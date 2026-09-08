@@ -707,19 +707,19 @@ public sealed class WorldInteractionRegistry
             item.SetConditions(
                 type is InteractionActivateType.Terminal or InteractionActivateType.Generic
                     or InteractionActivateType.PlaceExplosive
-                    ? () => expressions.EvaluateCondition(onExpression, emptyValue: true)
+                    ? () => expressions.EvaluateCondition(onExpression, emptyValue: true, declared)
                     : null,
                 type == InteractionActivateType.Door
-                    ? () => expressions.EvaluateCondition(lockedExpression, emptyValue: false)
+                    ? () => expressions.EvaluateCondition(lockedExpression, emptyValue: false, declared)
                     : null,
                 type == InteractionActivateType.Door && !string.IsNullOrWhiteSpace(openExpression)
-                    ? () => expressions.EvaluateCondition(openExpression, emptyValue: false)
+                    ? () => expressions.EvaluateCondition(openExpression, emptyValue: false, declared)
                     : null,
                 type == InteractionActivateType.Door && !string.IsNullOrWhiteSpace(closeExpression)
-                    ? () => expressions.EvaluateCondition(closeExpression, emptyValue: false)
+                    ? () => expressions.EvaluateCondition(closeExpression, emptyValue: false, declared)
                     : null,
                 type == InteractionActivateType.Fence && !string.IsNullOrWhiteSpace(electricExpression)
-                    ? () => expressions.EvaluateCondition(electricExpression, emptyValue: false)
+                    ? () => expressions.EvaluateCondition(electricExpression, emptyValue: false, declared)
                     : null);
             registry._items.Add(item);
             BindVariables(item, variables);
@@ -750,7 +750,7 @@ public sealed class WorldInteractionRegistry
                 "On expression",
                 ReadString(declared, "On Expression", string.Empty));
             GeneratorPowerState state = new(
-                () => expressions.EvaluateCondition(onExpression, emptyValue: true),
+                () => expressions.EvaluateCondition(onExpression, emptyValue: true, declared),
                 ReadBool(declared, "Use backup timer"),
                 Math.Max(0, (int)(ReadReal(declared, "Seconds until power backup", 10f) * 30f)));
             registry._generators.Add(state);

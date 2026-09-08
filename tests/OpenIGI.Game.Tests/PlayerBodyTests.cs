@@ -424,7 +424,16 @@ public sealed class PlayerBodyTests
         Vector3d start = player.Position;
 
         Vector3f delta = new(0f, 300f, 0f);
+        PlayerCommand run = new(1f, 0f, 0f, 0f, false, false, Jump: false);
         PlayerCommand jump = new(1f, 0f, 0f, 0f, false, false, Jump: true);
+
+        // Run for a tick BEFORE jumping, or there is no run to carry. The take-off reads the PREVIOUS
+        // tick's step, because 0x4109E7 runs the locomotion state machine before the root motion is
+        // sampled at 0x410B7E -- so state 28's entry (0x40BA70) reads what last tick left in
+        // Human+1312/+1316. Taking off on the body's very first tick would read a zero step and hop on
+        // the spot, which is the standing jump AStandingJumpGoesStraightUp already covers.
+        player.Tick(run, terrain, delta);
+        Assert.True(player.IsGrounded);
 
         player.Tick(jump, terrain, delta);
         Assert.False(player.IsGrounded);

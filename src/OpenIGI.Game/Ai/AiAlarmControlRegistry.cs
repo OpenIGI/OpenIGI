@@ -44,7 +44,7 @@ public sealed class AiAlarmControlRegistry
         {
             bool? trigger = string.IsNullOrWhiteSpace(entry.TriggerExpression)
                 ? null
-                : _expressions.EvaluateCondition(entry.TriggerExpression, emptyValue: false);
+                : _expressions.EvaluateCondition(entry.TriggerExpression, emptyValue: false, entry.Task);
             entry.State.UpdateWithAlarmExpression(
                 tick,
                 disabled: false,
@@ -52,7 +52,7 @@ public sealed class AiAlarmControlRegistry
                 trigger,
                 () => string.IsNullOrWhiteSpace(entry.AlarmExpression)
                     ? null
-                    : _expressions.EvaluateCondition(entry.AlarmExpression, emptyValue: false));
+                    : _expressions.EvaluateCondition(entry.AlarmExpression, emptyValue: false, entry.Task));
         }
     }
 

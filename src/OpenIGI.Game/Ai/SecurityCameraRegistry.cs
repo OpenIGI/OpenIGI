@@ -492,13 +492,14 @@ public sealed class SecurityCameraRegistry
     {
         foreach (SecurityCamera camera in _cameras)
         {
-            bool powered = _expressions.EvaluateCondition(camera.OnExpression, emptyValue: true);
+            bool powered = _expressions.EvaluateCondition(camera.OnExpression, emptyValue: true, camera.Task);
             camera.Tick(powered, targetFeet, targetCrouching, targetAlive, _sight);
         }
 
         foreach (Control control in _controls)
         {
-            control.IsDetection = _expressions.EvaluateCondition(control.Expression, emptyValue: false);
+            control.IsDetection = _expressions.EvaluateCondition(
+                control.Expression, emptyValue: false, control.Task);
         }
     }
 

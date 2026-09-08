@@ -22,6 +22,82 @@ public sealed class RetailInteractionInventoryTests
         "GenericTBA", "PlaceExplosiveTBA", "StationaryGun",
     };
 
+    [RequiresGameDataTheory]
+    [InlineData(400, 500, "this.isClosed && Switch_500.isLastPressed", "this.isOpen && Switch_500.isLastPressed")]
+    [InlineData(
+        403,
+        501,
+        "this.isClosed &&\n(Switch_501.isLastPressed || Switch_502.isLastPressed)",
+        "this.isOpen &&\n(Switch_501.isLastPressed || Switch_502.isLastPressed)")]
+    public void MissionFiveSelfGatedDoorsOpenAndCloseFromTheirRetailSwitches(
+        int doorId,
+        int switchId,
+        string expectedOpen,
+        string expectedClose)
+    {
+        (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(5);
+        DoorRegistry doors = DoorRegistry.Build(root);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(root, mission, doors, variables);
+        WorldInteraction door = Assert.Single(interactions.Items, item => item.Task.Id == doorId);
+        WorldInteraction doorSwitch = Assert.Single(interactions.Items, item => item.Task.Id == switchId);
+
+        Assert.Equal(expectedOpen, ReadString(door.Task, "Open door expression"));
+        Assert.Equal(expectedClose, ReadString(door.Task, "Close door expression"));
+        Assert.True(door.Door!.IsFullyClosed);
+
+        doorSwitch.Press();
+        for (int tick = 0; tick < 4; tick++)
+        {
+            interactions.Tick();
+            doors.Tick();
+        }
+        Assert.False(door.Door.IsFullyClosed);
+
+        for (int tick = 0; tick <= 60; tick++)
+        {
+            interactions.Tick();
+            doors.Tick();
+        }
+        Assert.True(door.Door.IsFullyOpen);
+
+        doorSwitch.Press();
+        for (int tick = 0; tick < 4; tick++)
+        {
+            interactions.Tick();
+            doors.Tick();
+        }
+        Assert.False(door.Door.IsFullyOpen);
+    }
+
+    [RequiresGameDataFact]
+    public void MissionThreeDoor472AutoClosesAfterItsRetailSelfTimer()
+    {
+        (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(3);
+        DoorRegistry doors = DoorRegistry.Build(root);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(root, mission, doors, variables);
+        WorldInteraction door = Assert.Single(interactions.Items, static item => item.Task.Id == 472);
+
+        Assert.Equal(
+            "this.nDoorOpenTicks > 10*GAME_FREQUENCY",
+            ReadString(door.Task, "Close door expression"));
+
+        door.Door!.CommandOpen();
+        for (int tick = 0; tick <= 60; tick++)
+        {
+            interactions.Tick();
+            doors.Tick();
+        }
+        Assert.True(door.Door.IsFullyOpen);
+
+        for (int tick = 0; tick <= 300; tick++)
+        {
+            interactions.Tick();
+            doors.Tick();
+        }
+
+        Assert.False(door.Door.IsFullyOpen);
+    }
+
     [Fact]
     public void MedipackPickupFallbackProvidesAUsableChargeCount()
     {
@@ -503,4 +579,7 @@ public sealed class RetailInteractionInventoryTests
 
     private static float ReadReal(DeclaredTask task, string name, float fallback) =>
         task.TryGetValue(name, out object? value) && value is float real ? real : fallback;
+
+    private static string ReadString(DeclaredTask task, string name) =>
+        task.TryGetValue(name, out object? value) && value is string text ? text : string.Empty;
 }

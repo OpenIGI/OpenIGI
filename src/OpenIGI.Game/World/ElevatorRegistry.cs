@@ -435,7 +435,7 @@ public sealed class ElevatorRegistry
                     .ToList();
                 List<Func<bool>> wantedFloors = wantedExpressions
                     .Select(expression => (Func<bool>)(() => expressions.EvaluateCondition(
-                        expression, emptyValue: false)))
+                        expression, emptyValue: false, declared)))
                     .ToList();
                 string canStart = ReadString(declared, "Can start");
                 string floorUp = ReadString(declared, "Floor up");
@@ -444,9 +444,9 @@ public sealed class ElevatorRegistry
                     root, declared, floors, wantedExpressions);
                 registry._commands.Add(new ElevatorCommand(
                     elevator,
-                    () => expressions.EvaluateCondition(canStart, emptyValue: true),
-                    () => expressions.EvaluateCondition(floorUp, emptyValue: false),
-                    () => expressions.EvaluateCondition(floorDown, emptyValue: false),
+                    () => expressions.EvaluateCondition(canStart, emptyValue: true, declared),
+                    () => expressions.EvaluateCondition(floorUp, emptyValue: false, declared),
+                    () => expressions.EvaluateCondition(floorDown, emptyValue: false, declared),
                     wantedFloors,
                     exteriorCalls));
                 // Elevator_BindExports (0x43D0E0): vFloor +0x1A0, vLastFloor +0x1A8,

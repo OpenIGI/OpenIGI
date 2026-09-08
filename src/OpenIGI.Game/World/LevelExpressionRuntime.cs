@@ -5,9 +5,15 @@ using OpenIGI.Scripting.Runtime;
 namespace OpenIGI.Game.World;
 
 /// <summary>Parses and evaluates level-task conditions against their live exported variables.</summary>
+/// <remarks>
+/// An authored <c>this.field</c> name resolves against the owner supplied for that evaluation. The
+/// parsed expression cache is shared, but each evaluation receives an immutable owner context so a
+/// cached or reentrant evaluation cannot replace another evaluation's <c>this</c> task.
+/// </remarks>
 public sealed class LevelExpressionRuntime
 {
-    private readonly Context _context;
+    private readonly ScriptVarRegistry _variables;
+    private readonly Func<string, ScriptArguments, QvmValue?>? _invoke;
     private readonly Dictionary<string, ScriptExpression?> _cache = new(StringComparer.Ordinal);
 
     /// <summary>Creates an evaluator over a mission's script variables.</summary>
@@ -16,11 +22,12 @@ public sealed class LevelExpressionRuntime
         Func<string, ScriptArguments, QvmValue?>? invoke = null)
     {
         ArgumentNullException.ThrowIfNull(variables);
-        _context = new Context(variables, invoke);
+        _variables = variables;
+        _invoke = invoke;
     }
 
     /// <summary>Evaluates an authored condition; an empty condition uses the caller's default.</summary>
-    public bool EvaluateCondition(string? source, bool emptyValue)
+    public bool EvaluateCondition(string? source, bool emptyValue, GameTask? owner = null)
     {
         if (string.IsNullOrWhiteSpace(source))
         {
@@ -44,11 +51,11 @@ public sealed class LevelExpressionRuntime
         // (IGI.exe 0x4F1725 -> 0x4B9660). Using the integer walk here truncates a departing
         // elevator's fractional vFloor to its old floor and immediately reopens that landing door.
         return expression is not null
-            && new ScriptExpressionEvaluator(_context).EvaluateReal(expression) != 0.0;
+            && CreateEvaluator(owner).EvaluateReal(expression) != 0.0;
     }
 
     /// <summary>Evaluates an authored integer expression; an empty expression uses the caller's default.</summary>
-    public int EvaluateInt32(string? source, int emptyValue = 0)
+    public int EvaluateInt32(string? source, int emptyValue = 0, GameTask? owner = null)
     {
         if (string.IsNullOrWhiteSpace(source))
         {
@@ -56,11 +63,13 @@ public sealed class LevelExpressionRuntime
         }
 
         ScriptExpression? expression = Parse(source);
-        return expression is null ? 0 : new ScriptExpressionEvaluator(_context).Evaluate(expression);
+        return expression is null
+            ? 0
+            : CreateEvaluator(owner).Evaluate(expression);
     }
 
     /// <summary>Evaluates an authored numeric expression as a single-precision value.</summary>
-    public float EvaluateSingle(string? source, float emptyValue = 0f)
+    public float EvaluateSingle(string? source, float emptyValue = 0f, GameTask? owner = null)
     {
         if (string.IsNullOrWhiteSpace(source))
         {
@@ -70,11 +79,11 @@ public sealed class LevelExpressionRuntime
         ScriptExpression? expression = Parse(source);
         return expression is null
             ? 0f
-            : (float)new ScriptExpressionEvaluator(_context).EvaluateReal(expression);
+            : (float)CreateEvaluator(owner).EvaluateReal(expression);
     }
 
     /// <summary>Evaluates an authored expression for its side effects and returns its integer result.</summary>
-    public int Execute(string? source) => EvaluateInt32(source, 0);
+    public int Execute(string? source, GameTask? owner = null) => EvaluateInt32(source, 0, owner);
 
     private ScriptExpression? Parse(string source)
     {
@@ -103,18 +112,26 @@ public sealed class LevelExpressionRuntime
         _ => null,
     };
 
+    private ScriptExpressionEvaluator CreateEvaluator(GameTask? owner) =>
+        new(new Context(_variables, _invoke, owner));
+
     private sealed class Context(
         ScriptVarRegistry variables,
-        Func<string, ScriptArguments, QvmValue?>? invoke) : IScriptExpressionContext
+        Func<string, ScriptArguments, QvmValue?>? invoke,
+        GameTask? owner) : IScriptExpressionContext
     {
-        public bool TryGetValue(string name, out QvmValue value) => variables.TryRead(name, out value);
-        public QvmValueKind GetValueKind(string name) => variables.GetValueKind(name);
-        public bool TrySetValue(string name, QvmValue value) => variables.TryWrite(name, value);
+        public bool TryGetValue(string name, out QvmValue value) => variables.TryRead(Resolve(name), out value);
+        public QvmValueKind GetValueKind(string name) => variables.GetValueKind(Resolve(name));
+        public bool TrySetValue(string name, QvmValue value) => variables.TryWrite(Resolve(name), value);
         public bool TryInvoke(string name, ScriptArguments arguments, out QvmValue result)
         {
             QvmValue? invoked = invoke?.Invoke(name, arguments);
             result = invoked ?? QvmValue.Zero;
             return invoked.HasValue;
         }
+
+        private string Resolve(string name) => owner is not null && name.StartsWith("this.", StringComparison.Ordinal)
+            ? string.Concat(owner.Name, name.AsSpan("this".Length))
+            : name;
     }
 }

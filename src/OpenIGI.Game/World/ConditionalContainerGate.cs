@@ -26,7 +26,7 @@ public sealed class ConditionalContainerGate
 {
     private const string LogCategory = "Level";
 
-    private readonly LevelExpressionContext _context;
+    private readonly ScriptVarRegistry _variables;
     private readonly IIgiLogger _logger;
     private readonly Dictionary<string, ScriptExpression?> _parseCache = new(StringComparer.Ordinal);
 
@@ -56,7 +56,7 @@ public sealed class ConditionalContainerGate
     public ConditionalContainerGate(ScriptVarRegistry variables, IIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(variables);
-        _context = new LevelExpressionContext(variables);
+        _variables = variables;
         _logger = logger ?? NullLogger.Instance;
     }
 
@@ -178,8 +178,11 @@ public sealed class ConditionalContainerGate
         }
 
         // A fresh evaluator per resolution: resolving one container's condition can re-enter this method
-        // through another container's exported isRun, and the evaluator carries per-run error state.
-        return new ScriptExpressionEvaluator(_context).EvaluateCondition(expression);
+        // through another container's exported isRun, and the evaluator carries per-run error state. The
+        // context is built per resolution for the same reason -- it carries the `this` owner, and a shared
+        // one would let a re-entrant resolution replace the outer container's own name.
+        return new ScriptExpressionEvaluator(new LevelExpressionContext(_variables, container))
+            .EvaluateCondition(expression);
     }
 
     private static int? ResolveConstant(string name) => name switch
@@ -209,20 +212,31 @@ public sealed class ConditionalContainerGate
     /// nothing. An unknown name returns <see langword="false"/> from <see cref="TryGetValue"/>, which the
     /// evaluator reports and reads as zero — the value an unmodelled progress flag holds at the start.
     /// </remarks>
-    private sealed class LevelExpressionContext(ScriptVarRegistry variables) : IScriptExpressionContext
+    private sealed class LevelExpressionContext(ScriptVarRegistry variables, GameTask? owner)
+        : IScriptExpressionContext
     {
         private readonly ScriptVarRegistry _variables = variables;
 
-        public bool TryGetValue(string name, out QvmValue value) => _variables.TryRead(name, out value);
+        public bool TryGetValue(string name, out QvmValue value) =>
+            _variables.TryRead(Resolve(name), out value);
 
-        public QvmValueKind GetValueKind(string name) => _variables.GetValueKind(name);
+        public QvmValueKind GetValueKind(string name) => _variables.GetValueKind(Resolve(name));
 
-        public bool TrySetValue(string name, QvmValue value) => _variables.TryWrite(name, value);
+        public bool TrySetValue(string name, QvmValue value) => _variables.TryWrite(Resolve(name), value);
 
         public bool TryInvoke(string name, ScriptArguments arguments, out QvmValue result)
         {
             result = QvmValue.Zero;
             return false;
         }
+
+        // The original rewrites a `this.` token to "<owning task name>.<field>" in its expression
+        // preprocessor (0x4F1400: sprintf("%s.%s", Task_GetName(owner), rest)) before the text is ever
+        // compiled, and every caller passes the task that declares the expression field as that owner.
+        // Resolving at lookup instead of at parse keeps the parse cache shared across owners.
+        private string Resolve(string name) =>
+            owner is not null && name.StartsWith("this.", StringComparison.Ordinal)
+                ? string.Concat(owner.Name, name.AsSpan("this".Length))
+                : name;
     }
 }
