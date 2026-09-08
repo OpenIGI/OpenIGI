@@ -77,9 +77,9 @@ public sealed class LevelFourOutroStabilityTests
                 {
                     Assert.Equal(2222, runtime.ActiveScene?.Id);
                     Assert.NotNull(runtime.Frame);
-                    Assert.NotEqual(
-                        4,
-                        runtime.Frame!.ShotIndex);
+                    // Retail 0x4F5400 can select the terminal zero-duration knot.
+                    // Knot fidelity is covered by the authored-camera tests; this test
+                    // verifies that camera movement cannot cancel the extraction gate.
                 }
 
                 if (run2222 && outroStarts == outroStops)

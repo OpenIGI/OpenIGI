@@ -866,7 +866,6 @@ public sealed class RetailMissionFourHelicopterTests
             "generic CutsceneRuntime must not contain Mission 4's task-800 identifier");
         Assert.Contains("heli-park-rest", source);
         Assert.Contains("TerminalLandingOnTerrain", source);
-        Assert.Contains("ResolveEditCameraPosition", source);
     }
 
     private static void ConfigureMissionFourGetawayLanding(CutsceneRuntime runtime, LevelTask root)

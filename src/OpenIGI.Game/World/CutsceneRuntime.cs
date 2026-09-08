@@ -56,11 +56,11 @@ public sealed class CutsceneRuntime
     private readonly Func<string, float>? _modelLength;
     private readonly Func<string, float>? _modelPivot;
     private readonly VehiclePhysicsRegistry? _vehiclePhysics;
+    private readonly Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? _vehicleObstacleHit;
+    private readonly Func<GameTask, bool>? _vehicleObstacleReleased;
     private readonly TerrainData? _terrain;
     private readonly IIgiLogger _logger;
     private ObjectCollisionIndex? _collisionIndex;
-    private readonly Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? _vehicleObstacleHit;
-    private readonly Func<GameTask, bool>? _vehicleObstacleReleased;
     private Func<int, CutsceneTargetPose?>? _targetPoseResolver;
     private bool _breakRequested;
     private CutSceneTask? _sceneExpressionOwner;
@@ -94,10 +94,10 @@ public sealed class CutsceneRuntime
         Func<string, float>? modelLength = null,
         Func<string, float>? modelPivot = null,
         VehiclePhysicsRegistry? vehiclePhysics = null,
-        TerrainData? terrain = null,
-        IIgiLogger? logger = null,
         Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? vehicleObstacleHit = null,
-        Func<GameTask, bool>? vehicleObstacleReleased = null)
+        Func<GameTask, bool>? vehicleObstacleReleased = null,
+        TerrainData? terrain = null,
+        IIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(variables);
@@ -108,10 +108,10 @@ public sealed class CutsceneRuntime
         _modelLength = modelLength;
         _modelPivot = modelPivot;
         _vehiclePhysics = vehiclePhysics;
-        _terrain = terrain;
-        _logger = logger ?? NullLogger.Instance;
         _vehicleObstacleHit = vehicleObstacleHit;
         _vehicleObstacleReleased = vehicleObstacleReleased;
+        _terrain = terrain;
+        _logger = logger ?? NullLogger.Instance;
         _expressions = new LevelExpressionRuntime(variables, InvokeNative);
         List<CutSceneTask> cutscenes = [];
 
@@ -386,8 +386,7 @@ public sealed class CutsceneRuntime
 
             if (scene.IsRun)
             {
-                // CutScene_RunHandler (IGI.exe 0x4F63C0; 0x43A470 is mid-instruction in AlarmLight) runs
-                // child AnimTasks before the scene,
+                // The cutscene run callback runs child AnimTasks before the scene,
                 // evaluates Run, and then calls CutScene_SetCamera with the *current* nTick. The
                 // camera marks isFinished only when that old tick is beyond the authored duration;
                 // Run stays latched for this frame and nTick is incremented afterwards. The Run
@@ -1009,27 +1008,17 @@ public sealed class CutsceneRuntime
     {
         CutSceneTask scene = state.Task;
         List<TimedShot> timed = state.Timed(scene.TimeScale);
-        // An EditCamera with no duration is a spline/filter endpoint, not a frame-owning shot. Retail
-        // keeps the preceding camera live on the two completion-boundary ticks; selecting a terminal
-        // zero-duration entry here exposes its marker pose as a visible flash (Mission 4's outro puts
-        // that pose inside Bell 356). Keep zero-length entries in `timed` so the preceding Hermite and
-        // filter interpolation can still end at their authored values, but never make one `active`.
-        bool OwnsFrame(TimedShot item) => Math.Max(0f, item.Shot.Duration * scene.TimeScale) > 0f;
-        int current = timed.FindIndex(OwnsFrame);
-        if (current < 0)
-        {
-            current = 0;
-        }
-        for (int i = current + 1; i < timed.Count; i++)
+        // IGI1 0x4F4880 retains every authored knot, including duration zero.
+        // 0x4F5400 selects the last start <= the scene time without a duration filter.
+        // Scene completion/presentation must not be repaired by changing knot ownership.
+        int current = 0;
+        for (int i = 1; i < timed.Count; i++)
         {
             if (timed[i].Start > time)
             {
                 break;
             }
-            if (OwnsFrame(timed[i]))
-            {
-                current = i;
-            }
+            current = i;
         }
 
         int i0 = Math.Max(0, current - 1);
@@ -1902,14 +1891,10 @@ public sealed class CutsceneRuntime
     private List<EditCameraShot> ReadShots(CutSceneTask scene)
     {
         List<EditCameraShot> shots = [];
-        // Mission 4 CutScene 1000 mixes world ObjectPos (the pad, ~53 km from origin) with
-        // cabin-scale ObjectPos (~18 m). Those small records are local offsets — Link is -1 —
-        // but Hermite still interpolates them as world points, so the intro camera leaves the
-        // castle and flies through empty sky to (17.7, -0.4, 2.8). Promote any cabin-scale
-        // shot onto the last world-space camera (or the CutScene anchor) so the path stays
-        // in the level. World-scale shots (Mission 1's linked heli cameras included) are
-        // left untouched.
-        Vector3d lastWorld = scene.Position;
+        // IGI1 0x4F55D0 interpolates EditCamera's authored XYZ fields directly.
+        // Small coordinates can belong to a separate cinematic set (Mission 4's Anya HQ);
+        // they are not evidence of a vehicle-local offset. Only explicit Link IDs transform
+        // the evaluated camera through 0x508940. See the MVP retail audit for both listings.
         foreach (GameTask task in Walk(scene))
         {
             if (task is not DeclaredTask camera || !string.Equals(task.Type.Name, "EditCamera", StringComparison.Ordinal))
@@ -1919,7 +1904,7 @@ public sealed class CutsceneRuntime
             int link = Int(camera, "Link task ID", -1);
             int target = Int(camera, "Target task ID", -1);
             (Vector3d linkOrigin, Matrix3f linkOrientation) = InitialPose(scene.Tree.FromId(link));
-            Vector3d position = ResolveEditCameraPosition(Vector(camera, "Position"), scene.Position, ref lastWorld);
+            Vector3d position = Vector(camera, "Position");
             shots.Add(new EditCameraShot(
                 position,
                 Real(camera, "Alpha"), Real(camera, "Beta"), Real(camera, "Gamma"),
@@ -1930,29 +1915,6 @@ public sealed class CutsceneRuntime
                 Real(camera, "Camera shake"), linkOrigin, linkOrientation));
         }
         return shots;
-    }
-
-    /// <summary>
-    /// ObjectPos smaller than a kilometre on a cutscene that itself sits tens of kilometres
-    /// from the origin is a local offset, not a world point.
-    /// </summary>
-    private static Vector3d ResolveEditCameraPosition(
-        Vector3d authored, Vector3d sceneOrigin, ref Vector3d lastWorld)
-    {
-        const double LocalRadius = 1_000.0 * WorldScene.UnitsPerMetre;
-        double authoredSquared = authored.LengthSquared;
-        if (authoredSquared < LocalRadius * LocalRadius
-            && sceneOrigin.LengthSquared > LocalRadius * LocalRadius)
-        {
-            return lastWorld + authored;
-        }
-
-        if (authoredSquared >= LocalRadius * LocalRadius)
-        {
-            lastWorld = authored;
-        }
-
-        return authored;
     }
 
     private static bool IsBandFilter(string filter) =>
