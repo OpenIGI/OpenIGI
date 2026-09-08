@@ -506,7 +506,7 @@ public sealed class DestructibleObjectRegistry
 
     private bool ExplosionEnabled(DestructibleObject item) =>
         item.ExplosionExpression.Length == 0
-        || _expressions.EvaluateCondition(item.ExplosionExpression, emptyValue: false);
+        || _expressions.EvaluateCondition(item.ExplosionExpression, emptyValue: false, item.Owner);
 
     /// <summary>Gets whether an explosive object should produce its authored blast.</summary>
     public bool ShouldExplode(DestructibleObject item)

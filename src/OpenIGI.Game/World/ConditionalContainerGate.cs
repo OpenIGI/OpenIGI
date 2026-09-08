@@ -217,10 +217,25 @@ public sealed class ConditionalContainerGate
     {
         private readonly ScriptVarRegistry _variables = variables;
 
-        public bool TryGetValue(string name, out QvmValue value) =>
-            _variables.TryRead(Resolve(name), out value);
+        public bool TryGetValue(string name, out QvmValue value)
+        {
+            string resolved = Resolve(name);
+            if (resolved.Contains(LevelExpressionRuntime.AlwaysTrueField, StringComparison.Ordinal))
+            {
+                value = QvmValue.FromInt32(1);
+                return true;
+            }
 
-        public QvmValueKind GetValueKind(string name) => _variables.GetValueKind(Resolve(name));
+            return _variables.TryRead(resolved, out value);
+        }
+
+        public QvmValueKind GetValueKind(string name)
+        {
+            string resolved = Resolve(name);
+            return resolved.Contains(LevelExpressionRuntime.AlwaysTrueField, StringComparison.Ordinal)
+                ? QvmValueKind.Integer
+                : _variables.GetValueKind(resolved);
+        }
 
         public bool TrySetValue(string name, QvmValue value) => _variables.TryWrite(Resolve(name), value);
 

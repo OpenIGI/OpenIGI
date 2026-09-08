@@ -26,6 +26,21 @@ public sealed class LevelExpressionRuntime
         _invoke = invoke;
     }
 
+    /// <summary>The suffix the original's preprocessor answers before any variable is consulted.</summary>
+    /// <remarks>
+    /// <c>0x4F1574</c> is the line after the <c>this.</c> rewrite: any token CONTAINING
+    /// <c>.isExists</c> is replaced outright with the literal <c>1</c>, so the name never reaches the
+    /// variable table and the answer is always true. It is a <c>strstr</c> in the original rather than
+    /// a suffix test, and this matches that.
+    /// <para>
+    /// No shipped level uses it — the string appears nowhere in the retail mission data, only in the
+    /// executable — so this changes nothing about the campaign. It is here so a level that does use it
+    /// reads the way the original would answer, rather than silently resolving to zero, which is the
+    /// opposite of what the engine says.
+    /// </para>
+    /// </remarks>
+    public const string AlwaysTrueField = ".isExists";
+
     /// <summary>Evaluates an authored condition; an empty condition uses the caller's default.</summary>
     public bool EvaluateCondition(string? source, bool emptyValue, GameTask? owner = null)
     {
@@ -120,8 +135,25 @@ public sealed class LevelExpressionRuntime
         Func<string, ScriptArguments, QvmValue?>? invoke,
         GameTask? owner) : IScriptExpressionContext
     {
-        public bool TryGetValue(string name, out QvmValue value) => variables.TryRead(Resolve(name), out value);
-        public QvmValueKind GetValueKind(string name) => variables.GetValueKind(Resolve(name));
+        public bool TryGetValue(string name, out QvmValue value)
+        {
+            string resolved = Resolve(name);
+            if (resolved.Contains(AlwaysTrueField, StringComparison.Ordinal))
+            {
+                value = QvmValue.FromInt32(1);
+                return true;
+            }
+
+            return variables.TryRead(resolved, out value);
+        }
+
+        public QvmValueKind GetValueKind(string name)
+        {
+            string resolved = Resolve(name);
+            return resolved.Contains(AlwaysTrueField, StringComparison.Ordinal)
+                ? QvmValueKind.Integer
+                : variables.GetValueKind(resolved);
+        }
         public bool TrySetValue(string name, QvmValue value) => variables.TryWrite(Resolve(name), value);
         public bool TryInvoke(string name, ScriptArguments arguments, out QvmValue result)
         {
