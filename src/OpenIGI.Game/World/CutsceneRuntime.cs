@@ -1947,9 +1947,9 @@ public sealed class CutsceneRuntime
                 // callback's observed zero-tick state (the callback itself is a run/state handler).
                 // The plane flies a scripted path through the level's terrain, and like the heli it has
                 // no per-tick collision that would stop it sinking into a valley or a ridge. Measure the
-                // model's rest height once (authored pose minus the ground under it), the same way the
-                // heli's parked airframe does, so the clamp below keeps the body above the terrain
-                // instead of letting a fly-by path clip through the ground.
+                // The plane receiver's two tick-zero packets restore the authored rigid-body pose and
+                // publish no movement.  Its later collision/body integration is Plane-owned; a Heli
+                // terrain rest clamp would turn a fly-by into a terrain follower.
                 transform.Position = transform.OriginPosition;
                 transform.Orientation = transform.AuthoredOrientation;
                 transform.Velocity = default;
@@ -1961,7 +1961,6 @@ public sealed class CutsceneRuntime
                 transform.GroundContact = false;
                 transform.GroundContactEventLogged = false;
                 transform.GroundContactLogged = false;
-                transform.GroundRestOffset = MeasureGroundRestOffset(transform.OriginPosition);
                 transform.IsDynamic = true;
                 return;
             }
@@ -2000,7 +1999,6 @@ public sealed class CutsceneRuntime
             transform.Position += new Vector3d(planeForward.X, planeForward.Y, planeForward.Z)
                 * transform.Speed;
             transform.Velocity = transform.Position - previousPosition;
-            KeepHelicopterAboveGround(target, transform);
             transform.IsDynamic = true;
             LogAirframePath(targetId, "Plane", target, transform);
             return;
