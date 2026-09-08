@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Player;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
 
@@ -66,24 +67,11 @@ public sealed class MissionObjectiveRuntime
 
         foreach (GameTask task in tasks)
         {
-            // HumanSoldier is a ContainerTask, not a DeclaredTask, so it must be handled before the
-            // DeclaredTask filter below. Mission 4's combat flow reads soldier deaths straight off the
-            // script variable HumanSoldier_N.isDead (EV 752 on guards 406-408, EV 753 on friendlies
-            // 401-402, MSG 975 on 400, MSG 985 on 428, MSG 996 on 433-434); it must be a LIVE alias fed
-            // each tick by the host, so a soldier killed in the NPC-vs-NPC gate fight flips its trigger
-            // exactly when it dies. A soldier the host has not reported is treated as alive.
-            if (string.Equals(task.Type.Name, "HumanSoldier", StringComparison.Ordinal))
-            {
-                int id = task.Id;
-                variables.BindBool(task, "isDead", () => IsSoldierDead(id), _ => { });
-                continue;
-            }
-            if (string.Equals(task.Type.Name, "HumanPlayer", StringComparison.Ordinal))
-            {
-                variables.BindBool(task, "isDead", () => !_playerAlive, _ => { });
-                continue;
-            }
-
+            // isDead is NOT bound here. HumanTask exports it, and eTeam beside it, the way the
+            // original exports both on the shared Human class rather than per subclass -- see
+            // HumanTask.OnExportVars. What this runtime still owns is feeding the latch: the host
+            // reports occupants and player state, and SetSoldierOccupants and TickLevelState write
+            // through to the tasks so the binding reads a live value.
             if (task is not DeclaredTask declared)
             {
                 continue;
@@ -355,6 +343,11 @@ public sealed class MissionObjectiveRuntime
         bool playerAlive = true)
     {
         _playerAlive = playerAlive;
+        if (_levelRoot.Tree.FromId(0) is HumanPlayerTask player && !playerAlive)
+        {
+            player.IsDead = true;
+        }
+
         foreach (AreaActivation area in _areaActivations)
         {
             int count = 0;
@@ -411,6 +404,14 @@ public sealed class MissionObjectiveRuntime
         foreach (HumanOccupant occupant in occupants)
         {
             _soldierOccupants[occupant.TaskId] = occupant;
+
+            // Write the report through to the task itself, which is where the original keeps it and
+            // where HumanTask's export reads it from. A soldier the host has not reported keeps the
+            // latch it already had, and a freshly declared one starts alive.
+            if (_levelRoot.Tree.FromId(occupant.TaskId) is HumanTask human && occupant.IsDead)
+            {
+                human.IsDead = true;
+            }
         }
     }
 

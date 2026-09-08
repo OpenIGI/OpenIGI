@@ -33,6 +33,40 @@ public abstract class HumanTask : ContainerTask
     /// numbering them.
     /// </remarks>
     public int Team { get; set; }
+
+    /// <summary>Gets or sets whether this character has died — the original's <c>Human+3317</c>.</summary>
+    /// <remarks>
+    /// A permanent latch, not a health test: the byte is cleared only by the <c>Human</c> reset
+    /// (<c>0x45ECD0</c>) and set to 1 by every death path there is (<c>0x408447</c>, <c>0x45551C</c>,
+    /// <c>0x45574F</c>, <c>0x4573DB</c>, <c>0x45A376</c>, <c>0x45D51D</c>, …). The host owns it, the
+    /// same way the original's death handlers own the byte.
+    /// </remarks>
+    public bool IsDead { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// <b>One export for every character, on the class they share.</b> The original installs its
+    /// ExportVars/UnexportVars pair on <c>Human</c> itself (<c>sub_45E450</c> registers
+    /// <c>sub_460850</c>/<c>sub_4608D0</c>), and neither <c>HumanPlayer</c> (<c>sub_40FE30</c>) nor
+    /// <c>HumanSoldier</c> (<c>sub_45CAB0</c>) registers an exporter of its own — both pass
+    /// <c>sub_460BE0()</c>, the <c>Human</c> type word, as their parent. So the player and every
+    /// soldier are exported by the same code, and a subclass added later is exported without being
+    /// asked about.
+    /// </para>
+    /// <para>
+    /// <c>sub_460850</c> binds exactly these two: <c>isDead</c> to the byte at <c>Human+3317</c> and
+    /// <c>eTeam</c> to the int at <c>Human+252</c>. Both are bound writable because the original binds
+    /// the raw storage — a script assigning to either changes the character.
+    /// </para>
+    /// </remarks>
+    protected override void OnExportVars(ScriptVarRegistry variables)
+    {
+        ArgumentNullException.ThrowIfNull(variables);
+
+        variables.BindBool(this, "isDead", () => IsDead, value => IsDead = value);
+        variables.BindInt(this, "eTeam", () => Team, value => Team = value);
+    }
 }
 
 /// <summary>The player's character — the original's <c>HumanPlayer</c>.</summary>
