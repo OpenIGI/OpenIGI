@@ -24,7 +24,7 @@ public sealed class LevelThreeOutroFidelityTests
         CutsceneRuntime runtime = new(
             root,
             loop.Variables,
-            clearTransientProjectiles: () => projectileCleanupCalls++);
+            native: InvokeNative);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
 
         // Leave the opening cinematic through the same native break edge used by the desktop host,
@@ -65,6 +65,17 @@ public sealed class LevelThreeOutroFidelityTests
         Assert.True(scene.IsFinished, "scene 700 must finish at its authored 52.5-second final knot");
         Assert.True(scene.IsRun, "retail retains the completion-boundary camera until mission flow advances");
         Assert.Equal(1, projectileCleanupCalls);
+
+        QvmValue? InvokeNative(string name, ScriptArguments _)
+        {
+            if (!string.Equals(name, "Game_CutsceneDelete", StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            projectileCleanupCalls++;
+            return QvmValue.FromInt32(1);
+        }
     }
 
     private static void Step(MissionObjectiveRuntime objectives, CutsceneRuntime runtime)

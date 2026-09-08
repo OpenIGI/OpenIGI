@@ -23,6 +23,34 @@ internal sealed partial class DesktopGame
 {
     /// <summary>Test-only outro forcing writes re-applied on every logic tick.</summary>
     private List<(string Name, string Value)> _testOutroTickWrites = [];
+
+    /// <summary>
+    /// Handles the retail transient-object cleanup native without giving it ownership of cinematic state.
+    /// </summary>
+    /// <remarks>
+    /// <c>IGI.EXE!Game_CutsceneDelete</c> walks the mine/grenade/missile registry, not the QVM
+    /// <c>CutScene</c> registry.  Mission 3 calls it while scene 700 is starting, so completing
+    /// scene 700 here would immediately satisfy the authored mission-complete expression.
+    /// </remarks>
+    internal static QvmValue? TryHandleCutsceneCleanupNative(string name, Action clearTransientProjectiles)
+    {
+        ArgumentNullException.ThrowIfNull(clearTransientProjectiles);
+        if (!string.Equals(name, "Game_CutsceneDelete", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        clearTransientProjectiles();
+        return QvmValue.FromInt32(1);
+    }
+
+    private void ClearTransientCutsceneObjects()
+    {
+        _player?.Grenades.Clear();
+        _player?.Missiles.Clear();
+        _player?.M203.Clear();
+    }
+
     private void StartMission(int id)
     {
         if (!_missions.TryGet(id, out MissionDescriptor? chosen))
@@ -249,6 +277,12 @@ internal sealed partial class DesktopGame
             _loop.Variables,
             (name, arguments) =>
             {
+                QvmValue? cleanup = TryHandleCutsceneCleanupNative(name, ClearTransientCutsceneObjects);
+                if (cleanup.HasValue)
+                {
+                    return cleanup;
+                }
+
                 if (name == GameMusicNatives.EnableNative)
                 {
                     if (_music is not null)
@@ -287,12 +321,6 @@ internal sealed partial class DesktopGame
             vehiclePhysics: _vehiclePhysics,
             terrain: loaded.Terrain,
             logger: _logger,
-            clearTransientProjectiles: () =>
-            {
-                _player?.Grenades.Clear();
-                _player?.Missiles.Clear();
-                _player?.M203.Clear();
-            },
             vehicleObstacleHit: (task, origin, end) =>
             {
                 if (_worldSolids?.TryCastIgnoring(
