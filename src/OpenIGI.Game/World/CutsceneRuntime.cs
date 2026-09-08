@@ -1967,11 +1967,24 @@ public sealed class CutsceneRuntime
 
             SnapshotDynamicPose(transform, simulationOrder);
 
-            // The Plane AnimTask publishes normalized pitch/roll/yaw controls and a latched thrust
-            // target. These are control targets, not Euler deltas; the callback that owns the Plane
-            // run/state transition is the r2/Ghidra-confirmed 0x433690 prologue.
-            transform.Control += (new Vector3f(channels[0], channels[1], channels[2]) - transform.Control)
-                * 0.12f;
+            // Plane_ReadChannels (0x4337E0) publishes pitch/roll/yaw targets and a latched thrust
+            // target.  Plane_Physics (0x433B50) retains those targets with config +8/+12/+16:
+            // the shipped SU-27 values are all 0.9.  Do not substitute the former 0.12 guess.
+            Vector3f targetControl = new(channels[0], channels[1], channels[2]);
+            if (transform.PlanePhysics is { } planePhysics)
+            {
+                Vector3f retention = planePhysics.ControlRetention;
+                transform.Control = new Vector3f(
+                    (retention.X * transform.Control.X) + ((1f - retention.X) * targetControl.X),
+                    (retention.Y * transform.Control.Y) + ((1f - retention.Y) * targetControl.Y),
+                    (retention.Z * transform.Control.Z) + ((1f - retention.Z) * targetControl.Z)) * 0.995f;
+            }
+            else
+            {
+                // Unit-level runtimes may deliberately omit the retail registry. Keep their
+                // pre-existing generic motion path isolated from the retail-game implementation.
+                transform.Control += (targetControl - transform.Control) * 0.12f;
+            }
             if (channels[3] != -1f)
             {
                 transform.TargetThrust = channels[3];
@@ -1980,10 +1993,13 @@ public sealed class CutsceneRuntime
             {
                 transform.CollisionEnabled = Bool(livePlane, "Collision detection");
             }
-            // The native plane callback keeps thrust as live body state.  Preserve that state in
-            // addition to the speed envelope so downstream consumers (attachments, diagnostics and
-            // collision) observe the same non-zero motion that the authored flight produces.
-            transform.Thrust = MoveTowards(transform.Thrust, transform.TargetThrust, 0.001f);
+            // Plane_Physics selects config +32 after thrust reaches 0.8 and config +36 before it.
+            // SU-27 supplies 0.054 / 0.006.  The old fixed 0.001 made the Level 3 takeoff spend
+            // most of its authored flight window spooling on the runway.
+            float thrustStep = transform.PlanePhysics is { } physics
+                ? transform.Thrust >= 0.8f ? physics.HighThrustStep : physics.LowThrustStep
+                : 0.001f;
+            transform.Thrust = MoveTowards(transform.Thrust, transform.TargetThrust, thrustStep);
             transform.Heading += transform.Control.Z * 0.004f;
             transform.Orientation = Matrix3f.FromEngineEulerAngles(
                 transform.Control.X * 0.10f,
