@@ -471,7 +471,14 @@ internal sealed partial class DesktopGame
             _cutscenes.EnableTerminalTerrainLanding(getawayBell);
         }
 
-        _cutscenes.CollisionIndex = id == 4 ? solids : null;
+        // Every mission: a car's suspension reads this for the surface under each wheel, and much
+        // of what a vehicle stands on is placed geometry -- Mission 1's outro truck starts on a
+        // garage floor above the dirt. Re-seating the helicopters on it stays Mission 4's.
+        _cutscenes.CollisionIndex = solids;
+        if (id == 4)
+        {
+            _cutscenes.RestHelicoptersOnSupport();
+        }
 
         // Bind each car's drawn TASKTYPE_WHEEL attachments to its physics record so the drive force
         // and the tyre torque act at the real axle offsets, and the wheels roll and steer.

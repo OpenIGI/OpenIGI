@@ -70,22 +70,32 @@ public sealed class CutsceneRuntime
 
     /// <summary>Gets or sets the solid-object index used to find a supporting surface for vehicles.</summary>
     /// <remarks>
-    /// Wired by the host when a level has placed pads, crates or rooftops under a vehicle the
-    /// terrain half cannot see. The terrain half mirrors retail's <c>0x4CBE40</c>; the object sweep
-    /// mirrors retail's placed-model sweep (<c>0x4CDB20</c> -&gt; <c>0x4C7770</c>).
+    /// <para>
+    /// Wired by the host when a level has placed pads, crates, garage floors or rooftops that a
+    /// vehicle stands on. The terrain half mirrors retail's <c>0x4CBE40</c>; the object sweep
+    /// mirrors retail's placed-model sweep (<c>0x4CDB20</c> -&gt; <c>0x4C7770</c>). Main thread only.
+    /// </para>
+    /// <para>
+    /// Every mission wants this: a car's suspension probes it for the surface under each wheel, and
+    /// a great deal of what a vehicle stands on is placed geometry rather than terrain -- the
+    /// Mission 1 outro truck starts on a garage floor a few centimetres above the dirt, and without
+    /// the objects its wheels settle through the floor onto the terrain. Setting it no longer rests
+    /// the helicopters as a side effect; call <see cref="RestHelicoptersOnSupport"/> for that.
+    /// </para>
     /// </remarks>
     public ObjectCollisionIndex? CollisionIndex
     {
         get => _collisionIndex;
-        set
-        {
-            _collisionIndex = value;
-            if (value is not null)
-            {
-                RestCollisionHelisOnSupport();
-            }
-        }
+        set => _collisionIndex = value;
     }
+
+    /// <summary>Settles every collision-enabled helicopter onto whatever is under it.</summary>
+    /// <remarks>
+    /// Separate from <see cref="CollisionIndex"/> because it is a one-shot placement pass, not a
+    /// consequence of the index being available: the index is what every vehicle's ground query
+    /// reads, and only a helicopter authored with collision wants to be re-seated on it.
+    /// </remarks>
+    public void RestHelicoptersOnSupport() => RestCollisionHelisOnSupport();
 
     /// <summary>Builds the live cutscene state for a loaded level.</summary>
     public CutsceneRuntime(
