@@ -147,7 +147,8 @@ public sealed class CarDynamicsTests
     /// <summary>
     /// The body rides its springs: dropped onto flat ground it settles, and settles where the four
     /// springs carry its weight. At a stiffness of 0.5 that is a quarter of the travel into each
-    /// spring, so the wheels stand three quarters of their travel clear of the surface.
+    /// spring, and the compression is measured DOWN from the surface, so each wheel's origin comes
+    /// to rest that far under it.
     /// </summary>
     [Fact]
     public void TheBodySettlesOntoItsSprings()
@@ -160,8 +161,8 @@ public sealed class CarDynamicsTests
         double travel = truck.Wheels[0].SuspensionLengthUnits;
         double axle = wheels[0].OffsetUnits.Z;
 
-        // Start a metre high and let it fall.
-        Vector3d position = new(0d, 0d, Ground + travel - axle + WorldScene.UnitsPerMetre);
+        // Start a metre above where it will settle and let it fall.
+        Vector3d position = new(0d, 0d, Ground - axle + WorldScene.UnitsPerMetre);
         double highest = double.MinValue;
         double lowest = double.MaxValue;
         for (int tick = 0; tick < 400; tick++)
@@ -177,9 +178,10 @@ public sealed class CarDynamicsTests
             }
         }
 
-        // Where the springs balance the weight: compression = travel / (4 * stiffness) a wheel.
+        // Where the springs balance the weight: each wheel's origin rides a compression of
+        // travel / (4 * stiffness) UNDER the surface.
         double compression = travel / (4d * truck.Wheels[0].SpringStiffness);
-        double expected = Ground + (travel - compression) - axle;
+        double expected = Ground - compression - axle;
         Assert.InRange(position.Z, expected - 200d, expected + 200d);
 
         // And it is at rest there rather than still bouncing.

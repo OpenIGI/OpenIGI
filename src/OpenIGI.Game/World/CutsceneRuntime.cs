@@ -646,6 +646,15 @@ public sealed class CutsceneRuntime
                 }
             }
 
+            int contacts = 0;
+            for (int i = 0; i < physics.Wheels.Count; i++)
+            {
+                if (physics.Wheels[i].HasBody)
+                {
+                    contacts++;
+                }
+            }
+
             CarWheel[] wheels = new CarWheel[placements.Count];
             for (int i = 0; i < placements.Count; i++)
             {
@@ -656,6 +665,20 @@ public sealed class CutsceneRuntime
                 Vector3d offset = bodyOffsets.TryGetValue(slot, out Vector3d bodyOffset)
                     ? bodyOffset
                     : drawn[i];
+
+                // Where the spring is probed from. Retail keeps that point on the wheel body, which
+                // is model data the port has no reader for, so it is placed by what it has to
+                // achieve: the spring settles with its origin a compression UNDER the surface, and
+                // the tyre has to end up ON the surface, so the origin sits a compression below the
+                // contact patch. Measuring the running game: its Mission 2 truck rests 0.037 m over
+                // the terrain, which puts the bottom of a 0.464 m wheel 0.023 m clear -- touching.
+                double radius = Math.Max(0d, modelRadius?.Invoke(placements[i].Instance.Name) ?? 0d);
+                double travel = definition.SuspensionLengthUnits;
+                double stiffness = definition.SpringStiffness;
+                double settled = contacts > 0 && stiffness > 0d
+                    ? Math.Min(travel, travel / (contacts * stiffness))
+                    : 0d;
+                offset = new Vector3d(offset.X, offset.Y, drawn[i].Z - radius - settled);
                 CarBodyDefinition? body = null;
                 for (int b = 0; b < physics.Bodies.Count; b++)
                 {
@@ -671,7 +694,7 @@ public sealed class CutsceneRuntime
                     offset,
                     body?.LateralFriction ?? 0.95f,
                     body?.LongitudinalFriction ?? 0.05f,
-                    Math.Max(0f, modelRadius?.Invoke(placements[i].Instance.Name) ?? 0f));
+                    (float)radius);
             }
 
             _carWheels[owner] = wheels;

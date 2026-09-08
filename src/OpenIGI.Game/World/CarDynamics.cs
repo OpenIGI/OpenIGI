@@ -247,6 +247,9 @@ public static class CarDynamics
         Vector3d translation = motion.Velocity + new Vector3d(0d, 0d, rise);
         double yawDelta = motion.YawRate;
 
+        // 0x4FBF90 integrates first and damps the stored velocity afterwards, so the step the body
+        // takes this tick is the undamped one. Damping before the move instead is a 3% shorter step:
+        // it flatters Mission 2's parking spot and costs Mission 1's route more than it gains.
         motion.Velocity *= LinearRetention;
         motion.YawRate *= AngularRetention;
 
@@ -275,11 +278,13 @@ public static class CarDynamics
 
     /// <summary>Rides the springs, returning how far the body rises this tick.</summary>
     /// <remarks>
-    /// The wheel sweep (<c>0x42EF00</c>) drops a ray at each wheel and pushes the body up by
-    /// <c>compression / travel * stiffness * mass * g</c>, which at rest leaves every wheel sitting
-    /// a quarter of its travel into its spring for a stiffness of 0.5. A wheel driven under the
-    /// surface keeps the full travel and its force grows by another <c>1 + depth / 4096</c>, and the
-    /// body is lifted clear by the deepest of them. Gravity is the whole weight at the origin.
+    /// The wheel sweep (<c>0x42EF00</c>) casts from <c>wheelZ + travel + 4096</c> down to
+    /// <c>wheelZ - 2048</c> and reads the compression as <c>(travel + 4096) - distance</c> -- which
+    /// is how far the wheel's origin sits UNDER the surface. It pushes the body up by
+    /// <c>compression / travel * stiffness * mass * g</c>, so at rest every wheel sits a quarter of
+    /// its travel into its spring for a stiffness of 0.5. A wheel driven past the full travel keeps
+    /// it and its force grows by another <c>1 + depth / 4096</c>, and the body is lifted clear of
+    /// the deepest of them. Gravity is the whole weight at the origin.
     /// Without this the body holds whatever height it was handed: no settle when it is boarded, and
     /// no ride over the ground it crosses.
     /// </remarks>
@@ -320,25 +325,32 @@ public static class CarDynamics
                 continue;
             }
 
-            double standing = at.Z - ground;
-            if (standing >= travel)
+            // How far the wheel's origin is UNDER the surface. 0x42EF00 casts from
+            // wheelZ + travel + 4096 down to wheelZ - 2048 and takes the compression as
+            // (travel + 4096) - distance, which is exactly that: nought when the surface reaches
+            // the origin, and the full travel when it stands a travel above it. The origin
+            // therefore rides BELOW the ground, not above -- resting it above instead sank the
+            // Mission 1 truck by a compression, half the depth of its wheels.
+            double sink = ground - at.Z;
+            grounded = true;
+            if (sink <= 0d)
             {
-                grounded = true;
                 continue;
             }
 
-            double compression = travel - Math.Max(0d, standing);
+            double compression = Math.Min(sink, travel);
             double force = compression / travel * wheel.Definition.SpringStiffness * mass
                 * GravityUnitsPerTickSquared;
-            if (standing < 0d)
+            if (sink > travel)
             {
-                double depth = -standing;
+                // Bottomed: the spring keeps its full travel and stiffens by another metre's worth
+                // of depth, and the body is lifted clear of the deepest of them.
+                double depth = sink - travel;
                 force *= 1d + (depth / WorldScene.UnitsPerMetre);
                 deepest = Math.Max(deepest, depth);
             }
 
             spring += force;
-            grounded = true;
         }
 
         if (!grounded)
