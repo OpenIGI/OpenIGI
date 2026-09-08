@@ -94,17 +94,27 @@ public sealed class GameMaterial
     /// <summary>Gets the material's name.</summary>
     public string Name { get; init; } = string.Empty;
 
-    /// <summary>Gets the first of the three unnamed numbers.</summary>
+    /// <summary>Gets what the surface resists a round with — argument 1, at <c>+32</c>.</summary>
     /// <remarks>
-    /// Arguments 1 to 3 are read as reals into <c>+32</c>, <c>+36</c> and <c>+40</c> and no consumer
-    /// for them has been traced. <c>Wood</c> declares <c>1</c>, <c>10</c> and <c>0.01</c>.
+    /// The shot resolution subtracts this from the round's own penetration power to decide whether the
+    /// round goes through: <c>0x47BD88</c> computes <c>shot+60 - material+64</c> (that <c>+64</c> is
+    /// this field, counted from the row start rather than from the name), penetrates outright when the
+    /// margin is at least one, and rolls against <c>0.6</c> when it is exactly zero. It is the
+    /// <c>surfaceResistance</c> <see cref="Weapons.GunShotBallistics.Penetrates"/> asks for and nothing
+    /// yet supplies. <c>Wood</c> declares <c>1</c>.
     /// </remarks>
-    public float Value1 { get; init; }
+    public float BulletResistance { get; init; }
 
-    /// <summary>Gets the second unnamed number.</summary>
-    public float Value2 { get; init; }
+    /// <summary>Gets the widest angle a round may deflect off this surface — argument 2, at <c>+36</c>.</summary>
+    /// <remarks>
+    /// In DEGREES: <c>0x47BB96</c> reads <c>material+68</c> and multiplies by <c>0.017453292</c>
+    /// (π/180) before comparing it against the incidence angle, and a zero here means the surface never
+    /// deflects. <c>Wood</c> declares <c>10</c>.
+    /// </remarks>
+    public float RicochetAngleDegrees { get; init; }
 
-    /// <summary>Gets the third unnamed number.</summary>
+    /// <summary>Gets the third unnamed number — argument 3, at <c>+40</c>.</summary>
+    /// <remarks>No consumer traced. <c>Wood</c> declares <c>0.01</c>.</remarks>
     public float Value3 { get; init; }
 
     /// <summary>Gets the flag at argument 4.</summary>
