@@ -1942,14 +1942,10 @@ public sealed class CutsceneRuntime
         {
             if (program.Tick == 0)
             {
-                // The retail Plane move callback is registered by 0x4330F0 and begins at 0x433690.
-                // The dispatcher resets the body on tick zero before any physics runs, matching the
-                // callback's observed zero-tick state (the callback itself is a run/state handler).
-                // The plane flies a scripted path through the level's terrain, and like the heli it has
-                // no per-tick collision that would stop it sinking into a valley or a ridge. Measure the
-                // The plane receiver's two tick-zero packets restore the authored rigid-body pose and
-                // publish no movement.  Its later collision/body integration is Plane-owned; a Heli
-                // terrain rest clamp would turn a fly-by into a terrain follower.
+                // The receiver's two tick-zero packets restore the authored rigid-body pose and
+                // publish no movement. Its positive-tick collision/body integration is Plane-owned:
+                // 0x433B50 calls the contact path at 0x434310 and shared body step at 0x4FC0E0.
+                // A Heli terrain-rest clamp would therefore turn a fly-by into a terrain follower.
                 transform.Position = transform.OriginPosition;
                 transform.Orientation = transform.AuthoredOrientation;
                 transform.Velocity = default;
