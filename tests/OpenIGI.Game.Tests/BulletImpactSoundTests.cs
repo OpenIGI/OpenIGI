@@ -51,8 +51,10 @@ public sealed class BulletImpactSoundTests
                 struckHuman: false,
                 surfaceMaterial: 6,
                 random: new IgiRandom()));
+        // An unresolvable row is silent, not dirt. 0x47BAAD reads the six names off the material the
+        // trace handed back; there is no name lookup to fall back through.
         Assert.Equal(
-            "bul_dirt_1",
+            string.Empty,
             BulletImpactSounds.PickForImpact(
                 materials,
                 struckHuman: false,
@@ -85,5 +87,34 @@ public sealed class BulletImpactSoundTests
         {
             Assert.InRange(BulletImpactSounds.QuietTicks(random), 6, 11);
         }
+    }
+
+    /// <summary>
+    /// The pick is <c>rand() % 6</c> over the row's six slots (<c>0x47BAAD</c>:
+    /// <c>32 * (rand % 6) + row + 340</c>), never <c>rand(named)</c>. Half the retail table leaves
+    /// slots empty on purpose — <c>Air</c>, <c>Water</c> and <c>Snow</c> name one of six, <c>Ground</c>,
+    /// <c>BloodyFlesh</c> and <c>Plastic</c> three — so those rows are meant to fall silent for the
+    /// slots they do not name, and narrowing the roll to the named ones would make them sound every time.
+    /// </summary>
+    [Fact]
+    public void AnUnnamedSlotIsSilentRatherThanRolledAway()
+    {
+        GameMaterial water = new()
+        {
+            Name = "Water",
+            BulletSounds = ["Hit0", string.Empty, string.Empty, string.Empty, string.Empty, string.Empty],
+        };
+
+        IgiRandom random = new();
+        int silent = 0;
+        for (int i = 0; i < 600; i++)
+        {
+            if (BulletImpactSounds.Pick(water, random).Length == 0)
+            {
+                silent++;
+            }
+        }
+
+        Assert.InRange(silent, 400, 600);
     }
 }

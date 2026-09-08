@@ -692,14 +692,6 @@ internal sealed partial class DesktopGame
         _sounds.PlayDefinition(landing.Sound, landing.PositionInUnits, priority: 60);
     }
 
-    /// <summary>Plays what this tick's bullet impacts struck.</summary>
-    /// <remarks>
-    /// Hit-scan and optional ballistic contacts share the retail material table: the struck material's
-    /// own six sounds, one picked at random, and the whole set rate-limited globally so a burst into a
-    /// wall does not stack six samples — see <see cref="BulletImpactSounds"/>. A human resolves to the
-    /// <c>Flesh</c> row; a surface whose row names no sounds falls back to <c>Ground</c>.
-    /// </remarks>
-
     /// <summary>Loads the rain recording the weather bed is built from.</summary>
     /// <remarks>
     /// A mono 16-bit PCM WAV under <c>Assets/sounds</c>, prepared as a seamless loop — see the notes
@@ -777,6 +769,14 @@ internal sealed partial class DesktopGame
         _logger.Information("Audio", $"Rain: {rain.Describe()}");
     }
 
+    /// <summary>Plays what this tick's bullet impacts struck.</summary>
+    /// <remarks>
+    /// Hit-scan and ballistic contacts share the retail material table, exactly as the original's shot
+    /// resolution does at <c>0x47BA95</c>: the struck material's own six sounds at row <c>+340</c>, one
+    /// picked by <c>rand() % 6</c>, and the whole set rate-limited by ONE global timestamp — see
+    /// <see cref="BulletImpactSounds"/>. A human resolves to the <c>Flesh</c> row, which is the only
+    /// row naming the <c>bul_flesh_*</c> samples at all.
+    /// </remarks>
     private void PlayBulletImpactSounds()
     {
         if (_player is null)
@@ -811,12 +811,19 @@ internal sealed partial class DesktopGame
             struckHuman,
             surfaceMaterial,
             _soundRandom);
+
+        // The quiet window opens on the CONTACT, not on the sample. 0x47BABE's jump skips only the
+        // playback call: 0x47BAE1 timestamps and 0x47BAFB re-rolls the interval on the merge path, so a
+        // slot that names nothing still spends the window. Half the authored rows are silent for at
+        // least half their slots -- Air, Water and Snow name a sound in one slot of six, and
+        // HumanCollision, MetalLadder and MetalFence in none -- so returning early here would let a
+        // burst into a ladder re-arm on every round and machine-gun the next surface it caught.
+        _impactSoundQuietUntil = _loop.Clock.TickCount + BulletImpactSounds.QuietTicks(_soundRandom);
         if (sound.Length == 0)
         {
             return;
         }
 
-        _impactSoundQuietUntil = _loop.Clock.TickCount + BulletImpactSounds.QuietTicks(_soundRandom);
         _sounds.PlayDefinition(
             sound,
             position,
