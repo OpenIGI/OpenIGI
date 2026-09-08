@@ -213,6 +213,10 @@ public sealed class SoldierRenderer : IDisposable
     /// <param name="materials">The level's materials, or <see langword="null"/> for none.</param>
     public void UseMaterials(GameMaterialRegistry? materials) => _materials = materials;
 
+    /// <summary>The game material the level's terrain is made of, or null to fall back to <c>Ground</c>.</summary>
+    /// <remarks>Guards walk on the same ground the player does; see the player camera's copy.</remarks>
+    public int? TerrainGameMaterialIndex { get; set; }
+
     /// <summary>Sounds a soldier's grunt at being hit, rate-limited the way the original is.</summary>
     /// <param name="report">The sink, or <see langword="null"/> to make hits silent.</param>
     /// <remarks>The argument is the body's position in engine units.</remarks>
@@ -267,11 +271,17 @@ public sealed class SoldierRenderer : IDisposable
         Vector3d where = view.Position;
         GameMaterial? material;
 
+        // As the player: a face that names no walk sound is not the floor, so keep looking down.
         if (_cast(probeFrom, probeTo, out WorldRayHit hit)
-            && _materials.TryGet(hit.Material, out GameMaterial struck))
+            && _materials.TryGet(hit.Material, out GameMaterial struck)
+            && FootstepSounds.NamesAWalk(struck))
         {
             material = struck;
             where = hit.Position;
+        }
+        else if (TerrainGameMaterialIndex is int terrainRow && _materials.TryGet(terrainRow, out GameMaterial declared))
+        {
+            material = declared;
         }
         else if (!_materials.TryGetByName(FootstepSounds.TerrainMaterialName, out GameMaterial ground))
         {
@@ -284,12 +294,18 @@ public sealed class SoldierRenderer : IDisposable
 
         // One cursor per soldier, so two guards walking abreast do not step in unison.
         _footCursors.TryGetValue(view, out int cursor);
-        string sound = FootstepSounds.Next(material, ref cursor);
+        string sound = FootstepSounds.Next(material, ref cursor, out int slot);
         _footCursors[view] = cursor;
 
         if (sound.Length > 0)
         {
-            _footstepSound(new Footstep(sound, where, FootstepSounds.HearingRadiusInUnits(material)));
+            // 0x463920 is one handler for every human, so a guard walking in the rain lays down the
+            // same wet layer the player does. The slot is what names it.
+            _footstepSound(new Footstep(
+                sound,
+                where,
+                FootstepSounds.HearingRadiusInUnits(material),
+                slot));
         }
     }
 

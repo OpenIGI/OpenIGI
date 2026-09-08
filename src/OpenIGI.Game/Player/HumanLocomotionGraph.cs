@@ -12,7 +12,7 @@ namespace OpenIGI.Game.Player;
 /// </para>
 /// <para>
 /// <b>Order is priority.</b> Almost every state begins with the same three — lose the ground, then the
-/// two death flags — and the movement states then test the stance toggle, the jump edge and the
+/// two death flags — and the movement states then test the run/walk toggle, the jump edge and the
 /// directions.
 /// </para>
 /// </remarks>
@@ -94,15 +94,16 @@ public static class HumanLocomotionGraph
     /// <summary>The states 0..27, which share the movement states' branch structure.</summary>
     public const int MovementStateCount = 28;
 
-    /// <summary>Pairs a standing movement state with its crouched counterpart, or vice versa.</summary>
+    /// <summary>Pairs a running movement state with its walking counterpart, or vice versa.</summary>
     /// <param name="state">A state in <c>1..16</c>.</param>
-    /// <returns>The state of the opposite stance.</returns>
+    /// <returns>The run/walk counterpart.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="state"/> is not a paired state.</exception>
     /// <remarks>
-    /// States <c>1..8</c> and <c>9..16</c> are the same eight motions in two stances, and the pairing is
-    /// not an assumption: each one's <b>fourth</b> target — the stance toggle — is exactly its partner.
+    /// States <c>1..8</c> and <c>9..16</c> are the same eight directions at run and walk speeds, and the
+    /// pairing is not an assumption: each one's <b>fourth</b> target — the run/walk toggle — is exactly
+    /// its counterpart.
     /// </remarks>
-    public static int OppositeStance(int state)
+    public static int RunWalkCounterpart(int state)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(state, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(state, 16);

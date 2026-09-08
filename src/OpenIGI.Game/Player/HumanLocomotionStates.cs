@@ -72,11 +72,18 @@ public static class HumanLocomotionStates
     /// <summary>The falling state.</summary>
     public const int Falling = 29;
 
-    /// <summary>How far above a standing movement state its crouched twin sits.</summary>
+    /// <summary>How far above a running movement state its walking twin sits.</summary>
     /// <remarks>Eight, exactly — 1 to 9, 4 to 12, 7 to 15, 8 to 16, and the diagonals alike.</remarks>
-    public const int CrouchedOffset = 8;
+    public const int WalkingOffset = 8;
 
-    /// <summary>The state a set of movement flags puts a standing or crouched human into.</summary>
+    /// <summary>The stationary crouch state.</summary>
+    public const int CrouchingIdle = 19;
+
+    /// <summary>How far above a running movement state its crouched counterpart sits.</summary>
+    /// <remarks>State 1 maps to 20, 2 to 21, and so on through state 8 mapping to 27.</remarks>
+    public const int CrouchingOffset = 19;
+
+    /// <summary>The state a set of movement flags puts a running or walking human into.</summary>
     /// <param name="flags">The motion flags for this tick.</param>
     /// <returns>The locomotion state, or <see cref="Idle"/> when nothing is held.</returns>
     /// <remarks>
@@ -88,8 +95,8 @@ public static class HumanLocomotionStates
     /// </para>
     /// <para>
     /// The layout was read off the animations rather than assumed: states 1 to 8 travel +Y, +X+Y,
-    /// −X+Y, −Y, +X−Y, −X−Y, +X and −X. And <b>crouching is exactly eight higher</b> — 9 to 16 travel
-    /// the same eight ways, more slowly.
+    /// −X+Y, −Y, +X−Y, −X−Y, +X and −X. The walk set is exactly eight higher — 9 to 16 travel the same
+    /// eight ways, more slowly. Crouch states are separate: 19 is stationary and 20 to 27 move.
     /// </para>
     /// </remarks>
     public static int ForDirection(HumanMotionState flags)
@@ -132,7 +139,21 @@ public static class HumanLocomotionStates
             return Idle;
         }
 
-        return (flags & HumanMotionState.Crouched) != 0 ? state + CrouchedOffset : state;
+        return (flags & HumanMotionState.Walking) != 0 ? state + WalkingOffset : state;
+    }
+
+    /// <summary>Gets the crouch state for a set of movement flags.</summary>
+    /// <param name="flags">The motion flags for this tick.</param>
+    /// <returns>The crouch idle state, a crouch movement state, or a higher-priority special state.</returns>
+    public static int CrouchingForDirection(HumanMotionState flags)
+    {
+        int state = ForDirection(flags & ~HumanMotionState.Walking);
+        return state switch
+        {
+            Idle => CrouchingIdle,
+            >= 1 and <= 8 => state + CrouchingOffset,
+            _ => state,
+        };
     }
 
     /// <summary>Reports whether a state drives itself instead of playing a clip from the set.</summary>

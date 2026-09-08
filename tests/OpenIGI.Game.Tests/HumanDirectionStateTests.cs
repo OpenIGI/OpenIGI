@@ -7,13 +7,13 @@ using Xunit;
 namespace OpenIGI.Game.Tests;
 
 /// <summary>
-/// The eight directions a human walks in, and the states that carry them.
+/// The eight directions a human can move in, and the states that carry them.
 /// </summary>
 /// <remarks>
 /// <para>
 /// This file exists because of a wrong reading. State zero's per-tick tests the four movement bits in
 /// order and takes the first that matches, which looked like the whole story — so holding forward and
-/// right resolved to state 1 and the player walked straight ahead instead of diagonally.
+/// right resolved to state 1 and the player ran straight ahead instead of diagonally.
 /// </para>
 /// <para>
 /// It only looks like the whole story from a standstill, where you can only start moving one way. The
@@ -41,19 +41,19 @@ public sealed class HumanDirectionStateTests
     }
 
     [Fact]
-    public void CrouchingIsTheSameEightDirectionsEightStatesHigher()
+    public void WalkingUsesTheRunningDirectionsAtTheWalkingOffset()
     {
         for (HumanMotionState held = 0; (int)held < 16; held++)
         {
             HumanMotionState flags = Movement((int)held);
-            int standing = Select(flags);
+            int running = Select(flags);
 
-            if (standing == HumanLocomotionStates.Idle)
+            if (running == HumanLocomotionStates.Idle)
             {
                 continue;
             }
 
-            Assert.Equal(standing + 8, Select(flags | HumanMotionState.Crouched));
+            Assert.Equal(running + HumanLocomotionStates.WalkingOffset, Select(flags | HumanMotionState.Walking));
         }
     }
 
@@ -61,7 +61,7 @@ public sealed class HumanDirectionStateTests
     public void HoldingNothingIsIdleAndBeingAirborneIsFalling()
     {
         Assert.Equal(HumanLocomotionStates.Idle, Select(0));
-        Assert.Equal(HumanLocomotionStates.Idle, Select(HumanMotionState.Crouched));
+        Assert.Equal(HumanLocomotionStates.Idle, Select(HumanMotionState.Walking));
 
         // Airborne wins over everything: the movement bits are still read while falling, but by the
         // airborne integrator's air control rather than by the state machine.
@@ -91,7 +91,7 @@ public sealed class HumanDirectionStateTests
         AssertTravels(set, 5, +1, -1);
         AssertTravels(set, 6, -1, -1);
 
-        // And the crouched four, eight higher.
+        // And the walking four, eight higher.
         AssertTravels(set, 10, +1, +1);
         AssertTravels(set, 11, -1, +1);
         AssertTravels(set, 13, +1, -1);
