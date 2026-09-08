@@ -10,11 +10,16 @@ namespace OpenIGI.Game.World;
 /// </param>
 /// <param name="LateralFriction">The across-the-wheel grip from the wheel body (0.95 on every car).</param>
 /// <param name="LongitudinalFriction">The rolling resistance from the wheel body (0.05).</param>
+/// <param name="RadiusUnits">
+/// The drawn wheel's radius, which sets how fast it rolls. Retail keeps it on the wheel's own task
+/// record; here it comes from the wheel model's own size, and falls back to the suspension travel.
+/// </param>
 public readonly record struct CarWheel(
     CarWheelDefinition Definition,
     Vector3d OffsetUnits,
     float LateralFriction,
-    float LongitudinalFriction);
+    float LongitudinalFriction,
+    float RadiusUnits = 0f);
 
 /// <summary>The live rigid-body state a car carries between physics ticks.</summary>
 public sealed class CarMotionState
@@ -244,7 +249,7 @@ public static class CarDynamics
             wheelSpeed = 0d;
         }
 
-        motion.WheelSpinRate = (wheelSpeed / WheelRadiusUnits(physics) * WheelSpinBlend)
+        motion.WheelSpinRate = (wheelSpeed / WheelRadiusUnits(physics, wheels) * WheelSpinBlend)
             + (motion.WheelSpinRate * (1d - WheelSpinBlend));
         if (handbrake)
         {
@@ -283,11 +288,20 @@ public static class CarDynamics
     }
 
     /// <summary>
-    /// A wheel radius for the rolling animation. The record publishes the suspension travel rather
-    /// than a radius, and every shipped car's travel is close to its wheel size, so it stands in.
+    /// The radius the drawn wheels roll on. The physics record has no radius -- retail reads it from
+    /// each wheel task's own record -- so this takes the one measured off the wheel model, and falls
+    /// back to the suspension travel only when no model size was supplied.
     /// </summary>
-    private static double WheelRadiusUnits(in CarPhysicsDefinition physics)
+    private static double WheelRadiusUnits(in CarPhysicsDefinition physics, IReadOnlyList<CarWheel> wheels)
     {
+        for (int i = 0; i < wheels.Count; i++)
+        {
+            if (wheels[i].RadiusUnits > 0f)
+            {
+                return wheels[i].RadiusUnits;
+            }
+        }
+
         for (int i = 0; i < physics.Wheels.Count; i++)
         {
             if (physics.Wheels[i].SuspensionLengthUnits > 0f)

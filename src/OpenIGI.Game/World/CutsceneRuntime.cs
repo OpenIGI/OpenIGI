@@ -577,7 +577,11 @@ public sealed class CutsceneRuntime
     /// origin are what the drive force and the tyre torque are applied at, so the physics reads them
     /// from the model rather than guessing an axle layout.
     /// </remarks>
-    public void BindVehicleWheels(WorldScene scene)
+    /// <param name="modelRadius">
+    /// Resolves a wheel model's radius in world units, for the rolling animation. Optional: without
+    /// it the wheels still turn, just at the suspension travel rather than their real size.
+    /// </param>
+    public void BindVehicleWheels(WorldScene scene, Func<string, float>? modelRadius = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         _carWheels.Clear();
@@ -666,7 +670,8 @@ public sealed class CutsceneRuntime
                     definition,
                     offset,
                     body?.LateralFriction ?? 0.95f,
-                    body?.LongitudinalFriction ?? 0.05f);
+                    body?.LongitudinalFriction ?? 0.05f,
+                    Math.Max(0f, modelRadius?.Invoke(placements[i].Instance.Name) ?? 0f));
             }
 
             _carWheels[owner] = wheels;

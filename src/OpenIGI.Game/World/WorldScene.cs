@@ -806,6 +806,45 @@ public sealed class WorldScene
                 : 0f;
     }
 
+    /// <summary>Gets the rolling radius of a wheel model, in world units.</summary>
+    /// <param name="model">The wheel model.</param>
+    /// <returns>Half its largest extent, or nought when it has no geometry.</returns>
+    /// <remarks>
+    /// A wheel is a disc: its two largest extents are both the diameter and the smallest is the
+    /// tread width, so half the largest is the radius. Retail keeps a radius on each wheel task's
+    /// own record, which the port has no reader for; measuring the drawn model gets within a tenth
+    /// of it. The Mission 1 truck's wheel measures 0.46 m here, against the 0.50 m its spin rate on
+    /// a straight implies in a capture of the running game -- where the suspension travel that
+    /// stood in for it before was 0.3 m, forty per cent out.
+    /// </remarks>
+    public static float WheelRadius(MefModel model)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        ReadOnlySpan<MefVertex> vertices = model.Vertices;
+        if (vertices.Length == 0)
+        {
+            return 0f;
+        }
+
+        Vector3f least = vertices[0].Position;
+        Vector3f most = least;
+        for (int i = 1; i < vertices.Length; i++)
+        {
+            Vector3f position = vertices[i].Position;
+            least = new Vector3f(
+                MathF.Min(least.X, position.X),
+                MathF.Min(least.Y, position.Y),
+                MathF.Min(least.Z, position.Z));
+            most = new Vector3f(
+                MathF.Max(most.X, position.X),
+                MathF.Max(most.Y, position.Y),
+                MathF.Max(most.Z, position.Z));
+        }
+
+        float widest = MathF.Max(most.X - least.X, MathF.Max(most.Y - least.Y, most.Z - least.Z));
+        return widest * 0.5f;
+    }
+
     /// <summary>Gets the retail model-origin fraction between a Train car's two couplers.</summary>
     /// <remarks>
     /// Train initialization (<c>0x42A150</c>) stores <c>abs(v0.x) / abs(v0.x - v1.x)</c> at

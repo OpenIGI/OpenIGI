@@ -109,6 +109,14 @@ internal sealed partial class DesktopGame
     }
 
     /// <summary>Gets the along-track extent retail uses to space cars in a Train consist.</summary>
+    /// <summary>Gets a wheel model's rolling radius in world units, for the wheel animation.</summary>
+    private static float CutsceneWheelRadius(LoadedMission mission, string name)
+    {
+        return mission.TryGetModel(name, out MefModel? model) && model is not null
+            ? WorldScene.WheelRadius(model)
+            : 0f;
+    }
+
     private static float CutsceneModelLength(LoadedMission mission, string name)
     {
         if (!mission.TryGetModel(name, out MefModel? model) || model is null)
@@ -467,7 +475,7 @@ internal sealed partial class DesktopGame
 
         // Bind each car's drawn TASKTYPE_WHEEL attachments to its physics record so the drive force
         // and the tyre torque act at the real axle offsets, and the wheels roll and steer.
-        _cutscenes.BindVehicleWheels(scene);
+        _cutscenes.BindVehicleWheels(scene, name => CutsceneWheelRadius(loaded, name));
 
         _destructibles = DestructibleObjectRegistry.Build(
             levelRoot,
