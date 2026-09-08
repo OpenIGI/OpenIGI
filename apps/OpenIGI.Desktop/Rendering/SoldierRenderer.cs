@@ -2826,7 +2826,7 @@ public sealed class SoldierRenderer : IDisposable
         List<(GuardGeneratorTask Generator, SoldierView Dead)> respawns = [];
         foreach ((GuardGeneratorTask generator, SoldierView view) in _guardGenerators)
         {
-            bool isOn = _guardExpressions?.EvaluateCondition(generator.GenerateGuards, emptyValue: false)
+            bool isOn = _guardExpressions?.EvaluateCondition(generator.GenerateGuards, emptyValue: false, generator)
                 ?? generator.GenerateGuards.Trim() is "1" or "TRUE" or "true";
             // Publish the first authored life immediately, but do not consume a bounded replacement
             // until its mesh and runtime subtree have actually been created. A transient upload failure
