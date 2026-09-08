@@ -24,12 +24,28 @@ public sealed class BulletMarksTests
             Entry = new GunShotEffect(true, true, string.Empty, string.Empty, 0.03f, string.Empty),
         });
 
-        // Named for the row every impact is attributed to while the face-to-material lookup is unread.
         registry.Add(new GameMaterial
         {
             Index = 1,
-            Name = BulletMarks.FallbackMaterial,
+            Name = "Wood",
             Entry = new GunShotEffect(true, true, "bullethole_wood.tex", "exit.tex", 0.03f, "1011_01_1"),
+        });
+
+        // A row that names a texture but sits at a different index, so a mark proves the struck face's
+        // own row was read rather than any single row standing in for the whole table.
+        registry.Add(new GameMaterial
+        {
+            Index = 2,
+            Name = "Glass",
+            Entry = new GunShotEffect(true, true, "hole_plexi1.tex", "hole_plexi1.tex", 0.02f, "1011_01_1"),
+        });
+
+        // Fence records no impact at all, which is why the original leaves a chain fence unmarked.
+        registry.Add(new GameMaterial
+        {
+            Index = 3,
+            Name = "Fence",
+            Entry = new GunShotEffect(true, true, string.Empty, string.Empty, 0.03f, string.Empty),
         });
 
         return registry;
@@ -104,5 +120,41 @@ public sealed class BulletMarksTests
 
         Assert.Equal(4, marks.Marks.Count);
         Assert.Equal(10, marks.TotalAdded);
+    }
+
+    /// <summary>
+    /// The mark comes from the row the struck face names, not from one row standing in for every
+    /// surface. <c>MefCollisionMesh.GlobalMaterial</c> resolves a face's per-mesh selector to the
+    /// global row (<c>0x4C1840</c> writes <c>scene[3388 + 4·u16]</c>), and the collision index reports
+    /// that row, so wood must read as wood and glass as glass.
+    /// </summary>
+    [Fact]
+    public void EachStruckFaceTakesItsOwnMaterialsTexture()
+    {
+        GameMaterialRegistry table = Table();
+        BulletMarks marks = new();
+
+        Assert.True(marks.TryAdd(Hit(1), table));
+        Assert.True(marks.TryAdd(Hit(2), table));
+
+        Assert.Collection(
+            marks.Marks,
+            wood => Assert.Equal("bullethole_wood.tex", wood.Texture),
+            glass => Assert.Equal("hole_plexi1.tex", glass.Texture));
+    }
+
+    /// <summary>
+    /// A fence is shot through, not marked. Both retail fence rows — <c>Fence</c> and
+    /// <c>MetalFence</c> — name no entry texture, and the shot loop skips a material that names none
+    /// rather than marking it with a default.
+    /// </summary>
+    [Fact]
+    public void AFenceIsNeverMarked()
+    {
+        GameMaterialRegistry table = Table();
+        BulletMarks marks = new();
+
+        Assert.False(marks.TryAdd(Hit(3), table));
+        Assert.Empty(marks.Marks);
     }
 }

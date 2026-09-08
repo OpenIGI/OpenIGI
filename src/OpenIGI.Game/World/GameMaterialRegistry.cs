@@ -188,8 +188,8 @@ public sealed class GameMaterialRegistry
         {
             Index = _active,
             Name = call.GetString(0),
-            Value1 = call.GetSingle(1),
-            Value2 = call.GetSingle(2),
+            BulletResistance = call.GetSingle(1),
+            RicochetAngleDegrees = call.GetSingle(2),
             Value3 = call.GetSingle(3),
             Flag4 = call.GetInt32(4) != 0,
             Value5 = call.GetSingle(5),

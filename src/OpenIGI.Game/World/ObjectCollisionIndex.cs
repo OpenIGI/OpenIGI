@@ -1607,11 +1607,25 @@ public sealed class ObjectCollisionIndex
 
                 // Face the ray. The winding of a collision mesh is not established, and a normal
                 // pointing away would push the body the wrong side of the wall.
+                //
+                // The sign before that flip is not noise: it is the front/back test the original's
+                // surface routine reports as its entry and exit rows (0x4CD300 sets them as the two
+                // halves of one condition, so exactly one is ever set). A round leaving a surface it
+                // had entered crosses a back face, and the shot resolution neither sounds nor marks
+                // that crossing the way it does an entry.
                 double facing = (normal.X * direction.X) + (normal.Y * direction.Y) + (normal.Z * direction.Z);
-                if (facing > 0.0)
+                bool towardsTheRay = facing > 0.0;
+                if (towardsTheRay)
                 {
                     normal = new Vector3d(-normal.X, -normal.Y, -normal.Z);
                 }
+
+                // Which side that is was measured, not assumed. Fanning 64 rays in from outside the
+                // geometry around the level-one doorway, ALL 64 first crossings have a positive facing,
+                // so these meshes wind their normals INTO the solid and a positive facing is the face a
+                // round enters by. The flip above is independent of that: it only turns the reported
+                // normal to oppose the ray so a decal sits proud of the surface.
+                bool leaving = !towardsTheRay;
 
                 nearest = t;
                 found = true;
@@ -1628,7 +1642,8 @@ public sealed class ObjectCollisionIndex
                     t * length,
                     // Report the global game-material row, not the per-mesh face index, so callers can
                     // name the surface (glass, fence, concrete) against the shared material table.
-                    Mesh.GlobalMaterial(face.Material));
+                    Mesh.GlobalMaterial(face.Material),
+                    leaving);
             }
 
             return found;

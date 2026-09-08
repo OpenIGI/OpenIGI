@@ -1112,6 +1112,11 @@ internal sealed partial class DesktopGame
                             _player.Marks.TryAdd(worldHit, table);
                         }
 
+                        PlayBulletImpactSound(
+                            worldHit.Position,
+                            struckHuman: false,
+                            surfaceMaterial: worldHit.Material);
+
                         // A guard's stray round pops a speaker exactly as the player's does -- the
                         // retail damage message never asked who fired.
                         DamageAlarmSpeakers(
@@ -1190,6 +1195,7 @@ internal sealed partial class DesktopGame
                     }
 
                     _playerHealth.Apply(hit.Zone, weapon.DamageFactor);
+                    PlayBulletImpactSound(hit.Position, struckHuman: true, surfaceMaterial: 0);
                     _guardHits++;
 
                     // The retail handler transforms the round into camera space before writing the four
@@ -1675,6 +1681,10 @@ internal sealed partial class DesktopGame
                         return found;
                     };
                     candidate.GroundImpact = impact => guards.NotifyGroundImpact(impact, candidate.Body.Position);
+
+                    // A glancing round whizzes where it turned, on the ricochet sound's own limit --
+                    // 0x47BD7B sounds it there directly rather than through the material's window.
+                    candidate.Deflected = PlayRicochetSound;
 
                     // One grenade pool for both throwers: the player's own and every guard's lob fly,
                     // bounce and detonate through the same simulation and the same drain.

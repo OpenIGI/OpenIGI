@@ -327,7 +327,6 @@ internal sealed partial class DesktopGame
         _sounds = new SoundSystem(_audio, _soundBank, _fileSystem, _logger);
         _soldierWeaponSounds.Clear();
         MountMenuSounds();
-        LoadExternalImpactSound();
         LoadRainAmbience();
 
         // The original hard-cuts between menu and mission themes, so a fade is an addition and belongs
@@ -693,19 +692,6 @@ internal sealed partial class DesktopGame
         _sounds.PlayDefinition(landing.Sound, landing.PositionInUnits, priority: 60);
     }
 
-    /// <summary>The name the remaster's own impact sound is registered and played under.</summary>
-    private const string CustomImpactSoundName = "remaster_bullet_impact";
-
-    /// <summary>The most custom impact sounds one tick starts.</summary>
-    /// <remarks>
-    /// The custom sound deliberately skips retail's global rand(6)+6-tick quiet spell — an automatic
-    /// rifle lands a round every couple of ticks, and a limit built for one impact a fifth of a
-    /// second swallowed most of a burst. What still needs a bound is the shotgun: thirty pellets
-    /// arrive on ONE tick, and thirty simultaneous copies of one sample is a 30× volume spike, not
-    /// thirty impacts. Six covers every automatic weapon's densest tick with room to spare.
-    /// </remarks>
-    private const int MaximumCustomImpactSoundsPerTick = 6;
-
     /// <summary>Loads the rain recording the weather bed is built from.</summary>
     /// <remarks>
     /// A mono 16-bit PCM WAV under <c>Assets/sounds</c>, prepared as a seamless loop — see the notes
@@ -783,139 +769,93 @@ internal sealed partial class DesktopGame
         _logger.Information("Audio", $"Rain: {rain.Describe()}");
     }
 
-    /// <summary>Loads the port's own bullet-impact sound, when the asset ships beside the game.</summary>
+    /// <summary>Plays what this tick's bullet impacts struck.</summary>
     /// <remarks>
-    /// A mono 16-bit PCM WAV under <c>Assets/sounds</c> — mono deliberately, because only a mono
-    /// source is positioned in 3D; a stereo buffer plays flat on the listener. Registered through
-    /// <see cref="SoundSystem.RegisterExternal"/> so the retail bank stays exactly what the game
-    /// data says. Missing file simply means the material table's own sounds carry on.
+    /// Hit-scan and ballistic contacts share the retail material table, exactly as the original's shot
+    /// resolution does at <c>0x47BA95</c>: the struck material's own six sounds at row <c>+340</c>, one
+    /// picked by <c>rand() % 6</c>, and the whole set rate-limited by ONE global timestamp — see
+    /// <see cref="BulletImpactSounds"/>. A human resolves to the <c>Flesh</c> row, which is the only
+    /// row naming the <c>bul_flesh_*</c> samples at all.
     /// </remarks>
-    private void LoadExternalImpactSound()
+    private void PlayBulletImpactSounds()
     {
-        if (_sounds is null)
+        if (_player is null)
         {
             return;
         }
 
-        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "sounds", "bullet-impact.wav");
-        if (!File.Exists(path))
+        foreach (GunImpact impact in _player.Impacts)
         {
-            return;
-        }
+            if (!impact.HitSomething)
+            {
+                continue;
+            }
 
-        byte[] bytes;
-        try
-        {
-            bytes = File.ReadAllBytes(path);
+            PlayBulletImpactSound(impact.Position, impact.StruckHuman, impact.Wall.Material);
         }
-        catch (IOException error)
-        {
-            _logger.Warning("Audio", $"Impact sound would not read: {error.Message}");
-            return;
-        }
-
-        if (!WavPcm.TryRead(bytes, out AudioFormat format, out byte[] pcm))
-        {
-            _logger.Warning("Audio", $"'{path}' is not an uncompressed PCM WAV; the material sounds stand.");
-            return;
-        }
-
-        _sounds.RegisterExternal(CustomImpactSoundName, format, pcm);
-        _logger.Information(
-            "Audio",
-            $"Impact sound: {format.SampleRate} Hz, {format.Channels} ch, {format.BitsPerSample}-bit, {pcm.Length} bytes.");
     }
 
-    /// <summary>Plays what this tick's arrived ballistic rounds struck.</summary>
-    /// <remarks>
-    /// The retail rules through the retail data: the struck material's own six sounds, one picked at
-    /// random, and the whole set rate-limited globally so a burst into a wall does not stack six
-    /// samples — see <see cref="BulletImpactSounds"/>. A human resolves to the <c>Flesh</c> row; a
-    /// surface whose row names no sounds falls back to <c>Ground</c>, the same row a step on bare
-    /// terrain takes, because a terrain face names no material row of its own.
-    /// </remarks>
-    private void PlayBallisticImpactSounds()
+    /// <summary>Plays one player or AI bullet contact through the retail sound definitions.</summary>
+    private void PlayBulletImpactSound(Vector3d position, bool struckHuman, int surfaceMaterial)
     {
         if (_sounds is null
-            || _player is null
             || _worldMaterials is null
-            || !GameplayCVars.BallisticsImpactSounds.Value)
+            || !GameplayCVars.BallisticsImpactSounds.Value
+            || _loop.Clock.TickCount < _impactSoundQuietUntil)
         {
             return;
         }
 
-        int customPlayedThisTick = 0;
-        foreach (BallisticImpact impact in _player.Ballistics.Impacts)
+        string sound = BulletImpactSounds.PickForImpact(
+            _worldMaterials,
+            struckHuman,
+            surfaceMaterial,
+            _soundRandom);
+
+        // The quiet window opens on the CONTACT, not on the sample. 0x47BABE's jump skips only the
+        // playback call: 0x47BAE1 timestamps and 0x47BAFB re-rolls the interval on the merge path, so a
+        // slot that names nothing still spends the window. Half the authored rows are silent for at
+        // least half their slots -- Air, Water and Snow name a sound in one slot of six, and
+        // HumanCollision, MetalLadder and MetalFence in none -- so returning early here would let a
+        // burst into a ladder re-arm on every round and machine-gun the next surface it caught.
+        _impactSoundQuietUntil = _loop.Clock.TickCount + BulletImpactSounds.QuietTicks(_soundRandom);
+
+        if (sound.Length > 0)
         {
-            if (!impact.StruckHuman && !impact.StruckWall)
-            {
-                continue;
-            }
-
-            // The port's own impact sound, when its asset ships, takes every material for now --
-            // positional at the impact, pitch-jittered so a burst is not one sample five times.
-            // EVERY round of an automatic burst plays; only a same-tick pellet storm is capped.
-            // Per-material variants can hang off the same seam later.
-            if (_sounds.HasExternal(CustomImpactSoundName))
-            {
-                if (++customPlayedThisTick > MaximumCustomImpactSoundsPerTick)
-                {
-                    continue;
-                }
-
-                _sounds.PlayExternal(
-                    CustomImpactSoundName,
-                    impact.Position,
-                    gain: 0.85f,
-                    priority: 45,
-                    pitch: FootstepSounds.Pitch(_soundRandom),
-                    minimumDistanceInMetres: 2f,
-                    maximumDistanceInMetres: 70f);
-                continue;
-            }
-
-            // The retail limit is GLOBAL -- one timestamp for every impact of every round -- so the
-            // first strike of a burst speaks for all of it. It stays on the retail sounds only: it
-            // is the original's own restraint, not the added asset's.
-            if (_loop.Clock.TickCount < _impactSoundQuietUntil)
-            {
-                return;
-            }
-
-            string sound = string.Empty;
-            if (impact.StruckHuman)
-            {
-                if (_worldMaterials.TryGetByName(BulletImpactSounds.FleshMaterialName, out GameMaterial flesh))
-                {
-                    sound = BulletImpactSounds.Pick(flesh, _soundRandom);
-                }
-            }
-            else
-            {
-                if (_worldMaterials.TryGet(impact.Wall.Material, out GameMaterial struck))
-                {
-                    sound = BulletImpactSounds.Pick(struck, _soundRandom);
-                }
-
-                if (sound.Length == 0
-                    && _worldMaterials.TryGetByName(FootstepSounds.TerrainMaterialName, out GameMaterial ground))
-                {
-                    sound = BulletImpactSounds.Pick(ground, _soundRandom);
-                }
-            }
-
-            if (sound.Length == 0)
-            {
-                continue;
-            }
-
-            _impactSoundQuietUntil = _loop.Clock.TickCount + BulletImpactSounds.QuietTicks(_soundRandom);
             _sounds.PlayDefinition(
                 sound,
-                impact.Position,
+                position,
                 pitch: FootstepSounds.Pitch(_soundRandom),
                 priority: 45);
         }
+
+        // The second half of a retail impact. 0x47C330 runs on the merge path inside the material
+        // window, keeps a SEPARATE timestamp and rand(6)+6 interval of its own, and picks one of four
+        // riccochet_* samples without reading the material at all -- which is why a burst into a fence
+        // is the fence's own ping AND a whizz, arriving on their own two rhythms rather than together.
+        PlayRicochetSound(position);
+    }
+
+    /// <summary>Plays the whizz a round makes coming off a surface, on its own retail limit.</summary>
+    /// <remarks>
+    /// Separate from the material's sample in every way that matters: its own global timestamp, its own
+    /// <c>rand(6)+6</c> interval, and a fixed table of four it reads without consulting the surface.
+    /// A round that glances off calls it directly (<c>0x47BD7B</c>) rather than through the material
+    /// window, so a ricochet always gets its turn.
+    /// </remarks>
+    private void PlayRicochetSound(Vector3d position)
+    {
+        if (_sounds is null || _loop.Clock.TickCount < _ricochetSoundQuietUntil)
+        {
+            return;
+        }
+
+        _ricochetSoundQuietUntil = _loop.Clock.TickCount + BulletImpactSounds.QuietTicks(_soundRandom);
+        _sounds.PlayDefinition(
+            BulletImpactSounds.PickRicochet(_soundRandom),
+            position,
+            pitch: FootstepSounds.Pitch(_soundRandom),
+            priority: 45);
     }
 
     /// <summary>Spawns the particle bursts for whatever ballistic rounds landed this tick.</summary>

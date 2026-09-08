@@ -195,18 +195,18 @@ public static class GameplayCVars
         CVarOptions.Archive,
         "Draw ballistic streaks for AI fire while g_ballistics is on. Visual only.");
 
-    /// <summary>Whether a ballistic round's impact is heard as well as seen.</summary>
+    /// <summary>Whether bullet impacts are heard as well as seen.</summary>
     /// <remarks>
-    /// Only read while <see cref="Ballistics"/> is on. The sounds are the material table's own six
-    /// per row — dirt for terrain, the struck row for objects, the <c>Flesh</c> row for a body —
-    /// picked and rate-limited exactly as the retail shot loop does
-    /// (<see cref="World.BulletImpactSounds"/>).
+    /// The sounds are the material table's own six per row — dirt for terrain, the struck row for
+    /// objects, the <c>Flesh</c> row for a body — picked and rate-limited exactly as the retail shot
+    /// loop does (<see cref="World.BulletImpactSounds"/>). It applies to hit-scan fire and to the
+    /// optional ballistic path.
     /// </remarks>
     public static readonly BoolCVar BallisticsImpactSounds = CVar.Bool(
         "g_ballistics_impact_sounds",
         true,
         CVarOptions.Archive,
-        "Play the struck material's own impact sound where a ballistic round lands.");
+        "Play the struck material's own impact sound for hit-scan and ballistic rounds.");
 
     /// <summary>Wires the profile variable to the values it stands for.</summary>
     /// <remarks>
