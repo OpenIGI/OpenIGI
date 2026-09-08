@@ -21,6 +21,8 @@ namespace OpenIGI.Desktop;
 
 internal sealed partial class DesktopGame
 {
+    /// <summary>Test-only outro forcing writes re-applied on every logic tick.</summary>
+    private List<(string Name, string Value)> _testOutroTickWrites = [];
     private void StartMission(int id)
     {
         if (!_missions.TryGet(id, out MissionDescriptor? chosen))
@@ -107,6 +109,14 @@ internal sealed partial class DesktopGame
     }
 
     /// <summary>Gets the along-track extent retail uses to space cars in a Train consist.</summary>
+    /// <summary>Gets a wheel model's rolling radius in world units, for the wheel animation.</summary>
+    private static float CutsceneWheelRadius(LoadedMission mission, string name)
+    {
+        return mission.TryGetModel(name, out MefModel? model) && model is not null
+            ? WorldScene.WheelRadius(model)
+            : 0f;
+    }
+
     private static float CutsceneModelLength(LoadedMission mission, string name)
     {
         if (!mission.TryGetModel(name, out MefModel? model) || model is null)
@@ -255,16 +265,52 @@ internal sealed partial class DesktopGame
                     }
                     return QvmValue.FromInt32(1);
                 }
-                return name is "MenuManager_SetEnabled" or "Game_CutsceneDelete"
-                    ? QvmValue.FromInt32(1)
-                    : null;
+                if (name == "MenuManager_SetEnabled")
+                {
+                    // Cutscene start/stop expressions own this native in retail.  The menu manager
+                    // lives in the shared loop task tree, so update its live script context rather
+                    // than returning success while leaving input enabled during cinematics.
+                    MenuManagerTask? manager = FindMenuManager();
+                    if (manager?.ScriptContext is { } context && arguments.Count >= 1)
+                    {
+                        context.IsEnabled = arguments.GetBoolean(0);
+                    }
+
+                    return QvmValue.FromInt32(1);
+                }
+
+                if (name == "Game_CutsceneDelete")
+                {
+                    _cutscenes?.DeleteCutscenes();
+                    return QvmValue.FromInt32(1);
+                }
+
+                return null;
             },
             SetCutsceneSound,
             modelLength: name => CutsceneModelLength(loaded, name),
             modelPivot: name => CutsceneModelPivot(loaded, name),
             vehiclePhysics: _vehiclePhysics,
             terrain: loaded.Terrain,
-            logger: _logger);
+            logger: _logger,
+            vehicleObstacleHit: (task, origin, end) =>
+            {
+                if (_worldSolids?.TryCastIgnoring(
+                        task,
+                        origin,
+                        end,
+                        out WorldRayHit hit,
+                        out GameTask? obstacle,
+                        out string obstacleLabel) == true
+                    && obstacle is not null)
+                {
+                    return (obstacle, hit, obstacleLabel);
+                }
+
+                return null;
+            },
+            vehicleObstacleReleased: obstacle =>
+                _doors?.Doors.FirstOrDefault(door => ReferenceEquals(door.Task, obstacle))?.State.IsFullyOpen == true);
         bool collectDiagnostics = _logger.IsEnabled(LogLevel.Information);
         if (collectDiagnostics && levelRoot.Tree.FromId(1608) is DeclaredTask levelTimer)
         {
@@ -315,6 +361,37 @@ internal sealed partial class DesktopGame
             _cutscenes.Tick();
             _cutscenes.FinishExpressionTick();
             StopCutsceneSounds();
+        }
+
+        // Test-only capture switch: exercise an authored outro through its real QVM gate rather than
+        // injecting a scene. OPENIGI_TEST_OUTRO_WRITES is a comma list of script writes, e.g.
+        // "EditVariable_199.nValue=1,AreaActivate_5.nActive=1"; the same writes are re-applied on
+        // every logic tick while the run lasts, so gates the level scripts reset stay satisfied.
+        string? testOutroWrites = Environment.GetEnvironmentVariable("OPENIGI_TEST_OUTRO_WRITES");
+        _testOutroTickWrites = TestOutroWrites(testOutroWrites);
+        if (_testOutroTickWrites.Count > 0)
+        {
+            foreach ((string assignmentName, string assignmentValue) in _testOutroTickWrites)
+            {
+                double parsed = double.Parse(assignmentValue, System.Globalization.CultureInfo.InvariantCulture);
+                if (parsed != Math.Floor(parsed))
+                {
+                    _logger.Warning(
+                        "Mission",
+                        $"Test capture write {assignmentName}={assignmentValue} is not an integer; "
+                            + $"script variables carry ints, so it truncates to {(int)parsed}.");
+                }
+
+                _logger.Information("Mission", $"Test capture write: {assignmentName}={assignmentValue}.");
+                _loop.Variables.TryWrite(assignmentName, QvmValue.FromInt32((int)parsed));
+            }
+
+            _cutscenes.RequestBreak();
+            _cutscenes.Tick();
+            _missionObjectives.TickLevelState();
+            _missionObjectives.TickAfterLevelState();
+            _cutscenes.FinishExpressionTick();
+            _logger.Information("Mission", "Test capture outro forcing active.");
         }
         _computerHighlights = new ComputerHighlightCatalog(levelRoot, _loop.Variables);
         _mapComputer = new MapComputerRenderer(_device, _resources, _logger, missionText.Get);
@@ -394,7 +471,18 @@ internal sealed partial class DesktopGame
             _cutscenes.EnableTerminalTerrainLanding(getawayBell);
         }
 
-        _cutscenes.CollisionIndex = id == 4 ? solids : null;
+        // Every mission: a car's suspension reads this for the surface under each wheel, and much
+        // of what a vehicle stands on is placed geometry -- Mission 1's outro truck starts on a
+        // garage floor above the dirt. Re-seating the helicopters on it stays Mission 4's.
+        _cutscenes.CollisionIndex = solids;
+        if (id == 4)
+        {
+            _cutscenes.RestHelicoptersOnSupport();
+        }
+
+        // Bind each car's drawn TASKTYPE_WHEEL attachments to its physics record so the drive force
+        // and the tyre torque act at the real axle offsets, and the wheels roll and steer.
+        _cutscenes.BindVehicleWheels(scene, name => CutsceneWheelRadius(loaded, name));
 
         _destructibles = DestructibleObjectRegistry.Build(
             levelRoot,
@@ -2404,5 +2492,50 @@ internal sealed partial class DesktopGame
             _logger.Information("Weapon", $"Holding {weapon.ScriptId} ('{weapon.GunModel}') on view bone "
                 + $"{HumanAttachPoints.FirstPersonWeapon}.");
         }
+    }
+
+    private MenuManagerTask? FindMenuManager()
+    {
+        foreach (GameTask task in WalkTasks(_loop.Tasks.Root))
+        {
+            if (task is MenuManagerTask manager)
+            {
+                return manager;
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<GameTask> WalkTasks(GameTask task)
+    {
+        foreach (GameTask child in task.Children)
+        {
+            yield return child;
+            foreach (GameTask nested in WalkTasks(child))
+            {
+                yield return nested;
+            }
+        }
+    }
+
+    /// <summary>Parses the test-only outro forcing list: "Var=Value,Var=Value".</summary>
+    private static List<(string Name, string Value)> TestOutroWrites(string? spec)
+    {
+        if (string.IsNullOrWhiteSpace(spec))
+        {
+            return [];
+        }
+
+        List<(string, string)> writes = [];
+        foreach (string part in spec.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            int equals = part.IndexOf('=');
+            if (equals > 0)
+            {
+                writes.Add((part[..equals].Trim(), part[(equals + 1)..].Trim()));
+            }
+        }
+        return writes;
     }
 }

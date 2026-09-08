@@ -59,6 +59,20 @@ public sealed class QvmCallContext
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is not a passed argument.</exception>
     public string GetString(int index) => TryGetString(index, out string value) ? value : string.Empty;
 
+    /// <summary>Evaluates an argument and retains the value's original VM representation.</summary>
+    /// <remarks>
+    /// This is intended for data-definition natives that need to preserve an indexed tail whose
+    /// meaning is owned by a native parser.  Unlike <see cref="GetInt32"/>,
+    /// <see cref="GetSingle(int)"/>, and <see cref="GetString(int)"/>, it does not coerce the value.
+    /// </remarks>
+    public QvmValue GetValue(int index) => TryGetValue(index, out QvmValue value) ? value : QvmValue.Zero;
+
+    /// <summary>Evaluates an argument and reports whether it produced a value.</summary>
+    public bool TryGetValue(int index, out QvmValue value)
+    {
+        return _interpreter.TryEvaluateArgument(Offset(index), QvmValueKind.None, out value);
+    }
+
     /// <summary>Evaluates an argument as an integer, reporting whether it produced one.</summary>
     /// <param name="index">The zero-based argument position.</param>
     /// <param name="value">Receives the integer.</param>

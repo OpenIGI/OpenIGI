@@ -50,37 +50,52 @@ public sealed class CutsceneRuntime
     private readonly Dictionary<GameTask, TransformState> _taskTransforms = [];
     private readonly Dictionary<GameTask, int> _taskOrder = [];
     private readonly Dictionary<GameTask, AttachmentState> _attachments = [];
+    private readonly Dictionary<GameTask, CarWheel[]> _carWheels = [];
+    private readonly Dictionary<WorldPlacement, int> _carWheelIndices = [];
     private readonly Dictionary<GameTask, float> _trainTailOffsets = [];
     private readonly Func<string, ScriptArguments, QvmValue?>? _hostNative;
     private readonly Action<CutsceneSoundEvent>? _soundChanged;
     private readonly Func<string, float>? _modelLength;
     private readonly Func<string, float>? _modelPivot;
     private readonly VehiclePhysicsRegistry? _vehiclePhysics;
+    private readonly Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? _vehicleObstacleHit;
+    private readonly Func<GameTask, bool>? _vehicleObstacleReleased;
     private readonly TerrainData? _terrain;
     private readonly IIgiLogger _logger;
     private ObjectCollisionIndex? _collisionIndex;
     private Func<int, CutsceneTargetPose?>? _targetPoseResolver;
     private bool _breakRequested;
+    private CutSceneTask? _sceneExpressionOwner;
     private readonly List<string> _diagnostics = [];
 
     /// <summary>Gets or sets the solid-object index used to find a supporting surface for vehicles.</summary>
     /// <remarks>
-    /// Wired by the host when a level has placed pads, crates or rooftops under a vehicle the
-    /// terrain half cannot see. The terrain half mirrors retail's <c>0x4CBE40</c>; the object sweep
-    /// mirrors retail's placed-model sweep (<c>0x4CDB20</c> -&gt; <c>0x4C7770</c>).
+    /// <para>
+    /// Wired by the host when a level has placed pads, crates, garage floors or rooftops that a
+    /// vehicle stands on. The terrain half mirrors retail's <c>0x4CBE40</c>; the object sweep
+    /// mirrors retail's placed-model sweep (<c>0x4CDB20</c> -&gt; <c>0x4C7770</c>). Main thread only.
+    /// </para>
+    /// <para>
+    /// Every mission wants this: a car's suspension probes it for the surface under each wheel, and
+    /// a great deal of what a vehicle stands on is placed geometry rather than terrain -- the
+    /// Mission 1 outro truck starts on a garage floor a few centimetres above the dirt, and without
+    /// the objects its wheels settle through the floor onto the terrain. Setting it no longer rests
+    /// the helicopters as a side effect; call <see cref="RestHelicoptersOnSupport"/> for that.
+    /// </para>
     /// </remarks>
     public ObjectCollisionIndex? CollisionIndex
     {
         get => _collisionIndex;
-        set
-        {
-            _collisionIndex = value;
-            if (value is not null)
-            {
-                RestCollisionHelisOnSupport();
-            }
-        }
+        set => _collisionIndex = value;
     }
+
+    /// <summary>Settles every collision-enabled helicopter onto whatever is under it.</summary>
+    /// <remarks>
+    /// Separate from <see cref="CollisionIndex"/> because it is a one-shot placement pass, not a
+    /// consequence of the index being available: the index is what every vehicle's ground query
+    /// reads, and only a helicopter authored with collision wants to be re-seated on it.
+    /// </remarks>
+    public void RestHelicoptersOnSupport() => RestCollisionHelisOnSupport();
 
     /// <summary>Builds the live cutscene state for a loaded level.</summary>
     public CutsceneRuntime(
@@ -91,6 +106,8 @@ public sealed class CutsceneRuntime
         Func<string, float>? modelLength = null,
         Func<string, float>? modelPivot = null,
         VehiclePhysicsRegistry? vehiclePhysics = null,
+        Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? vehicleObstacleHit = null,
+        Func<GameTask, bool>? vehicleObstacleReleased = null,
         TerrainData? terrain = null,
         IIgiLogger? logger = null)
     {
@@ -103,6 +120,8 @@ public sealed class CutsceneRuntime
         _modelLength = modelLength;
         _modelPivot = modelPivot;
         _vehiclePhysics = vehiclePhysics;
+        _vehicleObstacleHit = vehicleObstacleHit;
+        _vehicleObstacleReleased = vehicleObstacleReleased;
         _terrain = terrain;
         _logger = logger ?? NullLogger.Instance;
         _expressions = new LevelExpressionRuntime(variables, InvokeNative);
@@ -175,6 +194,11 @@ public sealed class CutsceneRuntime
             }
         }
 
+        // Capture the whole authored hierarchy before parking a vehicle. Moving a
+        // parent first makes its still-authored child positions acquire the parking
+        // displacement as a permanent local offset (Level 3's pilot floats above it).
+        RestCollisionHelisOnSupport();
+
         // EditCamera caches every Link task's initial world transform during retail
         // UpdateInternalData.  Build those keys only after all task transforms exist: Train tasks do
         // not author a world Position at all, and their initial frame must first be evaluated from the
@@ -184,11 +208,9 @@ public sealed class CutsceneRuntime
             _scenes.Add(new SceneState(cutscene, ReadShots(cutscene)));
         }
 
-        // QVM children of a Heli/Plane/Train are already parented by CaptureTransform
-        // (Walk is parent-then-child). Mission 1 Jones 1666 is a sibling of the car, so
-        // Human ground 0x462390 / AttachedMovement 0x462CF0 still needs the near-vehicle
-        // pass for those staged cabin copies that are not tree children.
-        AttachStagedHumansToNearestVehicle();
+        // Sibling humans acquire a moving parent from their live collision contact.
+        // Proximity at construction can capture an inactive vehicle's parked pose,
+        // baking its height difference into the actor before the scene registers.
 
         // The gate is prepared by the mission loader before this runtime is created. Refreshing here
         // replaces its former steady-game snapshot with the authored initial registration state.
@@ -206,7 +228,7 @@ public sealed class CutsceneRuntime
             state.Task.IsRun = run;
             if (run)
             {
-                _expressions.Execute(state.Task.StartExpression);
+                ExecuteSceneExpression(state.Task, state.Task.StartExpression);
             }
         }
 
@@ -272,15 +294,37 @@ public sealed class CutsceneRuntime
     /// <summary>Queues the retail break-cutscene key for the next logic tick.</summary>
     public void RequestBreak() => _breakRequested = true;
 
+    /// <summary>
+    /// Deletes every running cutscene except the one whose expression is currently executing.
+    /// </summary>
+    /// <remarks>
+    /// <c>Game_CutsceneDelete</c> walks the global cutscene registry and destroys stale scenes before
+    /// a newly admitted scene takes ownership.  A scene start expression may call the native itself,
+    /// so that scene is protected for the duration of its expression.  Container expressions have no
+    /// such owner and therefore clear every running scene, matching the global native walk.
+    /// </remarks>
+    public void DeleteCutscenes()
+    {
+        CutSceneTask? keep = _sceneExpressionOwner;
+        foreach (SceneState state in _scenes)
+        {
+            if (ReferenceEquals(state.Task, keep) || !state.Task.IsRun)
+            {
+                continue;
+            }
+
+            state.Task.IsRun = false;
+            state.Task.IsFinished = true;
+        }
+
+        UpdateFrame();
+    }
+
     /// <summary>Advances all cutscene-owned tasks by one fixed logic tick.</summary>
     public void Tick()
     {
         SimulationTick++;
         RefreshContainers(executeTransitions: true);
-        // Human_SetParent (0x462390 / 0x462CF0) binds cabin copies when the vehicle
-        // is registered. A staged mission vehicle can open after the initial walk — a one-shot
-        // attach at construction leaves its riders on the dirt beside an empty hull.
-        AttachStagedHumansToNearestVehicle();
 
         foreach (TimerState timer in _timers)
         {
@@ -332,7 +376,7 @@ public sealed class CutsceneRuntime
                 scene.IsRun = false;
                 if (wasRun)
                 {
-                    _expressions.Execute(scene.StopExpression);
+                    ExecuteSceneExpression(scene, scene.StopExpression);
                 }
                 continue;
             }
@@ -349,13 +393,12 @@ public sealed class CutsceneRuntime
 
             if (!wasRun && scene.IsRun)
             {
-                _expressions.Execute(scene.StartExpression);
+                ExecuteSceneExpression(scene, scene.StartExpression);
             }
 
             if (scene.IsRun)
             {
-                // The retail CutScene run callback begins at IGI.exe 0x43A450 (0x43A470 is
-                // inside that function). It runs child AnimTasks before the scene,
+                // The cutscene run callback runs child AnimTasks before the scene,
                 // evaluates Run, and then calls CutScene_SetCamera with the *current* nTick. The
                 // camera marks isFinished only when that old tick is beyond the authored duration;
                 // Run stays latched for this frame and nTick is incremented afterwards. The Run
@@ -379,7 +422,7 @@ public sealed class CutsceneRuntime
 
             if (wasRun && !scene.IsRun)
             {
-                _expressions.Execute(scene.StopExpression);
+                ExecuteSceneExpression(scene, scene.StopExpression);
             }
         }
 
@@ -451,6 +494,20 @@ public sealed class CutsceneRuntime
     /// <summary>Serves cutscene-specific level-expression natives to sibling mission runtimes.</summary>
     public QvmValue? TryInvokeNative(string name, ScriptArguments arguments) => InvokeNative(name, arguments);
 
+    /// <summary>Evaluates one scene's camera frame at an arbitrary scene time in seconds.</summary>
+    /// <remarks>
+    /// Uses exactly the production interpolation path (same knot selection, Hermite basis, link/
+    /// target remap and presentation fields) so tests can compare the emitted camera against the
+    /// authored EditCamera data without driving the whole level simulation. Callers must accumulate
+    /// shot start times exactly like <see cref="SceneState.Timed"/> (double += float duration) so
+    /// knot times match bit-for-bit and the current-shot scan selects the asserted shot.
+    /// </remarks>
+    internal CutsceneFrame? EvaluateSceneFrame(CutSceneTask scene, double time)
+    {
+        SceneState? state = _scenes.FirstOrDefault(item => ReferenceEquals(item.Task, scene));
+        return state is null ? null : BuildFrame(state, time);
+    }
+
     /// <summary>Clears one-tick cutscene input after every level expression has had a chance to read it.</summary>
     public void FinishExpressionTick() => _breakRequested = false;
 
@@ -479,6 +536,226 @@ public sealed class CutsceneRuntime
         position = default;
         orientation = Matrix3f.Identity;
         return false;
+    }
+
+    /// <summary>Reads the latest integrated velocity of a dynamic cutscene vehicle.</summary>
+    public bool TryGetDynamicVelocity(GameTask task, out Vector3d velocity)
+    {
+        if (_taskTransforms.TryGetValue(task, out TransformState? state) && state.IsDynamic)
+        {
+            velocity = state.Velocity / WorldScene.UnitsPerMetre;
+            return true;
+        }
+
+        velocity = default;
+        return false;
+    }
+
+    /// <summary>The magic-object task type retail gives a car's rolling wheels.</summary>
+    private const string WheelTaskTypeName = "TASKTYPE_WHEEL";
+
+    /// <summary>The two heights the vehicle obstacle probe sweeps, in metres above the body origin.</summary>
+    private static readonly double[] CarProbeHeightsMetres = [0.75d, 1.95d];
+
+    /// <summary>How far past the proposed step the obstacle probe reaches, in world units.</summary>
+    private const double CarProbeMarginUnits = 128d;
+
+    /// <summary>
+    /// The record a car falls back to when its model has no <c>physicsobj</c> entry: the shipped
+    /// truck's mass and dimensions with a single driven, unsteered wheel at the origin.
+    /// </summary>
+    private static readonly CarPhysicsDefinition DefaultCarPhysics = new(
+        3_000f,
+        new Vector3f(2.2f, 7.8f, 3f),
+        0,
+        [],
+        0.95f,
+        5_000f,
+        0.95f,
+        0,
+        [new CarWheelDefinition(false, true, 0f, 0, (float)WorldScene.UnitsPerMetre * 0.3f, 0.5f)],
+        []);
+
+    /// <summary>
+    /// Binds every car's drawn wheels to its physics record, in the order both are authored in.
+    /// </summary>
+    /// <param name="scene">The built world whose placements carry the wheel attachments.</param>
+    /// <remarks>
+    /// A car's wheels arrive as <c>TASKTYPE_WHEEL</c> magic-object attachments, one placement each,
+    /// in the same order as the record's wheel entries -- on the Mission 1 truck that pairing puts
+    /// both steered, driven entries exactly on the two front wheels. Their offsets from the body
+    /// origin are what the drive force and the tyre torque are applied at, so the physics reads them
+    /// from the model rather than guessing an axle layout.
+    /// </remarks>
+    /// <param name="modelRadius">
+    /// Resolves a wheel model's radius in world units, for the rolling animation. Optional: without
+    /// it the wheels still turn, just at the suspension travel rather than their real size.
+    /// </param>
+    public void BindVehicleWheels(WorldScene scene, Func<string, float>? modelRadius = null)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        _carWheels.Clear();
+        _carWheelIndices.Clear();
+        Dictionary<GameTask, List<WorldPlacement>> byOwner = [];
+        foreach (WorldPlacement placement in scene.Placements)
+        {
+            if (!string.Equals(placement.MagicTaskTypeName, WheelTaskTypeName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (!byOwner.TryGetValue(placement.Owner, out List<WorldPlacement>? list))
+            {
+                list = [];
+                byOwner[placement.Owner] = list;
+            }
+
+            list.Add(placement);
+        }
+
+        foreach ((GameTask owner, List<WorldPlacement> placements) in byOwner)
+        {
+            if (!_taskTransforms.TryGetValue(owner, out TransformState? state)
+                || state.CarPhysics is not { } physics)
+            {
+                continue;
+            }
+
+            // Where each drawn wheel sits in the body's own axes.
+            Vector3d[] drawn = new Vector3d[placements.Count];
+            double acrossTotal = 0d;
+            for (int i = 0; i < placements.Count; i++)
+            {
+                Vector3d placementUnits = placements[i].Position * WorldScene.UnitsPerMetre;
+                drawn[i] = state.AuthoredOrientation.Transform(placementUnits - state.OriginPosition);
+                acrossTotal += Math.Abs(drawn[i].X);
+            }
+
+            double acrossMagnitude = placements.Count > 0 ? acrossTotal / placements.Count : 0d;
+
+            // Forces are applied at the WHEEL BODIES, of which there are fewer than drawn wheels: a
+            // tandem rear pair shares one. Each body sits at the outermost drawn wheel that refers
+            // to it, and an axle is symmetric about the body's centreline, so the across offset is
+            // the mean of the drawn magnitudes rather than the wheel model's own origin. Reading a
+            // running game back confirms both: retail's four bodies on the Mission 1 truck are at
+            // (-0.79, +2.81), (-0.79, -2.29), (+0.85, +2.81) and (+0.85, -2.29) metres, which this
+            // reproduces to within five centimetres.
+            Dictionary<int, Vector3d> bodyOffsets = [];
+            for (int i = 0; i < placements.Count && i < physics.Wheels.Count; i++)
+            {
+                CarWheelDefinition entry = physics.Wheels[i];
+                int slot = entry.BodyIndex >= 0 ? entry.BodyIndex : -10 - entry.BodyIndex;
+                Vector3d candidate = new(
+                    Math.Sign(drawn[i].X) * acrossMagnitude,
+                    drawn[i].Y,
+                    drawn[i].Z);
+                if (!bodyOffsets.TryGetValue(slot, out Vector3d held)
+                    || Math.Abs(candidate.Y) > Math.Abs(held.Y))
+                {
+                    bodyOffsets[slot] = candidate;
+                }
+            }
+
+            int contacts = 0;
+            for (int i = 0; i < physics.Wheels.Count; i++)
+            {
+                if (physics.Wheels[i].HasBody)
+                {
+                    contacts++;
+                }
+            }
+
+            CarWheel[] wheels = new CarWheel[placements.Count];
+            for (int i = 0; i < placements.Count; i++)
+            {
+                CarWheelDefinition definition = i < physics.Wheels.Count
+                    ? physics.Wheels[i]
+                    : new CarWheelDefinition(false, false, 0f, -1, 0f, 0f);
+                int slot = definition.BodyIndex >= 0 ? definition.BodyIndex : -10 - definition.BodyIndex;
+                Vector3d offset = bodyOffsets.TryGetValue(slot, out Vector3d bodyOffset)
+                    ? bodyOffset
+                    : drawn[i];
+
+                // Where the spring is probed from. Retail keeps that point on the wheel body, which
+                // is model data the port has no reader for, so it is placed by what it has to
+                // achieve: the spring settles with its origin a compression UNDER the surface, and
+                // the tyre has to end up ON the surface, so the origin sits a compression below the
+                // contact patch. Measuring the running game: its Mission 2 truck rests 0.037 m over
+                // the terrain, which puts the bottom of a 0.464 m wheel 0.023 m clear -- touching.
+                double radius = Math.Max(0d, modelRadius?.Invoke(placements[i].Instance.Name) ?? 0d);
+                double travel = definition.SuspensionLengthUnits;
+                double stiffness = definition.SpringStiffness;
+                double settled = contacts > 0 && stiffness > 0d
+                    ? Math.Min(travel, travel / (contacts * stiffness))
+                    : 0d;
+                offset = new Vector3d(offset.X, offset.Y, drawn[i].Z - radius - settled);
+                CarBodyDefinition? body = null;
+                for (int b = 0; b < physics.Bodies.Count; b++)
+                {
+                    if (physics.Bodies[b].Index == slot)
+                    {
+                        body = physics.Bodies[b];
+                        break;
+                    }
+                }
+
+                wheels[i] = new CarWheel(
+                    definition,
+                    offset,
+                    body?.LateralFriction ?? 0.95f,
+                    body?.LongitudinalFriction ?? 0.05f,
+                    (float)radius);
+            }
+
+            _carWheels[owner] = wheels;
+            for (int i = 0; i < placements.Count; i++)
+            {
+                _carWheelIndices[placements[i]] = i;
+            }
+        }
+    }
+
+    /// <summary>Clamps a record retention into the range the native blend assumes.</summary>
+    private static float CarRetention(float? retention) =>
+        retention is { } value && float.IsFinite(value) && value is >= 0f and <= 1f ? value : 0.95f;
+
+    /// <summary>Drops an axis into the ground plane, falling back when it is degenerate.</summary>
+    private static Vector3d FlattenAxis(Vector3f axis, Vector3d fallback)
+    {
+        Vector3d flat = new(axis.X, axis.Y, 0d);
+        double length = flat.Length;
+        return length > 1e-6d ? flat / length : fallback;
+    }
+
+    /// <summary>The wheels bound to a car, or one driven wheel at the origin when none are bound.</summary>
+    private CarWheel[] CarWheelsFor(GameTask? task, in CarPhysicsDefinition physics)
+    {
+        if (task is not null && _carWheels.TryGetValue(task, out CarWheel[]? wheels) && wheels.Length > 0)
+        {
+            return wheels;
+        }
+
+        // Without the drawn attachments the record's own entries still say how many wheels drive and
+        // steer; place them on the authored dimension box so the body still moves and turns.
+        CarWheel[] fallback = new CarWheel[Math.Max(1, physics.Wheels.Count)];
+        double halfLength = physics.Dimensions.Y * 0.25d * WorldScene.UnitsPerMetre;
+        double halfWidth = physics.Dimensions.X * 0.5d * WorldScene.UnitsPerMetre;
+        for (int i = 0; i < fallback.Length; i++)
+        {
+            CarWheelDefinition definition = i < physics.Wheels.Count
+                ? physics.Wheels[i]
+                : new CarWheelDefinition(false, true, 0f, 0, 0f, 0f);
+            fallback[i] = new CarWheel(
+                definition,
+                new Vector3d(
+                    (i % 2) == 0 ? halfWidth : -halfWidth,
+                    definition.Steerable ? halfLength : -halfLength,
+                    0d),
+                0.95f,
+                0.05f);
+        }
+
+        return fallback;
     }
 
     /// <summary>Applies a moving task's rigid transform to one of its authored model placements.</summary>
@@ -562,6 +839,50 @@ public sealed class CutsceneRuntime
         {
             return false;
         }
+
+        if (TryGetWheelDraw(placement, out Matrix3f spun))
+        {
+            orientation *= spun;
+        }
+
+        return true;
+    }
+
+    /// <summary>Builds the roll and steer a car's drawn wheel carries this tick.</summary>
+    /// <param name="placement">The candidate placement.</param>
+    /// <param name="rotation">Receives the wheel's own rotation, in its placement frame.</param>
+    /// <returns><see langword="false"/> when the placement is not a car wheel.</returns>
+    /// <remarks>
+    /// A wheel rolls about its across axis by the distance the body has covered over the wheel
+    /// radius, and a steered wheel turns about the body's up axis by
+    /// <c>MaximumSteerDegrees * pi/180 * steering</c> -- the same angle <c>0x430D10</c> builds the
+    /// drive direction with. Without this the wheels are welded to the hull and the truck slides
+    /// along on frozen tyres.
+    /// </remarks>
+    public bool TryGetWheelDraw(WorldPlacement placement, out Matrix3f rotation)
+    {
+        ArgumentNullException.ThrowIfNull(placement);
+        rotation = Matrix3f.Identity;
+        if (!string.Equals(placement.MagicTaskTypeName, WheelTaskTypeName, StringComparison.Ordinal)
+            || !_carWheels.TryGetValue(placement.Owner, out CarWheel[]? wheels)
+            || !_taskTransforms.TryGetValue(placement.Owner, out TransformState? state))
+        {
+            return false;
+        }
+
+        bool steerable = _carWheelIndices.TryGetValue(placement, out int index)
+            && index < wheels.Length
+            && wheels[index].Definition.Steerable;
+        // Retail's accumulator counts DOWN as the car goes forward (Wheel::Tick subtracts the spin
+        // rate), and it is applied against the wheel's own axle axis, which points the opposite way
+        // from the placement frame's X here. Rolling by the raw accumulator spins the tyres
+        // backwards while the truck drives forwards.
+        rotation = Matrix3f.RotationX((float)-state.CarMotion.WheelRoll);
+        if (steerable && state.CarMotion.WheelSteer != 0d)
+        {
+            rotation = Matrix3f.RotationZ((float)state.CarMotion.WheelSteer) * rotation;
+        }
+
         return true;
     }
 
@@ -676,10 +997,12 @@ public sealed class CutsceneRuntime
     /// <returns><see langword="true"/> when the parent has a live cutscene transform.</returns>
     /// <remarks>
     /// Retail's Human ground pass tests the struck collision task's moving-platform flag and parents
-    /// the Human to that exact task. <c>0x463310</c> is a mid-instruction false start (AGENTS.md);
-    /// r2's real prologues are Human ground <c>0x462390</c> and <c>Human_AttachedMovement</c>
-    /// <c>0x462CF0</c>. The task-tree ancestry of the Human is unrelated: Mission 1 actor 1666 is a
-    /// sibling of train car 1888, not its child.
+    /// the Human to that exact task. The aligned native helper at <c>0x463310</c> writes the parent
+    /// pointer and the Human's local position/orientation frame; its real one-block boundary is
+    /// confirmed in both Ghidra and r2.
+    /// The paired detach helper at <c>0x463550</c> clears <c>Human+0x76c</c> when the ground pass has
+    /// no valid moving contact. The task-tree ancestry of the Human is unrelated: Mission 1 actor
+    /// 1666 is a sibling of train car 1888, not its child.
     /// </remarks>
     public bool TryAttachActorToTask(
         GameTask task,
@@ -714,6 +1037,48 @@ public sealed class CutsceneRuntime
         }
 
         return CaptureAttachment(task, state, parent, parentTransform);
+    }
+
+    /// <summary>Reads the moving parent a cinematic Human is currently attached to, if any.</summary>
+    /// <remarks>
+    /// Observation only: it never selects or changes the parent. Regressions use it to assert
+    /// the live contact selection without supplying an expected owner first.
+    /// </remarks>
+    public bool TryGetAttachmentParent(GameTask task, out GameTask? parent)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+
+        if (_attachments.TryGetValue(task, out AttachmentState? attachment))
+        {
+            parent = attachment.ParentTask;
+            return true;
+        }
+
+        parent = null;
+        return false;
+    }
+
+    /// <summary>
+    /// Clears a cinematic Human's moving-parent slot when its contacted owner has been unregistered.
+    /// </summary>
+    /// <remarks>
+    /// Native <c>Human_GroundCollision</c> calls the aligned detach helper at <c>0x463550</c> when a
+    /// candidate owner is no longer active; an empty query only clears support fields and deliberately
+    /// retains an existing parent. The latter distinction matters during the Level 1 helicopter-to-train
+    /// handoff, so this method checks only the parent's registration state and never guesses a replacement.
+    /// </remarks>
+    public bool TryDetachInactiveAttachment(GameTask task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+
+        if (!_attachments.TryGetValue(task, out AttachmentState? attachment)
+            || ConditionalContainerGate.IsTaskActive(attachment.ParentTask))
+        {
+            return false;
+        }
+
+        _attachments.Remove(task);
+        return true;
     }
 
     /// <summary>Consumes one Human root-motion delta while the Human is standing on a moving parent.</summary>
@@ -852,6 +1217,25 @@ public sealed class CutsceneRuntime
         return false;
     }
 
+    private void ExecuteSceneExpression(CutSceneTask scene, string expression)
+    {
+        if (string.IsNullOrWhiteSpace(expression))
+        {
+            return;
+        }
+
+        CutSceneTask? previous = _sceneExpressionOwner;
+        _sceneExpressionOwner = scene;
+        try
+        {
+            _expressions.Execute(expression);
+        }
+        finally
+        {
+            _sceneExpressionOwner = previous;
+        }
+    }
+
     private QvmValue? InvokeNative(string name, ScriptArguments arguments)
     {
         if (string.Equals(name, "LevelFlow_GetBreakCutSceneKey", StringComparison.Ordinal))
@@ -879,30 +1263,25 @@ public sealed class CutsceneRuntime
             return;
         }
 
+        Frame = BuildFrame(state, state.Task.Ticks / (double)Frequency);
+    }
+
+    /// <summary>Interpolates one scene's authored camera at an arbitrary scene time.</summary>
+    private CutsceneFrame? BuildFrame(SceneState state, double time)
+    {
         CutSceneTask scene = state.Task;
-        double time = scene.Ticks / (double)Frequency;
         List<TimedShot> timed = state.Timed(scene.TimeScale);
-        // An EditCamera with no duration is a spline/filter endpoint, not a frame-owning shot. Retail
-        // keeps the preceding camera live on the two completion-boundary ticks; selecting a terminal
-        // zero-duration entry here exposes its marker pose as a visible flash (Mission 4's outro puts
-        // that pose inside Bell 356). Keep zero-length entries in `timed` so the preceding Hermite and
-        // filter interpolation can still end at their authored values, but never make one `active`.
-        bool OwnsFrame(TimedShot item) => Math.Max(0f, item.Shot.Duration * scene.TimeScale) > 0f;
-        int current = timed.FindIndex(OwnsFrame);
-        if (current < 0)
-        {
-            current = 0;
-        }
-        for (int i = current + 1; i < timed.Count; i++)
+        // IGI1 0x4F4880 retains every authored knot, including duration zero.
+        // 0x4F5400 selects the last start <= the scene time without a duration filter.
+        // Scene completion/presentation must not be repaired by changing knot ownership.
+        int current = 0;
+        for (int i = 1; i < timed.Count; i++)
         {
             if (timed[i].Start > time)
             {
                 break;
             }
-            if (OwnsFrame(timed[i]))
-            {
-                current = i;
-            }
+            current = i;
         }
 
         int i0 = Math.Max(0, current - 1);
@@ -999,7 +1378,7 @@ public sealed class CutsceneRuntime
                 (float)((time - p1.Start) / ((p2.Start - p1.Start) - 0.5)), 0f, 1f);
         }
 
-        Frame = new CutsceneFrame(
+        return new CutsceneFrame(
             // EditCamera keeps a proper engine rotation (determinant +1), whereas Camera3D's left-handed
             // right/up/forward view basis has determinant -1. Its columns become our rows and the up row
             // changes sign at that boundary. A transpose alone points the cinematic camera's up axis down,
@@ -1102,7 +1481,27 @@ public sealed class CutsceneRuntime
             // when the first wait entry advances; beginning this accumulator at zero snapped linked
             // helicopters and planes to the identity matrix on cutscene tick one.
             Euler = angles,
+            Heading = angles.Z,
         };
+        if (string.Equals(task.Type.Name, "Car", StringComparison.Ordinal)
+            && _vehiclePhysics?.TryGetCar(Text(declared, WorldScene.ModelParameter), out CarPhysicsDefinition car) == true)
+        {
+            state.CarPhysics = car;
+            state.Steering = 0f;
+            state.TargetSteering = 0f;
+
+            // Car::ReadChannels restores both the live throttle and its target from this authored
+            // value on animation tick zero, the way the Heli and Train receivers do. Mission 2's
+            // truck opens its cutscene already carrying 0.6 and coasts down from it.
+            state.OriginalThrust = RealNamed(declared, "Original thrust");
+            state.Thrust = state.OriginalThrust;
+            state.TargetThrust = state.OriginalThrust;
+        }
+        if (string.Equals(task.Type.Name, "Plane", StringComparison.Ordinal)
+            && _vehiclePhysics?.TryGetPlane(Text(declared, WorldScene.ModelParameter), out PlanePhysicsDefinition plane) == true)
+        {
+            state.PlanePhysics = plane;
+        }
         if (string.Equals(task.Type.Name, "Heli", StringComparison.Ordinal))
         {
             // Heli::ReadChannels restores both live and target collective from this authored value on
@@ -1121,10 +1520,6 @@ public sealed class CutsceneRuntime
             // the contact solver below uses it only to prevent terrain penetration. The QVM
             // collective and cyclic controls remain free to lift and steer the airframe.
             state.CollisionEnabled = Bool(declared, "Collision detection");
-            if (state.CollisionEnabled)
-            {
-                RestHeliOnSupport(task, state);
-            }
         }
         bool attached = CaptureAttachment(task, state);
         if (task.Id != GameTask.NoId || attached)
@@ -1154,6 +1549,7 @@ public sealed class CutsceneRuntime
     {
         UpdateDerivedPose(parentTransform);
         AttachmentState attachment = new(
+            parent,
             parentTransform,
             DynamicRevision(parentTransform),
             parentTransform.Position,
@@ -1179,61 +1575,6 @@ public sealed class CutsceneRuntime
 
     private static bool IsVehicle(GameTask task) => CinematicActor.IsVehicle(task);
 
-    /// <summary>
-    /// How far a staged Human may sit from a vehicle origin and still inherit its ride (cabin / ramp).
-    /// </summary>
-    private const double StagedRideAttachRadiusMetres = 20.0;
-
-    private void AttachStagedHumansToNearestVehicle()
-    {
-        List<(HumanSoldierTask Human, TransformState State)> riders = [];
-        List<(GameTask Vehicle, TransformState State)> vehicles = [];
-        foreach ((GameTask task, TransformState state) in _taskTransforms)
-        {
-            if (task is HumanSoldierTask human && CinematicActor.IsStaged(human))
-            {
-                riders.Add((human, state));
-            }
-            else if (IsVehicle(task))
-            {
-                vehicles.Add((task, state));
-            }
-        }
-
-        double maxDistance = StagedRideAttachRadiusMetres * WorldScene.UnitsPerMetre;
-        double maxDistanceSquared = maxDistance * maxDistance;
-        foreach ((HumanSoldierTask human, TransformState rider) in riders)
-        {
-            if (_attachments.ContainsKey(human))
-            {
-                continue;
-            }
-
-            GameTask? best = null;
-            TransformState? bestState = null;
-            double bestDistanceSquared = maxDistanceSquared;
-            foreach ((GameTask vehicle, TransformState vehicleState) in vehicles)
-            {
-                double dx = rider.Position.X - vehicleState.Position.X;
-                double dy = rider.Position.Y - vehicleState.Position.Y;
-                double dz = rider.Position.Z - vehicleState.Position.Z;
-                double distanceSquared = (dx * dx) + (dy * dy) + (dz * dz);
-                if (distanceSquared <= bestDistanceSquared)
-                {
-                    bestDistanceSquared = distanceSquared;
-                    best = vehicle;
-                    bestState = vehicleState;
-                }
-            }
-
-            if (best is not null && bestState is not null)
-            {
-                CaptureAttachment(human, rider, best, bestState);
-                Note($"attach human={human.Id} vehicle={best.Id} dist2={bestDistanceSquared:R}");
-            }
-        }
-    }
-
     private void Remember(GameTask task, TransformState state)
     {
         _taskTransforms[task] = state;
@@ -1252,6 +1593,21 @@ public sealed class CutsceneRuntime
 
         GameTask? target = _root.Tree.FromId(targetId);
         string type = target?.Type.Name ?? string.Empty;
+
+        // Retail dispatch is table-driven (handler table slot*384 + typeId @ 0xA96AE0) and only
+        // Train/Car/Heli/Plane register ReadChannels handlers (ANIMTASK-RE.md §5-6). Human's
+        // registration sub_45E450 registers none, so AnimProgram_End (0x4F4060) skips delivery:
+        // an AnimTask targeting a human delivers NOTHING — no translation, no speed, no animation
+        // id. Humans animate through their own state machine (state tick 0x4550B0, playback rate
+        // engineDelta * 1.5 per Human_GetCutSceneDeltaTime 0x45EAE0), and their pose reaches the
+        // cutscene via SetTargetPoseResolver / attachment parenting. Reproduce that here: drop
+        // the packet instead of the former thrust-and-slide fallback.
+        if (target is not DeclaredTask
+            || !(type is "Train" or "Car" or "Heli" or "Plane"))
+        {
+            return;
+        }
+
         ReadOnlySpan<float> channels = program.Channels;
 
         if (string.Equals(type, "Train", StringComparison.Ordinal)
@@ -1296,13 +1652,43 @@ public sealed class CutsceneRuntime
         }
 
         float yaw = MathF.Atan2(transform.Orientation.M21, transform.Orientation.M11);
-        float thrust;
         if (string.Equals(type, "Car", StringComparison.Ordinal))
         {
-            if (program.Tick > 0)
+            // Car::ReadChannels (IGI.exe 0x42EA10) treats the first packet as receiver setup,
+            // not a physics step. Restore the authored body and install the channel hold
+            // sentinels before the positive-tick callback starts smoothing controls. Running the
+            // generic integration on tick zero advances a truck before its cutscene clock has
+            // elapsed and leaves the receiver's channel-two state live for the next packet.
+            if (program.Tick == 0)
             {
-                SnapshotDynamicPose(transform, simulationOrder);
+                transform.Position = transform.OriginPosition;
+                transform.Orientation = transform.AuthoredOrientation;
+                transform.PreviousPosition = transform.Position;
+                transform.PreviousOrientation = transform.Orientation;
+                transform.Velocity = default;
+                transform.Speed = 0f;
+                transform.Steering = 0f;
+                transform.TargetSteering = 0f;
+
+                // Car::ReadChannels seeds BOTH the live throttle and its target from the task's
+                // authored thrust (+1824 and +1840 from +1856), the way Train::ReadChannels does.
+                // Mission 2's truck opens its cutscene already carrying 0.6 and coasts down from
+                // it; starting from nought leaves it standing there, because the authored channel
+                // only ever sends the -1 hold afterwards.
+                transform.Thrust = transform.OriginalThrust;
+                transform.TargetThrust = transform.OriginalThrust;
+                transform.ParkingBrake = false;
+                transform.Heading = transform.Euler.Z;
+                transform.VehicleLatchedObstacle = null;
+                transform.VehicleGateReleased = false;
+                transform.CarMotion.Reset();
+                program.WriteChannel(1, -1f);
+                program.WriteChannel(2, -2f);
+                transform.IsDynamic = true;
+                return;
             }
+
+            SnapshotDynamicPose(transform, simulationOrder);
 
             // Car::ReadChannels (0x42EA10) copies ch0 to the steering target and latches ch1 as
             // throttle only when it is not -1.  ch3 is the parking-brake pulse.  The former generic
@@ -1315,18 +1701,130 @@ public sealed class CutsceneRuntime
             }
             transform.ParkingBrake = channels[3] != -1f;
 
-            // The two response coefficients are physics-object data in retail (+24 steering, +32
-            // throttle), rather than level parameters.  Keep the same first-order state shape here;
-            // the probe records the exact per-model response and pose so these defaults can be
-            // replaced without changing the timeline contract.
-            transform.Steering += (transform.TargetSteering - transform.Steering) * 0.18f;
-            transform.Thrust += (transform.TargetThrust - transform.Thrust) * 0.12f;
-            float targetSpeed = transform.ParkingBrake ? 0f : transform.Thrust * 1_200f;
-            transform.Speed += (targetSpeed - transform.Speed) * (transform.ParkingBrake ? 0.3f : 0.04f);
-            yaw += transform.Steering * transform.Speed / (4_096f * 4.5f);
-            transform.Orientation = Matrix3f.FromEngineEulerAngles(0f, 0f, yaw);
-            Vector3f carForward = transform.Orientation.Column1;
-            transform.Position += new Vector3d(carForward.X, carForward.Y, carForward.Z) * transform.Speed;
+            // Car::Tick (0x42ECA0) blends each live control from the model record's retention:
+            //     current = current * retention + target * (1 - retention)
+            // Retention is record +24 for steering and +32 for throttle; every shipped car publishes
+            // a value between 0.9 and 0.998 there.
+            CarPhysicsDefinition? carPhysics = transform.CarPhysics;
+            float steeringRetention = CarRetention(carPhysics?.SteeringRetention);
+            float throttleRetention = CarRetention(carPhysics?.ThrottleRetention);
+            transform.Steering = (transform.Steering * steeringRetention)
+                + (transform.TargetSteering * (1f - steeringRetention));
+            transform.Thrust = (transform.Thrust * throttleRetention)
+                + (transform.TargetThrust * (1f - throttleRetention));
+            // Car::Tick zeroes a near-zero smoothed throttle at a zero target (0x42ECA0: if
+            // +0x730 == 0 and |+0x720| < 0.01, +0x720 = 0). Without it a commanded stop decays
+            // asymptotically and the truck freezes mid-route holding residual thrust.
+            if (transform.TargetThrust == 0f && MathF.Abs(transform.Thrust) < 0.01f)
+            {
+                transform.Thrust = 0f;
+            }
+
+            float previousHeading = transform.Heading;
+            Matrix3f previousOrientation = transform.Orientation;
+
+            // The orientation's second column is the body's forward axis and the first its across
+            // axis, which is how 0x430D10 reads them when it builds the drive direction.
+            Vector3f forwardAxis = transform.Orientation.Column2;
+            Vector3f lateralAxis = transform.Orientation.Column1;
+            Vector3d forward = FlattenAxis(forwardAxis, new Vector3d(0d, 1d, 0d));
+            Vector3d lateral = FlattenAxis(lateralAxis, new Vector3d(1d, 0d, 0d));
+
+            CarPhysicsDefinition physics = carPhysics ?? DefaultCarPhysics;
+            (Vector3d carTranslation, double carYaw) = CarDynamics.Step(
+                transform.CarMotion,
+                physics,
+                CarWheelsFor(target, physics),
+                transform.Position,
+                forward,
+                lateral,
+                transform.Steering,
+                transform.Thrust,
+                transform.ParkingBrake,
+                at => TryFindSupportHeight(at, target, allowDeepRecovery: false, out double height, out _)
+                    ? height
+                    : double.NaN);
+
+            transform.Heading += (float)carYaw;
+            transform.Orientation = Matrix3f.FromEngineEulerAngles(
+                transform.Euler.X,
+                transform.Euler.Y,
+                transform.Heading);
+            transform.Speed = (float)transform.CarMotion.Velocity.Length;
+            Vector3d proposedPosition = transform.Position + carTranslation;
+
+            // The obstacle probe is the body's own front, taken from the authored dimensions rather
+            // than from a per-level table: half the length ahead of the origin, swept at the two
+            // heights that bracket a car's bumper.
+            double halfLengthUnits = physics.Dimensions.Y * 0.5d * WorldScene.UnitsPerMetre;
+            bool blocked = false;
+            GameTask? obstacle = null;
+            if (target is not null && _vehicleObstacleHit is not null && carTranslation.Length > 0d)
+            {
+                Vector3d heading3 = carTranslation / carTranslation.Length;
+                for (int heightIndex = 0; heightIndex < CarProbeHeightsMetres.Length && !blocked; heightIndex++)
+                {
+                    Vector3d offset = new(
+                        0d,
+                        0d,
+                        CarProbeHeightsMetres[heightIndex] * WorldScene.UnitsPerMetre);
+                    Vector3d probeStart = transform.Position + (heading3 * halfLengthUnits) + offset;
+                    Vector3d probeEnd = proposedPosition
+                        + (heading3 * (halfLengthUnits + CarProbeMarginUnits))
+                        + offset;
+                    if (_vehicleObstacleHit.Invoke(target, probeStart, probeEnd) is { } contact)
+                    {
+                        obstacle = contact.Owner;
+                        blocked = true;
+                    }
+                }
+            }
+
+            if (_vehicleObstacleReleased is not null
+                && obstacle is not null
+                && string.Equals(obstacle.Type.Name, "Door", StringComparison.Ordinal))
+            {
+                transform.VehicleLatchedObstacle = obstacle;
+            }
+
+            if (transform.VehicleLatchedObstacle is { } latchedDoor)
+            {
+                if (_vehicleObstacleReleased?.Invoke(latchedDoor) == true)
+                {
+                    transform.VehicleLatchedObstacle = null;
+                    transform.VehicleGateReleased = true;
+                    if (ReferenceEquals(obstacle, latchedDoor))
+                    {
+                        blocked = false;
+                        obstacle = null;
+                    }
+                }
+                else
+                {
+                    blocked = true;
+                    obstacle ??= latchedDoor;
+                }
+            }
+
+            if (blocked)
+            {
+                // Retail resolves a contact by cancelling the motion into the obstacle and letting
+                // the body keep whatever is left, so a car that clips scenery slides along it and
+                // recovers. Latching the speed to nought instead parks the vehicle for good, which
+                // is what stranded the Mission 1 truck against the perimeter fence. The springs are
+                // not part of that contact, so the body still rides them.
+                transform.Heading = previousHeading;
+                transform.Orientation = previousOrientation;
+                transform.CarMotion.Velocity = default;
+                transform.CarMotion.YawRate = 0d;
+                transform.Speed = 0f;
+                transform.Position += new Vector3d(0d, 0d, carTranslation.Z);
+            }
+            else
+            {
+                transform.Position = proposedPosition;
+                transform.Velocity = transform.Position - transform.PreviousPosition;
+            }
             transform.IsDynamic = true;
             return;
         }
@@ -1491,6 +1989,8 @@ public sealed class CutsceneRuntime
                 transform.Control = default;
                 transform.Heading = 0f;
                 transform.Speed = 0f;
+                transform.Thrust = 0f;
+                transform.TargetThrust = 0f;
                 transform.GroundContact = false;
                 transform.GroundContactEventLogged = false;
                 transform.GroundContactLogged = false;
@@ -1514,6 +2014,10 @@ public sealed class CutsceneRuntime
             {
                 transform.CollisionEnabled = Bool(livePlane, "Collision detection");
             }
+            // The native plane callback keeps thrust as live body state.  Preserve that state in
+            // addition to the speed envelope so downstream consumers (attachments, diagnostics and
+            // collision) observe the same non-zero motion that the authored flight produces.
+            transform.Thrust = MoveTowards(transform.Thrust, transform.TargetThrust, 0.001f);
             transform.Heading += transform.Control.Z * 0.004f;
             transform.Orientation = Matrix3f.FromEngineEulerAngles(
                 transform.Control.X * 0.10f,
@@ -1525,33 +2029,15 @@ public sealed class CutsceneRuntime
             Vector3f planeForward = transform.Orientation.Row2;
             float desiredSpeed = Math.Max(0f, transform.TargetThrust) * 1_500f;
             transform.Speed += (desiredSpeed - transform.Speed) * 0.025f;
+            Vector3d previousPosition = transform.Position;
             transform.Position += new Vector3d(planeForward.X, planeForward.Y, planeForward.Z)
                 * transform.Speed;
+            transform.Velocity = transform.Position - previousPosition;
             KeepHelicopterAboveGround(target, transform);
             transform.IsDynamic = true;
             LogAirframePath(targetId, "Plane", target, transform);
             return;
         }
-        else
-        {
-            thrust = channels[0];
-        }
-
-        if (thrust != -1f)
-        {
-            transform.Speed += thrust / Frequency;
-        }
-        transform.Speed *= 0.995f;
-        Vector3f forward = transform.Orientation.Row2;
-        transform.Position += new Vector3d(forward.X, forward.Y, forward.Z) * transform.Speed;
-        if (transform.Railroad is { } railroad)
-        {
-            transform.TrackPosition += transform.Speed;
-            railroad.Evaluate(transform.TrackPosition, out Vector3d railPosition, out Matrix3f railOrientation);
-            transform.Position = railPosition;
-            transform.Orientation = railOrientation;
-        }
-        transform.IsDynamic = true;
     }
 
     private bool TryPose(int id, out TransformState? state)
@@ -1681,14 +2167,10 @@ public sealed class CutsceneRuntime
     private List<EditCameraShot> ReadShots(CutSceneTask scene)
     {
         List<EditCameraShot> shots = [];
-        // Mission 4 CutScene 1000 mixes world ObjectPos (the pad, ~53 km from origin) with
-        // cabin-scale ObjectPos (~18 m). Those small records are local offsets — Link is -1 —
-        // but Hermite still interpolates them as world points, so the intro camera leaves the
-        // castle and flies through empty sky to (17.7, -0.4, 2.8). Promote any cabin-scale
-        // shot onto the last world-space camera (or the CutScene anchor) so the path stays
-        // in the level. World-scale shots (Mission 1's linked heli cameras included) are
-        // left untouched.
-        Vector3d lastWorld = scene.Position;
+        // IGI1 0x4F55D0 interpolates EditCamera's authored XYZ fields directly.
+        // Small coordinates can belong to a separate cinematic set (Mission 4's Anya HQ);
+        // they are not evidence of a vehicle-local offset. Only explicit Link IDs transform
+        // the evaluated camera through 0x508940. See the MVP retail audit for both listings.
         foreach (GameTask task in Walk(scene))
         {
             if (task is not DeclaredTask camera || !string.Equals(task.Type.Name, "EditCamera", StringComparison.Ordinal))
@@ -1698,7 +2180,7 @@ public sealed class CutsceneRuntime
             int link = Int(camera, "Link task ID", -1);
             int target = Int(camera, "Target task ID", -1);
             (Vector3d linkOrigin, Matrix3f linkOrientation) = InitialPose(scene.Tree.FromId(link));
-            Vector3d position = ResolveEditCameraPosition(Vector(camera, "Position"), scene.Position, ref lastWorld);
+            Vector3d position = Vector(camera, "Position");
             shots.Add(new EditCameraShot(
                 position,
                 Real(camera, "Alpha"), Real(camera, "Beta"), Real(camera, "Gamma"),
@@ -1709,29 +2191,6 @@ public sealed class CutsceneRuntime
                 Real(camera, "Camera shake"), linkOrigin, linkOrientation));
         }
         return shots;
-    }
-
-    /// <summary>
-    /// ObjectPos smaller than a kilometre on a cutscene that itself sits tens of kilometres
-    /// from the origin is a local offset, not a world point.
-    /// </summary>
-    private static Vector3d ResolveEditCameraPosition(
-        Vector3d authored, Vector3d sceneOrigin, ref Vector3d lastWorld)
-    {
-        const double LocalRadius = 1_000.0 * WorldScene.UnitsPerMetre;
-        double authoredSquared = authored.LengthSquared;
-        if (authoredSquared < LocalRadius * LocalRadius
-            && sceneOrigin.LengthSquared > LocalRadius * LocalRadius)
-        {
-            return lastWorld + authored;
-        }
-
-        if (authoredSquared >= LocalRadius * LocalRadius)
-        {
-            lastWorld = authored;
-        }
-
-        return authored;
     }
 
     private static bool IsBandFilter(string filter) =>
@@ -2622,6 +3081,7 @@ public sealed class CutsceneRuntime
     }
     private sealed record TimedShot(EditCameraShot Shot, double Start);
     private sealed class AttachmentState(
+        GameTask parentTask,
         TransformState parent,
         int parentRevisionAtCapture,
         Vector3d parentOriginPosition,
@@ -2629,6 +3089,7 @@ public sealed class CutsceneRuntime
         Vector3d position,
         Matrix3f orientation)
     {
+        public GameTask ParentTask { get; } = parentTask;
         public TransformState Parent { get; } = parent;
         public int ParentRevisionAtCapture { get; } = parentRevisionAtCapture;
         public Vector3d ParentOriginPosition { get; } = parentOriginPosition;
@@ -2666,6 +3127,12 @@ public sealed class CutsceneRuntime
         public float Steering { get; set; }
         public float TargetSteering { get; set; }
         public bool ParkingBrake { get; set; }
+        public CarPhysicsDefinition? CarPhysics { get; set; }
+
+        public CarMotionState CarMotion { get; } = new();
+        public PlanePhysicsDefinition? PlanePhysics { get; set; }
+        public GameTask? VehicleLatchedObstacle { get; set; }
+        public bool VehicleGateReleased { get; set; }
         public float Heading { get; set; }
         public Vector3d Velocity { get; set; }
         public HelicopterPhysicsDefinition? HelicopterPhysics { get; set; }
@@ -2686,6 +3153,7 @@ public sealed class CutsceneRuntime
         public Vector3f QueuedRotorForce { get; set; }
         public Vector3f QueuedRotorTorque { get; set; }
     }
+
 }
 
 /// <summary>The camera and screen treatment produced by the active authored cutscene shot.</summary>

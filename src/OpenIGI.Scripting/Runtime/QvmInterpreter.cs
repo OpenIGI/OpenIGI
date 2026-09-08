@@ -150,6 +150,21 @@ public sealed class QvmInterpreter
         {
             switch (want)
             {
+                case QvmValueKind.None:
+                    // A caller that needs to retain a definition record (rather than coerce it to
+                    // one of the native ABI slots) can request the value exactly as the expression
+                    // produced it.  Symbols are resolved here, matching the numeric/text helpers,
+                    // while strings and identifiers retain their original tag.
+                    QvmValue raw = _values[_depth - 1];
+                    _depth--;
+                    if (raw.Kind == QvmValueKind.Symbol && raw.Symbol is { IsReadable: true } symbol)
+                    {
+                        raw = symbol.Read();
+                    }
+                    value = raw;
+                    evaluated = true;
+                    break;
+
                 case QvmValueKind.Float:
                     evaluated = TryPopNumber(out QvmValue number);
                     value = QvmValue.FromSingle(number.ToSingle());
