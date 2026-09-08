@@ -1456,8 +1456,13 @@ public sealed class CutsceneRuntime
             state.CarPhysics = car;
             state.Steering = 0f;
             state.TargetSteering = 0f;
-            state.Thrust = 0f;
-            state.TargetThrust = 0f;
+
+            // Car::ReadChannels restores both the live throttle and its target from this authored
+            // value on animation tick zero, the way the Heli and Train receivers do. Mission 2's
+            // truck opens its cutscene already carrying 0.6 and coasts down from it.
+            state.OriginalThrust = RealNamed(declared, "Original thrust");
+            state.Thrust = state.OriginalThrust;
+            state.TargetThrust = state.OriginalThrust;
         }
         if (string.Equals(task.Type.Name, "Plane", StringComparison.Ordinal)
             && _vehiclePhysics?.TryGetPlane(Text(declared, WorldScene.ModelParameter), out PlanePhysicsDefinition plane) == true)
@@ -1631,12 +1636,19 @@ public sealed class CutsceneRuntime
                 transform.Speed = 0f;
                 transform.Steering = 0f;
                 transform.TargetSteering = 0f;
-                transform.Thrust = 0f;
-                transform.TargetThrust = 0f;
+
+                // Car::ReadChannels seeds BOTH the live throttle and its target from the task's
+                // authored thrust (+1824 and +1840 from +1856), the way Train::ReadChannels does.
+                // Mission 2's truck opens its cutscene already carrying 0.6 and coasts down from
+                // it; starting from nought leaves it standing there, because the authored channel
+                // only ever sends the -1 hold afterwards.
+                transform.Thrust = transform.OriginalThrust;
+                transform.TargetThrust = transform.OriginalThrust;
                 transform.ParkingBrake = false;
                 transform.Heading = transform.Euler.Z;
                 transform.VehicleLatchedObstacle = null;
                 transform.VehicleGateReleased = false;
+                transform.CarMotion.Reset();
                 program.WriteChannel(1, -1f);
                 program.WriteChannel(2, -2f);
                 transform.IsDynamic = true;
