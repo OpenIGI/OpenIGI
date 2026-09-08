@@ -144,12 +144,11 @@ public sealed class RetailPlaneCutsceneTests
             program.WriteChannel(2, 0.2f);
             program.WriteChannel(3, 0.8f);
 
-            // Reference model for the held packet, seeded from the receiver's actual control and
-            // heading the moment before the first held tick (the authored programme's final values
-            // are not zero). The 0.995 multiplier is the speed-zero term in 0x433B50; this focused
-            // test owns a synthetic packet rather than claiming a full retail flight trace.
+            // Reference model for the held packet, seeded from the receiver's actual control the
+            // moment before the first held tick (the authored programme's final values are not zero).
+            // The 0.995 multiplier is the speed-zero term in 0x433B50; this focused test proves one
+            // receiver application per packet, not the still-untraced body/heading integration.
             Vector3f expectedControl = (Vector3f)st.GetProperty("Control")!.GetValue(transform)!;
-            float expectedHeading = (float)st.GetProperty("Heading")!.GetValue(transform)!;
             Vector3f packet = new(0.5f, -0.3f, 0.2f);
             for (int held = 0; held < 6; held++)
             {
@@ -160,14 +159,11 @@ public sealed class RetailPlaneCutsceneTests
                     ((0.9f * expectedControl.X) + (0.1f * packet.X)) * 0.995f,
                     ((0.9f * expectedControl.Y) + (0.1f * packet.Y)) * 0.995f,
                     ((0.9f * expectedControl.Z) + (0.1f * packet.Z)) * 0.995f);
-                expectedHeading += expectedControl.Z * 0.004f;
 
                 Vector3f actualControl = (Vector3f)st.GetProperty("Control")!.GetValue(transform)!;
-                float actualHeading = (float)st.GetProperty("Heading")!.GetValue(transform)!;
                 Assert.Equal(expectedControl.X, actualControl.X, 5);
                 Assert.Equal(expectedControl.Y, actualControl.Y, 5);
                 Assert.Equal(expectedControl.Z, actualControl.Z, 5);
-                Assert.Equal(expectedHeading, actualHeading, 5);
             }
 
             planesChecked++;
