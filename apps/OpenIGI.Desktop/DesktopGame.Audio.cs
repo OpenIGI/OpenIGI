@@ -819,13 +819,40 @@ internal sealed partial class DesktopGame
         // HumanCollision, MetalLadder and MetalFence in none -- so returning early here would let a
         // burst into a ladder re-arm on every round and machine-gun the next surface it caught.
         _impactSoundQuietUntil = _loop.Clock.TickCount + BulletImpactSounds.QuietTicks(_soundRandom);
-        if (sound.Length == 0)
+
+        if (sound.Length > 0)
+        {
+            _sounds.PlayDefinition(
+                sound,
+                position,
+                pitch: FootstepSounds.Pitch(_soundRandom),
+                priority: 45);
+        }
+
+        // The second half of a retail impact. 0x47C330 runs on the merge path inside the material
+        // window, keeps a SEPARATE timestamp and rand(6)+6 interval of its own, and picks one of four
+        // riccochet_* samples without reading the material at all -- which is why a burst into a fence
+        // is the fence's own ping AND a whizz, arriving on their own two rhythms rather than together.
+        PlayRicochetSound(position);
+    }
+
+    /// <summary>Plays the whizz a round makes coming off a surface, on its own retail limit.</summary>
+    /// <remarks>
+    /// Separate from the material's sample in every way that matters: its own global timestamp, its own
+    /// <c>rand(6)+6</c> interval, and a fixed table of four it reads without consulting the surface.
+    /// A round that glances off calls it directly (<c>0x47BD7B</c>) rather than through the material
+    /// window, so a ricochet always gets its turn.
+    /// </remarks>
+    private void PlayRicochetSound(Vector3d position)
+    {
+        if (_sounds is null || _loop.Clock.TickCount < _ricochetSoundQuietUntil)
         {
             return;
         }
 
+        _ricochetSoundQuietUntil = _loop.Clock.TickCount + BulletImpactSounds.QuietTicks(_soundRandom);
         _sounds.PlayDefinition(
-            sound,
+            BulletImpactSounds.PickRicochet(_soundRandom),
             position,
             pitch: FootstepSounds.Pitch(_soundRandom),
             priority: 45);

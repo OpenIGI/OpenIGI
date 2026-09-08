@@ -14,6 +14,10 @@ namespace OpenIGI.Game.World;
 /// ballistic option reuses them.
 /// </para>
 /// <para>
+/// The material's sample is only half of it: <see cref="RicochetSounds"/> is the other half, on
+/// its own independent limit.
+/// </para>
+/// <para>
 /// A hit on a human takes the <see cref="FleshMaterialName"/> row, which is exactly what that row is
 /// in the table for — like <c>Ground</c>, nothing geometric ever names it.
 /// </para>
@@ -72,6 +76,32 @@ public static class BulletImpactSounds
         return materials.TryGet(surfaceMaterial, out GameMaterial struck)
             ? Pick(struck, random)
             : string.Empty;
+    }
+
+    /// <summary>The four sounds a round makes coming off a surface, whatever it is made of.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A retail impact is TWO sounds, not one.</b> Beside the struck material's own
+    /// <c>bul_*</c> sample, <c>0x47C330</c> plays one of these four at the same contact point — and it
+    /// reads none of the material, so a fence, a wall and a body all whizz alike.
+    /// </para>
+    /// <para>
+    /// The name is spelled with two <c>c</c>s in the retail sound bank and the table is a fixed four
+    /// (<c>off_54083C</c> indexed by <c>rand() % 4</c>), even though the bank also defines a
+    /// <c>riccochet_5</c> that nothing ever picks.
+    /// </para>
+    /// </remarks>
+    public static readonly IReadOnlyList<string> RicochetSounds =
+        ["riccochet_1", "riccochet_2", "riccochet_3", "riccochet_4"];
+
+    /// <summary>Picks one of the four ricochet sounds.</summary>
+    /// <param name="random">The stream the pick is drawn from.</param>
+    /// <returns>A sound definition's name.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="random"/> is <see langword="null"/>.</exception>
+    public static string PickRicochet(IgiRandom random)
+    {
+        ArgumentNullException.ThrowIfNull(random);
+        return RicochetSounds[(int)random.NextBounded((uint)RicochetSounds.Count)];
     }
 
     /// <summary>How long the whole set stays quiet after one plays.</summary>

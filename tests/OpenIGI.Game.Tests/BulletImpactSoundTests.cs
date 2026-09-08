@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using Xunit;
 
@@ -7,6 +7,9 @@ namespace OpenIGI.Game.Tests;
 /// <summary>The ballistic option's impact sounds: the material's own six, retail's pick and limit.</summary>
 public sealed class BulletImpactSoundTests
 {
+    private static readonly string[] RetailRicochetSounds =
+        ["riccochet_1", "riccochet_2", "riccochet_3", "riccochet_4"];
+
     [Fact]
     public void ThePickIsAlwaysOneOfTheMaterialsOwnSix()
     {
@@ -116,5 +119,29 @@ public sealed class BulletImpactSoundTests
         }
 
         Assert.InRange(silent, 400, 600);
+    }
+
+    /// <summary>
+    /// A retail impact is two sounds. Beside the material's own sample, <c>0x47C330</c> picks one of
+    /// four <c>riccochet_*</c> samples — two <c>c</c>s, as the retail sound bank spells it — by
+    /// <c>rand() % 4</c>, reading nothing off the surface.
+    /// </summary>
+    [Fact]
+    public void TheRicochetWhizzIsOneOfFourAndIgnoresTheSurface()
+    {
+        Assert.Equal(RetailRicochetSounds, BulletImpactSounds.RicochetSounds);
+
+        IgiRandom random = new();
+        HashSet<string> seen = [];
+        for (int i = 0; i < 400; i++)
+        {
+            string picked = BulletImpactSounds.PickRicochet(random);
+            Assert.Contains(picked, BulletImpactSounds.RicochetSounds);
+            seen.Add(picked);
+        }
+
+        // The bank also defines riccochet_5, which the retail table does not index and so never plays.
+        Assert.Equal(4, seen.Count);
+        Assert.DoesNotContain("riccochet_5", BulletImpactSounds.RicochetSounds);
     }
 }

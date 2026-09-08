@@ -2215,14 +2215,14 @@ public sealed class PlayerCamera
             }
             else
             {
-                _impacts.Add(Trace(shot, damageFactor, category));
+                ResolveShot(shot, damageFactor, category, held?.PenetrationPower ?? 0f);
             }
         }
     }
 
     /// <summary>Advances the ballistic rounds and lands whatever arrived this tick.</summary>
     /// <remarks>
-    /// The impact side-effects are exactly <see cref="Trace"/>'s, applied on the tick the round
+    /// The impact side-effects are exactly <see cref="ResolveShot"/>'s, applied on the tick the round
     /// arrives rather than the tick it was fired: the hit counters, the AI's ground-impact notice and
     /// the decal. Damage needs nothing here — the <see cref="Humans"/> delegate applied it during the
     /// cast, the same way it does for a ray.
@@ -2275,61 +2275,165 @@ public sealed class PlayerCamera
         }
     }
 
-    // One cast, not the full loop. 0x47B750 keeps casting while range is left, penetrating and
-    // ricocheting; that needs the surface properties the collision index does not carry yet, so this
-    // stops at the first thing hit. What IS retail is where the ray starts, which way it goes and how
-    // long it is -- all three come out of the weapon record. Recorded in TODO.md.
-    private GunImpact Trace(GunProjectile shot, float damageFactor, WeaponCategory category)
+    /// <summary>Resolves one round the way <c>0x47B750</c> does — as a march, not a single cast.</summary>
+    /// <remarks>
+    /// <para>
+    /// The round is hit-scan and settled entirely in the tick it is fired, but it does not stop at the
+    /// first thing it meets. The original loops while range is left, and each surface either stops the
+    /// round, is penetrated, or deflects it — the rules are <see cref="GunShotBallistics"/>, which had
+    /// been written from this same function and then never driven by anything.
+    /// </para>
+    /// <para>
+    /// Each surface's own row supplies the two numbers: <see cref="GameMaterial.BulletResistance"/>
+    /// against the weapon's penetration power (<c>0x47BD88</c>), and
+    /// <see cref="GameMaterial.RicochetAngleDegrees"/> against the angle of arrival (<c>0x47BB96</c>).
+    /// A deflection is allowed once per round and is tested BEFORE penetration, exactly as the original
+    /// orders them, so a grazing round glances rather than punching through.
+    /// </para>
+    /// <para>
+    /// <b>Not modelled:</b> the original's trace reports the surface a round entered and the surface it
+    /// left as two separate rows, and a crossing that reports both — a round passing clean through —
+    /// is silent and unmarked (<c>0x47B9EE</c> jumps straight to the next march step). The port's
+    /// collision index turns every normal to face the ray and records that face winding is not
+    /// established, so entry and exit cannot be told apart here. Every contact is treated as an entry.
+    /// </para>
+    /// </remarks>
+    private void ResolveShot(
+        GunProjectile shot,
+        float damageFactor,
+        WeaponCategory category,
+        float penetrationPower)
     {
         Vector3d direction = new(shot.Direction.X, shot.Direction.Y, shot.Direction.Z);
-        Vector3d end = shot.Origin + (direction * shot.RangeInUnits);
+        Vector3d origin = shot.Origin;
+        float remaining = shot.RangeInUnits;
+        bool deflected = false;
 
-        WorldTraceHit richHit = default;
-        bool struckWall = _walls is not null
-            && _walls.TryTrace(
-                new WorldTraceRequest(shot.Origin, end, WorldTraceMask.World),
-                out richHit);
-        WorldRayHit hit = struckWall ? richHit.RayHit : default;
-
-        // Both, then the nearer. A guard in front of a wall takes the round and the wall stays clean;
-        // one behind it does not, and the wall is marked.
-        HumanHit human = default;
-        bool struckHuman = Humans is { } humans
-            && humans(shot.Origin, end, damageFactor, category, out human)
-            && (!struckWall || human.Distance < hit.Distance);
-
-        if (struckHuman)
+        // The march is bounded by the range it spends, but a surface reporting a zero-length step would
+        // spend none. Cap the passes at the number of impacts one round may record.
+        for (int pass = 0; pass < GunShotBallistics.MaximumRecordedImpacts && remaining > 0f; pass++)
         {
-            HumanHits++;
-            LastHumanZone = human.Zone;
-            return new GunImpact(
-                human.Position,
-                true,
-                shot.RangeInUnits,
-                StruckHuman: true);
-        }
+            Vector3d end = origin + (direction * remaining);
 
-        if (struckWall)
-        {
-            GroundImpact?.Invoke(hit.Position);
+            WorldTraceHit richHit = default;
+            bool struckWall = _walls is not null
+                && _walls.TryTrace(new WorldTraceRequest(origin, end, WorldTraceMask.World), out richHit);
+            WorldRayHit hit = struckWall ? richHit.RayHit : default;
 
-            // The surface decides what the hit looks like, out of the material its own face names.
-            if (_materials is { } materials)
+            // Both, then the nearer. A guard in front of a wall takes the round and the wall stays
+            // clean; one behind it does not, and the wall is marked.
+            HumanHit human = default;
+            bool struckHuman = Humans is { } humans
+                && humans(origin, end, damageFactor, category, out human)
+                && (!struckWall || human.Distance < hit.Distance);
+
+            if (struckHuman)
             {
-                Marks.TryAdd(hit, materials);
+                HumanHits++;
+                LastHumanZone = human.Zone;
+                _impacts.Add(new GunImpact(human.Position, true, remaining, StruckHuman: true));
+                return;
             }
 
-            return new GunImpact(
+            if (!struckWall)
+            {
+                _impacts.Add(new GunImpact(end, false, remaining));
+                return;
+            }
+
+            GroundImpact?.Invoke(hit.Position);
+
+            // The surface decides what the hit looks like, out of the material its own face names. A
+            // row that records no impact leaves nothing — Fence and MetalFence are two such rows.
+            if (_materials is { } table)
+            {
+                Marks.TryAdd(hit, table);
+            }
+
+            _impacts.Add(new GunImpact(
                 hit.Position,
                 true,
-                shot.RangeInUnits,
+                remaining,
                 richHit.Owner,
                 richHit.Placement,
-                Wall: hit);
+                Wall: hit));
+
+            remaining = GunShotBallistics.ConsumeRange(remaining, (float)hit.Distance);
+
+            GameMaterial? struck = _materials is { } rows && rows.TryGet(hit.Material, out GameMaterial row)
+                ? row
+                : null;
+            if (struck is null || remaining <= 0f)
+            {
+                return;
+            }
+
+            // The graze first. The collision index has already turned the normal to face the ray, so
+            // the angle between the reversed travel and that normal is the incidence 0x4B2B30 returns:
+            // near zero arriving square on, near a right angle arriving along the surface.
+            if (GunShotBallistics.CanDeflect(deflected))
+            {
+                float incidence = IncidenceRadians(direction, hit.Normal);
+                if (_random.NextSingle()
+                    < GunShotBallistics.DeflectionChance(struck.RicochetAngleDegrees, incidence))
+                {
+                    deflected = true;
+                    direction = Reflect(direction, hit.Normal);
+                    origin = StepOff(hit.Position, direction);
+                    continue;
+                }
+            }
+
+            // Then the bite. The original will not let a round through a surface whose trace named no
+            // object, whatever the margin, so a hit on the bare level shell always stops it.
+            if (richHit.Owner is null
+                || !GunShotBallistics.Penetrates(
+                    penetrationPower, struck.BulletResistance, _random.NextSingle()))
+            {
+                return;
+            }
+
+            origin = StepOff(hit.Position, direction);
+        }
+    }
+
+    /// <summary>The angle a round arrives at, measured off the surface normal.</summary>
+    internal static float IncidenceRadians(Vector3d direction, Vector3f normal)
+    {
+        double length = Math.Sqrt(
+            (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
+        if (length <= 0.0)
+        {
+            return 0f;
         }
 
-        return new GunImpact(end, false, shot.RangeInUnits);
+        double dot = ((-direction.X / length) * normal.X)
+            + ((-direction.Y / length) * normal.Y)
+            + ((-direction.Z / length) * normal.Z);
+        return (float)Math.Acos(Math.Clamp(dot, -1.0, 1.0));
     }
+
+    /// <summary>Mirrors a direction about a surface normal, as the deflection at <c>0x47BC8E</c> does.</summary>
+    internal static Vector3d Reflect(Vector3d direction, Vector3f normal)
+    {
+        double dot = (direction.X * normal.X) + (direction.Y * normal.Y) + (direction.Z * normal.Z);
+        Vector3d reflected = new(
+            direction.X - (2.0 * dot * normal.X),
+            direction.Y - (2.0 * dot * normal.Y),
+            direction.Z - (2.0 * dot * normal.Z));
+        double length = Math.Sqrt(
+            (reflected.X * reflected.X) + (reflected.Y * reflected.Y) + (reflected.Z * reflected.Z));
+        return length > 0.0
+            ? new Vector3d(reflected.X / length, reflected.Y / length, reflected.Z / length)
+            : direction;
+    }
+
+    /// <summary>Where the next cast starts — five millimetres past the face, so it cannot meet it again.</summary>
+    private static Vector3d StepOff(Vector3d position, Vector3d direction) =>
+        new(
+            position.X + (direction.X * GunShotBallistics.PenetrationStepOffUnits),
+            position.Y + (direction.Y * GunShotBallistics.PenetrationStepOffUnits),
+            position.Z + (direction.Z * GunShotBallistics.PenetrationStepOffUnits));
 
     // 0x45E060, for the slots this port can supply. Every action slot carries the MASKED BIT VALUE and
     // never 1, because the original stores `mask & bit` -- a consumer that compared against 1 would
