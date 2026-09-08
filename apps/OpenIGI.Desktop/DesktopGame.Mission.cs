@@ -1499,6 +1499,23 @@ internal sealed partial class DesktopGame
                 _worldMaterials = materialTable;
                 _logger.Information("Material", $"Read {materialCount} game material(s).");
 
+                // What the open ground is made of. The terrain declares it the same way a mesh face
+                // does -- see FootstepSounds.TerrainGameMaterialIndex -- and it is Snow in the Arctic
+                // missions rather than Ground, which is the whole difference in how they sound.
+                int? terrainRow = loaded.Terrain is { } terrainData
+                    ? FootstepSounds.TerrainGameMaterialIndex(terrainData.Materials)
+                    : null;
+                candidate.TerrainGameMaterialIndex = terrainRow;
+                if (_soldiers is not null)
+                {
+                    _soldiers.TerrainGameMaterialIndex = terrainRow;
+                }
+
+                if (terrainRow is int row && materialTable.TryGet(row, out GameMaterial groundRow))
+                {
+                    _logger.Information("Material", $"Terrain walks on '{groundRow.Name}' (row {row}).");
+                }
+
                 _gunPickups = GunPickupRegistry.Build(levelRoot, weaponRoster, ammoTable);
                 GunPickupRegistry gunPickups = _gunPickups;
                 candidate.UseGunPickups(gunPickups);
@@ -2390,6 +2407,19 @@ internal sealed partial class DesktopGame
     /// <summary>Routes a resolved body landing into the desktop-owned presentation and death state.</summary>
     private void ResolvePlayerFallImpact(PlayerCamera player, HumanFallImpact impact)
     {
+        // 0x408460 arms the camera's dip on every ground contact, before it has decided whether the
+        // landing hurt: a step off a crate drops the view a little, a long drop drops it the full
+        // quarter-metre. 0x4659B0 is two stores, so this is unconditional and cannot fail.
+        player.InstallLandingViewKick(impact.ViewKickUnits);
+
+        // The ground's own landing sound, which is what every harmless drop sounds like. Both airborne
+        // states play it on contact from the struck material, independently of the fall-damage cue
+        // below -- a hurting fall is heard twice, once as the surface and once as the player.
+        if (player.TakeLandingSound() is { } landing)
+        {
+            PlayLandingSound(landing);
+        }
+
         // State 35 names one of these three definitions only when damage is non-zero. Like the player's
         // own hit and death sounds it belongs to the listener, so it is flat rather than world-panned.
         if (!string.IsNullOrEmpty(impact.SoundName))

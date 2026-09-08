@@ -92,7 +92,14 @@ public sealed class PlayerCamera
     private Vector3d _wireDirection;
     private double _wireSpeed;
     private bool _mapComputerOpen;
-    private bool _running;
+    /// <summary>
+    /// The walk/run latch. <b>True is the retail default</b>: the byte the toggle flips,
+    /// <c>HumanPlayer+3397</c>, is zeroed by the constructor at <c>0x410370</c>, and the flag word is
+    /// built with <c>if (byte) flags |= 0x40000; else flags &amp;= ~0x40000</c> at <c>0x4105EA</c> — so a
+    /// zero byte means the <i>walking</i> bit is clear, which selects the running set, states 1–8.
+    /// A player therefore spawns running and the first press of the toggle makes them walk.
+    /// </summary>
+    private bool _running = true;
     private GenericPickupRegistry? _genericPickups;
 
     /// <summary>Initializes the player camera.</summary>
@@ -111,6 +118,7 @@ public sealed class PlayerCamera
     // to the view however fast the frames come.
     private Vector3d _prevTickEye;
     private Vector3d _tickEye;
+    private readonly HumanLandingViewKick _landingKick = new();
     private double _prevTickWallPullback;
     private double _tickWallPullback;
     private Vector3f _prevTickRootMotion;
@@ -273,6 +281,15 @@ public sealed class PlayerCamera
         ArgumentNullException.ThrowIfNull(materials);
         _materials = materials;
     }
+
+    /// <summary>The game material the level's terrain is made of, or null to fall back to <c>Ground</c>.</summary>
+    /// <remarks>
+    /// Read from the level's own terrain materials — see
+    /// <see cref="FootstepSounds.TerrainGameMaterialIndex"/>. It is <c>Snow</c> in the four Arctic
+    /// missions and <c>Ground</c> everywhere else, which is the difference between crunching through
+    /// snow and treading on earth.
+    /// </remarks>
+    public int? TerrainGameMaterialIndex { get; set; }
 
     /// <summary>
     /// Gets the pitch the view is actually drawn at — the look, plus the recoil sitting on top of it.
@@ -577,7 +594,24 @@ public sealed class PlayerCamera
     }
 
     /// <summary>Gets the eye the scene is drawn from, in the renderer's metres.</summary>
-    public Camera3D Camera => new(ToMetres(_body.Eye), Camera3D.LookRotation(_body.Yaw, AimPitch));
+    public Camera3D Camera =>
+        new(ToMetres(_body.Eye + LandingKickOffsetUnits), Camera3D.LookRotation(_body.Yaw, AimPitch));
+
+    /// <summary>Gets the dip the last landing installed in the view.</summary>
+    /// <remarks>
+    /// Armed by <see cref="InstallLandingViewKick"/> off the body's fall impact and stepped beside the
+    /// weapon sway, which is where <c>0x464BD0</c> steps both.
+    /// </remarks>
+    public HumanLandingViewKick LandingKick => _landingKick;
+
+    /// <summary>The landing dip as a world-space displacement, in units — <c>0x464BD0</c> adds it to Z.</summary>
+    private Vector3d LandingKickOffsetUnits => new(0.0, 0.0, _landingKick.OffsetUnits);
+
+    /// <summary>Arms the landing dip, as <c>0x408460</c> does through <c>0x4659B0</c>.</summary>
+    /// <param name="amplitudeUnits">
+    /// <see cref="HumanFallImpact.ViewKickUnits"/> from the landing the body just resolved.
+    /// </param>
+    public void InstallLandingViewKick(float amplitudeUnits) => _landingKick.Install(amplitudeUnits);
 
     /// <summary>Gets where the player is standing, in metres, for diagnostics.</summary>
     public Vector3d Position => ToMetres(_body.Position);
@@ -620,29 +654,91 @@ public sealed class PlayerCamera
             return null;
         }
 
-        // The probe answers only for OBJECTS. A step that finds nothing solid landed on open terrain,
-        // which the original resolves by asking the terrain's own task -- something this port has no
-        // equivalent of, so it takes the Ground row by name instead.
-        (Vector3d from, Vector3d to) = FootstepSounds.Probe(_body.Position);
-        Vector3d where = _body.Position;
-        GameMaterial material;
-
-        if (_body.Walls is { } walls
-            && walls(from, to, out WorldRayHit hit)
-            && _materials.TryGet(hit.Material, out GameMaterial struck))
-        {
-            material = struck;
-            where = hit.Position;
-        }
-        else if (!_materials.TryGetByName(FootstepSounds.TerrainMaterialName, out material))
+        if (!TryGetGroundMaterial(out GameMaterial material, out Vector3d where))
         {
             return null;
         }
 
-        string sound = FootstepSounds.Next(material, ref _footCursor);
-        return sound.Length == 0
-            ? null
-            : new Footstep(sound, where, FootstepSounds.HearingRadiusInUnits(material));
+        string sound = FootstepSounds.Next(material, ref _footCursor, out int slot);
+        if (sound.Length == 0)
+        {
+            return null;
+        }
+
+        // The crouch byte does two things in 0x463920: it drops the voice to two thirds and it skips
+        // the AI hearing event. A zero radius carries the second half to the caller.
+        bool crouched = _body.IsCrouched;
+        return new Footstep(
+            sound,
+            where,
+            crouched ? 0.0 : FootstepSounds.HearingRadiusInUnits(material),
+            slot,
+            crouched ? FootstepSounds.CrouchedVolumeScale : 1f);
+    }
+
+    /// <summary>The sound the ground makes when the player lands on it, or null when it names none.</summary>
+    /// <returns>The definition name and where to play it, in engine units.</returns>
+    /// <remarks>
+    /// Both airborne states play the struck material's land sound on contact — <c>0x40BE40</c> for a
+    /// fall and <c>0x40BBD0</c> for a jump — reading the same <c>Human+1772</c> the footstep handler
+    /// reads. It is separate from, and additional to, the <c>player_fall_N</c> that a damaging drop
+    /// plays out of <c>0x408460</c>.
+    /// </remarks>
+    public (string Sound, Vector3d PositionInUnits)? TakeLandingSound()
+    {
+        if (!TryGetGroundMaterial(out GameMaterial material, out Vector3d where))
+        {
+            return null;
+        }
+
+        string sound = FootstepSounds.LandSound(material);
+        return sound.Length == 0 ? null : (sound, where);
+    }
+
+    /// <summary>Finds the material under the feet with the original's own short downward probe.</summary>
+    /// <param name="material">Receives the material.</param>
+    /// <param name="where">Receives the ground contact point, in engine units.</param>
+    /// <returns><see langword="false"/> when there is no material table, or no row to fall back to.</returns>
+    /// <remarks>
+    /// The probe answers only for OBJECTS. A step that finds nothing solid landed on open terrain,
+    /// which the original resolves by asking the terrain's own task -- something this port has no
+    /// equivalent of, so it takes the Ground row by name instead.
+    /// </remarks>
+    private bool TryGetGroundMaterial(out GameMaterial material, out Vector3d where)
+    {
+        (Vector3d from, Vector3d to) = FootstepSounds.Probe(_body.Position);
+        where = _body.Position;
+
+        if (_materials is null)
+        {
+            material = null!;
+            return false;
+        }
+
+        // The SURFACE cast, not the body's. The player moves against collision level one -- the
+        // human-collision hull, every face of which is material 21 and names no walk sound at all --
+        // so probing with it found a floor made of nothing and left every step on placed geometry
+        // silent. The general cast is the geometry bullets hit, and its faces carry the real materials:
+        // wood, concrete, metal, gravel. The guards were already using it.
+        //
+        // A struck face still only answers if it names something to walk on; see FootstepSounds.NamesAWalk.
+        if (_walls?.Caster() is { } walls
+            && walls(from, to, out WorldRayHit hit)
+            && _materials.TryGet(hit.Material, out GameMaterial struck)
+            && FootstepSounds.NamesAWalk(struck))
+        {
+            material = struck;
+            where = hit.Position;
+            return true;
+        }
+
+        // Open terrain: the level says what its ground is made of, exactly as a face does.
+        if (TerrainGameMaterialIndex is int terrain && _materials.TryGet(terrain, out material))
+        {
+            return true;
+        }
+
+        return _materials.TryGetByName(FootstepSounds.TerrainMaterialName, out material);
     }
 
     /// <summary>Gets whether the player is crouched.</summary>
@@ -661,8 +757,10 @@ public sealed class PlayerCamera
         _body.Position = new Vector3d(at.X * UnitsPerMetre, at.Y * UnitsPerMetre, at.Z * UnitsPerMetre);
         _body.Yaw = yaw;
 
-        // A placement is a teleport; the rig's tick pair must not be interpolated across it.
+        // A placement is a teleport; the rig's tick pair must not be interpolated across it, and a
+        // landing dip still playing belongs to the ground that was left behind.
         HasViewTickPair = false;
+        _landingKick.Reset();
         return _body.PlaceOnGround(terrain);
     }
 
@@ -877,6 +975,7 @@ public sealed class PlayerCamera
         _body.Yaw = spawn.Gamma;
         _body.Pitch = 0f;
         HasViewTickPair = false;
+        _landingKick.Reset();
 
         WorldRayCast? liveWalls = _body.Walls;
         if (registrationGround is not null)
@@ -1085,6 +1184,10 @@ public sealed class PlayerCamera
         // Where 0x464BD0 steps it: after the state machines have read it and before the rig is placed.
         _weapons?.Sway.Advance();
 
+        // The landing dip is stepped by the same function, in the same place, and for the same reason:
+        // it displaces the camera this tick places rather than the body the state machines just moved.
+        _landingKick.Advance();
+
         PoseChanged = true;
         SyncView();
 
@@ -1118,6 +1221,10 @@ public sealed class PlayerCamera
         TickWeapons();
         _view?.Tick();
         _weapons?.Sway.Advance();
+
+        // 0x464BD0 runs whatever the locomotion state is, so a dip that began before the computer was
+        // opened keeps playing out rather than freezing the view part-way down.
+        _landingKick.Advance();
         PoseChanged = true;
         SyncView();
         CaptureViewTickState();
@@ -1376,8 +1483,12 @@ public sealed class PlayerCamera
             return;
         }
 
-        _prevTickEye = HasViewTickPair ? _tickEye : view.Eye;
-        _tickEye = view.Eye;
+        // The dip belongs to the camera the frame is drawn from, so it is folded in here rather than at
+        // the eye the body reports: the blend between the two ticks then carries it for free, and the
+        // listener and the rig stay on the same head they always were.
+        Vector3d eye = view.Eye + LandingKickOffsetUnits;
+        _prevTickEye = HasViewTickPair ? _tickEye : eye;
+        _tickEye = eye;
 
         double wallPullback = view.WallPullbackInUnits;
         _prevTickWallPullback = HasViewTickPair ? _tickWallPullback : wallPullback;

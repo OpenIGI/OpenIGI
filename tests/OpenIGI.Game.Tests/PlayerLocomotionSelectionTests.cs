@@ -49,15 +49,34 @@ public sealed class PlayerLocomotionSelectionTests
             WeaponAction.Crouch);
     }
 
-    [Fact]
-    public void AStationaryJumpSelectsTheJumpStateBeforeCrouch()
+    [Theory]
+    [InlineData(0f, 0f, true)]
+    [InlineData(0f, 0f, false)]
+    [InlineData(1f, 0f, true)]
+    [InlineData(1f, 0f, false)]
+    [InlineData(0f, 1f, true)]
+    [InlineData(-1f, 0f, true)]
+    public void AnyStandingJumpReachesTheJumpState(float forward, float strafe, bool run)
     {
+        // State 0 tests its directions before the jump edge, but the movement state it hands to tests
+        // the jump edge as its next branch and is called in the same tick -- so a moving jump ends in
+        // 28 just as a stationary one does.
         Assert.Equal(
             HumanLocomotionGraph.Jump,
-            Tick(new PlayerCommand(0f, 0f, 0f, 0f, Run: true, Crouch: false, Jump: true)).State);
-        Assert.Equal(
-            HumanLocomotionGraph.Jump,
-            Tick(new PlayerCommand(0f, 0f, 0f, 0f, Run: false, Crouch: true, Jump: true)).State);
+            Tick(new PlayerCommand(forward, strafe, 0f, 0f, run, Crouch: false, Jump: true)).State);
+    }
+
+    [Theory]
+    [InlineData(0f, 0f)]
+    [InlineData(1f, 0f)]
+    [InlineData(0f, -1f)]
+    public void ACrouchedJumpIsRefusedBecauseNoCrouchStateNamesTwentyEight(float forward, float strafe)
+    {
+        // Rows 19 and 20-27 of the recovered graph contain no 28. The crouch keeps its own state.
+        int state = Tick(new PlayerCommand(forward, strafe, 0f, 0f, Run: true, Crouch: true, Jump: true)).State;
+
+        Assert.NotEqual(HumanLocomotionGraph.Jump, state);
+        Assert.True(state == HumanLocomotionStates.CrouchingIdle || (state >= 20 && state <= 27));
     }
 
     [Fact]

@@ -109,13 +109,34 @@ public sealed class MefCollisionMesh
     /// <param name="material">The face's material index — <see cref="MefCollisionFace.Material"/>.</param>
     /// <returns>
     /// The row of the global game-material table this face is made of (0 = Air, 14 = Glass, 18 = Fence,
-    /// …), read from the <c>TAMC</c> row's <c>u16</c> at offset 8. Falls back to the per-mesh index when
-    /// no global mapping is present (a hand-built mesh) or the row names no global material (<c>0xFFFF</c>).
+    /// …), read from the <c>TAMC</c> row's <c>u16</c> at offset 8.
     /// </returns>
-    public int GlobalMaterial(int material) =>
-        _materialGlobal is { } table && (uint)material < (uint)table.Length && table[material] != NotAPortal
-            ? table[material]
-            : material;
+    /// <remarks>
+    /// <para>
+    /// <b>A row of <c>0xFFFF</c> means <see cref="DefaultGlobalMaterial"/>, not the per-mesh index.</b>
+    /// <c>0x4C1840</c> writes the trace's material as
+    /// <c>scene[3388 + 4·u16]</c>, and takes the branch <c>scene[3392]</c> — which is that same array at
+    /// index <b>1</b> — when the u16 is <c>0xFFFF</c>. Returning the per-mesh index there would name an
+    /// arbitrary row instead.
+    /// </para>
+    /// <para>
+    /// A mesh with no global table at all is a hand-built one, which has no retail answer; it keeps its
+    /// own index so tests can name materials directly.
+    /// </para>
+    /// </remarks>
+    public int GlobalMaterial(int material)
+    {
+        if (_materialGlobal is not { } table || (uint)material >= (uint)table.Length)
+        {
+            return material;
+        }
+
+        return table[material] == NotAPortal ? DefaultGlobalMaterial : table[material];
+    }
+
+    /// <summary>The row a face falls back to when it names no global material — <c>Ground</c>.</summary>
+    /// <remarks><c>scene+3392</c> in <c>0x4C1840</c>, which is index 1 of the per-level material array.</remarks>
+    public const int DefaultGlobalMaterial = 1;
 
     /// <summary>Gets the collision triangles.</summary>
     public IReadOnlyList<MefCollisionFace> Faces { get; }

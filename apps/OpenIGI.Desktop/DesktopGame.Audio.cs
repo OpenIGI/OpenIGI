@@ -651,11 +651,46 @@ internal sealed partial class DesktopGame
             return;
         }
 
+        // One pitch for the whole step: 0x463920 computes it once and hands the same value to the
+        // material voice and to the rain voice, so the two halves of a wet step stay together.
+        float pitch = FootstepSounds.Pitch(_soundRandom);
+
         _sounds.PlayDefinition(
             step.Sound,
             step.PositionInUnits,
-            pitch: FootstepSounds.Pitch(_soundRandom),
+            gain: step.VolumeScale,
+            pitch: pitch,
             priority: 40);
+
+        // The wet layer is played AS WELL AS the material's own sound, never instead of it. Its gate
+        // is 0x416FB0, a single global byte -- the level's weather flag rather than a shelter test --
+        // which is what the rain ambience already reads through the RainEffect task.
+        if (_rain?.IsWeatherEnabled == true)
+        {
+            _sounds.PlayDefinition(
+                FootstepSounds.RainSoundName(step.CycleSlot),
+                step.PositionInUnits,
+                gain: step.VolumeScale,
+                pitch: pitch,
+                priority: 40);
+        }
+    }
+
+    /// <summary>Plays the sound the ground itself makes when the player lands on it.</summary>
+    /// <param name="landing">The definition name and where the feet touched down.</param>
+    /// <remarks>
+    /// Flat: <c>0x40BE40</c> and <c>0x40BBD0</c> both start this voice and then leave it alone -- no
+    /// pitch variation and no volume change, unlike a footstep. Priority sits above a footfall because
+    /// a landing is a single deliberate event rather than one of a stream.
+    /// </remarks>
+    private void PlayLandingSound((string Sound, Vector3d PositionInUnits) landing)
+    {
+        if (_sounds is null || landing.Sound.Length == 0)
+        {
+            return;
+        }
+
+        _sounds.PlayDefinition(landing.Sound, landing.PositionInUnits, priority: 60);
     }
 
     /// <summary>The name the remaster's own impact sound is registered and played under.</summary>
