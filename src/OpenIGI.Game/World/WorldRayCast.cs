@@ -18,12 +18,24 @@ namespace OpenIGI.Game.World;
 /// task class, so a round through glass and into brick leaves two different marks without the shot
 /// knowing about either. Carrying the index here is what makes that lookup possible at all.
 /// </para>
+/// <para>
+/// <b>Which side was crossed is carried for the same reason.</b> The original's surface test
+/// (<c>0x4CD300</c>) reports an entry row and an exit row as two complementary flags —
+/// <c>*a7 = c0; *a8 = !c0</c>, so exactly one is ever set — and the shot resolution branches on
+/// which: an entry crossing sounds and marks the surface, an exit crossing leaves only the exit
+/// decal and no sound at all. The test itself is the face's own facing against the ray, which is
+/// computed here anyway in order to turn the normal towards the ray.
+/// </para>
 /// </remarks>
+/// <param name="IsExit">
+/// Whether the ray crossed the surface's BACK face — leaving solid rather than entering it.
+/// </param>
 public readonly record struct WorldRayHit(
     Vector3d Position,
     Vector3f Normal,
     double Distance,
-    int Material = 0);
+    int Material = 0,
+    bool IsExit = false);
 
 /// <summary>Casts a ray at the world and reports the nearest surface it meets.</summary>
 /// <param name="origin">Where the ray starts, in world units.</param>

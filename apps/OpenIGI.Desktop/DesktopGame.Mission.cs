@@ -1682,6 +1682,10 @@ internal sealed partial class DesktopGame
                     };
                     candidate.GroundImpact = impact => guards.NotifyGroundImpact(impact, candidate.Body.Position);
 
+                    // A glancing round whizzes where it turned, on the ricochet sound's own limit --
+                    // 0x47BD7B sounds it there directly rather than through the material's window.
+                    candidate.Deflected = PlayRicochetSound;
+
                     // One grenade pool for both throwers: the player's own and every guard's lob fly,
                     // bounce and detonate through the same simulation and the same drain.
                     guards.SetGrenades(candidate.Grenades);

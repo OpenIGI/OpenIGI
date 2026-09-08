@@ -2291,11 +2291,12 @@ public sealed class PlayerCamera
     /// orders them, so a grazing round glances rather than punching through.
     /// </para>
     /// <para>
-    /// <b>Not modelled:</b> the original's trace reports the surface a round entered and the surface it
-    /// left as two separate rows, and a crossing that reports both — a round passing clean through —
-    /// is silent and unmarked (<c>0x47B9EE</c> jumps straight to the next march step). The port's
-    /// collision index turns every normal to face the ray and records that face winding is not
-    /// established, so entry and exit cannot be told apart here. Every contact is treated as an entry.
+    /// A crossing is an <b>entry</b> or an <b>exit</b>, never both: <c>0x4CD300</c> reports the two as
+    /// the halves of one condition (<c>*a7 = c0; *a8 = !c0</c>), so the pair the trace hands back always
+    /// has exactly one side set. An entry sounds and marks the surface and is what penetration and
+    /// deflection are tested on; an exit leaves only the far-side decal, silently, and arms the latch
+    /// that stops the round on its next entry (<c>0x47BB0A</c>) — which is what keeps a round that
+    /// punched through a wall from carrying on through the whole level.
     /// </para>
     /// </remarks>
     private void ResolveShot(
@@ -2308,6 +2309,7 @@ public sealed class PlayerCamera
         Vector3d origin = shot.Origin;
         float remaining = shot.RangeInUnits;
         bool deflected = false;
+        bool leftASurface = false;
 
         // The march is bounded by the range it spends, but a surface reporting a zero-length step would
         // spend none. Cap the passes at the number of impacts one round may record.
@@ -2341,6 +2343,27 @@ public sealed class PlayerCamera
                 return;
             }
 
+            remaining = GunShotBallistics.ConsumeRange(remaining, (float)hit.Distance);
+
+            // Coming OUT of something. The original marks the far side and says nothing: no sound, no
+            // hit message, no penetration test. It only remembers that it happened.
+            if (hit.IsExit)
+            {
+                if (_materials is { } far)
+                {
+                    Marks.TryAdd(hit, far, isEntry: false);
+                }
+
+                leftASurface = true;
+                if (remaining <= 0f)
+                {
+                    return;
+                }
+
+                origin = StepOff(hit.Position, direction);
+                continue;
+            }
+
             GroundImpact?.Invoke(hit.Position);
 
             // The surface decides what the hit looks like, out of the material its own face names. A
@@ -2358,7 +2381,12 @@ public sealed class PlayerCamera
                 richHit.Placement,
                 Wall: hit));
 
-            remaining = GunShotBallistics.ConsumeRange(remaining, (float)hit.Distance);
+            // A round that has already come out of something stops on the next thing it enters,
+            // whatever that thing is made of — it has spent its one pass through.
+            if (leftASurface)
+            {
+                return;
+            }
 
             GameMaterial? struck = _materials is { } rows && rows.TryGet(hit.Material, out GameMaterial row)
                 ? row
@@ -2377,7 +2405,10 @@ public sealed class PlayerCamera
                 if (_random.NextSingle()
                     < GunShotBallistics.DeflectionChance(struck.RicochetAngleDegrees, incidence))
                 {
+                    // 0x47BD7B sounds the whizz directly here rather than through the material's
+                    // window, so a round that glances always gets one.
                     deflected = true;
+                    Deflected?.Invoke(hit.Position);
                     direction = Reflect(direction, hit.Normal);
                     origin = StepOff(hit.Position, direction);
                     continue;
@@ -2396,6 +2427,13 @@ public sealed class PlayerCamera
             origin = StepOff(hit.Position, direction);
         }
     }
+
+    /// <summary>Raised where a round glanced off a surface, so the whizz can be sounded there.</summary>
+    /// <remarks>
+    /// Separate from the ordinary contact notice because the original sounds a deflection directly at
+    /// <c>0x47BD7B</c>, outside the material's own quiet window.
+    /// </remarks>
+    public Action<Vector3d>? Deflected { get; set; }
 
     /// <summary>The angle a round arrives at, measured off the surface normal.</summary>
     internal static float IncidenceRadians(Vector3d direction, Vector3f normal)
