@@ -51,6 +51,7 @@ public sealed class CutsceneRuntime
     private readonly Dictionary<GameTask, int> _taskOrder = [];
     private readonly Dictionary<GameTask, AttachmentState> _attachments = [];
     private readonly Dictionary<GameTask, CarWheel[]> _carWheels = [];
+    private readonly Dictionary<WorldPlacement, int> _carWheelIndices = [];
     private readonly Dictionary<GameTask, float> _trainTailOffsets = [];
     private readonly Func<string, ScriptArguments, QvmValue?>? _hostNative;
     private readonly Action<CutsceneSoundEvent>? _soundChanged;
@@ -580,6 +581,7 @@ public sealed class CutsceneRuntime
     {
         ArgumentNullException.ThrowIfNull(scene);
         _carWheels.Clear();
+        _carWheelIndices.Clear();
         Dictionary<GameTask, List<WorldPlacement>> byOwner = [];
         foreach (WorldPlacement placement in scene.Placements)
         {
@@ -605,18 +607,55 @@ public sealed class CutsceneRuntime
                 continue;
             }
 
-            CarWheel[] wheels = new CarWheel[placements.Count];
+            // Where each drawn wheel sits in the body's own axes.
+            Vector3d[] drawn = new Vector3d[placements.Count];
+            double acrossTotal = 0d;
             for (int i = 0; i < placements.Count; i++)
             {
                 Vector3d placementUnits = placements[i].Position * WorldScene.UnitsPerMetre;
-                Vector3d offset = state.AuthoredOrientation.Transform(placementUnits - state.OriginPosition);
+                drawn[i] = state.AuthoredOrientation.Transform(placementUnits - state.OriginPosition);
+                acrossTotal += Math.Abs(drawn[i].X);
+            }
+
+            double acrossMagnitude = placements.Count > 0 ? acrossTotal / placements.Count : 0d;
+
+            // Forces are applied at the WHEEL BODIES, of which there are fewer than drawn wheels: a
+            // tandem rear pair shares one. Each body sits at the outermost drawn wheel that refers
+            // to it, and an axle is symmetric about the body's centreline, so the across offset is
+            // the mean of the drawn magnitudes rather than the wheel model's own origin. Reading a
+            // running game back confirms both: retail's four bodies on the Mission 1 truck are at
+            // (-0.79, +2.81), (-0.79, -2.29), (+0.85, +2.81) and (+0.85, -2.29) metres, which this
+            // reproduces to within five centimetres.
+            Dictionary<int, Vector3d> bodyOffsets = [];
+            for (int i = 0; i < placements.Count && i < physics.Wheels.Count; i++)
+            {
+                CarWheelDefinition entry = physics.Wheels[i];
+                int slot = entry.BodyIndex >= 0 ? entry.BodyIndex : -10 - entry.BodyIndex;
+                Vector3d candidate = new(
+                    Math.Sign(drawn[i].X) * acrossMagnitude,
+                    drawn[i].Y,
+                    drawn[i].Z);
+                if (!bodyOffsets.TryGetValue(slot, out Vector3d held)
+                    || Math.Abs(candidate.Y) > Math.Abs(held.Y))
+                {
+                    bodyOffsets[slot] = candidate;
+                }
+            }
+
+            CarWheel[] wheels = new CarWheel[placements.Count];
+            for (int i = 0; i < placements.Count; i++)
+            {
                 CarWheelDefinition definition = i < physics.Wheels.Count
                     ? physics.Wheels[i]
                     : new CarWheelDefinition(false, false, 0f, -1, 0f, 0f);
+                int slot = definition.BodyIndex >= 0 ? definition.BodyIndex : -10 - definition.BodyIndex;
+                Vector3d offset = bodyOffsets.TryGetValue(slot, out Vector3d bodyOffset)
+                    ? bodyOffset
+                    : drawn[i];
                 CarBodyDefinition? body = null;
                 for (int b = 0; b < physics.Bodies.Count; b++)
                 {
-                    if (physics.Bodies[b].Index == definition.BodyIndex)
+                    if (physics.Bodies[b].Index == slot)
                     {
                         body = physics.Bodies[b];
                         break;
@@ -631,6 +670,10 @@ public sealed class CutsceneRuntime
             }
 
             _carWheels[owner] = wheels;
+            for (int i = 0; i < placements.Count; i++)
+            {
+                _carWheelIndices[placements[i]] = i;
+            }
         }
     }
 
@@ -789,8 +832,9 @@ public sealed class CutsceneRuntime
             return false;
         }
 
-        int index = Array.FindIndex(wheels, wheel => wheel.OffsetUnits == WheelOffset(placement, state));
-        bool steerable = index >= 0 && wheels[index].Definition.Steerable;
+        bool steerable = _carWheelIndices.TryGetValue(placement, out int index)
+            && index < wheels.Length
+            && wheels[index].Definition.Steerable;
         rotation = Matrix3f.RotationX((float)state.CarMotion.WheelRoll);
         if (steerable && state.CarMotion.WheelSteer != 0d)
         {
@@ -799,10 +843,6 @@ public sealed class CutsceneRuntime
 
         return true;
     }
-
-    private static Vector3d WheelOffset(WorldPlacement placement, TransformState state) =>
-        state.AuthoredOrientation.Transform(
-            (placement.Position * WorldScene.UnitsPerMetre) - state.OriginPosition);
 
     /// <summary>Builds the repeated orientations emitted by retail <c>RotorPrimitive::Draw</c>.</summary>
     public bool TryGetRotorDrawState(WorldPlacement placement, out RotorDrawState draw)

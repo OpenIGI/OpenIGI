@@ -176,9 +176,11 @@ public static class CarDynamics
                 double magnitude =
                     ((double)physics.EngineForce * thrust * GravityUnitsPerTickSquared / driven) - speed;
 
-                // 0x430D10 rotates the drive direction by the NEGATIVE steer angle (its
-                // sub_4B3BE0 call takes -v54) while the tyre model below takes the positive one.
-                Vector3d drive = ((forward * cos) - (lateral * sin)) * magnitude;
+                // Toward the across axis for a positive input. 0x430D10 hands sub_4B3BE0 the
+                // negated angle, but that builds the rotation the other way round, so the net
+                // effect is this: a probe of the retail game shows the truck's forward axis turning
+                // onto its across axis while the smoothed steering is positive.
+                Vector3d drive = ((forward * cos) + (lateral * sin)) * magnitude;
                 force += drive;
                 torque += Cross(offset, drive);
             }
@@ -198,12 +200,18 @@ public static class CarDynamics
             // Into wheel space, scale each axis by its own friction, and back out. The scaled vector
             // is deliberately not renormalised: its length carries the reduced grip. The handbrake
             // raises the rolling resistance to the lateral value, which is how retail locks a wheel.
-            double wheelAcross = (across * cos) + (along * sin);
-            double wheelAlong = (along * cos) - (across * sin);
+            //
+            // The tyre turns the OPPOSITE way from the drive direction above: 0x430D10 negates the
+            // angle for the drive and hands the positive one to 0x430960, and against the matrix
+            // those two build that comes out as +angle here and -angle there. Using the drive's sign
+            // for both leaves a steered wheel skating sideways -- at 45 degrees it reads a slip
+            // almost entirely across the tyre, which brakes the car instead of turning it.
+            double wheelAcross = (across * cos) - (along * sin);
+            double wheelAlong = (along * cos) + (across * sin);
             wheelAcross *= wheel.LateralFriction;
             wheelAlong *= handbrake ? wheel.LateralFriction : wheel.LongitudinalFriction;
-            double bodyAcross = (wheelAcross * cos) - (wheelAlong * sin);
-            double bodyAlong = (wheelAlong * cos) + (wheelAcross * sin);
+            double bodyAcross = (wheelAcross * cos) + (wheelAlong * sin);
+            double bodyAlong = (wheelAlong * cos) - (wheelAcross * sin);
 
             // Retail compares the slip against the breakaway point and picks one of two branches --
             // a gripping tyre whose force grows with slip, or a sliding one pinned to 0.24 of its

@@ -52,42 +52,53 @@ public sealed class CarDynamicsTests
     }
 
     /// <summary>
-    /// The drive direction is rotated by the NEGATIVE steer angle (0x430D10 passes -angle to
-    /// sub_4B3BE0), which is what decides the side the nose goes.
+    /// A positive steering input turns the body's forward axis TOWARD its across axis, and a
+    /// negative one away. Probing the retail game settles this: at the point its Mission 1 truck
+    /// carries a smoothed steering of +0.906 its drive force reads (0.655, 0.755) in body axes,
+    /// which is (sin, cos) of the wheel's own 40.7-degree angle about the across axis.
     /// </summary>
     [Fact]
-    public void SteeringYawsTheBodyAndReversesWithTheInput()
+    public void PositiveSteeringTurnsTheBodyTowardItsAcrossAxis()
     {
-        double positive = TotalYaw(steering: 1f);
-        double negative = TotalYaw(steering: -1f);
+        double positive = TurnTowardAcross(steering: 1f);
+        double negative = TurnTowardAcross(steering: -1f);
 
-        // The drive direction is rotated by -steer, so a positive input yaws the body the
-        // counter-clockwise way about the up axis. Feeding the Mission 1 truck's authored steering
-        // through the other sign sent it away from its gate.
-        Assert.True(Math.Abs(positive) > 1e-3d, "a steered, driven wheel must yaw the body");
-        Assert.True(
-            positive > 0d && negative < 0d,
-            $"steering must reverse the yaw: positive={positive}, negative={negative}");
+        Assert.True(positive > 0.05d, $"a positive input must turn toward the across axis: {positive}");
+        Assert.True(negative < -0.05d, $"a negative input must turn away from it: {negative}");
 
-        // Not an exact mirror: the axles sit off-centre across the body, so the two locks differ
-        // slightly. They must still be the same turn to within a few per cent.
-        Assert.InRange(Math.Abs(negative) / Math.Abs(positive), 0.9d, 1.1d);
+        // Nowhere near a mirror: the truck's axles sit off-centre across the body -- retail holds
+        // them at -0.79 and +0.85 metres -- and the tyre model is not linear, so one lock turns
+        // appreciably harder than the other. They must still be the same order of turn.
+        Assert.InRange(Math.Abs(negative) / Math.Abs(positive), 0.6d, 1.6d);
 
-        static double TotalYaw(float steering)
+        // How far the forward axis leans onto the across axis. The drive force is what turns the
+        // body, so the car is brought up to speed on a straight first -- which is also the order
+        // the authored channels use, holding the steering at nought for the first six seconds.
+        static double TurnTowardAcross(float steering)
         {
             CarPhysicsDefinition truck = Truck();
             CarMotionState motion = new();
             CarWheel[] wheels = Wheels(truck);
-            double yaw = 0d;
-            for (int tick = 0; tick < 200; tick++)
+            Vector3d forward = Forward;
+            Vector3d lateral = Lateral;
+            for (int tick = 0; tick < 350; tick++)
             {
                 (_, double delta) = CarDynamics.Step(
-                    motion, truck, wheels, Forward, Lateral, steering, thrust: 0.25f, handbrake: false);
-                yaw += delta;
+                    motion, truck, wheels, forward, lateral,
+                    tick < 180 ? 0f : steering, thrust: 0.25f, handbrake: false);
+                forward = Rotate(forward, delta);
+                lateral = Rotate(lateral, delta);
             }
 
-            return yaw;
+            return (forward.X * Lateral.X) + (forward.Y * Lateral.Y);
         }
+    }
+
+    private static Vector3d Rotate(Vector3d value, double radians)
+    {
+        double cos = Math.Cos(radians);
+        double sin = Math.Sin(radians);
+        return new Vector3d((value.X * cos) - (value.Y * sin), (value.X * sin) + (value.Y * cos), 0d);
     }
 
     /// <summary>A wheel with a negative body index has no collision body and takes no part.</summary>
@@ -162,22 +173,25 @@ public sealed class CarDynamicsTests
             []);
     }
 
-    /// <summary>The six drawn wheels at the offsets the Mission 1 truck's placements carry.</summary>
+    /// <summary>
+    /// The four wheel bodies the forces act at, read out of the running retail game: the tandem rear
+    /// pair shares one body a side, so six drawn wheels resolve onto four corners.
+    /// </summary>
     private static CarWheel[] Wheels(in CarPhysicsDefinition truck)
     {
-        double[] across = [0.99d, 0.99d, 0.99d, -0.70d, -0.70d, -0.70d];
-        double[] along = [2.83d, -1.21d, -2.30d, 2.83d, -1.22d, -2.30d];
+        Vector3d[] bodies =
+        [
+            new(-3253.813, 11523.6445, -787.932),   // wheel 0 -> body 1, front
+            new(-3253.809, -9381.4775, -787.931),   // wheel 1 -> body 0, rear
+            new(-3253.809, -9381.4775, -787.931),   // wheel 2 -> body 0 by the -10 alias
+            new(3492.065, 11523.6445, -787.932),    // wheel 3 -> body 2, front
+            new(3492.069, -9381.4775, -787.931),    // wheel 4 -> body 3 by the -13 alias
+            new(3492.069, -9381.4775, -787.931),    // wheel 5 -> body 3, rear
+        ];
         CarWheel[] wheels = new CarWheel[6];
         for (int i = 0; i < wheels.Length; i++)
         {
-            wheels[i] = new CarWheel(
-                truck.Wheels[i],
-                new Vector3d(
-                    across[i] * WorldScene.UnitsPerMetre,
-                    along[i] * WorldScene.UnitsPerMetre,
-                    0d),
-                0.95f,
-                0.05f);
+            wheels[i] = new CarWheel(truck.Wheels[i], bodies[i], 0.95f, 0.05f);
         }
 
         return wheels;
