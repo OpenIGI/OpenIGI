@@ -71,18 +71,31 @@ public sealed class MissionObjectiveRuntimeTests
 
         Assert.Equal(1, ReadActive(loop));
         Assert.False(ReadDead(loop, dormant.Id));
-        Assert.True(ReadDead(loop, 904));
         Assert.True(ReadDead(loop, dead.Id));
+
+        // 904 was deleted from the tree while still being reported as an occupant. The latch lives on
+        // the task now, so a task no longer in the tree stops being fed and reads alive -- which is the
+        // answer the original gives too, by a different route: it unexports on deletion
+        // (Human_UnexportVars, 0x4608D0) and its preprocessor rewrites a token naming a task that does
+        // not exist to the literal 0 (0x4F14E3). The port keeps the binding after a delete rather than
+        // unexporting, so the symbol still resolves; only the value agrees. Nothing deletes a soldier
+        // on death in play -- the renderer reports every brain precisely so a corpse keeps its latch --
+        // so this is the artificial case, not the live one.
+        Assert.False(ReadDead(loop, 904));
 
         Assert.True(loop.Variables.TryWrite("ConditionalContainer_901.isRun", QvmValue.FromInt32(1)));
         runtime.TickLevelState();
 
         Assert.Equal(2, ReadActive(loop));
 
-        static HumanSoldierTask NewSoldier(GameTask parent, int id)
+        // Declared the way the level's own script declares one: Task_New binds the id and then exports
+        // the task, which is what runs HumanTask's ExportVars and creates isDead and eTeam. Building
+        // the task without that step would leave it unexported, which no soldier in a loaded level is.
+        HumanSoldierTask NewSoldier(GameTask parent, int id)
         {
             HumanSoldierTask soldier = (HumanSoldierTask)parent.Tree.New(parent, parent.Tree.Types.Get("HumanSoldier"));
             Assert.True(parent.Tree.TryBindId(id, soldier));
+            Assert.True(loop.Variables.Export(soldier));
             return soldier;
         }
 
