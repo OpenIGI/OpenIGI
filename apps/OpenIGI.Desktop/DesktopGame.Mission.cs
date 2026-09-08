@@ -279,12 +279,6 @@ internal sealed partial class DesktopGame
                     return QvmValue.FromInt32(1);
                 }
 
-                if (name == "Game_CutsceneDelete")
-                {
-                    _cutscenes?.DeleteCutscenes();
-                    return QvmValue.FromInt32(1);
-                }
-
                 return null;
             },
             SetCutsceneSound,
@@ -293,6 +287,12 @@ internal sealed partial class DesktopGame
             vehiclePhysics: _vehiclePhysics,
             terrain: loaded.Terrain,
             logger: _logger,
+            clearTransientProjectiles: () =>
+            {
+                _player?.Grenades.Clear();
+                _player?.Missiles.Clear();
+                _player?.M203.Clear();
+            },
             vehicleObstacleHit: (task, origin, end) =>
             {
                 if (_worldSolids?.TryCastIgnoring(

@@ -54,6 +54,7 @@ public sealed class CutsceneRuntime
     private readonly Dictionary<WorldPlacement, int> _carWheelIndices = [];
     private readonly Dictionary<GameTask, float> _trainTailOffsets = [];
     private readonly Func<string, ScriptArguments, QvmValue?>? _hostNative;
+    private readonly Action? _clearTransientProjectiles;
     private readonly Action<CutsceneSoundEvent>? _soundChanged;
     private readonly Func<string, float>? _modelLength;
     private readonly Func<string, float>? _modelPivot;
@@ -65,7 +66,6 @@ public sealed class CutsceneRuntime
     private ObjectCollisionIndex? _collisionIndex;
     private Func<int, CutsceneTargetPose?>? _targetPoseResolver;
     private bool _breakRequested;
-    private CutSceneTask? _sceneExpressionOwner;
     private readonly List<string> _diagnostics = [];
 
     /// <summary>Gets or sets the solid-object index used to find a supporting surface for vehicles.</summary>
@@ -109,13 +109,15 @@ public sealed class CutsceneRuntime
         Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? vehicleObstacleHit = null,
         Func<GameTask, bool>? vehicleObstacleReleased = null,
         TerrainData? terrain = null,
-        IIgiLogger? logger = null)
+        IIgiLogger? logger = null,
+        Action? clearTransientProjectiles = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(variables);
         _root = levelRoot;
         _variables = variables;
         _hostNative = native;
+        _clearTransientProjectiles = clearTransientProjectiles;
         _soundChanged = soundChanged;
         _modelLength = modelLength;
         _modelPivot = modelPivot;
@@ -294,32 +296,6 @@ public sealed class CutsceneRuntime
 
     /// <summary>Queues the retail break-cutscene key for the next logic tick.</summary>
     public void RequestBreak() => _breakRequested = true;
-
-    /// <summary>
-    /// Deletes every running cutscene except the one whose expression is currently executing.
-    /// </summary>
-    /// <remarks>
-    /// <c>Game_CutsceneDelete</c> walks the global cutscene registry and destroys stale scenes before
-    /// a newly admitted scene takes ownership.  A scene start expression may call the native itself,
-    /// so that scene is protected for the duration of its expression.  Container expressions have no
-    /// such owner and therefore clear every running scene, matching the global native walk.
-    /// </remarks>
-    public void DeleteCutscenes()
-    {
-        CutSceneTask? keep = _sceneExpressionOwner;
-        foreach (SceneState state in _scenes)
-        {
-            if (ReferenceEquals(state.Task, keep) || !state.Task.IsRun)
-            {
-                continue;
-            }
-
-            state.Task.IsRun = false;
-            state.Task.IsFinished = true;
-        }
-
-        UpdateFrame();
-    }
 
     /// <summary>Advances all cutscene-owned tasks by one fixed logic tick.</summary>
     public void Tick()
@@ -1227,16 +1203,7 @@ public sealed class CutsceneRuntime
             return;
         }
 
-        CutSceneTask? previous = _sceneExpressionOwner;
-        _sceneExpressionOwner = scene;
-        try
-        {
-            _expressions.Execute(expression, scene);
-        }
-        finally
-        {
-            _sceneExpressionOwner = previous;
-        }
+        _expressions.Execute(expression, scene);
     }
 
     private QvmValue? InvokeNative(string name, ScriptArguments arguments)
@@ -1246,11 +1213,23 @@ public sealed class CutsceneRuntime
             return QvmValue.FromInt32(_breakRequested ? 1 : 0);
         }
 
+        if (string.Equals(name, "Game_CutsceneDelete", StringComparison.Ordinal))
+        {
+            // IGI.EXE 0x415AB0 walks the registry at 0x57BAB0. Its accessor (0x4168F0)
+            // is consumed only by the mine, grenade, missile and M203 constructors at
+            // 0x475C34/0x475D54/0x4761E9/0x476606/0x476AA9/0x476E8B. It is not the
+            // CutScene registry. Level 3 invokes this native from container 3445 after
+            // scene 700 starts, so finishing camera tasks here completes the mission on
+            // its first frame instead of clearing the stale projectile presentation.
+            _clearTransientProjectiles?.Invoke();
+            return QvmValue.FromInt32(1);
+        }
+
         return _hostNative?.Invoke(name, arguments) ?? name switch
         {
             // These native calls are side effects owned by the desktop host. Returning success keeps
             // boolean expression chains faithful even in a headless runtime.
-            "MenuManager_SetEnabled" or "Game_DisableMusic" or "Game_EnableMusic" or "Game_CutsceneDelete"
+            "MenuManager_SetEnabled" or "Game_DisableMusic" or "Game_EnableMusic"
                 => QvmValue.FromInt32(1),
             _ => null,
         };
