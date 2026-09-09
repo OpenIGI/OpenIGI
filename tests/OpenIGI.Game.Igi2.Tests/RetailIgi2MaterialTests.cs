@@ -46,7 +46,7 @@ public sealed class RetailIgi2MaterialTests
         int missing = 0;
         HashSet<string> textures = new(StringComparer.OrdinalIgnoreCase);
 
-        foreach (Level level in Levels())
+        foreach (Igi2Level level in Levels())
         {
             // One mesh is placed many times and wears the same textures every time, so the walk is over
             // the distinct (virtual model, mesh) pairs rather than over all 10,569 placements.
@@ -55,7 +55,7 @@ public sealed class RetailIgi2MaterialTests
                 .Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 if (!level.Table.TryResolveMesh(virtualModel, out string? mesh)
-                    || !TryRead(level.Models, Igi2WorldScene.ModelResourceName(mesh), out ReadOnlyMemory<byte> bytes))
+                    || !Igi2Level.TryRead(level.Models, Igi2WorldScene.ModelResourceName(mesh), out ReadOnlyMemory<byte> bytes))
                 {
                     continue;
                 }
@@ -79,7 +79,7 @@ public sealed class RetailIgi2MaterialTests
                     resolved++;
                     textures.Add(texture);
                     Assert.True(
-                        TryRead(level.Textures, Igi2ModelTable.TextureResourceName(texture), out ReadOnlyMemory<byte> pixels),
+                        Igi2Level.TryRead(level.Textures, Igi2ModelTable.TextureResourceName(texture), out ReadOnlyMemory<byte> pixels),
                         $"'{virtualModel}' slot {record.MaterialSlot} wants '{texture}', which the level does not ship.");
                     Assert.Equal(11u, TexFile.ReadVersion(pixels.Span));
                 }
@@ -122,80 +122,5 @@ public sealed class RetailIgi2MaterialTests
         Assert.NotEqual(firstUniform, thirdUniform);
     }
 
-    private static bool TryRead(IReadOnlyList<IresArchive> archives, string resource, out ReadOnlyMemory<byte> bytes)
-    {
-        foreach (IresArchive archive in archives)
-        {
-            if (archive.TryGetEntry(resource, out IresEntry? entry))
-            {
-                bytes = entry.Data;
-                return true;
-            }
-        }
-
-        bytes = default;
-        return false;
-    }
-
-    private static IEnumerable<Level> Levels()
-    {
-        foreach (string script in RetailIgi2LevelLoadTests.LevelScripts())
-        {
-            string directory = Path.GetDirectoryName(script)!;
-            string commonDirectory = Path.Combine(Path.GetDirectoryName(directory)!, "common");
-
-            string? levelPack = Directory.EnumerateFiles(directory, "*.mtp").FirstOrDefault();
-            if (levelPack is null)
-            {
-                continue;
-            }
-
-            string? commonPack = Directory.Exists(commonDirectory)
-                ? Directory.EnumerateFiles(commonDirectory, "*.mtp").FirstOrDefault()
-                : null;
-
-            List<IresArchive> models = Archives(directory, commonDirectory, "models");
-            List<IresArchive> textures = Archives(directory, commonDirectory, "textures");
-            if (models.Count == 0 || textures.Count == 0)
-            {
-                continue;
-            }
-
-            RetailIgi2LevelLoadTests.Harness harness = new(script);
-            harness.Loader.LoadScript(RetailIgi2LevelLoadTests.Harness.ScriptName);
-
-            yield return new Level(
-                Igi2WorldScene.Build(harness.LevelRoot),
-                Igi2ModelTable.Create(
-                    MtpPack.Read(File.ReadAllBytes(levelPack)),
-                    commonPack is null ? null : MtpPack.Read(File.ReadAllBytes(commonPack))),
-                models,
-                textures);
-        }
-    }
-
-    private static List<IresArchive> Archives(string directory, string commonDirectory, string kind)
-    {
-        List<IresArchive> archives = [];
-        foreach (string root in new[] { Path.Combine(directory, kind), Path.Combine(commonDirectory, kind) })
-        {
-            if (!Directory.Exists(root))
-            {
-                continue;
-            }
-
-            archives.AddRange(Directory
-                .EnumerateFiles(root, "*.res")
-                .OrderBy(static p => p, StringComparer.OrdinalIgnoreCase)
-                .Select(static p => IresArchive.Read(File.ReadAllBytes(p))));
-        }
-
-        return archives;
-    }
-
-    private sealed record Level(
-        Igi2WorldScene Scene,
-        Igi2ModelTable Table,
-        IReadOnlyList<IresArchive> Models,
-        IReadOnlyList<IresArchive> Textures);
+    private static IEnumerable<Igi2Level> Levels() => Igi2Level.All();
 }

@@ -100,18 +100,18 @@ public sealed class RetailIgi2ModelTableTests
         int byFileName = 0;
         int byTable = 0;
 
-        foreach ((Igi2WorldScene scene, Igi2ModelTable table, IReadOnlyList<IresArchive> archives) in Levels())
+        foreach (Igi2Level level in Igi2Level.All())
         {
-            foreach (Igi2Placement placement in scene.Placements)
+            foreach (Igi2Placement placement in level.Scene.Placements)
             {
                 total++;
 
-                bool direct = Holds(archives, Igi2WorldScene.ModelResourceName(placement.Model));
+                bool direct = Holds(level.Models, Igi2WorldScene.ModelResourceName(placement.Model));
                 byFileName += direct ? 1 : 0;
 
                 bool resolved = direct
-                    || (table.TryResolveMesh(placement.Model, out string? mesh)
-                        && Holds(archives, Igi2WorldScene.ModelResourceName(mesh)));
+                    || (level.Table.TryResolveMesh(placement.Model, out string? mesh)
+                        && Holds(level.Models, Igi2WorldScene.ModelResourceName(mesh)));
                 byTable += resolved ? 1 : 0;
             }
         }
@@ -205,7 +205,7 @@ public sealed class RetailIgi2ModelTableTests
     }
 
     private static bool Holds(IReadOnlyList<IresArchive> archives, string resource) =>
-        archives.Any(a => a.TryGetEntry(resource, out _));
+        Igi2Level.TryRead(archives, resource, out _);
 
     private static IEnumerable<string> Packs()
     {
@@ -213,54 +213,5 @@ public sealed class RetailIgi2ModelTableTests
         return Directory
             .EnumerateFiles(missions, "*.mtp", SearchOption.AllDirectories)
             .OrderBy(static p => p, StringComparer.OrdinalIgnoreCase);
-    }
-
-    private static IEnumerable<(Igi2WorldScene Scene, Igi2ModelTable Table, IReadOnlyList<IresArchive> Archives)> Levels()
-    {
-        foreach (string script in RetailIgi2LevelLoadTests.LevelScripts())
-        {
-            string directory = Path.GetDirectoryName(script)!;
-            string commonDirectory = Path.Combine(Path.GetDirectoryName(directory)!, "common");
-
-            string? levelPack = Directory.EnumerateFiles(directory, "*.mtp").FirstOrDefault();
-            if (levelPack is null)
-            {
-                continue;
-            }
-
-            string? commonPack = Directory.Exists(commonDirectory)
-                ? Directory.EnumerateFiles(commonDirectory, "*.mtp").FirstOrDefault()
-                : null;
-
-            List<IresArchive> archives = [];
-            foreach (string models in new[]
-                     {
-                         Path.Combine(directory, "models"),
-                         Path.Combine(commonDirectory, "models"),
-                     })
-            {
-                if (Directory.Exists(models))
-                {
-                    archives.AddRange(Directory
-                        .EnumerateFiles(models, "*.res")
-                        .OrderBy(static p => p, StringComparer.OrdinalIgnoreCase)
-                        .Select(static p => IresArchive.Read(File.ReadAllBytes(p))));
-                }
-            }
-
-            if (archives.Count == 0)
-            {
-                continue;
-            }
-
-            RetailIgi2LevelLoadTests.Harness harness = new(script);
-            harness.Loader.LoadScript(RetailIgi2LevelLoadTests.Harness.ScriptName);
-
-            Igi2ModelTable table = Igi2ModelTable.Create(
-                MtpPack.Read(File.ReadAllBytes(levelPack)),
-                commonPack is null ? null : MtpPack.Read(File.ReadAllBytes(commonPack)));
-
-            yield return (Igi2WorldScene.Build(harness.LevelRoot), table, archives);
-        }
     }
 }

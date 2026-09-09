@@ -5,6 +5,10 @@ using OpenIGI.Engine.Tasks;
 namespace OpenIGI.Game.Igi2.World;
 
 /// <summary>One model a level places in the world, with everything needed to draw it.</summary>
+/// <param name="LevelId">
+/// The level task id the placement was declared with, or <see cref="GameTask.NoId"/> when it has none.
+/// This is what names its baked lightmaps — see <see cref="Igi2LightmapIndex"/>.
+/// </param>
 /// <param name="TypeName">The task type that placed it, kept for diagnostics rather than for drawing.</param>
 /// <param name="Model">The model's base name, without a level-of-detail suffix or an extension.</param>
 /// <param name="Position">Where it stands, in engine units.</param>
@@ -18,6 +22,7 @@ namespace OpenIGI.Game.Igi2.World;
 /// group, which is also the queue an object lands in when a level does not say.
 /// </param>
 public readonly record struct Igi2Placement(
+    int LevelId,
     string TypeName,
     string Model,
     Vector3d Position,
@@ -180,7 +185,7 @@ public sealed class Igi2WorldScene
             ? value
             : 0;
 
-        placement = new Igi2Placement(task.Type.Name, model, position, orientation, group);
+        placement = new Igi2Placement(task.Id, task.Type.Name, model, position, orientation, group);
         return true;
     }
 }
