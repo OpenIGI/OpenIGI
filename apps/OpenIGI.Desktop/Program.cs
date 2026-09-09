@@ -1,9 +1,11 @@
 using OpenIGI.Audio.OpenAL;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Desktop;
-using OpenIGI.Engine.Vfs;
 using OpenIGI.Core.Titles;
+using OpenIGI.Desktop;
+using OpenIGI.Engine.Configuration;
+using OpenIGI.Engine.Vfs;
+using OpenIGI.Game.Content;
 using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Infrastructure;
 using OpenIGI.Host;
@@ -113,6 +115,14 @@ if (!profile.IsInstalled)
 
 VirtualFileSystem fileSystem = new(logger);
 fileSystem.RegisterDevice(new LocalFileDevice(gamePath));
+
+// The title's own alias bindings, overridable by a filesys.cfg beside the data. The original stores
+// that file name in a global nothing reads and hard-codes its aliases in the modules that own them;
+// this is the OpenIGI extension the config type was written for, and binding it here is what makes a
+// data-file mod able to redirect an alias without touching the base install.
+FileSystemConfig
+    .LoadOrDefault(Path.Combine(gamePath, FileSystemConfig.DefaultFileName), Igi1DataLayout.Instance)
+    .ApplyTo(fileSystem);
 
 DesktopPlatformHost platform = new();
 WindowSettings settings = new(

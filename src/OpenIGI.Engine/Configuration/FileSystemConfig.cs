@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using OpenIGI.Core;
+using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 
 namespace OpenIGI.Engine.Configuration;
@@ -39,21 +40,20 @@ public sealed class FileSystemConfig
     /// <summary>Gets the alias bindings, in the order they were declared.</summary>
     public IReadOnlyList<KeyValuePair<string, string>> Aliases { get; }
 
-    /// <summary>Creates the alias set the retail game binds at start-up.</summary>
-    /// <returns>The default configuration.</returns>
+    /// <summary>Creates the alias set a title binds at start-up.</summary>
+    /// <param name="layout">The title whose aliases these are.</param>
+    /// <returns>The default configuration for that title.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="layout"/> is <see langword="null"/>.</exception>
     /// <remarks>
-    /// Every binding here was read out of the original's own registration sites. <c>LANGUAGE:</c> and
-    /// <c>MISSION:</c> are deliberately absent: the original binds them at runtime, when the language is
-    /// chosen and when a mission loads.
+    /// Every binding was read out of the title's own registration sites. <c>LANGUAGE:</c> and
+    /// <c>MISSION:</c> are deliberately absent from both games' sets: both bind them at run time, when
+    /// the language is chosen and when a mission loads.
     /// </remarks>
-    public static FileSystemConfig CreateDefault() =>
-        new(new ReadOnlyCollection<KeyValuePair<string, string>>(
-        [
-            new(VirtualFileSystem.MenuSystemAlias, "LOCAL:menusystem/"),
-            new(VirtualFileSystem.ComputerAlias, "LOCAL:computer/"),
-            new(VirtualFileSystem.IntroScreenAlias, "LOCAL:screens/intro/"),
-            new(VirtualFileSystem.StatusScreenAlias, "LOCAL:screens/game/status/"),
-        ]));
+    public static FileSystemConfig CreateDefault(ITitleDataLayout layout)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        return new(new ReadOnlyCollection<KeyValuePair<string, string>>([.. layout.StartupAliases]));
+    }
 
     /// <summary>Parses configuration text.</summary>
     /// <param name="text">The file contents.</param>
@@ -102,15 +102,17 @@ public sealed class FileSystemConfig
         return new FileSystemConfig(new ReadOnlyCollection<KeyValuePair<string, string>>(aliases));
     }
 
-    /// <summary>Reads a configuration file, falling back to the retail defaults when it does not exist.</summary>
+    /// <summary>Reads a configuration file, falling back to a title's defaults when it does not exist.</summary>
     /// <param name="path">The path to the configuration file.</param>
-    /// <returns>The parsed configuration, or <see cref="CreateDefault"/> when the file is absent.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <param name="layout">The title whose defaults to fall back to.</param>
+    /// <returns>The parsed configuration, or the title's defaults when the file is absent.</returns>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
     /// <exception cref="FileSystemConfigException">The file exists but does not parse.</exception>
-    public static FileSystemConfig LoadOrDefault(string path)
+    public static FileSystemConfig LoadOrDefault(string path, ITitleDataLayout layout)
     {
         ArgumentNullException.ThrowIfNull(path);
-        return File.Exists(path) ? Parse(File.ReadAllText(path)) : CreateDefault();
+        ArgumentNullException.ThrowIfNull(layout);
+        return File.Exists(path) ? Parse(File.ReadAllText(path)) : CreateDefault(layout);
     }
 
     /// <summary>Binds every alias of this configuration on a virtual file system.</summary>
