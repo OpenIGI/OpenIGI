@@ -64,13 +64,19 @@ internal sealed partial class GameHost
         // the reference without disposing would leak a level's textures per row of the list.
         _world?.Dispose();
         _world = _presentation.CreateWorld(new WorldPresentationRequest(_device, preview.Resources, _logger));
-        _world.Materials = _materials;
-        _world.DetailMaps = _detailMaps;
+        if (_world is not null)
+        {
+            _world.Materials = _materials;
+            _world.DetailMaps = _detailMaps;
+        }
 
         // Decoded on the pool while this backdrop was being built, so the capture below uploads rather
         // than decodes. Null on a preview built before there was a cache to fill, which the renderer
         // handles by decoding as it always did.
-        _world.Decoded = preview.Decoded;
+        if (_world is not null)
+        {
+            _world.Decoded = preview.Decoded;
+        }
 
         // Held because the renderers read through the preview's own resource registry and file system for
         // as long as they live; letting it go would pull the packs out from under them.
@@ -105,7 +111,9 @@ internal sealed partial class GameHost
         // And the level's own residency, walked a little at a time on the frames that follow. The orbit
         // resolves only what it happens to look at, so without this the frame that moves the camera to the
         // player's spawn uploads everything else at once.
-        _arming = new MissionArming(preview.MissionId, preview.Scene, _world, _logger);
+        _arming = _world is null
+            ? null
+            : new MissionArming(preview.MissionId, preview.Scene, _world, _logger);
 
         _sky?.Dispose();
         _sky = new SkyRenderer(_device, preview.FileSystem, preview.LevelRoot, FarPlane, _logger);

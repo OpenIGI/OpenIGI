@@ -73,6 +73,11 @@ internal static class DesktopTitleCatalog
             return Igi1PresentationProvider.Instance;
         }
 
+        if (title == GameTitle.Igi2)
+        {
+            return Igi2PresentationProvider.Instance;
+        }
+
         throw new ArgumentException($"This build has no renderers for '{title.Id}'.", nameof(title));
     }
 }

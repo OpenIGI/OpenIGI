@@ -12,6 +12,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The renderers this title draws through. Both are abstractions over a backend rather than a
+         backend: Rendering owns IGraphicsDevice, Presentation owns the title-agnostic passes and the
+         ITitlePresentationProvider seam. The same pair OpenIGI.Game.Igi1 references, for the same reason. -->
+    <ProjectReference Include="..\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\OpenIGI.Presentation\OpenIGI.Presentation.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Emits the [ScriptParam] binders for this title's task classes. Build-time only: nothing of it
          ships. A task class without it compiles and registers, and then reports zero parameters against
          a declaration that has fourteen. -->

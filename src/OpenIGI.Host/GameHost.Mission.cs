@@ -490,7 +490,7 @@ internal sealed partial class GameHost
         _computerHighlights = _presentation.CreateComputerHighlights(new ComputerHighlightRequest(levelRoot, _loop.Variables));
         _mapComputer = _presentation.CreateMapComputer(
             new MapComputerPresentationRequest(_device, _resources, _logger, missionText.Get));
-        if (!_mapComputer.Load(_fileSystem))
+        if (_mapComputer is not null && !_mapComputer.Load(_fileSystem))
         {
             _mapComputer.Dispose();
             _mapComputer = null;
@@ -508,7 +508,7 @@ internal sealed partial class GameHost
         // one needs only the shipped faces, so a mission whose computer.res is missing still has a map.
         _tacticalComputer = _presentation.CreateTacticalComputer(
             new MapComputerPresentationRequest(_device, _resources, _logger, missionText.Get));
-        if (!_tacticalComputer.Load())
+        if (_tacticalComputer is not null && !_tacticalComputer.Load())
         {
             _tacticalComputer.Dispose();
             _tacticalComputer = null;
@@ -549,7 +549,14 @@ internal sealed partial class GameHost
         {
             scene = WorldScene.Build(loaded, levelRoot, _magic, _logger, _vehiclePhysics);
             _scene = scene;
-            world = _presentation.CreateWorld(new WorldPresentationRequest(_device, _resources, _logger));
+            // Unlike the thirteen optional passes, a mission cannot load without a world to put in it:
+            // the collision index, the destructibles and the cut-scene bindings below all attach to it.
+            // A title that has not written one yet can still show a menu, and says so here rather than
+            // by a null reference three hundred lines later.
+            world = _presentation.CreateWorld(new WorldPresentationRequest(_device, _resources, _logger))
+                ?? throw new InvalidOperationException(
+                    "The title supplies no world presenter, so it cannot load a mission yet.");
+
             world.Materials = _materials;
             world.DetailMaps = _detailMaps;
             world.Lamps = _lamps;
@@ -726,7 +733,7 @@ internal sealed partial class GameHost
         world.SecurityCameras = _securityCameras;
         _cameraStatusLights?.Dispose();
         _cameraStatusLights = _presentation.CreateCameraStatusLights(EffectsRequest());
-        if (!_cameraStatusLights.Load(_fileSystem))
+        if (_cameraStatusLights is not null && !_cameraStatusLights.Load(_fileSystem))
         {
             _cameraStatusLights.Dispose();
             _cameraStatusLights = null;
@@ -1849,7 +1856,7 @@ internal sealed partial class GameHost
                 // skinning: 005_01_1 is mesh format 1.
                 _arms?.Dispose();
                 _arms = _presentation.CreateViewModel(ViewModelRequest());
-                if (!_arms.Load(loaded))
+                if (_arms is not null && !_arms.Load(loaded))
                 {
                     _arms.Dispose();
                     _arms = null;
@@ -1968,7 +1975,7 @@ internal sealed partial class GameHost
 
                 _hud?.Dispose();
                 _hud = _presentation.CreateHud(new HudPresentationRequest(_device, _logger));
-                if (!_hud.Load(_fileSystem))
+                if (_hud is not null && !_hud.Load(_fileSystem))
                 {
                     _hud.Dispose();
                     _hud = null;
@@ -1976,7 +1983,7 @@ internal sealed partial class GameHost
 
                 _remasteredHud?.Dispose();
                 _remasteredHud = _presentation.CreateRemasteredHud(new HudPresentationRequest(_device, _logger));
-                if (!_remasteredHud.Load())
+                if (_remasteredHud is not null && !_remasteredHud.Load())
                 {
                     _remasteredHud.Dispose();
                     _remasteredHud = null;
@@ -1994,18 +2001,21 @@ internal sealed partial class GameHost
             if (_gunPickups is { } pickups)
             {
                 _gunPickupRenderer = _presentation.CreateGunPickups(ViewModelRequest());
-                _gunPickupRenderer.Materials = _materials;
-                _gunPickupRenderer.Load(loaded, pickups);
+                if (_gunPickupRenderer is not null)
+                {
+                    _gunPickupRenderer.Materials = _materials;
+                    _gunPickupRenderer.Load(loaded, pickups);
+                }
             }
 
             // The grenades in the air, drawn with their own retail models. Loaded beside the
             // pickups because it is the same model machinery at a transform the simulation owns.
             _grenadeRenderer?.Dispose();
             _grenadeRenderer = _presentation.CreateGrenades(ViewModelRequest());
-            _grenadeRenderer.Load(loaded);
+            _grenadeRenderer?.Load(loaded);
             _missileRenderer?.Dispose();
             _missileRenderer = _presentation.CreateMissiles(ViewModelRequest());
-            _missileRenderer.Load(loaded);
+            _missileRenderer?.Load(loaded);
 
             EndStage("the loadout, the bullet marks and the HUD");
 
@@ -2592,8 +2602,12 @@ internal sealed partial class GameHost
             }
         }
 
-        IHeldWeaponPresenter presenter = _presentation.CreateHeldWeapon(ViewModelRequest());
-        presenter.Materials = _materials;
+        IHeldWeaponPresenter? presenter = _presentation.CreateHeldWeapon(ViewModelRequest());
+        if (presenter is not null)
+        {
+            presenter.Materials = _materials;
+        }
+
         return presenter;
     }
 
