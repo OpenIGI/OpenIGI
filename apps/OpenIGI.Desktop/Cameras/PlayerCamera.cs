@@ -412,6 +412,23 @@ public sealed class PlayerCamera
         int animationId = animations.FullBody;
         bool loops = animations.LoopFullBody;
 
+        // The upper-body half, recorded for the third-person body to play on bone 1. 0x4137E0 tests the
+        // two ids INDEPENDENTLY -- `if (v4 != -1) sub_489F20(...); if (v5 != -1) sub_489ED0(...)` -- so
+        // this is settled before the full-body early-out below rather than after it. An action whose
+        // full-body id is -1 still moves the torso in retail.
+        //
+        // Bumped on every request rather than only on a change: PlayerWeapons clears RequestedAction at
+        // the top of each tick and raises it only when the machine actually dispatches, so this is
+        // called at exactly the cadence 0x4137E0 runs at — and a second shot asks for the SAME clip and
+        // has to restart it, which a change test would swallow.
+        if (animations.UpperBody >= 0)
+        {
+            _upperBodyAnimation = animations.UpperBody;
+            _upperBodyLoops = animations.LoopUpperBody;
+            _upperBodyBlendSeconds = animations.UpperBodyBlendSeconds;
+            _upperBodySequence++;
+        }
+
         // Retail's 0x40FB90 forwards FireAnimation2 to the animation dispatcher verbatim, and the
         // shipped medipack leaves that slot at -1. 0x4D61D0 leaves the view untouched for a negative
         // id, so the one-shot entry clip ("insert syringe") simply holds its final frame for the whole
@@ -808,6 +825,22 @@ public sealed class PlayerCamera
 
     /// <summary>Gets the locomotion state the player is in, for diagnostics.</summary>
     public int LocomotionState => _animator?.State ?? 0;
+
+    /// <summary>Gets the clip the player's legs are actually playing, for the third-person body to mirror.</summary>
+    /// <value>
+    /// The animation id the current locomotion state names, or
+    /// <see cref="HumanLocomotionStates.NoAnimation"/> for the states that name none.
+    /// </value>
+    /// <remarks>
+    /// Asked of the animator rather than looked up again from the state, so there is one answer to the
+    /// question of what the player is doing rather than two that can disagree — the body drawn from
+    /// outside is the same character the simulation is moving.
+    /// </remarks>
+    public int LocomotionAnimation => _animator?.AnimationId ?? HumanLocomotionStates.NoAnimation;
+
+    /// <summary>Gets whether the clip <see cref="LocomotionAnimation"/> names repeats.</summary>
+    /// <remarks>The state table's mode of one; every movement state carries it, the one-shots do not.</remarks>
+    public bool LocomotionAnimationLoops => _animator?.Loops ?? true;
 
     /// <summary>Makes the level's ladders climbable.</summary>
     /// <param name="ladders">The ladders the scene collected, in world units.</param>
@@ -1232,7 +1265,7 @@ public sealed class PlayerCamera
         SyncView();
 
         // 0x462E50, which HumanPlayer_Update calls after 0x464BD0 has committed the view.
-        ResolveFire();
+        ResolveFire(terrain);
 
         // After the fire, so a round spawned this tick flies its first segment in the same tick --
         // otherwise every shot would carry a one-tick delay on top of its real travel time.
@@ -1564,6 +1597,38 @@ public sealed class PlayerCamera
     private static int ActiveAnimationParameter(DeclaredTask task) =>
         task.TryGetValue("Activate Anim", out object? raw) && raw is int animation ? animation : -1;
 
+    private int _upperBodyAnimation = -1;
+    private bool _upperBodyLoops;
+    private float _upperBodyBlendSeconds;
+    private int _upperBodySequence;
+
+    /// <summary>Gets the weapon clip the player's TORSO is playing, or <c>-1</c> when it has none.</summary>
+    /// <value>An animation id in the human's own skeleton-0 set, not the first-person rig's.</value>
+    /// <remarks>
+    /// <para>
+    /// The other half of every weapon action. <c>0x4137E0</c> picks a pair — a full-body clip for the
+    /// first-person rig and an <c>UpperBody*</c> clip for the human's own body — and plays them on two
+    /// different skeletons. Only the first is visible through the player's own eyes, which is why the
+    /// second went unused here until there was a camera that could see the body.
+    /// </para>
+    /// <para>
+    /// Reported rather than played, because the body belongs to the renderer: this object owns the
+    /// simulation's copy of what the torso was asked to do, and <see cref="UpperBodySequence"/> is how a
+    /// consumer notices a new request without having to diff the id — a second shot plays the same clip
+    /// again and must restart it.
+    /// </para>
+    /// </remarks>
+    public int UpperBodyAnimation => _upperBodyAnimation;
+
+    /// <summary>Gets whether <see cref="UpperBodyAnimation"/> repeats.</summary>
+    public bool UpperBodyAnimationLoops => _upperBodyLoops;
+
+    /// <summary>Gets how long the torso clip eases in — 0.4 s for stances, immediate for a shot.</summary>
+    public float UpperBodyBlendSeconds => _upperBodyBlendSeconds;
+
+    /// <summary>Gets a counter bumped every time a new torso clip is requested.</summary>
+    public int UpperBodySequence => _upperBodySequence;
+
     /// <summary>Gets whether the rig has two tick states for the presentation to draw between.</summary>
     public bool HasViewTickPair { get; private set; }
 
@@ -1664,6 +1729,71 @@ public sealed class PlayerCamera
     /// <summary>Gets the complete first-person camera at one shared between-tick presentation point.</summary>
     public Camera3D SmoothedCamera(float alpha) =>
         new(SmoothedEyeMetres(alpha), SmoothedLookRotation(alpha));
+
+    /// <summary>Gets or sets the ray the crosshair sits on — the drawn camera's own centre line.</summary>
+    /// <value>
+    /// The camera's position in engine units and its unit forward, or <see langword="null"/> — the
+    /// default, and the only value first person ever holds — to fire straight along the eye's own
+    /// forward, exactly as the original does.
+    /// </value>
+    /// <remarks>
+    /// <para>
+    /// <b>The one thing the third-person view changes about the game rather than about the picture.</b>
+    /// A camera behind and to the side of the eye does not share its sight line, so a fixed crosshair
+    /// and a shot along the body's forward cannot both be right. Rather than let the crosshair wander to
+    /// wherever the round would land — truthful, and unusable — the shot converges on what the middle of
+    /// the screen is over.
+    /// </para>
+    /// <para>
+    /// <b>A ray rather than a point, and this is the whole of the fix.</b> Handing in a point meant the
+    /// renderer decided what the crosshair was over, and it answered with a different test from the one
+    /// the bullet uses — it saw walls and terrain and looked straight through people. So a shot aimed at
+    /// a guard converged on the hillside behind him and landed half a metre wide, which is exactly the
+    /// distance between the camera and the eye. Resolving the ray HERE settles it against
+    /// <see cref="HumanProbes"/> and the same <c>WorldTraceMask.World</c> trace <see cref="ResolveShot"/>
+    /// marches, so the crosshair's target and the round's target are found by one query and cannot
+    /// disagree.
+    /// </para>
+    /// <para>
+    /// The round still <b>leaves the eye</b>: only its direction is turned, which keeps the muzzle, the
+    /// tracer and the wall probe where they were. And the turn is the identity whenever the camera is at
+    /// the eye, so first person needs no flag to be unaffected.
+    /// </para>
+    /// </remarks>
+    public (Vector3d OriginUnits, Vector3f Direction)? AimConvergenceRay { get; set; }
+
+    /// <summary>How far the convergence probe reaches, in engine units — 300 m.</summary>
+    /// <remarks>
+    /// Past this the angle between a shot from the eye and one from a camera 2.6 m behind it is a
+    /// fraction of a degree. A ray that reaches the end unobstructed converges on the end, which is the
+    /// same answer as not converging at all.
+    /// </remarks>
+    public const double AimConvergenceReachInUnits = 300.0 * UnitsPerMetre;
+
+    /// <summary>Finds what the crosshair is over, with the tests a round would meet on the way.</summary>
+    /// <param name="terrain">The level's ground, which the placed-object index does not carry.</param>
+    /// <returns>The world point, in engine units, or <see langword="null"/> when nothing is aimed.</returns>
+    /// <remarks>
+    /// The picking rule itself is <see cref="AimConvergence"/>, which is where the reasoning lives and
+    /// where it is tested; this only names the three sources. They are the SAME ones a round meets:
+    /// <see cref="_walls"/> is what <see cref="ResolveShot"/> marches, and <see cref="HumanProbes"/> is
+    /// the reporting half of the <see cref="Humans"/> cast it offers rounds to.
+    /// </remarks>
+    private Vector3d? ResolveAimConvergence(TerrainData? terrain)
+    {
+        if (AimConvergenceRay is not { } ray)
+        {
+            return null;
+        }
+
+        return AimConvergence.Resolve(
+            ray.OriginUnits,
+            ray.Direction,
+            AimConvergenceReachInUnits,
+            _walls?.Tracer(),
+            terrain is null ? null : TerrainRayTrace.Caster(terrain),
+            HumanProbes);
+    }
 
     /// <summary>Gets the two FOV tangents blended for an uncapped presentation frame.</summary>
     /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
@@ -2056,9 +2186,18 @@ public sealed class PlayerCamera
         {
             PlayWeaponAction(held.Weapon, action, _weapons.RequestedFireVariant);
         }
+        else if (_weapons.InHand is null && _upperBodyAnimation >= 0)
+        {
+            // 0x4137E0's action zero: it clears Human+3420 and calls 0x489F00, which stands the upper
+            // body down. Empty hands are the state that reaches it — there is no weapon record to pick a
+            // torso clip out of — and without this the body holds the last weapon's stance after the
+            // player puts it away.
+            _upperBodyAnimation = -1;
+            _upperBodySequence++;
+        }
     }
 
-    private void ResolveFire()
+    private void ResolveFire(TerrainData? terrain = null)
     {
         _impacts.Clear();
 
@@ -2136,6 +2275,10 @@ public sealed class PlayerCamera
         Vector3f forward = new(m.M12, m.M22, m.M32);
         Vector3f right = new(m.M11, m.M21, m.M31);
         Vector3f up = new(m.M13, m.M23, m.M33);
+
+        // ...unless a camera that is not at the eye has said what the crosshair is over. See
+        // AimConvergencePointUnits: null in first person, and null is the retail path untouched.
+        AimBasis.Converge(_view.Eye, ResolveAimConvergence(terrain), ref forward, ref right, ref up);
 
         // A scoped rifle is braced: 0x472E50 multiplies the round's sampled kick by 0.05 before the
         // accumulators see it, and this is the same factor at the same point.

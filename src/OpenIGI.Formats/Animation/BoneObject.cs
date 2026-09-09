@@ -55,6 +55,13 @@ public sealed class BoneObject
     private readonly float[] _blendWeightResolved;
     private readonly float[] _blendWeightInherited;
 
+    // The orientation source a bone's animated rotation is composed under. IGI1 has exactly one of
+    // these -- sub_4D6130 builds a node combining a clip with an orientation, and its only caller is the
+    // human's upper body (sub_489ED0, bone 1, type 5) -- so the mechanism is retail's even where the
+    // value driven through it is not. Null everywhere until something sets one, which is the common case
+    // and costs one null test per bone.
+    private Quaternion32?[]? _bends;
+
     /// <summary>Gets whether the last tick changed any clip's sampled time.</summary>
     public bool ChangedThisTick { get; private set; }
 
@@ -96,6 +103,54 @@ public sealed class BoneObject
 
     /// <summary>Gets the number of bones.</summary>
     public int BoneCount => _own.Length;
+
+    /// <summary>Composes an extra rotation above a bone's own animated orientation.</summary>
+    /// <param name="bone">The bone to bend.</param>
+    /// <param name="rotation">
+    /// The rotation, expressed in the <b>parent's</b> frame, or <see langword="null"/> to remove one.
+    /// </param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="bone"/> is not a bone.</exception>
+    /// <remarks>
+    /// <para>
+    /// The engine's own orientation source, generalised. <c>sub_4D6130</c> attaches a bone to a node
+    /// that combines a clip with a stored orientation, and <c>sub_4D5820</c>'s type 5 resolves that node
+    /// as <c>stored ⊗ sampled</c> — the stored rotation on the left, which is what puts it in the
+    /// parent's frame rather than the bone's own. This composes on the same side for the same reason:
+    /// bending a spine means turning it where it joins the pelvis, not where it joins its own child.
+    /// </para>
+    /// <para>
+    /// A bend moves the bone's <b>descendants</b> and not the bone itself, because a bone is placed by
+    /// its parent's rotation (<see cref="BonePose.Evaluate"/>) — which is exactly what a joint does.
+    /// </para>
+    /// </remarks>
+    public void Bend(int bone, Quaternion32? rotation)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(bone);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(bone, _own.Length);
+
+        if (_bends is null)
+        {
+            if (rotation is null)
+            {
+                return;
+            }
+
+            _bends = new Quaternion32?[_own.Length];
+        }
+
+        _bends[bone] = rotation;
+    }
+
+    /// <summary>Gets the rotation composed above a bone's animated orientation, if any.</summary>
+    /// <param name="bone">The bone.</param>
+    /// <returns>The bend, or <see langword="null"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="bone"/> is not a bone.</exception>
+    public Quaternion32? BendOf(int bone)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(bone);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(bone, _own.Length);
+        return _bends?[bone];
+    }
 
     /// <summary>Starts a clip on a bone, replacing whatever that bone was sourced from.</summary>
     /// <param name="bone">The bone to attach the source to; <c>0</c> drives the whole skeleton.</param>
@@ -292,9 +347,13 @@ public sealed class BoneObject
             // outgoing, 1 = fully incoming). 0x4D5EC0's blend node, flattened to one branch per bone.
             BoneClip? from = _blendFromResolved[bone];
             float weight = _blendWeightResolved[bone];
-            _locals[bone] = from is not null && weight < 1f && bone < from.Animation.BoneCount
+            Quaternion32 local = from is not null && weight < 1f && bone < from.Animation.BoneCount
                 ? BoneRotationSampler.Slerp(from.SampleRotation(bone), incoming, weight)
                 : incoming;
+
+            // The bend goes on the LEFT, after the cross-fade rather than inside it: it is not a pose
+            // being blended between but a frame the blended pose is expressed in.
+            _locals[bone] = _bends?[bone] is { } bend ? bend * local : local;
         }
 
         return BonePose.Evaluate(_set.Skeleton, _locals, rootPosition, rootRotation);

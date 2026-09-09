@@ -115,6 +115,24 @@ internal sealed partial class DesktopGame : IDisposable
     private HumanDamageFlash _damageFlash = null!;
     private FlashbangScreenFlash _flashbangScreenFlash = null!;
     private DeathCamera _deathCamera = null!;
+
+    /// <summary>The over-the-shoulder view and the move between it and the player's own eyes.</summary>
+    /// <remarks>
+    /// Owned here rather than by <see cref="PlayerCamera"/> because it changes nothing the player camera
+    /// is responsible for: the body still walks, aims and fires from exactly where it did, and this only
+    /// decides where the frame is rasterised from. See <see cref="ThirdPersonCamera"/>.
+    /// </remarks>
+    private readonly ThirdPersonCamera _thirdPerson = new();
+
+    /// <summary>The wall clock the third-person move is advanced on; it is a camera move, not a tick.</summary>
+    private int _thirdPersonMilliseconds;
+
+    /// <summary>The pull-in ray, kept so a frame does not allocate one; rebuilt when the level's does.</summary>
+    private DeathCameraVantage.Blocked? _thirdPersonWalls;
+    private ObjectCollisionIndex? _thirdPersonWallsSolids;
+    private TerrainData? _thirdPersonWallsTerrain;
+
+
     private int _guardRounds;
     private int _guardHits;
     private Random _shotRandom = null!;
@@ -1848,7 +1866,12 @@ internal sealed partial class DesktopGame : IDisposable
                 {
                     if (_entry.ShowPlayerBody && _player is { } standingBody)
                     {
-                        bodies.StandPlayerBodyAt(standingBody.Body.Position, standingBody.Body.Yaw);
+                        // Minus the yaw, for the reason the third-person follow states at length: a
+                        // heading is a gamma and turns the other way. This shot has always faced the
+                        // character the wrong way about; it went unnoticed because the dive ends inside
+                        // their head and the level's own spawn heading is often near zero, where the
+                        // mirror shows nothing.
+                        bodies.StandPlayerBodyAt(standingBody.Body.Position, -standingBody.Body.Yaw);
                     }
                     else
                     {
@@ -3054,6 +3077,55 @@ internal sealed partial class DesktopGame : IDisposable
                     worldInteractionActive = false;
                 }
 
+                // The character the third-person view looks at, walked with the player on the same tick
+                // their own legs are -- see SoldierRenderer.FollowPlayerBody for why it must be the tick
+                // and not the frame. Kept running for the whole of the move back as well as out, so the
+                // body is already in step whenever the camera is far enough away to show it.
+                //
+                // The states with a body of their own are left alone: the ladder and the world
+                // interactions place and pose the same rig on their own schedule, and the death path owns
+                // it outright once the player has fallen.
+                if (_soldiers is { } followedBody)
+                {
+                    // The same conditions the camera itself is eligible under, and deliberately so: the
+                    // follow owns the torso clip and the aim bend, and every state excluded here has an
+                    // authored full-body clip or a camera of its own that must own the whole character.
+                    if (_playerMode
+                        && !_playerDead
+                        && !_missionFailedMenu
+                        && !_computerOpen
+                        && !_entry.IsCameraActive
+                        && _cutscenes?.IsPlaying != true
+                        && (!menuMode || pauseMenu)
+                        && _player is { IsOnLadder: false, IsInWorldInteraction: false } walkingBody
+                        && (GameplayCVars.ThirdPerson.Value || _thirdPerson.IsEngaged))
+                    {
+                        followedBody.FollowPlayerBody(
+                            walkingBody.Body.Position,
+
+                            // MINUS the yaw. A body's heading is a GAMMA and the look is a YAW, and the
+                            // two run opposite ways: PlayerBody.FacingBasis builds the body's own basis
+                            // as RotationZ(-yaw), and every other caller in the port converts the same
+                            // way (PlayerCamera writes `_body.Yaw = -facing` on entering an interaction
+                            // and `_interactionFacing = -_body.Yaw` on leaving one). Passing the yaw
+                            // straight through mirrors the character about the world's X axis, which is
+                            // a body that faces the camera at exactly the moment it should face away.
+                            -walkingBody.Body.Yaw,
+                            walkingBody.LocomotionAnimation,
+                            walkingBody.LocomotionAnimationLoops,
+                            new PlayerBodyPose(
+                                walkingBody.UpperBodyAnimation,
+                                walkingBody.UpperBodyAnimationLoops,
+                                walkingBody.UpperBodyBlendSeconds,
+                                walkingBody.UpperBodySequence,
+                                walkingBody.AimPitch));
+                    }
+                    else
+                    {
+                        followedBody.HidePlayerBodyFollowing();
+                    }
+                }
+
                 if (_missionObjectives is { } objectiveTick)
                 {
                     // The remaster holds a message three seconds longer than the original does, because
@@ -3457,6 +3529,80 @@ internal sealed partial class DesktopGame : IDisposable
                     && _player is { HasViewTickPair: true, IsOnLadder: false, IsInWorldInteraction: false })
                 {
                     eye = _player.SmoothedCamera(tickBlend);
+                }
+
+                // The over-the-shoulder view, built off whatever camera the player would have had. It is
+                // applied HERE, on the finished first-person eye and before anything reads the eye back,
+                // so the capture log, the aim projection below and every pass of the frame all agree on
+                // where the picture was taken from.
+                //
+                // The four states that own the view outright are excluded rather than blended out of: a
+                // cutscene, the entry shot, the map computer and the menu orbit each replace the eye
+                // below, and running the move underneath one of them would only decide where the camera
+                // was when it was handed back.
+                //
+                // The front end is excluded but the PAUSE is not, and the difference is the whole reason
+                // the test is written this way: a paused frame is still the player's own view of the level
+                // they are standing in, so the camera stays where it was and simply stops moving, while
+                // the menu's showcase orbit is somewhere else entirely and there is nothing to preserve.
+                bool thirdPersonEligible = _playerMode
+                    && !_playerDead
+                    && !_missionFailedMenu
+                    && !_computerOpen
+                    && !_entry.IsCameraActive
+                    && _cutscenes?.IsPlaying != true
+                    && mapScene is null
+                    && (!menuMode || pauseMenu)
+                    && _player is { IsOnLadder: false, IsInWorldInteraction: false };
+
+                if (thirdPersonEligible && _player is { } thirdPersonPlayer)
+                {
+                    int thirdPersonNow = _loop.TimeSource.Milliseconds;
+                    float thirdPersonElapsed =
+                        Math.Clamp((thirdPersonNow - _thirdPersonMilliseconds) / 1000f, 0f, 0.1f);
+                    _thirdPersonMilliseconds = thirdPersonNow;
+
+                    _thirdPerson.DistanceInMetres = GameplayCVars.ThirdPersonDistance.Value;
+                    _thirdPerson.ShoulderInMetres = GameplayCVars.ThirdPersonShoulder.Value;
+                    _thirdPerson.HeightInMetres = GameplayCVars.ThirdPersonHeight.Value;
+                    _thirdPerson.BlendSeconds = GameplayCVars.ThirdPersonBlend.Value;
+
+                    // Optics are a first-person act. Raising the binoculars or leaning into the Dragunov's
+                    // scope replaces the picture with what the eye sees, so the camera comes back to the
+                    // eye first -- by the same move, not by a cut -- and goes out again on the way down.
+                    bool wantsThirdPerson = GameplayCVars.ThirdPerson.Value
+                        && thirdPersonPlayer is { IsBinocularsOpen: false, IsSniperScoped: false };
+
+                    // A paused view does not move. Advancing the blend behind the menu would have the
+                    // camera quietly travel while the player was reading, and arrive somewhere else.
+                    eye = _thirdPerson.Update(
+                        menuMode ? 0f : thirdPersonElapsed,
+                        wantsThirdPerson,
+                        eye,
+                        ThirdPersonWalls());
+
+                    ConvergeThirdPersonAim(eye);
+                }
+                else
+                {
+                    // A cut, not a move: the view was taken by something that put the camera somewhere
+                    // else entirely, and interpolating back from there draws a frame from a line between
+                    // two unrelated places.
+                    _thirdPerson.Reset();
+                    _thirdPersonMilliseconds = _loop.TimeSource.Milliseconds;
+                    if (_player is not null)
+                    {
+                        _player.AimConvergenceRay = null;
+                    }
+                }
+
+                // Whether the character is drawn at all, read here rather than at the draw because the
+                // SHADOW cascades run before it: deciding at the geometry pass left the body's shadow a
+                // frame behind the body on the frame it appeared.
+                bool thirdPersonBody = _thirdPerson.ShowsBody;
+                if (_soldiers is { } shownBody)
+                {
+                    shownBody.PlayerBodyFollowVisible = thirdPersonBody;
                 }
 
                 // The pose the frame is actually drawn from, whichever camera supplied it, in the form
@@ -4209,6 +4355,11 @@ internal sealed partial class DesktopGame : IDisposable
                 bool showFirstPersonHud = showPlayerHud
                     && _player is { IsOnLadder: false, IsInWorldInteraction: false };
 
+                // The arms and the held weapon hang off the eye, so the moment the camera leaves it they
+                // are either filling the frame or behind it. When they stand down, and when they come
+                // back, is the camera's own call -- see ThirdPersonCamera.ShowsViewModel.
+                bool showViewModel = showFirstPersonHud && _thirdPerson.ShowsViewModel;
+
                 // What the interaction resolver is offering, advanced on its own wall clock so the
                 // marker fades at the same rate whatever the frame rate. Gated on showPlayerHud rather
                 // than showFirstPersonHud on purpose: a timed interaction hides the hands and the
@@ -4264,7 +4415,40 @@ internal sealed partial class DesktopGame : IDisposable
 
                 // The player's own body, once it has fallen -- drawn only under the death camera, so it never
                 // appears in front of the first-person view during normal play.
+                // ...and, now, whenever the third-person camera has cleared the character's head, which
+                // was settled with the camera above so the shadow cascades and this pass agree.
                 _soldiers?.DrawPlayerBody(eye, projection);
+
+                // What the character is holding. The first-person rig is not drawn at all from out here,
+                // so its weapon has to be hung off the body's own hand -- bone 22, where a guard's rifle
+                // rides -- under the WORLD projection rather than the view model's magnified one. Body
+                // only, as a soldier's is: the muzzle flame is light, and the deferred pass would shade it
+                // like scenery.
+                if (thirdPersonBody
+                    && _player is { } armedBody
+                    && _soldiers is { } handBody
+                    && _heldWeapon is { IsReady: true } thirdPersonGun
+                    && armedBody.Weapons?.HideFirstPersonWeapon != true)
+                {
+                    // The cycle changes the model as well as the animation, and out here nothing else is
+                    // watching for that: the first-person block that normally does is not running.
+                    if (_loadedMissionForWeapon is { } missionForBody)
+                    {
+                        FollowHeldWeapon(armedBody, _heldWeapon, missionForBody);
+                    }
+
+                    if (handBody.PlayerBodyHandAttachment() is { } handAttachment)
+                    {
+                        thirdPersonGun.Draw(
+                            handAttachment,
+                            eye,
+                            projection,
+                            firedThisTick: false,
+                            armedBody.ShotSequence,
+                            WeaponDrawParts.BodyOnly);
+                    }
+                }
+
                 EndStageIfSlow("the soldiers");
 
                 // The marks rounds have left, over the world and under the first-person rig.
@@ -4832,7 +5016,7 @@ internal sealed partial class DesktopGame : IDisposable
                         binocularRangeMetres = (float)(rangeHit.Distance / WorldScene.UnitsPerMetre);
                     }
                 }
-                if (showFirstPersonHud && _player is { View: { } rig } && !binocularsOpen && !sniperScoped)
+                if (showViewModel && _player is { View: { } rig } && !binocularsOpen && !sniperScoped)
                 {
                     // Only an advancing clip changes the skin, so the re-skin is keyed to the tick rather
                     // than the frame.
@@ -6083,6 +6267,98 @@ internal sealed partial class DesktopGame : IDisposable
         }
 
         return kept;
+    }
+
+    /// <summary>Hands the player the ray their crosshair sits on.</summary>
+    /// <param name="drawn">The camera the frame was rasterised from.</param>
+    /// <remarks>
+    /// <para>
+    /// Only the ray. What it is over is settled on the simulation tick, by
+    /// <see cref="PlayerCamera.AimConvergenceRay"/>, against the same world trace and the same human
+    /// probe a round marches — because a crosshair resolved by one test and a bullet resolved by
+    /// another disagree exactly where it matters. The first attempt at this traced here, with the
+    /// renderer's own wall query, and looked straight through people: every shot at a guard converged on
+    /// whatever stood behind him and landed the camera's own half-metre wide.
+    /// </para>
+    /// <para>
+    /// Cleared the moment the camera is back at the eye, which is what leaves first person firing along
+    /// the body's forward with no branch anywhere to say so.
+    /// </para>
+    /// </remarks>
+    private void ConvergeThirdPersonAim(in Camera3D drawn)
+    {
+        if (_player is null)
+        {
+            return;
+        }
+
+        if (!_thirdPerson.IsEngaged)
+        {
+            _player.AimConvergenceRay = null;
+            return;
+        }
+
+        _player.AimConvergenceRay = (
+            new Vector3d(
+                drawn.Position.X * WorldScene.UnitsPerMetre,
+                drawn.Position.Y * WorldScene.UnitsPerMetre,
+                drawn.Position.Z * WorldScene.UnitsPerMetre),
+            drawn.Orientation.Row3);
+    }
+
+    /// <summary>The ray the third-person camera keeps itself out of walls with.</summary>
+    /// <returns>The test, or <see langword="null"/> when the level has nothing to be blocked by yet.</returns>
+    /// <remarks>
+    /// <para>
+    /// Placed objects <b>and</b> the terrain, unlike the ladder camera's, which tests objects alone. That
+    /// is defensible for a camera that only ever exists on a ladder; a camera that follows the player
+    /// across a level spends most of its time outdoors, where the thing it is about to be pushed into is
+    /// a hillside.
+    /// </para>
+    /// <para>
+    /// Cached against the two references it is built from rather than rebuilt per frame: it is called
+    /// once a frame and would otherwise allocate a closure every one of them.
+    /// </para>
+    /// </remarks>
+    private DeathCameraVantage.Blocked? ThirdPersonWalls()
+    {
+        if (_worldSolids is null && _playerTerrain is null)
+        {
+            _thirdPersonWalls = null;
+            _thirdPersonWallsSolids = null;
+            _thirdPersonWallsTerrain = null;
+            return null;
+        }
+
+        if (_thirdPersonWalls is not null
+            && ReferenceEquals(_thirdPersonWallsSolids, _worldSolids)
+            && ReferenceEquals(_thirdPersonWallsTerrain, _playerTerrain))
+        {
+            return _thirdPersonWalls;
+        }
+
+        _thirdPersonWallsSolids = _worldSolids;
+        _thirdPersonWallsTerrain = _playerTerrain;
+
+        WorldRayCast? cast = (_worldSolids, _playerTerrain) switch
+        {
+            ({ } solids, { } ground) => WorldTrace.AsRayCast(
+                WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(ground))),
+            ({ } solids, null) => solids.Caster(),
+            (null, { } ground) => WorldTrace.AsRayCast(TerrainRayTrace.Caster(ground)),
+            _ => null,
+        };
+
+        _thirdPersonWalls = cast is null
+            ? null
+            : (Vector3d from, Vector3d to, out Vector3d hit) =>
+            {
+                bool blocked = cast(from, to, out WorldRayHit wall);
+                hit = blocked ? wall.Position : default;
+                return blocked;
+            };
+
+        return _thirdPersonWalls;
     }
 
     private static float VerticalFieldOfView(float aspectRatio, float horizontalTangent) =>

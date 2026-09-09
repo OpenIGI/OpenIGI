@@ -838,6 +838,9 @@ internal sealed class RemasteredHudRenderer : IDisposable
             return;
         }
 
+        // Dead centre, in every view. Third person does not move it: the shot converges on what the
+        // centre of the screen is over (PlayerCamera.AimConvergencePointUnits), rather than the cross
+        // chasing a shot that leaves an eye the camera is no longer sitting at.
         float centreX = context.SafeRect.X + (context.SafeRect.Width * 0.5f);
         float centreY = context.SafeRect.Y + (context.SafeRect.Height * 0.5f);
         float gap = context.Px(7f);

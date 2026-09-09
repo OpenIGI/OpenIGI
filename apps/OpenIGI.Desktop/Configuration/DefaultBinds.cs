@@ -34,6 +34,11 @@ public static class DefaultBinds
         // this table exists for has nothing to check on them.
         ("l", "lamp_switch"),
         ("k", "lamp_break"),
+
+        // Swaps between looking through the player's eyes and looking over their shoulder. It obeys the
+        // rule above rather than being an exception to it: g_thirdperson is deliberately NOT archived, so
+        // a view flipped to while lining up a jump is not what the game starts as tomorrow.
+        ("v", "toggle g_thirdperson"),
     ];
 
     /// <summary>The variable a statement toggles, or <see langword="null"/> when it toggles nothing.</summary>
