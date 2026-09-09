@@ -1,9 +1,9 @@
-﻿using OpenIGI.Game.Profiles;
+using OpenIGI.Core.Titles;
 using OpenIGI.Input;
-using OpenIGI.UI;
 using OpenIGI.UI.Focus;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
+using OpenIGI.UI;
 
 namespace OpenIGI.Frontend.Screens;
 

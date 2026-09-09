@@ -1,4 +1,4 @@
-namespace OpenIGI.Game.Profiles;
+namespace OpenIGI.Core.Titles;
 
 /// <summary>Whether a game title can be played by this port.</summary>
 public enum GameAvailability

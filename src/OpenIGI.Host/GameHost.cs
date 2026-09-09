@@ -3,6 +3,7 @@ using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
@@ -14,7 +15,6 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Menus;
 using OpenIGI.Game.Player;
-using OpenIGI.Game.Profiles;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Game;
@@ -1461,7 +1461,7 @@ internal sealed partial class GameHost : IDisposable
                 shellTheme,
                 shellHost,
                 new ScreenStack(),
-                GameProfileResolver.BuildCatalogue(_gamePath, null, null),
+                GameProfileResolver.BuildCatalogue(GameTitle.Igi1, _gamePath, null, null),
                 shellMissions,
                 CVarRegistry.Default,
                 GraphicsPresetRegistry.Default,

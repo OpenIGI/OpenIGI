@@ -3,7 +3,7 @@ using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Desktop;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Game.Profiles;
+using OpenIGI.Core.Titles;
 using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Infrastructure;
 using OpenIGI.Host;
@@ -71,14 +71,19 @@ string[] searched = new[] { SettingsPaths.ExecutableDirectory, AppContext.BaseDi
     .Distinct(StringComparer.OrdinalIgnoreCase)
     .ToArray();
 
+// The title this build runs. One name, in the composition root, because that is where the choice
+// belongs and where it becomes a real one: phase 1 replaces this with a selection over GameTitle.All,
+// and nothing below here has to change when it does.
+GameTitle title = GameTitle.Igi1;
+
 // -game, then IGI_GAME_PATH, then whatever is lying around the executable.
-string? gamePath = options.GamePath ?? GameProfileResolver.DiscoverDataRoot(searched);
+string? gamePath = options.GamePath ?? GameProfileResolver.DiscoverDataRoot(searched, title);
 
 if (string.IsNullOrWhiteSpace(gamePath))
 {
-    Console.Error.WriteLine("No Project I.G.I. installation found.");
+    Console.Error.WriteLine($"No {title.DisplayName} installation found.");
     Console.Error.WriteLine();
-    Console.Error.WriteLine("Put OpenIGI in the folder that holds IGI.exe, or point it at one:");
+    Console.Error.WriteLine($"Put OpenIGI in the folder that holds {title.SignatureFile}, or point it at one:");
     Console.Error.WriteLine("  -game <dir>");
     Console.Error.WriteLine($"  {HostOptions.GamePathVariable}=<dir>");
     Console.Error.WriteLine();
@@ -95,13 +100,13 @@ if (string.IsNullOrWhiteSpace(gamePath))
 // Reported apart from the search, because a path somebody typed being wrong is a different mistake
 // from there being nothing to find, and telling them the file that is missing is what makes a
 // mistyped path or a half-copied installation obvious rather than mysterious.
-GameProfile profile = new(GameTitle.Igi1, gamePath);
+GameProfile profile = new(title, gamePath);
 
 if (!profile.IsInstalled)
 {
     Console.Error.WriteLine(
         Directory.Exists(gamePath)
-            ? $"'{gamePath}' is not a Project I.G.I. installation -- no {GameTitle.Igi1.SignatureFile} in it."
+            ? $"'{gamePath}' is not a {title.DisplayName} installation -- no {title.SignatureFile} in it."
             : $"'{gamePath}' does not exist.");
     return 2;
 }

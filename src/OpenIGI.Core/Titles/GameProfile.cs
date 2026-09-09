@@ -1,6 +1,4 @@
-using OpenIGI.Game.World;
-
-namespace OpenIGI.Game.Profiles;
+namespace OpenIGI.Core.Titles;
 
 /// <summary>
 /// A <see cref="GameTitle"/> bound to a concrete installation on disk: its data root, whether it is
@@ -12,6 +10,12 @@ namespace OpenIGI.Game.Profiles;
 /// path string around, it resolves a profile (see <see cref="GameProfileResolver"/>) and everything that
 /// needs the data root asks the profile. That is what makes a second title tractable later: the shell
 /// holds a list of profiles, one per title, and the active one decides where data is read from.
+/// </para>
+/// <para>
+/// It lives in <c>OpenIGI.Core</c> so that everything from the engine upwards can ask which title is
+/// running without depending on gameplay. It carried a scanned mission registry until this was
+/// written, which made a Core-shaped identity type depend on <c>OpenIGI.Game</c> for a property
+/// nothing read; the session that scans the missions owns them instead.
 /// </para>
 /// <para>
 /// <see cref="Availability"/> combines two things: whether the port supports the title at all
@@ -44,10 +48,6 @@ public sealed class GameProfile
 
     /// <summary>Gets the name shown to the player.</summary>
     public string DisplayName => Title.DisplayName;
-
-    /// <summary>Gets or sets the scanned mission registry, once the title's missions have been read.</summary>
-    /// <remarks>Populated by the composition root after <see cref="MissionRegistry.Scan"/>; null until then.</remarks>
-    public MissionRegistry? Missions { get; set; }
 
     /// <summary>Gets a value indicating whether the data is present at <see cref="DataRoot"/>.</summary>
     /// <remarks>

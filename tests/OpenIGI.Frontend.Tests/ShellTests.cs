@@ -1,19 +1,19 @@
-using System.Linq;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Graphics;
-using OpenIGI.Frontend;
+using OpenIGI.Core.Titles;
 using OpenIGI.Frontend.Saves;
 using OpenIGI.Frontend.Screens;
 using OpenIGI.Frontend.Settings;
+using OpenIGI.Frontend;
 using OpenIGI.Game.Config;
-using OpenIGI.Game.Profiles;
 using OpenIGI.Input;
-using OpenIGI.Rendering;
 using OpenIGI.Rendering.Presets;
-using OpenIGI.UI;
+using OpenIGI.Rendering;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
+using OpenIGI.UI;
+using System.Linq;
 using Xunit;
 
 namespace OpenIGI.Frontend.Tests;
@@ -116,7 +116,7 @@ public sealed class ShellTests
             theme,
             host,
             new ScreenStack(),
-            GameProfileResolver.BuildCatalogue("C:\\Games\\IGI", null, null),
+            GameProfileResolver.BuildCatalogue(GameTitle.Igi1, "C:\\Games\\IGI", null, null),
             missions,
             new CVarRegistry(),
             GraphicsPresetRegistry.Default,

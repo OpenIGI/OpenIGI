@@ -1,9 +1,9 @@
 using OpenIGI.Core.Configuration;
-using OpenIGI.Game.Config;
-using OpenIGI.Game.Profiles;
+using OpenIGI.Core.Titles;
 using OpenIGI.Frontend.Saves;
-using OpenIGI.Rendering;
+using OpenIGI.Game.Config;
 using OpenIGI.Rendering.Presets;
+using OpenIGI.Rendering;
 using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Frontend;
