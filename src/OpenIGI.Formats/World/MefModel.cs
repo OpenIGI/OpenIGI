@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Collections.ObjectModel;
 using OpenIGI.Core;
 using OpenIGI.Core.Numerics;
@@ -26,7 +27,13 @@ public sealed class MefModel
     /// <summary>The mesh header size in bytes.</summary>
     public const int MeshHeaderSize = 156;
 
-    /// <summary>The only mesh version the original accepts.</summary>
+    /// <summary>The mesh version retail Project I.G.I. ships.</summary>
+    /// <remarks>
+    /// I.G.I. 2 ships <c>0.16</c> in the same field, so which versions are acceptable is a property of
+    /// the title being run rather than of this reader — see <see cref="AssetFormatProfile"/>. This
+    /// remains the default so that reading a model without saying which game it came from behaves as it
+    /// always has.
+    /// </remarks>
     public const float SupportedVersion = 0.1f;
 
     private readonly MefVertex[] _vertices;
@@ -141,14 +148,32 @@ public sealed class MefModel
     /// <exception cref="IlffFormatException">The container itself is malformed.</exception>
     public static MefModel Read(ReadOnlyMemory<byte> data) => FromContainer(IlffContainer.Read(data));
 
+    /// <summary>Parses a model, accepting the mesh versions one title ships.</summary>
+    /// <param name="data">The file bytes.</param>
+    /// <param name="profile">The title's format profile.</param>
+    /// <returns>The parsed model.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="profile"/> is <see langword="null"/>.</exception>
+    /// <exception cref="PackFormatException">The model is malformed, or is not a version the title ships.</exception>
+    public static MefModel Read(ReadOnlyMemory<byte> data, AssetFormatProfile profile) =>
+        FromContainer(IlffContainer.Read(data), profile);
+
     /// <summary>Parses a model from an already-parsed container.</summary>
     /// <param name="container">The container, whose form type must be <c>OCEM</c>.</param>
     /// <returns>The parsed model.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="container"/> is <see langword="null"/>.</exception>
     /// <exception cref="PackFormatException">The model is malformed or uses an unsupported mesh format.</exception>
-    public static MefModel FromContainer(IlffContainer container)
+    public static MefModel FromContainer(IlffContainer container) => FromContainer(container, AssetFormatProfile.Igi1);
+
+    /// <summary>Parses a model from an already-parsed container, accepting one title's mesh versions.</summary>
+    /// <param name="container">The container, whose form type must be <c>OCEM</c>.</param>
+    /// <param name="profile">The title's format profile.</param>
+    /// <returns>The parsed model.</returns>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    /// <exception cref="PackFormatException">The model is malformed, or is not a version the title ships.</exception>
+    public static MefModel FromContainer(IlffContainer container, AssetFormatProfile profile)
     {
         ArgumentNullException.ThrowIfNull(container);
+        ArgumentNullException.ThrowIfNull(profile);
 
         if (container.FormType != IlffTags.Ocem)
         {
@@ -162,10 +187,11 @@ public sealed class MefModel
         }
 
         float version = BinaryPrimitives.ReadSingleLittleEndian(mesh);
-        if (version != SupportedVersion)
+        if (!profile.AcceptsMesh(version))
         {
             throw new PackFormatException(
-                $"Mesh version is {version:0.00}, this code supports {SupportedVersion:0.00}.");
+                $"Mesh version is {version:0.00}, which this title does not ship "
+                + $"(it ships {string.Join(", ", profile.MeshVersions.Select(static v => v.ToString("0.00", CultureInfo.InvariantCulture)))}).");
         }
 
         uint rawFormat = BinaryPrimitives.ReadUInt32LittleEndian(mesh[32..]);
