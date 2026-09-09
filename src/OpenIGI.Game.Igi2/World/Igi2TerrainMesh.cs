@@ -11,7 +11,7 @@ namespace OpenIGI.Game.Igi2.World;
 /// <param name="Indices">The triangle list, three indices per triangle, into the mesh's vertices.</param>
 /// <param name="Weights">
 /// One weight per mesh vertex: <c>1</c> where the sample carries this material and <c>0</c> where it
-/// carries another. This is the alpha the pass blends with.
+/// carries another. This is the source alpha the pass blends with.
 /// </param>
 public readonly record struct Igi2TerrainPass(
     int MaterialId,
@@ -35,6 +35,18 @@ public readonly record struct Igi2TerrainPass(
 /// The per-vertex bits are set by <c>TerrainRender_CalculateRenderVertex</c> (<c>0x66A740</c>), which
 /// also keeps the weight this exposes: a vertex contributes fully to its own material's pass and
 /// nothing to another's.
+/// </para>
+/// <para>
+/// <b>The passes are additive, weighted by source alpha, and their order does not matter.</b>
+/// <c>TerrainRender_SetBlendState</c> (<c>igi2ed 0x66BCB0</c>) is three calls —
+/// <c>ALPHABLENDENABLE = 1</c>, <c>SRCBLEND = SRCALPHA</c>, <c>DESTBLEND = ONE</c> — so each pass adds
+/// <c>texture * diffuse * weight</c> onto the frame. The weights at a sample sum to one, which turns
+/// the accumulation into a weighted average without needing the passes sorted. That is why
+/// <see cref="Passes"/> may be emitted in any order at all.
+/// </para>
+/// <para>
+/// It also means a sample no pass covers contributes <em>nothing</em> rather than falling back to a
+/// default — see <see cref="UncoveredSampleCount"/>.
 /// </para>
 /// <para>
 /// <b>This is the tile at full detail, and that is a deliberate difference.</b> The original draws
@@ -79,6 +91,15 @@ public sealed class Igi2TerrainMesh
     /// <summary>Gets how many triangles the passes issue between them.</summary>
     public int TriangleCount => Passes.Sum(static p => p.Indices.Length) / 3;
 
+    /// <summary>Gets how many samples no pass covers, and which therefore draw as nothing.</summary>
+    /// <remarks>
+    /// A sample painted with a material the level never declared. Under an additive blend that is not a
+    /// fallback to some default ground — it is a contribution of zero, so the frame keeps whatever was
+    /// behind the terrain there. The original behaves the same way, which is why these are carried as a
+    /// count rather than repaired.
+    /// </remarks>
+    public int UncoveredSampleCount { get; private init; }
+
     /// <summary>Builds the geometry for one tile.</summary>
     /// <param name="tile">The tile.</param>
     /// <param name="materials">The level's terrain materials, keyed by id.</param>
@@ -112,10 +133,8 @@ public sealed class Igi2TerrainMesh
             }
         }
 
-        // One pass per material the tile actually paints, in id order so a caller's draw order is
-        // stable across runs. The original's order is the context's own material list, which is built
-        // from the level's declarations; nothing in the blend depends on it, because each pass writes
-        // only where its own weights are non-zero.
+        // One pass per material the tile actually paints, in id order purely so a run is reproducible.
+        // Nothing depends on the order: the blend is SRCALPHA/ONE, so the passes accumulate and commute.
         List<Igi2TerrainPass> passes = [];
         foreach (byte id in material.Distinct().Order())
         {
@@ -158,7 +177,16 @@ public sealed class Igi2TerrainMesh
                 weights));
         }
 
-        return new Igi2TerrainMesh(positions, lights, passes, width, height);
+        int uncovered = 0;
+        foreach (byte id in material)
+        {
+            uncovered += materials.ContainsKey(id) ? 0 : 1;
+        }
+
+        return new Igi2TerrainMesh(positions, lights, passes, width, height)
+        {
+            UncoveredSampleCount = uncovered,
+        };
     }
 
     /// <summary>Gets the texture coordinate a pass samples at one world position.</summary>

@@ -162,6 +162,55 @@ public sealed class RetailIgi2TerrainMeshTests
         Assert.Fail("No level shipped terrain to check.");
     }
 
+    /// <summary>The weights at a sample sum to one, which is what makes the additive blend an average.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>TerrainRender_SetBlendState</c> (<c>igi2ed 0x66BCB0</c>) sets <c>SRCBLEND = SRCALPHA</c> and
+    /// <c>DESTBLEND = ONE</c>, so the passes accumulate. That only composites correctly if the weights
+    /// at each sample sum to one — otherwise the ground comes out over- or under-bright rather than
+    /// simply wrong, which is the kind of error that reads as a lighting bug.
+    /// </para>
+    /// <para>
+    /// The exceptions are the samples painted with a material the level never declared: 758 across the
+    /// corpus, one in eight thousand. Their weight sums to <b>zero</b>, and under an additive blend that
+    /// is not a fallback — it is a contribution of nothing, so the frame keeps whatever lies behind the
+    /// terrain. The original does the same, so they are counted rather than repaired.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void The_weights_at_a_sample_sum_to_one_except_where_a_material_was_deleted()
+    {
+        int uncovered = 0;
+        long samples = 0;
+
+        foreach (Igi2Level level in Igi2Level.All())
+        {
+            Igi2TerrainSurface surface = Surface(level);
+            foreach (Igi2TerrainTile tile in surface.Tiles)
+            {
+                Igi2TerrainMesh mesh = Igi2TerrainMesh.Build(tile, surface.Materials);
+                uncovered += mesh.UncoveredSampleCount;
+                samples += mesh.Positions.Count;
+
+                for (int i = 0; i < mesh.Positions.Count; i++)
+                {
+                    float total = 0f;
+                    foreach (Igi2TerrainPass pass in mesh.Passes)
+                    {
+                        total += pass.Weights.Span[i];
+                    }
+
+                    Assert.True(total is 0f or 1f, $"Sample {i} of tile {tile.Id} sums to {total}.");
+                }
+            }
+        }
+
+        Assert.Equal(6_356_992L, samples);
+
+        // Measured: 758 samples across 6.36 million carry a material their level deleted.
+        Assert.Equal(758, uncovered);
+    }
+
     private static Igi2TerrainSurface Surface(Igi2Level level)
     {
         string path = Path.Combine(level.Directory, "heightmaps", "heightmaps.res");
