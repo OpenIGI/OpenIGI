@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- One game's content: its data layout, its format profile and the content modules that register
+         its task types, script natives and tables. Never references the other title project; only an app
+         composition root may name both, and it does so through IGameTitleRuntime. -->
+    <ProjectReference Include="..\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\OpenIGI.Engine\OpenIGI.Engine.csproj" />
+    <ProjectReference Include="..\OpenIGI.Formats\OpenIGI.Formats.csproj" />
+    <ProjectReference Include="..\OpenIGI.Scripting\OpenIGI.Scripting.csproj" />
+    <ProjectReference Include="..\OpenIGI.Game\OpenIGI.Game.csproj" />
+  </ItemGroup>
+
+</Project>

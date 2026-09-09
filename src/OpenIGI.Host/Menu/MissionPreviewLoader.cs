@@ -10,7 +10,6 @@ using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Game.Ai;
-using OpenIGI.Game.Content;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;

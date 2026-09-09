@@ -3,7 +3,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Content;
+namespace OpenIGI.Game.Igi1;
 
 /// <summary>Project I.G.I.'s content, as the modules a session registers.</summary>
 /// <remarks>

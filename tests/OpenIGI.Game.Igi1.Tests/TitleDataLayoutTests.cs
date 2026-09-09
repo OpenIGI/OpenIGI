@@ -1,11 +1,12 @@
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Titles;
-using OpenIGI.Game.Content;
+using OpenIGI.Game.Igi1;
+using OpenIGI.Game.Igi2;
 using OpenIGI.Game.World;
 using Xunit;
 
-namespace OpenIGI.Game.Tests.Content;
+namespace OpenIGI.Game.Igi1.Tests;
 
 /// <summary>The two titles' data layouts.</summary>
 public sealed class TitleDataLayoutTests

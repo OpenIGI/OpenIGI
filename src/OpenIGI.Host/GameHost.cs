@@ -14,7 +14,6 @@ using OpenIGI.Frontend.Saves;
 using OpenIGI.Frontend;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
-using OpenIGI.Game.Content;
 using OpenIGI.Game.Menus;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;

@@ -1,6 +1,7 @@
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Titles;
-using OpenIGI.Game.Content;
+using OpenIGI.Game.Igi1;
+using OpenIGI.Game.Igi2;
 
 namespace OpenIGI.Desktop;
 

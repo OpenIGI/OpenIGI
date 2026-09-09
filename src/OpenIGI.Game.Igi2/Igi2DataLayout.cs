@@ -2,7 +2,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 
-namespace OpenIGI.Game.Content;
+namespace OpenIGI.Game.Igi2;
 
 /// <summary>Where retail I.G.I. 2 keeps its data.</summary>
 /// <remarks>

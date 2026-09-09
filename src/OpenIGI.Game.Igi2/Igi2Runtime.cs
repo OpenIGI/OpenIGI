@@ -2,7 +2,7 @@ using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Formats;
 
-namespace OpenIGI.Game.Content;
+namespace OpenIGI.Game.Igi2;
 
 /// <summary>I.G.I. 2: Covert Strike, as far as the engine can currently run it.</summary>
 /// <remarks>

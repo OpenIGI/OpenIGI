@@ -4,7 +4,7 @@ using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.World;
 
-namespace OpenIGI.Game.Content;
+namespace OpenIGI.Game.Igi1;
 
 /// <summary>Where retail Project I.G.I. keeps its data.</summary>
 /// <remarks>

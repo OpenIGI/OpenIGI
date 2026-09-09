@@ -8,6 +8,8 @@
     <Project Path="src/OpenIGI.Formats/OpenIGI.Formats.csproj" />
     <Project Path="src/OpenIGI.Generators/OpenIGI.Generators.csproj" />
     <Project Path="src/OpenIGI.Game/OpenIGI.Game.csproj" />
+    <Project Path="src/OpenIGI.Game.Igi1/OpenIGI.Game.Igi1.csproj" />
+    <Project Path="src/OpenIGI.Game.Igi2/OpenIGI.Game.Igi2.csproj" />
     <Project Path="src/OpenIGI.Input/OpenIGI.Input.csproj" />
     <Project Path="src/OpenIGI.Modding/OpenIGI.Modding.csproj" />
     <Project Path="src/OpenIGI.Platform.Desktop/OpenIGI.Platform.Desktop.csproj" />
@@ -29,6 +31,7 @@
     <Project Path="tests/OpenIGI.Engine.Tests/OpenIGI.Engine.Tests.csproj" />
     <Project Path="tests/OpenIGI.Formats.Tests/OpenIGI.Formats.Tests.csproj" />
     <Project Path="tests/OpenIGI.Game.Tests/OpenIGI.Game.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Game.Igi1.Tests/OpenIGI.Game.Igi1.Tests.csproj" />
     <Project Path="tests/OpenIGI.Input.Tests/OpenIGI.Input.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.Tests/OpenIGI.Rendering.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.Vulkan.Tests/OpenIGI.Rendering.Vulkan.Tests.csproj" />
