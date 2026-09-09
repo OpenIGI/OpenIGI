@@ -54,11 +54,19 @@ public sealed record ContentRegistrationContext(
 /// <param name="FileSystem">The virtual file system scripts and archives are read from.</param>
 /// <param name="Resources">The resource registry archives are opened into.</param>
 /// <param name="Natives">The script namespace the table scripts call back into.</param>
-/// <param name="Services">Where a module publishes a table it built.</param>
+/// <param name="Tasks">The task tree, for tables whose rows are themselves tasks.</param>
+/// <param name="Services">The tables published during registration.</param>
 /// <param name="Logger">Where load diagnostics go.</param>
+/// <remarks>
+/// <see cref="Services"/> is read-only here on purpose. A module <em>builds</em> its table in
+/// <see cref="IContentModule.Register"/> and <em>fills</em> it here, so by this phase every table a
+/// module could need already exists — including one another module owns. Publishing at load time would
+/// reintroduce the ordering problem the two phases exist to remove.
+/// </remarks>
 public sealed record ContentLoadContext(
     VirtualFileSystem FileSystem,
     ResourceRegistry Resources,
     NativeRegistry Natives,
-    IServiceCollector Services,
+    TaskTree Tasks,
+    IServiceCatalog Services,
     IIgiLogger Logger);

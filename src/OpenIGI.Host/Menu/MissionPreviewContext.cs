@@ -1,6 +1,7 @@
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Time;
+using OpenIGI.Engine.Titles;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
 
@@ -64,6 +65,11 @@ namespace OpenIGI.Host.Menu;
 /// are read there too rather than on the frame that uploads them; the pack is shared across missions, so
 /// this is the session's own and not the preview's.
 /// </param>
+/// <param name="TitleServices">
+/// The tables the playing session's content modules built. A preview registers the same modules into
+/// its own loop — the natives are per-loop and must be — but the tables are the session's, so a
+/// backdrop reads the magic-object table that is already loaded rather than a second, empty one.
+/// </param>
 /// <param name="ComputeSupported">
 /// Whether the device can run compute at all. A distance field is only ever traced against on a device
 /// that can, so a backdrop built for one that cannot should not spend a worker baking one.
@@ -78,4 +84,5 @@ public sealed record MissionPreviewContext(
     ResourceOverrides Overrides,
     LampManifest Lamps,
     DistanceFieldCache DistanceFields,
+    IServiceCatalog TitleServices,
     bool ComputeSupported);

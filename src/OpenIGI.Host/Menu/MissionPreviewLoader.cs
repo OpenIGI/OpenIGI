@@ -6,9 +6,11 @@ using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
+using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Content;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
@@ -267,14 +269,19 @@ public sealed class MissionPreviewLoader(
             resources.Register(archive.Key, archive.Value);
         }
 
-        // The same task types the composition root registers, so the tree comes out shaped the way the
-        // scene walk expects rather than as untyped declared tasks.
-        PlayerTaskTypes.RegisterAll(loop.Types);
-        AiTaskTypes.RegisterAll(loop.Types);
-        HumanAiConfigRegistry.RegisterTypes(loop.Types);
-        loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
-        magic.Register(loop.Natives);
+        // The same content the playing session registers, from the same list rather than from a second
+        // copy of it maintained by hand -- which is what this was, and it had already drifted by an
+        // entry. loadTables is false because a preview does not play the mission: it needs every type
+        // registered so the tree comes out properly typed rather than as untyped placeholders, and it
+        // reads the tables the playing session already loaded through `inherited`.
+        TitleSession.Start(
+            Igi1ContentModules.All,
+            loop,
+            fileSystem,
+            resources,
+            logger,
+            loadTables: false,
+            inherited: context.TitleServices);
 
         // The two natives the composition root installs at boot and a look-only preview never needed.
         // DefineMission's table is already scanned and lives on the shared registry, so this is the hook

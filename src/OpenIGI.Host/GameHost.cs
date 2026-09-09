@@ -8,11 +8,13 @@ using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
+using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Frontend.Saves;
 using OpenIGI.Frontend;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
+using OpenIGI.Game.Content;
 using OpenIGI.Game.Menus;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
@@ -114,6 +116,7 @@ internal sealed partial class GameHost : IDisposable
     private VehiclePhysicsRegistry _vehiclePhysics = null!;
     private HumanAiConfigRegistry _aiConfig = null!;
     private AnimTriggerRegistry? _animationTriggers;
+    private TitleSession _title = null!;
     private MaterialLibrary _materials = null!;
     private MaterialDetailPack _detailMaps = null!;
 
@@ -769,51 +772,21 @@ internal sealed partial class GameHost : IDisposable
         GameMusicNatives musicNatives = new(_music!);
         musicNatives.Register(_loop.Natives);
 
-        // The magic-object table is what turns a level's few hundred scripted objects into its full
-        // contents: every model's attachments name an entry here. Loading it is a startup step, like the
-        // mission scan, because a level's own scripts never mention it.
-        _magic = new(_logger);
-        _vehiclePhysics = new(_logger);
-        _animationTriggers = new(_logger);
+        // One list, walked once. The desktop host and the mission-preview loader used to keep a copy of
+        // this block each, with a comment in the loader saying it matched the one here; they had already
+        // drifted by an entry. See TitleSession.
+        _title = TitleSession.Start(
+            Igi1ContentModules.All, _loop, _fileSystem, _resources, _logger, loadTables: false);
 
-        // Without these the level's own HumanPlayer task is never built, and the spawn the mission
-        // declares cannot be found - the tree loads perfectly well without it and simply has no player.
-        PlayerTaskTypes.RegisterAll(_loop.Types);
-
-        // Without these, HumanAI/PatrolPath/PatrolPathCommand load as untyped DeclaredTasks: the soldier's
-        // brain cannot be found, so no soldier gets its own MISSION:AI/<taskid> script, so nothing ever names a
-        // patrol path and every guard falls back to the archetype and stands still.
-        AiTaskTypes.RegisterAll(_loop.Types);
-
-        // A level's CutScene tasks export isRun/isFinished/nTick, which the mission AI scripts read in their
-        // idle branch. Without the type registered the symbols never bind and guard.qsc faults every idle tick
-        // on CutScene_1200.nTick, cutting its patrol handling short. Its fourteen parameters match the level's
-        // Task_DeclareParameters("CutScene", ...) declaration so the registry's verification passes.
-        _loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-
-        // A level parks its intro and outro cut-scene actors inside ConditionalContainer tasks gated on
-        // cut-scene / mission-progress state that is false during play. Without the type registered the port
-        // built each as a plain container and rendered its children, so those actors -- including a second
-        // David Jones on the player's own model, the outro "Jones drive truck" -- stood in the level at
-        // mission start where the original never registers them. Registering the type lets the gate below
-        // evaluate each container's condition and hide the subtrees the original leaves unregistered.
-        _loop.Types.Register<ConditionalContainerTask>(
-            ConditionalContainerTask.TypeName);
-
-        // Every soldier's combat numbers - 29 AI types x 3 difficulties out of common/ai/settings.qsc.
-        // Loaded before any level, as sub_406DF0 is: the table has to exist before a HumanAI is configured.
-        HumanAiConfigRegistry.RegisterTypes(_loop.Types);
-        _aiConfig = new(_logger);
-        _magic.Register(_loop.Natives);
-        _animationTriggers.Register(_loop.Natives);
+        _magic = _title.Services.Require<MagicObjectRegistry>();
+        _vehiclePhysics = _title.Services.Require<VehiclePhysicsRegistry>();
+        _animationTriggers = _title.Services.Require<AnimTriggerRegistry>();
+        _aiConfig = _title.Services.Require<HumanAiConfigRegistry>();
 
         try
         {
             _missions.Scan(_fileSystem, _resources, _loop.Natives);
-            _magic.Load(_resources, _loop.Natives);
-            _vehiclePhysics.Load(_resources);
-            _animationTriggers.Load(_resources, _loop.Natives);
-            _aiConfig.Load(_resources, _loop.Natives, _loop.Tasks);
+            _title.LoadTables(_loop, _fileSystem, _resources);
             configHost.Missions = _missions;
         }
         catch (EngineFatalException ex)
@@ -1038,6 +1011,7 @@ internal sealed partial class GameHost : IDisposable
             _overrides,
             _lampManifest,
             _sdfCache,
+            _title.Services,
             _device.Capabilities.SupportsCompute);
 
 

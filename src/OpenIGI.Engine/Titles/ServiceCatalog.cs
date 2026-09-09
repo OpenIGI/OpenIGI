@@ -18,6 +18,21 @@ public interface IServiceCollector
     /// <exception cref="InvalidOperationException">Something is already published under that type.</exception>
     void Provide<T>(T service)
         where T : class;
+
+    /// <summary>Publishes a table, or hands back one a previous session already built.</summary>
+    /// <typeparam name="T">The type callers will ask for it by.</typeparam>
+    /// <param name="factory">Builds the table when there is not one already.</param>
+    /// <returns>The table, new or inherited.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="factory"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// For a session that runs beside another rather than instead of it. The mission-preview loader
+    /// builds a level in its own loop, with its own script namespace, but must read the <em>same</em>
+    /// tables the playing session loaded — a second, empty magic-object table would silently give the
+    /// preview a level with no attachments. Seed a session with
+    /// <see cref="TitleSession.Start"/>'s inherited catalogue and modules reuse rather than rebuild.
+    /// </remarks>
+    T GetOrProvide<T>(Func<T> factory)
+        where T : class;
 }
 
 /// <summary>Reads back what a title's content modules published.</summary>
@@ -46,7 +61,19 @@ public interface IServiceCatalog
 /// </remarks>
 public sealed class ServiceCatalog : IServiceCollector, IServiceCatalog
 {
-    private readonly Dictionary<Type, object> _services = [];
+    private readonly Dictionary<Type, object> _services;
+
+    /// <summary>Initializes an empty catalogue.</summary>
+    public ServiceCatalog() => _services = [];
+
+    /// <summary>Initializes a catalogue holding everything another one holds.</summary>
+    /// <param name="inherited">The catalogue to copy; its tables are shared, not cloned.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="inherited"/> is <see langword="null"/>.</exception>
+    public ServiceCatalog(ServiceCatalog inherited)
+    {
+        ArgumentNullException.ThrowIfNull(inherited);
+        _services = new Dictionary<Type, object>(inherited._services);
+    }
 
     /// <inheritdoc/>
     public void Provide<T>(T service)
@@ -59,6 +86,23 @@ public sealed class ServiceCatalog : IServiceCollector, IServiceCatalog
             throw new InvalidOperationException(
                 $"A {typeof(T).Name} is already published; two content modules cannot both own one.");
         }
+    }
+
+    /// <inheritdoc/>
+    public T GetOrProvide<T>(Func<T> factory)
+        where T : class
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+
+        if (_services.TryGetValue(typeof(T), out object? found))
+        {
+            return (T)found;
+        }
+
+        T created = factory();
+        ArgumentNullException.ThrowIfNull(created);
+        _services[typeof(T)] = created;
+        return created;
     }
 
     /// <inheritdoc/>
