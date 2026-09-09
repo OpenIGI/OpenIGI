@@ -12,15 +12,12 @@ namespace OpenIGI.Scripting.Tests;
 /// The sequel emits version 7 where I.G.I. 1 emits 5. The <em>container</em> differs only in its
 /// header: measured across retail installations of both games, all 998 I.G.I. 1 scripts put their
 /// symbol table at offset 60 and all 1,784 I.G.I. 2 scripts put it at 64, the extra four bytes being a
-/// file-info offset. That is what these tests cover, and it is all the loader currently claims.
+/// file-info offset.
 /// </para>
 /// <para>
-/// <b>The instruction encoding is a separate, unfinished problem.</b> Version 7 renumbers the opcodes —
-/// the control-flow group moves to the front and the push family shifts up by six — and it also changes
-/// some operand widths: a linear sweep of all 1,784 scripts using the renumbering alone decodes 846 of
-/// them and desynchronises on the other 938. So <see cref="QvmDisassembler"/> cannot yet read version 7,
-/// and there is deliberately no test here claiming it can. The widths have to be read out of
-/// <c>igi2.exe</c>'s own <c>QVM_Op*</c> handlers before any of it is written down.
+/// Version 7 also renumbers the opcodes — the control-flow group moves to the front and the push family
+/// shifts up by six — which <see cref="QvmOpcodeEncoding"/> translates. The operand shapes do not change
+/// with it, and the sweep below is what proves that.
 /// </para>
 /// </remarks>
 public sealed class RetailIgi2QvmTests
@@ -91,5 +88,103 @@ public sealed class RetailIgi2QvmTests
 
         Assert.Equal(QvmProgram.IgiVersion, program.Version);
         Assert.Equal(0, program.FileInfoOffset);
+    }
+
+    /// <summary>Every retail I.G.I. 2 script disassembles, and the sweep lands on the section boundary.</summary>
+    /// <remarks>
+    /// The proof that the version 7 opcode map and every operand width are right. A linear sweep decodes
+    /// each instruction by its own length and steps to the next; one wrong length desynchronises the
+    /// walk and it overshoots the end of the section or stops short of it. Landing exactly on the
+    /// boundary in all 1,784 scripts is a much stronger statement than any single file decoding.
+    /// <para>
+    /// This is the same proof the I.G.I. 1 suite uses in
+    /// <c>ConfigQvmGoldenTests.EveryRetailScriptLoadsAndDisassembles</c>.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void Every_retail_script_disassembles_and_the_sweep_lands_exactly()
+    {
+        IReadOnlyList<string> scripts = GameDataSource.Igi2.EnumerateFiles("*.qvm");
+        Assert.NotEmpty(scripts);
+
+        foreach (string path in scripts)
+        {
+            QvmProgram program = QvmProgram.Read(File.ReadAllBytes(path));
+            List<QvmInstruction> instructions = [.. QvmDisassembler.Decode(program)];
+
+            Assert.NotEmpty(instructions);
+            Assert.All(instructions, instruction =>
+                Assert.True(
+                    QvmOpcodeInfo.TryGet(instruction.Opcode, out _),
+                    $"{path} at {instruction.Offset}: opcode 0x{(byte)instruction.Opcode:X2} is not in the table."));
+
+            QvmInstruction last = instructions[^1];
+            Assert.True(
+                last.Offset + last.Length == program.Code.Length,
+                $"{path}: the sweep ended at {last.Offset + last.Length} of {program.Code.Length}.");
+        }
+    }
+
+    /// <summary>The two encodings agree on the arithmetic block and disagree below it.</summary>
+    /// <remarks>
+    /// Read out of I.G.I. 2's <c>QVM_Open</c>, which fills its 49-slot handler table one index at a
+    /// time. The shared tail is why a version 5 reader gets some way into a version 7 file before it
+    /// goes wrong, which is a worse failure than not reading it at all.
+    /// </remarks>
+    [Fact]
+    public void Version_seven_renumbers_only_the_first_twenty_five_opcodes()
+    {
+        for (byte value = 0x19; value <= 0x2F; value++)
+        {
+            Assert.True(QvmOpcodeEncoding.Version5.TryDecode(value, out QvmOpcode v5));
+            Assert.True(QvmOpcodeEncoding.Version7.TryDecode(value, out QvmOpcode v7));
+            Assert.Equal(v5, v7);
+        }
+
+        // CALL is the clearest of the moves: 0x18 in version 5, 0x07 in version 7 -- and 0x18 in
+        // version 7 is POP, which takes no operand at all. That is the collision that desynchronises a
+        // version 5 reader, because it goes looking for an argument list that is not there.
+        Assert.True(QvmOpcodeEncoding.Version5.TryDecode(0x18, out QvmOpcode v5Call));
+        Assert.Equal(QvmOpcode.Call, v5Call);
+
+        Assert.True(QvmOpcodeEncoding.Version7.TryDecode(0x18, out QvmOpcode v7Pop));
+        Assert.Equal(QvmOpcode.Pop, v7Pop);
+
+        Assert.True(QvmOpcodeEncoding.Version7.TryDecode(0x07, out QvmOpcode v7Call));
+        Assert.Equal(QvmOpcode.Call, v7Call);
+    }
+
+    /// <summary>Version 7 leaves RET and JSR undefined, because its own handler table does.</summary>
+    /// <remarks>
+    /// <c>QVM_Open</c> points both at the illegal-instruction handler, so a file carrying one is
+    /// malformed rather than using something this port has not got round to.
+    /// </remarks>
+    [Fact]
+    public void Version_seven_defines_neither_ret_nor_jsr()
+    {
+        Assert.False(QvmOpcodeEncoding.Version7.TryDecode(0x02, out _));
+        Assert.False(QvmOpcodeEncoding.Version7.TryDecode(0x06, out _));
+
+        Assert.False(QvmOpcodeEncoding.Version7.TryEncode(QvmOpcode.Ret, out _));
+        Assert.False(QvmOpcodeEncoding.Version7.TryEncode(QvmOpcode.Jsr, out _));
+    }
+
+    /// <summary>Encoding and decoding are inverse, for both versions.</summary>
+    [Fact]
+    public void The_encodings_round_trip()
+    {
+        foreach (QvmOpcodeEncoding encoding in (QvmOpcodeEncoding[])[QvmOpcodeEncoding.Version5, QvmOpcodeEncoding.Version7])
+        {
+            for (int value = 0; value <= byte.MaxValue; value++)
+            {
+                if (!encoding.TryDecode((byte)value, out QvmOpcode opcode))
+                {
+                    continue;
+                }
+
+                Assert.True(encoding.TryEncode(opcode, out byte round));
+                Assert.Equal((byte)value, round);
+            }
+        }
     }
 }

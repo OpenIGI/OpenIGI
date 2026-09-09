@@ -33,21 +33,32 @@ public static class QvmDisassembler
     public static IEnumerable<QvmInstruction> Decode(QvmProgram program)
     {
         ArgumentNullException.ThrowIfNull(program);
-        return Decode(program.Code);
+        return Decode(program.Code, QvmOpcodeEncoding.ForVersion(program.Version));
     }
 
     /// <summary>Decodes every instruction of a code section, in address order.</summary>
     /// <param name="code">The code section.</param>
     /// <returns>The instructions, from offset zero to the end of the section.</returns>
     /// <exception cref="QvmFormatException">An instruction runs past the end of the code section.</exception>
-    public static IEnumerable<QvmInstruction> Decode(ReadOnlyMemory<byte> code)
+    public static IEnumerable<QvmInstruction> Decode(ReadOnlyMemory<byte> code) =>
+        Decode(code, QvmOpcodeEncoding.Version5);
+
+    /// <summary>Decodes every instruction of a code section written in a given encoding.</summary>
+    /// <param name="code">The code section.</param>
+    /// <param name="encoding">How this bytecode version numbers the opcodes.</param>
+    /// <returns>The instructions, from offset zero to the end of the section.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="encoding"/> is <see langword="null"/>.</exception>
+    /// <exception cref="QvmFormatException">An instruction runs past the end of the code section.</exception>
+    public static IEnumerable<QvmInstruction> Decode(ReadOnlyMemory<byte> code, QvmOpcodeEncoding encoding)
     {
+        ArgumentNullException.ThrowIfNull(encoding);
+
         List<QvmInstruction> instructions = [];
         int offset = 0;
 
         while (offset < code.Length)
         {
-            QvmInstruction instruction = DecodeAt(code.Span, offset);
+            QvmInstruction instruction = DecodeAt(code.Span, offset, encoding);
             instructions.Add(instruction);
             offset += instruction.Length;
         }
@@ -61,12 +72,31 @@ public static class QvmDisassembler
     /// <returns>The decoded instruction.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="offset"/> is outside <paramref name="code"/>.</exception>
     /// <exception cref="QvmFormatException">The instruction runs past the end of the code section.</exception>
-    public static QvmInstruction DecodeAt(ReadOnlySpan<byte> code, int offset)
+    public static QvmInstruction DecodeAt(ReadOnlySpan<byte> code, int offset) =>
+        DecodeAt(code, offset, QvmOpcodeEncoding.Version5);
+
+    /// <summary>Decodes the single instruction at an offset, in a given encoding.</summary>
+    /// <param name="code">The code section.</param>
+    /// <param name="offset">The byte offset of the instruction within <paramref name="code"/>.</param>
+    /// <param name="encoding">How this bytecode version numbers the opcodes.</param>
+    /// <returns>The decoded instruction.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="encoding"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="offset"/> is outside <paramref name="code"/>.</exception>
+    /// <exception cref="QvmFormatException">The instruction runs past the end of the code section.</exception>
+    public static QvmInstruction DecodeAt(ReadOnlySpan<byte> code, int offset, QvmOpcodeEncoding encoding)
     {
+        ArgumentNullException.ThrowIfNull(encoding);
         ArgumentOutOfRangeException.ThrowIfNegative(offset);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(offset, code.Length);
 
-        QvmOpcode opcode = (QvmOpcode)code[offset];
+        if (!encoding.TryDecode(code[offset], out QvmOpcode opcode))
+        {
+            // A byte this version does not define. Reported as a one-byte unknown rather than thrown,
+            // the way an undefined opcode has always been, so a caller sweeping a section sees where
+            // the trouble starts instead of only that there was some.
+            return new QvmInstruction(offset, (QvmOpcode)code[offset], 1);
+        }
+
         if (!QvmOpcodeInfo.TryGet(opcode, out QvmOpcodeInfo info))
         {
             return new QvmInstruction(offset, opcode, 1);
