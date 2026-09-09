@@ -1,3 +1,4 @@
+using OpenIGI.Presentation;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -11,7 +12,7 @@ using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>
 /// The remaster's map computer: a full-screen tactical interface drawn over a live overhead view of the
@@ -47,7 +48,7 @@ namespace OpenIGI.Presentation.Igi1;
 /// rasterisation.
 /// </para>
 /// </remarks>
-internal sealed class TacticalComputerRenderer : IDisposable
+internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
 {
     private const string LogCategory = "Computer";
 

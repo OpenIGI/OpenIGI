@@ -9,7 +9,7 @@ using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
 /// The remaster's presentation of the mission's status messages: a minimal comms feed at the top left when
@@ -21,7 +21,7 @@ namespace OpenIGI.Presentation.Igi1;
 /// from the simulation — <see cref="MissionObjectiveRuntime.DisplayedMessages"/> is what the original's
 /// slot array produces, typewriter and all — so this is a reskin in the strict sense: nothing here can
 /// make a message arrive earlier, hold longer, or appear in a different order than the retail path shows
-/// it in. <see cref="StatusScreenRenderer.DrawStatusMessages"/> is the faithful one; this is its
+/// it in. <c>StatusScreenRenderer.DrawStatusMessages</c> is the faithful one; this is its
 /// counterpart, chosen by <c>r_messages_tactical</c>.
 /// </para>
 /// <para>

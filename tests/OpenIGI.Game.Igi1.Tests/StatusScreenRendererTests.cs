@@ -1,3 +1,4 @@
+using OpenIGI.Game.Igi1.World;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Graphics;
 using OpenIGI.Engine.Vfs;
@@ -11,7 +12,7 @@ using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
 
-namespace OpenIGI.Desktop.Tests;
+namespace OpenIGI.Game.Igi1.Tests;
 
 /// <summary>Checks the executable-recovered retail HUD against the shipped resources.</summary>
 public sealed class StatusScreenRendererTests

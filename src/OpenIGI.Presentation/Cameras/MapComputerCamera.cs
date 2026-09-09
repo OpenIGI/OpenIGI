@@ -1,9 +1,8 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Animation;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Presentation.Cameras;
 
 /// <summary>Which part of the map computer's transition is running.</summary>
 public enum MapComputerPhase

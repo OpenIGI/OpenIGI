@@ -134,6 +134,8 @@ public sealed class FileSystemConfigTests : IDisposable
 
         public IReadOnlyList<string> SharedArchives { get; } = [];
 
+        public IReadOnlyList<string> StringArchives => [];
+
         public IReadOnlyList<string> SoundDirectories { get; } = [];
 
         public IReadOnlyList<string> StructuralTaskTypes { get; } = [];

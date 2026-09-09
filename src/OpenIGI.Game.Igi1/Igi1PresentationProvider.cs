@@ -47,6 +47,26 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
         new CameraStatusLightRenderer(request.Device, request.Logger);
 
     /// <inheritdoc/>
+    public IHudPresenter CreateHud(in HudPresentationRequest request) =>
+        new StatusScreenRenderer(request.Device, request.Logger);
+
+    /// <inheritdoc/>
+    public IRemasteredHudPresenter CreateRemasteredHud(in HudPresentationRequest request) =>
+        new RemasteredHudRenderer(request.Device, request.Logger);
+
+    /// <inheritdoc/>
+    public IMapComputerPresenter CreateMapComputer(in MapComputerPresentationRequest request) =>
+        new MapComputerRenderer(request.Device, request.Resources, request.Logger, request.ResolveText);
+
+    /// <inheritdoc/>
+    public ITacticalComputerPresenter CreateTacticalComputer(in MapComputerPresentationRequest request) =>
+        new TacticalComputerRenderer(request.Device, request.Resources, request.Logger, request.ResolveText);
+
+    /// <inheritdoc/>
+    public IComputerHighlightCatalogue CreateComputerHighlights(in ComputerHighlightRequest request) =>
+        new ComputerHighlightCatalog(request.LevelRoot, request.Variables);
+
+    /// <inheritdoc/>
     public ITerrainPresenter CreateTerrain(in TerrainPresentationRequest request) =>
         new TerrainRenderer(
             request.Device,

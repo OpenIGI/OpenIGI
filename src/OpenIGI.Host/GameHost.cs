@@ -367,12 +367,12 @@ internal sealed partial class GameHost : IDisposable
     private PlayerCamera? _player;
     private IHeldWeaponPresenter? _heldWeapon;
     private IGunPickupPresenter? _gunPickupRenderer;
-    private StatusScreenRenderer? _hud;
-    private RemasteredHudRenderer? _remasteredHud;
+    private IHudPresenter? _hud;
+    private IRemasteredHudPresenter? _remasteredHud;
     private DebugOverlayRenderer? _debugOverlay;
-    private MapComputerRenderer? _mapComputer;
+    private IMapComputerPresenter? _mapComputer;
     private MapComputerDeviceRenderer? _mapComputerDevice;
-    private TacticalComputerRenderer? _tacticalComputer;
+    private ITacticalComputerPresenter? _tacticalComputer;
     private StatusMessageRenderer? _messages;
     private readonly MapComputerCamera _computerFlight = new();
     private readonly BinocularOptics _binocularOptics = new();
@@ -393,7 +393,7 @@ internal sealed partial class GameHost : IDisposable
     private double _perfAllocRate;
     private long _benchmarkAllocStart;
     private (int, int, int) _benchmarkGcStart;
-    private ComputerHighlightCatalog? _computerHighlights;
+    private IComputerHighlightCatalogue? _computerHighlights;
     private MissionObjectiveRuntime? _missionObjectives;
     private CutsceneRuntime? _cutscenes;
     private MissionDescriptor? _activeMission;
@@ -417,7 +417,7 @@ internal sealed partial class GameHost : IDisposable
     /// compare the redesign against the original it replaces. Both renderers are therefore built for
     /// every mission; each costs an archive or a cached atlas, and neither is worth a restart.
     /// </remarks>
-    private TacticalComputerRenderer? TacticalComputer =>
+    private ITacticalComputerPresenter? TacticalComputer =>
         RenderCVars.TacticalComputer.Value && _tacticalComputer is { IsReady: true } ready ? ready : null;
 
     private bool _missionResultHandled;
@@ -573,10 +573,7 @@ internal sealed partial class GameHost : IDisposable
         {
             MenuStringTable.GetArchiveName(),
             MenuStringTable.GetMissionArchiveName(),
-            MapComputerRenderer.ComputerStringsArchive,
-            MapComputerRenderer.ObjectiveStringsArchive,
-            MapComputerRenderer.MessageStringsArchive,
-        })
+        }.Concat(_titleRuntime.Layout.StringArchives))
         {
             if (_fileSystem.Exists(archive))
             {
@@ -5491,7 +5488,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
 
                     if (_mapComputerDevice is { IsReady: true } deviceModel)
                     {
-                        Viewport deviceViewport = MapComputerRenderer.DeviceViewport(_window.Width, _window.Height);
+                        Viewport deviceViewport = _mapComputer!.DeviceViewport(_window.Width, _window.Height);
                         float horizontalHalfTangent = sight.ViewModelTanX;
                         // The mapcomputer mesh is a close foreground prop. Its housing extends past the
                         // view just as it does in retail; 2.50 is the retail asset's aperture-to-frame
@@ -5706,7 +5703,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     float topOffset = new LayoutContext(_window.Width, _window.Height)
-                        .Px(RemasteredHudRenderer.MessageTopInsetDesign);
+                        .Px(_remasteredHud!.MessageTopInset);
                     modernCards.Draw(
                         batch,
                         modernMessages.DisplayedMessages.Where(static message => !message.IsCutscene),

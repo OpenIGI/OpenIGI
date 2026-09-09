@@ -1,13 +1,14 @@
+using OpenIGI.Presentation;
 using OpenIGI.Presentation.World;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Cameras;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Reads the retail <c>ComputerHilight</c> records that annotate the overhead map.</summary>
-internal sealed class ComputerHighlightCatalog
+internal sealed class ComputerHighlightCatalog : IComputerHighlightCatalogue
 {
     private readonly LevelExpressionRuntime _expressions;
     private readonly List<Entry> _entries = [];
@@ -81,5 +82,3 @@ internal sealed class ComputerHighlightCatalog
         string Sprite,
         string Condition);
 }
-
-internal readonly record struct ComputerMapHighlight(Vector3d Position, string TitleResource, string Sprite);

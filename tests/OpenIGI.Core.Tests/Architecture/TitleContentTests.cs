@@ -27,7 +27,7 @@ namespace OpenIGI.Core.Tests.Architecture;
 /// world, then the first-person and projectile passes — each once an interface in
 /// <c>OpenIGI.Presentation</c> gave the host something to hold it by and
 /// <c>ITitlePresentationProvider</c> gave it something to build it with. 37 files at the start of
-/// phase 1, 18 now.
+/// phase 1, four now.
 /// </para>
 /// <para>
 /// <b>Not everything in there needed a seam.</b> Auditing the folder against the rule's own words —
@@ -46,10 +46,14 @@ namespace OpenIGI.Core.Tests.Architecture;
 /// left, that census says:
 /// </para>
 /// <list type="bullet">
-/// <item><description>HUD ~38, map computer ~39, the remaining cameras ~36;</description></item>
 /// <item><description><c>SoldierRenderer</c>, <b>68 of its 75 public members</b>;</description></item>
 /// <item><description><c>PlayerCamera</c>, <b>105 of its 118</b>.</description></item>
 /// </list>
+/// <para>
+/// Everything else has gone. What is left is those two, <c>Igi1Presentation</c> (which adapts the first
+/// for the shadow pass) and <c>InteractionPrompt</c> (which maps one game's sprite names to wording, and
+/// is reached only through <c>PlayerCamera</c>). All four leave together, when those two can.
+/// </para>
 /// <para>
 /// The last two do not get interfaces. An interface covering 68 or 105 members is the class copied out
 /// with the word <c>interface</c> in front, shaped end to end by one game, which is the failure the seam

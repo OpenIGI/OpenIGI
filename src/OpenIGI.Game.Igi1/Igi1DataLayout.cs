@@ -60,5 +60,18 @@ public sealed class Igi1DataLayout : ITitleDataLayout
     ];
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The map computer's own three, which it reads its screens, objectives and messages from. English
+    /// only, as the port is: the original picks the directory from its language setting, and nothing
+    /// here has one yet.
+    /// </remarks>
+    public IReadOnlyList<string> StringArchives { get; } =
+    [
+        "LOCAL:language/english/computer.res",
+        "LOCAL:language/english/objectives.res",
+        "LOCAL:language/english/messages.res",
+    ];
+
+    /// <inheritdoc/>
     public IReadOnlyList<string> StructuralTaskTypes => EngineTaskTypes.StructuralNames;
 }

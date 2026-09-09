@@ -1,3 +1,5 @@
+using OpenIGI.Presentation;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Graphics;
@@ -10,7 +12,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Draws the in-game HUD, including the retail action icons.</summary>
 /// <remarks>
@@ -31,7 +33,7 @@ namespace OpenIGI.Presentation.Igi1;
 /// a separate screen and remains owned by <see cref="MapComputerRenderer"/>.
 /// </para>
 /// </remarks>
-public sealed class StatusScreenRenderer : IDisposable
+internal sealed class StatusScreenRenderer : IHudPresenter
 {
     private const string LogCategory = "Hud";
     // 0x0046ff00 (LaserDesignatorOverlay_StatusDisplayHandler) positions the native range holder at

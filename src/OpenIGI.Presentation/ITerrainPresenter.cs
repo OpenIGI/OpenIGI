@@ -145,4 +145,29 @@ public interface ITitlePresentationProvider
     /// <param name="request">What the presenter needs.</param>
     /// <returns>The presenter.</returns>
     ICameraStatusLightPresenter CreateCameraStatusLights(in EffectsPresentationRequest request);
+
+    /// <summary>Builds this title's own heads-up display.</summary>
+    /// <param name="request">What the presenter needs.</param>
+    /// <returns>The presenter.</returns>
+    IHudPresenter CreateHud(in HudPresentationRequest request);
+
+    /// <summary>Builds the modern reskin of this title's heads-up display.</summary>
+    /// <param name="request">What the presenter needs.</param>
+    /// <returns>The presenter.</returns>
+    IRemasteredHudPresenter CreateRemasteredHud(in HudPresentationRequest request);
+
+    /// <summary>Builds this title's handheld map computer.</summary>
+    /// <param name="request">What the presenter needs.</param>
+    /// <returns>The presenter.</returns>
+    IMapComputerPresenter CreateMapComputer(in MapComputerPresentationRequest request);
+
+    /// <summary>Builds the modern alternative to this title's map computer.</summary>
+    /// <param name="request">What the presenter needs.</param>
+    /// <returns>The presenter.</returns>
+    ITacticalComputerPresenter CreateTacticalComputer(in MapComputerPresentationRequest request);
+
+    /// <summary>Builds the catalogue of places this title's computer marks on a level.</summary>
+    /// <param name="request">What the catalogue needs.</param>
+    /// <returns>The catalogue.</returns>
+    IComputerHighlightCatalogue CreateComputerHighlights(in ComputerHighlightRequest request);
 }

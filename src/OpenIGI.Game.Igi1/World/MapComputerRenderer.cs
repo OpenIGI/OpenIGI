@@ -1,3 +1,4 @@
+using OpenIGI.Presentation;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -11,10 +12,10 @@ using OpenIGI.Input;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Draws IGI1's C-key SIMOTECH map computer, objectives and event log.</summary>
-internal sealed class MapComputerRenderer : IDisposable
+internal sealed class MapComputerRenderer : IMapComputerPresenter
 {
     public const string Archive = "COMPUTER:computer.res";
     public const string LocalArchive = "LOCAL:computer/computer.res";
@@ -107,7 +108,7 @@ internal sealed class MapComputerRenderer : IDisposable
         bool middlePressed = input.Mouse.WasPressed(MouseButton.Middle);
         bool leftDown = input.Mouse.IsDown(MouseButton.Left);
         bool middleDown = input.Mouse.IsDown(MouseButton.Middle);
-        Viewport device = DeviceViewport(screenWidth, screenHeight);
+        Viewport device = DeviceViewportFor(screenWidth, screenHeight);
         float linkScale = PageLinkScale(device);
         float linkX = device.X + device.Width * 0.1f;
         float logY = LogLinkY(device);
@@ -233,7 +234,7 @@ internal sealed class MapComputerRenderer : IDisposable
         // them once the user has zoomed past the widest overview, where the text would overlap badly.
         if (_zoom >= 1)
         {
-            float uiScale = ComputerUiScale(DeviceViewport(width, height));
+            float uiScale = ComputerUiScale(DeviceViewportFor(width, height));
             List<ComputerMapHighlight> candidates = highlights
                 .GroupBy(highlight => highlight.TitleResource, StringComparer.OrdinalIgnoreCase)
                 .OrderBy(group => group.Count())
@@ -300,7 +301,7 @@ internal sealed class MapComputerRenderer : IDisposable
 
     private void DrawObjectives(SpriteBatch batch, MissionObjectiveRuntime runtime, int width, int height)
     {
-        Viewport device = DeviceViewport(width, height);
+        Viewport device = DeviceViewportFor(width, height);
         float scale = ComputerUiScale(device);
         float x = device.X + device.Width * 0.1f;
         float y = device.Y + device.Height * 0.1f;
@@ -317,7 +318,7 @@ internal sealed class MapComputerRenderer : IDisposable
 
     private void DrawLog(SpriteBatch batch, MissionObjectiveRuntime runtime, int width, int height)
     {
-        Viewport device = DeviceViewport(width, height);
+        Viewport device = DeviceViewportFor(width, height);
         float scale = ComputerUiScale(device);
         float x = device.X + device.Width * 0.15f;
         float y = device.Y + device.Height * 0.1f;
@@ -331,7 +332,7 @@ internal sealed class MapComputerRenderer : IDisposable
 
     private void DrawPageLinks(SpriteBatch batch, int width, int height)
     {
-        Viewport device = DeviceViewport(width, height);
+        Viewport device = DeviceViewportFor(width, height);
         float scale = PageLinkScale(device);
         float x = device.X + device.Width * 0.1f;
         float logY = LogLinkY(device);
@@ -503,7 +504,10 @@ internal sealed class MapComputerRenderer : IDisposable
         _mouseX >= x && _mouseX <= x + width && _mouseY >= y && _mouseY <= y + height;
 
     /// <summary>Gets the centred 4:3 presentation occupied by the retail handheld computer.</summary>
-    public static Viewport DeviceViewport(int width, int height)
+    public Viewport DeviceViewport(int width, int height) => DeviceViewportFor(width, height);
+
+    /// <summary>The same, without needing an instance, for this class's own layout maths.</summary>
+    internal static Viewport DeviceViewportFor(int width, int height)
     {
         int displayWidth = Math.Max(1, width);
         int displayHeight = Math.Max(1, height);
@@ -518,7 +522,7 @@ internal sealed class MapComputerRenderer : IDisposable
 
     private static Viewport ScreenViewport(int width, int height)
     {
-        Viewport device = DeviceViewport(width, height);
+        Viewport device = DeviceViewportFor(width, height);
         return new Viewport(
             device.X + Math.Max(1, (int)(device.Width * 0.045f)),
             device.Y + Math.Max(1, (int)(device.Height * 0.0525f)),
@@ -555,6 +559,3 @@ internal sealed class MapComputerRenderer : IDisposable
 
     private enum Page { Map, Objectives, Log }
 }
-
-/// <summary>The second, straight-down 3D view owned by the retail map page.</summary>
-internal readonly record struct MapSceneView(Camera3D Camera, float FieldOfView, Viewport Viewport);

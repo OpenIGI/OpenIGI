@@ -51,6 +51,15 @@ public interface ITitleDataLayout
     /// <summary>Gets the sound directories mounted for every mission, in mount order.</summary>
     IReadOnlyList<string> SoundDirectories { get; }
 
+    /// <summary>Gets the archives of displayable text the shell preloads before any mission.</summary>
+    /// <remarks>
+    /// Here rather than on whichever renderer shows the strings, because a path into an installation is
+    /// what this interface is for and a renderer that knew one would be a renderer only one game could
+    /// use. They are preloaded together because the shell reads them on the frame a menu first needs
+    /// them, and a synchronous read of a language archive on the render thread is a visible hitch.
+    /// </remarks>
+    IReadOnlyList<string> StringArchives { get; }
+
     /// <summary>Gets the task types this title's level data spawns without declaring.</summary>
     /// <remarks>
     /// What makes a type structural is that the title's editor emits no declaration for it, which is a

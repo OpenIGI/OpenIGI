@@ -1,3 +1,5 @@
+using OpenIGI.Presentation;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Cameras;
@@ -47,31 +49,13 @@ public readonly record struct InteractionPromptTarget(
     bool Locked,
     bool DoorOpen,
     float? Progress);
-
-/// <summary>Everything one prompt draw needs, in the level rather than on the screen.</summary>
-/// <param name="AnchorMetres">Where the badge's centre stands, in metres.</param>
-/// <param name="Opacity">The fade, in <c>[0,1]</c>.</param>
-/// <param name="Pop">The eased entry scale, in <c>[0,1]</c>.</param>
-/// <param name="KeyLabel">What is printed inside the badge — the bound key, compacted.</param>
-/// <param name="Title">The action, in sentence case.</param>
-/// <param name="Detail">The qualifier line under the title, or empty.</param>
-/// <param name="Progress">The ring's fill in <c>[0,1]</c>, or <see langword="null"/> for no ring.</param>
-internal readonly record struct InteractionPromptView(
-    Vector3d AnchorMetres,
-    float Opacity,
-    float Pop,
-    string KeyLabel,
-    string Title,
-    string Detail,
-    float? Progress);
-
 /// <summary>
 /// The wording, method and geometry of the remaster's world-anchored interaction prompt.
 /// </summary>
 /// <remarks>
 /// Pure decisions only, exactly as <see cref="RemasteredHudPresentation"/> is: the marker's placement
 /// is a projection of a world point, its wording is a function of the resolved task, and both are
-/// testable without a device. The drawing itself lives on <see cref="RemasteredHudRenderer"/>.
+/// testable without a device. The drawing itself lives on <see cref="IRemasteredHudPresenter"/>.
 /// </remarks>
 public static class InteractionPromptPresentation
 {

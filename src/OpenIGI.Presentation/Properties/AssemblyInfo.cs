@@ -8,3 +8,10 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("OpenIGI.Desktop")]
 [assembly: InternalsVisibleTo("OpenIGI.Presentation.Tests")]
 [assembly: InternalsVisibleTo("OpenIGI.Desktop.Tests")]
+
+// A title's own renderers live in its own project and draw with the shared presentation helpers -- the
+// canvas, the badge sprite, the vector primitives. Promoting each one to public API as it is needed
+// would grow the documented surface of this assembly for types nothing outside the port uses; two friend
+// entries, one per title, is the bounded version of the same thing.
+[assembly: InternalsVisibleTo("OpenIGI.Game.Igi1")]
+[assembly: InternalsVisibleTo("OpenIGI.Game.Igi2")]

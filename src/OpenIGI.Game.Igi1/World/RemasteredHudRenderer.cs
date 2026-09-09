@@ -1,3 +1,5 @@
+using OpenIGI.Presentation.Igi1;
+using OpenIGI.Presentation;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Graphics;
@@ -13,7 +15,7 @@ using OpenIGI.UI.Text;
 using OpenIGI.UI;
 using System.Globalization;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>The remaster's tactical, resolution-independent in-game HUD.</summary>
 /// <remarks>
@@ -21,10 +23,13 @@ namespace OpenIGI.Presentation.Igi1;
 /// player, weapon and objective data but presents it with the modern shell's distance-field fonts and
 /// layout system, so changing the surface cannot change the simulation behind it.
 /// </remarks>
-internal sealed class RemasteredHudRenderer : IDisposable
+internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
 {
     /// <summary>Leaves breathing room below the compact objective readout for the modern comms cards.</summary>
     public const float MessageTopInsetDesign = 116f;
+
+    /// <inheritdoc/>
+    public float MessageTopInset => MessageTopInsetDesign;
 
     /// <summary>The interaction badge's radius, in the marker's own design units.</summary>
     /// <remarks>
@@ -891,16 +896,3 @@ internal sealed class RemasteredHudRenderer : IDisposable
     private static Bgra32 Accent => Bgra32.FromRgb(240, 176, 84);
     private static Bgra32 Signal => Bgra32.FromRgb(140, 245, 200);
 }
-
-/// <summary>Everything the remaster HUD needs for one draw, collected without mutable renderer state.</summary>
-internal readonly record struct RemasteredHudSnapshot(
-    float HealthFraction,
-    float HeadingRadians,
-    WeaponType? Weapon,
-    int RoundsInClip,
-    int ReserveAmmo,
-    HumanWeaponState WeaponState,
-    string? ActionSprite,
-    IReadOnlyList<MissionObjective> Objectives,
-    bool SniperScoped,
-    bool WorldInteractionPrompt);

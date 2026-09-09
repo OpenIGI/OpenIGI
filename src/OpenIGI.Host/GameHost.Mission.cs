@@ -487,8 +487,9 @@ internal sealed partial class GameHost
             _cutscenes.FinishExpressionTick();
             _logger.Information("Mission", "Test capture outro forcing active.");
         }
-        _computerHighlights = new ComputerHighlightCatalog(levelRoot, _loop.Variables);
-        _mapComputer = new MapComputerRenderer(_device, _resources, _logger, missionText.Get);
+        _computerHighlights = _presentation.CreateComputerHighlights(new ComputerHighlightRequest(levelRoot, _loop.Variables));
+        _mapComputer = _presentation.CreateMapComputer(
+            new MapComputerPresentationRequest(_device, _resources, _logger, missionText.Get));
         if (!_mapComputer.Load(_fileSystem))
         {
             _mapComputer.Dispose();
@@ -505,7 +506,8 @@ internal sealed partial class GameHost
         // Both presentations are built, and r_computer_tactical decides which is drawn — see
         // GameHost.TacticalComputer. The retail pair above needs the installation's own archives; this
         // one needs only the shipped faces, so a mission whose computer.res is missing still has a map.
-        _tacticalComputer = new TacticalComputerRenderer(_device, _resources, _logger, missionText.Get);
+        _tacticalComputer = _presentation.CreateTacticalComputer(
+            new MapComputerPresentationRequest(_device, _resources, _logger, missionText.Get));
         if (!_tacticalComputer.Load())
         {
             _tacticalComputer.Dispose();
@@ -1965,7 +1967,7 @@ internal sealed partial class GameHost
                 _missileSmoke = new SmokeSpriteRenderer(_device, _fileSystem, _logger);
 
                 _hud?.Dispose();
-                _hud = new StatusScreenRenderer(_device, _logger);
+                _hud = _presentation.CreateHud(new HudPresentationRequest(_device, _logger));
                 if (!_hud.Load(_fileSystem))
                 {
                     _hud.Dispose();
@@ -1973,7 +1975,7 @@ internal sealed partial class GameHost
                 }
 
                 _remasteredHud?.Dispose();
-                _remasteredHud = new RemasteredHudRenderer(_device, _logger);
+                _remasteredHud = _presentation.CreateRemasteredHud(new HudPresentationRequest(_device, _logger));
                 if (!_remasteredHud.Load())
                 {
                     _remasteredHud.Dispose();

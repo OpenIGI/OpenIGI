@@ -67,6 +67,14 @@ public sealed class Igi2DataLayout : ITitleDataLayout
 
     /// <inheritdoc/>
     /// <remarks>
+    /// Empty until I.G.I. 2 has a shell that shows text. Its tree ships <c>language/</c> in upper case
+    /// beside <c>MISSIONS</c>, which is one of the casing differences that has to be settled before any
+    /// of these paths are written down.
+    /// </remarks>
+    public IReadOnlyList<string> StringArchives { get; } = [];
+
+    /// <inheritdoc/>
+    /// <remarks>
     /// I.G.I. 1's set less <c>Container</c>, which I.G.I. 2's editor declares with a parameter of its
     /// own. Pre-registering the engine's parameterless one fails the arity check on every I.G.I. 2
     /// level; the other five are undeclared by both games.
