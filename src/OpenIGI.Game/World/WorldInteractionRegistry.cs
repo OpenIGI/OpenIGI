@@ -326,6 +326,17 @@ public sealed class WorldInteraction
             return local.Y > 0.0 && Math.Abs(local.X) < 3072.0;
         }
 
+        if (Type == InteractionActivateType.Generic)
+        {
+            // GenericTBA's authored use pose is expressed in the task's model frame.  The former
+            // sin/cos gate treated Gamma as a player-facing angle, which is the opposite frame for
+            // rotated charges: their visible front was rejected even though it is within the regular
+            // two-metre activation scan.  Keep the old two-metre lateral width in the actual model
+            // frame, shared with BodyPose and the transformed magic vertex.
+            Vector3d local = Orientation.Transform(from - Anchor);
+            return local.Y > 0.0 && Math.Abs(local.X) < 8192.0;
+        }
+
         if (Type == InteractionActivateType.Switch)
         {
             // Switch::GetActivate 0x444500: offer from magic-vertex 0 (already in Anchor).
@@ -344,7 +355,6 @@ public sealed class WorldInteraction
         return Type switch
         {
             InteractionActivateType.Cabinet
-                or InteractionActivateType.Generic
                 or InteractionActivateType.StationaryGun => inFront > 0.0 && lateral < 8192.0,
             InteractionActivateType.PlaceExplosive => inFront > 0.0,
             _ => true,
