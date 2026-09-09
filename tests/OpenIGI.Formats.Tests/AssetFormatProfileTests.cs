@@ -82,4 +82,35 @@ public sealed class AssetFormatProfileTests
         Assert.True(AssetFormatProfile.Igi1.AcceptsTexture(Textures.TexFile.Version11));
         Assert.True(AssetFormatProfile.Igi1.AcceptsMesh(World.MefModel.SupportedVersion));
     }
+
+    /// <summary>
+    /// The two games' render headers hold their counts at the same offsets and differ only in size.
+    /// </summary>
+    /// <remarks>
+    /// Worth pinning, because the first reading of this got it wrong. Matching each header's dwords
+    /// against the mesh header's own vertex count picks offset 16 for the skinned layout, and that is
+    /// the base-vertex count rather than the total the vertex chunk actually holds — so every skinned
+    /// model then fails on a stride check that looks like a stride problem and is not.
+    /// </remarks>
+    [Fact]
+    public void The_render_headers_differ_only_in_size()
+    {
+        foreach (uint format in (uint[])[0, 1, 3])
+        {
+            Assert.True(AssetFormatProfile.Igi1.TryGetRenderHeader(format, out MeshRenderHeaderLayout igi1));
+            Assert.True(AssetFormatProfile.Igi2.TryGetRenderHeader(format, out MeshRenderHeaderLayout igi2));
+
+            Assert.Equal(igi1.SubMeshOffset, igi2.SubMeshOffset);
+            Assert.Equal(igi1.VertexOffset, igi2.VertexOffset);
+            Assert.True(igi2.Size < igi1.Size, $"format {format}: I.G.I. 2's header should be the shorter one.");
+        }
+    }
+
+    /// <summary>A format neither game ships is reported as absent rather than guessed at.</summary>
+    [Fact]
+    public void An_unknown_mesh_format_has_no_layout()
+    {
+        Assert.False(AssetFormatProfile.Igi1.TryGetRenderHeader(2, out _));
+        Assert.False(AssetFormatProfile.Igi2.TryGetRenderHeader(99, out _));
+    }
 }

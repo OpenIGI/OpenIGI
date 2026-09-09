@@ -206,7 +206,7 @@ public sealed class MefModel
         float nativeMarkerBound = BinaryPrimitives.ReadSingleLittleEndian(mesh[0x78..]);
 
         ReadOnlySpan<byte> render = RequireChunk(container, MefTags.RenderHeader).Span;
-        (int vertexCount, int subMeshCount, int lightmapCount) = ReadRenderHeader(render, format);
+        (int vertexCount, int subMeshCount, int lightmapCount) = ReadRenderHeader(render, format, profile);
 
         if (vertexCount != headerVertexCount)
         {
@@ -326,17 +326,20 @@ public sealed class MefModel
 
     private static (int VertexCount, int SubMeshCount, int LightmapCount) ReadRenderHeader(
         ReadOnlySpan<byte> render,
-        MefMeshFormat format)
+        MefMeshFormat format,
+        AssetFormatProfile profile)
     {
-        // Field positions shift with the format; the trailing 24 bytes are the original's runtime binding
-        // block and are zero on disk. Sizes are 48 bytes for Diffuse and 56 for the other two. Only the
-        // lightmapped layout has a page count, and it sits ahead of the counts the other two share.
-        (int subMeshOffset, int vertexOffset, int expectedSize) = format switch
+        // Field positions shift with the format, and with the title: the trailing bytes are the
+        // original's runtime binding block, zero on disk, and I.G.I. 2's is shorter. Its skinned layout
+        // also puts the vertex count four bytes earlier. Only the lightmapped layout has a page count,
+        // and it sits ahead of the counts the other two share -- in both games.
+        if (!profile.TryGetRenderHeader((uint)format, out MeshRenderHeaderLayout layout))
         {
-            MefMeshFormat.Diffuse => (8, 12, 48),
-            MefMeshFormat.Skinned => (8, 20, 56),
-            _ => (12, 16, 56),
-        };
+            throw new PackFormatException($"This title ships no mesh of format {(int)format}.");
+        }
+
+        (int subMeshOffset, int vertexOffset, int expectedSize) =
+            (layout.SubMeshOffset, layout.VertexOffset, layout.Size);
 
         if (render.Length < expectedSize)
         {

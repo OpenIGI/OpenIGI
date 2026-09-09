@@ -2,6 +2,17 @@ using System.Collections.Immutable;
 
 namespace OpenIGI.Formats;
 
+/// <summary>Where the counts sit in one mesh format's render header.</summary>
+/// <remarks>
+/// The offsets are shared between the games for two of the three formats; only the skinned layout
+/// moved. See <see cref="AssetFormatProfile.MeshRenderHeaders"/>.
+/// </remarks>
+/// <param name="Format">The mesh format this describes.</param>
+/// <param name="SubMeshOffset">The byte offset of the sub-mesh count.</param>
+/// <param name="VertexOffset">The byte offset of the vertex count.</param>
+/// <param name="Size">The smallest header this title ships for the format.</param>
+public readonly record struct MeshRenderHeaderLayout(uint Format, int SubMeshOffset, int VertexOffset, int Size);
+
 /// <summary>Which encodings of each asset format one game title ships.</summary>
 /// <remarks>
 /// <para>
@@ -13,9 +24,9 @@ namespace OpenIGI.Formats;
 /// <para>
 /// The two titles overlap more than expected, so this is mostly a correctness seam rather than an
 /// enabler. Measured against a retail installation of each: I.G.I. 2's textures are all version 11 and
-/// its sprites all version 9, both of which the readers already parse. **The mesh version is the one
-/// that differs** — I.G.I. 1 ships 0.10 and I.G.I. 2 ships 0.16 — and it is the one place a reader
-/// refuses the other game's data outright.
+/// its sprites all version 9, both of which the readers already parse. <b>Models are where they
+/// differ</b>: I.G.I. 1 ships mesh version 0.10 and I.G.I. 2 ships 0.16, and their render headers are
+/// different sizes — see <see cref="MeshRenderHeaders"/>.
 /// </para>
 /// <para>
 /// I.G.I. 1's sets are what its readers have always accepted, not a re-measurement, so introducing this
@@ -50,6 +61,39 @@ public sealed record AssetFormatProfile
     /// <summary>Gets the extensions a title's terrain files use, in the order the loader tries them.</summary>
     public required ImmutableArray<string> TerrainExtensions { get; init; }
 
+    /// <summary>Gets where the counts sit in a model's render header, per mesh format.</summary>
+    /// <remarks>
+    /// The one place the two games' model format genuinely differs, and it differs less than it first
+    /// appears: <b>only the size changes</b>. I.G.I. 2's trailing runtime binding block is shorter — 36,
+    /// 40 and 44 bytes against 48, 56 and 56 — and every field sits where I.G.I. 1 puts it.
+    /// <para>
+    /// The skinned layout is the one to be careful with. Its vertex count at offset 20 is the
+    /// <em>total</em> rows in the vertex chunk, base vertices plus extra influences; the mesh header's
+    /// own count is the base alone. Matching the header's dwords against that count picks offset 16 and
+    /// then fails on every skinned model, which is how this was got wrong once already.
+    /// </para>
+    /// </remarks>
+    public required ImmutableArray<MeshRenderHeaderLayout> MeshRenderHeaders { get; init; }
+
+    /// <summary>Looks up the render-header layout for a mesh format.</summary>
+    /// <param name="format">The mesh format from the mesh header.</param>
+    /// <param name="layout">Receives the layout when the title has one.</param>
+    /// <returns><see langword="false"/> when this title ships no mesh of that format.</returns>
+    public bool TryGetRenderHeader(uint format, out MeshRenderHeaderLayout layout)
+    {
+        foreach (MeshRenderHeaderLayout candidate in MeshRenderHeaders)
+        {
+            if (candidate.Format == format)
+            {
+                layout = candidate;
+                return true;
+            }
+        }
+
+        layout = default;
+        return false;
+    }
+
     /// <summary>Gets the profile for retail Project I.G.I. (2000).</summary>
     public static AssetFormatProfile Igi1 { get; } = new()
     {
@@ -60,6 +104,12 @@ public sealed record AssetFormatProfile
         QvmVersions = [5],
         QvmInstructionSet = 8,
         TerrainExtensions = [".bit", ".hmp", ".cmd", ".ctr", ".lmp"],
+        MeshRenderHeaders =
+        [
+            new(0, SubMeshOffset: 8, VertexOffset: 12, Size: 48),
+            new(1, SubMeshOffset: 8, VertexOffset: 20, Size: 56),
+            new(3, SubMeshOffset: 12, VertexOffset: 16, Size: 56),
+        ],
     };
 
     /// <summary>Gets the profile for I.G.I. 2: Covert Strike (2003).</summary>
@@ -79,6 +129,12 @@ public sealed record AssetFormatProfile
         QvmVersions = [7],
         QvmInstructionSet = 8,
         TerrainExtensions = [],
+        MeshRenderHeaders =
+        [
+            new(0, SubMeshOffset: 8, VertexOffset: 12, Size: 36),
+            new(1, SubMeshOffset: 8, VertexOffset: 20, Size: 40),
+            new(3, SubMeshOffset: 12, VertexOffset: 16, Size: 44),
+        ],
     };
 
     /// <summary>Gets a profile that accepts every encoding the readers understand.</summary>
@@ -95,6 +151,12 @@ public sealed record AssetFormatProfile
         QvmVersions = [5, 7],
         QvmInstructionSet = 8,
         TerrainExtensions = [".bit", ".hmp", ".cmd", ".ctr", ".lmp"],
+        MeshRenderHeaders =
+        [
+            new(0, SubMeshOffset: 8, VertexOffset: 12, Size: 48),
+            new(1, SubMeshOffset: 8, VertexOffset: 20, Size: 56),
+            new(3, SubMeshOffset: 12, VertexOffset: 16, Size: 56),
+        ],
     };
 
     /// <summary>Determines whether the title ships a <c>.tex</c> of this version.</summary>
