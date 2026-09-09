@@ -2001,10 +2001,11 @@ public sealed class CutsceneRuntime
                 transform.Control.X * 0.10f,
                 transform.Control.Y * 0.18f,
                 transform.Heading) * transform.AuthoredOrientation;
-            // IGI vehicles are Y-forward: the second row of Real32x9 is the local +Y axis in world
-            // space (same as the generic AnimTask path below). Column2 is the transposed axis and
-            // sent Mission 3/4 planes backwards along the authored heading.
-            Vector3f planeForward = transform.Orientation.Row2;
+            // Plane_Physics adds thrust on body-local +Y. The shared body integrator converts local
+            // acceleration to world space by dotting each orientation row with that local vector,
+            // which yields Column2. Mission 3's gamma=3pi/2 takeoff therefore travels +X down the
+            // runway; Row2 is the inverse direction and visibly makes the SU-27 fly tail-first.
+            Vector3f planeForward = transform.Orientation.Column2;
             float desiredSpeed = Math.Max(0f, transform.TargetThrust) * 1_500f;
             transform.Speed += (desiredSpeed - transform.Speed) * 0.025f;
             Vector3d previousPosition = transform.Position;

@@ -64,7 +64,11 @@ public sealed class RetailMissionFourPlaneRideTests
                 continue;
             }
 
-            Vector3f forward = authored.Row2;
+            // Plane_Physics accumulates thrust along body-local +Y. The shared rigid-body step
+            // converts that local vector to world space through the orientation columns, so +Y is
+            // Column2. Mission 3's takeoff plane starts at gamma 3pi/2: Column2 points down the
+            // runway toward +X, while Row2 points backward toward -X.
+            Vector3f forward = authored.Column2;
             WritePlaneHold(runtime, task.Id, thrust: 0.8f);
 
             for (int i = 0; i < 12; i++)
@@ -79,7 +83,13 @@ public sealed class RetailMissionFourPlaneRideTests
             double against = -along;
             Assert.True(
                 along > 1.0 && along > against,
-                $"plane #{task.Id} did not travel authored +Y (Row2). along={along:R} delta=({delta.X:R},{delta.Y:R},{delta.Z:R}) fwd=({forward.X:R},{forward.Y:R},{forward.Z:R})");
+                $"plane #{task.Id} did not travel body-local +Y (Column2). along={along:R} delta=({delta.X:R},{delta.Y:R},{delta.Z:R}) fwd=({forward.X:R},{forward.Y:R},{forward.Z:R})");
+            if (task.Id == 601)
+            {
+                Assert.True(
+                    delta.X > 1.0,
+                    $"Level 3 takeoff plane moved backward along the runway; delta=({delta.X:R},{delta.Y:R},{delta.Z:R})");
+            }
             Assert.True(
                 runtime.TryGetDynamicVelocity(task, out Vector3d velocity) && velocity.Length > 0.01d,
                 $"plane #{task.Id} must publish its integrated velocity while moving; velocity={velocity}");
