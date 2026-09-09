@@ -11,4 +11,12 @@
     <ProjectReference Include="..\OpenIGI.Game\OpenIGI.Game.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Emits the [ScriptParam] binders for this title's task classes. Build-time only: nothing of it
+         ships. A task class without it compiles and registers, and then reports zero parameters against
+         a declaration that has fourteen. -->
+    <ProjectReference Include="..\OpenIGI.Generators\OpenIGI.Generators.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
 </Project>

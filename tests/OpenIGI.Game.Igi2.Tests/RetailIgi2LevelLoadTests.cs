@@ -4,42 +4,33 @@ using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
+using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.TestSupport;
 using Xunit;
 
-namespace OpenIGI.Engine.Tests.Level;
+namespace OpenIGI.Game.Igi2.Tests;
 
 /// <summary>
 /// I.G.I. 2's levels, built into task trees by the engine written for I.G.I. 1.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Nothing here implements an I.G.I. 2 task class. <see cref="TaskTypeRegistry.Declare"/> creates a
-/// <see cref="DeclaredTask"/> placeholder for any type level data declares, so a level loads
-/// <em>structurally</em> — the right tree, the right types, the right parameter values — with the
-/// gameplay behaviour simply absent. That is what makes the sequel's level format testable long before
-/// any of its gameplay exists.
+/// Everything the sequel needs in order to load comes from <see cref="Igi2Runtime"/> — its structural
+/// type set, its content modules and the script vocabulary those modules declare. The list used to be
+/// kept by hand in the test, which is the same arrangement that let the desktop host and the preview
+/// loader drift apart before <see cref="TitleSession"/> existed.
 /// </para>
 /// <para>
-/// The one thing it must be told is which types are structural. I.G.I. 2's editor declares
-/// <c>Container</c> with a parameter of its own, where I.G.I. 1's emits no declaration for it at all, so
-/// pre-registering the engine's parameterless <c>Container</c> makes every I.G.I. 2 level fail the arity
-/// check.
+/// Types no module covers still load: <see cref="TaskTypeRegistry.Declare"/> creates a
+/// <see cref="DeclaredTask"/> placeholder for anything level data declares, so a level is
+/// <em>structurally</em> complete — the right tree, the right types, the right parameter values — with
+/// the gameplay behaviour simply absent. That is what makes the sequel's level format testable long
+/// before its gameplay exists.
 /// </para>
 /// </remarks>
 public sealed class RetailIgi2LevelLoadTests
 {
-    /// <summary>The structural types I.G.I. 2 spawns without declaring — I.G.I. 1's set less Container.</summary>
-    private static readonly string[] Igi2StructuralTypes =
-    [
-        EngineTaskTypes.Level,
-        EngineTaskTypes.Static,
-        EngineTaskTypes.Dynamic,
-        EngineTaskTypes.Idle,
-        EngineTaskTypes.CameraBase,
-    ];
-
     /// <summary>Every retail I.G.I. 2 level builds a task tree.</summary>
     [RequiresTitleDataFact("igi2")]
     public void Every_retail_level_builds_a_task_tree()
@@ -49,7 +40,7 @@ public sealed class RetailIgi2LevelLoadTests
 
         foreach (string script in levels)
         {
-            Harness harness = new(script, Igi2StructuralTypes);
+            Harness harness = new(script);
             harness.Loader.LoadScript(Harness.ScriptName);
 
             int tasks = Count(harness.LevelRoot);
@@ -58,7 +49,8 @@ public sealed class RetailIgi2LevelLoadTests
     }
 
     /// <summary>
-    /// The tree is built out of placeholders, and that is the point: no I.G.I. 2 task class exists yet.
+    /// The tree is still built largely out of placeholders, and that is the point: the module list covers
+    /// what the gameplay milestones have reached and no more.
     /// </summary>
     /// <remarks>
     /// Asserted rather than assumed, because a placeholder silently becoming a real class is how a level
@@ -67,7 +59,7 @@ public sealed class RetailIgi2LevelLoadTests
     [RequiresTitleDataFact("igi2")]
     public void The_tree_is_built_from_declared_placeholders()
     {
-        Harness harness = new(LevelScripts()[0], Igi2StructuralTypes);
+        Harness harness = new(LevelScripts()[0]);
         harness.Loader.LoadScript(Harness.ScriptName);
 
         List<GameTask> tasks = [];
@@ -79,8 +71,9 @@ public sealed class RetailIgi2LevelLoadTests
 
     /// <summary>Pre-registering I.G.I. 1's Container is what stops an I.G.I. 2 level loading.</summary>
     /// <remarks>
-    /// The negative half of the structural-type finding. Without it the fix looks like a tweak that
-    /// happened to help, rather than the one thing that was wrong.
+    /// The negative half of the structural-type finding, and the reason
+    /// <see cref="ITitleDataLayout.StructuralTaskTypes"/> exists. Without it the fix looks like a tweak
+    /// that happened to help, rather than the one thing that was wrong.
     /// </remarks>
     [RequiresTitleDataFact("igi2")]
     public void The_igi1_structural_set_rejects_an_igi2_level()
@@ -93,7 +86,7 @@ public sealed class RetailIgi2LevelLoadTests
         Assert.Contains("Container", failure.Message, StringComparison.Ordinal);
     }
 
-    private static IReadOnlyList<string> LevelScripts()
+    internal static IReadOnlyList<string> LevelScripts()
     {
         string missions = Path.Combine(GameDataSource.Igi2.RequireRoot(), "missions");
         return
@@ -124,39 +117,33 @@ public sealed class RetailIgi2LevelLoadTests
         }
     }
 
-    private sealed class Harness
+    /// <summary>One level loaded the way a host loads it: through the title, not through a hand-kept list.</summary>
+    internal sealed class Harness
     {
         public const string ScriptName = "LOCAL:objects.qvm";
 
-        public Harness(string scriptPath, IReadOnlyList<string> structuralTypes)
+        public Harness(string scriptPath, IReadOnlyList<string>? structuralTypes = null)
         {
-            Loop = new GameLoop(new ManualTimeSource(1_000), structuralTypes: structuralTypes);
-
-            // Every identifier I.G.I. 2's level scripts reference, and there are only nine: the two
-            // task commands, TRUE and FALSE, and these five constants. Counted from the symbol table of
-            // all 24 objects.qvm rather than discovered one failure at a time.
-            //
-            // The values come from igi2.exe -- AISquad_RegisterScriptValues (0x49A880) for the AI types
-            // and OverlayHolder_Open (0x533BC0) for the overlays -- rather than being guessed. A wrong
-            // value would not show up here at all: it is a parameter on a placeholder task, so the tree
-            // still builds, and it would surface much later looking like a gameplay bug.
-            //
-            // Registering them here is the shape of what a title content module will own; see the
-            // IContentModule seam in the plan.
-            Loop.Natives.RegisterConstant("AIType_Defensive", 0);
-            Loop.Natives.RegisterConstant("AIType_Offensive", 1);
-            Loop.Natives.RegisterConstant("AIType_OnVehicle", 2);
-            Loop.Natives.RegisterConstant("OVERLAY_BINOCULAR", 0);
-            Loop.Natives.RegisterConstant("OVERLAY_SNIPER", 2);
-
-            LevelRoot = (LevelTask)Loop.Tasks.New(Loop.Tasks.Root, Loop.Types.Get(EngineTaskTypes.Level));
+            Igi2Runtime title = Igi2Runtime.Instance;
+            Loop = new GameLoop(
+                new ManualTimeSource(1_000),
+                structuralTypes: structuralTypes ?? title.Layout.StructuralTaskTypes);
 
             Resources = new ResourceRegistry(new VirtualFileSystem());
             Resources.Register(ScriptName, File.ReadAllBytes(scriptPath));
+
+            // Registration only. The tables a module would load live beside a mounted mission, and this
+            // harness mounts nothing but the one script under test.
+            Session = TitleSession.Start(
+                title.Modules, Loop, new VirtualFileSystem(), Resources, loadTables: false);
+
+            LevelRoot = (LevelTask)Loop.Tasks.New(Loop.Tasks.Root, Loop.Types.Get(EngineTaskTypes.Level));
             Loader = new LevelLoader(LevelRoot, Loop.TaskCommands, Loop.Natives, Resources);
         }
 
         public GameLoop Loop { get; }
+
+        public TitleSession Session { get; }
 
         public LevelTask LevelRoot { get; }
 

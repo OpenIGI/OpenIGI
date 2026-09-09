@@ -13,9 +13,6 @@ namespace OpenIGI.Game.Igi1;
 /// from the copy. Naming them makes the list something a host walks rather than something two hosts
 /// remember.
 /// </para>
-/// <para>
-/// TODO(phase-1): moves to <c>OpenIGI.Game.Igi1</c> with the rest of I.G.I. 1's content.
-/// </para>
 /// </remarks>
 public static class Igi1ContentModules
 {

@@ -6,16 +6,9 @@ namespace OpenIGI.Game.Igi2;
 
 /// <summary>I.G.I. 2: Covert Strike, as far as the engine can currently run it.</summary>
 /// <remarks>
-/// <para>
-/// The layout and the format profile are real and measured against a retail installation. The module
-/// list is <b>empty</b>, and that is not a placeholder: with no modules, every task type a level
-/// declares becomes a <c>DeclaredTask</c> placeholder, and all 24 shipped levels build their trees
-/// correctly with no gameplay behaviour attached. Adding I.G.I. 2's task classes is what the gameplay
-/// milestones do, one module at a time.
-/// </para>
-/// <para>
-/// TODO(phase-1): moves to <c>OpenIGI.Game.Igi2</c>.
-/// </para>
+/// The layout and the format profile are measured against a retail installation. The module list covers what the gameplay milestones have reached and no more; every type it does not
+/// cover still loads, as a <c>DeclaredTask</c> placeholder carrying its declared parameters, so all 24
+/// shipped levels build correct trees at every stage and gain behaviour a module at a time.
 /// </remarks>
 public sealed class Igi2Runtime : IGameTitleRuntime
 {
@@ -32,9 +25,5 @@ public sealed class Igi2Runtime : IGameTitleRuntime
     public AssetFormatProfile Formats => AssetFormatProfile.Igi2;
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Empty until I.G.I. 2 has task classes. A level still loads: every declared type becomes a
-    /// placeholder, which is exactly what the structural load tests assert.
-    /// </remarks>
-    public IReadOnlyList<IContentModule> Modules { get; } = [];
+    public IReadOnlyList<IContentModule> Modules => Igi2ContentModules.All;
 }

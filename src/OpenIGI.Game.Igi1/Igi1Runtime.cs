@@ -5,7 +5,6 @@ using OpenIGI.Formats;
 namespace OpenIGI.Game.Igi1;
 
 /// <summary>Project I.G.I., as the engine runs it.</summary>
-/// <remarks>TODO(phase-1): moves to <c>OpenIGI.Game.Igi1</c> with the rest of I.G.I. 1's content.</remarks>
 public sealed class Igi1Runtime : IGameTitleRuntime
 {
     /// <summary>Gets the shared instance.</summary>
