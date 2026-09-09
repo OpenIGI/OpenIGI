@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using OpenIGI.Formats;
 
 namespace OpenIGI.Formats.World;
 
@@ -25,11 +26,13 @@ public sealed class ObjectLightmap
     /// <summary>The size in bytes of the header prefix that precedes the image descriptors.</summary>
     public const int PrefixSize = 60;
 
-    /// <summary>The size in bytes of one image descriptor.</summary>
+    /// <summary>The size in bytes of one image descriptor in Project I.G.I.</summary>
+    /// <remarks>
+    /// I.G.I. 2's is 52. The size is what a caller supplies through
+    /// <see cref="AssetFormatProfile.ObjectLightmapDescriptorStride"/>; this constant is kept so the
+    /// I.G.I. 1 number has a name and so the minimum-length check has something to quote.
+    /// </remarks>
     public const int DescriptorSize = 44;
-
-    /// <summary>The offset of an image's dimensions within its descriptor.</summary>
-    public const int DescriptorSizeOffset = 40;
 
     /// <summary>The file-name extension of a lightmap entry, including the dot.</summary>
     public const string Extension = ".olm";
@@ -45,15 +48,25 @@ public sealed class ObjectLightmap
 
     /// <summary>Parses a lightmap.</summary>
     /// <param name="data">The entry bytes.</param>
+    /// <param name="profile">
+    /// The title's format policy, which supplies the descriptor stride; defaults to Project I.G.I.
+    /// </param>
     /// <returns>The parsed lightmap.</returns>
     /// <exception cref="PackFormatException">The bytes do not match the documented layout.</exception>
-    public static ObjectLightmap Read(ReadOnlyMemory<byte> data)
+    /// <remarks>
+    /// The two games differ by the descriptor only. A wrong stride is not a degraded read: the pixel
+    /// blocks start at the wrong offset and every image after the first is noise, which is why the
+    /// closing arithmetic below is an assertion rather than a courtesy.
+    /// </remarks>
+    public static ObjectLightmap Read(ReadOnlyMemory<byte> data, AssetFormatProfile? profile = null)
     {
+        int descriptorStride = (profile ?? AssetFormatProfile.Igi1).ObjectLightmapDescriptorStride;
+
         ReadOnlySpan<byte> span = data.Span;
-        if (span.Length < PrefixSize + DescriptorSize)
+        if (span.Length < PrefixSize + descriptorStride)
         {
             throw new PackFormatException(
-                $"An object lightmap needs at least {PrefixSize + DescriptorSize} bytes, got {span.Length}.");
+                $"An object lightmap needs at least {PrefixSize + descriptorStride} bytes, got {span.Length}.");
         }
 
         float version = BinaryPrimitives.ReadSingleLittleEndian(span);
@@ -64,7 +77,7 @@ public sealed class ObjectLightmap
         }
 
         int count = (int)rawCount;
-        int pixelStart = PrefixSize + (count * DescriptorSize);
+        int pixelStart = PrefixSize + (count * descriptorStride);
         if (pixelStart > span.Length)
         {
             throw new PackFormatException(
@@ -75,7 +88,9 @@ public sealed class ObjectLightmap
         int offset = pixelStart;
         for (int i = 0; i < count; i++)
         {
-            int dims = PrefixSize + (i * DescriptorSize) + DescriptorSizeOffset;
+            // The dimensions are the descriptor's last dword in both games, so they move with the
+            // stride rather than needing an offset of their own.
+            int dims = PrefixSize + (i * descriptorStride) + descriptorStride - 4;
             int width = BinaryPrimitives.ReadUInt16LittleEndian(span[dims..]);
             int height = BinaryPrimitives.ReadUInt16LittleEndian(span[(dims + 2)..]);
 
@@ -90,7 +105,8 @@ public sealed class ObjectLightmap
             offset += (int)bytes;
         }
 
-        // The arithmetic closes exactly for all 25333 retail entries; a leftover means a misread header.
+        // The arithmetic closes exactly for all 25,333 I.G.I. 1 entries and all 31,542 I.G.I. 2 ones;
+        // a leftover means a misread header.
         if (offset != span.Length)
         {
             throw new PackFormatException(
@@ -99,6 +115,95 @@ public sealed class ObjectLightmap
 
         return new ObjectLightmap(version, new ReadOnlyCollection<ObjectLightmapImage>(images));
     }
+
+    /// <summary>The letters an I.G.I. 2 entry name uses to separate one task's lightmap groups.</summary>
+    /// <remarks>
+    /// <c>acIndexLetters</c> (<c>igi2ed 0x6CB554</c>) is <c>"!abcdefghijklmnopqrstuvwxyz"</c>. Index zero
+    /// is the <c>!</c>, and it is never emitted: the writer takes the lettered format string only when
+    /// the index is non-zero, so <c>a</c> is one, <c>b</c> is two, and a name with no letter is zero.
+    /// The retail corpus uses <c>a</c>, <c>b</c>, <c>c</c> and <c>e</c>.
+    /// </remarks>
+    public const string VariantLetters = "!abcdefghijklmnopqrstuvwxyz";
+
+    /// <summary>Splits an I.G.I. 2 lightmap entry name into its four parts.</summary>
+    /// <param name="name">The entry name, with or without a directory prefix and with or without the extension.</param>
+    /// <param name="taskId">Receives the level id of the task the lightmapped object belongs to.</param>
+    /// <param name="variant">Receives the group letter as a number, or zero when the name carries none.</param>
+    /// <param name="modelIndex">Receives the index of the model within that task's enumeration.</param>
+    /// <param name="lod">Receives the level of detail, counted from one.</param>
+    /// <returns><see langword="true"/> when the name has the expected shape.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// The sequel names lightmaps differently enough to need its own parser rather than a parameter.
+    /// I.G.I. 1 writes <c>&lt;objectName&gt;_&lt;%05d&gt;.olm</c>, where the number indexes the model's
+    /// draw records; I.G.I. 2 writes <c>%04d_%04d_%1d.olm</c> or <c>%04d%c_%04d_%1d.olm</c>
+    /// (<c>LightmapInfo_AddLightmapVirModelToEnumeration</c>, <c>igi2ed 0x625A20</c>), where the parts are
+    /// a task id, an optional group letter, a model index and a level of detail.
+    /// </para>
+    /// <para>
+    /// Reading the sequel's names with the first game's parser is the trap this exists to close: splitting
+    /// on the last underscore succeeds, and hands back the <em>level of detail</em> where a draw-record
+    /// index was expected.
+    /// </para>
+    /// </remarks>
+    public static bool TryParseIgi2Name(string name, out int taskId, out int variant, out int modelIndex, out int lod)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+
+        taskId = 0;
+        variant = 0;
+        modelIndex = 0;
+        lod = 0;
+
+        ReadOnlySpan<char> span = name.AsSpan();
+        int slash = span.LastIndexOfAny('/', '\\');
+        if (slash >= 0)
+        {
+            span = span[(slash + 1)..];
+        }
+
+        if (span.EndsWith(Extension, StringComparison.OrdinalIgnoreCase))
+        {
+            span = span[..^Extension.Length];
+        }
+
+        int second = span.LastIndexOf('_');
+        if (second <= 0)
+        {
+            return false;
+        }
+
+        ReadOnlySpan<char> head = span[..second];
+        int first = head.LastIndexOf('_');
+        if (first <= 0)
+        {
+            return false;
+        }
+
+        if (!TryParseNumber(span[(second + 1)..], out lod) || !TryParseNumber(head[(first + 1)..], out modelIndex))
+        {
+            return false;
+        }
+
+        ReadOnlySpan<char> id = head[..first];
+        if (id.Length > 0 && char.IsAsciiLetter(id[^1]))
+        {
+            int letter = VariantLetters.IndexOf(char.ToLowerInvariant(id[^1]), StringComparison.Ordinal);
+            if (letter <= 0)
+            {
+                return false;
+            }
+
+            variant = letter;
+            id = id[..^1];
+        }
+
+        return TryParseNumber(id, out taskId);
+    }
+
+    private static bool TryParseNumber(ReadOnlySpan<char> text, out int value) =>
+        int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out value);
 
     /// <summary>Splits a lightmap entry name into the object name and the draw-record index.</summary>
     /// <param name="name">The entry name, with or without a directory prefix and with or without the extension.</param>

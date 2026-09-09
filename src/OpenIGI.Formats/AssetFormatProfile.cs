@@ -127,6 +127,21 @@ public sealed record AssetFormatProfile
     /// <summary>Gets the byte offset of an attachment's bone index.</summary>
     public required int AttachmentBoneOffset { get; init; }
 
+    /// <summary>Gets the byte size of one image descriptor inside an object lightmap.</summary>
+    /// <remarks>
+    /// <para>
+    /// A <c>.olm</c> entry is a 60-byte prefix, then one descriptor per image, then the pixel blocks in
+    /// the same order at four bytes a texel. Only the descriptor differs between the games: I.G.I. 2's
+    /// carries two more dwords than I.G.I. 1's, 52 against 44.
+    /// </para>
+    /// <para>
+    /// The dimensions are always the descriptor's <em>last</em> dword, so they move with it and this one
+    /// number is enough. That is not a coincidence of two layouts — it is how the writer builds the
+    /// record, appending the size beside the pixel pointer it clears.
+    /// </para>
+    /// </remarks>
+    public required int ObjectLightmapDescriptorStride { get; init; }
+
     /// <summary>Gets how a title stores the triangles of each draw record.</summary>
     /// <remarks>
     /// Structurally different rather than a matter of offsets, which is why this selects a reader rather
@@ -226,6 +241,7 @@ public sealed record AssetFormatProfile
         DrawRecordStorage = MeshDrawRecordStorage.InlineIndices,
         AttachmentStride = 68,
         AttachmentBoneOffset = 64,
+        ObjectLightmapDescriptorStride = 44,
     };
 
     /// <summary>Gets the profile for I.G.I. 2: Covert Strike (2003).</summary>
@@ -261,6 +277,7 @@ public sealed record AssetFormatProfile
         DrawRecordStorage = MeshDrawRecordStorage.FaceGroupTable,
         AttachmentStride = 72,
         AttachmentBoneOffset = 68,
+        ObjectLightmapDescriptorStride = 52,
     };
 
     /// <summary>Gets a profile that accepts every encoding the readers understand.</summary>
@@ -293,6 +310,11 @@ public sealed record AssetFormatProfile
         DrawRecordStorage = MeshDrawRecordStorage.InlineIndices,
         AttachmentStride = 68,
         AttachmentBoneOffset = 64,
+
+        // A tool cannot be permissive here: the stride decides where the pixels start, so a wrong guess
+        // does not degrade, it desynchronises. I.G.I. 1's is the default because it is the older shape;
+        // a tool reading the sequel passes that profile, the same as for any other stride.
+        ObjectLightmapDescriptorStride = 44,
     };
 
     /// <summary>Determines whether the title ships a <c>.tex</c> of this version.</summary>
