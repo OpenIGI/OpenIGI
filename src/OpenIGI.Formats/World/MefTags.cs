@@ -40,6 +40,14 @@ public static class MefTags
     /// <summary>Chunk <c>DNER</c> (<c>REND</c>): draw records and 16-bit indices.</summary>
     public static FourCc DrawRecords { get; } = FourCc.FromString("DNER");
 
+    /// <summary>Chunk <c>ECAF</c> (<c>FACE</c>): the triangle-list indices, as <c>u16</c> triples.</summary>
+    /// <remarks>
+    /// I.G.I. 2 only. I.G.I. 1 packs each draw record's indices immediately after its header inside
+    /// <see cref="DrawRecords"/>; the sequel keeps one flat array here and has each face group name a
+    /// start and a count into it.
+    /// </remarks>
+    public static FourCc FaceIndices { get; } = FourCc.FromString("ECAF");
+
     /// <summary>Chunk <c>PMTL</c> (<c>LTMP</c>): one size entry per baked object-lightmap page.</summary>
     public static FourCc LightmapPages { get; } = FourCc.FromString("PMTL");
 

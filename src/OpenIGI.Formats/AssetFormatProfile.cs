@@ -27,6 +27,22 @@ public readonly record struct MeshVertexLayout(
     int DiffuseUvOffset,
     int LightmapUvOffset);
 
+/// <summary>How a title stores the triangles that make up a draw record.</summary>
+public enum MeshDrawRecordStorage
+{
+    /// <summary>
+    /// Each record's header is followed immediately by its own indices, and the records vary in length.
+    /// Indices are relative to the record's base vertex. Project I.G.I.'s layout.
+    /// </summary>
+    InlineIndices,
+
+    /// <summary>
+    /// The records are a flat array of fixed-size face groups, and each names a start and a count into a
+    /// separate index chunk. Indices are absolute into the model's vertex array. I.G.I. 2's layout.
+    /// </summary>
+    FaceGroupTable,
+}
+
 /// <summary>Where the counts sit in one mesh format's render header.</summary>
 /// <remarks>
 /// The offsets are shared between the games for two of the three formats; only the skinned layout
@@ -99,6 +115,24 @@ public sealed record AssetFormatProfile
     /// </para>
     /// </remarks>
     public required ImmutableArray<MeshRenderHeaderLayout> MeshRenderHeaders { get; init; }
+
+    /// <summary>Gets the size of one attachment record.</summary>
+    /// <remarks>
+    /// <c>Mesh3D_AttachObject_t</c>: a 16-byte name, a position, an orientation and a bone index.
+    /// I.G.I. 2 pads the orientation field to 40 bytes where I.G.I. 1 stores the nine floats tightly,
+    /// which pushes the bone index from 64 to 68 and the record from 68 to 72. Nothing else moves.
+    /// </remarks>
+    public required int AttachmentStride { get; init; }
+
+    /// <summary>Gets the byte offset of an attachment's bone index.</summary>
+    public required int AttachmentBoneOffset { get; init; }
+
+    /// <summary>Gets how a title stores the triangles of each draw record.</summary>
+    /// <remarks>
+    /// Structurally different rather than a matter of offsets, which is why this selects a reader rather
+    /// than parameterising one.
+    /// </remarks>
+    public required MeshDrawRecordStorage DrawRecordStorage { get; init; }
 
     /// <summary>Gets how each mesh format lays its vertices out.</summary>
     /// <remarks>
@@ -189,6 +223,9 @@ public sealed record AssetFormatProfile
             new(3, Stride: 40, NormalOffset: 12, DiffuseUvOffset: 24, LightmapUvOffset: 32),
         ],
         MeshHeaderCountsBaseVertices = false,
+        DrawRecordStorage = MeshDrawRecordStorage.InlineIndices,
+        AttachmentStride = 68,
+        AttachmentBoneOffset = 64,
     };
 
     /// <summary>Gets the profile for I.G.I. 2: Covert Strike (2003).</summary>
@@ -221,6 +258,9 @@ public sealed record AssetFormatProfile
             new(3, Stride: 28, NormalOffset: -1, DiffuseUvOffset: 12, LightmapUvOffset: 20),
         ],
         MeshHeaderCountsBaseVertices = true,
+        DrawRecordStorage = MeshDrawRecordStorage.FaceGroupTable,
+        AttachmentStride = 72,
+        AttachmentBoneOffset = 68,
     };
 
     /// <summary>Gets a profile that accepts every encoding the readers understand.</summary>
@@ -250,6 +290,9 @@ public sealed record AssetFormatProfile
             new(3, Stride: 40, NormalOffset: 12, DiffuseUvOffset: 24, LightmapUvOffset: 32),
         ],
         MeshHeaderCountsBaseVertices = null,
+        DrawRecordStorage = MeshDrawRecordStorage.InlineIndices,
+        AttachmentStride = 68,
+        AttachmentBoneOffset = 64,
     };
 
     /// <summary>Determines whether the title ships a <c>.tex</c> of this version.</summary>
