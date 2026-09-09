@@ -92,6 +92,7 @@ public readonly record struct DesktopOptions(
         int uiScale = Core.Graphics.UiScale.Automatic;
         bool logCamera = false;
         bool lockstep = false;
+        List<(int Frame, string Statement)> deferredCommands = [];
         bool startFlying = false;
         bool playCutscenes = true;
         float cameraYaw = 0f;
@@ -331,6 +332,17 @@ public readonly record struct DesktopOptions(
             {
                 logCamera = true;
             }
+            else if (arg.Equals("runat", StringComparison.OrdinalIgnoreCase))
+            {
+                string frame = Next(args, ref i, "runat");
+                if (!int.TryParse(frame, out int runFrame) || runFrame < 0)
+                {
+                    throw new ArgumentException(
+                        $"-runat expects a non-negative frame, got '{frame}'.", nameof(args));
+                }
+
+                deferredCommands.Add((runFrame, Next(args, ref i, "runat")));
+            }
             else if (arg.Equals("lockstep", StringComparison.OrdinalIgnoreCase))
             {
                 lockstep = true;
@@ -516,6 +528,7 @@ public readonly record struct DesktopOptions(
             CameraShake = cameraShake,
             Difficulty = difficulty,
             StartupCommands = startupCommands,
+            DeferredCommands = deferredCommands,
             VanillaMenu = vanillaMenu,
             ShellTab = shellTab,
             EntryCamMission = entryCamMission,
@@ -551,6 +564,15 @@ public readonly record struct DesktopOptions(
     /// <c>-screenshot</c> it writes the whole transition as a numbered sequence.
     /// </remarks>
     public int ComputerCamFrame { get; init; }
+
+    /// <summary>Gets the console statements to run once, each on the frame it names.</summary>
+    /// <remarks>
+    /// <c>+</c> statements run at start-up, before any level exists, so they cannot reach anything a
+    /// mission owns. This is the same idea for a loaded world: a capture can put a bullet mark, a dust
+    /// puff or a wound exactly where it wants one and photograph the result on a frame it can ask for
+    /// again.
+    /// </remarks>
+    public IReadOnlyList<(int Frame, string Statement)> DeferredCommands { get; init; } = [];
 
     /// <summary>
     /// Gets how many frames each leg of an abandon/replay cycle lasts, or <c>0</c> for never. Set by
@@ -728,6 +750,9 @@ public readonly record struct DesktopOptions(
                            instead of the wall clock. A run then depends only on its arguments,
                            which is what makes a capture reproducible. Capture only -- it uncaps
                            the simulation rate and is not how the game is meant to be played.
+          -runat <n> <cmd> Run one console statement on frame n, once. Unlike +<command>, which runs
+                           before any level exists, this reaches a loaded world -- so a capture can fire
+                           impact_test or blood_test and photograph the result.
           -benchmark <f>   Run 120 warm-up and 600 measured frames on a deterministic 120 Hz
                            presentation clock with 30 Hz simulation, then write JSON to <f>.
           -cutscene        Play the mission's authored opening cinematic. Cinematics already play by

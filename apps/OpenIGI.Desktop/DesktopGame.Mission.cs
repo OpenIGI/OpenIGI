@@ -543,6 +543,9 @@ internal sealed partial class DesktopGame
 
         EndStage("the soldiers' meshes and textures");
         _soldiers.Cutscenes = _cutscenes;
+
+        // A round that meets a body bleeds before it does anything else (0x45F94A), whoever fired it.
+        _soldiers.BloodSpray = (owner, at, direction) => SpawnRetailBlood(owner, at, direction);
         _cutscenes?.SetTargetPoseResolver(_soldiers.CutscenePose);
 
         // Interactions are level systems, not AI systems: build them even when a mission has no usable
@@ -1114,6 +1117,28 @@ internal sealed partial class DesktopGame
                         if (_worldMaterials is { } table)
                         {
                             _player.Marks.TryAdd(worldHit, table);
+
+                            // A guard's stray round runs the struck material's own GunShotEffect just
+                            // as the player's does -- 0x4083C0 never asked who fired.
+                            if (RenderCVars.ImpactEffects.Value
+                                && table.TryGet(worldHit.Material, out GameMaterial? struckRow)
+                                && struckRow is not null
+                                && struckRow.RecordsImpacts)
+                            {
+                                Vector3d shotLine = to - from;
+                                double shotLength = shotLine.Length;
+                                _impactEffects.SpawnSurfaceImpact(
+                                    worldHit.Position,
+                                    worldHit.Normal,
+                                    shotLength > 1e-6
+                                        ? new Vector3f(
+                                            (float)(shotLine.X / shotLength),
+                                            (float)(shotLine.Y / shotLength),
+                                            (float)(shotLine.Z / shotLength))
+                                        : default,
+                                    struckRow.Entry,
+                                    struckHuman: false);
+                            }
                         }
 
                         PlayBulletImpactSound(
@@ -1197,6 +1222,21 @@ internal sealed partial class DesktopGame
                     {
                         return;
                     }
+
+                    // 0x45F94A throws the blood before it looks at the damage at all, so the player
+                    // bleeds on contact -- the mist in front of the eye and the splash on whatever
+                    // stood behind. The systems belong to the player's own body.
+                    Vector3d wound = to - from;
+                    double woundLength = wound.Length;
+                    SpawnRetailBlood(
+                        _playerHealth,
+                        hit.Position,
+                        woundLength > 1e-6
+                            ? new Vector3f(
+                                (float)(wound.X / woundLength),
+                                (float)(wound.Y / woundLength),
+                                (float)(wound.Z / woundLength))
+                            : default);
 
                     _playerHealth.Apply(hit.Zone, weapon.DamageFactor);
                     PlayBulletImpactSound(hit.Position, struckHuman: true, surfaceMaterial: 0);
@@ -1397,6 +1437,34 @@ internal sealed partial class DesktopGame
                 ? WorldTrace.Nearest(liveSolids.Tracer(), TerrainRayTrace.Caster(liveTerrain))
                 : liveSolids.Tracer()
             : null;
+
+        // What the impact effects trace against, built here rather than beside the security cameras
+        // because the terrain is only known now: a blood droplet lands on the ground at least as often
+        // as it hits a wall, and the splash behind a body needs whatever is three metres past it.
+        //
+        // The terrain leaf reports no material row, so a hit on open ground comes back as Air and marks
+        // nothing -- which would leave the ground clean of both bullet holes and blood, where retail's
+        // Ground row names hole_concrete1.tex. The level's own terrain row is substituted, which is the
+        // same row the footsteps and the player's material lookup read.
+        _effectWalls = _worldTrace is { } effectTrace
+            ? (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+            {
+                if (!effectTrace(
+                        new WorldTraceRequest(origin, end, WorldTraceMask.World), out WorldTraceHit rich))
+                {
+                    hit = default;
+                    return false;
+                }
+
+                hit = rich.RayHit;
+                if (rich.Kind == WorldTraceHitKind.Terrain && hit.Material == 0 && _effectTerrainRow is int ground)
+                {
+                    hit = hit with { Material = ground };
+                }
+
+                return true;
+            }
+            : null;
         _player = null;
         _playerMode = false;
 
@@ -1516,6 +1584,7 @@ internal sealed partial class DesktopGame
                     ? FootstepSounds.TerrainGameMaterialIndex(terrainData.Materials)
                     : null;
                 candidate.TerrainGameMaterialIndex = terrainRow;
+                _effectTerrainRow = terrainRow;
                 if (_soldiers is not null)
                 {
                     _soldiers.TerrainGameMaterialIndex = terrainRow;
@@ -1651,6 +1720,9 @@ internal sealed partial class DesktopGame
             _tracers = null;
             _impactParticles?.Dispose();
             _impactParticles = null;
+            _retailImpacts?.Dispose();
+            _retailImpacts = null;
+            _impactEffects.Clear();
             _explosions?.Dispose();
             _explosions = null;
             _missileSmoke?.Dispose();
@@ -1711,6 +1783,28 @@ internal sealed partial class DesktopGame
                 if (!_impactParticles.Load(loaded))
                 {
                     _logger.Warning("Impact", "The retail IGI1 explosion model '1009_01_1' was not bound; using the sprite fallback.");
+                }
+
+                // The original's own impact effects: concrete1.spr dust, the material's own chip model,
+                // and blood1/blood2 for a body. The runtime keeps the motion; this only draws it.
+                _retailImpacts?.Dispose();
+                _retailImpacts = new RetailImpactRenderer(_device, _resources, _fileSystem);
+                int impactModels = _retailImpacts.Load(loaded);
+                _impactEffects.Clear();
+                _impactEffects.SetMistFrameCount(_retailImpacts.MistFrameCount);
+                if (!_retailImpacts.SpritesAvailable)
+                {
+                    _logger.Warning(
+                        "Impact",
+                        "concrete1.spr, blood1.spr or blood2.spr did not resolve; the original's "
+                            + "impact dust and blood will not draw.");
+                }
+                else
+                {
+                    _logger.Debug(
+                        "Impact",
+                        $"Retail impact effects bound: {impactModels} chip model(s), "
+                            + $"{_retailImpacts.MistFrameCount} blood frame(s).");
                 }
 
                 // The retail 1009_01_1 fireball, shared by every blast in the level. Loads its real
@@ -2128,6 +2222,7 @@ internal sealed partial class DesktopGame
         _marks?.Dispose();
         _tracers?.Dispose();
         _impactParticles?.Dispose();
+        _retailImpacts?.Dispose();
         _explosions?.Dispose();
         _missileSmoke?.Dispose();
         _cameraStatusLights?.Dispose();
@@ -2154,6 +2249,8 @@ internal sealed partial class DesktopGame
         _marks = null;
         _tracers = null;
         _impactParticles = null;
+        _retailImpacts = null;
+        _impactEffects.Clear();
         _explosions = null;
         _missileSmoke = null;
         _cameraStatusLights = null;
@@ -2164,6 +2261,7 @@ internal sealed partial class DesktopGame
         _playerMode = false;
         _scene = null;
         _playerTerrain = null;
+        _effectWalls = null;
         _worldSolids = null;
         _destructibles = null;
         _worldMaterials = null;

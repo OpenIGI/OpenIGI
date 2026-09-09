@@ -2095,6 +2095,17 @@ public sealed partial class VulkanGraphicsDevice
     /// <inheritdoc/>
     public bool SunShadowTraced => WillTraceSunShadow();
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The same product the first-person rig's lighting (<c>0x…</c> — see
+    /// <c>VulkanGraphicsDevice.Draw3D</c>) and the selection glow divide by: the player's exposure less
+    /// the night, times whatever the eye has adapted to. One outside the deferred pass, where a draw
+    /// lands on a display-encoded target.
+    /// </remarks>
+    public float SceneExposure => _deferredPassActive
+        ? MathF.Max(RenderCVars.EffectiveExposure * _lastAdaptedExposure, 1e-3f)
+        : 1f;
+
     /// <summary>Traces the sun's shadow against the scene, for the shading pass to read this same frame.</summary>
     private unsafe void DispatchSunShadow()
     {

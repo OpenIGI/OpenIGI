@@ -356,6 +356,7 @@ internal sealed partial class DesktopGame : IDisposable
     private LevelTask? _activeLevelRoot;
     private bool _computerOpen;
     private bool _computerCamFired;
+    private readonly HashSet<int> _deferredCommandsFired = [];
 
     // -missioncycle's bookkeeping: which leg of the abandon/replay cadence has been acted on, and the
     // mission to go back into once the level has been let go of.
@@ -381,6 +382,21 @@ internal sealed partial class DesktopGame : IDisposable
     private BulletMarkRenderer? _marks;
     private TracerTrailRenderer? _tracers;
     private ImpactParticleRenderer? _impactParticles;
+    private RetailImpactRenderer? _retailImpacts;
+
+    // The world the blood is traced against: placed objects AND the terrain, because a droplet lands
+    // on the ground as readily as on a wall and the player's own movement caster carries neither the
+    // terrain nor a bullet's idea of what is solid.
+    private WorldRayCast? _effectWalls;
+
+    // What the open ground is made of, for the trace above. A terrain leaf carries no material row of
+    // its own, so a hit on it reports Air -- which marks nothing at all. This is the row the footsteps
+    // and the player's own material lookup already use.
+    private int? _effectTerrainRow;
+
+    // The original's own impact effects -- the material's GunShotEffect and a body's blood. Simulated
+    // on the fixed tick beside the particles and drawn by _retailImpacts.
+    private readonly ImpactEffectRuntime _impactEffects = new();
     private ExplosionEffectRenderer? _explosions;
     private SmokeSpriteRenderer? _missileSmoke;
     private CameraStatusLightRenderer? _cameraStatusLights;
@@ -555,6 +571,7 @@ internal sealed partial class DesktopGame : IDisposable
         // Before Start, so a +lamp_switch on the command line and a settings.cfg that binds one both find
         // the command already there.
         RegisterLampCommands(console.System);
+        RegisterImpactCommands(console.System);
 
         console.Start(_fileSystem, _options.StartupCommands, useSavedSettings: !_options.Lockstep);
         _logger = console.WrapLogger(_logger);
@@ -981,6 +998,8 @@ internal sealed partial class DesktopGame : IDisposable
         _marks = null;
         _tracers = null;
         _impactParticles = null;
+        _retailImpacts = null;
+        _impactEffects.Clear();
         _explosions = null;
         _missileSmoke = null;
         _cameraStatusLights = null;
@@ -990,6 +1009,8 @@ internal sealed partial class DesktopGame : IDisposable
         _arms = null;
         _soldiers = null;
         _playerTerrain = null;
+        _effectWalls = null;
+        _effectTerrainRow = null;
 
         // The material table, shared with the guard-round handler so an AI round's impact can leave the
         // same mark a player's does -- retail rounds are physical and decal whatever they meet (10.4).
@@ -1929,6 +1950,24 @@ internal sealed partial class DesktopGame : IDisposable
                 _logger.Information("Menu", "Paused.");
             }
 
+            // -runat fires a console statement once on a named frame, after the world exists. Latched
+            // by index so a statement runs exactly once however long the capture goes on.
+            if (_options.DeferredCommands.Count > 0)
+            {
+                for (int i = 0; i < _options.DeferredCommands.Count; i++)
+                {
+                    (int frame, string statement) = _options.DeferredCommands[i];
+                    if (_deferredCommandsFired.Contains(i) || _loop.Clock.FrameCount < frame)
+                    {
+                        continue;
+                    }
+
+                    _deferredCommandsFired.Add(i);
+                    _logger.Information("Console", $"-runat {frame}: {statement}");
+                    console.System.Execute(statement, echo: true);
+                }
+            }
+
             // IGI1's handheld is a game mode, entered by the retail C binding. It owns the pointer and
             // freezes player/camera input while the world continues its fixed-tick simulation.
             if (!menuMode && !console.IsOpen && _player is not null
@@ -2620,7 +2659,14 @@ internal sealed partial class DesktopGame : IDisposable
                     _explosions?.Tick();
                     _missileSmoke?.Tick();
 
+                    // The original's own effects, on the same rhythm: the dust and chips step, and the
+                    // blood droplets in the air are traced against the world, marking whatever they
+                    // land on. Ticked before this tick's impacts spawn, so a new puff is drawn where
+                    // it was born.
+                    TickRetailImpactEffects();
+
                     SpawnBallisticImpactParticles();
+                    SpawnRetailImpactEffects();
 
                     // The launcher rockets in the air lay their smoke trail, one column of puffs per
                     // segment they crossed this tick.
@@ -4619,6 +4665,13 @@ internal sealed partial class DesktopGame : IDisposable
                 // The impact bursts: dust hazes over the scene, spark light over the haze.
                 _impactParticles?.Draw(eye, projection, smoothPresentation ? tickBlend : 1f);
 
+                // And the original's own: concrete1.spr dust, the chips it knocked loose, and blood.
+                if (RenderCVars.ImpactEffects.Value)
+                {
+                    _retailImpacts?.Draw(
+                        _impactEffects, eye, projection, smoothPresentation ? tickBlend : 1f);
+                }
+
                 // The rocket's smoke trail and the blast's grey column, under the fireball.
                 _missileSmoke?.Draw(eye, projection, smoothPresentation ? tickBlend : 1f);
 
@@ -6188,6 +6241,7 @@ internal sealed partial class DesktopGame : IDisposable
         _marks?.Dispose();
         _tracers?.Dispose();
         _impactParticles?.Dispose();
+        _retailImpacts?.Dispose();
         _explosions?.Dispose();
         _missileSmoke?.Dispose();
         _cameraStatusLights?.Dispose();

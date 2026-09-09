@@ -2372,7 +2372,8 @@ public sealed class PlayerCamera
                 impact.StruckHuman || impact.StruckWall,
                 impact.RangeInUnits,
                 StruckHuman: impact.StruckHuman,
-                Wall: impact.StruckWall ? impact.Wall : default));
+                Wall: impact.StruckWall ? impact.Wall : default,
+                Direction: impact.Direction));
         }
     }
 
@@ -2418,6 +2419,10 @@ public sealed class PlayerCamera
         {
             Vector3d end = origin + (direction * remaining);
 
+            // The direction the effect dispatcher carries with the contact. It changes mid-march when
+            // the round glances, so it is taken fresh each pass rather than from the shot.
+            Vector3f travel = new((float)direction.X, (float)direction.Y, (float)direction.Z);
+
             WorldTraceHit richHit = default;
             bool struckWall = _walls is not null
                 && _walls.TryTrace(new WorldTraceRequest(origin, end, WorldTraceMask.World), out richHit);
@@ -2434,13 +2439,14 @@ public sealed class PlayerCamera
             {
                 HumanHits++;
                 LastHumanZone = human.Zone;
-                _impacts.Add(new GunImpact(human.Position, true, remaining, StruckHuman: true));
+                _impacts.Add(
+                    new GunImpact(human.Position, true, remaining, StruckHuman: true, Direction: travel));
                 return;
             }
 
             if (!struckWall)
             {
-                _impacts.Add(new GunImpact(end, false, remaining));
+                _impacts.Add(new GunImpact(end, false, remaining, Direction: travel));
                 return;
             }
 
@@ -2467,25 +2473,20 @@ public sealed class PlayerCamera
 
             GroundImpact?.Invoke(hit.Position);
 
-            // The surface decides what the hit looks like, out of the material its own face names. A
-            // row that records no impact leaves nothing — Fence and MetalFence are two such rows.
-            if (_materials is { } table)
-            {
-                Marks.TryAdd(hit, table);
-            }
-
             _impacts.Add(new GunImpact(
                 hit.Position,
                 true,
                 remaining,
                 richHit.Owner,
                 richHit.Placement,
-                Wall: hit));
+                Wall: hit,
+                Direction: travel));
 
             // A round that has already come out of something stops on the next thing it enters,
             // whatever that thing is made of — it has spent its one pass through.
             if (leftASurface)
             {
+                Mark(hit, isEntry: !deflected);
                 return;
             }
 
@@ -2494,6 +2495,7 @@ public sealed class PlayerCamera
                 : null;
             if (struck is null || remaining <= 0f)
             {
+                Mark(hit, isEntry: !deflected);
                 return;
             }
 
@@ -2510,6 +2512,11 @@ public sealed class PlayerCamera
                     // window, so a round that glances always gets one.
                     deflected = true;
                     Deflected?.Invoke(hit.Position);
+
+                    // 0x47C262: a round that has glanced marks every surface it met as an EXIT, which
+                    // on metal and concrete is the dent rather than the hole. The latch is set here,
+                    // before the impact is recorded at 0x47BDED.
+                    Mark(hit, isEntry: false);
                     direction = Reflect(direction, hit.Normal);
                     origin = StepOff(hit.Position, direction);
                     continue;
@@ -2522,10 +2529,22 @@ public sealed class PlayerCamera
                 || !GunShotBallistics.Penetrates(
                     penetrationPower, struck.BulletResistance, _random.NextSingle()))
             {
+                Mark(hit, isEntry: !deflected);
                 return;
             }
 
+            Mark(hit, isEntry: !deflected);
             origin = StepOff(hit.Position, direction);
+        }
+
+        // The surface decides what the hit looks like, out of the material its own face names. A row
+        // that records no impact leaves nothing -- Fence and MetalFence are two such rows.
+        void Mark(in WorldRayHit surface, bool isEntry)
+        {
+            if (_materials is { } table)
+            {
+                Marks.TryAdd(surface, table, isEntry);
+            }
         }
     }
 

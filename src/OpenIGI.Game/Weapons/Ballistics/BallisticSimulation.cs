@@ -13,13 +13,15 @@ namespace OpenIGI.Game.Weapons.Ballistics;
 /// <param name="StruckWall">Whether the world stopped it.</param>
 /// <param name="Wall">The world contact, when a surface stopped it.</param>
 /// <param name="RangeInUnits">The weapon's whole range, carried for the impact record.</param>
+/// <param name="Direction">Which way the round was travelling when it landed, unit length.</param>
 public readonly record struct BallisticImpact(
     Vector3d Position,
     bool StruckHuman,
     HumanHit Human,
     bool StruckWall,
     WorldRayHit Wall,
-    float RangeInUnits);
+    float RangeInUnits,
+    Vector3f Direction = default);
 
 /// <summary>
 /// The rounds in flight under the tactical-ballistics option, stepped once per game tick.
@@ -292,6 +294,17 @@ public sealed class BallisticSimulation
                     && humans(start, position, round.DamageFactor, round.Category, out humanHit)
                     && (!struckWall || humanHit.Distance < wallHit.Distance);
 
+                // The round's own heading over this tick's chord, which the struck material's effect
+                // needs as the axis its chips fly along.
+                Vector3d step = position - start;
+                double stepDistance = step.Length;
+                Vector3f travel = stepDistance > 1e-9
+                    ? new Vector3f(
+                        (float)(step.X / stepDistance),
+                        (float)(step.Y / stepDistance),
+                        (float)(step.Z / stepDistance))
+                    : default;
+
                 if (struckHuman || struckWall)
                 {
                     position = struckHuman ? humanHit.Position : wallHit.Position;
@@ -301,12 +314,14 @@ public sealed class BallisticSimulation
                         humanHit,
                         !struckHuman && struckWall,
                         wallHit,
-                        RangeOf(round)));
+                        RangeOf(round),
+                        travel));
                     stopped = true;
                 }
                 else if (spent)
                 {
-                    _impacts.Add(new BallisticImpact(position, false, default, false, default, RangeOf(round)));
+                    _impacts.Add(new BallisticImpact(
+                        position, false, default, false, default, RangeOf(round), travel));
                 }
             }
 

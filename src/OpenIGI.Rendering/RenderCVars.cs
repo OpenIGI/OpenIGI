@@ -73,12 +73,31 @@ public static class RenderCVars
         high: "0.45",
         ultra: "0.45");
 
-    /// <summary>How rich the particle burst where a round lands is, or 0 for none.</summary>
+    /// <summary>Whether the original's own impact effects are drawn.</summary>
     /// <remarks>
-    /// A remaster addition: sparks and dust composed from the material table's own row for the
-    /// struck surface — metal showers sparks, dirt breathes a slow brown plume, a body a brief red
-    /// mist. One is the authored look, two doubles the particle counts, and vanilla pins zero
-    /// because the original drew nothing of the kind.
+    /// <b>Retail behaviour, on everywhere including vanilla.</b> The <c>GunShotEffect</c> a struck
+    /// material names (<c>0x438440</c>) — a puff of <c>concrete1.spr</c> half the time and two to four
+    /// chips of the material's own model — and the blood a body throws (<c>0x463AD0</c>), which is
+    /// separately gated by the game's own blood option. This exists to be turned off for diagnosis,
+    /// not for taste; <see cref="ImpactParticles"/> is the remaster's extra burst on top.
+    /// </remarks>
+    public static readonly BoolCVar ImpactEffects = Presets.Define(
+        CVar.Bool(
+            "r_impact_effects",
+            true,
+            CVarOptions.Archive,
+            "Draw the original's impact dust, surface chips and blood."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>How rich the extra remaster particle burst where a round lands is, or 0 for none.</summary>
+    /// <remarks>
+    /// A remaster addition <b>on top of</b> <see cref="ImpactEffects"/>: sparks and dust composed from
+    /// the material table's own row for the struck surface — metal showers sparks, dirt breathes a slow
+    /// brown plume, a body a brief red mist. One is the authored look, two doubles the particle counts,
+    /// and vanilla pins zero so a vanilla run shows the original's effects and nothing else.
     /// </remarks>
     public static readonly NumericCVar<float> ImpactParticles = Presets.Define(
         CVar.Float(

@@ -4571,6 +4571,16 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodyShown = false;
     }
 
+    /// <summary>Raised where a round met a body, so the blood can be thrown there.</summary>
+    /// <remarks>
+    /// <c>Human</c>'s damage handler (<c>0x45F930</c>) calls the blood (<c>0x463AD0</c>) as its very
+    /// first act, <b>before</b> the invulnerability and instant-death gates and before any damage is
+    /// applied. So this is raised on contact, not on damage: a friendly round or one on an invulnerable
+    /// guard still makes it bleed, exactly as it does in the original. The first argument identifies
+    /// the body, whose two particle systems the effect runtime keeps and reuses.
+    /// </remarks>
+    public Action<object, Vector3d, Vector3f>? BloodSpray { get; set; }
+
     /// <summary>Starts the third-person body in one of IGI1's ladder animation states.</summary>
     /// <param name="animation">The state's authored clip.</param>
     /// <param name="loops">Whether the clip loops.</param>
@@ -5387,6 +5397,20 @@ public sealed class SoldierRenderer : IDisposable
         if (struck is null)
         {
             return false;
+        }
+
+        // 0x45F94A, before anything else the damage handler does.
+        if (BloodSpray is { } bleed)
+        {
+            Vector3d line = end - origin;
+            double length = line.Length;
+            bleed(
+                (object?)struckView ?? struck,
+                hit.Position,
+                length > 1e-6
+                    ? new Vector3f(
+                        (float)(line.X / length), (float)(line.Y / length), (float)(line.Z / length))
+                    : default);
         }
 
         // The soldier's brain carries two flags the damage handler 0x45D3C0 reads: invulnerability skips
