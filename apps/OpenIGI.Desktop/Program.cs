@@ -4,8 +4,8 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Desktop;
 using OpenIGI.Engine.Configuration;
+using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Game.Content;
 using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Infrastructure;
 using OpenIGI.Host;
@@ -73,10 +73,10 @@ string[] searched = new[] { SettingsPaths.ExecutableDirectory, AppContext.BaseDi
     .Distinct(StringComparer.OrdinalIgnoreCase)
     .ToArray();
 
-// The title this build runs. One name, in the composition root, because that is where the choice
-// belongs and where it becomes a real one: phase 1 replaces this with a selection over GameTitle.All,
-// and nothing below here has to change when it does.
-GameTitle title = GameTitle.Igi1;
+// The title this build runs, chosen here because the composition root is the only place that may name
+// one. Everything below takes the runtime and never asks which game it is.
+IGameTitleRuntime titleRuntime = DesktopTitleCatalog.Default;
+GameTitle title = titleRuntime.Title;
 
 // -game, then IGI_GAME_PATH, then whatever is lying around the executable.
 string? gamePath = options.GamePath ?? GameProfileResolver.DiscoverDataRoot(searched, title);
@@ -121,7 +121,7 @@ fileSystem.RegisterDevice(new LocalFileDevice(gamePath));
 // this is the OpenIGI extension the config type was written for, and binding it here is what makes a
 // data-file mod able to redirect an alias without touching the base install.
 FileSystemConfig
-    .LoadOrDefault(Path.Combine(gamePath, FileSystemConfig.DefaultFileName), Igi1DataLayout.Instance)
+    .LoadOrDefault(Path.Combine(gamePath, FileSystemConfig.DefaultFileName), titleRuntime.Layout)
     .ApplyTo(fileSystem);
 
 DesktopPlatformHost platform = new();
@@ -185,7 +185,8 @@ using (window)
     // The composition root is the only place that names a concrete backend: the graphics device
     // above, and the audio factory here. GameHost itself sees only the abstractions.
     using GameHost game = new(
-        platform, window, device, OpenAlAudioDeviceFactory.Instance, fileSystem, options, gamePath, logger);
+        platform, window, device, OpenAlAudioDeviceFactory.Instance, titleRuntime,
+        fileSystem, options, gamePath, logger);
     return game.Run();
 }
 }

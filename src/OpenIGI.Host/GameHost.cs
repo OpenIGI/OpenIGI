@@ -69,6 +69,7 @@ internal sealed partial class GameHost : IDisposable
     private readonly IPlatformHost _platform;
     private readonly IGameWindow _window;
     private readonly IAudioDeviceFactory _audioFactory;
+    private readonly IGameTitleRuntime _titleRuntime;
     /// <summary>Gets the window width, or the authored 320 when a minimize/dock race reports 0x0.</summary>
     private int SafeWindowWidth => _window.Width > 0 ? _window.Width : 320;
 
@@ -470,6 +471,7 @@ internal sealed partial class GameHost : IDisposable
     /// <param name="window">The game window whose input and frames drive the loop.</param>
     /// <param name="device">The graphics device every renderer draws through.</param>
     /// <param name="audioFactory">Opens the audio backend; re-called whenever the device settings change.</param>
+    /// <param name="titleRuntime">The game being run: its data layout, its formats and its content modules.</param>
     /// <param name="fileSystem">The virtual file system the original installation is read through.</param>
     /// <param name="options">The parsed command line.</param>
     /// <param name="gamePath">The original installation directory.</param>
@@ -479,6 +481,7 @@ internal sealed partial class GameHost : IDisposable
         IGameWindow window,
         IGraphicsDevice device,
         IAudioDeviceFactory audioFactory,
+        IGameTitleRuntime titleRuntime,
         VirtualFileSystem fileSystem,
         HostOptions options,
         string gamePath,
@@ -488,6 +491,7 @@ internal sealed partial class GameHost : IDisposable
         _window = window;
         _device = device;
         _audioFactory = audioFactory;
+        _titleRuntime = titleRuntime;
         _fileSystem = fileSystem;
         _options = options;
         _gamePath = gamePath;
@@ -776,7 +780,7 @@ internal sealed partial class GameHost : IDisposable
         // this block each, with a comment in the loader saying it matched the one here; they had already
         // drifted by an entry. See TitleSession.
         _title = TitleSession.Start(
-            Igi1ContentModules.All, _loop, _fileSystem, _resources, _logger, loadTables: false);
+            _titleRuntime.Modules, _loop, _fileSystem, _resources, _logger, loadTables: false);
 
         _magic = _title.Services.Require<MagicObjectRegistry>();
         _vehiclePhysics = _title.Services.Require<VehiclePhysicsRegistry>();
@@ -1012,6 +1016,7 @@ internal sealed partial class GameHost : IDisposable
             _lampManifest,
             _sdfCache,
             _title.Services,
+            _titleRuntime.Modules,
             _device.Capabilities.SupportsCompute);
 
 
@@ -1435,7 +1440,7 @@ internal sealed partial class GameHost : IDisposable
                 shellTheme,
                 shellHost,
                 new ScreenStack(),
-                GameProfileResolver.BuildCatalogue(GameTitle.Igi1, _gamePath, null, null),
+                GameProfileResolver.BuildCatalogue(_titleRuntime.Title, _gamePath, null, null),
                 shellMissions,
                 CVarRegistry.Default,
                 GraphicsPresetRegistry.Default,

@@ -70,6 +70,10 @@ namespace OpenIGI.Host.Menu;
 /// its own loop — the natives are per-loop and must be — but the tables are the session's, so a
 /// backdrop reads the magic-object table that is already loaded rather than a second, empty one.
 /// </param>
+/// <param name="TitleModules">
+/// The running title's content modules. A preview registers the same ones into its own loop, so its
+/// tree comes out shaped the way the scene walk expects rather than as untyped placeholders.
+/// </param>
 /// <param name="ComputeSupported">
 /// Whether the device can run compute at all. A distance field is only ever traced against on a device
 /// that can, so a backdrop built for one that cannot should not spend a worker baking one.
@@ -85,4 +89,5 @@ public sealed record MissionPreviewContext(
     LampManifest Lamps,
     DistanceFieldCache DistanceFields,
     IServiceCatalog TitleServices,
+    IReadOnlyList<IContentModule> TitleModules,
     bool ComputeSupported);

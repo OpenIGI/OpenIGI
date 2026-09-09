@@ -275,7 +275,7 @@ public sealed class MissionPreviewLoader(
         // registered so the tree comes out properly typed rather than as untyped placeholders, and it
         // reads the tables the playing session already loaded through `inherited`.
         TitleSession.Start(
-            Igi1ContentModules.All,
+            context.TitleModules,
             loop,
             fileSystem,
             resources,
