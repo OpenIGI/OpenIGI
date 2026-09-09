@@ -162,15 +162,21 @@ measure at a worse apron ratio, chosen from the adapter's reported limit.
 
 ```
 src/     Core Engine Formats Scripting Game Modding UI Frontend
+         Presentation               title-agnostic drawing + the ITitlePresentation seam
+         Host                       the game host: frame loop, missions, dev console, menu host
          + Rendering/Audio/Input/Platform abstractions and their backends
-apps/    OpenIGI.Desktop            composition root and executable
+apps/    OpenIGI.Desktop            composition root and executable — under 300 lines
 tools/   ResExtract, QvmDisasm      archive/texture extraction and QVM disassembly
          texture-forge (Python)     AI texture upscaling and PBR map generation
 tests/   xUnit projects, one per source project
 ```
 
-The layering rule is that `OpenIGI.Engine` and `OpenIGI.Game` may reference only the abstraction
-projects, never a concrete backend; backends are wired together in the desktop app.
+The layering rule is that nothing under `src/` may reference a concrete backend — only the abstraction
+projects — and backends are wired together in the app composition root. The game itself lives in
+`Host` and `Presentation` rather than in the executable, so a second platform supplies a window, a
+graphics device and an audio factory and gets the same game. The rules are enforced by
+`tests/OpenIGI.Core.Tests/Architecture/`; the full set is in
+[`docs/architecture.md`](docs/architecture.md).
 
 ## Contributing
 
