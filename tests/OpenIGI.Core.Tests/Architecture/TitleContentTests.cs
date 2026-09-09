@@ -24,8 +24,8 @@ namespace OpenIGI.Core.Tests.Architecture;
 /// <c>Presentation/Igi1</c> is exempt wholesale rather than listed file by file. It is I.G.I. 1's
 /// renderers parked where they can compile until the host stops constructing each of them by name; see
 /// the README beside them for what is holding which. The exemption disappears with the folder, and the
-/// folder empties one pass at a time — the terrain renderer left first, once
-/// <c>ITerrainPresenter</c> gave the host something to hold it by.
+/// folder empties one pass at a time: terrain went first, then the world, each once an interface gave
+/// the host something to hold it by. The characters are not next — that README records why.
 /// </para>
 /// </remarks>
 public sealed class TitleContentTests

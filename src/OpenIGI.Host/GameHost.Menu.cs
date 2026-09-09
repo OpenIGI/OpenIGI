@@ -30,7 +30,7 @@ internal sealed partial class GameHost
     /// </para>
     /// <para>
     /// The renderers are built against the preview's OWN resource registry and file system, because a
-    /// <see cref="WorldRenderer"/> resolves models and textures through the registry it was given for as
+    /// <see cref="IWorldPresenter"/> resolves models and textures through the registry it was given for as
     /// long as it lives, and the sky reads through the file system whose <c>MISSION:</c> alias points at
     /// this level. Holding the preview keeps both alive; dropping it drops the whole context.
     /// </para>
@@ -63,16 +63,14 @@ internal sealed partial class GameHost
         // replaced every time the player settles on a different mission rather than once per game. Dropping
         // the reference without disposing would leak a level's textures per row of the list.
         _world?.Dispose();
-        _world = new WorldRenderer(_device, preview.Resources, _logger)
-        {
-            Materials = _materials,
-            DetailMaps = _detailMaps,
+        _world = _presentation.CreateWorld(new WorldPresentationRequest(_device, preview.Resources, _logger));
+        _world.Materials = _materials;
+        _world.DetailMaps = _detailMaps;
 
-            // Decoded on the pool while this backdrop was being built, so the capture below uploads
-            // rather than decodes. Null on a preview built before there was a cache to fill, which the
-            // renderer handles by decoding as it always did.
-            Decoded = preview.Decoded,
-        };
+        // Decoded on the pool while this backdrop was being built, so the capture below uploads rather
+        // than decodes. Null on a preview built before there was a cache to fill, which the renderer
+        // handles by decoding as it always did.
+        _world.Decoded = preview.Decoded;
 
         // Held because the renderers read through the preview's own resource registry and file system for
         // as long as they live; letting it go would pull the packs out from under them.

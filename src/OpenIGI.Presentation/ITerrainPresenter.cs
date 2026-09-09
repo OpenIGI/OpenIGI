@@ -93,9 +93,9 @@ public readonly record struct TerrainPresentationRequest(
 /// the only place that names either implementation, which is the property that actually matters.
 /// </para>
 /// <para>
-/// It grows one method per pass as each pass stops being constructed by the host. Terrain is the first;
-/// the world, the characters, the view model, the HUD and the menus follow as
-/// <see cref="ITitlePresentation"/> widens.
+/// It grows one method per pass as each pass stops being constructed by the host. Terrain came first and
+/// the world followed; the characters, the view model, the HUD and the menus are what is left. The
+/// characters are the hard one — see the README beside I.G.I. 1's remaining renderers.
 /// </para>
 /// </remarks>
 public interface ITitlePresentationProvider
@@ -104,4 +104,9 @@ public interface ITitlePresentationProvider
     /// <param name="request">What the presenter needs.</param>
     /// <returns>The presenter.</returns>
     ITerrainPresenter CreateTerrain(in TerrainPresentationRequest request);
+
+    /// <summary>Builds the presenter for this title's placed world objects.</summary>
+    /// <param name="request">What the presenter needs.</param>
+    /// <returns>The presenter.</returns>
+    IWorldPresenter CreateWorld(in WorldPresentationRequest request);
 }

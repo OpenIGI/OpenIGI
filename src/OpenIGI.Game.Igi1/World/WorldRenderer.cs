@@ -7,12 +7,13 @@ using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using System.Runtime.InteropServices;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Draws a loaded mission's static objects, uploading each model and texture the first time it is needed.</summary>
 /// <remarks>
@@ -26,7 +27,7 @@ namespace OpenIGI.Presentation.Igi1;
 /// nothing. That is why the horizon is empty rather than the sky being wrong.
 /// </para>
 /// </remarks>
-public sealed class WorldRenderer : IDisposable
+public sealed class WorldRenderer : IWorldPresenter
 {
     /// <summary>The alpha a cut-out surface has to reach to be drawn, matching what the shaders test.</summary>
     /// <remarks>
@@ -35,14 +36,6 @@ public sealed class WorldRenderer : IDisposable
     /// value here that disagrees with the shaders would preserve the wrong quantity and thin the fence
     /// anyway. Change both together.
     /// </remarks>
-    /// <summary>The alpha a cut-out texel must reach to be drawn, which the shaders test against.</summary>
-    /// <remarks>
-    /// Public because the decode that prepares a texture for this cutoff now happens off this class, on
-    /// a worker; see <see cref="TextureDecodeCache"/>. The two must use the same number or a chain is
-    /// corrected against a threshold nothing tests.
-    /// </remarks>
-    public const float AlphaTestCutoff = 0.5f;
-
     private const string LogCategory = "World";
 
     /// <summary>How far a lamp placement may stand from the light it houses, in metres.</summary>
@@ -197,6 +190,36 @@ public sealed class WorldRenderer : IDisposable
 
     /// <summary>Gets or sets the live rotating world objects (radar dishes and rotating tasks).</summary>
     public RotatingObjectRegistry? RotatingObjects { get; set; }
+
+    /// <inheritdoc/>
+    void IWorldPresenter.Draw(
+        WorldScene scene,
+        in Camera3D camera,
+        in Matrix4f projection,
+        in WorldDrawOptions options) =>
+        Draw(
+            scene,
+            camera,
+            projection,
+            options.MinimumRadius,
+            options.OcclusionCulling,
+            options.RotorsOnly,
+            options.GlassOnly);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Sub-meshes rather than objects, because that is the unit the device is handed and so the number
+    /// that decides the frame. A title whose world is not built from sub-meshes reports whatever its own
+    /// unit is, which is why these are lines rather than a fixed set of named counters.
+    /// </remarks>
+    public void Describe(ICollection<string> into)
+    {
+        ArgumentNullException.ThrowIfNull(into);
+
+        into.Add(FormattableString.Invariant(
+            $"sub-meshes {LastDrawCount}   lightmapped {LastLightmappedCount}   triangles {LastTriangleCount}"));
+        into.Add(FormattableString.Invariant($"placements occlusion-culled {LastOccludedCount}"));
+    }
 
     /// <summary>Sets the shared presentation point used by every tick-driven world transform.</summary>
     /// <remarks>
@@ -1827,10 +1850,10 @@ public sealed class WorldRenderer : IDisposable
                 // has and only generates one if it shipped without.
                 bool cutout = AlphaCoverage.IsCutout(image.GetLevel(0));
 
-                image.WidenCutoutAlpha(AlphaTestCutoff);
+                image.WidenCutoutAlpha(TextureDecodeCache.AlphaTestCutoff);
 
                 image = cutout ? image.RebuildMipChain() : image.WithMipChain();
-                image.PreserveAlphaCoverage(AlphaTestCutoff);
+                image.PreserveAlphaCoverage(TextureDecodeCache.AlphaTestCutoff);
 
                 handle = CreateFromDecoded(name, image, asset.Detail);
             }

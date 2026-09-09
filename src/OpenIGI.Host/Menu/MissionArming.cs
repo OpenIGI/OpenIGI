@@ -1,5 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation;
 using OpenIGI.Presentation.Igi1;
 using System.Diagnostics;
 
@@ -32,7 +33,7 @@ namespace OpenIGI.Host.Menu;
 public sealed class MissionArming
 {
     private readonly WorldScene _scene;
-    private readonly WorldRenderer _world;
+    private readonly IWorldPresenter _world;
     private readonly IIgiLogger _logger;
     private readonly Stopwatch _spent = new();
 
@@ -46,7 +47,7 @@ public sealed class MissionArming
     /// <param name="world">The renderer they are made resident in.</param>
     /// <param name="logger">The logger.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public MissionArming(int missionId, WorldScene scene, WorldRenderer world, IIgiLogger logger)
+    public MissionArming(int missionId, WorldScene scene, IWorldPresenter world, IIgiLogger logger)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(world);

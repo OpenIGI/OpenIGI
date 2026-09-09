@@ -7,12 +7,12 @@ using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Igi1;
+using OpenIGI.Game.Igi1.World;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
 
-namespace OpenIGI.Desktop.Tests;
+namespace OpenIGI.Game.Igi1.Tests;
 
 /// <summary>Checks the renderer's culling boundary around retail helicopter rotor blur meshes.</summary>
 public sealed class WorldRendererRotorCullingTests

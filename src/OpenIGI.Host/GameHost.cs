@@ -304,7 +304,7 @@ internal sealed partial class GameHost : IDisposable
     private float _inspectorTangent = 1f;
     private float _inspectorAspect = 16f / 9f;
     private WorldScene? _scene;
-    private WorldRenderer? _world;
+    private IWorldPresenter? _world;
     private ITerrainPresenter? _terrain;
     private SkyRenderer? _sky;
 
@@ -4433,7 +4433,7 @@ internal sealed partial class GameHost : IDisposable
                 // the walls; walls first, and early-Z rejects that fill instead. Outdoors the same
                 // holds for the ground behind every building.
                 bool cameraIndoors = IsCameraInsideBuilding(eye.Position);
-                _world.Draw(_scene, eye, projection, occlusionCulling: RenderCVars.WorldOcclusion.Value);
+                _world.Draw(_scene, eye, projection, new WorldDrawOptions(OcclusionCulling: RenderCVars.WorldOcclusion.Value));
                 EndStageIfSlow("the sky and the world's objects");
 
                 if (captured)
@@ -5000,14 +5000,14 @@ internal sealed partial class GameHost : IDisposable
                         Math.Max(1, (int)(rotorMap.Viewport.Width * renderScale)),
                         Math.Max(1, (int)(rotorMap.Viewport.Height * renderScale))));
                 }
-                _world.Draw(_scene, eye, projection, rotorsOnly: true);
+_world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
 
                 // The level's glazing, over a picture the lighting has finished. It has to follow the
                 // opaque world for the ordinary reason anything blended does, and it is a pass of its own
                 // rather than part of the rotor pass above because the two share nothing: a rotor is a
                 // whole placement that blends, and a pane is half of a texture on a placement whose other
                 // half was drawn into the G-buffer.
-                _world.Draw(_scene, eye, projection, glassOnly: true);
+                _world.Draw(_scene, eye, projection, new WorldDrawOptions(GlassOnly: true));
                 if (mapScene is not null)
                 {
                     _device.SetViewport(new Viewport(0, 0,
@@ -6009,9 +6009,9 @@ internal sealed partial class GameHost : IDisposable
                 if (!reportedWorld)
                 {
                     reportedWorld = true;
-                    _logger.Information(
-                        "World",
-                        $"Drew {_world.LastDrawCount} sub-mesh(es), {_world.LastLightmappedCount} lightmapped, {_world.LastTriangleCount} triangles, {_world.LastOccludedCount} placement(s) occlusion-culled from {_camera.Position}.");
+                    List<string> world = [];
+                    _world.Describe(world);
+                    _logger.Information("World", $"{string.Join("; ", world)}, from {_camera.Position}.");
 
                     if (_terrain is not null)
                     {

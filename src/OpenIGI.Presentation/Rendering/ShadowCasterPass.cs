@@ -79,7 +79,11 @@ public sealed class ShadowCasterPass
                     // anyone reads, and the cascades redraw the whole scene once each — so each one
                     // skips casters below 1/256th of its own radius. The near cascade's threshold is
                     // centimetres, which skips nothing a player could stand next to.
-                    world.Draw(scene, lightCamera, cascades[i].Projection, cascades[i].Radius * (1f / 256f));
+                    world.Draw(
+                        scene,
+                        lightCamera,
+                        cascades[i].Projection,
+                        new WorldDrawOptions(MinimumRadius: cascades[i].Radius * (1f / 256f)));
                 }
 
 characters?.Draw(lightCamera, cascades[i].Projection);

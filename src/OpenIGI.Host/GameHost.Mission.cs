@@ -532,7 +532,7 @@ internal sealed partial class GameHost
         EndStage("objectives, highlights and the map computer");
 
         ObjectCollisionIndex solids;
-        WorldRenderer world;
+        IWorldPresenter world;
         WorldScene scene;
         if (promoted)
         {
@@ -547,12 +547,10 @@ internal sealed partial class GameHost
         {
             scene = WorldScene.Build(loaded, levelRoot, _magic, _logger, _vehiclePhysics);
             _scene = scene;
-            world = new WorldRenderer(_device, _resources, _logger)
-            {
-                Materials = _materials,
-                DetailMaps = _detailMaps,
-                Lamps = _lamps,
-            };
+            world = _presentation.CreateWorld(new WorldPresentationRequest(_device, _resources, _logger));
+            world.Materials = _materials;
+            world.DetailMaps = _detailMaps;
+            world.Lamps = _lamps;
             _world = world;
             solids = ObjectCollisionIndex.Build(scene.Placements);
             _worldSolids = solids;
@@ -988,7 +986,7 @@ internal sealed partial class GameHost
                     else
                     {
                         // The setting is off, or off since the last load: make sure no stale bake lingers.
-                        _world?.SetBakedLightmaps(null);
+                        _world?.SetBakedLightmaps(null, discardRetail: false);
                     }
 
                     // The probe field, guarded on its own cvar so it does not trace under a lightmap-only

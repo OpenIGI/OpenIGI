@@ -1,3 +1,4 @@
+using OpenIGI.Presentation;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
@@ -26,7 +27,7 @@ namespace OpenIGI.Host.Menu;
 /// <para>
 /// It carries its own <see cref="Resources"/> and <see cref="FileSystem"/> because that is what made the
 /// load safe to run in the background at all — see <see cref="MissionPreviewLoader"/> — and because a
-/// <see cref="WorldRenderer"/> reads models and textures through the registry it was given for as long as
+/// <see cref="IWorldPresenter"/> reads models and textures through the registry it was given for as long as
 /// it lives. Dropping the preview drops the whole context with it.
 /// </para>
 /// </remarks>

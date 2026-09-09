@@ -5,14 +5,18 @@ namespace OpenIGI.Game.Igi1;
 
 /// <summary>Builds the renderers Project I.G.I. draws with.</summary>
 /// <remarks>
-/// One method for now, because terrain is the one pass the host no longer constructs by hand. It grows
-/// as the rest of <c>OpenIGI.Presentation/Igi1</c> follows the terrain renderer into this project; see
-/// that folder's README for what is holding each of the others.
+/// Two passes so far: the ground and the placed world. Each arrived when the host stopped naming its
+/// renderer, which is what lets the renderer live here; see the README beside the ones still in
+/// <c>OpenIGI.Presentation/Igi1</c> for what is holding the rest.
 /// </remarks>
 public sealed class Igi1PresentationProvider : ITitlePresentationProvider
 {
     /// <summary>Gets the shared instance.</summary>
     public static Igi1PresentationProvider Instance { get; } = new();
+
+    /// <inheritdoc/>
+    public IWorldPresenter CreateWorld(in WorldPresentationRequest request) =>
+        new WorldRenderer(request.Device, request.Resources, request.Logger);
 
     /// <inheritdoc/>
     public ITerrainPresenter CreateTerrain(in TerrainPresentationRequest request) =>

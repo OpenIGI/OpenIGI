@@ -8,13 +8,13 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Igi1;
+using OpenIGI.Game.Igi1.World;
 using OpenIGI.Rendering;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
 
-namespace OpenIGI.Desktop.Tests;
+namespace OpenIGI.Game.Igi1.Tests;
 
 /// <summary>
 /// Exercises the retail Location 0 / Level 4 extraction cutscene at the renderer boundary.  The

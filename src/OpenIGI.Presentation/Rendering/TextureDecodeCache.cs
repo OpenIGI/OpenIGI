@@ -40,6 +40,14 @@ namespace OpenIGI.Presentation.Rendering;
 /// </remarks>
 public sealed class TextureDecodeCache
 {
+    /// <summary>The alpha below which a world texel is discarded rather than blended.</summary>
+    /// <remarks>
+    /// Lives here rather than on a renderer because two things have to agree on it: the draw that tests
+    /// against it, and the decode that widens a cutout's alpha to survive it. The decode runs on a
+    /// worker, ahead of any renderer existing, so the constant cannot belong to one.
+    /// </remarks>
+    public const float AlphaTestCutoff = 0.5f;
+
     private const string TexturePrefix = "LOCAL:textures/";
     private const string TextureSuffix = ".tex";
 

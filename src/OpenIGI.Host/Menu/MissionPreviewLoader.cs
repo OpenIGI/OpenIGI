@@ -14,6 +14,7 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
 using OpenIGI.Host;
+using OpenIGI.Presentation;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
@@ -373,7 +374,7 @@ public sealed class MissionPreviewLoader(
         // reads the registry on this thread has finished with it: the cache takes the bytes it needs now
         // and touches the registry no further, so nothing races the render thread's own loads later.
         TextureDecodeCache decoded = TextureDecodeCache.StartFor(
-            resources, WorldRenderer.AlphaTestCutoff, context.DetailMaps);
+            resources, TextureDecodeCache.AlphaTestCutoff, context.DetailMaps);
 
         logger.Information(
             LogCategory,
