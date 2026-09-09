@@ -62,7 +62,7 @@ public sealed class RetailIgi2ModelTableTests
             GameDataSource.Igi2.RequireRoot(), "missions", "location1", "common", "location1.mtp");
         Assert.True(File.Exists(common), $"'{common}' is missing.");
 
-        Igi2ModelTable table = Igi2ModelTable.Create(MtpPack.Read(File.ReadAllBytes(common)), null);
+        Igi2ModelTable table = Igi2ModelTable.Create([MtpPack.Read(File.ReadAllBytes(common))]);
 
         foreach (string uniform in new[] { "rsg1_1", "rsg2_1", "rsg3_1" })
         {
@@ -116,15 +116,84 @@ public sealed class RetailIgi2ModelTableTests
             }
         }
 
-        Assert.True(total > 10_000, $"Only {total} placements were walked.");
-        // Measured: of the 10,569 placements, 9,209 resolve by file name and 10,154 through the packs.
-        // The 945 the packs add are the characters; the 415 still missing are the next thread to pull.
-        Assert.True(
-            byTable > byFileName + 900,
-            $"The table resolved {byTable} against {byFileName} by file name, which is not the difference it should make.");
-        Assert.True(
-            byTable >= total * 96 / 100,
-            $"Only {byTable} of {total} placements resolved through the packs.");
+        // Exact, because the corpus is fixed and the residue is now small enough to name. Of the 10,569
+        // placements 9,536 resolve by file name alone and 10,564 through the packs -- the 1,028 the packs
+        // add are the characters and everything else the global pack carries.
+        Assert.Equal(10_569, total);
+        Assert.Equal(9_536, byFileName);
+        Assert.Equal(10_564, byTable);
+    }
+
+    /// <summary>The five placements the shipped data cannot resolve, and why they are the data's fault.</summary>
+    /// <remarks>
+    /// <para>
+    /// This began as 415 unresolved. Opening the two global packs took it to 5, and those 5 are not a
+    /// gap in the port: <c>soldier_1</c> is in no archive anywhere in the installation, and
+    /// <c>igiagent_1</c>, <c>231_15_1</c> and <c>730_01_1</c> exist only in the archives of levels other
+    /// than the one placing them.
+    /// </para>
+    /// <para>
+    /// <b>The original fails identically.</b> <c>MTP_VirModel_GetPtr</c> searches only the four packs the
+    /// game has open, so a name none of them carries yields no model and the object is simply not drawn.
+    /// Pinning the exact names keeps that a statement about the retail data rather than a tolerance.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void The_five_that_do_not_resolve_are_missing_from_the_shipped_data()
+    {
+        Dictionary<string, int> unresolved = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (Igi2Level level in Igi2Level.All())
+        {
+            foreach (Igi2Placement placement in level.Scene.Placements)
+            {
+                if (Holds(level.Models, Igi2WorldScene.ModelResourceName(placement.Model))
+                    || (level.Table.TryResolveMesh(placement.Model, out string? mesh)
+                        && Holds(level.Models, Igi2WorldScene.ModelResourceName(mesh))))
+                {
+                    continue;
+                }
+
+                unresolved.TryGetValue(placement.Model, out int count);
+                unresolved[placement.Model] = count + 1;
+            }
+        }
+
+        Assert.Equal(2, unresolved["soldier_1"]);
+        Assert.Equal(1, unresolved["igiagent_1"]);
+        Assert.Equal(1, unresolved["231_15_1"]);
+        Assert.Equal(1, unresolved["730_01_1"]);
+        Assert.Equal(4, unresolved.Count);
+    }
+
+    /// <summary>The global pack is what carries the characters, and it is loaded first.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>Game_CreateHandler</c> loads four packs in a fixed order — <c>common</c>, <c>new</c>, the
+    /// location's, the level's — and <c>MTP_Load</c> appends, so <c>COMMON/common.mtp</c> is the head of
+    /// <c>MTP_tMTPList</c>. That matters twice: it is the pack a <see cref="PackId.CommonBase"/> id
+    /// addresses, and <c>MTP_VirModel_GetPtr</c> returns the <em>first</em> match walking from the head,
+    /// so a level cannot override a name the global pack already has.
+    /// </para>
+    /// <para>
+    /// It is also where the player and the scientists live, which is why 415 placements looked
+    /// unresolvable while only the level and location packs were open.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void The_global_pack_carries_the_characters()
+    {
+        string root = GameDataSource.Igi2.RequireRoot();
+        MtpPack global = MtpPack.Read(File.ReadAllBytes(Path.Combine(root, "COMMON", "common.mtp")));
+
+        Assert.Equal(398, global.ModelNames.Count);
+        Assert.Equal(416, global.Instances.Count);
+
+        Igi2ModelTable table = Igi2ModelTable.Create([global]);
+        foreach (string character in new[] { "jones_1", "scientist" })
+        {
+            Assert.True(table.TryResolveMesh(character, out _), $"The global pack does not name '{character}'.");
+        }
     }
 
     /// <summary>
@@ -155,7 +224,7 @@ public sealed class RetailIgi2ModelTableTests
 
         Assert.DoesNotContain(level.Instances, i => string.Equals(i.Name, "rsg3_1", StringComparison.OrdinalIgnoreCase));
 
-        Igi2ModelTable table = Igi2ModelTable.Create(level, common);
+        Igi2ModelTable table = Igi2ModelTable.Create([common, level]);
         Assert.True(table.TryResolveMesh("rsg3_1", out string? mesh));
         Assert.Equal("rsg_1", mesh);
 

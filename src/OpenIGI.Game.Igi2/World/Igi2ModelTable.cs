@@ -32,48 +32,58 @@ namespace OpenIGI.Game.Igi2.World;
 /// </remarks>
 public sealed class Igi2ModelTable
 {
-    private readonly MtpPack _level;
-    private readonly MtpPack? _common;
+    private readonly IReadOnlyList<MtpPack> _packs;
     private readonly Dictionary<string, Entry> _byName;
 
-    private Igi2ModelTable(MtpPack level, MtpPack? common, Dictionary<string, Entry> byName)
+    private Igi2ModelTable(IReadOnlyList<MtpPack> packs, Dictionary<string, Entry> byName)
     {
-        _level = level;
-        _common = common;
+        _packs = packs;
         _byName = byName;
     }
 
-    /// <summary>Gets how many virtual models the two packs name between them.</summary>
+    /// <summary>Gets how many virtual models the packs name between them.</summary>
     public int Count => _byName.Count;
 
-    /// <summary>Builds a table over a level's pack and the common pack behind it.</summary>
-    /// <param name="level">The level's own pack.</param>
-    /// <param name="common">The location's common pack, or null when the level has none.</param>
+    /// <summary>Builds a table over the packs a level has open, in the order the original loads them.</summary>
+    /// <param name="packsInLoadOrder">
+    /// The packs, nearest the front of the original's list first: the global common pack, then the
+    /// <c>new</c> pack, then the location's, then the level's.
+    /// </param>
     /// <returns>The table.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="level"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="packsInLoadOrder"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">No packs were given, or one of them is <see langword="null"/>.</exception>
     /// <remarks>
-    /// The level's own names win, which is the order the original resolves in. A name in both packs is
-    /// the level overriding what its neighbours share, and taking the level's is what makes that work.
+    /// <para>
+    /// <b>The first pack to name a model wins</b>, which is the opposite of what this used to do.
+    /// <c>MTP_VirModel_GetPtr</c> (<c>igi2.exe 0x4F4CA0</c>) walks <c>MTP_tMTPList</c> from the head and
+    /// returns the first match; <c>MTP_Load</c> appends, so the head is the pack loaded first. A level
+    /// therefore cannot override a name the global pack already has.
+    /// </para>
+    /// <para>
+    /// The order comes from <c>Game_CreateHandler</c>, which loads four packs in a fixed sequence behind
+    /// its own loading-screen captions: <c>common</c> ("Loading common resource archive..."), <c>new</c>,
+    /// the location ("Loading LOCATION..."), then the level ("Loading LEVEL MTP...").
+    /// </para>
     /// </remarks>
-    public static Igi2ModelTable Create(MtpPack level, MtpPack? common)
+    public static Igi2ModelTable Create(IReadOnlyList<MtpPack> packsInLoadOrder)
     {
-        ArgumentNullException.ThrowIfNull(level);
+        ArgumentNullException.ThrowIfNull(packsInLoadOrder);
+        if (packsInLoadOrder.Count == 0 || packsInLoadOrder.Any(static p => p is null))
+        {
+            throw new ArgumentException("At least one pack is needed, and none may be null.", nameof(packsInLoadOrder));
+        }
 
         Dictionary<string, Entry> byName = new(StringComparer.OrdinalIgnoreCase);
-        if (common is not null)
+        foreach (MtpPack pack in packsInLoadOrder)
         {
-            foreach (MtpInstance instance in common.Instances)
+            foreach (MtpInstance instance in pack.Instances)
             {
-                byName[instance.Name] = new Entry(instance, common);
+                // First wins: TryAdd, never the indexer.
+                byName.TryAdd(instance.Name, new Entry(instance, pack));
             }
         }
 
-        foreach (MtpInstance instance in level.Instances)
-        {
-            byName[instance.Name] = new Entry(instance, level);
-        }
-
-        return new Igi2ModelTable(level, common, byName);
+        return new Igi2ModelTable([.. packsInLoadOrder], byName);
     }
 
     /// <summary>Turns a placed model name into the mesh file it draws.</summary>
@@ -96,11 +106,9 @@ public sealed class Igi2ModelTable
         // level's is wrong for every instance the common pack contributes, and wrong quietly: it lands on
         // a real mesh at that index and hands back the wrong model. It cost 358 unresolvable material
         // slots, which is how it surfaced -- the wrong mesh named slots its instance did not have.
-        MtpPack? pack = entry.Instance.Model.IsCommon ? _common : entry.Pack;
-        if (pack is null)
-        {
-            return false;
-        }
+        // A common id addresses the head of the pack list -- the global common pack -- and a local one the
+        // pack that owns the INST record, which is not the same thing as the level's.
+        MtpPack pack = entry.Instance.Model.IsCommon ? _packs[0] : entry.Pack;
 
         int index = entry.Instance.Model.Index;
         if (index < 0 || index >= pack.ModelNames.Count)
@@ -171,5 +179,5 @@ public sealed class Igi2ModelTable
 
     /// <inheritdoc/>
     public override string ToString() =>
-        $"I.G.I. 2 model table, {Count} virtual models over {_level.ModelNames.Count} meshes";
+        $"I.G.I. 2 model table, {Count} virtual models over {_packs.Count} packs";
 }

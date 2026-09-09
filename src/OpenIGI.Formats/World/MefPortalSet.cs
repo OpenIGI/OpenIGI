@@ -56,8 +56,8 @@ public readonly record struct MefPortalFace(int Vertex0, int Vertex1, int Vertex
 /// remaining faces only widen the outline.
 /// </para>
 /// <para>
-/// <b>A portal is not necessarily a quad, and not necessarily a triangle fan.</b> Across I.G.I. 2's 770
-/// placed portals the commonest shape is the quad (578 of them, four vertices and two triangles) but they
+/// <b>A portal is not necessarily a quad, and not necessarily a triangle fan.</b> Across I.G.I. 2's 794
+/// placed portals the commonest shape is the quad (602 of them, four vertices and two triangles) but they
 /// run to 28 vertices and 22 triangles, and <b>41 have a face count that is not
 /// <c>vertices - 2</c></b> — <c>v28 f14</c> is seven separate quads, not one fan. So a reader that
 /// triangulated the vertex list itself, or assumed four corners, would be wrong on a quarter of them.

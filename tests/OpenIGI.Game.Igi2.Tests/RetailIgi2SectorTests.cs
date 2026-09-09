@@ -56,15 +56,15 @@ public sealed class RetailIgi2SectorTests
             }
         }
 
-        Assert.Equal(218, sectors);
-        Assert.Equal(770, portals);
+        Assert.Equal(242, sectors);
+        Assert.Equal(794, portals);
 
         // A portal is NOT always a quad, and NOT always a triangle fan. The quad is merely the commonest
         // shape; the rest run to 28 vertices and 22 triangles, and 41 have a face count that is not
         // `vertices - 2` -- v28 f14 is seven separate quads. Pinned in both directions because assuming
         // either would be wrong on a quarter of the corpus, and silently so: the portal would still
         // occlude, just with the wrong outline.
-        Assert.Equal(578, quads);
+        Assert.Equal(602, quads);
         Assert.Equal(41, strips);
     }
 
@@ -74,7 +74,7 @@ public sealed class RetailIgi2SectorTests
     /// The load-bearing negative result. A portal is an opening in one sector's own shell; the room
     /// beyond has an opening of its own nearby, not in the same place. Of the 180 portals belonging to
     /// sectors placed without rotation — the ones whose world position needs no orientation convention to
-    /// compute — <b>2 coincide with a portal of another sector</b>, and those two are one mesh placed
+    /// compute — <b>4 coincide with a portal of another sector</b>, and those are two meshes each placed
     /// twice.
     /// </para>
     /// <para>
@@ -122,8 +122,8 @@ public sealed class RetailIgi2SectorTests
             }
         }
 
-        Assert.Equal(180, upright);
-        Assert.Equal(2, coincident);
+        Assert.Equal(199, upright);
+        Assert.Equal(4, coincident);
     }
 
     /// <summary>A sector hangs under a container-shaped task, which is what groups the linkage.</summary>
@@ -147,7 +147,7 @@ public sealed class RetailIgi2SectorTests
         }
 
         Assert.Equal(145, parents["Container"]);
-        Assert.Equal(69, parents["ConditionalContainer"]);
+        Assert.Equal(93, parents["ConditionalContainer"]);
         Assert.Equal(3, parents["Building"]);
         Assert.Equal(1, parents["Dynamic"]);
         Assert.Equal(4, parents.Count);

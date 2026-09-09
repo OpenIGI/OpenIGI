@@ -86,8 +86,8 @@ public sealed class RetailIgi2MaterialTests
             }
         }
 
-        Assert.Equal(1_564, meshes);
-        Assert.Equal(5_807, records);
+        Assert.Equal(1_654, meshes);
+        Assert.Equal(6_066, records);
 
         // Not one slot goes unanswered. This started at 358 and the residue was the finding: the missing
         // slots all belonged to meshes resolved against the wrong pack, so a mesh arrived wearing another
@@ -95,8 +95,8 @@ public sealed class RetailIgi2MaterialTests
         // says the cause was found rather than the symptom trimmed.
         Assert.Equal(0, missing);
         Assert.Equal(records - untextured, resolved);
-        Assert.Equal(2, untextured);
-        Assert.Equal(918, textures.Count);
+        Assert.Equal(25, untextured);
+        Assert.Equal(952, textures.Count);
     }
 
     /// <summary>Two uniforms of one soldier mesh really do sample different textures.</summary>
@@ -111,7 +111,7 @@ public sealed class RetailIgi2MaterialTests
     {
         string path = Path.Combine(
             GameDataSource.Igi2.RequireRoot(), "missions", "location1", "common", "location1.mtp");
-        Igi2ModelTable table = Igi2ModelTable.Create(MtpPack.Read(File.ReadAllBytes(path)), null);
+        Igi2ModelTable table = Igi2ModelTable.Create([MtpPack.Read(File.ReadAllBytes(path))]);
 
         Assert.True(table.TryResolveTexture("rsg1_1", 0, out string? firstShared));
         Assert.True(table.TryResolveTexture("rsg3_1", 0, out string? thirdShared));

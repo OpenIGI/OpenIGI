@@ -22,13 +22,12 @@ public readonly record struct Igi2Sector(
 /// </summary>
 /// <remarks>
 /// <para>
-/// A sector is any placement whose mesh carries portals — 218 placements across the 24 shipped levels,
-/// over 54 distinct meshes. Everything else is a prop standing in the open.
+/// A sector is any placement whose mesh carries portals — 242 placements across the 24 shipped levels. Everything else is a prop standing in the open.
 /// </para>
 /// <para>
 /// <b>Linkage is by portal slot within a container, not by geometry.</b> That is worth stating flatly
 /// because the geometric reading is the one anybody would reach for first, and it is wrong:
-/// of the 180 portals belonging to sectors placed without rotation, <b>2 coincide in world space</b>.
+/// of the 199 portals belonging to sectors placed without rotation, <b>4 coincide in world space</b>.
 /// Sectors do not meet portal-to-portal. A portal is a hole in one sector's own shell, and the sector
 /// behind it has a hole of its own somewhere near, not in the same place.
 /// </para>
@@ -41,7 +40,7 @@ public readonly record struct Igi2Sector(
 /// <para>
 /// <b>One thing here is a reading rather than a fact:</b> that <c>ptSectorContainer</c> is the task the
 /// sector hangs under. It is not proven from the binary — the field's assignment was not found — but it
-/// fits what the levels contain: 217 of the 218 sector placements sit directly under a
+/// fits what the levels contain: 241 of the 242 sector placements sit directly under a
 /// <c>Container</c>, <c>ConditionalContainer</c> or <c>Building</c>, and the remaining one under
 /// <c>Dynamic</c>. <see cref="Igi2Sector.ContainerType"/> carries that so a later reader can check the
 /// claim rather than inherit it.

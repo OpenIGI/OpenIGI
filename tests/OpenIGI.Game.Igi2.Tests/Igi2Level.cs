@@ -95,9 +95,25 @@ internal sealed class Igi2Level
                 continue;
             }
 
-            string? commonPack = System.IO.Directory.Exists(commonDirectory)
-                ? System.IO.Directory.EnumerateFiles(commonDirectory, "*.mtp").FirstOrDefault()
-                : null;
+            // The order Game_CreateHandler loads them in: the global common pack, then new, then the
+            // location's, then the level's. The first to name a model wins, so the order is behaviour.
+            string root = GameDataSource.Igi2.RequireRoot();
+            List<MtpPack> packs = [];
+            foreach (string candidate in new[]
+                     {
+                         Path.Combine(root, "COMMON", "common.mtp"),
+                         Path.Combine(root, "COMMON", "new.mtp"),
+                         System.IO.Directory.Exists(commonDirectory)
+                             ? System.IO.Directory.EnumerateFiles(commonDirectory, "*.mtp").FirstOrDefault() ?? string.Empty
+                             : string.Empty,
+                         levelPack,
+                     })
+            {
+                if (candidate.Length > 0 && File.Exists(candidate))
+                {
+                    packs.Add(MtpPack.Read(File.ReadAllBytes(candidate)));
+                }
+            }
 
             RetailIgi2LevelLoadTests.Harness harness = new(script);
             harness.Loader.LoadScript(RetailIgi2LevelLoadTests.Harness.ScriptName);
@@ -106,9 +122,7 @@ internal sealed class Igi2Level
                 directory,
                 commonDirectory,
                 harness.LevelRoot,
-                Igi2ModelTable.Create(
-                    MtpPack.Read(File.ReadAllBytes(levelPack)),
-                    commonPack is null ? null : MtpPack.Read(File.ReadAllBytes(commonPack))));
+                Igi2ModelTable.Create(packs));
         }
     }
 
@@ -166,8 +180,15 @@ internal sealed class Igi2Level
 
     private static List<IresArchive> Archives(string directory, string commonDirectory, string kind)
     {
+        // The four packs' sibling archives, in the same order: COMMON/<kind>/ holds common.res and
+        // new.res, then the location's, then the level's.
         List<IresArchive> archives = [];
-        foreach (string root in new[] { Path.Combine(directory, kind), Path.Combine(commonDirectory, kind) })
+        foreach (string root in new[]
+                 {
+                     Path.Combine(GameDataSource.Igi2.RequireRoot(), "COMMON", kind),
+                     Path.Combine(commonDirectory, kind),
+                     Path.Combine(directory, kind),
+                 })
         {
             if (System.IO.Directory.Exists(root))
             {

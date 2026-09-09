@@ -145,8 +145,8 @@ public sealed class MefModel
     /// <summary>Gets the model's portals, decoded on first use.</summary>
     /// <exception cref="PackFormatException">The portal chunks are malformed.</exception>
     /// <remarks>
-    /// Lazy because most models have none — 54 of the sequel's 559 placed meshes are sectors, and 41 of
-    /// Project I.G.I.'s 595 — so decoding eagerly would charge every model for a chunk it does not use.
+    /// Lazy because most models have none — a minority of the sequel's placed meshes are sectors, and 41
+    /// of Project I.G.I.'s 595 — so decoding eagerly would charge every model for a chunk it never uses.
     /// </remarks>
     public MefPortalSet Portals => _portals ??= MefPortalSet.Read(Container);
 
