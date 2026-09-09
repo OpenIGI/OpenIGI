@@ -2,6 +2,31 @@ using System.Collections.Immutable;
 
 namespace OpenIGI.Formats;
 
+/// <summary>How one mesh format lays its vertices out on disk.</summary>
+/// <remarks>
+/// <para>
+/// The layouts are the vertex structs the games' own renderers declare, read from I.G.I. 2's PDB rather
+/// than inferred: <c>Direct3DRender_XYZNormalTex1Vertex_t</c> (32 B: position, normal, UV),
+/// <c>Direct3DRender_BoneVertex_t</c> (40 B: that plus a bone index and weight word) and
+/// <c>LightmapDirect3D_Vertex_t</c> (28 B: position, UV, lightmap UV).
+/// </para>
+/// <para>
+/// I.G.I. 1 uses the D3D flexible vertex formats <c>0x112</c> = <c>XYZ|NORMAL|TEX1</c> at 32 bytes and
+/// <c>0x212</c> = <c>XYZ|NORMAL|TEX2</c> at 40.
+/// </para>
+/// </remarks>
+/// <param name="Format">The mesh format this describes.</param>
+/// <param name="Stride">The bytes one vertex occupies.</param>
+/// <param name="NormalOffset">The byte offset of the normal, or -1 when the format carries none.</param>
+/// <param name="DiffuseUvOffset">The byte offset of the diffuse texture coordinates.</param>
+/// <param name="LightmapUvOffset">The byte offset of the lightmap coordinates, or -1 when there are none.</param>
+public readonly record struct MeshVertexLayout(
+    uint Format,
+    int Stride,
+    int NormalOffset,
+    int DiffuseUvOffset,
+    int LightmapUvOffset);
+
 /// <summary>Where the counts sit in one mesh format's render header.</summary>
 /// <remarks>
 /// The offsets are shared between the games for two of the three formats; only the skinned layout
@@ -75,6 +100,53 @@ public sealed record AssetFormatProfile
     /// </remarks>
     public required ImmutableArray<MeshRenderHeaderLayout> MeshRenderHeaders { get; init; }
 
+    /// <summary>Gets how each mesh format lays its vertices out.</summary>
+    /// <remarks>
+    /// The lightmapped format is where the games differ: I.G.I. 1 writes 40 bytes with a normal and two
+    /// UV sets, I.G.I. 2 writes 28 with two UV sets and <b>no normal</b>, because the lighting is baked
+    /// and nothing shades from it. The other two formats are byte-identical between the games.
+    /// </remarks>
+    public required ImmutableArray<MeshVertexLayout> MeshVertexLayouts { get; init; }
+
+    /// <summary>Looks up the vertex layout for a mesh format.</summary>
+    /// <param name="format">The mesh format from the mesh header.</param>
+    /// <param name="layout">Receives the layout when the title has one.</param>
+    /// <returns><see langword="false"/> when this title ships no mesh of that format.</returns>
+    public bool TryGetVertexLayout(uint format, out MeshVertexLayout layout)
+    {
+        foreach (MeshVertexLayout candidate in MeshVertexLayouts)
+        {
+            if (candidate.Format == format)
+            {
+                layout = candidate;
+                return true;
+            }
+        }
+
+        layout = default;
+        return false;
+    }
+
+    /// <summary>Gets whether a mesh header's vertex count is the base count rather than the total.</summary>
+    /// <remarks>
+    /// <para>
+    /// A skinned model's vertex chunk holds its base vertices followed by the extra weighted influences
+    /// that accumulate into them, and the render header carries both counts and their sum. What the
+    /// <em>mesh</em> header holds differs between the games: I.G.I. 1 puts the total there and I.G.I. 2
+    /// puts the base.
+    /// </para>
+    /// <para>
+    /// Measured across 2,048 models from ten retail I.G.I. 2 archives: all 101 skinned models carry the
+    /// base count, and in both games the base and the extras sum to the total and the vertex chunk holds
+    /// exactly that many rows. For unskinned models there is no difference, because the two are equal.
+    /// </para>
+    /// <para>
+    /// <see langword="null"/> means "either" — for a tool reading a file without knowing which game it
+    /// came from, where the cross-check is not available rather than satisfied.
+    /// </para>
+    /// </remarks>
+    public required bool? MeshHeaderCountsBaseVertices { get; init; }
+
     /// <summary>Looks up the render-header layout for a mesh format.</summary>
     /// <param name="format">The mesh format from the mesh header.</param>
     /// <param name="layout">Receives the layout when the title has one.</param>
@@ -110,6 +182,13 @@ public sealed record AssetFormatProfile
             new(1, SubMeshOffset: 8, VertexOffset: 20, Size: 56),
             new(3, SubMeshOffset: 12, VertexOffset: 16, Size: 56),
         ],
+        MeshVertexLayouts =
+        [
+            new(0, Stride: 32, NormalOffset: 12, DiffuseUvOffset: 24, LightmapUvOffset: -1),
+            new(1, Stride: 40, NormalOffset: 12, DiffuseUvOffset: 24, LightmapUvOffset: 32),
+            new(3, Stride: 40, NormalOffset: 12, DiffuseUvOffset: 24, LightmapUvOffset: 32),
+        ],
+        MeshHeaderCountsBaseVertices = false,
     };
 
     /// <summary>Gets the profile for I.G.I. 2: Covert Strike (2003).</summary>
@@ -135,6 +214,13 @@ public sealed record AssetFormatProfile
             new(1, SubMeshOffset: 8, VertexOffset: 20, Size: 40),
             new(3, SubMeshOffset: 12, VertexOffset: 16, Size: 44),
         ],
+        MeshVertexLayouts =
+        [
+            new(0, Stride: 32, NormalOffset: 12, DiffuseUvOffset: 24, LightmapUvOffset: -1),
+            new(1, Stride: 40, NormalOffset: 12, DiffuseUvOffset: 24, LightmapUvOffset: -1),
+            new(3, Stride: 28, NormalOffset: -1, DiffuseUvOffset: 12, LightmapUvOffset: 20),
+        ],
+        MeshHeaderCountsBaseVertices = true,
     };
 
     /// <summary>Gets a profile that accepts every encoding the readers understand.</summary>
@@ -157,6 +243,13 @@ public sealed record AssetFormatProfile
             new(1, SubMeshOffset: 8, VertexOffset: 20, Size: 56),
             new(3, SubMeshOffset: 12, VertexOffset: 16, Size: 56),
         ],
+        MeshVertexLayouts =
+        [
+            new(0, Stride: 32, NormalOffset: 12, DiffuseUvOffset: 24, LightmapUvOffset: -1),
+            new(1, Stride: 40, NormalOffset: 12, DiffuseUvOffset: 24, LightmapUvOffset: 32),
+            new(3, Stride: 40, NormalOffset: 12, DiffuseUvOffset: 24, LightmapUvOffset: 32),
+        ],
+        MeshHeaderCountsBaseVertices = null,
     };
 
     /// <summary>Determines whether the title ships a <c>.tex</c> of this version.</summary>

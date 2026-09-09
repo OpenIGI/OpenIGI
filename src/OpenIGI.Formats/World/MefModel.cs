@@ -208,18 +208,12 @@ public sealed class MefModel
         ReadOnlySpan<byte> render = RequireChunk(container, MefTags.RenderHeader).Span;
         (int vertexCount, int subMeshCount, int lightmapCount) = ReadRenderHeader(render, format, profile);
 
-        if (vertexCount != headerVertexCount)
-        {
-            throw new PackFormatException(
-                $"The mesh header declares {headerVertexCount} vertices but the render header declares {vertexCount}.");
-        }
-
         ReadOnlySpan<byte> vertexBytes = RequireChunk(container, MefTags.Vertices).Span;
-        MefVertex[] vertices = ReadVertices(vertexBytes, format, vertexCount);
+        MefVertex[] vertices = ReadVertices(vertexBytes, format, vertexCount, profile);
 
         // A skinned model splits its vertex array in two: the base vertices, then the extra weighted
         // influences that accumulate into them. The render header carries both counts, and they sum to
-        // the array length in all 537 retail skinned models.
+        // the array length in all 537 retail I.G.I. 1 skinned models and all 101 sampled from I.G.I. 2.
         int baseVertexCount = vertexCount;
         int extraInfluenceCount = 0;
         MefSkinInfluence[] influences = [];
@@ -236,6 +230,27 @@ public sealed class MefModel
             }
 
             influences = ReadSkinInfluences(vertexBytes, vertexCount);
+        }
+
+        // The mesh header repeats a vertex count, and the two games mean different things by it:
+        // I.G.I. 1 writes the total, I.G.I. 2 writes the base. They are equal for everything but a
+        // skinned model, which is the only case where the extras are non-zero. Checked rather than
+        // ignored, because it is a genuine cross-check on the render header having been read correctly
+        // -- reading the wrong dword there produces a plausible number, and this is what catches it.
+        int expectedHeaderCount = profile.MeshHeaderCountsBaseVertices == true ? baseVertexCount : vertexCount;
+        if (profile.MeshHeaderCountsBaseVertices is not null && headerVertexCount != expectedHeaderCount)
+        {
+            throw new PackFormatException(
+                $"The mesh header declares {headerVertexCount} vertices but the render header declares "
+                    + $"{expectedHeaderCount}.");
+        }
+
+        if (profile.MeshHeaderCountsBaseVertices is null
+            && headerVertexCount != vertexCount && headerVertexCount != baseVertexCount)
+        {
+            throw new PackFormatException(
+                $"The mesh header declares {headerVertexCount} vertices, which is neither the render "
+                    + $"header's {vertexCount} total nor its {baseVertexCount} base.");
         }
         ReadOnlyCollection<MefLightmapPage> pages = ReadLightmapPages(container, lightmapCount);
         IReadOnlyList<MefDrawRecord> records = ReadDrawRecords(
@@ -426,39 +441,59 @@ public sealed class MefModel
         return System.Text.Encoding.ASCII.GetString(end < 0 ? field : field[..end]);
     }
 
-    private static MefVertex[] ReadVertices(ReadOnlySpan<byte> data, MefMeshFormat format, int count)
+    private static MefVertex[] ReadVertices(
+        ReadOnlySpan<byte> data,
+        MefMeshFormat format,
+        int count,
+        AssetFormatProfile profile)
     {
         if (count == 0)
         {
             return [];
         }
 
-        int stride = MefVertex.StrideOf(format);
-        long needed = (long)stride * count;
+        if (!profile.TryGetVertexLayout((uint)format, out MeshVertexLayout layout))
+        {
+            throw new PackFormatException($"This title ships no mesh of format {(int)format}.");
+        }
+
+        long needed = (long)layout.Stride * count;
         if (needed != data.Length)
         {
             throw new PackFormatException(
-                $"The '{MefTags.Vertices}' chunk is {data.Length} bytes but {count} vertices at a {stride}-byte stride need {needed}.");
+                $"The '{MefTags.Vertices}' chunk is {data.Length} bytes but {count} vertices at a "
+                    + $"{layout.Stride}-byte stride need {needed}.");
         }
 
-        bool hasLightmapUv = format != MefMeshFormat.Diffuse;
         MefVertex[] vertices = new MefVertex[count];
         for (int i = 0; i < count; i++)
         {
-            ReadOnlySpan<byte> v = data.Slice(i * stride, stride);
+            ReadOnlySpan<byte> v = data.Slice(i * layout.Stride, layout.Stride);
+
+            // I.G.I. 2's lightmapped vertex carries no normal at all -- the lighting is baked and
+            // nothing shades from it -- so the field reads as zero rather than as whatever happens to
+            // sit at the offset I.G.I. 1 keeps it at.
+            Vector3f normal = layout.NormalOffset < 0
+                ? default
+                : new Vector3f(
+                    BinaryPrimitives.ReadSingleLittleEndian(v[layout.NormalOffset..]),
+                    BinaryPrimitives.ReadSingleLittleEndian(v[(layout.NormalOffset + 4)..]),
+                    BinaryPrimitives.ReadSingleLittleEndian(v[(layout.NormalOffset + 8)..]));
+
             vertices[i] = new MefVertex(
                 new Vector3f(
                     BinaryPrimitives.ReadSingleLittleEndian(v),
                     BinaryPrimitives.ReadSingleLittleEndian(v[4..]),
                     BinaryPrimitives.ReadSingleLittleEndian(v[8..])),
-                new Vector3f(
-                    BinaryPrimitives.ReadSingleLittleEndian(v[12..]),
-                    BinaryPrimitives.ReadSingleLittleEndian(v[16..]),
-                    BinaryPrimitives.ReadSingleLittleEndian(v[20..])),
-                BinaryPrimitives.ReadSingleLittleEndian(v[24..]),
-                BinaryPrimitives.ReadSingleLittleEndian(v[28..]),
-                hasLightmapUv ? BinaryPrimitives.ReadSingleLittleEndian(v[32..]) : 0f,
-                hasLightmapUv ? BinaryPrimitives.ReadSingleLittleEndian(v[36..]) : 0f);
+                normal,
+                BinaryPrimitives.ReadSingleLittleEndian(v[layout.DiffuseUvOffset..]),
+                BinaryPrimitives.ReadSingleLittleEndian(v[(layout.DiffuseUvOffset + 4)..]),
+                layout.LightmapUvOffset < 0
+                    ? 0f
+                    : BinaryPrimitives.ReadSingleLittleEndian(v[layout.LightmapUvOffset..]),
+                layout.LightmapUvOffset < 0
+                    ? 0f
+                    : BinaryPrimitives.ReadSingleLittleEndian(v[(layout.LightmapUvOffset + 4)..]));
         }
 
         return vertices;
