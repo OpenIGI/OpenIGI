@@ -40,6 +40,7 @@
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/OpenIGI.Tools.QvmDisasm/OpenIGI.Tools.QvmDisasm.csproj" />
+    <Project Path="tools/OpenIGI.Tools.TaskCensus/OpenIGI.Tools.TaskCensus.csproj" />
     <Project Path="tools/OpenIGI.Tools.ResExtract/OpenIGI.Tools.ResExtract.csproj" />
   </Folder>
 </Solution>
