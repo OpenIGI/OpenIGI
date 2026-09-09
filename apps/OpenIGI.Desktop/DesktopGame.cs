@@ -332,6 +332,12 @@ internal sealed partial class DesktopGame : IDisposable
     private StatusMessageRenderer? _messages;
     private readonly MapComputerCamera _computerFlight = new();
     private readonly BinocularOptics _binocularOptics = new();
+
+    // The interaction marker's own wall clock: which offer is on screen and how far it has faded up.
+    // Kept beside the optics for the same reason -- a fade measured in real seconds cannot live on a
+    // renderer that is only asked to draw.
+    private readonly InteractionPromptAnimation _interactionPrompt = new();
+    private int _lastInteractionPromptMilliseconds;
     private int _lastBinocularMilliseconds;
     private int _lastMotionBlurMilliseconds;
 
@@ -4157,6 +4163,24 @@ internal sealed partial class DesktopGame : IDisposable
                 bool showFirstPersonHud = showPlayerHud
                     && _player is { IsOnLadder: false, IsInWorldInteraction: false };
 
+                // What the interaction resolver is offering, advanced on its own wall clock so the
+                // marker fades at the same rate whatever the frame rate. Gated on showPlayerHud rather
+                // than showFirstPersonHud on purpose: a timed interaction hides the hands and the
+                // weapon, and that is exactly when the ring filling on the object is what the player
+                // is reading.
+                bool worldInteractionPrompt = InteractionPromptPresentation.UsesWorldPrompt(
+                    remasterHud,
+                    RenderCVars.InteractionPrompt.Value);
+                int interactionPromptNow = _loop.TimeSource.Milliseconds;
+                float interactionPromptElapsed =
+                    Math.Clamp((interactionPromptNow - _lastInteractionPromptMilliseconds) / 1000f, 0f, 0.1f);
+                _lastInteractionPromptMilliseconds = interactionPromptNow;
+                _interactionPrompt.Update(
+                    worldInteractionPrompt && showPlayerHud
+                        ? _player?.InteractionPrompt(smoothPresentation ? tickBlend : 1f)
+                        : null,
+                    interactionPromptElapsed);
+
                 // The remastered detector's range grows with the zoom: from the base range at the
                 // default field of view up to the zoomed range at the tightest magnification, so leaning
                 // into the optics resolves a distant figure the wide view does not. The vanilla optics
@@ -5138,7 +5162,10 @@ internal sealed partial class DesktopGame : IDisposable
                 // HumanPlayer_DrawStatus keeps drawing states 30/31/32/35/36 in third person and adds
                 // the current/total bar at 0x413120. It must therefore sit outside the first-person arms
                 // block, which interactions deliberately suppress.
+                // The world-anchored marker carries the same progress on its own ring, at the object,
+                // so the centred bar would be the same reading twice.
                 if (remasterHud
+                    && !worldInteractionPrompt
                     && _player?.InteractionProgress is float interactionProgress
                     && _remasteredHud is { IsReady: true } interactionHud)
                 {
@@ -5205,9 +5232,40 @@ internal sealed partial class DesktopGame : IDisposable
                             modernCarried.State,
                             _player.ActionSprite,
                             _missionObjectives?.Objectives ?? [],
-                            _player.IsSniperScoped),
+                            _player.IsSniperScoped,
+                            worldInteractionPrompt),
                         _window.Width,
                         _window.Height);
+                    batch.End();
+                }
+
+                // The marker itself, over the finished frame and over the HUD. It is a surface standing
+                // in the level rather than an overlay on the picture, so it is handed the same presented
+                // eye and the same lens that drew the thing it belongs to, and it projects itself.
+                if (worldInteractionPrompt
+                    && _interactionPrompt.Visible is { } promptTarget
+                    && _remasteredHud is { IsReady: true } promptHud)
+                {
+                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+                    batch.Begin();
+                    promptHud.DrawInteractionPrompt(
+                        batch,
+                        new InteractionPromptView(
+                            promptTarget.AnchorUnits / WorldScene.UnitsPerMetre,
+                            _interactionPrompt.Opacity,
+                            _interactionPrompt.Pop,
+                            InteractionPromptPresentation.BadgeLabel(
+                                PlayerProfileInputBindings.BoundKeyName(
+                                    _configuration.Active,
+                                    PlayerInputBindings.ConfigName(PlayerAction.Activate))),
+                            InteractionPromptPresentation.Title(promptTarget),
+                            InteractionPromptPresentation.Detail(promptTarget),
+                            InteractionPromptPresentation.RingProgress(promptTarget)),
+                        eye,
+                        horizontalTangent,
+                        aspectRatio,
+                        SafeWindowWidth,
+                        SafeWindowHeight);
                     batch.End();
                 }
 

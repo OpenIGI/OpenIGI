@@ -85,6 +85,26 @@ public sealed record PlacedDoor(
             (Position.Z / WorldScene.UnitsPerMetre) + offset.Z);
     }
 
+    /// <summary>Gets the door's pose as this frame presents it, between its last two ticks.</summary>
+    /// <param name="tickFraction">How far the frame stands between the two simulation states.</param>
+    /// <param name="smooth">Whether to interpolate at all; <see langword="false"/> takes the newer state.</param>
+    /// <returns>The position in metres and the swing orientation.</returns>
+    /// <remarks>
+    /// The door moves on the thirty-hertz tick and is drawn far more often than that, so everything
+    /// that has to sit on the door — its mesh, and any mark placed on it — has to ask for the same
+    /// blended pose. Reading the tick state directly is what makes a thing on a moving door judder
+    /// while the door itself glides.
+    /// </remarks>
+    public (Vector3d Position, Matrix3f Orientation) PresentedPose(float tickFraction, bool smooth)
+    {
+        float alpha = smooth ? Math.Clamp(tickFraction, 0f, 1f) : 1f;
+        float slide = State.PreviousSlideFraction
+            + ((State.SlideFraction - State.PreviousSlideFraction) * alpha);
+        float angle = State.PreviousAngleDegrees
+            + ((State.AngleDegrees - State.PreviousAngleDegrees) * alpha);
+        return (DrawPositionAt(slide), DrawOrientationAt(angle));
+    }
+
     /// <summary>Gets the door's current drawable swing orientation.</summary>
     public Matrix3f DrawOrientation =>
         DrawOrientationAt(State.AngleDegrees);
@@ -309,13 +329,7 @@ public sealed class DoorRegistry
     {
         if (_doorsByTask.TryGetValue(task, out PlacedDoor? door))
         {
-            float alpha = smooth ? Math.Clamp(tickFraction, 0f, 1f) : 1f;
-            float slide = door.State.PreviousSlideFraction
-                + ((door.State.SlideFraction - door.State.PreviousSlideFraction) * alpha);
-            float angle = door.State.PreviousAngleDegrees
-                + ((door.State.AngleDegrees - door.State.PreviousAngleDegrees) * alpha);
-            position = door.DrawPositionAt(slide);
-            orientation = door.DrawOrientationAt(angle);
+            (position, orientation) = door.PresentedPose(tickFraction, smooth);
             return true;
         }
 

@@ -75,6 +75,8 @@ public sealed class UiSurfaces : IDisposable
         Bgra32[] pixels = new Bgra32[AtlasWidth * AtlasHeight];
         WriteRoundedCorner(pixels, originX: 0);
         WriteShadowCorner(pixels, originX: Quadrant * 2);
+        WriteInsideGuard(pixels, originX: 0);
+        WriteInsideGuard(pixels, originX: Quadrant * 2);
 
         TextureHandle texture = device.CreateTexture(new TextureDescription(AtlasWidth, AtlasHeight), pixels);
         return new UiSurfaces(device, texture);
@@ -119,6 +121,44 @@ public sealed class UiSurfaces : IDisposable
                 // reads as smooth at every size this is drawn at.
                 float coverage = Math.Clamp(Radius - distance + 0.5f, 0f, 1f);
                 pixels[((y * AtlasWidth) + originX + x)] = Bgra32.FromRgba(255, 255, 255, (byte)(coverage * 255f));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Continues each quadrant's solid inside past its edge, so filtering never samples off the shape.
+    /// </summary>
+    /// <param name="pixels">The atlas being filled.</param>
+    /// <param name="originX">The quadrant's left edge in the atlas.</param>
+    /// <remarks>
+    /// <para>
+    /// A quadrant is authored with the shape's outside at its top-left and its solid inside at the
+    /// bottom-right, and a draw samples right up to that inside edge. Bilinear filtering there reaches
+    /// one texel further, which without this lands in the empty atlas between the quadrants and halves
+    /// the alpha along the seam.
+    /// </para>
+    /// <para>
+    /// It goes unnoticed for an ordinary rounded panel, whose corners meet stretched edge strips carrying
+    /// the same solid value. A figure whose radius is half its height — a circle, a capsule — has no
+    /// edge strips at all: its four corners meet each other, and the seam draws a faint cross through
+    /// the middle of the shape. Half the guard band is left clear so the neighbouring quadrant's own
+    /// outside edge still filters into nothing.
+    /// </para>
+    /// </remarks>
+    private static void WriteInsideGuard(Bgra32[] pixels, int originX)
+    {
+        const int Guard = Quadrant / 2;
+        Bgra32 inside = Bgra32.FromRgba(255, 255, 255, 255);
+        for (int y = 0; y < Quadrant + Guard; y++)
+        {
+            for (int x = 0; x < Quadrant + Guard; x++)
+            {
+                if (x < Quadrant && y < Quadrant)
+                {
+                    continue;
+                }
+
+                pixels[(y * AtlasWidth) + originX + x] = inside;
             }
         }
     }

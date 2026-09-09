@@ -3033,6 +3033,32 @@ public static class RenderCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>Whether a usable object is marked in the world rather than captioned across the screen.</summary>
+    /// <remarks>
+    /// <para>
+    /// The modern presentation of the same offer: a key badge pinned to the door, cabinet or ladder the
+    /// activation scan resolved, carrying the control the player actually has bound, the action's name,
+    /// and — for the timed states — the hold as a ring that fills. Off returns the remaster HUD to its
+    /// single centred line of text.
+    /// </para>
+    /// <para>
+    /// Presentation only, and only while <see cref="RemasteredHud"/> is on. What can be used, from where,
+    /// and for how long is decided by the retail activation scan either way; this changes where the
+    /// player reads it. Off under vanilla with the rest of the remaster, which keeps the original's
+    /// action sprites.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar InteractionPrompt = Presets.Define(
+        CVar.Bool(
+            "r_interaction_prompt",
+            true,
+            CVarOptions.Archive,
+            "With the remaster HUD, mark usable objects in the world. Off is the centred text prompt."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
     /// <summary>Whether the C-key map computer is the remaster's interface rather than the retail one.</summary>
     /// <remarks>
     /// <para>

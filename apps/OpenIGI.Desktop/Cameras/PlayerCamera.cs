@@ -80,6 +80,7 @@ public sealed class PlayerCamera
     private LadderPlacement? _nearLadder;
     private bool _nearLadderAtTop;
     private double _nearLadderAngle = double.MaxValue;
+    private int _nearLadderIndex = -1;
     private WorldInteractionRegistry? _interactions;
     private GunPickupRegistry? _gunPickups;
     private WorldInteraction? _nearInteraction;
@@ -930,6 +931,45 @@ public sealed class PlayerCamera
         ? DoorNeedsPicking(interaction) ? "action_picklock.spr" : interaction.ActionSprite
         : ShowLadderAction ? StatusScreenLayout.LadderActionSprite : null;
 
+    /// <summary>What the remaster's world-anchored interaction marker should point at.</summary>
+    /// <param name="tickBlend">
+    /// How far this frame stands between the last two simulation states, so a marker on something that
+    /// moves — a swinging door, a button riding a lift — sits where that thing is being drawn rather
+    /// than where the tick left it.
+    /// </param>
+    /// <returns>The offer to mark, or <see langword="null"/> when there is none.</returns>
+    /// <remarks>
+    /// <para>
+    /// The same three offers the retail action sprite is chosen from — the resolved activatable, the
+    /// ladder in reach, and the timed state currently running — described as flat data so the prompt
+    /// can be laid out and tested without reaching back into the simulation.
+    /// </para>
+    /// <para>
+    /// A running interaction is only offered while it has a progress reading. That is the retail
+    /// condition for a progress display (HumanPlayer+3432 is set by states 30, 31, 32, 35 and 36 alone),
+    /// and it is the right one here too: a fence vault, a wire ride and a mounted gun are not things the
+    /// player is being invited to press a key for while they happen.
+    /// </para>
+    /// </remarks>
+    public InteractionPromptTarget? InteractionPrompt(float tickBlend)
+    {
+        if (_activeInteraction is { } running)
+        {
+            return InteractionProgress is { } progress
+                ? Describe(running, _body.Eye, tickBlend, progress)
+                : null;
+        }
+
+        if (_nearInteraction is { } offered)
+        {
+            return Describe(offered, _body.Eye, tickBlend, progress: null);
+        }
+
+        return ShowLadderAction && _nearLadder is { } ladder
+            ? DescribeLadder(ladder, _nearLadderAtTop, _nearLadderIndex)
+            : null;
+    }
+
     /// <summary>Gets whether the player is on a ladder.</summary>
     public bool IsOnLadder => _climb.IsOnLadder;
 
@@ -1468,6 +1508,59 @@ public sealed class PlayerCamera
         return interaction.Type == InteractionActivateType.Door && interaction.IsLocked;
     }
 
+    private static InteractionPromptTarget Describe(
+        WorldInteraction interaction,
+        Vector3d eye,
+        float tickBlend,
+        float? progress) =>
+        new(
+            interaction.Task.Id,
+            interaction.Type,
+            interaction.ActionSprite,
+            interaction.MarkerPoint(eye, tickBlend),
+            interaction.DurationTicks,
+            DoorNeedsPicking(interaction),
+
+            // A door that is not fully closed is offered as one to close, because that is what the
+            // toggle this prompt is describing will do to it.
+            interaction.Door is { IsFullyClosed: false },
+            progress);
+
+    private static InteractionPromptTarget DescribeLadder(LadderPlacement ladder, bool atTop, int index) =>
+        new(
+            // Negative, so a ladder's identity can never collide with a declared task's id.
+            -(index + 1),
+            InteractionActivateType.Ladder,
+            StatusScreenLayout.LadderActionSprite,
+            LadderMarker(ladder, atTop),
+            DurationTicks: 0,
+            Locked: false,
+            DoorOpen: false,
+            Progress: null);
+
+    /// <summary>The rung a ladder's marker sits on: the one the player is about to take hold of.</summary>
+    /// <remarks>
+    /// Fixed to the end being mounted rather than tracking the player up and down the stile. A ladder
+    /// is metres long and a marker in the middle of one marks nothing, but a marker that slides as the
+    /// player walks belongs to the player rather than to the ladder.
+    /// </remarks>
+    private static Vector3d LadderMarker(LadderPlacement ladder, bool atTop)
+    {
+        if (atTop)
+        {
+            return ladder.Top;
+        }
+
+        Vector3d climb = ladder.Top - ladder.Bottom;
+        double length = climb.Length;
+        return length <= 0.0
+            ? ladder.Bottom
+            : ladder.Bottom + (climb / length * Math.Min(length, LadderGrabHeightUnits));
+    }
+
+    /// <summary>How far up a ladder a climber takes hold — chest height, in world units.</summary>
+    private const double LadderGrabHeightUnits = 1.25 * WorldScene.UnitsPerMetre;
+
     private static int ActiveAnimationParameter(DeclaredTask task) =>
         task.TryGetValue("Activate Anim", out object? raw) && raw is int animation ? animation : -1;
 
@@ -1807,10 +1900,13 @@ public sealed class PlayerCamera
         _nearLadder = null;
         _nearLadderAtTop = false;
         _nearLadderAngle = double.MaxValue;
+        _nearLadderIndex = -1;
         double best = double.MaxValue;
 
-        foreach (LadderPlacement ladder in _ladders)
+        for (int index = 0; index < _ladders.Count; index++)
         {
+            LadderPlacement ladder = _ladders[index];
+
             // Human_UpdateActivate evaluates tasks from the HumanView position, not the task's feet.
             // Using the feet makes the strict ladder-origin height test fail until the player jumps.
             if (!ladder.CanActivate(_body.Eye, _body.Yaw, out bool atTop, out double angle))
@@ -1825,6 +1921,10 @@ public sealed class PlayerCamera
                 _nearLadder = ladder;
                 _nearLadderAtTop = atTop;
                 _nearLadderAngle = angle;
+
+                // Kept so the marker can tell one ladder from another: a level declares no task id for
+                // them, and the prompt has to know when the thing under the player's aim has changed.
+                _nearLadderIndex = index;
             }
         }
     }
@@ -1840,6 +1940,7 @@ public sealed class PlayerCamera
         _body.Yaw = ladder.PlayerYaw;
         _body.Position = _climb.Position;
         _nearLadder = null;
+        _nearLadderIndex = -1;
         PoseChanged = true;
         SyncView();
     }

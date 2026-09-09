@@ -48,6 +48,10 @@ internal sealed partial class DesktopGame
         _missionResultHandled = false;
         _computerOpen = false;
         _computerFlight.Reset();
+
+        // The marker belongs to a task in the level being torn down; carrying its fade into the next
+        // one would project a dead anchor for a frame.
+        _interactionPrompt.Reset();
         LevelLoader levelLoader = new(levelRoot, _loop.TaskCommands, _loop.Natives, _resources, _logger);
         TerrainLoader terrainLoader = new(_resources, _loop.Natives, _logger);
 

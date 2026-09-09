@@ -412,6 +412,12 @@ public static class GraphicsMenu
             "Draws the health, ammunition and objective readouts in the remaster's own style. Off returns "
                 + "the original's."),
         new GraphicsSetting(
+            "r_interaction_prompt",
+            "Interaction Markers",
+            "Marks a door, ladder or terminal you can use with a badge on the object itself, showing the "
+                + "key you have bound and, where the action takes time, a ring that fills as you hold it. "
+                + "Off, the same prompt is a line of text across the middle of the screen."),
+        new GraphicsSetting(
             "r_computer_tactical",
             "Tactical Computer",
             "Draws the map computer in the remaster's style, with the level's objectives and your own "
