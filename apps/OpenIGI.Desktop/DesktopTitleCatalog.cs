@@ -2,6 +2,7 @@ using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Igi1;
 using OpenIGI.Game.Igi2;
+using OpenIGI.Presentation;
 
 namespace OpenIGI.Desktop;
 
@@ -51,5 +52,27 @@ internal static class DesktopTitleCatalog
         }
 
         throw new ArgumentException($"This build has no runtime for '{title.Id}'.", nameof(title));
+    }
+
+    /// <summary>Finds the renderers for a title.</summary>
+    /// <param name="title">The title to run.</param>
+    /// <returns>Its presentation provider.</returns>
+    /// <exception cref="ArgumentException">This build has no renderers for that title.</exception>
+    /// <remarks>
+    /// A second lookup rather than a member of <see cref="IGameTitleRuntime"/>, because the reference
+    /// graph forbids joining them: <c>OpenIGI.Presentation</c> references <c>OpenIGI.Engine</c>, so
+    /// <c>Engine</c> cannot name a presenter. What matters is that both are resolved here, from the same
+    /// title, in the one place allowed to name either game.
+    /// </remarks>
+    public static ITitlePresentationProvider PresentationFor(GameTitle title)
+    {
+        ArgumentNullException.ThrowIfNull(title);
+
+        if (title == GameTitle.Igi1)
+        {
+            return Igi1PresentationProvider.Instance;
+        }
+
+        throw new ArgumentException($"This build has no renderers for '{title.Id}'.", nameof(title));
     }
 }

@@ -548,7 +548,7 @@ internal sealed partial class GameHost : IWorldInspector
             "terrain",
             "terrain",
             default,
-            $"{_terrain.LastChunkCount} chunk(s) drawn",
+            _terrain.Summary,
             Distance(eye, default)));
     }
 
@@ -716,14 +716,9 @@ internal sealed partial class GameHost : IWorldInspector
             return;
         }
 
-        into.Add(Line($"tiles {_terrain.TileCount}   chunks drawn {_terrain.LastChunkCount}"));
-        into.Add(Line($"triangles {_terrain.LastTriangleCount}   passes {_terrain.LastPassCount}   batches {_terrain.LastBatchCount}"));
-        into.Add(Line($"occlusion queries {_terrain.LastOcclusionQueryCount}   occluded {_terrain.LastOccludedChunkCount}"));
-        into.Add(Line($"cached {_terrain.CachedCount}   built this frame {_terrain.LastBuildCount}"));
-        into.Add(Line($"page meshes created {_terrain.PageMeshesCreated}   destroyed {_terrain.PageMeshesDestroyed}   spare {_terrain.SparePageCount}"));
-        (int pages, long pageVertices, long pageCapacity) = _terrain.PageOccupancy;
-        into.Add(Line($"pages {pages}   vertices {pageVertices} of {pageCapacity} ({pageCapacity * 48 / (1024 * 1024)} MB)"));
-        into.Add(Line($"trims {_terrain.TrimCount}   evicted {_terrain.EvictedChunkCount}   compacted pages {_terrain.CompactedPageCount}"));
+        // The presenter names its own counters. A terrain that streams no chunks has none of these to
+        // report, and an overlay that demanded them would be one only I.G.I. 1 could fill.
+        _terrain.Describe(into);
     }
 
     // ---- Shared ----

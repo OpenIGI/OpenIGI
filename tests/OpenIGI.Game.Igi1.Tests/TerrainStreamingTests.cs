@@ -7,12 +7,12 @@ using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Igi1;
+using OpenIGI.Game.Igi1.World;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
 
-namespace OpenIGI.Desktop.Tests;
+namespace OpenIGI.Game.Igi1.Tests;
 
 /// <summary>
 /// What the terrain renderer draws is what the descent asked for — on the frame it asks, not several

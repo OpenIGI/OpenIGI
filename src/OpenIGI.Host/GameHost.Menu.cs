@@ -3,6 +3,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Menu;
+using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Rendering;
@@ -79,7 +80,8 @@ internal sealed partial class GameHost
 
         _terrain?.Dispose();
         _terrain = preview.TerrainSurface is { } surface
-            ? new TerrainRenderer(_device, surface, _logger, _detailMaps, preview.GroundDetail)
+            ? _presentation.CreateTerrain(new TerrainPresentationRequest(
+                _device, surface, _logger, _detailMaps, preview.GroundDetail))
             : null;
 
         // The mission's soldiers, built while the player is still reading the briefing. They are not drawn

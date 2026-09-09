@@ -186,6 +186,7 @@ using (window)
     // above, and the audio factory here. GameHost itself sees only the abstractions.
     using GameHost game = new(
         platform, window, device, OpenAlAudioDeviceFactory.Instance, titleRuntime,
+        DesktopTitleCatalog.PresentationFor(titleRuntime.Title),
         fileSystem, options, gamePath, logger);
     return game.Run();
 }

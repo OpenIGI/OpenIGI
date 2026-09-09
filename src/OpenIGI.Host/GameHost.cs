@@ -27,6 +27,7 @@ using OpenIGI.Host.Infrastructure;
 using OpenIGI.Host.Lighting;
 using OpenIGI.Host.Menu;
 using OpenIGI.Platform;
+using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Rendering;
@@ -69,6 +70,7 @@ internal sealed partial class GameHost : IDisposable
     private readonly IGameWindow _window;
     private readonly IAudioDeviceFactory _audioFactory;
     private readonly IGameTitleRuntime _titleRuntime;
+    private readonly ITitlePresentationProvider _presentation;
     /// <summary>Gets the window width, or the authored 320 when a minimize/dock race reports 0x0.</summary>
     private int SafeWindowWidth => _window.Width > 0 ? _window.Width : 320;
 
@@ -303,7 +305,7 @@ internal sealed partial class GameHost : IDisposable
     private float _inspectorAspect = 16f / 9f;
     private WorldScene? _scene;
     private WorldRenderer? _world;
-    private TerrainRenderer? _terrain;
+    private ITerrainPresenter? _terrain;
     private SkyRenderer? _sky;
 
     // The level's own GlobalLight keyframe: the fog the ground and the models are drawn into, and the
@@ -471,6 +473,7 @@ internal sealed partial class GameHost : IDisposable
     /// <param name="device">The graphics device every renderer draws through.</param>
     /// <param name="audioFactory">Opens the audio backend; re-called whenever the device settings change.</param>
     /// <param name="titleRuntime">The game being run: its data layout, its formats and its content modules.</param>
+    /// <param name="presentation">The same game's renderers. A second seam because the reference graph forbids one.</param>
     /// <param name="fileSystem">The virtual file system the original installation is read through.</param>
     /// <param name="options">The parsed command line.</param>
     /// <param name="gamePath">The original installation directory.</param>
@@ -481,6 +484,7 @@ internal sealed partial class GameHost : IDisposable
         IGraphicsDevice device,
         IAudioDeviceFactory audioFactory,
         IGameTitleRuntime titleRuntime,
+        ITitlePresentationProvider presentation,
         VirtualFileSystem fileSystem,
         HostOptions options,
         string gamePath,
@@ -491,6 +495,7 @@ internal sealed partial class GameHost : IDisposable
         _device = device;
         _audioFactory = audioFactory;
         _titleRuntime = titleRuntime;
+        _presentation = presentation;
         _fileSystem = fileSystem;
         _options = options;
         _gamePath = gamePath;
@@ -4438,14 +4443,7 @@ internal sealed partial class GameHost : IDisposable
                     _device.SetMaterialOverride(SurfaceMaterial.Default);
                 }
 
-                if (_terrain is not null)
-                {
-                    // Read per frame rather than latched at load, so changing the setting from the
-                    // console takes effect on the next frame the way every other render CVar does.
-                    _terrain.CacheLimit = RenderCVars.TerrainCache.Value;
-                }
-
-                // The ground is drawn through its own band of the same keyframe. Retail keeps two --
+// The ground is drawn through its own band of the same keyframe. Retail keeps two --
                 // "terrain" and "object category 1" -- and publishes them to different globals; every
                 // shipping level happens to author them alike, which is not a reason to draw them alike.
                 if (retailFog)
@@ -4453,7 +4451,7 @@ internal sealed partial class GameHost : IDisposable
                     _device.SetFog(_globalLight.TerrainFog);
                 }
 
-                _terrain?.Draw(
+                _terrain?.Draw(new TerrainFrame(
                     eye,
                     projection,
                     verticalFieldOfView,
@@ -4463,7 +4461,7 @@ internal sealed partial class GameHost : IDisposable
                     // meaning what it did; otherwise the setting decides.
                     _options.TerrainViewDistance > 0 ? _options.TerrainViewDistance : RenderCVars.TerrainDetail.Value,
                     GraphicsPresetRegistry.Default.Current != GraphicsPreset.Vanilla,
-                    RenderCVars.TerrainOcclusion.Value);
+                    RenderCVars.TerrainOcclusion.Value));
                 EndStageIfSlow("the terrain");
 
                 if (retailFog)
@@ -6017,13 +6015,11 @@ internal sealed partial class GameHost : IDisposable
 
                     if (_terrain is not null)
                     {
-                        _logger.Information(
-                            "Terrain",
-                            $"Drew {_terrain.LastChunkCount} chunk(s) in {_terrain.LastPassCount} material pass(es) "
-                                + $"and {_terrain.LastBatchCount} multi-draw batch(es); "
-                                + $"{_terrain.LastTriangleCount} triangles, from {_terrain.LastVisitedCount} "
-                                + $"octree node(s) visited, {_terrain.LastOccludedChunkCount} chunk(s) occlusion-culled "
-                                + $"by {_terrain.LastOcclusionQueryCount} query box(es), over {_terrain.TileCount} ground tile(s).");
+                        // The presenter formats its own counters: what is worth reporting about a
+                        // streamed octree is not what is worth reporting about a grid of tiles.
+                        List<string> terrain = [];
+                        _terrain.Describe(terrain);
+                        _logger.Information("Terrain", string.Join("; ", terrain));
                     }
                 }
             }

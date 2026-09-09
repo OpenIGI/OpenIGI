@@ -4,12 +4,13 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>
 /// Draws a level's terrain: descends the octree from the camera, then draws each chunk the descent
@@ -32,7 +33,7 @@ namespace OpenIGI.Presentation.Igi1;
 /// uniformly wound within every block, and only a mirrored orientation flips a chunk's facing.
 /// </para>
 /// </remarks>
-public sealed class TerrainRenderer : IDisposable
+public sealed class TerrainRenderer : ITerrainPresenter
 {
     private const string LogCategory = "Terrain";
     private const int BatchCellMetres = 2048;
@@ -320,6 +321,56 @@ public sealed class TerrainRenderer : IDisposable
 
             return (pages, vertices, capacity);
         }
+    }
+
+    /// <inheritdoc/>
+    public string Summary => FormattableString.Invariant($"{LastChunkCount} chunk(s) drawn");
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The counters this reports are facts about a streamed octree -- chunks, octree visits, batch pages
+    /// -- so they are formatted here rather than named on an interface a flat-grid terrain could not
+    /// fill. The overlay that shows them wants lines, and lines are all it is promised.
+    /// </remarks>
+    public void Describe(ICollection<string> into)
+    {
+        ArgumentNullException.ThrowIfNull(into);
+
+        into.Add(FormattableString.Invariant($"tiles {TileCount}   chunks drawn {LastChunkCount}"));
+        into.Add(FormattableString.Invariant(
+            $"triangles {LastTriangleCount}   passes {LastPassCount}   batches {LastBatchCount}"));
+        into.Add(FormattableString.Invariant(
+            $"occlusion queries {LastOcclusionQueryCount}   occluded {LastOccludedChunkCount}"));
+        into.Add(FormattableString.Invariant($"cached {CachedCount}   built this frame {LastBuildCount}"));
+        into.Add(FormattableString.Invariant(
+            $"page meshes created {PageMeshesCreated}   destroyed {PageMeshesDestroyed}   spare {SparePageCount}"));
+
+        (int pages, long pageVertices, long pageCapacity) = PageOccupancy;
+        into.Add(FormattableString.Invariant(
+            $"pages {pages}   vertices {pageVertices} of {pageCapacity} ({pageCapacity * 48 / (1024 * 1024)} MB)"));
+        into.Add(FormattableString.Invariant(
+            $"trims {TrimCount}   evicted {EvictedChunkCount}   compacted pages {CompactedPageCount}"));
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The cache limit is read here, per frame, rather than set by the host before the call. It is this
+    /// renderer's own setting -- a flat-grid terrain streams nothing and has no cache to bound -- and
+    /// reading it per frame is what makes changing it from the console take effect on the next frame,
+    /// which is how every other render setting behaves.
+    /// </remarks>
+    void ITerrainPresenter.Draw(in TerrainFrame frame)
+    {
+        CacheLimit = RenderCVars.TerrainCache.Value;
+
+        Draw(
+            frame.Camera,
+            frame.Projection,
+            frame.VerticalFieldOfView,
+            frame.AspectRatio,
+            frame.ViewDistance,
+            frame.Batching,
+            frame.OcclusionCulling);
     }
 
     /// <summary>Descends the octree from a camera and draws what it selects.</summary>

@@ -6,6 +6,7 @@
     <ProjectReference Include="..\..\src\OpenIGI.Game.Igi1\OpenIGI.Game.Igi1.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Game.Igi2\OpenIGI.Game.Igi2.csproj" />
     <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
   </ItemGroup>
 
   <ItemGroup>

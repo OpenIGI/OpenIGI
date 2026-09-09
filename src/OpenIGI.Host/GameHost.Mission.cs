@@ -17,6 +17,7 @@ using OpenIGI.Game;
 using OpenIGI.Host.Infrastructure;
 using OpenIGI.Host.Lighting;
 using OpenIGI.Host.Menu;
+using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.Presentation.Rendering;
@@ -1449,7 +1450,8 @@ internal sealed partial class GameHost
             // The surface comes from the level's own TextureModifier tasks, so it needs the loaded tree.
             _terrain?.Dispose();
             _terrain = loaded.Terrain is { IsUsable: true } usable
-                ? new TerrainRenderer(_device, TerrainSurface.Build(usable, levelRoot, _logger), _logger, _detailMaps)
+                ? _presentation.CreateTerrain(new TerrainPresentationRequest(
+                    _device, TerrainSurface.Build(usable, levelRoot, _logger), _logger, _detailMaps, null))
                 : null;
 
             // The sky is script data on the level's task tree; its fog colour is also what the frame

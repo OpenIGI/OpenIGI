@@ -3,7 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>
 /// The terrain as the ray-traced world should see it this frame: the chunks that were drawn, at the
