@@ -151,7 +151,7 @@ public sealed class Igi2WorldScene
     {
         foreach (GameTask child in task.Children)
         {
-            if (child is DeclaredTask declared && TryPlace(declared, out Igi2Placement placement))
+            if (child is DeclaredTask declared && TryReadPlacement(declared, out Igi2Placement placement))
             {
                 into.Add(placement);
             }
@@ -160,7 +160,24 @@ public sealed class Igi2WorldScene
         }
     }
 
-    private static bool TryPlace(DeclaredTask task, out Igi2Placement placement)
+    /// <summary>Reads one task's placement, if it declares the three parameters that make one.</summary>
+    /// <param name="task">The placeholder task.</param>
+    /// <param name="placement">Receives the placement.</param>
+    /// <returns><see langword="false"/> when the task places no model.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="task"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// Public because a caller that needs a placement's <em>context</em> — <see cref="Igi2SectorGraph"/>
+    /// needs the task it hangs under — has to walk the tree itself, and would otherwise reimplement the
+    /// parameter reading this already does.
+    /// </remarks>
+    public static bool TryPlace(DeclaredTask task, out Igi2Placement placement)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+
+        return TryReadPlacement(task, out placement);
+    }
+
+    private static bool TryReadPlacement(DeclaredTask task, out Igi2Placement placement)
     {
         placement = default;
 

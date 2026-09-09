@@ -36,6 +36,7 @@ public sealed class MefModel
     /// </remarks>
     public const float SupportedVersion = 0.1f;
 
+    private MefPortalSet? _portals;
     private readonly MefVertex[] _vertices;
     private readonly MefSkinInfluence[] _skinInfluences;
 
@@ -140,6 +141,14 @@ public sealed class MefModel
     /// </remarks>
     public bool IsSector =>
         Container.TryFindChunk(MefTags.Portals, out IlffChunk portals) && portals.Payload.Length > 0;
+
+    /// <summary>Gets the model's portals, decoded on first use.</summary>
+    /// <exception cref="PackFormatException">The portal chunks are malformed.</exception>
+    /// <remarks>
+    /// Lazy because most models have none — 54 of the sequel's 559 placed meshes are sectors, and 41 of
+    /// Project I.G.I.'s 595 — so decoding eagerly would charge every model for a chunk it does not use.
+    /// </remarks>
+    public MefPortalSet Portals => _portals ??= MefPortalSet.Read(Container);
 
     /// <summary>Parses a model.</summary>
     /// <param name="data">The <c>.mef</c> bytes, starting at the ILFF header.</param>

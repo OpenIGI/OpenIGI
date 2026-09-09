@@ -34,6 +34,7 @@ internal sealed class Igi2Level
     private Igi2Level(string directory, string commonDirectory, GameTask root, Igi2ModelTable table)
     {
         Directory = directory;
+        Root = root;
         Scene = Igi2WorldScene.Build(root);
         Table = table;
 
@@ -48,6 +49,9 @@ internal sealed class Igi2Level
             return ids;
         });
     }
+
+    /// <summary>Gets the level's loaded task tree.</summary>
+    public GameTask Root { get; private init; } = null!;
 
     /// <summary>Gets the level's directory on disk.</summary>
     public string Directory { get; }
