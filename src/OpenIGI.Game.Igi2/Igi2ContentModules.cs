@@ -21,6 +21,7 @@ public static class Igi2ContentModules
         new Igi2ScriptVocabularyModule(),
         new Igi2TerrainContentModule(),
         new Igi2ForestContentModule(),
+        new Igi2WaterContentModule(),
     ];
 }
 
@@ -117,6 +118,32 @@ public sealed class Igi2ForestContentModule : IContentModule
 
     /// <inheritdoc/>
     /// <remarks>Nothing to load: a stand's placement file arrives with the level, not before it.</remarks>
+    public void LoadTables(ContentLoadContext context)
+    {
+    }
+}
+
+/// <summary>The water's task types: a sheet and the wave trains summed over it.</summary>
+/// <remarks>
+/// Without these the two types load as placeholders, so nothing knows a sheet has a level id or a
+/// resource list, and its baked environment maps -- named from both -- are unreachable.
+/// </remarks>
+public sealed class Igi2WaterContentModule : IContentModule
+{
+    /// <inheritdoc/>
+    public string Name => "Water";
+
+    /// <inheritdoc/>
+    public void Register(ContentRegistrationContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        context.Types.Register<WaterTask>(WaterTask.TypeName);
+        context.Types.Register<WaterLayerTask>(WaterLayerTask.TypeName);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Nothing to load: a sheet's environment maps arrive with the level, not before it.</remarks>
     public void LoadTables(ContentLoadContext context)
     {
     }
