@@ -4,9 +4,10 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>Draws every grenade in the air with its own retail model, tumbling as it flies.</summary>
 /// <remarks>

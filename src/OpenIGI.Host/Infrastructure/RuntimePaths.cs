@@ -1,4 +1,4 @@
-namespace OpenIGI.Desktop.Infrastructure;
+namespace OpenIGI.Host.Infrastructure;
 
 /// <summary>Chooses writable locations for files produced while the game is running.</summary>
 internal static class RuntimePaths

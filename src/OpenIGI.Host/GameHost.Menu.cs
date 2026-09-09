@@ -2,13 +2,17 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
+using OpenIGI.Host.Menu;
+using OpenIGI.Presentation.Cameras;
+using OpenIGI.Presentation.Igi1;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
-using OpenIGI.UI;
 using OpenIGI.UI.Layout;
+using OpenIGI.UI;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host;
 
-internal sealed partial class DesktopGame
+internal sealed partial class GameHost
 {
     /// <summary>
     /// Makes a preview built on a worker the live backdrop, doing on the render thread only what has to

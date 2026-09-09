@@ -1,6 +1,6 @@
 using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
 /// The little arithmetic of drawing between two simulation ticks, shared by everything that does it.

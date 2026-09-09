@@ -1,4 +1,4 @@
-namespace OpenIGI.Desktop.Configuration;
+namespace OpenIGI.Host.Configuration;
 
 /// <summary>The keys the game binds for itself when the player has not bound them to something else.</summary>
 /// <remarks>

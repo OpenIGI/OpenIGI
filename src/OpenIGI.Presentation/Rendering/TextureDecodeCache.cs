@@ -2,9 +2,11 @@ using System.Collections.Concurrent;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Textures;
+using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
+using System.Collections.Concurrent;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
 /// Decodes a level's textures on worker threads, so the render thread only ever uploads them.
@@ -20,7 +22,7 @@ namespace OpenIGI.Desktop;
 /// <para>
 /// None of it needs the device, and every texture is independent of every other, so it belongs where the
 /// rest of a backdrop is built: on a worker, ahead of the frame that wants it. The render thread's
-/// <see cref="WorldRenderer.GetTexture"/> then finds the image already decoded and does nothing but
+/// <c>WorldRenderer.GetTexture</c> then finds the image already decoded and does nothing but
 /// create and upload.
 /// </para>
 /// <para>

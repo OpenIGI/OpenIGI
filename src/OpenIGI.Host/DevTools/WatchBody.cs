@@ -2,7 +2,7 @@ using OpenIGI.Core.Configuration;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.DevTools;
 
 /// <summary>
 /// The pinned-value panel: a short list of names and whatever they read this frame.

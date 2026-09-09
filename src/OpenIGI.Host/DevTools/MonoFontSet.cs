@@ -1,7 +1,8 @@
+using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Text;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.DevTools;
 
 /// <summary>
 /// The developer tools' fixed-pitch faces, rasterised once per pixel size actually drawn.

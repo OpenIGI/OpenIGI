@@ -4,7 +4,7 @@ using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.DevTools;
 
 /// <summary>
 /// A fuzzy finder over every command and variable, opened with a chord and dismissed by choosing.

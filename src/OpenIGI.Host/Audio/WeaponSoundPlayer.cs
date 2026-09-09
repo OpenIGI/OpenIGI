@@ -3,7 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Game.Weapons;
 
-namespace OpenIGI.Desktop.Audio;
+namespace OpenIGI.Host.Audio;
 
 /// <summary>
 /// Makes a gun sound, on the two-sample rule the weapon records are built around.

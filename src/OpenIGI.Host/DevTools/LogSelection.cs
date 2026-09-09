@@ -1,4 +1,4 @@
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.DevTools;
 
 /// <summary>
 /// A range of scrollback text picked out with the pointer, from one row and column to another.

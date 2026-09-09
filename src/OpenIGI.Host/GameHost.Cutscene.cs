@@ -3,9 +3,9 @@ using OpenIGI.Game.World;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host;
 
-internal sealed partial class DesktopGame
+internal sealed partial class GameHost
 {
     private static bool HasAuthoredCutscene(GameTask root)
     {

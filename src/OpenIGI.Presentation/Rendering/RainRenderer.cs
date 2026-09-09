@@ -6,7 +6,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
 /// Renders procedural falling rain particle streaks for levels featuring rain weather.

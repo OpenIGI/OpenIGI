@@ -1,8 +1,8 @@
-using OpenIGI.Desktop;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using Xunit;
 
-namespace OpenIGI.Desktop.Tests;
+namespace OpenIGI.Presentation.Tests;
 
 /// <summary>
 /// Holds the fall to being a fall and not a printed texture: drops must lean by different amounts and

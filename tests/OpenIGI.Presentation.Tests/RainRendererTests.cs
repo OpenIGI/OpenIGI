@@ -1,3 +1,4 @@
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.World;
@@ -7,7 +8,7 @@ using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
 
-namespace OpenIGI.Desktop.Tests;
+namespace OpenIGI.Presentation.Tests;
 
 public sealed class RainRendererTests
 {

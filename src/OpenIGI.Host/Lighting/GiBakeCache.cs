@@ -3,7 +3,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Lighting;
 
 /// <summary>
 /// Reads and writes baked irradiance probe volumes to disk, so a level's global-illumination bake is a

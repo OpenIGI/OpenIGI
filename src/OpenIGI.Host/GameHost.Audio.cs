@@ -1,6 +1,4 @@
-using System.Diagnostics;
 using OpenIGI.Audio;
-using OpenIGI.Audio.OpenAL;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
@@ -8,20 +6,22 @@ using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Game;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
-using OpenIGI.Game.Weapons;
 using OpenIGI.Game.Weapons.Ballistics;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Desktop.Audio;
+using OpenIGI.Game;
+using OpenIGI.Host.Audio;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.UI;
+using System.Diagnostics;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host;
 
 /// <summary>The audio half of the composition root: opening the device and keeping the buses levelled.</summary>
-internal sealed partial class DesktopGame
+internal sealed partial class GameHost
 {
     /// <summary>The menu system's own sound archive, which the original mounts apart from any mission.</summary>
     private const string MenuSoundArchive = "LOCAL:menusystem/sound/sounds.res";
@@ -322,8 +322,8 @@ internal sealed partial class DesktopGame
     /// The volumes are not — those are pushed on change, so dragging a slider is heard immediately.
     /// </para>
     /// <para>
-    /// A backend that cannot open is not an error. <see cref="OpenAlAudioDevice"/> degrades to silence
-    /// on its own, so there is nothing here to handle: the game runs either way.
+    /// A backend that cannot open is not an error. The factory returns a silent device rather than
+    /// throwing, so there is nothing here to handle: the game runs either way.
     /// </para>
     /// </remarks>
     private void OpenAudioDevice()
@@ -331,7 +331,7 @@ internal sealed partial class DesktopGame
         _audio.Dispose();
 
         _audio = AudioCVars.Enabled.Value
-            ? new OpenAlAudioDevice(AudioDeviceOptions.FromCVars(), _logger)
+            ? _audioFactory.Open(AudioDeviceOptions.FromCVars(), _logger)
             : new NullAudioDevice();
 
         _soundBank = new SoundBank(_fileSystem, _logger);

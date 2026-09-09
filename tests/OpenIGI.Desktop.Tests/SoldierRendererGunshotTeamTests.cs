@@ -1,4 +1,3 @@
-using System.Reflection;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
@@ -10,7 +9,9 @@ using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Igi1;
 using OpenIGI.TestSupport;
+using System.Reflection;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;

@@ -6,7 +6,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Game.World;
 
-namespace OpenIGI.Desktop.Audio;
+namespace OpenIGI.Host.Audio;
 
 /// <summary>
 /// The weather, heard: six taps on one rain recording, placed around the listener's head and mixed

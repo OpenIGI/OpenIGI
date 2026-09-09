@@ -4,12 +4,14 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
+using OpenIGI.Presentation.Cameras;
+using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
-using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
+using OpenIGI.UI;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>
 /// The remaster's map computer: a full-screen tactical interface drawn over a live overhead view of the

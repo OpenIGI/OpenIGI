@@ -4,7 +4,7 @@ using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.DevTools;
 
 /// <summary>
 /// Lists what is in the world and reports what is known about whichever entry is selected.

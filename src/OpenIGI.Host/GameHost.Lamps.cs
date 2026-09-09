@@ -1,9 +1,10 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
+using OpenIGI.Host.Configuration;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host;
 
 /// <summary>
 /// The wall switch: aiming at one of a level's lamps and turning it off, or breaking it.
@@ -21,7 +22,7 @@ namespace OpenIGI.Desktop;
 /// key is read.
 /// </para>
 /// </remarks>
-internal sealed partial class DesktopGame
+internal sealed partial class GameHost
 {
     /// <summary>How far down the crosshair a lamp may stand and still be switchable, in metres.</summary>
     /// <remarks>

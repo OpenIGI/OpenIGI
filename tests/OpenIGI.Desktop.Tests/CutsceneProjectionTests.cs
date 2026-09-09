@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Game.World;
+using OpenIGI.Host;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
@@ -13,7 +14,7 @@ public sealed class CutsceneProjectionTests
     [Fact]
     public void AuthoredVerticalFramingStaysAtTheRetailFourByThreeAperture()
     {
-        float actual = DesktopGame.CutsceneVerticalFieldOfView(1f);
+        float actual = GameHost.CutsceneVerticalFieldOfView(1f);
         float retail = 2f * MathF.Atan(1f / (4f / 3f));
         float croppedWidescreen = 2f * MathF.Atan(1f / (16f / 9f));
 
@@ -29,10 +30,10 @@ public sealed class CutsceneProjectionTests
 
         Assert.Equal(
             cameraMetres * WorldScene.UnitsPerMetre,
-            DesktopGame.AreaActivationOccupant(playerUnits, cameraMetres));
+            GameHost.AreaActivationOccupant(playerUnits, cameraMetres));
         Assert.Equal(
             playerUnits,
-            DesktopGame.AreaActivationOccupant(playerUnits, cutsceneViewMetres: null));
+            GameHost.AreaActivationOccupant(playerUnits, cutsceneViewMetres: null));
     }
 
     [Fact]
@@ -43,14 +44,14 @@ public sealed class CutsceneProjectionTests
 
         Assert.Equal(
             playerUnits,
-            DesktopGame.AreaActivationOccupant(
+            GameHost.AreaActivationOccupant(
                 playerUnits,
                 cutsceneViewMetres: null,
                 freeViewMetres: extractionCameraMetres));
 
         Assert.Equal(
             extractionCameraMetres * WorldScene.UnitsPerMetre,
-            DesktopGame.AreaActivationOccupant(
+            GameHost.AreaActivationOccupant(
                 playerUnits: null,
                 cutsceneViewMetres: null,
                 freeViewMetres: extractionCameraMetres));
@@ -66,9 +67,9 @@ public sealed class CutsceneProjectionTests
         // so a latch-less gate such as Mission 4's outro volume does not flap with the camera.
         Assert.Equal(
             playerUnits,
-            DesktopGame.AreaActivationExtraOccupant(playerUnits, cameraMetres));
-        Assert.Null(DesktopGame.AreaActivationExtraOccupant(playerUnits, cutsceneViewMetres: null));
-        Assert.Null(DesktopGame.AreaActivationExtraOccupant(playerUnits: null, cameraMetres));
+            GameHost.AreaActivationExtraOccupant(playerUnits, cameraMetres));
+        Assert.Null(GameHost.AreaActivationExtraOccupant(playerUnits, cutsceneViewMetres: null));
+        Assert.Null(GameHost.AreaActivationExtraOccupant(playerUnits: null, cameraMetres));
     }
 
     [Fact]
@@ -78,7 +79,7 @@ public sealed class CutsceneProjectionTests
         Vector3d bodyInside = new(0.0, 0.0, 0.0);
         Vector3d cameraOutsideMetres = new(100.0, 0.0, 0.0);
 
-        DesktopGame.TickAreaActivations(
+        GameHost.TickAreaActivations(
             runtime,
             bodyInside,
             playerTeam: 0,
@@ -87,7 +88,7 @@ public sealed class CutsceneProjectionTests
             playerAlive: true);
         Assert.Equal(1, ReadPlayerAreaActive(loop));
 
-        DesktopGame.TickAreaActivations(
+        GameHost.TickAreaActivations(
             runtime,
             bodyInside,
             playerTeam: 0,

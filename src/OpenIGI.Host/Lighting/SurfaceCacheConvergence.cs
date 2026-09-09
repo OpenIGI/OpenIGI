@@ -3,7 +3,7 @@ using System.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Lighting;
 
 /// <summary>
 /// Solves a surface cache forward to its multi-bounce equilibrium a few slices at a time, so a level

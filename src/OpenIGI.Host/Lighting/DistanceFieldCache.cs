@@ -3,7 +3,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Lighting;
 
 /// <summary>
 /// Reads and writes a level's baked signed distance fields to disk, so the structure the real-time

@@ -1,10 +1,11 @@
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 using Xunit;
 
-namespace OpenIGI.Desktop.Tests;
+namespace OpenIGI.Presentation.Tests;
 
 /// <summary>Protects the shared-widget composition and safe-area anchoring of the diagnostics surface.</summary>
 public sealed class DebugOverlayRendererTests

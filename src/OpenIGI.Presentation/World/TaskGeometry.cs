@@ -1,7 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.World;
 
 /// <summary>
 /// Reads placement geometry out of a loaded task tree, for the callers that need where a task sits rather

@@ -1,6 +1,6 @@
 ﻿using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>
 /// The render-side fade that raises and lowers the remastered binocular's glass lens transform.

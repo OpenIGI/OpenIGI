@@ -2,8 +2,9 @@ using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Time;
 using OpenIGI.Game.World;
+using OpenIGI.Host.Lighting;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Menu;
 
 /// <summary>
 /// The pieces of the running session a menu backdrop needs in order to be <em>promotable</em> — that is,

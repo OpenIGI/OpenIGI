@@ -1,9 +1,9 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Desktop;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using Xunit;
 
-namespace OpenIGI.Desktop.Tests;
+namespace OpenIGI.Presentation.Tests;
 
 /// <summary>Locks down the surface a world-space marker is laid on: where it faces, and where it lands.</summary>
 public sealed class WorldCanvasTests

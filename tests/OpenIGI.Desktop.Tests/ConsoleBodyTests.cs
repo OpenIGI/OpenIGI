@@ -1,10 +1,12 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Desktop;
+using OpenIGI.Host.DevTools;
+using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
-using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
+using OpenIGI.UI;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;

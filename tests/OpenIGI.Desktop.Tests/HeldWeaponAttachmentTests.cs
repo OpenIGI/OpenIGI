@@ -9,6 +9,7 @@ using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;

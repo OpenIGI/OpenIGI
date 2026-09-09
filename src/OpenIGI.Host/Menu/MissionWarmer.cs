@@ -1,7 +1,7 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Game.World;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Menu;
 
 /// <summary>
 /// Warms a mission's data on a worker thread when the campaign carousel hovers it, so the level it will

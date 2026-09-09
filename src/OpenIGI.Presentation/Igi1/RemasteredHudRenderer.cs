@@ -4,13 +4,16 @@ using OpenIGI.Engine.Graphics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Cameras;
+using OpenIGI.Presentation.Rendering;
+using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
-using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
+using OpenIGI.UI;
 using System.Globalization;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>The remaster's tactical, resolution-independent in-game HUD.</summary>
 /// <remarks>

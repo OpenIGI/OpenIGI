@@ -1,9 +1,9 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Desktop;
+using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 using Xunit;
 
-namespace OpenIGI.Desktop.Tests;
+namespace OpenIGI.Presentation.Tests;
 
 /// <summary>
 /// The handheld wander, held to the two properties that make it usable in a shot: it never grows beyond

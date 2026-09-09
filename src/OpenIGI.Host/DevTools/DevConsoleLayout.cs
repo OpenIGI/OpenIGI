@@ -1,8 +1,9 @@
-using System.Globalization;
+using OpenIGI.Presentation.Cameras;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
+using System.Globalization;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.DevTools;
 
 /// <summary>Where one developer-tool panel sat, and whether it was showing.</summary>
 /// <param name="Frame">The panel's rectangle in back-buffer pixels.</param>

@@ -1,8 +1,9 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Cameras;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Lighting;
 
 /// <summary>
 /// Works out which lights a level has, given that it declares none, and which of its surfaces are the

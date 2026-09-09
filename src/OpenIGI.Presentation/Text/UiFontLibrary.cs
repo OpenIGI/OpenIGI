@@ -2,7 +2,7 @@ using OpenIGI.Core.Configuration;
 using OpenIGI.Rendering;
 using OpenIGI.UI.Text;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Text;
 
 /// <summary>
 /// Loads the shell's Saira faces into GPU-resident <see cref="UiFont"/>s, cached to disk so the

@@ -4,7 +4,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>Renders small, slowly falling snow flakes for an authored snow weather task.</summary>
 /// <remarks>

@@ -1,9 +1,10 @@
 using OpenIGI.Core.Graphics;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
-using OpenIGI.UI;
 using OpenIGI.UI.Layout;
+using OpenIGI.UI;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>
 /// The interaction marker's key badge, generated once as a small antialiased sprite.

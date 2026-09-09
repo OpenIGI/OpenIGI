@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Reflection;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
@@ -10,13 +8,17 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.World;
-using OpenIGI.Game;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using OpenIGI.Game;
+using OpenIGI.Presentation.Igi1;
+using OpenIGI.Presentation.World;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
+using System.Collections;
+using System.Reflection;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;

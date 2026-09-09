@@ -1,7 +1,8 @@
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Core.Numerics;
 using Xunit;
 
-namespace OpenIGI.Desktop.Tests;
+namespace OpenIGI.Presentation.Tests;
 
 public sealed class ViewModelProjectionTests
 {

@@ -4,7 +4,7 @@ using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using System.Globalization;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>Pure presentation decisions shared by the remaster HUD and its focused tests.</summary>
 public static class RemasteredHudPresentation

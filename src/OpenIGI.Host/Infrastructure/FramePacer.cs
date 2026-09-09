@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Infrastructure;
 
 /// <summary>
 /// Holds a loop to a target frame rate by waiting out the remainder of each frame's interval, for the

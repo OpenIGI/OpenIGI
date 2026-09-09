@@ -4,7 +4,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Lighting;
 
 /// <summary>
 /// Writes the surface cache's intermediate atlases out as images, because a capture can only be judged by

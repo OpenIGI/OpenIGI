@@ -4,7 +4,7 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Config;
 using OpenIGI.Scripting.Qvm;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Configuration;
 
 /// <summary>
 /// Reads and writes the game's settings and player profiles, always leaving the original installation
@@ -22,7 +22,7 @@ namespace OpenIGI.Desktop;
 /// read but never written. The format is identical, so copying one over the other would work.
 /// </para>
 /// </remarks>
-internal static class DesktopConfiguration
+internal static class HostConfiguration
 {
     /// <summary>The file OpenIGI keeps its own settings and profiles in.</summary>
     public const string FileName = "openigi-config.qvm";

@@ -1,11 +1,13 @@
-﻿using System.Globalization;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Ai;
-using OpenIGI.Core.Graphics;
-using OpenIGI.Rendering;
 using OpenIGI.Game.World;
+using OpenIGI.Host.DevTools;
+using OpenIGI.Presentation.Igi1;
+using OpenIGI.Rendering;
+using System.Globalization;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host;
 
 /// <summary>
 /// The game's answer to the developer inspector: everything the world is made of, and how to go and
@@ -29,7 +31,7 @@ namespace OpenIGI.Desktop;
 /// holding one the loader had already discarded.
 /// </para>
 /// </remarks>
-internal sealed partial class DesktopGame : IWorldInspector
+internal sealed partial class GameHost : IWorldInspector
 {
     /// <summary>How many handles each kind reserves.</summary>
     /// <remarks>Larger than any mission's count of anything, so two kinds can never collide.</remarks>
@@ -226,7 +228,7 @@ internal sealed partial class DesktopGame : IWorldInspector
     /// has no silhouette.
     /// </para>
     /// </remarks>
-    private void DrawInspectorOutline(DesktopConsole console, Camera3D camera)
+    private void DrawInspectorOutline(HostConsole console, Camera3D camera)
     {
         if (!console.WantsDraw || console.View.SelectedEntityId is not { } id)
         {

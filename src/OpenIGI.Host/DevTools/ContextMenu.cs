@@ -1,7 +1,8 @@
-using OpenIGI.UI;
+using OpenIGI.Presentation.Cameras;
 using OpenIGI.UI.Layout;
+using OpenIGI.UI;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.DevTools;
 
 /// <summary>One line of a context menu.</summary>
 /// <param name="Label">What the reader sees.</param>

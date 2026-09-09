@@ -1,3 +1,4 @@
+using OpenIGI.Host;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;
@@ -16,19 +17,19 @@ public sealed class DeathMenuPointerTests
         //
         // Standing a single branch down is not enough: the chain simply falls through to the next one
         // that locks. The screen has to stop the chain here, the way the pause menu does.
-        Assert.True(DesktopGame.MenuOwnsPointer(pauseMenu: false, missionFailedMenu: true));
+        Assert.True(GameHost.MenuOwnsPointer(pauseMenu: false, missionFailedMenu: true));
     }
 
     [Fact]
     public void ThePauseMenuStillOwnsThePointer()
     {
-        Assert.True(DesktopGame.MenuOwnsPointer(pauseMenu: true, missionFailedMenu: false));
+        Assert.True(GameHost.MenuOwnsPointer(pauseMenu: true, missionFailedMenu: false));
     }
 
     [Fact]
     public void BothAtOnceIsStillTheMenu()
     {
-        Assert.True(DesktopGame.MenuOwnsPointer(pauseMenu: true, missionFailedMenu: true));
+        Assert.True(GameHost.MenuOwnsPointer(pauseMenu: true, missionFailedMenu: true));
     }
 
     [Fact]
@@ -36,6 +37,6 @@ public sealed class DeathMenuPointerTests
     {
         // With no menu up the chain must fall through, so the look and the death orbit keep the lock
         // that makes the view keep turning however far the mouse is moved.
-        Assert.False(DesktopGame.MenuOwnsPointer(pauseMenu: false, missionFailedMenu: false));
+        Assert.False(GameHost.MenuOwnsPointer(pauseMenu: false, missionFailedMenu: false));
     }
 }

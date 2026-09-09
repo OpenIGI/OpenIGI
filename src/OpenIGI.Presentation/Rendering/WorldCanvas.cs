@@ -1,11 +1,12 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
-using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
+using OpenIGI.UI;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
 /// A flat surface standing in the level, laid out in the same units an interface is, and drawn by
@@ -13,7 +14,7 @@ namespace OpenIGI.Desktop;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The technique <see cref="WorldTitleRenderer"/> sets the mission briefing in: there is no third
+/// The technique <c>WorldTitleRenderer</c> sets the mission briefing in: there is no third
 /// dimension in the sprite path, so a plane in the world is drawn by putting its corners where the
 /// camera says they are and letting the batch interpolate between them. What that buys over an overlay
 /// is everything perspective does — the surface shrinks as the player backs away from it, foreshortens

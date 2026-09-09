@@ -1,6 +1,6 @@
 using OpenIGI.Formats.Animation;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>Limits a stopped animated pose to the two uploads needed by its interpolation buffers.</summary>
 internal sealed class PoseUploadLatch

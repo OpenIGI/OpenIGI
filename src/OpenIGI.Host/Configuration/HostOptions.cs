@@ -1,8 +1,10 @@
 using OpenIGI.Game.Ai;
 using OpenIGI.Platform;
+using OpenIGI.Presentation.Cameras;
+using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Configuration;
 
 /// <summary>
 /// The command-line options the desktop shell understands.
@@ -30,7 +32,7 @@ namespace OpenIGI.Desktop;
 /// <c>HardcoreGerman</c>. <c>-window</c> is kept with the same meaning; the rest are additions the
 /// original had no need for because it shipped alongside its data.
 /// </remarks>
-public readonly record struct DesktopOptions(
+public readonly record struct HostOptions(
     string? GamePath,
     WindowMode Mode,
     int Width,
@@ -56,7 +58,7 @@ public readonly record struct DesktopOptions(
     /// <param name="args">The arguments, without the executable name.</param>
     /// <returns>The parsed options.</returns>
     /// <exception cref="ArgumentException">An option is malformed.</exception>
-    public static DesktopOptions Parse(string[] args)
+    public static HostOptions Parse(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
 
@@ -499,7 +501,7 @@ public readonly record struct DesktopOptions(
             startFlying = true;
         }
 
-        return new DesktopOptions(
+        return new HostOptions(
             gamePath,
             resolvedMode,
             width,

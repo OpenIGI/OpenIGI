@@ -1,13 +1,16 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
-using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Resources;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.World;
+using OpenIGI.Host.Lighting;
+using OpenIGI.Presentation.Igi1;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Menu;
 
 /// <summary>
 /// A mission built for the menu backdrop, everything in it produced away from the graphics device and

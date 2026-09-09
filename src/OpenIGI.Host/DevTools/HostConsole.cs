@@ -1,11 +1,12 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Host.DevTools;
 using OpenIGI.Input;
-using OpenIGI.Rendering;
 using OpenIGI.Rendering.Presets;
+using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.DevTools;
 
 /// <summary>
 /// The desktop shell's console: the registry, the command set, the settings file and the on-screen view.
@@ -23,7 +24,7 @@ namespace OpenIGI.Desktop;
 /// opening the console shows the log rather than an empty panel.
 /// </para>
 /// </remarks>
-public sealed class DesktopConsole : IDisposable
+public sealed class HostConsole : IDisposable
 {
     private const string LogCategory = "Console";
 
@@ -32,11 +33,11 @@ public sealed class DesktopConsole : IDisposable
     private readonly DeveloperConsole _view;
     private bool _disposed;
 
-    /// <summary>Initialises a new instance of the <see cref="DesktopConsole"/> class.</summary>
+    /// <summary>Initialises a new instance of the <see cref="HostConsole"/> class.</summary>
     /// <param name="device">The device the console's font is uploaded to.</param>
     /// <param name="logger">Where to report what the console does.</param>
     /// <exception cref="ArgumentNullException"><paramref name="device"/> is <see langword="null"/>.</exception>
-    public DesktopConsole(IGraphicsDevice device, IIgiLogger? logger = null)
+    public HostConsole(IGraphicsDevice device, IIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
 

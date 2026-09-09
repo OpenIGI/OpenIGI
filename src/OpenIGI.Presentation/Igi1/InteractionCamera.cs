@@ -1,8 +1,9 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Player;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>
 /// The third-person view the player is shown from while on a ladder — the original's camera mode 3

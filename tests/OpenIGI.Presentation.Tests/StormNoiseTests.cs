@@ -1,7 +1,7 @@
-using OpenIGI.Desktop;
+using OpenIGI.Presentation.Rendering;
 using Xunit;
 
-namespace OpenIGI.Desktop.Tests;
+namespace OpenIGI.Presentation.Tests;
 
 /// <summary>The gust and glimmer fields: that they vary, and that they vary <em>smoothly</em>.</summary>
 /// <remarks>

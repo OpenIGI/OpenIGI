@@ -1,7 +1,7 @@
 using System;
 using System.Globalization;
 
-namespace OpenIGI.Desktop.Diagnostics;
+namespace OpenIGI.Host.Diagnostics;
 
 /// <summary>
 /// Measures whether presented motion advances in step with real time, behind OPENIGI_PACING_DEBUG=1.

@@ -1,6 +1,6 @@
 using OpenIGI.UI.Animation;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Menu;
 
 /// <summary>Which part of the loading sequence is running.</summary>
 public enum MissionLoadPhase

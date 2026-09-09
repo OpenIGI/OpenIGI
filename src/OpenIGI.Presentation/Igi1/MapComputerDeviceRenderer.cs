@@ -6,7 +6,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>Draws the retail <c>mapcomputer.mef</c> as the computer presentation.</summary>
 /// <remarks>

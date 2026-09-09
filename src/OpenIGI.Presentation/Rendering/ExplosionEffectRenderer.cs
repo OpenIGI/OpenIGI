@@ -7,9 +7,10 @@ using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
 /// Plays the retail explosion: staggered bursts of the animated <c>fireball.spr</c>, each cycling the
@@ -27,7 +28,7 @@ namespace OpenIGI.Desktop;
 /// </para>
 /// <para>
 /// The sprite lives in the global <c>common/sprites/sprites.res</c>, loaded the same way
-/// <see cref="CameraStatusLightRenderer"/> loads <c>alarmlight.spr</c>. Without it the caller falls back
+/// <c>CameraStatusLightRenderer</c> loads <c>alarmlight.spr</c>. Without it the caller falls back
 /// to the procedural burst so a blast is never invisible.
 /// </para>
 /// </remarks>

@@ -1,10 +1,11 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Game.World;
+using OpenIGI.Host.Lighting;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host;
 
-internal sealed partial class DesktopGame
+internal sealed partial class GameHost
 {
     // The density and resolution the structures currently in memory were actually built at, so a change
     // to either can be noticed and rebuilt from rather than quietly ignored until the next level load.

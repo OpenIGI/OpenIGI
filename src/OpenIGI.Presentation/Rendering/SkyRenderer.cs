@@ -7,7 +7,7 @@ using OpenIGI.Formats.Textures;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
 /// Draws a level's sky: the gradient dome, then the scrolling cloud layers over it.

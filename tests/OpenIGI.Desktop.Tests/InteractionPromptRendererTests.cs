@@ -1,6 +1,7 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Desktop;
+using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;

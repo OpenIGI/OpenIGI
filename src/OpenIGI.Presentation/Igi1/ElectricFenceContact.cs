@@ -1,6 +1,7 @@
 using OpenIGI.Game.Player;
+using OpenIGI.Presentation.Cameras;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>The result of the port's current electric-fence contact rule.</summary>
 internal readonly record struct ElectricFenceShock(float Damage, bool IsLethal);

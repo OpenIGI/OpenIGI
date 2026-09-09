@@ -8,17 +8,19 @@ using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
-using OpenIGI.Game;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using OpenIGI.Game;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
+using System.Runtime.InteropServices;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>Draws a level's placed soldiers — each the model, skeleton and stand animation its own task declares.</summary>
 /// <remarks>
@@ -3239,12 +3241,12 @@ public sealed class SoldierRenderer : IDisposable
             }
         }
 
-        // Elevator and non-door child collision is applied in DesktopGame immediately after
+        // Elevator and non-door child collision is applied in GameHost immediately after
         // elevators.Tick(), before passenger carry and Settle. Re-applying descendant translation
         // here wrote elevator-owned doors twice.
 
         // Child Train collision starts at its authored placeholder and receives its derived consist
-        // transform from DesktopGame immediately before this tick. Retry registration here so the
+        // transform from GameHost immediately before this tick. Retry registration here so the
         // first live mesh pose can reproduce retail's pre-scene Human_SetParent call. This pass is
         // deliberately before animation root motion: the authored Human position is the parent origin.
         AttachStagedActorsToVehicles();

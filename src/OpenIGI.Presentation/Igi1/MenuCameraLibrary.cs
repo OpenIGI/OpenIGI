@@ -1,8 +1,9 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Presentation.Cameras;
+using System.Text.Json.Serialization;
+using System.Text.Json;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>The orbit parameters for one mission's menu showcase camera.</summary>
 /// <param name="Radius">The orbit radius in metres.</param>

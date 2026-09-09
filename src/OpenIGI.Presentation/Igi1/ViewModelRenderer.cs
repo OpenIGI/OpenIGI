@@ -8,7 +8,7 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>Draws the player's own arms — the skinned model <c>005_01_1</c> on the first-person rig.</summary>
 /// <remarks>

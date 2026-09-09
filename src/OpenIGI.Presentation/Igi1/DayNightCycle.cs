@@ -2,7 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
 
-namespace OpenIGI.Desktop.World;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>
 /// An interactive day/night cycle: the level's authored sun, swept across the sky by a time of day the

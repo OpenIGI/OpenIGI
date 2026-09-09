@@ -1,6 +1,7 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Desktop.Configuration;
 using OpenIGI.Game;
+using OpenIGI.Host.Configuration;
 using OpenIGI.Rendering;
 using Xunit;
 

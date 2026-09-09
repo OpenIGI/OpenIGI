@@ -23,6 +23,8 @@
     <ProjectReference Include="..\..\src\OpenIGI.Formats\OpenIGI.Formats.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Scripting\OpenIGI.Scripting.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Presentation\OpenIGI.Presentation.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Host\OpenIGI.Host.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Rendering.Vulkan\OpenIGI.Rendering.Vulkan.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.UI\OpenIGI.UI.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Frontend\OpenIGI.Frontend.csproj" />

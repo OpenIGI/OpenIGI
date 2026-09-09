@@ -8,9 +8,10 @@ using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
+using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>Draws IGI1's C-key SIMOTECH map computer, objectives and event log.</summary>
 internal sealed class MapComputerRenderer : IDisposable

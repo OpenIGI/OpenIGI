@@ -7,7 +7,7 @@ using OpenIGI.Game.Menus;
 using OpenIGI.Input;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Menu;
 
 /// <summary>
 /// The shell's side of both seams: the flow's host, and the menu manager's.
@@ -23,7 +23,7 @@ namespace OpenIGI.Desktop;
 /// screens, no outro and no game to begin.
 /// </para>
 /// </remarks>
-public sealed class DesktopMenuHost : IFlowHost, IMenuHost
+public sealed class MenuHost : IFlowHost, IMenuHost
 {
     private const string LogCategory = "Menu";
 
@@ -37,7 +37,7 @@ public sealed class DesktopMenuHost : IFlowHost, IMenuHost
     private readonly Func<int> _screenHeight;
     private readonly Action _quit;
 
-    /// <summary>Initializes a new instance of the <see cref="DesktopMenuHost"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="MenuHost"/> class.</summary>
     /// <param name="input">The window's input state.</param>
     /// <param name="batch">The batch menu drawing goes through.</param>
     /// <param name="renderer">Supplies the renderer once the menu archive is known.</param>
@@ -46,7 +46,7 @@ public sealed class DesktopMenuHost : IFlowHost, IMenuHost
     /// <param name="quit">Called when the menu asks to leave.</param>
     /// <param name="logger">Where to report menu activity.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public DesktopMenuHost(
+    public MenuHost(
         InputState input,
         SpriteBatch batch,
         Func<MenuRenderer?> renderer,

@@ -1,4 +1,4 @@
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Lighting;
 
 /// <summary>
 /// Decides when a freshly loaded level may be shown: not after a fixed number of frames, but once the

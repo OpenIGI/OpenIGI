@@ -8,7 +8,7 @@ using OpenIGI.Rendering;
 using System;
 using System.Collections.Generic;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>Draws launcher missiles with the model named by their projectile task.</summary>
 internal sealed class MissileRenderer : IDisposable

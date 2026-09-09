@@ -1,6 +1,7 @@
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
+using OpenIGI.Presentation.Igi1;
 using OpenIGI.TestSupport;
 using Xunit;
 

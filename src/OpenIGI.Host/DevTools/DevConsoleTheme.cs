@@ -3,7 +3,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.DevTools;
 
 /// <summary>
 /// The developer tools' palette, type scale and spacing rhythm.

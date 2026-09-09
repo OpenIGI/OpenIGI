@@ -1,8 +1,9 @@
+using OpenIGI.Core.Diagnostics;
+using OpenIGI.Presentation.Cameras;
 using System.Globalization;
 using System.Text;
-using OpenIGI.Core.Diagnostics;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>
 /// Writes <c>Assets/menu-cameras.json</c> from places found in the levels, so the shots a mission's

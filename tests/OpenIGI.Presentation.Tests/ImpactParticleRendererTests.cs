@@ -1,5 +1,5 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Desktop;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
@@ -14,7 +14,7 @@ using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
 
-namespace OpenIGI.Desktop.Tests;
+namespace OpenIGI.Presentation.Tests;
 
 public sealed class ImpactParticleRendererTests
 {

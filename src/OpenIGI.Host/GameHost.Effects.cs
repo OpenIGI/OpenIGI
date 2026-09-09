@@ -8,14 +8,14 @@ using OpenIGI.Formats.Textures;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host;
 
 /// <summary>
 /// The world's blast and rocket effects: the shared retail fireball and the launcher smoke trail. These
 /// are presentation, driven off the fixed tick beside the impact particles, and kept apart from the
 /// audio and detonation-resolution code that asks for them.
 /// </summary>
-internal sealed partial class DesktopGame
+internal sealed partial class GameHost
 {
     /// <summary>Steps the original's impact effects, and lets its blood mark what it lands on.</summary>
     /// <remarks>

@@ -8,18 +8,25 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.World;
-using OpenIGI.Game;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Menus;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using OpenIGI.Game;
+using OpenIGI.Host.Infrastructure;
+using OpenIGI.Host.Lighting;
+using OpenIGI.Host.Menu;
+using OpenIGI.Presentation.Cameras;
+using OpenIGI.Presentation.Igi1;
+using OpenIGI.Presentation.Rendering;
+using OpenIGI.Presentation.World;
 using OpenIGI.Rendering;
 using OpenIGI.Scripting.Runtime;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host;
 
-internal sealed partial class DesktopGame
+internal sealed partial class GameHost
 {
     /// <summary>Test-only outro forcing writes re-applied on every logic tick.</summary>
     private List<(string Name, string Value)> _testOutroTickWrites = [];
@@ -495,7 +502,7 @@ internal sealed partial class DesktopGame
         }
 
         // Both presentations are built, and r_computer_tactical decides which is drawn — see
-        // DesktopGame.TacticalComputer. The retail pair above needs the installation's own archives; this
+        // GameHost.TacticalComputer. The retail pair above needs the installation's own archives; this
         // one needs only the shipped faces, so a mission whose computer.res is missing still has a map.
         _tacticalComputer = new TacticalComputerRenderer(_device, _resources, _logger, missionText.Get);
         if (!_tacticalComputer.Load())
@@ -1052,7 +1059,7 @@ internal sealed partial class DesktopGame
                 //
                 // Started here rather than built here: EnsureDistanceFields is the same call the render
                 // loop makes every frame, so a level begins its bake at load and a player who switches the
-                // lighting model on later gets one started for them. See DesktopGame.RealtimeGi.cs.
+                // lighting model on later gets one started for them. See GameHost.RealtimeGi.cs.
                 // The outgoing level's cards go first, before the incoming field is adopted. Adopting a
                 // field is one of the two moments that can complete the pair and converge the cache, and
                 // with the old cards still standing it would converge THOSE against the new level's field
@@ -1536,7 +1543,7 @@ internal sealed partial class DesktopGame
         }
 
         // The surfaces, now that the sun and the fixtures they are lit by are both known. Captures the
-        // atlas and lights it in one step -- see DesktopGame.RealtimeGi.cs, which is also what the render
+        // atlas and lights it in one step -- see GameHost.RealtimeGi.cs, which is also what the render
         // loop calls when the lighting model is switched on mid-level.
         EnsureSurfaceCache();
 
@@ -2116,7 +2123,7 @@ internal sealed partial class DesktopGame
         // The level is about to be built; it is not yet worth looking at. Everything temporal -- the
         // probe gather, the radiance cache, the resolve's history, the eye -- needs frames rather than
         // load time, so those frames are drawn with the picture withheld, under the entry shot's hold.
-        // See DesktopGame.MissionWarmUp.cs.
+        // See GameHost.MissionWarmUp.cs.
         BeginMissionWarmUp(chosen);
 
         // A mission with an authored intro is promoted straight from the menu with no shot to cover it,

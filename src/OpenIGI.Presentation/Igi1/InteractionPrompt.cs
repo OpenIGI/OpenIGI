@@ -1,9 +1,10 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Cameras;
 using OpenIGI.UI.Animation;
 using System.Globalization;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>How the player completes an offered interaction.</summary>
 public enum InteractionPromptMethod

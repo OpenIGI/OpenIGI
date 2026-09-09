@@ -1,8 +1,9 @@
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using Xunit;
 
-namespace OpenIGI.Desktop.Tests;
+namespace OpenIGI.Presentation.Tests;
 
 public sealed class PoseUploadLatchTests
 {

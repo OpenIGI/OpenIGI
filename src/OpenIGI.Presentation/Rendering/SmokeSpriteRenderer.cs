@@ -7,9 +7,10 @@ using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
 /// Draws drifting puffs of the retail <c>smoke2.spr</c> — the rocket's exhaust trail and the grey column
@@ -23,7 +24,7 @@ namespace OpenIGI.Desktop;
 /// A puff is dropped where the rocket was and left behind to drift, expand and grey out.
 /// </para>
 /// <para>
-/// Loaded from the global <c>common/sprites/sprites.res</c> the way <see cref="CameraStatusLightRenderer"/>
+/// Loaded from the global <c>common/sprites/sprites.res</c> the way <c>CameraStatusLightRenderer</c>
 /// loads <c>alarmlight.spr</c>. Presentation only, on the fixed tick.
 /// </para>
 /// </remarks>

@@ -1,9 +1,9 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Desktop;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using Xunit;
 
-namespace OpenIGI.Desktop.Tests;
+namespace OpenIGI.Presentation.Tests;
 
 /// <summary>
 /// Guards the facts about the storm's drop sheet that the renderer's arithmetic assumes.

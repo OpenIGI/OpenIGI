@@ -1,8 +1,9 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Player;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>
 /// The camera the game hands control to when the player dies — it detaches from the eye, pulls back to a

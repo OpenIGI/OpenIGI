@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Presentation.Cameras;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>
 /// What one soldier looked like at the moment the developer inspector asked.

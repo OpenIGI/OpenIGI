@@ -6,7 +6,7 @@ using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.Menus;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Menu;
 
 /// <summary>
 /// Draws a menu screen from the task tree the menu script built.

@@ -10,7 +10,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Formats.World;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>What a burst of impact particles looks like, decided by what the round struck.</summary>
 public enum ImpactSurfaceKind

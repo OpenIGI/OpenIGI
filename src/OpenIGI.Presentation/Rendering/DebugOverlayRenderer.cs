@@ -1,16 +1,18 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Presentation.Igi1;
+using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
-using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
+using OpenIGI.UI;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>Renders the developer diagnostics panels with the shared, modern UI vocabulary.</summary>
 /// <remarks>
-/// This renderer is deliberately separate from <see cref="StatusScreenRenderer"/>. The retail HUD uses
+/// This renderer is deliberately separate from <c>StatusScreenRenderer</c>. The retail HUD uses
 /// the game's bitmap status face, which is the right choice for faithful gameplay presentation but made
 /// the F12 diagnostics inherit its green colour and pixel font. Diagnostics are a developer surface, so
 /// they use the same Saira widgets as the rest of the modern interface and never read a graphics preset

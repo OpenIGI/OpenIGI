@@ -2,7 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Input;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Cameras;
 
 /// <summary>A fly-through camera with a scene editor's controls.</summary>
 /// <remarks>

@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using OpenIGI.Core.Graphics;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Infrastructure;
 
 /// <summary>
 /// Writes a captured frame to an uncompressed 32-bit BMP.

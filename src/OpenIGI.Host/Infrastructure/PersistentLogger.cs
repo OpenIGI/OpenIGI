@@ -2,7 +2,7 @@ using System.Globalization;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop.Infrastructure;
+namespace OpenIGI.Host.Infrastructure;
 
 /// <summary>Mirrors desktop diagnostics to the console and a per-session file.</summary>
 internal sealed class PersistentLogger : IIgiLogger, IDisposable

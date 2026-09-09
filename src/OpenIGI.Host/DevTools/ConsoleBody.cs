@@ -5,7 +5,7 @@ using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.DevTools;
 
 /// <summary>
 /// The developer console's contents: a filter bar, the scrollback, the prompt, and the completion

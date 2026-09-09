@@ -1,6 +1,6 @@
 using OpenIGI.Core.Configuration;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.DevTools;
 
 /// <summary>How the developer tools are coloured.</summary>
 public enum ConsolePalette
@@ -23,7 +23,7 @@ public enum ConsolePalette
 /// Declared in the desktop application rather than beside the renderer's, because they configure a
 /// tool that only the desktop shell has. The application already references the CVar source generator
 /// as an analyzer, so the module initialiser that forces these declarations to register is emitted
-/// here as it is for every other container — but <see cref="DesktopConsole.Start"/> must still call it
+/// here as it is for every other container — but <see cref="HostConsole.Start"/> must still call it
 /// explicitly before the settings file is read, or a saved <c>con_</c> line would be met with
 /// "unknown variable" and the reader's layout would silently never come back.
 /// </para>

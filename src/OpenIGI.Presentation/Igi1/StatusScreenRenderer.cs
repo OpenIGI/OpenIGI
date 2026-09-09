@@ -4,12 +4,13 @@ using OpenIGI.Engine.Graphics;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Game.Player;
+using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>Draws the in-game HUD, including the retail action icons.</summary>
 /// <remarks>

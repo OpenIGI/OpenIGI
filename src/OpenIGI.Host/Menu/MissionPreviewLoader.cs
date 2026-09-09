@@ -11,9 +11,13 @@ using OpenIGI.Formats.Textures;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Host.Lighting;
+using OpenIGI.Host;
+using OpenIGI.Presentation.Igi1;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Menu;
 
 /// <summary>
 /// Builds the menu's backdrop mission on a worker thread and hands the result to the render thread when
@@ -41,7 +45,7 @@ namespace OpenIGI.Desktop;
 /// <para>
 /// <b>What is left on the render thread.</b> Only the uploads: a GL texture belongs to the context that
 /// made it, so the terrain's tiles, the sky and the world renderer are built in
-/// <c>DesktopGame</c> when the result is collected. That is the same handover
+/// <c>GameHost</c> when the result is collected. That is the same handover
 /// <see cref="IrradianceProbeBake"/> and <c>DistanceFieldBake</c> already use.
 /// </para>
 /// <para>

@@ -5,7 +5,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Platform;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Configuration;
 
 /// <summary>
 /// Supplies the configuration functions with what only the shell knows.
@@ -17,7 +17,7 @@ namespace OpenIGI.Desktop;
 /// </remarks>
 /// <param name="graphics">The graphics device, for its reported capabilities.</param>
 /// <param name="window">The window, for the size it is running at.</param>
-public sealed class DesktopConfigHost(IGraphicsDevice graphics, IGameWindow window) : IConfigHost
+public sealed class HostConfigHost(IGraphicsDevice graphics, IGameWindow window) : IConfigHost
 {
     /// <summary>The id the mission chain starts at. <c>0x417090</c> returns this constant.</summary>
     private const int FirstMissionId = MissionRegistry.FirstMissionId;

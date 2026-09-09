@@ -1,31 +1,34 @@
-﻿using OpenIGI.Core.Configuration;
+using OpenIGI.Audio.OpenAL;
+using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Desktop;
-using OpenIGI.Desktop.Infrastructure;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Profiles;
-using OpenIGI.Platform;
+using OpenIGI.Host.Configuration;
+using OpenIGI.Host.Infrastructure;
+using OpenIGI.Host;
 using OpenIGI.Platform.Desktop;
-using OpenIGI.Rendering;
+using OpenIGI.Platform;
 using OpenIGI.Rendering.Vulkan;
+using OpenIGI.Rendering;
 
-DesktopOptions options;
+HostOptions options;
 try
 {
     // -vulkan is still swallowed rather than rejected. It names the only backend there is, so it does
     // nothing, but a shortcut or a script that has carried it since there were two should keep working.
-    options = DesktopOptions.Parse(
+    options = HostOptions.Parse(
         args.Where(a => !a.Equals("-vulkan", StringComparison.OrdinalIgnoreCase)).ToArray());
 }
 catch (ArgumentException ex)
 {
     Console.Error.WriteLine(ex.Message);
     Console.Error.WriteLine();
-    Console.Error.WriteLine(DesktopOptions.Usage);
+    Console.Error.WriteLine(HostOptions.Usage);
     return 2;
 }
 
-OpenIGI.Desktop.Infrastructure.PersistentLogger persistentLogger;
+OpenIGI.Host.Infrastructure.PersistentLogger persistentLogger;
 try
 {
     persistentLogger = new(RuntimePaths.GetLogPath());
@@ -77,7 +80,7 @@ if (string.IsNullOrWhiteSpace(gamePath))
     Console.Error.WriteLine();
     Console.Error.WriteLine("Put OpenIGI in the folder that holds IGI.exe, or point it at one:");
     Console.Error.WriteLine("  -game <dir>");
-    Console.Error.WriteLine($"  {DesktopOptions.GamePathVariable}=<dir>");
+    Console.Error.WriteLine($"  {HostOptions.GamePathVariable}=<dir>");
     Console.Error.WriteLine();
     Console.Error.WriteLine("Looked in:");
 
@@ -164,7 +167,10 @@ using (window)
         options.ScreenshotPath is not null,
         logger);
 
-    using DesktopGame game = new(platform, window, device, fileSystem, options, gamePath, logger);
+    // The composition root is the only place that names a concrete backend: the graphics device
+    // above, and the audio factory here. GameHost itself sees only the abstractions.
+    using GameHost game = new(
+        platform, window, device, OpenAlAudioDeviceFactory.Instance, fileSystem, options, gamePath, logger);
     return game.Run();
 }
 }

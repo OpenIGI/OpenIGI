@@ -3,9 +3,9 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host;
 
-internal sealed partial class DesktopGame
+internal sealed partial class GameHost
 {
     // The sky as a source of indirect light: the colour a GI ray that escapes the geometry returns. The
     // level's Dirlight ambient is a dim fill (~0.27, its "Back Color"), authored to sit on top of the flat

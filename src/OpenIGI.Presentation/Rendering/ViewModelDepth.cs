@@ -1,6 +1,6 @@
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>Prepares the first-person rig's private foreground depth layer.</summary>
 /// <remarks>

@@ -1,4 +1,5 @@
 using OpenIGI.Desktop;
+using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 using Xunit;
 

@@ -1,19 +1,15 @@
-﻿using OpenIGI.Audio;
-using OpenIGI.Audio.OpenAL;
+using OpenIGI.Audio;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Desktop.Audio;
-using OpenIGI.Desktop.World;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Frontend;
 using OpenIGI.Frontend.Saves;
-using OpenIGI.Game;
+using OpenIGI.Frontend;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Menus;
@@ -21,25 +17,36 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.Profiles;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using OpenIGI.Game;
+using OpenIGI.Host.Audio;
+using OpenIGI.Host.Configuration;
+using OpenIGI.Host.DevTools;
+using OpenIGI.Host.Diagnostics;
+using OpenIGI.Host.Infrastructure;
+using OpenIGI.Host.Lighting;
+using OpenIGI.Host.Menu;
 using OpenIGI.Platform;
-using OpenIGI.Platform.Desktop;
-using OpenIGI.Rendering;
+using OpenIGI.Presentation.Cameras;
+using OpenIGI.Presentation.Igi1;
+using OpenIGI.Presentation.Rendering;
+using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering.Presets;
+using OpenIGI.Rendering;
 using OpenIGI.Scripting.Runtime;
-using OpenIGI.UI;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
+using OpenIGI.UI;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host;
 
 /// <summary>
 /// The desktop composition root: it builds the world, the renderers and the developer console, drives
 /// the frame loop, and tears everything down. The startup and per-frame body lives in <see cref="Run"/>;
 /// mission loading, lighting and the menu shell are in the sibling partials.
 /// </summary>
-internal sealed partial class DesktopGame : IDisposable
+internal sealed partial class GameHost : IDisposable
 {
     private static readonly System.Text.Json.JsonSerializerOptions BenchmarkJsonOptions = new()
     {
@@ -57,8 +64,9 @@ internal sealed partial class DesktopGame : IDisposable
     private const int LightingWaitMilliseconds = 30_000;
 
     // --- Environment, supplied by the composition root ---
-    private readonly DesktopPlatformHost _platform;
-    private readonly SilkGameWindow _window;
+    private readonly IPlatformHost _platform;
+    private readonly IGameWindow _window;
+    private readonly IAudioDeviceFactory _audioFactory;
     /// <summary>Gets the window width, or the authored 320 when a minimize/dock race reports 0x0.</summary>
     private int SafeWindowWidth => _window.Width > 0 ? _window.Width : 320;
 
@@ -67,7 +75,7 @@ internal sealed partial class DesktopGame : IDisposable
 
     private readonly IGraphicsDevice _device;
     private readonly VirtualFileSystem _fileSystem;
-    private readonly DesktopOptions _options;
+    private readonly HostOptions _options;
     private readonly string _gamePath;
     private IIgiLogger _logger;
 
@@ -91,7 +99,7 @@ internal sealed partial class DesktopGame : IDisposable
     // scheduler and archives. See MissionPreviewContext.
     private MissionPreviewContext _previewContext = null!;
     private GameConfig _configuration = null!;
-    private DesktopRenderScheduler _scheduler = null!;
+    private HostRenderScheduler _scheduler = null!;
 
     // The one wall clock every loop reads. A mission promoted out of the menu's backdrop brings its own
     // GameLoop with it, and both loops have to measure milliseconds from the same origin — see
@@ -455,25 +463,28 @@ internal sealed partial class DesktopGame : IDisposable
     private MenuCameraLibrary _menuCameras = MenuCameraLibrary.Empty;
 
     /// <summary>Wires the game to the window, device, file system and options it runs against.</summary>
-    /// <param name="platform">The desktop platform host, for reporting its name.</param>
+    /// <param name="platform">The platform host, for reporting its name.</param>
     /// <param name="window">The game window whose input and frames drive the loop.</param>
     /// <param name="device">The graphics device every renderer draws through.</param>
+    /// <param name="audioFactory">Opens the audio backend; re-called whenever the device settings change.</param>
     /// <param name="fileSystem">The virtual file system the original installation is read through.</param>
     /// <param name="options">The parsed command line.</param>
     /// <param name="gamePath">The original installation directory.</param>
     /// <param name="logger">The log; wrapped by the developer console once it starts.</param>
-    public DesktopGame(
-        DesktopPlatformHost platform,
-        SilkGameWindow window,
+    public GameHost(
+        IPlatformHost platform,
+        IGameWindow window,
         IGraphicsDevice device,
+        IAudioDeviceFactory audioFactory,
         VirtualFileSystem fileSystem,
-        DesktopOptions options,
+        HostOptions options,
         string gamePath,
         IIgiLogger logger)
     {
         _platform = platform;
         _window = window;
         _device = device;
+        _audioFactory = audioFactory;
         _fileSystem = fileSystem;
         _options = options;
         _gamePath = gamePath;
@@ -566,8 +577,8 @@ internal sealed partial class DesktopGame : IDisposable
 
         // Settings load from the retail config.qvm, and from our own file in preference to it when one
         // exists. Nothing here ever writes into the original installation.
-        _configuration = DesktopConfiguration.Load(_fileSystem, _logger);
-        DesktopConfigHost configHost = new(_device, _window)
+        _configuration = HostConfiguration.Load(_fileSystem, _logger);
+        HostConfigHost configHost = new(_device, _window)
         {
             ApplyResolution = (w, h) =>
             {
@@ -597,7 +608,7 @@ internal sealed partial class DesktopGame : IDisposable
         SpriteBatch batch = new(_device);
 
         // Held so a loading frame can be drawn and swapped from outside this loop, before a mission
-        // load blocks it. See DesktopGame.MissionWarmUp.cs.
+        // load blocks it. See GameHost.MissionWarmUp.cs.
         _batch = batch;
         _renderer = null;
         bool running = true;
@@ -606,7 +617,7 @@ internal sealed partial class DesktopGame : IDisposable
         // anything reads a setting, so the saved file and the command line's +statements are already in
         // effect by the time the renderer and the game are built. Everything logged from here on is
         // mirrored into its scrollback, so opening it shows the log rather than an empty panel.
-        using DesktopConsole console = new(_device, _logger);
+        using HostConsole console = new(_device, _logger);
         console.QuitRequested += (_, _) => running = false;
 
         // The console reaches the system clipboard through the window, which is what owns the handle,
@@ -678,7 +689,7 @@ internal sealed partial class DesktopGame : IDisposable
         _device.SetStageTiming(RenderCVars.PerformanceLog.Value);
         RenderCVars.PerformanceLog.Changed += (_, _) => _device.SetStageTiming(RenderCVars.PerformanceLog.Value);
 
-        DesktopMenuHost menuHost = new(
+        MenuHost menuHost = new(
             _window.Input,
             batch,
             () => _renderer,
@@ -1154,7 +1165,7 @@ internal sealed partial class DesktopGame : IDisposable
 
         // -entrycam: Play has not been pressed yet. Set only when the flag asked for it.
         bool entryCamPending = false;
-        DesktopShellHost? shellHostForEntryCam = null;
+        ShellHost? shellHostForEntryCam = null;
 
         // When the mission-entry shot last read the clock.
         int lastEntryMilliseconds = 0;
@@ -1243,7 +1254,7 @@ internal sealed partial class DesktopGame : IDisposable
 
             var saves = new SaveSlotStore(Path.Combine(SettingsPaths.GetUserDirectory(), "saves"));
 
-            var shellHost = new DesktopShellHost(
+            var shellHost = new ShellHost(
                 startMission: (id, difficulty) =>
                 {
                     if (_configuration.Active is { } activeProfile)
@@ -1434,7 +1445,7 @@ internal sealed partial class DesktopGame : IDisposable
                     }
                 },
                 saveSettings: () => console.SaveSettings(),
-                saveProfiles: () => DesktopConfiguration.Save(_configuration, _logger),
+                saveProfiles: () => HostConfiguration.Save(_configuration, _logger),
                 captureThumbnail: (out captureWidth, out captureHeight) =>
                 {
                     captureWidth = _window.Width;
@@ -1740,7 +1751,7 @@ internal sealed partial class DesktopGame : IDisposable
 
             // Whatever the real-time lighting model needs and does not have yet. Every frame rather than
             // at load, because the settings menu can ask for that model at any moment and the structures it
-            // reads have to be able to arrive afterwards -- see DesktopGame.RealtimeGi.cs. A no-op once
+            // reads have to be able to arrive afterwards -- see GameHost.RealtimeGi.cs. A no-op once
             // they exist, which is every frame but the handful after the switch.
             EnsureRealtimeGiStructures();
 
@@ -3305,7 +3316,7 @@ internal sealed partial class DesktopGame : IDisposable
                             MissionProgression.UnlockNext(activeProfile, _missions, nextMissionId);
                             // Retail writes LOCAL:config.qsc after every non-final completion, even when
                             // replaying an earlier mission leaves the frontier unchanged.
-                            DesktopConfiguration.Save(_configuration, _logger);
+                            HostConfiguration.Save(_configuration, _logger);
                         }
 
                         _logger.Information("Mission", $"Completed mission {completedMission.Id}; loading {nextMissionId}.");
@@ -6310,7 +6321,7 @@ internal sealed partial class DesktopGame : IDisposable
 
         if (!_options.IsBenchmark)
         {
-            DesktopConfiguration.Save(_configuration, _logger);
+            HostConfiguration.Save(_configuration, _logger);
             console.SaveSettings();
         }
         missionWarmer?.Dispose();

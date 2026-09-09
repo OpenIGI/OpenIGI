@@ -1,11 +1,12 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Weapons;
 using OpenIGI.Game.Weapons.Ballistics;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>Draws the ballistic rounds in flight: a glow at the head, a streak behind it, a fading ribbon tail.</summary>
 /// <remarks>
@@ -36,7 +37,7 @@ namespace OpenIGI.Desktop;
 /// (<see cref="AmmoTracer.IntensityAt"/>) applied — the retail amber-to-yellow ammunition gradient
 /// is available in <see cref="AmmoTracer.ColourAt"/> but reads as flame against this game's dusk
 /// levels. Geometry is CAMERA-RELATIVE in double precision before narrowing, for the reason
-/// <see cref="BulletMarkRenderer"/> documents.
+/// <c>BulletMarkRenderer</c> documents.
 /// </para>
 /// </remarks>
 public sealed class TracerTrailRenderer : IDisposable

@@ -1,8 +1,9 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Flow;
+using OpenIGI.Host.Diagnostics;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host;
 
 /// <summary>
 /// The frame arbiter's render hooks, wired to the graphics device.
@@ -20,14 +21,14 @@ namespace OpenIGI.Desktop;
 /// <em>when</em>, the shell only says what it means on this platform.
 /// </para>
 /// </remarks>
-public sealed class DesktopRenderScheduler : IRenderScheduler
+public sealed class HostRenderScheduler : IRenderScheduler
 {
     private readonly IGraphicsDevice _device;
 
-    /// <summary>Initializes a new instance of the <see cref="DesktopRenderScheduler"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="HostRenderScheduler"/> class.</summary>
     /// <param name="device">The device to present and clear.</param>
     /// <exception cref="ArgumentNullException"><paramref name="device"/> is <see langword="null"/>.</exception>
-    public DesktopRenderScheduler(IGraphicsDevice device)
+    public HostRenderScheduler(IGraphicsDevice device)
     {
         ArgumentNullException.ThrowIfNull(device);
         _device = device;

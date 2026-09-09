@@ -1,8 +1,9 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop.World;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>
 /// A draggable, on-screen rotation gizmo for the sun, for the free camera.

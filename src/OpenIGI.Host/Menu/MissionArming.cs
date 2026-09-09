@@ -1,9 +1,9 @@
-using System.Diagnostics;
-
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Igi1;
+using System.Diagnostics;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Menu;
 
 /// <summary>
 /// Makes the menu's backdrop ready to be played, a couple of milliseconds at a time, while the player is

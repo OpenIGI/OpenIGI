@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Presentation.Cameras;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.DevTools;
 
 /// <summary>Where a selected entity lands on screen.</summary>
 /// <param name="X">The horizontal position in back-buffer pixels; may fall outside the viewport.</param>

@@ -1,17 +1,19 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Formats.Animation;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Game;
+using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
-using OpenIGI.Game.Weapons;
 using OpenIGI.Game.Weapons.Ballistics;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using OpenIGI.Game;
 using OpenIGI.Input;
+using OpenIGI.Presentation.Cameras;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>
 /// Drives a <see cref="PlayerBody"/> from the keyboard and mouse, and gives the renderer its eye.

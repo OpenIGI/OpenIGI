@@ -1,16 +1,16 @@
-﻿using System.Diagnostics;
-
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
-using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
+using OpenIGI.UI;
+using System.Diagnostics;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host;
 
-internal sealed partial class DesktopGame
+internal sealed partial class GameHost
 {
     // The two animation sets every mission uses: skeleton 0's, which the player's body walks on, and
     // skeleton 5's, the first-person rig the held weapon hangs off. They live under common/ rather than
@@ -174,7 +174,7 @@ internal sealed partial class DesktopGame
         }
 
         // One more share of the loading bar, and a frame to show it on: the load is the one stretch
-        // where nothing else presents. See DesktopGame.MissionWarmUp.cs.
+        // where nothing else presents. See GameHost.MissionWarmUp.cs.
         ReportLoadStage();
 
         _stageStartedAt = Stopwatch.GetTimestamp();

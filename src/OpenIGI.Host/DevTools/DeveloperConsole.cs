@@ -1,15 +1,16 @@
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Input;
+using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
-using OpenIGI.UI;
 using OpenIGI.UI.Focus;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
+using OpenIGI.UI;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.DevTools;
 
 /// <summary>
 /// The developer console's on-screen half: a set of floating panels, the input that drives them, and

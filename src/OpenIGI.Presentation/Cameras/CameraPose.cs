@@ -1,7 +1,9 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Presentation.Igi1;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Cameras;
 
 /// <summary>
 /// A camera as a position and two angles, which is the form every camera in this game actually keeps and
@@ -18,8 +20,8 @@ namespace OpenIGI.Desktop;
 /// </para>
 /// <para>
 /// That is sound here because <see cref="Camera3D.LookRotation"/> is itself a pure function of a yaw and
-/// a pitch, so the round trip through this type is exact up to floating-point error. <see cref="DeathCamera"/>
-/// and <see cref="InteractionCamera"/> already recover the same pair of angles from a look direction by
+/// a pitch, so the round trip through this type is exact up to floating-point error. <c>DeathCamera</c>
+/// and <c>InteractionCamera</c> already recover the same pair of angles from a look direction by
 /// hand; this is that idiom, named.
 /// </para>
 /// <para>

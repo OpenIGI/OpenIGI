@@ -6,14 +6,17 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.Menus;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Host.Lighting;
+using OpenIGI.Host.Menu;
+using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
-using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
+using OpenIGI.UI;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host;
 
-internal sealed partial class DesktopGame
+internal sealed partial class GameHost
 {
     /// <summary>The mission-name table, so the card titles a level the way the campaign screen did.</summary>
     private MenuStringTable? _menuStrings;

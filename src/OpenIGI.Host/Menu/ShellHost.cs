@@ -2,7 +2,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Frontend;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.Menu;
 
 /// <summary>
 /// The desktop composition root's side of the cinematic shell: it turns the shell's requests into calls
@@ -11,7 +11,7 @@ namespace OpenIGI.Desktop;
 /// <remarks>
 /// The shell is backend-free, so everything it cannot do itself — leaving the menu into a mission,
 /// previewing a level behind the menu, capturing a save thumbnail, quitting, persisting settings — is a
-/// delegate the composition root supplies here. This is the same pattern as <see cref="DesktopMenuHost"/>'s
+/// delegate the composition root supplies here. This is the same pattern as <see cref="MenuHost"/>'s
 /// <c>StartGame</c>/quit hooks, made into a full <see cref="IShellHost"/>.
 /// </remarks>
 /// <param name="startMission">Starts a mission at a difficulty and leaves the shell.</param>
@@ -24,7 +24,7 @@ namespace OpenIGI.Desktop;
 /// <param name="saveSettings">Persists the current settings.</param>
 /// <param name="saveProfiles">Persists player profiles and their progress.</param>
 /// <param name="captureThumbnail">Captures the current frame as save-thumbnail pixels.</param>
-public sealed class DesktopShellHost(
+public sealed class ShellHost(
     Action<int, int> startMission,
     Action<MissionConditions> setMissionConditions,
     Action resumeMission,

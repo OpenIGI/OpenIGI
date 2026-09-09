@@ -1,14 +1,15 @@
-﻿using System.Diagnostics.CodeAnalysis;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>
 /// Draws a level's terrain: descends the octree from the camera, then draws each chunk the descent

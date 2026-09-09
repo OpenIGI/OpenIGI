@@ -1,4 +1,3 @@
-﻿using System.Runtime.InteropServices;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -8,9 +7,12 @@ using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Cameras;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
+using System.Runtime.InteropServices;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>Draws a loaded mission's static objects, uploading each model and texture the first time it is needed.</summary>
 /// <remarks>

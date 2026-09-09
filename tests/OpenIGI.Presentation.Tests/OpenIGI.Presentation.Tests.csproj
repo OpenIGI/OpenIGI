@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- The title-agnostic rendering: the weather and particle passes, the view-model projection, the
+         free camera. None of it touches a graphics device, which is the whole reason it can be tested. -->
+    <ProjectReference Include="..\..\src\OpenIGI.Presentation\OpenIGI.Presentation.csproj" />
+    <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The storm's drop sheet, so the tests that read its layout read the shipped images rather than a
+         copy of them that is free to drift. -->
+    <None Include="..\..\apps\OpenIGI.Desktop\Assets\weather\*.png"
+          Link="Assets\weather\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+
+    <None Include="..\..\apps\OpenIGI.Desktop\Assets\fonts\Saira-Regular.ttf"
+          Link="Assets\fonts\Saira-Regular.ttf"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+</Project>

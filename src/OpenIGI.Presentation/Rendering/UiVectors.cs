@@ -3,7 +3,7 @@ using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
 /// Resolution-independent vector primitives the remastered interfaces share: discs, rings, diamonds,

@@ -1,7 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Cameras;
 
 /// <summary>
 /// Places the free camera so a mission opens looking at the level rather than at the inside of whichever

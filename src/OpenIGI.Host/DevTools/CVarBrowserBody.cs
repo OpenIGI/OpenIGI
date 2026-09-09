@@ -4,7 +4,7 @@ using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Host.DevTools;
 
 /// <summary>
 /// A live table of every console variable: filtered as the reader types, showing value, default,
