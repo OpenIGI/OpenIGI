@@ -1,7 +1,8 @@
 using OpenIGI.Game.World;
+using OpenIGI.Presentation;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
 /// Draws the world into the sun's shadow cascades.
@@ -11,8 +12,8 @@ namespace OpenIGI.Presentation.Igi1;
 /// It draws through the <em>same</em> renderers the main pass uses, with a camera placed in the light
 /// instead of in the player's head. That is deliberate and is what the pass structure on
 /// <see cref="IGraphicsDevice"/> exists for: a renderer asks for a mesh with a texture, and the device
-/// decides from the current pass that this one wants depth only. Nothing in
-/// <see cref="WorldRenderer"/> or <see cref="SoldierRenderer"/> knows that shadows exist.
+/// decides from the current pass that this one wants depth only. Neither
+/// presenter knows that shadows exist, and this pass does not know which game it is drawing.
 /// </para>
 /// <para>
 /// <b>The light camera sits at the player's position, not at the light.</b> A directional light has no
@@ -25,7 +26,7 @@ namespace OpenIGI.Presentation.Igi1;
 /// <b>Terrain does not cast here.</b> Its level of detail is chosen from the camera's position, so
 /// drawing it from the light would pick a tessellation for a viewpoint kilometres away — and its own
 /// shadowing is already in the baked lightmaps. Objects and soldiers are what throw the shadows a player
-/// reads. The ray-traced sun does see it, through <see cref="TerrainShadowCaster"/>.
+/// reads. The ray-traced sun does see it, through the title's own terrain shadow caster.
 /// </para>
 /// </remarks>
 public sealed class ShadowCasterPass
@@ -49,15 +50,15 @@ public sealed class ShadowCasterPass
     /// <param name="count">How many of them are live.</param>
     /// <param name="eye">The camera the cascades were fitted around.</param>
     /// <param name="scene">The world's placed objects, or <see langword="null"/> for none.</param>
-    /// <param name="world">The renderer that draws them.</param>
-    /// <param name="soldiers">The soldier renderer, or <see langword="null"/> for none.</param>
+    /// <param name="world">The presenter that draws them, or <see langword="null"/> for none.</param>
+    /// <param name="characters">The character presenter, or <see langword="null"/> for none.</param>
     public void Render(
         ReadOnlySpan<ShadowCascade> cascades,
         int count,
         in Camera3D eye,
         WorldScene? scene,
-        WorldRenderer? world,
-        SoldierRenderer? soldiers)
+        IWorldPresenter? world,
+        ICharacterPresenter? characters)
     {
         LastCascadeCount = 0;
 
@@ -81,13 +82,13 @@ public sealed class ShadowCasterPass
                     world.Draw(scene, lightCamera, cascades[i].Projection, cascades[i].Radius * (1f / 256f));
                 }
 
-                soldiers?.Draw(lightCamera, cascades[i].Projection);
+characters?.Draw(lightCamera, cascades[i].Projection);
 
-                // The player's own body, which is not one of the soldiers and so is not in that draw.
+                // The player's own body, which is not one of the characters and so is not in that draw.
                 // It costs a shadow only while something is showing it -- the third-person view, a ladder,
                 // a death -- and without it a character walking across open ground in third person is the
                 // one thing in the level with no shadow under it.
-                soldiers?.DrawPlayerBody(lightCamera, cascades[i].Projection);
+                characters?.DrawPlayerBody(lightCamera, cascades[i].Projection);
             }
             finally
             {

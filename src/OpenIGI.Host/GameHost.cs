@@ -4328,7 +4328,14 @@ internal sealed partial class GameHost : IDisposable
                 BeginStage();
                 if (cascadeCount > 0 && _shadowPass is not null && cascadesRead)
                 {
-                    _shadowPass.Render(cascadeStorage, cascadeCount, eye, _scene, _world, shadowCasters);
+                    // The cascades are filled through the title's presentation, not through this
+                    // host's renderer fields: the pass draws whichever game is loaded.
+                    // Named concretely because this host still knows its title; the seam is
+                    // ShadowCasterPass.Render, which takes only the presenter interfaces and so
+                    // draws whichever game supplied them. The title becomes injected in phase 1.
+                    Igi1Presentation casters = new(_world, shadowCasters);
+                    _shadowPass.Render(
+                        cascadeStorage, cascadeCount, eye, _scene, casters.World, casters.Characters);
                 }
                 EndStageIfSlow("the shadow cascades");
 
