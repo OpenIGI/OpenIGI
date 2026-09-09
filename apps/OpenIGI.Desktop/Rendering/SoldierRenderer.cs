@@ -345,6 +345,11 @@ public sealed class SoldierRenderer : IDisposable
     private bool _playerBodyActive;
     private bool _playerBodyClimbing;
     private bool _playerBodyShown;
+    private bool _playerBodyFollowing;
+    // The torso request the followed body last acted on. -1 is "none seen": PlayerCamera's counter
+    // starts at zero and only ever climbs, so this forces a re-issue the first time the follow takes
+    // the body and every time it takes it back off a ladder, a keypad or a death.
+    private int _playerBodyUpperBodySequence = -1;
     private bool _playerBodySuppressRootHeight;
     private double _playerBodyVisualLift;
     private double _playerBodyRootHeightAtStart;
@@ -4029,6 +4034,13 @@ public sealed class SoldierRenderer : IDisposable
                 ResolveFrameState(member, alpha, smooth);
             }
         }
+
+        // The player's own body is not in _groups, so it resolves here rather than in the loop -- and it
+        // has to resolve HERE rather than inside its draw, because its draw now runs once per shadow
+        // cascade as well as once for the geometry pass, and the frame bookkeeping below records what was
+        // on screen LAST frame. Doing it per draw would make a body cast three shadows' worth of history
+        // and report itself as never having moved.
+        ResolvePlayerBodyFrameState();
     }
 
     /// <summary>Computes one soldier's drawn placement, pose blend and motion for this frame.</summary>
@@ -4571,6 +4583,205 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodyShown = false;
     }
 
+    /// <summary>Gets whether the third-person view is currently placing and animating the body.</summary>
+    public bool IsPlayerBodyFollowing => _playerBodyFollowing;
+
+    /// <summary>Gets or sets whether the followed body is actually drawn this frame.</summary>
+    /// <value>
+    /// <see langword="true"/> once the camera has left the head far enough for a body to be a body
+    /// rather than the inside of a skull filling the screen.
+    /// </value>
+    /// <remarks>
+    /// Deliberately separate from <see cref="FollowPlayerBody"/>'s latch, and read per FRAME rather than
+    /// per tick. The follow keeps placing, animating and capturing the tick pair for the whole of the
+    /// move between the two views; only the draw is switched, so crossing the threshold cannot be
+    /// mistaken for the body appearing out of nowhere and reset the interpolation and temporal history
+    /// that make it move smoothly.
+    /// </remarks>
+    public bool PlayerBodyFollowVisible { get; set; } = true;
+
+    /// <summary>Raised where a round met a body, so the blood can be thrown there.</summary>
+    /// <remarks>
+    /// <c>Human</c>'s damage handler (<c>0x45F930</c>) calls the blood (<c>0x463AD0</c>) as its very
+    /// first act, <b>before</b> the invulnerability and instant-death gates and before any damage is
+    /// applied. So this is raised on contact, not on damage: a friendly round or one on an invulnerable
+    /// guard still makes it bleed, exactly as it does in the original. The first argument identifies
+    /// the body, whose two particle systems the effect runtime keeps and reuses.
+    /// </remarks>
+    public Action<object, Vector3d, Vector3f>? BloodSpray { get; set; }
+
+    /// <summary>Walks the third-person body with the player, in the clip the player's own legs are in.</summary>
+    /// <param name="feetUnits">Where the player is standing, in engine units — <c>PlayerBody.Position</c>.</param>
+    /// <param name="facing">Which way the body faces, in radians — the player's yaw.</param>
+    /// <param name="animation">
+    /// The clip the player's <see cref="HumanLocomotionAnimator"/> is playing, or
+    /// <see cref="HumanLocomotionStates.NoAnimation"/> for the states that name none.
+    /// </param>
+    /// <param name="loops">Whether that state's table entry loops.</param>
+    /// <param name="pose">
+    /// The half of the body the legs' clip does not drive — the weapon's torso animation and where the
+    /// player is looking. See <see cref="PlayerBodyPose"/>.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// <b>Called on the simulation tick, not on the frame.</b> The body's clip advances one authoring
+    /// frame per <see cref="SoldierView.Tick"/> and the player's animator advances one per tick, so
+    /// stepping it here — and only here — is what keeps the two in phase without any clock being copied
+    /// between them: the same state entered on the same tick starts the same clip at the same zero. Step
+    /// it from the draw instead and a display slower than 30 Hz walks the legs at less than the speed the
+    /// body is actually travelling, which is a character skating along the ground.
+    /// </para>
+    /// <para>
+    /// The placement is the ordinary one a soldier gets — the task position lifted by the clip's own root
+    /// height (<see cref="PlayerBodyPlacement"/>) — so a crouch sits where a crouching guard sits.
+    /// </para>
+    /// <para>
+    /// <paramref name="facing"/> is a <b>gamma</b>, not the player's yaw: the two run opposite ways, and
+    /// the caller negates. See the call site in <c>DesktopGame</c>.
+    /// </para>
+    /// </remarks>
+    public void FollowPlayerBody(Vector3d feetUnits, float facing, int animation, bool loops, in PlayerBodyPose pose)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_playerBodyView is not { } view)
+        {
+            return;
+        }
+
+        bool appearing = !_playerBodyFollowing;
+        _playerBodyFacing = facing;
+        _playerBodySuppressRootHeight = false;
+        _playerBodyVisualLift = 0.0;
+
+        if (animation != HumanLocomotionStates.NoAnimation)
+        {
+            // A no-op when the state has not changed, so holding a direction does not restart the walk
+            // every tick — the same contract the player's own animator keeps.
+            view.PlayStateAnimation(animation, loops);
+        }
+
+        // The torso, on bone 1. A new request is a new clip even when it names the one already playing,
+        // because a second shot has to restart the fire animation -- so the SEQUENCE decides, not the id.
+        if (pose.UpperBodySequence != _playerBodyUpperBodySequence)
+        {
+            _playerBodyUpperBodySequence = pose.UpperBodySequence;
+            if (pose.UpperBodyAnimation < 0)
+            {
+                view.StopUpperBodyAnimation();
+            }
+            else
+            {
+                view.PlayUpperBodyAnimation(
+                    pose.UpperBodyAnimation, pose.UpperBodyLoops, pose.UpperBodyBlendSeconds);
+            }
+        }
+
+        view.AimAlong(pose.AimPitch);
+        view.PlaceAt(feetUnits, Matrix3f.FromEngineEulerAngles(0f, 0f, facing));
+
+        // The mesh is uploaded from the model's REST geometry and holds no pose until something puts one
+        // in it, so the first skin is not optional: without it the body's very first drawn frame is a rig
+        // splayed across the world. Once per simulation tick after that.
+        bool posed = !appearing;
+        if ((appearing || _playerBodySkinTick != _tick) && _playerBodyGroup?.Model is { } model)
+        {
+            view.Tick();
+            ReskinPlayerBody(view, model);
+            posed = true;
+        }
+
+        if (!posed)
+        {
+            return;
+        }
+
+        _playerBodyFollowing = true;
+        CapturePlayerBodyTickState(snap: appearing);
+        if (appearing && _playerBodyMember is { } fresh)
+        {
+            fresh.HasFrameState = false;
+        }
+    }
+
+    /// <summary>Stops following the player — the view has gone back inside their head.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>And gives the rig back.</b> The torso clip on bone 1 and the aim bend belong to the follow and
+    /// to nothing else: while the player is on a ladder, at a keypad, cutting a wire or dead, an authored
+    /// full-body clip owns the whole character, and a weapon stance left in its shoulders replaces the
+    /// half of that clip above the waist. <see cref="SoldierView.StartLadderAnimation"/> and
+    /// <see cref="SoldierView.Kill"/> release it too, so no ordering between this and them can leave the
+    /// override behind — but doing it here as well is what makes the invariant a property of the follow
+    /// rather than of a list of call sites.
+    /// </para>
+    /// <para>
+    /// Cheap to repeat: this is called on every tick the follow is not running, and both releases return
+    /// at once when there is nothing to release.
+    /// </para>
+    /// </remarks>
+    public void HidePlayerBodyFollowing()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_playerBodyFollowing)
+        {
+            return;
+        }
+
+        _playerBodyFollowing = false;
+        _playerBodyUpperBodySequence = -1;
+        _playerBodyView?.ReleaseUpperBody();
+    }
+
+    /// <summary>Where the third-person body's hand is this frame, for the weapon it is holding.</summary>
+    /// <returns>
+    /// The hand bone's world placement in engine units, or <see langword="null"/> when no body is being
+    /// followed or the rig has no such bone.
+    /// </returns>
+    /// <remarks>
+    /// <see cref="HumanAttachPoints.ThirdPersonWeapon"/> — bone 22, the arm <c>0x4600C0</c> resolves for
+    /// a body seen from outside, which is the same bone a guard's rifle rides. Interpolated between the
+    /// same two ticks the body itself is drawn between, or the gun steps at 30 Hz in a hand that glides.
+    /// </remarks>
+    public BoneAttachment? PlayerBodyHandAttachment()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_playerBodyFollowing || _playerBodyView is not { } view || _playerBodyMember is not { } member)
+        {
+            return null;
+        }
+
+        BonePose pose = view.UnrotatedPose();
+        if (HumanAttachPoints.ThirdPersonWeapon >= pose.BoneCount)
+        {
+            return null;
+        }
+
+        Vector3f hand = pose.Positions[HumanAttachPoints.ThirdPersonWeapon];
+        Matrix3f handRotation = pose.Rotations[HumanAttachPoints.ThirdPersonWeapon];
+        if (_frameSmooth && member.HasHandState)
+        {
+            hand = member.PrevTickHandPosition + ((member.TickHandPosition - member.PrevTickHandPosition) * _frameAlpha);
+            handRotation = PresentationBlend.InterpolateRotation(
+                member.PrevTickHandRotation, member.TickHandRotation, _frameAlpha);
+        }
+
+        (Vector3d where, Matrix3f orientation) = PlayerBodyPlacement();
+        if (_frameSmooth && _playerBodyHasTickState)
+        {
+            where = PresentationBlend.Lerp(_playerBodyPrevTickWhere, _playerBodyTickWhere, _frameAlpha);
+        }
+
+        // M . v — the palette's own convention — is the transpose of the row-vector Transform, the same
+        // turn DrawWeapon applies to a soldier's hand.
+        Vector3f turned = orientation.Transposed().Transform(hand);
+        return new BoneAttachment(
+            new Vector3d(
+                (where.X * WorldScene.UnitsPerMetre) + turned.X,
+                (where.Y * WorldScene.UnitsPerMetre) + turned.Y,
+                (where.Z * WorldScene.UnitsPerMetre) + turned.Z),
+            orientation * handRotation);
+    }
+
     /// <summary>Starts the third-person body in one of IGI1's ladder animation states.</summary>
     /// <param name="animation">The state's authored clip.</param>
     /// <param name="loops">Whether the clip loops.</param>
@@ -4869,8 +5080,70 @@ public sealed class SoldierRenderer : IDisposable
 
         // A second capture in the same tick only refines the current state; the previous one stands.
         _playerBodyTickWhere = where;
+
+        // The hand the third-person weapon rides, captured in the same pair and by the same rules a
+        // soldier's is (ResolveTickState). Only the followed body needs it: the death and ladder paths
+        // draw no weapon, and asking a posed rig for a bone it has costs one array read.
+        if (_playerBodyFollowing
+            && _playerBodyMember is { } member
+            && HumanAttachPoints.ThirdPersonWeapon < view.UnrotatedPose().BoneCount)
+        {
+            BonePose pose = view.UnrotatedPose();
+            Vector3f hand = pose.Positions[HumanAttachPoints.ThirdPersonWeapon];
+            Matrix3f rotation = pose.Rotations[HumanAttachPoints.ThirdPersonWeapon];
+            bool fresh = snap || !member.HasHandState;
+            member.PrevTickHandPosition = fresh
+                ? hand
+                : _playerBodyCaptureTick != _tick ? member.TickHandPosition : member.PrevTickHandPosition;
+            member.PrevTickHandRotation = fresh
+                ? rotation
+                : _playerBodyCaptureTick != _tick ? member.TickHandRotation : member.PrevTickHandRotation;
+            member.TickHandPosition = hand;
+            member.TickHandRotation = rotation;
+            member.HasHandState = true;
+        }
+
         _playerBodyCaptureTick = _tick;
         _playerBodyHasTickState = true;
+    }
+
+    /// <summary>Settles where the player's own body is drawn this frame, and what it moved from.</summary>
+    /// <remarks>
+    /// <para>
+    /// The <see cref="ResolveFrameState"/> a soldier gets, for the one body that is not in a group. Its
+    /// placement is a ladder position or a fall or a walk — <see cref="PlayerBodyPlacement"/> knows which
+    /// — interpolated between the last two tick captures exactly as a guard's is.
+    /// </para>
+    /// <para>
+    /// A body normally sits at its clip's own root height (<c>Human+1300</c>), which for a fall, a stand
+    /// or a wire interaction is part of the authored placement. A ladder position is not: IGI1 writes the
+    /// human task root itself (bottom + 3915.776 vertically) and clip 168's lowest foot is authored at
+    /// −4128.768, which put the foot at ground height already, so adding a pose-derived pelvis lift there
+    /// duplicates the mount offset and starts Jones a body-height above the first rung. That case clears
+    /// the lift rather than being special-cased here.
+    /// </para>
+    /// </remarks>
+    private void ResolvePlayerBodyFrameState()
+    {
+        if (_playerBodyView is null || _playerBodyMember is not { } member)
+        {
+            return;
+        }
+
+        (Vector3d where, Matrix3f orientation) = PlayerBodyPlacement();
+        if (_frameSmooth && _playerBodyHasTickState)
+        {
+            where = PresentationBlend.Lerp(_playerBodyPrevTickWhere, _playerBodyTickWhere, _frameAlpha);
+        }
+
+        member.PreviousDrawn = member.HasFrameState ? (member.DrawnWhere, member.DrawnOrientation) : null;
+        member.DrawnWhere = where;
+        member.DrawnOrientation = orientation;
+        member.PreviousPoseBlend = member.PoseFlippedSinceFrame ? 1f : member.PoseBlend;
+        member.PoseBlend = _frameSmooth ? 1f - _frameAlpha : 0f;
+        member.PoseFlippedSinceFrame = false;
+        member.NoHistoryThisFrame = !member.HasFrameState;
+        member.HasFrameState = true;
     }
 
     /// <summary>Draws the player's third-person body, when it is active — what the death camera looks at.</summary>
@@ -4884,8 +5157,11 @@ public sealed class SoldierRenderer : IDisposable
     public void DrawPlayerBody(in Camera3D camera, in Matrix4f projection)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!(_playerBodyActive || _playerBodyClimbing || _playerBodyShown)
-            || _playerBodyView is not { } view
+        if (!(_playerBodyActive
+                || _playerBodyClimbing
+                || _playerBodyShown
+                || (_playerBodyFollowing && PlayerBodyFollowVisible))
+            || _playerBodyView is null
             || _playerBodyMember is not { } member
             || _playerBodyGroup is not { } group)
         {
@@ -4896,33 +5172,7 @@ public sealed class SoldierRenderer : IDisposable
         _device.SetCullMode(CullMode.None);
         _device.SetDepthState(DepthState.TestAndWrite);
 
-        // A body is normally shifted by its clip's root height (Human+1300), which for a fall, stand or
-        // wire interaction is part of the authored placement. A ladder position is different: IGI1 writes the human task
-        // root itself (bottom + 3915.776 vertically), and clip 168's lowest foot is authored at -4128.768.
-        // Those values put the foot at ground height already. Adding a pose-derived pelvis lift here
-        // duplicates the mount offset and starts Jones roughly one body-height above the first rung.
-        //
-        // The tick capture (CapturePlayerBodyTickState) computes exactly this per tick; frames between
-        // ticks draw between the last two captures, the same smoothing a soldier gets.
-        (Vector3d where, Matrix3f orientation) = PlayerBodyPlacement();
-
-        if (_frameSmooth && _playerBodyHasTickState)
-        {
-            where = PresentationBlend.Lerp(_playerBodyPrevTickWhere, _playerBodyTickWhere, _frameAlpha);
-        }
-
-        // The same frame bookkeeping a soldier gets from ResolveFrameState, done here because this
-        // body draws once per frame and in no other pass.
-        member.PreviousDrawn = member.HasFrameState ? (member.DrawnWhere, member.DrawnOrientation) : null;
-        member.DrawnWhere = where;
-        member.DrawnOrientation = orientation;
-        member.PreviousPoseBlend = member.PoseFlippedSinceFrame ? 1f : member.PoseBlend;
-        member.PoseBlend = _frameSmooth ? 1f - _frameAlpha : 0f;
-        member.PoseFlippedSinceFrame = false;
-        member.NoHistoryThisFrame = !member.HasFrameState;
-        member.HasFrameState = true;
-
-        Matrix4f modelView = camera.CreateModelView(where, orientation);
+        Matrix4f modelView = camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation);
 
         _device.SetPoseInterpolation(member.PoseBlend, member.PreviousPoseBlend);
 
@@ -4984,6 +5234,8 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodyActive = false;
         _playerBodyClimbing = false;
         _playerBodyShown = false;
+        _playerBodyFollowing = false;
+        _playerBodyUpperBodySequence = -1;
         _playerBodyVisualLift = 0.0;
         _playerBodyRootHeightAtStart = 0.0;
         _playerBodyHasTickState = false;
@@ -5387,6 +5639,20 @@ public sealed class SoldierRenderer : IDisposable
         if (struck is null)
         {
             return false;
+        }
+
+        // 0x45F94A, before anything else the damage handler does.
+        if (BloodSpray is { } bleed)
+        {
+            Vector3d line = end - origin;
+            double length = line.Length;
+            bleed(
+                (object?)struckView ?? struck,
+                hit.Position,
+                length > 1e-6
+                    ? new Vector3f(
+                        (float)(line.X / length), (float)(line.Y / length), (float)(line.Z / length))
+                    : default);
         }
 
         // The soldier's brain carries two flags the damage handler 0x45D3C0 reads: invulnerability skips

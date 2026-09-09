@@ -174,7 +174,9 @@ public sealed class RetailInteractionInventoryTests
             stationaryGun: stationaryGun,
             localBoundsMinimum: default,
             localBoundsMaximum: default,
-            hasLocalBounds: false);
+            hasLocalBounds: false,
+            markerPoint: default,
+            markerLocal: default);
         object aiOwner = new();
         Assert.True(stationaryGun.TryMount(aiOwner));
 

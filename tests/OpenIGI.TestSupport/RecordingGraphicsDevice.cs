@@ -510,6 +510,11 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// </remarks>
     public bool SunShadowTraced { get; set; }
 
+    /// <inheritdoc/>
+    /// <remarks>One unless a test says otherwise: this double resolves nothing, so a colour written
+    /// through it means what it says.</remarks>
+    public float SceneExposure { get; set; } = 1f;
+
     /// <summary>The shadow casters submitted, in order.</summary>
     public List<(MeshHandle Mesh, Matrix4f ModelView, int IndexCount)> ShadowCasters { get; } = [];
 

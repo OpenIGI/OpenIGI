@@ -73,12 +73,31 @@ public static class RenderCVars
         high: "0.45",
         ultra: "0.45");
 
-    /// <summary>How rich the particle burst where a round lands is, or 0 for none.</summary>
+    /// <summary>Whether the original's own impact effects are drawn.</summary>
     /// <remarks>
-    /// A remaster addition: sparks and dust composed from the material table's own row for the
-    /// struck surface — metal showers sparks, dirt breathes a slow brown plume, a body a brief red
-    /// mist. One is the authored look, two doubles the particle counts, and vanilla pins zero
-    /// because the original drew nothing of the kind.
+    /// <b>Retail behaviour, on everywhere including vanilla.</b> The <c>GunShotEffect</c> a struck
+    /// material names (<c>0x438440</c>) — a puff of <c>concrete1.spr</c> half the time and two to four
+    /// chips of the material's own model — and the blood a body throws (<c>0x463AD0</c>), which is
+    /// separately gated by the game's own blood option. This exists to be turned off for diagnosis,
+    /// not for taste; <see cref="ImpactParticles"/> is the remaster's extra burst on top.
+    /// </remarks>
+    public static readonly BoolCVar ImpactEffects = Presets.Define(
+        CVar.Bool(
+            "r_impact_effects",
+            true,
+            CVarOptions.Archive,
+            "Draw the original's impact dust, surface chips and blood."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>How rich the extra remaster particle burst where a round lands is, or 0 for none.</summary>
+    /// <remarks>
+    /// A remaster addition <b>on top of</b> <see cref="ImpactEffects"/>: sparks and dust composed from
+    /// the material table's own row for the struck surface — metal showers sparks, dirt breathes a slow
+    /// brown plume, a body a brief red mist. One is the authored look, two doubles the particle counts,
+    /// and vanilla pins zero so a vanilla run shows the original's effects and nothing else.
     /// </remarks>
     public static readonly NumericCVar<float> ImpactParticles = Presets.Define(
         CVar.Float(
@@ -3028,6 +3047,32 @@ public static class RenderCVars
             true,
             CVarOptions.Archive,
             "Draw the remaster HUD. Off uses IGI1's original health, weapon, action and timer display."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Whether a usable object is marked in the world rather than captioned across the screen.</summary>
+    /// <remarks>
+    /// <para>
+    /// The modern presentation of the same offer: a key badge pinned to the door, cabinet or ladder the
+    /// activation scan resolved, carrying the control the player actually has bound, the action's name,
+    /// and — for the timed states — the hold as a ring that fills. Off returns the remaster HUD to its
+    /// single centred line of text.
+    /// </para>
+    /// <para>
+    /// Presentation only, and only while <see cref="RemasteredHud"/> is on. What can be used, from where,
+    /// and for how long is decided by the retail activation scan either way; this changes where the
+    /// player reads it. Off under vanilla with the rest of the remaster, which keeps the original's
+    /// action sprites.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar InteractionPrompt = Presets.Define(
+        CVar.Bool(
+            "r_interaction_prompt",
+            true,
+            CVarOptions.Archive,
+            "With the remaster HUD, mark usable objects in the world. Off is the centred text prompt."),
         vanilla: "0",
         enhanced: "1",
         high: "1",

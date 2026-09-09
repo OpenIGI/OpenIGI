@@ -890,6 +890,26 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     bool SunShadowTraced { get; }
 
+    /// <summary>
+    /// What the resolve is about to multiply the lit buffer by — the exposure a display-referred colour
+    /// must be divided by to survive it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A forward draw that declares itself emissive writes straight into the SCENE-REFERRED lit buffer,
+    /// which the resolve then exposes and tone maps. A colour authored in display terms and written raw
+    /// is at the mercy of the eye adaptation: in a dark scene the exposure is high, and a saturated red
+    /// sprite comes back pink because the red channel clips long before the other two stop rising.
+    /// Dividing by this lands it at the colour it was asked for whatever the scene is doing — the same
+    /// correction the first-person rig's lighting and the selection glow already take.
+    /// </para>
+    /// <para>
+    /// One on a backend or a path that draws straight to a display-encoded target, where a colour
+    /// already means what it says. Never zero.
+    /// </para>
+    /// </remarks>
+    float SceneExposure { get; }
+
     /// <summary>Creates one asynchronous occlusion query.</summary>
     OcclusionQueryHandle CreateOcclusionQuery();
 

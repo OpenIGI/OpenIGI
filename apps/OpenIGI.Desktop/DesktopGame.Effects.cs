@@ -1,5 +1,9 @@
+using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Desktop;
@@ -11,6 +15,229 @@ namespace OpenIGI.Desktop;
 /// </summary>
 internal sealed partial class DesktopGame
 {
+    /// <summary>Steps the original's impact effects, and lets its blood mark what it lands on.</summary>
+    /// <remarks>
+    /// The droplet traces are the reason this needs the world: <c>0x4640B0</c> is a collision callback,
+    /// so where a droplet stops is where the splash is stamped. The same <see cref="BulletMarks"/> the
+    /// bullet holes go into takes them, which is what makes them fade out of the world together.
+    /// </remarks>
+    private void TickRetailImpactEffects()
+    {
+        if (_player is null)
+        {
+            return;
+        }
+
+        _impactEffects.BloodEnabled = RenderCVars.ImpactEffects.Value
+            && (_configuration.Active?.BloodEnabled ?? true);
+        _impactEffects.Tick(_effectWalls ?? _player.Body.Walls, _player.Marks, _worldMaterials);
+    }
+
+    /// <summary>Runs the struck material's own <c>GunShotEffect</c> for whatever landed this tick.</summary>
+    /// <remarks>
+    /// <para>
+    /// The impact list carries both the instant rays and the ballistic arrivals, so either mode kicks
+    /// the same dust. A contact that met a human is deliberately skipped: <c>0x438458</c> asks the
+    /// struck object whether it is a Human first and drops both the dust and the chips when it is —
+    /// a body throws blood instead, which the soldier and player damage paths raise directly.
+    /// </para>
+    /// <para>
+    /// The <b>entry</b> block is the one consulted, because that is the block the shot march
+    /// (<c>0x47B750</c>) dispatches for a hit on world geometry; the second block, which every retail
+    /// row leaves flagless, is for the far side and produces only its mark.
+    /// </para>
+    /// </remarks>
+    private void SpawnRetailImpactEffects()
+    {
+        if (_player is null || _worldMaterials is null || !RenderCVars.ImpactEffects.Value)
+        {
+            return;
+        }
+
+        foreach (GunImpact impact in _player.Impacts)
+        {
+            if (!impact.HitSomething || impact.StruckHuman)
+            {
+                continue;
+            }
+
+            if (!_worldMaterials.TryGet(impact.Wall.Material, out GameMaterial? material)
+                || material is null
+                || !material.RecordsImpacts)
+            {
+                continue;
+            }
+
+            _impactEffects.SpawnSurfaceImpact(
+                impact.Wall.Position,
+                impact.Wall.Normal,
+                impact.Direction,
+                material.Entry,
+                struckHuman: false);
+        }
+    }
+
+    /// <summary>Throws one wound's blood, as <c>Human</c>'s damage handler does before anything else.</summary>
+    /// <param name="owner">The body — its two systems are kept against this and reused.</param>
+    /// <param name="position">Where the round entered, in world units.</param>
+    /// <param name="direction">The round's travel direction.</param>
+    /// <remarks>
+    /// <c>0x45F94A</c> calls the blood <b>first</b>, before the invulnerability and instant-death gates
+    /// and before any damage is applied, so a round that does nothing to a body still makes it bleed.
+    /// Callers therefore raise this on contact, not on damage.
+    /// </remarks>
+    private BloodReport SpawnRetailBlood(object owner, Vector3d position, Vector3f direction)
+    {
+        if (_player is null || !RenderCVars.ImpactEffects.Value)
+        {
+            return default;
+        }
+
+        _impactEffects.BloodEnabled = _configuration.Active?.BloodEnabled ?? true;
+        return _impactEffects.SpawnBlood(
+            owner,
+            position,
+            direction,
+            _effectWalls ?? _player.Body.Walls,
+            _player.Marks,
+            _worldMaterials);
+    }
+
+    /// <summary>Registers the commands that fire the original's impact effects by hand.</summary>
+    /// <param name="console">The console to register with.</param>
+    /// <remarks>
+    /// Diagnosis, and a capture handle: a headless run can put a dust puff, a spray of chips or a wound
+    /// exactly where the crosshair points and photograph it, which firing a weapon on a synthetic clock
+    /// cannot do reproducibly.
+    /// </remarks>
+    private void RegisterImpactCommands(ConsoleSystem console)
+    {
+        console.Commands.Add(
+            "impact_test",
+            "Runs the struck material's own GunShotEffect where the crosshair points.",
+            context =>
+            {
+                if (!TryAimedSurface(out WorldRayHit hit, out Vector3f look))
+                {
+                    context.Warn("Nothing under the crosshair, or no level is loaded.");
+                    _logger.Warning("Impact", "impact_test: nothing under the crosshair.");
+                    return;
+                }
+
+                if (_worldMaterials is null
+                    || !_worldMaterials.TryGet(hit.Material, out GameMaterial? material)
+                    || material is null)
+                {
+                    context.Warn($"Material row {hit.Material} is not in the table.");
+                    _logger.Warning("Impact", $"impact_test: material row {hit.Material} is not in the table.");
+                    return;
+                }
+
+                if (!material.RecordsImpacts)
+                {
+                    context.Print($"{material.Name} records no impact at all, so nothing is drawn.");
+                    _logger.Information("Impact", $"impact_test: {material.Name} records no impact.");
+                    return;
+                }
+
+                _player?.Marks.TryAdd(hit, _worldMaterials);
+                _impactEffects.SpawnSurfaceImpact(
+                    hit.Position, hit.Normal, look, material.Entry, struckHuman: false);
+                string where = FormattableString.Invariant(
+                    $"{hit.Distance / WorldScene.UnitsPerMetre:0.#} m");
+                string report =
+                    $"{material.Name} at {where}: {_impactEffects.Puffs.Count} dust quad(s), "
+                        + $"{_impactEffects.Fragments.Count} chip(s) of {material.Entry.Model}.";
+                context.Print(report);
+                _logger.Information("Impact", report);
+            });
+
+        console.Commands.Add(
+            "blood_test",
+            "Throws a wound's blood where the crosshair points, as a round meeting a body does.",
+            context =>
+            {
+                Camera3D eye = _inspectorEye;
+                Vector3f look = eye.Orientation.Row3;
+                Vector3d wound;
+
+                // An explicit range puts the wound that many metres down the line of sight instead of
+                // at whatever the crosshair reaches, so a capture can hold the spray at arm's length.
+                if (context.Count > 0
+                    && float.TryParse(
+                        context[0],
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out float metres))
+                {
+                    double reach = metres * WorldScene.UnitsPerMetre;
+                    Vector3d origin = eye.Position * WorldScene.UnitsPerMetre;
+                    wound = new Vector3d(
+                        origin.X + (look.X * reach),
+                        origin.Y + (look.Y * reach),
+                        origin.Z + (look.Z * reach));
+                }
+                else
+                {
+                    if (!TryAimedSurface(out WorldRayHit hit, out look))
+                    {
+                        context.Warn("Nothing under the crosshair, or no level is loaded.");
+                        _logger.Warning("Impact", "blood_test: nothing under the crosshair.");
+                        return;
+                    }
+
+                    // A metre back down the line of sight, so the spray has the three metres of room the
+                    // backstop trace wants and lands on the surface being aimed at.
+                    wound = new Vector3d(
+                        hit.Position.X - (look.X * WorldScene.UnitsPerMetre),
+                        hit.Position.Y - (look.Y * WorldScene.UnitsPerMetre),
+                        hit.Position.Z - (look.Z * WorldScene.UnitsPerMetre));
+                }
+
+                BloodReport blood = SpawnRetailBlood(context, wound, look);
+                string backstop = blood.BackstopHit
+                    ? string.Create(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        $"backstop {(_worldMaterials is { } rows && rows.TryGet(blood.BackstopMaterial, out GameMaterial? row) && row is not null ? row.Name : blood.BackstopMaterial.ToString(System.Globalization.CultureInfo.InvariantCulture))}"
+                            + $" at {blood.BackstopDistanceUnits / WorldScene.UnitsPerMetre:0.##} m, "
+                            + $"{(blood.BackstopMarked ? "splashed" : "no splash -- that row marks nothing")}")
+                    : "nothing within three metres behind the wound";
+                int droplets = 0;
+                foreach (BloodSystems systems in _impactEffects.Blood.Values)
+                {
+                    droplets += systems.Droplets.Count;
+                }
+
+                string report = _impactEffects.BloodEnabled
+                    ? $"{droplets} droplet(s) in the air from {_impactEffects.Blood.Count} body(ies), "
+                        + $"{_player?.Marks.TotalAdded ?? 0} mark(s) recorded; {backstop}."
+                    : "Blood is switched off, in the game options or by r_impact_effects.";
+                context.Print(report);
+                _logger.Information("Impact", report);
+            });
+    }
+
+    /// <summary>Casts the frame's own eye at the world, for the impact commands.</summary>
+    /// <param name="hit">Receives the surface under the crosshair.</param>
+    /// <param name="look">Receives the direction looked along, unit length.</param>
+    /// <returns><see langword="false"/> when nothing is in front of the camera.</returns>
+    private bool TryAimedSurface(out WorldRayHit hit, out Vector3f look)
+    {
+        hit = default;
+        Camera3D eye = _inspectorEye;
+        Vector3f forward = eye.Orientation.Row3;
+        look = forward;
+
+        if (_effectWalls is not { } walls)
+        {
+            return false;
+        }
+
+        Vector3d origin = eye.Position * WorldScene.UnitsPerMetre;
+        Vector3d end = origin + (new Vector3d(forward.X, forward.Y, forward.Z) * (60.0 * WorldScene.UnitsPerMetre));
+        return walls(origin, end, out hit);
+    }
+
     /// <summary>Shows one blast's fireball: the real retail explosion when its texture is loaded.</summary>
     /// <param name="positionUnits">The blast centre, in world units.</param>
     /// <param name="intensity">The size and count scale; one is the grenade/missile fireball.</param>

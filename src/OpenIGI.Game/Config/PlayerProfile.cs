@@ -534,6 +534,32 @@ public static class PlayerProfileInputBindings
     public static bool WasPressed(PlayerProfile? profile, InputState input, string action) =>
         Resolve(profile, input, action, pressed: true);
 
+    /// <summary>Names the control an action is bound to, for an interface that has to show it.</summary>
+    /// <param name="profile">The player's profile, or <see langword="null"/> for the shipped defaults.</param>
+    /// <param name="action">The action's config name, as <c>PlayerInputBindings.ConfigName</c> spells it.</param>
+    /// <returns>The first bound control's display name, or <see langword="null"/> when nothing is bound.</returns>
+    /// <exception cref="ArgumentException"><paramref name="action"/> is empty.</exception>
+    /// <remarks>
+    /// The first binding wins, which is the same one <see cref="IsDown"/> would find first: a prompt has
+    /// room for one key, and showing a key the player has rebound away from would be worse than showing
+    /// none. Unbinding an action leaves the caller to decide what to print instead.
+    /// </remarks>
+    public static string? BoundKeyName(PlayerProfile? profile, string action)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(action);
+
+        IReadOnlyList<InputBinding> bindings = profile?.Bindings ?? PlayerProfile.DefaultBindings;
+        foreach (InputBinding binding in bindings)
+        {
+            if (string.Equals(binding.Action, action, StringComparison.OrdinalIgnoreCase))
+            {
+                return InputBindingKeyNames.DisplayName(binding);
+            }
+        }
+
+        return null;
+    }
+
     private static bool Resolve(PlayerProfile? profile, InputState input, string action, bool pressed)
     {
         ArgumentNullException.ThrowIfNull(input);

@@ -30,11 +30,14 @@ public sealed class BulletImpactTests
     }
 
     [Fact]
-    public void ADeflectedRoundNeverLeavesAnExitMark()
+    public void ADeflectedRoundLeavesExitMarksThroughout()
     {
-        // Checked first, so it overrides both of the other cases however many surfaces followed.
-        Assert.True(BulletImpact.ClassifyEntry(4, impactCount: 5, hasDeflected: true, normalDotTravel: 1f));
-        Assert.True(BulletImpact.ClassifyEntry(0, impactCount: 1, hasDeflected: true, normalDotTravel: 1f));
+        // 0x47C262 tests the deflection latch first and jumps straight to the exit answer, so a round
+        // that glanced marks the DENT on every surface it met however many followed. Reading this the
+        // other way round put a bullet hole where the original puts a dent.
+        Assert.False(BulletImpact.ClassifyEntry(4, impactCount: 5, hasDeflected: true, normalDotTravel: 1f));
+        Assert.False(BulletImpact.ClassifyEntry(0, impactCount: 1, hasDeflected: true, normalDotTravel: 1f));
+        Assert.False(BulletImpact.ClassifyEntry(1, impactCount: 5, hasDeflected: true, normalDotTravel: -1f));
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Desktop.Configuration;
+using OpenIGI.Game;
 using OpenIGI.Rendering;
 using Xunit;
 
@@ -32,6 +33,10 @@ public sealed class DefaultBindTests
     {
         // Forces the render variables to register, so the registry can be asked about them.
         _ = RenderCVars.Lighting;
+
+        // And the gameplay ones, which live in another assembly and another static constructor: the
+        // third-person view is bound by default, so the rule below has to be able to see it.
+        _ = GameplayCVars.ThirdPerson;
 
         List<string> archived = [];
         foreach ((string key, string statement) in DefaultBinds.All)

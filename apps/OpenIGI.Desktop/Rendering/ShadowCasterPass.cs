@@ -82,6 +82,12 @@ public sealed class ShadowCasterPass
                 }
 
                 soldiers?.Draw(lightCamera, cascades[i].Projection);
+
+                // The player's own body, which is not one of the soldiers and so is not in that draw.
+                // It costs a shadow only while something is showing it -- the third-person view, a ladder,
+                // a death -- and without it a character walking across open ground in third person is the
+                // one thing in the level with no shadow under it.
+                soldiers?.DrawPlayerBody(lightCamera, cascades[i].Projection);
             }
             finally
             {

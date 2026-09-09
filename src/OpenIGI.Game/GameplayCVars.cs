@@ -208,6 +208,75 @@ public static class GameplayCVars
         CVarOptions.Archive,
         "Play the struck material's own impact sound for hit-scan and ballistic rounds.");
 
+    /// <summary>Whether the player is drawn from behind rather than through their own eyes.</summary>
+    /// <remarks>
+    /// <para>
+    /// Presentation only, and deliberately so: the eye the shot is fired from, the ear the world is
+    /// heard through and everything the simulation records stay exactly where the first-person view put
+    /// them. Only the point the frame is rasterised from moves, and the character the original always
+    /// carried — the body <see cref="Player.HumanPlayerBody"/> describes, the one the death camera
+    /// reveals — is drawn instead of the arms.
+    /// </para>
+    /// <para>
+    /// <b>Not archived, on purpose.</b> A default key is bound to it (<c>DefaultBinds</c>), and the one
+    /// rule that table has is that a key the game binds for itself must not decide what the game starts
+    /// as tomorrow. A view the player flipped to while looking at a jump is not a setting they saved.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar ThirdPerson = CVar.Bool(
+        "g_thirdperson",
+        false,
+        CVarOptions.None,
+        "Draw the player from behind instead of through their own eyes.");
+
+    /// <summary>How far behind the head the third-person eye settles, in metres.</summary>
+    public static readonly NumericCVar<float> ThirdPersonDistance = CVar.Float(
+        "g_thirdperson_distance",
+        2.6f,
+        0.5f,
+        8f,
+        CVarOptions.Archive,
+        "How far behind the player the third-person camera sits, in metres.");
+
+    /// <summary>How far to the player's right the third-person eye sits, in metres.</summary>
+    /// <remarks>
+    /// The shoulder offset is what keeps the character out of the middle of the frame. It costs a
+    /// truthful centred crosshair — the round still leaves the eye, which is no longer on the camera's
+    /// own axis — which is why the remaster HUD projects the aim point rather than drawing a cross at
+    /// the centre of the screen. Zero puts the camera exactly on the eye's sight line, where the two
+    /// coincide again.
+    /// </remarks>
+    public static readonly NumericCVar<float> ThirdPersonShoulder = CVar.Float(
+        "g_thirdperson_shoulder",
+        0.55f,
+        -2f,
+        2f,
+        CVarOptions.Archive,
+        "How far right of the player the third-person camera sits, in metres. 0 centres it behind them.");
+
+    /// <summary>How far above the eye the third-person camera sits, in metres.</summary>
+    public static readonly NumericCVar<float> ThirdPersonHeight = CVar.Float(
+        "g_thirdperson_height",
+        0.25f,
+        -1f,
+        2f,
+        CVarOptions.Archive,
+        "How far above the player's eye the third-person camera sits, in metres.");
+
+    /// <summary>How long the move between the two views takes, in seconds.</summary>
+    /// <remarks>
+    /// The whole point of the feature having a number at all: the camera travels the arc between the eye
+    /// and the shoulder over this long, with zero velocity and zero acceleration at both ends, so
+    /// neither entering nor leaving the view is a cut. Zero is the cut, for anyone who wants one.
+    /// </remarks>
+    public static readonly NumericCVar<float> ThirdPersonBlend = CVar.Float(
+        "g_thirdperson_blend",
+        0.35f,
+        0f,
+        2f,
+        CVarOptions.Archive,
+        "How long the camera takes to travel between the first- and third-person views, in seconds.");
+
     /// <summary>Wires the profile variable to the values it stands for.</summary>
     /// <remarks>
     /// A static constructor rather than a registry, the same way <c>AudioCVars</c> does it and for the

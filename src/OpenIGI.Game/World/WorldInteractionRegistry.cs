@@ -27,7 +27,11 @@ public sealed class WorldInteraction
     private readonly Vector3d _authoredAnchor;
     private readonly Vector3d _authoredEnd;
     private Func<Vector3d>? _dynamicOffset;
+    private Func<float, Vector3d>? _presentedOffset;
     private Vector3d _offset;
+    private readonly PlacedDoor? _placedDoor;
+    private readonly Vector3d _authoredMarker;
+    private readonly Vector3d _markerLocal;
 
     internal WorldInteraction(
         DeclaredTask task,
@@ -38,22 +42,26 @@ public sealed class WorldInteraction
         float facing,
         int durationTicks,
         string actionSprite,
-        DoorState? door,
+        PlacedDoor? door,
         bool isPickable,
         AiStationaryGun? stationaryGun,
         Vector3d localBoundsMinimum,
         Vector3d localBoundsMaximum,
-        bool hasLocalBounds)
+        bool hasLocalBounds,
+        Vector3d markerPoint,
+        Vector3d markerLocal)
     {
         Task = task;
         Type = type;
+        _placedDoor = door;
+        _authoredMarker = markerPoint;
+        _markerLocal = markerLocal;
         _authoredAnchor = anchor;
         _authoredEnd = end;
         Orientation = orientation;
         Facing = facing;
         DurationTicks = durationTicks;
         ActionSprite = actionSprite;
-        Door = door;
         IsPickable = isPickable;
         StationaryGun = stationaryGun;
         LocalBoundsMinimum = localBoundsMinimum;
@@ -69,7 +77,7 @@ public sealed class WorldInteraction
     public float Facing { get; }
     public int DurationTicks { get; }
     public string ActionSprite { get; }
-    public DoorState? Door { get; }
+    public DoorState? Door => _placedDoor?.State;
     /// <summary>Whether a locked door allows the player to pick its lock.</summary>
     public bool IsPickable { get; }
     public AiStationaryGun? StationaryGun { get; }
@@ -100,6 +108,46 @@ public sealed class WorldInteraction
         InteractionActivateType.Door => !IsLocked || IsPickable,
         _ => true,
     };
+
+    /// <summary>Where a marker for this task belongs, in world units.</summary>
+    /// <param name="from">The human's view position, for the tasks whose answer depends on it.</param>
+    /// <param name="tickBlend">How far the frame stands between the last two simulation states.</param>
+    /// <returns>A point on the thing itself.</returns>
+    /// <remarks>
+    /// <para>
+    /// The middle of the model, not the task's own origin and not <see cref="CandidatePoint"/>. An
+    /// origin is wherever the author put it — the hinge edge of a door, the floor under a terminal —
+    /// and the activation point moves with the player by design, which is exactly what a marker must
+    /// not do: it belongs to the object, and an object does not move when you take a step sideways.
+    /// </para>
+    /// <para>
+    /// A door is the exception that proves it. Its marker rides the leaf's live swing and slide, so it
+    /// stays on the door as the door moves — and only then, because the door has moved. It rides the
+    /// <em>presented</em> pose, not the tick's: everything moves on the thirty-hertz tick and is drawn
+    /// far more often than that, so a mark that reads the tick state judders along beside a door that
+    /// glides.
+    /// </para>
+    /// <para>
+    /// A fence and a wire are the other exception: they are longer than a player can use at once, so
+    /// the part of them being offered is the part being marked, which is what
+    /// <see cref="CandidatePoint"/> already answers.
+    /// </para>
+    /// </remarks>
+    public Vector3d MarkerPoint(Vector3d from, float tickBlend = 1f)
+    {
+        if (_placedDoor is { } door)
+        {
+            (Vector3d position, Matrix3f orientation) = door.PresentedPose(tickBlend, smooth: true);
+            Vector3f local = new((float)_markerLocal.X, (float)_markerLocal.Y, (float)_markerLocal.Z);
+            Vector3f swung = orientation.Transposed().Transform(local);
+            Vector3d leaf = position * WorldScene.UnitsPerMetre;
+            return new Vector3d(leaf.X + swung.X, leaf.Y + swung.Y, leaf.Z + swung.Z);
+        }
+
+        return Type is InteractionActivateType.Fence or InteractionActivateType.Wire
+            ? CandidatePoint(from)
+            : _authoredMarker + (_presentedOffset?.Invoke(tickBlend) ?? _offset);
+    }
 
     /// <summary>The nearest point offered to the shared activation resolver.</summary>
     public Vector3d CandidatePoint(Vector3d from)
@@ -407,6 +455,14 @@ public sealed class WorldInteraction
 
     internal void SetDynamicOffset(Func<Vector3d> offset) => _dynamicOffset = offset;
 
+    /// <summary>Sets where this task's marker is carried to, as the frame presents it.</summary>
+    /// <remarks>
+    /// The counterpart to <see cref="SetDynamicOffset"/>, and deliberately separate from it: the
+    /// simulation's own offset has to be the tick's exact value, because activation is decided on it,
+    /// while a marker has to sit where the object is being drawn this frame or it judders against it.
+    /// </remarks>
+    internal void SetPresentedOffset(Func<float, Vector3d> offset) => _presentedOffset = offset;
+
     internal void SetPressHandler(Action handler) => _onPress = handler;
 
     internal bool SegmentTouchesFence(Vector3d from, Vector3d to)
@@ -665,8 +721,8 @@ public sealed class WorldInteractionRegistry
                 start += new Vector3d(offset.X, offset.Y, offset.Z);
             }
 
-            DoorState? door = type == InteractionActivateType.Door
-                ? doors.Doors.FirstOrDefault(candidate => ReferenceEquals(candidate.Task, task))?.State
+            PlacedDoor? door = type == InteractionActivateType.Door
+                ? doors.Doors.FirstOrDefault(candidate => ReferenceEquals(candidate.Task, task))
                 : null;
             AiStationaryGun? stationaryGun = type == InteractionActivateType.StationaryGun
                 ? new AiStationaryGun(
@@ -684,16 +740,29 @@ public sealed class WorldInteractionRegistry
                     && models.TryGetValue(modelName, out MefModel? fenceModel)
                     ? BoundsOf(fenceModel)
                     : default;
+            // Where a marker for this task goes: the middle of its model, in the task's own frame and
+            // then in the world. Every activatable in the level has a model, and its middle is the one
+            // point unarguably on the thing; the task position is only where the author dropped its
+            // origin, which for a door is the hinge edge and for a terminal the floor beneath it.
+            (Vector3d markerPoint, Vector3d markerLocal) =
+                MarkerOf(taskPosition, orientation, start, models, modelName);
             WorldInteraction item = new(
                 declared, type, start, end, orientation, facing,
                 DurationOf(declared, type), SpriteOf(declared, type), door,
                 ReadBool(declared, "Pickable"), stationaryGun,
-                localBoundsMinimum, localBoundsMaximum, hasLocalBounds);
+                localBoundsMinimum, localBoundsMaximum, hasLocalBounds,
+                markerPoint, markerLocal);
             if (elevators is not null)
             {
                 // Interaction anchors, activation radii and player positions are engine units. The
                 // render path uses metres, so do not reuse its converted elevator displacement here.
                 item.SetDynamicOffset(() => elevators.GetCurrentDisplacementInUnits(item.Task));
+
+                // The lift's mesh is drawn between ticks; a marker on a button riding it has to be too.
+                item.SetPresentedOffset(blend =>
+                    elevators.TryGetDisplacement(item.Task, blend, smooth: true, out Vector3d metres)
+                        ? metres * WorldScene.UnitsPerMetre
+                        : elevators.GetCurrentDisplacementInUnits(item.Task));
                 if (type == InteractionActivateType.Switch)
                 {
                     item.SetPressHandler(() => elevators.RequestFromSwitch(item.Task));
@@ -885,6 +954,37 @@ public sealed class WorldInteractionRegistry
                 .Replace("STATUSSCREEN:", string.Empty, StringComparison.OrdinalIgnoreCase),
         _ => string.Empty,
     };
+
+    /// <summary>The middle of a task's model, in the world and in the model's own frame.</summary>
+    /// <remarks>
+    /// Falls back to the task's activation anchor for anything whose model is missing, which keeps a
+    /// marker on the object rather than at the origin of the level.
+    /// </remarks>
+    private static (Vector3d World, Vector3d Local) MarkerOf(
+        Vector3d taskPosition,
+        Matrix3f orientation,
+        Vector3d anchor,
+        IReadOnlyDictionary<string, MefModel> models,
+        string modelName)
+    {
+        if (!models.TryGetValue(modelName, out MefModel? model))
+        {
+            return (anchor, default);
+        }
+
+        (Vector3d minimum, Vector3d maximum, bool hasBounds) = BoundsOf(model);
+        if (!hasBounds)
+        {
+            return (anchor, default);
+        }
+
+        Vector3d local = (minimum + maximum) * 0.5;
+        Vector3f world = orientation.Transposed()
+            .Transform(new Vector3f((float)local.X, (float)local.Y, (float)local.Z));
+        return (
+            new Vector3d(taskPosition.X + world.X, taskPosition.Y + world.Y, taskPosition.Z + world.Z),
+            local);
+    }
 
     private static (Vector3d Minimum, Vector3d Maximum, bool HasBounds) BoundsOf(MefModel model)
     {

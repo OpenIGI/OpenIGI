@@ -14,6 +14,11 @@ namespace OpenIGI.Game.Weapons;
 /// <param name="Placement">The exact rendered placement struck, including an attached magic object.</param>
 /// <param name="StruckHuman">Whether the contact was a human rather than a world surface.</param>
 /// <param name="Wall">The world contact, when a surface stopped the shot.</param>
+/// <param name="Direction">
+/// Which way the round was travelling when it landed, unit length. The struck material's effect needs
+/// it: <c>0x4083C0</c> packages the direction with the contact, and <c>0x438440</c> hands it on as the
+/// axis the surface chips fly along.
+/// </param>
 /// <remarks>
 /// <para>
 /// <b>This is one cast, not the original's loop.</b> <c>0x47B750</c> keeps casting while range is left,
@@ -31,4 +36,5 @@ public readonly record struct GunImpact(
     GameTask? Owner = null,
     WorldPlacement? Placement = null,
     bool StruckHuman = false,
-    WorldRayHit Wall = default);
+    WorldRayHit Wall = default,
+    Vector3f Direction = default);

@@ -40,8 +40,9 @@ public readonly record struct BulletImpact(int MaterialTypeId, int Surface, bool
     /// Three cases, in the original's order:
     /// </para>
     /// <list type="number">
-    /// <item><description>A round that <b>deflected</b> leaves entry marks throughout — a ricochet never
-    /// produces an exit wound, however many surfaces it went on to meet.</description></item>
+    /// <item><description>A round that <b>deflected</b> leaves EXIT marks throughout — the latch at
+    /// <c>0x47C262</c> jumps straight to the exit answer for every surface a glancing round met, which
+    /// on metal and concrete is the dent rather than the hole.</description></item>
     /// <item><description>Every impact <b>but the last</b> is an entry, because the round demonstrably
     /// carried on past it.</description></item>
     /// <item><description>The <b>last</b> impact is decided by the sign of the dot product: a normal
@@ -51,12 +52,19 @@ public readonly record struct BulletImpact(int MaterialTypeId, int Surface, bool
     /// The sign test is <c>&gt; 0</c>, so a normal exactly perpendicular to the travel counts as an
     /// entry.
     /// </para>
+    /// <para>
+    /// <b>The latch is read after the whole march.</b> The original classifies its recorded impacts in
+    /// a second pass, so a round that glances off its <i>third</i> surface retroactively turns the marks
+    /// on the first two into dents as well. The live path marks each crossing as it happens and so
+    /// reads the latch as it stood at that crossing; only a round that penetrated something and then
+    /// glanced can tell the difference.
+    /// </para>
     /// </remarks>
     public static bool ClassifyEntry(int index, int impactCount, bool hasDeflected, float normalDotTravel)
     {
         if (hasDeflected)
         {
-            return true;
+            return false;
         }
 
         if (index < impactCount - 1)
