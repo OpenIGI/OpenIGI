@@ -20,6 +20,7 @@ public static class Igi2ContentModules
     [
         new Igi2ScriptVocabularyModule(),
         new Igi2TerrainContentModule(),
+        new Igi2ForestContentModule(),
     ];
 }
 
@@ -89,6 +90,33 @@ public sealed class Igi2TerrainContentModule : IContentModule
     /// Nothing to load. A terrain's tables are its own child tasks and its tiles' map files, both of
     /// which arrive with the level rather than before it.
     /// </remarks>
+    public void LoadTables(ContentLoadContext context)
+    {
+    }
+}
+
+/// <summary>The forest's task types: a stand of trees and the wind that moves it.</summary>
+/// <remarks>
+/// Without these the two types load as placeholders, so nothing knows a stand has a level id, and
+/// without the id nothing can name its <c>forest_%d.dat</c> — the placement file is named by the task
+/// rather than by a parameter, so an unrecognised task means an unreachable file.
+/// </remarks>
+public sealed class Igi2ForestContentModule : IContentModule
+{
+    /// <inheritdoc/>
+    public string Name => "Forest";
+
+    /// <inheritdoc/>
+    public void Register(ContentRegistrationContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        context.Types.Register<ForestTask>(ForestTask.TypeName);
+        context.Types.Register<WindTask>(WindTask.TypeName);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Nothing to load: a stand's placement file arrives with the level, not before it.</remarks>
     public void LoadTables(ContentLoadContext context)
     {
     }
