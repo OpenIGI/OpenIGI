@@ -39,6 +39,14 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
         new GunPickupRenderer(request.Device, request.Resources, request.Magic, request.Logger);
 
     /// <inheritdoc/>
+    public IBulletMarkPresenter CreateBulletMarks(in EffectsPresentationRequest request) =>
+        new BulletMarkRenderer(request.Device, request.Resources, request.Logger);
+
+    /// <inheritdoc/>
+    public ICameraStatusLightPresenter CreateCameraStatusLights(in EffectsPresentationRequest request) =>
+        new CameraStatusLightRenderer(request.Device, request.Logger);
+
+    /// <inheritdoc/>
     public ITerrainPresenter CreateTerrain(in TerrainPresentationRequest request) =>
         new TerrainRenderer(
             request.Device,

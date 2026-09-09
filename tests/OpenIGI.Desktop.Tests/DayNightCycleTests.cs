@@ -1,3 +1,4 @@
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Desktop;
 using OpenIGI.Game.World;

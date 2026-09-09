@@ -1,12 +1,16 @@
-using OpenIGI.Game.Player;
-using OpenIGI.Presentation.Cameras;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Game.Player;
 
 /// <summary>The result of the port's current electric-fence contact rule.</summary>
-internal readonly record struct ElectricFenceShock(float Damage, bool IsLethal);
+public readonly record struct ElectricFenceShock(float Damage, bool IsLethal);
 
 /// <summary>Retail electric-fence contact handling for the player.</summary>
+/// <remarks>
+/// Gameplay, not presentation: a damage factor, a cooldown and the zone the shock lands on. It sat
+/// among the renderers only because the code that calls it does, and it moved here — beside
+/// <see cref="HumanDamage"/>, whose zone it names — the first time that folder was audited rather than
+/// inherited.
+/// </remarks>
 /// <remarks>
 /// <para>
 /// The powered fence callback at <c>0x43FF70</c> dispatches to the HumanPlayer handler at
@@ -20,23 +24,23 @@ internal readonly record struct ElectricFenceShock(float Damage, bool IsLethal);
 /// broadening the desktop game's private mission bootstrap into a test API.
 /// </para>
 /// </remarks>
-internal static class ElectricFenceContact
+public static class ElectricFenceContact
 {
     /// <summary>
     /// The dose used when the level supplies no HumanPlayer tuning — the retail argument-8 value.
     /// </summary>
-    internal const float DefaultDamageFactor = 0.5f;
+    public const float DefaultDamageFactor = 0.5f;
 
     /// <summary>The native fence-contact bookkeeping zone.</summary>
-    internal const int Zone = HumanDamage.FrontZone;
+    public const int Zone = HumanDamage.FrontZone;
 
     /// <summary>Native fence-contact lockout written by <c>0x412F80</c>.</summary>
-    internal const int CooldownTicks = 45;
+    public const int CooldownTicks = 45;
 
     /// <summary>
     /// Advances the native per-player shock guard and returns the observed fence when it may deal damage.
     /// </summary>
-    internal static T? Advance<T>(ref int cooldownTicks, T? observedContact)
+    public static T? Advance<T>(ref int cooldownTicks, T? observedContact)
         where T : class
     {
         if (cooldownTicks > 0)
@@ -52,7 +56,7 @@ internal static class ElectricFenceContact
     /// This is used by an explicit fence interaction, which happens outside the ordinary movement
     /// contact update and therefore must not decrement the once-per-tick guard itself.
     /// </remarks>
-    internal static T? TryShock<T>(ref int cooldownTicks, T? observedContact)
+    public static T? TryShock<T>(ref int cooldownTicks, T? observedContact)
         where T : class
     {
         if (observedContact is null || cooldownTicks > 0)
@@ -70,7 +74,7 @@ internal static class ElectricFenceContact
     /// The level's HumanPlayer argument 8, from <see cref="HumanPlayerParameters.ElectricFenceDose"/>.
     /// A level that retunes the player must shock it by its own number, not by the retail one.
     /// </param>
-    internal static ElectricFenceShock Shock(HumanHealth health, float damageFactor)
+    public static ElectricFenceShock Shock(HumanHealth health, float damageFactor)
     {
         ArgumentNullException.ThrowIfNull(health);
         float damage = health.ApplyDirect(Zone, damageFactor);

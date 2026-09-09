@@ -423,7 +423,7 @@ internal sealed partial class GameHost : IDisposable
     private bool _missionResultHandled;
     private int _missionFailureTicks;
     private bool _missionFailedMenu;
-    private BulletMarkRenderer? _marks;
+    private IBulletMarkPresenter? _marks;
     private TracerTrailRenderer? _tracers;
     private ImpactParticleRenderer? _impactParticles;
     private RetailImpactRenderer? _retailImpacts;
@@ -443,8 +443,8 @@ internal sealed partial class GameHost : IDisposable
     private readonly ImpactEffectRuntime _impactEffects = new();
     private ExplosionEffectRenderer? _explosions;
     private SmokeSpriteRenderer? _missileSmoke;
-    private CameraStatusLightRenderer? _cameraStatusLights;
-private IGrenadePresenter? _grenadeRenderer;
+    private ICameraStatusLightPresenter? _cameraStatusLights;
+    private IGrenadePresenter? _grenadeRenderer;
     private IMissilePresenter? _missileRenderer;
     private readonly MissileSimulation _vehicleMissiles = new();
     private LoadedMission? _loadedMissionForWeapon;

@@ -1,11 +1,11 @@
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
-using OpenIGI.Presentation.Igi1;
+using OpenIGI.Game.Igi1.World;
 using OpenIGI.TestSupport;
 using Xunit;
 
-namespace OpenIGI.Desktop.Tests;
+namespace OpenIGI.Game.Igi1.Tests;
 
 public sealed class CameraStatusLightRendererTests
 {

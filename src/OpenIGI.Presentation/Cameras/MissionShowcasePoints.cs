@@ -4,9 +4,8 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Cameras;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Presentation.Cameras;
 
 /// <summary>One place in a level worth showing behind the menu, and the orbit that frames it.</summary>
 /// <param name="Centre">The world point the orbit circles, in metres.</param>

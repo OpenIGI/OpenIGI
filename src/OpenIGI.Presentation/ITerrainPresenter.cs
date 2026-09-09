@@ -135,4 +135,14 @@ public interface ITitlePresentationProvider
     /// <param name="request">What the presenter needs.</param>
     /// <returns>The presenter.</returns>
     IGunPickupPresenter CreateGunPickups(in ViewModelPresentationRequest request);
+
+    /// <summary>Builds the presenter for the marks rounds leave on the world.</summary>
+    /// <param name="request">What the presenter needs.</param>
+    /// <returns>The presenter.</returns>
+    IBulletMarkPresenter CreateBulletMarks(in EffectsPresentationRequest request);
+
+    /// <summary>Builds the presenter for the lamps on a level's security cameras.</summary>
+    /// <param name="request">What the presenter needs.</param>
+    /// <returns>The presenter.</returns>
+    ICameraStatusLightPresenter CreateCameraStatusLights(in EffectsPresentationRequest request);
 }

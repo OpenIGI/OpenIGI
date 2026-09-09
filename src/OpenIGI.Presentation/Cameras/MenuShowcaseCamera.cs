@@ -1,7 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Presentation.Cameras;
 
 /// <summary>
 /// The slow orbital camera behind the menu, circling one location at a time and moving on to the next

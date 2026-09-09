@@ -5,7 +5,7 @@ using OpenIGI.Rendering;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Text;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
 /// Text standing in the level itself: distance-field glyphs laid on the ground at the player's start,

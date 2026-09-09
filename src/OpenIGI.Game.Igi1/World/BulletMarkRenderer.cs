@@ -1,3 +1,4 @@
+using OpenIGI.Presentation;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -7,7 +8,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Draws the marks rounds have left on the world.</summary>
 /// <remarks>
@@ -32,7 +33,7 @@ namespace OpenIGI.Presentation.Igi1;
 /// of and wrong for anything that moves. Recorded in <c>TODO.md</c>.
 /// </para>
 /// </remarks>
-public sealed class BulletMarkRenderer : IDisposable
+internal sealed class BulletMarkRenderer : IBulletMarkPresenter
 {
     private const string LogCategory = "Decal";
 

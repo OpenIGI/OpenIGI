@@ -27,7 +27,17 @@ namespace OpenIGI.Core.Tests.Architecture;
 /// world, then the first-person and projectile passes — each once an interface in
 /// <c>OpenIGI.Presentation</c> gave the host something to hold it by and
 /// <c>ITitlePresentationProvider</c> gave it something to build it with. 37 files at the start of
-/// phase 1, 28 now.
+/// phase 1, 18 now.
+/// </para>
+/// <para>
+/// <b>Not everything in there needed a seam.</b> Auditing the folder against the rule's own words —
+/// does this name an asset path, model id, task type, weapon, HUD element or mission of one game? —
+/// found eight files that were only ever there because phase 0 moved the executable wholesale: the
+/// showcase points and their file, the menu camera library and its orbit camera, the sun gizmo, the
+/// day-night cycle and the world title cards are all title-agnostic and moved <em>up</em> into
+/// <c>OpenIGI.Presentation</c>, and the electric-fence damage rule was not presentation at all and
+/// moved to <c>OpenIGI.Game</c> beside the zone table it names. Reclassifying is cheaper than
+/// abstracting, and it is the first thing to try on each remaining cluster.
 /// </para>
 /// <para>
 /// <b>How the order of the remaining moves is decided, and why two of them are not moving.</b> The
@@ -36,8 +46,7 @@ namespace OpenIGI.Core.Tests.Architecture;
 /// left, that census says:
 /// </para>
 /// <list type="bullet">
-/// <item><description>showcase, 3 files, 3 members — statics and a record, the cheapest;</description></item>
-/// <item><description>effects ~32, HUD ~38, map computer ~39, cameras ~43;</description></item>
+/// <item><description>HUD ~38, map computer ~39, the remaining cameras ~36;</description></item>
 /// <item><description><c>SoldierRenderer</c>, <b>68 of its 75 public members</b>;</description></item>
 /// <item><description><c>PlayerCamera</c>, <b>105 of its 118</b>.</description></item>
 /// </list>

@@ -1,3 +1,4 @@
+using OpenIGI.Presentation.Cameras;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;

@@ -1,3 +1,4 @@
+using OpenIGI.Presentation;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -9,7 +10,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Draws the pulsing green/red lamp attached to every retail security-camera lens.</summary>
 /// <remarks>
@@ -18,7 +19,7 @@ namespace OpenIGI.Presentation.Igi1;
 /// flips size every eight 30 Hz ticks. This renderer preserves those authored positions, colours and
 /// half-sizes as emissive camera-facing quads.
 /// </remarks>
-public sealed class CameraStatusLightRenderer : IDisposable
+internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
 {
     /// <summary>The global archive used by retail's by-name sprite loader.</summary>
     public const string SpriteArchive = "LOCAL:common/sprites/sprites.res";

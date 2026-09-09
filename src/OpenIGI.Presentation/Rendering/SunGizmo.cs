@@ -3,7 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
 /// A draggable, on-screen rotation gizmo for the sun, for the free camera.

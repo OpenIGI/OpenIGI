@@ -723,7 +723,7 @@ internal sealed partial class GameHost
         _securityCameras.BindScene(scene.Placements);
         world.SecurityCameras = _securityCameras;
         _cameraStatusLights?.Dispose();
-        _cameraStatusLights = new CameraStatusLightRenderer(_device, _logger);
+        _cameraStatusLights = _presentation.CreateCameraStatusLights(EffectsRequest());
         if (!_cameraStatusLights.Load(_fileSystem))
         {
             _cameraStatusLights.Dispose();
@@ -1917,7 +1917,7 @@ internal sealed partial class GameHost
 
                 // The in-game HUD owns its own archive, exactly as StatusScreen's constructor does.
                 _marks?.Dispose();
-                _marks = new BulletMarkRenderer(_device, _resources, _logger);
+                _marks = _presentation.CreateBulletMarks(EffectsRequest());
 
                 // The ballistic streaks, beside the marks they end in. Cheap to have around: with
                 // g_ballistics off nothing is ever spawned and Draw returns at the count check.
@@ -2594,6 +2594,9 @@ internal sealed partial class GameHost
         presenter.Materials = _materials;
         return presenter;
     }
+
+    /// <summary>The three things the small world-effect presenters are built from.</summary>
+    private EffectsPresentationRequest EffectsRequest() => new(_device, _resources, _logger);
 
     /// <summary>The four things every first-person and projectile presenter is built from.</summary>
     /// <remarks>
