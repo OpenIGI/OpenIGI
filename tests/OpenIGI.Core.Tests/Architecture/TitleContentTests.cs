@@ -22,10 +22,31 @@ namespace OpenIGI.Core.Tests.Architecture;
 /// </para>
 /// <para>
 /// <c>Presentation/Igi1</c> is exempt wholesale rather than listed file by file. It is I.G.I. 1's
-/// renderers parked where they can compile until the host stops constructing each of them by name; see
-/// the README beside them for what is holding which. The exemption disappears with the folder, and the
-/// folder empties one pass at a time: terrain went first, then the world, each once an interface gave
-/// the host something to hold it by. The characters are not next — that README records why.
+/// renderers parked where they can compile until the host stops constructing each of them by name. The
+/// exemption disappears with the folder, and the folder empties one pass at a time: terrain went first,
+/// then the world, each once an interface in <c>OpenIGI.Presentation</c> gave the host something to hold
+/// it by and <c>ITitlePresentationProvider</c> gave it something to build it with.
+/// </para>
+/// <para>
+/// <b>How the order of the remaining moves is decided, and why two of them are not moving.</b> The
+/// interface for a pass is a <em>census</em> of what the host already uses on that renderer, never an
+/// invention — the same method that retyped <c>_platform</c> and <c>_window</c> in phase 0. Run over the
+/// 34 files left, that census says:
+/// </para>
+/// <list type="bullet">
+/// <item><description>showcase, 3 files, 3 members — statics and a record, the cheapest;</description></item>
+/// <item><description>view model, 6 files, ~20 — one field and one construction each;</description></item>
+/// <item><description>effects ~32, HUD ~38, map computer ~39, cameras ~43;</description></item>
+/// <item><description><c>SoldierRenderer</c>, <b>68 of its 75 public members</b>;</description></item>
+/// <item><description><c>PlayerCamera</c>, <b>105 of its 118</b>.</description></item>
+/// </list>
+/// <para>
+/// The last two do not get interfaces. An interface covering 68 or 105 members is the class copied out
+/// with the word <c>interface</c> in front, shaped end to end by one game, which is the failure the seam
+/// exists to prevent — they are a character system and a first-person player state wearing renderers'
+/// names. They move wholesale when they can, and a shared abstraction is extracted at M2-6 against
+/// I.G.I. 2's, which is the same call the plan already makes for <c>Ai/AiSoldier.cs</c>. Only three of
+/// the 34 are blocked by anything but the host naming them: those two and the adapter over the first.
 /// </para>
 /// </remarks>
 public sealed class TitleContentTests
