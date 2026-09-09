@@ -127,6 +127,44 @@ public sealed class RetailIgi2ModelTableTests
             $"Only {byTable} of {total} placements resolved through the packs.");
     }
 
+    /// <summary>
+    /// A name the common pack contributes resolves against the common pack's own mesh list.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>MTP_ParseMTP</c> resolves a model id below <see cref="PackId.CommonBase"/> against
+    /// <c>ptMTP-&gt;tModelList</c>, and <c>ptMTP</c> is <em>the pack being parsed</em> — not the level's.
+    /// This table read every local id against the level's list regardless of which pack named the
+    /// instance, which is wrong for every name the common pack contributes: <b>2,481 of them across the
+    /// corpus, and all 2,481 landed on a different mesh.</b>
+    /// </para>
+    /// <para>
+    /// It failed quietly, which is why this test exists in this shape. The wrong index is a valid index —
+    /// <c>rsg3_1</c> came back as <c>good_sc_3</c> in level 1 and <c>410_60_3</c> in level 2, both real
+    /// meshes the level really ships — so every resolution-rate measurement kept passing at exactly the
+    /// same number. What caught it was asking the next question: a soldier arrived wearing a scenery
+    /// mesh, and that mesh's draw records named material slots the soldier's instance did not have.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void A_name_the_common_pack_contributes_resolves_against_the_common_packs_meshes()
+    {
+        string location = Path.Combine(GameDataSource.Igi2.RequireRoot(), "missions", "location1");
+        MtpPack common = MtpPack.Read(File.ReadAllBytes(Path.Combine(location, "common", "location1.mtp")));
+        MtpPack level = MtpPack.Read(File.ReadAllBytes(Path.Combine(location, "level1", "level1.mtp")));
+
+        Assert.DoesNotContain(level.Instances, i => string.Equals(i.Name, "rsg3_1", StringComparison.OrdinalIgnoreCase));
+
+        Igi2ModelTable table = Igi2ModelTable.Create(level, common);
+        Assert.True(table.TryResolveMesh("rsg3_1", out string? mesh));
+        Assert.Equal("rsg_1", mesh);
+
+        // The mesh the level's own list holds at that same index, to show the two really do disagree and
+        // that the old answer was a plausible one rather than an obvious failure.
+        Assert.True(table.TryGetInstance("rsg3_1", out MtpInstance instance));
+        Assert.Equal("good_sc_3", level.ModelNames[instance.Model.Index]);
+    }
+
     /// <summary>The sequel does use the common-pack half of a pack id, where the first game never did.</summary>
     /// <remarks>
     /// <see cref="PackId"/> records that ids at or above <see cref="PackId.CommonBase"/> address the

@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using OpenIGI.Formats.World;
 
 namespace OpenIGI.Game.Igi2.World;
@@ -33,9 +34,9 @@ public sealed class Igi2ModelTable
 {
     private readonly MtpPack _level;
     private readonly MtpPack? _common;
-    private readonly Dictionary<string, MtpInstance> _byName;
+    private readonly Dictionary<string, Entry> _byName;
 
-    private Igi2ModelTable(MtpPack level, MtpPack? common, Dictionary<string, MtpInstance> byName)
+    private Igi2ModelTable(MtpPack level, MtpPack? common, Dictionary<string, Entry> byName)
     {
         _level = level;
         _common = common;
@@ -58,18 +59,18 @@ public sealed class Igi2ModelTable
     {
         ArgumentNullException.ThrowIfNull(level);
 
-        Dictionary<string, MtpInstance> byName = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, Entry> byName = new(StringComparer.OrdinalIgnoreCase);
         if (common is not null)
         {
             foreach (MtpInstance instance in common.Instances)
             {
-                byName[instance.Name] = instance;
+                byName[instance.Name] = new Entry(instance, common);
             }
         }
 
         foreach (MtpInstance instance in level.Instances)
         {
-            byName[instance.Name] = instance;
+            byName[instance.Name] = new Entry(instance, level);
         }
 
         return new Igi2ModelTable(level, common, byName);
@@ -85,18 +86,23 @@ public sealed class Igi2ModelTable
         ArgumentNullException.ThrowIfNull(virtualModel);
 
         mesh = null;
-        if (!_byName.TryGetValue(virtualModel, out MtpInstance instance) || instance.Model.IsNone)
+        if (!_byName.TryGetValue(virtualModel, out Entry entry) || entry.Instance.Model.IsNone)
         {
             return false;
         }
 
-        MtpPack? pack = instance.Model.IsCommon ? _common : _level;
+        // A local id resolves against the pack that owns the INST record, not against the level's --
+        // MTP_ParseMTP walks ptMTP->tModelList, and ptMTP is the pack being parsed. Reading it as the
+        // level's is wrong for every instance the common pack contributes, and wrong quietly: it lands on
+        // a real mesh at that index and hands back the wrong model. It cost 358 unresolvable material
+        // slots, which is how it surfaced -- the wrong mesh named slots its instance did not have.
+        MtpPack? pack = entry.Instance.Model.IsCommon ? _common : entry.Pack;
         if (pack is null)
         {
             return false;
         }
 
-        int index = instance.Model.Index;
+        int index = entry.Instance.Model.Index;
         if (index < 0 || index >= pack.ModelNames.Count)
         {
             return false;
@@ -118,8 +124,50 @@ public sealed class Igi2ModelTable
     public bool TryGetInstance(string virtualModel, out MtpInstance instance)
     {
         ArgumentNullException.ThrowIfNull(virtualModel);
-        return _byName.TryGetValue(virtualModel, out instance);
+
+        bool found = _byName.TryGetValue(virtualModel, out Entry entry);
+        instance = entry.Instance;
+        return found;
     }
+
+    /// <summary>Gets the texture one of a placed model's material slots draws with.</summary>
+    /// <param name="virtualModel">The name a placement carries.</param>
+    /// <param name="materialSlot">The slot a mesh draw record names.</param>
+    /// <param name="texture">Receives the texture's bare name, without a path or an extension.</param>
+    /// <returns><see langword="false"/> when the slot draws untextured or names nothing the pack holds.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="virtualModel"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The walk is <see cref="MtpPack.TryGetTextureName"/>'s, shared with Project I.G.I., because both
+    /// games resolve a slot through <c>GTT</c> to <c>TEXF</c> identically. What is the sequel's own is
+    /// only <em>which</em> pack the slot is resolved against — the one that named the instance.
+    /// </remarks>
+    public bool TryResolveTexture(string virtualModel, int materialSlot, [NotNullWhen(true)] out string? texture)
+    {
+        ArgumentNullException.ThrowIfNull(virtualModel);
+
+        texture = null;
+        return _byName.TryGetValue(virtualModel, out Entry entry)
+            && entry.Pack.TryGetTextureName(entry.Instance, materialSlot, out texture);
+    }
+
+    /// <summary>Gets the resource name a texture's pixels are registered under.</summary>
+    /// <param name="texture">The bare texture name.</param>
+    /// <returns>The alias-qualified resource name.</returns>
+    /// <exception cref="ArgumentException"><paramref name="texture"/> is null or empty.</exception>
+    public static string TextureResourceName(string texture)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(texture);
+
+        return string.Create(CultureInfo.InvariantCulture, $"LOCAL:textures/{texture}.tex");
+    }
+
+    /// <summary>A named instance together with the pack that named it.</summary>
+    /// <remarks>
+    /// A slot resolves against the <c>GTT</c> and <c>TEXF</c> of the pack the instance came from, so the
+    /// two travel together. Recording it while the table is built is also what keeps a lookup a
+    /// dictionary hit instead of a scan for the name across both packs.
+    /// </remarks>
+    private readonly record struct Entry(MtpInstance Instance, MtpPack Pack);
 
     /// <inheritdoc/>
     public override string ToString() =>

@@ -53,9 +53,9 @@ public sealed class RetailWorldGoldenTests
                     Assert.False(material.Texture.IsNone);
                     Assert.InRange(material.Texture.Index, 0, pack.TextureNames.Count - 1);
 
-                    // Every GTT entry in every retail pack says "no lightmap"; object lightmaps come from
-                    // lightmaps.res instead. If this ever fails, re-read world-loading.md §3.3 first.
-                    Assert.True(material.Lightmap.IsNone, $"{Path.GetFileName(path)} has a non-null lightmap id");
+                    // Every GTT entry in every retail pack says "no palette"; nothing shipped draws a
+                    // palettised surface. If this ever fails, re-read world-loading.md §3.3 first.
+                    Assert.True(material.Palette.IsNone, $"{Path.GetFileName(path)} has a non-null palette id");
                 }
 
                 // Retail packs leave these three empty; the loader still has to handle them.

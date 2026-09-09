@@ -225,17 +225,11 @@ public sealed class LoadedPack
     /// <returns><see langword="false"/> when the record draws untextured.</returns>
     public bool TryGetTextureName(MtpInstance instance, int materialSlot, out string textureName)
     {
-        textureName = string.Empty;
-        if (!Pack.TryGetMaterial(instance, materialSlot, out MtpMaterial material)
-            || material.Texture.IsNone
-            || material.Texture.IsCommon
-            || material.Texture.Index >= Pack.TextureNames.Count)
-        {
-            return false;
-        }
-
-        textureName = Pack.TextureNames[material.Texture.Index];
-        return true;
+        // The walk itself is the pack's, not this type's: both games resolve a slot the same way, and
+        // I.G.I. 2 asks the same question of the same chunks through Igi2ModelTable.
+        bool resolved = Pack.TryGetTextureName(instance, materialSlot, out string? name);
+        textureName = name ?? string.Empty;
+        return resolved;
     }
 
     /// <summary>Builds the resource name a texture's pixels are registered under.</summary>

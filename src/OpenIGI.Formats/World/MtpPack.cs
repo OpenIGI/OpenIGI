@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using OpenIGI.Core;
 
@@ -109,7 +110,7 @@ public sealed class MtpPack
             textureNames,
             ReadNames(file, MtpTags.PaletteNames, required: false),
             materials,
-            ReadInstances(file, instanceNames, textureNames.Count));
+            ReadInstances(file, instanceNames, materials.Count));
     }
 
     /// <summary>Resolves an instance's material slot to the material it draws.</summary>
@@ -129,17 +130,49 @@ public sealed class MtpPack
             return false;
         }
 
-        int textureIndex = instance.MaterialIndices.Span[materialSlot];
-        if (textureIndex < 0 || textureIndex >= TextureNames.Count)
+        int lookup = instance.MaterialIndices.Span[materialSlot];
+        if (lookup < 0 || lookup >= Materials.Count)
         {
             material = default;
             return false;
         }
 
-        // INST carries a TEXF index directly. GTT is parallel metadata for that texture, not an
-        // indirection table whose index should be read from INST.
-        PackId lightmap = textureIndex < Materials.Count ? Materials[textureIndex].Lightmap : PackId.None;
-        material = new MtpMaterial(new PackId((uint)textureIndex), lightmap);
+        // INST carries a GTT index, and GTT carries the texture and the palette for it -- see
+        // MTP_ParseMTP (igi2.exe 0x4F5DE0), which reads both halves as gtt[2 * slot] and
+        // gtt[2 * slot + 1]. An earlier reading here took the INST value as a TEXF index directly and
+        // only indexed GTT for the palette, which is self-inconsistent; it produced the right answer
+        // because GTT's texture half is the identity mapping in all 50 packs the two games ship, which
+        // RetailMtpMaterialTests pins so the equivalence stays a measurement rather than an assumption.
+        material = Materials[lookup];
+        return !material.Texture.IsNone && material.Texture.Index < TextureNames.Count;
+    }
+
+    /// <summary>Resolves the diffuse texture a draw record samples, all the way to its name.</summary>
+    /// <param name="instance">The instance being drawn.</param>
+    /// <param name="materialSlot">The slot from the model's draw record.</param>
+    /// <param name="textureName">Receives the texture's bare name, without a path or an extension.</param>
+    /// <returns><see langword="false"/> when the record draws untextured.</returns>
+    /// <remarks>
+    /// The whole chain in one call — slot to <c>GTT</c> to <c>TEXF</c> — because both games walk it
+    /// identically and a title that resolved it itself would be reimplementing
+    /// <see cref="TryGetMaterial"/>'s other half.
+    /// <para>
+    /// A texture id addressing the common pack is refused rather than followed. The pack list a common id
+    /// would be resolved against is the resource system's, not this type's, and no retail pack in either
+    /// game ships one — <c>GTT</c>'s texture half is the identity mapping throughout, so every id is
+    /// below <see cref="PackId.CommonBase"/> by construction. A caller that one day needs the common
+    /// case has to supply the other pack, which is a signature this cannot have.
+    /// </para>
+    /// </remarks>
+    public bool TryGetTextureName(MtpInstance instance, int materialSlot, [NotNullWhen(true)] out string? textureName)
+    {
+        textureName = null;
+        if (!TryGetMaterial(instance, materialSlot, out MtpMaterial material) || material.Texture.IsCommon)
+        {
+            return false;
+        }
+
+        textureName = TextureNames[material.Texture.Index];
         return true;
     }
 
@@ -204,7 +237,7 @@ public sealed class MtpPack
         return new ReadOnlyCollection<MtpMaterial>(materials);
     }
 
-    private static ReadOnlyCollection<MtpInstance> ReadInstances(MtpFile file, ReadOnlyCollection<string> names, int textureCount)
+    private static ReadOnlyCollection<MtpInstance> ReadInstances(MtpFile file, ReadOnlyCollection<string> names, int materialCount)
     {
         MtpChunk chunk = file.GetChunk(MtpTags.Instances);
         ReadOnlyMemory<byte> payload = chunk.Payload;
@@ -235,13 +268,14 @@ public sealed class MtpPack
             for (int j = 0; j < slotCount; j++)
             {
                 uint raw = BinaryPrimitives.ReadUInt32LittleEndian(span[(offset + (4 * j))..]);
-                // INST stores TEXF indices directly. GTT is a separate table (currently used only
-                // for its lightmap field); interpreting these values as GTT indices shifts the
-                // model-to-texture mapping on packs whose two tables differ.
-                if (raw >= (uint)textureCount)
+                // A slot is an index into GTT, which is what MTP_ParseMTP indexes with it; TryGetMaterial
+                // then reads the texture and the palette out of that entry. Every retail pack gives GTT
+                // exactly as many entries as TEXF, so bounding against either accepts the same files --
+                // this bounds against the table actually indexed.
+                if (raw >= (uint)materialCount)
                 {
                     throw new PackFormatException(
-                        $"Instance '{names[i]}' slot {j} references texture {raw}, but the pack has {textureCount}.");
+                        $"Instance '{names[i]}' slot {j} references material {raw}, but the pack has {materialCount}.");
                 }
 
                 indices[j] = (int)raw;
