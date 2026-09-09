@@ -5,9 +5,11 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation.Rendering;
+using OpenIGI.Presentation;
+using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Draws every grenade in the air with its own retail model, tumbling as it flies.</summary>
 /// <remarks>
@@ -20,7 +22,7 @@ namespace OpenIGI.Presentation.Igi1;
 /// instead of spinning in place while its fuse runs down.
 /// </para>
 /// </remarks>
-internal sealed class GrenadeRenderer : IDisposable
+internal sealed class GrenadeRenderer : IGrenadePresenter
 {
     /// <summary>How fast a flying grenade tumbles, in radians per tick.</summary>
     public const float TumbleRadiansPerTick = GrenadePhysics.TumbleRadiansPerTick;

@@ -1,11 +1,16 @@
 ﻿using OpenIGI.Rendering;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>
 /// The render-side fade that raises and lowers the remastered binocular's glass lens transform.
 /// </summary>
 /// <remarks>
+/// <para>
+/// Title-agnostic, which is why it sits here rather than beside one game's renderers: it is a clamped
+/// ramp over a wall-clock delta whose only other type comes from <see cref="OpenIGI.Rendering"/>, and
+/// both games have binoculars — I.G.I. 2's levels name <c>OVERLAY_BINOCULAR</c> in their own scripts.
+/// </para>
 /// <para>
 /// This is presentation state, deliberately kept off the simulation. <c>BinocularsView</c> owns whether
 /// the device is open, but it ticks on the fixed 30 Hz clock and exposes only edges, not a continuous

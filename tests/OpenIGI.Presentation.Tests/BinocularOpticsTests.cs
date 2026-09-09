@@ -1,9 +1,8 @@
-using OpenIGI.Desktop;
-using OpenIGI.Presentation.Igi1;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using Xunit;
 
-namespace OpenIGI.Desktop.Tests;
+namespace OpenIGI.Presentation.Tests;
 
 /// <summary>
 /// The binocular glass fade (<see cref="BinocularOptics"/>) must rise on the render clock when the

@@ -93,9 +93,10 @@ public readonly record struct TerrainPresentationRequest(
 /// the only place that names either implementation, which is the property that actually matters.
 /// </para>
 /// <para>
-/// It grows one method per pass as each pass stops being constructed by the host. Terrain came first and
-/// the world followed; the characters, the view model, the HUD and the menus are what is left. The
-/// characters are the hard one — see the README beside I.G.I. 1's remaining renderers.
+/// It grows one method per pass as each pass stops being constructed by the host: terrain, then the
+/// world, then the first-person and projectile passes. The HUD, the map computer and the cameras are
+/// what is left, plus the two that are not getting interfaces at all — see the census on
+/// <c>TitleContentTests</c> for which and why.
 /// </para>
 /// </remarks>
 public interface ITitlePresentationProvider
@@ -109,4 +110,29 @@ public interface ITitlePresentationProvider
     /// <param name="request">What the presenter needs.</param>
     /// <returns>The presenter.</returns>
     IWorldPresenter CreateWorld(in WorldPresentationRequest request);
+
+    /// <summary>Builds the presenter for the arms the player sees.</summary>
+    /// <param name="request">What the presenter needs.</param>
+    /// <returns>The presenter.</returns>
+    IViewModelPresenter CreateViewModel(in ViewModelPresentationRequest request);
+
+    /// <summary>Builds the presenter for the weapon the player holds.</summary>
+    /// <param name="request">What the presenter needs.</param>
+    /// <returns>The presenter.</returns>
+    IHeldWeaponPresenter CreateHeldWeapon(in ViewModelPresentationRequest request);
+
+    /// <summary>Builds the presenter for grenades in flight.</summary>
+    /// <param name="request">What the presenter needs.</param>
+    /// <returns>The presenter.</returns>
+    IGrenadePresenter CreateGrenades(in ViewModelPresentationRequest request);
+
+    /// <summary>Builds the presenter for rockets and launched rounds in flight.</summary>
+    /// <param name="request">What the presenter needs.</param>
+    /// <returns>The presenter.</returns>
+    IMissilePresenter CreateMissiles(in ViewModelPresentationRequest request);
+
+    /// <summary>Builds the presenter for weapons lying in the world.</summary>
+    /// <param name="request">What the presenter needs.</param>
+    /// <returns>The presenter.</returns>
+    IGunPickupPresenter CreateGunPickups(in ViewModelPresentationRequest request);
 }

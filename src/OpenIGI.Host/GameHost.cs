@@ -365,8 +365,8 @@ internal sealed partial class GameHost : IDisposable
 
     // --- The player, the held weapon, the HUD and the soldiers ---
     private PlayerCamera? _player;
-    private HeldWeaponRenderer? _heldWeapon;
-    private GunPickupRenderer? _gunPickupRenderer;
+    private IHeldWeaponPresenter? _heldWeapon;
+    private IGunPickupPresenter? _gunPickupRenderer;
     private StatusScreenRenderer? _hud;
     private RemasteredHudRenderer? _remasteredHud;
     private DebugOverlayRenderer? _debugOverlay;
@@ -444,11 +444,11 @@ internal sealed partial class GameHost : IDisposable
     private ExplosionEffectRenderer? _explosions;
     private SmokeSpriteRenderer? _missileSmoke;
     private CameraStatusLightRenderer? _cameraStatusLights;
-    private GrenadeRenderer? _grenadeRenderer;
-    private MissileRenderer? _missileRenderer;
+private IGrenadePresenter? _grenadeRenderer;
+    private IMissilePresenter? _missileRenderer;
     private readonly MissileSimulation _vehicleMissiles = new();
     private LoadedMission? _loadedMissionForWeapon;
-    private ViewModelRenderer? _arms;
+    private IViewModelPresenter? _arms;
     private SoldierRenderer? _soldiers;
     private TerrainData? _playerTerrain;
     private GameMaterialRegistry? _worldMaterials;

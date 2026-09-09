@@ -8,32 +8,12 @@ using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Presentation.Igi1;
-
-/// <summary>Which of a weapon's parts one <see cref="HeldWeaponRenderer.Draw"/> call covers.</summary>
-/// <remarks>
-/// The split exists because the two kinds of part belong to different passes on the modern renderer:
-/// the gun's body is geometry, but its muzzle flame is LIGHT — additive, depth-read-only — and light
-/// drawn into the deferred G-buffer comes out shaded like scenery. That was visible as a one-frame
-/// dark square at a firing soldier's muzzle. A soldier now draws its body in the geometry and shadow
-/// passes and its flame in the forward pass; the first-person weapon draws whole in the forward pass
-/// and keeps <see cref="All"/>.
-/// </remarks>
-public enum WeaponDrawParts
-{
-    /// <summary>Every part — the first-person path, which draws entirely in the forward pass.</summary>
-    All,
-
-    /// <summary>The rigid parts only, for the geometry and shadow passes.</summary>
-    BodyOnly,
-
-    /// <summary>The muzzle flame only, for the forward pass.</summary>
-    FlameOnly,
-}
+namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Which bone of the first-person view rig one of a weapon's parts hangs off.</summary>
 /// <remarks>
@@ -104,7 +84,7 @@ public enum WeaponAttachSlot
 /// still determines where the model rests.
 /// </para>
 /// </remarks>
-public sealed class HeldWeaponRenderer : IDisposable
+internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
 {
     private const string LogCategory = "Weapon";
     private const string GunFlameTaskType = "TASKTYPE_GUNFLAME";

@@ -5,9 +5,9 @@ namespace OpenIGI.Game.Igi1;
 
 /// <summary>Builds the renderers Project I.G.I. draws with.</summary>
 /// <remarks>
-/// Two passes so far: the ground and the placed world. Each arrived when the host stopped naming its
-/// renderer, which is what lets the renderer live here; see the README beside the ones still in
-/// <c>OpenIGI.Presentation/Igi1</c> for what is holding the rest.
+/// The ground, the placed world, and the first-person and projectile passes. Each arrived when the host
+/// stopped naming its renderer, which is what lets the renderer live here; the census on
+/// <c>TitleContentTests</c> records what is holding the rest.
 /// </remarks>
 public sealed class Igi1PresentationProvider : ITitlePresentationProvider
 {
@@ -17,6 +17,26 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
     /// <inheritdoc/>
     public IWorldPresenter CreateWorld(in WorldPresentationRequest request) =>
         new WorldRenderer(request.Device, request.Resources, request.Logger);
+
+    /// <inheritdoc/>
+    public IViewModelPresenter CreateViewModel(in ViewModelPresentationRequest request) =>
+        new ViewModelRenderer(request.Device, request.Resources, request.Logger);
+
+    /// <inheritdoc/>
+    public IHeldWeaponPresenter CreateHeldWeapon(in ViewModelPresentationRequest request) =>
+        new HeldWeaponRenderer(request.Device, request.Resources, request.Magic, request.Logger);
+
+    /// <inheritdoc/>
+    public IGrenadePresenter CreateGrenades(in ViewModelPresentationRequest request) =>
+        new GrenadeRenderer(request.Device, request.Resources, request.Magic, request.Logger);
+
+    /// <inheritdoc/>
+    public IMissilePresenter CreateMissiles(in ViewModelPresentationRequest request) =>
+        new MissileRenderer(request.Device, request.Resources, request.Magic, request.Logger);
+
+    /// <inheritdoc/>
+    public IGunPickupPresenter CreateGunPickups(in ViewModelPresentationRequest request) =>
+        new GunPickupRenderer(request.Device, request.Resources, request.Magic, request.Logger);
 
     /// <inheritdoc/>
     public ITerrainPresenter CreateTerrain(in TerrainPresentationRequest request) =>

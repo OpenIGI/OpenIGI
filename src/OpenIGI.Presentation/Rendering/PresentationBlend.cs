@@ -10,7 +10,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// (see <c>RenderCVars.SmoothPresentation</c>); these are the blends that drawing needs and the game
 /// layer deliberately does not provide, because interpolation is a property of the presentation.
 /// </remarks>
-internal static class PresentationBlend
+public static class PresentationBlend
 {
     /// <summary>Interpolates a position.</summary>
     public static Vector3d Lerp(Vector3d from, Vector3d to, float t) => new(

@@ -244,7 +244,7 @@ public static class InteractionPromptPresentation
 /// </summary>
 /// <remarks>
 /// <para>
-/// State the renderer must not own, for the reason <see cref="BinocularOptics"/> does not: the fade is
+/// State the renderer must not own, for the reason <c>BinocularOptics</c> does not: the fade is
 /// measured in real seconds so it runs at the same rate at any frame rate, and it has to survive the
 /// frames when nothing is offered at all — otherwise the marker vanishes the instant the player's aim
 /// leaves the door instead of falling away from it.

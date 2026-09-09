@@ -1846,7 +1846,7 @@ internal sealed partial class GameHost
                 // The arms are the other half of what 0x4644A0 draws, and the half that needs CPU
                 // skinning: 005_01_1 is mesh format 1.
                 _arms?.Dispose();
-                _arms = new ViewModelRenderer(_device, _resources, _logger);
+                _arms = _presentation.CreateViewModel(ViewModelRequest());
                 if (!_arms.Load(loaded))
                 {
                     _arms.Dispose();
@@ -1991,20 +1991,18 @@ internal sealed partial class GameHost
 
             if (_gunPickups is { } pickups)
             {
-                _gunPickupRenderer = new GunPickupRenderer(_device, _resources, _magic, _logger)
-                {
-                    Materials = _materials,
-                };
+                _gunPickupRenderer = _presentation.CreateGunPickups(ViewModelRequest());
+                _gunPickupRenderer.Materials = _materials;
                 _gunPickupRenderer.Load(loaded, pickups);
             }
 
             // The grenades in the air, drawn with their own retail models. Loaded beside the
             // pickups because it is the same model machinery at a transform the simulation owns.
             _grenadeRenderer?.Dispose();
-            _grenadeRenderer = new GrenadeRenderer(_device, _resources, _magic, _logger);
+            _grenadeRenderer = _presentation.CreateGrenades(ViewModelRequest());
             _grenadeRenderer.Load(loaded);
             _missileRenderer?.Dispose();
-            _missileRenderer = new MissileRenderer(_device, _resources, _magic, _logger);
+            _missileRenderer = _presentation.CreateMissiles(ViewModelRequest());
             _missileRenderer.Load(loaded);
 
             EndStage("the loadout, the bullet marks and the HUD");
@@ -2551,7 +2549,7 @@ internal sealed partial class GameHost
     // and the first tick lands on entry 0 of DefineHumanPlayerWeaponCycle, stepping on until it finds
     // one that is carried. That retires the divergence this function used to carry -- see
     // the original. The renderer's model follows whatever ends up in hand.
-    private HeldWeaponRenderer? CarryLoadout(
+    private IHeldWeaponPresenter? CarryLoadout(
         PlayerCamera candidate,
         PlayerLoadout loadout,
         LoadedMission loadedMission,
@@ -2592,8 +2590,18 @@ internal sealed partial class GameHost
             }
         }
 
-        return new HeldWeaponRenderer(_device, _resources, _magic, _logger) { Materials = _materials };
+        IHeldWeaponPresenter presenter = _presentation.CreateHeldWeapon(ViewModelRequest());
+        presenter.Materials = _materials;
+        return presenter;
     }
+
+    /// <summary>The four things every first-person and projectile presenter is built from.</summary>
+    /// <remarks>
+    /// A helper because five call sites want the same value and the magic-object table is not readable
+    /// until a mission has loaded, so it cannot be cached beside the provider.
+    /// </remarks>
+    private ViewModelPresentationRequest ViewModelRequest() =>
+        new(_device, _resources, _magic, _logger);
 
     /// <summary>Puts the player through the whole death sequence, whatever killed them.</summary>
     /// <param name="from">Where the killing thing came from — the shooter's muzzle, or the blast.</param>
@@ -2815,7 +2823,7 @@ internal sealed partial class GameHost
 
     // Keeps the drawn model on whatever the cycle has put in hand. Called every frame; it only does
     // anything on the tick the weapon actually changed.
-    private void FollowHeldWeapon(PlayerCamera candidate, HeldWeaponRenderer? held, LoadedMission loadedMission)
+    private void FollowHeldWeapon(PlayerCamera candidate, IHeldWeaponPresenter? held, LoadedMission loadedMission)
     {
         if (held is null || !candidate.WeaponChanged)
         {

@@ -3,9 +3,11 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation;
+using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Draws the weapon models the level's live <c>GunPickup</c> tasks place in the world.</summary>
 /// <remarks>
@@ -13,7 +15,7 @@ namespace OpenIGI.Presentation.Igi1;
 /// world object for it. Reusing the multipart weapon renderer keeps attached slides, magazines and
 /// authored textures together, while a synthetic attachment supplies the pickup task's world transform.
 /// </remarks>
-internal sealed class GunPickupRenderer : IDisposable
+internal sealed class GunPickupRenderer : IGunPickupPresenter
 {
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;

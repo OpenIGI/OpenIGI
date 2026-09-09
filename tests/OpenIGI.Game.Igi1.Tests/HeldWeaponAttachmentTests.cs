@@ -1,3 +1,4 @@
+using OpenIGI.Presentation;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
@@ -9,12 +10,12 @@ using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
-using OpenIGI.Presentation.Igi1;
+using OpenIGI.Game.Igi1.World;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
 
-namespace OpenIGI.Desktop.Tests;
+namespace OpenIGI.Game.Igi1.Tests;
 
 /// <summary>
 /// The parts of a weapon that hang off bones of their own, and therefore animate through a reload.

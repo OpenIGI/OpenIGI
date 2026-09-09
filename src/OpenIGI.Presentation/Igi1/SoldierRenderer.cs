@@ -36,7 +36,7 @@ namespace OpenIGI.Presentation.Igi1;
 /// CPU skin runs once per distinct triple and each soldier draws that mesh at its own position and
 /// facing. The facing can live in the per-soldier model matrix because the pose is skinned with an
 /// identity root — the root rotation only ever left-multiplies every bone (see
-/// <see cref="ViewModelRenderer"/>).
+/// <see cref="IViewModelPresenter"/>).
 /// </para>
 /// </remarks>
 public sealed class SoldierRenderer : IDisposable
@@ -79,6 +79,15 @@ public sealed class SoldierRenderer : IDisposable
     private readonly List<Group> _groups = [];
     private readonly List<HeldWeapon> _weapons = [];
     private readonly Dictionary<string, HeldWeapon> _heldWeaponsByModel = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Builds a presenter for a weapon a soldier holds, or null when the host supplies none.</summary>
+    /// <remarks>
+    /// A factory rather than a type, because the renderer that draws a held weapon is title content and
+    /// lives in the title's own project: naming it here would put I.G.I. 1 content back in
+    /// <c>OpenIGI.Presentation</c>, which is what this class is waiting to leave. Null is a soldier that
+    /// draws no weapon, which is what a test harness and a backdrop both want.
+    /// </remarks>
+    private readonly Func<IHeldWeaponPresenter>? _heldWeapons;
     private readonly Dictionary<SoldierView, HumanHealth> _health = [];
     // FUN_004D9620 writes Human+0xA0 from FUN_004D0950(model), which reads the authored model bound
     // at model+0x78. This is the exact value used by the retail detector; the derived vertex radius is
@@ -392,12 +401,18 @@ public sealed class SoldierRenderer : IDisposable
     /// <param name="resources">Where texture bytes are read from.</param>
     /// <param name="logger">Where to report problems.</param>
     /// <param name="magic">The retail multipart-object table, used to attach gun-flame tasks.</param>
+    /// <param name="heldWeapons">
+    /// Builds a presenter for a weapon a soldier holds, or null for a renderer that draws none. A
+    /// factory rather than a type because the renderer behind it is title content and lives in the
+    /// title's own project.
+    /// </param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public SoldierRenderer(
         IGraphicsDevice device,
         ResourceRegistry resources,
         IIgiLogger? logger = null,
-        MagicObjectRegistry? magic = null)
+        MagicObjectRegistry? magic = null,
+        Func<IHeldWeaponPresenter>? heldWeapons = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(resources);
@@ -405,6 +420,7 @@ public sealed class SoldierRenderer : IDisposable
         _device = device;
         _resources = resources;
         _magic = magic;
+        _heldWeapons = heldWeapons;
         _logger = logger ?? NullLogger.Instance;
     }
 
@@ -1766,14 +1782,16 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         (LoadedPack? pack, MtpInstance? instance) = FindInstance(mission, modelName);
-        HeldWeaponRenderer? presentation = null;
-        if (_magic is not null)
+        IHeldWeaponPresenter? presentation = null;
+        if (_magic is not null && _heldWeapons?.Invoke() is { } candidate)
         {
-            presentation = new HeldWeaponRenderer(_device, _resources, _magic, _logger);
-            if (!presentation.Load(mission, modelName))
+            if (candidate.Load(mission, modelName))
             {
-                presentation.Dispose();
-                presentation = null;
+                presentation = candidate;
+            }
+            else
+            {
+                candidate.Dispose();
             }
         }
 
@@ -6736,7 +6754,7 @@ public sealed class SoldierRenderer : IDisposable
         MeshHandle mesh,
         MtpInstance? instance,
         LoadedPack? pack,
-        HeldWeaponRenderer? presentation)
+        IHeldWeaponPresenter? presentation)
     {
         public MeshGeometry Geometry { get; } = geometry;
 
@@ -6747,6 +6765,6 @@ public sealed class SoldierRenderer : IDisposable
         public LoadedPack? Pack { get; } = pack;
 
         /// <summary>The multipart retail object, including its transient TASKTYPE_GUNFLAME child.</summary>
-        public HeldWeaponRenderer? Presentation { get; } = presentation;
+        public IHeldWeaponPresenter? Presentation { get; } = presentation;
     }
 }

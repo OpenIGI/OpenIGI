@@ -6,9 +6,11 @@ using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation;
+using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Presentation.Igi1;
+namespace OpenIGI.Game.Igi1.World;
 
 /// <summary>Draws the player's own arms — the skinned model <c>005_01_1</c> on the first-person rig.</summary>
 /// <remarks>
@@ -24,7 +26,7 @@ namespace OpenIGI.Presentation.Igi1;
 /// idle is once. That is a port-level difference in bookkeeping, not in what is drawn.
 /// </para>
 /// </remarks>
-public sealed class ViewModelRenderer : IDisposable
+internal sealed class ViewModelRenderer : IViewModelPresenter
 {
     private const string LogCategory = "ViewModel";
 
