@@ -49,6 +49,14 @@ public static class EngineTaskTypes
     public const string Container = "Container";
 
     /// <summary>The names of the structural types, in the order the engine registers them.</summary>
+    /// <remarks>
+    /// <b>This is the set retail Project I.G.I. uses, and a title may differ.</b> What makes a type
+    /// structural is that the title's editor emits no declaration for it, which is a property of the
+    /// editor rather than of the engine: I.G.I. 2 declares <see cref="Container"/> with a parameter of
+    /// its own (<c>Exclude from lightmaps</c>) and so must not have it pre-registered, or the arity
+    /// check rejects every one of its levels. Pass the title's own set to
+    /// <see cref="Register(TaskTypeRegistry, IReadOnlyList{string})"/>.
+    /// </remarks>
     public static IReadOnlyList<string> StructuralNames { get; } =
         [Level, Static, Dynamic, Idle, CameraBase, Container];
 
@@ -57,18 +65,42 @@ public static class EngineTaskTypes
     /// <returns>The root type.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="types"/> is <see langword="null"/>.</exception>
     /// <remarks>Types already registered are left alone, so a class may claim a name before this runs.</remarks>
-    public static TaskType Register(TaskTypeRegistry types)
+    public static TaskType Register(TaskTypeRegistry types) => Register(types, StructuralNames);
+
+    /// <summary>Registers the root type and a title's structural types into a registry.</summary>
+    /// <param name="types">The registry to fill.</param>
+    /// <param name="structuralNames">The names this title's level data spawns without declaring.</param>
+    /// <returns>The root type.</returns>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="structuralNames"/> holds a name that is not structural.</exception>
+    /// <remarks>
+    /// Types already registered are left alone, so a class may claim a name before this runs. A name
+    /// left out of <paramref name="structuralNames"/> is simply not pre-registered, which is what lets
+    /// level data declare it with parameters of its own.
+    /// </remarks>
+    public static TaskType Register(TaskTypeRegistry types, IReadOnlyList<string> structuralNames)
     {
         ArgumentNullException.ThrowIfNull(types);
+        ArgumentNullException.ThrowIfNull(structuralNames);
 
         TaskType root = types.TryGet(Root, out TaskType? existing) ? existing : types.Register<RootTask>(Root);
 
-        RegisterIfAbsent<LevelTask>(types, Level, root);
-        RegisterIfAbsent<RootTask>(types, Static, root);
-        RegisterIfAbsent<DynamicTask>(types, Dynamic, root);
-        RegisterIfAbsent<RootTask>(types, Idle, root);
-        RegisterIfAbsent<ContainerTask>(types, CameraBase, root);
-        RegisterIfAbsent<ContainerTask>(types, Container, root);
+        foreach (string name in structuralNames)
+        {
+            switch (name)
+            {
+                case Level: RegisterIfAbsent<LevelTask>(types, Level, root); break;
+                case Static: RegisterIfAbsent<RootTask>(types, Static, root); break;
+                case Dynamic: RegisterIfAbsent<DynamicTask>(types, Dynamic, root); break;
+                case Idle: RegisterIfAbsent<RootTask>(types, Idle, root); break;
+                case CameraBase: RegisterIfAbsent<ContainerTask>(types, CameraBase, root); break;
+                case Container: RegisterIfAbsent<ContainerTask>(types, Container, root); break;
+                default:
+                    throw new ArgumentException(
+                        $"'{name}' is not a structural task type; the engine has no class for it.",
+                        nameof(structuralNames));
+            }
+        }
 
         return root;
     }

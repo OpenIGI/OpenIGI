@@ -31,18 +31,24 @@ public sealed class GameLoop
     /// <param name="suspension">The pause/loading/cutscene flags; defaults to none set.</param>
     /// <param name="renderer">The render scheduler; defaults to one that draws nothing.</param>
     /// <param name="logger">The logger; defaults to a sink that discards.</param>
+    /// <param name="structuralTypes">
+    /// The task types this title's level data spawns without declaring; defaults to
+    /// <see cref="EngineTaskTypes.StructuralNames"/>, which is Project I.G.I.'s set. I.G.I. 2 declares
+    /// <c>Container</c> itself and must leave it out, or the arity check rejects every level.
+    /// </param>
     public GameLoop(
         ITimeSource? time = null,
         IFlowHost? host = null,
         IFrameSuspension? suspension = null,
         IRenderScheduler? renderer = null,
-        IIgiLogger? logger = null)
+        IIgiLogger? logger = null,
+        IReadOnlyList<string>? structuralTypes = null)
     {
         _logger = logger ?? NullLogger.Instance;
         TimeSource = time ?? new SystemTimeSource();
 
         Types = new TaskTypeRegistry(_logger);
-        TaskType root = EngineTaskTypes.Register(Types);
+        TaskType root = EngineTaskTypes.Register(Types, structuralTypes ?? EngineTaskTypes.StructuralNames);
         FlowType = Types.Register(FlowTypeName, static () => new FlowTask(), root);
 
         // The system tree is created first because the flow task holds it, and it is unparented in the
