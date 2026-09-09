@@ -48,12 +48,19 @@ public sealed record GameTitle(
         ["missions", "common", "language", "menusystem"]);
 
     /// <summary>Gets I.G.I. 2: Covert Strike (2003) — known to the shell but not yet supported.</summary>
+    /// <remarks>
+    /// The data root is the installation's <c>pc</c> directory, not the directory above it: a retail
+    /// install puts <c>igi2.exe</c> in <c>pc</c> alongside <c>config.qvm</c>, <c>missions</c>,
+    /// <c>common</c>, <c>language</c> and <c>menusystem</c>. So the asset roots are those content
+    /// directories, exactly as they are for <see cref="Igi1"/>, and <c>pc</c> is not one of them — it is
+    /// the root they hang off. Checked against a retail 1.1 installation.
+    /// </remarks>
     public static GameTitle Igi2 { get; } = new(
         "igi2",
         "I.G.I. 2: Covert Strike",
         GameAvailability.Unavailable,
         "igi2.exe",
-        ["pc"]);
+        ["missions", "common", "language", "menusystem"]);
 
     /// <summary>Gets every title the shell knows about, active first.</summary>
     public static IReadOnlyList<GameTitle> All { get; } = [Igi1, Igi2];
