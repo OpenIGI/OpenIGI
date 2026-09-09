@@ -9,11 +9,10 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Cameras;
-using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using System.Runtime.InteropServices;
 
-namespace OpenIGI.Game.Igi1.World;
+namespace OpenIGI.Presentation.Rendering;
 
 /// <summary>Draws a loaded mission's static objects, uploading each model and texture the first time it is needed.</summary>
 /// <remarks>

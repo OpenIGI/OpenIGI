@@ -286,6 +286,31 @@ public sealed class WorldScene
         AttachedCount = attached;
     }
 
+    /// <summary>Builds a scene from placements a title has already resolved.</summary>
+    /// <param name="mission">The mission the placements belong to, which is what locates the lightmap archive.</param>
+    /// <param name="placements">Everything to draw, in the order the level placed it.</param>
+    /// <returns>The scene.</returns>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Build"/> walks a task tree and knows a great deal about which types Project I.G.I.
+    /// places and what their parameters are called — down to naming the security-camera models. That
+    /// walk is not shared, and neither is it needed: a title that has already worked out what it places
+    /// has nothing left to discover, and only needs somewhere to put the answer.
+    /// </para>
+    /// <para>
+    /// So this is the seam that lets one renderer draw both games. The scene, the placement and the
+    /// renderer are shared; how a level is read into placements is the title's own business.
+    /// </para>
+    /// </remarks>
+    public static WorldScene FromPlacements(LoadedMission mission, IReadOnlyList<WorldPlacement> placements)
+    {
+        ArgumentNullException.ThrowIfNull(mission);
+        ArgumentNullException.ThrowIfNull(placements);
+
+        return new WorldScene(mission, placements, [], unresolved: 0, unplaced: 0, attached: 0);
+    }
+
     /// <summary>Gets the mission the scene was built from.</summary>
     public LoadedMission Mission { get; }
 

@@ -106,8 +106,20 @@ public sealed record WorldPlacement(
     /// <summary>Gets the attached magic object's authored damage threshold.</summary>
     public float MagicExplosionDamageThreshold { get; init; }
 
+    /// <summary>Gets the archive entry name when the title knows it outright, rather than by formula.</summary>
+    /// <remarks>
+    /// The two games name the entries of the same archive differently. Project I.G.I. writes
+    /// <c>&lt;set&gt;_&lt;%05d&gt;.olm</c>, which <see cref="LightmapEntryName"/> can compute from
+    /// <see cref="LightmapSet"/> and <see cref="LightmapIndex"/>; I.G.I. 2 writes
+    /// <c>%04d_%04d_%1d.olm</c> over a task id, a model index and a level of detail, and it reads the
+    /// name out of the archive rather than rebuilding it — one of its levels registers full paths where
+    /// the other 23 register bare names, so rebuilding would work on 23 levels and fail on the 24th.
+    /// A title that has the name simply supplies it.
+    /// </remarks>
+    public string LightmapEntry { get; init; } = string.Empty;
+
     /// <summary>Gets a value indicating whether a baked lightmap covers this object.</summary>
-    public bool HasLightmap => LightmapIndex >= 0 && LightmapSet.Length > 0;
+    public bool HasLightmap => LightmapEntry.Length > 0 || (LightmapIndex >= 0 && LightmapSet.Length > 0);
 
     /// <summary>The cached result of <see cref="LightmapEntryName"/>; the inputs are init-only.</summary>
     private string? _lightmapEntryName;
@@ -119,9 +131,11 @@ public sealed record WorldPlacement(
     /// formatting it each time was a measurable share of the frame's garbage.
     /// </remarks>
     public string LightmapEntryName() =>
-        HasLightmap
-            ? _lightmapEntryName ??= $"{LightmapSet}_{LightmapIndex:D5}{ObjectLightmap.Extension}"
-            : string.Empty;
+        LightmapEntry.Length > 0
+            ? LightmapEntry
+            : HasLightmap
+                ? _lightmapEntryName ??= $"{LightmapSet}_{LightmapIndex:D5}{ObjectLightmap.Extension}"
+                : string.Empty;
 
     /// <inheritdoc/>
     public override string ToString() => $"{Instance.Name} at {Position}";

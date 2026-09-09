@@ -31,8 +31,11 @@ internal sealed class Igi2Level
     private readonly Lazy<Igi2LightmapIndex> _lightmaps;
     private readonly Lazy<IReadOnlySet<int>> _taskIds;
 
+    private readonly string _commonDirectory;
+
     private Igi2Level(string directory, string commonDirectory, GameTask root, Igi2ModelTable table)
     {
+        _commonDirectory = commonDirectory;
         Directory = directory;
         Root = root;
         Scene = Igi2WorldScene.Build(root);
@@ -76,6 +79,30 @@ internal sealed class Igi2Level
 
     /// <summary>Gets the level task id of every task the level declares one for.</summary>
     public IReadOnlySet<int> TaskIds => _taskIds.Value;
+
+    /// <summary>Gets the directory and pack name of each pack the game opens, in load order.</summary>
+    /// <returns>The four sources: the global common pack, <c>new</c>, the location's, and the level's.</returns>
+    public IEnumerable<(string Directory, string Name)> PackSources()
+    {
+        string root = GameDataSource.Igi2.RequireRoot();
+        foreach ((string directory, string name) in new[]
+                 {
+                     (Path.Combine(root, "COMMON"), "common"),
+                     (Path.Combine(root, "COMMON"), "new"),
+                     (_commonDirectory, Path.GetFileNameWithoutExtension(
+                         System.IO.Directory.Exists(_commonDirectory)
+                             ? System.IO.Directory.EnumerateFiles(_commonDirectory, "*.mtp").FirstOrDefault() ?? string.Empty
+                             : string.Empty)),
+                     (Directory, Path.GetFileNameWithoutExtension(
+                         System.IO.Directory.EnumerateFiles(Directory, "*.mtp").First())),
+                 })
+        {
+            if (name.Length > 0 && File.Exists(Path.Combine(directory, name + ".mtp")))
+            {
+                yield return (directory, name);
+            }
+        }
+    }
 
     /// <summary>Gets a value indicating whether the level ships baked object lightmaps.</summary>
     public bool HasLightmaps => File.Exists(LightmapArchivePath(Directory));

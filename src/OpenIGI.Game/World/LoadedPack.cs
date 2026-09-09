@@ -3,6 +3,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.Iff;
+using OpenIGI.Formats;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
 
@@ -87,10 +88,20 @@ public sealed class LoadedPack
     /// <param name="name">The pack name, for example <c>level1</c>.</param>
     /// <param name="resources">Where the pack's files are read from.</param>
     /// <param name="logger">The logger for load diagnostics.</param>
+    /// <param name="profile">
+    /// The title's format policy, which says which mesh versions its models may be. Defaults to Project
+    /// I.G.I.'s, which is what every existing caller wants; I.G.I. 2 ships mesh version 0.16 and is
+    /// refused outright without this, so a pack that opened with no models was the symptom.
+    /// </param>
     /// <returns>The bound pack.</returns>
     /// <exception cref="ArgumentException">A required argument is null or empty.</exception>
     /// <exception cref="EngineFatalException">The pack or one of its archives is missing or malformed.</exception>
-    public static LoadedPack Open(string directory, string name, ResourceRegistry resources, IIgiLogger? logger = null)
+    public static LoadedPack Open(
+        string directory,
+        string name,
+        ResourceRegistry resources,
+        IIgiLogger? logger = null,
+        AssetFormatProfile? profile = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(directory);
         ArgumentException.ThrowIfNullOrEmpty(name);
@@ -131,7 +142,7 @@ public sealed class LoadedPack
                 string key = BareName(entry.Name);
                 try
                 {
-                    models[key] = MefModel.Read(entry.Data);
+                    models[key] = profile is null ? MefModel.Read(entry.Data) : MefModel.Read(entry.Data, profile);
                 }
                 catch (Exception ex) when (ex is PackFormatException or IlffFormatException)
                 {
