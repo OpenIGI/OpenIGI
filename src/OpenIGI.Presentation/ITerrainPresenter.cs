@@ -1,4 +1,6 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Engine.Resources;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
@@ -99,6 +101,21 @@ public readonly record struct TerrainPresentationRequest(
 /// <c>TitleContentTests</c> for which and why.
 /// </para>
 /// </remarks>
+/// <summary>What a title needs in order to read and build its own ground.</summary>
+/// <param name="Device">The graphics device to upload through.</param>
+/// <param name="LevelRoot">The level's task tree, which is what says where the ground is and what it is made of.</param>
+/// <param name="Resources">The registry the level's files are read from.</param>
+/// <param name="Logger">Where load diagnostics go.</param>
+/// <remarks>
+/// Nothing here is title-shaped, which is the point: a title is handed the level and reads whatever its
+/// own ground happens to be, rather than being handed a ground somebody else decided the shape of.
+/// </remarks>
+public readonly record struct GroundPresentationRequest(
+    IGraphicsDevice Device,
+    GameTask LevelRoot,
+    ResourceRegistry Resources,
+    IIgiLogger Logger);
+
 /// <remarks>
 /// <para>
 /// <b>Every factory may return null, and the default is null.</b> That is the same rule
@@ -120,6 +137,30 @@ public interface ITitlePresentationProvider
     /// <param name="request">What the presenter needs.</param>
     /// <returns>The presenter.</returns>
     ITerrainPresenter? CreateTerrain(in TerrainPresentationRequest request) => null;
+
+    /// <summary>Builds the presenter for a title whose ground is not a <see cref="TerrainSurface"/>.</summary>
+    /// <param name="request">The level, and what to read it through.</param>
+    /// <returns>The presenter, or null when this title's ground arrives the other way.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Two factories, because the two grounds have nothing in common.</b> Project I.G.I.'s is a
+    /// chunked octree that the shared <see cref="TerrainSurface"/> already describes and the host
+    /// already builds — on a worker, during the menu, which is most of a mission's load cost and worth
+    /// keeping. I.G.I. 2's is a flat grid of height-map tiles that produces no such surface at all.
+    /// </para>
+    /// <para>
+    /// Widening <see cref="TerrainPresentationRequest"/> with fields one title always leaves null was
+    /// the alternative, and it is the one this interface's own remarks warned against. A title
+    /// implements whichever of the two suits its ground and leaves the other at null; the host asks for
+    /// this one first and falls back.
+    /// </para>
+    /// <para>
+    /// The asymmetry is temporary in principle: when Project I.G.I.'s surface construction moves out of
+    /// the host and into its own provider, both titles will read their ground from a level and the older
+    /// factory can retire.
+    /// </para>
+    /// </remarks>
+    ITerrainPresenter? CreateGround(in GroundPresentationRequest request) => null;
 
     /// <summary>Builds the presenter for this title's placed world objects.</summary>
     /// <param name="request">What the presenter needs.</param>

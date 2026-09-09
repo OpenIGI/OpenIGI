@@ -1,7 +1,10 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Formats.Ilff;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Presentation;
+using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -62,6 +65,79 @@ public sealed class Igi2PresentationProviderTests
         Assert.Equal(0, world.LastDrawCount);
     }
 
+    /// <summary>The provider reads and draws a real level's ground.</summary>
+    /// <remarks>
+    /// <para>
+    /// End to end through the seam the host uses: a resource registry with the level's own archives
+    /// mounted, in, and a presenter that issues additive draws, out. <c>CreateTerrain</c> stays null —
+    /// the sequel's ground is not a <c>TerrainSurface</c> — and <c>CreateGround</c> is what answers.
+    /// </para>
+    /// <para>
+    /// <b>The ground draws untextured, and that is the true state of the port.</b> A terrain material
+    /// names a full path with its own extension — <c>MISSION:textures/k_grass.jpg</c> — which resolves
+    /// to a loose JPEG beside the level's archive. 76 of those ship, against 24 <c>.tex</c>, and nothing
+    /// here decodes one. The pass therefore runs with its baked lighting and no surface, which the test
+    /// asserts rather than papers over.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void The_provider_reads_and_draws_a_levels_ground()
+    {
+        ITitlePresentationProvider provider = Igi2PresentationProvider.Instance;
+        string root = GameDataSource.Igi2.RequireRoot();
+
+        foreach (Igi2Level level in Igi2Level.All())
+        {
+            string archive = Path.Combine(level.Directory, "heightmaps", "heightmaps.res");
+            string textures = Path.Combine(level.Directory, "textures");
+            if (!File.Exists(archive) || !Directory.Exists(textures))
+            {
+                continue;
+            }
+
+            // The real tree behind the registry, because a name the level does not ship falls through
+            // to the file system -- which in the host always has a device and here must too.
+            VirtualFileSystem files = new();
+            files.RegisterDevice(new LocalFileDevice(root));
+            files.SetAlias(
+                VirtualFileSystem.MissionAlias,
+                "LOCAL:" + Path.GetRelativePath(root, level.Directory).Replace(Path.DirectorySeparatorChar, '/') + "/");
+            ResourceRegistry resources = new(files);
+            resources.Register(Igi2PresentationProvider.HeightmapArchive, File.ReadAllBytes(archive));
+            foreach (string res in Directory.EnumerateFiles(textures, "*.res"))
+            {
+                foreach (IresEntry entry in IresArchive.Read(File.ReadAllBytes(res)).Entries)
+                {
+                    resources.Register(entry.Name, entry.Data, replaceExisting: true);
+                }
+            }
+
+            RecordingGraphicsDevice device = new();
+            using ITerrainPresenter? ground = provider.CreateGround(
+                new GroundPresentationRequest(device, level.Root, resources, NullLogger.Instance));
+
+            if (ground is null)
+            {
+                // A level that declares no terrain gets no presenter, which is the honest answer.
+                continue;
+            }
+
+            ground.Draw(new TerrainFrame(default, Matrix4f.Identity, 1f, 1.6f, 0, false, false));
+
+            Assert.NotEmpty(device.MeshDraws);
+            Assert.All(device.MeshDraws, draw => Assert.Equal(BlendMode.Additive, draw.Blend));
+
+            // Chunked at the original's 10,000-index budget, not one draw per pass.
+            Assert.All(device.MeshDraws, draw => Assert.InRange(draw.IndexCount, 3, 9999));
+
+            // And untextured, for now: every terrain texture the corpus names is a JPEG.
+            Assert.All(device.MeshDraws, draw => Assert.Equal(TextureHandle.None, draw.Diffuse));
+            return;
+        }
+
+        Assert.Fail("No level shipped both terrain and textures.");
+    }
+
     /// <summary>The optional factories default to null, so a title states only what it has.</summary>
     /// <remarks>
     /// The reason <see cref="Igi2PresentationProvider"/> is thirty lines rather than two hundred. A
@@ -75,6 +151,7 @@ public sealed class Igi2PresentationProviderTests
 
         Assert.Null(empty.CreateWorld(default));
         Assert.Null(empty.CreateTerrain(default));
+        Assert.Null(empty.CreateGround(default));
         Assert.Null(empty.CreateHud(default));
     }
 

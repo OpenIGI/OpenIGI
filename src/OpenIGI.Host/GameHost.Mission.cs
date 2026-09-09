@@ -1455,8 +1455,14 @@ internal sealed partial class GameHost
             // A level whose terrain files are not live data — level 14 is exactly that — draws its objects
             // over nothing rather than following offsets into whatever the geometry blob happens to hold.
             // The surface comes from the level's own TextureModifier tasks, so it needs the loaded tree.
+            // A title whose ground it reads itself answers CreateGround; one whose ground the host
+            // already built as a TerrainSurface answers CreateTerrain. Asking in that order is what lets
+            // the two coexist without either pretending to the other's shape.
             _terrain?.Dispose();
-            _terrain = loaded.Terrain is { IsUsable: true } usable
+            _terrain = _presentation.CreateGround(
+                new GroundPresentationRequest(_device, levelRoot, _resources, _logger));
+
+            _terrain ??= loaded.Terrain is { IsUsable: true } usable
                 ? _presentation.CreateTerrain(new TerrainPresentationRequest(
                     _device, TerrainSurface.Build(usable, levelRoot, _logger), _logger, _detailMaps, null))
                 : null;
