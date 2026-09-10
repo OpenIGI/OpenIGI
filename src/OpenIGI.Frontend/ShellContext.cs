@@ -1,4 +1,4 @@
-using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Titles;
 using OpenIGI.Frontend.Saves;
 using OpenIGI.Game.Config;
@@ -26,6 +26,7 @@ public sealed class ShellContext
     /// <param name="host">The application seam for actions the shell cannot perform itself.</param>
     /// <param name="stack">The screen stack, for pushing further screens.</param>
     /// <param name="games">The game titles for the selector.</param>
+    /// <param name="activeTitleId">The id of the title running now, which is the current entry.</param>
     /// <param name="missions">The campaign's missions, resolved for display.</param>
     /// <param name="cvars">The CVar registry the settings screen binds to.</param>
     /// <param name="presets">The graphics-preset registry.</param>
@@ -37,6 +38,7 @@ public sealed class ShellContext
         IShellHost host,
         ScreenStack stack,
         IReadOnlyList<GameProfile> games,
+        string activeTitleId,
         IReadOnlyList<MissionInfo> missions,
         CVarRegistry cvars,
         GraphicsPresetRegistry presets,
@@ -47,6 +49,7 @@ public sealed class ShellContext
         ArgumentNullException.ThrowIfNull(host);
         ArgumentNullException.ThrowIfNull(stack);
         ArgumentNullException.ThrowIfNull(games);
+        ArgumentNullException.ThrowIfNull(activeTitleId);
         ArgumentNullException.ThrowIfNull(missions);
         ArgumentNullException.ThrowIfNull(cvars);
         ArgumentNullException.ThrowIfNull(presets);
@@ -57,6 +60,7 @@ public sealed class ShellContext
         Host = host;
         Stack = stack;
         Games = games;
+        ActiveTitleId = activeTitleId;
         Missions = missions;
         Cvars = cvars;
         Presets = presets;
@@ -92,6 +96,17 @@ public sealed class ShellContext
 
     /// <summary>Gets the game titles for the selector.</summary>
     public IReadOnlyList<GameProfile> Games { get; }
+
+    /// <summary>Gets the id of the title running now.</summary>
+    /// <remarks>
+    /// Which entry of <see cref="Games"/> is current, given rather than assumed to be the first: the
+    /// list is in a fixed order and the running title can be any of them. By id rather than by index,
+    /// because an index is only meaningful against a list this type does not own.
+    /// <para>
+    /// The app rebuilds this whole context when the game changes, so it is fixed for a context's life.
+    /// </para>
+    /// </remarks>
+    public string ActiveTitleId { get; }
 
     /// <summary>Gets the campaign's missions, resolved for display.</summary>
     public IReadOnlyList<MissionInfo> Missions { get; }

@@ -21,6 +21,7 @@ using OpenIGI.Game.World;
 using OpenIGI.Game;
 using OpenIGI.Host.Audio;
 using OpenIGI.Host.Configuration;
+using OpenIGI.Host.Titles;
 using OpenIGI.Host.DevTools;
 using OpenIGI.Host.Diagnostics;
 using OpenIGI.Host.Infrastructure;
@@ -69,16 +70,23 @@ internal sealed partial class GameHost : IDisposable
     private readonly IPlatformHost _platform;
     private readonly IGameWindow _window;
     private readonly IAudioDeviceFactory _audioFactory;
-    private readonly IGameTitleRuntime _titleRuntime;
-    private readonly ITitlePresentationProvider _presentation;
+    // The games this build can run. Held rather than resolved once, because the shell can change which
+    // one is running: a switch resolves a different title's four services through the same catalogue the
+    // first one came from, so there is no second path that could answer differently.
+    private readonly ITitleCatalog _titles;
+
+    // The title running NOW. Every one of these four moves together, and a switch that moved three of
+    // them would be one game's world drawn through another's renderers.
+    private IGameTitleRuntime _titleRuntime;
+    private ITitlePresentationProvider _presentation;
 
     // How this title turns a loaded level into placements. The host used to call the first game's walk
     // directly, which made it a host only that game could load a mission into.
-    private readonly ITitleWorldBuilder _worldBuilder;
+    private ITitleWorldBuilder _worldBuilder;
 
     // A factory rather than the catalogue itself, because the scan happens after the log is wrapped by
     // the developer console and the catalogue reports what it found as it goes.
-    private readonly Func<IIgiLogger, IMissionCatalogue<MissionDescriptor>> _missionCatalogue;
+    private Func<IIgiLogger, IMissionCatalogue<MissionDescriptor>> _missionCatalogue;
     /// <summary>Gets the window width, or the authored 320 when a minimize/dock race reports 0x0.</summary>
     private int SafeWindowWidth => _window.Width > 0 ? _window.Width : 320;
 
@@ -88,12 +96,20 @@ internal sealed partial class GameHost : IDisposable
     private readonly IGraphicsDevice _device;
     private readonly VirtualFileSystem _fileSystem;
     private readonly HostOptions _options;
-    private readonly string _gamePath;
+
+    // Where the RUNNING title is installed. The file system's LOCAL device is re-pointed here on a
+    // switch; VirtualFileSystem registers devices by name, so re-registering replaces rather than adds.
+    private string _gamePath;
     private IIgiLogger _logger;
 
     // --- Services built during startup ---
     private ResourceRegistry _resources = null!;
     private ResourceOverrides _overrides = null!;
+
+    // What the last scan of that folder found, reported once the console has started -- until then the
+    // log verbosity the player configured has not been applied and an information line goes nowhere
+    // anybody can see.
+    private ResourceOverrides.ScanResult _overrideScan;
 
     // Normally the session file system above. A promoted preview brings a registry backed by its own
     // private file system, while long-lived services such as audio stay on the session one. Mission
@@ -420,6 +436,7 @@ internal sealed partial class GameHost : IDisposable
     // -missioncycle's bookkeeping: which leg of the abandon/replay cadence has been acted on, and the
     // mission to go back into once the level has been let go of.
     private long _missionCycleLeg;
+    private long _titleCycleLeg;
     private int _missionCycleMission;
 
     /// <summary>How much longer than the original the remaster holds a status message, in seconds.</summary>
@@ -477,6 +494,20 @@ internal sealed partial class GameHost : IDisposable
     private GunPickupRegistry? _gunPickups;
     private GenericPickupRegistry? _genericPickups;
 
+    // --- Built once and re-registered into every title's namespace ---
+    // Locals until the shell could change games. All three outlive a title: the config host and the menu
+    // host are the seams the menus act through, and the mission state is a native the level scripts call.
+    // A switch builds a new GameLoop, and each of them has to be registered into it -- which is why they
+    // are here rather than in Run's own scope.
+    private HostConfigHost _configHost = null!;
+    private MenuHost _menuHost = null!;
+    private GameMissionState _missionState = null!;
+
+    // The game the shell has asked for, waiting for a frame boundary. Deferred for the same reason a
+    // mission load is: the switch tears down the loop, the registry and every presenter, and doing that
+    // from inside a frame would pull them out from under the pass that is drawing.
+    private GameTitle? _pendingTitle;
+
     // --- The menus and the cinematic shell ---
     private MenuRenderer? _renderer;
     private MenuShowcaseCamera? _showcaseCamera;
@@ -487,36 +518,48 @@ internal sealed partial class GameHost : IDisposable
     /// <param name="window">The game window whose input and frames drive the loop.</param>
     /// <param name="device">The graphics device every renderer draws through.</param>
     /// <param name="audioFactory">Opens the audio backend; re-called whenever the device settings change.</param>
-    /// <param name="titleRuntime">The game being run: its data layout, its formats and its content modules.</param>
-    /// <param name="presentation">The same game's renderers. A second seam because the reference graph forbids one.</param>
-    /// <param name="worldBuilder">The same game's scene walk. A third seam, for the same reason.</param>
-    /// <param name="missionCatalogue">Opens the same game's mission table. A fourth, likewise.</param>
+    /// <param name="titles">The games this build can run, and where each of them is installed.</param>
+    /// <param name="startOn">The one to open on.</param>
     /// <param name="fileSystem">The virtual file system the original installation is read through.</param>
     /// <param name="options">The parsed command line.</param>
-    /// <param name="gamePath">The original installation directory.</param>
+    /// <param name="gamePath">The starting title's installation directory.</param>
     /// <param name="logger">The log; wrapped by the developer console once it starts.</param>
+    /// <exception cref="ArgumentException">The catalogue has no implementation for <paramref name="startOn"/>.</exception>
+    /// <remarks>
+    /// The catalogue rather than one title's services, because the shell can change games without the
+    /// process restarting. Starting in a title and switching to it then run the same code, which is the
+    /// only arrangement in which the second one cannot rot: there is no boot path for a switch to
+    /// disagree with.
+    /// </remarks>
     public GameHost(
         IPlatformHost platform,
         IGameWindow window,
         IGraphicsDevice device,
         IAudioDeviceFactory audioFactory,
-        IGameTitleRuntime titleRuntime,
-        ITitlePresentationProvider presentation,
-        ITitleWorldBuilder worldBuilder,
-        Func<IIgiLogger, IMissionCatalogue<MissionDescriptor>> missionCatalogue,
+        ITitleCatalog titles,
+        GameTitle startOn,
         VirtualFileSystem fileSystem,
         HostOptions options,
         string gamePath,
         IIgiLogger logger)
     {
+        ArgumentNullException.ThrowIfNull(titles);
+        ArgumentNullException.ThrowIfNull(startOn);
+
+        if (!titles.TryResolve(startOn, out TitleBinding? binding))
+        {
+            throw new ArgumentException($"This build cannot run '{startOn.Id}'.", nameof(startOn));
+        }
+
         _platform = platform;
         _window = window;
         _device = device;
         _audioFactory = audioFactory;
-        _titleRuntime = titleRuntime;
-        _presentation = presentation;
-        _worldBuilder = worldBuilder;
-        _missionCatalogue = missionCatalogue;
+        _titles = titles;
+        _titleRuntime = binding.Runtime;
+        _presentation = binding.Presentation;
+        _worldBuilder = binding.WorldBuilder;
+        _missionCatalogue = binding.Missions;
         _fileSystem = fileSystem;
         _options = options;
         _gamePath = gamePath;
@@ -558,56 +601,16 @@ internal sealed partial class GameHost : IDisposable
             _device.Set2DProjection(width, height);
         }
 
-        // Entry labels are keys into the language archive, so it has to be registered before the menu can
-        // resolve any of them.
-        _resourceFileSystem = _fileSystem;
-        _resources = new(_resourceFileSystem, _logger);
-
-        // The overrides folder, beside the game's own directories. Anything dropped in there replaces the
-        // asset that lives at the same path in the installation -- an archived texture by the directory
-        // its archive sits in, a loose file by its own path -- so a replacement pack is just the game
-        // folder with the files somebody changed and nothing else.
-        _overrides = new ResourceOverrides(
-            _resourceFileSystem.TryGetDevice(LocalFileDevice.DeviceName, out IFileDevice? local)
-                && local is LocalFileDevice localDevice
-                    ? Path.Combine(localDevice.RootDirectory, ResourceOverrides.DirectoryName)
-                    : null,
-            _logger);
-
-        _resources.Overrides = _overrides;
-
-        // Scanned here, because the archives mounted below consult it -- but REPORTED after the console
-        // has started, because until then the log verbosity the player configured has not been applied
-        // and an information line goes nowhere anybody can see.
-        ResourceOverrides.ScanResult overrideScan = _overrides.Rescan();
-
-        // menusystem.res holds the menu's own labels; missions.res holds the mission names and briefings,
-        // because a descriptor's "Mission 1 Name" is a key into it rather than the title itself.
-        //
-        // Kept as bytes as well as registered, because these are the session's archives rather than any
-        // one level's: a mission previewed for the menu builds into its own private ResourceRegistry, and
-        // that registry becomes the game's own if the preview is promoted into the played mission. Without
-        // the bytes to hand, the promoted registry would be missing every string the menus, the mission
-        // briefings and the handheld computer resolve through. Bytes rather than a shared registry read,
-        // so a worker never touches this one.
-        foreach (string archive in new[]
-        {
-            MenuStringTable.GetArchiveName(),
-            MenuStringTable.GetMissionArchiveName(),
-        }.Concat(_titleRuntime.Layout.StringArchives))
-        {
-            if (_fileSystem.Exists(archive))
-            {
-                byte[] bytes = _fileSystem.ReadAllBytes(archive);
-                _sessionArchives[archive] = bytes;
-                _resources.Register(archive, bytes);
-            }
-        }
+            // Entry labels are keys into the language archive, so it has to be registered before the menu
+            // can resolve any of them. Through the same method a title switch runs, so a game taken up mid
+            // session registers exactly what a game started on does. The overrides folder is re-pointed
+            // there too, because a different installation has a different one.
+            LoadTitleResources();
 
         // Settings load from the retail config.qvm, and from our own file in preference to it when one
         // exists. Nothing here ever writes into the original installation.
         _configuration = HostConfiguration.Load(_fileSystem, _logger);
-        HostConfigHost configHost = new(_device, _window)
+        _configHost = new HostConfigHost(_device, _window)
         {
             ApplyResolution = (w, h) =>
             {
@@ -625,10 +628,10 @@ internal sealed partial class GameHost : IDisposable
             },
         };
 
-        ConfigNatives configNatives = new(_configuration, configHost);
+        ConfigNatives configNatives = new(_configuration, _configHost);
 
-        MenuStringTable strings = new(_resources);
-        configHost.Strings = strings;
+        MenuStringTable strings = _menuStrings!;
+        _configHost.Strings = strings;
 
         // Held so anything outside this method can name a mission the way the player saw it named. A
         // descriptor's own Name is the table KEY -- it reads "Mission 1 Name" -- so a loading panel that
@@ -667,7 +670,9 @@ internal sealed partial class GameHost : IDisposable
 
         console.Start(_fileSystem, _options.StartupCommands, useSavedSettings: !_options.Lockstep);
         _logger = console.WrapLogger(_logger);
-        ReportOverrideScan(overrideScan);
+        // The scan LoadTitleResources ran: taken off the field because the scan now happens wherever the
+        // resources are loaded, and that is a method a title switch calls too.
+        ReportOverrideScan(_overrideScan);
 
         WarnAboutSettingsTheBackendIgnores();
 
@@ -718,7 +723,7 @@ internal sealed partial class GameHost : IDisposable
         _device.SetStageTiming(RenderCVars.PerformanceLog.Value);
         RenderCVars.PerformanceLog.Changed += (_, _) => _device.SetStageTiming(RenderCVars.PerformanceLog.Value);
 
-        MenuHost menuHost = new(
+        _menuHost = new MenuHost(
             _window.Input,
             batch,
             () => _renderer,
@@ -753,17 +758,6 @@ internal sealed partial class GameHost : IDisposable
         // milliseconds from different origins, and every `last*Milliseconds` delta in the frame loop
         // would jump the moment the swap happened. One source, shared, keeps the handover invisible.
         _timeSource = lockstepClock is not null ? lockstepClock : new SystemTimeSource();
-        // The title's structural task types, not the engine's fixed set. What makes a type structural is
-        // that the title's own editor emits no declaration for it, and the two games disagree by one
-        // name: I.G.I. 2's editor declares Container with a parameter, so a loop that registered it with
-        // none refuses every level of that game the moment one mentions it.
-        _loop = new(
-            time: _timeSource,
-            host: menuHost,
-            renderer: _scheduler,
-            logger: _logger,
-            structuralTypes: _titleRuntime.Layout.StructuralTaskTypes);
-
         // Baked global illumination: a mission's probe field is loaded from the shipped cache (Assets/gi)
         // when present, else traced and written to the per-user cache so the next load is fast. This is what
         // turns a level load from a few-seconds lighting trace into an instant read -- see GiBakeCache.
@@ -788,57 +782,19 @@ internal sealed partial class GameHost : IDisposable
             Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "gi"),
             _logger);
 
-        // The mission table is built the way the original builds it: walk LOCAL:missions and run every
-        // mission.qvm, each of which publishes one descriptor through DefineMission. It has to happen
-        // before the Select Mission screen asks for the list.
-        _missions = _missionCatalogue(_logger);
-        _missions.Register(_loop.Natives);
-        GameMissionState missionState = new();
-        missionState.Register(_loop.Natives);
+        // The mission state native, held because a switch has to re-register it into the loop it builds.
+        _missionState = new GameMissionState();
 
         // The audio device, collected here: this is the first line that reads it, and everything between
         // it and the Task.Run above -- the scheduler, the console, the cvar wiring -- is work the open
         // ran alongside rather than after.
         audioReady.GetAwaiter().GetResult();
 
-        // Game_EnableMusic / Game_DisableMusic / Game_SetMusicVolume. Without these the options menu's
-        // music slider -- whose script is literally Game_SetMusicVolume(this.vValue) -- moves and does
-        // nothing.
+        // The task loop, the mission table and the title's content, through the same method a switch
+        // runs. Everything above this line belongs to the process; everything it builds belongs to the
+        // game, and changing games rebuilds exactly this much.
+        LoadTitleSession();
         GameMusicNatives musicNatives = new(_music!);
-        musicNatives.Register(_loop.Natives);
-
-        // One list, walked once. The desktop host and the mission-preview loader used to keep a copy of
-        // this block each, with a comment in the loader saying it matched the one here; they had already
-        // drifted by an entry. See TitleSession.
-        _title = TitleSession.Start(
-            _titleRuntime.Modules, _loop, _fileSystem, _resources, _logger, loadTables: false);
-
-        // Asked for, not required. These four are tables one game publishes and the other does not, and a
-        // host that demanded them was a host only that game could start -- which is the same rule the
-        // renderers, the scene walk and the mission table are already behind, reached from the other
-        // direction.
-        //
-        // I.G.I. 2's absence is not an omission to be filled in later with an empty one. It HAS magic
-        // objects; what it does not have is a DefineMagicObj table. MagicObjConfig_Open (igi2 0x584DA0)
-        // registers MagicObjConfig as an 84-byte QTASK TYPE with three parameters -- Name at 0x28, Model
-        // at 0x38, TaskType at 0x4C -- and magicobjconfig.qvm builds those with Task_New. No shipped
-        // I.G.I. 2 script calls DefineMagicObj at all, so a registry of that shape would load an empty
-        // table and publishing one would say something false.
-        _title.Services.TryGet(out _magic);
-        _title.Services.TryGet(out _vehiclePhysics);
-        _title.Services.TryGet(out _animationTriggers);
-        _title.Services.TryGet(out _aiConfig);
-
-        try
-        {
-            _missions.Scan(_fileSystem, _resources, _loop.Natives);
-            _title.LoadTables(_loop, _fileSystem, _resources);
-            configHost.Missions = _missions;
-        }
-        catch (EngineFatalException ex)
-        {
-            _logger.Warning("Mission", $"The mission scan failed, so no missions are selectable: {ex.Message}");
-        }
 
         bool reportedWorld = false;
         bool reportedShot = false;
@@ -1047,21 +1003,7 @@ internal sealed partial class GameHost : IDisposable
         // checked against and the field cache it reads. Built here because every part of it is finished
         // being written by this point and none of it is mutated afterwards, which is what makes it safe
         // to hand to a worker.
-        _previewContext = new MissionPreviewContext(
-            _timeSource,
-            menuHost,
-            _scheduler,
-            missionState,
-            _detailMaps,
-            _sessionArchives,
-            _overrides,
-            _lampManifest,
-            _sdfCache,
-            _title.Services,
-            _titleRuntime.Modules,
-            _titleRuntime.Layout.StructuralTaskTypes,
-            _titleRuntime.Formats,
-            _device.Capabilities.SupportsCompute);
+            RebuildPreviewContext();
 
 
         // Skeleton 0's and skeleton 5's animation sets, read here rather than when a mission starts.
@@ -1123,9 +1065,9 @@ internal sealed partial class GameHost : IDisposable
         _worldTrace = null;
         bool showDebug = false;
 
-        menuHost.StartGame = () => StartMission(missionState.PendingMissionId);
+        _menuHost.StartGame = () => StartMission(_missionState.PendingMissionId);
 
-        menuHost.LoadMainMenu = () =>
+        _menuHost.LoadMainMenu = () =>
         {
             MenuSystem menu = MenuSystem.Load(
                 _fileSystem.ReadAllBytes("LOCAL:menusystem/mainmenu.qvm"),
@@ -1159,8 +1101,8 @@ internal sealed partial class GameHost : IDisposable
             // evaluated by the menu's own evaluator rather than by the script VM -- so registering them
             // with the VM is not enough to make the Select Mission button or the music slider work.
             menu.Manager.ExternalNatives = (name, arguments) =>
-                missionState.TryInvokeFromMenu(name, arguments) ?? musicNatives.TryInvokeFromMenu(name, arguments);
-            menu.Manager.Initialize(menu, menuHost, _logger);
+                _missionState.TryInvokeFromMenu(name, arguments) ?? musicNatives.TryInvokeFromMenu(name, arguments);
+            menu.Manager.Initialize(menu, _menuHost, _logger);
         };
 
         // R11: the cinematic shell (OpenIGI.Frontend) is the default front end; -vanilla and -vanillamenu
@@ -1172,6 +1114,13 @@ internal sealed partial class GameHost : IDisposable
         _menuCameras = MenuCameraLibrary.Empty;
         UiFont? shellBodyFont = null;
         UiFont? shellHeadingFont = null;
+
+        // Hoisted so a title switch can rebuild the shell around them. Neither belongs to a game: the
+        // host seam calls back into this class, and the save store is the player's, one directory for
+        // the session. What the rebuilt shell does get anew is its CONTEXT -- the game list and the
+        // mission list, which are the two things that change when the game does.
+        ShellHost? shellHost = null;
+        SaveSlotStore? saves = null;
 
         // What the mission-entry shot types over its vantage. Filled when the shot begins.
 
@@ -1262,22 +1211,9 @@ internal sealed partial class GameHost : IDisposable
             // order is the startup scan's, which is a directory walk and therefore alphabetical, so it
             // listed level 10 between level 1 and level 2. The retail menu walks the chain (0x405660) and
             // so does this.
-            var shellMissions = new List<MissionInfo>();
-            _shellMissions = shellMissions;
-            int missionNumber = 1;
-            foreach (MissionDescriptor descriptor in _missions.InCampaignOrder())
-            {
-                shellMissions.Add(new MissionInfo(
-                    descriptor.Id,
-                    missionNumber++,
-                    strings.Get(descriptor.Name),
-                    strings.Get(descriptor.Description),
-                    descriptor.BriefingSprite));
-            }
+            saves = new SaveSlotStore(Path.Combine(SettingsPaths.GetUserDirectory(), "saves"));
 
-            var saves = new SaveSlotStore(Path.Combine(SettingsPaths.GetUserDirectory(), "saves"));
-
-            var shellHost = new ShellHost(
+            shellHost = new ShellHost(
                 startMission: (id, difficulty) =>
                 {
                     if (_configuration.Active is { } activeProfile)
@@ -1440,6 +1376,7 @@ internal sealed partial class GameHost : IDisposable
                     _window.CursorVisible = true;
                 },
                 quit: () => running = false,
+                switchTitle: RequestTitle,
                 previewMission: id =>
                 {
                     // Never over a live mission. Adopting a preview disposes the world renderer and drops
@@ -1480,16 +1417,7 @@ internal sealed partial class GameHost : IDisposable
 
             shellHostForEntryCam = shellHost;
 
-            shell = new Shell(new ShellContext(
-                shellTheme,
-                shellHost,
-                new ScreenStack(),
-                GameProfileResolver.BuildCatalogue(_titleRuntime.Title, _gamePath, null, null),
-                shellMissions,
-                CVarRegistry.Default,
-                GraphicsPresetRegistry.Default,
-                _configuration,
-                saves));
+            shell = new Shell(BuildShellContext(shellHost, shellTheme, saves));
 
             // -shelltab is a development shortcut, not a game feature, and the shell's counterpart to
             // -screen: it opens straight on a section so a capture does not need someone to click there.
@@ -1649,6 +1577,30 @@ internal sealed partial class GameHost : IDisposable
             // A load whose departure has played out runs here, between frames, where the picture it
             // needs has already been held and nothing is half-drawn.
             RunPendingLoadIfDue();
+
+            // And a change of game, at the same boundary and for the same reason -- this one disposes
+            // the task loop, the resource registry and every presenter, so it must not happen while a
+            // pass is drawing them. The shell is rebuilt around the new title rather than told about it:
+            // its game list, its campaign and which entry is current are all the title's.
+            if (SwitchTitleIfDue())
+            {
+                missionWarmer = new MissionWarmer(_gamePath, _missions, _logger);
+                previewLoader = new MissionPreviewLoader(
+                    _gamePath, _missions, _magic, _giCache, _menuCameras, _previewContext, _logger);
+
+                if (shellHost is not null && shellBodyFont is not null && shellHeadingFont is not null && saves is not null)
+                {
+                    shell = new Shell(BuildShellContext(shellHost, new UiTheme(shellBodyFont, shellHeadingFont), saves));
+                    shell.OpenOn("campaign");
+                }
+
+                // Back to the front end with no level up: the outgoing game's was released and the
+                // incoming one has not been asked for.
+                menuMode = true;
+                pauseMenu = false;
+                showcasePending = true;
+                ApplyMenuDepthOfField();
+            }
 
             // The menu has nothing to gain past the display's rate, and a GPU kept at full load turns every
             // small upload between frames into a hitch. Only after a pass that presented, or the pacing
@@ -1990,6 +1942,20 @@ internal sealed partial class GameHost : IDisposable
                     // entirely; without dropping the pair the first gameplay frame interpolates across
                     // the whole descent.
                     _logger.Information("Menu", "The mission-entry shot has handed over.");
+                }
+            }
+
+            // -titlecycle changes GAME on a fixed cadence, taking exactly the path the menu's selector
+            // takes. Latched on the frame count for the same reason -missioncycle is, and placed beside
+            // it because it is the same kind of flag: the switch is the largest teardown the session
+            // performs and a person clicking a dropdown was the only way to reach it.
+            if (_options.TitleCycleFrames > 0)
+            {
+                long titleLeg = _loop.Clock.FrameCount / _options.TitleCycleFrames;
+                if (titleLeg != _titleCycleLeg)
+                {
+                    _titleCycleLeg = titleLeg;
+                    RequestNextInstalledTitle();
                 }
             }
 
@@ -5760,15 +5726,20 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     batch.End();
                 }
 
+                // The HUD is in the condition, not asserted inside it. Every presenter is nullable so a
+                // title under construction draws the passes it has and skips the rest -- and I.G.I. 2 has
+                // no HUD at all yet, so the null-forgiving read of it here took the process down as soon
+                // as one of its missions had an objective to post.
                 if (tacticalMessages
                     && showFirstPersonHud
+                    && _remasteredHud is { } messageHud
                     && _missionObjectives is { } modernMessages
                     && _messages is { IsReady: true } modernCards)
                 {
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     float topOffset = new LayoutContext(_window.Width, _window.Height)
-                        .Px(_remasteredHud!.MessageTopInset);
+                        .Px(messageHud.MessageTopInset);
                     modernCards.Draw(
                         batch,
                         modernMessages.DisplayedMessages.Where(static message => !message.IsCutscene),

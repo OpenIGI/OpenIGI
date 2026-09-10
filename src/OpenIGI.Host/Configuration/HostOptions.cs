@@ -128,6 +128,7 @@ public readonly record struct HostOptions(
         int entryCamMission = 0;
         int computerCamFrame = 0;
         int missionCycleFrames = 0;
+        int titleCycleFrames = 0;
         int backdropCycleFrames = 0;
         string? showcasePointDump = null;
         string? benchmarkPath = null;
@@ -458,6 +459,20 @@ public readonly record struct HostOptions(
                         $"-missioncycle expects a frame count, got '{value}'.", nameof(args));
                 }
             }
+            else if (arg.Equals("titlecycle", StringComparison.OrdinalIgnoreCase))
+            {
+                // Change GAME every n frames, for as long as the run lasts. -missioncycle and
+                // -backdropcycle's counterpart one level up: a title switch replaces the task loop, the
+                // resource registry, the mission table, the content session and every renderer at once,
+                // which is the largest teardown the session has, and choosing another game from the menu
+                // is the only other way to reach it. A development flag.
+                string value = Next(args, ref i, "titlecycle");
+                if (!int.TryParse(value, out titleCycleFrames) || titleCycleFrames <= 0)
+                {
+                    throw new ArgumentException(
+                        $"-titlecycle expects a frame count, got '{value}'.", nameof(args));
+                }
+            }
             else if (arg.Equals("backdropcycle", StringComparison.OrdinalIgnoreCase))
             {
                 // Walk the campaign's rows in the menu, every n frames, for as long as the run lasts.
@@ -560,6 +575,7 @@ public readonly record struct HostOptions(
             EntryCamMission = entryCamMission,
             ComputerCamFrame = computerCamFrame,
             MissionCycleFrames = missionCycleFrames,
+            TitleCycleFrames = titleCycleFrames,
             BackdropCycleFrames = backdropCycleFrames,
             ShowcasePointDump = showcasePointDump,
             PlayCutscenes = playCutscenes,
@@ -611,6 +627,16 @@ public readonly record struct HostOptions(
     /// anything it fails to release, something a run can measure rather than something a player reports.
     /// </remarks>
     public int MissionCycleFrames { get; init; }
+
+    /// <summary>Gets how many frames a game runs for before the next installed one is switched to.</summary>
+    /// <remarks>
+    /// Zero for never. Set by <c>-titlecycle</c>, and <see cref="MissionCycleFrames"/> one level up: a
+    /// title switch replaces the task loop, the resource registry, the mission table, the content
+    /// session and every renderer together, which is the largest teardown a session performs. Until this
+    /// it could only be reached by a person choosing another game from the menu, so nothing could
+    /// measure it or run it often enough to see what it fails to release.
+    /// </remarks>
+    public int TitleCycleFrames { get; init; }
 
     /// <summary>Gets how many frames a menu backdrop is shown for before the next mission is selected.</summary>
     /// <remarks>
@@ -822,6 +848,9 @@ public readonly record struct HostOptions(
           -missioncycle N  Abandon the mission to the campaign and play it again every N frames, so the
                            cost of leaving a level -- and whether it releases what it built -- can be
                            measured over many cycles instead of clicked through by hand.
+          -titlecycle N    Switch to the next installed game every N frames, the same way choosing one
+                           from the menu does. The largest teardown there is: the task loop, the
+                           resource registry, the mission table and every renderer, all at once.
           -backdropcycle N Select the next mission in the menu every N frames, so the backdrop swap --
                            a whole level replaced while the loop keeps presenting -- can be run for as
                            long as it takes instead of clicked down the list by hand.

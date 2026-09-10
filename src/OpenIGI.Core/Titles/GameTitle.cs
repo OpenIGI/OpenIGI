@@ -1,4 +1,4 @@
-namespace OpenIGI.Core.Titles;
+﻿namespace OpenIGI.Core.Titles;
 
 /// <summary>Whether a game title can be played by this port.</summary>
 public enum GameAvailability
@@ -17,9 +17,9 @@ public enum GameAvailability
 /// <remarks>
 /// <para>
 /// A <see cref="GameTitle"/> is the game in the abstract; a <see cref="GameProfile"/> binds it to a
-/// concrete installation on disk. The shell's game selector lists the titles and greys out the ones that
-/// are <see cref="GameAvailability.Unavailable"/> — <see cref="Igi2"/> is registered so the selector can
-/// show it as a known but not-yet-playable entry, exactly as the R11 specification asks.
+/// concrete installation on disk. The shell's game selector lists the titles and greys out the ones the
+/// player cannot take — a title this build does not support, or one it supports and cannot find on
+/// disk. Both games are supported now, so what greys an entry out is the installation being absent.
 /// </para>
 /// <para>
 /// <see cref="SignatureFile"/> is a file whose presence in a directory is taken as proof that the
@@ -47,18 +47,32 @@ public sealed record GameTitle(
         "config.qvm",
         ["missions", "common", "language", "menusystem"]);
 
-    /// <summary>Gets I.G.I. 2: Covert Strike (2003) — known to the shell but not yet supported.</summary>
+    /// <summary>Gets I.G.I. 2: Covert Strike (2003).</summary>
     /// <remarks>
+    /// <para>
+    /// <b>Supported means "this build can load and render it", not "it is finished".</b> The sequel's
+    /// levels load, its world, ground, sky, forest and water draw, and the shell can switch to it while
+    /// the game is running; it has no player, weapons or AI yet, so a level opens in the free camera.
+    /// Listing it as unavailable once the port could draw it would have been the shell telling the
+    /// player something untrue about their own installation.
+    /// </para>
+    /// <para>
+    /// Support is still a claim about the port rather than about the disk. Whether it can actually be
+    /// played from here is <see cref="GameProfile.Availability"/>, which needs this AND the signature
+    /// file to be present.
+    /// </para>
+    /// <para>
     /// The data root is the installation's <c>pc</c> directory, not the directory above it: a retail
     /// install puts <c>igi2.exe</c> in <c>pc</c> alongside <c>config.qvm</c>, <c>missions</c>,
     /// <c>common</c>, <c>language</c> and <c>menusystem</c>. So the asset roots are those content
     /// directories, exactly as they are for <see cref="Igi1"/>, and <c>pc</c> is not one of them — it is
     /// the root they hang off. Checked against a retail 1.1 installation.
+    /// </para>
     /// </remarks>
     public static GameTitle Igi2 { get; } = new(
         "igi2",
         "I.G.I. 2: Covert Strike",
-        GameAvailability.Unavailable,
+        GameAvailability.Available,
         "igi2.exe",
         ["missions", "common", "language", "menusystem"]);
 

@@ -1,4 +1,4 @@
-using OpenIGI.Core.Titles;
+﻿using OpenIGI.Core.Titles;
 using Xunit;
 
 namespace OpenIGI.Core.Tests.Titles;
@@ -6,13 +6,24 @@ namespace OpenIGI.Core.Tests.Titles;
 /// <summary>Covers game-title identity, path-resolution precedence and installation probing.</summary>
 public sealed class GameProfileTests
 {
+    /// <summary>Both games are supported, and support is a claim about the port rather than the disk.</summary>
+    /// <remarks>
+    /// I.G.I. 2 was listed as unsupported while the port could not draw it. It can now — its levels
+    /// load, its world and ground render, and the shell can switch to it mid-session — so saying
+    /// otherwise would be the selector telling the player something untrue about their installation.
+    /// Whether it can actually be PLAYED from a given directory is <see cref="GameProfile.Availability"/>,
+    /// which needs this and the signature file both.
+    /// </remarks>
     [Fact]
-    public void Igi1_is_supported_and_igi2_is_not()
+    public void Both_titles_are_supported_and_the_first_game_is_listed_first()
     {
         Assert.Equal(GameAvailability.Available, GameTitle.Igi1.Support);
-        Assert.Equal(GameAvailability.Unavailable, GameTitle.Igi2.Support);
+        Assert.Equal(GameAvailability.Available, GameTitle.Igi2.Support);
         Assert.Equal(2, GameTitle.All.Count);
         Assert.Same(GameTitle.Igi1, GameTitle.All[0]);
+
+        // The signature files differ, which is what stops one installation answering for the other.
+        Assert.NotEqual(GameTitle.Igi1.SignatureFile, GameTitle.Igi2.SignatureFile);
     }
 
     [Theory]
@@ -93,10 +104,48 @@ public sealed class GameProfileTests
         Assert.Equal("igi1", igi1.Id);
         Assert.Equal(@"C:\Games\IGI", igi1.DataRoot);
 
+        // Bound to nothing when the caller says nothing about it, so it lists as present-but-unavailable
+        // rather than as absent from the build.
         GameProfile igi2 = catalogue[1];
         Assert.Equal("igi2", igi2.Id);
-        Assert.Equal(GameAvailability.Unavailable, igi2.Availability); // never playable regardless of disk
+        Assert.Empty(igi2.DataRoot);
+        Assert.Equal(GameAvailability.Unavailable, igi2.Availability);
         Assert.False(igi2.IsPlayable);
+    }
+
+    /// <summary>A title other than the active one is bound to wherever the caller says it is.</summary>
+    /// <remarks>
+    /// The selector's whole point. A machine may have both games, and only the composition root knows
+    /// where each is — the command line and the working directory can speak about one installation, so
+    /// binding every other title to an empty root showed a game the player owns as missing.
+    /// </remarks>
+    [Fact]
+    public void Catalogue_binds_the_other_titles_through_the_callers_own_resolver()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-catalogue-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, GameTitle.Igi2.SignatureFile), "stub");
+
+            IReadOnlyList<GameProfile> catalogue = GameProfileResolver.BuildCatalogue(
+                GameTitle.Igi1,
+                @"C:\Games\IGI",
+                null,
+                null,
+                title => title == GameTitle.Igi2 ? dir : null);
+
+            Assert.Equal(@"C:\Games\IGI", catalogue[0].DataRoot);
+            Assert.Equal(dir, catalogue[1].DataRoot);
+
+            // And it is playable, which is the assertion the shell reads: supported by the build, and
+            // found on disk.
+            Assert.True(catalogue[1].IsPlayable);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 
     [Fact]

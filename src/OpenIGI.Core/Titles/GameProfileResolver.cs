@@ -1,4 +1,4 @@
-namespace OpenIGI.Core.Titles;
+﻿namespace OpenIGI.Core.Titles;
 
 /// <summary>
 /// Resolves which installation the port should run against, in one place, so game-path resolution flows
@@ -122,22 +122,34 @@ public static class GameProfileResolver
         string? fallbackPath) =>
         new(title, ResolvePath(explicitPath, environmentPath, fallbackPath));
 
-    /// <summary>Builds the full catalogue of titles as profiles, the active one resolved to a data root.</summary>
+    /// <summary>Builds the full catalogue of titles as profiles, each resolved to its own data root.</summary>
     /// <param name="active">The title the resolved path belongs to.</param>
     /// <param name="explicitPath">The path from a command-line flag, or <see langword="null"/>.</param>
     /// <param name="environmentPath">The path from the environment, or <see langword="null"/>.</param>
     /// <param name="fallbackPath">The default path, or <see langword="null"/>.</param>
+    /// <param name="pathFor">
+    /// Where a title other than the active one is installed, or <see langword="null"/> to bind them to
+    /// nothing. A machine may well have both games, and only the caller knows where each is.
+    /// </param>
     /// <returns>One profile per <see cref="GameTitle.All"/> entry; the game selector lists these.</returns>
     /// <remarks>
-    /// The active title is bound to the resolved path; the others are bound to an empty data root, so they
-    /// report <see cref="GameAvailability.Unavailable"/> and appear greyed out until the port supports
-    /// them and they are pointed at their own installation.
+    /// <para>
+    /// The active title takes the resolved path, because that is the one the command line and the
+    /// working directory can speak about. Every other title is asked for by <paramref name="pathFor"/>,
+    /// so a selector can show which of them is actually installed instead of showing them all as
+    /// missing — which is what it did when the others were bound to an empty root.
+    /// </para>
+    /// <para>
+    /// A title with no path still appears, greyed out. Listing a game the player owns as missing is a
+    /// worse answer than listing one they do not own as unavailable.
+    /// </para>
     /// </remarks>
     public static IReadOnlyList<GameProfile> BuildCatalogue(
         GameTitle active,
         string? explicitPath,
         string? environmentPath,
-        string? fallbackPath)
+        string? fallbackPath,
+        Func<GameTitle, string?>? pathFor = null)
     {
         ArgumentNullException.ThrowIfNull(active);
 
@@ -145,7 +157,11 @@ public static class GameProfileResolver
         var catalogue = new List<GameProfile>(GameTitle.All.Count);
         foreach (GameTitle title in GameTitle.All)
         {
-            catalogue.Add(new GameProfile(title, title == active ? activePath : string.Empty));
+            string path = title == active
+                ? activePath
+                : pathFor?.Invoke(title) ?? string.Empty;
+
+            catalogue.Add(new GameProfile(title, path));
         }
 
         return catalogue;

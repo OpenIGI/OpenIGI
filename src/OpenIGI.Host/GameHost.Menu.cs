@@ -115,9 +115,16 @@ internal sealed partial class GameHost
             ? null
             : new MissionArming(preview.MissionId, preview.Scene, _world, _logger);
 
+        // The preview's OWN registry, not the session's. The two halves of this request have to describe
+        // the same installation: preview.FileSystem carries the MISSION alias the backdrop's level bound,
+        // and the session registry is reading through a file system that has no such alias while the menu
+        // is up. Project I.G.I.'s sky never noticed because it reads its layers through the file system
+        // directly; the sequel's resolves them as resources, so it asked for MISSION:... and got a fatal
+        // "device not present" -- which took the process down the first time a backdrop was built for it.
         _sky?.Dispose();
-_sky = _presentation.CreateSky(
-            new SkyPresentationRequest(_device, preview.LevelRoot, preview.FileSystem, _resources, FarPlane, _logger));
+        _sky = _presentation.CreateSky(
+            new SkyPresentationRequest(
+                _device, preview.LevelRoot, preview.FileSystem, preview.Resources, FarPlane, _logger));
         _globalLight = GlobalLightSettings.Read(preview.LevelRoot);
         _shadowPass ??= new ShadowCasterPass(_device);
 

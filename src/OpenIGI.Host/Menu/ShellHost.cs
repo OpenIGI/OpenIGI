@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Frontend;
 using OpenIGI.Rendering;
 
@@ -20,6 +20,7 @@ namespace OpenIGI.Host.Menu;
 /// <param name="restartMission">Reloads the current mission from its authored start.</param>
 /// <param name="abandonMission">Releases the current mission and returns to the campaign shell.</param>
 /// <param name="quit">Closes the game.</param>
+/// <param name="switchTitle">Runs a different game; false when it cannot be run.</param>
 /// <param name="previewMission">Shows a mission's level behind the menu, or the default showcase when null.</param>
 /// <param name="saveSettings">Persists the current settings.</param>
 /// <param name="saveProfiles">Persists player profiles and their progress.</param>
@@ -31,6 +32,7 @@ public sealed class ShellHost(
     Action restartMission,
     Action abandonMission,
     Action quit,
+    Func<string, bool> switchTitle,
     Action<int?> previewMission,
     Action saveSettings,
     Action saveProfiles,
@@ -50,6 +52,9 @@ public sealed class ShellHost(
 
     /// <inheritdoc/>
     public void AbandonMission() => abandonMission();
+
+    /// <inheritdoc/>
+    public bool SwitchTitle(string titleId) => switchTitle(titleId);
 
     /// <inheritdoc/>
     public void Quit() => quit();
