@@ -8,6 +8,13 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <!-- Whether this build produces something that will run on macOS: a macOS runtime identifier, or no
+         runtime identifier at all on a macOS host. -->
+    <TargetsMacOS Condition="$(RuntimeIdentifier.StartsWith('osx'))">true</TargetsMacOS>
+    <TargetsMacOS Condition="'$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('OSX'))">true</TargetsMacOS>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenIGI.Core\OpenIGI.Core.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Engine\OpenIGI.Engine.csproj" />
@@ -38,5 +45,39 @@
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false"
                       GlobalPropertiesToRemove="PublishTrimmed;TrimMode;PublishReadyToRun;PublishSingleFile;IncludeNativeLibrariesForSelfExtract;SelfContained;RuntimeIdentifier" />
   </ItemGroup>
+
+  <!-- GLFW decides whether Vulkan exists by dlopen'ing a file called exactly "libvulkan.1.dylib": one
+       leaf name, hard coded, and the only one it will try. Silk asks it that question before it will
+       create a Vulkan window at all, so on macOS the game fell over at window creation with "GLFW ...
+       doesn't support Vulkan on this computer" on a machine whose Vulkan works perfectly.
+       Silk.NET.MoltenVK.Native ships the loader under its own name, libMoltenVK.dylib, which satisfies
+       Silk's own loader and not GLFW's.
+
+       MoltenVK exports the Vulkan entry points directly (it is an ICD that can also serve as the
+       loader), so a copy under the name GLFW looks for is a working loader rather than a shim. Beside
+       the executable is where it belongs for a build run in place: dlopen searches the working
+       directory for a bare leaf name. It is not where a bundle wants it, because Finder and the Dock
+       launch with a working directory of "/" and GLFW's only fallback is the main bundle's private
+       frameworks directory; tools/package-macos.sh moves this copy into Contents/Frameworks. -->
+  <Target Name="CopyMoltenVkAsVulkanLoader" AfterTargets="Build" Condition="'$(TargetsMacOS)' == 'true'">
+    <ItemGroup>
+      <!-- Distinct because every project reference contributes the same paths, and .dylib because the
+           package also carries static libMoltenVK.a for the phone and TV runtimes. -->
+      <MoltenVkLoader Include="@(ReferenceCopyLocalPaths->Distinct())"
+                      Condition="'%(Filename)%(Extension)' == 'libMoltenVK.dylib'" />
+    </ItemGroup>
+    <Copy SourceFiles="@(MoltenVkLoader)" DestinationFiles="$(OutDir)libvulkan.1.dylib"
+          SkipUnchangedFiles="true" Condition="'@(MoltenVkLoader)' != ''" />
+  </Target>
+
+  <!-- Again for publish, whose output is a different folder assembled by a different item list. -->
+  <Target Name="PublishMoltenVkAsVulkanLoader" AfterTargets="Publish" Condition="'$(TargetsMacOS)' == 'true'">
+    <ItemGroup>
+      <MoltenVkPublishedLoader Include="@(ResolvedFileToPublish->Distinct())"
+                               Condition="'%(Filename)%(Extension)' == 'libMoltenVK.dylib'" />
+    </ItemGroup>
+    <Copy SourceFiles="@(MoltenVkPublishedLoader)" DestinationFiles="$(PublishDir)libvulkan.1.dylib"
+          SkipUnchangedFiles="true" Condition="'@(MoltenVkPublishedLoader)' != ''" />
+  </Target>
 
 </Project>

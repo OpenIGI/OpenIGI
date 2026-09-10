@@ -122,8 +122,15 @@ screen-space gather. Everything is capability-gated, so this is a quieter pictur
 one, but the `ultra` preset does not look on macOS the way it looks on Windows. Reaching parity would
 mean a Metal backend built on `MTLAccelerationStructure`, not a change to this one.
 
-Build the bundle with `tools/package-macos.sh` — a loose executable runs but macOS gives it no focus,
-Dock icon or menu bar.
+MoltenVK is shipped twice over, under its own name for Silk's loader and as `libvulkan.1.dylib` for
+GLFW's, which will dlopen that name and no other. GLFW looks for it in the working directory and in the
+bundle's `Contents/Frameworks`, so a build output runs when started from its own folder, and an app
+bundle runs from anywhere. Build the bundle with `tools/package-macos.sh` — a loose executable runs but
+macOS gives it no focus, Dock icon or menu bar.
+
+MoltenVK also caps a workgroup's shared memory at Metal's 32KB rather than the 48KB a desktop driver
+offers, so the temporal resolve's shading-rejection pass builds on a narrower tile there. It is the same
+measure at a worse apron ratio, chosen from the adapter's reported limit.
 
 ## Repository layout
 
