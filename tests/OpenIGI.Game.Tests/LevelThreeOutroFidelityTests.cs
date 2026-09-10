@@ -19,6 +19,47 @@ namespace OpenIGI.Game.Tests;
 public sealed class LevelThreeOutroFidelityTests
 {
     [RequiresGameDataFact]
+    public void ExtractionAreaStartsScene700BeforeLevelFlowCompletes()
+    {
+        (GameLoop loop, LevelTask root) = LoadLevelThree();
+        int projectileCleanupCalls = 0;
+        CutsceneRuntime runtime = new(
+            root,
+            loop.Variables,
+            native: (name, _) =>
+            {
+                if (!string.Equals(name, "Game_CutsceneDelete", StringComparison.Ordinal))
+                {
+                    return null;
+                }
+
+                projectileCleanupCalls++;
+                return QvmValue.FromInt32(1);
+            });
+        MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+
+        // Leave the intro, then reproduce the real final-objective path: objectives 1 and 2
+        // are already complete and the player enters authored extraction AreaActivate_739.
+        // Do not write Objective3/3068 directly -- its EditVariable task must raise the gate.
+        runtime.RequestBreak();
+        Step(objectives, runtime);
+        Assert.True(loop.Variables.TryWrite("EditVariable_3071.nValue", QvmValue.FromInt32(1)));
+        Assert.True(loop.Variables.TryWrite("EditVariable_3069.nValue", QvmValue.FromInt32(1)));
+
+        Vector3d extractionCentre = Position(Assert.IsType<DeclaredTask>(root.Tree.FromId(739)));
+        Step(objectives, runtime, extractionCentre);
+
+        Assert.True(loop.Variables.TryRead("EditVariable_3068.nValue", out QvmValue objective3));
+        Assert.Equal(1, objective3.ToInt32());
+        CutSceneTask scene = Assert.IsType<CutSceneTask>(root.Tree.FromId(700));
+        Assert.Equal(700, runtime.ActiveScene?.Id);
+        Assert.True(scene.IsRun);
+        Assert.False(scene.IsFinished);
+        Assert.False(objectives.IsComplete);
+        Assert.Equal(1, projectileCleanupCalls);
+    }
+
+    [RequiresGameDataFact]
     public void Scene700KeepsItsAuthoredHangarAndTakeoffTimeline()
     {
         (GameLoop loop, LevelTask root) = LoadLevelThree();
@@ -159,9 +200,12 @@ public sealed class LevelThreeOutroFidelityTests
         }
     }
 
-    private static void Step(MissionObjectiveRuntime objectives, CutsceneRuntime runtime)
+    private static void Step(
+        MissionObjectiveRuntime objectives,
+        CutsceneRuntime runtime,
+        Vector3d? playerPosition = null)
     {
-        objectives.TickLevelState();
+        objectives.TickLevelState(playerPosition);
         runtime.Tick();
         objectives.TickAfterLevelState();
         runtime.FinishExpressionTick();
