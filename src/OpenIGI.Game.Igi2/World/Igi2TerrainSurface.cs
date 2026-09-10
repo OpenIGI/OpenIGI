@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
@@ -16,7 +16,8 @@ namespace OpenIGI.Game.Igi2.World;
 /// <param name="TexelHeight">The distance between samples along Y, in world units.</param>
 /// <param name="Width">How many samples the tile is across.</param>
 /// <param name="Height">How many samples the tile is down.</param>
-/// <param name="Heights">The height map, whose samples are world-space and used as stored.</param>
+/// <param name="Heights">The height map, whose samples are stored relative to <paramref name="BaseHeight"/>.</param>
+/// <param name="BaseHeight">The Z the samples are measured from — the parent <c>Terrain</c>'s own, in world units.</param>
 /// <param name="Materials">The material map, or null when the tile ships none.</param>
 /// <param name="Lightmap">The baked lightmap, or null when the tile ships none.</param>
 public readonly record struct Igi2TerrainTile(
@@ -27,13 +28,37 @@ public readonly record struct Igi2TerrainTile(
     int Width,
     int Height,
     Igi2TerrainMap Heights,
+    double BaseHeight,
     Igi2TerrainMap? Materials,
     Igi2TerrainMap? Lightmap)
 {
+    /// <summary>Gets the world height of one sample.</summary>
+    /// <param name="x">The sample's column.</param>
+    /// <param name="y">The sample's row.</param>
+    /// <returns>The height, in world units.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A sample is an offset from the level's terrain, not a world height.</b>
+    /// <c>Terrain_GetZFromWorldCoordinates</c> (<c>igi2ed 0x632FF0</c>) interpolates the four samples
+    /// around a world position and adds <c>ptTerrain-&gt;tPos.z</c> to the result — the <em>parent</em>
+    /// <c>Terrain</c> task's Z, not the tile's. The X and Y halves of the same function convert the
+    /// query and the tile's own position into terrain space by subtracting the same origin from both,
+    /// so those two cancel and only Z is left as a real offset.
+    /// </para>
+    /// <para>
+    /// Twenty-three of the twenty-four shipped levels author that Z as zero, which is why every path
+    /// through here read the same either way. <c>location1/level3</c> authors it as 36,864,000 — nine
+    /// kilometres — and there the difference is the whole level: the ground draws nine kilometres below
+    /// the buildings standing on it, which past a four-kilometre far plane is not a misplaced terrain
+    /// but a black screen.
+    /// </para>
+    /// </remarks>
+    public double HeightAt(int x, int y) => BaseHeight + Heights.GetHeight(x, y);
+
     /// <summary>Gets the world position of one sample.</summary>
     /// <param name="x">The sample's column.</param>
     /// <param name="y">The sample's row.</param>
-    /// <returns>The position, with the stored height as Z.</returns>
+    /// <returns>The position, with the sample's world height as Z.</returns>
     /// <exception cref="ArgumentOutOfRangeException">The sample is outside the tile.</exception>
     /// <remarks>
     /// <b>Samples sit at texel centres, not at grid corners.</b> The tile spans
@@ -64,7 +89,7 @@ public readonly record struct Igi2TerrainTile(
         return new Vector3d(
             Centre.X - (Width * TexelWidth * 0.5) + ((x + 0.5) * TexelWidth),
             Centre.Y - (Height * TexelHeight * 0.5) + ((y + 0.5) * TexelHeight),
-            Heights.GetHeight(x, y));
+            HeightAt(x, y));
     }
 
     /// <summary>Gets the material id painted on one sample, or zero when the tile ships no material map.</summary>
@@ -200,10 +225,27 @@ public sealed class Igi2TerrainSurface
             heights.Width,
             heights.Height,
             heights,
+            BaseHeightOf(map),
             Matching(materialMap, heights) ? materialMap : null,
             Matching(lightMap, heights) ? lightMap : null);
 
         return true;
+    }
+
+    // The Z a tile's samples are measured from, which Terrain_GetZFromWorldCoordinates takes from the
+    // TerrainMap's parent rather than from the TerrainMap. A tile the level parented somewhere else is
+    // measured from nothing, which is the same answer the original gives when no terrain is active.
+    private static double BaseHeightOf(TerrainMapTask map)
+    {
+        for (GameTask? parent = map.Parent; parent is not null; parent = parent.Parent)
+        {
+            if (parent is TerrainTask terrain)
+            {
+                return terrain.Position.Z;
+            }
+        }
+
+        return 0.0;
     }
 
     // A map whose extent disagrees with the height map's is not usable as a per-sample channel. The

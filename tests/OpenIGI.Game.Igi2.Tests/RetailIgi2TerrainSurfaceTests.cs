@@ -1,6 +1,8 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -141,7 +143,7 @@ public sealed class RetailIgi2TerrainSurfaceTests
                         continue;
                     }
 
-                    offsets.Add(placement.Position.Z - tile.Heights.GetHeight(x, y));
+                    offsets.Add(placement.Position.Z - tile.HeightAt(x, y));
                     break;
                 }
             }
@@ -157,6 +159,114 @@ public sealed class RetailIgi2TerrainSurfaceTests
         // nowhere near the objects would too. Three metres is a crate's middle standing on a floor.
         Assert.InRange(median, -4096.0, 4096.0);
         Assert.InRange(absoluteMedian, 0.0, 5.0 * 4096.0);
+    }
+
+    /// <summary>A sample is measured from the level's own terrain, not from zero.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>Terrain_GetZFromWorldCoordinates</c> (<c>igi2ed 0x632FF0</c>) adds <c>ptTerrain-&gt;tPos.z</c>
+    /// to the interpolated sample — the <em>parent</em> <c>Terrain</c>'s Z, not the tile's. Most of the
+    /// shipped levels author it as zero and cannot tell "measured from the terrain" from "measured from
+    /// zero" at all; the ones that do not are what this rests on, and the largest of them is nine
+    /// kilometres.
+    /// </para>
+    /// <para>
+    /// The footing check is the half that says the offset is applied in the right direction. Without it
+    /// a raised level's ground draws kilometres beneath the buildings standing on it, which past a
+    /// four-kilometre far plane is not a visibly misplaced terrain but a black screen — the failure that
+    /// reads as nothing having loaded at all.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void A_sample_is_measured_from_the_levels_terrain_not_from_zero()
+    {
+        int raised = 0;
+        double highest = 0.0;
+
+        foreach (Igi2Level level in Igi2Level.All())
+        {
+            double declared = TerrainHeight(level.Root);
+            Igi2TerrainSurface surface = Surface(level);
+
+            foreach (Igi2TerrainTile tile in surface.Tiles)
+            {
+                Assert.Equal(declared, tile.BaseHeight);
+                Assert.Equal(declared + tile.Heights.GetHeight(0, 0), tile.HeightAt(0, 0));
+                Assert.Equal(tile.HeightAt(0, 0), tile.PositionOf(0, 0).Z);
+            }
+
+            if (surface.IsEmpty)
+            {
+                continue;
+            }
+
+            // Whatever the level raised its ground to, the objects standing on it are within a few
+            // metres of it -- which is what the offset has to be applied, and applied the right way
+            // round, to be true of.
+            Assert.InRange(MedianFootingOffset(level, surface), -8.0 * 4096.0, 8.0 * 4096.0);
+
+            if (declared != 0.0)
+            {
+                raised++;
+                highest = Math.Max(highest, Math.Abs(declared));
+            }
+        }
+
+        // A corpus where every level sat at zero would prove nothing at all.
+        Assert.True(raised > 0, "no shipped level raises its terrain, so this test cannot fail.");
+        Assert.Equal(9000.0 * WorldScene.UnitsPerMetre, highest);
+    }
+
+    // The signed distance from each placed object to the sample beneath it, as
+    // Placed_objects_sit_on_the_ground_the_tiles_describe measures it, for one level.
+    private static double MedianFootingOffset(Igi2Level level, Igi2TerrainSurface surface)
+    {
+        List<double> offsets = [];
+
+        foreach (Igi2Placement placement in level.Scene.StaticPlacements)
+        {
+            foreach (Igi2TerrainTile tile in surface.Tiles)
+            {
+                double left = tile.Centre.X - (tile.Width * tile.TexelWidth * 0.5);
+                double top = tile.Centre.Y - (tile.Height * tile.TexelHeight * 0.5);
+                int x = (int)((placement.Position.X - left) / tile.TexelWidth);
+                int y = (int)((placement.Position.Y - top) / tile.TexelHeight);
+
+                if (x < 0 || y < 0 || x >= tile.Width || y >= tile.Height)
+                {
+                    continue;
+                }
+
+                offsets.Add(placement.Position.Z - tile.HeightAt(x, y));
+                break;
+            }
+        }
+
+        offsets.Sort();
+        Assert.NotEmpty(offsets);
+        return offsets[offsets.Count / 2];
+    }
+
+    // The Z the level's Terrain task is authored at, which is what every one of its tiles measures from.
+    // A level with no Terrain has no tiles either, so the zero is never read.
+    private static double TerrainHeight(GameTask root) => FindTerrain(root)?.Position.Z ?? 0.0;
+
+    private static TerrainTask? FindTerrain(GameTask task)
+    {
+        if (task is TerrainTask terrain)
+        {
+            return terrain;
+        }
+
+        foreach (GameTask child in task.Children)
+        {
+            if (FindTerrain(child) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
     }
 
     private static Igi2TerrainSurface Surface(Igi2Level level)

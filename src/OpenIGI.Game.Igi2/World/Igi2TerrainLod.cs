@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
@@ -294,7 +294,7 @@ public sealed class Igi2TerrainHeightPyramid
         {
             for (int x = 0; x < width; x++)
             {
-                float z = tile.Heights.GetHeight(x, y);
+                float z = (float)tile.HeightAt(x, y);
                 minimum[0][(y * width) + x] = z;
                 maximum[0][(y * width) + x] = z;
             }
@@ -559,26 +559,26 @@ public sealed class Igi2TerrainLod
     {
         int width = _tile.Width;
         int height = _tile.Height;
-        Igi2TerrainMap heights = _tile.Heights;
+        Igi2TerrainTile tile = _tile;
 
         if (x >= width && y >= height)
         {
-            return (3.0 * heights.GetHeight(width - 1, height - 1))
-                - heights.GetHeight(width - 2, height - 1)
-                - heights.GetHeight(width - 1, height - 2);
+            return (3.0 * tile.HeightAt(width - 1, height - 1))
+                - tile.HeightAt(width - 2, height - 1)
+                - tile.HeightAt(width - 1, height - 2);
         }
 
         if (x >= width)
         {
-            return (2.0 * heights.GetHeight(width - 1, y)) - heights.GetHeight(width - 2, y);
+            return (2.0 * tile.HeightAt(width - 1, y)) - tile.HeightAt(width - 2, y);
         }
 
         if (y >= height)
         {
-            return (2.0 * heights.GetHeight(x, height - 1)) - heights.GetHeight(x, height - 2);
+            return (2.0 * tile.HeightAt(x, height - 1)) - tile.HeightAt(x, height - 2);
         }
 
-        return heights.GetHeight(x, y);
+        return tile.HeightAt(x, y);
     }
 
     /// <summary>Gets the world position of a sample, extrapolating past the tile.</summary>
@@ -889,7 +889,7 @@ public sealed class Igi2TerrainLod
             if ((uint)mx < (uint)_owner._tile.Width && (uint)my < (uint)_owner._tile.Height)
             {
                 double mean = (_trueZ[a] + _trueZ[b]) * 0.5;
-                double error = Math.Abs(mean - _owner._tile.Heights.GetHeight(mx, my));
+                double error = Math.Abs(mean - _owner._tile.HeightAt(mx, my));
                 roughness = (float)(error / (square.Size * _owner._tile.TexelWidth));
             }
 

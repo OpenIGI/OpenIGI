@@ -112,7 +112,7 @@ public sealed class RetailIgi2ForestTests
                             continue;
                         }
 
-                        offsets.Add(tree.Position.Z - tile.Heights.GetHeight(x, y));
+                        offsets.Add(tree.Position.Z - tile.HeightAt(x, y));
                         break;
                     }
                 }
