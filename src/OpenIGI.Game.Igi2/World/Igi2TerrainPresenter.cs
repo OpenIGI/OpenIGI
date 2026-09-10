@@ -212,6 +212,33 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         _device.SetCullMode(CullMode.Clockwise);
+
+        // NO ALPHA TEST. TerrainRender_SetGenericState (igi2ed 0x66BAD0) writes
+        // D3DRS_ALPHATESTENABLE = 0 for the ground and nothing turns it back on, and the ground is the
+        // one surface in the game that cannot afford one: alpha here is not a cut-out, it is the
+        // material's SHARE of the pixel. The passes blend SRCALPHA onto ONE and their weights sum to
+        // exactly one at every vertex, so the ground is fully painted only if every pass draws its
+        // share however small.
+        //
+        // Left at the port's default of 128 the test threw away every share under a half. A pixel is
+        // then black wherever no single material owns most of it -- which is every place three
+        // materials meet, and every two-material blend near even -- and it moved with the camera,
+        // because the quadtree morphs the weights as it subdivides. It read as holes torn in the
+        // ground, one to two metres across, in the shape of the boundaries between grass, rock and
+        // scree.
+        _device.SetAlphaReference(0);
+        try
+        {
+            DrawGround(frame);
+        }
+        finally
+        {
+            _device.SetAlphaReference(IGraphicsDevice.DefaultAlphaReference);
+        }
+    }
+
+    private void DrawGround(in TerrainFrame frame)
+    {
         if (!_tessellates)
         {
             foreach (Chunk chunk in _chunks)
