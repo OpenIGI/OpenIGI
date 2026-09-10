@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
@@ -116,7 +116,8 @@ internal sealed partial class GameHost
             : new MissionArming(preview.MissionId, preview.Scene, _world, _logger);
 
         _sky?.Dispose();
-        _sky = new SkyRenderer(_device, preview.FileSystem, preview.LevelRoot, FarPlane, _logger);
+_sky = _presentation.CreateSky(
+            new SkyPresentationRequest(_device, preview.LevelRoot, preview.FileSystem, _resources, FarPlane, _logger));
         _globalLight = GlobalLightSettings.Read(preview.LevelRoot);
         _shadowPass ??= new ShadowCasterPass(_device);
 
@@ -164,12 +165,14 @@ internal sealed partial class GameHost
         // lamps' emission off the geometry, so it comes after them.
         EnsureSurfaceCache();
 
-        if (_sky.HasSky)
+        // A title may decline a sky entirely -- the factory returns null when the level declares
+        // none -- so the clear colour keeps whatever it had rather than reading off nothing.
+        if (_sky is { HasSky: true } sky)
         {
             _scheduler.ClearColour = new Bgra32(
-                (byte)Math.Clamp((int)(_sky.FogColour.Z * 255f), 0, 255),
-                (byte)Math.Clamp((int)(_sky.FogColour.Y * 255f), 0, 255),
-                (byte)Math.Clamp((int)(_sky.FogColour.X * 255f), 0, 255),
+                (byte)Math.Clamp((int)(sky.FogColour.Z * 255f), 0, 255),
+                (byte)Math.Clamp((int)(sky.FogColour.Y * 255f), 0, 255),
+                (byte)Math.Clamp((int)(sky.FogColour.X * 255f), 0, 255),
                 255);
         }
 

@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Core.Numerics;
@@ -166,6 +166,16 @@ public interface ITitlePresentationProvider
     /// <param name="request">What the presenter needs.</param>
     /// <returns>The presenter.</returns>
     IWorldPresenter? CreateWorld(in WorldPresentationRequest request) => null;
+
+    /// <summary>Builds the title's sky, or returns null when it draws none.</summary>
+    /// <param name="request">The level and what it is read through.</param>
+    /// <returns>The presenter, or <see langword="null"/>.</returns>
+    /// <remarks>
+    /// Behind the seam because the host was building one game's sky directly, by a type that finds its
+    /// <c>FlatSky</c> under a name only a title without a class for it carries — so the title that
+    /// <em>has</em> such a class drew no sky. See <see cref="ISkyPresenter"/>.
+    /// </remarks>
+    ISkyPresenter? CreateSky(in SkyPresentationRequest request) => null;
 
     /// <summary>Builds the presenter for the arms the player sees.</summary>
     /// <param name="request">What the presenter needs.</param>

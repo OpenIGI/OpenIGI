@@ -1,4 +1,4 @@
-using OpenIGI.Audio;
+﻿using OpenIGI.Audio;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
@@ -306,7 +306,9 @@ internal sealed partial class GameHost : IDisposable
     private WorldScene? _scene;
     private IWorldPresenter? _world;
     private ITerrainPresenter? _terrain;
-    private SkyRenderer? _sky;
+    // Behind the seam, not a named renderer: which type this is differs by title, and the host asking
+    // for one game's by name is what left the other with no sky at all.
+    private ISkyPresenter? _sky;
 
     // The level's own GlobalLight keyframe: the fog the ground and the models are drawn into, and the
     // flat light a model with no lightmap wears. Read once per level, used every frame.
@@ -4416,7 +4418,7 @@ internal sealed partial class GameHost : IDisposable
                     // sky rather than a flat blue one and the screen-space bounce off it carries that warmth
                     // into the room instead of a cool tint. Untouched with the sun high.
                     _sky?.SetSunTint(SkyWarmthTint((_effectiveSun ?? _sun)?.Direction.Z ?? 1f));
-                    _sky?.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
+                    _sky?.Draw(new SkyFrame(eye, projection, _loop.TimeSource.Milliseconds / 1000f));
                 }
 
                 if (captured)

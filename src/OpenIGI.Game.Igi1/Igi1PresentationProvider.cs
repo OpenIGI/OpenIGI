@@ -1,4 +1,4 @@
-using OpenIGI.Game.Igi1.World;
+﻿using OpenIGI.Game.Igi1.World;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Rendering;
 
@@ -18,6 +18,14 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
     /// <inheritdoc/>
     public IWorldPresenter CreateWorld(in WorldPresentationRequest request) =>
         new WorldRenderer(request.Device, request.Resources, request.Logger);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The dome is sized to the far plane, which is this game's rule and not the sequel's; a layer's
+    /// texture is a path under <c>LOCAL:</c>, so the file system is the half of the request it reads.
+    /// </remarks>
+    public ISkyPresenter CreateSky(in SkyPresentationRequest request) =>
+        new SkyRenderer(request.Device, request.FileSystem, request.LevelRoot, request.FarPlane, request.Logger);
 
     /// <inheritdoc/>
     public IViewModelPresenter CreateViewModel(in ViewModelPresentationRequest request) =>

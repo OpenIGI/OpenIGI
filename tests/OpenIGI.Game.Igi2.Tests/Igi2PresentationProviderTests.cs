@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
@@ -135,6 +135,65 @@ public sealed class Igi2PresentationProviderTests
         }
 
         Assert.Fail("No level shipped both terrain and textures.");
+    }
+
+    /// <summary>Every shipped level's sky comes back through the seam, and draws.</summary>
+    /// <remarks>
+    /// <para>
+    /// The wiring's own test, and it would have failed before the seam existed for a reason no counter
+    /// would have shown: the host built <c>SkyRenderer</c> directly, and that type finds its sky by
+    /// walking for a <c>DeclaredTask</c> named <c>FlatSky</c> — the node a title with no class for the
+    /// type carries. I.G.I. 2 has a class for it, so the walk found nothing and the sequel drew no sky
+    /// at all, silently, with every level loading and rendering otherwise correctly.
+    /// </para>
+    /// <para>
+    /// So what this asserts is that the factory returns something for every level that declares a sky,
+    /// and that the something draws a dome. Both halves matter: a factory that returned null for all 24
+    /// would reproduce the original bug exactly.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void Every_shipped_levels_sky_comes_back_through_the_seam()
+    {
+        ITitlePresentationProvider provider = Igi2PresentationProvider.Instance;
+        string root = GameDataSource.Igi2.RequireRoot();
+        int levels = 0;
+
+        foreach (Igi2Level level in Igi2Level.All())
+        {
+            VirtualFileSystem files = new();
+            files.RegisterDevice(new LocalFileDevice(root));
+            files.SetAlias(
+                VirtualFileSystem.MissionAlias,
+                "LOCAL:" + Path.GetRelativePath(root, level.Directory).Replace(Path.DirectorySeparatorChar, '/') + "/");
+
+            RecordingGraphicsDevice device = new();
+            using ISkyPresenter? sky = provider.CreateSky(new SkyPresentationRequest(
+                device,
+                level.Root,
+                files,
+                new ResourceRegistry(files),
+                160f,
+                NullLogger.Instance));
+
+            if (sky is null)
+            {
+                continue;
+            }
+
+            levels++;
+            Assert.True(sky.HasSky);
+
+            sky.Draw(new SkyFrame(new Camera3D(default, Camera3D.LookRotation(0.4f, -0.1f)), Matrix4f.Identity, 2f));
+
+            // The dome, and one draw per cloud layer over it, all with the depth buffer out of the way.
+            Assert.NotEmpty(device.MeshDraws);
+            Assert.All(device.MeshDraws, draw => Assert.Equal(DepthState.Disabled, draw.DepthState));
+            Assert.Equal(BlendMode.Opaque, device.MeshDraws[0].Blend);
+        }
+
+        // Every shipped level declares one, which is what makes the silence before this so complete.
+        Assert.Equal(24, levels);
     }
 
     /// <summary>The optional factories default to null, so a title states only what it has.</summary>

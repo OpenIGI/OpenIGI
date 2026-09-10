@@ -1,6 +1,7 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Presentation;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 
@@ -22,7 +23,7 @@ namespace OpenIGI.Game.Igi2.World;
 /// which advances once a tick rather than by elapsed time.
 /// </para>
 /// </remarks>
-public sealed class Igi2SkyPresenter : IDisposable
+public sealed class Igi2SkyPresenter : ISkyPresenter
 {
     /// <summary>The category load diagnostics are logged under.</summary>
     public const string LogCategory = "igi2.sky";
@@ -43,6 +44,7 @@ public sealed class Igi2SkyPresenter : IDisposable
     private readonly ushort[] _gridIndices;
     private readonly MeshHandle _dome;
     private readonly int _domeIndexCount;
+    private long _ticks;
     private bool _disposed;
 
     /// <summary>Builds one level's sky.</summary>
@@ -106,7 +108,35 @@ public sealed class Igi2SkyPresenter : IDisposable
     /// <c>Display_SetBackgroundColourFn</c>, so the level's fog colour is literally what is behind
     /// everything.
     /// </remarks>
-    public Vector3f BackgroundColour => Sky.FogColour;
+    public Vector3f FogColour => Sky.FogColour;
+
+    /// <inheritdoc/>
+    /// <remarks>A level that declares a <c>FlatSky</c> at all has one; this presenter is not built otherwise.</remarks>
+    public bool HasSky => true;
+
+    /// <inheritdoc/>
+    public float FogAmount => Sky.FogAmount;
+
+    /// <inheritdoc/>
+    /// <remarks>In metres, as the task authors it, which is the unit the host seeds its fog from.</remarks>
+    public float PlaneHeight => Sky.LayerHeight;
+
+    /// <summary>How many simulation ticks make one second of cloud scroll.</summary>
+    /// <remarks>
+    /// <para>
+    /// Sixty, and it is read rather than assumed: <c>Water_SetVertexFunctionParameters</c>
+    /// (<c>igi2ed 0x6474A0</c>) sets <c>Water_vTime = Timer_nTicks * 0.016666667</c>, which puts the
+    /// engine's tick at a sixtieth of a second. The sky's own scroll advances once per task run rather
+    /// than by elapsed time, so this is what converts one to the other.
+    /// </para>
+    /// <para>
+    /// <b>Whole ticks only.</b> The remainder is carried rather than dropped, so a run of frames
+    /// advances the scroll by exactly as many ticks as the elapsed time contains — the same number of
+    /// calls to <see cref="Tick"/>, in the same order, whatever the frame rate. A fractional advance
+    /// would be smoother and would not be what the engine does.
+    /// </para>
+    /// </remarks>
+    public const double TicksPerSecond = 60.0;
 
     /// <summary>Advances every layer's scroll by one simulation tick.</summary>
     /// <exception cref="ObjectDisposedException">The presenter has been disposed.</exception>
@@ -124,6 +154,47 @@ public sealed class Igi2SkyPresenter : IDisposable
         {
             _layers[i].Advance();
         }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Advances the scroll to the frame's time before drawing, in whole ticks, then draws. The clock is
+    /// the frame's rather than a count this presenter keeps, so a paused host draws a still sky.
+    /// </remarks>
+    public void Draw(in SkyFrame frame)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        AdvanceTo(frame.Seconds);
+        _device.SetProjection(frame.Projection);
+        Draw(frame.Camera);
+    }
+
+    /// <summary>Advances the scroll to a moment on the level's clock.</summary>
+    /// <param name="seconds">The level's elapsed time.</param>
+    /// <exception cref="ObjectDisposedException">The presenter has been disposed.</exception>
+    /// <remarks>
+    /// Idempotent in the sense that matters: called with the same time twice, the second call advances
+    /// nothing. Called with a time that has gone backwards — which a host restarting a level does — it
+    /// resets rather than winding the scroll back a million ticks.
+    /// </remarks>
+    public void AdvanceTo(double seconds)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        long ticks = (long)(seconds * TicksPerSecond);
+        if (ticks < _ticks)
+        {
+            _ticks = ticks;
+            return;
+        }
+
+        for (long i = _ticks; i < ticks; i++)
+        {
+            Tick();
+        }
+
+        _ticks = ticks;
     }
 
     /// <summary>Draws the sky behind everything.</summary>

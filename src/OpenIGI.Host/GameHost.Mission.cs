@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
@@ -1470,7 +1470,8 @@ internal sealed partial class GameHost
             // The sky is script data on the level's task tree; its fog colour is also what the frame
             // clears to, so the horizon meets sky-coloured backing rather than black.
             _sky?.Dispose();
-            _sky = new SkyRenderer(_device, _fileSystem, levelRoot, FarPlane, _logger);
+_sky = _presentation.CreateSky(
+                new SkyPresentationRequest(_device, levelRoot, _fileSystem, _resources, FarPlane, _logger));
 
             // The air the level is drawn through and the flat light on its models, both off the same
             // GlobalLight keyframe -- see GlobalLightSettings for why that task and not FlatSky.
@@ -1504,12 +1505,14 @@ internal sealed partial class GameHost
                 _logger.Information("Light", "The level declares no Dirlight; the modern path will light it with a default sun.");
             }
 
-            if (_sky.HasSky)
+            // A title may decline a sky entirely -- the factory returns null when the level declares
+            // none -- so the clear colour keeps whatever it had rather than reading off nothing.
+            if (_sky is { HasSky: true } sky)
             {
                 _scheduler.ClearColour = new Bgra32(
-                    (byte)Math.Clamp((int)(_sky.FogColour.Z * 255f), 0, 255),
-                    (byte)Math.Clamp((int)(_sky.FogColour.Y * 255f), 0, 255),
-                    (byte)Math.Clamp((int)(_sky.FogColour.X * 255f), 0, 255),
+                    (byte)Math.Clamp((int)(sky.FogColour.Z * 255f), 0, 255),
+                    (byte)Math.Clamp((int)(sky.FogColour.Y * 255f), 0, 255),
+                    (byte)Math.Clamp((int)(sky.FogColour.X * 255f), 0, 255),
                     255);
             }
 

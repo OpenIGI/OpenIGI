@@ -41,7 +41,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// original sky draws. Levels that do declare one will need the flare ported.
 /// </para>
 /// </remarks>
-public sealed class SkyRenderer : IDisposable
+public sealed class SkyRenderer : ISkyPresenter
 {
     private const string LogCategory = "Sky";
 
@@ -201,6 +201,9 @@ public sealed class SkyRenderer : IDisposable
 
     /// <summary>Gets the distance in metres over which the level's authored fog reaches full strength.</summary>
     public float Distance { get; }
+
+    /// <inheritdoc/>
+    public void Draw(in SkyFrame frame) => Draw(frame.Camera, frame.Projection, frame.Seconds);
 
     /// <summary>Draws the sky behind everything: the dome, then each cloud layer.</summary>
     /// <param name="camera">The camera, positioned in metres.</param>
