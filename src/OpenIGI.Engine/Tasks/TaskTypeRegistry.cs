@@ -1,4 +1,4 @@
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using OpenIGI.Core.Diagnostics;
 
 namespace OpenIGI.Engine.Tasks;
@@ -164,18 +164,50 @@ public sealed class TaskTypeRegistry
         return [.. probe.GetDeclaredScriptParameters()];
     }
 
+    /// <summary>Checks a class against the parameter list a script declared for its type.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The declared list is the wire format and the class is whatever part of it has been
+    /// transcribed.</b> A parameter list is per script, not global — <c>ParameterList_Derive</c>
+    /// (<c>igi2 0x5686C0</c>) builds a type's list by extending its parent's, and each level's
+    /// <c>Task_DeclareParameters</c> then states the list <em>that</em> script was compiled against. Two
+    /// scripts in one game disagree routinely: I.G.I. 2's <c>location1/level1</c> declares ten
+    /// parameters for <c>HumanPlayer</c> and every other level declares eleven, the extra one being
+    /// <c>DisableSpottedIncrease</c> appended after that level was last built.
+    /// </para>
+    /// <para>
+    /// So the two lists have to agree where they overlap and may differ in length either way. Trailing
+    /// parameters the class does not carry are read and dropped; trailing members the data does not
+    /// supply read as zero, which is what <see cref="ScriptArgumentReader"/> already returns past the
+    /// end of a call's arguments. Neither can shift a field, because <c>Task_New</c> reads positionally
+    /// and the shared part is a prefix.
+    /// </para>
+    /// <para>
+    /// What is still fatal is disagreement <em>inside</em> the shared prefix about how many script
+    /// arguments a parameter consumes, which does shift every field after it.
+    /// </para>
+    /// </remarks>
     private void VerifyAgainstDeclaration(TaskType type, IReadOnlyList<TaskParameter> declared)
     {
         IReadOnlyList<TaskParameter> compiled = type.Parameters;
+        int shared = Math.Min(compiled.Count, declared.Count);
 
         if (compiled.Count != declared.Count)
         {
-            throw new EngineFatalException(
-                $"Task type '{type.Name}' declares {declared.Count} parameters in level data but its class " +
-                $"has {compiled.Count} [ScriptParam] members.");
+            IReadOnlyList<TaskParameter> longer = declared.Count > compiled.Count ? declared : compiled;
+            string surplus = string.Join(
+                ", ", longer.Skip(shared).Select(static parameter => $"'{parameter.Name}'"));
+
+            _logger.Warning(
+                LogCategory,
+                declared.Count > compiled.Count
+                    ? $"Task type '{type.Name}' declares {declared.Count} parameters in level data and its " +
+                      $"class carries {compiled.Count}; {surplus} are read and dropped."
+                    : $"Task type '{type.Name}' declares {declared.Count} parameters in level data and its " +
+                      $"class carries {compiled.Count}; {surplus} read as zero.");
         }
 
-        for (int i = 0; i < compiled.Count; i++)
+        for (int i = 0; i < shared; i++)
         {
             ScriptParamType compiledType = ScriptParamTypeInfo.GetBaseType(compiled[i].Type);
             ScriptParamType declaredType = ScriptParamTypeInfo.GetBaseType(declared[i].Type);

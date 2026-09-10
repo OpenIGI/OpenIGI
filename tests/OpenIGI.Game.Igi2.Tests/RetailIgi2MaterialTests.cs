@@ -1,4 +1,4 @@
-using OpenIGI.Formats;
+﻿using OpenIGI.Formats;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
@@ -86,8 +86,8 @@ public sealed class RetailIgi2MaterialTests
             }
         }
 
-        Assert.Equal(1_654, meshes);
-        Assert.Equal(6_066, records);
+        Assert.Equal(1_652, meshes);
+        Assert.Equal(6_062, records);
 
         // Not one slot goes unanswered. This started at 358 and the residue was the finding: the missing
         // slots all belonged to meshes resolved against the wrong pack, so a mesh arrived wearing another

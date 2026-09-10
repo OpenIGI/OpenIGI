@@ -1,4 +1,4 @@
-using OpenIGI.Formats;
+﻿using OpenIGI.Formats;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.World;
@@ -51,8 +51,10 @@ public sealed class RetailIgi2WorldSceneTests
         }
 
         Assert.Equal(24, levels);
-        Assert.Equal(10_569, placements);
-        Assert.Equal(15, types.Count);
+        Assert.Equal(10_550, placements);
+        // Fourteen, not fifteen: HumanPlayer became a class of its own when the sequel's player was
+        // registered, and a character is not a static placement.
+        Assert.Equal(14, types.Count);
     }
 
     /// <summary>

@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
@@ -69,21 +69,34 @@ public sealed class RetailIgi2LevelLoadTests
         Assert.Contains(tasks, static t => t is DeclaredTask);
     }
 
-    /// <summary>Pre-registering I.G.I. 1's Container is what stops an I.G.I. 2 level loading.</summary>
+    /// <summary>Pre-registering I.G.I. 1's Container costs an I.G.I. 2 level its Container parameters.</summary>
     /// <remarks>
+    /// <para>
     /// The negative half of the structural-type finding, and the reason
-    /// <see cref="ITitleDataLayout.StructuralTaskTypes"/> exists. Without it the fix looks like a tweak
-    /// that happened to help, rather than the one thing that was wrong.
+    /// <see cref="ITitleDataLayout.StructuralTaskTypes"/> exists. What makes a type structural is that
+    /// the title's own editor emits no declaration for it, and I.G.I. 2's does emit one for
+    /// <c>Container</c> — <c>Exclude from lightmaps</c>. Pre-registering it as parameterless does not
+    /// stop the level loading, because a script's declaration and a type's list are allowed to differ in
+    /// length; it makes every one of that level's containers load with the flag dropped.
+    /// </para>
+    /// <para>
+    /// So the assertion is on the containers themselves rather than on a throw. Silent is the point: a
+    /// wrong structural set does not announce itself, which is why the set belongs to the title.
+    /// </para>
     /// </remarks>
     [RequiresTitleDataFact("igi2")]
-    public void The_igi1_structural_set_rejects_an_igi2_level()
+    public void The_igi1_structural_set_costs_an_igi2_level_its_container_parameters()
     {
-        Harness harness = new(LevelScripts()[0], EngineTaskTypes.StructuralNames);
+        Harness structural = new(LevelScripts()[0], EngineTaskTypes.StructuralNames);
+        structural.Loader.LoadScript(Harness.ScriptName);
 
-        EngineFatalException failure = Assert.Throws<EngineFatalException>(
-            () => harness.Loader.LoadScript(Harness.ScriptName));
+        Harness declared = new(LevelScripts()[0]);
+        declared.Loader.LoadScript(Harness.ScriptName);
 
-        Assert.Contains("Container", failure.Message, StringComparison.Ordinal);
+        Assert.Empty(structural.Loop.Types.Get("Container").Parameters);
+        Assert.Equal(
+            "Exclude from lightmaps",
+            Assert.Single(declared.Loop.Types.Get("Container").Parameters).Name);
     }
 
     internal static IReadOnlyList<string> LevelScripts()

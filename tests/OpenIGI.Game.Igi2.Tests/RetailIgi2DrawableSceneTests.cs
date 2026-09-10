@@ -148,8 +148,10 @@ public sealed class RetailIgi2DrawableSceneTests
             }
         }
 
-        Assert.Equal(10_569, placed);
-        Assert.Equal(1_229, characters);
+        Assert.Equal(10_550, placed);
+        // 1,210 rather than 1,229: the nineteen the levels declare as HumanPlayer are no longer
+        // placements at all, having become the player the mission stands up.
+        Assert.Equal(1_210, characters);
         // Everything placed, less the characters, less the two the shipped data cannot resolve.
         Assert.Equal(placed - characters - 2, drawable);
     }

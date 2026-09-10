@@ -1,4 +1,4 @@
-using OpenIGI.Formats.Ilff;
+﻿using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.TestSupport;
@@ -116,12 +116,12 @@ public sealed class RetailIgi2ModelTableTests
             }
         }
 
-        // Exact, because the corpus is fixed and the residue is now small enough to name. Of the 10,569
-        // placements 9,536 resolve by file name alone and 10,564 through the packs -- the 1,028 the packs
+        // Exact, because the corpus is fixed and the residue is now small enough to name. Of the 10,550
+        // placements 9,536 resolve by file name alone and 10,545 through the packs -- the ones the packs
         // add are the characters and everything else the global pack carries.
-        Assert.Equal(10_569, total);
+        Assert.Equal(10_550, total);
         Assert.Equal(9_536, byFileName);
-        Assert.Equal(10_564, byTable);
+        Assert.Equal(10_545, byTable);
     }
 
     /// <summary>The five placements the shipped data cannot resolve, and why they are the data's fault.</summary>

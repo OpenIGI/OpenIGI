@@ -1,5 +1,6 @@
-using OpenIGI.Engine.Titles;
+﻿using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Igi2;
 
@@ -19,6 +20,7 @@ public static class Igi2ContentModules
     public static IReadOnlyList<IContentModule> All { get; } =
     [
         new Igi2ScriptVocabularyModule(),
+        new Igi2PlayerContentModule(),
         new Igi2TerrainContentModule(),
         new Igi2ForestContentModule(),
         new Igi2WaterContentModule(),
@@ -61,6 +63,44 @@ public sealed class Igi2ScriptVocabularyModule : IContentModule
     }
 
     /// <inheritdoc/>
+    public void LoadTables(ContentLoadContext context)
+    {
+    }
+}
+
+/// <summary>The player the level places.</summary>
+/// <remarks>
+/// <para>
+/// The two classes are the first game's, unchanged, because the first four parameters are the same four
+/// in the same order -- <c>Position</c>, <c>Gamma</c>, <c>Model</c>, <c>Team</c> -- and parameters bind
+/// by name, so the sequel's extra ones (a starting weapon, a first-person model, the visibility
+/// triple) are simply not bound yet. What the class carries that a placeholder cannot is the level's
+/// own spawn: <c>PlayerSpawn</c> looks for a <c>HumanPlayerTask</c>, and without one a level that
+/// declares its player perfectly well appears to declare none.
+/// </para>
+/// <para>
+/// <b>That absence was not a missing feature but a failing mission.</b> Dropped where the debugging
+/// camera opens rather than where the level puts him, the player stands outside the
+/// <c>AreaActivate</c> volume the mission is played inside; <c>location1/level1</c>'s LevelFlow reads
+/// <c>!AreaActivate_178.nActive</c> as "left the area", sends its LEFT_AREA message, and fails the
+/// mission about two and a half seconds in -- the grace period MainMenu state 9 counts out.
+/// </para>
+/// </remarks>
+public sealed class Igi2PlayerContentModule : IContentModule
+{
+    /// <inheritdoc/>
+    public string Name => "Characters";
+
+    /// <inheritdoc/>
+    public void Register(ContentRegistrationContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        context.Types.Register<HumanPlayerTask>("HumanPlayer");
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Nothing to load: a character's model and animations arrive with the level's packs.</remarks>
     public void LoadTables(ContentLoadContext context)
     {
     }
