@@ -1,4 +1,6 @@
 ﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.World;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
@@ -135,6 +137,133 @@ public sealed class Igi2PresentationProviderTests
         }
 
         Assert.Fail("No level shipped both terrain and textures.");
+    }
+
+    /// <summary>The ground is drawn in metres, where the camera and everything else already is.</summary>
+    /// <remarks>
+    /// <para>
+    /// The sequel's terrain is stored in engine units, like every other authored coordinate, and the
+    /// renderer works in metres. The presenter is where the two spaces meet, so the conversion is its
+    /// job — and it was not doing it, which put the whole ground 4096 times too large and a few million
+    /// metres away. Nothing failed; the level simply had no ground, and a missing ground looks exactly
+    /// like a level that ships none.
+    /// </para>
+    /// <para>
+    /// The assertion is made from a camera standing at the tile's own centre. If the presenter draws in
+    /// metres, what it hands the device is a translation near zero and vertices spanning the tile's
+    /// width in metres; if it draws in units, both are larger by 4096 and this fails by a margin no
+    /// tolerance could hide.
+    /// </para>
+    /// <para>
+    /// The quadtree is <em>not</em> converted, and that is deliberate rather than an omission: the
+    /// level's <c>Detail</c> and <c>Adaption</c> scale a squared edge length the original measures in
+    /// its own units, so the eye is converted into that space instead — the same division of labour
+    /// Project I.G.I.'s octree traversal uses.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void The_ground_is_drawn_in_metres()
+    {
+        ITitlePresentationProvider provider = Igi2PresentationProvider.Instance;
+        string root = GameDataSource.Igi2.RequireRoot();
+
+        foreach (Igi2Level level in Igi2Level.All())
+        {
+            string archive = Path.Combine(level.Directory, "heightmaps", "heightmaps.res");
+            if (!File.Exists(archive))
+            {
+                continue;
+            }
+
+            VirtualFileSystem files = new();
+            files.RegisterDevice(new LocalFileDevice(root));
+            files.SetAlias(
+                VirtualFileSystem.MissionAlias,
+                "LOCAL:" + Path.GetRelativePath(root, level.Directory).Replace(Path.DirectorySeparatorChar, '/') + "/");
+            ResourceRegistry resources = new(files);
+            resources.Register(Igi2PresentationProvider.HeightmapArchive, File.ReadAllBytes(archive));
+
+            Igi2TerrainSurface surface = Igi2TerrainSurface.Build(level.Root, IresArchive.Read(File.ReadAllBytes(archive)), NullLogger.Instance);
+            if (surface.IsEmpty)
+            {
+                continue;
+            }
+
+            RecordingGraphicsDevice device = new();
+            using ITerrainPresenter? ground = provider.CreateGround(
+                new GroundPresentationRequest(device, level.Root, resources, NullLogger.Instance));
+
+            if (ground is null)
+            {
+                continue;
+            }
+
+            // Standing at the first tile's centre, converted -- which is where a camera that can see
+            // this ground would actually be.
+            Vector3d eye = WorldScene.ToMetres(surface.Tiles[0].Centre);
+            ground.Draw(new TerrainFrame(
+                new Camera3D(eye, Camera3D.LookRotation(0f, 0f)),
+                Matrix4f.CreatePerspective(MathF.PI / 3f, 16f / 9f, 0.05f, 4000f),
+                MathF.PI / 3f,
+                16f / 9f,
+                0,
+                false,
+                false));
+
+            if (device.MeshDraws.Count == 0)
+            {
+                continue;
+            }
+
+            // A tile's own extent, in metres, is what a vertex stored relative to its centre can
+            // reach -- and it is read off the tile rather than picked, so the bound means something on
+            // any level rather than being a number that happens to hold on this one.
+            Igi2TerrainTile tile = surface.Tiles[0];
+            double halfExtent = Math.Max(tile.Width * tile.TexelWidth, tile.Height * tile.TexelHeight)
+                * 0.5 / WorldScene.UnitsPerMetre;
+
+            Assert.True(halfExtent > 1.0, "the tile has no extent, so the bound below would prove nothing.");
+
+            // Twice it, because a tile's drawn geometry reaches a little past the span of its own
+            // samples -- the quadtree stitches to its neighbours -- and because the thing being
+            // separated here differs by a factor of 4096. A bound loose by two is still decisive by
+            // three orders of magnitude, and a bound tight enough to argue about would be measuring
+            // the tessellation rather than the units.
+            double bound = halfExtent * 2.0;
+
+            int checkedVertices = 0;
+            foreach ((Vertex3D[] vertices, _) in device.Meshes.Values)
+            {
+                foreach (Vertex3D vertex in vertices)
+                {
+                    checkedVertices++;
+                    Assert.InRange(MathF.Abs(vertex.Position.X), 0f, (float)bound);
+                    Assert.InRange(MathF.Abs(vertex.Position.Y), 0f, (float)bound);
+                }
+            }
+
+            Assert.True(checkedVertices > 0, "the ground drew nothing, so nothing here is measured.");
+
+            // And the chunk origins, which carry the other half of the position. A tile centred away
+            // from the world origin is the case that catches a missed conversion here; a tile centred
+            // ON it -- which the first mission's are -- cannot, which is why the vertices above are the
+            // assertion that does the work.
+            foreach (RecordingGraphicsDevice.MeshDrawCall draw in device.MeshDraws)
+            {
+                float distance = MathF.Sqrt(
+                    (draw.ModelView.M41 * draw.ModelView.M41)
+                    + (draw.ModelView.M42 * draw.ModelView.M42)
+                    + (draw.ModelView.M43 * draw.ModelView.M43));
+
+                Assert.True(
+                    distance < 100_000f,
+                    $"{level} drew a terrain chunk {distance:F0} from an eye standing on it, which is engine units rather than metres.");
+            }
+
+            return;
+        }
+
+        Assert.Fail("No level shipped a ground that drew.");
     }
 
     /// <summary>Every shipped level's sky comes back through the seam, and draws.</summary>

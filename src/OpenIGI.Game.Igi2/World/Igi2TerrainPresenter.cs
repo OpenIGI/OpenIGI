@@ -1,7 +1,8 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Rendering;
 
@@ -222,7 +223,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
                     chunk.Mesh,
                     0,
                     chunk.IndexCount,
-                    frame.Camera.CreateModelView(chunk.Origin, Matrix3f.Identity),
+                    frame.Camera.CreateModelView(WorldScene.ToMetres(chunk.Origin), Matrix3f.Identity),
                     chunk.Diffuse,
                     TextureHandle.None,
                     BlendMode.Additive);
@@ -231,7 +232,12 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             return;
         }
 
-        Igi2TerrainView view = Igi2TerrainView.FromFrame(frame);
+        // The quadtree runs in engine units, because that is the space its thresholds are authored in:
+        // the level's Detail and Adaption scale a squared edge length measured against the eye, and the
+        // original measures it in the same units the height field is stored in. So the eye is converted
+        // rather than the terrain -- which is what Project I.G.I.'s octree traversal does too.
+        Igi2TerrainView view = Igi2TerrainView.FromFrame(
+            frame with { Camera = new Camera3D(WorldScene.ToUnits(frame.Camera.Position), frame.Camera.Orientation) });
         _poolUsed = 0;
 
         int triangles = 0;
@@ -244,7 +250,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             drawn += tessellation.SquaresDrawn;
             culled += tessellation.SquaresCulled;
 
-            Matrix4f modelView = frame.Camera.CreateModelView(tile.Centre, Matrix3f.Identity);
+            Matrix4f modelView = frame.Camera.CreateModelView(WorldScene.ToMetres(tile.Centre), Matrix3f.Identity);
             foreach (Igi2TerrainPass pass in tessellation.Mesh.Passes)
             {
                 if (!tile.Textures.TryGetValue(pass.MaterialId, out (TextureHandle Diffuse, TextureHandle Detail) texture))
@@ -306,9 +312,9 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
 
         return new Vertex3D(
             new Vector3f(
-                (float)(world.X - centre.X),
-                (float)(world.Y - centre.Y),
-                (float)(world.Z - centre.Z)),
+                (float)((world.X - centre.X) / WorldScene.UnitsPerMetre),
+                (float)((world.Y - centre.Y) / WorldScene.UnitsPerMetre),
+                (float)((world.Z - centre.Z) / WorldScene.UnitsPerMetre)),
             Vector3f.UnitZ,
             diffuseUv.U,
             diffuseUv.V,

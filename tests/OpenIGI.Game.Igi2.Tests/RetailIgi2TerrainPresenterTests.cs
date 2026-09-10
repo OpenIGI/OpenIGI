@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Presentation;
@@ -226,11 +226,20 @@ public sealed class RetailIgi2TerrainPresenterTests
         Assert.Equal(186, chunks);
     }
 
+    /// <summary>A frame from an eye standing two metres above the middle of a tile.</summary>
+    /// <remarks>
+    /// <b>In metres</b>, which is what a <see cref="TerrainFrame"/> carries: every camera downstream of
+    /// <c>WorldScene</c> is, and the host hands the presenter the same one it hands the world pass. The
+    /// presenter converts it into the quadtree's own space itself. This used to build the camera in
+    /// engine units to match what the presenter then did with it, which was self-consistent and agreed
+    /// with nothing else -- the host's real camera arrived in metres and the ground was tessellated for
+    /// an eye four thousand times further away.
+    /// </remarks>
     private static TerrainFrame StandingOn(Igi2TerrainTile tile)
     {
         Vector3d ground = tile.PositionOf(tile.Width / 2, tile.Height / 2);
         Camera3D camera = new(
-            new Vector3d(ground.X, ground.Y, ground.Z + (2.0 * OpenIGI.Game.World.WorldScene.UnitsPerMetre)),
+            OpenIGI.Game.World.WorldScene.ToMetres(ground) + new Vector3d(0.0, 0.0, 2.0),
             Camera3D.LookRotation(0f, -0.2f));
 
         return new TerrainFrame(

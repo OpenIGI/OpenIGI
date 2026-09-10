@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Textures;
@@ -395,12 +395,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
 
         // The traversal works in engine units, which is the octree's own space; the camera arrives in
         // metres because that is what everything downstream of WorldScene uses.
-        Camera3D engineCamera = new(
-            new Vector3d(
-                camera.Position.X * WorldScene.UnitsPerMetre,
-                camera.Position.Y * WorldScene.UnitsPerMetre,
-                camera.Position.Z * WorldScene.UnitsPerMetre),
-            camera.Orientation);
+        Camera3D engineCamera = new(WorldScene.ToUnits(camera.Position), camera.Orientation);
 
         TerrainView view = TerrainView.FromPerspective(
             engineCamera,

@@ -54,6 +54,17 @@ public sealed class WorldScene
     public static Vector3d ToMetres(Vector3d units) =>
         new(units.X / UnitsPerMetre, units.Y / UnitsPerMetre, units.Z / UnitsPerMetre);
 
+    /// <summary>Converts a position or an offset from metres into engine units.</summary>
+    /// <param name="metres">The value in metres.</param>
+    /// <returns>The same value in engine units.</returns>
+    /// <remarks>
+    /// The inverse of <see cref="ToMetres"/>, and it exists because both games' terrain needs it: the
+    /// level-of-detail thresholds are authored in engine units, so the eye is converted into that space
+    /// rather than the height field out of it.
+    /// </remarks>
+    public static Vector3d ToUnits(Vector3d metres) =>
+        new(metres.X * UnitsPerMetre, metres.Y * UnitsPerMetre, metres.Z * UnitsPerMetre);
+
     /// <summary>The task parameter naming an object's model.</summary>
     public const string ModelParameter = "Model";
 
