@@ -502,6 +502,13 @@ internal sealed partial class DesktopGame
         {
             _cutscenes.EnableTerminalTerrainLanding(getawayBell);
         }
+        // Mission 5's extraction Bell likewise has a one-shot approach: AnimTask 3333 lowers
+        // Heli 3322 onto the helipad and then waits. Stop the live rigid body at that first terrain
+        // contact so its residual horizontal velocity cannot carry it beyond the pad.
+        if (id == 5 && levelRoot.Tree.FromId(3322) is { } extractionBell)
+        {
+            _cutscenes.EnableTerminalTerrainLanding(extractionBell);
+        }
 
         // Every mission: a car's suspension reads this for the surface under each wheel, and much
         // of what a vehicle stands on is placed geometry -- Mission 1's outro truck starts on a
