@@ -176,6 +176,21 @@ public interface ITitlePresentationProvider
     /// </remarks>
     SceneAtmosphere? ReadAtmosphere(GameTask levelRoot) => null;
 
+    /// <summary>Reads how this title composites its placed objects, if it departs from the default.</summary>
+    /// <param name="levelRoot">The level's task tree.</param>
+    /// <returns>The shading, or nothing when this game draws objects the way the port always has.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A second seam rather than a wider first one.</b> <see cref="ReadAtmosphere"/> is about the air
+    /// and is baked into every pipeline; this is about how a lightmap is applied and what lights an
+    /// object without one, and is applied per draw. I.G.I. 2's lightmap stage is <c>MODULATE2X</c> and
+    /// its unlightmapped objects are lit by Direct3D's own vertex pipeline from the level's sun
+    /// (<see cref="ObjectShading"/> cites the state blocks); Project I.G.I. answers nothing here and is
+    /// composited exactly as before.
+    /// </para>
+    /// </remarks>
+    ObjectShading? ReadObjectShading(GameTask levelRoot) => null;
+
     /// <summary>Builds the presenter for this title's placed world objects.</summary>
     /// <param name="request">What the presenter needs.</param>
     /// <returns>The presenter.</returns>

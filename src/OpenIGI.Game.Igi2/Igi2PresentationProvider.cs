@@ -90,6 +90,27 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
             ? new SceneAtmosphere(air.FogColour, air.FogDensity, air.Ambient)
             : null;
 
+    /// <summary>What a sampled object lightmap is multiplied by: the sequel's lightmap stage is <c>MODULATE2X</c>.</summary>
+    /// <remarks>
+    /// <c>Direct3DRender_SetTextureStateLightmap</c> (<c>igi2ed 0x56D140</c>) sets stage 0 to
+    /// <c>SELECTARG1(TEXTURE)</c> and stage 1 to <c>COLOROP = MODULATE2X</c> with <c>COLORARG1 = TEXTURE</c>
+    /// (the bake) and <c>COLORARG2 = CURRENT</c>. The vertex colour never enters; the product is doubled.
+    /// A lightmapped object drawn at a plain multiply is half the brightness the game shipped at.
+    /// </remarks>
+    public const float LightmapGain = 2f;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The gain is a property of the renderer and holds for every level; the sun is read off the level and
+    /// may be absent, in which case an unlightmapped object is left as the port has always drawn it.
+    /// </remarks>
+    public ObjectShading? ReadObjectShading(GameTask levelRoot) =>
+        new ObjectShading(
+            LightmapGain,
+            Igi2FixedFunctionSun.TryRead(levelRoot, out Igi2FixedFunctionSun sun)
+                ? new FixedFunctionSun(sun.Ambient, sun.Colour, sun.Direction)
+                : null);
+
     /// <inheritdoc/>
     public ITerrainPresenter? CreateGround(in GroundPresentationRequest request)
     {

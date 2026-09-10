@@ -54,12 +54,25 @@ namespace OpenIGI.Game.Igi2.World;
 /// <param name="Ambient">The flat light every surface sits in, from <c>Ambient color terrain</c>.</param>
 /// <param name="SkyColour">The sky's own colour, from <c>Sky color</c>.</param>
 /// <param name="TimeOfDay">The keyframe's <c>Time</c>, an hour of the day.</param>
+/// <param name="ObjectAmbient">
+/// The flat light an unlightmapped OBJECT sits in, from <c>Ambient color object category 1</c>. The
+/// keyframe authors four object categories beside the terrain's, and the renderer reads exactly one of
+/// them: <c>GlobalLightQTask_DrawCallback</c> copies every category into <c>Mesh3D_atAmbientColor</c>
+/// and <c>Mesh3D_atFogColor</c> in order, terrain first, and every object state block —
+/// <c>Direct3DRender_SetGenericStateRigid</c> (<c>0x56CA90</c>), <c>SetGenericStateLightmap</c>
+/// (<c>0x56CFD0</c>), the forest's and the water's — reads the slot at index one. Nothing anywhere
+/// reads index two or beyond. This is the value <c>Lightsource_SetAmbientlight</c> (<c>0x41C990</c>)
+/// hands Direct3D as <c>D3DRS_AMBIENT</c> for the fixed-function lighting of objects without a bake.
+/// (The same slot's fog colour and density are what objects are fogged against; every retail level
+/// probed authors them equal to the terrain's, so <see cref="FogColour"/> serves both.)
+/// </param>
 public readonly record struct Igi2SceneAtmosphere(
     Vector3f FogColour,
     float FogDensity,
     Vector3f Ambient,
     Vector3f SkyColour,
-    float TimeOfDay)
+    float TimeOfDay,
+    Vector3f ObjectAmbient)
 {
     /// <summary>The task type the level declares its atmosphere on.</summary>
     public const string TaskTypeName = "GlobalLight";
@@ -106,7 +119,8 @@ public readonly record struct Igi2SceneAtmosphere(
             Math.Max(0f, Float(keyframe, "Fog density terrain", 0f)) * AuthoredDensityScale,
             Colour(keyframe, "Ambient color terrain", Vector3f.Zero),
             Colour(keyframe, "Sky color", new Vector3f(0.5f, 0.55f, 0.6f)),
-            Float(keyframe, "Time", 12f));
+            Float(keyframe, "Time", 12f),
+            Colour(keyframe, "Ambient color object category 1", Vector3f.Zero));
 
         return true;
     }
