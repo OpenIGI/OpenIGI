@@ -313,6 +313,33 @@ public interface IGraphicsDevice : IDisposable
     /// <remarks>So that a renderer which must draw untinted — the sky — can put back what it found.</remarks>
     Vector3f ModelAmbient { get; }
 
+    /// <summary>Makes the following draws multiply their lightmap texture into the base colour.</summary>
+    /// <param name="modulate">Whether the lightmap slot is a colour to modulate rather than a bake.</param>
+    /// <remarks>
+    /// <para>
+    /// For I.G.I. 2's ground, whose second texture is a DETAIL map rather than a lightmap.
+    /// <c>TerrainRender_SetMaterialTextures</c> (<c>igi2ed 0x667330</c>) binds the material's diffuse to
+    /// stage 0 at <c>1 / (TextureScale * 4096)</c> and its detail texture to stage 1 at
+    /// <c>1 / (DetailTextureScale * 4096)</c> — the two scales it writes into vertex-shader constants
+    /// 11 and 12 — and <c>TerrainRender_SetTextureState</c> (<c>0x66B810</c>) gives stage 1
+    /// <c>TEXCOORDINDEX = 1</c> and <c>COLOROP = MODULATE(TEXTURE, CURRENT)</c>. The ground's colour is
+    /// therefore the diffuse times the detail, at two different tiling rates, and it is where the rock
+    /// and grass grain in the original's hillsides comes from: the diffuse alone repeats every few tens
+    /// of metres and reads as a smooth wash.
+    /// </para>
+    /// <para>
+    /// The forward path needs nothing said to it — it already multiplies the lightmap into the colour,
+    /// which for a bound detail map is exactly the stage-1 modulate. The deferred path routes the
+    /// lightmap to its own G-buffer attachment instead, which is right for an object's bake and wrong
+    /// for this, so this is how it is told which of the two it has.
+    /// </para>
+    /// <para>Device state, like <see cref="SetLightmapScale"/>: it spans a run of draws.</para>
+    /// </remarks>
+    void SetGroundDetail(bool modulate)
+    {
+        _ = modulate;
+    }
+
     /// <summary>Gets the part of the frame draws currently belong to.</summary>
     /// <remarks><see cref="ScenePass.None"/> outside a scene capture, which is the original's own path.</remarks>
     ScenePass CurrentPass { get; }

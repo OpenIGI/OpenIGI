@@ -40,6 +40,13 @@ public sealed partial class VulkanGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void SetGroundDetail(bool modulate)
+    {
+        ThrowIfDisposed();
+        _groundDetail = modulate;
+    }
+
+    /// <inheritdoc/>
     public void ClearDetailFade()
     {
         ThrowIfDisposed();

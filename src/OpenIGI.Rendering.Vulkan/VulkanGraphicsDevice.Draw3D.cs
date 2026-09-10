@@ -37,6 +37,11 @@ public sealed partial class VulkanGraphicsDevice
     // texture alone, which is what every path but the baked one wants.
     private Vector3f _modelAmbient = Vector3f.One;
 
+    // The sequel's ground: its lightmap slot holds a detail colour to multiply into the base rather
+    // than a bake to keep apart. Mode 3 in the first normal row's fourth component, which the G-buffer
+    // shader reads beside the two the level-of-detail fade uses. See IGraphicsDevice.SetGroundDetail.
+    private bool _groundDetail;
+
     // How much of the previous-pose vertex stream is in the position drawn now, and how much was in the
     // one drawn last frame. Zero for everything that does not animate -- and for those two streams are
     // one buffer, so any blend of a value with itself is that value and the picture is unchanged.
@@ -669,7 +674,8 @@ public sealed partial class VulkanGraphicsDevice
         }
         else
         {
-            data[16] = normalMatrix.M11; data[17] = normalMatrix.M21; data[18] = normalMatrix.M31; data[19] = 0f;
+            data[16] = normalMatrix.M11; data[17] = normalMatrix.M21; data[18] = normalMatrix.M31;
+            data[19] = _groundDetail ? 3f : 0f;
             data[20] = normalMatrix.M12; data[21] = normalMatrix.M22; data[22] = normalMatrix.M32;
             data[24] = normalMatrix.M13; data[25] = normalMatrix.M23; data[26] = normalMatrix.M33; data[27] = _alphaHashSeed;
         }

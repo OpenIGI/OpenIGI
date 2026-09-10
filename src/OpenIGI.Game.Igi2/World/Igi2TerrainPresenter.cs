@@ -227,13 +227,21 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         // because the quadtree morphs the weights as it subdivides. It read as holes torn in the
         // ground, one to two metres across, in the shape of the boundaries between grass, rock and
         // scree.
+        // The second texture is the material's DETAIL map, multiplied into the ground's colour at its
+        // own tiling rate -- stage 1's MODULATE at TEXCOORDINDEX 1 (TerrainRender_SetTextureState,
+        // igi2ed 0x66B810), bound by TerrainRender_SetMaterialTextures (0x667330) beside the diffuse.
+        // The forward path multiplies its lightmap slot into the colour already, so binding it there is
+        // the whole of it; the deferred path keeps that slot for an object's bake, and this is what
+        // tells it this one is a colour instead.
         _device.SetAlphaReference(0);
+        _device.SetGroundDetail(true);
         try
         {
             DrawGround(frame);
         }
         finally
         {
+            _device.SetGroundDetail(false);
             _device.SetAlphaReference(IGraphicsDevice.DefaultAlphaReference);
         }
     }
@@ -257,14 +265,13 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
 
                     // Stage 0 is the material, stage 1 the detail map modulated onto it -- the two
                     // stages TerrainRender_SetTextureState configures.
-                    _device.SetTextureDetail(chunk.Diffuse, chunk.Detail);
                     _device.DrawMesh(
                         chunk.Mesh,
                         0,
                         chunk.IndexCount,
                         frame.Camera.CreateModelView(WorldScene.ToMetres(chunk.Origin), Matrix3f.Identity),
                         chunk.Diffuse,
-                        TextureHandle.None,
+                        chunk.Detail,
                         bases ? BlendMode.Opaque : BlendMode.Additive);
                 }
             }
@@ -391,6 +398,18 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         // original's own product -- texture * light * share -- on all four combinations.
         float weight = Math.Clamp(pass.Weights.Span[index], 0f, 1f);
 
+        // AND THE BAKE COMES IN AT TWICE ITS STORED VALUE, because that is the strength the original
+        // applies it at. It does not put the tile's lightmap in the vertex at all: it draws the whole
+        // ground again, with the lightmap on stage 0 through TerrainRender_nLightmapVertexShader and its
+        // own per-tile scale and offset, under blend mode 3 -- SRCBLEND = DESTCOLOR, DESTBLEND = SRCCOLOR
+        // (TerrainRender_SetBlendMode, igi2ed 0x666B90), which is src*dst + dst*src: a MODULATE2X. A
+        // lightmap's neutral is therefore a half rather than white, and reading the samples straight into
+        // the vertex left every level at half the brightness the original gives it.
+        //
+        // Doubling here is that pass's factor, taken where this port keeps the bake. Saturating at white
+        // is what the blender does too.
+        const float BakeModulate2X = 2f;
+
         return new Vertex3D(
             new Vector3f(
                 (float)((world.X - centre.X) / WorldScene.UnitsPerMetre),
@@ -407,9 +426,9 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             detailUv.U,
             detailUv.V,
             new Bgra32(
-                Scale(light.B, weight),
-                Scale(light.G, weight),
-                Scale(light.R, weight),
+                Scale(light.B, weight * BakeModulate2X),
+                Scale(light.G, weight * BakeModulate2X),
+                Scale(light.R, weight * BakeModulate2X),
                 255));
     }
 
@@ -478,14 +497,13 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             0,
             CollectionsMarshal.AsSpan(_compact));
 
-        _device.SetTextureDetail(texture.Diffuse, texture.Detail);
         _device.DrawMesh(
             mesh,
             0,
             _compact.Count,
             modelView,
             texture.Diffuse,
-            TextureHandle.None,
+            texture.Detail,
             blend);
 
         int triangles = _compact.Count / 3;
