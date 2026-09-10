@@ -80,6 +80,17 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     /// holds the three maps of each. A level that declares no terrain gets no presenter rather than an
     /// empty one, so the host skips the pass entirely instead of issuing nothing every frame.
     /// </remarks>
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The sequel's levels carry a <c>GlobalLight</c> task; see <see cref="Igi2SceneAtmosphere"/> for
+    /// what the original does with it and why a level without the haze does not read as night.
+    /// </remarks>
+    public SceneAtmosphere? ReadAtmosphere(GameTask levelRoot) =>
+        Igi2SceneAtmosphere.TryRead(levelRoot, out Igi2SceneAtmosphere air)
+            ? new SceneAtmosphere(air.FogColour, air.FogDensity, air.Ambient)
+            : null;
+
+    /// <inheritdoc/>
     public ITerrainPresenter? CreateGround(in GroundPresentationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request.LevelRoot);

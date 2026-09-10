@@ -1,4 +1,5 @@
-﻿using OpenIGI.Rendering;
+﻿using OpenIGI.Core.Numerics;
+using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Shaders;
 using Silk.NET.Core.Native;
@@ -74,6 +75,9 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
     }
 
     /// <summary>Gets the layout binding the diffuse and lightmap textures the fragment shader samples.</summary>
+    private Vector3f _fogColour;
+    private float _fogDensity;
+
     public DescriptorSetLayout DescriptorSetLayout { get; }
 
     /// <summary>Gets the layout binding the environment cube a reflective draw samples.</summary>
@@ -87,6 +91,31 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
 
     /// <summary>Gets the pipeline layout shared by every variant.</summary>
     public PipelineLayout PipelineLayout { get; }
+
+    /// <summary>Sets the scene's fog, rebuilding the variants when it changes.</summary>
+    /// <param name="colour">The colour a surface tends to with distance.</param>
+    /// <param name="density">The extinction per metre; zero is no fog.</param>
+    /// <remarks>
+    /// A level's fog is a constant, so it is baked into the variants rather than pushed — there is no
+    /// push room, and nothing about it varies within a mission. Changing it therefore throws the cache
+    /// away, which is why this is only ever called when a mission loads.
+    /// </remarks>
+    public void SetFog(Vector3f colour, float density)
+    {
+        if (colour == _fogColour && density.Equals(_fogDensity))
+        {
+            return;
+        }
+
+        _fogColour = colour;
+        _fogDensity = density;
+        foreach (Pipeline pipeline in _pipelines.Values)
+        {
+            _vk.DestroyPipeline(_device, pipeline, null);
+        }
+
+        _pipelines.Clear();
+    }
 
     /// <summary>Gets, building if needed, the pipeline for one render state.</summary>
     /// <param name="depth">The depth behaviour.</param>
@@ -221,13 +250,15 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
             // The cut-out threshold and the reflection switch are baked in here rather than pushed:
             // there is no push room left for either. The storage lives in this frame, which outlasts the
             // pipeline creation below.
-            uint* specializationData = stackalloc uint[2];
-            SpecializationMapEntry* specializationEntries = stackalloc SpecializationMapEntry[2];
+            uint* specializationData = stackalloc uint[6];
+            SpecializationMapEntry* specializationEntries = stackalloc SpecializationMapEntry[6];
             SpecializationInfo specialization = AlphaReferenceSpecialization.DescribeMesh(
                 specializationData,
                 specializationEntries,
                 key.AlphaReference,
-                key.Reflective);
+                key.Reflective,
+                _fogColour,
+                _fogDensity);
 
             PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
             stages[0] = new PipelineShaderStageCreateInfo

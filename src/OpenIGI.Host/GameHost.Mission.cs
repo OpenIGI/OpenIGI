@@ -1355,6 +1355,29 @@ internal sealed partial class GameHost
                 new SkyPresentationRequest(_device, levelRoot, _fileSystem, _resources, FarPlane, _logger));
             _shadowPass = new ShadowCasterPass(_device);
 
+            // The air the level is played in, if the running game authors one. A title seam: I.G.I. 2
+            // reads a fog colour, a fog density and a flat ambient off its GlobalLight task and fogs
+            // every surface it draws against them; Project I.G.I. authors none of this and answers
+            // nothing, which leaves its picture exactly as it was. Set once here, because it is a
+            // constant of the level rather than of the frame, so it is set once here -- but through the
+            // SAME SceneFog every world draw already wears, rather than a mechanism of its own. Two were
+            // built independently: this game's air as pipeline specialization constants, and Project
+            // I.G.I.'s retail fog as device state with a per-vertex factor. The second is strictly the
+            // more capable -- it changes per draw without a pipeline variant, and SceneFog.ColourFor
+            // already knows an additive pass fogs to black -- so it is the one kept.
+            SceneAtmosphere? air = _presentation.ReadAtmosphere(levelRoot);
+            _atmosphere = air;
+            _device.SetFog(air is { } authored
+                ? new SceneFog(authored.FogColour, authored.FogDensity)
+                : SceneFog.None);
+            if (air is { } reported)
+            {
+                _logger.Information(
+                    "Mission",
+                    $"The level's air: fog {reported.FogColour} at {reported.FogDensity:G4} per metre, "
+                        + $"ambient {reported.Ambient}.");
+            }
+
             if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings readSun))
             {
                 _sun = readSun;

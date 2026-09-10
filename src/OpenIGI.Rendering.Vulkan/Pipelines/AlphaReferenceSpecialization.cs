@@ -1,4 +1,5 @@
-﻿using Silk.NET.Vulkan;
+﻿using OpenIGI.Core.Numerics;
+using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Pipelines;
 
@@ -47,11 +48,35 @@ internal static unsafe class AlphaReferenceSpecialization
     /// <summary>The <c>constant_id</c> the forward mesh shader declares its reflection switch under.</summary>
     public const uint ReflectiveConstantId = 1;
 
-    /// <summary>Fills a description of both the forward mesh shader's constants.</summary>
-    /// <param name="data">Room for two four-byte values, which must outlive the pipeline creation call.</param>
-    /// <param name="entries">Room for two map entries, likewise.</param>
+    /// <summary>The <c>constant_id</c>s the forward mesh shader declares the scene's fog under.</summary>
+    /// <remarks>
+    /// <para>
+    /// Constants for the same reason the two above are — no push room — and, unlike those two, that is
+    /// no compromise at all: a level's fog IS a constant. I.G.I. 2 reads one colour and one density off
+    /// the level's <c>GlobalLight</c> when the mission loads and never changes them while it is played
+    /// (<c>GlobalLightQTask_DrawCallback</c>, <c>igi2ed 0x6534E0</c>). Baking them means the fog costs a
+    /// multiply-add in the shaders that have it and nothing whatever in the ones that do not — which is
+    /// every pipeline Project I.G.I. builds, since it reports no atmosphere.
+    /// </para>
+    /// </remarks>
+    public const uint FogColourRedConstantId = 2;
+
+    /// <summary>The green channel of the scene's fog colour.</summary>
+    public const uint FogColourGreenConstantId = 3;
+
+    /// <summary>The blue channel of the scene's fog colour.</summary>
+    public const uint FogColourBlueConstantId = 4;
+
+    /// <summary>The scene fog's extinction per metre; zero is no fog, and no cost.</summary>
+    public const uint FogDensityConstantId = 5;
+
+    /// <summary>Fills a description of the forward mesh shader's constants.</summary>
+    /// <param name="data">Room for six four-byte values, which must outlive the pipeline creation call.</param>
+    /// <param name="entries">Room for six map entries, likewise.</param>
     /// <param name="reference">The cut-out threshold to bake in.</param>
     /// <param name="reflective">Whether the variant samples an environment cube.</param>
+    /// <param name="fogColour">The scene's fog colour.</param>
+    /// <param name="fogDensity">The scene's fog extinction per metre; zero is no fog.</param>
     /// <returns>The description.</returns>
     /// <remarks>
     /// The reflection switch is a constant for the same reason the threshold is — no push room — and it
@@ -63,11 +88,20 @@ internal static unsafe class AlphaReferenceSpecialization
         uint* data,
         SpecializationMapEntry* entries,
         byte reference,
-        bool reflective)
+        bool reflective,
+        Vector3f fogColour,
+        float fogDensity)
     {
         float unit = ToUnit(reference);
         data[0] = *(uint*)&unit;
         data[1] = reflective ? 1u : 0u;
+        float red = fogColour.X;
+        float green = fogColour.Y;
+        float blue = fogColour.Z;
+        data[2] = *(uint*)&red;
+        data[3] = *(uint*)&green;
+        data[4] = *(uint*)&blue;
+        data[5] = *(uint*)&fogDensity;
 
         entries[0] = new SpecializationMapEntry { ConstantID = ConstantId, Offset = 0, Size = sizeof(float) };
         entries[1] = new SpecializationMapEntry
@@ -76,12 +110,36 @@ internal static unsafe class AlphaReferenceSpecialization
             Offset = sizeof(float),
             Size = sizeof(int),
         };
+        entries[2] = new SpecializationMapEntry
+        {
+            ConstantID = FogColourRedConstantId,
+            Offset = sizeof(float) * 2,
+            Size = sizeof(float),
+        };
+        entries[3] = new SpecializationMapEntry
+        {
+            ConstantID = FogColourGreenConstantId,
+            Offset = sizeof(float) * 3,
+            Size = sizeof(float),
+        };
+        entries[4] = new SpecializationMapEntry
+        {
+            ConstantID = FogColourBlueConstantId,
+            Offset = sizeof(float) * 4,
+            Size = sizeof(float),
+        };
+        entries[5] = new SpecializationMapEntry
+        {
+            ConstantID = FogDensityConstantId,
+            Offset = sizeof(float) * 5,
+            Size = sizeof(float),
+        };
 
         return new SpecializationInfo
         {
-            MapEntryCount = 2,
+            MapEntryCount = 6,
             PMapEntries = entries,
-            DataSize = sizeof(uint) * 2,
+            DataSize = sizeof(uint) * 6,
             PData = data,
         };
     }

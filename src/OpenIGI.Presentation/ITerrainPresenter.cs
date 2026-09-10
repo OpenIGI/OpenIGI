@@ -162,6 +162,20 @@ public interface ITitlePresentationProvider
     /// </remarks>
     ITerrainPresenter? CreateGround(in GroundPresentationRequest request) => null;
 
+    /// <summary>Reads the air this title's levels are played in, if it authors one.</summary>
+    /// <param name="levelRoot">The level's task tree.</param>
+    /// <returns>The atmosphere, or nothing when this game does not author one.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A title seam, and deliberately empty by default.</b> I.G.I. 2 lights its levels with a
+    /// <c>GlobalLight</c> task carrying a fog colour, a fog density and a flat ambient, and applies that
+    /// fog to every surface it draws. Project I.G.I. has no such task and no such pass, and its picture
+    /// is a regression gate — so it answers nothing here and the host applies nothing, which is what
+    /// keeps a change to the sequel's air from reaching it at all rather than merely not being noticed.
+    /// </para>
+    /// </remarks>
+    SceneAtmosphere? ReadAtmosphere(GameTask levelRoot) => null;
+
     /// <summary>Builds the presenter for this title's placed world objects.</summary>
     /// <param name="request">What the presenter needs.</param>
     /// <returns>The presenter.</returns>

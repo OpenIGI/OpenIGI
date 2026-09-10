@@ -332,6 +332,10 @@ internal sealed partial class GameHost : IDisposable
     private float _inspectorAspect = 16f / 9f;
     private WorldScene? _scene;
     private IWorldPresenter? _world;
+    // The air the running level is played in, when the title authors one. Null for a game that does
+    // not, which is what keeps Project I.G.I. out of this entirely.
+    private SceneAtmosphere? _atmosphere;
+
     private ITerrainPresenter? _terrain;
     private IForestPresenter? _forest;
     private IWaterPresenter? _water;
