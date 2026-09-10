@@ -246,7 +246,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
 
         // The trunks cut out at whatever the frame is set to; a trunk texture is opaque, so the value
         // does not reach them either way.
-        Issue(camera, static s => s.Trunk, BlendMode.Opaque);
+        Issue(camera, static s => s.Trunk, BlendMode.Opaque, doubled: false);
         if (!SortedFoliage)
         {
             // And the foliage at 32 out of 255, which is the whole point of the reference being
@@ -254,7 +254,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
             // a fraction of its authored shape. Set back afterwards, because it is device state and the
             // next thing drawn is not foliage.
             _device.SetAlphaReference(FoliageAlphaReference);
-            Issue(camera, static s => s.Foliage, BlendMode.Opaque);
+            Issue(camera, static s => s.Foliage, BlendMode.Opaque, doubled: true);
             _device.SetAlphaReference(IGraphicsDevice.DefaultAlphaReference);
             return;
         }
@@ -262,7 +262,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         // Back to front, which is what SortRender_AllocItem's key buys: it takes the view-space depth of
         // the face group's first vertex and the sort renderer replays the items in that order.
         _visible.Sort(static (a, b) => b.Depth.CompareTo(a.Depth));
-        Issue(camera, static s => s.Foliage, BlendMode.AlphaBlend);
+        Issue(camera, static s => s.Foliage, BlendMode.AlphaBlend, doubled: true);
     }
 
     /// <summary>Builds a tree's orientation, with its per-axis scale folded in.</summary>
@@ -417,14 +417,14 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         _visible.Add(new Visible(stand, tree, delta.Length));
     }
 
-    private void Issue(in Camera3D camera, Func<Stand, Part[]> select, BlendMode blend)
+    private void Issue(in Camera3D camera, Func<Stand, Part[]> select, BlendMode blend, bool doubled)
     {
         // The bake in the second slot is a colour to multiply in, not a light to keep apart -- see
         // BakeOf. The forward path does that already; this is what tells the deferred one.
         _device.SetLightmapModulates(true);
         try
         {
-            IssueTrees(camera, select, blend);
+            IssueTrees(camera, select, blend, doubled);
         }
         finally
         {
@@ -432,7 +432,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         }
     }
 
-    private void IssueTrees(in Camera3D camera, Func<Stand, Part[]> select, BlendMode blend)
+    private void IssueTrees(in Camera3D camera, Func<Stand, Part[]> select, BlendMode blend, bool doubled)
     {
         foreach (Visible visible in _visible)
         {
@@ -446,7 +446,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
             Igi2Tree tree = stand.Trees[visible.Tree];
             // Drawn in metres: the frame's camera is, and so are the mesh's own vertices now.
             Matrix4f modelView = camera.CreateModelView(WorldScene.ToMetres(tree.Position), OrientationOf(tree));
-            TextureHandle bake = BakeOf(tree.Light);
+            TextureHandle bake = BakeOf(tree.Light, doubled);
             foreach (Part part in parts)
             {
                 _device.DrawMesh(
@@ -486,20 +486,26 @@ public sealed class Igi2ForestPresenter : IForestPresenter
     /// are all well under half.
     /// </para>
     /// </remarks>
-    private TextureHandle BakeOf(Bgra32 light)
+    private TextureHandle BakeOf(Bgra32 light, bool doubled)
     {
-        uint key = ((uint)light.R << 16) | ((uint)light.G << 8) | light.B;
+        uint key = ((uint)light.R << 16) | ((uint)light.G << 8) | light.B | (doubled ? 0x8000_0000u : 0u);
         if (_bakes.TryGetValue(key, out TextureHandle existing))
         {
             return existing;
         }
 
-        Bgra32 doubled = new(
-            (byte)Math.Min(255, light.B * 2),
-            (byte)Math.Min(255, light.G * 2),
-            (byte)Math.Min(255, light.R * 2),
+        // THE TRUNK IS NOT DOUBLED AND THE FOLIAGE IS. They are separate state blocks in the original
+        // and they disagree on exactly this: ForestRender_SetTextureState_Trunk (igi2ed 0x57C2D0) sets
+        // stage 0 to COLOROP = MODULATE, while ForestRender_SetTextureState_AlphaTestFoliage (0x57C4B0)
+        // sets MODULATE2X. Doubling both put every trunk at twice the brightness the original gives it,
+        // which on a birch reads as a white post standing in a dark wood.
+        int scale = doubled ? 2 : 1;
+        Bgra32 applied = new(
+            (byte)Math.Min(255, light.B * scale),
+            (byte)Math.Min(255, light.G * scale),
+            (byte)Math.Min(255, light.R * scale),
             255);
-        TextureHandle texture = _device.CreateTexture(new TextureDescription(1, 1), [doubled]);
+        TextureHandle texture = _device.CreateTexture(new TextureDescription(1, 1), [applied]);
         _bakes[key] = texture;
         return texture;
     }
