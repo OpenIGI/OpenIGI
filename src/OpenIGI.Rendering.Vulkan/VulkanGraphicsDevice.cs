@@ -573,6 +573,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         }
 
         _textures.Clear();
+        DestroyCubes();
         // Before the compute registry, which owns the atlas images the render pass names.
         _placeholderScene?.Dispose();
         DisposeSceneTextures();

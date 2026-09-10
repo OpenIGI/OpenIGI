@@ -575,7 +575,8 @@ public sealed partial class VulkanGraphicsDevice
         Vk vk = _instance.Vk;
         CommandBuffer cmd = _frameCommandBuffer;
 
-        BindGraphicsPipeline(_deferred.ShadowPipeline.Pipeline);
+        // The same threshold the G-buffer will be asked for, which is what keeps the two tests agreeing.
+        BindGraphicsPipeline(_deferred.ShadowPipeline.ForAlphaReference(_alphaReference));
         BindMeshBuffers(mesh);
 
         // The colour texture, for its alpha alone: a cut-out must cast the shadow of the shape that is
@@ -627,7 +628,7 @@ public sealed partial class VulkanGraphicsDevice
         Vk vk = _instance.Vk;
         CommandBuffer cmd = _frameCommandBuffer;
 
-        BindGraphicsPipeline(_deferred.Geometry.ForState(_depthState, _cullMode, blend));
+        BindGraphicsPipeline(_deferred.Geometry.ForState(_depthState, _cullMode, blend, _alphaReference));
         BindMeshBuffers(mesh);
         BindMeshTextures(_deferred.Geometry.PipelineLayout, diffuse, lightmap);
         BindSurfaceSet();
@@ -787,7 +788,7 @@ public sealed partial class VulkanGraphicsDevice
         Vk vk = _instance.Vk;
         CommandBuffer cmd = _frameCommandBuffer;
 
-        BindGraphicsPipeline(pipeline.ForState(_depthState, _cullMode, blend));
+        BindGraphicsPipeline(pipeline.ForState(_depthState, _cullMode, blend, _alphaReference));
         BindMeshBuffers(mesh);
         BindMeshTextures(pipeline.PipelineLayout, diffuse, lightmap);
 

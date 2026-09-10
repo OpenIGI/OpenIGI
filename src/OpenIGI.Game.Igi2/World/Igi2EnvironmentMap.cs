@@ -1,9 +1,10 @@
-using System.Globalization;
+﻿using System.Globalization;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Textures;
+using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.Igi2.World;
 
@@ -56,31 +57,15 @@ public enum Igi2CubeFace
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>What this is not.</b> It does not upload anything. <c>OpenIGI.Rendering.IGraphicsDevice</c> has no
-/// cube-texture entry point — it can create a 2D texture (<c>CreateTexture</c>), a volume texture
-/// (<c>CreateVolumeTexture</c>) and a storage texture, and nothing that takes six faces or binds a cube
-/// sampler. So this type stops at the last thing that can be done without one: it holds the six faces as
-/// <see cref="Bgra32"/> in the order a cube texture wants them, with the sampling rule written down.
-/// What the device would have to grow is small and specific:
+/// <b>What it holds, and what it hands over.</b> The six faces as <see cref="Bgra32"/>, in the order a
+/// cube sampler wants them, with the sampling rule written down — and <see cref="Upload"/>, which turns
+/// them into a device cube map. When this type was first written the device had no cube entry point at
+/// all and this remark listed what one would need; three of the four items are now
+/// <c>CreateCubeTexture</c>, <c>UpdateCubeFace</c> and <c>SetEnvironmentCube</c>. The fourth, a draw
+/// path with three-component texture coordinates, is not needed after all: I.G.I. 2's water is drawn
+/// camera-relative, so a reflection direction can be built in the vertex stage out of the position and
+/// normal the mesh already carries.
 /// </para>
-/// <list type="number">
-/// <item><description>
-/// create a cube texture from an edge length and a format — the original uses
-/// <c>CreateCubeTexture(edge, 1 level, usage 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED)</c>, one mip only;
-/// </description></item>
-/// <item><description>
-/// upload one face at a time, indexed by <see cref="Igi2CubeFace"/>, which is the same order every
-/// graphics API since Direct3D 8 has used;
-/// </description></item>
-/// <item><description>
-/// bind it to a texture unit as a cube sampler — distinct from <c>SetTexture</c> for the same reason
-/// <c>SetVolumeTexture</c> already is, because the two bind different targets to one unit;
-/// </description></item>
-/// <item><description>
-/// and a draw path whose texture coordinates for that unit are three-component directions rather than
-/// a UV pair.
-/// </description></item>
-/// </list>
 /// <para>
 /// <b>Only water samples these.</b> <c>Envmap_LoadFromMemory</c> has exactly one caller,
 /// <c>Water_LoadEnvmapData</c> (<c>igi2ed 0x646810</c>), and <c>Envmap_Create</c> (<c>0x5817C0</c>) has
@@ -148,6 +133,38 @@ public sealed class Igi2EnvironmentMap
             ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, FaceCount);
             return _faces[index];
         }
+    }
+
+    /// <summary>Uploads the six faces as a device cube map.</summary>
+    /// <param name="device">The device to create the cube on.</param>
+    /// <returns>A handle to the cube, ready for <c>SetEnvironmentCube</c>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="device"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// One cube at <see cref="Edge"/>, six faces written in order, no mip chain — which is exactly what
+    /// <c>Envmap_LoadFromMemory</c> (<c>igi2ed 0x581670</c>) builds: a single-mip <c>A8R8G8B8</c> cube at
+    /// face zero's width, with file <c>i</c> loaded into cube slot <c>i</c> and no remapping.
+    /// </para>
+    /// <para>
+    /// <b>The face order needs no translation and that is not a coincidence.</b> The engine bakes its
+    /// faces in engine axes — <c>Envmap_CubeMapRender</c>'s switch puts up and down in slots 2 and 3,
+    /// where a sampler expects ±Y — and the water shader swizzles <c>.xzy</c> on the way to the lookup,
+    /// which exchanges Y and Z and lines the two up again. So the file index, the
+    /// <see cref="Igi2CubeFace"/> value and the sampler's slot are all the same number, and the caller
+    /// that has to do the exchange is whatever builds the direction, not this.
+    /// </para>
+    /// </remarks>
+    public TextureHandle Upload(IGraphicsDevice device)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+
+        TextureHandle cube = device.CreateCubeTexture(Edge, $"water {TaskId} envmap {Index}");
+        for (int face = 0; face < FaceCount; face++)
+        {
+            device.UpdateCubeFace(cube, face, _faces[face]);
+        }
+
+        return cube;
     }
 
     /// <summary>Names the archive a water task's baked faces ship in.</summary>

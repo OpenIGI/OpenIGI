@@ -27,7 +27,7 @@ internal sealed unsafe class GBufferPipeline : IDisposable
     private readonly RenderPass _renderPass;
     private readonly VulkanShaderModule _vertex;
     private readonly VulkanShaderModule _fragment;
-    private readonly Dictionary<(DepthState Depth, CullMode Cull, bool Additive), Pipeline> _pipelines = [];
+    private readonly Dictionary<(DepthState Depth, CullMode Cull, bool Additive, byte AlphaReference), Pipeline> _pipelines = [];
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="GBufferPipeline"/> class.</summary>
@@ -81,16 +81,26 @@ internal sealed unsafe class GBufferPipeline : IDisposable
     /// <c>TerrainChunkMesh</c>): the base colour alone blends, its alpha and the other attachments are
     /// left as the base pass wrote them.
     /// </param>
-    public Pipeline ForState(DepthState depth, CullMode cull, BlendMode blend = BlendMode.Opaque)
+    /// <param name="alphaReference">
+    /// How much texture alpha a cut-out fragment needs to survive, out of 255. Baked into the variant
+    /// because there is no push room for it; see <see cref="Pipelines.AlphaReferenceSpecialization"/>.
+    /// <b>The shadow pass has to be asked for the same number</b>, or a surface shadows itself along the
+    /// edge where the two tests disagree.
+    /// </param>
+    public Pipeline ForState(
+        DepthState depth,
+        CullMode cull,
+        BlendMode blend = BlendMode.Opaque,
+        byte alphaReference = IGraphicsDevice.DefaultAlphaReference)
     {
         bool additive = blend == BlendMode.Additive;
-        if (_pipelines.TryGetValue((depth, cull, additive), out Pipeline existing))
+        if (_pipelines.TryGetValue((depth, cull, additive, alphaReference), out Pipeline existing))
         {
             return existing;
         }
 
-        Pipeline pipeline = CreatePipeline(depth, cull, additive);
-        _pipelines[(depth, cull, additive)] = pipeline;
+        Pipeline pipeline = CreatePipeline(depth, cull, additive, alphaReference);
+        _pipelines[(depth, cull, additive, alphaReference)] = pipeline;
         return pipeline;
     }
 
@@ -145,14 +155,22 @@ internal sealed unsafe class GBufferPipeline : IDisposable
         return layout;
     }
 
-    private Pipeline CreatePipeline(DepthState depth, CullMode cull, bool additive)
+    private Pipeline CreatePipeline(DepthState depth, CullMode cull, bool additive, byte alphaReference)
     {
         nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
         try
         {
+            float specializationValue;
+            SpecializationMapEntry specializationEntry;
+            SpecializationInfo specialization = Pipelines.AlphaReferenceSpecialization.Describe(
+                &specializationValue,
+                &specializationEntry,
+                alphaReference);
+
             PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
             stages[0] = Stage(ShaderStageFlags.VertexBit, _vertex.Handle, entryPoint);
             stages[1] = Stage(ShaderStageFlags.FragmentBit, _fragment.Handle, entryPoint);
+            stages[1].PSpecializationInfo = &specialization;
 
             // Two streams of the same shape: the pose the mesh holds now, and the pose it held before.
             // A static mesh reports one buffer as both, so the delta the vertex stage forms is zero.

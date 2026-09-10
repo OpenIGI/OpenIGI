@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.World;
@@ -206,6 +206,62 @@ public sealed class RetailIgi2ForestPresenterTests
         // against a single model; the rest mix two to nine stands and several models.
         Assert.Equal(5, counted);
         Assert.True(sorted >= 50, $"Only {sorted} stands drew a blended foliage pass.");
+    }
+
+    /// <summary>The foliage pass lowers the cut-out to 32 and puts it back afterwards.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>ForestRender_SetStates_Foliage</c> (<c>igi2ed 0x57BDF0</c>) sets <c>D3DRS_ALPHAREF</c> to 32,
+    /// well below the 128 this port cuts out at everywhere else. It matters because I.G.I. 2's leaf
+    /// sprites do not carry a strictly nought-or-255 alpha the way I.G.I. 1's do: theirs ramps, and
+    /// testing it at a half erodes the sprite to a fraction of its authored shape.
+    /// </para>
+    /// <para>
+    /// The restore is half the claim. The reference is device state that spans a run of draws, so a
+    /// pass that lowered it and walked away would leave every later cut-out in the frame — fencing,
+    /// railings, window glass — testing at the foliage's threshold and keeping texels the original cuts.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void The_foliage_pass_lowers_the_cut_out_and_restores_it()
+    {
+        int checkedStands = 0;
+
+        foreach (Igi2Level level in Igi2Level.All())
+        {
+            Igi2Forest forest = Forest(level);
+            if (forest.IsEmpty)
+            {
+                continue;
+            }
+
+            RecordingGraphicsDevice device = new();
+            using Igi2ForestPresenter presenter = new(
+                device,
+                forest,
+                name => Resolve(level, name),
+                _ => TextureHandle.None);
+
+            foreach (Igi2ForestStand stand in forest.Stands)
+            {
+                device.AlphaReferences.Clear();
+                presenter.Draw(CameraIn(stand, 0));
+                if (presenter.VisibleTreeCount == 0)
+                {
+                    continue;
+                }
+
+                checkedStands++;
+
+                // Lowered once, restored once, in that order — and the device is left where it started.
+                Assert.Equal(
+                    [Igi2ForestPresenter.FoliageAlphaReference, IGraphicsDevice.DefaultAlphaReference],
+                    device.AlphaReferences);
+                Assert.Equal(IGraphicsDevice.DefaultAlphaReference, device.AlphaReference);
+            }
+        }
+
+        Assert.True(checkedStands > 0, "no stand drew a tree, so the cut-out was never exercised.");
     }
 
     /// <summary>Every tree model but one flags the face group that carries its leaves.</summary>

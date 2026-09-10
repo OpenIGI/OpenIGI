@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Rendering;
@@ -26,6 +26,18 @@ namespace OpenIGI.Rendering;
 /// </remarks>
 public interface IGraphicsDevice : IDisposable
 {
+    /// <summary>The cut-out threshold a device starts at, and returns to.</summary>
+    /// <remarks>
+    /// 128, which is the half this port has always tested at to within a texel value — the shader's
+    /// literal was <c>0.5</c> and <c>128 / 255</c> is <c>0.502</c>. Chosen so that making the threshold
+    /// settable changes no picture until somebody asks it to. It is <em>not</em> either of I.G.I. 2's
+    /// numbers; see <see cref="SetAlphaReference"/>.
+    /// </remarks>
+    const byte DefaultAlphaReference = 128;
+
+    /// <summary>The number of faces a cube map has.</summary>
+    const int CubeFaceCount = 6;
+
     /// <summary>Gets what this device supports. Mirrors <c>GetGFXCaps</c>.</summary>
     GraphicsCapabilities Capabilities { get; }
 
@@ -370,6 +382,36 @@ public interface IGraphicsDevice : IDisposable
     /// </param>
     /// <remarks>Device state, like <see cref="SetLightmapScale"/>: it spans a run of draws.</remarks>
     void SetAlphaHash(float seed);
+
+    /// <summary>Sets how much texture alpha a cut-out draw needs to survive, for the following draws.</summary>
+    /// <param name="reference">
+    /// The threshold, out of 255. A fragment whose texture alpha is <b>below</b> it is discarded;
+    /// <see cref="DefaultAlphaReference"/> is the port's long-standing half and zero turns the test off.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// A byte rather than a fraction because that is the original's own type:
+    /// <c>D3DRS_ALPHAREF</c> takes an integer out of 255, and I.G.I. 2 sets it to exactly two values —
+    /// <b>64</b> for cut-outs generally (<c>Direct3DRender_SetBlendStateAlphaTest</c>,
+    /// <c>igi2ed 0x56C960</c>) and <b>32</b> for foliage, which lowers it so the thin edges of a leaf
+    /// sprite survive (<c>ForestRender_SetStates_Foliage</c>, <c>0x57BDF0</c>). The comparison there is
+    /// <c>D3DCMP_GREATEREQUAL</c>, so the test is "alpha at least the reference" and this discards below
+    /// it, which is the same rule.
+    /// </para>
+    /// <para>
+    /// It matters more than a threshold usually does. The port had it hard coded at a half, which is
+    /// neither of the original's numbers: on I.G.I. 1's foliage, whose texture alpha is strictly nought
+    /// or 255, any threshold in between gives the same picture and the constant was harmless. I.G.I. 2's
+    /// is not — a leaf sprite's alpha ramps, and testing at a half erodes it to a fraction of its
+    /// authored shape.
+    /// </para>
+    /// <para>
+    /// Device state, like <see cref="SetAlphaHash"/>: it spans a run of draws and must be set back
+    /// after them. A backend may treat it as part of the pipeline, so callers should change it in runs
+    /// rather than per draw.
+    /// </para>
+    /// </remarks>
+    void SetAlphaReference(byte reference);
 
     /// <summary>Attaches a derived surface-detail map to a diffuse texture.</summary>
     /// <param name="diffuse">The diffuse texture the map belongs to.</param>
@@ -742,6 +784,58 @@ public interface IGraphicsDevice : IDisposable
     /// and a unit holding both is a unit whose meaning depends on which sampler reads it.
     /// </remarks>
     void SetVolumeTexture(int unit, TextureHandle texture);
+
+    /// <summary>Creates an empty cube map.</summary>
+    /// <param name="edge">The edge length of one face, in texels.</param>
+    /// <param name="name">A name for the texture, used only in diagnostics.</param>
+    /// <returns>A handle to the cube, its faces undefined until written.</returns>
+    /// <exception cref="GraphicsDeviceException">The edge is not positive, or the device refused it.</exception>
+    /// <remarks>
+    /// <para>
+    /// Distinct from <see cref="CreateTexture"/> for the reason <see cref="CreateVolumeTexture"/> is:
+    /// the two bind different targets, and a unit holding both is a unit whose meaning depends on which
+    /// sampler reads it.
+    /// </para>
+    /// <para>
+    /// Square faces and no mip chain, which is what the game's own bakes are — I.G.I. 2 writes one
+    /// <c>A8R8G8B8</c> single-mip cube at face zero's width and loads the six files into it in order
+    /// (<c>Envmap_LoadFromMemory</c>, <c>igi2ed 0x581670</c>). Filtered linearly and clamped at every
+    /// edge, so the seams between faces blend rather than repeat.
+    /// </para>
+    /// </remarks>
+    TextureHandle CreateCubeTexture(int edge, string name);
+
+    /// <summary>Replaces one face of a cube map.</summary>
+    /// <param name="cube">The cube to write.</param>
+    /// <param name="face">Which face, <c>0</c> to <c>5</c>.</param>
+    /// <param name="pixels">The face's texels, row by row, <c>edge × edge</c> of them.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="face"/> is not a face.</exception>
+    /// <exception cref="GraphicsDeviceException">The handle is not a cube of this device, or the span is the wrong size.</exception>
+    /// <remarks>
+    /// The face order is the one every cube map API agrees on and the one the game's files are numbered
+    /// in: <c>+X, −X, +Y, −Y, +Z, −Z</c>, in the <em>sampler's</em> axes. Those are not the engine's —
+    /// I.G.I. 2 bakes its faces in engine axes and the water shader swizzles <c>.xzy</c> on the way to
+    /// the lookup, which exchanges Y and Z and lines the two up. A caller holding engine-axis faces
+    /// therefore has a mapping to do, and it belongs on the caller's side of this seam.
+    /// </remarks>
+    void UpdateCubeFace(TextureHandle cube, int face, ReadOnlySpan<Bgra32> pixels);
+
+    /// <summary>Hands over the cube map reflective draws sample, or clears it.</summary>
+    /// <param name="cube">The cube, or <see cref="TextureHandle.None"/> for none.</param>
+    /// <remarks>
+    /// <para>
+    /// Device state rather than a texture unit, and that is a fact about this seam rather than about
+    /// cube maps: a 3D draw here takes its diffuse and its lightmap as <see cref="DrawMesh"/> arguments,
+    /// and the unit array <see cref="SetTexture"/> writes is read by the compute path alone. A
+    /// reflection belongs with <see cref="SetShelterMap"/> and <see cref="SetReflections"/> — something
+    /// the frame is told once and a run of draws then uses.
+    /// </para>
+    /// <para>
+    /// A device with no cube reflects nothing; so does a draw made while none is set. That is the
+    /// state every non-reflective draw is in, which is nearly all of them.
+    /// </para>
+    /// </remarks>
+    void SetEnvironmentCube(TextureHandle cube);
 
     /// <summary>Compiles a compute program.</summary>
     /// <param name="source">The GLSL compute shader.</param>

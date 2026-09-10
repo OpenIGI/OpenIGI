@@ -76,6 +76,20 @@ public sealed partial class VulkanGraphicsDevice
     private float _alphaHashSeed;
 
     /// <inheritdoc/>
+    public void SetAlphaReference(byte reference)
+    {
+        ThrowIfDisposed();
+        _alphaReference = reference;
+    }
+
+    // Part of the pipeline rather than of a draw, because there is no push-constant room left in either
+    // mesh block -- both are exactly the 128 bytes Vulkan guarantees, and every float is spoken for. It
+    // becomes a specialization constant instead, which is why the seam takes a byte: the variant space
+    // is the 256 values D3DRS_ALPHAREF itself has, and a level uses two or three of them.
+    private byte _alphaReference = IGraphicsDevice.DefaultAlphaReference;
+
+
+    /// <inheritdoc/>
     /// <remarks>
     /// Recorded against the diffuse texture's own id, and looked up when a draw binds that diffuse. The
     /// pairing outlives any draw, so nothing between here and the G-buffer has to carry it: the descriptor

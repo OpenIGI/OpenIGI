@@ -82,10 +82,15 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
     /// <param name="depth">The depth behaviour.</param>
     /// <param name="cull">The face-culling rule.</param>
     /// <param name="blend">The blend mode.</param>
+    /// <param name="alphaReference">The cut-out threshold out of 255, baked into the variant.</param>
     /// <returns>The matching pipeline.</returns>
-    public Pipeline ForState(DepthState depth, CullMode cull, BlendMode blend)
+    public Pipeline ForState(
+        DepthState depth,
+        CullMode cull,
+        BlendMode blend,
+        byte alphaReference = IGraphicsDevice.DefaultAlphaReference)
     {
-        Mesh3DPipelineKey key = new(depth, cull, blend);
+        Mesh3DPipelineKey key = new(depth, cull, blend, alphaReference);
         if (_pipelines.TryGetValue(key, out Pipeline existing))
         {
             return existing;
@@ -182,12 +187,22 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
                 Module = _vertex.Handle,
                 PName = (byte*)entryPoint,
             };
+            // The cut-out threshold is baked in here rather than pushed: there is no push room left. The
+            // storage lives in this frame, which outlasts the pipeline creation below.
+            float specializationValue;
+            SpecializationMapEntry specializationEntry;
+            SpecializationInfo specialization = AlphaReferenceSpecialization.Describe(
+                &specializationValue,
+                &specializationEntry,
+                key.AlphaReference);
+
             stages[1] = new PipelineShaderStageCreateInfo
             {
                 SType = StructureType.PipelineShaderStageCreateInfo,
                 Stage = ShaderStageFlags.FragmentBit,
                 Module = _fragment.Handle,
                 PName = (byte*)entryPoint,
+                PSpecializationInfo = &specialization,
             };
 
             // Two streams: the pose the mesh holds now, and the pose it held before. The first-person rig

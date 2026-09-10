@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
@@ -43,7 +43,7 @@ public sealed class Igi2ForestPresenter : IDisposable
     /// state blocks it otherwise selects between (<c>0x57C770</c> alpha test, <c>0x57C900</c> alpha blend)
     /// set neither the reference nor the test themselves.
     /// </remarks>
-    public const int FoliageAlphaReference = 32;
+    public const byte FoliageAlphaReference = 32;
 
     /// <summary>The face-group flag bit that marks the group as foliage rather than trunk.</summary>
     /// <remarks><c>ForestRender_CreateBSPModel</c> tests <c>*groupByte0 &amp; 2</c> and takes the first hit.</remarks>
@@ -218,10 +218,18 @@ public sealed class Igi2ForestPresenter : IDisposable
         // once for the frame.
         _device.SetCullMode(CullMode.CounterClockwise);
 
+        // The trunks cut out at whatever the frame is set to; a trunk texture is opaque, so the value
+        // does not reach them either way.
         Issue(camera, static s => s.Trunk, BlendMode.Opaque);
         if (!SortedFoliage)
         {
+            // And the foliage at 32 out of 255, which is the whole point of the reference being
+            // settable: a leaf sprite's alpha ramps, and the half this port used to test at eroded it to
+            // a fraction of its authored shape. Set back afterwards, because it is device state and the
+            // next thing drawn is not foliage.
+            _device.SetAlphaReference(FoliageAlphaReference);
             Issue(camera, static s => s.Foliage, BlendMode.Opaque);
+            _device.SetAlphaReference(IGraphicsDevice.DefaultAlphaReference);
             return;
         }
 
