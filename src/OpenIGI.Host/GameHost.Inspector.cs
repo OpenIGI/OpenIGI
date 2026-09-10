@@ -1,4 +1,4 @@
-using OpenIGI.Presentation.Rendering;
+﻿using OpenIGI.Presentation.Rendering;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Ai;
@@ -128,7 +128,7 @@ internal sealed partial class GameHost : IWorldInspector
     /// <inheritdoc/>
     public bool TryTeleportPlayerTo(int id) =>
         _player is not null && TryResolvePosition(id, out Vector3d position) &&
-        _player.Place(_playerTerrain, position, _player.Body.Yaw);
+        _player.Place(_ground, position, _player.Body.Yaw);
 
     /// <inheritdoc/>
     public bool TryMoveCameraTo(int id)

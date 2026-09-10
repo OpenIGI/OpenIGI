@@ -104,7 +104,7 @@ public sealed class Igi2PresentationProviderTests
                 VirtualFileSystem.MissionAlias,
                 "LOCAL:" + Path.GetRelativePath(root, level.Directory).Replace(Path.DirectorySeparatorChar, '/') + "/");
             ResourceRegistry resources = new(files);
-            resources.Register(Igi2PresentationProvider.HeightmapArchive, File.ReadAllBytes(archive));
+            resources.Register(Igi2TerrainSurface.ArchiveResourceName, File.ReadAllBytes(archive));
             foreach (string res in Directory.EnumerateFiles(textures, "*.res"))
             {
                 foreach (IresEntry entry in IresArchive.Read(File.ReadAllBytes(res)).Entries)
@@ -179,7 +179,7 @@ public sealed class Igi2PresentationProviderTests
                 VirtualFileSystem.MissionAlias,
                 "LOCAL:" + Path.GetRelativePath(root, level.Directory).Replace(Path.DirectorySeparatorChar, '/') + "/");
             ResourceRegistry resources = new(files);
-            resources.Register(Igi2PresentationProvider.HeightmapArchive, File.ReadAllBytes(archive));
+            resources.Register(Igi2TerrainSurface.ArchiveResourceName, File.ReadAllBytes(archive));
             foreach (string res in Directory.EnumerateFiles(textures, "*.res"))
             {
                 foreach (IresEntry entry in IresArchive.Read(File.ReadAllBytes(res)).Entries)
@@ -250,7 +250,7 @@ public sealed class Igi2PresentationProviderTests
                 VirtualFileSystem.MissionAlias,
                 "LOCAL:" + Path.GetRelativePath(root, level.Directory).Replace(Path.DirectorySeparatorChar, '/') + "/");
             ResourceRegistry resources = new(files);
-            resources.Register(Igi2PresentationProvider.HeightmapArchive, File.ReadAllBytes(archive));
+            resources.Register(Igi2TerrainSurface.ArchiveResourceName, File.ReadAllBytes(archive));
 
             Igi2TerrainSurface surface = Igi2TerrainSurface.Build(level.Root, IresArchive.Read(File.ReadAllBytes(archive)), NullLogger.Instance);
             if (surface.IsEmpty)

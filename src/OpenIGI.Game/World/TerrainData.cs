@@ -1,3 +1,4 @@
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 
@@ -17,7 +18,7 @@ namespace OpenIGI.Game.World;
 /// and that level draws its objects over nothing rather than following wild offsets.
 /// </para>
 /// </remarks>
-public sealed class TerrainData
+public sealed class TerrainData : IGroundHeightField
 {
     /// <summary>Initializes a new instance of the <see cref="TerrainData"/> class.</summary>
     /// <param name="octree">The octree.</param>
@@ -99,6 +100,33 @@ public sealed class TerrainData
     /// <returns><see langword="false"/> when the chunk's offset does not address a block.</returns>
     public bool TryGetBlock(in TerrainChunk chunk, out TerrainCommandBlock block) =>
         Commands.TryGetBlock(chunk.CommandOffset, out block);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The octree walk, unchanged and reached through the seam a second title needed. Everything the
+    /// query does still lives in <see cref="TerrainHeightQuery"/>; this only says that a Project I.G.I.
+    /// terrain is one of the things a body can stand on.
+    /// </remarks>
+    public bool TryGetGround(double x, double y, double z, double aboveUnits, out TerrainGround ground) =>
+        TerrainHeightQuery.TryGetGround(this, x, y, z, aboveUnits, out ground);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The terrain half of the mover's own swept cast. It answers with the first triangle the segment
+    /// crosses whichever way it faces; the caller keeps or drops it on the normal, as it always did.
+    /// </remarks>
+    public bool TryTraceDescent(Vector3d from, Vector3d target, out TerrainGround ground)
+    {
+        ground = default;
+        WorldTraceRequest fall = new(from, target, WorldTraceMask.Terrain);
+        if (!TerrainRayTrace.TryTrace(this, fall, out WorldTraceHit crossed))
+        {
+            return false;
+        }
+
+        ground = new TerrainGround(crossed.Position.Z, crossed.Normal.X, crossed.Normal.Y, crossed.Normal.Z);
+        return true;
+    }
 
     /// <inheritdoc/>
     public override string ToString() =>

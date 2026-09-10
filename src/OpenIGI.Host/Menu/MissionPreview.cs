@@ -1,4 +1,4 @@
-using OpenIGI.Presentation.Cameras;
+﻿using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Flow;
@@ -72,6 +72,10 @@ namespace OpenIGI.Host.Menu;
 /// hands the mission a finished field, and one that was not hands it the bake in flight.
 /// </param>
 /// <param name="DistanceFieldResolution">The voxel resolution the field was read or is being baked at.</param>
+/// <param name="Ground">
+/// The ground the level's own data describes, when the title's walk produced one. Project I.G.I.'s comes
+/// with the mission instead, so this is null there and the host falls back to it.
+/// </param>
 /// <param name="Decoded">
 /// The level's textures, decoded on the thread pool while the rest of this was being built. The render
 /// thread then only uploads them — see <see cref="TextureDecodeCache"/>.
@@ -94,4 +98,5 @@ public sealed record MissionPreview(
     SceneDistanceField? DistanceField,
     DistanceFieldBake? PendingDistanceField,
     int DistanceFieldResolution,
-    TextureDecodeCache? Decoded);
+    TextureDecodeCache? Decoded,
+    IGroundHeightField? Ground = null);

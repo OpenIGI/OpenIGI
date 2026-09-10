@@ -316,7 +316,11 @@ public sealed class MissionPreviewLoader(
             ? DeriveGroundDetailAsync(loaded.Terrain)
             : Task.FromResult<Bgra32[][]>([]);
 
-        WorldScene scene = WorldScene.Build(loaded, levelRoot, magic, logger);
+        // The title's own walk, not the first game's. A promoted backdrop IS the mission, scene and
+        // all, so these two cannot be allowed to differ.
+        WorldBuildResult built = context.WorldBuilder.Build(
+            new WorldBuildRequest(loaded, levelRoot, resources, magic, logger));
+        WorldScene scene = built.Scene;
         ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements, context.Formats.Collision);
 
         TerrainSurface? surface = loaded.Terrain is { IsUsable: true } usable
@@ -401,7 +405,8 @@ public sealed class MissionPreviewLoader(
             distanceField,
             pendingField,
             fieldResolution,
-            decoded);
+            decoded,
+            built.Ground);
     }
 
     /// <summary>Gets whether the selected render preset can consume derived ground detail.</summary>

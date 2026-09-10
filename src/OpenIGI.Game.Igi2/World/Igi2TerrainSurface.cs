@@ -1,6 +1,7 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats;
 using OpenIGI.Formats.Ilff;
@@ -136,6 +137,52 @@ public readonly record struct Igi2TerrainTile(
     /// <remarks>See <see cref="PositionOf"/> for why the half texel is there.</remarks>
     public double SampleY(int y) => Centre.Y - (Height * TexelHeight * 0.5) + ((y + 0.5) * TexelHeight);
 
+    /// <summary>Gets the fractional sample column a world X falls on.</summary>
+    /// <param name="x">The world X, in world units.</param>
+    /// <returns>The column, which may be outside the tile.</returns>
+    /// <remarks>
+    /// The inverse of <see cref="SampleX"/>, and the original's own:
+    /// <c>Terrain_VertexFunction</c> (<c>igi2 0x5706F0</c>) forms
+    /// <c>(x − centre + half) / texelWidth − 0.5</c>, the same half texel that puts a sample at its
+    /// texel's centre rather than on the grid corner.
+    /// </remarks>
+    public double ColumnAt(double x) => ((x - Centre.X + (Width * TexelWidth * 0.5)) / TexelWidth) - 0.5;
+
+    /// <summary>Gets the fractional sample row a world Y falls on.</summary>
+    /// <param name="y">The world Y, in world units.</param>
+    /// <returns>The row, which may be outside the tile.</returns>
+    /// <remarks>See <see cref="ColumnAt"/>.</remarks>
+    public double RowAt(double y) => ((y - Centre.Y + (Height * TexelHeight * 0.5)) / TexelHeight) - 0.5;
+
+    /// <summary>Gets whether a world point is inside this tile, half a texel in from each edge.</summary>
+    /// <param name="x">The world X, in world units.</param>
+    /// <param name="y">The world Y, in world units.</param>
+    /// <returns><see langword="true"/> when this tile answers for the point.</returns>
+    /// <remarks>
+    /// <para>
+    /// The test both of the sequel's height queries walk the tile list with —
+    /// <c>Terrain_VertexFunction</c> (<c>igi2 0x5706F0</c>) and
+    /// <c>Terrain_GetZFromWorldCoordinates</c> (<c>igi2ed 0x632FF0</c>) — and it is strict on all four
+    /// sides and shrunk by half a texel, because a sample sits at its texel's centre and the outer half
+    /// texel has no second sample to interpolate against.
+    /// </para>
+    /// <para>
+    /// Both walk the list backwards and take the <em>first</em> tile that contains the point, which is
+    /// what makes a later-declared finer tile win over the coarse one it sits inside — the same priority
+    /// <see cref="IsSuperseded"/> draws with.
+    /// </para>
+    /// </remarks>
+    public bool CoversPoint(double x, double y)
+    {
+        double halfWidth = Width * TexelWidth * 0.5;
+        double halfHeight = Height * TexelHeight * 0.5;
+
+        return Centre.X - halfWidth + (TexelWidth * 0.5) < x
+            && x < Centre.X + halfWidth - (TexelWidth * 0.5)
+            && Centre.Y - halfHeight + (TexelHeight * 0.5) < y
+            && y < Centre.Y + halfHeight - (TexelHeight * 0.5);
+    }
+
     /// <summary>Gets the span this tile's samples cover.</summary>
     public Igi2TerrainExtent Extent => new(SampleX(0), SampleY(0), SampleX(Width), SampleY(Height));
 
@@ -226,6 +273,14 @@ public sealed class Igi2TerrainSurface
     /// <summary>The category load diagnostics are logged under.</summary>
     public const string LogCategory = "igi2.terrain";
 
+    /// <summary>The archive a level keeps its three terrain maps per tile in.</summary>
+    /// <remarks>
+    /// <c>TerrainMap_GetDirectory</c> (<c>igi2ed 0x62FE50</c>) builds <c>MISSION:heightmaps</c> and
+    /// <c>TerrainMap_Alloc</c> appends the file name; on a retail install those files are not loose, and
+    /// arrive through this archive mounted at the same place.
+    /// </remarks>
+    public const string ArchiveResourceName = "MISSION:heightmaps/heightmaps.res";
+
     private Igi2TerrainSurface(
         IReadOnlyList<Igi2TerrainTile> tiles,
         IReadOnlyDictionary<int, TerrainMaterialTask> materials)
@@ -246,6 +301,27 @@ public sealed class Igi2TerrainSurface
 
     /// <summary>Gets a value indicating whether the level has any ground to draw.</summary>
     public bool IsEmpty => Tiles.Count == 0;
+
+    /// <summary>Loads the ground a level declares, opening its archive through the registry.</summary>
+    /// <param name="levelRoot">The level's task tree.</param>
+    /// <param name="resources">The registry the level's own files are read from.</param>
+    /// <param name="logger">Where load diagnostics go.</param>
+    /// <returns>The surface, which may be empty.</returns>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The one place that knows where the maps live, because two callers want them: the presenter that
+    /// draws the ground and the walk that hands the player something to stand on.
+    /// </remarks>
+    public static Igi2TerrainSurface Build(GameTask levelRoot, ResourceRegistry resources, IIgiLogger? logger = null)
+    {
+        ArgumentNullException.ThrowIfNull(resources);
+
+        IresArchive? heightmaps = resources.TryLoad(ArchiveResourceName, out ReadOnlyMemory<byte> bytes)
+            ? IresArchive.Read(bytes)
+            : null;
+
+        return Build(levelRoot, heightmaps, logger);
+    }
 
     /// <summary>Loads the ground a level declares.</summary>
     /// <param name="levelRoot">The level's task tree.</param>

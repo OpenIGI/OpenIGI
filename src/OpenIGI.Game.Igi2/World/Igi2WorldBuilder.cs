@@ -1,4 +1,4 @@
-using OpenIGI.Formats.Ilff;
+﻿using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 
@@ -69,7 +69,17 @@ public sealed class Igi2WorldBuilder : ITitleWorldBuilder
             packs,
             request.Logger);
 
-        return new WorldBuildResult(result.Scene, result.UnresolvedCount, result.LightmappedCount);
+        // The ground the player stands on, from the same level the placements came from. Built with no
+        // logger because the presenter builds it again to draw it and reports it there; one line about a
+        // level's tiles is enough.
+        Igi2TerrainSurface surface = Igi2TerrainSurface.Build(request.LevelRoot, request.Resources);
+        Igi2Ground ground = new(surface);
+
+        return new WorldBuildResult(
+            result.Scene,
+            result.UnresolvedCount,
+            result.LightmappedCount,
+            ground.IsEmpty ? null : ground);
     }
 
     /// <inheritdoc/>

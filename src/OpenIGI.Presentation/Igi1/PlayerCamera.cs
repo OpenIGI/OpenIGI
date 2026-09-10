@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Animation;
@@ -248,6 +248,15 @@ public sealed class PlayerCamera
 
     /// <summary>Gets or sets the rich world trace used to retain a launcher's exact impact object.</summary>
     public WorldTraceCast? MissileTrace { get; set; }
+
+    /// <summary>Gets or sets a trace through the terrain, for the casts a ground query cannot answer.</summary>
+    /// <remarks>
+    /// The view model's wall pullback sweeps <em>forward</em>, so it wants a ray through the terrain
+    /// rather than the height under a point -- which is why it arrives as a cast the host supplies and not
+    /// as something read off the ground the body stands on. A title whose terrain nothing can trace
+    /// leaves this null, and the pullback then meets placed objects only.
+    /// </remarks>
+    public WorldTraceCast? TerrainTrace { get; set; }
 
     /// <summary>Gets or sets what offers this player's rounds to the humans in the world.</summary>
     /// <remarks>
@@ -775,7 +784,7 @@ public sealed class PlayerCamera
     /// <param name="at">Where to try standing, in the renderer's metres.</param>
     /// <param name="yaw">Which way to face.</param>
     /// <returns><see langword="false"/> when there is no ground under the point.</returns>
-    public bool Place(TerrainData? terrain, Vector3d at, float yaw)
+    public bool Place(IGroundHeightField? terrain, Vector3d at, float yaw)
     {
         _body.Position = new Vector3d(at.X * UnitsPerMetre, at.Y * UnitsPerMetre, at.Z * UnitsPerMetre);
         _body.Yaw = yaw;
@@ -1047,7 +1056,7 @@ public sealed class PlayerCamera
     /// A spawn's position is already in the game's world units — unlike a scene placement, which the
     /// scene builder has divided into metres for the renderer — so it goes to the body untouched.
     /// </remarks>
-    public bool PlaceAt(TerrainData? terrain, PlayerSpawnPoint spawn, WorldRayCast? registrationGround = null)
+    public bool PlaceAt(IGroundHeightField? terrain, PlayerSpawnPoint spawn, WorldRayCast? registrationGround = null)
     {
         _body.Position = spawn.Position;
         // HumanPlayer's objects.qvm Gamma is the engine object's facing angle. The camera stores a
@@ -1140,7 +1149,7 @@ public sealed class PlayerCamera
     /// muzzle is this tick's eye.
     /// </para>
     /// </remarks>
-    public void Tick(InputState input, TerrainData? terrain)
+    public void Tick(InputState input, IGroundHeightField? terrain)
     {
         ArgumentNullException.ThrowIfNull(input);
 
@@ -1259,7 +1268,7 @@ public sealed class PlayerCamera
         SyncView();
         if (_view is { } view)
         {
-            view.TickWallPullback(ViewModelWalls(terrain));
+            view.TickWallPullback(ViewModelWalls());
         }
 
         // Where 0x464BD0 steps it: after the state machines have read it and before the rig is placed.
@@ -1318,7 +1327,7 @@ public sealed class PlayerCamera
     /// </remarks>
     public void StopWeaponsForDeath() => _weapons?.StopForDeath();
 
-    private void Activate(WorldInteraction interaction, TerrainData? terrain)
+    private void Activate(WorldInteraction interaction, IGroundHeightField? terrain)
     {
         InteractionDispatchResult dispatch = HumanInteractionDispatch.Dispatch(
             interaction.Type, DoorNeedsPicking(interaction));
@@ -1376,7 +1385,7 @@ public sealed class PlayerCamera
     internal static void SnapBodyForInteraction(
         PlayerBody body,
         InteractionActivateType type,
-        TerrainData? terrain,
+        IGroundHeightField? terrain,
         double? standingHeight = null)
     {
         if (type is InteractionActivateType.Door
@@ -1430,7 +1439,7 @@ public sealed class PlayerCamera
         _nearInteraction = null;
     }
 
-    private void TickInteraction(InputState input, TerrainData? terrain)
+    private void TickInteraction(InputState input, IGroundHeightField? terrain)
     {
         WorldInteraction interaction = _activeInteraction!;
         bool use = _input.IsSet(PlayerInputSlot.Activate);
@@ -1475,7 +1484,7 @@ public sealed class PlayerCamera
         }
     }
 
-    private void TickWire(TerrainData? terrain, bool use)
+    private void TickWire(IGroundHeightField? terrain, bool use)
     {
         WorldInteraction wire = _activeInteraction!;
         bool sliding = Math.Abs(_wireDirection.Z) > Math.Sin(0.034906585);
@@ -1501,7 +1510,7 @@ public sealed class PlayerCamera
         }
     }
 
-    private void TickFence(WorldInteraction fence, TerrainData? terrain)
+    private void TickFence(WorldInteraction fence, IGroundHeightField? terrain)
     {
         // State 41 plants the task root at the authored fence mount and lets animation 171 carry the
         // visible body over it. Its own duration accessor returns six seconds (0x440270), not the
@@ -1513,7 +1522,7 @@ public sealed class PlayerCamera
         }
     }
 
-    private void EndInteraction(bool completed, TerrainData? terrain)
+    private void EndInteraction(bool completed, IGroundHeightField? terrain)
     {
         WorldInteraction interaction = _activeInteraction!;
         if (completed)
@@ -1536,7 +1545,7 @@ public sealed class PlayerCamera
     internal static void RestoreBodyAfterInteraction(
         PlayerBody body,
         InteractionActivateType type,
-        TerrainData? terrain)
+        IGroundHeightField? terrain)
     {
         if (type == InteractionActivateType.Wire)
         {
@@ -1954,13 +1963,13 @@ public sealed class PlayerCamera
         }
     }
 
-    private WorldRayCast ViewModelWalls(TerrainData? terrain)
+    private WorldRayCast ViewModelWalls()
     {
-        WorldTraceCast trace = (_walls, terrain) switch
+        WorldTraceCast trace = (_walls, TerrainTrace) switch
         {
-            ({ } walls, { } ground) => WorldTrace.Nearest(walls.Tracer(), TerrainRayTrace.Caster(ground)),
+            ({ } walls, { } ground) => WorldTrace.Nearest(walls.Tracer(), ground),
             ({ } walls, null) => walls.Tracer(),
-            (null, { } ground) => TerrainRayTrace.Caster(ground),
+            (null, { } ground) => ground,
             _ => throw new InvalidOperationException("The player has neither terrain nor object collision."),
         };
         return WorldTrace.AsRayCast(trace);
@@ -2104,7 +2113,7 @@ public sealed class PlayerCamera
     /// Up/down only act at a rung boundary. Use is checked independently and may enter the retail slide
     /// state during a rung (<c>sub_40D6B0</c>).
     /// </remarks>
-    public LadderStepResult DecideLadderStep(bool up, bool down, bool slide, TerrainData? terrain)
+    public LadderStepResult DecideLadderStep(bool up, bool down, bool slide, IGroundHeightField? terrain)
     {
         LadderStepResult result = _climb.Decide(up, down, slide);
         if (result == LadderStepResult.Dismounted)
@@ -2137,7 +2146,7 @@ public sealed class PlayerCamera
 
     /// <summary>Consumes animation 170's endpoint and resolves the roof when state 39 detaches.</summary>
     /// <param name="terrain">The level terrain used by the final ground placement.</param>
-    public void CompleteLadderTopTransition(TerrainData? terrain)
+    public void CompleteLadderTopTransition(IGroundHeightField? terrain)
     {
         LadderTraversalPhase previous = _climb.Phase;
         if (!_climb.CompleteTopTransition())
@@ -2158,7 +2167,7 @@ public sealed class PlayerCamera
     /// <param name="rootDelta">Animation 169's world-space root delta.</param>
     /// <param name="terrain">The level terrain.</param>
     /// <returns><see langword="true"/> when the slide ended this tick.</returns>
-    public bool TickLadderSlide(Vector3d rootDelta, TerrainData? terrain)
+    public bool TickLadderSlide(Vector3d rootDelta, IGroundHeightField? terrain)
     {
         if (_climb.Phase != LadderTraversalPhase.SlidingDown)
         {

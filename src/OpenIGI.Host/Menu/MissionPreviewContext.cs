@@ -87,6 +87,12 @@ namespace OpenIGI.Host.Menu;
 /// The running title's content modules. A preview registers the same ones into its own loop, so its
 /// tree comes out shaped the way the scene walk expects rather than as untyped placeholders.
 /// </param>
+/// <param name="WorldBuilder">
+/// The running title's scene walk. A backdrop is promoted into the played mission and keeps the scene it
+/// walked, so a preview that used a different walk from the mission's would not merely look wrong — it
+/// would <em>become</em> the mission's world. This used to call the first game's walk by name, which for
+/// the sequel placed almost nothing and said nothing about it.
+/// </param>
 /// <param name="ComputeSupported">
 /// Whether the device can run compute at all. A distance field is only ever traced against on a device
 /// that can, so a backdrop built for one that cannot should not spend a worker baking one.
@@ -105,4 +111,5 @@ public sealed record MissionPreviewContext(
     IReadOnlyList<IContentModule> TitleModules,
     IReadOnlyList<string> StructuralTaskTypes,
     AssetFormatProfile Formats,
+    ITitleWorldBuilder WorldBuilder,
     bool ComputeSupported);

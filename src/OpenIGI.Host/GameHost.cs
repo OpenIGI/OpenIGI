@@ -483,6 +483,11 @@ internal sealed partial class GameHost : IDisposable
     private IViewModelPresenter? _arms;
     private SoldierRenderer? _soldiers;
     private TerrainData? _playerTerrain;
+
+    // What the player's feet stand on, which is not always the terrain the rest of the level traces
+    // against. Project I.G.I. answers both with one octree and this is simply that; I.G.I. 2's ground is
+    // a height field its level declares and nothing can trace through yet, so the two part company.
+    private IGroundHeightField? _ground;
     private GameMaterialRegistry? _worldMaterials;
     private AmmoTypeRegistry? _ammoTypes;
     private bool _playerMode;
@@ -1049,6 +1054,7 @@ internal sealed partial class GameHost : IDisposable
         _playerTerrain = null;
         _effectWalls = null;
         _effectTerrainRow = null;
+        _ground = null;
 
         // The material table, shared with the guard-round handler so an AI round's impact can leave the
         // same mark a player's does -- retail rounds are physical and decal whatever they meet (10.4).
@@ -2365,7 +2371,7 @@ internal sealed partial class GameHost : IDisposable
                 _playerMode = !_playerMode;
                 if (_playerMode)
                 {
-                    if (!_player.Place(_playerTerrain, _camera.Position, _camera.Yaw))
+                    if (!_player.Place(_ground, _camera.Position, _camera.Yaw))
                     {
                         _playerMode = false;
                         _logger.Warning("Player", "Nothing to stand on here; staying with the free camera.");
@@ -2676,7 +2682,7 @@ internal sealed partial class GameHost : IDisposable
                     }
                     else
                     {
-                        _player.Tick(_window.Input, _playerTerrain);
+                        _player.Tick(_window.Input, _ground);
                         // PlayerCamera advances its interaction registry before it resolves this
                         // tick's activate target. Do not advance the same registry again below.
                         interactionsTickedByPlayer = true;
@@ -3023,7 +3029,7 @@ internal sealed partial class GameHost : IDisposable
 
                     bool climbSlide = climbUse && climbSlideArmed;
                     LadderStepResult decision = _player.DecideLadderStep(
-                        climbUp, climbDown, climbSlide, _playerTerrain!);
+                        climbUp, climbDown, climbSlide, _ground!);
                     switch (decision)
                     {
                         case LadderStepResult.SteppingUp:
@@ -3071,7 +3077,7 @@ internal sealed partial class GameHost : IDisposable
                                 _player.MoveLadder(topDelta);
                                 if (topAnimationEnded)
                                 {
-                                    _player.CompleteLadderTopTransition(_playerTerrain!);
+                                    _player.CompleteLadderTopTransition(_ground!);
                                     if (_player.LadderPhase == LadderTraversalPhase.Climbing)
                                     {
                                         _soldiers.StartPlayerLadderAnimation(
@@ -3091,7 +3097,7 @@ internal sealed partial class GameHost : IDisposable
                                 // velocity function first runs on the following tick.
                                 if (decision != LadderStepResult.Sliding)
                                 {
-                                    _player.TickLadderSlide(slideDelta, _playerTerrain!);
+                                    _player.TickLadderSlide(slideDelta, _ground!);
                                 }
 
                                 break;

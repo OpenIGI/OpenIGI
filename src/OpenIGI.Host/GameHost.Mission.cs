@@ -473,6 +473,7 @@ internal sealed partial class GameHost
                 new WorldBuildRequest(loaded, levelRoot, _resources, _magic, _logger));
             scene = built.Scene;
             _scene = scene;
+            _ground = built.Ground;
 
             if (built.UnresolvedCount > 0 || built.LightmappedCount > 0)
             {
@@ -567,7 +568,10 @@ internal sealed partial class GameHost
             _soldiers.Load(
                 loaded,
                 levelRoot,
-                loaded.Terrain is { IsUsable: true } standing ? standing : null,
+                // The walk's ground when the title keeps one in the level, and the mission's terrain
+                // otherwise. Spelled out rather than reading _ground, which is not settled until the
+                // player is stood up a thousand lines below.
+                _ground ?? (loaded.Terrain is { IsUsable: true } standing ? standing : null),
                 solids.Caster());
         }
 
@@ -1432,6 +1436,10 @@ internal sealed partial class GameHost
         // optional: Mission 14 is entirely inside placed building/tunnel models, whose collision floors
         // are enough for placement and movement even though its terrain files are not live data.
         _playerTerrain = loaded.Terrain is { IsUsable: true } standable ? standable : null;
+
+        // The walk has already spoken for a title that keeps its ground in the level; for the one that
+        // keeps it in the mission, the terrain IS the ground.
+        _ground ??= _playerTerrain;
         _worldTrace = _worldSolids is { } liveSolids
             ? _playerTerrain is { } liveTerrain
                 ? WorldTrace.Nearest(liveSolids.Tracer(), TerrainRayTrace.Caster(liveTerrain))
@@ -1486,6 +1494,13 @@ internal sealed partial class GameHost
             candidate.GrenadeTrace = _playerTerrain is { } grenadeTraceGround
                 ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeTraceGround))
                 : solids.Tracer();
+
+            // The view model's forward sweep, which wants a ray through the terrain rather than the
+            // height under a point. Null for a title whose ground nothing can trace yet, and the
+            // pullback then meets placed objects only.
+            candidate.TerrainTrace = _playerTerrain is { } viewModelGround
+                ? TerrainRayTrace.Caster(viewModelGround)
+                : null;
 
             // The ladders the level attaches to its buildings, so the player can climb them (E to mount,
             // W/S up and down, E held to slide).
@@ -1822,8 +1837,8 @@ internal sealed partial class GameHost
             // fallback needs a camera to read; a level with neither is simply not placed, which the
             // warning below already covers.
             bool placed = PlayerSpawn.TryFindGameplay(levelRoot, out PlayerSpawnPoint spawn)
-                ? candidate.PlaceAt(_playerTerrain, spawn, solids.PlayerRegistrationCaster())
-                : _camera is { } opening && candidate.Place(_playerTerrain, opening.Position, _options.CameraYaw);
+                ? candidate.PlaceAt(_ground, spawn, solids.PlayerRegistrationCaster())
+                : _camera is { } opening && candidate.Place(_ground, opening.Position, _options.CameraYaw);
 
             if (placed)
             {
@@ -2235,6 +2250,7 @@ internal sealed partial class GameHost
         _playerMode = false;
         _scene = null;
         _playerTerrain = null;
+        _ground = null;
         _worldSolids = null;
         _destructibles = null;
         _worldMaterials = null;

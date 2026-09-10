@@ -337,6 +337,7 @@ internal sealed partial class GameHost
             _titleRuntime.Modules,
             _titleRuntime.Layout.StructuralTaskTypes,
             _titleRuntime.Formats,
+            _worldBuilder,
             _device.Capabilities.SupportsCompute);
     }
 

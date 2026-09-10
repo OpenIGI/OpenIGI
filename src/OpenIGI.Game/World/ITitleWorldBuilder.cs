@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 
@@ -25,6 +25,11 @@ public readonly record struct WorldBuildRequest(
 /// <param name="Scene">The placements, which the world presenter draws and the collision index is built from.</param>
 /// <param name="UnresolvedCount">How many placements named something the packs do not hold.</param>
 /// <param name="LightmappedCount">How many carry a baked object lightmap.</param>
+/// <param name="Ground">
+/// The ground this level's own data describes, or <see langword="null"/> for a title whose ground the
+/// host already has. Project I.G.I.'s arrives with the mission, as part of what the mission loader
+/// opened; the sequel's is inside the level, so the walk that reads the level is what produces it.
+/// </param>
 /// <remarks>
 /// The two counts are diagnostics rather than data: a scene walk that silently placed nothing would
 /// produce an empty world and no complaint, and these are what let the host say how much of the level it
@@ -33,7 +38,8 @@ public readonly record struct WorldBuildRequest(
 public readonly record struct WorldBuildResult(
     WorldScene Scene,
     int UnresolvedCount,
-    int LightmappedCount);
+    int LightmappedCount,
+    IGroundHeightField? Ground = null);
 
 /// <summary>Turns a title's loaded level into the shared scene everything downstream consumes.</summary>
 /// <remarks>

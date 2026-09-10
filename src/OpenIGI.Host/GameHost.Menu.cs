@@ -54,6 +54,10 @@ internal sealed partial class GameHost
         _dayNight.ResetForLevel(preview.Sun, RenderCVars.TimeOfDay.Value);
         _playerTerrain = preview.Mission.Terrain is { IsUsable: true } standable ? standable : null;
 
+        // A title whose ground is inside the level hands it over with the walk; one whose ground came
+        // with the mission stands on the terrain itself.
+        _ground = preview.Ground ?? _playerTerrain;
+
         // Nobody stands in a backdrop, and the previous mission's player must not be left holding a scene
         // that has just been replaced.
         _player = null;

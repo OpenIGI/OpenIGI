@@ -129,7 +129,7 @@ public sealed class SoldierRenderer : IDisposable
     private readonly Dictionary<BoneAnimationSet, RagdollSkeleton> _ragdollRigs = [];
     private RagdollWorld? _ragdollWorld;
 
-    private TerrainData? _terrain;
+    private IGroundHeightField? _terrain;
     private WorldRayCast? _cast;
     private WorldRayCast? _sight;
     private SoldierRound? _onRound;
@@ -910,7 +910,7 @@ public sealed class SoldierRenderer : IDisposable
     /// <param name="cast">The placed-object ray cast, for soldiers standing on floors and platforms.</param>
     /// <returns>The number of soldiers that resolved.</returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public int Load(LoadedMission mission, GameTask levelRoot, TerrainData? terrain = null, WorldRayCast? cast = null)
+    public int Load(LoadedMission mission, GameTask levelRoot, IGroundHeightField? terrain = null, WorldRayCast? cast = null)
     {
         ArgumentNullException.ThrowIfNull(mission);
         ArgumentNullException.ThrowIfNull(levelRoot);
@@ -1272,7 +1272,7 @@ public sealed class SoldierRenderer : IDisposable
     /// divergence, retired with the soldier update.
     /// </para>
     /// </remarks>
-    private static Vector3d Stand(HumanSoldierTask soldier, Group group, TerrainData? terrain, WorldRayCast? cast)
+    private static Vector3d Stand(HumanSoldierTask soldier, Group group, IGroundHeightField? terrain, WorldRayCast? cast)
     {
         Vector3d declared = soldier.Position;
         double probeTop = declared.Z + ProbeAboveInUnits;
@@ -1290,7 +1290,7 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         if (terrain is not null
-            && TerrainHeightQuery.TryGetGround(terrain, declared.X, declared.Y, probeTop, out TerrainGround ground)
+            && terrain.TryGetGround(declared.X, declared.Y, probeTop, out TerrainGround ground)
             && ground.Height >= declared.Z - ProbeBelowInUnits
             && ground.Height <= probeTop)
         {
@@ -1343,7 +1343,7 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         if (_terrain is not null
-            && TerrainHeightQuery.TryGetGround(_terrain, x, y, probeTop, out TerrainGround ground)
+            && _terrain.TryGetGround(x, y, probeTop, out TerrainGround ground)
             && ground.Height >= declaredZ - ProbeBelowInUnits
             && ground.Height <= probeTop)
         {
@@ -2756,7 +2756,7 @@ public sealed class SoldierRenderer : IDisposable
 
     private AiSoldier.GroundQuery? MakeGroundQuery()
     {
-        TerrainData? terrain = _terrain;
+        IGroundHeightField? terrain = _terrain;
         WorldRayCast? cast = _cast;
         if (terrain is null && cast is null)
         {
@@ -2779,7 +2779,7 @@ public sealed class SoldierRenderer : IDisposable
             }
 
             if (terrain is not null
-                && TerrainHeightQuery.TryGetGround(terrain, x, y, z, out TerrainGround ground)
+                && terrain.TryGetGround(x, y, z, out TerrainGround ground)
                 && ground.Height >= z - ProbeBelowInUnits - ProbeAboveInUnits
                 && ground.Height <= z)
             {

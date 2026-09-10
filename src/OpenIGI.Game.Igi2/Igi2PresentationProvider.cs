@@ -85,13 +85,8 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
         ArgumentNullException.ThrowIfNull(request.LevelRoot);
         ArgumentNullException.ThrowIfNull(request.Resources);
 
-        IresArchive? heightmaps = null;
-        if (request.Resources.TryLoad(HeightmapArchive, out ReadOnlyMemory<byte> bytes))
-        {
-            heightmaps = IresArchive.Read(bytes);
-        }
-
-        Igi2TerrainSurface surface = Igi2TerrainSurface.Build(request.LevelRoot, heightmaps, request.Logger);
+        Igi2TerrainSurface surface = Igi2TerrainSurface.Build(
+            request.LevelRoot, request.Resources, request.Logger);
         if (surface.IsEmpty)
         {
             return null;
@@ -229,8 +224,7 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
         }
     }
 
-    /// <summary>The archive a level keeps its terrain maps in, under the mission alias.</summary>
-    public const string HeightmapArchive = "MISSION:heightmaps/heightmaps.res";
+
 
     /// <summary>Finds the level's sky, if it declares one.</summary>
     /// <remarks>
