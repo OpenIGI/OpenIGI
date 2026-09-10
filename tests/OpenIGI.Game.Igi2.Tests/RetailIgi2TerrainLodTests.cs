@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Presentation;
@@ -98,6 +98,7 @@ public sealed class RetailIgi2TerrainLodTests
     public void The_leaves_tile_their_square_exactly()
     {
         int checks = 0;
+        long superseded = 0;
 
         foreach (Igi2Level level in Igi2Level.All())
         {
@@ -120,16 +121,21 @@ public sealed class RetailIgi2TerrainLodTests
                     // Culled subtrees are the one legitimate way to leave a hole, so this checks the
                     // uncullable view of each tile as well: with no planes at all nothing is rejected
                     // and the leaves must account for every last sample.
+                    // Ground a finer tile owns is the other legitimate way, and it is not a view
+                    // decision: the same squares are left alone from every camera.
+                    long accounted = tessellation.CoveredArea + tessellation.SupersededArea;
                     if (view.PlaneNormals.IsEmpty)
                     {
-                        Assert.Equal(area, tessellation.CoveredArea);
+                        Assert.Equal(area, accounted);
                     }
                     else
                     {
                         Assert.True(
-                            tessellation.CoveredArea <= area,
-                            $"Tile {tile.Id} covered {tessellation.CoveredArea} of {area} samples.");
+                            accounted <= area,
+                            $"Tile {tile.Id} accounted for {accounted} of {area} samples.");
                     }
+
+                    superseded += tessellation.SupersededArea;
 
                     checks++;
                 }
@@ -137,6 +143,10 @@ public sealed class RetailIgi2TerrainLodTests
         }
 
         Assert.Equal(184, checks);
+
+        // And some of it was left alone, so the branch above is not vacuous: I.G.I. 2's tiles nest, and
+        // a coarse tile that drew under a finer one would put a second ground in the frame.
+        Assert.True(superseded > 0, "no tile left any ground to a finer one, so nesting is untested here.");
     }
 
     /// <summary>A tile far enough away collapses to its root: two triangles for the whole thing.</summary>
@@ -229,10 +239,13 @@ public sealed class RetailIgi2TerrainLodTests
         // 13,271,214 triangles at full detail against 230,483 tessellated -- 1.74 per cent, a factor of
         // 57.6. 82,541 quadtree leaves produce those triangles and 8,771 squares never got that far,
         // rejected outright by the four clipping planes with their subtrees.
-        Assert.Equal(13_271_214L, full);
-        Assert.Equal(230_483L, tessellated);
-        Assert.Equal(82_541, squares);
-        Assert.Equal(8_771, culled);
+        // 12,939,092 triangles at full detail against 199,264 tessellated -- 1.54 per cent, a factor
+        // of 64.9. 72,585 quadtree leaves produce those triangles, and the clipping planes reject the
+        // rest outright with their subtrees.
+        Assert.Equal(12_939_092L, full);
+        Assert.Equal(199_264L, tessellated);
+        Assert.Equal(72_585, squares);
+        Assert.Equal(7_542, culled);
     }
 
     /// <summary>The clipping planes reject what is behind the camera.</summary>

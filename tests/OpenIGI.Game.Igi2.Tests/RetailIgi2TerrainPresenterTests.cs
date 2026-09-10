@@ -65,13 +65,13 @@ public sealed class RetailIgi2TerrainPresenterTests
         }
 
         Assert.Equal(22, levels);
-        Assert.Equal(4_113, chunks);
+        Assert.Equal(4_006, chunks);
 
-        // Every triangle the mesh builds is uploaded -- the same 13,271,214 RetailIgi2TerrainMeshTests
+        // Every triangle the mesh builds is uploaded -- the same 12,939,092 RetailIgi2TerrainMeshTests
         // counts. An earlier attempt kept one chunk per pass and dropped the 32 that overran a 16-bit
         // index, which lost whole materials from whole levels and did it quietly. Chunking at the
         // original's own 10,000-index budget makes the question go away rather than trading it off.
-        Assert.Equal(13_271_214L, triangles);
+        Assert.Equal(12_939_092L, triangles);
     }
 
     /// <summary>A tile is drawn about its own centre, so a distant level keeps its precision.</summary>
@@ -221,9 +221,13 @@ public sealed class RetailIgi2TerrainPresenterTests
         // factor of 70.7 -- from 64,896 quadtree leaves, in 186 chunks rather than 4,113. Lower than
         // RetailIgi2TerrainLodTests' 230,483 because that suite stands the camera on each tile in turn
         // while a frame has one camera: a level's second and third tiles are further away and coarser.
-        Assert.Equal(187_834L, triangles);
-        Assert.Equal(64_896, squares);
-        Assert.Equal(186, chunks);
+        // 156,615 triangles across the corpus against 12,939,092 at full detail -- 1.21 per cent, a
+        // factor of 82.6 -- from 54,940 quadtree leaves, in 160 chunks rather than 4,006. Lower than
+        // RetailIgi2TerrainLodTests' 199,264 because that suite stands the camera on each tile in turn
+        // while a frame has one camera: a level's second and third tiles are further away and coarser.
+        Assert.Equal(156_615L, triangles);
+        Assert.Equal(54_940, squares);
+        Assert.Equal(160, chunks);
     }
 
     /// <summary>A frame from an eye standing two metres above the middle of a tile.</summary>

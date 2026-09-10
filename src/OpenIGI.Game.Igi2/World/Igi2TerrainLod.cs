@@ -372,15 +372,21 @@ public sealed class Igi2TerrainHeightPyramid
 /// <param name="SquaresVisited">How many squares came off the traversal stack.</param>
 /// <param name="CoveredArea">
 /// The emitted leaves' areas added up, in samples squared. The traversal only ever divides a square
-/// into four equal quadrants, so this equalling the root's own area is a proof that the leaves tile it
+/// into four equal quadrants, so this plus <paramref name="SupersededArea"/> equalling the root's own
+/// area is a proof that the leaves tile it
 /// exactly — no gap, no overlap — which is the property a level-of-detail mesh most easily loses.
+/// </param>
+/// <param name="SupersededArea">
+/// The area a finer tile draws instead, which this one left alone. Zero for a level whose tiles do not
+/// nest, and for the finest tile of one whose tiles do.
 /// </param>
 public readonly record struct Igi2TerrainTessellation(
     Igi2TerrainMesh Mesh,
     int SquaresDrawn,
     int SquaresCulled,
     int SquaresVisited,
-    long CoveredArea);
+    long CoveredArea,
+    long SupersededArea);
 
 /// <summary>
 /// The quadtree I.G.I. 2 tessellates a terrain tile with: how finely a square is subdivided given where
@@ -452,9 +458,11 @@ public readonly record struct Igi2TerrainTessellation(
 /// <b>What is not reproduced.</b> The original runs one quadtree over the whole terrain and descends
 /// into a neighbouring tile through <c>TerrainContext_t::aapiSubmap</c>, a per-square map index that
 /// lets a square change which height map it is reading (<c>0x668CBF</c>). This builds one quadtree per
-/// tile. The shipped levels place at most three tiles and they do not overlap, so the difference shows
-/// only as a seam between tiles at different detail — which the original's shared-edge cache would have
-/// closed and this cannot. Also absent: <c>TerrainRender_DrawGlitchPolyRecursive</c>
+/// tile and stops each one where the finer tile begins, which
+/// <see cref="Igi2TerrainTile.IsSuperseded"/> decides from the same measurements
+/// <c>Terrain_UpdateSubmaps</c> takes. The two agree on which ground each tile owns; where they differ
+/// is the seam between them, which the original's shared-edge cache closes and separate trees cannot.
+/// Also absent: <c>TerrainRender_DrawGlitchPolyRecursive</c>
 /// (<c>0x66A930</c>), the original's repair for the T-junction a coarse square leaves against a
 /// finer neighbour that subdivided after it was drawn.
 /// </para>
@@ -637,6 +645,7 @@ public sealed class Igi2TerrainLod
         private int _drawn;
         private int _uncovered;
         private long _covered;
+        private long _superseded;
 
         public Builder(Igi2TerrainLod owner, in Igi2TerrainView view, in Igi2TerrainLodSettings settings)
         {
@@ -655,15 +664,7 @@ public sealed class Igi2TerrainLod
 
             int n = _owner.RootSize;
             Stack<Square> stack = new();
-            Square root = new(0, 0, n, Vertex(0, 0), Vertex(n, 0), Vertex(n, n), Vertex(0, n));
-            if (!IsOutOfSight(root))
-            {
-                stack.Push(root);
-            }
-            else
-            {
-                _culled++;
-            }
+            Push(stack, new Square(0, 0, n, Vertex(0, 0), Vertex(n, 0), Vertex(n, n), Vertex(0, n)));
 
             Span<int> midpoint = stackalloc int[5];
             Span<float> morph = stackalloc float[5];
@@ -713,13 +714,21 @@ public sealed class Igi2TerrainLod
                 Push(stack, new Square(square.X, square.Y + half, half, midpoint[3], midpoint[4], midpoint[2], square.V3));
             }
 
-            return new Igi2TerrainTessellation(BuildMesh(), _drawn, _culled, _visited, _covered);
+            return new Igi2TerrainTessellation(BuildMesh(), _drawn, _culled, _visited, _covered, _superseded);
         }
 
         private static long EdgeKey(int a, int b) => a < b ? ((long)a << 32) | (uint)b : ((long)b << 32) | (uint)a;
 
         private void Push(Stack<Square> stack, Square square)
         {
+            // Ahead of the clipping planes, because it is cheaper and because it is not a decision about
+            // this frame: a square a finer tile covers is never this tile's to draw, from any camera.
+            if (_owner._tile.IsSuperseded(square.X, square.Y, square.Size))
+            {
+                _superseded += (long)square.Size * square.Size;
+                return;
+            }
+
             if (IsOutOfSight(square))
             {
                 _culled++;

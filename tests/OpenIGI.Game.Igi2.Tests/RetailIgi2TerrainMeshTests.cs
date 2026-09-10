@@ -1,4 +1,4 @@
-using OpenIGI.Formats.Ilff;
+﻿using OpenIGI.Formats.Ilff;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -58,9 +58,12 @@ public sealed class RetailIgi2TerrainMeshTests
         }
 
         Assert.Equal(46, tiles);
-        Assert.Equal(229, passes);
+
+        // 215 rather than one per material per tile: a tile whose only samples of some material lie
+        // under a finer tile now issues no triangles for it, and a pass with nothing to draw is dropped.
+        Assert.Equal(215, passes);
         Assert.Equal(6_356_992L, vertices);
-        Assert.Equal(13_271_214L, triangles);
+        Assert.Equal(12_939_092L, triangles);
     }
 
     /// <summary>A triangle is issued by every material at any of its corners, and by no other.</summary>
@@ -123,9 +126,11 @@ public sealed class RetailIgi2TerrainMeshTests
             }
         }
 
-        // 140,913 triangles straddle a boundary on the first tile of each level alone, so the rule is
-        // exercised heavily rather than being a corner case the corpus never reaches.
-        Assert.Equal(140_913, shared);
+        // 99,710 triangles straddle a boundary on the first tile of each level alone, so the rule is
+        // exercised heavily rather than being a corner case the corpus never reaches. It was 140,913
+        // before the coarse tiles stopped drawing the ground their submaps own -- a boundary is exactly
+        // the kind of detail a level lays a finer tile over.
+        Assert.Equal(99_710, shared);
     }
 
     /// <summary>Texture coordinates come from the world, not from the tile's grid.</summary>

@@ -9,6 +9,39 @@ using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.World;
 
+/// <summary>The world span a terrain tile's samples cover, on the ground plane.</summary>
+/// <param name="Left">The west edge, in world units.</param>
+/// <param name="Top">The north edge.</param>
+/// <param name="Right">The east edge.</param>
+/// <param name="Bottom">The south edge.</param>
+/// <remarks>
+/// The span runs from the first sample's own position to half a texel past the last, which is where
+/// <c>Terrain_UpdateSubmaps</c> (<c>igi2ed 0x62C770</c>) puts it: it tests against
+/// <c>tPos +/- vWorldWidth * 2048 + vTexelWidth / 2</c>, the same half-texel shift that puts a sample at
+/// its texel's centre rather than on the grid corner.
+/// </remarks>
+public readonly record struct Igi2TerrainExtent(double Left, double Top, double Right, double Bottom)
+{
+    /// <summary>The slack the original allows a cell before it counts as outside -- a millimetre.</summary>
+    /// <remarks>
+    /// <c>4.096</c> world units, written into both comparisons at <c>0x62C770</c> so that a submap laid
+    /// exactly on the base grid by <c>TerrainMap_Align</c> is not thrown out by the last bit of a float.
+    /// </remarks>
+    public const double Tolerance = 4.096;
+
+    /// <summary>Gets whether a cell lies inside this span, to within <see cref="Tolerance"/>.</summary>
+    /// <param name="left">The cell's west edge, in world units.</param>
+    /// <param name="top">Its north edge.</param>
+    /// <param name="right">Its east edge.</param>
+    /// <param name="bottom">Its south edge.</param>
+    /// <returns><see langword="true"/> when the whole cell is inside.</returns>
+    public bool Contains(double left, double top, double right, double bottom) =>
+        left >= Left - Tolerance
+        && right <= Right + Tolerance
+        && top >= Top - Tolerance
+        && bottom <= Bottom + Tolerance;
+}
+
 /// <summary>One terrain tile of an I.G.I. 2 level, placed in the world.</summary>
 /// <param name="Id">The tile id, which is what names its three files.</param>
 /// <param name="Centre">Where the tile's middle sits, in world units.</param>
@@ -20,6 +53,7 @@ namespace OpenIGI.Game.Igi2.World;
 /// <param name="BaseHeight">The Z the samples are measured from — the parent <c>Terrain</c>'s own, in world units.</param>
 /// <param name="Materials">The material map, or null when the tile ships none.</param>
 /// <param name="Lightmap">The baked lightmap, or null when the tile ships none.</param>
+/// <param name="Submaps">The finer tiles that draw this one's ground in its place.</param>
 public readonly record struct Igi2TerrainTile(
     int Id,
     Vector3d Centre,
@@ -30,7 +64,8 @@ public readonly record struct Igi2TerrainTile(
     Igi2TerrainMap Heights,
     double BaseHeight,
     Igi2TerrainMap? Materials,
-    Igi2TerrainMap? Lightmap)
+    Igi2TerrainMap? Lightmap,
+    IReadOnlyList<Igi2TerrainExtent> Submaps)
 {
     /// <summary>Gets the world height of one sample.</summary>
     /// <param name="x">The sample's column.</param>
@@ -86,10 +121,70 @@ public readonly record struct Igi2TerrainTile(
         ArgumentOutOfRangeException.ThrowIfNegative(y);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(y, Height);
 
-        return new Vector3d(
-            Centre.X - (Width * TexelWidth * 0.5) + ((x + 0.5) * TexelWidth),
-            Centre.Y - (Height * TexelHeight * 0.5) + ((y + 0.5) * TexelHeight),
-            HeightAt(x, y));
+        return new Vector3d(SampleX(x), SampleY(y), HeightAt(x, y));
+    }
+
+    /// <summary>Gets the world X of a sample column, which may be one past the last.</summary>
+    /// <param name="x">The column.</param>
+    /// <returns>The coordinate, in world units.</returns>
+    /// <remarks>See <see cref="PositionOf"/> for why the half texel is there.</remarks>
+    public double SampleX(int x) => Centre.X - (Width * TexelWidth * 0.5) + ((x + 0.5) * TexelWidth);
+
+    /// <summary>Gets the world Y of a sample row, which may be one past the last.</summary>
+    /// <param name="y">The row.</param>
+    /// <returns>The coordinate, in world units.</returns>
+    /// <remarks>See <see cref="PositionOf"/> for why the half texel is there.</remarks>
+    public double SampleY(int y) => Centre.Y - (Height * TexelHeight * 0.5) + ((y + 0.5) * TexelHeight);
+
+    /// <summary>Gets the span this tile's samples cover.</summary>
+    public Igi2TerrainExtent Extent => new(SampleX(0), SampleY(0), SampleX(Width), SampleY(Height));
+
+    /// <summary>Gets whether a finer tile draws this square's ground in this tile's place.</summary>
+    /// <param name="x">The square's first column.</param>
+    /// <param name="y">Its first row.</param>
+    /// <param name="size">How many samples across it is.</param>
+    /// <returns><see langword="true"/> when the square must not be drawn from this tile.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>I.G.I. 2's tiles nest.</b> A level lays a coarse map over the whole of itself and then finer
+    /// maps over the parts that need them -- <c>location1/level1</c>'s second tile is 512 metres of
+    /// four-metre texels sitting inside two kilometres of thirty-two-metre ones -- and the ground under
+    /// the finer map is drawn from the finer map alone.
+    /// </para>
+    /// <para>
+    /// <c>Terrain_UpdateSubmaps</c> (<c>igi2ed 0x62C770</c>) is where that is decided, once per load: for
+    /// every cell of every mip of every map it walks the maps declared <em>after</em> it, keeps those
+    /// whose texels are no larger than its own, and records the last one that contains the cell whole.
+    /// <c>TerrainRender_Draw</c> reads that index at <c>0x668CBF</c> and changes which map the square is
+    /// reading rather than drawing the coarse one.
+    /// </para>
+    /// <para>
+    /// Drawing both is not a double cost but a visible fault: the passes blend <c>SRCALPHA</c> onto
+    /// <c>ONE</c>, so a coarse tile left under a fine one adds a second ground to the frame -- pale
+    /// sheets that cut through the hillsides wherever the two tessellations disagree.
+    /// </para>
+    /// </remarks>
+    public bool IsSuperseded(int x, int y, int size)
+    {
+        if (Submaps is not { Count: > 0 })
+        {
+            return false;
+        }
+
+        double left = SampleX(x);
+        double top = SampleY(y);
+        double right = SampleX(x + size);
+        double bottom = SampleY(y + size);
+
+        foreach (Igi2TerrainExtent submap in Submaps)
+        {
+            if (submap.Contains(left, top, right, bottom))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Gets the material id painted on one sample, or zero when the tile ships no material map.</summary>
@@ -187,6 +282,8 @@ public sealed class Igi2TerrainSurface
             }
         }
 
+        BindSubmaps(tiles);
+
         log.Information(LogCategory, $"Terrain: {tiles.Count} tile(s), {materials.Count} material(s).");
         return new Igi2TerrainSurface(tiles, materials);
     }
@@ -194,6 +291,27 @@ public sealed class Igi2TerrainSurface
     /// <inheritdoc/>
     public override string ToString() =>
         $"I.G.I. 2 terrain, {Tiles.Count} tile(s), {Materials.Count} material(s)";
+
+    // Which tiles supersede which, as Terrain_UpdateSubmaps decides it: a map is superseded by the maps
+    // declared after it whose texels are no larger than its own. Declaration order is the whole of the
+    // priority rule -- Terrain_GetZFromWorldCoordinates searches the same list backwards and takes the
+    // first containing map, which makes the last declared the finest and map 0 the fallback.
+    private static void BindSubmaps(List<Igi2TerrainTile> tiles)
+    {
+        for (int i = 0; i < tiles.Count; i++)
+        {
+            List<Igi2TerrainExtent> superseding = [];
+            for (int j = i + 1; j < tiles.Count; j++)
+            {
+                if (tiles[j].TexelWidth <= tiles[i].TexelWidth)
+                {
+                    superseding.Add(tiles[j].Extent);
+                }
+            }
+
+            tiles[i] = tiles[i] with { Submaps = superseding };
+        }
+    }
 
     private static bool TryLoad(
         TerrainMapTask map,
@@ -227,7 +345,8 @@ public sealed class Igi2TerrainSurface
             heights,
             BaseHeightOf(map),
             Matching(materialMap, heights) ? materialMap : null,
-            Matching(lightMap, heights) ? lightMap : null);
+            Matching(lightMap, heights) ? lightMap : null,
+            []);
 
         return true;
     }

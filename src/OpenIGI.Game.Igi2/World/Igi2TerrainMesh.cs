@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 
@@ -171,6 +171,13 @@ public sealed class Igi2TerrainMesh
             {
                 for (int x = 0; x + 1 < width; x++)
                 {
+                    // A cell a finer tile covers is that tile's to draw. Leaving it here would put a
+                    // second ground in the frame rather than a hidden one, because the passes add.
+                    if (tile.IsSuperseded(x, y, 1))
+                    {
+                        continue;
+                    }
+
                     int a = (y * width) + x;
                     int b = a + 1;
                     int c = a + width;
