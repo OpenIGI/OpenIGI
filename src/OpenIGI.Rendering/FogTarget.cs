@@ -20,7 +20,7 @@ namespace OpenIGI.Rendering;
 /// </remarks>
 public enum FogTarget
 {
-    /// <summary>The scene's fog colour, as set by <see cref="IGraphicsDevice.SetSceneFog"/>.</summary>
+    /// <summary>The scene's fog colour, as set by <see cref="IGraphicsDevice.SetFog"/>.</summary>
     Scene,
 
     /// <summary>Half the scene's fog colour, 127 out of 255 of it: a pass that will be doubled by the next.</summary>

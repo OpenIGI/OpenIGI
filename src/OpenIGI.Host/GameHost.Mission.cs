@@ -217,6 +217,63 @@ internal sealed partial class GameHost
             AreaActivationExtraOccupant(playerUnits, cutsceneViewMetres),
             playerAlive);
 
+    /// <summary>Applies what a title reads off a level once and the renderer keeps for the whole of it.</summary>
+    /// <param name="levelRoot">The level's task tree.</param>
+    /// <remarks>
+    /// <para>
+    /// Two title seams, both constants of the level rather than of the frame. The AIR: I.G.I. 2 reads
+    /// a fog colour, a fog density and a flat ambient off its <c>GlobalLight</c> and fogs every surface
+    /// against them; Project I.G.I. authors none of this and answers nothing, which leaves its picture
+    /// exactly as it was (<see cref="IGraphicsDevice.SetFog"/>). The OBJECT SHADING: the sequel's
+    /// bakes are <c>MODULATE2X</c> and its unlightmapped objects are lit by a fixed-function sun read off
+    /// the level; the other title keeps <see cref="ObjectShading.Default"/>, the compositing it always
+    /// had. The gain and the sun's direction are the world renderer's, per draw; the sun's colours are
+    /// the device's, baked in beside the fog.
+    /// </para>
+    /// <para>
+    /// Called from BOTH ways a level comes up: <see cref="AdoptPreview"/>, where the menu builds it as a
+    /// backdrop, and the cold path of <see cref="BringMissionUp"/>. It used to live in the latter's
+    /// not-promoted block alone, so a mission entered through the menu -- the way the game is played --
+    /// had no haze, white tanks and unlit objects, while one launched straight to had all three.
+    /// </para>
+    /// </remarks>
+    private void ApplyLevelConstants(GameTask levelRoot)
+    {
+        SceneAtmosphere? air = _presentation.ReadAtmosphere(levelRoot);
+        _atmosphere = air;
+        // Through the SAME SceneFog every world draw already wears, rather than a mechanism of its own.
+        // Two were built independently -- this game's air as pipeline specialization constants, and
+        // Project I.G.I.'s retail fog as device state with a per-vertex factor. The second is strictly
+        // the more capable: it changes per draw without a pipeline variant, and SceneFog.ColourFor
+        // already knows an additive pass fogs to black.
+        _device.SetFog(air is { } authored
+            ? new SceneFog(authored.FogColour, authored.FogDensity)
+            : SceneFog.None);
+        if (air is { } reported)
+        {
+            _logger.Information(
+                "Mission",
+                $"The level's air: fog {reported.FogColour} at {reported.FogDensity:G4} per metre, "
+                    + $"ambient {reported.Ambient}.");
+        }
+
+        ObjectShading shading = _presentation.ReadObjectShading(levelRoot) ?? ObjectShading.Default;
+        if (_world is { } shadedWorld)
+        {
+            shadedWorld.Shading = shading;
+        }
+
+        _device.SetSceneSun(shading.Sun?.Ambient ?? Vector3f.Zero, shading.Sun?.Colour ?? Vector3f.Zero);
+        if (shading.Sun is { } fixedFunctionSun)
+        {
+            _logger.Information(
+                "Light",
+                $"Objects without a bake are lit by the level's sun: ambient {fixedFunctionSun.Ambient}, "
+                    + $"colour {fixedFunctionSun.Colour}, towards {fixedFunctionSun.Direction}; "
+                    + FormattableString.Invariant($"bakes are multiplied by {shading.LightmapGain:G2}."));
+        }
+    }
+
     /// <summary>Builds everything a loaded level needs in order to be played, and stands the player in it.</summary>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
     /// <param name="levelRoot">The level's task tree, already loaded and gated.</param>
@@ -1355,49 +1412,7 @@ internal sealed partial class GameHost
                 new SkyPresentationRequest(_device, levelRoot, _fileSystem, _resources, FarPlane, _logger));
             _shadowPass = new ShadowCasterPass(_device);
 
-            // The air the level is played in, if the running game authors one. A title seam: I.G.I. 2
-            // reads a fog colour, a fog density and a flat ambient off its GlobalLight task and fogs
-            // every surface it draws against them; Project I.G.I. authors none of this and answers
-            // nothing, which leaves its picture exactly as it was. Set once here, because it is a
-            // constant of the level rather than of the frame, so it is set once here -- but through the
-            // SAME SceneFog every world draw already wears, rather than a mechanism of its own. Two were
-            // built independently: this game's air as pipeline specialization constants, and Project
-            // I.G.I.'s retail fog as device state with a per-vertex factor. The second is strictly the
-            // more capable -- it changes per draw without a pipeline variant, and SceneFog.ColourFor
-            // already knows an additive pass fogs to black -- so it is the one kept.
-            SceneAtmosphere? air = _presentation.ReadAtmosphere(levelRoot);
-            _atmosphere = air;
-            _device.SetFog(air is { } authored
-                ? new SceneFog(authored.FogColour, authored.FogDensity)
-                : SceneFog.None);
-            if (air is { } reported)
-            {
-                _logger.Information(
-                    "Mission",
-                    $"The level's air: fog {reported.FogColour} at {reported.FogDensity:G4} per metre, "
-                        + $"ambient {reported.Ambient}.");
-            }
-
-            // How the title composites its objects: the seam beside the air. I.G.I. 2's bakes are
-            // MODULATE2X and its unlightmapped objects are lit by a fixed-function sun read off the
-            // level; Project I.G.I. answers nothing and keeps the default, which is the compositing it
-            // always had. The gain and the sun's direction are the world renderer's, per draw; the sun's
-            // colours are the device's, baked in beside the fog for the same reason.
-            ObjectShading shading = _presentation.ReadObjectShading(levelRoot) ?? ObjectShading.Default;
-            if (_world is { } shadedWorld)
-            {
-                shadedWorld.Shading = shading;
-            }
-
-            _device.SetSceneSun(shading.Sun?.Ambient ?? Vector3f.Zero, shading.Sun?.Colour ?? Vector3f.Zero);
-            if (shading.Sun is { } fixedFunctionSun)
-            {
-                _logger.Information(
-                    "Light",
-                    $"Objects without a bake are lit by the level's sun: ambient {fixedFunctionSun.Ambient}, "
-                        + $"colour {fixedFunctionSun.Colour}, towards {fixedFunctionSun.Direction}; "
-                        + FormattableString.Invariant($"bakes are multiplied by {shading.LightmapGain:G2}."));
-            }
+            ApplyLevelConstants(levelRoot);
 
             if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings readSun))
             {

@@ -140,6 +140,11 @@ internal sealed partial class GameHost
         _globalLight = GlobalLightSettings.Read(preview.LevelRoot);
         _shadowPass ??= new ShadowCasterPass(_device);
 
+        // The level's air and its object shading, which the backdrop draws under and the promoted mission
+        // keeps. BringMissionUp reads them only on its cold path; a level that comes up this way must
+        // read them here or play without them.
+        ApplyLevelConstants(preview.LevelRoot);
+
         // A mission with no shipped bake previews on sun and sky alone. Tracing one is seconds of CPU for a
         // backdrop, and the trace belongs to the mission's real load, which caches it for good.
         _probeField = preview.ProbeField;
