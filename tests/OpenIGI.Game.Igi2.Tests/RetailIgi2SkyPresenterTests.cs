@@ -49,11 +49,14 @@ public sealed class RetailIgi2SkyPresenterTests
                 Assert.All(device.MeshDraws, draw => Assert.Equal(DepthState.Disabled, draw.DepthState));
                 Assert.All(device.MeshDraws, draw => Assert.Equal(CullMode.None, draw.CullMode));
 
-                // Each layer is the shared cloud grid, blended over the dome.
+                // Each layer is the shared cloud grid, ADDED over the dome: the strip the original
+                // registers for a layer carries state word 0x41480008, whose bit 3 is SRCALPHA/ONE in
+                // Direct3DQVertex_SetAlphaState (igi2ed 0x6653D0). Blended instead, location1/level1's
+                // star layer -- opaque black between its stars -- painted the whole dome black.
                 foreach (RecordingGraphicsDevice.MeshDrawCall cloud in device.MeshDraws.Skip(1))
                 {
                     Assert.Equal(SkyCloudPlane.IndexCount, cloud.IndexCount);
-                    Assert.Equal(BlendMode.AlphaBlend, cloud.Blend);
+                    Assert.Equal(BlendMode.Additive, cloud.Blend);
                 }
             }
         }

@@ -290,6 +290,13 @@ public sealed class Igi2SkyPresenter : ISkyPresenter
             return;
         }
 
+        // ADDED over the dome, not blended over it. FlatSky_EnterHandler (igi2ed 0x653E10) registers
+        // each layer as a QVertex strip whose state word is 0x41480008, and
+        // Direct3DQVertex_SetAlphaState (0x6653D0) reads bit 3 of that word as SRCBLEND = SRCALPHA,
+        // DESTBLEND = ONE. The star layer's texture is opaque black with the stars in it -- every
+        // texel's alpha is 255 -- so an alpha blend painted the whole dome black and left the stars;
+        // added, the black contributes nothing and the dome's authored colours show through. The
+        // clouds' 0.2 alpha then adds a fifth of their colour rather than replacing a fifth of the sky.
         _device.DrawMesh(
             layer.Mesh,
             0,
@@ -297,7 +304,7 @@ public sealed class Igi2SkyPresenter : ISkyPresenter
             modelView,
             layer.Texture,
             TextureHandle.None,
-            BlendMode.AlphaBlend);
+            BlendMode.Additive);
     }
 
     /// <summary>One <c>FlatSkyLayer</c>, its texture, its scroll and the mesh it is drawn through.</summary>
