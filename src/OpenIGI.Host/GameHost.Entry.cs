@@ -1,4 +1,4 @@
-using OpenIGI.Presentation.Rendering;
+﻿using OpenIGI.Presentation.Rendering;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Formats.Animation;
@@ -15,8 +15,9 @@ internal sealed partial class GameHost
 {
     // The two animation sets every mission uses: skeleton 0's, which the player's body walks on, and
     // skeleton 5's, the first-person rig the held weapon hangs off. They live under common/ rather than
-    // under any level, so they are the same bytes for all fourteen missions -- 1.5 MB and 0.9 MB of IFF
-    // re-read and re-parsed on the render thread every single time a mission started. Read once.
+    // under any level, so they are the same bytes for every mission of one game -- 1.5 MB and 0.9 MB of
+    // IFF re-read and re-parsed on the render thread every single time a mission started. Read once per
+    // TITLE: they come from the game's own installation, so switching games has to forget them.
     private BoneAnimationSet? _playerBodyAnimations;
     private BoneAnimationSet? _viewRigAnimations;
     private bool _sharedAnimationsRead;
@@ -53,6 +54,20 @@ internal sealed partial class GameHost
         _sharedAnimationsRead = true;
         BeginReadingSharedAnimations();
         (_playerBodyAnimations, _viewRigAnimations) = _sharedAnimationsTask!.GetAwaiter().GetResult();
+    }
+
+    /// <summary>Drops the shared sets so the next mission reads the running title's own.</summary>
+    /// <remarks>
+    /// Called when the game being played changes, which is the only thing that can invalidate them. A
+    /// read still in flight is abandoned rather than waited on: it reads files and touches nothing else,
+    /// so the worst it can do is finish into a task nobody holds.
+    /// </remarks>
+    private void ForgetSharedAnimations()
+    {
+        _sharedAnimationsRead = false;
+        _sharedAnimationsTask = null;
+        _playerBodyAnimations = null;
+        _viewRigAnimations = null;
     }
 
     private BoneAnimationSet? ReadAnimationSet(string name, string consequence)

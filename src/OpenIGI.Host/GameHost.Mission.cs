@@ -2207,6 +2207,12 @@ internal sealed partial class GameHost
         // the traced world went on holding structures nothing would place again.
         _device.ReleaseWorld();
 
+        // And the residency walk, which holds the world renderer being disposed below and is stepped by
+        // the idle loop for as long as a backdrop is up. Left standing it keeps calling MakeResident on
+        // a disposed renderer -- reliably, on the first frame after a title switch, because that path
+        // releases the level while the menu is still arming the next backdrop.
+        _arming = null;
+
         _sky?.Dispose();
         _terrain?.Dispose();
         _world?.Dispose();

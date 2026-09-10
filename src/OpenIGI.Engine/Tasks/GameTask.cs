@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 
 namespace OpenIGI.Engine.Tasks;
 
@@ -91,9 +91,19 @@ public abstract class GameTask
     /// <c>AlarmControl_98.isAlarm</c> and <c>Switch_94.isLastPressed</c>, never the labels the
     /// corresponding <c>Task_New</c> calls carry.
     /// </para>
+    /// <para>
+    /// <b>A task with no type still has a name</b>, spelled from its CLR type instead. Not every task is
+    /// a level's: the player's third-person body is a <c>HumanSoldier</c> the renderer builds by hand, so
+    /// it has no script type and never binds a variable. <see cref="Type"/> still refuses, because
+    /// reaching for a type a task does not have is a mistake; a <em>name</em> is a diagnostic, and a
+    /// diagnostic that throws takes the process down at exactly the moment something is already wrong —
+    /// which is how a warning about a missing model became an unhandled exception.
+    /// </para>
     /// </remarks>
     public virtual string Name =>
-        string.Create(CultureInfo.InvariantCulture, $"{Type.Name}_{Id}");
+        _type is { } type
+            ? string.Create(CultureInfo.InvariantCulture, $"{type.Name}_{Id}")
+            : string.Create(CultureInfo.InvariantCulture, $"{GetType().Name}_{Id}");
 
     /// <summary>Gets the editor label the script passed, which the engine itself never uses.</summary>
     /// <remarks>Kept because it is the only human-readable identifier in level data, and tools want it.</remarks>

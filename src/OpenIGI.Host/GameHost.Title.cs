@@ -154,6 +154,13 @@ internal sealed partial class GameHost
         _missionCatalogue = binding.Missions;
         _gamePath = binding.DataRoot;
 
+        // The shared animation sets are read from _gamePath, so they belong to the title and not to the
+        // session. Left standing across a switch they hand the incoming game the outgoing one's
+        // skeletons -- and a set that is merely present is enough to send the mission down a path it
+        // would otherwise have skipped, which is how a switch to a title with no animations at all
+        // ended in an unhandled exception rather than a warning.
+        ForgetSharedAnimations();
+
         // The same file system, re-pointed. VirtualFileSystem keys devices by name, so registering a
         // second LOCAL replaces the first -- which matters because the console, the audio system and the
         // settings all hold this instance and would not see a replacement.
