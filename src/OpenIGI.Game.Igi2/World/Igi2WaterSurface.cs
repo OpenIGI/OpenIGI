@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.World;
@@ -18,6 +18,7 @@ public readonly record struct Igi2WaterWave(float Frequency, float Amplitude, fl
 /// <param name="Radius">How far it reaches from its centre, in world units.</param>
 /// <param name="Detail">How finely it is tessellated.</param>
 /// <param name="Alpha">How transparent it is.</param>
+/// <param name="FadeOut">How fast the waves flatten with distance from the centre.</param>
 /// <param name="Texture">Its surface texture, named as the task carries it.</param>
 /// <param name="Envmap">Its environment map, named as the task carries it.</param>
 /// <param name="Waves">Its wave trains, at most four of which are ever active.</param>
@@ -27,6 +28,7 @@ public readonly record struct Igi2WaterSheet(
     double Radius,
     float Detail,
     float Alpha,
+    float FadeOut,
     string Texture,
     string Envmap,
     IReadOnlyList<Igi2WaterWave> Waves);
@@ -42,12 +44,12 @@ public readonly record struct Igi2WaterSheet(
 /// <c>Water_vTime = Timer_nTicks / 60</c>, so wave phase is seconds at the simulation's own tick rate.
 /// </para>
 /// <para>
-/// <b>The wave displacement itself is not reproduced here, and cannot be read.</b> The function's name
-/// gives it away — the layer parameters are uploaded as <em>vertex function</em> constants and the
-/// displacement is evaluated by a compiled vertex shader, which neither shipped binary exposes as
-/// source. What is recoverable is every input to it: the four trains, their frequency, amplitude, speed
-/// and angle, and the time base. A renderer can sum them the obvious way, and should say that it is
-/// doing so rather than claim the original's shape.
+/// <b>The displacement is in <see cref="Igi2WaterWaveField"/>, and an earlier version of this remark was
+/// wrong about it.</b> It said the waves were evaluated by a compiled vertex shader and could not be
+/// recovered. They are not: <c>Water_VertexFunction</c> (<c>igi2ed 0x645B30</c>) sums the trains on the
+/// CPU and differences the normal, and <c>Water_EnterHandler</c> hands a pointer to it into the
+/// renderer's draw method as a callback. The name of <c>Water_SetVertexFunctionParameters</c> is what
+/// misled — those are arguments to an ordinary function.
 /// </para>
 /// <para>
 /// <b>How a sheet blends is readable, and it is not what one would guess.</b>
@@ -116,6 +118,7 @@ public sealed class Igi2WaterSurface
                 water.Size * WorldScene.UnitsPerMetre,
                 water.Detail,
                 water.Alpha,
+                water.FadeOut,
                 water.Texture,
                 water.Envmap,
                 waves));
