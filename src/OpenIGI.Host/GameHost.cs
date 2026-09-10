@@ -4440,6 +4440,14 @@ internal sealed partial class GameHost : IDisposable
                 // drawn first every one of those terrain fragments was shaded and then buried under
                 // the walls; walls first, and early-Z rejects that fill instead. Outdoors the same
                 // holds for the ground behind every building.
+                //
+                // This is the one place the frame knowingly differs from I.G.I. 2's, which puts terrain
+                // in queue 2 and rigid objects in 5 and so draws the ground first. The picture is the
+                // same either way -- both passes are opaque and depth-tested, so the order decides only
+                // which fragments are shaded and then thrown away -- and the port's way throws away
+                // fewer. Where the order does decide the picture, the render group is honoured: the sky
+                // is drawn first, the water last, and the world's own objects come out grouped, which is
+                // what BuildDrawOrder is for.
                 bool cameraIndoors = IsCameraInsideBuilding(eye.Position);
                 _world.Draw(_scene, eye, projection, new WorldDrawOptions(OcclusionCulling: RenderCVars.WorldOcclusion.Value));
                 EndStageIfSlow("the sky and the world's objects");

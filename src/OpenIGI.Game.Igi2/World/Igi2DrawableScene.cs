@@ -1,4 +1,4 @@
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
@@ -109,6 +109,10 @@ public static class Igi2DrawableScene
                 levelRoot)
             {
                 LightmapEntry = entry,
+
+                // The queue this object is drawn in. Every I.G.I. 2 level authors it, and it is what
+                // separates a decal or a pane of glass from the geometry it has to come after.
+                RenderGroup = placement.RenderGroup,
             });
         }
 

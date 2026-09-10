@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
 
@@ -36,6 +36,39 @@ public sealed record WorldPlacement(
     string LightmapSet = "",
     int LightmapIndex = -1)
 {
+    /// <summary>The queue an object goes in when nothing says otherwise.</summary>
+    /// <remarks>
+    /// Five. <c>World_InitDynCubeObj</c> (<c>igi2ed 0x412C90</c>) writes it into every object as it is
+    /// created, and most never change it.
+    /// </remarks>
+    public const int DefaultRenderGroup = 5;
+
+    /// <summary>Gets which of the frame's sixteen queues this placement is drawn in.</summary>
+    /// <remarks>
+    /// <para>
+    /// The engine draws nothing directly. <c>World_Draw</c> (<c>igi2ed 0x417F50</c>) walks the world cube
+    /// tree and lets the traversal <em>enqueue</em> each visible object into one of sixteen call queues;
+    /// <c>QCube_CallHandlers</c> (<c>0x4171B0</c>) then empties them <b>0 to 15</b> with a shadow-volume
+    /// flush after each. So the group is the object's place in the frame, and objects in different groups
+    /// are separated by everything the groups between them draw.
+    /// </para>
+    /// <para>
+    /// <b>Mostly the engine's, not the level's.</b> An author can set it — I.G.I. 2 registers
+    /// <c>RenderGroup</c> as a level parameter on its rigid objects and all 24 levels use it — but the
+    /// values a level ships are largely the ones the engine would have chosen anyway. Read out of the
+    /// create handlers: the sky takes <b>0</b>, the sector object the camera is standing inside is forced
+    /// to <b>1</b>, terrain takes <b>2</b>, a sector object <b>3</b>, everything else <b>5</b>, a vehicle
+    /// <b>7</b>, a human or the first-person view <b>9</b>, a sector — and anything registered as
+    /// interior to one — <b>12</b>, and water <b>14</b>.
+    /// </para>
+    /// <para>
+    /// Project I.G.I. authors none, so every placement of that game keeps
+    /// <see cref="DefaultRenderGroup"/> and the sixteen queues collapse to one — which is why a fixed
+    /// pass order is not a shortcut that happens to work there, but the same behaviour.
+    /// </para>
+    /// </remarks>
+    public int RenderGroup { get; init; } = DefaultRenderGroup;
+
     /// <summary>Gets the model binding drawn after this object's destructible head is shot out.</summary>
     /// <remarks>
     /// Security cameras keep their holder but replace the live <c>313_02_1</c> head with the authored

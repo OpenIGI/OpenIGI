@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
@@ -765,8 +765,27 @@ public sealed class WorldRenderer : IWorldPresenter
         }
     }
 
-    /// <summary>Orders the placements by model, so consecutive draws share GPU state.</summary>
-    private static int[] BuildDrawOrder(WorldScene scene)
+    /// <summary>Orders the placements by render group, then by model so consecutive draws share GPU state.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The group has to be the outer key.</b> The engine draws nothing directly: it enqueues each
+    /// visible object into one of sixteen call queues by its group and empties them in order, so two
+    /// objects in different groups are separated by everything the groups between them draw. Batching by
+    /// model across that boundary would put a pane of glass before the wall behind it because the two
+    /// happen to share a mesh name, which is the shape of every sorting complaint an I.G.I. 2 world can
+    /// produce.
+    /// </para>
+    /// <para>
+    /// Model stays the inner key, so the state batching survives inside each group — which is where it
+    /// was doing its work anyway, since a group is a run of objects rather than a scattering.
+    /// </para>
+    /// <para>
+    /// <b>Project I.G.I. is unaffected to the bit.</b> No shipped level of that game authors a group, so
+    /// every placement carries <see cref="WorldPlacement.DefaultRenderGroup"/>, the first comparison is
+    /// always nought, and the order is the one this produced before the key existed.
+    /// </para>
+    /// </remarks>
+    internal static int[] BuildDrawOrder(WorldScene scene)
     {
         int[] order = new int[scene.Placements.Count];
         for (int i = 0; i < order.Length; i++)
@@ -776,6 +795,12 @@ public sealed class WorldRenderer : IWorldPresenter
 
         Array.Sort(order, (left, right) =>
         {
+            int byGroup = scene.Placements[left].RenderGroup.CompareTo(scene.Placements[right].RenderGroup);
+            if (byGroup != 0)
+            {
+                return byGroup;
+            }
+
             int byModel = string.CompareOrdinal(
                 scene.Placements[left].Instance.Name,
                 scene.Placements[right].Instance.Name);
