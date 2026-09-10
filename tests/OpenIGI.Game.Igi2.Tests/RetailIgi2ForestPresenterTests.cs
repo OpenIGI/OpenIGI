@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Core.Numerics;
+using OpenIGI.Game.World;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.World;
@@ -69,7 +70,7 @@ public sealed class RetailIgi2ForestPresenterTests
                 device,
                 forest,
                 name => Resolve(level, name),
-                _ => TextureHandle.None);
+                (_, _) => TextureHandle.None);
 
             stands += presenter.StandCount;
             trees += presenter.TreeCount;
@@ -140,7 +141,7 @@ public sealed class RetailIgi2ForestPresenterTests
                 device,
                 forest,
                 name => Resolve(level, name),
-                _ => TextureHandle.None);
+                (_, _) => TextureHandle.None);
 
             foreach (Igi2ForestStand stand in forest.Stands)
             {
@@ -240,7 +241,7 @@ public sealed class RetailIgi2ForestPresenterTests
                 device,
                 forest,
                 name => Resolve(level, name),
-                _ => TextureHandle.None);
+                (_, _) => TextureHandle.None);
 
             foreach (Igi2ForestStand stand in forest.Stands)
             {
@@ -359,11 +360,19 @@ public sealed class RetailIgi2ForestPresenterTests
     /// the whole offset from the task down to the ground, which in mission 1 is 1.9 million units. A
     /// camera at the task's own Z would be four hundred metres over the wood and see none of it.
     /// </remarks>
+    /// <summary>An eye standing among a stand's trees, head height above the middle one.</summary>
+    /// <remarks>
+    /// <b>In metres</b>, which is what a frame carries: every camera downstream of <c>WorldScene</c> is,
+    /// and the host hands the forest the same one it hands the ground. The presenter converts it into the
+    /// cull's own space itself. This used to build the camera in engine units to match what the presenter
+    /// then did with it, which was self-consistent and agreed with nothing else -- the host's real camera
+    /// arrived in metres and every tree in every level was four thousand times too far away to draw.
+    /// </remarks>
     private static Camera3D CameraIn(Igi2ForestStand stand, int heading)
     {
         Igi2Tree middle = stand.Trees[stand.Trees.Count / 2];
         return new Camera3D(
-            new Vector3d(middle.Position.X, middle.Position.Y, middle.Position.Z + 7000),
+            WorldScene.ToMetres(new Vector3d(middle.Position.X, middle.Position.Y, middle.Position.Z + 7000)),
             Camera3D.LookRotation(heading * MathF.Tau / Headings, 0f));
     }
 

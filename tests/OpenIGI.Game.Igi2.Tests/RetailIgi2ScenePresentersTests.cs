@@ -245,6 +245,7 @@ public sealed class RetailIgi2ScenePresentersTests
             level.Root,
             new ResourceRegistry(files),
             name => Resolve(level, name),
+            static (_, _) => null,
             NullLogger.Instance);
     }
 

@@ -1900,6 +1900,7 @@ internal sealed partial class GameHost
             levelRoot,
             _resources,
             name => loaded.TryGetModel(name, out MefModel? model) ? model : null,
+            (name, slot) => loaded.TryGetTextureName(name, slot, out string texture) ? texture : null,
             _logger);
 
         _forest?.Dispose();

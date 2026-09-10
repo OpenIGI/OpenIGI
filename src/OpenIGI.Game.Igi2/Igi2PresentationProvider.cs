@@ -128,7 +128,16 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
         }
 
         Igi2TextureLoader textures = new(request.Device, request.Resources, request.Logger);
-        return new Igi2ForestPresenter(request.Device, forest, request.Models, textures.Resolve, request.Logger);
+        Func<string, int, string?> materials = request.MaterialTextures;
+
+        return new Igi2ForestPresenter(
+            request.Device,
+            forest,
+            request.Models,
+            (model, slot) => materials(model, slot) is { } name
+                ? textures.Resolve(Igi2ModelTable.TextureResourceName(name))
+                : TextureHandle.None,
+            request.Logger);
     }
 
     /// <inheritdoc/>

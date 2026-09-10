@@ -42,6 +42,7 @@ public sealed class LoadedPack
 
     private readonly Dictionary<string, MefModel> _models;
     private HashSet<string>? _registered;
+    private Dictionary<string, MtpInstance>? _byModelName;
 
     private LoadedPack(
         string name,
@@ -285,6 +286,53 @@ public sealed class LoadedPack
         bool resolved = Pack.TryGetTextureName(instance, materialSlot, out string? name);
         textureName = name ?? string.Empty;
         return resolved;
+    }
+
+    /// <summary>Resolves the diffuse texture a draw record samples, for a model named directly.</summary>
+    /// <param name="model">The model's name, as level data spells it.</param>
+    /// <param name="materialSlot">The draw record's material slot.</param>
+    /// <param name="textureName">Receives the texture's bare name.</param>
+    /// <returns><see langword="false"/> when nothing in the pack answers for that model and slot.</returns>
+    /// <remarks>
+    /// <para>
+    /// A material belongs to an <em>instance</em>, not to a mesh — the slot indexes the instance's own
+    /// material range — so a caller holding only a name has to find the instance that uses it. Both
+    /// spellings resolve: a name that is itself an instance's, and a name that is the mesh an instance
+    /// points at. Level data uses the first for placed objects and the second for a forest stand, whose
+    /// <c>Model</c> parameter names the tree mesh.
+    /// </para>
+    /// <para>
+    /// The first instance using a mesh wins. Two instances of one mesh with different materials would be
+    /// two differently textured objects, and nothing in the retail data does that for the meshes reached
+    /// this way — a tree is a tree.
+    /// </para>
+    /// </remarks>
+    public bool TryGetTextureName(string model, int materialSlot, out string textureName)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(model);
+
+        textureName = string.Empty;
+        _byModelName ??= BuildInstanceIndex();
+
+        return _byModelName.TryGetValue(model, out MtpInstance instance)
+            && TryGetTextureName(instance, materialSlot, out textureName);
+    }
+
+    private Dictionary<string, MtpInstance> BuildInstanceIndex()
+    {
+        Dictionary<string, MtpInstance> index = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (MtpInstance instance in Instances)
+        {
+            index.TryAdd(instance.Name, instance);
+
+            if (!instance.Model.IsNone && !instance.Model.IsCommon && instance.Model.Index < Pack.ModelNames.Count)
+            {
+                index.TryAdd(Pack.ModelNames[instance.Model.Index], instance);
+            }
+        }
+
+        return index;
     }
 
     /// <summary>Builds the resource name a texture's pixels are registered under.</summary>

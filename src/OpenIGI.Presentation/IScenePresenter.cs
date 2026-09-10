@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
@@ -15,6 +15,11 @@ namespace OpenIGI.Presentation;
 /// Resolves a model by the name a level refers to it by, or returns <see langword="null"/> when there is
 /// none. A host that has not opened the mission's model packs supplies a lookup that always declines,
 /// and the passes that need geometry then build nothing rather than half of something.
+/// </param>
+/// <param name="MaterialTextures">
+/// Resolves a model name and one of its material slots to the texture that slot samples, or
+/// <see langword="null"/> when nothing answers. A mesh alone cannot say: a material belongs to the
+/// instance that uses the mesh, and only the packs know which instance that is.
 /// </param>
 /// <param name="Logger">Where load diagnostics go.</param>
 /// <remarks>
@@ -37,6 +42,7 @@ public readonly record struct ScenePresentationRequest(
     GameTask LevelRoot,
     ResourceRegistry Resources,
     Func<string, MefModel?> Models,
+    Func<string, int, string?> MaterialTextures,
     IIgiLogger Logger);
 
 /// <summary>What one frame needs in order to draw a title's foliage.</summary>

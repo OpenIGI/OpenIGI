@@ -72,14 +72,14 @@ public sealed class Igi2ForestPresenter : IForestPresenter
     /// <param name="device">The device to upload through.</param>
     /// <param name="forest">The level's stands, already placed.</param>
     /// <param name="models">Resolves a stand's model name to its mesh, or null when the level lacks it.</param>
-    /// <param name="textures">Resolves a texture name to a handle.</param>
+    /// <param name="textures">Resolves a model name and material slot to the texture handle it samples.</param>
     /// <param name="logger">Where load diagnostics go.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public Igi2ForestPresenter(
         IGraphicsDevice device,
         Igi2Forest forest,
         Func<string, MefModel?> models,
-        Func<string, TextureHandle> textures,
+        Func<string, int, TextureHandle> textures,
         IIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
@@ -98,7 +98,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
                 continue;
             }
 
-            if (MefMeshBuilder.Build(model) is not { } geometry)
+            if (MefMeshBuilder.Build(model, (float)(1.0 / WorldScene.UnitsPerMetre)) is not { } geometry)
             {
                 log.Warning(LogCategory, $"Forest {stand.TaskId}'s model '{stand.Model}' has no geometry.");
                 continue;
@@ -107,11 +107,19 @@ public sealed class Igi2ForestPresenter : IForestPresenter
             (Vector3f centre, float radius, float height) = BoundsOf(model);
             int foliage = FoliageFaceGroupOf(model);
 
-            List<MeshSubset> trunk = [];
-            List<MeshSubset> leaves = [];
+            // A tree is two materials, not one: bark and leaves, and they are different textures on
+            // different slots of the same mesh. Resolved per subset for that reason -- one handle for the
+            // whole stand drew the trunk in the foliage's texture, or in nothing at all.
+            List<Part> trunk = [];
+            List<Part> leaves = [];
             for (int i = 0; i < geometry.Subsets.Length; i++)
             {
-                (i == foliage ? leaves : trunk).Add(geometry.Subsets[i]);
+                MeshSubset subset = geometry.Subsets[i];
+                TextureHandle texture = subset.HasMaterial
+                    ? textures(stand.Model, subset.MaterialSlot)
+                    : TextureHandle.None;
+
+                (i == foliage ? leaves : trunk).Add(new Part(subset, texture));
             }
 
             _stands.Add(new Stand(
@@ -125,8 +133,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
                 radius,
                 height,
                 Igi2ForestBsp.MarginOf(radius, stand.RandomScaleRangeX, stand.RandomScaleRangeY),
-                (float)(stand.ViewCutoff * WorldScene.UnitsPerMetre),
-                TextureHandle.None));
+                (float)(stand.ViewCutoff * WorldScene.UnitsPerMetre)));
         }
 
         TreeCount = _stands.Sum(static s => s.Trees.Count);
@@ -193,7 +200,12 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         _visible.Clear();
-        Camera3D view = camera;
+
+        // The cull runs in engine units, because everything it measures is: a stand's centre and half
+        // extent, a tree's position, and the ViewCutoff the level authored in metres and the load
+        // multiplied up. So the eye is converted rather than the forest -- the same division of labour
+        // the ground's quadtree makes, and for the same reason.
+        Camera3D view = new(WorldScene.ToUnits(camera.Position), camera.Orientation);
         float biasScale = MathF.Sqrt(Igi2ForestLod.BiasSquaredOf(LodBias));
         float biasInverse = Igi2ForestLod.BiasInverseOf(LodBias);
 
@@ -394,27 +406,28 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         _visible.Add(new Visible(stand, tree, delta.Length));
     }
 
-    private void Issue(in Camera3D camera, Func<Stand, MeshSubset[]> select, BlendMode blend)
+    private void Issue(in Camera3D camera, Func<Stand, Part[]> select, BlendMode blend)
     {
         foreach (Visible visible in _visible)
         {
             Stand stand = _stands[visible.Stand];
-            MeshSubset[] subsets = select(stand);
-            if (subsets.Length == 0)
+            Part[] parts = select(stand);
+            if (parts.Length == 0)
             {
                 continue;
             }
 
             Igi2Tree tree = stand.Trees[visible.Tree];
-            Matrix4f modelView = camera.CreateModelView(tree.Position, OrientationOf(tree));
-            foreach (MeshSubset subset in subsets)
+            // Drawn in metres: the frame's camera is, and so are the mesh's own vertices now.
+            Matrix4f modelView = camera.CreateModelView(WorldScene.ToMetres(tree.Position), OrientationOf(tree));
+            foreach (Part part in parts)
             {
                 _device.DrawMesh(
                     stand.Mesh,
-                    subset.IndexOffset,
-                    subset.IndexCount,
+                    part.Subset.IndexOffset,
+                    part.Subset.IndexCount,
                     modelView,
-                    stand.Texture,
+                    part.Texture,
                     TextureHandle.None,
                     blend);
             }
@@ -425,8 +438,8 @@ public sealed class Igi2ForestPresenter : IForestPresenter
 
     private sealed record Stand(
         MeshHandle Mesh,
-        MeshSubset[] Trunk,
-        MeshSubset[] Foliage,
+        Part[] Trunk,
+        Part[] Foliage,
         IReadOnlyList<Igi2Tree> Trees,
         Igi2ForestBsp Bsp,
         Vector3d Centre,
@@ -434,6 +447,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         float Radius,
         float Height,
         float Margin,
-        float Cutoff,
-        TextureHandle Texture);
+        float Cutoff);
+
+    private readonly record struct Part(MeshSubset Subset, TextureHandle Texture);
 }
