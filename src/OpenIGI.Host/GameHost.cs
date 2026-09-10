@@ -71,6 +71,10 @@ internal sealed partial class GameHost : IDisposable
     private readonly IAudioDeviceFactory _audioFactory;
     private readonly IGameTitleRuntime _titleRuntime;
     private readonly ITitlePresentationProvider _presentation;
+
+    // How this title turns a loaded level into placements. The host used to call the first game's walk
+    // directly, which made it a host only that game could load a mission into.
+    private readonly ITitleWorldBuilder _worldBuilder;
     /// <summary>Gets the window width, or the authored 320 when a minimize/dock race reports 0x0.</summary>
     private int SafeWindowWidth => _window.Width > 0 ? _window.Width : 320;
 
@@ -478,6 +482,7 @@ internal sealed partial class GameHost : IDisposable
     /// <param name="audioFactory">Opens the audio backend; re-called whenever the device settings change.</param>
     /// <param name="titleRuntime">The game being run: its data layout, its formats and its content modules.</param>
     /// <param name="presentation">The same game's renderers. A second seam because the reference graph forbids one.</param>
+    /// <param name="worldBuilder">The same game's scene walk. A third seam, for the same reason.</param>
     /// <param name="fileSystem">The virtual file system the original installation is read through.</param>
     /// <param name="options">The parsed command line.</param>
     /// <param name="gamePath">The original installation directory.</param>
@@ -489,6 +494,7 @@ internal sealed partial class GameHost : IDisposable
         IAudioDeviceFactory audioFactory,
         IGameTitleRuntime titleRuntime,
         ITitlePresentationProvider presentation,
+        ITitleWorldBuilder worldBuilder,
         VirtualFileSystem fileSystem,
         HostOptions options,
         string gamePath,
@@ -500,6 +506,7 @@ internal sealed partial class GameHost : IDisposable
         _audioFactory = audioFactory;
         _titleRuntime = titleRuntime;
         _presentation = presentation;
+        _worldBuilder = worldBuilder;
         _fileSystem = fileSystem;
         _options = options;
         _gamePath = gamePath;

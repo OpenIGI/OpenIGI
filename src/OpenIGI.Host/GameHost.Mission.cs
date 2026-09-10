@@ -547,8 +547,19 @@ internal sealed partial class GameHost
         }
         else
         {
-            scene = WorldScene.Build(loaded, levelRoot, _magic, _logger, _vehiclePhysics);
+WorldBuildResult built = _worldBuilder.Build(
+                new WorldBuildRequest(loaded, levelRoot, _resources, _magic, _logger, _vehiclePhysics));
+            scene = built.Scene;
             _scene = scene;
+
+            if (built.UnresolvedCount > 0 || built.LightmappedCount > 0)
+            {
+                _logger.Information(
+                    "World",
+                    $"{scene.Placements.Count} placement(s), {built.LightmappedCount} lightmapped, "
+                        + $"{built.UnresolvedCount} unresolved.");
+            }
+
             // Unlike the thirteen optional passes, a mission cannot load without a world to put in it:
             // the collision index, the destructibles and the cut-scene bindings below all attach to it.
             // A title that has not written one yet can still show a menu, and says so here rather than

@@ -1,7 +1,10 @@
-using OpenIGI.Core.Titles;
+﻿using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Igi1;
+using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.Igi2;
+using OpenIGI.Game.Igi2.World;
+using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 
 namespace OpenIGI.Desktop;
@@ -52,6 +55,33 @@ internal static class DesktopTitleCatalog
         }
 
         throw new ArgumentException($"This build has no runtime for '{title.Id}'.", nameof(title));
+    }
+
+    /// <summary>Finds the scene walk for a title.</summary>
+    /// <param name="title">The title to run.</param>
+    /// <returns>Its world builder.</returns>
+    /// <exception cref="ArgumentException">This build has no scene walk for that title.</exception>
+    /// <remarks>
+    /// A third lookup, for the same reason there is a second: <c>OpenIGI.Game</c> references
+    /// <c>OpenIGI.Engine</c>, so <c>Engine</c> cannot name a <c>WorldScene</c> and
+    /// <see cref="IGameTitleRuntime"/> cannot carry this. All three are resolved here, from the same
+    /// title, in the one place allowed to name either game.
+    /// </remarks>
+    public static ITitleWorldBuilder WorldBuilderFor(GameTitle title)
+    {
+        ArgumentNullException.ThrowIfNull(title);
+
+        if (title == GameTitle.Igi1)
+        {
+            return Igi1WorldBuilder.Instance;
+        }
+
+        if (title == GameTitle.Igi2)
+        {
+            return Igi2WorldBuilder.Instance;
+        }
+
+        throw new ArgumentException($"This build has no scene walk for {title}.", nameof(title));
     }
 
     /// <summary>Finds the renderers for a title.</summary>

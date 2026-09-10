@@ -1,4 +1,4 @@
-using OpenIGI.Audio.OpenAL;
+﻿using OpenIGI.Audio.OpenAL;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
@@ -187,6 +187,7 @@ using (window)
     using GameHost game = new(
         platform, window, device, OpenAlAudioDeviceFactory.Instance, titleRuntime,
         DesktopTitleCatalog.PresentationFor(titleRuntime.Title),
+        DesktopTitleCatalog.WorldBuilderFor(titleRuntime.Title),
         fileSystem, options, gamePath, logger);
     return game.Run();
 }
