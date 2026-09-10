@@ -32,10 +32,14 @@ public sealed class Igi2SkyPresenter : ISkyPresenter
     /// How many engine units one unit of the space this presenter draws in is worth.
     /// </summary>
     /// <remarks>
-    /// One: I.G.I. 2's world is drawn in engine units directly, so the sky's authored distances need no
-    /// conversion. I.G.I. 1's renderer draws in metres and passes 4,096 for the same parameter.
+    /// <b>4,096, because the frame's camera arrives in metres.</b> It used to be one, on the assumption
+    /// that the sequel drew its world in engine units — which was true of nothing by the time the ground
+    /// and the trees were both being drawn in metres. A cloud layer authored fourteen metres above the
+    /// camera was built fourteen <em>thousand</em> metres up, so the sky had a dome and no clouds in it.
+    /// The fade and the texture scale are authored against engine units either way, which is what this
+    /// number is for.
     /// </remarks>
-    public const float UnitsPerPosition = 1f;
+    public const float UnitsPerPosition = (float)Game.World.WorldScene.UnitsPerMetre;
 
     private readonly IGraphicsDevice _device;
     private readonly IIgiLogger _logger;
@@ -76,11 +80,18 @@ public sealed class Igi2SkyPresenter : ISkyPresenter
             Igi2SkyDome.ColourTableFor(sky),
             Igi2SkyDome.HalfAngleOf(sky.DomeAngle));
 
+        // Into metres, like everything else drawn about this camera. The dome's own radius is the
+        // original's 8,000 engine units -- about two metres, which is all it needs to be: it is drawn
+        // with depth off and centred on the viewer, so it is a direction rather than a distance, and
+        // leaving it at eight kilometres put it past the far plane and left it there on the driver's
+        // goodwill.
+        const float toMetres = 1f / UnitsPerPosition;
+
         Vertex3D[] vertices = new Vertex3D[positions.Length];
         for (int i = 0; i < positions.Length; i++)
         {
             // Untextured: the dome is pure vertex colour, and the clouds are the layers over it.
-            vertices[i] = new Vertex3D(positions[i], Vector3f.Zero, 0f, 0f, 0f, 0f, colours[i]);
+            vertices[i] = new Vertex3D(positions[i] * toMetres, Vector3f.Zero, 0f, 0f, 0f, 0f, colours[i]);
         }
 
         ushort[] indices = SkyDomeGeometry.BuildIndices();
