@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
@@ -222,7 +222,9 @@ public sealed class Igi2WaterPresenter : IWaterPresenter
             sheet.Mesh,
             0,
             sheet.IndexCount,
-            frame.Camera.CreateModelView(sheet.Definition.Centre, Matrix3f.Identity),
+            // In metres, like the ground the sheet lies on: a Water task's Position is authored in
+            // engine units and the frame's camera is not.
+            frame.Camera.CreateModelView(WorldScene.ToMetres(sheet.Definition.Centre), Matrix3f.Identity),
             sheet.Texture,
             TextureHandle.None,
             BlendMode.AlphaBlend);
@@ -239,6 +241,9 @@ public sealed class Igi2WaterPresenter : IWaterPresenter
         private readonly float _origin;
         private readonly float _uvScale;
         private readonly Bgra32 _colour;
+
+        /// <summary>The scale from the space the waves are summed in to the space they are drawn in.</summary>
+        private const float MetresPerUnit = (float)(1.0 / WorldScene.UnitsPerMetre);
 
         public Sheet(
             Igi2WaterSheet definition,
@@ -295,8 +300,12 @@ public sealed class Igi2WaterPresenter : IWaterPresenter
                     float z = _field.HeightAt(x, y, seconds, radius);
                     Vector3f normal = _field.NormalAt(x, y, seconds, radius);
 
+                    // The grid is laid out and the waves are summed in engine units, because the
+                    // sheet's radius and every wave's frequency are authored in them; the vertex is
+                    // handed over in metres, because that is what it is drawn in. The UVs are taken
+                    // before the conversion for the same reason -- the tiling is repeats per unit.
                     _vertices[(row * _edge) + column] = new Vertex3D(
-                        new Vector3f(x, y, z),
+                        new Vector3f(x, y, z) * MetresPerUnit,
                         normal,
                         x * _uvScale,
                         y * _uvScale,
