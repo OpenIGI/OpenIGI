@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Animation;
@@ -115,12 +115,13 @@ public sealed class LoadedPack
         // The animation sets come first because Pack_Bind (0x4CF080) loads them first, before either
         // archive binds - and from the shared common root, not the pack's own directory.
         List<BoneAnimationSet> sets = [];
+        int absentSets = 0;
         foreach (string setName in pack.AnimationSetNames)
         {
             string path = $"{AnimationSetRoot}anims/{setName}.iff";
             if (!resources.TryLoad(path, out ReadOnlyMemory<byte> bytes))
             {
-                log.Warning(LogCategory, $"Animation set '{path}' is absent.");
+                absentSets++;
                 continue;
             }
 
@@ -134,12 +135,47 @@ public sealed class LoadedPack
             }
         }
 
+        // Counted, not listed. A pack names hundreds of sets, and a title that keeps them somewhere
+        // else is missing all of them at once -- I.G.I. 2 ships no loose .iff anywhere, its animation
+        // data being inside the packs -- so a line each buried every other diagnostic in the run under
+        // a thousand identical ones. A set that IS there and will not parse still gets its own line,
+        // because that is one file being wrong rather than a title keeping them elsewhere.
+        if (absentSets > 0)
+        {
+            log.Warning(
+                LogCategory,
+                $"{absentSets} of {pack.AnimationSetNames.Count} animation set(s) named by '{name}' are not under "
+                    + $"{AnimationSetRoot}anims/; this title keeps them elsewhere.");
+        }
+
         Dictionary<string, MefModel> models = new(StringComparer.OrdinalIgnoreCase);
+        int animations = 0;
+        int shadows = 0;
         if (TryRegisterArchive($"{dir}models/{name}.res", resources, log) is { } archive)
         {
             foreach (IresEntry entry in archive.Entries)
             {
                 string key = BareName(entry.Name);
+                // An animation in the models archive is not a broken model. The sequel keeps its bone
+                // animations there rather than beside the pack as loose .iff files, so the archive holds
+                // both forms -- and reading every one of them as a model reported several hundred
+                // perfectly good animations as malformed, once per file.
+                if (IsAnimation(entry.Data))
+                {
+                    animations++;
+                    continue;
+                }
+
+                // Nor is a shadow volume. It carries SMES/SVTX/SFAC/EDGE and no MESH, because it is
+                // silhouette geometry to be extruded rather than a surface to be shaded -- so the
+                // model reader's "no MESH chunk" was right about the bytes and wrong about what they
+                // are, sixty-eight times in the sequel's common pack alone.
+                if (IsShadowVolume(entry.Data))
+                {
+                    shadows++;
+                    continue;
+                }
+
                 try
                 {
                     models[key] = profile is null ? MefModel.Read(entry.Data) : MefModel.Read(entry.Data, profile);
@@ -149,6 +185,14 @@ public sealed class LoadedPack
                     log.Warning(LogCategory, $"Model '{entry.Name}' in '{name}' did not parse: {ex.Message}");
                 }
             }
+        }
+
+        if (animations > 0 || shadows > 0)
+        {
+            log.Information(
+                LogCategory,
+                $"'{name}' holds {animations} bone animation(s) and {shadows} shadow volume(s) beside its "
+                    + "models; neither is a render model.");
         }
 
         List<string> missing = [];
@@ -263,6 +307,59 @@ public sealed class LoadedPack
 
         int dot = span.LastIndexOf('.');
         return new string(dot > 0 ? span[..dot] : span);
+    }
+
+    /// <summary>Whether an archive entry is a bone animation rather than a model.</summary>
+    /// <remarks>
+    /// By the container's form type, which is the only thing that distinguishes them: both are ILFF and
+    /// both are named <c>.iff</c> in the archive. <c>MINA</c> is <c>ANIM</c> as the tag is stored.
+    /// </remarks>
+    private static bool IsAnimation(ReadOnlyMemory<byte> data)
+    {
+        try
+        {
+            return IlffContainer.Read(data).FormType == IlffTags.Mina;
+        }
+        catch (IlffFormatException)
+        {
+            // Not a container at all, so the model reader's own message is the useful one.
+            return false;
+        }
+    }
+
+    /// <summary>Whether an archive entry is a shadow volume rather than a render model.</summary>
+    /// <remarks>
+    /// By the header chunk it carries. Both are <c>OCEM</c> containers, so the form type cannot separate
+    /// them the way it separates an animation; what a shadow volume has instead of a mesh is
+    /// <see cref="MefTags.ShadowMesh"/>.
+    /// </remarks>
+    private static bool IsShadowVolume(ReadOnlyMemory<byte> data)
+    {
+        try
+        {
+            IlffContainer container = IlffContainer.Read(data);
+            if (container.FormType != IlffTags.Ocem)
+            {
+                return false;
+            }
+
+            bool shadow = false;
+            foreach (IlffChunk chunk in container.Chunks)
+            {
+                if (chunk.Id == MefTags.Mesh)
+                {
+                    return false;
+                }
+
+                shadow |= chunk.Id == MefTags.ShadowMesh;
+            }
+
+            return shadow;
+        }
+        catch (IlffFormatException)
+        {
+            return false;
+        }
     }
 
     private static MtpPack ReadPack(string path, ResourceRegistry resources)

@@ -1,4 +1,4 @@
-using OpenIGI.Core;
+﻿using OpenIGI.Core;
 
 namespace OpenIGI.Formats.Ilff;
 
@@ -17,6 +17,14 @@ public static class IlffTags
 
     /// <summary>Form type <c>OCEM</c>: an MEF model (the logical name is <c>MECO</c>).</summary>
     public static FourCc Ocem { get; } = FourCc.FromString("OCEM");
+
+    /// <summary>Form type <c>MINA</c>: a bone animation (the logical name is <c>ANIM</c>).</summary>
+    /// <remarks>
+    /// The sequel keeps its animations inside a pack's model archive rather than beside it as loose
+    /// <c>.iff</c> files, so a models archive holds both forms. An animation is not a malformed model,
+    /// and reading it as one is how several hundred of them came to be reported as broken.
+    /// </remarks>
+    public static FourCc Mina { get; } = FourCc.FromString("MINA");
 
     /// <summary>Form type <c>FONT</c>: a bitmap font.</summary>
     public static FourCc Font { get; } = FourCc.FromString("FONT");
