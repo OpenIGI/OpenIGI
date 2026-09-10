@@ -613,6 +613,9 @@ public sealed class Igi2TerrainLod
     private Bgra32 LightAt(int x, int y) =>
         _tile.LightAt(Math.Min(x, _tile.Width - 1), Math.Min(y, _tile.Height - 1));
 
+    private Vector3f NormalAt(int x, int y) =>
+        _tile.NormalAt(Math.Min(x, _tile.Width - 1), Math.Min(y, _tile.Height - 1));
+
     private readonly record struct Square(int X, int Y, int Size, int V0, int V1, int V2, int V3)
     {
         public int Corner(int index) => index switch
@@ -633,6 +636,7 @@ public sealed class Igi2TerrainLod
         private readonly Igi2TerrainLodSettings _settings;
 
         private readonly List<Vector3d> _positions = [];
+        private readonly List<Vector3f> _normals = [];
         private readonly List<double> _trueZ = [];
         private readonly List<Bgra32> _lights = [];
         private readonly List<float> _weights = [];
@@ -762,6 +766,7 @@ public sealed class Igi2TerrainLod
 
             Vector3d position = _owner.PositionOf(x, y);
             _positions.Add(position);
+            _normals.Add(_owner.NormalAt(x, y));
             _trueZ.Add(position.Z);
             _lights.Add(_owner.LightAt(x, y));
 
@@ -797,6 +802,7 @@ public sealed class Igi2TerrainLod
             double z = parentMean + (Igi2TerrainLodSettings.MorphFraction(morph) * (trueZ - parentMean));
 
             _positions.Add(new Vector3d(_owner.EdgeX(x), _owner.EdgeY(y), z));
+            _normals.Add(_owner.NormalAt(x, y));
             _trueZ.Add(trueZ);
             _lights.Add(_owner.LightAt(x, y));
 
@@ -1030,6 +1036,7 @@ public sealed class Igi2TerrainLod
 
             return Igi2TerrainMesh.Create(
                 _positions,
+                _normals,
                 _lights,
                 passes,
                 _owner._tile.Width,

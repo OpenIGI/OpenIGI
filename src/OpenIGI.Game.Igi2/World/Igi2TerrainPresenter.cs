@@ -370,26 +370,51 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         (float U, float V) diffuseUv = Igi2TerrainMesh.TextureCoordinate(pass.TextureScale, world);
         (float U, float V) detailUv = Igi2TerrainMesh.TextureCoordinate(pass.DetailTextureScale, world);
         Bgra32 light = mesh.Lights[index];
+        Vector3f normal = mesh.Normals[index];
+
+        // THE WEIGHT IS FOLDED INTO THE COLOUR, not left in the alpha for a blend factor to apply.
+        //
+        // The original keeps this weight in a vertex stream of its own -- stream 1, four bytes a vertex,
+        // one buffer per material (TerrainRender_DrawRenderChunk_, igi2ed 0x667400) -- and applies it
+        // through the blender: TerrainRender_SetBlendMode (0x666B90) sets SRCBLEND = SRCALPHA for both
+        // of the ground's modes, with DESTBLEND ZERO for the base pass and ONE for the ones that add.
+        // So in the original every terrain pass is scaled by its share whatever else it does.
+        //
+        // The port cannot lean on that, because its blend modes do not all carry a source-alpha factor:
+        // the deferred G-buffer's additive is ONE/ONE and every path's opaque is ONE/ZERO. Left in the
+        // alpha the share was therefore applied on the vanilla path and DROPPED on the deferred one,
+        // where each of a tile's five to seven materials then added its texture at full strength. That
+        // is what made the remastered ground a pale wash with no material in it: not a lighting fault,
+        // an unweighted sum of every texture the tile paints.
+        //
+        // Multiplied into the light instead, it survives every blend the port uses and comes out as the
+        // original's own product -- texture * light * share -- on all four combinations.
+        float weight = Math.Clamp(pass.Weights.Span[index], 0f, 1f);
 
         return new Vertex3D(
             new Vector3f(
                 (float)((world.X - centre.X) / WorldScene.UnitsPerMetre),
                 (float)((world.Y - centre.Y) / WorldScene.UnitsPerMetre),
                 (float)((world.Z - centre.Z) / WorldScene.UnitsPerMetre)),
-            Vector3f.UnitZ,
+
+            // The original's ground has no normal at all: its vertex is sixteen bytes of x, y, z and a
+            // fog factor (TerrainRender_CalculateRenderVertex, igi2ed 0x66A740), and it is lit by the
+            // tile's lightmap rather than by a light. The deferred path needs one anyway -- see
+            // Igi2TerrainTile.NormalAt.
+            normal,
             diffuseUv.U,
             diffuseUv.V,
             detailUv.U,
             detailUv.V,
-            // RGB is the baked terrain light; alpha is this material's weight, which is what the
-            // additive blend scales the pass by. The quadtree makes that weight fractional: a vertex
-            // half-morphed between two levels carries a share of each material its parents had.
             new Bgra32(
-                light.B,
-                light.G,
-                light.R,
-                (byte)Math.Clamp((int)MathF.Round(pass.Weights.Span[index] * 255f), 0, 255)));
+                Scale(light.B, weight),
+                Scale(light.G, weight),
+                Scale(light.R, weight),
+                255));
     }
+
+    private static byte Scale(byte channel, float weight) =>
+        (byte)Math.Clamp((int)MathF.Round(channel * weight), 0, 255);
 
     private int Stream(
         Igi2TerrainMesh mesh,

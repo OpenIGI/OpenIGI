@@ -234,6 +234,43 @@ public readonly record struct Igi2TerrainTile(
         return false;
     }
 
+    /// <summary>Gets the surface normal at one sample, from the slope of the height map around it.</summary>
+    /// <param name="x">The sample's column.</param>
+    /// <param name="y">The sample's row.</param>
+    /// <returns>The unit normal, Z up.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The original has no terrain normals to reproduce.</b> Its ground is lit entirely by the
+    /// per-sample lightmap the tile ships, carried in the vertex colour, and nothing in
+    /// <c>TerrainRender_CalculateRenderVertex</c> (<c>igi2ed 0x66A740</c>) writes a normal at all. The
+    /// remaster's deferred path needs one anyway: the sun, the ambient and the screen-space passes all
+    /// ask the G-buffer which way a surface faces, and a ground that answers "up" everywhere is lit as
+    /// a flat plate — which is what a hillside built out of thirty-two-metre texels looked like.
+    /// </para>
+    /// <para>
+    /// Central differences over the height map, which is the slope the ground actually has rather than
+    /// the slope of whichever triangles the quadtree happened to emit. Taking it from the samples means
+    /// a vertex keeps the same normal at every level of detail, so the ground does not re-light as it
+    /// subdivides. Heights and texel sizes are both in world units, so the ratio is dimensionless.
+    /// </para>
+    /// </remarks>
+    public Vector3f NormalAt(int x, int y)
+    {
+        int left = Math.Max(0, Math.Min(Width - 1, x - 1));
+        int right = Math.Max(0, Math.Min(Width - 1, x + 1));
+        int up = Math.Max(0, Math.Min(Height - 1, y - 1));
+        int down = Math.Max(0, Math.Min(Height - 1, y + 1));
+
+        double spanX = (right - left) * TexelWidth;
+        double spanY = (down - up) * TexelHeight;
+        double slopeX = spanX > 0d ? (HeightAt(right, y) - HeightAt(left, y)) / spanX : 0d;
+        double slopeY = spanY > 0d ? (HeightAt(x, down) - HeightAt(x, up)) / spanY : 0d;
+
+        Vector3f normal = new((float)-slopeX, (float)-slopeY, 1f);
+        float length = MathF.Sqrt((normal.X * normal.X) + (normal.Y * normal.Y) + 1f);
+        return normal / length;
+    }
+
     /// <summary>Gets the material id painted on one sample, or zero when the tile ships no material map.</summary>
     /// <param name="x">The sample's column.</param>
     /// <param name="y">The sample's row.</param>

@@ -132,15 +132,26 @@ public sealed class RetailIgi2TerrainPresenterTests
         Assert.Fail("No level shipped terrain to draw.");
     }
 
-    /// <summary>A vertex carries the baked light in colour and its material's weight in alpha.</summary>
+    /// <summary>A vertex carries the baked light already scaled by its material's share.</summary>
     /// <remarks>
-    /// What stage 0 consumes: <c>COLOROP = MODULATE(TEXTURE, DIFFUSE)</c> and
-    /// <c>ALPHAOP = SELECTARG2(DIFFUSE)</c>. So the diffuse channel does two jobs at once, and getting
-    /// either wrong is a lighting fault rather than a geometry one — the ground still draws, in the
-    /// wrong colour or with the wrong material showing through.
+    /// <para>
+    /// What stage 0 consumes is <c>COLOROP = MODULATE(TEXTURE, DIFFUSE)</c>, and the share arrives
+    /// separately: the original keeps it in a vertex stream of its own — stream 1, four bytes a vertex,
+    /// one buffer per material (<c>TerrainRender_DrawRenderChunk_</c>, <c>igi2ed 0x667400</c>) — and
+    /// applies it through the blender, <c>SRCBLEND = SRCALPHA</c> in both of the ground's modes
+    /// (<c>TerrainRender_SetBlendMode</c>, <c>0x666B90</c>).
+    /// </para>
+    /// <para>
+    /// The port folds it into the colour instead, because not every blend mode it draws the ground with
+    /// carries a source-alpha factor — the deferred G-buffer's additive is ONE/ONE and every path's
+    /// opaque is ONE/ZERO. Left in the alpha the share was applied on the vanilla path and dropped on
+    /// the deferred one, where a tile's five to seven materials each added at full strength. So the
+    /// contract asserted here is the product: a vertex whose material this pass is keeps its bake, and
+    /// one borrowed from a neighbour comes through black and adds nothing.
+    /// </para>
     /// </remarks>
     [RequiresTitleDataFact("igi2")]
-    public void A_vertex_carries_the_bake_in_colour_and_the_weight_in_alpha()
+    public void A_vertex_carries_the_bake_scaled_by_its_materials_share()
     {
         foreach (Igi2Level level in Igi2Level.All())
         {
@@ -153,20 +164,35 @@ public sealed class RetailIgi2TerrainPresenterTests
             RecordingGraphicsDevice device = new();
             using Igi2TerrainPresenter presenter = new(device, surface, _ => TextureHandle.None);
 
-            int opaque = 0;
-            int transparent = 0;
+            int carried = 0;
+            int borrowed = 0;
             foreach (Vertex3D vertex in device.Meshes.Values.First().Vertices)
             {
-                // The weight is one or zero, so the alpha is 255 or 0 and nothing between.
-                Assert.True(vertex.Colour.A is 0 or 255, $"A vertex carries alpha {vertex.Colour.A}.");
-                opaque += vertex.Colour.A == 255 ? 1 : 0;
-                transparent += vertex.Colour.A == 0 ? 1 : 0;
+                // The share is one or zero at full detail, so a vertex is either its own bake or black.
+                // The alpha is no longer the share and must not gate anything: it is always opaque.
+                Assert.Equal(255, vertex.Colour.A);
+
+                bool lit = vertex.Colour.R != 0 || vertex.Colour.G != 0 || vertex.Colour.B != 0;
+                carried += lit ? 1 : 0;
+                borrowed += lit ? 0 : 1;
+
+                // And the normal is the ground's own slope rather than a flat up: the deferred path
+                // lights the ground with it, and a plate normal is what made a hillside read as one.
+                Assert.InRange(vertex.Normal.Z, 0.001f, 1.001f);
+                float length = MathF.Sqrt(
+                    (vertex.Normal.X * vertex.Normal.X)
+                    + (vertex.Normal.Y * vertex.Normal.Y)
+                    + (vertex.Normal.Z * vertex.Normal.Z));
+                Assert.Equal(1f, length, 3);
             }
 
             // Both kinds are present: a pass keeps the vertices its triangles touch, and a triangle
             // straddling a boundary brings in corners belonging to another material.
-            Assert.True(opaque > 0, "No vertex carried this material.");
-            Assert.True(transparent > 0, "No vertex was borrowed from a neighbouring material.");
+            Assert.True(carried > 0, "No vertex carried this material.");
+            Assert.True(borrowed > 0, "No vertex was borrowed from a neighbouring material.");
+
+            // Not every normal is flat, or the slope is not being read at all.
+            Assert.Contains(device.Meshes.Values.First().Vertices, v => v.Normal.Z < 0.999f);
             return;
         }
 

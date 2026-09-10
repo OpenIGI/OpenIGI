@@ -99,12 +99,14 @@ public sealed class Igi2TerrainMesh
 {
     private Igi2TerrainMesh(
         IReadOnlyList<Vector3d> positions,
+        IReadOnlyList<Vector3f> normals,
         IReadOnlyList<Bgra32> lights,
         IReadOnlyList<Igi2TerrainPass> passes,
         int width,
         int height)
     {
         Positions = positions;
+        Normals = normals;
         Lights = lights;
         Passes = passes;
         Width = width;
@@ -113,6 +115,11 @@ public sealed class Igi2TerrainMesh
 
     /// <summary>Gets each sample's world position, row-major.</summary>
     public IReadOnlyList<Vector3d> Positions { get; }
+
+    /// <summary>Gets each sample's surface normal, matching <see cref="Positions"/>.</summary>
+    /// <remarks>See <see cref="Igi2TerrainTile.NormalAt"/> — the original has none and this is the
+    /// height map's own slope, taken per sample so the level of detail cannot change it.</remarks>
+    public IReadOnlyList<Vector3f> Normals { get; }
 
     /// <summary>Gets each sample's baked light, row-major and matching <see cref="Positions"/>.</summary>
     public IReadOnlyList<Bgra32> Lights { get; }
@@ -140,6 +147,7 @@ public sealed class Igi2TerrainMesh
 
     /// <summary>Wraps geometry someone else tessellated — the quadtree's own output.</summary>
     /// <param name="positions">Each vertex's world position, with the morphed height as Z.</param>
+    /// <param name="normals">The samples' surface normals.</param>
     /// <param name="lights">Each vertex's baked light, matching <paramref name="positions"/>.</param>
     /// <param name="passes">The passes, one per material the geometry paints.</param>
     /// <param name="width">The tile's sample width, carried through for reference.</param>
@@ -154,12 +162,13 @@ public sealed class Igi2TerrainMesh
     /// </remarks>
     internal static Igi2TerrainMesh Create(
         IReadOnlyList<Vector3d> positions,
+        IReadOnlyList<Vector3f> normals,
         IReadOnlyList<Bgra32> lights,
         IReadOnlyList<Igi2TerrainPass> passes,
         int width,
         int height,
         int uncovered) =>
-        new(positions, lights, passes, width, height) { UncoveredSampleCount = uncovered };
+        new(positions, normals, lights, passes, width, height) { UncoveredSampleCount = uncovered };
 
     /// <summary>Builds the geometry for one tile.</summary>
     /// <param name="tile">The tile.</param>
@@ -180,6 +189,7 @@ public sealed class Igi2TerrainMesh
         int count = width * height;
 
         Vector3d[] positions = new Vector3d[count];
+        Vector3f[] normals = new Vector3f[count];
         Bgra32[] lights = new Bgra32[count];
         byte[] material = new byte[count];
 
@@ -189,6 +199,7 @@ public sealed class Igi2TerrainMesh
             {
                 int i = (y * width) + x;
                 positions[i] = tile.PositionOf(x, y);
+                normals[i] = tile.NormalAt(x, y);
                 lights[i] = tile.LightAt(x, y);
                 material[i] = tile.MaterialAt(x, y);
             }
@@ -257,7 +268,7 @@ public sealed class Igi2TerrainMesh
             uncovered += materials.ContainsKey(id) ? 0 : 1;
         }
 
-        return new Igi2TerrainMesh(positions, lights, passes, width, height)
+        return new Igi2TerrainMesh(positions, normals, lights, passes, width, height)
         {
             UncoveredSampleCount = uncovered,
         };
