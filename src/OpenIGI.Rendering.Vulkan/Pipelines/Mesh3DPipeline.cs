@@ -149,15 +149,17 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
     /// <param name="blend">The blend mode.</param>
     /// <param name="alphaReference">The cut-out threshold out of 255, baked into the variant.</param>
     /// <param name="reflective">Whether the variant samples the bound environment cube.</param>
+    /// <param name="fogTarget">The colour the variant fogs towards.</param>
     /// <returns>The matching pipeline.</returns>
     public Pipeline ForState(
         DepthState depth,
         CullMode cull,
         BlendMode blend,
         byte alphaReference = IGraphicsDevice.DefaultAlphaReference,
-        bool reflective = false)
+        bool reflective = false,
+        FogTarget fogTarget = FogTarget.Scene)
     {
-        Mesh3DPipelineKey key = new(depth, cull, blend, alphaReference, reflective);
+        Mesh3DPipelineKey key = new(depth, cull, blend, alphaReference, reflective, fogTarget);
         if (_pipelines.TryGetValue(key, out Pipeline existing))
         {
             return existing;
@@ -286,7 +288,8 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
                 _fogColour,
                 _fogDensity,
                 _sunAmbient,
-                _sunColour);
+                _sunColour,
+                key.FogTarget);
 
             PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
             stages[0] = new PipelineShaderStageCreateInfo

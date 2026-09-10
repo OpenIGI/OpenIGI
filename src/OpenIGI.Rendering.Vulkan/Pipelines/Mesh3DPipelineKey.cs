@@ -20,9 +20,14 @@ namespace OpenIGI.Rendering.Vulkan.Pipelines;
 /// Whether the variant samples the bound environment cube. Also a specialization constant, so that the
 /// lookup is compiled out of every pipeline the rest of the world draws through.
 /// </param>
+/// <param name="FogTarget">
+/// The colour the variant fogs towards. A specialization constant for the same reason: three values,
+/// a property of a run of draws, and no push room. See <see cref="FogTarget"/>.
+/// </param>
 internal readonly record struct Mesh3DPipelineKey(
     DepthState Depth,
     CullMode Cull,
     BlendMode Blend,
     byte AlphaReference,
-    bool Reflective);
+    bool Reflective,
+    FogTarget FogTarget = FogTarget.Scene);

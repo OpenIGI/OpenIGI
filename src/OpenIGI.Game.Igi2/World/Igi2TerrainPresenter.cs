@@ -254,10 +254,24 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         }
         finally
         {
+            _device.SetFogTarget(FogTarget.Scene);
             _device.SetLightmapModulates(false);
             _device.SetAlphaReference(IGraphicsDevice.DefaultAlphaReference);
         }
     }
+
+    /// <summary>The colour a ground pass fogs towards, as the original's state block for its mode writes it.</summary>
+    /// <remarks>
+    /// <c>TerrainRender_SetBlendMode</c> (<c>igi2ed 0x666B90</c>): modes 1 and 2 — the base and the
+    /// overlays — set <c>D3DRS_FOGCOLOR</c> to the fog colour times 127; mode 3 — the lightmap — sets it
+    /// to <c>0xFFFFFFFF</c>. The lightmap pass doubles what is under it, so at distance the three land
+    /// on <c>2 × (fog / 2) × 1</c>, the fog; nearer in the bake is fogged to the identity before the
+    /// texture is fogged to the haze, which is what keeps far rock textured. Fogging every pass to the
+    /// scene's colour instead multiplied the fog into itself, and the far hills went to fog squared —
+    /// a third the brightness the original draws them at.
+    /// </remarks>
+    private static FogTarget FogTargetOf(ChunkPass pass) =>
+        pass == ChunkPass.Lightmap ? FogTarget.White : FogTarget.HalfScene;
 
     private void DrawGround(in TerrainFrame frame)
     {
@@ -271,6 +285,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             {
                 ChunkPass which = (ChunkPass)phase;
                 _device.SetDepthState(which == ChunkPass.Base ? DepthState.TestAndWrite : DepthState.TestOnly);
+                _device.SetFogTarget(FogTargetOf(which));
                 foreach (Chunk chunk in _chunks)
                 {
                     if (chunk.Pass != which || chunk.IndexCount == 0)
@@ -330,6 +345,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         {
             ChunkPass which = (ChunkPass)phase;
             _device.SetDepthState(which == ChunkPass.Base ? DepthState.TestAndWrite : DepthState.TestOnly);
+            _device.SetFogTarget(FogTargetOf(which));
             foreach ((Tile tile, Igi2TerrainTessellation tessellation, Matrix4f modelView) in _ready)
             {
                 if (which == ChunkPass.Lightmap)

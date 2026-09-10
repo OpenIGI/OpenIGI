@@ -313,6 +313,20 @@ public interface IGraphicsDevice : IDisposable
     /// <remarks>So that a renderer which must draw untinted — the sky — can put back what it found.</remarks>
     Vector3f ModelAmbient { get; }
 
+    /// <summary>Sets the colour the following draws fog towards, until it is set again.</summary>
+    /// <param name="target">The colour: the scene's fog, half of it, or white.</param>
+    /// <remarks>
+    /// For I.G.I. 2's ground, whose three multiplied passes each fog to a different colour so that the
+    /// product lands on the scene's fog at distance — see <see cref="FogTarget"/> for the state blocks.
+    /// Device state, like <see cref="SetLightmapModulates"/>: it spans a run of draws and must be put
+    /// back to <see cref="FogTarget.Scene"/> after them. A title that never calls this fogs everything
+    /// to the scene's colour, which is what the forward path always did.
+    /// </remarks>
+    void SetFogTarget(FogTarget target)
+    {
+        _ = target;
+    }
+
     /// <summary>Sets the fixed-function sun a title's unlightmapped objects are lit by, for every draw until it is set again.</summary>
     /// <param name="ambient">The flat light every such vertex receives, linear.</param>
     /// <param name="colour">The directional light's diffuse colour, linear.</param>

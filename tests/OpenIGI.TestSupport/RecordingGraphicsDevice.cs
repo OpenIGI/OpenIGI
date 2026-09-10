@@ -106,6 +106,12 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public void SetVertexSun(Vector3f towardsSun) => VertexSun = towardsSun;
 
+    /// <summary>Gets the colour the draws that follow fog towards.</summary>
+    public FogTarget FogTarget { get; private set; }
+
+    /// <inheritdoc/>
+    public void SetFogTarget(FogTarget target) => FogTarget = target;
+
     /// <inheritdoc/>
     public void SetAlphaHash(float seed)
     {
@@ -952,7 +958,8 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
             Fog,
             ModelAmbient,
             LightmapScale,
-            VertexSun));
+            VertexSun,
+            FogTarget));
 
     public void DrawMeshRanges(
         MeshHandle mesh,
@@ -1016,7 +1023,8 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         SceneFog Fog = default,
         Vector3f ModelAmbient = default,
         float LightmapScale = 1f,
-        Vector3f VertexSun = default)
+        Vector3f VertexSun = default,
+        FogTarget FogTarget = FogTarget.Scene)
     {
         public int TriangleCount => IndexCount / 3;
     }

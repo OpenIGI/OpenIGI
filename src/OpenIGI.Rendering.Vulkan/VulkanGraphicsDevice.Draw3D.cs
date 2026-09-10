@@ -797,7 +797,7 @@ public sealed partial class VulkanGraphicsDevice
         // A draw reflects when the frame has handed over a cube, which is what SetEnvironmentCube means.
         bool reflective = TryGetEnvironmentCube(out Textures.VulkanCubeTexture? cube);
 
-        BindGraphicsPipeline(pipeline.ForState(_depthState, _cullMode, blend, _alphaReference, reflective));
+        BindGraphicsPipeline(pipeline.ForState(_depthState, _cullMode, blend, _alphaReference, reflective, _fogTarget));
         BindMeshBuffers(mesh);
         BindMeshTextures(pipeline.PipelineLayout, diffuse, lightmap);
         BindEnvironmentCube(pipeline, cube);

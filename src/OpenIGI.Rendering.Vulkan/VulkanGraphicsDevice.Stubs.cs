@@ -64,6 +64,16 @@ public sealed partial class VulkanGraphicsDevice
         _vertexSun = towardsSun;
     }
 
+    /// <inheritdoc/>
+    public void SetFogTarget(FogTarget target)
+    {
+        ThrowIfDisposed();
+        _fogTarget = target;
+    }
+
+    // The colour the draws in flight fog towards; a pipeline-variant key, not a push value.
+    private FogTarget _fogTarget;
+
     // The model-space direction towards the fixed-function sun for the draws in flight, or zero.
     private Vector3f _vertexSun;
 

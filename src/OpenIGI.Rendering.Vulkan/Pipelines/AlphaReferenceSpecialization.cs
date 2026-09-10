@@ -96,8 +96,17 @@ internal static unsafe class AlphaReferenceSpecialization
     /// <summary>The blue channel of the sun's colour.</summary>
     public const uint SunColourBlueConstantId = 11;
 
+    /// <summary>The <c>constant_id</c> the forward mesh fragment stage declares its fog target under.</summary>
+    /// <remarks>
+    /// Which colour a variant fogs towards — the scene's, half of it, or white — as
+    /// <see cref="FogTarget"/> numbers them. A constant because the three are a property of a run of
+    /// draws, the ground's three passes, and the push block is full; and because folded away, the
+    /// scene-colour variant compiles to exactly the fog it always had.
+    /// </remarks>
+    public const uint FogTargetConstantId = 12;
+
     /// <summary>How many constants <see cref="DescribeMesh"/> writes.</summary>
-    public const int MeshConstantCount = 12;
+    public const int MeshConstantCount = 13;
 
     /// <summary>Fills a description of the forward mesh shader's constants.</summary>
     /// <param name="data">Room for <see cref="MeshConstantCount"/> four-byte values, which must outlive the pipeline creation call.</param>
@@ -108,6 +117,7 @@ internal static unsafe class AlphaReferenceSpecialization
     /// <param name="fogDensity">The scene's fog extinction per metre; zero is no fog.</param>
     /// <param name="sunAmbient">The flat light an unlightmapped vertex receives from the scene sun.</param>
     /// <param name="sunColour">The scene sun's diffuse colour.</param>
+    /// <param name="fogTarget">The colour the variant fogs towards.</param>
     /// <returns>The description.</returns>
     /// <remarks>
     /// The reflection switch is a constant for the same reason the threshold is — no push room — and it
@@ -123,7 +133,8 @@ internal static unsafe class AlphaReferenceSpecialization
         Vector3f fogColour,
         float fogDensity,
         Vector3f sunAmbient,
-        Vector3f sunColour)
+        Vector3f sunColour,
+        FogTarget fogTarget)
     {
         WriteFloat(data, 0, ToUnit(reference));
         data[1] = reflective ? 1u : 0u;
@@ -137,6 +148,7 @@ internal static unsafe class AlphaReferenceSpecialization
         WriteFloat(data, 9, sunColour.X);
         WriteFloat(data, 10, sunColour.Y);
         WriteFloat(data, 11, sunColour.Z);
+        data[12] = (uint)fogTarget;
 
         // The constant ids happen to be the slot numbers, and the map says so entry by entry rather than
         // relying on it: the ids are the shader's contract, the offsets are this function's.
@@ -152,6 +164,7 @@ internal static unsafe class AlphaReferenceSpecialization
         entries[9] = Entry(SunColourRedConstantId, 9);
         entries[10] = Entry(SunColourGreenConstantId, 10);
         entries[11] = Entry(SunColourBlueConstantId, 11);
+        entries[12] = Entry(FogTargetConstantId, 12);
 
         return new SpecializationInfo
         {

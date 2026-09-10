@@ -66,6 +66,21 @@ public sealed class ObjectShadingShaderTests
             StringComparison.Ordinal);
     }
 
+    /// <summary>The fragment stage declares the fog target and fogs towards half the scene's colour or white on request.</summary>
+    /// <remarks>
+    /// TerrainRender_SetBlendMode (igi2ed 0x666B90) writes the fog colour times 127 for the ground's base
+    /// and overlay passes and white for its lightmap pass; the default of zero must fold back to the fog
+    /// the shader always had.
+    /// </remarks>
+    [Fact]
+    public void The_fragment_stage_fogs_towards_the_variants_target()
+    {
+        Assert.Contains("layout(constant_id = 12) const int cFogTarget = 0;", Mesh3DShaderSource.Fragment, StringComparison.Ordinal);
+        Assert.Contains("fogColour *= 127.0 / 255.0;", Mesh3DShaderSource.Fragment, StringComparison.Ordinal);
+        Assert.Contains("fogColour = vec3(1.0);", Mesh3DShaderSource.Fragment, StringComparison.Ordinal);
+        Assert.Contains("return mix(fogColour, colour, exp(-cFogDensity * vFogDepth));", Mesh3DShaderSource.Fragment, StringComparison.Ordinal);
+    }
+
     /// <summary>The vertex stage compiles with the constants at their defaults and with a sun supplied.</summary>
     [RequiresGlslcTheory]
     [InlineData(false)]
