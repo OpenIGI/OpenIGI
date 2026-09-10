@@ -317,7 +317,7 @@ public sealed class MissionPreviewLoader(
             : Task.FromResult<Bgra32[][]>([]);
 
         WorldScene scene = WorldScene.Build(loaded, levelRoot, magic, logger);
-        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements);
+        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements, context.Formats.Collision);
 
         TerrainSurface? surface = loaded.Terrain is { IsUsable: true } usable
             ? TerrainSurface.Build(usable, levelRoot, logger)

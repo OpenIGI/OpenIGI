@@ -1,4 +1,4 @@
-using System.Collections.Immutable;
+﻿using System.Collections.Immutable;
 
 namespace OpenIGI.Formats;
 
@@ -26,6 +26,37 @@ public readonly record struct MeshVertexLayout(
     int NormalOffset,
     int DiffuseUvOffset,
     int LightmapUvOffset);
+
+/// <summary>How a title lays out a model's collision geometry.</summary>
+/// <param name="FaceStride">Bytes per collision face.</param>
+/// <param name="VertexStride">Bytes per collision vertex.</param>
+/// <param name="MaterialStride">Bytes per collision material row.</param>
+/// <param name="SphereStride">Bytes per node of the sphere tree.</param>
+/// <param name="MaterialPortalOffset">Where a material row keeps its portal index.</param>
+/// <param name="MaterialGlobalOffset">Where a material row keeps the global game-material row.</param>
+/// <remarks>
+/// <para>
+/// Read out of the sequel's own symbols rather than measured, because two of these are the kind of
+/// difference that produces a wrong answer instead of a failure. <c>MultiMesh_Face_t</c> is <b>12</b>
+/// bytes there — <c>aiVertex[3]</c>, <c>iMaterial</c>, then an <c>iLightmap</c> and a pad — where
+/// Project I.G.I.'s face is 8; and <c>MultiMesh_Material_t</c> is <b>16</b> where the first game's is
+/// 12, having gained <c>iBumpMap</c> and <c>iEnvMap</c> at offsets 8 and 10.
+/// </para>
+/// <para>
+/// <b>That second one moves a field rather than appending one.</b> The global game-material row — which
+/// is what tells the sight test glass from a wall — sits at offset 8 in the first game and at <b>12</b>
+/// in the sequel, because the two new fields were inserted before it rather than after. A reader that
+/// only widened the stride would keep reading offset 8 and get the bump-map index, which is a small
+/// number indexing a real table and would look entirely plausible.
+/// </para>
+/// </remarks>
+public readonly record struct CollisionLayout(
+    int FaceStride,
+    int VertexStride,
+    int MaterialStride,
+    int SphereStride,
+    int MaterialPortalOffset,
+    int MaterialGlobalOffset);
 
 /// <summary>How a title stores the triangles that make up a draw record.</summary>
 public enum MeshDrawRecordStorage
@@ -115,6 +146,9 @@ public sealed record AssetFormatProfile
     /// </para>
     /// </remarks>
     public required ImmutableArray<MeshRenderHeaderLayout> MeshRenderHeaders { get; init; }
+
+    /// <summary>Gets how this title lays out a model's collision geometry.</summary>
+    public required CollisionLayout Collision { get; init; }
 
     /// <summary>Gets the size of one attachment record.</summary>
     /// <remarks>
@@ -231,6 +265,13 @@ public sealed record AssetFormatProfile
             new(1, SubMeshOffset: 8, VertexOffset: 20, Size: 56),
             new(3, SubMeshOffset: 12, VertexOffset: 16, Size: 56),
         ],
+        Collision = new CollisionLayout(
+            FaceStride: 8,
+            VertexStride: 16,
+            MaterialStride: 12,
+            SphereStride: 24,
+            MaterialPortalOffset: 4,
+            MaterialGlobalOffset: 8),
         MeshVertexLayouts =
         [
             new(0, Stride: 32, NormalOffset: 12, DiffuseUvOffset: 24, LightmapUvOffset: -1),
@@ -267,6 +308,15 @@ public sealed record AssetFormatProfile
             new(1, SubMeshOffset: 8, VertexOffset: 20, Size: 40),
             new(3, SubMeshOffset: 12, VertexOffset: 16, Size: 44),
         ],
+        Collision = new CollisionLayout(
+            FaceStride: 12,
+            VertexStride: 20,
+            MaterialStride: 16,
+            SphereStride: 24,
+            MaterialPortalOffset: 4,
+
+            // Twelve, not eight: iBumpMap and iEnvMap were inserted before it, not after.
+            MaterialGlobalOffset: 12),
         MeshVertexLayouts =
         [
             new(0, Stride: 32, NormalOffset: 12, DiffuseUvOffset: 24, LightmapUvOffset: -1),
@@ -300,6 +350,13 @@ public sealed record AssetFormatProfile
             new(1, SubMeshOffset: 8, VertexOffset: 20, Size: 56),
             new(3, SubMeshOffset: 12, VertexOffset: 16, Size: 56),
         ],
+        Collision = new CollisionLayout(
+            FaceStride: 8,
+            VertexStride: 16,
+            MaterialStride: 12,
+            SphereStride: 24,
+            MaterialPortalOffset: 4,
+            MaterialGlobalOffset: 8),
         MeshVertexLayouts =
         [
             new(0, Stride: 32, NormalOffset: 12, DiffuseUvOffset: 24, LightmapUvOffset: -1),

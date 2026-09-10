@@ -576,7 +576,7 @@ WorldBuildResult built = _worldBuilder.Build(
             world.DetailMaps = _detailMaps;
             world.Lamps = _lamps;
             _world = world;
-            solids = ObjectCollisionIndex.Build(scene.Placements);
+            solids = ObjectCollisionIndex.Build(scene.Placements, _titleRuntime.Formats.Collision);
             _worldSolids = solids;
             EndStage("the scene walk, the world renderer and the collision index");
         }
@@ -2310,7 +2310,7 @@ _sky = _presentation.CreateSky(
         ReleaseShelterField();
 
         long started = _loop.TimeSource.Milliseconds;
-        _shelterField = ShelterHeightField.Build(scene.Placements);
+        _shelterField = ShelterHeightField.Build(scene.Placements, collision: _titleRuntime.Formats.Collision);
         if (_shelterField.IsEmpty)
         {
             _logger.Information("Shelter", "the level places nothing solid; nothing is sheltered");

@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using OpenIGI.Core;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ilff;
@@ -65,7 +65,12 @@ public sealed class MefCollisionMesh
     /// <summary>How many collision mesh levels an HSMC header carries.</summary>
     public const int MeshLevels = HeaderSize / MeshHeaderSize;
 
-    /// <summary>Bytes per face.</summary>
+    /// <summary>Bytes per face, in the first game's layout.</summary>
+    /// <remarks>
+    /// The strides below are Project I.G.I.'s and are what a reader given no profile uses, which keeps
+    /// every existing caller reading exactly what it read before. I.G.I. 2 widens three of the four and
+    /// moves a field inside the material row; see <see cref="CollisionLayout"/>.
+    /// </remarks>
     public const int FaceStride = 8;
 
     /// <summary>Bytes per vertex.</summary>
@@ -76,6 +81,12 @@ public sealed class MefCollisionMesh
 
     /// <summary>Bytes per sphere.</summary>
     public const int SphereStride = 24;
+
+    /// <summary>Where a material row keeps its portal index, in the first game's layout.</summary>
+    public const int MaterialPortalOffset = 4;
+
+    /// <summary>Where a material row keeps the global game-material row, in the first game's layout.</summary>
+    public const int MaterialGlobalOffset = 8;
 
     /// <summary>The <c>iPortal</c> value that means "not a portal" — <c>0xFFFF</c>, i.e. −1.</summary>
     /// <remarks>
@@ -179,21 +190,27 @@ public sealed class MefCollisionMesh
     /// <summary>Reads collision mesh level zero from a model, if it carries one.</summary>
     /// <param name="container">The model's chunks.</param>
     /// <param name="mesh">Receives the mesh.</param>
+    /// <param name="layout">How this title lays the rows out, or null for the first game's.</param>
     /// <returns><see langword="false"/> when the model has no collision geometry, which is not an error.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="container"/> is <see langword="null"/>.</exception>
     /// <exception cref="PackFormatException">A chunk's length disagrees with the header's count.</exception>
-    public static bool TryRead(IlffContainer container, out MefCollisionMesh? mesh)
-        => TryRead(container, meshIndex: 0, out mesh);
+    public static bool TryRead(IlffContainer container, out MefCollisionMesh? mesh, CollisionLayout? layout = null)
+        => TryRead(container, meshIndex: 0, out mesh, layout);
 
     /// <summary>Reads one collision mesh level from a model, if it carries one.</summary>
     /// <param name="container">The model's chunks.</param>
     /// <param name="meshIndex">The retail <c>iMesh</c> collision level: zero or one.</param>
     /// <param name="mesh">Receives the mesh.</param>
+    /// <param name="layout">How this title lays the rows out, or null for the first game's.</param>
     /// <returns><see langword="false"/> when that level has no collision geometry.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="meshIndex"/> is not a declared mesh level.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="container"/> is <see langword="null"/>.</exception>
     /// <exception cref="PackFormatException">A chunk's length disagrees with the header's count.</exception>
-    public static bool TryRead(IlffContainer container, int meshIndex, out MefCollisionMesh? mesh)
+    public static bool TryRead(
+        IlffContainer container,
+        int meshIndex,
+        out MefCollisionMesh? mesh,
+        CollisionLayout? layout = null)
     {
         ArgumentNullException.ThrowIfNull(container);
         ArgumentOutOfRangeException.ThrowIfNegative(meshIndex);
@@ -204,6 +221,10 @@ public sealed class MefCollisionMesh
         {
             return false;
         }
+
+        // The title's layout, or the first game's when none is given.
+        CollisionLayout rows = layout ?? new CollisionLayout(
+            FaceStride, VertexStride, MaterialStride, SphereStride, MaterialPortalOffset, MaterialGlobalOffset);
 
         ReadOnlySpan<byte> head = header.Payload.Span;
         if (head.Length < HeaderSize)
@@ -223,7 +244,7 @@ public sealed class MefCollisionMesh
             return false;
         }
 
-        ReadOnlySpan<byte> faceBytes = Payload(container, MefTags.CollisionFaces, meshIndex, faceCount, FaceStride);
+        ReadOnlySpan<byte> faceBytes = Payload(container, MefTags.CollisionFaces, meshIndex, faceCount, rows.FaceStride);
 
         // A small number of retail collision meshes carry a stale vertex count in HSMC. The XTVC
         // payload is still a complete sequence of 16-byte records, and ECFC references the records
@@ -231,19 +252,19 @@ public sealed class MefCollisionMesh
         // Trust the self-delimiting payload for vertices while retaining exact count checks for the
         // face, material, and sphere tables below.
         ReadOnlySpan<byte> vertexBytes = Payload(
-            container, MefTags.CollisionVertices, meshIndex, vertexCount, VertexStride,
+            container, MefTags.CollisionVertices, meshIndex, vertexCount, rows.VertexStride,
             allowAdditionalRecords: true);
-        if (vertexBytes.Length % VertexStride != 0)
+        if (vertexBytes.Length % rows.VertexStride != 0)
         {
             throw new PackFormatException(
                 $"The level {meshIndex} '{MefTags.CollisionVertices}' chunk is {vertexBytes.Length} bytes, "
-                + $"not a whole number of {VertexStride}-byte records.");
+                + $"not a whole number of {rows.VertexStride}-byte records.");
         }
 
-        vertexCount = vertexBytes.Length / VertexStride;
-        ReadOnlySpan<byte> sphereBytes = Payload(container, MefTags.CollisionSpheres, meshIndex, sphereCount, SphereStride);
-        ReadOnlySpan<byte> materialBytes = Payload(container, MefTags.CollisionMaterials, meshIndex, materialCount, MaterialStride);
-        int payloadVertexCount = vertexBytes.Length / VertexStride;
+        vertexCount = vertexBytes.Length / rows.VertexStride;
+        ReadOnlySpan<byte> sphereBytes = Payload(container, MefTags.CollisionSpheres, meshIndex, sphereCount, rows.SphereStride);
+        ReadOnlySpan<byte> materialBytes = Payload(container, MefTags.CollisionMaterials, meshIndex, materialCount, rows.MaterialStride);
+        int payloadVertexCount = vertexBytes.Length / rows.VertexStride;
 
         // The material rows' one field the collision needs: iPortal (u16 at offset 4). A doorway or
         // window opening is closed by a portal polygon whose material carries a portal index here; the
@@ -255,16 +276,16 @@ public sealed class MefCollisionMesh
         int[] materialGlobal = new int[materialCount];
         for (int i = 0; i < materialCount; i++)
         {
-            int portal = BinaryPrimitives.ReadUInt16LittleEndian(materialBytes.Slice((i * MaterialStride) + 4, 2));
+            int portal = BinaryPrimitives.ReadUInt16LittleEndian(materialBytes.Slice((i * rows.MaterialStride) + rows.MaterialPortalOffset, 2));
             materialIsPortal[i] = portal != NotAPortal;
-            materialGlobal[i] = BinaryPrimitives.ReadUInt16LittleEndian(materialBytes.Slice((i * MaterialStride) + 8, 2));
+            materialGlobal[i] = BinaryPrimitives.ReadUInt16LittleEndian(materialBytes.Slice((i * rows.MaterialStride) + rows.MaterialGlobalOffset, 2));
         }
 
         Vector3f[] vertices = new Vector3f[payloadVertexCount];
         int[] vertexBones = new int[payloadVertexCount];
         for (int i = 0; i < payloadVertexCount; i++)
         {
-            ReadOnlySpan<byte> row = vertexBytes.Slice(i * VertexStride, VertexStride);
+            ReadOnlySpan<byte> row = vertexBytes.Slice(i * rows.VertexStride, rows.VertexStride);
             vertices[i] = new Vector3f(
                 BinaryPrimitives.ReadSingleLittleEndian(row),
                 BinaryPrimitives.ReadSingleLittleEndian(row[4..]),
@@ -277,7 +298,7 @@ public sealed class MefCollisionMesh
         MefCollisionFace[] faces = new MefCollisionFace[faceCount];
         for (int i = 0; i < faceCount; i++)
         {
-            ReadOnlySpan<byte> row = faceBytes.Slice(i * FaceStride, FaceStride);
+            ReadOnlySpan<byte> row = faceBytes.Slice(i * rows.FaceStride, rows.FaceStride);
             faces[i] = new MefCollisionFace(
                 BinaryPrimitives.ReadUInt16LittleEndian(row),
                 BinaryPrimitives.ReadUInt16LittleEndian(row[2..]),
@@ -288,7 +309,7 @@ public sealed class MefCollisionMesh
         MefCollisionSphere[] spheres = new MefCollisionSphere[sphereCount];
         for (int i = 0; i < sphereCount; i++)
         {
-            ReadOnlySpan<byte> row = sphereBytes.Slice(i * SphereStride, SphereStride);
+            ReadOnlySpan<byte> row = sphereBytes.Slice(i * rows.SphereStride, rows.SphereStride);
             spheres[i] = new MefCollisionSphere(
                 new Vector3f(
                     BinaryPrimitives.ReadSingleLittleEndian(row),
