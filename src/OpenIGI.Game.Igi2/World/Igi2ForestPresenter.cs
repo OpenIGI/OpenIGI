@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
@@ -66,6 +67,10 @@ public sealed class Igi2ForestPresenter : IForestPresenter
     private readonly IGraphicsDevice _device;
     private readonly List<Stand> _stands = [];
     private readonly List<Visible> _visible = [];
+
+    // One texel per distinct tree bake. A stand's trees mostly share a value, so this is a handful of
+    // textures for thousands of trees rather than one each.
+    private readonly Dictionary<uint, TextureHandle> _bakes = [];
     private bool _disposed;
 
     /// <summary>Builds the forests of one level.</summary>
@@ -325,6 +330,12 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         }
 
         _disposed = true;
+        foreach (TextureHandle bake in _bakes.Values)
+        {
+            _device.DestroyTexture(bake);
+        }
+
+        _bakes.Clear();
         foreach (Stand stand in _stands)
         {
             _device.DestroyMesh(stand.Mesh);
@@ -408,6 +419,21 @@ public sealed class Igi2ForestPresenter : IForestPresenter
 
     private void Issue(in Camera3D camera, Func<Stand, Part[]> select, BlendMode blend)
     {
+        // The bake in the second slot is a colour to multiply in, not a light to keep apart -- see
+        // BakeOf. The forward path does that already; this is what tells the deferred one.
+        _device.SetLightmapModulates(true);
+        try
+        {
+            IssueTrees(camera, select, blend);
+        }
+        finally
+        {
+            _device.SetLightmapModulates(false);
+        }
+    }
+
+    private void IssueTrees(in Camera3D camera, Func<Stand, Part[]> select, BlendMode blend)
+    {
         foreach (Visible visible in _visible)
         {
             Stand stand = _stands[visible.Stand];
@@ -420,6 +446,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
             Igi2Tree tree = stand.Trees[visible.Tree];
             // Drawn in metres: the frame's camera is, and so are the mesh's own vertices now.
             Matrix4f modelView = camera.CreateModelView(WorldScene.ToMetres(tree.Position), OrientationOf(tree));
+            TextureHandle bake = BakeOf(tree.Light);
             foreach (Part part in parts)
             {
                 _device.DrawMesh(
@@ -428,10 +455,53 @@ public sealed class Igi2ForestPresenter : IForestPresenter
                     part.Subset.IndexCount,
                     modelView,
                     part.Texture,
-                    TextureHandle.None,
+                    bake,
                     blend);
             }
         }
+    }
+
+    /// <summary>Gets the single-texel texture holding one tree's baked colour, doubled.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The trees are lit by nothing but this.</b> The original's foliage stage 0 is
+    /// <c>COLOROP = MODULATE2X</c> over <c>COLORARG1 = TEXTURE</c> and <c>COLORARG2 = DIFFUSE</c>
+    /// (<c>ForestRender_SetTextureState_AlphaTestFoliage</c>, <c>igi2ed 0x57C4B0</c>), and
+    /// <c>ForestRender_SetGenericState_AlphaTestFoliage</c> (<c>0x57C770</c>) writes
+    /// <c>D3DRS_LIGHTING = 0</c> beside it — so a tree's colour is its texture times the colour the
+    /// forest bake gave that tree, doubled, and nothing else touches it.
+    /// </para>
+    /// <para>
+    /// The port read that colour into <see cref="Igi2Tree.Light"/> and then drew the trees without it,
+    /// at their full albedo. On location1/level1 the bake is around (20, 35, 53) — dark, and blue over
+    /// green over red, which is the night the level is authored for. Drawn without it a pine reads as
+    /// bright daylight green in the middle of that night, which is exactly what it looked like.
+    /// </para>
+    /// <para>
+    /// A single texel, because a tree is one draw and the port has no per-draw diffuse colour to put
+    /// this in — the forward push block is full. The lightmap slot is free here and the forward path
+    /// already multiplies it into the base colour, which is the product wanted; the deferred path is
+    /// told to do the same by <see cref="IGraphicsDevice.SetLightmapModulates"/>. Doubling is baked
+    /// into the texel rather than done in a shader, which is exact at these levels: the night values
+    /// are all well under half.
+    /// </para>
+    /// </remarks>
+    private TextureHandle BakeOf(Bgra32 light)
+    {
+        uint key = ((uint)light.R << 16) | ((uint)light.G << 8) | light.B;
+        if (_bakes.TryGetValue(key, out TextureHandle existing))
+        {
+            return existing;
+        }
+
+        Bgra32 doubled = new(
+            (byte)Math.Min(255, light.B * 2),
+            (byte)Math.Min(255, light.G * 2),
+            (byte)Math.Min(255, light.R * 2),
+            255);
+        TextureHandle texture = _device.CreateTexture(new TextureDescription(1, 1), [doubled]);
+        _bakes[key] = texture;
+        return texture;
     }
 
     private readonly record struct Visible(int Stand, int Tree, float Depth);

@@ -247,14 +247,14 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         // the whole of it; the deferred path keeps that slot for an object's bake, and this is what
         // tells it this one is a colour instead.
         _device.SetAlphaReference(0);
-        _device.SetGroundDetail(true);
+        _device.SetLightmapModulates(true);
         try
         {
             DrawGround(frame);
         }
         finally
         {
-            _device.SetGroundDetail(false);
+            _device.SetLightmapModulates(false);
             _device.SetAlphaReference(IGraphicsDevice.DefaultAlphaReference);
         }
     }

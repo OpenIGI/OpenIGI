@@ -40,7 +40,7 @@ public sealed partial class VulkanGraphicsDevice
     }
 
     /// <inheritdoc/>
-    public void SetGroundDetail(bool modulate)
+    public void SetLightmapModulates(bool modulate)
     {
         ThrowIfDisposed();
         _groundDetail = modulate;

@@ -317,6 +317,17 @@ public interface IGraphicsDevice : IDisposable
     /// <param name="modulate">Whether the lightmap slot is a colour to modulate rather than a bake.</param>
     /// <remarks>
     /// <para>
+    /// Two of I.G.I. 2's surfaces put a colour in that slot rather than a bake to keep apart, and both
+    /// want it multiplied into what stage 0 laid down — which is what the original's stage 1 does and
+    /// what the forward path here does already. The FOREST is the other one: its second texture is a
+    /// single texel holding the tree's own baked colour, because the original's foliage stage 0 is
+    /// <c>MODULATE2X(TEXTURE, DIFFUSE)</c> with fixed-function lighting off
+    /// (<c>ForestRender_SetTextureState_AlphaTestFoliage</c>, <c>igi2ed 0x57C4B0</c>, and
+    /// <c>ForestRender_SetGenericState_AlphaTestFoliage</c>, <c>0x57C770</c>, writing
+    /// <c>D3DRS_LIGHTING = 0</c>) and this port has nowhere else to put a per-draw diffuse: the forward
+    /// push block is full.
+    /// </para>
+    /// <para>
     /// For I.G.I. 2's ground, whose second texture is a DETAIL map rather than a lightmap.
     /// <c>TerrainRender_SetMaterialTextures</c> (<c>igi2ed 0x667330</c>) binds the material's diffuse to
     /// stage 0 at <c>1 / (TextureScale * 4096)</c> and its detail texture to stage 1 at
@@ -335,7 +346,7 @@ public interface IGraphicsDevice : IDisposable
     /// </para>
     /// <para>Device state, like <see cref="SetLightmapScale"/>: it spans a run of draws.</para>
     /// </remarks>
-    void SetGroundDetail(bool modulate)
+    void SetLightmapModulates(bool modulate)
     {
         _ = modulate;
     }
