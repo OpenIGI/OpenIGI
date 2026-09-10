@@ -234,6 +234,17 @@ internal sealed partial class GameHost
     {
         BeginStage();
 
+        // The mission's terrain, first thing, because three separate passes below close over it and it
+        // used to be assigned a thousand lines after the first of them. A cold start therefore built the
+        // security cameras' sight trace and the lightmap bake's occlusion cast against whatever the
+        // FIELD still held -- null, since the last mission's unload cleared it -- so a camera saw
+        // through a hillside and a bake let the sun through one. Nothing between here and there reads
+        // it, and the value depends on nothing but the argument.
+        //
+        // Terrain stays optional: Mission 14 is entirely inside placed building and tunnel models, whose
+        // collision floors are enough to walk on even though its terrain files are not live data.
+        _playerTerrain = loaded.Terrain is { IsUsable: true } standable ? standable : null;
+
         // The mission's sounds and its score. Both routes into a mission come through here -- a cold
         // start and a backdrop being promoted -- and only the cold one passes the mission loader, so
         // the mount has to happen on this side or a promoted mission plays nothing at all.
@@ -569,9 +580,8 @@ internal sealed partial class GameHost
                 loaded,
                 levelRoot,
                 // The walk's ground when the title keeps one in the level, and the mission's terrain
-                // otherwise. Spelled out rather than reading _ground, which is not settled until the
-                // player is stood up a thousand lines below.
-                _ground ?? (loaded.Terrain is { IsUsable: true } standing ? standing : null),
+                // otherwise. _ground itself is not settled until the player is stood up below.
+                _ground ?? _playerTerrain,
                 solids.Caster());
         }
 
@@ -1431,11 +1441,6 @@ internal sealed partial class GameHost
         // atlas and lights it in one step -- see GameHost.RealtimeGi.cs, which is also what the render
         // loop calls when the lighting model is switched on mid-level.
         EnsureSurfaceCache();
-
-        // The player stands where the camera looks from, dropped onto whatever is under it. Terrain is
-        // optional: Mission 14 is entirely inside placed building/tunnel models, whose collision floors
-        // are enough for placement and movement even though its terrain files are not live data.
-        _playerTerrain = loaded.Terrain is { IsUsable: true } standable ? standable : null;
 
         // The walk has already spoken for a title that keeps its ground in the level; for the one that
         // keeps it in the mission, the terrain IS the ground.
