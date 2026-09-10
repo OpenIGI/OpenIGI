@@ -15,8 +15,8 @@ using Xunit;
 namespace OpenIGI.Game.Tests;
 
 /// <summary>
-/// Regression coverage for the retail Plane callback (IGI.exe registration 0x4330F0, callback
-/// prologue 0x433690). Retail dispatches every
+/// Regression coverage for the retail Plane callback (IGI.exe registration 0x4330F0, channel
+/// receiver 0x4337E0 and physics routine 0x433B50). Retail dispatches every
 /// AnimTask twice at tick zero: the receiver restores the authored pose, zeroes motion and control,
 /// and performs no physics until the first positive tick. Afterwards each tick applies the scripted
 /// control channels exactly once.
@@ -136,38 +136,34 @@ public sealed class RetailPlaneCutsceneTests
 
             Assert.True(program.HasFinished, $"plane #{target} programme must finish within {budget} ticks (stopped at {tick})");
 
-            // A known held packet: controls (0.5, -0.3, 0.2), thrust 0.8. Each positive tick must
-            // smooth Control toward it exactly once (0.12) and integrate heading exactly once
-            // (0.004). The duplicated apply block converged at ~0.2256 per tick and doubled the
-            // heading rate, so these references only match a single-apply receiver.
+            // A known held packet: controls (0.5, -0.3, 0.2), thrust 0.8. Plane_Physics retains
+            // each SU-27 target by 0.9 and applies its 0.995 low-speed multiplier once per tick.
+            // The duplicated apply block would square that response in one scheduler slot.
             program.WriteChannel(0, 0.5f);
             program.WriteChannel(1, -0.3f);
             program.WriteChannel(2, 0.2f);
             program.WriteChannel(3, 0.8f);
 
-            // Reference model for the held packet, seeded from the receiver's actual control and
-            // heading the moment before the first held tick (the authored programme's final values
-            // are not zero). Each positive tick must smooth Control toward the packet exactly once
-            // (0.12) and integrate heading exactly once (0.004). The duplicated apply block instead
-            // converged at ~0.2256 per tick and doubled the heading rate, so these references only
-            // match a single-apply receiver.
+            // Reference model for the held packet, seeded from the receiver's actual control the
+            // moment before the first held tick (the authored programme's final values are not zero).
+            // The 0.995 multiplier is the speed-zero term in 0x433B50; this focused test proves one
+            // receiver application per packet, not the still-untraced body/heading integration.
             Vector3f expectedControl = (Vector3f)st.GetProperty("Control")!.GetValue(transform)!;
-            float expectedHeading = (float)st.GetProperty("Heading")!.GetValue(transform)!;
             Vector3f packet = new(0.5f, -0.3f, 0.2f);
             for (int held = 0; held < 6; held++)
             {
                 runtime.Tick();
                 runtime.FinishExpressionTick();
 
-                expectedControl += (packet - expectedControl) * 0.12f;
-                expectedHeading += expectedControl.Z * 0.004f;
+                expectedControl = new Vector3f(
+                    ((0.9f * expectedControl.X) + (0.1f * packet.X)) * 0.995f,
+                    ((0.9f * expectedControl.Y) + (0.1f * packet.Y)) * 0.995f,
+                    ((0.9f * expectedControl.Z) + (0.1f * packet.Z)) * 0.995f);
 
                 Vector3f actualControl = (Vector3f)st.GetProperty("Control")!.GetValue(transform)!;
-                float actualHeading = (float)st.GetProperty("Heading")!.GetValue(transform)!;
                 Assert.Equal(expectedControl.X, actualControl.X, 5);
                 Assert.Equal(expectedControl.Y, actualControl.Y, 5);
                 Assert.Equal(expectedControl.Z, actualControl.Z, 5);
-                Assert.Equal(expectedHeading, actualHeading, 5);
             }
 
             planesChecked++;

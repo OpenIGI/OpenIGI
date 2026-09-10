@@ -253,6 +253,42 @@ public sealed class RetailInteractionInventoryTests
     }
 
     [RequiresGameDataFact]
+    public void MissionThreeControlTowerTerminalTypingPoseStaysOnTheFloor()
+    {
+        (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) =
+            Load(3, loadTerrain: true);
+        WorldScene scene = WorldScene.Build(mission, root, magic);
+        ObjectCollisionIndex collisions = ObjectCollisionIndex.Build(scene.Placements);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+            root,
+            mission,
+            DoorRegistry.Build(root),
+            variables);
+        WorldInteraction terminal = Assert.Single(
+            interactions.Items,
+            static item => item.Type == InteractionActivateType.Terminal && item.Task.Id == 333);
+        (Vector3d authoredPose, _) = terminal.BodyPose(terminal.Anchor);
+        Vector3d clearFloorSample = terminal.Anchor + terminal.Orientation.Transposed().Transform(
+            new Vector3d(0.0, 4096.0, 0.0));
+        Assert.True(collisions.PlayerCaster()(
+            clearFloorSample + new Vector3d(0.0, 0.0, 16384.0),
+            clearFloorSample - new Vector3d(0.0, 0.0, 65536.0),
+            out WorldRayHit floor));
+        PlayerBody body = new()
+        {
+            // A player close enough to activate this terminal is standing on the same control-room
+            // floor sampled just beyond the terminal's collision footprint.
+            Position = new Vector3d(authoredPose.X, authoredPose.Y, floor.Position.Z),
+            Walls = collisions.PlayerCaster(),
+        };
+
+        Assert.True(body.SnapInteractionToGround(Assert.IsType<TerrainData>(mission.Terrain)));
+        Assert.Equal(floor.Position.Z, body.Position.Z, precision: 3);
+        Assert.True(body.Position.Z < terminal.Anchor.Z);
+        Assert.True(body.IsGrounded);
+    }
+
+    [RequiresGameDataFact]
     public void EveryRetailDirectInteractionHasARegisteredActivateType()
     {
         Dictionary<string, int> totals = InteractiveTypes.ToDictionary(static name => name, static _ => 0);

@@ -439,7 +439,14 @@ public readonly record struct AerodynamicSurfaceDefinition(
     OpenIGI.Core.Numerics.Vector3f Direction,
     OpenIGI.Core.Numerics.Vector3f Point);
 
-/// <summary>The retained PLANE physics record (indexed retail arguments).</summary>
+/// <summary>The retained PLANE physics record published by <c>DefinePhysicsObjType</c>.</summary>
+/// <remarks>
+/// The shared type reader consumes the header through argument 11.  The Plane-specific
+/// config begins at argument 12: <see cref="ControlRetention"/> is read by
+/// <c>Plane_Physics</c> at config +8/+12/+16 and the two collective increments at
+/// config +32/+36.  Keeping the original argument list as well preserves the still-unmapped
+/// aerodynamic tail without inventing names for it.
+/// </remarks>
 public readonly record struct PlanePhysicsDefinition(
     IReadOnlyList<QvmValue> Arguments)
 {
@@ -449,6 +456,18 @@ public readonly record struct PlanePhysicsDefinition(
     /// <summary>Returns an untouched definition value by its retail argument index.</summary>
     public QvmValue ArgumentAt(int index) =>
         (uint)index < (uint)Arguments.Count ? Arguments[index] : QvmValue.Zero;
+
+    /// <summary>Retail retention for the pitch, roll, and yaw channel targets.</summary>
+    public OpenIGI.Core.Numerics.Vector3f ControlRetention => new(
+        ArgumentAt(14).ToSingle(),
+        ArgumentAt(15).ToSingle(),
+        ArgumentAt(16).ToSingle());
+
+    /// <summary>Retail collective increment once live thrust reaches the 0.8 threshold.</summary>
+    public float HighThrustStep => ArgumentAt(20).ToSingle();
+
+    /// <summary>Retail collective increment below the 0.8 threshold.</summary>
+    public float LowThrustStep => ArgumentAt(21).ToSingle();
 }
 
 /// <summary>The Rotor record parsed by retail function <c>0x42D9F0</c>.</summary>

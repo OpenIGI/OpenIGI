@@ -65,7 +65,6 @@ public sealed class CutsceneRuntime
     private ObjectCollisionIndex? _collisionIndex;
     private Func<int, CutsceneTargetPose?>? _targetPoseResolver;
     private bool _breakRequested;
-    private CutSceneTask? _sceneExpressionOwner;
     private readonly List<string> _diagnostics = [];
 
     /// <summary>Gets or sets the solid-object index used to find a supporting surface for vehicles.</summary>
@@ -294,32 +293,6 @@ public sealed class CutsceneRuntime
 
     /// <summary>Queues the retail break-cutscene key for the next logic tick.</summary>
     public void RequestBreak() => _breakRequested = true;
-
-    /// <summary>
-    /// Deletes every running cutscene except the one whose expression is currently executing.
-    /// </summary>
-    /// <remarks>
-    /// <c>Game_CutsceneDelete</c> walks the global cutscene registry and destroys stale scenes before
-    /// a newly admitted scene takes ownership.  A scene start expression may call the native itself,
-    /// so that scene is protected for the duration of its expression.  Container expressions have no
-    /// such owner and therefore clear every running scene, matching the global native walk.
-    /// </remarks>
-    public void DeleteCutscenes()
-    {
-        CutSceneTask? keep = _sceneExpressionOwner;
-        foreach (SceneState state in _scenes)
-        {
-            if (ReferenceEquals(state.Task, keep) || !state.Task.IsRun)
-            {
-                continue;
-            }
-
-            state.Task.IsRun = false;
-            state.Task.IsFinished = true;
-        }
-
-        UpdateFrame();
-    }
 
     /// <summary>Advances all cutscene-owned tasks by one fixed logic tick.</summary>
     public void Tick()
@@ -1227,16 +1200,7 @@ public sealed class CutsceneRuntime
             return;
         }
 
-        CutSceneTask? previous = _sceneExpressionOwner;
-        _sceneExpressionOwner = scene;
-        try
-        {
-            _expressions.Execute(expression, scene);
-        }
-        finally
-        {
-            _sceneExpressionOwner = previous;
-        }
+        _expressions.Execute(expression, scene);
     }
 
     private QvmValue? InvokeNative(string name, ScriptArguments arguments)
@@ -1250,7 +1214,7 @@ public sealed class CutsceneRuntime
         {
             // These native calls are side effects owned by the desktop host. Returning success keeps
             // boolean expression chains faithful even in a headless runtime.
-            "MenuManager_SetEnabled" or "Game_DisableMusic" or "Game_EnableMusic" or "Game_CutsceneDelete"
+            "Game_CutsceneDelete" or "MenuManager_SetEnabled" or "Game_DisableMusic" or "Game_EnableMusic"
                 => QvmValue.FromInt32(1),
             _ => null,
         };
@@ -1978,14 +1942,10 @@ public sealed class CutsceneRuntime
         {
             if (program.Tick == 0)
             {
-                // The retail Plane move callback is registered by 0x4330F0 and begins at 0x433690.
-                // The dispatcher resets the body on tick zero before any physics runs, matching the
-                // callback's observed zero-tick state (the callback itself is a run/state handler).
-                // The plane flies a scripted path through the level's terrain, and like the heli it has
-                // no per-tick collision that would stop it sinking into a valley or a ridge. Measure the
-                // model's rest height once (authored pose minus the ground under it), the same way the
-                // heli's parked airframe does, so the clamp below keeps the body above the terrain
-                // instead of letting a fly-by path clip through the ground.
+                // The receiver's two tick-zero packets restore the authored rigid-body pose and
+                // publish no movement. Its positive-tick collision/body integration is Plane-owned:
+                // 0x433B50 calls the contact path at 0x434310 and shared body step at 0x4FC0E0.
+                // A Heli terrain-rest clamp would therefore turn a fly-by into a terrain follower.
                 transform.Position = transform.OriginPosition;
                 transform.Orientation = transform.AuthoredOrientation;
                 transform.Velocity = default;
@@ -1997,18 +1957,30 @@ public sealed class CutsceneRuntime
                 transform.GroundContact = false;
                 transform.GroundContactEventLogged = false;
                 transform.GroundContactLogged = false;
-                transform.GroundRestOffset = MeasureGroundRestOffset(transform.OriginPosition);
                 transform.IsDynamic = true;
                 return;
             }
 
             SnapshotDynamicPose(transform, simulationOrder);
 
-            // The Plane AnimTask publishes normalized pitch/roll/yaw controls and a latched thrust
-            // target. These are control targets, not Euler deltas; the callback that owns the Plane
-            // run/state transition is the r2/Ghidra-confirmed 0x433690 prologue.
-            transform.Control += (new Vector3f(channels[0], channels[1], channels[2]) - transform.Control)
-                * 0.12f;
+            // Plane_ReadChannels (0x4337E0) publishes pitch/roll/yaw targets and a latched thrust
+            // target.  Plane_Physics (0x433B50) retains those targets with config +8/+12/+16:
+            // the shipped SU-27 values are all 0.9.  Do not substitute the former 0.12 guess.
+            Vector3f targetControl = new(channels[0], channels[1], channels[2]);
+            if (transform.PlanePhysics is { } planePhysics)
+            {
+                Vector3f retention = planePhysics.ControlRetention;
+                transform.Control = new Vector3f(
+                    (retention.X * transform.Control.X) + ((1f - retention.X) * targetControl.X),
+                    (retention.Y * transform.Control.Y) + ((1f - retention.Y) * targetControl.Y),
+                    (retention.Z * transform.Control.Z) + ((1f - retention.Z) * targetControl.Z)) * 0.995f;
+            }
+            else
+            {
+                // Unit-level runtimes may deliberately omit the retail registry. Keep their
+                // pre-existing generic motion path isolated from the retail-game implementation.
+                transform.Control += (targetControl - transform.Control) * 0.12f;
+            }
             if (channels[3] != -1f)
             {
                 transform.TargetThrust = channels[3];
@@ -2017,26 +1989,29 @@ public sealed class CutsceneRuntime
             {
                 transform.CollisionEnabled = Bool(livePlane, "Collision detection");
             }
-            // The native plane callback keeps thrust as live body state.  Preserve that state in
-            // addition to the speed envelope so downstream consumers (attachments, diagnostics and
-            // collision) observe the same non-zero motion that the authored flight produces.
-            transform.Thrust = MoveTowards(transform.Thrust, transform.TargetThrust, 0.001f);
+            // Plane_Physics selects config +32 after thrust reaches 0.8 and config +36 before it.
+            // SU-27 supplies 0.054 / 0.006.  The old fixed 0.001 made the Level 3 takeoff spend
+            // most of its authored flight window spooling on the runway.
+            float thrustStep = transform.PlanePhysics is { } physics
+                ? transform.Thrust >= 0.8f ? physics.HighThrustStep : physics.LowThrustStep
+                : 0.001f;
+            transform.Thrust = MoveTowards(transform.Thrust, transform.TargetThrust, thrustStep);
             transform.Heading += transform.Control.Z * 0.004f;
             transform.Orientation = Matrix3f.FromEngineEulerAngles(
                 transform.Control.X * 0.10f,
                 transform.Control.Y * 0.18f,
                 transform.Heading) * transform.AuthoredOrientation;
-            // IGI vehicles are Y-forward: the second row of Real32x9 is the local +Y axis in world
-            // space (same as the generic AnimTask path below). Column2 is the transposed axis and
-            // sent Mission 3/4 planes backwards along the authored heading.
-            Vector3f planeForward = transform.Orientation.Row2;
+            // Plane_Physics adds thrust on body-local +Y. The shared body integrator converts local
+            // acceleration to world space by dotting each orientation row with that local vector,
+            // which yields Column2. Mission 3's gamma=3pi/2 takeoff therefore travels +X down the
+            // runway; Row2 is the inverse direction and visibly makes the SU-27 fly tail-first.
+            Vector3f planeForward = transform.Orientation.Column2;
             float desiredSpeed = Math.Max(0f, transform.TargetThrust) * 1_500f;
             transform.Speed += (desiredSpeed - transform.Speed) * 0.025f;
             Vector3d previousPosition = transform.Position;
             transform.Position += new Vector3d(planeForward.X, planeForward.Y, planeForward.Z)
                 * transform.Speed;
             transform.Velocity = transform.Position - previousPosition;
-            KeepHelicopterAboveGround(target, transform);
             transform.IsDynamic = true;
             LogAirframePath(targetId, "Plane", target, transform);
             return;

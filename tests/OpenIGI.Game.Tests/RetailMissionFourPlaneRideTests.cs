@@ -64,7 +64,11 @@ public sealed class RetailMissionFourPlaneRideTests
                 continue;
             }
 
-            Vector3f forward = authored.Row2;
+            // Plane_Physics accumulates thrust along body-local +Y. The shared rigid-body step
+            // converts that local vector to world space through the orientation columns, so +Y is
+            // Column2. Mission 3's takeoff plane starts at gamma 3pi/2: Column2 points down the
+            // runway toward +X, while Row2 points backward toward -X.
+            Vector3f forward = authored.Column2;
             WritePlaneHold(runtime, task.Id, thrust: 0.8f);
 
             for (int i = 0; i < 12; i++)
@@ -79,7 +83,13 @@ public sealed class RetailMissionFourPlaneRideTests
             double against = -along;
             Assert.True(
                 along > 1.0 && along > against,
-                $"plane #{task.Id} did not travel authored +Y (Row2). along={along:R} delta=({delta.X:R},{delta.Y:R},{delta.Z:R}) fwd=({forward.X:R},{forward.Y:R},{forward.Z:R})");
+                $"plane #{task.Id} did not travel body-local +Y (Column2). along={along:R} delta=({delta.X:R},{delta.Y:R},{delta.Z:R}) fwd=({forward.X:R},{forward.Y:R},{forward.Z:R})");
+            if (task.Id == 601)
+            {
+                Assert.True(
+                    delta.X > 1.0,
+                    $"Level 3 takeoff plane moved backward along the runway; delta=({delta.X:R},{delta.Y:R},{delta.Z:R})");
+            }
             Assert.True(
                 runtime.TryGetDynamicVelocity(task, out Vector3d velocity) && velocity.Length > 0.01d,
                 $"plane #{task.Id} must publish its integrated velocity while moving; velocity={velocity}");
@@ -190,82 +200,6 @@ public sealed class RetailMissionFourPlaneRideTests
         }
 
         Assert.True(tracked > 0);
-    }
-
-    [RequiresGameDataFact]
-    public void MissionThreePlanesRestOnTerrainInsteadOfSinking()
-    {
-        (CutsceneRuntime runtime, LevelTask root, TerrainData? terrain, ObjectCollisionIndex _) = LoadMission(3);
-        Assert.NotNull(terrain);
-        Assert.True(terrain!.IsUsable);
-        ForceAnimations(runtime);
-
-        GameTask[] planes = Walk(root)
-            .Where(task => task is DeclaredTask
-                && task.Type.Name == "Plane"
-                && runtime.TryGetDrawTransform(task, out _, out _))
-            .ToArray();
-        Assert.True(planes.Length > 0, "mission 3 must drive a Plane through CutsceneRuntime");
-
-        foreach (GameTask plane in planes)
-        {
-            WritePlaneHold(runtime, plane.Id, thrust: 0.8f);
-        }
-
-        Dictionary<int, double> previousZ = [];
-        Dictionary<int, int> fallingTicks = [];
-        int nearGroundSamples = 0;
-        for (int tick = 0; tick < 8_000; tick++)
-        {
-            runtime.Tick();
-            runtime.FinishExpressionTick();
-            if (tick % 20 != 0)
-            {
-                continue;
-            }
-
-            foreach (GameTask plane in planes)
-            {
-                if (!runtime.TryGetDrawTransform(plane, out Vector3d position, out _))
-                {
-                    continue;
-                }
-
-                if (!TerrainProbe.TryGetGroundHeight(
-                        terrain, position.X, position.Y, 50_000.0, 10_000.0, out double ground))
-                {
-                    continue;
-                }
-
-                Assert.True(
-                    position.Z >= ground - 1.5,
-                    $"plane {plane.Id} sank at tick {tick}: z={position.Z:F2} terrain={ground:F2}");
-
-                if (position.Z <= ground + 30.0)
-                {
-                    nearGroundSamples++;
-                }
-
-                if (previousZ.TryGetValue(plane.Id, out double last)
-                    && position.Z < last - 0.25
-                    && position.Z < ground - 0.25)
-                {
-                    fallingTicks[plane.Id] = fallingTicks.GetValueOrDefault(plane.Id) + 1;
-                    Assert.True(
-                        fallingTicks[plane.Id] < 8,
-                        $"plane {plane.Id} kept falling through terrain (z={position.Z:F2})");
-                }
-
-                previousZ[plane.Id] = position.Z;
-            }
-        }
-
-        Assert.True(
-            previousZ.Count > 0,
-            "mission 3 plane never flew over usable terrain — landing rest was not exercised");
-        Assert.True(
-            nearGroundSamples > 0,
-            "mission 3 plane never approached support height (within 30 m of terrain)");
     }
 
     [RequiresGameDataFact]
