@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+if [ "${SKIP_FULL_TESTS:-}" = "1" ]; then
+  echo "WARNING: SKIP_FULL_TESTS=1 bypasses the pre-push Release build and test gate." >&2
+  exit 0
+fi
+"$root/tools/test/verify-dotnet.sh"

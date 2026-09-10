@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+git diff --cached --check
+paths=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -n "$paths" ] || exit 0
+if printf '%s\n' "$paths" | grep -Eq '(^|/)([^/]+\.py)$'; then
+  python3 -m unittest discover -s tests -p '*test*.py'
+fi
+if printf '%s\n' "$paths" | grep -Eq '\.(cs|csproj|props|targets|slnx)$|^(src|apps|tests)/'; then
+  "$root/tools/test/verify-dotnet.sh"
+fi

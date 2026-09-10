@@ -144,6 +144,21 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md). In short: preserve the determinism con
 core free of backend dependencies, document every public member, and add golden tests for format
 readers.
 
+### Verification gates
+
+Install the local hooks with `tools/install-hooks.sh`. Pre-commit runs whitespace checks and relevant
+staged-change tests; pre-push runs the serialized Release build and all .NET tests. An emergency
+`SKIP_FULL_TESTS=1 git push` bypass is allowed, but prints a warning.
+
+Retail smoke validation covers the MVP Levels 1–5 only:
+
+```sh
+IGI_GAME_PATH=/path/to/Project\ IGI tools/test/verify-e2e-mvp.sh
+```
+
+The landing-time retail job requires a self-hosted macOS runner labelled `igi-retail`. Retail data is
+never committed; the job uploads only generated capture evidence.
+
 ## Legal
 
 Licensed under **GPL-3.0** — see [`LICENSE`](LICENSE).
