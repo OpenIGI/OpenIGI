@@ -1,3 +1,4 @@
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
@@ -329,6 +330,56 @@ public sealed class RetailWeaponConfigTests
         weapons.Register(loop.Natives);
         weapons.Load(fileSystem, resources, loop.Natives);
         return weapons;
+    }
+
+    /// <summary>A title that ships no script at this path says so rather than aborting.</summary>
+    /// <remarks>
+    /// <para>
+    /// Absent is not the same as broken. I.G.I. 2 keeps its weapons as task data out of
+    /// <c>WEAPONS/weapon.qvm</c> -- <c>Task_DeclareParameters</c> with <c>WEAPONTYPE_GUN</c> and
+    /// <c>TASKTYPE_GUN</c>, the shape its magic objects also take -- and ships nothing at
+    /// <see cref="WeaponConfigRegistry.ScriptResource"/> at all. A host running it should degrade the
+    /// way it already does for a missing material table, not stop.
+    /// </para>
+    /// <para>
+    /// A script that IS there and does not parse still aborts, and the next test is what says so:
+    /// the distinction being drawn is between a different installation and a broken one.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void AnAbsentScriptIsReportedRatherThanFatal()
+    {
+        GameLoop loop = new(new ManualTimeSource());
+        WeaponConfigRegistry.RegisterTypes(loop.Types);
+
+        // An installation with nothing at that path, which is what a title that keeps its weapons
+        // elsewhere looks like from here. A real device, because the point is a file that is not there
+        // rather than a file system that is not mounted.
+        string empty = Directory.CreateTempSubdirectory("openigi-weapons").FullName;
+        VirtualFileSystem files = new();
+        files.RegisterDevice(new LocalFileDevice(empty));
+        ResourceRegistry resources = new(files);
+        WeaponConfigRegistry weapons = new();
+
+        Assert.Equal(WeaponConfigRegistry.NoScript, weapons.Load(resources, loop.Natives, loop.Tasks));
+        Assert.Empty(weapons.Weapons);
+
+        // Negative, so a caller cannot confuse it with the nought an empty table would give.
+        Assert.True(WeaponConfigRegistry.NoScript < 0);
+    }
+
+    /// <summary>A script that is there and will not parse is still fatal.</summary>
+    [Fact]
+    public void AMalformedScriptIsStillFatal()
+    {
+        GameLoop loop = new(new ManualTimeSource());
+        WeaponConfigRegistry.RegisterTypes(loop.Types);
+
+        ResourceRegistry resources = new(new VirtualFileSystem());
+        resources.Register(WeaponConfigRegistry.ScriptResource, new byte[] { 1, 2, 3, 4 });
+
+        Assert.Throws<EngineFatalException>(
+            () => new WeaponConfigRegistry().Load(resources, loop.Natives, loop.Tasks));
     }
 
     private static WeaponConfigRegistry Load(out ResourceRegistry resources, out NativeRegistry natives)

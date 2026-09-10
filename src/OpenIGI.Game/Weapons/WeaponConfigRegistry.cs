@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Qvm;
@@ -69,13 +69,19 @@ public sealed class WeaponConfigRegistry
         }
     }
 
+    /// <summary>What <see cref="Load"/> returns when the title ships no script at this path.</summary>
+    /// <remarks>
+    /// Negative, so it cannot be confused with the nought a title that ships an empty table returns.
+    /// </remarks>
+    public const int NoScript = -1;
+
     /// <summary>Reads and runs the weapon configuration.</summary>
     /// <param name="resources">Where the script is read from.</param>
     /// <param name="natives">The script namespace; the enum constants must already be registered.</param>
     /// <param name="tree">The task tree the configuration is built into.</param>
-    /// <returns>The number of weapons registered.</returns>
+    /// <returns>The number of weapons registered, or <see cref="NoScript"/> when there is no script.</returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    /// <exception cref="EngineFatalException">The script is missing, malformed, or faults.</exception>
+    /// <exception cref="EngineFatalException">The script is malformed or faults.</exception>
     public int Load(ResourceRegistry resources, NativeRegistry natives, TaskTree tree)
     {
         ArgumentNullException.ThrowIfNull(resources);
@@ -85,9 +91,15 @@ public sealed class WeaponConfigRegistry
         _weapons.Clear();
         _byId.Clear();
 
+        // Absent is not the same as broken. A title that keeps its weapon configuration in some other
+        // form ships no script at this path at all -- I.G.I. 2 builds its weapons as tasks out of
+        // WEAPONS/weapon.qvm rather than as a table here -- and the caller should be able to say so and
+        // carry on, the way it already does for a missing material table. A script that IS here and does
+        // not parse still throws below, because that is a broken installation rather than a different
+        // one.
         if (!resources.TryLoad(ScriptResource, out ReadOnlyMemory<byte> bytes))
         {
-            throw new EngineFatalException($"Couldn't load script: {ScriptResource}");
+            return NoScript;
         }
 
         QvmProgram program;

@@ -1720,8 +1720,16 @@ _sky = _presentation.CreateSky(
                 weaponRoster.Load(_fileSystem, _resources, _loop.Natives);
                 WeaponConfigRegistry.RegisterTypes(_loop.Types);
                 WeaponConfigRegistry weaponConfig = new(_logger);
-                weaponConfig.Load(_resources, _loop.Natives, _loop.Tasks);
-                weaponConfig.AttachTo(weaponRoster);
+                if (weaponConfig.Load(_resources, _loop.Natives, _loop.Tasks) == WeaponConfigRegistry.NoScript)
+                {
+                    _logger.Warning(
+                        "Weapon",
+                        $"No weapon configuration at {WeaponConfigRegistry.ScriptResource}; this title keeps it elsewhere.");
+                }
+                else
+                {
+                    weaponConfig.AttachTo(weaponRoster);
+                }
                 ammoTable.Register(_loop.Natives);
                 ammoTable.Load(_fileSystem, _resources, _loop.Natives);
 
