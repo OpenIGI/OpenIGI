@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Titles;
+﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Igi1;
 using OpenIGI.Game.Igi1.World;
@@ -55,6 +56,34 @@ internal static class DesktopTitleCatalog
         }
 
         throw new ArgumentException($"This build has no runtime for '{title.Id}'.", nameof(title));
+    }
+
+    /// <summary>Finds the mission catalogue for a title.</summary>
+    /// <param name="title">The title to run.</param>
+    /// <param name="logger">Where scan diagnostics go.</param>
+    /// <returns>Its catalogue.</returns>
+    /// <exception cref="ArgumentException">This build has no catalogue for that title.</exception>
+    /// <remarks>
+    /// A fourth lookup, and the reason is the same each time: the reference graph forbids joining them.
+    /// What differs between the two is the reader, not the walk — <c>DefineMission</c> takes eleven
+    /// arguments in one game and fourteen in the other, and the fourth argument of the first is a next
+    /// mission id the second does not have.
+    /// </remarks>
+    public static IMissionCatalogue<MissionDescriptor> MissionCatalogueFor(GameTitle title, IIgiLogger? logger = null)
+    {
+        ArgumentNullException.ThrowIfNull(title);
+
+        if (title == GameTitle.Igi1)
+        {
+            return new MissionRegistry(logger);
+        }
+
+        if (title == GameTitle.Igi2)
+        {
+            return new Igi2MissionCatalogue(logger);
+        }
+
+        throw new ArgumentException($"This build has no mission catalogue for '{title.Id}'.", nameof(title));
     }
 
     /// <summary>Finds the scene walk for a title.</summary>

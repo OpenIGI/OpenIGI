@@ -1,7 +1,9 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
+using OpenIGI.Engine.Titles;
+using OpenIGI.Formats;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 
@@ -48,7 +50,12 @@ public sealed class MissionLoader
     /// </remarks>
     public const string MissionSoundDirectory = "MISSION:sounds";
 
-    private readonly MissionRegistry _registry;
+    private readonly IMissionCatalogue<MissionDescriptor> _registry;
+
+    // Which encodings this title's packs may hold. Null keeps the reader's own defaults, which is what
+    // Project I.G.I. has always used; I.G.I. 2 ships mesh version 0.16 where the first game ships 0.10,
+    // and a pack opened under the wrong profile refuses every model in it.
+    private readonly AssetFormatProfile? _formats;
     private readonly VirtualFileSystem _fileSystem;
     private readonly ResourceRegistry _resources;
     private readonly LevelLoader _levelLoader;
@@ -68,18 +75,20 @@ public sealed class MissionLoader
     /// terrain and says so in <see cref="LoadedMission.PendingSteps"/>.
     /// </param>
     /// <param name="soundBank">
+    /// <param name="formats">Which encodings this title's packs may hold, or null for the reader's defaults.</param>
     /// The bank the mission's sound directories are mounted into. Optional for the same reason the
     /// terrain loader is: a caller with no audio still loads missions, and says what it went without.
     /// </param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public MissionLoader(
-        MissionRegistry registry,
+        IMissionCatalogue<MissionDescriptor> registry,
         VirtualFileSystem fileSystem,
         ResourceRegistry resources,
         LevelLoader levelLoader,
         IIgiLogger? logger = null,
         TerrainLoader? terrainLoader = null,
-        SoundBank? soundBank = null)
+        SoundBank? soundBank = null,
+        AssetFormatProfile? formats = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(fileSystem);
@@ -87,6 +96,7 @@ public sealed class MissionLoader
         ArgumentNullException.ThrowIfNull(levelLoader);
 
         _registry = registry;
+        _formats = formats;
         _fileSystem = fileSystem;
         _resources = resources;
         _levelLoader = levelLoader;
@@ -105,7 +115,15 @@ public sealed class MissionLoader
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(tickRate);
 
         // 1. The descriptor, with the original's wording when the id is unknown.
-        MissionDescriptor descriptor = _registry.Require(missionId);
+        // The original's own failure, word for word: Mission_GetMissionFromID returns nothing and the
+        // caller aborts. Through the interface rather than MissionRegistry.Require, because the
+        // catalogue is now the title's -- but the message a caller sees must not depend on which title
+        // is running.
+        if (!_registry.TryGet(missionId, out MissionDescriptor? descriptor))
+        {
+            throw new EngineFatalException($"The mission ID {missionId} does not exist.");
+        }
+
         _logger.Information(LogCategory, $"Loading {descriptor}.");
 
         // 2. Bind MISSION: before anything resolves a path through it.
@@ -133,21 +151,22 @@ public sealed class MissionLoader
             }
         }
 
-        // 5-6. The common pack, opened from its own directory with LOCAL:common/ as the fallback.
-        LoadedPack common = LoadedPack.Open(
-            $"LOCAL:{descriptor.CommonPackDirectory}/",
-            descriptor.CommonPackName,
-            _resources,
-            _logger);
+        // 5-7. The packs, in the order the title opens them, each from its own directory. The search
+        //      directory moves first every time: a pack's archives are addressed relative to it, so
+        //      opening one against another's directory silently binds the wrong archives.
+        //
+        //      Project I.G.I. names two and the descriptor falls back to exactly those. I.G.I. 2 names
+        //      four -- Game_CreateHandler (igi2ed 0x4469A0) loads the global common pack, then "new",
+        //      then the location's, then the level's -- and MTP_VirModel_GetPtr returns the first match
+        //      from the head, so the earlier a pack is opened the more it shadows.
+        List<LoadedPack> packs = [];
+        foreach (PackReference reference in descriptor.PacksToOpen)
+        {
+            packs.Add(LoadedPack.Open(reference.Directory, reference.Name, _resources, _logger, _formats));
+        }
 
-        // 7. The level pack, from the level's directory. The search directory moves first: a pack's
-        //    archives are addressed relative to it, so opening the level pack against the common
-        //    directory would silently bind the wrong archives.
-        LoadedPack level = LoadedPack.Open(
-            $"LOCAL:{descriptor.LevelPackDirectory}/",
-            descriptor.LevelPackName,
-            _resources,
-            _logger);
+        LoadedPack common = packs[0];
+        LoadedPack level = packs[^1];
 
         // 9-11. Shared sound, sprite and texture content.
         MountShared(pending);
@@ -180,7 +199,7 @@ public sealed class MissionLoader
             _logger.Warning(LogCategory, $"Mission {descriptor.Id} loaded without: {string.Join(", ", pending)}.");
         }
 
-        return new LoadedMission(descriptor, common, level, pending, terrain);
+        return new LoadedMission(descriptor, common, level, pending, terrain, packs);
     }
 
     private void MountShared(List<string> pending)
