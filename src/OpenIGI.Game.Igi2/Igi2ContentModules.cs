@@ -22,6 +22,7 @@ public static class Igi2ContentModules
         new Igi2TerrainContentModule(),
         new Igi2ForestContentModule(),
         new Igi2WaterContentModule(),
+        new Igi2SkyContentModule(),
     ];
 }
 
@@ -144,6 +145,34 @@ public sealed class Igi2WaterContentModule : IContentModule
 
     /// <inheritdoc/>
     /// <remarks>Nothing to load: a sheet's environment maps arrive with the level, not before it.</remarks>
+    public void LoadTables(ContentLoadContext context)
+    {
+    }
+}
+
+/// <summary>The sky's task types: the dome, its scrolling layers, and its colour keyframes.</summary>
+/// <remarks>
+/// Without these the three load as placeholders, and a sky layer's texture stays the string the level
+/// authored rather than the one the engine actually opens — <c>FlatSkyLayer_FixFilename</c> rebases
+/// every name onto <c>MISSION:textures/</c>, and only the registered class knows to do that.
+/// </remarks>
+public sealed class Igi2SkyContentModule : IContentModule
+{
+    /// <inheritdoc/>
+    public string Name => "Sky";
+
+    /// <inheritdoc/>
+    public void Register(ContentRegistrationContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        context.Types.Register<FlatSkyTask>(FlatSkyTask.TypeName);
+        context.Types.Register<FlatSkyLayerTask>(FlatSkyLayerTask.TypeName);
+        context.Types.Register<FlatSkyKeyframeTask>(FlatSkyKeyframeTask.TypeName);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Nothing to load: a sky's textures arrive with the level, not before it.</remarks>
     public void LoadTables(ContentLoadContext context)
     {
     }
