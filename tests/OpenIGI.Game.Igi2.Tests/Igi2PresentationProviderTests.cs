@@ -126,7 +126,13 @@ public sealed class Igi2PresentationProviderTests
             ground.Draw(new TerrainFrame(default, Matrix4f.Identity, 1f, 1.6f, 0, false, false));
 
             Assert.NotEmpty(device.MeshDraws);
-            Assert.All(device.MeshDraws, draw => Assert.Equal(BlendMode.Additive, draw.Blend));
+            // An opaque base per triangle and the other materials' shares added over it -- see
+            // Igi2TerrainPass.BaseIndices.
+            Assert.All(
+                device.MeshDraws,
+                draw => Assert.True(
+                    draw.Blend is BlendMode.Opaque or BlendMode.Additive,
+                    $"The ground drew with {draw.Blend}."));
 
             // Chunked at the original's 10,000-index budget, not one draw per pass.
             Assert.All(device.MeshDraws, draw => Assert.InRange(draw.IndexCount, 3, 9999));

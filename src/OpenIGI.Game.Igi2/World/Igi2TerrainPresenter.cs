@@ -80,6 +80,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
     private readonly List<Vertex3D> _vertices = [];
     private readonly List<ushort> _compact = [];
 
+    private readonly List<(Tile Tile, Igi2TerrainTessellation Tessellation, Matrix4f ModelView)> _ready = [];
     private int _poolUsed;
     private bool _disposed;
 
@@ -241,21 +242,34 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
     {
         if (!_tessellates)
         {
-            foreach (Chunk chunk in _chunks)
+            // Bases first, all of them, then the overlays. Globally rather than per chunk: an opaque
+            // base written after a neighbouring pass had already added its share would erase it.
+            for (int phase = 0; phase < 2; phase++)
             {
-                // Stage 0 is the material, stage 1 the detail map modulated onto it -- the two stages
-                // TerrainRender_SetTextureState configures.
-                _device.SetTextureDetail(chunk.Diffuse, chunk.Detail);
-                _device.DrawMesh(
-                    chunk.Mesh,
-                    0,
-                    chunk.IndexCount,
-                    frame.Camera.CreateModelView(WorldScene.ToMetres(chunk.Origin), Matrix3f.Identity),
-                    chunk.Diffuse,
-                    TextureHandle.None,
-                    BlendMode.Additive);
+                bool bases = phase == 0;
+                _device.SetDepthState(bases ? DepthState.TestAndWrite : DepthState.TestOnly);
+                foreach (Chunk chunk in _chunks)
+                {
+                    if (chunk.IsBase != bases || chunk.IndexCount == 0)
+                    {
+                        continue;
+                    }
+
+                    // Stage 0 is the material, stage 1 the detail map modulated onto it -- the two
+                    // stages TerrainRender_SetTextureState configures.
+                    _device.SetTextureDetail(chunk.Diffuse, chunk.Detail);
+                    _device.DrawMesh(
+                        chunk.Mesh,
+                        0,
+                        chunk.IndexCount,
+                        frame.Camera.CreateModelView(WorldScene.ToMetres(chunk.Origin), Matrix3f.Identity),
+                        chunk.Diffuse,
+                        TextureHandle.None,
+                        bases ? BlendMode.Opaque : BlendMode.Additive);
+                }
             }
 
+            _device.SetDepthState(DepthState.TestAndWrite);
             return;
         }
 
@@ -271,23 +285,43 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         int drawn = 0;
         int culled = 0;
 
+        _ready.Clear();
         foreach (Tile tile in _tiles)
         {
             Igi2TerrainTessellation tessellation = tile.Lod.Tessellate(view, _settings);
             drawn += tessellation.SquaresDrawn;
             culled += tessellation.SquaresCulled;
+            _ready.Add((tile, tessellation, frame.Camera.CreateModelView(WorldScene.ToMetres(tile.Centre), Matrix3f.Identity)));
+        }
 
-            Matrix4f modelView = frame.Camera.CreateModelView(WorldScene.ToMetres(tile.Centre), Matrix3f.Identity);
-            foreach (Igi2TerrainPass pass in tessellation.Mesh.Passes)
+        // Every tile's bases before any tile's overlays, for the reason the full-detail path gives.
+        for (int phase = 0; phase < 2; phase++)
+        {
+            bool bases = phase == 0;
+            _device.SetDepthState(bases ? DepthState.TestAndWrite : DepthState.TestOnly);
+            foreach ((Tile tile, Igi2TerrainTessellation tessellation, Matrix4f modelView) in _ready)
             {
-                if (!tile.Textures.TryGetValue(pass.MaterialId, out (TextureHandle Diffuse, TextureHandle Detail) texture))
+                foreach (Igi2TerrainPass pass in tessellation.Mesh.Passes)
                 {
-                    continue;
-                }
+                    if (!tile.Textures.TryGetValue(pass.MaterialId, out (TextureHandle Diffuse, TextureHandle Detail) texture))
+                    {
+                        continue;
+                    }
 
-                triangles += Stream(tessellation.Mesh, pass, tile.Centre, texture, modelView);
+                    triangles += Stream(
+                        tessellation.Mesh,
+                        pass,
+                        bases ? pass.BaseIndices : pass.OverlayIndices,
+                        bases ? BlendMode.Opaque : BlendMode.Additive,
+                        tile.Centre,
+                        texture,
+                        modelView);
+                }
             }
         }
+
+        _device.SetDepthState(DepthState.TestAndWrite);
+        _ready.Clear();
 
         TriangleCount = triangles;
         ChunkCount = _poolUsed;
@@ -360,11 +394,12 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
     private int Stream(
         Igi2TerrainMesh mesh,
         Igi2TerrainPass pass,
+        ReadOnlySpan<int> indices,
+        BlendMode blend,
         Vector3d centre,
         (TextureHandle Diffuse, TextureHandle Detail) texture,
         in Matrix4f modelView)
     {
-        ReadOnlySpan<int> indices = pass.Indices.Span;
         int triangles = 0;
 
         _remap.Clear();
@@ -375,7 +410,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         {
             if (_compact.Count + 3 > MaximumIndicesPerChunk)
             {
-                triangles += Flush(texture, modelView);
+                triangles += Flush(texture, blend, modelView);
             }
 
             for (int corner = 0; corner < 3; corner++)
@@ -392,10 +427,13 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             }
         }
 
-        return triangles + Flush(texture, modelView);
+        return triangles + Flush(texture, blend, modelView);
     }
 
-    private int Flush((TextureHandle Diffuse, TextureHandle Detail) texture, in Matrix4f modelView)
+    private int Flush(
+        (TextureHandle Diffuse, TextureHandle Detail) texture,
+        BlendMode blend,
+        in Matrix4f modelView)
     {
         if (_compact.Count == 0)
         {
@@ -423,7 +461,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             modelView,
             texture.Diffuse,
             TextureHandle.None,
-            BlendMode.Additive);
+            blend);
 
         int triangles = _compact.Count / 3;
         _remap.Clear();
@@ -439,8 +477,19 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         TextureHandle diffuse,
         TextureHandle detail)
     {
-        ReadOnlySpan<int> indices = pass.Indices.Span;
+        Upload(mesh, pass, pass.BaseIndices, isBase: true, centre, diffuse, detail);
+        Upload(mesh, pass, pass.OverlayIndices, isBase: false, centre, diffuse, detail);
+    }
 
+    private void Upload(
+        Igi2TerrainMesh mesh,
+        Igi2TerrainPass pass,
+        ReadOnlySpan<int> indices,
+        bool isBase,
+        Vector3d centre,
+        TextureHandle diffuse,
+        TextureHandle detail)
+    {
         // Only the vertices this chunk's own triangles touch, compacted, so the alpha can carry this
         // material's weight and the indices stay 16-bit.
         Dictionary<int, ushort> remap = [];
@@ -451,7 +500,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         {
             if (compact.Count + 3 > MaximumIndicesPerChunk)
             {
-                Store(vertices, compact, centre, diffuse, detail);
+                Store(vertices, compact, isBase, centre, diffuse, detail);
                 remap.Clear();
                 vertices.Clear();
                 compact.Clear();
@@ -471,12 +520,13 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             }
         }
 
-        Store(vertices, compact, centre, diffuse, detail);
+        Store(vertices, compact, isBase, centre, diffuse, detail);
     }
 
     private void Store(
         List<Vertex3D> vertices,
         List<ushort> indices,
+        bool isBase,
         Vector3d centre,
         TextureHandle diffuse,
         TextureHandle detail)
@@ -489,6 +539,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         _chunks.Add(new Chunk(
             _device.CreateMesh(vertices.ToArray(), indices.ToArray()),
             indices.Count,
+            isBase,
             centre,
             diffuse,
             detail));
@@ -497,6 +548,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
     private readonly record struct Chunk(
         MeshHandle Mesh,
         int IndexCount,
+        bool IsBase,
         Vector3d Origin,
         TextureHandle Diffuse,
         TextureHandle Detail);

@@ -11,12 +11,15 @@ namespace OpenIGI.Game.Igi2.Tests;
 /// <summary>The ground, uploaded and drawn.</summary>
 public sealed class RetailIgi2TerrainPresenterTests
 {
-    /// <summary>Every level's ground uploads and draws, one additive pass per material.</summary>
+    /// <summary>Every level's ground uploads and draws: an opaque base, then the shares added over it.</summary>
     /// <remarks>
     /// <para>
-    /// The state is the original's, not a choice: <c>SRCBLEND = SRCALPHA</c> with
-    /// <c>DESTBLEND = ONE</c> is <see cref="BlendMode.Additive"/>, and every chunk must use it — one
-    /// opaque pass would overwrite the materials drawn before it instead of accumulating with them.
+    /// The blend is the original's: <c>SRCBLEND = SRCALPHA</c> with <c>DESTBLEND = ONE</c> is
+    /// <see cref="BlendMode.Additive"/>, and that is what a material pass adds its share of the ground
+    /// with. But a ground built only from those can never be opaque, and the frame draws the world's
+    /// objects before the terrain — so each triangle is also written ONCE, opaquely and with depth, by
+    /// the lowest-numbered pass that covers it. Both kinds of draw must be present, and every draw must
+    /// be one or the other.
     /// </para>
     /// <para>
     /// Culling is clockwise because <c>TerrainRender_SetGenericState</c> sets <c>CULLMODE = CW</c>. That
@@ -60,12 +63,27 @@ public sealed class RetailIgi2TerrainPresenterTests
                 OcclusionCulling: false));
 
             Assert.Equal(presenter.ChunkCount, device.MeshDraws.Count);
-            Assert.All(device.MeshDraws, draw => Assert.Equal(BlendMode.Additive, draw.Blend));
+            Assert.All(
+                device.MeshDraws,
+                draw => Assert.True(
+                    draw.Blend is BlendMode.Opaque or BlendMode.Additive,
+                    $"The ground drew with {draw.Blend}."));
+            Assert.Contains(device.MeshDraws, draw => draw.Blend == BlendMode.Opaque);
+            Assert.Contains(device.MeshDraws, draw => draw.Blend == BlendMode.Additive);
+
+            // Every base is drawn before every overlay: an opaque write landing after a neighbouring
+            // pass had added its share would erase it.
+            int lastBase = device.MeshDraws.FindLastIndex(draw => draw.Blend == BlendMode.Opaque);
+            int firstOverlay = device.MeshDraws.FindIndex(draw => draw.Blend == BlendMode.Additive);
+            Assert.True(lastBase < firstOverlay, "An opaque base was drawn after an additive overlay.");
             Assert.Equal(CullMode.Clockwise, device.CullMode);
         }
 
         Assert.Equal(22, levels);
-        Assert.Equal(4_006, chunks);
+
+        // 4,115 rather than the 4,006 an additive-only ground uploaded: a pass whose triangles are
+        // split between the base it writes and the shares it adds needs one chunk run for each.
+        Assert.Equal(4_115, chunks);
 
         // Every triangle the mesh builds is uploaded -- the same 12,939,092 RetailIgi2TerrainMeshTests
         // counts. An earlier attempt kept one chunk per pass and dropped the 32 that overran a 16-bit
@@ -203,7 +221,11 @@ public sealed class RetailIgi2TerrainPresenterTests
             squares += presenter.SquaresDrawn;
 
             Assert.Equal(presenter.ChunkCount, device.MeshDraws.Count);
-            Assert.All(device.MeshDraws, draw => Assert.Equal(BlendMode.Additive, draw.Blend));
+            Assert.All(
+                device.MeshDraws,
+                draw => Assert.True(
+                    draw.Blend is BlendMode.Opaque or BlendMode.Additive,
+                    $"The ground drew with {draw.Blend}."));
             Assert.Equal(CullMode.Clockwise, device.CullMode);
 
             // The second frame reuses every chunk the first one took out of the pool: the same draws
@@ -222,12 +244,16 @@ public sealed class RetailIgi2TerrainPresenterTests
         // RetailIgi2TerrainLodTests' 230,483 because that suite stands the camera on each tile in turn
         // while a frame has one camera: a level's second and third tiles are further away and coarser.
         // 156,615 triangles across the corpus against 12,939,092 at full detail -- 1.21 per cent, a
-        // factor of 82.6 -- from 54,940 quadtree leaves, in 160 chunks rather than 4,006. Lower than
+        // factor of 82.6 -- from 54,940 quadtree leaves, in 247 chunks rather than 4,115. Lower than
         // RetailIgi2TerrainLodTests' 199,264 because that suite stands the camera on each tile in turn
         // while a frame has one camera: a level's second and third tiles are further away and coarser.
+        //
+        // The triangle total is unchanged by the base split -- a triangle is still issued once per pass
+        // that covers it -- and only the chunk count moves, because each pass now streams its base and
+        // its overlays as separate runs.
         Assert.Equal(156_615L, triangles);
         Assert.Equal(54_940, squares);
-        Assert.Equal(160, chunks);
+        Assert.Equal(247, chunks);
     }
 
     /// <summary>A frame from an eye standing two metres above the middle of a tile.</summary>

@@ -639,6 +639,7 @@ public sealed class Igi2TerrainLod
         private readonly Dictionary<long, int> _vertices = [];
         private readonly Dictionary<long, EdgeDecision> _edges = [];
         private readonly List<List<int>> _indices = [];
+        private readonly List<List<int>> _baseIndices = [];
 
         private int _culled;
         private int _visited;
@@ -660,6 +661,7 @@ public sealed class Igi2TerrainLod
             for (int i = 0; i < slots; i++)
             {
                 _indices.Add([]);
+                _baseIndices.Add([]);
             }
 
             int n = _owner.RootSize;
@@ -968,19 +970,26 @@ public sealed class Igi2TerrainLod
         private void Emit(int a, int b, int c)
         {
             int slots = _owner._slotMaterial.Count;
+            bool based = false;
             for (int slot = 0; slot < slots; slot++)
             {
                 // TerrainRender_DrawFace's OR (0x66AAB0): a triangle belongs to every pass that has any
                 // weight at any of its three corners, so a triangle straddling a boundary is issued once
                 // per material and each pass carries weight only where its own corners are.
-                if (_weights[(a * slots) + slot] > 0f
-                    || _weights[(b * slots) + slot] > 0f
-                    || _weights[(c * slots) + slot] > 0f)
+                if (_weights[(a * slots) + slot] <= 0f
+                    && _weights[(b * slots) + slot] <= 0f
+                    && _weights[(c * slots) + slot] <= 0f)
                 {
-                    _indices[slot].Add(a);
-                    _indices[slot].Add(b);
-                    _indices[slot].Add(c);
+                    continue;
                 }
+
+                // The first pass to reach the triangle writes it as the ground's opaque base and the
+                // rest add over it -- see Igi2TerrainPass.BaseIndices for why the ground needs one.
+                List<int> into = based ? _indices[slot] : _baseIndices[slot];
+                based = true;
+                into.Add(a);
+                into.Add(b);
+                into.Add(c);
             }
         }
 
@@ -992,7 +1001,7 @@ public sealed class Igi2TerrainLod
 
             for (int slot = 0; slot < slots; slot++)
             {
-                if (_indices[slot].Count == 0)
+                if (_indices[slot].Count + _baseIndices[slot].Count == 0)
                 {
                     continue;
                 }
@@ -1006,11 +1015,16 @@ public sealed class Igi2TerrainLod
                     weights[i] = _weights[(i * slots) + slot];
                 }
 
+                int baseTriangles = _baseIndices[slot].Count / 3;
+                List<int> indices = _baseIndices[slot];
+                indices.AddRange(_indices[slot]);
+
                 passes.Add(new Igi2TerrainPass(
                     id,
                     material.TextureScale,
                     material.DetailTextureScale,
-                    _indices[slot].ToArray(),
+                    indices.ToArray(),
+                    baseTriangles,
                     weights));
             }
 

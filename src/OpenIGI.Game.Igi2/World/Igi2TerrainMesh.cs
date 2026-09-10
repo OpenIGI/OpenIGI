@@ -8,7 +8,14 @@ namespace OpenIGI.Game.Igi2.World;
 /// <param name="MaterialId">The material's own <c>ID</c>, as a <c>.tmm</c> sample carries it.</param>
 /// <param name="TextureScale">The material's texture scale, in metres per repeat.</param>
 /// <param name="DetailTextureScale">Its detail texture's scale, in metres per repeat.</param>
-/// <param name="Indices">The triangle list, three indices per triangle, into the mesh's vertices.</param>
+/// <param name="Indices">
+/// The triangle list, three indices per triangle, into the mesh's vertices. The pass's
+/// <see cref="Igi2TerrainPass.BaseTriangleCount"/> base triangles come first.
+/// </param>
+/// <param name="BaseTriangleCount">
+/// How many of the leading triangles this pass owns as the ground's base — the ones for which it is
+/// the lowest-numbered pass that covers them. See <see cref="Igi2TerrainPass.BaseIndices"/>.
+/// </param>
 /// <param name="Weights">
 /// One weight per mesh vertex: <c>1</c> where the sample carries this material and <c>0</c> where it
 /// carries another. This is the source alpha the pass blends with.
@@ -18,7 +25,38 @@ public readonly record struct Igi2TerrainPass(
     float TextureScale,
     float DetailTextureScale,
     ReadOnlyMemory<int> Indices,
-    ReadOnlyMemory<float> Weights);
+    int BaseTriangleCount,
+    ReadOnlyMemory<float> Weights)
+{
+    /// <summary>Gets the triangles this pass draws as the ground's opaque base.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The ground has to be opaque somewhere, and the material passes on their own never are.</b>
+    /// They blend SRCALPHA onto ONE — every pass ADDS — so a ground built only from them cannot hide
+    /// what is behind it or what was drawn before it. The frame draws the world's objects before the
+    /// terrain (walls are the best occluders, and early-Z then rejects the ground behind them), so an
+    /// additive-only ground left every crate and fence it should have buried showing through the
+    /// hillside, and let the far side of a valley show through the near side.
+    /// </para>
+    /// <para>
+    /// So each triangle is written ONCE, opaquely and with depth, by the lowest-numbered pass that
+    /// covers it, and every other pass that covers it adds its share on top with depth test only. The
+    /// sum is unchanged — the fragment shader scales albedo by the pass's share whatever the blend, and
+    /// the shares still sum to one — but the ground now owns its pixels.
+    /// </para>
+    /// <para>
+    /// This is the arrangement I.G.I. 1's own terrain uses in this port (<c>TerrainRenderer</c> draws
+    /// its base layer <c>Opaque</c> and its overlays <c>Additive</c>), and it is what the original's
+    /// render state asks for: <c>TerrainRender_SetGenericState</c> (<c>igi2ed 0x66BAD0</c>) writes
+    /// <c>D3DRS_ZWRITEENABLE = 1</c> and <c>D3DRS_ZFUNC = D3DCMP_LESSEQUAL</c>, so the ground writes
+    /// depth and its own later passes still pass the test at equal depth.
+    /// </para>
+    /// </remarks>
+    public ReadOnlySpan<int> BaseIndices => Indices.Span[..(BaseTriangleCount * 3)];
+
+    /// <summary>Gets the triangles this pass adds on top of a base another pass has written.</summary>
+    public ReadOnlySpan<int> OverlayIndices => Indices.Span[(BaseTriangleCount * 3)..];
+}
 
 /// <summary>
 /// A terrain tile as geometry: one vertex grid, and one pass per material painted on it.
@@ -166,7 +204,8 @@ public sealed class Igi2TerrainMesh
                 continue;
             }
 
-            List<int> indices = [];
+            List<int> baseIndices = [];
+            List<int> overlayIndices = [];
             for (int y = 0; y + 1 < height; y++)
             {
                 for (int x = 0; x + 1 < width; x++)
@@ -183,15 +222,19 @@ public sealed class Igi2TerrainMesh
                     int c = a + width;
                     int d = c + 1;
 
-                    Emit(indices, material, id, a, c, b);
-                    Emit(indices, material, id, b, c, d);
+                    Emit(baseIndices, overlayIndices, materials, material, id, a, c, b);
+                    Emit(baseIndices, overlayIndices, materials, material, id, b, c, d);
                 }
             }
 
-            if (indices.Count == 0)
+            if (baseIndices.Count + overlayIndices.Count == 0)
             {
                 continue;
             }
+
+            int baseTriangles = baseIndices.Count / 3;
+            List<int> indices = baseIndices;
+            indices.AddRange(overlayIndices);
 
             float[] weights = new float[count];
             for (int i = 0; i < count; i++)
@@ -204,6 +247,7 @@ public sealed class Igi2TerrainMesh
                 declared.TextureScale,
                 declared.DetailTextureScale,
                 indices.ToArray(),
+                baseTriangles,
                 weights));
         }
 
@@ -241,14 +285,37 @@ public sealed class Igi2TerrainMesh
     public override string ToString() =>
         $"I.G.I. 2 terrain mesh {Width}x{Height}, {Passes.Count} pass(es), {TriangleCount} triangles";
 
-    private static void Emit(List<int> into, byte[] material, byte id, int a, int b, int c)
+    private static void Emit(
+        List<int> baseIndices,
+        List<int> overlayIndices,
+        IReadOnlyDictionary<int, TerrainMaterialTask> materials,
+        byte[] material,
+        byte id,
+        int a,
+        int b,
+        int c)
     {
         // The OR that TerrainRender_DrawFace performs: one corner of this material is enough.
-        if (material[a] == id || material[b] == id || material[c] == id)
+        if (material[a] != id && material[b] != id && material[c] != id)
         {
-            into.Add(a);
-            into.Add(b);
-            into.Add(c);
+            return;
         }
+
+        // The lowest declared material among the three corners writes the triangle as the ground's
+        // base; the rest add over it. Passes are built in ascending id order, so "lowest" is the first
+        // pass to reach the triangle and every later one finds a base already written.
+        int lowest = int.MaxValue;
+        foreach (int corner in (ReadOnlySpan<int>)[a, b, c])
+        {
+            if (materials.ContainsKey(material[corner]))
+            {
+                lowest = Math.Min(lowest, material[corner]);
+            }
+        }
+
+        List<int> into = lowest == id ? baseIndices : overlayIndices;
+        into.Add(a);
+        into.Add(b);
+        into.Add(c);
     }
 }
