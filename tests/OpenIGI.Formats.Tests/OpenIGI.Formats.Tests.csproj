@@ -12,4 +12,9 @@
     <PackageReference Include="coverlet.collector" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The decoded-pixel hashes the JPEG reader was verified against, copied beside the tests. -->
+    <None Include="JpegFingerprints.tsv" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

@@ -31,10 +31,9 @@ namespace OpenIGI.Game.Igi2.World;
 /// shape, otherwise nothing.
 /// </para>
 /// <para>
-/// <b>JPEG is the gap.</b> 76 <c>.jpg</c> files ship in the mission texture directories against 95
-/// <c>.tga</c> and 24 <c>.tex</c>, and the terrain is textured entirely from the first kind. Those
-/// still resolve to <see cref="TextureHandle.None"/> and the ground draws with its baked lighting and
-/// no surface — visibly wrong, and honestly wrong rather than quietly so.
+/// All three are read here, so the ground, the sky and the props all texture. The sniffing order
+/// matters: <c>LOOP</c> and JPEG both have a magic number and TGA has none, so TGA is tried last and
+/// only its header <em>shape</em> can be checked.
 /// </para>
 /// <para>
 /// A name the level does not ship resolves to <see cref="TextureHandle.None"/> rather than throwing.
@@ -128,6 +127,10 @@ public sealed class Igi2TextureLoader
             {
                 image = TexFile.Load(bytes.Span);
             }
+            else if (JpegImage.IsJpeg(bytes.Span))
+            {
+                image = JpegImage.Read(bytes.Span);
+            }
             else if (TgaImage.IsTga(bytes.Span))
             {
                 image = TgaImage.Read(bytes.Span);
@@ -135,8 +138,7 @@ public sealed class Igi2TextureLoader
 
             if (image is null)
             {
-                // A JPEG, on the evidence of the corpus. Warned once per name, because the dictionary
-                // caches the miss.
+                // Warned once per name, because the dictionary caches the miss.
                 _logger.Warning(LogCategory, $"Texture '{resource}' is in no format read here; it draws untextured.");
                 return TextureHandle.None;
             }

@@ -73,11 +73,10 @@ public sealed class Igi2PresentationProviderTests
     /// the sequel's ground is not a <c>TerrainSurface</c> — and <c>CreateGround</c> is what answers.
     /// </para>
     /// <para>
-    /// <b>The ground draws untextured, and that is the true state of the port.</b> A terrain material
-    /// names a full path with its own extension — <c>MISSION:textures/k_grass.jpg</c> — which resolves
-    /// to a loose JPEG beside the level's archive. 76 of those ship, against 24 <c>.tex</c>, and nothing
-    /// here decodes one. The pass therefore runs with its baked lighting and no surface, which the test
-    /// asserts rather than papers over.
+    /// <b>The ground is textured.</b> A terrain material names a full path with its own extension —
+    /// <c>MISSION:textures/k_grass.jpg</c> — resolving to a loose JPEG beside the level's archive, and
+    /// the loader reads those now. So the draws come out with a real diffuse handle rather than
+    /// <see cref="TextureHandle.None"/>, which is the difference between a lit shape and a surface.
     /// </para>
     /// </remarks>
     [RequiresTitleDataFact("igi2")]
@@ -130,8 +129,8 @@ public sealed class Igi2PresentationProviderTests
             // Chunked at the original's 10,000-index budget, not one draw per pass.
             Assert.All(device.MeshDraws, draw => Assert.InRange(draw.IndexCount, 3, 9999));
 
-            // And untextured, for now: every terrain texture the corpus names is a JPEG.
-            Assert.All(device.MeshDraws, draw => Assert.Equal(TextureHandle.None, draw.Diffuse));
+            // And textured: the terrain materials resolve to handles the device really uploaded.
+            Assert.All(device.MeshDraws, draw => Assert.NotEqual(TextureHandle.None, draw.Diffuse));
             return;
         }
 
