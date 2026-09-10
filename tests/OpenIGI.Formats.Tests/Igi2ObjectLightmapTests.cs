@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using OpenIGI.Formats;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
@@ -52,16 +52,23 @@ public sealed class Igi2ObjectLightmapTests
         Assert.Throws<PackFormatException>(() => ObjectLightmap.Read(entry, AssetFormatProfile.Igi1));
     }
 
-    /// <summary>The first game's entries still decode with no profile given.</summary>
+    /// <summary>Neither game is the default, because there is no default.</summary>
+    /// <remarks>
+    /// This used to assert that a caller who said nothing got the first game. It does not any more, and
+    /// the reason is the bug that change fixed: the shared world renderer said nothing, so every I.G.I. 2
+    /// level drew unlit while its lightmap archive sat there readable. A stride cannot be guessed from
+    /// the bytes -- both readings parse -- so the caller has to know, and now it has to say.
+    /// </remarks>
     [Fact]
-    public void The_default_profile_is_still_the_first_game()
+    public void A_caller_has_to_name_the_title_it_is_reading()
     {
         byte[] entry = Build(44, [(4, 4)]);
 
-        ObjectLightmap lightmap = ObjectLightmap.Read(entry);
+        ObjectLightmap lightmap = ObjectLightmap.Read(entry, AssetFormatProfile.Igi1);
 
         Assert.Single(lightmap.Images);
         Assert.Equal(4, lightmap.Images[0].Width);
+        Assert.Throws<ArgumentNullException>(() => ObjectLightmap.Read(entry, null!));
     }
 
     /// <summary>An I.G.I. 2 entry name splits into a task id, a model index and a level of detail.</summary>

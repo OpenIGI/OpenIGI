@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using OpenIGI.Formats;
@@ -48,19 +48,29 @@ public sealed class ObjectLightmap
 
     /// <summary>Parses a lightmap.</summary>
     /// <param name="data">The entry bytes.</param>
-    /// <param name="profile">
-    /// The title's format policy, which supplies the descriptor stride; defaults to Project I.G.I.
-    /// </param>
+    /// <param name="profile">The title's format policy, which supplies the descriptor stride.</param>
     /// <returns>The parsed lightmap.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="profile"/> is <see langword="null"/>.</exception>
     /// <exception cref="PackFormatException">The bytes do not match the documented layout.</exception>
     /// <remarks>
+    /// <para>
     /// The two games differ by the descriptor only. A wrong stride is not a degraded read: the pixel
     /// blocks start at the wrong offset and every image after the first is noise, which is why the
     /// closing arithmetic below is an assertion rather than a courtesy.
+    /// </para>
+    /// <para>
+    /// <b>Required, with no default.</b> It used to default to the first game, and the shared world
+    /// renderer took that default — so every I.G.I. 2 level drew unlit while its archive was there and
+    /// readable, reporting one refused entry per object. A caller that does not know which game it is
+    /// reading cannot pick a stride, and asking it to say so is the only thing that makes that visible
+    /// at the call site rather than at the first frame.
+    /// </para>
     /// </remarks>
-    public static ObjectLightmap Read(ReadOnlyMemory<byte> data, AssetFormatProfile? profile = null)
+    public static ObjectLightmap Read(ReadOnlyMemory<byte> data, AssetFormatProfile profile)
     {
-        int descriptorStride = (profile ?? AssetFormatProfile.Igi1).ObjectLightmapDescriptorStride;
+        ArgumentNullException.ThrowIfNull(profile);
+
+        int descriptorStride = profile.ObjectLightmapDescriptorStride;
 
         ReadOnlySpan<byte> span = data.Span;
         if (span.Length < PrefixSize + descriptorStride)

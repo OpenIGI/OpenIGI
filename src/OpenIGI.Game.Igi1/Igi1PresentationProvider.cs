@@ -1,4 +1,5 @@
-﻿using OpenIGI.Game.Igi1.World;
+﻿using OpenIGI.Formats;
+using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Rendering;
@@ -18,7 +19,7 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
 
     /// <inheritdoc/>
     public IWorldPresenter CreateWorld(in WorldPresentationRequest request) =>
-        new WorldRenderer(request.Device, request.Resources, request.Logger);
+        new WorldRenderer(request.Device, request.Resources, AssetFormatProfile.Igi1, request.Logger);
 
     /// <inheritdoc/>
     /// <remarks>

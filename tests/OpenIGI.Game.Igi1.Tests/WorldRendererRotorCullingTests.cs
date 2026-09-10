@@ -1,3 +1,4 @@
+﻿using OpenIGI.Formats;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
@@ -187,7 +188,7 @@ public sealed class WorldRendererRotorCullingTests
         }
 
         RecordingGraphicsDevice device = new();
-        WorldRenderer renderer = new(device, resources) { Cutscenes = cutscenes };
+        WorldRenderer renderer = new(device, resources, AssetFormatProfile.Igi1) { Cutscenes = cutscenes };
         return new Scenario(scene, cutscenes, device, renderer);
     }
 

@@ -1,4 +1,4 @@
-using OpenIGI.Formats.Ilff;
+﻿using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -231,7 +231,7 @@ public sealed class RetailWorldGoldenTests
             {
                 try
                 {
-                    ObjectLightmap map = ObjectLightmap.Read(entry.Data);
+                    ObjectLightmap map = ObjectLightmap.Read(entry.Data, AssetFormatProfile.Igi1);
                     Assert.Equal(0.12f, map.Version, 3);
                     Assert.NotEmpty(map.Images);
                     foreach (ObjectLightmapImage image in map.Images)

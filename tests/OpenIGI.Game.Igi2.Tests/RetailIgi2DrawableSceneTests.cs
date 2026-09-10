@@ -1,4 +1,7 @@
 ﻿using OpenIGI.Engine.Resources;
+using OpenIGI.Core.Numerics;
+using OpenIGI.Presentation.Rendering;
+using OpenIGI.Rendering;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats;
 using OpenIGI.Formats.World;
@@ -213,7 +216,61 @@ public sealed class RetailIgi2DrawableSceneTests
         Assert.InRange(furthest, 1_000.0, 100_000.0);
     }
 
-    private static Igi2DrawableSceneResult Build(Igi2Level level)
+    /// <summary>The shared renderer reads the sequel's baked lightmaps, and refuses them at the first game's stride.</summary>
+    /// <remarks>
+    /// <para>
+    /// The wiring, not the format. <see cref="ObjectLightmap"/> could already read an I.G.I. 2 entry
+    /// when told which game wrote it, and the shared <see cref="WorldRenderer"/> did not tell it — so
+    /// every level drew unlit with a readable archive sitting beside it, one refused entry per object.
+    /// The reader's own tests could not catch that, because from inside the reader nothing was wrong.
+    /// </para>
+    /// <para>
+    /// So the assertion is made through the renderer, from a camera that is actually looking at
+    /// something: pages uploaded and sub-meshes reported as lightmapped. The second half draws the same
+    /// scene at the first game's stride and asserts NOTHING lands, which is what says the first half is
+    /// about the profile rather than about the archive merely being present.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void The_shared_renderer_reads_the_sequels_baked_lightmaps()
+    {
+        (Igi2DrawableSceneResult built, ResourceRegistry resources) = BuildWithResources(Igi2Level.All().First());
+
+        WorldPlacement lit = built.Scene.Placements.First(static p => p.HasLightmap);
+        Assert.NotEmpty(lit.LightmapEntryName());
+
+        Assert.True(Lightmapped(built.Scene, resources, lit, AssetFormatProfile.Igi2) > 0,
+            "the renderer drew the level with no lightmapped sub-mesh, under the sequel's own profile.");
+        Assert.Equal(0, Lightmapped(built.Scene, resources, lit, AssetFormatProfile.Igi1));
+    }
+
+    /// <summary>Draws one lightmapped placement head-on and reports how many sub-meshes sampled a bake.</summary>
+    private static int Lightmapped(
+        WorldScene scene,
+        ResourceRegistry resources,
+        WorldPlacement subject,
+        AssetFormatProfile formats)
+    {
+        RecordingGraphicsDevice device = new();
+        using WorldRenderer renderer = new(device, resources, formats);
+
+        // Twenty metres back along -Y and a little up, which is a look at the object rather than a
+        // survey of the level: the count is of what was drawn, so the camera has to be able to see it.
+        Camera3D camera = new(
+            new Vector3d(subject.Position.X, subject.Position.Y - 20.0, subject.Position.Z + 2.0),
+            Camera3D.LookRotation(0f, 0f));
+
+        renderer.BeginFrame(1f, smooth: false);
+        renderer.Draw(scene, camera, Matrix4f.CreatePerspective(MathF.PI / 3f, 16f / 9f, 0.05f, 400f));
+
+        Assert.True(renderer.LastDrawCount > 0, "the camera saw nothing at all, so the count says nothing.");
+        return renderer.LastLightmappedCount;
+    }
+
+    private static Igi2DrawableSceneResult Build(Igi2Level level) => BuildWithResources(level).Built;
+
+    /// <summary>The same walk, keeping the registry the lightmap archive is read back through.</summary>
+    private static (Igi2DrawableSceneResult Built, ResourceRegistry Resources) BuildWithResources(Igi2Level level)
     {
         // The real tree behind the registry, because the common pack names six animation sets and the
         // pack loader reads them straight through the file system rather than from a registered key.
@@ -252,12 +309,14 @@ public sealed class RetailIgi2DrawableSceneTests
             packs[^1],
             []);
 
-        return Igi2DrawableScene.Build(
-            mission,
-            level.Root,
-            level.Table,
-            level.HasLightmaps ? level.Lightmaps : null,
-            packs);
+        return (
+            Igi2DrawableScene.Build(
+                mission,
+                level.Root,
+                level.Table,
+                level.HasLightmaps ? level.Lightmaps : null,
+                packs),
+            resources);
     }
 
     private static string ResourceDirectory(string directory, string root) =>

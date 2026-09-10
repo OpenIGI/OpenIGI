@@ -1,3 +1,4 @@
+﻿using OpenIGI.Formats;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Ilff;
@@ -81,16 +82,24 @@ public static class EmissiveTextureSurvey
     /// <summary>Surveys a level and ranks its textures by how much they look like light sources.</summary>
     /// <param name="scene">The loaded level.</param>
     /// <param name="resources">Where the level's lightmap archive is read from.</param>
+    /// <param name="formats">The title's format policy; a baked lightmap's descriptor stride differs.</param>
     /// <param name="logger">Where to report progress and anything unreadable.</param>
     /// <returns>The findings, most light-like first. Textures with no lightmap at all are omitted.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="scene"/> or <paramref name="resources"/> is null.</exception>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The profile is asked for rather than assumed for the same reason the reader asks for it: reading
+    /// a lightmap at the wrong stride does not fail everywhere, and a survey that quietly measured the
+    /// wrong pixels would rank the wrong textures as lights.
+    /// </remarks>
     public static IReadOnlyList<Finding> Survey(
         WorldScene scene,
         ResourceRegistry resources,
+        AssetFormatProfile formats,
         IIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(resources);
+        ArgumentNullException.ThrowIfNull(formats);
 
         IIgiLogger log = logger ?? NullLogger.Instance;
 
@@ -136,7 +145,7 @@ public static class EmissiveTextureSurvey
 
             if (!cache.TryGetValue(entryName, out ObjectLightmap? lightmap))
             {
-                lightmap = TryRead(entries, entryName, log);
+                lightmap = TryRead(entries, entryName, formats, log);
                 cache[entryName] = lightmap!;
             }
 
@@ -202,6 +211,7 @@ public static class EmissiveTextureSurvey
     private static ObjectLightmap? TryRead(
         Dictionary<string, IresEntry> entries,
         string entryName,
+        AssetFormatProfile formats,
         IIgiLogger log)
     {
         if (!entries.TryGetValue(entryName, out IresEntry? entry) || entry is null)
@@ -211,7 +221,7 @@ public static class EmissiveTextureSurvey
 
         try
         {
-            return ObjectLightmap.Read(entry.Data);
+            return ObjectLightmap.Read(entry.Data, formats);
         }
         catch (Exception ex) when (ex is PackFormatException or ArgumentException)
         {

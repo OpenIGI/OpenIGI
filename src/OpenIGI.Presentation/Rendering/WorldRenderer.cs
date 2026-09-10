@@ -1,6 +1,7 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Formats;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Textures;
@@ -44,6 +45,7 @@ public sealed class WorldRenderer : IWorldPresenter
     private readonly IGraphicsDevice _device;
     private LampSwitchboard? _switchboard;
     private readonly ResourceRegistry _resources;
+    private readonly AssetFormatProfile _formats;
     private readonly IIgiLogger _logger;
     private MaterialLibrary _materials = MaterialLibrary.Empty;
     private readonly Dictionary<string, MeshGeometry?> _geometry = new(StringComparer.OrdinalIgnoreCase);
@@ -135,15 +137,28 @@ public sealed class WorldRenderer : IWorldPresenter
     /// <summary>Initializes a new instance of the <see cref="WorldRenderer"/> class.</summary>
     /// <param name="device">The device to upload to and draw with.</param>
     /// <param name="resources">Where texture bytes are read from.</param>
+    /// <param name="formats">The title's format policy; a baked lightmap's descriptor stride differs.</param>
     /// <param name="logger">Where to report upload problems.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public WorldRenderer(IGraphicsDevice device, ResourceRegistry resources, IIgiLogger? logger = null)
+    /// <remarks>
+    /// The profile is the only title-shaped thing this renderer takes, and it takes it because a
+    /// <c>.olm</c> entry cannot be read without knowing which game wrote it — the descriptor is 44
+    /// bytes in Project I.G.I. and 52 in the sequel, and the stride decides where the pixels start.
+    /// It is a parameter rather than a default so that a title cannot forget to say.
+    /// </remarks>
+    public WorldRenderer(
+        IGraphicsDevice device,
+        ResourceRegistry resources,
+        AssetFormatProfile formats,
+        IIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(resources);
+        ArgumentNullException.ThrowIfNull(formats);
 
         _device = device;
         _resources = resources;
+        _formats = formats;
         _logger = logger ?? NullLogger.Instance;
     }
 
@@ -1493,7 +1508,7 @@ public sealed class WorldRenderer : IWorldPresenter
         {
             try
             {
-                ObjectLightmap lightmap = ObjectLightmap.Read(entry.Data);
+                ObjectLightmap lightmap = ObjectLightmap.Read(entry.Data, _formats);
                 pages = new TextureHandle[lightmap.Images.Count];
                 for (int i = 0; i < pages.Length; i++)
                 {

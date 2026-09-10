@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Formats;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Ilff;
@@ -43,7 +44,7 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
 
     /// <inheritdoc/>
     public IWorldPresenter CreateWorld(in WorldPresentationRequest request) =>
-        new WorldRenderer(request.Device, request.Resources, request.Logger);
+        new WorldRenderer(request.Device, request.Resources, AssetFormatProfile.Igi2, request.Logger);
 
     /// <inheritdoc/>
     /// <remarks>
