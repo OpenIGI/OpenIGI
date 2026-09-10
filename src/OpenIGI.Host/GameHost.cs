@@ -3274,6 +3274,14 @@ internal sealed partial class GameHost : IDisposable
                     if (!_missionFailedMenu && ++_missionFailureTicks > 151 && shell is not null)
                     {
                         _missionFailedMenu = true;
+
+                        // Said out loud because the level decided this, not the player: a LevelFlow
+                        // 'Failed' expression is authored out of message and area state, and when it
+                        // turns for a reason nobody in the room understands this line is where the
+                        // reading starts.
+                        _logger.Information(
+                            "Mission",
+                            $"The level's LevelFlow has failed the mission; opening the failed page.");
                         _computerOpen = false;
                         _computerFlight.Reset();
                         _player?.SetMapComputerOpen(false);
