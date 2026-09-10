@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
@@ -459,13 +459,11 @@ public sealed class Igi2PortalCulling
         // its two edges from vertex 0, rotated into the world and then normalised. The remaining faces
         // only widen the outline.
         //
-        // Note this is NOT MefPortalSet.NormalOf, which crosses the edges from vertex 1 and so returns
-        // the opposite sign. The sign is load-bearing below, so the normal is taken here.
-        MefPortalFace first = set.Faces[portal.FirstFace];
-        Vector3f p0 = set.Vertices[first.Vertex0];
-        Vector3f normal = rotate.Transform(Vector3f.Cross(
-            set.Vertices[first.Vertex1] - p0,
-            set.Vertices[first.Vertex2] - p0)).Normalized();
+        // The sign is load-bearing below, and MefPortalSet.NormalOf now carries the original's -- it
+        // used to cross from vertex 1, which for a triangle is the negation, so this reproduced the
+        // maths locally rather than trust it. It is one implementation again.
+        Vector3f p0 = set.Vertices[set.Faces[portal.FirstFace].Vertex0];
+        Vector3f normal = rotate.Transform(set.NormalOf(portal)).Normalized();
 
         Vector3f rotatedP0 = rotate.Transform(p0);
         Vector3f relative = new(

@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using System.Collections.ObjectModel;
 using OpenIGI.Core;
 using OpenIGI.Core.Numerics;
@@ -183,9 +183,19 @@ public sealed class MefPortalSet
     /// <param name="portal">The portal.</param>
     /// <returns>The unnormalised normal, or zero when the portal has no faces or is degenerate.</returns>
     /// <remarks>
-    /// Taken from the <em>first</em> face alone, which is what <c>Sector_IsPortalVisible</c> does. The
-    /// sign is whatever the winding gives; the original flips it toward the camera at use, so a caller
-    /// that needs a facing has to do the same rather than trust this one.
+    /// <para>
+    /// Taken from the <em>first</em> face alone, which is what <c>Sector_IsPortalVisible</c> does
+    /// (<c>igi2.exe 0x587D88</c>–<c>0x587E03</c>); the remaining faces only widen the outline.
+    /// </para>
+    /// <para>
+    /// <b>The sign is meaningful and this returns the original's.</b> An earlier version of this method
+    /// crossed the edges from vertex 1 rather than vertex 0, which for a triangle is exactly the
+    /// negation, under a remark saying the sign did not matter because "the original flips it toward the
+    /// camera at use". It does not. The sign is a <em>test</em>: the engine dots this against the
+    /// direction from the camera, and only on the far side does it negate — locally, to project the
+    /// camera onto the portal's plane and reject anything more than 409.6 units off it. A caller that
+    /// took the opposite normal would apply that relief to exactly the portals that should skip it.
+    /// </para>
     /// </remarks>
     public Vector3f NormalOf(MefPortal portal)
     {
@@ -195,8 +205,8 @@ public sealed class MefPortalSet
         }
 
         MefPortalFace face = Faces[portal.FirstFace];
-        Vector3f origin = Vertices[face.Vertex1];
-        Vector3f a = Vertices[face.Vertex0] - origin;
+        Vector3f origin = Vertices[face.Vertex0];
+        Vector3f a = Vertices[face.Vertex1] - origin;
         Vector3f b = Vertices[face.Vertex2] - origin;
 
         return new Vector3f(
