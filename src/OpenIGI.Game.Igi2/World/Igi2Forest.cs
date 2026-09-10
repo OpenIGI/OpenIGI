@@ -112,7 +112,15 @@ public sealed class Igi2Forest
                     tree.Light));
             }
 
-            stands.Add(new Igi2ForestStand(task.Id, forest.Model, forest.Position, forest.AreaSize, trees));
+            stands.Add(new Igi2ForestStand(
+                task.Id,
+                forest.Model,
+                forest.Position,
+                forest.AreaSize,
+                forest.ViewCutoff,
+                forest.RandomScaleRangeX,
+                forest.RandomScaleRangeY,
+                trees));
         }
 
         log.Information(LogCategory, $"Forest: {stands.Count} stand(s), {stands.Sum(static s => s.Trees.Count)} trees.");
@@ -141,12 +149,25 @@ public sealed class Igi2Forest
 /// <param name="Model">The tree model every tree in the stand draws.</param>
 /// <param name="Centre">Where the stand sits, in world units.</param>
 /// <param name="AreaSize">How wide the stand is, in metres.</param>
+/// <param name="ViewCutoff">How far the stand is drawn, in metres.</param>
+/// <param name="RandomScaleRangeX">The scatter the bake scaled a tree's X by.</param>
+/// <param name="RandomScaleRangeY">The scatter it scaled Y by.</param>
 /// <param name="Trees">The trees, already placed in the world.</param>
+/// <remarks>
+/// The last three are here because the draw path needs them and not because placement does. The cut-off
+/// is what <c>Forest_SetUpClippingPlanes</c> (<c>igi2ed 0x64B550</c>) builds the stand's two extra clip
+/// planes from, and the two scale ranges are what <c>Forest_DrawTrees1_Optimized</c> (<c>0x64AE60</c>)
+/// turns into the margin every node's box is widened by — <c>(max(x, y) / 2 + 1) * modelRadius</c>, the
+/// widest crown the stand's own scatter can have produced.
+/// </remarks>
 public readonly record struct Igi2ForestStand(
     int TaskId,
     string Model,
     Vector3d Centre,
     float AreaSize,
+    float ViewCutoff,
+    float RandomScaleRangeX,
+    float RandomScaleRangeY,
     IReadOnlyList<Igi2Tree> Trees)
 {
     /// <summary>Gets how far the stand reaches either side of its centre, in world units.</summary>
