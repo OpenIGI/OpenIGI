@@ -155,6 +155,94 @@ public sealed class RetailIgi2TerrainPresenterTests
         Assert.Fail("No level shipped terrain to draw.");
     }
 
+    /// <summary>With the quadtree, a frame issues a small fraction of the full-detail ground.</summary>
+    /// <remarks>
+    /// <para>
+    /// The same 22 levels, drawn from a camera two metres above the middle sample of each level's first
+    /// tile. Every draw is still additive and clockwise-culled, because the quadtree changes how many
+    /// triangles there are and nothing about how they combine.
+    /// </para>
+    /// <para>
+    /// <b>The chunks are storage meshes from a pool, not a fresh upload.</b>
+    /// <c>TerrainRender_Draw</c> locks one vertex and one index buffer at the top of the frame and
+    /// refills them from the traversal, handing out 10,000-index chunks from
+    /// <c>TerrainRender_tRenderChunkPool</c> as it goes; this does the same with
+    /// <see cref="IGraphicsDevice.CreateMeshStorage"/>. Drawing a second frame must therefore create no
+    /// mesh at all, and that is asserted — a per-frame quadtree that reallocated its buffers would be
+    /// slower than the full-detail path it replaced.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void Tessellated_ground_draws_a_fraction_of_full_detail()
+    {
+        int levels = 0;
+        int chunks = 0;
+        long triangles = 0;
+        int squares = 0;
+
+        foreach (Igi2Level level in Igi2Level.All())
+        {
+            Igi2TerrainSurface surface = Surface(level);
+            if (surface.IsEmpty)
+            {
+                continue;
+            }
+
+            levels++;
+            RecordingGraphicsDevice device = new();
+            Igi2TerrainLodSettings settings = Igi2TerrainLodSettings.Read(level.Root)!.Value;
+            using Igi2TerrainPresenter presenter = new(device, surface, settings, _ => TextureHandle.None);
+
+            Assert.True(presenter.IsTessellated);
+
+            TerrainFrame frame = StandingOn(surface.Tiles[0]);
+            presenter.Draw(frame);
+
+            chunks += presenter.ChunkCount;
+            triangles += presenter.TriangleCount;
+            squares += presenter.SquaresDrawn;
+
+            Assert.Equal(presenter.ChunkCount, device.MeshDraws.Count);
+            Assert.All(device.MeshDraws, draw => Assert.Equal(BlendMode.Additive, draw.Blend));
+            Assert.Equal(CullMode.Clockwise, device.CullMode);
+
+            // The second frame reuses every chunk the first one took out of the pool: the same draws
+            // again, and not one new mesh.
+            int allocated = device.Meshes.Count;
+            int issued = device.MeshDraws.Count;
+            presenter.Draw(frame);
+            Assert.Equal(allocated, device.Meshes.Count);
+            Assert.Equal(issued * 2, device.MeshDraws.Count);
+        }
+
+        Assert.Equal(22, levels);
+
+        // 187,834 triangles across the corpus against 13,271,214 at full detail -- 1.42 per cent, a
+        // factor of 70.7 -- from 64,896 quadtree leaves, in 186 chunks rather than 4,113. Lower than
+        // RetailIgi2TerrainLodTests' 230,483 because that suite stands the camera on each tile in turn
+        // while a frame has one camera: a level's second and third tiles are further away and coarser.
+        Assert.Equal(187_834L, triangles);
+        Assert.Equal(64_896, squares);
+        Assert.Equal(186, chunks);
+    }
+
+    private static TerrainFrame StandingOn(Igi2TerrainTile tile)
+    {
+        Vector3d ground = tile.PositionOf(tile.Width / 2, tile.Height / 2);
+        Camera3D camera = new(
+            new Vector3d(ground.X, ground.Y, ground.Z + (2.0 * OpenIGI.Game.World.WorldScene.UnitsPerMetre)),
+            Camera3D.LookRotation(0f, -0.2f));
+
+        return new TerrainFrame(
+            camera,
+            Matrix4f.Identity,
+            MathF.PI / 3f,
+            1.6f,
+            ViewDistance: 0,
+            Batching: false,
+            OcclusionCulling: false);
+    }
+
     private static Igi2TerrainSurface Surface(Igi2Level level)
     {
         string path = Path.Combine(level.Directory, "heightmaps", "heightmaps.res");

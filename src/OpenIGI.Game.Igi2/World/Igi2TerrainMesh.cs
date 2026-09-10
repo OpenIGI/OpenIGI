@@ -100,6 +100,29 @@ public sealed class Igi2TerrainMesh
     /// </remarks>
     public int UncoveredSampleCount { get; private init; }
 
+    /// <summary>Wraps geometry someone else tessellated — the quadtree's own output.</summary>
+    /// <param name="positions">Each vertex's world position, with the morphed height as Z.</param>
+    /// <param name="lights">Each vertex's baked light, matching <paramref name="positions"/>.</param>
+    /// <param name="passes">The passes, one per material the geometry paints.</param>
+    /// <param name="width">The tile's sample width, carried through for reference.</param>
+    /// <param name="height">The tile's sample height.</param>
+    /// <param name="uncovered">How many vertices name a material the level never declared.</param>
+    /// <returns>The mesh.</returns>
+    /// <remarks>
+    /// <see cref="Igi2TerrainLod"/> produces the same three arrays a full-detail build does, so a
+    /// renderer consumes either without knowing which it has. <see cref="Width"/> and
+    /// <see cref="Height"/> still describe the <em>tile</em> rather than the geometry, because a
+    /// tessellated tile has no grid to describe.
+    /// </remarks>
+    internal static Igi2TerrainMesh Create(
+        IReadOnlyList<Vector3d> positions,
+        IReadOnlyList<Bgra32> lights,
+        IReadOnlyList<Igi2TerrainPass> passes,
+        int width,
+        int height,
+        int uncovered) =>
+        new(positions, lights, passes, width, height) { UncoveredSampleCount = uncovered };
+
     /// <summary>Builds the geometry for one tile.</summary>
     /// <param name="tile">The tile.</param>
     /// <param name="materials">The level's terrain materials, keyed by id.</param>
