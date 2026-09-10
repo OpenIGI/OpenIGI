@@ -125,9 +125,9 @@ internal sealed partial class GameHost : IDisposable
     // other, and only one of them names the mission that follows -- so the reader and the campaign order
     // are both the title's to supply.
     private IMissionCatalogue<MissionDescriptor> _missions = null!;
-    private MagicObjectRegistry _magic = null!;
-    private VehiclePhysicsRegistry _vehiclePhysics = null!;
-    private HumanAiConfigRegistry _aiConfig = null!;
+    private MagicObjectRegistry? _magic;
+    private VehiclePhysicsRegistry? _vehiclePhysics;
+    private HumanAiConfigRegistry? _aiConfig;
     private AnimTriggerRegistry? _animationTriggers;
     private TitleSession _title = null!;
     private MaterialLibrary _materials = null!;
@@ -813,10 +813,21 @@ internal sealed partial class GameHost : IDisposable
         _title = TitleSession.Start(
             _titleRuntime.Modules, _loop, _fileSystem, _resources, _logger, loadTables: false);
 
-        _magic = _title.Services.Require<MagicObjectRegistry>();
-        _vehiclePhysics = _title.Services.Require<VehiclePhysicsRegistry>();
-        _animationTriggers = _title.Services.Require<AnimTriggerRegistry>();
-        _aiConfig = _title.Services.Require<HumanAiConfigRegistry>();
+        // Asked for, not required. These four are tables one game publishes and the other does not, and a
+        // host that demanded them was a host only that game could start -- which is the same rule the
+        // renderers, the scene walk and the mission table are already behind, reached from the other
+        // direction.
+        //
+        // I.G.I. 2's absence is not an omission to be filled in later with an empty one. It HAS magic
+        // objects; what it does not have is a DefineMagicObj table. MagicObjConfig_Open (igi2 0x584DA0)
+        // registers MagicObjConfig as an 84-byte QTASK TYPE with three parameters -- Name at 0x28, Model
+        // at 0x38, TaskType at 0x4C -- and magicobjconfig.qvm builds those with Task_New. No shipped
+        // I.G.I. 2 script calls DefineMagicObj at all, so a registry of that shape would load an empty
+        // table and publishing one would say something false.
+        _title.Services.TryGet(out _magic);
+        _title.Services.TryGet(out _vehiclePhysics);
+        _title.Services.TryGet(out _animationTriggers);
+        _title.Services.TryGet(out _aiConfig);
 
         try
         {
@@ -1049,6 +1060,7 @@ internal sealed partial class GameHost : IDisposable
             _title.Services,
             _titleRuntime.Modules,
             _titleRuntime.Layout.StructuralTaskTypes,
+            _titleRuntime.Formats,
             _device.Capabilities.SupportsCompute);
 
 

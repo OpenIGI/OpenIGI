@@ -75,11 +75,36 @@ string[] searched = new[] { SettingsPaths.ExecutableDirectory, AppContext.BaseDi
 
 // The title this build runs, chosen here because the composition root is the only place that may name
 // one. Everything below takes the runtime and never asks which game it is.
-IGameTitleRuntime titleRuntime = DesktopTitleCatalog.Default;
+//
+// -title wins, then OPENIGI_TITLE, then a probe of what is actually installed. An id nobody recognises
+// stops rather than falling back: a run asked for one game and quietly given another is worse than one
+// that refuses.
+IGameTitleRuntime? titleRuntime;
+string? probed = null;
+
+if (options.Title is { } requestedTitle)
+{
+    if (!DesktopTitleCatalog.TryResolve(requestedTitle, out titleRuntime))
+    {
+        Console.Error.WriteLine($"'{requestedTitle}' is not a game this build runs.");
+        Console.Error.WriteLine($"  -title {DesktopTitleCatalog.KnownTitleIds}");
+        return 2;
+    }
+}
+else
+{
+    titleRuntime = DesktopTitleCatalog.Probe(searched, out probed) ?? DesktopTitleCatalog.Default;
+}
+
 GameTitle title = titleRuntime.Title;
 
-// -game, then IGI_GAME_PATH, then whatever is lying around the executable.
-string? gamePath = options.GamePath ?? GameProfileResolver.DiscoverDataRoot(searched, title);
+// -game, then the title's OWN path variable, then whatever the probe found or is lying around the
+// executable. Per title, because a machine may have both installed and one variable cannot say where
+// two of them are.
+string? gamePath = options.GamePath
+    ?? Environment.GetEnvironmentVariable(DesktopTitleCatalog.GamePathVariableFor(title))
+    ?? probed
+    ?? GameProfileResolver.DiscoverDataRoot(searched, title);
 
 if (string.IsNullOrWhiteSpace(gamePath))
 {
@@ -87,7 +112,9 @@ if (string.IsNullOrWhiteSpace(gamePath))
     Console.Error.WriteLine();
     Console.Error.WriteLine($"Put OpenIGI in the folder that holds {title.SignatureFile}, or point it at one:");
     Console.Error.WriteLine("  -game <dir>");
-    Console.Error.WriteLine($"  {HostOptions.GamePathVariable}=<dir>");
+    Console.Error.WriteLine($"  {DesktopTitleCatalog.GamePathVariableFor(title)}=<dir>");
+    Console.Error.WriteLine();
+    Console.Error.WriteLine($"To run a different game: -title {DesktopTitleCatalog.KnownTitleIds}");
     Console.Error.WriteLine();
     Console.Error.WriteLine("Looked in:");
 

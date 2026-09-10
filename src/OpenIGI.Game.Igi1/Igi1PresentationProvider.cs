@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Game.Igi1.World;
+using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Presentation.Rendering;
 
@@ -33,19 +34,31 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
 
     /// <inheritdoc/>
     public IHeldWeaponPresenter CreateHeldWeapon(in ViewModelPresentationRequest request) =>
-        new HeldWeaponRenderer(request.Device, request.Resources, request.Magic, request.Logger);
+        new HeldWeaponRenderer(request.Device, request.Resources, MagicOf(request), request.Logger);
 
     /// <inheritdoc/>
     public IGrenadePresenter CreateGrenades(in ViewModelPresentationRequest request) =>
-        new GrenadeRenderer(request.Device, request.Resources, request.Magic, request.Logger);
+        new GrenadeRenderer(request.Device, request.Resources, MagicOf(request), request.Logger);
 
     /// <inheritdoc/>
     public IMissilePresenter CreateMissiles(in ViewModelPresentationRequest request) =>
-        new MissileRenderer(request.Device, request.Resources, request.Magic, request.Logger);
+        new MissileRenderer(request.Device, request.Resources, MagicOf(request), request.Logger);
 
     /// <inheritdoc/>
     public IGunPickupPresenter CreateGunPickups(in ViewModelPresentationRequest request) =>
-        new GunPickupRenderer(request.Device, request.Resources, request.Magic, request.Logger);
+        new GunPickupRenderer(request.Device, request.Resources, MagicOf(request), request.Logger);
+
+    /// <summary>Takes the magic-object table these renderers cannot do without.</summary>
+    /// <remarks>
+    /// The request carries it optionally, because a title may have no table of that shape — I.G.I. 2's
+    /// magic objects are QTask data rather than a <c>DefineMagicObj</c> table, so its host publishes
+    /// none. This game always has one, and every renderer below resolves its model through it, so a
+    /// missing one is a host that wired something wrong rather than a case to degrade around.
+    /// </remarks>
+    private static MagicObjectRegistry MagicOf(in ViewModelPresentationRequest request) =>
+        request.Magic
+        ?? throw new InvalidOperationException(
+            "Project I.G.I.'s view model needs its magic-object table, and the request carries none.");
 
     /// <inheritdoc/>
     public IBulletMarkPresenter CreateBulletMarks(in EffectsPresentationRequest request) =>

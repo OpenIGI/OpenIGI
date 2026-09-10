@@ -68,7 +68,7 @@ namespace OpenIGI.Host.Menu;
 public sealed class MissionPreviewLoader(
     string gamePath,
     IMissionCatalogue<MissionDescriptor> missions,
-    MagicObjectRegistry magic,
+    MagicObjectRegistry? magic,
     GiBakeCache probeFields,
     MenuCameraLibrary cameras,
     MissionPreviewContext context,
@@ -294,7 +294,8 @@ public sealed class MissionPreviewLoader(
         var levelRoot = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         var levelLoader = new LevelLoader(levelRoot, loop.TaskCommands, loop.Natives, resources, logger);
         var terrainLoader = new TerrainLoader(resources, loop.Natives, logger);
-        var missionLoader = new MissionLoader(missions, fileSystem, resources, levelLoader, logger, terrainLoader);
+        var missionLoader = new MissionLoader(
+            missions, fileSystem, resources, levelLoader, logger, terrainLoader, soundBank: null, context.Formats);
 
         LoadedMission loaded = missionLoader.Load(missionId);
 

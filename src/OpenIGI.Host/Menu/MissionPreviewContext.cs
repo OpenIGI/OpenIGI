@@ -5,6 +5,8 @@ using OpenIGI.Engine.Titles;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
 
+using OpenIGI.Formats;
+
 namespace OpenIGI.Host.Menu;
 
 /// <summary>
@@ -77,6 +79,10 @@ namespace OpenIGI.Host.Menu;
 /// <c>Container</c> with a parameter, and a loop that had registered it with none refuses every level
 /// that mentions it.
 /// </param>
+/// <param name="Formats">
+/// Which encodings this title's assets may hold. Without it a pack is read as the first game's, and a
+/// title shipping a later mesh version has every model refused while the pack still opens.
+/// </param>
 /// <param name="TitleModules">
 /// The running title's content modules. A preview registers the same ones into its own loop, so its
 /// tree comes out shaped the way the scene walk expects rather than as untyped placeholders.
@@ -98,4 +104,5 @@ public sealed record MissionPreviewContext(
     IServiceCatalog TitleServices,
     IReadOnlyList<IContentModule> TitleModules,
     IReadOnlyList<string> StructuralTaskTypes,
+    AssetFormatProfile Formats,
     bool ComputeSupported);

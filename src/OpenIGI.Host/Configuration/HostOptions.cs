@@ -1,4 +1,4 @@
-using OpenIGI.Game.Ai;
+﻿using OpenIGI.Game.Ai;
 using OpenIGI.Platform;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Igi1;
@@ -10,6 +10,7 @@ namespace OpenIGI.Host.Configuration;
 /// The command-line options the desktop shell understands.
 /// </summary>
 /// <param name="GamePath">The original installation to read data from.</param>
+/// <param name="Title">Which game to run, by id, or null to work it out from what is installed.</param>
 /// <param name="Mode">How the window relates to the screen.</param>
 /// <param name="Width">The window client width in pixels, or zero for the monitor's own.</param>
 /// <param name="Height">The window client height in pixels, or zero for the monitor's own.</param>
@@ -34,6 +35,7 @@ namespace OpenIGI.Host.Configuration;
 /// </remarks>
 public readonly record struct HostOptions(
     string? GamePath,
+    string? Title,
     WindowMode Mode,
     int Width,
     int Height,
@@ -54,6 +56,13 @@ public readonly record struct HostOptions(
     /// <summary>Gets the environment variable consulted when no path is given on the command line.</summary>
     public const string GamePathVariable = "IGI_GAME_PATH";
 
+    /// <summary>The environment variable that names the game to run, when <c>-title</c> does not.</summary>
+    /// <remarks>
+    /// The path variable is per title and this one is not, because a machine may well have both games
+    /// installed and wants to say which to run without retyping where either is.
+    /// </remarks>
+    public const string TitleVariable = "OPENIGI_TITLE";
+
     /// <summary>Parses a command line.</summary>
     /// <param name="args">The arguments, without the executable name.</param>
     /// <returns>The parsed options.</returns>
@@ -63,6 +72,7 @@ public readonly record struct HostOptions(
         ArgumentNullException.ThrowIfNull(args);
 
         string? gamePath = Environment.GetEnvironmentVariable(GamePathVariable);
+        string? titleId = Environment.GetEnvironmentVariable(TitleVariable);
 
         // Null until -difficulty is seen: the faithful source is the active player profile (the original's
         // sub_406F70 reads sub_406220()'s first field), so the flag is only a test override, not a default.
@@ -202,6 +212,10 @@ public readonly record struct HostOptions(
                         $"-uiscale expects 0 for automatic or a positive whole number, got '{value}'.",
                         nameof(args));
                 }
+            }
+            else if (arg.Equals("title", StringComparison.OrdinalIgnoreCase))
+            {
+                titleId = Next(args, ref i, "title");
             }
             else if (arg.Equals("screenshot", StringComparison.OrdinalIgnoreCase))
             {
@@ -503,6 +517,7 @@ public readonly record struct HostOptions(
 
         return new HostOptions(
             gamePath,
+            string.IsNullOrWhiteSpace(titleId) ? null : titleId.Trim(),
             resolvedMode,
             width,
             height,

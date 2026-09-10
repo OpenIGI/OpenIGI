@@ -157,8 +157,12 @@ internal sealed partial class GameHost
         {
             _fileSystem.SetAlias(VirtualFileSystem.MissionAlias, chosen.MissionAliasTarget);
         }
+        // The title's format profile, without which every pack is read as the first game's and a title
+        // shipping a later mesh version has every model in it refused on the way in -- the pack still
+        // opens, still reports a name, and holds nothing.
         MissionLoader missionLoader = new(
-            _missions, _resourceFileSystem, _resources, levelLoader, _logger, terrainLoader, _soundBank);
+            _missions, _resourceFileSystem, _resources, levelLoader, _logger, terrainLoader, _soundBank,
+            _titleRuntime.Formats);
         LoadedMission loaded = missionLoader.Load(id);
 
         // Evaluate the level's ConditionalContainer conditions against the initial playable state, so the

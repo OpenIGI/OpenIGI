@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.World;
@@ -180,5 +180,5 @@ public interface IGunPickupPresenter : IDisposable
 public readonly record struct ViewModelPresentationRequest(
     IGraphicsDevice Device,
     ResourceRegistry Resources,
-    MagicObjectRegistry Magic,
+    MagicObjectRegistry? Magic,
     IIgiLogger Logger);
