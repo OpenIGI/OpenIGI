@@ -28,7 +28,9 @@ jobs:
         run: test -d "$IGI_GAME_PATH" && test -f "$IGI_GAME_PATH/IGI.EXE"
       - name: Run focused Levels 3 and 5 regression tests
         run: |
+          set -o pipefail
           mkdir -p scratch/mvp-e2e
+          dotnet restore tests/OpenIGI.Game.Tests/OpenIGI.Game.Tests.csproj
           dotnet test tests/OpenIGI.Game.Tests/OpenIGI.Game.Tests.csproj \
             -c Release --no-restore \
             --filter 'FullyQualifiedName~LevelThreeOutroFidelityTests|FullyQualifiedName~RetailMissionFiveHelicopterTests' \
