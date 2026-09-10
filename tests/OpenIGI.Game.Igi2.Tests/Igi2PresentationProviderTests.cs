@@ -139,6 +139,75 @@ public sealed class Igi2PresentationProviderTests
         Assert.Fail("No level shipped both terrain and textures.");
     }
 
+    /// <summary>The ground's textures tile, and carry the mip chain their file ships.</summary>
+    /// <remarks>
+    /// <para>
+    /// A terrain material is laid across the ground rather than fitted to it, so its U and V run into
+    /// the hundreds. <c>TerrainRender_SetTextureState</c> (<c>igi2ed 0x66B810</c>) sets
+    /// <c>D3DTSS_ADDRESSU</c> and <c>ADDRESSV</c> to <c>D3DTADDRESS_WRAP</c> on stage 0 and stage 1 —
+    /// the material and the detail map — and clamps only stage 2.
+    /// </para>
+    /// <para>
+    /// The loader took <see cref="TextureDescription"/>'s two-argument constructor, which is the one 2D
+    /// drawing uses: a single mip level, clamped. Clamping a coordinate of 300 samples the same edge
+    /// texel three hundred times, so every material was drawn as a streak of its own border pulled down
+    /// the hillside — and because it is a plausible-looking mess rather than a failure, nothing said so.
+    /// </para>
+    /// <para>
+    /// Both halves are asserted. The mip count is the quieter one: ground seen at a kilometre is
+    /// minified hard, and a single level aliases into a shimmer rather than resolving.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void The_grounds_textures_tile_rather_than_clamp()
+    {
+        ITitlePresentationProvider provider = Igi2PresentationProvider.Instance;
+        string root = GameDataSource.Igi2.RequireRoot();
+
+        foreach (Igi2Level level in Igi2Level.All())
+        {
+            string archive = Path.Combine(level.Directory, "heightmaps", "heightmaps.res");
+            string textures = Path.Combine(level.Directory, "textures");
+            if (!File.Exists(archive) || !Directory.Exists(textures))
+            {
+                continue;
+            }
+
+            VirtualFileSystem files = new();
+            files.RegisterDevice(new LocalFileDevice(root));
+            files.SetAlias(
+                VirtualFileSystem.MissionAlias,
+                "LOCAL:" + Path.GetRelativePath(root, level.Directory).Replace(Path.DirectorySeparatorChar, '/') + "/");
+            ResourceRegistry resources = new(files);
+            resources.Register(Igi2PresentationProvider.HeightmapArchive, File.ReadAllBytes(archive));
+            foreach (string res in Directory.EnumerateFiles(textures, "*.res"))
+            {
+                foreach (IresEntry entry in IresArchive.Read(File.ReadAllBytes(res)).Entries)
+                {
+                    resources.Register(entry.Name, entry.Data, replaceExisting: true);
+                }
+            }
+
+            RecordingGraphicsDevice device = new();
+            using ITerrainPresenter? ground = provider.CreateGround(
+                new GroundPresentationRequest(device, level.Root, resources, NullLogger.Instance));
+
+            if (ground is null || device.Textures.Count == 0)
+            {
+                continue;
+            }
+
+            Assert.All(
+                device.Textures,
+                texture => Assert.Equal(TextureAddressMode.Repeat, texture.AddressMode));
+
+            Assert.Contains(device.Textures, texture => texture.MipLevels > 1);
+            return;
+        }
+
+        Assert.Fail("No level shipped a ground whose materials resolved to textures.");
+    }
+
     /// <summary>The ground is drawn in metres, where the camera and everything else already is.</summary>
     /// <remarks>
     /// <para>

@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats;
@@ -136,6 +136,11 @@ public sealed class Igi2TextureLoader
                 image = TgaImage.Read(bytes.Span);
             }
 
+            // Built here rather than shipped: the sequel's ground materials are JPEG and TGA, neither of
+            // which carries a chain, so every one of them arrived with a single level. Project I.G.I.'s
+            // terrain, sky and world paths all call this for the same reason.
+            image = image?.WithMipChain();
+
             if (image is null)
             {
                 // Warned once per name, because the dictionary caches the miss.
@@ -143,8 +148,30 @@ public sealed class Igi2TextureLoader
                 return TextureHandle.None;
             }
 
+            // Repeating, with whatever mip chain the file carries. The two-argument constructor is the
+            // one 2D drawing uses -- a single level, clamped -- and taking it here was wrong twice over.
+            //
+            // Clamping is the visible half: a terrain material tiles across the ground, so its U and V
+            // run to the hundreds, and clamping smears the edge texel of every material into long
+            // streaks down the hillside. TerrainRender_SetTextureState (igi2ed 0x66B810) sets
+            // D3DTSS_ADDRESSU and ADDRESSV to D3DTADDRESS_WRAP on stage 0 and stage 1 -- the material
+            // and the detail map -- and only stage 2 clamps.
+            //
+            // The single mip level is the quieter half: ground seen at a distance is minified hard, and
+            // one level means it aliases into a shimmer instead of resolving. The chain is built above,
+            // because these files ship without one.
+            //
+            // WithMipChain rather than RebuildMipChain, which is the cut-out case: a tree billboard's
+            // transparent gaps have to be filtered with the alpha weighted or the foliage darkens with
+            // distance. Nothing here knows which textures are cut-outs yet, and the ground -- which is
+            // what this was written for -- is opaque.
             return _device.CreateTexture(
-                new TextureDescription(image.Width, image.Height),
+                new TextureDescription(
+                    image.Width,
+                    image.Height,
+                    image.MipLevels,
+                    TextureFilter.Linear,
+                    TextureAddressMode.Repeat),
                 image.Pixels);
         }
         catch (Exception ex) when (ex is PackFormatException or TextureFormatException)

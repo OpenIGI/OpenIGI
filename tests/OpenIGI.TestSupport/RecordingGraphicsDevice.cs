@@ -737,8 +737,20 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     {
     }
 
-    public TextureHandle CreateTexture(in TextureDescription description, ReadOnlySpan<Bgra32> pixels) =>
-        new(_nextTexture++);
+    /// <summary>Every 2D texture created, in order, with the description it was created under.</summary>
+    /// <remarks>
+    /// The description rather than only the pixels, because the address mode and the mip count are
+    /// decisions a caller makes and gets silently wrong: <c>TextureDescription</c>'s two-argument
+    /// constructor is 2D drawing's -- one level, clamped -- and taking it for a tiling world texture
+    /// smears its edge texel across everything it is drawn on.
+    /// </remarks>
+    public List<TextureDescription> Textures { get; } = [];
+
+    public TextureHandle CreateTexture(in TextureDescription description, ReadOnlySpan<Bgra32> pixels)
+    {
+        Textures.Add(description);
+        return new(_nextTexture++);
+    }
 
     public void UpdateTexture(TextureHandle texture, int mipLevel, ReadOnlySpan<Bgra32> pixels)
     {
