@@ -1,4 +1,4 @@
-using OpenIGI.Engine.Resources;
+﻿using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats;
 using OpenIGI.Formats.World;
@@ -149,6 +149,68 @@ public sealed class RetailIgi2DrawableSceneTests
         Assert.Equal(1_229, characters);
         // Everything placed, less the characters, less the two the shipped data cannot resolve.
         Assert.Equal(placed - characters - 2, drawable);
+    }
+
+    /// <summary>A drawable placement is in metres, and the walk it came from is in engine units.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>Game_Open</c> registers <c>WORLD_METER</c> as a double — <c>IGI.exe 0x539558</c>,
+    /// <c>igi2.exe 0x640B80</c> — and both games hold <b>4096</b>. So an authored position is in
+    /// sixteenths of a millimetre and a <see cref="WorldPlacement"/> is in metres, and the division
+    /// between them is a step the walk owes the renderer.
+    /// </para>
+    /// <para>
+    /// Worth its own test because the symptom lies. A walk that skips the conversion does not fail or
+    /// draw the world wrongly; it pushes every object four thousand times further out than the far
+    /// plane, and the frame comes back as an empty sky — which reads as "nothing was placed" rather
+    /// than as a scale error, and sends you looking in the wrong file.
+    /// </para>
+    /// <para>
+    /// The measurement is a ratio rather than a bound, so it says nothing about how big a level is:
+    /// however far out the sequel's first mission puts its aeroplane, the drawable placement is that
+    /// position divided by 4096 and not some other number.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void A_drawable_placement_is_the_authored_position_in_metres()
+    {
+        Igi2DrawableSceneResult built = Build(Igi2Level.All().First());
+
+        // Every authored position, converted. A set rather than a pairing, because the walk drops the
+        // characters and the unresolved on the way through and keeps no id to pair the rest back by --
+        // and the claim does not need one: it is that a drawable position IS an authored position over
+        // 4096, whichever authored one it came from.
+        HashSet<(double X, double Y, double Z)> inMetres = [.. built.Placed.Placements.Select(static p =>
+            (p.Position.X / WorldScene.UnitsPerMetre,
+             p.Position.Y / WorldScene.UnitsPerMetre,
+             p.Position.Z / WorldScene.UnitsPerMetre))];
+
+        Assert.NotEmpty(built.Scene.Placements);
+        Assert.All(
+            built.Scene.Placements,
+            placement => Assert.Contains(
+                (placement.Position.X, placement.Position.Y, placement.Position.Z),
+                inMetres));
+
+        // The negative half: the authored units are NOT the drawable ones, so the assertion above is
+        // about a conversion rather than about two collections that happen to agree.
+        HashSet<(double X, double Y, double Z)> inUnits = [.. built.Placed.Placements.Select(static p =>
+            (p.Position.X, p.Position.Y, p.Position.Z))];
+
+        Assert.DoesNotContain(
+            (built.Scene.Placements[0].Position.X,
+             built.Scene.Placements[0].Position.Y,
+             built.Scene.Placements[0].Position.Z),
+            inUnits);
+
+        // And the level comes out the size of a level. The sequel's first mission opens in an aeroplane
+        // some four and a half kilometres up, so the assertion is a hundred kilometres rather than a
+        // tight box -- but an unconverted walk lands at sixty-two million, which this catches by four
+        // orders of magnitude.
+        double furthest = built.Scene.Placements.Max(static p =>
+            Math.Max(Math.Abs(p.Position.X), Math.Max(Math.Abs(p.Position.Y), Math.Abs(p.Position.Z))));
+
+        Assert.InRange(furthest, 1_000.0, 100_000.0);
     }
 
     private static Igi2DrawableSceneResult Build(Igi2Level level)

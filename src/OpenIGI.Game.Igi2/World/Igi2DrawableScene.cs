@@ -100,7 +100,10 @@ public static class Igi2DrawableScene
             }
 
             drawable.Add(new WorldPlacement(
-                placement.Position,
+                // The walk reads the placement in engine units, because that is what everything else
+                // built on it -- the sector graph, the lightmap bindings -- compares against. A
+                // WorldPlacement is the renderer's, and the renderer works in metres.
+                WorldScene.ToMetres(placement.Position),
                 WorldScene.ToOrientation(placement.Orientation),
                 instance,
                 pack,

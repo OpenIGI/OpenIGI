@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Globalization;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
@@ -38,6 +38,21 @@ public sealed class WorldScene
     /// the level-1 water tower measures 95005 units tall, which is 23 metres.
     /// </remarks>
     public const double UnitsPerMetre = 4096.0;
+
+    /// <summary>Converts a position or an offset from engine units into metres.</summary>
+    /// <param name="units">The value in engine units.</param>
+    /// <returns>The same value in metres.</returns>
+    /// <remarks>
+    /// Beside the constant that defines it, because every title's scene walk needs it and the arithmetic
+    /// is the kind that goes wrong by being retyped: a walk that forgets it renders a level four thousand
+    /// times too large, which looks like an empty world rather than like a scale error.
+    /// <para>
+    /// Both games agree on the divisor. <c>Game_Open</c> registers <c>WORLD_METER</c> as a double
+    /// (<c>IGI.exe 0x539558</c>, <c>igi2.exe 0x640B80</c>) and both hold 4096.
+    /// </para>
+    /// </remarks>
+    public static Vector3d ToMetres(Vector3d units) =>
+        new(units.X / UnitsPerMetre, units.Y / UnitsPerMetre, units.Z / UnitsPerMetre);
 
     /// <summary>The task parameter naming an object's model.</summary>
     public const string ModelParameter = "Model";
@@ -1409,7 +1424,7 @@ public sealed class WorldScene
         {
             if (task.TryGetValue(name, out object? value) && value is Vector3d p)
             {
-                position = new Vector3d(p.X / UnitsPerMetre, p.Y / UnitsPerMetre, p.Z / UnitsPerMetre);
+                position = ToMetres(p);
                 return true;
             }
         }
