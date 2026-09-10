@@ -587,6 +587,9 @@ public static class GraphicsMenu
         "r_rt_lights",
         "r_rt_reflections",
         "r_lamp_denoise",
+        // Preset-invariant retail impact dust/chips/blood. This is a diagnostic kill switch, while
+        // r_impact_particles is the player-facing switch for the remaster's additional burst.
+        "r_impact_effects",
         "r_sdf_validate",
         "r_cards_dump",
         "r_cards_probe",
