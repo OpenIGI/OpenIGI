@@ -269,75 +269,9 @@ public sealed class RetailIgi2DrawableSceneTests
         return renderer.LastLightmappedCount;
     }
 
-    private static Igi2DrawableSceneResult Build(Igi2Level level) => BuildWithResources(level).Built;
+    private static Igi2DrawableSceneResult Build(Igi2Level level) => Igi2LevelScene.Build(level).Built;
 
     /// <summary>The same walk, keeping the registry the lightmap archive is read back through.</summary>
-    private static (Igi2DrawableSceneResult Built, ResourceRegistry Resources) BuildWithResources(Igi2Level level)
-    {
-        // The real tree behind the registry, because the common pack names six animation sets and the
-        // pack loader reads them straight through the file system rather than from a registered key.
-        string root = GameDataSource.Igi2.RequireRoot();
-        VirtualFileSystem files = new();
-        files.RegisterDevice(new LocalFileDevice(root));
-        ResourceRegistry resources = new(files);
-        List<LoadedPack> packs = [];
-
-        foreach ((string directory, string name) in level.PackSources())
-        {
-            Register(resources, directory, name, root);
-            packs.Add(LoadedPack.Open(
-                ResourceDirectory(directory, root),
-                name,
-                resources,
-                logger: null,
-                AssetFormatProfile.Igi2));
-        }
-
-        string levelDirectory = ResourceDirectory(level.Directory, root);
-        LoadedMission mission = new(
-            new MissionDescriptor(
-                Id: 1,
-                Name: "igi2",
-                Description: string.Empty,
-                Tag: string.Empty,
-                NextMissionId: MissionDescriptor.NextMissionUndefined,
-                MissionDirectory: levelDirectory,
-                CommonPackDirectory: packs[0].Directory,
-                LevelPackDirectory: levelDirectory,
-                CommonPackName: packs[0].Name,
-                LevelPackName: packs[^1].Name,
-                BriefingSprite: string.Empty),
-            packs[0],
-            packs[^1],
-            []);
-
-        return (
-            Igi2DrawableScene.Build(
-                mission,
-                level.Root,
-                level.Table,
-                level.HasLightmaps ? level.Lightmaps : null,
-                packs),
-            resources);
-    }
-
-    private static string ResourceDirectory(string directory, string root) =>
-        "LOCAL:" + Path.GetRelativePath(root, directory).Replace('\\', '/') + "/";
-
-    private static void Register(ResourceRegistry resources, string directory, string name, string root)
-    {
-        string prefix = ResourceDirectory(directory, root);
-        Add(resources, $"{prefix}{name}.mtp", Path.Combine(directory, $"{name}.mtp"));
-        Add(resources, $"{prefix}models/{name}.res", Path.Combine(directory, "models", $"{name}.res"));
-        Add(resources, $"{prefix}textures/{name}.res", Path.Combine(directory, "textures", $"{name}.res"));
-        Add(resources, $"{prefix}lightmaps/lightmaps.res", Path.Combine(directory, "lightmaps", "lightmaps.res"));
-    }
-
-    private static void Add(ResourceRegistry resources, string key, string path)
-    {
-        if (File.Exists(path))
-        {
-            resources.Register(key, File.ReadAllBytes(path));
-        }
-    }
+    private static (Igi2DrawableSceneResult Built, ResourceRegistry Resources) BuildWithResources(Igi2Level level) =>
+        Igi2LevelScene.Build(level);
 }

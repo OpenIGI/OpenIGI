@@ -73,6 +73,9 @@ public sealed class WorldRenderer : IWorldPresenter
     private const float HdrHeadroom = 4f;
     private float _lightmapScale = 1f;
 
+    /// <inheritdoc/>
+    public ObjectShading Shading { get; set; } = ObjectShading.Default;
+
     /// <summary>Each placement's mesh and per-subset draw state, resolved once and kept.</summary>
     /// <remarks>
     /// Keyed by reference: <see cref="WorldPlacement"/> is a record, and its value equality would hash
@@ -369,6 +372,13 @@ public sealed class WorldRenderer : IWorldPresenter
         // scaled by it.
         _device.SetLightmapScale(_lightmapScale);
 
+        // What this pass composites with, read once: the title's lightmap gain and, if it has one, the
+        // sun its unlightmapped objects are lit by. Both are applied per sub-mesh below and tracked so
+        // the device is told only when something changes.
+        ObjectShading shading = Shading;
+        float appliedScale = _lightmapScale;
+        Vector3f appliedSun = Vector3f.Zero;
+
         int draws = 0;
         int triangles = 0;
         int lit = 0;
@@ -546,12 +556,41 @@ public sealed class WorldRenderer : IWorldPresenter
                 }
 
                 _device.SetMaterialOverride(subset.IsLamp && glow < 1f ? Dimmed(subset.Material, glow) : subset.Material);
+
+                // A bake is multiplied by the title's gain on top of whatever headroom it was encoded
+                // with; a sub-mesh with none is drawn at the headroom alone and lit -- if the title
+                // lights such things at all -- by its fixed-function sun. I.G.I. 2's lightmap stage is
+                // MODULATE2X and its unlightmapped objects are lit by Direct3D's vertex pipeline
+                // (ObjectShading cites the state blocks); Project I.G.I. answers Default at the seam, and
+                // both of these are then the calls this pass always made.
+                bool baked = subset.Lightmap.IsValid;
+                float scale = baked ? _lightmapScale * shading.LightmapGain : _lightmapScale;
+                if (scale != appliedScale)
+                {
+                    _device.SetLightmapScale(scale);
+                    appliedScale = scale;
+                }
+
                 int sampleCount = entry.HasRotor ? entry.Rotor.SampleCount : 1;
                 for (int sample = 0; sample < sampleCount; sample++)
                 {
+                    Matrix3f orientation = entry.HasRotor ? entry.Rotor.GetOrientation(sample) : entry.Orientation;
                     Matrix4f modelView = entry.HasRotor
-                        ? camera.CreateModelView(entry.Position, entry.Rotor.GetOrientation(sample))
+                        ? camera.CreateModelView(entry.Position, orientation)
                         : baseModelView;
+
+                    // The sun in the placement's own frame. An orientation's rows are the model's axes
+                    // in the world, so dotting a world vector against them -- the transpose, in the
+                    // engine's row-vector convention -- is what takes it into model space.
+                    Vector3f sun = !baked && shading.Sun is { } sunlight
+                        ? orientation.Transposed().Transform(sunlight.Direction)
+                        : Vector3f.Zero;
+                    if (sun != appliedSun)
+                    {
+                        _device.SetVertexSun(sun);
+                        appliedSun = sun;
+                    }
+
                     _device.DrawMesh(
                         model.Mesh,
                         subset.IndexOffset,
@@ -585,10 +624,16 @@ public sealed class WorldRenderer : IWorldPresenter
         LastLightmappedCount = (rotorsOnly || glassOnly ? LastLightmappedCount : 0) + lit;
         LastOccludedCount = (rotorsOnly || glassOnly ? LastOccludedCount : 0) + occluded;
 
-        // Back to one for whatever draws next -- the terrain keeps its shipped LDR lightmaps.
-        if (_lightmapScale != 1f)
+        // Back to one, and to no sun, for whatever draws next -- the terrain keeps its shipped LDR
+        // lightmaps and lights itself.
+        if (appliedScale != 1f)
         {
             _device.SetLightmapScale(1f);
+        }
+
+        if (appliedSun != Vector3f.Zero)
+        {
+            _device.SetVertexSun(Vector3f.Zero);
         }
     }
 

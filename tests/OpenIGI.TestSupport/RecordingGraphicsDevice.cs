@@ -88,10 +88,23 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public void SetMaterialOverride(in SurfaceMaterial material) => Materials.Add(material);
 
+    /// <summary>Gets the lightmap scale the draws that follow carry.</summary>
+    public float LightmapScale { get; private set; } = 1f;
+
+    /// <summary>Gets the model-space direction towards the fixed-function sun the draws that follow carry, or zero.</summary>
+    public Vector3f VertexSun { get; private set; }
+
+    /// <summary>The fixed-function sun's colours, each time they were set.</summary>
+    public List<(Vector3f Ambient, Vector3f Colour)> SceneSuns { get; } = [];
+
     /// <inheritdoc/>
-    public void SetLightmapScale(float scale)
-    {
-    }
+    public void SetLightmapScale(float scale) => LightmapScale = scale;
+
+    /// <inheritdoc/>
+    public void SetSceneSun(Vector3f ambient, Vector3f colour) => SceneSuns.Add((ambient, colour));
+
+    /// <inheritdoc/>
+    public void SetVertexSun(Vector3f towardsSun) => VertexSun = towardsSun;
 
     /// <inheritdoc/>
     public void SetAlphaHash(float seed)
@@ -926,7 +939,20 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         TextureHandle diffuse,
         TextureHandle lightmap,
         BlendMode blend) =>
-        MeshDraws.Add(new MeshDrawCall(mesh, indexOffset, indexCount, modelView, diffuse, lightmap, blend, DepthState, CullMode, Fog, ModelAmbient));
+        MeshDraws.Add(new MeshDrawCall(
+            mesh,
+            indexOffset,
+            indexCount,
+            modelView,
+            diffuse,
+            lightmap,
+            blend,
+            DepthState,
+            CullMode,
+            Fog,
+            ModelAmbient,
+            LightmapScale,
+            VertexSun));
 
     public void DrawMeshRanges(
         MeshHandle mesh,
@@ -988,7 +1014,9 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         DepthState DepthState,
         CullMode CullMode,
         SceneFog Fog = default,
-        Vector3f ModelAmbient = default)
+        Vector3f ModelAmbient = default,
+        float LightmapScale = 1f,
+        Vector3f VertexSun = default)
     {
         public int TriangleCount => IndexCount / 3;
     }

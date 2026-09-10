@@ -68,6 +68,15 @@ public interface IWorldPresenter : IDisposable
     /// <summary>Gets or sets what each of the level's textures is made of.</summary>
     MaterialLibrary Materials { get; set; }
 
+    /// <summary>Gets or sets how the title composites the objects this presenter draws.</summary>
+    /// <remarks>
+    /// Read off the level through <see cref="ITitlePresentationProvider.ReadObjectShading"/> and applied
+    /// per sub-mesh: a baked lightmap is multiplied by the title's gain, and a sub-mesh with no bake is
+    /// lit by the title's fixed-function sun if it has one. <see cref="ObjectShading.Default"/> is the
+    /// compositing the port always had, and what a title that answers nothing gets.
+    /// </remarks>
+    ObjectShading Shading { get; set; }
+
     /// <summary>Gets or sets the detail textures the world is shaded with, or null for none.</summary>
     MaterialDetailPack? DetailMaps { get; set; }
 

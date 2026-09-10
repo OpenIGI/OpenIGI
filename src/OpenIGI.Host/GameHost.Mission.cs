@@ -1378,6 +1378,27 @@ internal sealed partial class GameHost
                         + $"ambient {reported.Ambient}.");
             }
 
+            // How the title composites its objects: the seam beside the air. I.G.I. 2's bakes are
+            // MODULATE2X and its unlightmapped objects are lit by a fixed-function sun read off the
+            // level; Project I.G.I. answers nothing and keeps the default, which is the compositing it
+            // always had. The gain and the sun's direction are the world renderer's, per draw; the sun's
+            // colours are the device's, baked in beside the fog for the same reason.
+            ObjectShading shading = _presentation.ReadObjectShading(levelRoot) ?? ObjectShading.Default;
+            if (_world is { } shadedWorld)
+            {
+                shadedWorld.Shading = shading;
+            }
+
+            _device.SetSceneSun(shading.Sun?.Ambient ?? Vector3f.Zero, shading.Sun?.Colour ?? Vector3f.Zero);
+            if (shading.Sun is { } fixedFunctionSun)
+            {
+                _logger.Information(
+                    "Light",
+                    $"Objects without a bake are lit by the level's sun: ambient {fixedFunctionSun.Ambient}, "
+                        + $"colour {fixedFunctionSun.Colour}, towards {fixedFunctionSun.Direction}; "
+                        + FormattableString.Invariant($"bakes are multiplied by {shading.LightmapGain:G2}."));
+            }
+
             if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings readSun))
             {
                 _sun = readSun;

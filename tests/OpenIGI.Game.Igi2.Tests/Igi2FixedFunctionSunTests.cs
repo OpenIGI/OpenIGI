@@ -1,8 +1,5 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Resources;
-using OpenIGI.Engine.Vfs;
-using OpenIGI.Formats;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
@@ -127,52 +124,5 @@ public sealed class Igi2FixedFunctionSunTests
         Igi2Level.All().First(level =>
             level.Directory.Replace('\\', '/').EndsWith("location1/level1", StringComparison.OrdinalIgnoreCase));
 
-    private static Igi2DrawableSceneResult Build(Igi2Level level)
-    {
-        string root = GameDataSource.Igi2.RequireRoot();
-        VirtualFileSystem files = new();
-        files.RegisterDevice(new LocalFileDevice(root));
-        ResourceRegistry resources = new(files);
-        List<LoadedPack> packs = [];
-
-        foreach ((string directory, string name) in level.PackSources())
-        {
-            string prefix = "LOCAL:" + Path.GetRelativePath(root, directory).Replace('\\', '/') + "/";
-            foreach ((string key, string path) in new[]
-                     {
-                         ($"{prefix}{name}.mtp", Path.Combine(directory, $"{name}.mtp")),
-                         ($"{prefix}models/{name}.res", Path.Combine(directory, "models", $"{name}.res")),
-                         ($"{prefix}textures/{name}.res", Path.Combine(directory, "textures", $"{name}.res")),
-                         ($"{prefix}lightmaps/lightmaps.res", Path.Combine(directory, "lightmaps", "lightmaps.res")),
-                     })
-            {
-                if (File.Exists(path))
-                {
-                    resources.Register(key, File.ReadAllBytes(path));
-                }
-            }
-
-            packs.Add(LoadedPack.Open(prefix, name, resources, logger: null, AssetFormatProfile.Igi2));
-        }
-
-        string levelDirectory = "LOCAL:" + Path.GetRelativePath(root, level.Directory).Replace('\\', '/') + "/";
-        LoadedMission mission = new(
-            new MissionDescriptor(
-                Id: 1,
-                Name: "igi2",
-                Description: string.Empty,
-                Tag: string.Empty,
-                NextMissionId: MissionDescriptor.NextMissionUndefined,
-                MissionDirectory: levelDirectory,
-                CommonPackDirectory: packs[0].Directory,
-                LevelPackDirectory: levelDirectory,
-                CommonPackName: packs[0].Name,
-                LevelPackName: packs[^1].Name,
-                BriefingSprite: string.Empty),
-            packs[0],
-            packs[^1],
-            []);
-
-        return Igi2DrawableScene.Build(mission, level.Root, level.Table, level.HasLightmaps ? level.Lightmaps : null, packs);
-    }
+    private static Igi2DrawableSceneResult Build(Igi2Level level) => Igi2LevelScene.Build(level).Built;
 }
