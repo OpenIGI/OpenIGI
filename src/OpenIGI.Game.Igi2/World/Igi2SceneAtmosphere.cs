@@ -80,13 +80,26 @@ public readonly record struct Igi2SceneAtmosphere(
     /// <summary>The task type each of its keyframes is declared as.</summary>
     public const string KeyframeTypeName = "GlobalLightKeyframe";
 
-    /// <summary>What the authored density is multiplied by on its way to the renderer.</summary>
+    /// <summary>What the authored density is multiplied by on its way to a per-metre extinction.</summary>
     /// <remarks>
-    /// <c>GlobalLightQTask_DrawCallback</c> writes <c>vObjectFogDensity * 0.0005</c> and nothing else
-    /// scales it afterwards, so the authored 0.85 of location1/level1 becomes 4.25e-4 — a haze that
-    /// takes about two and a third kilometres to halve what it is looking through.
+    /// <para>
+    /// <c>GlobalLightQTask_DrawCallback</c> writes <c>vObjectFogDensity * 0.0005</c>, and that number is
+    /// per DIRECT3D UNIT, not per metre. <c>Direct3D_New</c> (<c>igi2ed 0x55AE63</c>) sets
+    /// <c>Direct3D_vScale</c> to <c>0.001</c> — a Direct3D unit is a thousand engine units, about a
+    /// quarter of a metre — and every distance the fog is evaluated over is scaled by it:
+    /// <c>Direct3DRender_SetFogParameters</c> (<c>0x5681E0</c>) multiplies an object's view depth by
+    /// <c>vScale</c> before the density, and <c>TerrainRender_SetVertexShaderConstants</c>
+    /// (<c>0x667D20</c>) builds the matrix <c>TerrainRender_CalculateRenderVertex</c> (<c>0x66A740</c>)
+    /// takes its depth from with <c>vScale</c> on its diagonal. A metre is 4.096 of those units, so the
+    /// per-metre extinction is <c>0.0005 × 4.096</c>.
+    /// </para>
+    /// <para>
+    /// location1/level1's authored 0.85 is therefore 1.74e-3 per metre — a haze that halves what it is
+    /// looking through every four hundred metres — and not the 4.25e-4 this constant first read, which
+    /// left every tank, tree and hill a quarter as hazed as the original draws them.
+    /// </para>
     /// </remarks>
-    public const float AuthoredDensityScale = 0.0005f;
+    public const float AuthoredDensityScale = 0.0005f * (float)(Game.World.WorldScene.UnitsPerMetre / 1000.0);
 
     /// <summary>
     /// The highest <c>Time</c> treated as an hour of the day rather than as an unused slot.
