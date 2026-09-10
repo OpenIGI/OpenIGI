@@ -40,6 +40,25 @@ public sealed class LoadedPack
     /// </remarks>
     public const string AnimationSetRoot = "LOCAL:common/";
 
+    /// <summary>The name a set carries when the pack's own models archive is where it lives.</summary>
+    /// <remarks>
+    /// <para>
+    /// I.G.I. 2 ships no loose <c>.iff</c> anywhere and has no <c>common/anims/</c> directory at all: its
+    /// bone animations are entries in the same <c>common/models/&lt;pack&gt;.res</c> the meshes come from,
+    /// named <c>LOCAL:anims/&lt;set&gt;.iff</c>, and the archive registers them under exactly that name.
+    /// <c>common.res</c> holds 254 of them beside its 466 models and <c>new.res</c> holds 990 and nothing
+    /// else — the two counts the pack's own <c>BANM</c> list names.
+    /// </para>
+    /// <para>
+    /// <b>The two games also split them differently.</b> Project I.G.I. ships one file per skeleton with
+    /// every clip inside it, which is why its player is built from <c>000.iff</c> alone; the sequel ships
+    /// one file per clip — <c>005_02.iff</c>, <c>005_03.iff</c> — and no whole-skeleton file exists to
+    /// read. Assembling a skeleton's clips into one set is character work and belongs with it; what
+    /// happens here is only that the clips are found and parsed instead of being reported absent.
+    /// </para>
+    /// </remarks>
+    public const string PackAnimationSetRoot = "LOCAL:";
+
     private readonly Dictionary<string, MefModel> _models;
     private HashSet<string>? _registered;
     private Dictionary<string, MtpInstance>? _byModelName;
@@ -116,37 +135,19 @@ public sealed class LoadedPack
         // The animation sets come first because Pack_Bind (0x4CF080) loads them first, before either
         // archive binds - and from the shared common root, not the pack's own directory.
         List<BoneAnimationSet> sets = [];
-        int absentSets = 0;
+        List<string> elsewhere = [];
+        int unreadableSets = 0;
         foreach (string setName in pack.AnimationSetNames)
         {
-            string path = $"{AnimationSetRoot}anims/{setName}.iff";
-            if (!resources.TryLoad(path, out ReadOnlyMemory<byte> bytes))
+            switch (ReadAnimationSet(resources, $"{AnimationSetRoot}anims/{setName}.iff", sets, log))
             {
-                absentSets++;
-                continue;
+                case AnimationSetSource.Absent:
+                    elsewhere.Add(setName);
+                    break;
+                case AnimationSetSource.Unreadable:
+                    unreadableSets++;
+                    break;
             }
-
-            try
-            {
-                sets.Add(BoneAnimationSet.Read(bytes));
-            }
-            catch (IffFormatException ex)
-            {
-                log.Warning(LogCategory, $"Animation set '{path}' did not parse: {ex.Message}");
-            }
-        }
-
-        // Counted, not listed. A pack names hundreds of sets, and a title that keeps them somewhere
-        // else is missing all of them at once -- I.G.I. 2 ships no loose .iff anywhere, its animation
-        // data being inside the packs -- so a line each buried every other diagnostic in the run under
-        // a thousand identical ones. A set that IS there and will not parse still gets its own line,
-        // because that is one file being wrong rather than a title keeping them elsewhere.
-        if (absentSets > 0)
-        {
-            log.Warning(
-                LogCategory,
-                $"{absentSets} of {pack.AnimationSetNames.Count} animation set(s) named by '{name}' are not under "
-                    + $"{AnimationSetRoot}anims/; this title keeps them elsewhere.");
         }
 
         Dictionary<string, MefModel> models = new(StringComparer.OrdinalIgnoreCase);
@@ -160,7 +161,8 @@ public sealed class LoadedPack
                 // An animation in the models archive is not a broken model. The sequel keeps its bone
                 // animations there rather than beside the pack as loose .iff files, so the archive holds
                 // both forms -- and reading every one of them as a model reported several hundred
-                // perfectly good animations as malformed, once per file.
+                // perfectly good animations as malformed, once per file. They are read below, by name,
+                // now that the archive has registered them.
                 if (IsAnimation(entry.Data))
                 {
                     animations++;
@@ -188,12 +190,57 @@ public sealed class LoadedPack
             }
         }
 
-        if (animations > 0 || shadows > 0)
+        // The second place a set can be, tried only for the ones the shared root did not answer for.
+        // It has to come after the archive, because the archive is what registers them.
+        int absentSets = 0;
+        foreach (string setName in elsewhere)
+        {
+            switch (ReadAnimationSet(resources, $"{PackAnimationSetRoot}anims/{setName}.iff", sets, log))
+            {
+                case AnimationSetSource.Absent:
+                    absentSets++;
+                    break;
+                case AnimationSetSource.Unreadable:
+                    unreadableSets++;
+                    break;
+            }
+        }
+
+        // Found, and in a shape this reader does not read yet. Counted rather than listed for the same
+        // reason the absent ones are: a title whose animations are all in the other form is a thousand
+        // identical lines, and the interesting number is which of the two it is.
+        if (unreadableSets > 0)
+        {
+            log.Warning(
+                LogCategory,
+                $"{unreadableSets} of {pack.AnimationSetNames.Count} animation set(s) named by '{name}' are "
+                    + "ILFF 'MINA' forms rather than IFF 'FORM' ones, which the set reader does not take yet.");
+        }
+
+        if (shadows > 0)
         {
             log.Information(
                 LogCategory,
-                $"'{name}' holds {animations} bone animation(s) and {shadows} shadow volume(s) beside its "
-                    + "models; neither is a render model.");
+                $"'{name}' holds {shadows} shadow volume(s) beside its models, which are not render models.");
+        }
+
+        if (sets.Count > 0)
+        {
+            log.Information(
+                LogCategory,
+                $"'{name}' bound {sets.Count} of {pack.AnimationSetNames.Count} animation set(s).");
+        }
+
+        // Counted, not listed. A pack names hundreds of sets, and a title that keeps them somewhere this
+        // does not know about is missing all of them at once, so a line each would bury every other
+        // diagnostic in the run. A set that IS there and will not parse still gets its own line, because
+        // that is one file being wrong rather than a title keeping them elsewhere.
+        if (absentSets > 0)
+        {
+            log.Warning(
+                LogCategory,
+                $"{absentSets} of {pack.AnimationSetNames.Count} animation set(s) named by '{name}' are in "
+                    + $"neither {AnimationSetRoot}anims/ nor its own models archive.");
         }
 
         List<string> missing = [];
@@ -362,6 +409,50 @@ public sealed class LoadedPack
     /// By the container's form type, which is the only thing that distinguishes them: both are ILFF and
     /// both are named <c>.iff</c> in the archive. <c>MINA</c> is <c>ANIM</c> as the tag is stored.
     /// </remarks>
+    /// <summary>What asking one place for one animation set produced.</summary>
+    private enum AnimationSetSource
+    {
+        /// <summary>Nothing is registered under that name.</summary>
+        Absent,
+
+        /// <summary>It was there and it parsed.</summary>
+        Read,
+
+        /// <summary>It was there and this reader cannot take its container.</summary>
+        Unreadable,
+    }
+
+    // One named set, from wherever it was asked for. The sequel's sets are ILFF containers of a MINA
+    // form and the first game's are IFF FORMs; only the second parses here, so the first is separated
+    // out rather than handed to a reader that will report every one of them as corrupt.
+    private static AnimationSetSource ReadAnimationSet(
+        ResourceRegistry resources,
+        string path,
+        List<BoneAnimationSet> sets,
+        IIgiLogger log)
+    {
+        if (!resources.TryLoad(path, out ReadOnlyMemory<byte> bytes))
+        {
+            return AnimationSetSource.Absent;
+        }
+
+        if (IsAnimation(bytes))
+        {
+            return AnimationSetSource.Unreadable;
+        }
+
+        try
+        {
+            sets.Add(BoneAnimationSet.Read(bytes));
+            return AnimationSetSource.Read;
+        }
+        catch (IffFormatException ex)
+        {
+            log.Warning(LogCategory, $"Animation set '{path}' did not parse: {ex.Message}");
+            return AnimationSetSource.Unreadable;
+        }
+    }
+
     private static bool IsAnimation(ReadOnlyMemory<byte> data)
     {
         try
