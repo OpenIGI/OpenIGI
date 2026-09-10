@@ -82,8 +82,16 @@ internal sealed partial class GameHost
         // as long as they live; letting it go would pull the packs out from under them.
         _backdrop = preview;
 
+        // Both factories, and in the mission path's own order. A backdrop that asked only for the second
+        // gave a title whose ground it does not describe no ground at all -- and because a promoted
+        // backdrop IS the mission, keeping its terrain rather than rebuilding it, the mission then had
+        // none either. That is why I.G.I. 2 drew its ground from -mission and not from the menu: the two
+        // routes were asking different questions of the same title.
         _terrain?.Dispose();
-        _terrain = preview.TerrainSurface is { } surface
+        _terrain = _presentation.CreateGround(
+            new GroundPresentationRequest(_device, preview.LevelRoot, preview.Resources, _logger));
+
+        _terrain ??= preview.TerrainSurface is { } surface
             ? _presentation.CreateTerrain(new TerrainPresentationRequest(
                 _device, surface, _logger, _detailMaps, preview.GroundDetail))
             : null;

@@ -31,88 +31,6 @@ internal sealed partial class GameHost
 {
     /// <summary>Test-only outro forcing writes re-applied on every logic tick.</summary>
     private List<(string Name, string Value)> _testOutroTickWrites = [];
-
-    /// <summary>
-    /// Handles the retail transient-object cleanup native without giving it ownership of cinematic state.
-    /// </summary>
-    /// <remarks>
-    /// <c>IGI.EXE!Game_CutsceneDelete</c> walks the mine/grenade/missile registry, not the QVM
-    /// <c>CutScene</c> registry.  Mission 3 calls it while scene 700 is starting, so completing
-    /// scene 700 here would immediately satisfy the authored mission-complete expression.
-    /// </remarks>
-    internal static QvmValue? TryHandleCutsceneCleanupNative(string name, Action clearTransientProjectiles)
-    {
-        ArgumentNullException.ThrowIfNull(clearTransientProjectiles);
-        if (!string.Equals(name, "Game_CutsceneDelete", StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        clearTransientProjectiles();
-        return QvmValue.FromInt32(1);
-    }
-
-    private void ClearTransientCutsceneObjects()
-    {
-        _player?.Grenades.Clear();
-        _player?.Missiles.Clear();
-        _vehicleMissiles.Clear();
-        _player?.M203.Clear();
-    }
-
-    /// <summary>Advances missiles fired by authored vehicles against the player's own body.</summary>
-    private void TickVehicleMissiles()
-    {
-        if (_player is not { } player)
-        {
-            return;
-        }
-
-        bool PlayerProbe(Vector3d from, Vector3d to, out HumanHit hit)
-        {
-            hit = default;
-            if (_playerHealth.IsDead)
-            {
-                return false;
-            }
-
-            if (_soldiers?.TryHitPlayerBody(from, to, player.Body.Position, player.Body.Yaw, out hit) == true)
-            {
-                return true;
-            }
-
-            Vector3f facing = new(-MathF.Sin(player.Body.Yaw), MathF.Cos(player.Body.Yaw), 0f);
-            return HumanHitTest.TryCast(from, to, player.Body.Position, facing, pose: null, out hit);
-        }
-
-        MissileWorldTraceCast? walls = _worldTrace is { } trace
-            ? (LiveMissile missile, Vector3d from, Vector3d to, out WorldTraceHit hit) =>
-            {
-                bool found = trace(
-                    new WorldTraceRequest(
-                        from,
-                        to,
-                        WorldTraceMask.World,
-                        IgnoredOwner: missile.CollisionOwner),
-                    out hit);
-                return found;
-            }
-            : _effectWalls is { } effectWalls
-                ? (LiveMissile _, Vector3d from, Vector3d to, out WorldTraceHit hit) =>
-                {
-                    bool found = effectWalls(from, to, out WorldRayHit rayHit);
-                    hit = found
-                        ? WorldTraceHit.FromRayHit(
-                            new WorldTraceRequest(from, to, WorldTraceMask.World),
-                            rayHit,
-                            WorldTraceHitKind.StaticObject)
-                        : default;
-                    return found;
-                }
-                : null;
-        _vehicleMissiles.TickWithMissileContext(walls, PlayerProbe);
-    }
-
     private void StartMission(int id)
     {
         if (!_missions.TryGet(id, out MissionDescriptor? chosen))
@@ -347,12 +265,6 @@ internal sealed partial class GameHost
             _loop.Variables,
             (name, arguments) =>
             {
-                QvmValue? cleanup = TryHandleCutsceneCleanupNative(name, ClearTransientCutsceneObjects);
-                if (cleanup.HasValue)
-                {
-                    return cleanup;
-                }
-
                 if (name == GameMusicNatives.EnableNative)
                 {
                     if (_music is not null)
@@ -380,6 +292,12 @@ internal sealed partial class GameHost
                         context.IsEnabled = arguments.GetBoolean(0);
                     }
 
+                    return QvmValue.FromInt32(1);
+                }
+
+                if (name == "Game_CutsceneDelete")
+                {
+                    _cutscenes?.DeleteCutscenes();
                     return QvmValue.FromInt32(1);
                 }
 
@@ -551,8 +469,8 @@ internal sealed partial class GameHost
         }
         else
         {
-WorldBuildResult built = _worldBuilder.Build(
-                new WorldBuildRequest(loaded, levelRoot, _resources, _magic, _logger, _vehiclePhysics));
+            WorldBuildResult built = _worldBuilder.Build(
+                new WorldBuildRequest(loaded, levelRoot, _resources, _magic, _logger));
             scene = built.Scene;
             _scene = scene;
 
@@ -586,15 +504,6 @@ WorldBuildResult built = _worldBuilder.Build(
         {
             _cutscenes.EnableTerminalTerrainLanding(getawayBell);
         }
-        // Mission 5's extraction Bell likewise has a one-shot approach. At AnimTask 3333's terminal
-        // gate the retail QVM replaces Heli 3322 with parked Heli 1234, whose authored pose is on the
-        // helipad. Use that position for touchdown, then stop the residual rigid-body motion.
-        if (id == 5
-            && levelRoot.Tree.FromId(3322) is { } extractionBell
-            && levelRoot.Tree.FromId(1234) is { } parkedBell)
-        {
-            _cutscenes.EnableTerminalTerrainLanding(extractionBell, parkedBell);
-        }
 
         // Every mission: a car's suspension reads this for the surface under each wheel, and much
         // of what a vehicle stands on is placed geometry -- Mission 1's outro truck starts on a
@@ -612,9 +521,7 @@ WorldBuildResult built = _worldBuilder.Build(
         _destructibles = DestructibleObjectRegistry.Build(
             levelRoot,
             scene.Placements,
-            _loop.Variables,
-            _vehiclePhysics);
-        _cutscenes.Destructibles = _destructibles;
+            _loop.Variables);
         world.Destructibles = _destructibles;
         solids.Destructibles = _destructibles;
         world.Cutscenes = _cutscenes;
@@ -666,9 +573,6 @@ WorldBuildResult built = _worldBuilder.Build(
 
         EndStage("the soldiers' meshes and textures");
         _soldiers.Cutscenes = _cutscenes;
-
-        // A round that meets a body bleeds before it does anything else (0x45F94A), whoever fired it.
-        _soldiers.BloodSpray = (owner, at, direction) => SpawnRetailBlood(owner, at, direction);
         _cutscenes?.SetTargetPoseResolver(_soldiers.CutscenePose);
 
         // Interactions are level systems, not AI systems: build them even when a mission has no usable
@@ -677,7 +581,6 @@ WorldBuildResult built = _worldBuilder.Build(
         _elevators = ElevatorRegistry.Build(levelRoot, _loop.Variables);
         _interactions = WorldInteractionRegistry.Build(levelRoot, loaded, _doors, _loop.Variables, _elevators);
         _genericPickups = GenericPickupRegistry.Build(levelRoot, _loop.Variables);
-        world.Interactions = _interactions;
         world.GenericPickups = _genericPickups;
         solids.GenericPickups = _genericPickups;
         _soldiers.SetAiTaskActivator(id => _interactions?.ActivateFromAi(id));
@@ -713,10 +616,6 @@ WorldBuildResult built = _worldBuilder.Build(
         // Each AI weapon owns its automatic loop and updates its world position every tick. The round
         // callback handles ballistics only; without this parallel path AI shots were completely silent.
         _soldiers.SetWeaponSound(TickSoldierWeaponSound);
-
-        // Close-combat strikes: punch or strike landing on the player within melee range (issue #235).
-        _soldiers.SetMeleeStrikeSink(ResolvePlayerMeleeStrike);
-        _soldiers.SetAnimationTriggers(_animationTriggers);
 
         // Footsteps: animation event 1010, picked from the six walk sounds of whatever is underfoot.
         _soldiers.SetFootstepSound(step => PlayFootstep(step));
@@ -757,11 +656,6 @@ WorldBuildResult built = _worldBuilder.Build(
             "Ai",
             $"{_securityCameras.Cameras.Count} security camera(s), "
                 + $"{_securityCameras.ControlCount} camera control(s) placed.");
-        _rotatingObjects = RotatingObjectRegistry.Build(levelRoot, scene.Placements, _loop.Variables, _magic);
-        world.RotatingObjects = _rotatingObjects;
-        _logger.Information(
-            "World",
-            $"{_rotatingObjects.Count} rotating object(s) registered.");
 
         // The level's nav graphs. A level ships ONE PER AIGraph TASK, named by that task's id (ai.md 1.1),
         // and every HumanAI names the one it walks through its own "Graph ID" parameter (ai.md 7.6).
@@ -816,11 +710,6 @@ WorldBuildResult built = _worldBuilder.Build(
                     $"Nav graphs: {graphs.Count} — " +
                     string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n")));
 
-                // CarAI is a separate retail task family from HumanAI. Give the runtime the same
-                // graph corpus the soldier system receives so alarm-gated APCs and objective-gated
-                // limousines follow their authored PatrolPath routes instead of remaining parked.
-                _cutscenes?.ConfigureCarAi(graphs);
-
                 // The difficulty every guard reads its combat row at. Faithfully the ACTIVE PLAYER PROFILE's
                 // (sub_406F70 takes it from sub_406220()'s first field), so the difficulty the player picked
                 // in the menu actually reaches the AI -- which it did not while this was a hardcoded default,
@@ -841,9 +730,10 @@ WorldBuildResult built = _worldBuilder.Build(
                 // 0x4CDB20 does (both of the sight ray's passes send the -1 mask whose sign bit turns
                 // the terrain arm on -- player.md 7.6). Objects alone let guards see and shoot through
                 // hills. Nearest contact wins.
-                // Portal faces describe openings, not cover. Physical walls, terrain and the actual
-                // collision mesh of a closed door still participate in the AI sight cast.
-                WorldRayCast levelCast = SoldierRenderer.AiSightCast(worldTrace);
+                // Movement still skips portal faces (walk through a doorway). Sight must not:
+                // those faces are the room/window openings, and skipping them lets a guard see
+                // through a closed door and into the room on the other side.
+                WorldRayCast levelCast = WorldTrace.AsRayCast(worldTrace, tracePortals: true);
 
                 // The level's sun has to be known BEFORE the bakes below, not after: the Dirlight was read
                 // some hundreds of lines further down (the `if (!promoted)` block), so every probe field and
@@ -1254,28 +1144,6 @@ WorldBuildResult built = _worldBuilder.Build(
                         if (_worldMaterials is { } table)
                         {
                             _player.Marks.TryAdd(worldHit, table);
-
-                            // A guard's stray round runs the struck material's own GunShotEffect just
-                            // as the player's does -- 0x4083C0 never asked who fired.
-                            if (RenderCVars.ImpactEffects.Value
-                                && table.TryGet(worldHit.Material, out GameMaterial? struckRow)
-                                && struckRow is not null
-                                && struckRow.RecordsImpacts)
-                            {
-                                Vector3d shotLine = to - from;
-                                double shotLength = shotLine.Length;
-                                _impactEffects.SpawnSurfaceImpact(
-                                    worldHit.Position,
-                                    worldHit.Normal,
-                                    shotLength > 1e-6
-                                        ? new Vector3f(
-                                            (float)(shotLine.X / shotLength),
-                                            (float)(shotLine.Y / shotLength),
-                                            (float)(shotLine.Z / shotLength))
-                                        : default,
-                                    struckRow.Entry,
-                                    struckHuman: false);
-                            }
                         }
 
                         PlayBulletImpactSound(
@@ -1288,8 +1156,7 @@ WorldBuildResult built = _worldBuilder.Build(
                         DamageAlarmSpeakers(
                             worldHit.Position,
                             owner: blocker.Owner,
-                            placement: blocker.Placement,
-                            destructibleDamage: weapon.DamageFactor);
+                            placement: blocker.Placement);
 
                         // A guard's round kicks the same burst a player's does -- misses landing
                         // around you are half of what sells incoming fire.
@@ -1360,21 +1227,6 @@ WorldBuildResult built = _worldBuilder.Build(
                     {
                         return;
                     }
-
-                    // 0x45F94A throws the blood before it looks at the damage at all, so the player
-                    // bleeds on contact -- the mist in front of the eye and the splash on whatever
-                    // stood behind. The systems belong to the player's own body.
-                    Vector3d wound = to - from;
-                    double woundLength = wound.Length;
-                    SpawnRetailBlood(
-                        _playerHealth,
-                        hit.Position,
-                        woundLength > 1e-6
-                            ? new Vector3f(
-                                (float)(wound.X / woundLength),
-                                (float)(wound.Y / woundLength),
-                                (float)(wound.Z / woundLength))
-                            : default);
 
                     _playerHealth.Apply(hit.Zone, weapon.DamageFactor);
                     PlayBulletImpactSound(hit.Position, struckHuman: true, surfaceMaterial: 0);
@@ -1447,7 +1299,7 @@ WorldBuildResult built = _worldBuilder.Build(
                         _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal,
                         (int)AiDifficulty.Easy,
                         (int)AiDifficulty.Hard);
-                WorldRayCast levelCast = SoldierRenderer.AiSightCast(worldTrace);
+                WorldRayCast levelCast = WorldTrace.AsRayCast(worldTrace, tracePortals: true);
                 _soldiers.Animate(
                     graphs, levelCast, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty,
                     _loop.Variables);
@@ -1482,32 +1334,11 @@ WorldBuildResult built = _worldBuilder.Build(
                     _device, TerrainSurface.Build(usable, levelRoot, _logger), _logger, _detailMaps, null))
                 : null;
 
-            // The things standing in the world rather than being it: planted foliage, and water. Both
-            // are handed the mission's model lookup, which is the one thing the ground and the sky do
-            // not need -- a forest plants instances of a model, and the model lives in a pack rather
-            // than in the level's own files.
-            ScenePresentationRequest adornments = new(
-                _device,
-                levelRoot,
-                _resources,
-                name => loaded.TryGetModel(name, out MefModel? model) ? model : null,
-                _logger);
-
-            _forest?.Dispose();
-            _forest = _presentation.CreateForest(adornments);
-
-            _water?.Dispose();
-            _water = _presentation.CreateWater(adornments);
-
             // The sky is script data on the level's task tree; its fog colour is also what the frame
             // clears to, so the horizon meets sky-coloured backing rather than black.
             _sky?.Dispose();
-_sky = _presentation.CreateSky(
+            _sky = _presentation.CreateSky(
                 new SkyPresentationRequest(_device, levelRoot, _fileSystem, _resources, FarPlane, _logger));
-
-            // The air the level is drawn through and the flat light on its models, both off the same
-            // GlobalLight keyframe -- see GlobalLightSettings for why that task and not FlatSky.
-            _globalLight = GlobalLightSettings.Read(levelRoot);
             _shadowPass = new ShadowCasterPass(_device);
 
             if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings readSun))
@@ -1606,37 +1437,8 @@ _sky = _presentation.CreateSky(
                 ? WorldTrace.Nearest(liveSolids.Tracer(), TerrainRayTrace.Caster(liveTerrain))
                 : liveSolids.Tracer()
             : null;
-
-        // What the impact effects trace against, built here rather than beside the security cameras
-        // because the terrain is only known now: a blood droplet lands on the ground at least as often
-        // as it hits a wall, and the splash behind a body needs whatever is three metres past it.
-        //
-        // The terrain leaf reports no material row, so a hit on open ground comes back as Air and marks
-        // nothing -- which would leave the ground clean of both bullet holes and blood, where retail's
-        // Ground row names hole_concrete1.tex. The level's own terrain row is substituted, which is the
-        // same row the footsteps and the player's material lookup read.
-        _effectWalls = _worldTrace is { } effectTrace
-            ? (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
-            {
-                if (!effectTrace(
-                        new WorldTraceRequest(origin, end, WorldTraceMask.World), out WorldTraceHit rich))
-                {
-                    hit = default;
-                    return false;
-                }
-
-                hit = rich.RayHit;
-                if (rich.Kind == WorldTraceHitKind.Terrain && hit.Material == 0 && _effectTerrainRow is int ground)
-                {
-                    hit = hit with { Material = ground };
-                }
-
-                return true;
-            }
-            : null;
         _player = null;
         _playerMode = false;
-        _pendingGenericTbaExplosions.Clear();
 
         // A fresh mission is a fresh life: the last one's death, its red wash and its death camera do not
         // carry over.
@@ -1684,7 +1486,6 @@ _sky = _presentation.CreateSky(
             candidate.GrenadeTrace = _playerTerrain is { } grenadeTraceGround
                 ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeTraceGround))
                 : solids.Tracer();
-            candidate.MissileTrace = candidate.GrenadeTrace;
 
             // The ladders the level attaches to its buildings, so the player can climb them (E to mount,
             // W/S up and down, E held to slide).
@@ -1763,7 +1564,6 @@ _sky = _presentation.CreateSky(
                     ? FootstepSounds.TerrainGameMaterialIndex(terrainData.Materials)
                     : null;
                 candidate.TerrainGameMaterialIndex = terrainRow;
-                _effectTerrainRow = terrainRow;
                 if (_soldiers is not null)
                 {
                     _soldiers.TerrainGameMaterialIndex = terrainRow;
@@ -1800,33 +1600,6 @@ _sky = _presentation.CreateSky(
             }
 
             EndStage("the player's animation sets, walls, ladders and the weapon tables");
-
-            if (id == 6
-                && levelRoot.Tree.FromId(800) is { } alarmApc
-                && _cutscenes is { } vehicleRuntime
-                && weaponRoster.TryGetByScriptId("WEAPON_ID_APC", out WeaponType apcWeapon))
-            {
-                vehicleRuntime.ConfigureVehicleCombat(alarmApc, apcWeapon);
-                vehicleRuntime.VehicleCombatTarget = () => !_playerHealth.IsDead ? candidate.EyeUnits : null;
-                vehicleRuntime.VehicleCombatLineOfSight = (owner, from, to) =>
-                    _worldTrace is null
-                    || !_worldTrace(
-                        new WorldTraceRequest(from, to, WorldTraceMask.World, IgnoredOwner: owner), out _);
-                vehicleRuntime.VehicleCombatShotFired = shot =>
-                {
-                    if (_vehicleMissiles.Spawn(
-                        shot.Origin,
-                        shot.Target,
-                        shot.MissileType,
-                        shot.MuzzleVelocityMetresPerSecond,
-                        shot.Direction,
-                        shot.ModelName,
-                        collisionOwner: shot.Owner))
-                    {
-                        _sounds?.PlayDefinition("rpg_launch_1", shot.Origin, priority: 250);
-                    }
-                };
-            }
 
             // The guards' weapons, which have to wait for the roster: a soldier's gun is an authored
             // Gun child task naming a WEAPON_ID_*, and only the table knows which model that draws.
@@ -1926,9 +1699,6 @@ _sky = _presentation.CreateSky(
             _tracers = null;
             _impactParticles?.Dispose();
             _impactParticles = null;
-            _retailImpacts?.Dispose();
-            _retailImpacts = null;
-            _impactEffects.Clear();
             _explosions?.Dispose();
             _explosions = null;
             _missileSmoke?.Dispose();
@@ -1989,28 +1759,6 @@ _sky = _presentation.CreateSky(
                 if (!_impactParticles.Load(loaded))
                 {
                     _logger.Warning("Impact", "The retail IGI1 explosion model '1009_01_1' was not bound; using the sprite fallback.");
-                }
-
-                // The original's own impact effects: concrete1.spr dust, the material's own chip model,
-                // and blood1/blood2 for a body. The runtime keeps the motion; this only draws it.
-                _retailImpacts?.Dispose();
-                _retailImpacts = new RetailImpactRenderer(_device, _resources, _fileSystem);
-                int impactModels = _retailImpacts.Load(loaded);
-                _impactEffects.Clear();
-                _impactEffects.SetMistFrameCount(_retailImpacts.MistFrameCount);
-                if (!_retailImpacts.SpritesAvailable)
-                {
-                    _logger.Warning(
-                        "Impact",
-                        "concrete1.spr, blood1.spr or blood2.spr did not resolve; the original's "
-                            + "impact dust and blood will not draw.");
-                }
-                else
-                {
-                    _logger.Debug(
-                        "Impact",
-                        $"Retail impact effects bound: {impactModels} chip model(s), "
-                            + $"{_retailImpacts.MistFrameCount} blood frame(s).");
                 }
 
                 // The retail 1009_01_1 fireball, shared by every blast in the level. Loads its real
@@ -2123,6 +1871,27 @@ _sky = _presentation.CreateSky(
             }
         }
 
+        // The things standing in the world rather than being it: planted foliage, and water. Both are
+        // handed the mission's model lookup, which is the one thing the ground and the sky do not need --
+        // a forest plants instances of a model, and the model lives in a pack rather than in the level's
+        // own files.
+        //
+        // Outside the block above, which exists to keep what the backdrop already built. The backdrop
+        // builds the ground and the sky and stops there, so a promoted mission that skipped these would
+        // be a level with no trees and no water in it -- which is what pressing Play produced while this
+        // sat with the rest.
+        ScenePresentationRequest adornments = new(
+            _device,
+            levelRoot,
+            _resources,
+            name => loaded.TryGetModel(name, out MefModel? model) ? model : null,
+            _logger);
+
+        _forest?.Dispose();
+        _forest = _presentation.CreateForest(adornments);
+
+        _water?.Dispose();
+        _water = _presentation.CreateWater(adornments);
 
         // The menus are done; without dropping the renderer the last screen would keep drawing over
         // the world.
@@ -2368,10 +2137,6 @@ _sky = _presentation.CreateSky(
 
     private void ReleasePlayedMission()
     {
-        // Vehicle missiles own task references from the outgoing level. Drop them before any old
-        // collision/render state is torn down so a restart cannot carry a projectile into the next run.
-        _vehicleMissiles.Clear();
-
         // First, because both are worker threads tracing the level that is going and they hold the whole
         // of what they trace: the lightmap bake's texel maps, triangles and BVH run to a few hundred
         // megabytes, and nothing here released them. A bake was only ever cancelled by the NEXT one
@@ -2401,7 +2166,6 @@ _sky = _presentation.CreateSky(
         _missionObjectives = null;
         _cutscenes = null;
         _securityCameras = null;
-        _rotatingObjects = null;
         _cameraBeepVoices.Clear();
         _cameraMoveVoices.Clear();
         StopCutsceneSounds();
@@ -2435,7 +2199,6 @@ _sky = _presentation.CreateSky(
         _marks?.Dispose();
         _tracers?.Dispose();
         _impactParticles?.Dispose();
-        _retailImpacts?.Dispose();
         _explosions?.Dispose();
         _missileSmoke?.Dispose();
         _cameraStatusLights?.Dispose();
@@ -2462,8 +2225,6 @@ _sky = _presentation.CreateSky(
         _marks = null;
         _tracers = null;
         _impactParticles = null;
-        _retailImpacts = null;
-        _impactEffects.Clear();
         _explosions = null;
         _missileSmoke = null;
         _cameraStatusLights = null;
@@ -2472,10 +2233,8 @@ _sky = _presentation.CreateSky(
         _arms = null;
         _player = null;
         _playerMode = false;
-        _pendingGenericTbaExplosions.Clear();
         _scene = null;
         _playerTerrain = null;
-        _effectWalls = null;
         _worldSolids = null;
         _destructibles = null;
         _worldMaterials = null;
@@ -2841,51 +2600,6 @@ _sky = _presentation.CreateSky(
         if (shock.IsLethal)
         {
             BeginPlayerDeath(fence.Anchor, ElectricFenceContact.Zone, bone: -1, WeaponCategory.Gun);
-        }
-    }
-
-    /// <summary>Applies damage and presentation for an enemy close-combat strike (issue #235).</summary>
-    private void ResolvePlayerMeleeStrike(Vector3d attackerPosition, float damage)
-    {
-        if (_player is null || _playerDead || _playerHealth.IsDead || damage <= 0f)
-        {
-            return;
-        }
-
-        _playerHealth.Apply(MeleeStrike.Zone, damage);
-
-        // The retail handler transforms the incoming hit into camera space before writing the four
-        // corner alphas (0x412440). Strike incoming direction points from attacker toward the player.
-        Vector3d strikeVector = _player.Body.Position - attackerPosition;
-        Vector3f incoming = new(
-            (float)strikeVector.X,
-            (float)strikeVector.Y,
-            (float)strikeVector.Z);
-        Vector3f viewIncoming = _player.Camera.Orientation.Transposed().Transform(incoming);
-        _damageFlash.Hit(viewIncoming, _soundRandom.NextSingle());
-
-        // Retail 0x412CE0 / 0x412E60 plays punched_01 or punched_02 (50/50) flat on the listener
-        // when struck by melee.
-        string punchSound = _soundRandom.NextBounded(2) == 0 ? "punched_01" : "punched_02";
-        _sounds?.PlayDefinition(punchSound, priority: 220);
-
-        if (!_playerHealth.IsDead && _loop.Clock.TickCount >= _playerHitQuietUntil)
-        {
-            _playerHitQuietUntil = _loop.Clock.TickCount + HumanVariantSound.HitCooldownTicks(_soundRandom);
-            PlayHitSound(HumanVariantSound.PlayerHitPrefix, HumanVariantSound.PlayerHitVariants, null);
-        }
-
-        _logger.Information(
-            "AI",
-            $"An enemy close-combat strike hit the player ({damage:F2} damage factor, "
-                + $"{_playerHealth.RemainingFraction:P0} health left).");
-
-        if (_playerHealth.IsDead)
-        {
-            BeginPlayerDeath(attackerPosition, MeleeStrike.Zone, bone: -1, WeaponCategory.Knife);
-            _logger.Information(
-                "AI",
-                $"The player was killed by an enemy close-combat strike ({_playerHealth.RemainingFraction:P0} left).");
         }
     }
 
