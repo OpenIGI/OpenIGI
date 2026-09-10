@@ -313,6 +313,47 @@ public interface IGraphicsDevice : IDisposable
     /// <remarks>So that a renderer which must draw untinted — the sky — can put back what it found.</remarks>
     Vector3f ModelAmbient { get; }
 
+    /// <summary>Sets the fixed-function sun a title's unlightmapped objects are lit by, for every draw until it is set again.</summary>
+    /// <param name="ambient">The flat light every such vertex receives, linear.</param>
+    /// <param name="colour">The directional light's diffuse colour, linear.</param>
+    /// <remarks>
+    /// <para>
+    /// The colours are a LEVEL'S CONSTANTS, like the fog: I.G.I. 2 reads them off its <c>Dirlight</c> and
+    /// <c>GlobalLight</c> when the mission loads (<c>DirlightQTask_DrawCallback</c>, <c>igi2ed 0x657680</c>;
+    /// <c>GlobalLightQTask_DrawCallback</c>, <c>0x6534E0</c>) and the backend is free to bake them in.
+    /// The direction is not, because it is applied in each object's own space: see
+    /// <see cref="SetVertexSun"/>, which is what switches the lighting on for a run of draws at all.
+    /// </para>
+    /// <para>
+    /// A title that has no such light never calls this and both stay black, which lights nothing.
+    /// </para>
+    /// </remarks>
+    void SetSceneSun(Vector3f ambient, Vector3f colour)
+    {
+        _ = ambient;
+        _ = colour;
+    }
+
+    /// <summary>Lights the following draws' vertices with the scene sun, from this direction; zero switches it off.</summary>
+    /// <param name="towardsSun">
+    /// The unit vector towards the sun in the MODEL space of the draws that follow, or zero for draws that
+    /// take no vertex lighting.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// What Direct3D's vertex pipeline computed for an I.G.I. 2 object with no baked lightmap
+    /// (<c>Direct3DRender_SetGenericStateRigid</c>, <c>igi2ed 0x56CA90</c>: <c>D3DRS_LIGHTING = 1</c> over a
+    /// white material): each vertex's colour becomes <c>saturate(ambient + colour · max(N · L, 0))</c>
+    /// and the texture is modulated by it. In model space so that the vertex stage needs nothing but the
+    /// normal it already has; the caller knows the placement's orientation and the backend need not.
+    /// </para>
+    /// <para>Device state, like <see cref="SetLightmapScale"/>: it spans a run of draws and must be cleared after them.</para>
+    /// </remarks>
+    void SetVertexSun(Vector3f towardsSun)
+    {
+        _ = towardsSun;
+    }
+
     /// <summary>Makes the following draws multiply their lightmap texture into the base colour.</summary>
     /// <param name="modulate">Whether the lightmap slot is a colour to modulate rather than a bake.</param>
     /// <remarks>

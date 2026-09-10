@@ -77,6 +77,8 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
     /// <summary>Gets the layout binding the diffuse and lightmap textures the fragment shader samples.</summary>
     private Vector3f _fogColour;
     private float _fogDensity;
+    private Vector3f _sunAmbient;
+    private Vector3f _sunColour;
 
     public DescriptorSetLayout DescriptorSetLayout { get; }
 
@@ -109,6 +111,30 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
 
         _fogColour = colour;
         _fogDensity = density;
+        DiscardVariants();
+    }
+
+    /// <summary>Sets the fixed-function sun's colours, rebuilding the variants when they change.</summary>
+    /// <param name="ambient">The flat light an unlightmapped vertex receives.</param>
+    /// <param name="colour">The sun's diffuse colour.</param>
+    /// <remarks>
+    /// Baked for the same reason the fog is: constants of the level, and no push room. The direction
+    /// is per draw and travels in the push block; see <c>IGraphicsDevice.SetVertexSun</c>.
+    /// </remarks>
+    public void SetSun(Vector3f ambient, Vector3f colour)
+    {
+        if (ambient == _sunAmbient && colour == _sunColour)
+        {
+            return;
+        }
+
+        _sunAmbient = ambient;
+        _sunColour = colour;
+        DiscardVariants();
+    }
+
+    private void DiscardVariants()
+    {
         foreach (Pipeline pipeline in _pipelines.Values)
         {
             _vk.DestroyPipeline(_device, pipeline, null);
@@ -250,15 +276,17 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
             // The cut-out threshold and the reflection switch are baked in here rather than pushed:
             // there is no push room left for either. The storage lives in this frame, which outlasts the
             // pipeline creation below.
-            uint* specializationData = stackalloc uint[6];
-            SpecializationMapEntry* specializationEntries = stackalloc SpecializationMapEntry[6];
+            uint* specializationData = stackalloc uint[AlphaReferenceSpecialization.MeshConstantCount];
+            SpecializationMapEntry* specializationEntries = stackalloc SpecializationMapEntry[AlphaReferenceSpecialization.MeshConstantCount];
             SpecializationInfo specialization = AlphaReferenceSpecialization.DescribeMesh(
                 specializationData,
                 specializationEntries,
                 key.AlphaReference,
                 key.Reflective,
                 _fogColour,
-                _fogDensity);
+                _fogDensity,
+                _sunAmbient,
+                _sunColour);
 
             PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
             stages[0] = new PipelineShaderStageCreateInfo

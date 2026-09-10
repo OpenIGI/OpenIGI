@@ -47,6 +47,27 @@ public sealed partial class VulkanGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void SetSceneSun(Vector3f ambient, Vector3f colour)
+    {
+        ThrowIfDisposed();
+
+        // Both forward pipelines, for the reason SetSceneFog gives: an object lit on one and not the
+        // other would change with the preset.
+        _mesh3D.SetSun(ambient, colour);
+        _deferred?.Forward.SetSun(ambient, colour);
+    }
+
+    /// <inheritdoc/>
+    public void SetVertexSun(Vector3f towardsSun)
+    {
+        ThrowIfDisposed();
+        _vertexSun = towardsSun;
+    }
+
+    // The model-space direction towards the fixed-function sun for the draws in flight, or zero.
+    private Vector3f _vertexSun;
+
+    /// <inheritdoc/>
     public void ClearDetailFade()
     {
         ThrowIfDisposed();

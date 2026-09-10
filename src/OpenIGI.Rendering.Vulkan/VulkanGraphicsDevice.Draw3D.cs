@@ -819,7 +819,11 @@ public sealed partial class VulkanGraphicsDevice
         // (the retail look), so it is divided by the exposure the resolve will apply — written raw, the
         // eye adaptation of a dim interior multiplied the arms into pure white.
         float exposure = MathF.Max(RenderCVars.EffectiveExposure * _lastAdaptedExposure, 1e-3f);
-        data[17] = litViewModel ? 1f / exposure : 1f;
+
+        // A world draw has no exposure to carry and puts the lightmap scale there instead -- the same
+        // scale the G-buffer path pushes in its material row, which this block has no room for
+        // otherwise. One unless a title's bakes are MODULATE2X or an HDR bake was encoded with headroom.
+        data[17] = litViewModel ? 1f / exposure : _lightmapScale;
 
         // How much of the previous pose is in the position drawn. This block is the guaranteed 128 bytes
         // to the last float, and the slot it takes used to carry "light this draw with the rig's key",
@@ -835,7 +839,11 @@ public sealed partial class VulkanGraphicsDevice
         // stays one — this only tells it how much light there is where it is standing.
         Vector3f lamps = litViewModel ? LampLightAtEye() : default;
         float lampFill = (lamps.X * 0.212639f) + (lamps.Y * 0.715169f) + (lamps.Z * 0.072192f);
-        data[19] = _lighting.AmbientColour.Length + lampFill;
+
+        // The rig's ambient level; for a world draw, the first component of the model-space direction
+        // towards the fixed-function sun, which the vertex stage reads with the two rows' spare w's
+        // below and which is zero unless SetVertexSun switched the lighting on for this run of draws.
+        data[19] = litViewModel ? _lighting.AmbientColour.Length + lampFill : _vertexSun.X;
 
         if (_detailFade.Mode > 0f && !litViewModel)
         {
@@ -863,7 +871,9 @@ public sealed partial class VulkanGraphicsDevice
             // level's own sun tint plus whatever the lamps are contributing, so a weapon picks up the mood
             // of the mission it is in and the colour of the light it is standing under. The key is read
             // by the lit rig alone, so every other draw leaves the first w at zero: that is the terrain
-            // flag the vertex stage reads, and a sun tint there would morph the world.
+            // flag the vertex stage reads, and a sun tint there would morph the world. The other two
+            // w's are a world draw's remaining components of the direction towards the fixed-function
+            // sun, zero when it is not lit that way.
             data[20] = modelView.M11; data[21] = modelView.M12; data[22] = modelView.M13;
             data[23] = litViewModel ? _lighting.SunColour.X + lamps.X : 0f;
 

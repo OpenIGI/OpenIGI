@@ -70,13 +70,44 @@ internal static unsafe class AlphaReferenceSpecialization
     /// <summary>The scene fog's extinction per metre; zero is no fog, and no cost.</summary>
     public const uint FogDensityConstantId = 5;
 
+    /// <summary>The <c>constant_id</c>s the forward mesh vertex stage declares the fixed-function sun under.</summary>
+    /// <remarks>
+    /// The two colours of the light I.G.I. 2 shines on an object with no baked lightmap — the
+    /// <c>GlobalLight</c>'s object ambient and the <c>Dirlight</c>'s front colour — which are constants
+    /// of the level for the same reason the fog is, and are baked in for the same reason: there is no
+    /// push room. The direction is not a constant of the level in any one draw's space, and it travels
+    /// in the push block instead; see <c>IGraphicsDevice.SetVertexSun</c>. A title without the light
+    /// leaves all six at zero, and a black light over a black ambient changes nothing.
+    /// </remarks>
+    public const uint SunAmbientRedConstantId = 6;
+
+    /// <summary>The green channel of the sun's ambient.</summary>
+    public const uint SunAmbientGreenConstantId = 7;
+
+    /// <summary>The blue channel of the sun's ambient.</summary>
+    public const uint SunAmbientBlueConstantId = 8;
+
+    /// <summary>The red channel of the sun's colour.</summary>
+    public const uint SunColourRedConstantId = 9;
+
+    /// <summary>The green channel of the sun's colour.</summary>
+    public const uint SunColourGreenConstantId = 10;
+
+    /// <summary>The blue channel of the sun's colour.</summary>
+    public const uint SunColourBlueConstantId = 11;
+
+    /// <summary>How many constants <see cref="DescribeMesh"/> writes.</summary>
+    public const int MeshConstantCount = 12;
+
     /// <summary>Fills a description of the forward mesh shader's constants.</summary>
-    /// <param name="data">Room for six four-byte values, which must outlive the pipeline creation call.</param>
-    /// <param name="entries">Room for six map entries, likewise.</param>
+    /// <param name="data">Room for <see cref="MeshConstantCount"/> four-byte values, which must outlive the pipeline creation call.</param>
+    /// <param name="entries">Room for <see cref="MeshConstantCount"/> map entries, likewise.</param>
     /// <param name="reference">The cut-out threshold to bake in.</param>
     /// <param name="reflective">Whether the variant samples an environment cube.</param>
     /// <param name="fogColour">The scene's fog colour.</param>
     /// <param name="fogDensity">The scene's fog extinction per metre; zero is no fog.</param>
+    /// <param name="sunAmbient">The flat light an unlightmapped vertex receives from the scene sun.</param>
+    /// <param name="sunColour">The scene sun's diffuse colour.</param>
     /// <returns>The description.</returns>
     /// <remarks>
     /// The reflection switch is a constant for the same reason the threshold is — no push room — and it
@@ -90,59 +121,55 @@ internal static unsafe class AlphaReferenceSpecialization
         byte reference,
         bool reflective,
         Vector3f fogColour,
-        float fogDensity)
+        float fogDensity,
+        Vector3f sunAmbient,
+        Vector3f sunColour)
     {
-        float unit = ToUnit(reference);
-        data[0] = *(uint*)&unit;
+        WriteFloat(data, 0, ToUnit(reference));
         data[1] = reflective ? 1u : 0u;
-        float red = fogColour.X;
-        float green = fogColour.Y;
-        float blue = fogColour.Z;
-        data[2] = *(uint*)&red;
-        data[3] = *(uint*)&green;
-        data[4] = *(uint*)&blue;
-        data[5] = *(uint*)&fogDensity;
+        WriteFloat(data, 2, fogColour.X);
+        WriteFloat(data, 3, fogColour.Y);
+        WriteFloat(data, 4, fogColour.Z);
+        WriteFloat(data, 5, fogDensity);
+        WriteFloat(data, 6, sunAmbient.X);
+        WriteFloat(data, 7, sunAmbient.Y);
+        WriteFloat(data, 8, sunAmbient.Z);
+        WriteFloat(data, 9, sunColour.X);
+        WriteFloat(data, 10, sunColour.Y);
+        WriteFloat(data, 11, sunColour.Z);
 
-        entries[0] = new SpecializationMapEntry { ConstantID = ConstantId, Offset = 0, Size = sizeof(float) };
-        entries[1] = new SpecializationMapEntry
-        {
-            ConstantID = ReflectiveConstantId,
-            Offset = sizeof(float),
-            Size = sizeof(int),
-        };
-        entries[2] = new SpecializationMapEntry
-        {
-            ConstantID = FogColourRedConstantId,
-            Offset = sizeof(float) * 2,
-            Size = sizeof(float),
-        };
-        entries[3] = new SpecializationMapEntry
-        {
-            ConstantID = FogColourGreenConstantId,
-            Offset = sizeof(float) * 3,
-            Size = sizeof(float),
-        };
-        entries[4] = new SpecializationMapEntry
-        {
-            ConstantID = FogColourBlueConstantId,
-            Offset = sizeof(float) * 4,
-            Size = sizeof(float),
-        };
-        entries[5] = new SpecializationMapEntry
-        {
-            ConstantID = FogDensityConstantId,
-            Offset = sizeof(float) * 5,
-            Size = sizeof(float),
-        };
+        // The constant ids happen to be the slot numbers, and the map says so entry by entry rather than
+        // relying on it: the ids are the shader's contract, the offsets are this function's.
+        entries[0] = Entry(ConstantId, 0);
+        entries[1] = Entry(ReflectiveConstantId, 1);
+        entries[2] = Entry(FogColourRedConstantId, 2);
+        entries[3] = Entry(FogColourGreenConstantId, 3);
+        entries[4] = Entry(FogColourBlueConstantId, 4);
+        entries[5] = Entry(FogDensityConstantId, 5);
+        entries[6] = Entry(SunAmbientRedConstantId, 6);
+        entries[7] = Entry(SunAmbientGreenConstantId, 7);
+        entries[8] = Entry(SunAmbientBlueConstantId, 8);
+        entries[9] = Entry(SunColourRedConstantId, 9);
+        entries[10] = Entry(SunColourGreenConstantId, 10);
+        entries[11] = Entry(SunColourBlueConstantId, 11);
 
         return new SpecializationInfo
         {
-            MapEntryCount = 6,
+            MapEntryCount = MeshConstantCount,
             PMapEntries = entries,
-            DataSize = sizeof(uint) * 6,
+            DataSize = sizeof(uint) * MeshConstantCount,
             PData = data,
         };
     }
+
+    private static void WriteFloat(uint* data, int slot, float value) => data[slot] = *(uint*)&value;
+
+    private static SpecializationMapEntry Entry(uint constantId, int slot) => new()
+    {
+        ConstantID = constantId,
+        Offset = (uint)(sizeof(uint) * slot),
+        Size = sizeof(uint),
+    };
 
     /// <summary>Fills a specialization description from storage the caller owns.</summary>
     /// <param name="value">Room for the one float, which must outlive the pipeline creation call.</param>
