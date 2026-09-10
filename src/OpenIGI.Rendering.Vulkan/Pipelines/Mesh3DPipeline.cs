@@ -408,6 +408,14 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
                 state.DstColorBlendFactor = BlendFactor.One;
                 state.DstAlphaBlendFactor = BlendFactor.One;
                 break;
+            case BlendMode.Modulate2X:
+                // src*dst + dst*src. The alpha is left alone: this pass multiplies a colour in and has
+                // no coverage of its own.
+                state.SrcColorBlendFactor = BlendFactor.DstColor;
+                state.DstColorBlendFactor = BlendFactor.SrcColor;
+                state.SrcAlphaBlendFactor = BlendFactor.Zero;
+                state.DstAlphaBlendFactor = BlendFactor.One;
+                break;
             default:
                 state.SrcColorBlendFactor = BlendFactor.One;
                 state.DstColorBlendFactor = BlendFactor.Zero;

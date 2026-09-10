@@ -234,6 +234,34 @@ public readonly record struct Igi2TerrainTile(
         return false;
     }
 
+    /// <summary>Gets the planar projection that lays this tile's lightmap over the ground.</summary>
+    /// <returns>A scale and an offset per axis: <c>u = worldX * ScaleX + OffsetX</c>.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The lightmap is a TEXTURE over the ground, not a colour on its vertices.</b>
+    /// <c>TerrainRender_DrawRenderChunk_</c> (<c>igi2ed 0x667400</c>) draws the whole ground a second
+    /// time for it: no material stream, the tile's <c>TexInfo</c> from
+    /// <c>TerrainContext_t::aptLightmap[i]</c> on stage 0, <c>TerrainRender_nLightmapVertexShader</c>
+    /// bound, and vertex-shader constants 11 and 12 loaded from <c>::atLightmapOffset[i]</c> and
+    /// <c>::atLightmapScale[i]</c> — an affine projection of world XY, which is the pair this returns.
+    /// </para>
+    /// <para>
+    /// The projection is the tile's own extent, half a texel in on each side, because a lightmap texel
+    /// answers for the same square a height sample does — the shipped maps are the same dimensions as
+    /// their tile's height map, 128 by 128 beside 128 by 128.
+    /// </para>
+    /// </remarks>
+    public (float ScaleX, float ScaleY, float OffsetX, float OffsetY) LightmapProjection()
+    {
+        double spanX = Width * TexelWidth;
+        double spanY = Height * TexelHeight;
+        return (
+            (float)(1d / spanX),
+            (float)(1d / spanY),
+            (float)(0.5d - (Centre.X / spanX)),
+            (float)(0.5d - (Centre.Y / spanY)));
+    }
+
     /// <summary>Gets the surface normal at one sample, from the slope of the height map around it.</summary>
     /// <param name="x">The sample's column.</param>
     /// <param name="y">The sample's row.</param>

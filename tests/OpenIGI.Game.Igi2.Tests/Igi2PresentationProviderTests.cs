@@ -126,12 +126,13 @@ public sealed class Igi2PresentationProviderTests
             ground.Draw(new TerrainFrame(default, Matrix4f.Identity, 1f, 1.6f, 0, false, false));
 
             Assert.NotEmpty(device.MeshDraws);
-            // An opaque base per triangle and the other materials' shares added over it -- see
-            // Igi2TerrainPass.BaseIndices.
+            // The original's three passes: an opaque base per triangle, the other materials' shares
+            // added over it, and the tile's lightmap multiplied over the lot -- see
+            // Igi2TerrainPass.BaseIndices and Igi2TerrainTile.LightmapProjection.
             Assert.All(
                 device.MeshDraws,
                 draw => Assert.True(
-                    draw.Blend is BlendMode.Opaque or BlendMode.Additive,
+                    draw.Blend is BlendMode.Opaque or BlendMode.Additive or BlendMode.Modulate2X,
                     $"The ground drew with {draw.Blend}."));
 
             // Chunked at the original's 10,000-index budget, not one draw per pass.
@@ -203,11 +204,19 @@ public sealed class Igi2PresentationProviderTests
                 continue;
             }
 
+            // The material textures tile and are mipped. The tile LIGHTMAPS are the exception on both
+            // counts: one level, because the pass draws them at the ground's own scale, and clamped,
+            // because TerrainRender_SetBlendMode's case 3 (igi2ed 0x666B90) sets ADDRESSU and ADDRESSV
+            // to D3DTADDRESS_CLAMP -- the quadtree's root reaches half a texel past the map on two
+            // sides, and wrapping there would fetch the far edge's bake and draw a bright seam.
             Assert.All(
                 device.Textures,
-                texture => Assert.Equal(TextureAddressMode.Repeat, texture.AddressMode));
+                texture => Assert.Equal(
+                    texture.MipLevels > 1 ? TextureAddressMode.Repeat : TextureAddressMode.Clamp,
+                    texture.AddressMode));
 
             Assert.Contains(device.Textures, texture => texture.MipLevels > 1);
+            Assert.Contains(device.Textures, texture => texture.MipLevels == 1);
             return;
         }
 

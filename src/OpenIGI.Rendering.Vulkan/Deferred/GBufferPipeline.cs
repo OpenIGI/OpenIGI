@@ -27,7 +27,7 @@ internal sealed unsafe class GBufferPipeline : IDisposable
     private readonly RenderPass _renderPass;
     private readonly VulkanShaderModule _vertex;
     private readonly VulkanShaderModule _fragment;
-    private readonly Dictionary<(DepthState Depth, CullMode Cull, bool Additive, byte AlphaReference), Pipeline> _pipelines = [];
+    private readonly Dictionary<(DepthState Depth, CullMode Cull, BlendMode Blend, byte AlphaReference), Pipeline> _pipelines = [];
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="GBufferPipeline"/> class.</summary>
@@ -93,14 +93,13 @@ internal sealed unsafe class GBufferPipeline : IDisposable
         BlendMode blend = BlendMode.Opaque,
         byte alphaReference = IGraphicsDevice.DefaultAlphaReference)
     {
-        bool additive = blend == BlendMode.Additive;
-        if (_pipelines.TryGetValue((depth, cull, additive, alphaReference), out Pipeline existing))
+        if (_pipelines.TryGetValue((depth, cull, blend, alphaReference), out Pipeline existing))
         {
             return existing;
         }
 
-        Pipeline pipeline = CreatePipeline(depth, cull, additive, alphaReference);
-        _pipelines[(depth, cull, additive, alphaReference)] = pipeline;
+        Pipeline pipeline = CreatePipeline(depth, cull, blend, alphaReference);
+        _pipelines[(depth, cull, blend, alphaReference)] = pipeline;
         return pipeline;
     }
 
@@ -155,7 +154,7 @@ internal sealed unsafe class GBufferPipeline : IDisposable
         return layout;
     }
 
-    private Pipeline CreatePipeline(DepthState depth, CullMode cull, bool additive, byte alphaReference)
+    private Pipeline CreatePipeline(DepthState depth, CullMode cull, BlendMode blend, byte alphaReference)
     {
         nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
         try
@@ -265,15 +264,21 @@ internal sealed unsafe class GBufferPipeline : IDisposable
                 blends[i] = new PipelineColorBlendAttachmentState { ColorWriteMask = writeAll, BlendEnable = false };
             }
 
-            if (additive)
+            // Additive and Modulate2X are the ground's two ways of combining with what a pass before
+            // them wrote: one adds a material's share of the colour, the other multiplies the tile's
+            // lightmap over the lot. Both touch the base colour's rgb and nothing else -- not that
+            // attachment's alpha, and none of the normal, material or baked attachments, which the
+            // opaque pass under them wrote for the same surface.
+            if (blend is BlendMode.Additive or BlendMode.Modulate2X)
             {
+                bool modulate = blend == BlendMode.Modulate2X;
                 blends[0] = new PipelineColorBlendAttachmentState
                 {
                     ColorWriteMask = writeColour,
                     BlendEnable = true,
                     ColorBlendOp = BlendOp.Add,
-                    SrcColorBlendFactor = BlendFactor.One,
-                    DstColorBlendFactor = BlendFactor.One,
+                    SrcColorBlendFactor = modulate ? BlendFactor.DstColor : BlendFactor.One,
+                    DstColorBlendFactor = modulate ? BlendFactor.SrcColor : BlendFactor.One,
                     AlphaBlendOp = BlendOp.Add,
                     SrcAlphaBlendFactor = BlendFactor.Zero,
                     DstAlphaBlendFactor = BlendFactor.One,

@@ -122,6 +122,14 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
 
                 Upload(mesh, pass, tile.Centre, textures(material.Texture), textures(material.DetailTexture));
             }
+
+            // And the tile's bake, over the lot: the original's mode 3, drawn once for every triangle
+            // the material passes established.
+            TextureHandle lightmap = CreateLightmap(device, tile);
+            if (lightmap.IsValid)
+            {
+                UploadLightmap(mesh, tile, lightmap);
+            }
         }
 
         TriangleCount = _chunks.Sum(static c => c.IndexCount) / 3;
@@ -168,7 +176,12 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
                 resolved[id] = (textures(material.Texture), textures(material.DetailTexture));
             }
 
-            _tiles.Add(new Tile(new Igi2TerrainLod(tile, surface.Materials), tile.Centre, resolved));
+            _tiles.Add(new Tile(
+                new Igi2TerrainLod(tile, surface.Materials),
+                tile.Centre,
+                CreateLightmap(device, tile),
+                tile.LightmapProjection(),
+                resolved));
         }
 
         log.Information(
@@ -250,21 +263,24 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
     {
         if (!_tessellates)
         {
-            // Bases first, all of them, then the overlays. Globally rather than per chunk: an opaque
-            // base written after a neighbouring pass had already added its share would erase it.
-            for (int phase = 0; phase < 2; phase++)
+            // The original's three, in its order: every base, then every overlay, then every lightmap.
+            // Globally rather than per chunk -- an opaque base written after a neighbouring pass had
+            // already added its share would erase it, and a lightmap multiplied in before the shares
+            // were finished would be multiplied by half a ground.
+            for (int phase = 0; phase < 3; phase++)
             {
-                bool bases = phase == 0;
-                _device.SetDepthState(bases ? DepthState.TestAndWrite : DepthState.TestOnly);
+                ChunkPass which = (ChunkPass)phase;
+                _device.SetDepthState(which == ChunkPass.Base ? DepthState.TestAndWrite : DepthState.TestOnly);
                 foreach (Chunk chunk in _chunks)
                 {
-                    if (chunk.IsBase != bases || chunk.IndexCount == 0)
+                    if (chunk.Pass != which || chunk.IndexCount == 0)
                     {
                         continue;
                     }
 
                     // Stage 0 is the material, stage 1 the detail map modulated onto it -- the two
-                    // stages TerrainRender_SetTextureState configures.
+                    // stages TerrainRender_SetTextureState configures. The lightmap pass carries the
+                    // tile's bake in stage 0 instead and no second texture at all.
                     _device.DrawMesh(
                         chunk.Mesh,
                         0,
@@ -272,7 +288,12 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
                         frame.Camera.CreateModelView(WorldScene.ToMetres(chunk.Origin), Matrix3f.Identity),
                         chunk.Diffuse,
                         chunk.Detail,
-                        bases ? BlendMode.Opaque : BlendMode.Additive);
+                        which switch
+                        {
+                            ChunkPass.Base => BlendMode.Opaque,
+                            ChunkPass.Overlay => BlendMode.Additive,
+                            _ => BlendMode.Modulate2X,
+                        });
                 }
             }
 
@@ -301,13 +322,26 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             _ready.Add((tile, tessellation, frame.Camera.CreateModelView(WorldScene.ToMetres(tile.Centre), Matrix3f.Identity)));
         }
 
-        // Every tile's bases before any tile's overlays, for the reason the full-detail path gives.
-        for (int phase = 0; phase < 2; phase++)
+        // The original's three passes, in its order: every tile's bases, then every tile's overlays,
+        // then every tile's lightmap. Globally rather than per tile -- an opaque base written after a
+        // neighbour had already added its share would erase it, and a lightmap multiplied in before the
+        // shares were finished would be multiplied by half a ground.
+        for (int phase = 0; phase < 3; phase++)
         {
-            bool bases = phase == 0;
-            _device.SetDepthState(bases ? DepthState.TestAndWrite : DepthState.TestOnly);
+            ChunkPass which = (ChunkPass)phase;
+            _device.SetDepthState(which == ChunkPass.Base ? DepthState.TestAndWrite : DepthState.TestOnly);
             foreach ((Tile tile, Igi2TerrainTessellation tessellation, Matrix4f modelView) in _ready)
             {
+                if (which == ChunkPass.Lightmap)
+                {
+                    if (tile.Lightmap.IsValid)
+                    {
+                        triangles += StreamLightmap(tessellation.Mesh, tile, modelView);
+                    }
+
+                    continue;
+                }
+
                 foreach (Igi2TerrainPass pass in tessellation.Mesh.Passes)
                 {
                     if (!tile.Textures.TryGetValue(pass.MaterialId, out (TextureHandle Diffuse, TextureHandle Detail) texture))
@@ -315,6 +349,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
                         continue;
                     }
 
+                    bool bases = which == ChunkPass.Base;
                     triangles += Stream(
                         tessellation.Mesh,
                         pass,
@@ -371,12 +406,78 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         _tiles.Clear();
     }
 
+    /// <summary>Uploads the full-detail lightmap pass: every triangle once, at the tile's projection.</summary>
+    private void UploadLightmap(Igi2TerrainMesh mesh, Igi2TerrainTile tile, TextureHandle lightmap)
+    {
+        (float ScaleX, float ScaleY, float OffsetX, float OffsetY) projection = tile.LightmapProjection();
+        Dictionary<int, ushort> remap = [];
+        List<Vertex3D> vertices = [];
+        List<ushort> compact = [];
+
+        foreach (Igi2TerrainPass pass in mesh.Passes)
+        {
+            ReadOnlySpan<int> indices = pass.BaseIndices;
+            for (int i = 0; i < indices.Length; i += 3)
+            {
+                if (compact.Count + 3 > MaximumIndicesPerChunk)
+                {
+                    Store(vertices, compact, ChunkPass.Lightmap, tile.Centre, lightmap, TextureHandle.None);
+                    remap.Clear();
+                    vertices.Clear();
+                    compact.Clear();
+                }
+
+                for (int corner = 0; corner < 3; corner++)
+                {
+                    int index = indices[i + corner];
+                    if (!remap.TryGetValue(index, out ushort mapped))
+                    {
+                        mapped = (ushort)vertices.Count;
+                        remap[index] = mapped;
+                        vertices.Add(BuildLightmapVertex(mesh, index, tile.Centre, projection));
+                    }
+
+                    compact.Add(mapped);
+                }
+            }
+        }
+
+        Store(vertices, compact, ChunkPass.Lightmap, tile.Centre, lightmap, TextureHandle.None);
+    }
+
+    /// <summary>Uploads one tile's baked lightmap as a texture.</summary>
+    /// <remarks>
+    /// Clamped, because the original's lightmap pass sets <c>ADDRESSU</c> and <c>ADDRESSV</c> to
+    /// <c>D3DTADDRESS_CLAMP</c> (<c>TerrainRender_SetBlendMode</c> case 3, <c>igi2ed 0x666B90</c>): the
+    /// quadtree's root reaches half a texel past the map on two sides, and wrapping there would fetch
+    /// the far edge's bake and draw a bright seam along the tile.
+    /// </remarks>
+    private static TextureHandle CreateLightmap(IGraphicsDevice device, Igi2TerrainTile tile)
+    {
+        if (tile.Lightmap is not { } lightmap)
+        {
+            return TextureHandle.None;
+        }
+
+        int width = lightmap.Width;
+        int height = lightmap.Height;
+        Bgra32[] pixels = new Bgra32[width * height];
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                pixels[(y * width) + x] = lightmap.GetLight(x, y);
+            }
+        }
+
+        return device.CreateTexture(new TextureDescription(width, height), pixels);
+    }
+
     private static Vertex3D Build(Igi2TerrainMesh mesh, Igi2TerrainPass pass, int index, Vector3d centre)
     {
         Vector3d world = mesh.Positions[index];
         (float U, float V) diffuseUv = Igi2TerrainMesh.TextureCoordinate(pass.TextureScale, world);
         (float U, float V) detailUv = Igi2TerrainMesh.TextureCoordinate(pass.DetailTextureScale, world);
-        Bgra32 light = mesh.Lights[index];
         Vector3f normal = mesh.Normals[index];
 
         // THE WEIGHT IS FOLDED INTO THE COLOUR, not left in the alpha for a blend factor to apply.
@@ -398,17 +499,11 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         // original's own product -- texture * light * share -- on all four combinations.
         float weight = Math.Clamp(pass.Weights.Span[index], 0f, 1f);
 
-        // AND THE BAKE COMES IN AT TWICE ITS STORED VALUE, because that is the strength the original
-        // applies it at. It does not put the tile's lightmap in the vertex at all: it draws the whole
-        // ground again, with the lightmap on stage 0 through TerrainRender_nLightmapVertexShader and its
-        // own per-tile scale and offset, under blend mode 3 -- SRCBLEND = DESTCOLOR, DESTBLEND = SRCCOLOR
-        // (TerrainRender_SetBlendMode, igi2ed 0x666B90), which is src*dst + dst*src: a MODULATE2X. A
-        // lightmap's neutral is therefore a half rather than white, and reading the samples straight into
-        // the vertex left every level at half the brightness the original gives it.
-        //
-        // Doubling here is that pass's factor, taken where this port keeps the bake. Saturating at white
-        // is what the blender does too.
-        const float BakeModulate2X = 2f;
+        // THE BAKE IS NOT HERE. It is a texture over the whole ground, drawn as its own pass — see
+        // LightmapPass and Igi2TerrainTile.LightmapProjection. Reading it per sample, which is what this
+        // vertex used to carry, threw nearly all of it away: the quadtree's vertices are the tile's
+        // samples only where the camera is standing, and hundreds of metres apart at the far end of a
+        // level, so a bake authored every three metres arrived as one value per hillside.
 
         return new Vertex3D(
             new Vector3f(
@@ -426,14 +521,38 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             detailUv.U,
             detailUv.V,
             new Bgra32(
-                Scale(light.B, weight * BakeModulate2X),
-                Scale(light.G, weight * BakeModulate2X),
-                Scale(light.R, weight * BakeModulate2X),
+                Share(weight),
+                Share(weight),
+                Share(weight),
                 255));
     }
 
-    private static byte Scale(byte channel, float weight) =>
-        (byte)Math.Clamp((int)MathF.Round(channel * weight), 0, 255);
+    private static byte Share(float weight) => (byte)Math.Clamp((int)MathF.Round(weight * 255f), 0, 255);
+
+    /// <summary>Builds a vertex of the lightmap pass: the projection in place of the material's uv.</summary>
+    private static Vertex3D BuildLightmapVertex(
+        Igi2TerrainMesh mesh,
+        int index,
+        Vector3d centre,
+        (float ScaleX, float ScaleY, float OffsetX, float OffsetY) projection)
+    {
+        Vector3d world = mesh.Positions[index];
+
+        return new Vertex3D(
+            new Vector3f(
+                (float)((world.X - centre.X) / WorldScene.UnitsPerMetre),
+                (float)((world.Y - centre.Y) / WorldScene.UnitsPerMetre),
+                (float)((world.Z - centre.Z) / WorldScene.UnitsPerMetre)),
+            mesh.Normals[index],
+            (float)((world.X * projection.ScaleX) + projection.OffsetX),
+            (float)((world.Y * projection.ScaleY) + projection.OffsetY),
+            0f,
+            0f,
+
+            // White: this pass carries no share and no colour of its own. What it multiplies in is the
+            // texture, and the doubling is the blend's.
+            new Bgra32(255, 255, 255, 255));
+    }
 
     private int Stream(
         Igi2TerrainMesh mesh,
@@ -472,6 +591,49 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         }
 
         return triangles + Flush(texture, blend, modelView);
+    }
+
+    /// <summary>Streams one tile's lightmap pass: every leaf triangle once, multiplied over the ground.</summary>
+    /// <remarks>
+    /// The geometry is the union of the passes' BASE triangles, which is every triangle exactly once —
+    /// each is base to the one pass that established it. Taking the passes' whole index lists instead
+    /// would multiply the lightmap in again for every material a triangle straddles.
+    /// </remarks>
+    private int StreamLightmap(Igi2TerrainMesh mesh, Tile tile, in Matrix4f modelView)
+    {
+        int triangles = 0;
+        (TextureHandle Diffuse, TextureHandle Detail) texture = (tile.Lightmap, TextureHandle.None);
+
+        _remap.Clear();
+        _vertices.Clear();
+        _compact.Clear();
+
+        foreach (Igi2TerrainPass pass in mesh.Passes)
+        {
+            ReadOnlySpan<int> indices = pass.BaseIndices;
+            for (int i = 0; i < indices.Length; i += 3)
+            {
+                if (_compact.Count + 3 > MaximumIndicesPerChunk)
+                {
+                    triangles += Flush(texture, BlendMode.Modulate2X, modelView);
+                }
+
+                for (int corner = 0; corner < 3; corner++)
+                {
+                    int index = indices[i + corner];
+                    if (!_remap.TryGetValue(index, out ushort mapped))
+                    {
+                        mapped = (ushort)_vertices.Count;
+                        _remap[index] = mapped;
+                        _vertices.Add(BuildLightmapVertex(mesh, index, tile.Centre, tile.Projection));
+                    }
+
+                    _compact.Add(mapped);
+                }
+            }
+        }
+
+        return triangles + Flush(texture, BlendMode.Modulate2X, modelView);
     }
 
     private int Flush(
@@ -520,15 +682,15 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         TextureHandle diffuse,
         TextureHandle detail)
     {
-        Upload(mesh, pass, pass.BaseIndices, isBase: true, centre, diffuse, detail);
-        Upload(mesh, pass, pass.OverlayIndices, isBase: false, centre, diffuse, detail);
+        Upload(mesh, pass, pass.BaseIndices, ChunkPass.Base, centre, diffuse, detail);
+        Upload(mesh, pass, pass.OverlayIndices, ChunkPass.Overlay, centre, diffuse, detail);
     }
 
     private void Upload(
         Igi2TerrainMesh mesh,
         Igi2TerrainPass pass,
         ReadOnlySpan<int> indices,
-        bool isBase,
+        ChunkPass which,
         Vector3d centre,
         TextureHandle diffuse,
         TextureHandle detail)
@@ -543,7 +705,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         {
             if (compact.Count + 3 > MaximumIndicesPerChunk)
             {
-                Store(vertices, compact, isBase, centre, diffuse, detail);
+                Store(vertices, compact, which, centre, diffuse, detail);
                 remap.Clear();
                 vertices.Clear();
                 compact.Clear();
@@ -563,13 +725,13 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             }
         }
 
-        Store(vertices, compact, isBase, centre, diffuse, detail);
+        Store(vertices, compact, which, centre, diffuse, detail);
     }
 
     private void Store(
         List<Vertex3D> vertices,
         List<ushort> indices,
-        bool isBase,
+        ChunkPass which,
         Vector3d centre,
         TextureHandle diffuse,
         TextureHandle detail)
@@ -582,16 +744,34 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         _chunks.Add(new Chunk(
             _device.CreateMesh(vertices.ToArray(), indices.ToArray()),
             indices.Count,
-            isBase,
+            which,
             centre,
             diffuse,
             detail));
     }
 
+    /// <summary>Which of the ground's three passes a chunk belongs to.</summary>
+    /// <remarks>
+    /// The original's own three, and its own order: <c>TerrainRender_DrawFace</c>
+    /// (<c>igi2ed 0x66AAB0</c>) files a face under blend mode 1 for the first material that claims it,
+    /// mode 2 for every other material that claims it, and mode 3 once for the tile's lightmap.
+    /// </remarks>
+    private enum ChunkPass
+    {
+        /// <summary>Mode 1: the material that establishes the pixel, opaque and writing depth.</summary>
+        Base,
+
+        /// <summary>Mode 2: another material adding its share over it.</summary>
+        Overlay,
+
+        /// <summary>Mode 3: the tile's lightmap, multiplied over the lot.</summary>
+        Lightmap,
+    }
+
     private readonly record struct Chunk(
         MeshHandle Mesh,
         int IndexCount,
-        bool IsBase,
+        ChunkPass Pass,
         Vector3d Origin,
         TextureHandle Diffuse,
         TextureHandle Detail);
@@ -599,5 +779,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
     private readonly record struct Tile(
         Igi2TerrainLod Lod,
         Vector3d Centre,
+        TextureHandle Lightmap,
+        (float ScaleX, float ScaleY, float OffsetX, float OffsetY) Projection,
         Dictionary<int, (TextureHandle Diffuse, TextureHandle Detail)> Textures);
 }

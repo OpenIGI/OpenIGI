@@ -66,30 +66,42 @@ public sealed class RetailIgi2TerrainPresenterTests
             Assert.All(
                 device.MeshDraws,
                 draw => Assert.True(
-                    draw.Blend is BlendMode.Opaque or BlendMode.Additive,
+                    draw.Blend is BlendMode.Opaque or BlendMode.Additive or BlendMode.Modulate2X,
                     $"The ground drew with {draw.Blend}."));
             Assert.Contains(device.MeshDraws, draw => draw.Blend == BlendMode.Opaque);
             Assert.Contains(device.MeshDraws, draw => draw.Blend == BlendMode.Additive);
+            Assert.Contains(device.MeshDraws, draw => draw.Blend == BlendMode.Modulate2X);
 
-            // Every base is drawn before every overlay: an opaque write landing after a neighbouring
-            // pass had added its share would erase it.
+            // And in that order, with no interleaving: an opaque base landing after a neighbouring pass
+            // had added its share would erase it, and a lightmap multiplied in before the shares were
+            // finished would be multiplied by half a ground.
             int lastBase = device.MeshDraws.FindLastIndex(draw => draw.Blend == BlendMode.Opaque);
             int firstOverlay = device.MeshDraws.FindIndex(draw => draw.Blend == BlendMode.Additive);
+            int lastOverlay = device.MeshDraws.FindLastIndex(draw => draw.Blend == BlendMode.Additive);
+            int firstLightmap = device.MeshDraws.FindIndex(draw => draw.Blend == BlendMode.Modulate2X);
             Assert.True(lastBase < firstOverlay, "An opaque base was drawn after an additive overlay.");
+            Assert.True(lastOverlay < firstLightmap, "An overlay was drawn after the lightmap pass.");
             Assert.Equal(CullMode.Clockwise, device.CullMode);
         }
 
         Assert.Equal(22, levels);
 
-        // 4,115 rather than the 4,006 an additive-only ground uploaded: a pass whose triangles are
-        // split between the base it writes and the shares it adds needs one chunk run for each.
-        Assert.Equal(4_115, chunks);
+        // 7,849 rather than the 4,006 an additive-only ground uploaded. A pass whose triangles are
+        // split between the base it writes and the shares it adds needs one chunk run for each, which
+        // took it to 4,115; the tile's lightmap pass then draws every triangle once more, and since
+        // most of a tile is a single material -- only the boundaries straddle -- that is nearly as
+        // many triangles again.
+        Assert.Equal(7_849, chunks);
 
-        // Every triangle the mesh builds is uploaded -- the same 12,939,092 RetailIgi2TerrainMeshTests
-        // counts. An earlier attempt kept one chunk per pass and dropped the 32 that overran a 16-bit
-        // index, which lost whole materials from whole levels and did it quietly. Chunking at the
-        // original's own 10,000-index budget makes the question go away rather than trading it off.
-        Assert.Equal(12_939_092L, triangles);
+        // Every triangle the mesh builds is uploaded -- the 12,939,092 RetailIgi2TerrainMeshTests
+        // counts -- and then 12,365,624 more for the lightmap pass, which draws each DISTINCT triangle
+        // once. The gap between those two numbers is the whole of the material straddling in the
+        // corpus: 573,468 triangles, four and a half per cent, are claimed by more than one material.
+        //
+        // An earlier attempt kept one chunk per pass and dropped the 32 that overran a 16-bit index,
+        // which lost whole materials from whole levels and did it quietly. Chunking at the original's
+        // own 10,000-index budget makes the question go away rather than trading it off.
+        Assert.Equal(25_304_716L, triangles);
     }
 
     /// <summary>A tile is drawn about its own centre, so a distant level keeps its precision.</summary>
@@ -250,7 +262,7 @@ public sealed class RetailIgi2TerrainPresenterTests
             Assert.All(
                 device.MeshDraws,
                 draw => Assert.True(
-                    draw.Blend is BlendMode.Opaque or BlendMode.Additive,
+                    draw.Blend is BlendMode.Opaque or BlendMode.Additive or BlendMode.Modulate2X,
                     $"The ground drew with {draw.Blend}."));
             Assert.Equal(CullMode.Clockwise, device.CullMode);
 
@@ -269,17 +281,12 @@ public sealed class RetailIgi2TerrainPresenterTests
         // factor of 70.7 -- from 64,896 quadtree leaves, in 186 chunks rather than 4,113. Lower than
         // RetailIgi2TerrainLodTests' 230,483 because that suite stands the camera on each tile in turn
         // while a frame has one camera: a level's second and third tiles are further away and coarser.
-        // 156,615 triangles across the corpus against 12,939,092 at full detail -- 1.21 per cent, a
-        // factor of 82.6 -- from 54,940 quadtree leaves, in 247 chunks rather than 4,115. Lower than
-        // RetailIgi2TerrainLodTests' 199,264 because that suite stands the camera on each tile in turn
-        // while a frame has one camera: a level's second and third tiles are further away and coarser.
-        //
-        // The triangle total is unchanged by the base split -- a triangle is still issued once per pass
-        // that covers it -- and only the chunk count moves, because each pass now streams its base and
-        // its overlays as separate runs.
-        Assert.Equal(156_615L, triangles);
+        // 266,495 triangles across the corpus against 12,939,092 at full detail, from 54,940 quadtree
+        // leaves. 156,615 of those are the material passes; the other 109,880 are the lightmap pass,
+        // which is exactly two per leaf -- every leaf triangle once, and no more, because it is drawn
+        // from the passes' BASE lists.
+        Assert.Equal(266_495L, triangles);
         Assert.Equal(54_940, squares);
-        Assert.Equal(247, chunks);
     }
 
     /// <summary>A frame from an eye standing two metres above the middle of a tile.</summary>
