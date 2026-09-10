@@ -90,12 +90,18 @@ public static class Igi2DrawableScene
             string entry = string.Empty;
             if (lightmaps is not null
                 && lightmaps.TryGetBindings(placement, out IReadOnlyList<Igi2LightmapBinding>? bindings)
-                && bindings.Count > 0)
+                && FinestOf(bindings, placement.ModelVariant) is { } bake)
             {
-                // The first binding is the object's first model at its finest level of detail, which is
-                // what the world pass draws. The rest belong to the LODs and to the object's other
-                // models, and are reached through the index when a renderer wants them.
-                entry = BareName(bindings[0].ResourceName);
+                // The bake of the model this placement actually wears, at its finest level of detail --
+                // which is what the world pass draws. The rest belong to the LODs and to the object's
+                // other model slots, and are reached through the index when a renderer wants them.
+                //
+                // The SLOT matters because a task may own several models and not be wearing the first:
+                // a Switch that starts off wears its off model, which is a different group letter, and
+                // if that model is not a lightmapped mesh there is no bake for it at all. Taking the
+                // first binding regardless lit two of the corpus's switches by their own destroyed
+                // model's bake, and 33 placements by some other model's.
+                entry = BareName(bake.ResourceName);
                 lit++;
             }
 
@@ -150,6 +156,45 @@ public static class Igi2DrawableScene
         pack = null;
         model = null;
         return false;
+    }
+
+    /// <summary>The finest-detail bake of the model slot a placement wears, or nothing when it has none.</summary>
+    /// <param name="bindings">Every bake the level's archive holds for the owning task.</param>
+    /// <param name="variant">The slot, counted from one, or zero for "whichever the archive holds first".</param>
+    /// <returns>The binding, or <see langword="null"/>.</returns>
+    /// <remarks>
+    /// <para>
+    /// The list arrives sorted by variant, then model, then level of detail, so the first entry that
+    /// matches is the finest of its slot, and the first entry overall is the finest of the lowest slot.
+    /// </para>
+    /// <para>
+    /// A zero variant takes that first entry, which is what every type whose enumerator this port has
+    /// not read gets: for a task with one model group there is nothing else to take, and for one with
+    /// several the lowest letter is its first slot — the pristine model, which is what a placement wears
+    /// until something damages it.
+    /// </para>
+    /// <para>
+    /// Nothing matching is the correct answer rather than a failure: the original's enumerator creates an
+    /// entry only for a lightmapped mesh with faces, so a slot holding a plain diffuse model simply has
+    /// no bake.
+    /// </para>
+    /// </remarks>
+    private static Igi2LightmapBinding? FinestOf(IReadOnlyList<Igi2LightmapBinding> bindings, int variant)
+    {
+        if (variant == 0)
+        {
+            return bindings.Count > 0 ? bindings[0] : null;
+        }
+
+        foreach (Igi2LightmapBinding binding in bindings)
+        {
+            if (binding.Variant == variant)
+            {
+                return binding;
+            }
+        }
+
+        return null;
     }
 
     private static string BareName(string resourceName)

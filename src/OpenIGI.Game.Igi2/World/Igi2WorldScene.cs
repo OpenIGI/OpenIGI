@@ -21,13 +21,22 @@ namespace OpenIGI.Game.Igi2.World;
 /// Which of the frame's sixteen call queues it is drawn in. Zero for the task types that declare no
 /// group, which is also the queue an object lands in when a level does not say.
 /// </param>
+/// <param name="ModelVariant">
+/// Which of the owning task's model SLOTS this is wearing, counted from one, or zero when the type has
+/// a single slot or the port has not established its enumeration. It is the group letter in the name of
+/// the object's baked lightmap — <c>LightmapInfo_AddLightmapVirModelToEnumeration</c>
+/// (<c>igi2 0x53C920</c>) writes <c>acIndexLetters[nModelVariation]</c>, and a slot's variation is its
+/// index plus one — so it is what picks the matching bake out of the level's archive. See
+/// <see cref="Igi2LightmapIndex"/>.
+/// </param>
 public readonly record struct Igi2Placement(
     int LevelId,
     string TypeName,
     string Model,
     Vector3d Position,
     Vector3f Orientation,
-    int RenderGroup);
+    int RenderGroup,
+    int ModelVariant = 0);
 
 /// <summary>
 /// Everything an I.G.I. 2 level places in the world, walked out of its task tree.
@@ -65,6 +74,73 @@ public sealed class Igi2WorldScene
 
     /// <summary>The parameter a placeable task names its draw queue with, when it has one.</summary>
     public const string RenderGroupParameter = "RenderGroup";
+
+    /// <summary>What a type that names its parameters the usual way is read with.</summary>
+    public static Igi2PlacementBinding DefaultBinding { get; } =
+        new(ModelParameter, PositionParameter, OrientationParameter);
+
+    /// <summary>The types that name their model, position or facing something other than the usual.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Every entry is the rest transform its create handler builds</b>, read out of the dedicated
+    /// server's <c>igi2.exe</c> rather than inferred from the parameter names:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><description>
+    /// <c>Door</c> — <c>Door_UpdateInternalDataHandler</c> (<c>0x537E10</c>) copies the task's position
+    /// into <c>tOriginalPosStart</c>, sets <c>isClosed</c>, and calls <c>Door_SetPosition</c>
+    /// (<c>0x5362B0</c>), which offsets by <c>stop × slider</c> and turns by <c>maxAngle × slider</c>.
+    /// A closed door has a slider of zero, so it stands exactly at <c>Position start</c> under
+    /// <c>Orientation</c>. 802 of them in the corpus.
+    /// </description></item>
+    /// <item><description>
+    /// <c>Switch</c> — <c>Switch_SetModel</c> (<c>0x4DA360</c>) indexes the five models as on,
+    /// on-pressed, off, off-pressed, destroyed. Unpressed and undamaged, <c>Initial on</c> alone chooses
+    /// between the first and the third.
+    /// </description></item>
+    /// <item><description>
+    /// <c>SCamera</c> — <c>SCamera_UpdateInternalDataHandler</c> (<c>0x48FB80</c>) builds the holder's
+    /// rotation from a single angle's sine and cosine, so the bracket turns about the up axis only. The
+    /// camera body is a separate child task whose own handler (<c>0x48F370</c>) places it on a MAGIC
+    /// VERTEX of the holder, which is why only the holder is bound here.
+    /// </description></item>
+    /// <item><description>
+    /// <c>StationaryGun</c>, <c>AIStationaryGunHolder</c> — <c>AIStationaryGunHolder_UpdateInternalDataHandler</c>
+    /// (<c>0x5158E0</c>) copies the parameter block's orientation straight into the model object. The
+    /// barrel is an attachment, and is left out for the same reason the camera body is.
+    /// </description></item>
+    /// <item><description>
+    /// <c>Lift</c> — the authored start. <c>Lift_SetPositionToFirstFloor</c> (<c>0x46DD50</c>) moves a
+    /// lift onto its first <c>Floor</c> child at load, which this does not do; the eight lifts in the
+    /// corpus stand where the editor left them until it does.
+    /// </description></item>
+    /// </list>
+    /// <para>
+    /// <b>Not here, and why.</b> <c>SplineObjWaypoint</c> (678) carries a <c>Segment Model</c> that is
+    /// extruded along the spline between waypoints by <c>SplineObjSegment_Update</c>, and a
+    /// <c>Waypoint Model</c> that is the editor's own <c>ai-arrow</c>; drawing either at the waypoint
+    /// would be wrong. <c>RotateAttachment</c> (250) has no position at all — it hangs off its parent.
+    /// <c>Wire</c> (25) is strung between a start and a stop. <c>Train</c> (9) rides a spline.
+    /// <c>ComputerHilight</c> (108) names <c>MARKER_NONE</c>, a sentinel for the computer overlay rather
+    /// than a model, and <c>LevelInfo</c> (19) names a script path. Each is a subsystem, not a name.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyDictionary<string, Igi2PlacementBinding> Bindings { get; } =
+        new Dictionary<string, Igi2PlacementBinding>(StringComparer.Ordinal)
+        {
+            ["Door"] = new("Model", "Position start", OrientationParameter),
+            ["Switch"] = new(
+                "Off model",
+                PositionParameter,
+                OrientationParameter,
+                AlternateModel: "On model",
+                AlternateWhen: "Initial on",
+                Enumerated: ["On model", "On pressed model", "Off model", "Off pressed model", "Destroyed model"]),
+            ["SCamera"] = new("Holder Model", "Holder Position", Gamma: "Holder Gamma"),
+            ["StationaryGun"] = new("Holder model", PositionParameter, OrientationParameter),
+            ["AIStationaryGunHolder"] = new("Holder model", PositionParameter, OrientationParameter),
+            ["Lift"] = new("Model", "Start Position", "Start Orientation"),
+        };
 
     private Igi2WorldScene(IReadOnlyList<Igi2Placement> placements) => Placements = placements;
 
@@ -177,32 +253,97 @@ public sealed class Igi2WorldScene
         return TryReadPlacement(task, out placement);
     }
 
+    /// <summary>Which model slot of its task a chosen model is, counted from one.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>Switch_EnumerateLightmapVirModelsHandler</c> (<c>igi2 0x4DB120</c>) walks the five model slots
+    /// in order and sets <c>nModelVariation</c> to the slot's own index plus one before enumerating it.
+    /// <c>LightmapInfo_AddLightmapVirModelToEnumeration</c> (<c>0x53C920</c>) then writes that through
+    /// <c>acIndexLetters</c>, so slot zero's bakes are lettered <c>a</c> and slot four's <c>e</c>. The
+    /// index is the RAW slot: a slot naming a model an earlier slot already named takes no entry of its
+    /// own, but does not shift the slots after it either.
+    /// </para>
+    /// <para>
+    /// Zero for a type this port has not read an enumerator for, which means "the first bake the archive
+    /// holds" rather than a particular slot — see <c>Igi2DrawableScene</c>.
+    /// </para>
+    /// </remarks>
+    private static int VariantOf(DeclaredTask task, Igi2PlacementBinding binding, string model)
+    {
+        if (binding.Enumerated is not { Count: > 0 } enumerated)
+        {
+            return 0;
+        }
+
+        for (int slot = 0; slot < enumerated.Count; slot++)
+        {
+            if (task.TryGetValue(enumerated[slot], out object? raw)
+                && raw is string name
+                && string.Equals(name, model, StringComparison.OrdinalIgnoreCase))
+            {
+                return slot + 1;
+            }
+        }
+
+        return 0;
+    }
+
     private static bool TryReadPlacement(DeclaredTask task, out Igi2Placement placement)
     {
         placement = default;
 
-        if (!task.TryGetValue(ModelParameter, out object? rawModel)
+        Igi2PlacementBinding binding = Bindings.TryGetValue(task.Type.Name, out Igi2PlacementBinding bound)
+            ? bound
+            : DefaultBinding;
+
+        // A type with two models says which it is wearing at rest with a flag of its own.
+        string modelParameter = binding.AlternateWhen.Length > 0
+            && task.TryGetValue(binding.AlternateWhen, out object? rawAlternate)
+            && rawAlternate is bool alternate
+            && alternate
+                ? binding.AlternateModel
+                : binding.Model;
+
+        if (!task.TryGetValue(modelParameter, out object? rawModel)
             || rawModel is not string model
             || string.IsNullOrWhiteSpace(model))
         {
             return false;
         }
 
-        if (!task.TryGetValue(PositionParameter, out object? rawPosition) || rawPosition is not Vector3d position)
+        if (!task.TryGetValue(binding.Position, out object? rawPosition) || rawPosition is not Vector3d position)
         {
             return false;
         }
 
-        Vector3f orientation = task.TryGetValue(OrientationParameter, out object? rawOrientation)
-            && rawOrientation is Vector3f angles
-                ? angles
-                : default;
+        // Euler angles where the type carries three, and a lone gamma -- a turn about the world's up
+        // axis -- where it carries one. A type that carries neither faces down the world's X axis.
+        Vector3f orientation = default;
+        if (binding.Orientation.Length > 0
+            && task.TryGetValue(binding.Orientation, out object? rawOrientation)
+            && rawOrientation is Vector3f angles)
+        {
+            orientation = angles;
+        }
+        else if (binding.Gamma.Length > 0
+            && task.TryGetValue(binding.Gamma, out object? rawGamma)
+            && rawGamma is float gamma)
+        {
+            orientation = new Vector3f(0f, 0f, gamma);
+        }
 
         int group = task.TryGetValue(RenderGroupParameter, out object? rawGroup) && rawGroup is int value
             ? value
             : 0;
 
-        placement = new Igi2Placement(task.Id, task.Type.Name, model, position, orientation, group);
+        placement = new Igi2Placement(
+            task.Id,
+            task.Type.Name,
+            model,
+            position,
+            orientation,
+            group,
+            VariantOf(task, binding, model));
         return true;
     }
 }

@@ -75,6 +75,13 @@ public sealed class RetailIgi2LightmapBindingTests
     /// the port to it: <b>every placement this binds a lightmap to has a lightmapped mesh.</b>
     /// </para>
     /// <para>
+    /// <b>Asked of the model slot the placement wears, not of its task.</b> A task may own several models
+    /// and draw only one — a <c>Switch</c> that starts off wears its off model — so a task can hold bakes
+    /// while the model on show has none. Matching <see cref="Igi2Placement.ModelVariant"/> is the same
+    /// question <c>Igi2DrawableScene</c> asks when it picks a bake, and asking the looser one instead
+    /// found 33 placements in the corpus wearing a diffuse mesh under another model's light.
+    /// </para>
+    /// <para>
     /// The converse is deliberately not asserted. A lightmapped mesh whose object was excluded from the
     /// bake — the <c>Exclude from lightmaps</c> parameter I.G.I. 2's editor emits on <c>Container</c> —
     /// legitimately has none, so requiring one in both directions would be asserting a stronger rule than
@@ -91,7 +98,8 @@ public sealed class RetailIgi2LightmapBindingTests
         {
             foreach (Igi2Placement placement in level.Scene.StaticPlacements)
             {
-                if (!level.Lightmaps.TryGetBindings(placement, out _)
+                if (!level.Lightmaps.TryGetBindings(placement, out IReadOnlyList<Igi2LightmapBinding>? bindings)
+                    || !bindings.Any(binding => placement.ModelVariant == 0 || binding.Variant == placement.ModelVariant)
                     || !level.Table.TryResolveMesh(placement.Model, out string? mesh)
                     || !level.TryReadModel(mesh, out MefModel? model))
                 {

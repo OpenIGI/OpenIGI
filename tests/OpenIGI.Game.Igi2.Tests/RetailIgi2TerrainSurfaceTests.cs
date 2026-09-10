@@ -149,7 +149,7 @@ public sealed class RetailIgi2TerrainSurfaceTests
             }
         }
 
-        Assert.Equal(8_240, offsets.Count);
+        Assert.Equal(9_251, offsets.Count);
 
         offsets.Sort();
         double median = offsets[offsets.Count / 2];

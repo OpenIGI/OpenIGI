@@ -92,10 +92,10 @@ public sealed class Igi2FixedFunctionSunTests
 
     /// <summary>Every unlightmapped placement reaches the shader with a white vertex colour.</summary>
     /// <remarks>
-    /// Measured rather than assumed before the sun was added: 63 of the level's placements have no
-    /// bake, 25 in the colourless 32-byte format and 38 in the 40-byte one with no entry in the
-    /// archive, and every vertex of every one of them is <c>#FFFFFFFF</c>. Nothing in the data lights
-    /// them; only the sun can.
+    /// Measured rather than assumed before the sun was added, and every vertex of every one of them is
+    /// <c>#FFFFFFFF</c>: nothing in the data lights them, only the sun can. The count rose from 63 to 108
+    /// when the doors, switches, cameras and gun holders the walk had been dropping joined the scene —
+    /// see <see cref="Igi2WorldScene.Bindings"/>.
     /// </remarks>
     [RequiresTitleDataFact("igi2")]
     public void Level_one_s_unlightmapped_placements_carry_no_lighting_of_their_own()
@@ -117,7 +117,7 @@ public sealed class Igi2FixedFunctionSunTests
             Assert.All(geometry.Vertices, vertex => Assert.Equal(Bgra32.White, vertex.Colour));
         }
 
-        Assert.Equal(63, unlit);
+        Assert.Equal(108, unlit);
     }
 
     private static Igi2Level LevelOne() =>
