@@ -753,7 +753,16 @@ internal sealed partial class GameHost : IDisposable
         // milliseconds from different origins, and every `last*Milliseconds` delta in the frame loop
         // would jump the moment the swap happened. One source, shared, keeps the handover invisible.
         _timeSource = lockstepClock is not null ? lockstepClock : new SystemTimeSource();
-        _loop = new(time: _timeSource, host: menuHost, renderer: _scheduler, logger: _logger);
+        // The title's structural task types, not the engine's fixed set. What makes a type structural is
+        // that the title's own editor emits no declaration for it, and the two games disagree by one
+        // name: I.G.I. 2's editor declares Container with a parameter, so a loop that registered it with
+        // none refuses every level of that game the moment one mentions it.
+        _loop = new(
+            time: _timeSource,
+            host: menuHost,
+            renderer: _scheduler,
+            logger: _logger,
+            structuralTypes: _titleRuntime.Layout.StructuralTaskTypes);
 
         // Baked global illumination: a mission's probe field is loaded from the shipped cache (Assets/gi)
         // when present, else traced and written to the per-user cache so the next load is fast. This is what
@@ -1039,6 +1048,7 @@ internal sealed partial class GameHost : IDisposable
             _sdfCache,
             _title.Services,
             _titleRuntime.Modules,
+            _titleRuntime.Layout.StructuralTaskTypes,
             _device.Capabilities.SupportsCompute);
 
 

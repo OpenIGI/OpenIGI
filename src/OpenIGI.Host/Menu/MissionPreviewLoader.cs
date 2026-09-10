@@ -260,7 +260,8 @@ public sealed class MissionPreviewLoader(
             time: context.TimeSource,
             host: context.Host,
             renderer: context.Scheduler,
-            logger: logger);
+            logger: logger,
+            structuralTypes: context.StructuralTaskTypes);
 
         // The archives that belong to the session rather than to this level. Registered from bytes the
         // composition root read at start-up: once promoted, this registry is the one the menus, the

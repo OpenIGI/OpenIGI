@@ -70,6 +70,13 @@ namespace OpenIGI.Host.Menu;
 /// its own loop — the natives are per-loop and must be — but the tables are the session's, so a
 /// backdrop reads the magic-object table that is already loaded rather than a second, empty one.
 /// </param>
+/// <param name="StructuralTaskTypes">
+/// The task types this title's editor emits no declaration for, so the loop registers them itself. It is
+/// the title's set and not a fixed one: what makes a type structural is that the title's own editor does
+/// not declare it, and the two games disagree by exactly one name — I.G.I. 2's editor declares
+/// <c>Container</c> with a parameter, and a loop that had registered it with none refuses every level
+/// that mentions it.
+/// </param>
 /// <param name="TitleModules">
 /// The running title's content modules. A preview registers the same ones into its own loop, so its
 /// tree comes out shaped the way the scene walk expects rather than as untyped placeholders.
@@ -90,4 +97,5 @@ public sealed record MissionPreviewContext(
     DistanceFieldCache DistanceFields,
     IServiceCatalog TitleServices,
     IReadOnlyList<IContentModule> TitleModules,
+    IReadOnlyList<string> StructuralTaskTypes,
     bool ComputeSupported);
