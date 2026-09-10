@@ -23,11 +23,18 @@ namespace OpenIGI.Game.Igi2.World;
 /// materials name theirs — is expanded into <c>LOCAL:textures/&lt;name&gt;.tex</c>.
 /// </para>
 /// <para>
-/// <b>The sequel's terrain textures are JPEG, and nothing here decodes one yet.</b> 76 <c>.jpg</c> and
-/// 95 <c>.tga</c> files sit in the shipped mission texture directories against 24 <c>.tex</c>, and the
-/// ground is drawn from the first kind. Until a decoder exists those resolve to
-/// <see cref="TextureHandle.None"/> and the terrain draws with its baked lighting and no surface, which
-/// is visibly wrong and honestly wrong rather than quietly so.
+/// <b>Three formats, because the game does not decode two of them itself.</b>
+/// <c>Direct3DTexture_DownloadFromFile</c> (<c>igi2ed 0x662FE0</c>) hands the raw bytes to
+/// <c>D3DXCreateTextureFromFileInMemoryEx</c>, which sniffs and decodes whatever they are — so the
+/// sequel names <c>.tex</c>, <c>.tga</c> and <c>.jpg</c> interchangeably and the engine never notices.
+/// This sniffs the same way: a <c>LOOP</c> magic is the engine's own format, otherwise a TGA header
+/// shape, otherwise nothing.
+/// </para>
+/// <para>
+/// <b>JPEG is the gap.</b> 76 <c>.jpg</c> files ship in the mission texture directories against 95
+/// <c>.tga</c> and 24 <c>.tex</c>, and the terrain is textured entirely from the first kind. Those
+/// still resolve to <see cref="TextureHandle.None"/> and the ground draws with its baked lighting and
+/// no surface — visibly wrong, and honestly wrong rather than quietly so.
 /// </para>
 /// <para>
 /// A name the level does not ship resolves to <see cref="TextureHandle.None"/> rather than throwing.
@@ -112,22 +119,33 @@ public sealed class Igi2TextureLoader
             return TextureHandle.None;
         }
 
-        if (!TexFile.IsLoopAsset(bytes.Span))
-        {
-            // A loose .jpg or .tga, which the sequel's terrain is textured from and no reader here
-            // decodes. Warned once per name rather than per use, because the dictionary caches the miss.
-            _logger.Warning(LogCategory, $"Texture '{resource}' is not a LOOP asset; it draws untextured.");
-            return TextureHandle.None;
-        }
-
         try
         {
-            TextureImage image = TexFile.Load(bytes.Span);
+            // The same order the game's own sniffing amounts to: the engine's format first, because it
+            // has a magic number, then TGA, whose header is a shape rather than an identity.
+            TextureImage? image = null;
+            if (TexFile.IsLoopAsset(bytes.Span))
+            {
+                image = TexFile.Load(bytes.Span);
+            }
+            else if (TgaImage.IsTga(bytes.Span))
+            {
+                image = TgaImage.Read(bytes.Span);
+            }
+
+            if (image is null)
+            {
+                // A JPEG, on the evidence of the corpus. Warned once per name, because the dictionary
+                // caches the miss.
+                _logger.Warning(LogCategory, $"Texture '{resource}' is in no format read here; it draws untextured.");
+                return TextureHandle.None;
+            }
+
             return _device.CreateTexture(
                 new TextureDescription(image.Width, image.Height),
                 image.Pixels);
         }
-        catch (PackFormatException ex)
+        catch (Exception ex) when (ex is PackFormatException or TextureFormatException)
         {
             _logger.Warning(LogCategory, $"Texture '{resource}' did not decode: {ex.Message}");
             return TextureHandle.None;
