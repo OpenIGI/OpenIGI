@@ -1,7 +1,10 @@
-﻿using OpenIGI.Engine.Tasks;
+﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Engine.Resources;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Game.Igi2.World;
 using OpenIGI.Presentation;
+using OpenIGI.Rendering;
 using OpenIGI.Presentation.Rendering;
 
 namespace OpenIGI.Game.Igi2;
@@ -101,6 +104,128 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
         return Igi2TerrainLodSettings.Read(request.LevelRoot) is { } settings
             ? new Igi2TerrainPresenter(request.Device, surface, settings, textures.Resolve, request.Logger)
             : new Igi2TerrainPresenter(request.Device, surface, textures.Resolve, request.Logger);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// The stands come from the level's <c>Forest</c> tasks and the trees from the <c>forest_&lt;id&gt;.dat</c>
+    /// beside them; the model each stand plants comes from the mission's packs, which is the one thing a
+    /// ground or a sky never needs and the reason this pass has a request of its own.
+    /// </para>
+    /// <para>
+    /// A host that cannot resolve models yet supplies a lookup that declines, and the presenter then
+    /// finds no geometry for any stand — so nothing is built rather than 54,537 invisible trees being
+    /// culled every frame.
+    /// </para>
+    /// </remarks>
+    public IForestPresenter? CreateForest(in ScenePresentationRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request.LevelRoot);
+        ArgumentNullException.ThrowIfNull(request.Resources);
+        ArgumentNullException.ThrowIfNull(request.Models);
+
+        Igi2Forest forest = Igi2Forest.Build(request.LevelRoot, request.Resources, request.Logger);
+        if (forest.IsEmpty)
+        {
+            return null;
+        }
+
+        Igi2TextureLoader textures = new(request.Device, request.Resources, request.Logger);
+        return new Igi2ForestPresenter(request.Device, forest, request.Models, textures.Resolve, request.Logger);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// Water needs nothing from the model packs — a sheet is a surface, not an instance of anything — so
+    /// the only part of the request it reads beyond the level is the registry, which is where its
+    /// texture and its baked reflection both live.
+    /// </para>
+    /// <para>
+    /// The reflection is the first cube map in the sheet's own <c>water_&lt;id&gt;.res</c>. A level lists
+    /// several and the original picks between them by which the camera is nearest; picking the first is
+    /// this port's simplification, and a sheet whose archive is absent simply does not reflect.
+    /// </para>
+    /// </remarks>
+    public IWaterPresenter? CreateWater(in ScenePresentationRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request.LevelRoot);
+        ArgumentNullException.ThrowIfNull(request.Resources);
+
+        Igi2WaterSurface surface = Igi2WaterSurface.Build(request.LevelRoot, request.Logger);
+        if (surface.IsEmpty)
+        {
+            return null;
+        }
+
+        Dictionary<int, WaterTask> tasks = [];
+        foreach (WaterTask water in Waters(request.LevelRoot))
+        {
+            tasks[water.Id] = water;
+        }
+
+        IGraphicsDevice device = request.Device;
+        ResourceRegistry resources = request.Resources;
+        IIgiLogger logger = request.Logger;
+
+        Igi2TextureLoader textures = new(device, resources, logger);
+        return new Igi2WaterPresenter(
+            device,
+            surface,
+            textures.Resolve,
+            sheet => LoadCube(device, resources, tasks, sheet, logger),
+            logger);
+    }
+
+    /// <summary>Loads one sheet's baked reflection, or hands back nothing.</summary>
+    private static TextureHandle LoadCube(
+        IGraphicsDevice device,
+        ResourceRegistry resources,
+        Dictionary<int, WaterTask> tasks,
+        Igi2WaterSheet sheet,
+        IIgiLogger logger)
+    {
+        if (sheet.EnvmapIndices.Count == 0 || !tasks.TryGetValue(sheet.TaskId, out WaterTask? water))
+        {
+            return TextureHandle.None;
+        }
+
+        string name = "MISSION:" + Igi2EnvironmentMap.ArchiveDirectory + "/" + Igi2EnvironmentMap.ArchiveName(sheet.TaskId);
+        if (!resources.TryLoad(name, out ReadOnlyMemory<byte> bytes))
+        {
+            return TextureHandle.None;
+        }
+
+        try
+        {
+            IresArchive archive = IresArchive.Read(bytes);
+            return Igi2EnvironmentMap.Load(water, sheet.EnvmapIndices[0], archive).Upload(device);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or ArgumentException or GraphicsDeviceException)
+        {
+            logger.Warning(
+                Igi2WaterPresenter.LogCategory,
+                $"Water {sheet.TaskId}'s reflection did not load: {ex.Message}");
+            return TextureHandle.None;
+        }
+    }
+
+    /// <summary>Walks the level's water tasks.</summary>
+    private static IEnumerable<WaterTask> Waters(GameTask task)
+    {
+        foreach (GameTask child in task.Children)
+        {
+            if (child is WaterTask water)
+            {
+                yield return water;
+            }
+
+            foreach (WaterTask descendant in Waters(child))
+            {
+                yield return descendant;
+            }
+        }
     }
 
     /// <summary>The archive a level keeps its terrain maps in, under the mission alias.</summary>

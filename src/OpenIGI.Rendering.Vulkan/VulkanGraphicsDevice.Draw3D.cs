@@ -788,9 +788,13 @@ public sealed partial class VulkanGraphicsDevice
         Vk vk = _instance.Vk;
         CommandBuffer cmd = _frameCommandBuffer;
 
-        BindGraphicsPipeline(pipeline.ForState(_depthState, _cullMode, blend, _alphaReference));
+        // A draw reflects when the frame has handed over a cube, which is what SetEnvironmentCube means.
+        bool reflective = TryGetEnvironmentCube(out Textures.VulkanCubeTexture? cube);
+
+        BindGraphicsPipeline(pipeline.ForState(_depthState, _cullMode, blend, _alphaReference, reflective));
         BindMeshBuffers(mesh);
         BindMeshTextures(pipeline.PipelineLayout, diffuse, lightmap);
+        BindEnvironmentCube(pipeline, cube);
 
         // The forward and direct pipelines take the combined model-view-projection plus the lit
         // view-model block; their shader applies the OpenGL-to-Vulkan clip correction.

@@ -69,11 +69,21 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
             ShaderStage.Fragment);
 
         DescriptorSetLayout = CreateDescriptorSetLayout();
-        PipelineLayout = CreatePipelineLayout(DescriptorSetLayout);
+        CubeSetLayout = CreateCubeSetLayout();
+        PipelineLayout = CreatePipelineLayout(DescriptorSetLayout, CubeSetLayout);
     }
 
     /// <summary>Gets the layout binding the diffuse and lightmap textures the fragment shader samples.</summary>
     public DescriptorSetLayout DescriptorSetLayout { get; }
+
+    /// <summary>Gets the layout binding the environment cube a reflective draw samples.</summary>
+    /// <remarks>
+    /// A second set rather than a fourth binding on <see cref="DescriptorSetLayout"/>, because that one
+    /// is shared with the shadow and geometry paths: a set is built per texture pairing and reused by
+    /// whichever pipeline draws it, so widening it would make every world draw in the frame carry a
+    /// binding only water reads. This set is bound on its own and left alone by the rest.
+    /// </remarks>
+    public DescriptorSetLayout CubeSetLayout { get; }
 
     /// <summary>Gets the pipeline layout shared by every variant.</summary>
     public PipelineLayout PipelineLayout { get; }
@@ -83,14 +93,16 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
     /// <param name="cull">The face-culling rule.</param>
     /// <param name="blend">The blend mode.</param>
     /// <param name="alphaReference">The cut-out threshold out of 255, baked into the variant.</param>
+    /// <param name="reflective">Whether the variant samples the bound environment cube.</param>
     /// <returns>The matching pipeline.</returns>
     public Pipeline ForState(
         DepthState depth,
         CullMode cull,
         BlendMode blend,
-        byte alphaReference = IGraphicsDevice.DefaultAlphaReference)
+        byte alphaReference = IGraphicsDevice.DefaultAlphaReference,
+        bool reflective = false)
     {
-        Mesh3DPipelineKey key = new(depth, cull, blend, alphaReference);
+        Mesh3DPipelineKey key = new(depth, cull, blend, alphaReference, reflective);
         if (_pipelines.TryGetValue(key, out Pipeline existing))
         {
             return existing;
@@ -117,6 +129,7 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
 
         _vk.DestroyPipelineLayout(_device, PipelineLayout, null);
         _vk.DestroyDescriptorSetLayout(_device, DescriptorSetLayout, null);
+        _vk.DestroyDescriptorSetLayout(_device, CubeSetLayout, null);
         _fragment.Dispose();
         _vertex.Dispose();
     }
@@ -151,7 +164,29 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
         return layout;
     }
 
-    private PipelineLayout CreatePipelineLayout(DescriptorSetLayout setLayout)
+    private DescriptorSetLayout CreateCubeSetLayout()
+    {
+        DescriptorSetLayoutBinding binding = new()
+        {
+            Binding = 0,
+            DescriptorType = DescriptorType.CombinedImageSampler,
+            DescriptorCount = 1,
+            StageFlags = ShaderStageFlags.FragmentBit,
+        };
+
+        DescriptorSetLayoutCreateInfo createInfo = new()
+        {
+            SType = StructureType.DescriptorSetLayoutCreateInfo,
+            BindingCount = 1,
+            PBindings = &binding,
+        };
+
+        DescriptorSetLayout layout;
+        VkCheck.Ok(_vk.CreateDescriptorSetLayout(_device, &createInfo, null, &layout), "vkCreateDescriptorSetLayout (cube)");
+        return layout;
+    }
+
+    private PipelineLayout CreatePipelineLayout(DescriptorSetLayout setLayout, DescriptorSetLayout cubeLayout)
     {
         PushConstantRange push = new()
         {
@@ -160,11 +195,15 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
             Size = sizeof(float) * 32,
         };
 
+        DescriptorSetLayout* layouts = stackalloc DescriptorSetLayout[2];
+        layouts[0] = setLayout;
+        layouts[1] = cubeLayout;
+
         PipelineLayoutCreateInfo createInfo = new()
         {
             SType = StructureType.PipelineLayoutCreateInfo,
-            SetLayoutCount = 1,
-            PSetLayouts = &setLayout,
+            SetLayoutCount = 2,
+            PSetLayouts = layouts,
             PushConstantRangeCount = 1,
             PPushConstantRanges = &push,
         };
@@ -179,6 +218,17 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
         nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
         try
         {
+            // The cut-out threshold and the reflection switch are baked in here rather than pushed:
+            // there is no push room left for either. The storage lives in this frame, which outlasts the
+            // pipeline creation below.
+            uint* specializationData = stackalloc uint[2];
+            SpecializationMapEntry* specializationEntries = stackalloc SpecializationMapEntry[2];
+            SpecializationInfo specialization = AlphaReferenceSpecialization.DescribeMesh(
+                specializationData,
+                specializationEntries,
+                key.AlphaReference,
+                key.Reflective);
+
             PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
             stages[0] = new PipelineShaderStageCreateInfo
             {
@@ -186,16 +236,12 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
                 Stage = ShaderStageFlags.VertexBit,
                 Module = _vertex.Handle,
                 PName = (byte*)entryPoint,
-            };
-            // The cut-out threshold is baked in here rather than pushed: there is no push room left. The
-            // storage lives in this frame, which outlasts the pipeline creation below.
-            float specializationValue;
-            SpecializationMapEntry specializationEntry;
-            SpecializationInfo specialization = AlphaReferenceSpecialization.Describe(
-                &specializationValue,
-                &specializationEntry,
-                key.AlphaReference);
 
+                // The vertex stage declares the reflection constant as well -- it is what builds the
+                // direction -- and a constant supplied to one stage and not the other is two shaders
+                // that disagree about whether the varying between them means anything.
+                PSpecializationInfo = &specialization,
+            };
             stages[1] = new PipelineShaderStageCreateInfo
             {
                 SType = StructureType.PipelineShaderStageCreateInfo,

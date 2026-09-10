@@ -254,6 +254,9 @@ public sealed class RetailIgi2WaterWaveFieldTests
             1f,
             1f,
             fadeOut,
+            1f,
+            default,
+            [],
             string.Empty,
             string.Empty,
             waves));

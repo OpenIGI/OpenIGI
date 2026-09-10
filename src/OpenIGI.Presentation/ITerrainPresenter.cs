@@ -177,6 +177,16 @@ public interface ITitlePresentationProvider
     /// </remarks>
     ISkyPresenter? CreateSky(in SkyPresentationRequest request) => null;
 
+    /// <summary>Builds the title's planted foliage, or returns null when it plants none.</summary>
+    /// <param name="request">The level, what it is read through, and how a model name resolves.</param>
+    /// <returns>The presenter, or <see langword="null"/>.</returns>
+    IForestPresenter? CreateForest(in ScenePresentationRequest request) => null;
+
+    /// <summary>Builds the title's water, or returns null when it places none.</summary>
+    /// <param name="request">The level and what it is read through.</param>
+    /// <returns>The presenter, or <see langword="null"/>.</returns>
+    IWaterPresenter? CreateWater(in ScenePresentationRequest request) => null;
+
     /// <summary>Builds the presenter for the arms the player sees.</summary>
     /// <param name="request">What the presenter needs.</param>
     /// <returns>The presenter.</returns>

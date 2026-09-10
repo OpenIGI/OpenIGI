@@ -15,10 +15,17 @@ public readonly record struct Igi2WaterWave(float Frequency, float Amplitude, fl
 /// <summary>One sheet of water a level places.</summary>
 /// <param name="TaskId">The level task id, which is what names its baked environment map.</param>
 /// <param name="Centre">Where the sheet sits, in world units.</param>
-/// <param name="Radius">How far it reaches from its centre, in world units.</param>
+/// <param name="Radius">
+/// How far it reaches from its centre along each axis, in world units — a <b>half-extent</b>, not a
+/// radius. <c>Water_IsUnderWater</c> (<c>igi2ed 0x6477D0</c>) tests X and Y against it independently,
+/// so a sheet is a square; the name is kept because that is what the parameter is called.
+/// </param>
 /// <param name="Detail">How finely it is tessellated.</param>
 /// <param name="Alpha">How transparent it is.</param>
 /// <param name="FadeOut">How fast the waves flatten with distance from the centre.</param>
+/// <param name="UvScale">How far the surface texture is tiled, in metres per repeat.</param>
+/// <param name="Colour">The water's own colour.</param>
+/// <param name="EnvmapIndices">Which baked cube maps its archive holds, in the order the level lists them.</param>
 /// <param name="Texture">Its surface texture, named as the task carries it.</param>
 /// <param name="Envmap">Its environment map, named as the task carries it.</param>
 /// <param name="Waves">Its wave trains, at most four of which are ever active.</param>
@@ -29,6 +36,9 @@ public readonly record struct Igi2WaterSheet(
     float Detail,
     float Alpha,
     float FadeOut,
+    float UvScale,
+    Vector3f Colour,
+    IReadOnlyList<int> EnvmapIndices,
     string Texture,
     string Envmap,
     IReadOnlyList<Igi2WaterWave> Waves);
@@ -119,6 +129,9 @@ public sealed class Igi2WaterSurface
                 water.Detail,
                 water.Alpha,
                 water.FadeOut,
+                water.UvScale,
+                water.DiffuseColour,
+                water.EnvmapIndices,
                 water.Texture,
                 water.Envmap,
                 waves));

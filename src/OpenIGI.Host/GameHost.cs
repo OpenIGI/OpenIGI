@@ -306,6 +306,8 @@ internal sealed partial class GameHost : IDisposable
     private WorldScene? _scene;
     private IWorldPresenter? _world;
     private ITerrainPresenter? _terrain;
+    private IForestPresenter? _forest;
+    private IWaterPresenter? _water;
     // Behind the seam, not a named renderer: which type this is differs by title, and the host asking
     // for one game's by name is what left the other with no sky at all.
     private ISkyPresenter? _sky;
@@ -4463,10 +4465,24 @@ internal sealed partial class GameHost : IDisposable
                     RenderCVars.TerrainOcclusion.Value));
                 EndStageIfSlow("the terrain");
 
-                if (retailFog)
+if (retailFog)
                 {
                     _device.SetFog(_globalLight.ObjectFog);
                 }
+
+                // The foliage after the ground it is planted in, so a tree's trunk depth-tests against
+                // the hillside rather than against whatever was drawn there before it. Half-tangents
+                // rather than the angle, because the cull's planes are built straight out of them.
+                _forest?.Draw(new ForestFrame(
+                    eye,
+                    MathF.Tan(verticalFieldOfView * 0.5f) * aspectRatio,
+                    MathF.Tan(verticalFieldOfView * 0.5f)));
+                EndStageIfSlow("the forest");
+
+                // And the water last of the opaque world, because it is translucent and has to sort
+                // against everything already in the depth buffer -- the ground under it above all.
+                _water?.Draw(new WaterFrame(eye, projection, _loop.TimeSource.Milliseconds / 1000.0));
+                EndStageIfSlow("the water");
 
                 // With the world and the terrain both in the depth buffer, the world's occlusion
                 // queries can be answered honestly: walls hide the outdoors, and hills hide buildings.
@@ -6789,6 +6805,10 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
         _rain?.Dispose();
         _storm?.Dispose();
         _terrain?.Dispose();
+        _forest?.Dispose();
+        _forest = null;
+        _water?.Dispose();
+        _water = null;
         _world?.Dispose();
         _soldiers?.Dispose();
         _backdropSoldiers?.Dispose();

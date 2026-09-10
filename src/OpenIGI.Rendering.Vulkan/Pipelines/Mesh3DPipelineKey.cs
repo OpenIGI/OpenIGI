@@ -16,8 +16,13 @@ namespace OpenIGI.Rendering.Vulkan.Pipelines;
 /// a specialization constant rather than a push value — see <see cref="AlphaReferenceSpecialization"/>
 /// for why it has to be, and why a byte keeps the variant space finite.
 /// </param>
+/// <param name="Reflective">
+/// Whether the variant samples the bound environment cube. Also a specialization constant, so that the
+/// lookup is compiled out of every pipeline the rest of the world draws through.
+/// </param>
 internal readonly record struct Mesh3DPipelineKey(
     DepthState Depth,
     CullMode Cull,
     BlendMode Blend,
-    byte AlphaReference);
+    byte AlphaReference,
+    bool Reflective);

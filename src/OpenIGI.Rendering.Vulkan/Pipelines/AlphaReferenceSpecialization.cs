@@ -1,4 +1,4 @@
-using Silk.NET.Vulkan;
+﻿using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Pipelines;
 
@@ -43,6 +43,48 @@ internal static unsafe class AlphaReferenceSpecialization
     /// <param name="reference">The reference.</param>
     /// <returns>The fraction.</returns>
     public static float ToUnit(byte reference) => reference / 255f;
+
+    /// <summary>The <c>constant_id</c> the forward mesh shader declares its reflection switch under.</summary>
+    public const uint ReflectiveConstantId = 1;
+
+    /// <summary>Fills a description of both the forward mesh shader's constants.</summary>
+    /// <param name="data">Room for two four-byte values, which must outlive the pipeline creation call.</param>
+    /// <param name="entries">Room for two map entries, likewise.</param>
+    /// <param name="reference">The cut-out threshold to bake in.</param>
+    /// <param name="reflective">Whether the variant samples an environment cube.</param>
+    /// <returns>The description.</returns>
+    /// <remarks>
+    /// The reflection switch is a constant for the same reason the threshold is — no push room — and it
+    /// buys more than the threshold does. A cube lookup that every draw in the world computed and threw
+    /// away would be a texture fetch per fragment for the one surface in the level that reflects; as a
+    /// constant, the branch is gone from the shader the other pipelines were built from.
+    /// </remarks>
+    public static SpecializationInfo DescribeMesh(
+        uint* data,
+        SpecializationMapEntry* entries,
+        byte reference,
+        bool reflective)
+    {
+        float unit = ToUnit(reference);
+        data[0] = *(uint*)&unit;
+        data[1] = reflective ? 1u : 0u;
+
+        entries[0] = new SpecializationMapEntry { ConstantID = ConstantId, Offset = 0, Size = sizeof(float) };
+        entries[1] = new SpecializationMapEntry
+        {
+            ConstantID = ReflectiveConstantId,
+            Offset = sizeof(float),
+            Size = sizeof(int),
+        };
+
+        return new SpecializationInfo
+        {
+            MapEntryCount = 2,
+            PMapEntries = entries,
+            DataSize = sizeof(uint) * 2,
+            PData = data,
+        };
+    }
 
     /// <summary>Fills a specialization description from storage the caller owns.</summary>
     /// <param name="value">Room for the one float, which must outlive the pipeline creation call.</param>

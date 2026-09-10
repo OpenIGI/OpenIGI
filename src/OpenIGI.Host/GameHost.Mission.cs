@@ -1467,6 +1467,23 @@ internal sealed partial class GameHost
                     _device, TerrainSurface.Build(usable, levelRoot, _logger), _logger, _detailMaps, null))
                 : null;
 
+            // The things standing in the world rather than being it: planted foliage, and water. Both
+            // are handed the mission's model lookup, which is the one thing the ground and the sky do
+            // not need -- a forest plants instances of a model, and the model lives in a pack rather
+            // than in the level's own files.
+            ScenePresentationRequest adornments = new(
+                _device,
+                levelRoot,
+                _resources,
+                name => loaded.TryGetModel(name, out MefModel? model) ? model : null,
+                _logger);
+
+            _forest?.Dispose();
+            _forest = _presentation.CreateForest(adornments);
+
+            _water?.Dispose();
+            _water = _presentation.CreateWater(adornments);
+
             // The sky is script data on the level's task tree; its fog colour is also what the frame
             // clears to, so the horizon meets sky-coloured backing rather than black.
             _sky?.Dispose();

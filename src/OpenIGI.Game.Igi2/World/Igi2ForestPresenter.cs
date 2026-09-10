@@ -2,6 +2,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.Igi2.World;
@@ -31,7 +32,7 @@ namespace OpenIGI.Game.Igi2.World;
 /// baked light's three bytes and the foliage gets the light itself under <c>| 0xFF000000</c>.
 /// </para>
 /// </remarks>
-public sealed class Igi2ForestPresenter : IDisposable
+public sealed class Igi2ForestPresenter : IForestPresenter
 {
     /// <summary>The category load diagnostics are logged under.</summary>
     public const string LogCategory = "igi2.forest";
@@ -140,7 +141,8 @@ public sealed class Igi2ForestPresenter : IDisposable
     /// <summary>Gets how many stands were uploaded.</summary>
     public int StandCount => _stands.Count;
 
-    /// <summary>Gets how many trees the last <see cref="Draw"/> found visible.</summary>
+    /// <inheritdoc/>
+    /// <remarks>What the last <see cref="Draw(in ForestFrame)"/> kept after culling.</remarks>
     public int VisibleTreeCount { get; private set; }
 
     /// <summary>Gets or sets the renderer's level-of-detail bias, <c>ModelObj_GetLODBias()</c>.</summary>
@@ -156,6 +158,13 @@ public sealed class Igi2ForestPresenter : IDisposable
     /// of detail comes from <c>ForestRender_GetLOD</c> or from the ordinary <c>ModelObj_GetLOD</c>.
     /// </remarks>
     public bool SortedFoliage { get; set; }
+
+    /// <inheritdoc/>
+    public string Summary => ToString();
+
+    /// <inheritdoc/>
+    public void Draw(in ForestFrame frame) =>
+        Draw(frame.Camera, frame.HorizontalHalfTangent, frame.VerticalHalfTangent);
 
     /// <summary>Draws every tree the stand's index and the view distance keep.</summary>
     /// <param name="camera">Where the world is seen from.</param>

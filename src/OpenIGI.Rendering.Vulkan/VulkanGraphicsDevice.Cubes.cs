@@ -1,5 +1,6 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering.Vulkan.Textures;
+using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan;
 
@@ -18,9 +19,15 @@ public sealed partial class VulkanGraphicsDevice
     // rejected rather than mistaken for a texture that happens to share an id.
     private const uint FirstCubeId = 30_000;
 
+    // The black stand-in, given an id no real cube can take.
+    private const uint PlaceholderCubeId = 0;
+
     private readonly Dictionary<uint, VulkanCubeTexture> _cubes = [];
     private uint _nextCubeId = FirstCubeId;
     private TextureHandle _environmentCube;
+    private Textures.CubeDescriptorCache? _cubeDescriptors;
+    private Textures.VulkanCubeTexture? _placeholderCube;
+    private DescriptorSet _boundCubeSet;
 
     /// <inheritdoc/>
     public TextureHandle CreateCubeTexture(int edge, string name)
@@ -71,6 +78,50 @@ public sealed partial class VulkanGraphicsDevice
         return false;
     }
 
+    /// <summary>Binds set one, the environment cube a reflective draw samples.</summary>
+    /// <remarks>
+    /// <para>
+    /// Bound on <b>every</b> forward draw, not only reflective ones, and with a one-texel black cube
+    /// when there is nothing to reflect. A pipeline layout declares its sets whether or not a given
+    /// variant reads them, and leaving a declared set unbound is the kind of thing that works on the
+    /// driver it was written on and faults on the next one. Black costs a bind and reflects nothing.
+    /// </para>
+    /// <para>
+    /// The placeholder is made on first use rather than at start-up, because a title that never
+    /// reflects anything should not pay for a cube it will not sample.
+    /// </para>
+    /// </remarks>
+    private unsafe void BindEnvironmentCube(Pipelines.Mesh3DPipeline pipeline, Textures.VulkanCubeTexture? cube)
+    {
+        Textures.VulkanCubeTexture bound = cube ?? PlaceholderCube();
+        uint id = cube is null ? PlaceholderCubeId : _environmentCube.Id;
+
+        _cubeDescriptors ??= new Textures.CubeDescriptorCache(
+            _instance.Vk,
+            _device.Device,
+            pipeline.CubeSetLayout);
+
+        DescriptorSet set = _cubeDescriptors.Get(id, bound);
+        if (_boundCubeSet.Handle == set.Handle)
+        {
+            return;
+        }
+
+        _instance.Vk.CmdBindDescriptorSets(
+            _frameCommandBuffer,
+            PipelineBindPoint.Graphics,
+            pipeline.PipelineLayout,
+            1,
+            1,
+            &set,
+            0,
+            null);
+        _boundCubeSet = set;
+    }
+
+    private Textures.VulkanCubeTexture PlaceholderCube() =>
+        _placeholderCube ??= new Textures.VulkanCubeTexture(_instance.Vk, _device, _allocator, _commands, 1);
+
     private void DestroyCubes()
     {
         foreach (VulkanCubeTexture cube in _cubes.Values)
@@ -80,6 +131,11 @@ public sealed partial class VulkanGraphicsDevice
 
         _cubes.Clear();
         _environmentCube = TextureHandle.None;
+        _cubeDescriptors?.Dispose();
+        _cubeDescriptors = null;
+        _placeholderCube?.Dispose();
+        _placeholderCube = null;
+        _boundCubeSet = default;
     }
 
     private VulkanCubeTexture ResolveCube(TextureHandle handle)
