@@ -53,7 +53,13 @@ public readonly record struct HostOptions(
     int TerrainViewDistance,
     int UiScale)
 {
-    /// <summary>Gets the environment variable consulted when no path is given on the command line.</summary>
+    /// <summary>The environment variable that says where the first game is installed.</summary>
+    /// <remarks>
+    /// Named here and read by the composition root, not by <see cref="Parse"/>. The path is per title --
+    /// a machine may well have both games installed -- so which variable to consult is a question only
+    /// the place that resolved the title can answer, and <see cref="GamePath"/> is therefore what the
+    /// command line said and nothing else.
+    /// </remarks>
     public const string GamePathVariable = "IGI_GAME_PATH";
 
     /// <summary>The environment variable that names the game to run, when <c>-title</c> does not.</summary>
@@ -71,7 +77,10 @@ public readonly record struct HostOptions(
     {
         ArgumentNullException.ThrowIfNull(args);
 
-        string? gamePath = Environment.GetEnvironmentVariable(GamePathVariable);
+        // Only what -game says. The environment fallback is the composition root's, because it is per
+        // title and this parser does not know which title was chosen -- seeding it here pointed an
+        // I.G.I. 2 run at whatever IGI_GAME_PATH named and reported the sequel missing from it.
+        string? gamePath = null;
         string? titleId = Environment.GetEnvironmentVariable(TitleVariable);
 
         // Null until -difficulty is seen: the faithful source is the active player profile (the original's
@@ -745,11 +754,14 @@ public readonly record struct HostOptions(
           OpenIGI.Desktop [options]
 
         options:
-          -game <dir>      Original installation to read data from. Defaults to the
-                           IGI_GAME_PATH environment variable, and failing that to an
-                           installation found beside the executable or in the working
-                           directory -- so putting OpenIGI in the game's own folder is
-                           enough on its own.
+          -title <id>      The game to run: igi1 or igi2. Defaults to OPENIGI_TITLE, and
+                           failing that to whichever is installed where the port can see
+                           it. I.G.I. 2's levels load and render; it has no gameplay yet.
+          -game <dir>      Installation to read data from. Defaults to the chosen title's
+                           own variable -- IGI_GAME_PATH for igi1, IGI2_GAME_PATH for
+                           igi2 -- and failing that to an installation found beside the
+                           executable or in the working directory, so putting OpenIGI in
+                           the game's own folder is enough on its own.
           -borderless      Cover the screen with an undecorated window at the monitor's
                            own resolution and refresh rate. This is the default.
           -window          Run windowed. Implied by -size.
