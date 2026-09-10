@@ -126,6 +126,46 @@ public sealed class Igi2MissionCatalogue : IMissionCatalogue<MissionDescriptor>
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// The campaign's missions by ascending id, then everything else the same way. Ascending id is the
+    /// campaign's own grouping rather than an arbitrary sort: a mission's id is its location and its
+    /// level read together — <c>location1/level1</c> is 11 and <c>location2/LEVEL2</c> is 22 — so
+    /// ascending id walks the locations in turn and the levels within each.
+    /// </para>
+    /// <para>
+    /// <b>The mode filter is what makes it work.</b> The shipped multiplayer maps take ids 1, 5 and 100,
+    /// which are below and above the campaign's 11 to 36; sorting every mission by id together would put
+    /// two deathmatch maps ahead of the first mission of the game.
+    /// </para>
+    /// <para>
+    /// It is still a listing order and not a progression. Nothing in this title's <c>DefineMission</c>
+    /// says which mission follows which, so a real campaign flow has to come from the front end.
+    /// </para>
+    /// </remarks>
+    public IEnumerable<MissionDescriptor> InCampaignOrder()
+    {
+        foreach (MissionDescriptor mission in Campaign.OrderBy(static m => m.Id))
+        {
+            yield return mission;
+        }
+
+        foreach (MissionDescriptor mission in _missions
+            .Where(static m => !string.Equals(m.GameMode, SinglePlayerMode, StringComparison.Ordinal))
+            .OrderBy(static m => m.Id))
+        {
+            yield return mission;
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The campaign by ascending id, and nothing else — a multiplayer map is not part of a progression.
+    /// This title asserts no order of its own, so the id's own structure is what supplies one.
+    /// </remarks>
+    public IEnumerable<MissionDescriptor> InProgressionOrder() => Campaign.OrderBy(static m => m.Id);
+
+    /// <inheritdoc/>
     public bool TryGet(int id, [NotNullWhen(true)] out MissionDescriptor? descriptor) =>
         _byId.TryGetValue(id, out descriptor);
 

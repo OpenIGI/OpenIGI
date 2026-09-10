@@ -1,4 +1,4 @@
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Scripting.Runtime;
@@ -39,6 +39,41 @@ public interface IMissionCatalogue<TDescriptor>
     /// <param name="natives">The script namespace the scripts call back into.</param>
     /// <returns>How many missions were registered.</returns>
     int Scan(VirtualFileSystem fileSystem, ResourceRegistry resources, NativeRegistry natives);
+
+    /// <summary>Walks every registered mission in the order a browser should list them.</summary>
+    /// <returns>The missions, campaign first.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A listing order, not a progression.</b> The two titles derive it completely differently and
+    /// only one of them can state a progression at all: Project I.G.I.'s <c>DefineMission</c> names the
+    /// mission that follows each one, so its campaign is a chain, and I.G.I. 2's names nothing of the
+    /// kind — the argument that would carry it holds a four-character game mode instead. So this is what
+    /// a menu wants, and where the real progression comes from is a separate question for the title that
+    /// has one.
+    /// </para>
+    /// <para>
+    /// Every registered mission appears, including any the campaign does not reach. A mod's extra level
+    /// or an installation with a broken descriptor still exists and should still be listed rather than
+    /// silently vanishing.
+    /// </para>
+    /// </remarks>
+    IEnumerable<TDescriptor> InCampaignOrder();
+
+    /// <summary>Walks the campaign the way the game plays it.</summary>
+    /// <returns>The campaign's missions, in the order they are played.</returns>
+    /// <remarks>
+    /// <para>
+    /// Distinct from <see cref="InCampaignOrder"/>, which lists everything for a browser. This is the
+    /// progression a mission-select menu offers up to whatever the player has reached, so a mission the
+    /// campaign never reaches must <b>not</b> appear in it.
+    /// </para>
+    /// <para>
+    /// Only one of the two titles states a progression. Project I.G.I. names the mission that follows
+    /// each one and its campaign is that chain; I.G.I. 2 names nothing of the kind, so the best it can
+    /// answer is its campaign's own grouping — which is a real answer, but not one its data asserts.
+    /// </para>
+    /// </remarks>
+    IEnumerable<TDescriptor> InProgressionOrder();
 
     /// <summary>Looks up a mission by id.</summary>
     /// <param name="id">The mission id.</param>

@@ -1,4 +1,4 @@
-using OpenIGI.Presentation.Cameras;
+﻿using OpenIGI.Presentation.Cameras;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -67,7 +67,7 @@ namespace OpenIGI.Host.Menu;
 /// <param name="logger">The logger.</param>
 public sealed class MissionPreviewLoader(
     string gamePath,
-    MissionRegistry missions,
+    IMissionCatalogue<MissionDescriptor> missions,
     MagicObjectRegistry magic,
     GiBakeCache probeFields,
     MenuCameraLibrary cameras,

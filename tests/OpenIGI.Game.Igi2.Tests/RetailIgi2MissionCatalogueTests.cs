@@ -154,6 +154,48 @@ public sealed class RetailIgi2MissionCatalogueTests
         Assert.NotEqual(packs[0].Name, packs[3].Name);
     }
 
+    /// <summary>The two orderings answer two different questions.</summary>
+    /// <remarks>
+    /// <para>
+    /// A progression is what a mission-select menu offers; a browser order is everything the install
+    /// holds. They differ here because the multiplayer maps take ids <b>1, 5 and 100</b> — below and
+    /// above the campaign's 11 to 36 — so a single list sorted by id would put two deathmatch maps ahead
+    /// of the first mission of the game and one after the last.
+    /// </para>
+    /// <para>
+    /// Neither is asserted by the data. This title's <c>DefineMission</c> names no next mission, so
+    /// ascending id is the campaign's own grouping — a mission's id is its location and level read
+    /// together — rather than an order the game states.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void The_progression_is_the_campaign_and_the_browser_order_is_everything()
+    {
+        (Igi2MissionCatalogue catalogue, _, _) = Scan();
+
+        List<MissionDescriptor> progression = [.. catalogue.InProgressionOrder()];
+        List<MissionDescriptor> browser = [.. catalogue.InCampaignOrder()];
+
+        // The progression is the campaign and only the campaign.
+        Assert.Equal(catalogue.Campaign.Count(), progression.Count);
+        Assert.All(
+            progression,
+            m => Assert.Equal(Igi2MissionCatalogue.SinglePlayerMode, m.GameMode));
+
+        // The browser lists everything, campaign first, and loses nothing.
+        Assert.Equal(catalogue.Count, browser.Count);
+        Assert.Equal(catalogue.Count, browser.Select(static m => m.Id).Distinct().Count());
+        Assert.Equal(progression.Select(static m => m.Id), browser.Take(progression.Count).Select(static m => m.Id));
+
+        // Both ascend within their own run.
+        Assert.Equal(progression.Select(static m => m.Id).Order(), progression.Select(static m => m.Id));
+
+        // And the two really are different lists here, which is what makes the distinction worth having:
+        // a multiplayer map sorts below the campaign's first mission.
+        Assert.True(browser.Count > progression.Count, "every mission was in the campaign.");
+        Assert.Contains(browser, m => m.Id < progression[0].Id);
+    }
+
     /// <summary>The mode is the four characters the script spells, in order.</summary>
     [Fact]
     public void The_mode_is_the_four_characters_the_script_spells()

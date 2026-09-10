@@ -188,6 +188,7 @@ using (window)
         platform, window, device, OpenAlAudioDeviceFactory.Instance, titleRuntime,
         DesktopTitleCatalog.PresentationFor(titleRuntime.Title),
         DesktopTitleCatalog.WorldBuilderFor(titleRuntime.Title),
+        log => DesktopTitleCatalog.MissionCatalogueFor(titleRuntime.Title, log),
         fileSystem, options, gamePath, logger);
     return game.Run();
 }

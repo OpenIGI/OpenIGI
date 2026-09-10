@@ -1,4 +1,5 @@
-using System.Globalization;
+﻿using System.Globalization;
+using OpenIGI.Engine.Titles;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Menus;
 using OpenIGI.Game.World;
@@ -90,7 +91,7 @@ public sealed class HostConfigHost(IGraphicsDevice graphics, IGameWindow window)
     /// Populated by the startup scan. Left null the screen shows nothing, which is the honest rendering
     /// of an installation whose missions could not be read.
     /// </remarks>
-    public MissionRegistry? Missions { get; set; }
+    public IMissionCatalogue<MissionDescriptor>? Missions { get; set; }
 
     /// <summary>Gets or sets the table that resolves a descriptor's name and description keys.</summary>
     public MenuStringTable? Strings { get; set; }
@@ -152,7 +153,7 @@ public sealed class HostConfigHost(IGraphicsDevice graphics, IGameWindow window)
     /// the walk lives now that the cinematic shell's mission list needs the same order.
     /// </remarks>
     private IEnumerable<MissionDescriptor> Chain() =>
-        Missions?.Chain(FirstMissionId) ?? [];
+        Missions?.InProgressionOrder() ?? [];
 
     /// <summary>Resolves a descriptor's name or description, which are language keys rather than text.</summary>
     private string Localise(string key) => Strings is null ? key : Strings.Get(key);

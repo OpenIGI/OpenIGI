@@ -75,6 +75,10 @@ internal sealed partial class GameHost : IDisposable
     // How this title turns a loaded level into placements. The host used to call the first game's walk
     // directly, which made it a host only that game could load a mission into.
     private readonly ITitleWorldBuilder _worldBuilder;
+
+    // A factory rather than the catalogue itself, because the scan happens after the log is wrapped by
+    // the developer console and the catalogue reports what it found as it goes.
+    private readonly Func<IIgiLogger, IMissionCatalogue<MissionDescriptor>> _missionCatalogue;
     /// <summary>Gets the window width, or the authored 320 when a minimize/dock race reports 0x0.</summary>
     private int SafeWindowWidth => _window.Width > 0 ? _window.Width : 320;
 
@@ -117,7 +121,10 @@ internal sealed partial class GameHost : IDisposable
     private GiBakeCache _giCache = null!;
     private DistanceFieldCache _sdfCache = null!;
     private LightmapBakeCache _lightmapCache = null!;
-    private MissionRegistry _missions = null!;
+    // The title's own, not this game's. DefineMission takes eleven arguments in one and fourteen in the
+    // other, and only one of them names the mission that follows -- so the reader and the campaign order
+    // are both the title's to supply.
+    private IMissionCatalogue<MissionDescriptor> _missions = null!;
     private MagicObjectRegistry _magic = null!;
     private VehiclePhysicsRegistry _vehiclePhysics = null!;
     private HumanAiConfigRegistry _aiConfig = null!;
@@ -483,6 +490,7 @@ internal sealed partial class GameHost : IDisposable
     /// <param name="titleRuntime">The game being run: its data layout, its formats and its content modules.</param>
     /// <param name="presentation">The same game's renderers. A second seam because the reference graph forbids one.</param>
     /// <param name="worldBuilder">The same game's scene walk. A third seam, for the same reason.</param>
+    /// <param name="missionCatalogue">Opens the same game's mission table. A fourth, likewise.</param>
     /// <param name="fileSystem">The virtual file system the original installation is read through.</param>
     /// <param name="options">The parsed command line.</param>
     /// <param name="gamePath">The original installation directory.</param>
@@ -495,6 +503,7 @@ internal sealed partial class GameHost : IDisposable
         IGameTitleRuntime titleRuntime,
         ITitlePresentationProvider presentation,
         ITitleWorldBuilder worldBuilder,
+        Func<IIgiLogger, IMissionCatalogue<MissionDescriptor>> missionCatalogue,
         VirtualFileSystem fileSystem,
         HostOptions options,
         string gamePath,
@@ -507,6 +516,7 @@ internal sealed partial class GameHost : IDisposable
         _titleRuntime = titleRuntime;
         _presentation = presentation;
         _worldBuilder = worldBuilder;
+        _missionCatalogue = missionCatalogue;
         _fileSystem = fileSystem;
         _options = options;
         _gamePath = gamePath;
@@ -772,7 +782,7 @@ internal sealed partial class GameHost : IDisposable
         // The mission table is built the way the original builds it: walk LOCAL:missions and run every
         // mission.qvm, each of which publishes one descriptor through DefineMission. It has to happen
         // before the Select Mission screen asks for the list.
-        _missions = new(_logger);
+        _missions = _missionCatalogue(_logger);
         _missions.Register(_loop.Natives);
         GameMissionState missionState = new();
         missionState.Register(_loop.Natives);

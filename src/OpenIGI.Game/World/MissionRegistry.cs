@@ -1,4 +1,4 @@
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Titles;
@@ -139,6 +139,10 @@ public sealed class MissionRegistry : IMissionCatalogue<MissionDescriptor>
             yield return mission;
         }
     }
+
+    /// <inheritdoc/>
+    /// <remarks>The chain from the first mission, which is this game's campaign exactly.</remarks>
+    public IEnumerable<MissionDescriptor> InProgressionOrder() => Chain(FirstMissionId);
 
     /// <summary>Empties the table.</summary>
     public void Clear()

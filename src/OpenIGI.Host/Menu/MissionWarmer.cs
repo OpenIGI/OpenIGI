@@ -1,4 +1,5 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Engine.Titles;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Host.Menu;
@@ -21,7 +22,7 @@ namespace OpenIGI.Host.Menu;
 /// and any I/O error is swallowed — a warm that fails just means the real load pays full price.
 /// </para>
 /// </remarks>
-public sealed class MissionWarmer(string gamePath, MissionRegistry missions, IIgiLogger logger) : IDisposable
+public sealed class MissionWarmer(string gamePath, IMissionCatalogue<MissionDescriptor> missions, IIgiLogger logger) : IDisposable
 {
     private readonly Lock _gate = new();
     private CancellationTokenSource? _cancellation;
