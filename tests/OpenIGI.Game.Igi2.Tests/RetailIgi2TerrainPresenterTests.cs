@@ -268,13 +268,22 @@ public sealed class RetailIgi2TerrainPresenterTests
                     $"The ground drew with {draw.Blend}."));
             Assert.Equal(CullMode.Clockwise, device.CullMode);
 
-            // The second frame reuses every chunk the first one took out of the pool: the same draws
-            // again, and not one new mesh.
-            int allocated = device.Meshes.Count;
-            int issued = device.MeshDraws.Count;
-            presenter.Draw(frame);
-            Assert.Equal(allocated, device.Meshes.Count);
-            Assert.Equal(issued * 2, device.MeshDraws.Count);
+            // A chunk is written by the host straight into a buffer the GPU may still be reading, so
+            // every frame draws from its own pool and only the ChunkPoolSlots'th frame after one may
+            // reuse its chunks -- see Igi2TerrainPresenter.ChunkPoolSlots. The pools therefore fill for
+            // as many frames as there are slots and the ring closes: nothing is allocated after that,
+            // and every frame issues the same draws from the same camera.
+            int perFrameDraws = device.MeshDraws.Count;
+            int perFrameMeshes = device.Meshes.Count;
+
+            for (int f = 1; f <= Igi2TerrainPresenter.ChunkPoolSlots; f++)
+            {
+                presenter.Draw(frame);
+                Assert.Equal(perFrameDraws * (f + 1), device.MeshDraws.Count);
+                Assert.Equal(
+                    perFrameMeshes * Math.Min(f + 1, Igi2TerrainPresenter.ChunkPoolSlots),
+                    device.Meshes.Count);
+            }
         }
 
         Assert.Equal(22, levels);

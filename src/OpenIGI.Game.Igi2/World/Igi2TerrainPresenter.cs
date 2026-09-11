@@ -69,10 +69,31 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
     /// </remarks>
     public const int MaximumIndicesPerChunk = 9999;
 
+    /// <summary>How many chunk pools take turns, one per frame.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A chunk cannot be rewritten while a frame in flight is still reading it.</b> A storage mesh's
+    /// buffers are host-visible and <c>UploadMeshRange</c> writes them directly, with no staging copy
+    /// and no fence: the contract is that callers <em>append</em>, so the bytes a submitted frame reads
+    /// are never touched again. The tessellated ground is the one caller that does not append — it
+    /// refills the same chunks from offset zero every frame — so with two frames in flight the geometry
+    /// the GPU was drawing was being overwritten underneath it, and triangles came out built from two
+    /// frames' vertices at once: flat sheets and black wedges hanging off the ground, appearing only
+    /// while the camera moved, because a still camera rewrites the same bytes.
+    /// </para>
+    /// <para>
+    /// One more than <c>VulkanFrameLoop.MaxFramesInFlight</c>, which is the same ring
+    /// <c>TerrainShadowCaster</c> takes for the same reason: a pool written now was last submitted three
+    /// frames ago, and those have retired. It costs two more copies of the chunks actually used — about
+    /// half a megabyte each — rather than a stall.
+    /// </para>
+    /// </remarks>
+    public const int ChunkPoolSlots = 3;
+
     private readonly IGraphicsDevice _device;
     private readonly List<Chunk> _chunks = [];
     private readonly List<Tile> _tiles = [];
-    private readonly List<MeshHandle> _pool = [];
+    private readonly List<MeshHandle>[] _pools = [.. Enumerable.Range(0, ChunkPoolSlots).Select(_ => new List<MeshHandle>())];
     private readonly Igi2TerrainLodSettings _settings;
     private readonly bool _tessellates;
 
@@ -81,6 +102,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
     private readonly List<ushort> _compact = [];
 
     private readonly List<(Tile Tile, Igi2TerrainTessellation Tessellation, Matrix4f ModelView)> _ready = [];
+    private int _poolSlot;
     private int _poolUsed;
     private bool _disposed;
 
@@ -322,6 +344,9 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         // rather than the terrain -- which is what Project I.G.I.'s octree traversal does too.
         Igi2TerrainView view = Igi2TerrainView.FromFrame(
             frame with { Camera = new Camera3D(WorldScene.ToUnits(frame.Camera.Position), frame.Camera.Orientation) });
+
+        // Onto the pool the frames still in flight are not reading -- see ChunkPoolSlots.
+        _poolSlot = (_poolSlot + 1) % ChunkPoolSlots;
         _poolUsed = 0;
 
         int triangles = 0;
@@ -412,13 +437,17 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             _device.DestroyMesh(chunk.Mesh);
         }
 
-        foreach (MeshHandle mesh in _pool)
+        foreach (List<MeshHandle> pool in _pools)
         {
-            _device.DestroyMesh(mesh);
+            foreach (MeshHandle mesh in pool)
+            {
+                _device.DestroyMesh(mesh);
+            }
+
+            pool.Clear();
         }
 
         _chunks.Clear();
-        _pool.Clear();
         _tiles.Clear();
     }
 
@@ -662,12 +691,13 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             return 0;
         }
 
-        if (_poolUsed == _pool.Count)
+        List<MeshHandle> pool = _pools[_poolSlot];
+        if (_poolUsed == pool.Count)
         {
-            _pool.Add(_device.CreateMeshStorage(MaximumIndicesPerChunk, MaximumIndicesPerChunk));
+            pool.Add(_device.CreateMeshStorage(MaximumIndicesPerChunk, MaximumIndicesPerChunk));
         }
 
-        MeshHandle mesh = _pool[_poolUsed++];
+        MeshHandle mesh = pool[_poolUsed++];
         _device.UploadMeshRange(
             mesh,
             0,
