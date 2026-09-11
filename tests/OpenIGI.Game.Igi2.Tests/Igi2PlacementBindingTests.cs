@@ -180,6 +180,64 @@ public sealed class Igi2PlacementBindingTests
             level.Directory.Replace(Path.DirectorySeparatorChar, '/')
                 .EndsWith("location1/level1", StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>A wire hangs between its two endpoints rather than standing at a position.</summary>
+    /// <remarks>
+    /// <c>Wire_UpdateInternalDataHandler</c> (<c>igi2 0x49B720</c>) is the one placing handler in the
+    /// sequel that reads no position at all. It subtracts <c>Start position</c> from <c>Stop position</c>,
+    /// hands the direction to <c>GameFunctions_CreateOrientationFromDirection</c> (<c>0x53C350</c>) —
+    /// which writes the direction into the MIDDLE column, so the model's local Y is what runs down the
+    /// span — scales that axis by <c>length × 0.000244140625</c>, and moves the object to the midpoint.
+    /// Checked against the endpoints themselves, so a wire that started reading some other parameter,
+    /// or that lost the stretch, fails here rather than as a corpus count that moved.
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void A_wire_hangs_between_its_endpoints()
+    {
+        int wires = 0;
+
+        foreach (Igi2Level level in Igi2Level.All())
+        {
+            foreach (DeclaredTask task in Walk(level.Root)
+                .OfType<DeclaredTask>()
+                .Where(t => t.Type.Name == Igi2WorldScene.WireType))
+            {
+                Assert.True(task.TryGetValue("Start position", out object? rawStart));
+                Assert.True(task.TryGetValue("Stop position", out object? rawStop));
+                Vector3d start = Assert.IsType<Vector3d>(rawStart);
+                Vector3d stop = Assert.IsType<Vector3d>(rawStop);
+
+                Igi2Placement placement = level.Scene.Placements.Single(p => p.LevelId == task.Id);
+                wires++;
+
+                // Halfway along, in engine units, which is what every other placement is read in.
+                Assert.Equal((start.X + stop.X) * 0.5, placement.Position.X, 3);
+                Assert.Equal((start.Y + stop.Y) * 0.5, placement.Position.Y, 3);
+                Assert.Equal((start.Z + stop.Z) * 0.5, placement.Position.Z, 3);
+
+                // The span itself, so a wire long enough to see is stretched by more than one model.
+                Vector3d span = stop - start;
+                double length = span.Length;
+                Assert.True(length > 0.0);
+                Assert.Equal(length / 4096.0, placement.StretchY, 3);
+
+                // Local Y runs down the span: the frame's middle column is the unit direction.
+                Matrix3f frame = Assert.IsType<Matrix3f>(placement.Frame);
+                Assert.Equal(span.X / length, frame.Column2.X, 3);
+                Assert.Equal(span.Y / length, frame.Column2.Y, 3);
+                Assert.Equal(span.Z / length, frame.Column2.Z, 3);
+
+                // And the frame is a rotation, which is what the other two columns being a normalised
+                // right-handed pair around that direction amounts to.
+                Assert.Equal(1f, frame.Determinant, 3);
+
+                // A wire carries no Position, which is why the name-driven walk dropped all of them.
+                Assert.False(task.TryGetValue(Igi2WorldScene.PositionParameter, out _));
+            }
+        }
+
+        Assert.Equal(25, wires);
+    }
+
     private static IEnumerable<GameTask> Walk(GameTask root)
     {
         foreach (GameTask child in root.Children)

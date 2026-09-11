@@ -96,6 +96,7 @@ public static class Igi2DrawableScene
             Matrix3f orientation,
             string mounted,
             Matrix3f mountedOrientation,
+            float stretchY,
             int variant,
             int depth,
             ref int index)
@@ -113,6 +114,19 @@ public static class Igi2DrawableScene
             // the attach objects and the task children, all sharing the one counter. So the numbering is
             // depth first over the whole tree and a diffuse node still consumes its place in it.
             int own = index++;
+
+            // A model drawn at a size the level chose rather than the size it was authored. Only a
+            // Wire does this, stretching its own Y down the span; the geometry is its own because the
+            // mesh cache is keyed by name, and two wires of the same model are not the same mesh.
+            MeshGeometry? bent = null;
+            if (stretchY != 0f)
+            {
+                bent = WireTransform.Stretch(model, stretchY);
+                if (bent is null)
+                {
+                    return false;
+                }
+            }
 
             string entry = string.Empty;
             if (lightmaps is not null
@@ -136,6 +150,7 @@ public static class Igi2DrawableScene
                 levelRoot)
             {
                 LightmapEntry = entry,
+                BentGeometry = bent,
 
                 // The queue this object is drawn in. Every I.G.I. 2 level authors it, and it is what
                 // separates a decal or a pane of glass from the geometry it has to come after.
@@ -171,7 +186,7 @@ public static class Igi2DrawableScene
                         unitsPosition.Z + mountOffset.Z);
                 }
 
-                if (Emit(mounted, mountPosition, mountedOrientation, string.Empty, default, variant, depth + 1, ref index))
+                if (Emit(mounted, mountPosition, mountedOrientation, string.Empty, default, 0f, variant, depth + 1, ref index))
                 {
                     attached++;
                 }
@@ -200,6 +215,7 @@ public static class Igi2DrawableScene
                     orientation * attachment.Orientation,
                     string.Empty,
                     default,
+                    stretchY: 0f,
                     variant,
                     depth + 1,
                     ref index))
@@ -221,16 +237,22 @@ public static class Igi2DrawableScene
         foreach (Igi2Placement placement in placed.StaticPlacements)
         {
             placementId = placement.LevelId;
-            placementType = placement.TypeName;
+            // The renderer caches a stretched model's geometry under the task's name rather than the
+            // model's, because the stretch is the placement's and not the model's. Two wires of one
+            // model must not collide in that cache.
+            placementType = placement.StretchY != 0f
+                ? $"wire:{placement.LevelId}"
+                : placement.TypeName;
             placementGroup = placement.RenderGroup;
 
             int index = 0;
             if (!Emit(
                 placement.Model,
                 placement.Position,
-                WorldScene.ToOrientation(placement.Orientation),
+                placement.Frame ?? WorldScene.ToOrientation(placement.Orientation),
                 placement.MountedModel,
                 WorldScene.ToOrientation(placement.MountedOrientation),
+                placement.StretchY,
                 placement.ModelVariant,
                 depth: 0,
                 ref index))

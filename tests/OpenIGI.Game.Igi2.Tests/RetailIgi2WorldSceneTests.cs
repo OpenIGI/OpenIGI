@@ -51,10 +51,11 @@ public sealed class RetailIgi2WorldSceneTests
         }
 
         Assert.Equal(24, levels);
-        Assert.Equal(11_699, placements);
+        Assert.Equal(11_724, placements);
         // Fourteen, not fifteen: HumanPlayer became a class of its own when the sequel's player was
-        // registered, and a character is not a static placement.
-        Assert.Equal(20, types.Count);
+        // registered, and a character is not a static placement. Wire is the twenty-first, and is the
+        // one type here that is not placed at a position it authors -- it is strung between two.
+        Assert.Equal(21, types.Count);
     }
 
     /// <summary>
@@ -89,7 +90,7 @@ public sealed class RetailIgi2WorldSceneTests
             }
         }
 
-        Assert.Equal(10_489, total);
+        Assert.Equal(10_514, total);
         Assert.True(
             resolved >= total * 96 / 100,
             $"Only {resolved} of {total} static placements resolved, below the 96% the corpus reaches.");

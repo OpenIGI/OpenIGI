@@ -19,12 +19,39 @@ public readonly record struct WireTransform(
     Vector3d CableStart,
     Vector3d CableEnd)
 {
+    /// <summary>Gets the midpoint the model is drawn at, in engine units.</summary>
+    /// <remarks>
+    /// A world walk reads and compares in engine units and converts once, at the point it hands a
+    /// placement to the renderer. This is the same midpoint <see cref="PositionMetres"/> reports.
+    /// </remarks>
+    public Vector3d PositionUnits => new(
+        PositionMetres.X * WorldScene.UnitsPerMetre,
+        PositionMetres.Y * WorldScene.UnitsPerMetre,
+        PositionMetres.Z * WorldScene.UnitsPerMetre);
+
+    /// <summary>Builds the runtime transform from a wire task alone.</summary>
+    /// <remarks>
+    /// The model is needed only for <see cref="CableStart"/> and <see cref="CableEnd"/>, which is the
+    /// line the player traverses. A caller that only wants to DRAW the cable does not have one to hand
+    /// at the point it reads the task, and does not need one; the endpoints then report the authored
+    /// positions, which is what the magic vertices sit at either end of anyway.
+    /// </remarks>
+    public static bool TryCreate(DeclaredTask task, out WireTransform transform)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        return Build(task, null, out transform);
+    }
+
     /// <summary>Builds the runtime transform from a wire task and its model.</summary>
     public static bool TryCreate(DeclaredTask task, MefModel model, out WireTransform transform)
     {
         ArgumentNullException.ThrowIfNull(task);
         ArgumentNullException.ThrowIfNull(model);
+        return Build(task, model, out transform);
+    }
 
+    private static bool Build(DeclaredTask task, MefModel? model, out WireTransform transform)
+    {
         if (!TryPosition(task, "Start position", out Vector3d start)
             || !TryPosition(task, "Stop position", out Vector3d stop))
         {
@@ -52,7 +79,8 @@ public readonly record struct WireTransform(
 
         Vector3d cableStart = start;
         Vector3d cableEnd = stop;
-        if (model.TryGetMagicVertex(0, out Vector3f localStart)
+        if (model is not null
+            && model.TryGetMagicVertex(0, out Vector3f localStart)
             && model.TryGetMagicVertex(1, out Vector3f localEnd))
         {
             cableStart = TransformMagic(midpoint, orientation, scaleY, localStart);
@@ -72,7 +100,13 @@ public readonly record struct WireTransform(
     }
 
     /// <summary>Builds the wire's model geometry with its retail local-Y stretch applied.</summary>
-    public MeshGeometry? Stretch(MefModel model)
+    public MeshGeometry? Stretch(MefModel model) => Stretch(model, ScaleY);
+
+    /// <summary>Builds a model's geometry with a local-Y stretch applied.</summary>
+    /// <param name="model">The model to stretch.</param>
+    /// <param name="scaleY">The factor its local Y axis is scaled by.</param>
+    /// <returns>The stretched geometry, or <see langword="null"/> when the model has none.</returns>
+    public static MeshGeometry? Stretch(MefModel model, float scaleY)
     {
         ArgumentNullException.ThrowIfNull(model);
         MeshGeometry? source = MefMeshBuilder.Build(model, (float)(1.0 / WorldScene.UnitsPerMetre));
@@ -87,10 +121,10 @@ public readonly record struct WireTransform(
             Vertex3D vertex = source.Vertices[i];
             Vector3f normal = Normalize(new Vector3f(
                 vertex.Normal.X,
-                ScaleY != 0f ? vertex.Normal.Y / ScaleY : vertex.Normal.Y,
+                scaleY != 0f ? vertex.Normal.Y / scaleY : vertex.Normal.Y,
                 vertex.Normal.Z));
             vertices[i] = new Vertex3D(
-                new Vector3f(vertex.Position.X, vertex.Position.Y * ScaleY, vertex.Position.Z),
+                new Vector3f(vertex.Position.X, vertex.Position.Y * scaleY, vertex.Position.Z),
                 normal,
                 vertex.DiffuseU,
                 vertex.DiffuseV,

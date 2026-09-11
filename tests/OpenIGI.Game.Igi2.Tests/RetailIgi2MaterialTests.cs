@@ -86,8 +86,8 @@ public sealed class RetailIgi2MaterialTests
             }
         }
 
-        Assert.Equal(1_863, meshes);
-        Assert.Equal(6_522, records);
+        Assert.Equal(1_872, meshes);
+        Assert.Equal(6_531, records);
 
         // Not one slot goes unanswered. This started at 358 and the residue was the finding: the missing
         // slots all belonged to meshes resolved against the wrong pack, so a mesh arrived wearing another
@@ -96,7 +96,7 @@ public sealed class RetailIgi2MaterialTests
         Assert.Equal(0, missing);
         Assert.Equal(records - untextured, resolved);
         Assert.Equal(25, untextured);
-        Assert.Equal(991, textures.Count);
+        Assert.Equal(992, textures.Count);
     }
 
     /// <summary>Two uniforms of one soldier mesh really do sample different textures.</summary>

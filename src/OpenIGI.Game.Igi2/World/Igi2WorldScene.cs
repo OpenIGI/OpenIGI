@@ -1,6 +1,7 @@
 using System.Globalization;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.World;
 
@@ -29,6 +30,14 @@ namespace OpenIGI.Game.Igi2.World;
 /// <param name="MountedOrientation">
 /// The mounted model's own facing, in the same three angles, already composed with the host's.
 /// </param>
+/// <param name="Frame">
+/// The orientation given as a matrix rather than as three angles, for a type whose handler builds one
+/// directly. Null for everything placed at an authored facing, which is nearly everything.
+/// </param>
+/// <param name="StretchY">
+/// A factor the model's own Y axis is scaled by before it is drawn, or zero for a model drawn at the
+/// size it was authored. Only a stretched model needs geometry of its own.
+/// </param>
 /// <param name="ModelVariant">
 /// Which of the owning task's model SLOTS this is wearing, counted from one, or zero when the type has
 /// a single slot or the port has not established its enumeration. It is the group letter in the name of
@@ -46,7 +55,9 @@ public readonly record struct Igi2Placement(
     int RenderGroup,
     int ModelVariant = 0,
     string MountedModel = "",
-    Vector3f MountedOrientation = default);
+    Vector3f MountedOrientation = default,
+    Matrix3f? Frame = null,
+    float StretchY = 0f);
 
 /// <summary>
 /// Everything an I.G.I. 2 level places in the world, walked out of its task tree.
@@ -81,6 +92,9 @@ public sealed class Igi2WorldScene
 
     /// <summary>The parameter every placeable task names its orientation with.</summary>
     public const string OrientationParameter = "Orientation";
+
+    /// <summary>The type that is strung between two points rather than placed at one.</summary>
+    public const string WireType = "Wire";
 
     /// <summary>The parameter a placeable task names its draw queue with, when it has one.</summary>
     public const string RenderGroupParameter = "RenderGroup";
@@ -120,6 +134,13 @@ public sealed class Igi2WorldScene
     /// barrel is an attachment, and is left out for the same reason the camera body is.
     /// </description></item>
     /// <item><description>
+    /// <c>Wire</c> — <c>Wire_UpdateInternalDataHandler</c> (<c>0x49B720</c>) gives the model no
+    /// position of its own. It puts it at the midpoint of <c>Start position</c> and <c>Stop position</c>,
+    /// builds an orientation whose middle column is the direction down the span, and scales the model's
+    /// local Y by <c>length × 0.000244140625</c> — one over <c>WORLD_METER</c>. So a wire is bound by
+    /// its endpoints rather than by the usual parameter names; see <see cref="WireTransform"/>.
+    /// </description></item>
+    /// <item><description>
     /// <c>Lift</c> — the authored start. <c>Lift_SetPositionToFirstFloor</c> (<c>0x46DD50</c>) moves a
     /// lift onto its first <c>Floor</c> child at load, which this does not do; the eight lifts in the
     /// corpus stand where the editor left them until it does.
@@ -130,7 +151,7 @@ public sealed class Igi2WorldScene
     /// extruded along the spline between waypoints by <c>SplineObjSegment_Update</c>, and a
     /// <c>Waypoint Model</c> that is the editor's own <c>ai-arrow</c>; drawing either at the waypoint
     /// would be wrong. <c>RotateAttachment</c> (250) has no position at all — it hangs off its parent.
-    /// <c>Wire</c> (25) is strung between a start and a stop. <c>Train</c> (9) rides a spline.
+    /// <c>Train</c> (9) rides a spline.
     /// <c>ComputerHilight</c> (108) names <c>MARKER_NONE</c>, a sentinel for the computer overlay rather
     /// than a model, and <c>LevelInfo</c> (19) names a script path. Each is a subsystem, not a name.
     /// </para>
@@ -331,7 +352,27 @@ public sealed class Igi2WorldScene
             return false;
         }
 
-        if (!task.TryGetValue(binding.Position, out object? rawPosition) || rawPosition is not Vector3d position)
+        // A wire is strung, not placed. Wire_UpdateInternalDataHandler (igi2 0x49B720) reads the two
+        // endpoints, puts the model at their midpoint, points its local Y down the span and scales that
+        // axis by length / WORLD_METER. It is the same handler Project I.G.I. runs -- the same 0.95
+        // branch in GameFunctions_CreateOrientationFromDirection (0x53C350) for a span too close to
+        // vertical, the same 0.000244140625 -- so the shared transform is used unchanged rather than
+        // written again for the sequel.
+        Vector3d position;
+        Matrix3f? frame = null;
+        float stretchY = 0f;
+        if (string.Equals(task.Type.Name, WireType, StringComparison.Ordinal)
+            && WireTransform.TryCreate(task, out WireTransform wire))
+        {
+            position = wire.PositionUnits;
+            frame = wire.Orientation;
+            stretchY = wire.ScaleY;
+        }
+        else if (task.TryGetValue(binding.Position, out object? rawPosition) && rawPosition is Vector3d authored)
+        {
+            position = authored;
+        }
+        else
         {
             return false;
         }
@@ -384,7 +425,9 @@ public sealed class Igi2WorldScene
             group,
             VariantOf(task, binding, model),
             mounted,
-            mountedOrientation);
+            mountedOrientation,
+            frame,
+            stretchY);
         return true;
     }
 }

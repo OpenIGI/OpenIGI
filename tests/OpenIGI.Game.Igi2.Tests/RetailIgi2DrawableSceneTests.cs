@@ -60,9 +60,9 @@ public sealed class RetailIgi2DrawableSceneTests
         }
 
         Assert.Equal(24, levels);
-        Assert.Equal(16_612, placements);
+        Assert.Equal(16_637, placements);
         Assert.Equal(12_239, lightmapped);
-        Assert.Equal(2_650_200L, triangles);
+        Assert.Equal(2_652_000L, triangles);
 
         // The two are `soldier_1`, which is in no archive anywhere in the installation -- the residue
         // RetailIgi2ModelTableTests names. A scene that silently dropped more than that would still look
@@ -150,7 +150,7 @@ public sealed class RetailIgi2DrawableSceneTests
             }
         }
 
-        Assert.Equal(11_699, placed);
+        Assert.Equal(11_724, placed);
         // 1,210 rather than 1,229: the nineteen the levels declare as HumanPlayer are no longer
         // placements at all, having become the player the mission stands up.
         Assert.Equal(1_210, characters);
