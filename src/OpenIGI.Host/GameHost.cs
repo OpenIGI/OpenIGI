@@ -3897,6 +3897,10 @@ internal sealed partial class GameHost : IDisposable
                 // a reference render wants: a pinned sun and an unmodified exposure.
                 RenderCVars.Nightfall.Value = _deferredLighting?.Nightfall ?? _dayNight.Nightfall;
 
+                // And what the LEVEL says about its own darkness, which the adaptation cannot work out
+                // for itself: a scene lit dimly all over reads to it as a correctly-exposed dark subject.
+                RenderCVars.AuthoredNightfall.Value = _deferredLighting?.Nightfall ?? 0f;
+
                 // The sun keeps the level's own authored chromaticity — the same warm (1, 0.77, 0.62) the
                 // reference scene lights with — because rewriting it to a neutral key is exactly the kind
                 // of grade that made the two renders impossible to compare channel for channel. Only the
@@ -3985,9 +3989,17 @@ internal sealed partial class GameHost : IDisposable
                 // buildings crisp -- and it hung inside rooms besides. This carries the same shape at a
                 // fraction of the extinction, so distance still reads but the far wall of a compound stays
                 // legible.
-                float authoredDensity = _sky is { HasSky: true }
-                    ? 0.002f + (Math.Clamp(_sky.FogAmount, 0f, 1f) * 0.010f)
-                    : 0.006f;
+                // A title that authors a real extinction gives it here, in the same units, and is
+                // believed. I.G.I. 2's GlobalLight carries one per level -- mission 1 asks for 0.00174
+                // per metre -- where the curve below is a fit over Project I.G.I.'s FlatSky "Fog Amount",
+                // which is a 0-to-1 dial and not a length at all. Run through that fit the sequel's first
+                // mission came out at 0.0070 per metre, four times its own figure, and the frame was a
+                // blue wash with the buildings barely in it.
+                float authoredDensity = _atmosphere is { FogDensity: > 0f } own
+                    ? own.FogDensity
+                    : _sky is { HasSky: true }
+                        ? 0.002f + (Math.Clamp(_sky.FogAmount, 0f, 1f) * 0.010f)
+                        : 0.006f;
 
                 // Fog is an outdoor medium, and where it is outdoors is decided a froxel at a time inside
                 // the march itself -- see the shelter lookup in VolumetricFogShaderSource. It used to be
@@ -4022,6 +4034,14 @@ internal sealed partial class GameHost : IDisposable
                     // replaced by a global number, and a preset that assigned one could not be told from
                     // a player who had. Picking a preset therefore CLEARS an override and hands the
                     // missions back their own air, which is the behaviour the settings page implies.
+                    // The haze is the colour the level says it is. Without this the medium scatters a
+                    // near-white droplet albedo lit by the sun, which for a night mission whose own fog is
+                    // a dark blue (0.00, 0.16, 0.29) is a pale daylight haze over a dark scene.
+                    if (_atmosphere is { } tint && tint.FogColour.LengthSquared > 0f)
+                    {
+                        medium = medium with { Albedo = tint.FogColour };
+                    }
+
                     if (RenderCVars.FogDensity.Value > 0f)
                     {
                         medium = medium with { Density = RenderCVars.FogDensity.Value };
@@ -4390,8 +4410,17 @@ internal sealed partial class GameHost : IDisposable
                     // few thousandths of a sun still rendered as a dim but unmistakably blue daytime
                     // sky where a night sky reads near black. The surfaces keep the full moonlight; the
                     // sky keeps only a trace of it.
+                    // The same knock-down, for the other way a scene can be at night. The moon case
+                    // above exists because the atmosphere scatters whatever illuminance it is given and a
+                    // trace of moonlight still came out as a dim blue DAYTIME sky. I.G.I. 2 reaches the
+                    // same place by a different road: its night missions leave the sun up and paint it
+                    // nearly black, so the model -- which only knows night as a sun below the horizon --
+                    // has no way to tell. Told by the level instead, and taken to the same floor.
+                    float nightFeed = _deferredLighting is { } nightly
+                        ? 1f + ((0.02f - 1f) * Math.Clamp(nightly.Nightfall, 0f, 1f))
+                        : 1f;
                     Vector3f atmosphereSun = light.Colour * RenderCVars.AtmosphereSunScale.Value
-                        * (_dayNight.Moonrise > 0f ? 0.02f : 1f);
+                        * (_dayNight.Moonrise > 0f ? 0.02f : nightFeed);
 
                     // TEMPORARY (r_ambient_scale): the dynamic model fills every surface with this one flat
                     // ambient, so a sealed room reads as lit as open ground. Scaling it here -- towards 0 --
