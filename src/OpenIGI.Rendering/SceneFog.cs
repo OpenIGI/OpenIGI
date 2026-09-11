@@ -23,12 +23,13 @@ namespace OpenIGI.Rendering;
 /// <c>colour = f · surface + (1 - f) · fogColour</c>.
 /// </para>
 /// <para>
-/// The density is a level's own. The weather update <c>sub_527520</c> hands <c>sub_50FD20</c> the
-/// <c>FlatSky</c> task's fog colour and its <b>Fog Amount × 0.0005</b> (<c>0x527B41</c>), so with 4096
-/// game units to the metre the whole chain collapses to <see cref="DensityFor"/>: <c>0.002048</c> per
-/// metre per unit of fog amount. The thirteen shipping levels ask for <c>0.70</c> to <c>0.975</c>, which
-/// is half the surface gone by 350–480 m and all but a hundredth of it by 2.3–3.2 km, and every one of
-/// them fogs to the same <c>(0.2, 0.288, 0.4)</c> slate blue.
+/// The density is a level's own, and it comes from the <b><c>GlobalLight</c></b> task — not from
+/// <c>FlatSky</c>, whose <c>Fog Amount</c> is the cloud plane's fade. <c>sub_527520</c> hands
+/// <c>sub_50FD20</c> the showing <c>GlobalLightKeyframe</c>'s fog colour and its
+/// <b>density × 0.0005</b> (<c>0x527B41</c>), so with 4096 game units to the metre the whole chain
+/// collapses to <see cref="DensityFor"/>: <c>0.002048</c> per metre per unit of declared density. See
+/// <c>GlobalLightSettings</c> for the bands and what the shipping levels ask for — anything from half a
+/// surface gone by 71 m to half of it still there at 2.9 km, each with its own colour.
 /// </para>
 /// <para>
 /// <b>The fog colour follows the blend, not the level</b> (<c>sub_5144E0</c>): an opaque draw fogs to the
@@ -58,8 +59,8 @@ public readonly record struct SceneFog(Vector3f Colour, float DensityPerMetre)
     /// <summary>Gets a value indicating whether anything is fogged.</summary>
     public bool IsEnabled => DensityPerMetre > 0f;
 
-    /// <summary>Turns a level's <c>Fog Amount</c> into the extinction per metre the shader wants.</summary>
-    /// <param name="amount">The <c>FlatSky</c> task's <c>Fog Amount</c>.</param>
+    /// <summary>Turns a level's declared fog density into the extinction per metre the shader wants.</summary>
+    /// <param name="amount">The <c>GlobalLightKeyframe</c> band's fog density.</param>
     /// <param name="unitsPerMetre">Game units to the metre; the world's own 4096.</param>
     /// <returns>The extinction per metre, never negative.</returns>
     /// <remarks>
@@ -78,12 +79,12 @@ public readonly record struct SceneFog(Vector3f Colour, float DensityPerMetre)
         return density * DistanceScale * unitsPerMetre;
     }
 
-    /// <summary>Builds the fog a level's <c>FlatSky</c> asks for.</summary>
-    /// <param name="colour">The task's <c>Fog Color</c>, which the original clamps to <c>[0, 1]</c>.</param>
-    /// <param name="amount">The task's <c>Fog Amount</c>.</param>
+    /// <summary>Builds the fog one band of a level's <c>GlobalLightKeyframe</c> asks for.</summary>
+    /// <param name="colour">The band's fog colour, which the original clamps to <c>[0, 1]</c>.</param>
+    /// <param name="amount">The band's fog density.</param>
     /// <param name="unitsPerMetre">Game units to the metre.</param>
     /// <returns>The fog.</returns>
-    public static SceneFog FromFlatSky(Vector3f colour, float amount, float unitsPerMetre = 4096f) => new(
+    public static SceneFog FromGlobalLight(Vector3f colour, float amount, float unitsPerMetre = 4096f) => new(
         new Vector3f(
             Math.Clamp(colour.X, 0f, 1f),
             Math.Clamp(colour.Y, 0f, 1f),

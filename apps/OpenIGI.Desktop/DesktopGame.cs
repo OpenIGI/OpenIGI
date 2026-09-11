@@ -287,6 +287,10 @@ internal sealed partial class DesktopGame : IDisposable
     private WorldRenderer? _world;
     private TerrainRenderer? _terrain;
     private SkyRenderer? _sky;
+
+    // The level's own GlobalLight keyframe: the fog the ground and the models are drawn into, and the
+    // flat light a model with no lightmap wears. Read once per level, used every frame.
+    private GlobalLightSettings _globalLight = GlobalLightSettings.None;
     private RainRenderer? _rain;
     private StormRenderer? _storm;
     private SnowRenderer? _snow;
@@ -4270,14 +4274,17 @@ internal sealed partial class DesktopGame : IDisposable
                 // horizon across the middle of the frame and only reaches straight down at the top, so
                 // dropping the sky for the whole of it would leave the first half of the shot rising out
                 // of a black void.
-                // The level's own distance fog, which the whole world below is drawn into. Set before
-                // the sky, because the sky renderer puts back whatever it finds here after drawing its
-                // unfogged dome. The modern tiers leave it off and march the same FlatSky haze through
-                // the froxel volume instead.
-                _device.SetFog(
-                    RenderCVars.RetailFog.Value && _sky is { HasSky: true } fogSky
-                        ? SceneFog.FromFlatSky(fogSky.FogColour, fogSky.FogAmount)
-                        : SceneFog.None);
+                // The level's own distance fog, which the whole world below is drawn into, and its flat
+                // model light. Set before the sky, because the sky renderer puts back whatever it finds
+                // here after drawing its unfogged dome. The modern tiers leave the fog off and march the
+                // same authored haze through the froxel volume instead, and their models are lit by the
+                // G-buffer pass rather than by this one.
+                bool retailFog = RenderCVars.RetailFog.Value;
+                _device.SetFog(retailFog ? _globalLight.ObjectFog : SceneFog.None);
+                _device.SetModelAmbient(
+                    EffectiveLighting == LightingModel.Baked
+                        ? _globalLight.ObjectAmbient
+                        : GlobalLightSettings.DefaultAmbient);
 
                 if (mapScene is null || _computerFlight.IsFlying)
                 {
@@ -4316,6 +4323,14 @@ internal sealed partial class DesktopGame : IDisposable
                     _terrain.CacheLimit = RenderCVars.TerrainCache.Value;
                 }
 
+                // The ground is drawn through its own band of the same keyframe. Retail keeps two --
+                // "terrain" and "object category 1" -- and publishes them to different globals; every
+                // shipping level happens to author them alike, which is not a reason to draw them alike.
+                if (retailFog)
+                {
+                    _device.SetFog(_globalLight.TerrainFog);
+                }
+
                 _terrain?.Draw(
                     eye,
                     projection,
@@ -4328,6 +4343,11 @@ internal sealed partial class DesktopGame : IDisposable
                     GraphicsPresetRegistry.Default.Current != GraphicsPreset.Vanilla,
                     RenderCVars.TerrainOcclusion.Value);
                 EndStageIfSlow("the terrain");
+
+                if (retailFog)
+                {
+                    _device.SetFog(_globalLight.ObjectFog);
+                }
 
                 // With the world and the terrain both in the depth buffer, the world's occlusion
                 // queries can be answered honestly: walls hide the outdoors, and hills hide buildings.

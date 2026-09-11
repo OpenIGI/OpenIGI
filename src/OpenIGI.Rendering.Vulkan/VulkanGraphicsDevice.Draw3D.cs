@@ -32,6 +32,11 @@ public sealed partial class VulkanGraphicsDevice
     // original's. Its density is zero -- no fog -- for everything but the vanilla picture.
     private SceneFog _fog = SceneFog.None;
 
+    // The flat light a model with no lightmap wears -- the original's D3DRENDERSTATE_AMBIENT, which is
+    // the whole of its model lighting. One for every draw in the frame, like the fog; white leaves the
+    // texture alone, which is what every path but the baked one wants.
+    private Vector3f _modelAmbient = Vector3f.One;
+
     // How much of the previous-pose vertex stream is in the position drawn now, and how much was in the
     // one drawn last frame. Zero for everything that does not animate -- and for those two streams are
     // one buffer, so any blend of a value with itself is that value and the picture is unchanged.
@@ -723,16 +728,24 @@ public sealed partial class VulkanGraphicsDevice
             // flag the vertex stage reads, and a sun tint there would morph the world.
             data[20] = modelView.M11; data[21] = modelView.M12; data[22] = modelView.M13;
             data[23] = litViewModel ? _lighting.SunColour.X + lamps.X : 0f;
-            data[24] = modelView.M21; data[25] = modelView.M22; data[26] = modelView.M23;
-            data[27] = _lighting.SunColour.Y + lamps.Y;
 
             if (litViewModel)
             {
+                data[24] = modelView.M21; data[25] = modelView.M22; data[26] = modelView.M23;
+                data[27] = _lighting.SunColour.Y + lamps.Y;
                 data[28] = modelView.M31; data[29] = modelView.M32; data[30] = modelView.M33;
                 data[31] = _lighting.SunColour.Z + lamps.Z;
             }
             else
             {
+                // The second normal row carries the level's flat model light instead. A sub-mesh with a
+                // lightmap does not take it -- the original draws that one with Direct3D lighting off and
+                // the lightmap in the second stage, and this one with lighting on and the ambient as its
+                // only term (sub_49F1C0). White is the identity either way, so the shader multiplies
+                // unconditionally and nothing branches.
+                Vector3f tint = lightmap.IsValid ? Vector3f.One : _modelAmbient;
+                data[24] = tint.X; data[25] = tint.Y; data[26] = tint.Z;
+                data[27] = 0f;
                 // The third normal row and the key's blue are read by the lit rig and by nothing else —
                 // every other draw returns out of the fragment stage before it touches either — so this
                 // is where the frame's fog rides in. The rig itself is never fogged, which is the

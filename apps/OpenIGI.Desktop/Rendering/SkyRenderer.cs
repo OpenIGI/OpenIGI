@@ -206,7 +206,13 @@ public sealed class SkyRenderer : IDisposable
         // have swallowed it whole. The clouds ride the same state; their own fade is the distance ramp
         // the FlatSky task authors.
         SceneFog fog = _device.Fog;
+        Vector3f ambient = _device.ModelAmbient;
         _device.SetFog(SceneFog.None);
+
+        // Nor is the sky a model: its gradient is in its own vertices and the level's flat model light
+        // has no business multiplying it. The original keeps the dome in its own state block for the
+        // same reason it keeps it out of the depth buffer -- it is the backdrop, not the world.
+        _device.SetModelAmbient(Vector3f.One);
 
         // The dome follows the camera, so its model position is the camera's and only the rotation
         // remains in the model-view.
@@ -219,6 +225,7 @@ public sealed class SkyRenderer : IDisposable
         }
 
         _device.SetFog(fog);
+        _device.SetModelAmbient(ambient);
     }
 
     /// <summary>Tints the dome to the sun's warmth, rebuilding it when the tint moves enough to matter.</summary>

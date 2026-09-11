@@ -105,6 +105,7 @@ internal sealed partial class DesktopGame
 
         _sky?.Dispose();
         _sky = new SkyRenderer(_device, preview.FileSystem, preview.LevelRoot, FarPlane, _logger);
+        _globalLight = GlobalLightSettings.Read(preview.LevelRoot);
         _shadowPass ??= new ShadowCasterPass(_device);
 
         // A mission with no shipped bake previews on sun and sky alone. Tracing one is seconds of CPU for a

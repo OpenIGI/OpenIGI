@@ -24,47 +24,103 @@ namespace OpenIGI.Desktop.Tests;
 /// </remarks>
 public sealed class RetailSkyFogTests
 {
-    /// <summary>Every mission declares one sky, and the fog it asks for is the fog the port builds.</summary>
-    [RequiresGameDataFact]
-    public void EveryLevelsFlatSkyAsksForTheFogTheOriginalDraws()
+    /// <summary>The air every mission asks for, and what it means in metres.</summary>
+    /// <remarks>
+    /// <para>
+    /// Read off the <c>GlobalLight</c> keyframe, which is where the original reads it. The first attempt
+    /// took <c>FlatSky</c>'s <c>Fog Amount</c> instead and got one figure for the whole campaign — the
+    /// cloud plane's fade, which every level authors at about 0.9. The real bands are nothing like that
+    /// uniform: mission 3 loses half a surface in 71 m and mission 11 still has half of it at 2.9 km,
+    /// and that difference is the whole reason one mission's range is meant to be seen and another's
+    /// horizon is not.
+    /// </para>
+    /// <para>
+    /// The figures below are the levels' own, so a change to the chain of constants moves them all and
+    /// this fails; they are not a re-derivation of the formula from itself.
+    /// </para>
+    /// </remarks>
+    [RequiresGameDataTheory]
+    [InlineData(1, 1.89f, 179f)]
+    [InlineData(2, 0.18f, 1880f)]
+    [InlineData(3, 4.79f, 71f)]
+    [InlineData(4, 1.2f, 282f)]
+    [InlineData(5, 0.12f, 2820f)]
+    [InlineData(6, 0.18f, 1880f)]
+    [InlineData(7, 0.79f, 428f)]
+    [InlineData(8, 0.4f, 846f)]
+    [InlineData(9, 3f, 113f)]
+    [InlineData(10, 0.18f, 1880f)]
+    [InlineData(11, 0.115f, 2943f)]
+    [InlineData(12, 0.4f, 846f)]
+    [InlineData(13, 0.6f, 564f)]
+    [InlineData(14, 9.5f, 36f)]
+    public void EveryMissionsAirIsItsGlobalLightKeyframes(int mission, float density, float halfAt)
     {
-        int levels = 0;
+        using Level level = Level.Load(mission);
+        GlobalLightSettings light = level.GlobalLight;
 
-        for (int mission = 1; mission <= 14; mission++)
-        {
-            using Level level = Level.Load(mission);
-            if (!level.Sky.HasSky)
-            {
-                // Level 14 ships no FlatSky, as it ships no usable terrain.
-                Assert.Equal(14, mission);
-                continue;
-            }
+        // The keyframe a mission opens on is its own, not the green one the goggles switch to.
+        Assert.Equal(12f, light.Time);
 
-            levels++;
-            SceneFog fog = SceneFog.FromFlatSky(level.Sky.FogColour, level.Sky.FogAmount);
+        Assert.Equal(SceneFog.DensityFor(density), light.TerrainFog.DensityPerMetre, 7);
+        Assert.Equal(halfAt, HalfVisibleAt(light.TerrainFog), 0);
 
-            // The authored range across the campaign, and what it means in metres. Anything outside this
-            // is either a level read wrongly or a chain of constants that has drifted.
-            Assert.InRange(level.Sky.FogAmount, 0.7f, 0.975f);
-            Assert.InRange(fog.DensityPerMetre, 0.0014f, 0.0021f);
-            Assert.InRange(HalfVisibleAt(fog), 330f, 500f);
+        // Every shipping level authors the terrain band and the first object band alike. They are still
+        // read and published separately, because the original does.
+        Assert.Equal(light.TerrainFog, light.ObjectFog);
 
-            // Half a kilometre out a surface still shows through; four kilometres out it does not. The
-            // thinnest fog in the campaign is mission 7's 0.70, which still leaves only a hundredth of a
-            // surface at 3.2 km.
-            Assert.InRange(fog.FactorAt(500f), 0.35f, 0.5f);
-            Assert.True(fog.FactorAt(4000f) < 0.01f, $"mission {mission} still shows {fog.FactorAt(4000f):0.###} at 4 km");
-
-            // The same slate blue in all thirteen, which is the colour the horizon settles to.
-            Assert.Equal(0.2f, fog.Colour.X, 3);
-            Assert.Equal(0.288f, fog.Colour.Y, 3);
-            Assert.Equal(0.4f, fog.Colour.Z, 3);
-        }
-
-        Assert.Equal(13, levels);
+        // And a flat model light that is a dim tint, never white: models in this game are the texture
+        // multiplied by it, and one that reached white would be the port's own default showing through.
+        Assert.InRange(light.ObjectAmbient.X, 0.0f, 0.6f);
+        Assert.InRange(light.ObjectAmbient.Y, 0.05f, 0.6f);
+        Assert.InRange(light.ObjectAmbient.Z, 0.05f, 0.6f);
     }
 
-    /// <summary>The sky is drawn unfogged, and gives back the fog it found.</summary>
+    /// <summary>The goggles' keyframe is the green one, and it carries no fog.</summary>
+    /// <remarks>
+    /// Every level declares exactly two keyframes: its own air at time 12, and a green one at time 100
+    /// with the fog density at zero. That is the night-vision state, not a time of day — which is why
+    /// the keyframe a mission opens on is chosen by taking the lowest time rather than by interpolating
+    /// towards a clock.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void TheSecondKeyframeIsTheNightVisionState()
+    {
+        using Level level = Level.Load(1);
+
+        List<DeclaredTask> keyframes = [];
+        Collect(level.Root);
+
+        Assert.Equal(2, keyframes.Count);
+        Assert.Contains(keyframes, k => Time(k) == 12f);
+
+        DeclaredTask goggles = Assert.Single(keyframes, k => Time(k) == 100f);
+        GlobalLightSettings green = GlobalLightSettings.From(goggles, 100f);
+
+        Assert.False(green.TerrainFog.IsEnabled);
+        Assert.False(green.ObjectFog.IsEnabled);
+        Assert.True(green.ObjectAmbient.Y > green.ObjectAmbient.X, "the goggle state is not green");
+        Assert.True(green.ObjectAmbient.Y > green.ObjectAmbient.Z, "the goggle state is not green");
+
+        void Collect(GameTask task)
+        {
+            if (task is DeclaredTask declared
+                && string.Equals(declared.Type.Name, GlobalLightSettings.KeyframeType, StringComparison.Ordinal))
+            {
+                keyframes.Add(declared);
+            }
+
+            foreach (GameTask child in task.Children)
+            {
+                Collect(child);
+            }
+        }
+
+        static float Time(DeclaredTask keyframe) =>
+            keyframe.TryGetValue("Time", out object? value) && value is float time ? time : float.NaN;
+    }
+
+    /// <summary>The sky is drawn unfogged and untinted, and gives back what it found.</summary>
     /// <remarks>
     /// <c>sub_52D060</c> turns <c>FOGENABLE</c> off with its depth states before the dome and the cloud
     /// layers. It has to: the dome is a sphere of eighty kilometres, which is several times past the
@@ -72,12 +128,13 @@ public sealed class RetailSkyFogTests
     /// fog colour and the level has no sky at all.
     /// </remarks>
     [RequiresGameDataFact]
-    public void TheSkyDrawsUnfoggedAndLeavesTheFramesFogAsItFoundIt()
+    public void TheSkyDrawsUnfoggedAndUntintedAndLeavesTheFrameAsItFoundIt()
     {
         using Level level = Level.Load(1);
-        SceneFog fog = SceneFog.FromFlatSky(level.Sky.FogColour, level.Sky.FogAmount);
+        SceneFog fog = level.GlobalLight.TerrainFog;
 
         level.Device.SetFog(fog);
+        level.Device.SetModelAmbient(level.GlobalLight.ObjectAmbient);
         level.Device.MeshDraws.Clear();
         level.Sky.Draw(
             new Camera3D(new Vector3d(0, 0, 0), Camera3D.LookRotation(0f, 0f)),
@@ -87,6 +144,10 @@ public sealed class RetailSkyFogTests
         Assert.NotEmpty(level.Device.MeshDraws);
         Assert.All(level.Device.MeshDraws, draw => Assert.False(draw.Fog.IsEnabled));
         Assert.Equal(fog, level.Device.Fog);
+
+        // Nor is the dome tinted by the flat model light: its gradient is its own vertices.
+        Assert.All(level.Device.MeshDraws, draw => Assert.Equal(Vector3f.One, draw.ModelAmbient));
+        Assert.Equal(level.GlobalLight.ObjectAmbient, level.Device.ModelAmbient);
     }
 
     /// <summary>The dome is sized to the original's four fifths of the far plane.</summary>
@@ -108,15 +169,23 @@ public sealed class RetailSkyFogTests
     /// <summary>A retail level loaded far enough to build its sky.</summary>
     private sealed class Level : IDisposable
     {
-        private Level(RecordingGraphicsDevice device, SkyRenderer sky)
+        private Level(RecordingGraphicsDevice device, SkyRenderer sky, GameTask root)
         {
             Device = device;
             Sky = sky;
+            Root = root;
+            GlobalLight = GlobalLightSettings.Read(root);
         }
 
         public RecordingGraphicsDevice Device { get; }
 
         public SkyRenderer Sky { get; }
+
+        /// <summary>Gets the loaded level's task tree.</summary>
+        public GameTask Root { get; }
+
+        /// <summary>Gets the air and the model light the level declares.</summary>
+        public GlobalLightSettings GlobalLight { get; }
 
         public static Level Load(int mission)
         {
@@ -136,7 +205,7 @@ public sealed class RetailSkyFogTests
                 .Load(mission);
 
             RecordingGraphicsDevice device = new();
-            return new Level(device, new SkyRenderer(device, fileSystem, levelRoot, ViewPlanes.FarMetres));
+            return new Level(device, new SkyRenderer(device, fileSystem, levelRoot, ViewPlanes.FarMetres), levelRoot);
         }
 
         public void Dispose() => Sky.Dispose();

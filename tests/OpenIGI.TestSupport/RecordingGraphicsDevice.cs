@@ -822,6 +822,11 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <summary>Gets the fog the last <see cref="SetFog"/> asked for.</summary>
     public SceneFog Fog { get; private set; } = SceneFog.None;
 
+    public void SetModelAmbient(Vector3f ambient) => ModelAmbient = ambient;
+
+    /// <summary>Gets the flat model light the last <see cref="SetModelAmbient"/> asked for.</summary>
+    public Vector3f ModelAmbient { get; private set; } = Vector3f.One;
+
     public void DrawMesh(
         MeshHandle mesh,
         int indexOffset,
@@ -830,7 +835,7 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         TextureHandle diffuse,
         TextureHandle lightmap,
         BlendMode blend) =>
-        MeshDraws.Add(new MeshDrawCall(mesh, indexOffset, indexCount, modelView, diffuse, lightmap, blend, DepthState, CullMode, Fog));
+        MeshDraws.Add(new MeshDrawCall(mesh, indexOffset, indexCount, modelView, diffuse, lightmap, blend, DepthState, CullMode, Fog, ModelAmbient));
 
     public void DrawMeshRanges(
         MeshHandle mesh,
@@ -891,7 +896,8 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         BlendMode Blend,
         DepthState DepthState,
         CullMode CullMode,
-        SceneFog Fog = default)
+        SceneFog Fog = default,
+        Vector3f ModelAmbient = default)
     {
         public int TriangleCount => IndexCount / 3;
     }
