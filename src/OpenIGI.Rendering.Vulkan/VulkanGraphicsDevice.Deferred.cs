@@ -1793,6 +1793,26 @@ public sealed partial class VulkanGraphicsDevice
     private bool _firstPersonGeometry;
 
     /// <inheritdoc/>
+    public void SetPaintedSky(bool painted)
+    {
+        ThrowIfDisposed();
+        _paintedSky = painted;
+    }
+
+    // Whether the title draws a sky of its own that the lighting pass should keep. Also marks the draws
+    // in between as pictures rather than radiances, which is the same thing said to the other end of the
+    // frame: the dome is divided by the exposure the resolve will multiply back.
+    private bool _paintedSky;
+
+    /// <summary>The exposure a display-referred draw has to be divided by to survive the resolve.</summary>
+    /// <remarks>
+    /// The player's setting less the night, times whatever the eye has adapted to. Floored so a frame
+    /// that has adapted to near-black cannot divide by nothing.
+    /// </remarks>
+    private float ResolveExposure() =>
+        MathF.Max(RenderCVars.EffectiveExposure * _lastAdaptedExposure, 1e-3f);
+
+    /// <inheritdoc/>
     public void SetIrradianceVolumeSettings(in IrradianceVolumeSettings settings)
     {
         ThrowIfDisposed();
@@ -2644,7 +2664,7 @@ public sealed partial class VulkanGraphicsDevice
         vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _deferred.Lighting.PipelineLayout, 0, 1, &set, 0, null);
         InvalidateBoundState();
 
-        float* light = stackalloc float[12];
+        float* light = stackalloc float[16];
         light[0] = _lighting.SunDirection.X;
         light[1] = _lighting.SunDirection.Y;
         light[2] = _lighting.SunDirection.Z;
@@ -2657,7 +2677,14 @@ public sealed partial class VulkanGraphicsDevice
         light[9] = _lighting.AmbientColour.Y;
         light[10] = _lighting.AmbientColour.Z;
         light[11] = (int)_debugView;
-        vk.CmdPushConstants(cmd, _deferred.Lighting.PipelineLayout, ShaderStageFlags.FragmentBit, 0, sizeof(float) * 12, light);
+
+        // Whether the lighting pass should keep what the game drew where there is no depth, rather than
+        // substituting the atmosphere for it.
+        light[12] = _paintedSky ? 1f : 0f;
+        light[13] = 0f;
+        light[14] = 0f;
+        light[15] = 0f;
+        vk.CmdPushConstants(cmd, _deferred.Lighting.PipelineLayout, ShaderStageFlags.FragmentBit, 0, sizeof(float) * 16, light);
 
         // The light covers the whole G-buffer regardless of the geometry viewport.
         ApplyViewportAndScissor(cmd, new Viewport(0, 0, (int)_sceneTarget.Extent.Width, (int)_sceneTarget.Extent.Height));

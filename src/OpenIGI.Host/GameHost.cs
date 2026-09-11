@@ -4497,6 +4497,15 @@ internal sealed partial class GameHost : IDisposable
                     // sky rather than a flat blue one and the screen-space bounce off it carries that warmth
                     // into the room instead of a cool tint. Untouched with the sun high.
                     _sky?.SetSunTint(SkyWarmthTint((_effectiveSun ?? _sun)?.Direction.Z ?? 1f));
+
+                    // Kept rather than replaced by the atmosphere, and divided by the exposure on the way
+                    // in because what it carries is a picture. Only where there IS a resolve to survive:
+                    // vanilla draws straight to the back buffer.
+                    if (captured)
+                    {
+                        _device.SetPaintedSky(_sky is { IsGameOwnSky: true });
+                    }
+
                     _sky?.Draw(new SkyFrame(eye, projection, _loop.TimeSource.Milliseconds / 1000f));
                 }
 

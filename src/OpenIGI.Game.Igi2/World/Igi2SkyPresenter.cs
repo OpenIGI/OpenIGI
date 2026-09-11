@@ -167,6 +167,14 @@ public sealed class Igi2SkyPresenter : ISkyPresenter
         }
     }
 
+    /// <summary>The sequel authors a sky per mission, and it is a painted one.</summary>
+    /// <remarks>
+    /// A <c>FlatSky</c> carries the dome's own vertex colours and the layers added over it, and mission 1
+    /// is what makes keeping them necessary: it is authored at night, and an atmosphere put in its place
+    /// returned a daylight blue with a glare where the sun sits.
+    /// </remarks>
+    public bool IsGameOwnSky => true;
+
     /// <inheritdoc/>
     /// <remarks>
     /// Advances the scroll to the frame's time before drawing, in whole ticks, then draws. The clock is

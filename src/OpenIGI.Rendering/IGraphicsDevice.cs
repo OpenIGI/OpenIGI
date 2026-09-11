@@ -467,6 +467,29 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetFirstPersonGeometry(bool firstPerson);
 
+    /// <summary>Says that the title draws a sky of its own, which the frame should keep.</summary>
+    /// <param name="painted">Whether the sky about to be drawn is the game's own painted one.</param>
+    /// <remarks>
+    /// <para>
+    /// A deferred frame has to decide what to put where nothing was drawn, and a remaster's answer is
+    /// its own atmosphere — which is the right answer for a game whose sky is a flat painted gradient
+    /// and whose missions are daylight. It is the wrong answer for a game that authors a sky per
+    /// mission: an atmosphere knows night only as a sun below the horizon, and I.G.I. 2's night
+    /// missions leave the sun up and paint it black, so its night skies came back as daylight blue.
+    /// </para>
+    /// <para>
+    /// Setting this says two things at once: keep what the dome drew, and treat it as a picture rather
+    /// than a radiance — divide it by the exposure the resolve will multiply back, the same
+    /// compensation <see cref="SetFirstPersonGeometry"/> already earns for the view model. Defaulted to
+    /// nothing, so a backend that never exposes anything ignores it and a title that has not asked
+    /// keeps the picture it had.
+    /// </para>
+    /// </remarks>
+    void SetPaintedSky(bool painted)
+    {
+        _ = painted;
+    }
+
     /// <summary>Sets the seed for the following draws' hashed alpha test, zero for the hard cut-out.</summary>
     /// <param name="seed">
     /// Zero draws cut-outs with a hard per-pixel test. A value above zero turns on the hashed test, whose

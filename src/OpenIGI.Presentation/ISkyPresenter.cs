@@ -74,6 +74,23 @@ public interface ISkyPresenter : IDisposable
     /// <summary>Gets how far above the camera the cloud plane sits, in the title's own position units.</summary>
     float PlaneHeight { get; }
 
+    /// <summary>Gets whether this sky is the game's own painted one, to be kept rather than replaced.</summary>
+    /// <remarks>
+    /// <para>
+    /// True for a sky whose colours are the ones the artist wanted on the screen and whose mood is
+    /// authored per mission. A deferred frame otherwise substitutes its own atmosphere wherever no
+    /// geometry wrote depth, which a sky dome never does — and an atmosphere cannot be a night sky for
+    /// a game that authors night in the sun's COLOUR rather than its height.
+    /// </para>
+    /// <para>
+    /// Defaulted to FALSE rather than true, though both games' skies are painted. Project I.G.I.'s
+    /// deferred picture is a regression gate and its atmosphere is deliberate — the remaster replaces
+    /// that game's flat gradient on purpose. Turning this on for it is its own decision, not a side
+    /// effect of the sequel asking.
+    /// </para>
+    /// </remarks>
+    bool IsGameOwnSky => false;
+
     /// <summary>Draws the sky behind everything.</summary>
     /// <param name="frame">The frame to draw for.</param>
     void Draw(in SkyFrame frame);

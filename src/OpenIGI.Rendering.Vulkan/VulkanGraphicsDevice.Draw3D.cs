@@ -694,7 +694,14 @@ public sealed partial class VulkanGraphicsDevice
         // and the frame was all that survived.
         data[28] = _material.Glass ? SurfaceMaterial.Default.Roughness : _material.Roughness;
         data[29] = _material.Metallic;
-        data[30] = _material.Emissive;
+
+        // A painted sky is written as emission -- it is not lit, it IS light -- but what it carries is
+        // the colour the artist wanted on the screen rather than a radiance. Divided here by what the
+        // resolve will multiply back, so it comes out of the tone map at the colour it was painted. The
+        // lighting pass reads the strength back out of the G-buffer and applies it.
+        data[30] = _paintedSky && _material.Emissive > 0f
+            ? _material.Emissive / ResolveExposure()
+            : _material.Emissive;
         data[31] = _lightmapScale;
         vk.CmdPushConstants(
             cmd,
