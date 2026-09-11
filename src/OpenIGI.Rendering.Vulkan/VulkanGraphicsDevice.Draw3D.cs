@@ -675,7 +675,10 @@ public sealed partial class VulkanGraphicsDevice
         else
         {
             data[16] = normalMatrix.M11; data[17] = normalMatrix.M21; data[18] = normalMatrix.M31;
-            data[19] = _groundDetail ? 3f : 0f;
+            // Three says the lightmap slot is the ground's DETAIL map; four says this draw is the
+            // ground's BAKE and belongs in the baked attachment rather than in the colour. Nothing
+            // but I.G.I. 2's ground asks for either -- Modulate2X has no other producer in the port.
+            data[19] = blend == BlendMode.Modulate2X ? 4f : (_groundDetail ? 3f : 0f);
             data[20] = normalMatrix.M12; data[21] = normalMatrix.M22; data[22] = normalMatrix.M32;
             data[24] = normalMatrix.M13; data[25] = normalMatrix.M23; data[26] = normalMatrix.M33; data[27] = _alphaHashSeed;
         }

@@ -27,6 +27,12 @@ internal sealed unsafe class GBufferPipeline : IDisposable
     private readonly RenderPass _renderPass;
     private readonly VulkanShaderModule _vertex;
     private readonly VulkanShaderModule _fragment;
+    /// <summary>Where the G-buffer's base colour is attached, in the order the subpass declares.</summary>
+    private const int GBaseColourAttachment = 0;
+
+    /// <summary>Where the G-buffer's baked light is attached, in the same order.</summary>
+    private const int GBakedAttachment = 3;
+
     private readonly Dictionary<(DepthState Depth, CullMode Cull, BlendMode Blend, byte AlphaReference), Pipeline> _pipelines = [];
     private bool _disposed;
 
@@ -265,14 +271,27 @@ internal sealed unsafe class GBufferPipeline : IDisposable
             }
 
             // Additive and Modulate2X are the ground's two ways of combining with what a pass before
-            // them wrote: one adds a material's share of the colour, the other multiplies the tile's
-            // lightmap over the lot. Both touch the base colour's rgb and nothing else -- not that
-            // attachment's alpha, and none of the normal, material or baked attachments, which the
-            // opaque pass under them wrote for the same surface.
+            // them wrote, and on a deferred path they do NOT land in the same place.
+            //
+            // Additive is one more material adding its share of the ground's colour, so it belongs on
+            // the base colour with the base pass it is finishing. Modulate2X is the tile's BAKE, and a
+            // bake is not a colour: the base colour attachment holds an albedo, and a bake multiplied
+            // into an albedo is lit a second time by whatever lights the frame. So it goes to the baked
+            // attachment, which the base pass left at the neutral one and which the lighting reads as
+            // irradiance -- and the doubling MODULATE2X means falls out of the blend for free, because
+            // src * dst + dst * src over a neutral destination is twice the bake.
+            //
+            // Either way one attachment's rgb and nothing else: not its alpha, and none of the three the
+            // opaque pass under it wrote for the same surface.
             if (blend is BlendMode.Additive or BlendMode.Modulate2X)
             {
                 bool modulate = blend == BlendMode.Modulate2X;
-                blends[0] = new PipelineColorBlendAttachmentState
+                for (int i = 0; i < 4; i++)
+                {
+                    blends[i] = new PipelineColorBlendAttachmentState { ColorWriteMask = 0, BlendEnable = false };
+                }
+
+                blends[modulate ? GBakedAttachment : GBaseColourAttachment] = new PipelineColorBlendAttachmentState
                 {
                     ColorWriteMask = writeColour,
                     BlendEnable = true,
@@ -283,10 +302,6 @@ internal sealed unsafe class GBufferPipeline : IDisposable
                     SrcAlphaBlendFactor = BlendFactor.Zero,
                     DstAlphaBlendFactor = BlendFactor.One,
                 };
-                for (int i = 1; i < 4; i++)
-                {
-                    blends[i] = new PipelineColorBlendAttachmentState { ColorWriteMask = 0, BlendEnable = false };
-                }
             }
 
             PipelineColorBlendStateCreateInfo colorBlend = new()
