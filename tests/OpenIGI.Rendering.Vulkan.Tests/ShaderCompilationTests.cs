@@ -22,6 +22,13 @@ public sealed class ShaderCompilationTests
     [InlineData("reflect.comp", "comp")]
     [InlineData("fog.scatter.comp", "comp")]
     [InlineData("fog.integrate.comp", "comp")]
+
+    // The forward mesh pair is the whole of the vanilla picture -- terrain, world, sky and rig all go
+    // through it -- and it carries the level-of-detail morph, the retail distance fog and the rig's key
+    // light in one push block that is exactly the guaranteed 128 bytes. Nothing at build time reads it
+    // either, and a broken splice there is a black frame rather than a compile error.
+    [InlineData("mesh3d.vert", "vert")]
+    [InlineData("mesh3d.frag", "frag")]
     public void TheShadersThatReadTheShelterMapCompile(string name, string stage)
     {
         string compiler = Glslc.Path;
@@ -32,6 +39,8 @@ public sealed class ShaderCompilationTests
             "shading-rayquery.frag" => DeferredShaderSource.LightingFragment(rayQuery: true),
             "fog.scatter.comp" => VolumetricFogShaderSource.Scatter,
             "fog.integrate.comp" => VolumetricFogShaderSource.Integrate,
+            "mesh3d.vert" => Mesh3DShaderSource.Vertex,
+            "mesh3d.frag" => Mesh3DShaderSource.Fragment,
             _ => ReflectionShaderSource.Reflect,
         };
 
