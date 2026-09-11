@@ -33,7 +33,7 @@ public sealed class RetailIgi2TerrainMeshTests
             foreach (Igi2TerrainTile tile in surface.Tiles)
             {
                 tiles++;
-                Igi2TerrainMesh mesh = Igi2TerrainMesh.Build(tile, surface.Materials);
+                Igi2TerrainMesh mesh = Igi2TerrainMesh.Build(tile, surface.Materials, surface.Discards);
 
                 Assert.Equal(tile.Width * tile.Height, mesh.Positions.Count);
                 Assert.Equal(mesh.Positions.Count, mesh.Lights.Count);
@@ -63,7 +63,11 @@ public sealed class RetailIgi2TerrainMeshTests
         // under a finer tile now issues no triangles for it, and a pass with nothing to draw is dropped.
         Assert.Equal(215, passes);
         Assert.Equal(6_356_992L, vertices);
-        Assert.Equal(12_939_092L, triangles);
+
+        // 12,925,877 rather than the 12,939,092 the ground has before its holes: the four levels that
+        // declare a DiscardTask lose 13,215 triangles between them, which is what a vehicle hangar, two
+        // sewer mouths and ten multiplayer cellars cost.
+        Assert.Equal(12_925_877L, triangles);
     }
 
     /// <summary>A triangle is issued by every material at any of its corners, and by no other.</summary>
@@ -93,7 +97,7 @@ public sealed class RetailIgi2TerrainMeshTests
             }
 
             Igi2TerrainTile tile = surface.Tiles[0];
-            Igi2TerrainMesh mesh = Igi2TerrainMesh.Build(tile, surface.Materials);
+            Igi2TerrainMesh mesh = Igi2TerrainMesh.Build(tile, surface.Materials, surface.Discards);
 
             // Every triangle a pass issues has a corner of that pass's material.
             Dictionary<(int, int, int), List<int>> issuedBy = [];
@@ -151,7 +155,7 @@ public sealed class RetailIgi2TerrainMeshTests
             }
 
             Igi2TerrainTile tile = surface.Tiles[0];
-            Igi2TerrainMesh mesh = Igi2TerrainMesh.Build(tile, surface.Materials);
+            Igi2TerrainMesh mesh = Igi2TerrainMesh.Build(tile, surface.Materials, surface.Discards);
             Igi2TerrainPass pass = mesh.Passes[0];
 
             (float U, float V) first = Igi2TerrainMesh.TextureCoordinate(pass.TextureScale, mesh.Positions[0]);
@@ -193,7 +197,7 @@ public sealed class RetailIgi2TerrainMeshTests
             Igi2TerrainSurface surface = Surface(level);
             foreach (Igi2TerrainTile tile in surface.Tiles)
             {
-                Igi2TerrainMesh mesh = Igi2TerrainMesh.Build(tile, surface.Materials);
+                Igi2TerrainMesh mesh = Igi2TerrainMesh.Build(tile, surface.Materials, surface.Discards);
                 uncovered += mesh.UncoveredSampleCount;
                 samples += mesh.Positions.Count;
 

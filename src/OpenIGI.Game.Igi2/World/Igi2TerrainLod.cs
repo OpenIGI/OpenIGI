@@ -482,20 +482,26 @@ public sealed class Igi2TerrainLod
     private readonly Igi2TerrainTile _tile;
     private readonly IReadOnlyDictionary<int, TerrainMaterialTask> _materials;
     private readonly Igi2TerrainHeightPyramid _bounds;
+    private readonly Igi2TerrainDiscard[] _discards;
     private readonly int[] _slotOf = new int[256];
     private readonly List<int> _slotMaterial = [];
 
     /// <summary>Builds the quadtree over one tile.</summary>
     /// <param name="tile">The tile.</param>
     /// <param name="materials">The level's terrain materials, keyed by id.</param>
+    /// <param name="discards">The level's <see cref="DiscardTask"/> boxes, or null for none.</param>
     /// <exception cref="ArgumentNullException"><paramref name="materials"/> is <see langword="null"/>.</exception>
-    public Igi2TerrainLod(Igi2TerrainTile tile, IReadOnlyDictionary<int, TerrainMaterialTask> materials)
+    public Igi2TerrainLod(
+        Igi2TerrainTile tile,
+        IReadOnlyDictionary<int, TerrainMaterialTask> materials,
+        IReadOnlyList<Igi2TerrainDiscard>? discards = null)
     {
         ArgumentNullException.ThrowIfNull(materials);
 
         _tile = tile;
         _materials = materials;
         _bounds = Igi2TerrainHeightPyramid.Build(tile);
+        _discards = discards as Igi2TerrainDiscard[] ?? [.. discards ?? []];
 
         RootSize = 1;
         while (RootSize < Math.Max(tile.Width, tile.Height))
@@ -616,6 +622,11 @@ public sealed class Igi2TerrainLod
     private Vector3f NormalAt(int x, int y) =>
         _tile.NormalAt(Math.Min(x, _tile.Width - 1), Math.Min(y, _tile.Height - 1));
 
+    // TerrainRender_CalculateRenderVertex, 0x66A7F7. X and Y only, so a morphed vertex -- which moves in
+    // Z alone -- carries the same answer as the sample it was born from.
+    private bool IsDiscarded(double x, double y) =>
+        _discards.Length > 0 && Igi2TerrainDiscard.AnyContains(_discards, x, y);
+
     private readonly record struct Square(int X, int Y, int Size, int V0, int V1, int V2, int V3)
     {
         public int Corner(int index) => index switch
@@ -639,6 +650,7 @@ public sealed class Igi2TerrainLod
         private readonly List<Vector3f> _normals = [];
         private readonly List<double> _trueZ = [];
         private readonly List<Bgra32> _lights = [];
+        private readonly List<bool> _discarded = [];
         private readonly List<float> _weights = [];
         private readonly Dictionary<long, int> _vertices = [];
         private readonly Dictionary<long, EdgeDecision> _edges = [];
@@ -769,6 +781,7 @@ public sealed class Igi2TerrainLod
             _normals.Add(_owner.NormalAt(x, y));
             _trueZ.Add(position.Z);
             _lights.Add(_owner.LightAt(x, y));
+            _discarded.Add(_owner.IsDiscarded(position.X, position.Y));
 
             byte material = _owner.MaterialAt(x, y);
             int slot = _owner._slotOf[material];
@@ -805,6 +818,7 @@ public sealed class Igi2TerrainLod
             _normals.Add(_owner.NormalAt(x, y));
             _trueZ.Add(trueZ);
             _lights.Add(_owner.LightAt(x, y));
+            _discarded.Add(_owner.IsDiscarded(_owner.EdgeX(x), _owner.EdgeY(y)));
 
             // 0x66A7C4: the material weights morph too, and four times as fast -- the vertex takes the
             // mean of its parents' weights scaled by (1 - w) and adds w to its own material, with
@@ -975,6 +989,14 @@ public sealed class Igi2TerrainLod
 
         private void Emit(int a, int b, int c)
         {
+            // 0x66AB24, ahead of the material loop: a face whose three corners all stand over a
+            // DiscardTask is issued into no pass at all. The AND is what leaves the ring of triangles
+            // straddling the box's edge in place, so the ground meets the building rather than the hole.
+            if (_discarded[a] && _discarded[b] && _discarded[c])
+            {
+                return;
+            }
+
             int slots = _owner._slotMaterial.Count;
             bool based = false;
             for (int slot = 0; slot < slots; slot++)

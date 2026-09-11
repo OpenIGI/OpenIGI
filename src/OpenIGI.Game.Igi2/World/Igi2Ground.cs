@@ -23,6 +23,13 @@ namespace OpenIGI.Game.Igi2.World;
 /// that one belongs to the lightmap bake and nothing else calls it.)
 /// </para>
 /// <para>
+/// <b>A <see cref="DiscardTask"/> removes the ground here too.</b> <c>Terrain_GetNextZHandler</c> tests
+/// the point against <c>DiscardTask_IsDiscardVertex</c> (<c>igi2ed 0x65A670</c>) before it accepts a
+/// surface, so a body over one of the level's discard boxes gets no terrain at all and falls to
+/// whatever collision mesh was built in the hole. The renderer applies the same boxes, which is what
+/// keeps the surface a body stands on the surface it can see.
+/// </para>
+/// <para>
 /// <b>Placed objects are not in here.</b> The body's own query already casts at the world's collision
 /// meshes and keeps whichever surface is higher, exactly as it does for the first game, so a crate or a
 /// building floor still wins over the ground beneath it.
@@ -31,6 +38,7 @@ namespace OpenIGI.Game.Igi2.World;
 public sealed class Igi2Ground : IGroundHeightField
 {
     private readonly IReadOnlyList<Igi2TerrainTile> _tiles;
+    private readonly Igi2TerrainDiscard[] _discards;
 
     /// <summary>Initializes a new instance of the <see cref="Igi2Ground"/> class.</summary>
     /// <param name="surface">The level's loaded tiles.</param>
@@ -39,6 +47,7 @@ public sealed class Igi2Ground : IGroundHeightField
     {
         ArgumentNullException.ThrowIfNull(surface);
         _tiles = surface.Tiles;
+        _discards = surface.Discards;
     }
 
     /// <summary>Gets a value indicating whether this level has any ground to stand on.</summary>
@@ -103,13 +112,21 @@ public sealed class Igi2Ground : IGroundHeightField
     }
 
     /// <inheritdoc/>
-    public override string ToString() => $"I.G.I. 2 ground over {_tiles.Count} tile(s)";
+    public override string ToString() =>
+        $"I.G.I. 2 ground over {_tiles.Count} tile(s), {_discards.Length} discard(s)";
 
     // Terrain_VertexFunction, 0x5706F0: the tile, the cell, the triangle, the height and the normal.
     private bool TrySample(double x, double y, out TerrainGround ground)
     {
         ground = default;
         if (_tiles.Count == 0)
+        {
+            return false;
+        }
+
+        // 0x62E9E3: the discard is tested before the surface is kept, and on X and Y alone. A point
+        // inside a box has no terrain under it at any height.
+        if (Igi2TerrainDiscard.AnyContains(_discards, x, y))
         {
             return false;
         }

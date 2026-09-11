@@ -348,10 +348,12 @@ public sealed class Igi2TerrainSurface
 
     private Igi2TerrainSurface(
         IReadOnlyList<Igi2TerrainTile> tiles,
-        IReadOnlyDictionary<int, TerrainMaterialTask> materials)
+        IReadOnlyDictionary<int, TerrainMaterialTask> materials,
+        Igi2TerrainDiscard[] discards)
     {
         Tiles = tiles;
         Materials = materials;
+        Discards = discards;
     }
 
     /// <summary>Gets the level's tiles, in the order it declared them.</summary>
@@ -364,8 +366,21 @@ public sealed class Igi2TerrainSurface
     /// </remarks>
     public IReadOnlyDictionary<int, TerrainMaterialTask> Materials { get; }
 
+    /// <summary>Gets the boxes the level's <see cref="DiscardTask"/>s cut out of the ground.</summary>
+    /// <remarks>
+    /// Empty for twenty of the twenty-four shipped levels. See <see cref="DiscardTask"/> for what a box
+    /// means and <see cref="Igi2TerrainDiscard"/> for why it has no Z.
+    /// </remarks>
+    public Igi2TerrainDiscard[] Discards { get; }
+
     /// <summary>Gets a value indicating whether the level has any ground to draw.</summary>
     public bool IsEmpty => Tiles.Count == 0;
+
+    /// <summary>Gets whether a world position stands over ground a <see cref="DiscardTask"/> removed.</summary>
+    /// <param name="x">The world X, in world units.</param>
+    /// <param name="y">The world Y.</param>
+    /// <returns><see langword="true"/> when the level cuts its ground away there.</returns>
+    public bool IsDiscarded(double x, double y) => Igi2TerrainDiscard.AnyContains(Discards, x, y);
 
     /// <summary>Loads the ground a level declares, opening its archive through the registry.</summary>
     /// <param name="levelRoot">The level's task tree.</param>
@@ -401,6 +416,7 @@ public sealed class Igi2TerrainSurface
         IIgiLogger log = logger ?? NullLogger.Instance;
         List<Igi2TerrainTile> tiles = [];
         Dictionary<int, TerrainMaterialTask> materials = [];
+        List<Igi2TerrainDiscard> discards = [];
 
         // heightmaps.res keys its entries by bare file name -- `heightmap000.thm`, not the alias-
         // qualified path the task builds. The original never notices: TerrainMap_Alloc sprintfs a name
@@ -421,17 +437,26 @@ public sealed class Igi2TerrainSurface
             {
                 tiles.Add(tile);
             }
+            else if (task is DiscardTask discard)
+            {
+                // A DiscardTask is a sibling of the terrain rather than a child of it: the original
+                // keeps them in DiscardTask_ptQTaskList, a flat list every terrain vertex is tested
+                // against, so where in the tree one sits does not matter. The whole walk is the list.
+                discards.Add(discard.Region);
+            }
         }
 
         BindSubmaps(tiles);
 
-        log.Information(LogCategory, $"Terrain: {tiles.Count} tile(s), {materials.Count} material(s).");
-        return new Igi2TerrainSurface(tiles, materials);
+        log.Information(
+            LogCategory,
+            $"Terrain: {tiles.Count} tile(s), {materials.Count} material(s), {discards.Count} discard(s).");
+        return new Igi2TerrainSurface(tiles, materials, [.. discards]);
     }
 
     /// <inheritdoc/>
     public override string ToString() =>
-        $"I.G.I. 2 terrain, {Tiles.Count} tile(s), {Materials.Count} material(s)";
+        $"I.G.I. 2 terrain, {Tiles.Count} tile(s), {Materials.Count} material(s), {Discards.Length} discard(s)";
 
     // Which tiles supersede which, as Terrain_UpdateSubmaps decides it: a map is superseded by the maps
     // declared after it whose texels are no larger than its own. Declaration order is the whole of the

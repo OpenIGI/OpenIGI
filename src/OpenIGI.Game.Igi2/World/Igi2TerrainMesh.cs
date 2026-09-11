@@ -173,6 +173,7 @@ public sealed class Igi2TerrainMesh
     /// <summary>Builds the geometry for one tile.</summary>
     /// <param name="tile">The tile.</param>
     /// <param name="materials">The level's terrain materials, keyed by id.</param>
+    /// <param name="discards">The level's <see cref="DiscardTask"/> boxes, or null for none.</param>
     /// <returns>The mesh.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="materials"/> is <see langword="null"/>.</exception>
     /// <remarks>
@@ -180,7 +181,10 @@ public sealed class Igi2TerrainMesh
     /// corpus's 6.3 million samples are painted with a material their author later deleted, and the
     /// original resolves those to a null texture and draws them untextured.
     /// </remarks>
-    public static Igi2TerrainMesh Build(Igi2TerrainTile tile, IReadOnlyDictionary<int, TerrainMaterialTask> materials)
+    public static Igi2TerrainMesh Build(
+        Igi2TerrainTile tile,
+        IReadOnlyDictionary<int, TerrainMaterialTask> materials,
+        IReadOnlyList<Igi2TerrainDiscard>? discards = null)
     {
         ArgumentNullException.ThrowIfNull(materials);
 
@@ -192,6 +196,9 @@ public sealed class Igi2TerrainMesh
         Vector3f[] normals = new Vector3f[count];
         Bgra32[] lights = new Bgra32[count];
         byte[] material = new byte[count];
+        bool[] discarded = new bool[count];
+
+        Igi2TerrainDiscard[] boxes = discards as Igi2TerrainDiscard[] ?? [.. discards ?? []];
 
         for (int y = 0; y < height; y++)
         {
@@ -202,6 +209,11 @@ public sealed class Igi2TerrainMesh
                 normals[i] = tile.NormalAt(x, y);
                 lights[i] = tile.LightAt(x, y);
                 material[i] = tile.MaterialAt(x, y);
+
+                // TerrainRender_CalculateRenderVertex, 0x66A7F7: the flag is per vertex and is taken
+                // from its X and Y alone, so it is fixed for a sample whatever the level of detail.
+                discarded[i] = boxes.Length > 0
+                    && Igi2TerrainDiscard.AnyContains(boxes, positions[i].X, positions[i].Y);
             }
         }
 
@@ -233,8 +245,8 @@ public sealed class Igi2TerrainMesh
                     int c = a + width;
                     int d = c + 1;
 
-                    Emit(baseIndices, overlayIndices, materials, material, id, a, c, b);
-                    Emit(baseIndices, overlayIndices, materials, material, id, b, c, d);
+                    Emit(baseIndices, overlayIndices, materials, material, discarded, id, a, c, b);
+                    Emit(baseIndices, overlayIndices, materials, material, discarded, id, b, c, d);
                 }
             }
 
@@ -301,11 +313,20 @@ public sealed class Igi2TerrainMesh
         List<int> overlayIndices,
         IReadOnlyDictionary<int, TerrainMaterialTask> materials,
         byte[] material,
+        bool[] discarded,
         byte id,
         int a,
         int b,
         int c)
     {
+        // The AND that TerrainRender_DrawFace performs first (0x66AB24): a face goes only when all three
+        // of its corners stand over a DiscardTask. One corner outside keeps the whole triangle, which is
+        // what closes the hole's edge against the building sitting in it.
+        if (discarded[a] && discarded[b] && discarded[c])
+        {
+            return;
+        }
+
         // The OR that TerrainRender_DrawFace performs: one corner of this material is enough.
         if (material[a] != id && material[b] != id && material[c] != id)
         {

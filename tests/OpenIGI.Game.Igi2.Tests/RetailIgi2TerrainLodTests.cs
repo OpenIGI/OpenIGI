@@ -111,7 +111,7 @@ public sealed class RetailIgi2TerrainLodTests
             Igi2TerrainLodSettings settings = Igi2TerrainLodSettings.Read(level.Root)!.Value;
             foreach (Igi2TerrainTile tile in surface.Tiles)
             {
-                Igi2TerrainLod lod = new(tile, surface.Materials);
+                Igi2TerrainLod lod = new(tile, surface.Materials, surface.Discards);
                 long area = (long)lod.RootSize * lod.RootSize;
 
                 foreach (Igi2TerrainView view in Views(tile))
@@ -169,7 +169,7 @@ public sealed class RetailIgi2TerrainLodTests
 
             Igi2TerrainLodSettings settings = Igi2TerrainLodSettings.Read(level.Root)!.Value;
             Igi2TerrainTile tile = surface.Tiles[0];
-            Igi2TerrainLod lod = new(tile, surface.Materials);
+            Igi2TerrainLod lod = new(tile, surface.Materials, surface.Discards);
 
             // A hundred kilometres out, along every axis at once, and looking at nothing in particular:
             // no clipping planes, so the collapse is the detail test's doing and not the cull's.
@@ -226,9 +226,9 @@ public sealed class RetailIgi2TerrainLodTests
             Igi2TerrainLodSettings settings = Igi2TerrainLodSettings.Read(level.Root)!.Value;
             foreach (Igi2TerrainTile tile in surface.Tiles)
             {
-                full += Igi2TerrainMesh.Build(tile, surface.Materials).TriangleCount;
+                full += Igi2TerrainMesh.Build(tile, surface.Materials, surface.Discards).TriangleCount;
 
-                Igi2TerrainLod lod = new(tile, surface.Materials);
+                Igi2TerrainLod lod = new(tile, surface.Materials, surface.Discards);
                 Igi2TerrainTessellation tessellation = lod.Tessellate(StandingOn(tile), settings);
                 tessellated += tessellation.Mesh.TriangleCount;
                 squares += tessellation.SquaresDrawn;
@@ -236,14 +236,12 @@ public sealed class RetailIgi2TerrainLodTests
             }
         }
 
-        // 13,271,214 triangles at full detail against 230,483 tessellated -- 1.74 per cent, a factor of
-        // 57.6. 82,541 quadtree leaves produce those triangles and 8,771 squares never got that far,
-        // rejected outright by the four clipping planes with their subtrees.
-        // 12,939,092 triangles at full detail against 199,264 tessellated -- 1.54 per cent, a factor
-        // of 64.9. 72,585 quadtree leaves produce those triangles, and the clipping planes reject the
-        // rest outright with their subtrees.
-        Assert.Equal(12_939_092L, full);
-        Assert.Equal(199_264L, tessellated);
+        // 12,925,877 triangles at full detail against 198,867 tessellated -- 1.54 per cent, a factor
+        // of 65.0. 72,585 quadtree leaves produce those triangles, and the clipping planes reject the
+        // rest outright with their subtrees. Both counts are of the ground the levels actually draw:
+        // the four levels with a DiscardTask have their holes cut out of each.
+        Assert.Equal(12_925_877L, full);
+        Assert.Equal(198_867L, tessellated);
         Assert.Equal(72_585, squares);
         Assert.Equal(7_542, culled);
     }
@@ -269,7 +267,7 @@ public sealed class RetailIgi2TerrainLodTests
 
             Igi2TerrainLodSettings settings = Igi2TerrainLodSettings.Read(level.Root)!.Value;
             Igi2TerrainTile tile = surface.Tiles[0];
-            Igi2TerrainLod lod = new(tile, surface.Materials);
+            Igi2TerrainLod lod = new(tile, surface.Materials, surface.Discards);
 
             Igi2TerrainTessellation facing = lod.Tessellate(StandingOn(tile), settings);
             Igi2TerrainTessellation nothing = lod.Tessellate(LookingAt(tile, MathF.PI, -1.4f), settings);
@@ -306,7 +304,7 @@ public sealed class RetailIgi2TerrainLodTests
 
             Igi2TerrainLodSettings settings = Igi2TerrainLodSettings.Read(level.Root)!.Value;
             Igi2TerrainTile tile = surface.Tiles[0];
-            Igi2TerrainLod lod = new(tile, surface.Materials);
+            Igi2TerrainLod lod = new(tile, surface.Materials, surface.Discards);
             Igi2TerrainTessellation tessellation = lod.Tessellate(StandingOn(tile), settings);
 
             int blended = 0;

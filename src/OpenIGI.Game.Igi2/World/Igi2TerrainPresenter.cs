@@ -112,7 +112,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
 
         foreach (Igi2TerrainTile tile in surface.Tiles)
         {
-            Igi2TerrainMesh mesh = Igi2TerrainMesh.Build(tile, surface.Materials);
+            Igi2TerrainMesh mesh = Igi2TerrainMesh.Build(tile, surface.Materials, surface.Discards);
             foreach (Igi2TerrainPass pass in mesh.Passes)
             {
                 if (!surface.Materials.TryGetValue(pass.MaterialId, out TerrainMaterialTask? material))
@@ -177,7 +177,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
             }
 
             _tiles.Add(new Tile(
-                new Igi2TerrainLod(tile, surface.Materials),
+                new Igi2TerrainLod(tile, surface.Materials, surface.Discards),
                 tile.Centre,
                 CreateLightmap(device, tile),
                 tile.LightmapProjection(),

@@ -46,6 +46,13 @@ public sealed class RetailIgi2GroundTests
                 for (int x = 1; x < tile.Width - 1; x += 41)
                 {
                     Vector3d at = tile.PositionOf(x, y);
+                    // A sample a DiscardTask removed has no ground by design -- see
+                    // RetailIgi2TerrainDiscardTests -- so it is not this test's business.
+                    if (surface.IsDiscarded(at.X, at.Y))
+                    {
+                        continue;
+                    }
+
                     Assert.True(
                         ground.TryGetGround(at.X, at.Y, at.Z, out TerrainGround found),
                         $"Tile {tile.Id} sample ({x}, {y}) has no ground under its own position.");
@@ -87,6 +94,13 @@ public sealed class RetailIgi2GroundTests
                 for (int x = 1; x < tile.Width - 1; x += 47)
                 {
                     Vector3d at = tile.PositionOf(x, y);
+                    // A sample a DiscardTask removed has no ground by design -- see
+                    // RetailIgi2TerrainDiscardTests -- so it is not this test's business.
+                    if (surface.IsDiscarded(at.X, at.Y))
+                    {
+                        continue;
+                    }
+
                     Assert.True(ground.TryGetGround(at.X, at.Y, at.Z, out TerrainGround found));
 
                     double length = Math.Sqrt(
@@ -136,7 +150,9 @@ public sealed class RetailIgi2GroundTests
                 for (int x = 2; x < fine.Width - 2; x += 59)
                 {
                     Vector3d at = fine.PositionOf(x, y);
-                    if (!fine.CoversPoint(at.X, at.Y) || !coarse.CoversPoint(at.X, at.Y))
+                    if (!fine.CoversPoint(at.X, at.Y)
+                        || !coarse.CoversPoint(at.X, at.Y)
+                        || surface.IsDiscarded(at.X, at.Y))
                     {
                         continue;
                     }

@@ -106,11 +106,18 @@ public sealed class Igi2PlayerContentModule : IContentModule
     }
 }
 
-/// <summary>The terrain's task types: the tile grid, its placement and its material table.</summary>
+/// <summary>The terrain's task types: the tile grid, its placement, its material table and its holes.</summary>
 /// <remarks>
-/// Without these the three types load as placeholders — the tree is right and the parameter values are
+/// <para>
+/// Without these the four types load as placeholders — the tree is right and the parameter values are
 /// there, but nothing knows a tile has an id, so no <c>.thm</c>, <c>.tmm</c> or <c>.tlm</c> is ever
 /// asked for and the level renders with no ground.
+/// </para>
+/// <para>
+/// <see cref="DiscardTask"/> fails the other way round: unregistered it loads as a placeholder and the
+/// ground it should have taken away is drawn, so the hillside runs straight through the vehicle ramp
+/// cut into it. Four of the shipped levels need it.
+/// </para>
 /// </remarks>
 public sealed class Igi2TerrainContentModule : IContentModule
 {
@@ -125,6 +132,7 @@ public sealed class Igi2TerrainContentModule : IContentModule
         context.Types.Register<TerrainTask>(TerrainTask.TypeName);
         context.Types.Register<TerrainMapTask>(TerrainMapTask.TypeName);
         context.Types.Register<TerrainMaterialTask>(TerrainMaterialTask.TypeName);
+        context.Types.Register<DiscardTask>(DiscardTask.TypeName);
     }
 
     /// <inheritdoc/>
