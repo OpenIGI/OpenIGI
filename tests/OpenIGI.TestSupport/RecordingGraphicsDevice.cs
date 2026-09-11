@@ -817,6 +817,11 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 
     public (float Scale, float Offset, float Slope, bool FadeAlpha)? DetailFade { get; private set; }
 
+    public void SetFog(in SceneFog fog) => Fog = fog;
+
+    /// <summary>Gets the fog the last <see cref="SetFog"/> asked for.</summary>
+    public SceneFog Fog { get; private set; } = SceneFog.None;
+
     public void DrawMesh(
         MeshHandle mesh,
         int indexOffset,
@@ -825,7 +830,7 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         TextureHandle diffuse,
         TextureHandle lightmap,
         BlendMode blend) =>
-        MeshDraws.Add(new MeshDrawCall(mesh, indexOffset, indexCount, modelView, diffuse, lightmap, blend, DepthState, CullMode));
+        MeshDraws.Add(new MeshDrawCall(mesh, indexOffset, indexCount, modelView, diffuse, lightmap, blend, DepthState, CullMode, Fog));
 
     public void DrawMeshRanges(
         MeshHandle mesh,
@@ -885,7 +890,8 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         TextureHandle Lightmap,
         BlendMode Blend,
         DepthState DepthState,
-        CullMode CullMode)
+        CullMode CullMode,
+        SceneFog Fog = default)
     {
         public int TriangleCount => IndexCount / 3;
     }

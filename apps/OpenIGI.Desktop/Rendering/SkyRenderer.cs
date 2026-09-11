@@ -200,6 +200,14 @@ public sealed class SkyRenderer : IDisposable
         _device.SetCullMode(CullMode.None);
         _device.SetDepthState(DepthState.Disabled);
 
+        // The sky is not fogged. sub_52D060 turns FOGENABLE off with its depth states before drawing the
+        // dome, and that is what leaves a gradient up there instead of a flat wash of the fog colour --
+        // the dome is drawn at four fifths of a hundred-kilometre far plane, where any fog at all would
+        // have swallowed it whole. The clouds ride the same state; their own fade is the distance ramp
+        // the FlatSky task authors.
+        SceneFog fog = _device.Fog;
+        _device.SetFog(SceneFog.None);
+
         // The dome follows the camera, so its model position is the camera's and only the rotation
         // remains in the model-view.
         Matrix4f modelView = camera.CreateModelView(camera.Position);
@@ -209,6 +217,8 @@ public sealed class SkyRenderer : IDisposable
         {
             DrawCloudLayer(_layers[i], i, camera, modelView, seconds);
         }
+
+        _device.SetFog(fog);
     }
 
     /// <summary>Tints the dome to the sun's warmth, rebuilding it when the tint moves enough to matter.</summary>

@@ -573,6 +573,12 @@ public static class GraphicsMenu
         "r_terrain_occlusion",
         "r_terrain_cache",  // how much streamed ground stays resident; the detail row is the player's version
 
+        // Which fog the picture wears, which the Preset row has already answered: vanilla draws the
+        // original's own per-vertex haze into the level's fog colour, and every tier above it marches
+        // the same authored haze through the froxel volume instead. A player who could set this
+        // separately could set both at once, which fogs the frame twice.
+        "r_fog_retail",
+
         "r_camera_taps",
 
         // Off at every preset by design: a first-person camera has no business deciding what the player

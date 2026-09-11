@@ -227,6 +227,15 @@ public sealed class TerrainRenderer : IDisposable
     /// <summary>Gets how many octree nodes the last descent entered.</summary>
     public int LastVisitedCount { get; private set; }
 
+    /// <summary>Gets how many chunks the last descent found and could not fit in its visible list.</summary>
+    /// <remarks>
+    /// Every one of them is ground the frame does not draw — a hole, not a saving. It should be zero at
+    /// every detail setting the presets offer; a non-zero figure means the list is bounded below what
+    /// <c>r_terrain_detail</c> asks for, which is what <see cref="CacheLimit"/> is passed to the descent
+    /// to prevent.
+    /// </remarks>
+    public int LastDroppedChunkCount { get; private set; }
+
     /// <summary>Gets how many uploaded chunks are held.</summary>
     public int CachedCount => _cache.Count;
 
@@ -350,7 +359,14 @@ public sealed class TerrainRenderer : IDisposable
             _terrain.Octree,
             view,
             _chunks,
-            _surface.Discards);
+            _surface.Discards,
+
+            // The visible list is bounded by what the cache can hold, not by retail's 4096: the detail
+            // setting is what decides how many chunks one frustum asks for, and the same setting sizes
+            // the cache. Left at 4096 a wide frustum at the ultra distance drops thousands of chunks a
+            // frame, and every dropped chunk is a piece of ground that is not there. Vanilla's cache is
+            // retail's 4096, so vanilla keeps retail's bound exactly.
+            CacheLimit);
 
         _frame++;
         _buildsThisFrame = 0;
@@ -500,13 +516,19 @@ public sealed class TerrainRenderer : IDisposable
         LastOccludedChunkCount = occludedChunks;
         LastTriangleCount = triangles;
         LastVisitedCount = result.Visited;
+        LastDroppedChunkCount = result.Dropped;
         _previousCamera = camera;
         _hasPreviousCamera = true;
         _previousOccludedChunks = occludedChunks;
 
         if (result.Dropped > 0)
         {
-            _logger.Warning(LogCategory, $"{result.Dropped} chunk(s) did not fit the visible list.");
+            // Every one of these is ground the descent chose and the frame will not draw, so it says
+            // which setting to raise rather than only that it happened.
+            _logger.Warning(
+                LogCategory,
+                $"{result.Dropped} chunk(s) did not fit the visible list of {CacheLimit}; "
+                    + "the ground has holes in it. Raise r_terrain_cache to match r_terrain_detail.");
         }
 
         Trim();

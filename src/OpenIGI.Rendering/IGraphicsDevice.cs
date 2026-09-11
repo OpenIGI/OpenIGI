@@ -270,6 +270,21 @@ public interface IGraphicsDevice : IDisposable
     /// <summary>Stops the terrain fade; subsequent <see cref="DrawMesh"/> calls draw unmodified.</summary>
     void ClearDetailFade();
 
+    /// <summary>Sets the distance fog every following world draw is blended into.</summary>
+    /// <param name="fog">The fog, or <see cref="SceneFog.None"/> to draw unfogged.</param>
+    /// <remarks>
+    /// A device state rather than a per-draw argument, because it is a property of the frame: the level
+    /// publishes one fog and every world draw in the frame wears it. The first-person rig and the sky
+    /// are the exceptions the original makes too — the rig is a separate layer and the sky dome is drawn
+    /// with <c>FOGENABLE</c> off (<c>sub_52D060</c>) — so the sky renderer clears this around its own
+    /// draws. See <see cref="SceneFog"/> for what the numbers are and where they were read from.
+    /// </remarks>
+    void SetFog(in SceneFog fog);
+
+    /// <summary>Gets the fog the last <see cref="SetFog"/> set.</summary>
+    /// <remarks>So that a renderer which must draw unfogged — the sky — can put back what it found.</remarks>
+    SceneFog Fog { get; }
+
     /// <summary>Gets the part of the frame draws currently belong to.</summary>
     /// <remarks><see cref="ScenePass.None"/> outside a scene capture, which is the original's own path.</remarks>
     ScenePass CurrentPass { get; }

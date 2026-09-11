@@ -46,9 +46,11 @@ internal sealed partial class DesktopGame : IDisposable
         WriteIndented = true,
     };
 
-    // The camera's far plane -- the original's HumanView far distance. Shared with the sky, which sizes
-    // its dome from it, and with the terrain traversal, which culls against the same frustum.
-    private const float FarPlane = 4000f;
+    // The camera's clip planes, both measured out of the original's own renderer setup -- see
+    // ViewPlanes. The far one is shared with the sky, which sizes its dome to four fifths of it exactly
+    // as sub_52CC40 does, and with the first-person layer's shallower projection.
+    private const float NearPlane = ViewPlanes.NearMetres;
+    private const float FarPlane = ViewPlanes.FarMetres;
 
     // How long a load will hold for the lighting before giving up and letting the player in anyway. A
     // level that somehow never finishes tracing must not become a game that never starts.
@@ -3450,14 +3452,16 @@ internal sealed partial class DesktopGame : IDisposable
 
                     verticalFieldOfView = mapView.FieldOfView;
                 }
-                // The near plane is the original's default: 0x493580 initialises it to 409.6 units, which
-                // is 0.1 m. (Scripts can move it through the SetNearClippingPlane native, 0x497D00.) At
-                // 0.2 the plane reached twice as far as retail's and cut into any wall the sweep lets the
-                // body stand 2.5 mm from.
+                // Both planes are the original's own: 0x493580 initialises the near one to 409.6 units,
+                // which is 0.1 m, and the far one to 409,600,000, which is 100 km. (Scripts can move the
+                // near plane through the SetNearClippingPlane native, 0x497D00.) At 0.2 the near plane
+                // reached twice as far as retail's and cut into any wall the sweep lets the body stand
+                // 2.5 mm from; at the 4000 m the far plane carried since the first fly-through, every
+                // mountain past four kilometres was clipped away. See ViewPlanes.
                 Matrix4f unjitteredProjection = Matrix4f.CreatePerspective(
                     verticalFieldOfView,
                     aspectRatio,
-                    near: 0.1f,
+                    near: NearPlane,
                     far: FarPlane);
 
                 // Temporal accumulation works by sampling a different point inside each pixel every frame
@@ -3752,7 +3756,7 @@ internal sealed partial class DesktopGame : IDisposable
                 // feeds straight back into the cycle, the same knob the numpad keys turn.
                 _sunGizmo.Update(
                     eye,
-                    DepthUnprojection.From(unjitteredProjection, 0.1f, FarPlane),
+                    DepthUnprojection.From(unjitteredProjection, NearPlane, FarPlane),
                     light.Direction,
                     _window.Width,
                     _window.Height,
@@ -3794,13 +3798,13 @@ internal sealed partial class DesktopGame : IDisposable
                     shadowSettings,
                     verticalFieldOfView,
                     aspectRatio,
-                    0.1f,
+                    NearPlane,
                     cascadeStorage);
 
                 _device.SetShadows(
                     shadowSettings,
                     cascadeStorage.AsSpan(0, cascadeCount),
-                    DepthUnprojection.From(unjitteredProjection, 0.1f, FarPlane),
+                    DepthUnprojection.From(unjitteredProjection, NearPlane, FarPlane),
 
                     // View space back into camera-relative world space, which is the frame the cascades
                     // are fitted in. The same transpose, for the same reason.
@@ -4266,6 +4270,15 @@ internal sealed partial class DesktopGame : IDisposable
                 // horizon across the middle of the frame and only reaches straight down at the top, so
                 // dropping the sky for the whole of it would leave the first half of the shot rising out
                 // of a black void.
+                // The level's own distance fog, which the whole world below is drawn into. Set before
+                // the sky, because the sky renderer puts back whatever it finds here after drawing its
+                // unfogged dome. The modern tiers leave it off and march the same FlatSky haze through
+                // the froxel volume instead.
+                _device.SetFog(
+                    RenderCVars.RetailFog.Value && _sky is { HasSky: true } fogSky
+                        ? SceneFog.FromFlatSky(fogSky.FogColour, fogSky.FogAmount)
+                        : SceneFog.None);
+
                 if (mapScene is null || _computerFlight.IsFlying)
                 {
                     // Warm the sky dome towards the horizon as the sun sinks, so a window shows a golden dusk
@@ -4556,7 +4569,7 @@ internal sealed partial class DesktopGame : IDisposable
                             liveGiField,
                             _device.SceneDepth,
                             _device.SceneNormal,
-                            DepthUnprojection.From(unjitteredProjection, 0.1f, FarPlane),
+                            DepthUnprojection.From(unjitteredProjection, NearPlane, FarPlane),
                             eye.Orientation.Transposed(),
                             giCameraToCache,
                             giSourceWidth,
@@ -4648,7 +4661,7 @@ internal sealed partial class DesktopGame : IDisposable
                         giRead,
                         _device.SceneDepth,
                         _device.SceneNormal,
-                        DepthUnprojection.From(unjitteredProjection, 0.1f, FarPlane),
+                        DepthUnprojection.From(unjitteredProjection, NearPlane, FarPlane),
                         eye.Orientation.Transposed(),
                         giCameraToCache,
                         giResolvePrevWorldToView,

@@ -27,6 +27,11 @@ public sealed partial class VulkanGraphicsDevice
     // All zero for everything that is not terrain, which is how the vertex stage tells them apart.
     private (float Scale, float Offset, float Slope, float Mode) _detailFade;
 
+    // The level's distance fog. A frame's property rather than a draw's: every world draw wears it, and
+    // the sky clears it around its own dome exactly as sub_52D060 turns FOGENABLE off around the
+    // original's. Its density is zero -- no fog -- for everything but the vanilla picture.
+    private SceneFog _fog = SceneFog.None;
+
     // How much of the previous-pose vertex stream is in the position drawn now, and how much was in the
     // one drawn last frame. Zero for everything that does not animate -- and for those two streams are
     // one buffer, so any blend of a value with itself is that value and the picture is unchanged.
@@ -707,7 +712,7 @@ public sealed partial class VulkanGraphicsDevice
             data[25] = (modelView.M12 * modelView.M14) + (modelView.M22 * modelView.M24) + (modelView.M32 * modelView.M34);
             data[26] = (modelView.M13 * modelView.M14) + (modelView.M23 * modelView.M24) + (modelView.M33 * modelView.M34);
             data[27] = 0f;
-            data[28] = 0f; data[29] = 0f; data[30] = 0f; data[31] = 0f;
+            WriteFog(data, blend);
         }
         else
         {
@@ -720,8 +725,21 @@ public sealed partial class VulkanGraphicsDevice
             data[23] = litViewModel ? _lighting.SunColour.X + lamps.X : 0f;
             data[24] = modelView.M21; data[25] = modelView.M22; data[26] = modelView.M23;
             data[27] = _lighting.SunColour.Y + lamps.Y;
-            data[28] = modelView.M31; data[29] = modelView.M32; data[30] = modelView.M33;
-            data[31] = _lighting.SunColour.Z + lamps.Z;
+
+            if (litViewModel)
+            {
+                data[28] = modelView.M31; data[29] = modelView.M32; data[30] = modelView.M33;
+                data[31] = _lighting.SunColour.Z + lamps.Z;
+            }
+            else
+            {
+                // The third normal row and the key's blue are read by the lit rig and by nothing else —
+                // every other draw returns out of the fragment stage before it touches either — so this
+                // is where the frame's fog rides in. The rig itself is never fogged, which is the
+                // original's arrangement too: it is drawn on the shallow first-person layer, a hand's
+                // length from the eye, where the exponential has not begun.
+                WriteFog(data, blend);
+            }
         }
 
         vk.CmdPushConstants(
@@ -731,6 +749,24 @@ public sealed partial class VulkanGraphicsDevice
             0,
             sizeof(float) * 32,
             data);
+    }
+
+    /// <summary>Writes the frame's fog into the last row of the forward push block.</summary>
+    /// <param name="data">The block being filled.</param>
+    /// <param name="blend">The draw's blend, which decides what colour it fogs towards.</param>
+    /// <remarks>
+    /// The colour follows the blend the way <c>sub_5144E0</c> sets <c>FOGCOLOR</c> per blend mode: an
+    /// additive pass fogs to black so that a surface drawn as several passes is fogged once and not once
+    /// per pass. The density is per metre of view depth, and zero means the vertex stage leaves the
+    /// draw alone.
+    /// </remarks>
+    private unsafe void WriteFog(float* data, BlendMode blend)
+    {
+        Vector3f colour = _fog.ColourFor(blend);
+        data[28] = colour.X;
+        data[29] = colour.Y;
+        data[30] = colour.Z;
+        data[31] = _fog.DensityPerMetre;
     }
 
     /// <summary>How much light the level's lamps put on the first-person rig, in the same units as the sun.</summary>

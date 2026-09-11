@@ -2898,6 +2898,33 @@ public static class RenderCVars
         high: "0",
         ultra: "0");
 
+    /// <summary>Whether the world wears the original's own per-vertex distance fog.</summary>
+    /// <remarks>
+    /// <para>
+    /// The retail picture is a fogged one. Every shipping level's <c>FlatSky</c> asks for a fog amount
+    /// between 0.70 and 0.975, which is half of a surface gone by four hundred metres and nearly all of
+    /// it by two and a half kilometres, and the same slate blue to fog into. Without it the ground runs
+    /// to the horizon in full colour and the mountain ranges of missions 5, 9 and 11 stand up sharp
+    /// behind the level -- which is not what the original draws, whatever the far plane is.
+    /// </para>
+    /// <para>
+    /// On for vanilla and off above it, because the modern tiers already integrate the same level data
+    /// through <see cref="FogQuality"/>'s froxel volume, which scatters and shadows it rather than
+    /// lerping towards a constant. Turning both on would fog the frame twice. See
+    /// <see cref="SceneFog"/> for the arithmetic and where it was read from.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar RetailFog = Presets.Define(
+        CVar.Bool(
+            "r_fog_retail",
+            false,
+            CVarOptions.Archive,
+            "Fog the world the way the original does: exp(-density * view depth) into the level's own fog colour."),
+        vanilla: "1",
+        enhanced: "0",
+        high: "0",
+        ultra: "0");
+
     /// <summary>How many samples each fog ray takes, or 0 for no volumetric fog.</summary>
     /// <remarks>The single biggest cost in the pass, and the quality dial.</remarks>
     public static readonly NumericCVar<int> FogQuality = Presets.Define(
