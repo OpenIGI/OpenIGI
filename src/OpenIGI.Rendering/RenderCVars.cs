@@ -513,7 +513,13 @@ public static class RenderCVars
     /// <para>
     /// Mission 1, mean ground luminance over the lower half of the frame against vanilla's 15.22, swept on
     /// r_exposure (which enters this the same way, one for one): 0.909 at 1.55, 1.101 at 1.62. The
-    /// crossing is 1.585, and subtracting the player's 1.414 and the sweep's own night term leaves this.
+    /// crossing is 1.585, which is an EffectiveExposure of 0.482 at full night.
+    /// </para>
+    /// <para>
+    /// Stated per unit of the SWEEP's nightfall, because that is what now drives it: a night-bound level
+    /// sits at midnight where the sweep reads a full one, so 1.414 - (0.3 + this) x 1 = 0.482. It used to
+    /// be stated against the level's own authored figure of 0.85, which is where the 0.8 came from -- the
+    /// same exposure, said against a number that no longer reaches it.
     /// </para>
     /// <para>
     /// <b>The previous value was 1.0, and it was fitted against a broken picture.</b> The ground's bake was
@@ -528,7 +534,7 @@ public static class RenderCVars
     /// says nothing -- Project I.G.I. -- pays none of it whatever this is set to.
     /// </para>
     /// </remarks>
-    public const float AuthoredNightDrop = 0.8f;
+    public const float AuthoredNightDrop = 0.632f;
 
     /// <summary>How dark a title says its own level is, 0 to 1; 0 for a title that does not say.</summary>
     /// <remarks>

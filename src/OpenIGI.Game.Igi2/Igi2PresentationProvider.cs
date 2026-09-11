@@ -129,6 +129,45 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
     /// <summary>The luminance above which a level is shown as full day.</summary>
     public const float DayLuminance = 0.45f;
 
+    /// <summary>How dark a level has to read before the cycle binds it by its night end.</summary>
+    /// <remarks>
+    /// Three of the twenty-four are past this: <c>location1/level1</c> at 0.85, <c>location2/LEVEL6</c> at
+    /// 0.94 and <c>location3/LEVEL4</c> at 1.00, whose sun is literally black. The two below it are a dusk
+    /// map at 0.24 and a dim one at 0.03, and both are far nearer a dim DAY than a night -- bound by their
+    /// night end they would open at midnight, which is not what they are.
+    /// </remarks>
+    public const float NightBoundNightfall = 0.5f;
+
+    /// <summary>The hour a night-bound level opens at: the darkest point of the cycle.</summary>
+    /// <remarks>
+    /// <para>
+    /// Midnight rather than an hour fitted per level, because the sequel gives no hour to fit one from --
+    /// every campaign level writes <c>Time 12</c> and every multiplayer map writes <c>Time 0</c>, so the
+    /// field is a constant and says nothing. Midnight is where the cycle's own handover is complete: the
+    /// moon is fully risen and the sun fully faded, so the authored night is reproduced exactly rather
+    /// than crossfaded with a sun on its way down.
+    /// </para>
+    /// <para>
+    /// Written as twenty-four rather than nought, which is the same instant: <c>DayNightCycle.Apply</c>
+    /// reads a reference hour as <c>&gt; 0 and &lt;= 24</c> -- nought is its "this level said nothing" --
+    /// and <c>Reset</c> wraps twenty-four back to nought for the clock itself. So this is midnight said
+    /// in the one way both of them hear.
+    /// </para>
+    /// </remarks>
+    public const float NightReferenceHour = 24f;
+
+    /// <summary>The daylight sun a night level would have authored, taken from the ones that did.</summary>
+    /// <remarks>
+    /// The median over the nineteen levels the corpus reads as day, which is the only evidence available:
+    /// a level that authors a night authors no day, and the cycle has to sweep it somewhere. Median rather
+    /// than mean so <c>location3/LEVEL4</c>'s pure black and <c>location2/LEVEL2</c>'s over-unity red
+    /// pull nothing.
+    /// </remarks>
+    public static readonly Vector3f DaylightColour = new(0.923077f, 0.788462f, 0.58f);
+
+    /// <summary>And the fill, measured the same way over the same nineteen.</summary>
+    public static readonly Vector3f DaylightAmbient = new(0.28308f, 0.288462f, 0.29f);
+
     /// <inheritdoc/>
     public DeferredLighting? ReadDeferredLighting(GameTask levelRoot)
     {
@@ -151,7 +190,13 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
             nightfall = 1f - (day * day * (3f - (2f * day)));
         }
 
-        return new DeferredLighting(ambient, nightfall);
+        // A level the sequel authors as a night is bound to the cycle by its NIGHT end, so the clock
+        // sweeps it UP to a day rather than down from one it never had. See AuthoredNight.
+        AuthoredNight? night = nightfall > NightBoundNightfall
+            ? new AuthoredNight(NightReferenceHour, DaylightColour, DaylightAmbient)
+            : null;
+
+        return new DeferredLighting(ambient, nightfall, night);
     }
 
     /// <inheritdoc/>

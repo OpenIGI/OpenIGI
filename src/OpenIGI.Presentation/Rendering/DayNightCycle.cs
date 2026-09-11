@@ -61,6 +61,17 @@ internal sealed class DayNightCycle
     /// </remarks>
     public const float AutomaticTicksPerDay = 3600f;
 
+    /// <summary>What the moon carries when the level does not say: three-thousandths of a sun, cool.</summary>
+    /// <remarks>
+    /// Enough for the adapted eye to read shape and for the moon to throw a shadow, never enough to read as
+    /// day. This is the cycle's own invention, and it stands for every level that authors no night of its
+    /// own -- which is all of Project I.G.I.
+    /// </remarks>
+    public static readonly Vector3f DefaultNightColour = new(0.003f, 0.0033f, 0.0043f);
+
+    /// <summary>And the fill a night crosses to when the level does not say: a faint blue.</summary>
+    public static readonly Vector3f DefaultNightAmbient = new(0.03f, 0.045f, 0.08f);
+
     private const float HoursPerDay = 24f;
     private const float Tau = MathF.PI * 2f;
 
@@ -73,6 +84,8 @@ internal sealed class DayNightCycle
     private float _rotZ;
     private float _automaticSeconds;
     private Vector3f _lastDirection = Vector3f.UnitZ;
+    private Vector3f _nightColour = DefaultNightColour;
+    private Vector3f _nightAmbient = DefaultNightAmbient;
 
     /// <summary>Gets the current time of day, an hour in [0, 24).</summary>
     public float TimeHours => _timeHours;
@@ -124,6 +137,11 @@ internal sealed class DayNightCycle
         // A fresh level opens exactly on its hour: whatever the last one had banked towards its next tick
         // is not this one's, and carrying it over would move the sun off the authored hour immediately.
         _automaticSeconds = 0f;
+
+        // And with the cycle's own night, until the level says otherwise. A night belonging to the last
+        // level is worse than no night at all: it is a mission lit by another mission's moon.
+        _nightColour = DefaultNightColour;
+        _nightAmbient = DefaultNightAmbient;
     }
 
     /// <summary>Returns the cycle to the hour a level opens on: its own authored hour, unless overridden.</summary>
@@ -141,6 +159,29 @@ internal sealed class DayNightCycle
             : authored is { TimeOfDay: > 0f and <= 24f } sun ? sun.TimeOfDay : 12f;
 
         Reset(hour);
+    }
+
+    /// <summary>Sets what the cycle's night is made of, for a level that authors one of its own.</summary>
+    /// <param name="colour">What the moon carries, or null for the cycle's own faint moonlight.</param>
+    /// <param name="ambient">The fill at full night, or null for the cycle's own night blue.</param>
+    /// <remarks>
+    /// <para>
+    /// The cycle invents a night because a level that authors its sun at noon does not have one. A level
+    /// that DOES author one -- I.G.I. 2's night missions, which paint the sun nearly black and leave it up
+    /// -- is bound to the cycle by that end instead, and then the invented night is the wrong night: it is
+    /// about thirty times darker in the directional and half as bright in the fill, so the mission would
+    /// open far darker than its artists drew it.
+    /// </para>
+    /// <para>
+    /// Set per level and cleared by <see cref="ResetForLevel"/>, so a level that says nothing cannot
+    /// inherit the last one's night. Project I.G.I. never says anything and keeps the constants it always
+    /// had.
+    /// </para>
+    /// </remarks>
+    public void SetNightLighting(Vector3f? colour, Vector3f? ambient)
+    {
+        _nightColour = colour ?? DefaultNightColour;
+        _nightAmbient = ambient ?? DefaultNightAmbient;
     }
 
     /// <summary>Reads the cycle's keys and advances it on real elapsed time.</summary>
@@ -312,13 +353,12 @@ internal sealed class DayNightCycle
         if (moonrise > 0f)
         {
             direction = -direction;
-            colour = new Vector3f(0.003f, 0.0033f, 0.0043f) * moonrise;
+            colour = _nightColour * moonrise;
         }
 
-        // The sky fill crosses from a faint blue night to the authored daytime ambient, so a night scene
-        // reads as moonlit rather than lit by a sun that is no longer there.
-        Vector3f nightAmbient = new(0.03f, 0.045f, 0.08f);
-        Vector3f ambient = Lerp(nightAmbient, authored.Ambient, daylight);
+        // The sky fill crosses from the night's to the authored daytime ambient, so a night scene reads as
+        // moonlit rather than lit by a sun that is no longer there.
+        Vector3f ambient = Lerp(_nightAmbient, authored.Ambient, daylight);
 
         _lastDirection = direction;
 

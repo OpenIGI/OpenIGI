@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Presentation;
 
@@ -48,4 +49,106 @@ namespace OpenIGI.Presentation;
 /// carries only the two things the level measurably does say.
 /// </para>
 /// </remarks>
-public readonly record struct DeferredLighting(Vector3f Ambient, float Nightfall);
+/// <param name="Night">
+/// Where the level sits on the day/night cycle, for one it authors as a NIGHT. Null for a level whose
+/// authored lighting is already a daytime one, which is every level Project I.G.I. ships and nineteen of
+/// the sequel's twenty-four.
+/// </param>
+public readonly record struct DeferredLighting(
+    Vector3f Ambient,
+    float Nightfall,
+    AuthoredNight? Night = null);
+
+/// <summary>Where a level whose authored lighting IS a night sits on the day/night cycle.</summary>
+/// <param name="ReferenceHour">The hour at which the cycle reproduces the level's authored lighting.</param>
+/// <param name="DaylightColour">The sun to sweep UP to, which a night level does not author.</param>
+/// <param name="DaylightAmbient">The fill to sweep up to, likewise.</param>
+/// <remarks>
+/// <para>
+/// <b>The cycle assumes a level authors its sun at noon</b> and sweeps down from there: it fits an arc
+/// through the authored elevation at the authored hour, fades the sun out as that arc sets, hangs a moon
+/// on the anti-solar point and crosses the fill to a night blue. Handed a level that authors a NIGHT, all
+/// of that is applied to a scene that is already dark -- the sun is faded from nearly black to black, and
+/// an authored night fill is crossed towards another one.
+/// </para>
+/// <para>
+/// I.G.I. 2's night levels are exactly that, and they are worse than that: they leave the sun a third of
+/// the way UP the sky and paint it (0.10, 0.15, 0.25), so nothing about their elevation says night and the
+/// arc cannot be made to say it either -- an arc through an above-horizon elevation at a night hour has no
+/// solution, and the fit's own clamp rejects it.
+/// </para>
+/// <para>
+/// So a level answering this is bound to the cycle by its NIGHT end instead of its day one. Its authored
+/// sun becomes the cycle's moon and its authored fill the cycle's night fill, reached at
+/// <paramref name="ReferenceHour"/> -- where the picture is then exactly what its artists made. The day
+/// end is what it never authored and has to be supplied: sweeping to noon lights it with
+/// <paramref name="DaylightColour"/> and <paramref name="DaylightAmbient"/>.
+/// </para>
+/// </remarks>
+public readonly record struct AuthoredNight(
+    float ReferenceHour,
+    Vector3f DaylightColour,
+    Vector3f DaylightAmbient);
+
+/// <summary>Turns a level's authored sun into the one the day/night cycle can sweep.</summary>
+/// <remarks>
+/// Static and pure, and here rather than in the host, because it is the whole of what a title's answer
+/// MEANS to the cycle -- and because it is the piece worth testing: everything downstream of it is the
+/// cycle doing what it has always done.
+/// </remarks>
+public static class DayNightBinding
+{
+    /// <summary>Binds the level's sun to the cycle.</summary>
+    /// <param name="authored">The sun exactly as the level wrote it.</param>
+    /// <param name="lighting">What the title says about the level, or null for a title that says nothing.</param>
+    /// <returns>The sun to hand the cycle.</returns>
+    /// <remarks>
+    /// <para>
+    /// The cycle's contract is that a level authors its sun at NOON and it sweeps down from there. Project
+    /// I.G.I. honours that and comes back unchanged. I.G.I. 2 does not, in two ways, and both have to be
+    /// answered here or the cycle is meaningless on it.
+    /// </para>
+    /// <para>
+    /// First, its FILL. The sequel leaves the <c>Dirlight</c>'s back colour black in nineteen of its
+    /// twenty-four levels and puts the real ambient on <c>GlobalLight</c> instead, so the cycle would
+    /// cross to black at noon. The title's answer replaces it, and the cycle then has a real daytime fill
+    /// to reach.
+    /// </para>
+    /// <para>
+    /// Second, its NIGHT levels. They paint the sun nearly black and leave it a third of the way UP the
+    /// sky, so the arc cannot be fitted to say night -- and must not be asked to, because what they author
+    /// IS the night. Such a level is turned round: the cycle is handed the ANTI-solar direction at
+    /// midnight, where its own moon flips it back and returns the authored direction exactly, with the
+    /// authored colour and fill supplied separately as the night to cross to. What it sweeps UP to is the
+    /// daytime the level never wrote, which the title supplies from the levels that did.
+    /// </para>
+    /// <para>
+    /// <b>Why the turn-round works.</b> The arc fits its peak elevation as
+    /// <c>referenceElevation / sin(referencePhase)</c> and clamps it positive. Handed the authored
+    /// elevation at a night hour that quotient is negative and the clamp rejects it, which is the
+    /// dead end. Handed the NEGATED elevation at the same hour both signs cancel, the fit lands on the
+    /// authored elevation, and at that hour the arc reproduces it pointing the other way -- which is
+    /// exactly what the moon path then flips back.
+    /// </para>
+    /// </remarks>
+    public static DirectionalLightSettings Bind(DirectionalLightSettings authored, DeferredLighting? lighting)
+    {
+        if (lighting is not { } lit)
+        {
+            return authored;
+        }
+
+        if (lit.Night is not { } night)
+        {
+            return authored with { Ambient = lit.Ambient };
+        }
+
+        return authored with
+        {
+            Direction = -authored.Direction,
+            TimeOfDay = night.ReferenceHour,
+            Colour = night.DaylightColour,
+            Ambient = night.DaylightAmbient,
+        };
+    }
+}

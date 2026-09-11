@@ -131,4 +131,44 @@ public sealed class Igi2DeferredLightingTests
     {
         public IWorldPresenter? CreateWorld(in WorldPresentationRequest request) => null;
     }
+
+    /// <summary>The levels the sequel authors as a night are bound to the cycle by that end.</summary>
+    /// <remarks>
+    /// Three of the twenty-four, and the measurement that picks them is the same one the nightfall comes
+    /// from. The two dim levels below the threshold -- a dusk map at 0.24 and a dim one at 0.03 -- are far
+    /// nearer a dim DAY than a night, and binding them by their night end would open them at midnight.
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void Only_the_levels_authored_as_night_are_bound_by_their_night_end()
+    {
+        int bound = 0;
+
+        foreach (Igi2Level level in Igi2Level.All())
+        {
+            DeferredLighting lit = Read(level);
+            if (lit.Night is not { } night)
+            {
+                Assert.True(
+                    lit.Nightfall <= Igi2PresentationProvider.NightBoundNightfall,
+                    $"'{level.Directory}' reads as night at {lit.Nightfall:F2} and is not bound as one.");
+                continue;
+            }
+
+            bound++;
+
+            // Midnight, said the way the cycle hears it -- nought is its "the level said nothing".
+            Assert.Equal(24f, night.ReferenceHour);
+
+            // And it sweeps up to a real daytime, which is the thing such a level never authored.
+            Assert.True(
+                Luminance(night.DaylightColour) > Igi2PresentationProvider.DayLuminance,
+                "a night level has to sweep up to a sun that reads as day.");
+            Assert.True(
+                Luminance(night.DaylightAmbient) > Luminance(lit.Ambient),
+                "its daytime fill has to be brighter than the night fill it leaves.");
+        }
+
+        Assert.Equal(3, bound);
+    }
+
 }

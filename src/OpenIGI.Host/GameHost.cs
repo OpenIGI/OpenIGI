@@ -259,6 +259,12 @@ internal sealed partial class GameHost : IDisposable
     // Project I.G.I., which keeps the sweep. Set by ApplyLevelConstants, so the menu path gets it too.
     private DeferredLighting? _deferredLighting;
 
+    // The level's sun as the DAY/NIGHT CYCLE has to see it, which is not always as the level wrote it.
+    // See BindToCycle.
+    private DirectionalLightSettings? _cycleSun;
+
+
+
     // What a person has said outright about which models are lamps, which beats anything the detector
     // works out. One file for the whole game; see Assets/lamps.json.
     private LampManifest _lampManifest = LampManifest.Empty;
@@ -3878,16 +3884,11 @@ internal sealed partial class GameHost : IDisposable
                 }
                 else
                 {
-                    light = _dayNight.Apply(_sun ?? defaultSun);
-
-                    // A title that authors its own fill says so, and means it. The sweep would otherwise
-                    // cross the level's ambient towards a stand-in night blue by how high the sun is --
-                    // which for a game that does not put its darkness in the sun's height is an answer to
-                    // a question it never asked. See DeferredLighting.
-                    if (_deferredLighting is { } authored)
-                    {
-                        light = light with { Ambient = authored.Ambient };
-                    }
+                    // The BOUND sun, not the raw authored one: a title whose levels do not author a noon
+                    // sun has already had that answered for it. See BindToCycle. Its fill is in there too,
+                    // which is why nothing pins the ambient afterwards any more -- pinning it was what
+                    // held the level at its own hour and made the cycle do nothing.
+                    light = _dayNight.Apply(_cycleSun ?? _sun ?? defaultSun);
                 }
 
                 // What the night is doing to the picture, published for the exposure. The sweep is the only
@@ -3895,11 +3896,17 @@ internal sealed partial class GameHost : IDisposable
                 // from here, so it travels as the one hidden variable rather than as another argument
                 // threaded through every pass between. The fixed-sun path leaves it at nought, which is what
                 // a reference render wants: a pinned sun and an unmodified exposure.
-                RenderCVars.Nightfall.Value = _deferredLighting?.Nightfall ?? _dayNight.Nightfall;
+                RenderCVars.Nightfall.Value = _dayNight.Nightfall;
 
                 // And what the LEVEL says about its own darkness, which the adaptation cannot work out
                 // for itself: a scene lit dimly all over reads to it as a correctly-exposed dark subject.
-                RenderCVars.AuthoredNightfall.Value = _deferredLighting?.Nightfall ?? 0f;
+                //
+                // The SWEEP's reading, not the level's own constant. It used to be the constant, which
+                // pinned the exposure to the hour the level opened at: scrub a night mission to noon and
+                // the sun came up while the picture stayed exposed for midnight. A title that authors its
+                // own night is bound to the cycle by it, so the cycle's own reading is the level's -- and
+                // it moves with the clock, which is the whole point of having one.
+                RenderCVars.AuthoredNightfall.Value = _deferredLighting is null ? 0f : _dayNight.Nightfall;
 
                 // The sun keeps the level's own authored chromaticity — the same warm (1, 0.77, 0.62) the
                 // reference scene lights with — because rewriting it to a neutral key is exactly the kind

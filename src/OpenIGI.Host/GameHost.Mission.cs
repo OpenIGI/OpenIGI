@@ -1434,10 +1434,19 @@ internal sealed partial class GameHost
             if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings readSun))
             {
                 _sun = readSun;
+                _cycleSun = DayNightBinding.Bind(readSun, _deferredLighting);
 
                 // At the hour the level's authors placed the sun for, not a fixed one: the cycle lands
                 // back on the authored direction only there.
-                _dayNight.ResetForLevel(readSun, RenderCVars.TimeOfDay.Value);
+                _dayNight.ResetForLevel(_cycleSun, RenderCVars.TimeOfDay.Value);
+
+                // After the reset, which clears it: a level that authors its own night hands the cycle
+                // that night to cross to, instead of the faint one the cycle invents for a level that
+                // does not have one. See DayNightCycle.SetNightLighting.
+                if (_deferredLighting is { Night: not null } authoredNight)
+                {
+                    _dayNight.SetNightLighting(readSun.Colour, authoredNight.Ambient);
+                }
                 _logger.Information(
                     "Light",
                     FormattableString.Invariant(
@@ -1454,6 +1463,7 @@ internal sealed partial class GameHost
             }
             else
             {
+                _cycleSun = null;
                 _dayNight.ResetForLevel(null, RenderCVars.TimeOfDay.Value);
                 _logger.Information("Light", "The level declares no Dirlight; the modern path will light it with a default sun.");
             }
@@ -2281,6 +2291,7 @@ internal sealed partial class GameHost
         // would be lit by the last one's answer -- and for Project I.G.I. that means its sky model would
         // stay switched off after a visit to the sequel.
         _deferredLighting = null;
+        _cycleSun = null;
 
         // Before a single mesh is destroyed. The backend has assembled its own copy of the level from
         // the frames it drew -- the traceable world, and the material records a hit is looked up in --
