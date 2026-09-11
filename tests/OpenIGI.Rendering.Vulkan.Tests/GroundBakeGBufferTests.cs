@@ -63,4 +63,25 @@ public sealed class GroundBakeGBufferTests
             DeferredShaderSource.GBufferFragment,
             StringComparison.Ordinal);
     }
+    /// <summary>The ground asks for no specular, because the original's ground has none.</summary>
+    /// <remarks>
+    /// Retail draws the ground as three texture passes with no lighting in them, so a specular lobe on it
+    /// is the port's invention. Given one it laid a sheen down every sun-facing slope -- worst at distance,
+    /// where a coarse tile is one flat triangle and the highlight is uniform over a whole hillside -- and
+    /// fed the screen-space reflections besides. Only the dynamic model reads these channels, which is why
+    /// the ground was shiny on that model alone.
+    /// </remarks>
+    [Fact]
+    public void The_ground_asks_for_no_specular()
+    {
+        string source = DeferredShaderSource.GBufferFragment;
+        int gate = source.LastIndexOf("if (push.uNormal0.w > 2.5)", StringComparison.Ordinal);
+        int encode = source.IndexOf("gMaterial = EncodeGBufferMaterial(", StringComparison.Ordinal);
+
+        Assert.True(gate >= 0 && encode > gate, "the ground has to be made matte before the material is packed.");
+
+        string block = source[gate..encode];
+        Assert.Contains("specular = 0.0;", block, StringComparison.Ordinal);
+        Assert.Contains("roughness = 1.0;", block, StringComparison.Ordinal);
+    }
 }
