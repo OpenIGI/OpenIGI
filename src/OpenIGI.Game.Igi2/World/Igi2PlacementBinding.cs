@@ -35,6 +35,18 @@ namespace OpenIGI.Game.Igi2.World;
 /// <param name="AlternateWhen">
 /// The boolean parameter that selects <paramref name="AlternateModel"/>. Empty for a type with one model.
 /// </param>
+/// <param name="MountedModel">
+/// The parameter naming a SECOND model this one carries, placed on the first's magic vertex. Empty for
+/// a type with one model. See <see cref="Igi2WorldScene.Bindings"/> for the handlers.
+/// </param>
+/// <param name="MountedAlpha">
+/// The parameter naming the mounted model's own tilt, in radians. Empty when it simply inherits the
+/// host's facing.
+/// </param>
+/// <param name="MountedGamma">
+/// The parameter naming the mounted model's own turn about the up axis, ADDED to the host's. Empty when
+/// it simply inherits the host's facing.
+/// </param>
 /// <param name="Enumerated">
 /// Every model parameter the type's lightmap enumerator walks, in the order it walks them. Empty for a
 /// type with one model, which is then index zero. See <see cref="Igi2WorldScene.Bindings"/>.
@@ -46,4 +58,7 @@ public readonly record struct Igi2PlacementBinding(
     string Gamma = "",
     string AlternateModel = "",
     string AlternateWhen = "",
+    string MountedModel = "",
+    string MountedAlpha = "",
+    string MountedGamma = "",
     IReadOnlyList<string>? Enumerated = null);

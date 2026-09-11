@@ -90,7 +90,15 @@ public static class Igi2DrawableScene
         // magic-object type, and -- when it is not one -- uses that same name AS A MODEL and spawns a
         // RigidMagicObj. 27 of the 28 attachment names level 1 uses resolve straight to a model, so for
         // static world geometry the name is simply the model.
-        bool Emit(string modelName, Vector3d unitsPosition, Matrix3f orientation, int variant, int depth, ref int index)
+        bool Emit(
+            string modelName,
+            Vector3d unitsPosition,
+            Matrix3f orientation,
+            string mounted,
+            Matrix3f mountedOrientation,
+            int variant,
+            int depth,
+            ref int index)
         {
             if (!table.TryResolveMesh(modelName, out string? mesh)
                 || !TryFind(packs, mesh, out LoadedPack? pack, out MefModel? model)
@@ -142,6 +150,37 @@ public static class Igi2DrawableScene
                 return true;
             }
 
+            // The model this one carries, on the host's first magic vertex. The vertex is a point in
+            // the host's own space, and RigidDynCubeObj_GetMagicVertexPos (igi2 0x58E430) takes it to
+            // the world exactly as an attachment point is taken: the host's rows dotted with it, plus
+            // the host's position. A host with no magic vertex mounts at its own origin, which is what
+            // that function returns when there is none to read.
+            //
+            // Emitted after the attachments because that is the order the lightmap enumerator walks:
+            // a node's own model, then its attach objects, then its task children -- and the camera body
+            // is a child task of the bracket (SCamera_SCameraLensCreateHandler, 0x48EC90).
+            if (mounted.Length > 0)
+            {
+                Vector3d mountPosition = unitsPosition;
+                if (model.TryGetMagicVertex(0, out Vector3f mount))
+                {
+                    Vector3f mountOffset = orientation.Transposed().Transform(mount);
+                    mountPosition = new Vector3d(
+                        unitsPosition.X + mountOffset.X,
+                        unitsPosition.Y + mountOffset.Y,
+                        unitsPosition.Z + mountOffset.Z);
+                }
+
+                if (Emit(mounted, mountPosition, mountedOrientation, string.Empty, default, variant, depth + 1, ref index))
+                {
+                    attached++;
+                }
+                else
+                {
+                    attachmentsUnresolved++;
+                }
+            }
+
             foreach (MefAttachment attachment in model.Attachments)
             {
                 // Parent to world is the column-vector product M*v, which is what the renderer applies
@@ -155,7 +194,15 @@ public static class Igi2DrawableScene
                     unitsPosition.Y + offset.Y,
                     unitsPosition.Z + offset.Z);
 
-                if (Emit(attachment.Name, childPosition, orientation * attachment.Orientation, variant, depth + 1, ref index))
+                if (Emit(
+                    attachment.Name,
+                    childPosition,
+                    orientation * attachment.Orientation,
+                    string.Empty,
+                    default,
+                    variant,
+                    depth + 1,
+                    ref index))
                 {
                     attached++;
                 }
@@ -182,6 +229,8 @@ public static class Igi2DrawableScene
                 placement.Model,
                 placement.Position,
                 WorldScene.ToOrientation(placement.Orientation),
+                placement.MountedModel,
+                WorldScene.ToOrientation(placement.MountedOrientation),
                 placement.ModelVariant,
                 depth: 0,
                 ref index))

@@ -21,6 +21,14 @@ namespace OpenIGI.Game.Igi2.World;
 /// Which of the frame's sixteen call queues it is drawn in. Zero for the task types that declare no
 /// group, which is also the queue an object lands in when a level does not say.
 /// </param>
+/// <param name="MountedModel">
+/// A second model this one carries, which sits on the host's first magic vertex rather than at a
+/// position of its own — a security camera's body on its bracket, a gun's barrel on its mount. Empty
+/// for the great majority of placements, which carry nothing.
+/// </param>
+/// <param name="MountedOrientation">
+/// The mounted model's own facing, in the same three angles, already composed with the host's.
+/// </param>
 /// <param name="ModelVariant">
 /// Which of the owning task's model SLOTS this is wearing, counted from one, or zero when the type has
 /// a single slot or the port has not established its enumeration. It is the group letter in the name of
@@ -36,7 +44,9 @@ public readonly record struct Igi2Placement(
     Vector3d Position,
     Vector3f Orientation,
     int RenderGroup,
-    int ModelVariant = 0);
+    int ModelVariant = 0,
+    string MountedModel = "",
+    Vector3f MountedOrientation = default);
 
 /// <summary>
 /// Everything an I.G.I. 2 level places in the world, walked out of its task tree.
@@ -136,9 +146,19 @@ public sealed class Igi2WorldScene
                 AlternateModel: "On model",
                 AlternateWhen: "Initial on",
                 Enumerated: ["On model", "On pressed model", "Off model", "Off pressed model", "Destroyed model"]),
-            ["SCamera"] = new("Holder Model", "Holder Position", Gamma: "Holder Gamma"),
+            ["SCamera"] = new(
+                "Holder Model",
+                "Holder Position",
+                Gamma: "Holder Gamma",
+                MountedModel: "Camera Model",
+                MountedAlpha: "Camera Alpha",
+                MountedGamma: "Camera Gamma"),
             ["StationaryGun"] = new("Holder model", PositionParameter, OrientationParameter),
-            ["AIStationaryGunHolder"] = new("Holder model", PositionParameter, OrientationParameter),
+            ["AIStationaryGunHolder"] = new(
+                "Holder model",
+                PositionParameter,
+                OrientationParameter,
+                MountedModel: "Barrel model"),
             ["Lift"] = new("Model", "Start Position", "Start Orientation"),
         };
 
@@ -336,6 +356,25 @@ public sealed class Igi2WorldScene
             ? value
             : 0;
 
+        // A second model carried on the first. Its tilt is its own and its turn is added to the host's,
+        // which is the composition SCamera_UpdateInternalDataHandler (igi2 0x48FB80) builds for the
+        // camera body: one angle about the up axis summed with the bracket's, and one about the long
+        // axis for the downward look. A mounted model that names neither simply faces as its host does.
+        string mounted = binding.MountedModel.Length > 0
+            && task.TryGetValue(binding.MountedModel, out object? rawMounted)
+            && rawMounted is string mountedName
+            && !string.IsNullOrWhiteSpace(mountedName)
+                ? mountedName
+                : string.Empty;
+
+        Vector3f mountedOrientation = orientation;
+        if (mounted.Length > 0 && (binding.MountedAlpha.Length > 0 || binding.MountedGamma.Length > 0))
+        {
+            float alpha = task.TryGetValue(binding.MountedAlpha, out object? rawAlpha) && rawAlpha is float a ? a : 0f;
+            float gamma = task.TryGetValue(binding.MountedGamma, out object? rawGamma2) && rawGamma2 is float g ? g : 0f;
+            mountedOrientation = new Vector3f(alpha, 0f, orientation.Z + gamma);
+        }
+
         placement = new Igi2Placement(
             task.Id,
             task.Type.Name,
@@ -343,7 +382,9 @@ public sealed class Igi2WorldScene
             position,
             orientation,
             group,
-            VariantOf(task, binding, model));
+            VariantOf(task, binding, model),
+            mounted,
+            mountedOrientation);
         return true;
     }
 }

@@ -60,9 +60,9 @@ public sealed class RetailIgi2DrawableSceneTests
         }
 
         Assert.Equal(24, levels);
-        Assert.Equal(16_447, placements);
-        Assert.Equal(12_225, lightmapped);
-        Assert.Equal(2_620_042L, triangles);
+        Assert.Equal(16_612, placements);
+        Assert.Equal(12_239, lightmapped);
+        Assert.Equal(2_650_200L, triangles);
 
         // The two are `soldier_1`, which is in no archive anywhere in the installation -- the residue
         // RetailIgi2ModelTableTests names. A scene that silently dropped more than that would still look
@@ -118,7 +118,7 @@ public sealed class RetailIgi2DrawableSceneTests
             }
         }
 
-        Assert.Equal(12_225, checkedEntries);
+        Assert.Equal(12_239, checkedEntries);
     }
 
     /// <summary>The world scene carries no characters.</summary>
@@ -157,7 +157,7 @@ public sealed class RetailIgi2DrawableSceneTests
         // Everything placed, less the characters, less the two the shipped data cannot resolve, plus
         // every part attached to one of them -- each of which is a placement in its own right.
         Assert.Equal(placed - characters - 2 + attached, drawable);
-        Assert.Equal(5_960, attached);
+        Assert.Equal(6_125, attached);
     }
 
     /// <summary>A drawable placement is in metres, and the walk it came from is in engine units.</summary>
