@@ -123,7 +123,7 @@ public sealed class Igi2FixedFunctionSunTests
             Assert.All(geometry.Vertices, vertex => Assert.Equal(Bgra32.White, vertex.Colour));
         }
 
-        Assert.Equal(164, unlit);
+        Assert.Equal(178, unlit);
     }
 
     private static Igi2Level LevelOne() =>

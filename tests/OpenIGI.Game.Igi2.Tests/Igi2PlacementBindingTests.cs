@@ -231,7 +231,8 @@ public sealed class Igi2PlacementBindingTests
                 Vector3d span = stop - start;
                 double length = span.Length;
                 Assert.True(length > 0.0);
-                Assert.Equal(length / 4096.0, placement.StretchY, 3);
+                Igi2WireGeometry stretch = Assert.IsType<Igi2WireGeometry>(placement.Geometry);
+                Assert.Equal(length / 4096.0, stretch.ScaleY, 3);
 
                 // Local Y runs down the span: the frame's middle column is the unit direction.
                 Matrix3f frame = Assert.IsType<Matrix3f>(placement.Frame);

@@ -96,7 +96,7 @@ public static class Igi2DrawableScene
             Matrix3f orientation,
             string mounted,
             Matrix3f mountedOrientation,
-            float stretchY,
+            IIgi2PlacementGeometry? geometry,
             int variant,
             int depth,
             ref int index)
@@ -115,21 +115,29 @@ public static class Igi2DrawableScene
             // depth first over the whole tree and a diffuse node still consumes its place in it.
             int own = index++;
 
-            // A model drawn at a size the level chose rather than the size it was authored. Only a
-            // Wire does this, stretching its own Y down the span; the geometry is its own because the
-            // mesh cache is keyed by name, and two wires of the same model are not the same mesh.
+            // A model this placement deforms rather than draws as it ships -- a wire stretched down
+            // its span, a spline segment bent along its curve. The geometry is the placement's own and
+            // not the model's, because the renderer's mesh cache is keyed by name and two wires of one
+            // model are not one mesh.
             MeshGeometry? bent = null;
-            if (stretchY != 0f)
+            if (geometry is not null)
             {
-                bent = WireTransform.Stretch(model, stretchY);
+                bent = geometry.Build(model);
                 if (bent is null)
                 {
                     return false;
                 }
             }
 
+            // A deformed mesh is not looked up in the bake index. Its lightmap coordinates are the
+            // model's, but the bake belongs to the OBJECT, and for a spline segment that object is one
+            // the level data never declares -- SplineObjSegment_New (igi2ed 0x611E80) makes it, and what
+            // number SplineObjWaypoint_EnumerateLightmapHandler (0x643BB0) gives it is not established
+            // here. Binding it to the owning waypoint's own number would be a guess, and a wrong bake
+            // looks worse on screen than no bake, so it goes unlit until the numbering is read.
             string entry = string.Empty;
-            if (lightmaps is not null
+            if (geometry is null
+                && lightmaps is not null
                 && lightmaps.TryGetBindings(new Igi2Placement(placementId, string.Empty, modelName, default, default, 0, variant), out IReadOnlyList<Igi2LightmapBinding>? bindings)
                 && FinestOf(bindings, variant, own) is { } bake)
             {
@@ -186,7 +194,7 @@ public static class Igi2DrawableScene
                         unitsPosition.Z + mountOffset.Z);
                 }
 
-                if (Emit(mounted, mountPosition, mountedOrientation, string.Empty, default, 0f, variant, depth + 1, ref index))
+                if (Emit(mounted, mountPosition, mountedOrientation, string.Empty, default, null, variant, depth + 1, ref index))
                 {
                     attached++;
                 }
@@ -215,7 +223,7 @@ public static class Igi2DrawableScene
                     orientation * attachment.Orientation,
                     string.Empty,
                     default,
-                    stretchY: 0f,
+                    geometry: null,
                     variant,
                     depth + 1,
                     ref index))
@@ -237,12 +245,12 @@ public static class Igi2DrawableScene
         foreach (Igi2Placement placement in placed.StaticPlacements)
         {
             placementId = placement.LevelId;
-            // The renderer caches a stretched model's geometry under the task's name rather than the
-            // model's, because the stretch is the placement's and not the model's. Two wires of one
-            // model must not collide in that cache.
-            placementType = placement.StretchY != 0f
-                ? $"wire:{placement.LevelId}"
-                : placement.TypeName;
+            // The renderer caches a deformed model's geometry under the task's name rather than the
+            // model's, because the deformation is the placement's and not the model's. Two wires, or two
+            // segments of one road, must not collide in that cache.
+            placementType = placement.Geometry is null
+                ? placement.TypeName
+                : $"{placement.TypeName}:{placement.LevelId}";
             placementGroup = placement.RenderGroup;
 
             int index = 0;
@@ -252,7 +260,7 @@ public static class Igi2DrawableScene
                 placement.Frame ?? WorldScene.ToOrientation(placement.Orientation),
                 placement.MountedModel,
                 WorldScene.ToOrientation(placement.MountedOrientation),
-                placement.StretchY,
+                placement.Geometry,
                 placement.ModelVariant,
                 depth: 0,
                 ref index))

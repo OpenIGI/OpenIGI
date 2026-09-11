@@ -34,9 +34,10 @@ namespace OpenIGI.Game.Igi2.World;
 /// The orientation given as a matrix rather than as three angles, for a type whose handler builds one
 /// directly. Null for everything placed at an authored facing, which is nearly everything.
 /// </param>
-/// <param name="StretchY">
-/// A factor the model's own Y axis is scaled by before it is drawn, or zero for a model drawn at the
-/// size it was authored. Only a stretched model needs geometry of its own.
+/// <param name="Geometry">
+/// How the placement's geometry is derived, for the few types that deform their model rather than draw
+/// it as it ships — a wire stretched down its span, a spline segment bent along its curve. Null for
+/// everything drawn as authored, which is nearly everything.
 /// </param>
 /// <param name="ModelVariant">
 /// Which of the owning task's model SLOTS this is wearing, counted from one, or zero when the type has
@@ -57,7 +58,7 @@ public readonly record struct Igi2Placement(
     string MountedModel = "",
     Vector3f MountedOrientation = default,
     Matrix3f? Frame = null,
-    float StretchY = 0f);
+    IIgi2PlacementGeometry? Geometry = null);
 
 /// <summary>
 /// Everything an I.G.I. 2 level places in the world, walked out of its task tree.
@@ -158,9 +159,9 @@ public sealed class Igi2WorldScene
     /// </list>
     /// <para>
     /// <b>Not here, and why.</b> A <c>SplineObjWaypoint</c>'s <c>Segment Model</c> is swept along the
-    /// spline between consecutive waypoints rather than placed at either — 678 of them, and a subsystem
-    /// rather than a name. <c>RotateAttachment</c> (250) has no position at all — it hangs off its
-    /// parent. <c>Train</c> (9) rides a spline.
+    /// spline between consecutive waypoints rather than placed at either, so it is read from the run as
+    /// a whole — see <see cref="Igi2SplineObject"/>. <c>RotateAttachment</c> (250) has no position at
+    /// all — it hangs off its parent. <c>Train</c> (9) rides a spline.
     /// <c>ComputerHilight</c> (108) names <c>MARKER_NONE</c>, a sentinel for the computer overlay rather
     /// than a model, and <c>LevelInfo</c> (19) names a script path. Each is a subsystem, not a name.
     /// </para>
@@ -278,9 +279,20 @@ public sealed class Igi2WorldScene
     {
         foreach (GameTask child in task.Children)
         {
-            if (child is DeclaredTask declared && TryReadPlacement(declared, out Igi2Placement placement))
+            if (child is DeclaredTask declared)
             {
-                into.Add(placement);
+                if (TryReadPlacement(declared, out Igi2Placement placement))
+                {
+                    into.Add(placement);
+                }
+
+                // A spline's segments are not declared by anything -- they are made at load, between
+                // consecutive waypoints -- so they are read from the run as a whole rather than from a
+                // task. See <see cref="Igi2SplineObject"/>.
+                if (string.Equals(declared.Type.Name, Igi2SplineObject.SplineType, StringComparison.Ordinal))
+                {
+                    into.AddRange(Igi2SplineObject.Segments(declared));
+                }
             }
 
             Collect(child, into);
@@ -370,13 +382,13 @@ public sealed class Igi2WorldScene
         // written again for the sequel.
         Vector3d position;
         Matrix3f? frame = null;
-        float stretchY = 0f;
+        IIgi2PlacementGeometry? geometry = null;
         if (string.Equals(task.Type.Name, WireType, StringComparison.Ordinal)
             && WireTransform.TryCreate(task, out WireTransform wire))
         {
             position = wire.PositionUnits;
             frame = wire.Orientation;
-            stretchY = wire.ScaleY;
+            geometry = new Igi2WireGeometry(wire.ScaleY);
         }
         else if (task.TryGetValue(binding.Position, out object? rawPosition) && rawPosition is Vector3d authored)
         {
@@ -437,7 +449,7 @@ public sealed class Igi2WorldScene
             mounted,
             mountedOrientation,
             frame,
-            stretchY);
+            geometry);
         return true;
     }
 }

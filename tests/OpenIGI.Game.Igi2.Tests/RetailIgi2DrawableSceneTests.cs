@@ -60,9 +60,9 @@ public sealed class RetailIgi2DrawableSceneTests
         }
 
         Assert.Equal(24, levels);
-        Assert.Equal(16_731, placements);
-        Assert.Equal(12_239, lightmapped);
-        Assert.Equal(2_653_692L, triangles);
+        Assert.Equal(17_365, placements);
+        Assert.Equal(12_240, lightmapped);
+        Assert.Equal(2_807_808L, triangles);
 
         // The residue RetailIgi2ModelTableTests names one by one: two `soldier_1`, which is in no
         // archive anywhere in the installation, and 584 spline waypoints naming the editor's `ai-arrow`
@@ -121,7 +121,7 @@ public sealed class RetailIgi2DrawableSceneTests
             }
         }
 
-        Assert.Equal(12_239, checkedEntries);
+        Assert.Equal(12_240, checkedEntries);
     }
 
     /// <summary>The world scene carries no characters.</summary>
@@ -153,14 +153,14 @@ public sealed class RetailIgi2DrawableSceneTests
             }
         }
 
-        Assert.Equal(12_402, placed);
+        Assert.Equal(13_035, placed);
         // 1,210 rather than 1,229: the nineteen the levels declare as HumanPlayer are no longer
         // placements at all, having become the player the mission stands up.
         Assert.Equal(1_210, characters);
         // Everything placed, less the characters, less the 586 the shipped data cannot resolve, plus
         // every part attached to one of them -- each of which is a placement in its own right.
         Assert.Equal(placed - characters - 586 + attached, drawable);
-        Assert.Equal(6_125, attached);
+        Assert.Equal(6_126, attached);
     }
 
     /// <summary>A drawable placement is in metres, and the walk it came from is in engine units.</summary>
