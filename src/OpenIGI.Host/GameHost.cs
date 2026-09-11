@@ -255,6 +255,10 @@ internal sealed partial class GameHost : IDisposable
     // rebuilt per mission and this outlives the rebuild.
     private LampDetector.Lamps _lamps = LampDetector.Lamps.None;
 
+    // What the level says about its own light, for a title that authors that rather than a sky. Null for
+    // Project I.G.I., which keeps the sweep. Set by ApplyLevelConstants, so the menu path gets it too.
+    private DeferredLighting? _deferredLighting;
+
     // What a person has said outright about which models are lamps, which beats anything the detector
     // works out. One file for the whole game; see Assets/lamps.json.
     private LampManifest _lampManifest = LampManifest.Empty;
@@ -3875,6 +3879,15 @@ internal sealed partial class GameHost : IDisposable
                 else
                 {
                     light = _dayNight.Apply(_sun ?? defaultSun);
+
+                    // A title that authors its own fill says so, and means it. The sweep would otherwise
+                    // cross the level's ambient towards a stand-in night blue by how high the sun is --
+                    // which for a game that does not put its darkness in the sun's height is an answer to
+                    // a question it never asked. See DeferredLighting.
+                    if (_deferredLighting is { } authored)
+                    {
+                        light = light with { Ambient = authored.Ambient };
+                    }
                 }
 
                 // What the night is doing to the picture, published for the exposure. The sweep is the only
@@ -3882,17 +3895,24 @@ internal sealed partial class GameHost : IDisposable
                 // from here, so it travels as the one hidden variable rather than as another argument
                 // threaded through every pass between. The fixed-sun path leaves it at nought, which is what
                 // a reference render wants: a pinned sun and an unmodified exposure.
-                RenderCVars.Nightfall.Value = _dayNight.Nightfall;
+                RenderCVars.Nightfall.Value = _deferredLighting?.Nightfall ?? _dayNight.Nightfall;
 
                 // The sun keeps the level's own authored chromaticity — the same warm (1, 0.77, 0.62) the
                 // reference scene lights with — because rewriting it to a neutral key is exactly the kind
                 // of grade that made the two renders impossible to compare channel for channel. Only the
                 // ambient is re-pointed, since the level's flat cool triple stands in for a sky the
                 // dynamic model now largely derives itself.
-                light = light with
+                // Only for a title that leaves its fill to the renderer. One that authored an ambient
+                // per level means it: the sequel's night mission fills with a cold blue (0.06, 0.10, 0.18)
+                // and re-pointing that to a warm daylight chroma is the same grade this comment warns
+                // against, applied to the one game whose levels say otherwise.
+                if (_deferredLighting is null)
                 {
-                    Ambient = DaylightColour(light.Ambient, new Vector3f(1.18f, 0.88f, 0.58f)),
-                };
+                    light = light with
+                    {
+                        Ambient = DaylightColour(light.Ambient, new Vector3f(1.18f, 0.88f, 0.58f)),
+                    };
+                }
 
                 _effectiveSun = light;
                 Vector3f viewSunDirection = eye.Orientation.Transposed().Transform(light.Direction);

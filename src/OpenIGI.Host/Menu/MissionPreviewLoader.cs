@@ -352,7 +352,8 @@ public sealed class MissionPreviewLoader(
         // to about 140 ms -- and it is half of what makes a backdrop look like the mission: a lamplit
         // interior previewed with its lamps out is simply a different, darker picture.
         EmissiveLightProposer.Proposal lamps = RenderCVars.GlobalIlluminationLamps.Value != 0
-            ? EmissiveLightProposer.Propose(scene, resources, context.Lamps, missionId, logger)
+            ? EmissiveLightProposer.Propose(
+                scene, resources, context.Lamps, missionId, context.TitleId, logger)
             : EmissiveLightProposer.Proposal.None;
 
         // The other half: the distance field the real-time lighting traces against. Cached, it is a file

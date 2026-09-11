@@ -191,6 +191,28 @@ public interface ITitlePresentationProvider
     /// </remarks>
     ObjectShading? ReadObjectShading(GameTask levelRoot) => null;
 
+    /// <summary>Reads how this title's level drives the dynamic renderer, if it authors that itself.</summary>
+    /// <param name="levelRoot">The level's task tree.</param>
+    /// <returns>
+    /// The lighting, or nothing when this game's sun is a position in the sky and the host should go on
+    /// deriving the picture's darkness and its fill from where that position is.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A third seam, and the one that turns the sky model off.</b> The other two are about what a
+    /// surface is drawn with; this is about what lights it in the dynamic path. Answering it says three
+    /// things at once: use my sun's direction as authored rather than sweeping it around an arc, fill
+    /// with this ambient rather than the one you would have blended towards, and take this darkness
+    /// rather than measuring my sun's height. <see cref="DeferredLighting"/> gives the measurements
+    /// behind that, over all of I.G.I. 2's levels.
+    /// </para>
+    /// <para>
+    /// Project I.G.I. answers nothing and keeps the sweep, the moon and the elevation-derived exposure
+    /// untouched — which its regression captures require, since every one of them is a dynamic frame.
+    /// </para>
+    /// </remarks>
+    DeferredLighting? ReadDeferredLighting(GameTask levelRoot) => null;
+
     /// <summary>Builds the presenter for this title's placed world objects.</summary>
     /// <param name="request">What the presenter needs.</param>
     /// <returns>The presenter.</returns>

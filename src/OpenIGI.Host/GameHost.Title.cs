@@ -331,6 +331,8 @@ internal sealed partial class GameHost
     {
         // What a backdrop needs to be built on a worker, rebuilt because half of it is the title's: its
         // modules, its structural types, its format profile and its service table.
+        // The title the backdrop belongs to, so its fixture list is not confused with the other
+        // game's: the two number their missions independently and the ranges overlap.
         _previewContext = new MissionPreviewContext(
             _timeSource,
             _menuHost,
@@ -345,7 +347,8 @@ internal sealed partial class GameHost
             _titleRuntime.Layout.StructuralTaskTypes,
             _titleRuntime.Formats,
             _worldBuilder,
-            _device.Capabilities.SupportsCompute);
+            _device.Capabilities.SupportsCompute,
+            _titleRuntime.Title.Id);
     }
 
     /// <summary>The campaign as the shell lists it, for the title running now.</summary>

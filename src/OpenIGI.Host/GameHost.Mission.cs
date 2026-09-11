@@ -257,6 +257,17 @@ internal sealed partial class GameHost
                     + $"ambient {reported.Ambient}.");
         }
 
+        // How the level drives the dynamic renderer, for a title whose sun is a lighting direction
+        // rather than a position in the sky. Project I.G.I. answers nothing and keeps the sweep.
+        _deferredLighting = _presentation.ReadDeferredLighting(levelRoot);
+        if (_deferredLighting is { } lit)
+        {
+            _logger.Information(
+                "Mission",
+                $"The level's own light: ambient {lit.Ambient}, nightfall {lit.Nightfall:F2} "
+                    + "(its sun is authored, so the day/night sweep is off).");
+        }
+
         ObjectShading shading = _presentation.ReadObjectShading(levelRoot) ?? ObjectShading.Default;
         if (_world is { } shadedWorld)
         {
@@ -1497,7 +1508,8 @@ internal sealed partial class GameHost
         {
             ApplyLamps(
                 RenderCVars.GlobalIlluminationLamps.Value != 0
-                    ? EmissiveLightProposer.Propose(_scene, _resources, _lampManifest, id, _logger)
+                    ? EmissiveLightProposer.Propose(
+                        _scene, _resources, _lampManifest, id, ActiveTitle.Id, _logger)
                     : EmissiveLightProposer.Proposal.None,
                 id);
         }
@@ -2264,6 +2276,11 @@ internal sealed partial class GameHost
         // without.
         _sun = null;
         _effectiveSun = null;
+
+        // And so does what the level said about its own light. Left standing, the next title's mission
+        // would be lit by the last one's answer -- and for Project I.G.I. that means its sky model would
+        // stay switched off after a visit to the sequel.
+        _deferredLighting = null;
 
         // Before a single mesh is destroyed. The backend has assembled its own copy of the level from
         // the frames it drew -- the traceable world, and the material records a hit is looked up in --

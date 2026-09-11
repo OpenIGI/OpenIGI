@@ -41,22 +41,55 @@ public static class EmissiveLightProposer
         public static Proposal None { get; } = new([], LampDetector.Lamps.None);
     }
 
+    /// <summary>The title whose fixture files keep the bare <c>mission-N.json</c> name.</summary>
+    /// <remarks>
+    /// Project I.G.I.'s, because those files exist and some have been corrected by hand. A second title
+    /// writing into the same names would have overwritten them, so the prefix goes on the newcomer.
+    /// </remarks>
+    public const string DefaultTitleId = "igi1";
+
     /// <summary>Proposes a level's lamps, from an authored file or a fresh survey.</summary>
     /// <param name="scene">The built world scene whose placements and textures are surveyed.</param>
     /// <param name="resources">The resource registry the emitter textures are decoded through.</param>
     /// <param name="manifest">The lamps a person named by hand, which win over anything inferred.</param>
     /// <param name="missionId">The mission the fixtures belong to, which names the per-mission file.</param>
+    /// <param name="titleId">
+    /// Which game the mission belongs to, as <c>GameTitle.Id</c> gives it. Two titles number their
+    /// missions independently and the ranges OVERLAP, so this is what keeps them apart.
+    /// </param>
     /// <param name="logger">The log the proposal is reported to.</param>
     /// <returns>The lamps to place and the surfaces they come out of.</returns>
     public static Proposal Propose(
-        WorldScene scene, ResourceRegistry resources, LampManifest manifest, int missionId, IIgiLogger logger)
+        WorldScene scene,
+        ResourceRegistry resources,
+        LampManifest manifest,
+        int missionId,
+        string titleId,
+        IIgiLogger logger)
     {
+        ArgumentNullException.ThrowIfNull(logger);
+
         // Beside the other authored data, one file per mission. When it exists and its version matches
         // it is the truth: the detection ran once to propose the list and a human has had the chance to
         // correct it since, exactly the way authored material detail wins over the detail derived from
         // a texture.
+        //
+        // NAMED BY TITLE, because the numbers collide. Project I.G.I. has missions 1 to 17 and I.G.I. 2
+        // numbers its own location*10 + level, which starts at 11 -- so the sequel's first seven
+        // missions sat exactly on top of the first game's last seven. The sequel loaded Project I.G.I.'s
+        // fixture list, which names that game's textures and matches none of its own, and because a
+        // loaded list WINS over detection it never surveyed the level at all. That is why the sequel's
+        // lamps were dark.
+        //
+        // The first game keeps the unprefixed name it has always written, so every list already
+        // corrected by hand stays valid; anything else is prefixed.
         string fixturesPath = Path.Combine(
-            AppContext.BaseDirectory, "Assets", "fixtures", $"mission-{missionId}.json");
+            AppContext.BaseDirectory,
+            "Assets",
+            "fixtures",
+            string.Equals(titleId, DefaultTitleId, StringComparison.Ordinal)
+                ? $"mission-{missionId}.json"
+                : $"{titleId}-mission-{missionId}.json");
 
         if (LightFixtureStore.TryLoad(
                 fixturesPath, out IReadOnlyList<LightFixture> saved, out LampDetector.Lamps stored, logger))
@@ -66,7 +99,9 @@ public static class EmissiveLightProposer
 
         try
         {
-            LampDetector.Lamps lamps = LampDetector.Detect(scene, resources, manifest.Entries, logger);
+            // Only this game's hand-named lamps. The two titles' model numbering overlaps, and a
+            // name that is a lamp in one is ordinary furniture in the other.
+            LampDetector.Lamps lamps = LampDetector.Detect(scene, resources, manifest.For(titleId), logger);
 
             if (lamps.Count == 0)
             {

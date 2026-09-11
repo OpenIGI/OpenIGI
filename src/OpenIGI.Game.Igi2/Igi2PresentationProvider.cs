@@ -1,5 +1,7 @@
 ﻿using OpenIGI.Formats;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Numerics;
+using OpenIGI.Game.World;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Ilff;
@@ -110,6 +112,47 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
             Igi2FixedFunctionSun.TryRead(levelRoot, out Igi2FixedFunctionSun sun)
                 ? new FixedFunctionSun(sun.Ambient, sun.Colour, sun.Direction)
                 : null);
+
+    /// <summary>How dark a sun has to be before the picture is shown as night.</summary>
+    /// <remarks>
+    /// <para>
+    /// The band is fitted to what the sequel actually authors, which is the only thing available: the
+    /// engine has no notion of exposure and nothing in a level says how bright to show it. Over the
+    /// twenty-four levels the sun's luminance is either under 0.45 or over 0.55, with nothing in
+    /// between — three night levels at 0.00, 0.11 and 0.15, a dusk one at 0.32, a dim mine at 0.41, and
+    /// everything else from 0.56 to 0.99. So the band brackets a gap in the data rather than splitting
+    /// a continuum, and every level lands firmly on one side of it.
+    /// </para>
+    /// </remarks>
+    public const float NightLuminance = 0.05f;
+
+    /// <summary>The luminance above which a level is shown as full day.</summary>
+    public const float DayLuminance = 0.45f;
+
+    /// <inheritdoc/>
+    public DeferredLighting? ReadDeferredLighting(GameTask levelRoot)
+    {
+        ArgumentNullException.ThrowIfNull(levelRoot);
+
+        // The fill is the GlobalLight's object ambient -- the same one the fixed-function path shines on
+        // an object with no bake -- and not the Dirlight's back colour, which nineteen of the sequel's
+        // levels leave at black.
+        Vector3f ambient = Igi2SceneAtmosphere.TryRead(levelRoot, out Igi2SceneAtmosphere air)
+            ? air.ObjectAmbient
+            : Vector3f.Zero;
+
+        // And the darkness is the sun's own, because that is where the sequel puts it. A level with no
+        // Dirlight at all has no sun to be dark, so it reads as day rather than as pitch black.
+        float nightfall = 0f;
+        if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings sun))
+        {
+            float luminance = (sun.Colour.X * 0.2126f) + (sun.Colour.Y * 0.7152f) + (sun.Colour.Z * 0.0722f);
+            float day = Math.Clamp((luminance - NightLuminance) / (DayLuminance - NightLuminance), 0f, 1f);
+            nightfall = 1f - (day * day * (3f - (2f * day)));
+        }
+
+        return new DeferredLighting(ambient, nightfall);
+    }
 
     /// <inheritdoc/>
     public ITerrainPresenter? CreateGround(in GroundPresentationRequest request)
