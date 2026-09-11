@@ -54,10 +54,33 @@ namespace OpenIGI.Presentation;
 /// authored lighting is already a daytime one, which is every level Project I.G.I. ships and nineteen of
 /// the sequel's twenty-four.
 /// </param>
+/// <param name="CompleteBake">
+/// <para>
+/// Whether the level's shipped bakes are a WHOLE lighting solution, direct light included.
+/// </para>
+/// <para>
+/// The hybrid model adds a live sun on top of the bakes, because its premise is that a bake is an
+/// AMBIENT term -- the bounce and the fill, with the key light left to be computed. That is a statement
+/// about the bakes, and it is not true of every game's.
+/// </para>
+/// <para>
+/// I.G.I. 2's are whole: the ground's third pass is a full lighting solution and a lightmapped object
+/// carries one too, which is why the fixed-function sun reaches only the objects that have NO bake.
+/// Adding a sun over them counts the key light twice, and on its night missions it does so at a scale
+/// that swamps the bake -- the directional there is the level's own night sun, some thirty times the moon
+/// the cycle invents for a level without one. Measured on mission 1, hybrid came out at 3.5 times
+/// vanilla's ground with the night exposure on and 6.9 with it off, against a baked model at 0.18.
+/// </para>
+/// <para>
+/// A title that says its bakes are whole has the hybrid model's added sun withheld, so hybrid reproduces
+/// the bake rather than doubling it. Project I.G.I. says nothing and keeps the sun it always had.
+/// </para>
+/// </param>
 public readonly record struct DeferredLighting(
     Vector3f Ambient,
     float Nightfall,
-    AuthoredNight? Night = null);
+    AuthoredNight? Night = null,
+    bool CompleteBake = false);
 
 /// <summary>Where a level whose authored lighting IS a night sits on the day/night cycle.</summary>
 /// <param name="ReferenceHour">The hour at which the cycle reproduces the level's authored lighting.</param>

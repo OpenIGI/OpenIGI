@@ -24,6 +24,10 @@ namespace OpenIGI.Rendering;
 /// A flat stand-in for bounced light, used only by <see cref="LightingModel.Dynamic"/> until the probe
 /// volume of stage R7 replaces it with something directional.
 /// </param>
+/// <param name="CompleteBake">
+/// Whether the level's bakes already carry its direct light, so <see cref="LightingModel.Hybrid"/> must
+/// not add a sun on top of them. See <c>DeferredLighting.CompleteBake</c>.
+/// </param>
 /// <param name="Scale">
 /// Scales the whole dynamically-computed irradiance, and is ignored under
 /// <see cref="LightingModel.Baked"/>, which has to reproduce the original exactly.
@@ -56,6 +60,7 @@ public readonly record struct SceneLighting(
     Vector3f SunColour,
     Vector3f AmbientColour,
     float Scale = 1f,
+    bool CompleteBake = false,
     Vector3f SkyColour = default,
     float SkyLightIntensity = 1f,
     Vector3f? AtmosphereSunColour = null)

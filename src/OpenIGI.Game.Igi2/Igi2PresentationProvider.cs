@@ -196,7 +196,10 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
             ? new AuthoredNight(NightReferenceHour, DaylightColour, DaylightAmbient)
             : null;
 
-        return new DeferredLighting(ambient, nightfall, night);
+        // And the sequel's bakes are WHOLE -- the ground's third pass is a complete lighting solution and
+        // a lightmapped object carries one too, which is why the fixed-function sun reaches only the
+        // objects that have none. So nothing is to add a sun on top of them. See DeferredLighting.
+        return new DeferredLighting(ambient, nightfall, night, CompleteBake: true);
     }
 
     /// <inheritdoc/>

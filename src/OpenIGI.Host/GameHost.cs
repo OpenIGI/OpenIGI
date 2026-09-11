@@ -3906,7 +3906,24 @@ internal sealed partial class GameHost : IDisposable
                 // the sun came up while the picture stayed exposed for midnight. A title that authors its
                 // own night is bound to the cycle by it, so the cycle's own reading is the level's -- and
                 // it moves with the clock, which is the whole point of having one.
-                RenderCVars.AuthoredNightfall.Value = _deferredLighting is null ? 0f : _dayNight.Nightfall;
+                //
+                // And ONLY under the dynamic model, because that is the only one it describes. The drop
+                // answers an eye adaptation that misreads a scene whose light is COMPUTED at low levels
+                // and lifts the whole thing back to mid grey. A model that reproduces the level's own
+                // composited picture computes nothing to be misread: the picture is what the artists made,
+                // and re-exposing it for a night it already contains is subtracting the same night twice.
+                // Fitted for the dynamic model, it crushed the other two -- mission 1's baked ground came
+                // out at 0.18 of vanilla where the dynamic one landed on 0.93.
+                //
+                // The REQUESTED model, not EffectiveLighting. That one reports Baked until the real-time
+                // structures finish building, so reading it here would move the exposure partway through a
+                // load -- and the adaptation that rides on it is temporal, so the step would be chased
+                // rather than taken. What the exposure follows has to be a decision the player made, not a
+                // state the loader is in.
+                RenderCVars.AuthoredNightfall.Value =
+                    _deferredLighting is null || RenderCVars.Lighting.Value != LightingModel.Dynamic
+                        ? 0f
+                        : _dayNight.Nightfall;
 
                 // The sun keeps the level's own authored chromaticity — the same warm (1, 0.77, 0.62) the
                 // reference scene lights with — because rewriting it to a neutral key is exactly the kind
@@ -4440,6 +4457,10 @@ internal sealed partial class GameHost : IDisposable
                         scaledSun,
                         scaledAmbient,
                         RenderCVars.LightScale.Value,
+
+                        // Whether the level's bakes already carry its direct light, so the hybrid model
+                        // must not add a sun over them. See DeferredLighting.CompleteBake.
+                        _deferredLighting?.CompleteBake ?? false,
 
                         // The fog scatters the level's OWN ambient, not the r_sky_light-boosted surface
                         // fill: the fog was calibrated against this value and boosting it whites the frame

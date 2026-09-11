@@ -171,4 +171,15 @@ public sealed class Igi2DeferredLightingTests
         Assert.Equal(3, bound);
     }
 
+    /// <summary>The sequel's bakes are whole, so nothing may add a sun over them.</summary>
+    /// <remarks>
+    /// The ground's third pass is a complete lighting solution and a lightmapped object carries one too,
+    /// which is why the fixed-function sun reaches only the objects that have NO bake. See
+    /// <see cref="DeferredLighting.CompleteBake"/>.
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void Every_level_reports_its_bakes_as_whole()
+    {
+        Assert.All(Igi2Level.All(), level => Assert.True(Read(level).CompleteBake));
+    }
 }

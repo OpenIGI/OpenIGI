@@ -2694,7 +2694,9 @@ public sealed partial class VulkanGraphicsDevice
         // and finished long before this pass is recorded.
         light[12] = _frameHasPaintedSky ? 1f : 0f;
         light[13] = 0f;
-        light[14] = 0f;
+
+        // Whether the hybrid model may add a sun to the bake, or whether the bake already has one.
+        light[14] = _lighting.CompleteBake ? 1f : 0f;
         light[15] = 0f;
         vk.CmdPushConstants(cmd, _deferred.Lighting.PipelineLayout, ShaderStageFlags.FragmentBit, 0, sizeof(float) * 16, light);
 
