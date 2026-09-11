@@ -542,6 +542,7 @@ internal sealed partial class GameHost
             scene = built.Scene;
             _scene = scene;
             _ground = built.Ground;
+            _spins = built.Spins;
 
             if (built.UnresolvedCount > 0 || built.LightmappedCount > 0)
             {
@@ -562,6 +563,11 @@ internal sealed partial class GameHost
             world.Materials = _materials;
             world.DetailMaps = _detailMaps;
             world.Lamps = _lamps;
+
+            // The parts of the level's objects that never stop turning. Set here rather than beside the
+            // other registries below because a promoted backdrop skips that block entirely, and it
+            // arrives with its own already walked.
+            world.Spins = _spins;
             _world = world;
             solids = ObjectCollisionIndex.Build(scene.Placements, _titleRuntime.Formats.Collision);
             _worldSolids = solids;

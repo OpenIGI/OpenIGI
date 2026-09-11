@@ -406,7 +406,8 @@ public sealed class MissionPreviewLoader(
             pendingField,
             fieldResolution,
             decoded,
-            built.Ground);
+            built.Ground,
+            built.Spins);
     }
 
     /// <summary>Gets whether the selected render preset can consume derived ground detail.</summary>

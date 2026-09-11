@@ -48,6 +48,7 @@ internal sealed partial class GameHost
 
         _scene = preview.Scene;
         _worldSolids = preview.Solids;
+        _spins = preview.Spins;
         _sun = preview.Sun;
 
         // Under the level's own sun, at the level's own hour -- see DayNightCycle.ResetForLevel.
@@ -72,6 +73,10 @@ internal sealed partial class GameHost
         {
             _world.Materials = _materials;
             _world.DetailMaps = _detailMaps;
+
+            // The backdrop turns its fans too, and a promoted mission keeps this very renderer, so
+            // setting it here is what makes the mission behave the same whichever way it was entered.
+            _world.Spins = _spins;
         }
 
         // Decoded on the pool while this backdrop was being built, so the capture below uploads rather

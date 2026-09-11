@@ -199,6 +199,7 @@ internal sealed partial class GameHost : IDisposable
     private readonly Dictionary<AlarmSpeaker, AudioVoiceHandle> _sirenVoices = [];
     private readonly HashSet<AlarmSpeaker> _reportedSirenFailures = [];
     private SecurityCameraRegistry? _securityCameras;
+    private IPlacementSpin? _spins;
     private readonly Dictionary<SecurityCamera, (string Sound, AudioVoiceHandle Voice)> _cameraBeepVoices = [];
     private readonly Dictionary<SecurityCamera, AudioVoiceHandle> _cameraMoveVoices = [];
     private RotatingObjectRegistry? _rotatingObjects;
@@ -2949,6 +2950,10 @@ internal sealed partial class GameHost : IDisposable
                         QvmValue.FromInt32((int)double.Parse(writeValue, System.Globalization.CultureInfo.InvariantCulture)));
                 }
                 _cutscenes?.FinishExpressionTick();
+
+                // The level's fans and radar heads, one tick further round. Unconditional and cheap: it
+                // is a counter, and the renderer turns the transform from it when it draws.
+                _spins?.Advance();
                 if (_securityCameras is { } cameras)
                 {
                     bool crouching = _playerMode && _player is not null && _player.IsCrouched;

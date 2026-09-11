@@ -196,6 +196,9 @@ public sealed class WorldRenderer : IWorldPresenter
     /// <summary>Gets or sets the live articulated security-camera transforms.</summary>
     public SecurityCameraRegistry? SecurityCameras { get; set; }
 
+    /// <inheritdoc/>
+    public IPlacementSpin? Spins { get; set; }
+
     /// <summary>Gets or sets the authored cinematic runtime that supplies live vehicle transforms.</summary>
     public CutsceneRuntime? Cutscenes { get; set; }
 
@@ -792,6 +795,13 @@ public sealed class WorldRenderer : IWorldPresenter
                 entry.Displayed = entry.Displayed! with { Orientation = headOrientation };
             }
 
+            // A fan or a radar head, which turns for ever and never leaves its spot. Same reasoning as
+            // the camera above: the model and the position are settled, only the transform is per-frame.
+            if (Spins?.TryGetOrientation(authored, _frameAlpha, out Matrix3f spun) == true)
+            {
+                entry.Displayed = entry.Displayed! with { Orientation = spun };
+            }
+
             ResolveDrawTransform(
                 entry.Displayed!,
                 out entry.Position,
@@ -1193,6 +1203,11 @@ public sealed class WorldRenderer : IWorldPresenter
             out Matrix3f orientation) == true)
         {
             displayed = displayed with { Orientation = orientation };
+        }
+
+        if (Spins?.TryGetOrientation(placement, _frameAlpha, out Matrix3f spun) == true)
+        {
+            displayed = displayed with { Orientation = spun };
         }
 
         return displayed;

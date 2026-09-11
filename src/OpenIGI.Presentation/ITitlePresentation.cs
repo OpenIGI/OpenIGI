@@ -104,6 +104,9 @@ public interface IWorldPresenter : IDisposable
     /// <summary>Gets or sets the level's security cameras, or null when it has none.</summary>
     SecurityCameraRegistry? SecurityCameras { get; set; }
 
+    /// <summary>Gets or sets the placements that turn on the spot, or null when none do.</summary>
+    IPlacementSpin? Spins { get; set; }
+
     /// <summary>Gets or sets the level's pickups, or null when it has none.</summary>
     GenericPickupRegistry? GenericPickups { get; set; }
 

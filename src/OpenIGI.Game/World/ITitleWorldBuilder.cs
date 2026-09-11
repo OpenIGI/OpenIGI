@@ -30,6 +30,10 @@ public readonly record struct WorldBuildRequest(
 /// host already has. Project I.G.I.'s arrives with the mission, as part of what the mission loader
 /// opened; the sequel's is inside the level, so the walk that reads the level is what produces it.
 /// </param>
+/// <param name="Spins">
+/// The placements this title turns on the spot, or <see langword="null"/> for a title that turns none.
+/// Project I.G.I. has no such thing; I.G.I. 2's <c>RotateAttachment</c> is one.
+/// </param>
 /// <remarks>
 /// The two counts are diagnostics rather than data: a scene walk that silently placed nothing would
 /// produce an empty world and no complaint, and these are what let the host say how much of the level it
@@ -39,7 +43,8 @@ public readonly record struct WorldBuildResult(
     WorldScene Scene,
     int UnresolvedCount,
     int LightmappedCount,
-    IGroundHeightField? Ground = null);
+    IGroundHeightField? Ground = null,
+    IPlacementSpin? Spins = null);
 
 /// <summary>Turns a title's loaded level into the shared scene everything downstream consumes.</summary>
 /// <remarks>

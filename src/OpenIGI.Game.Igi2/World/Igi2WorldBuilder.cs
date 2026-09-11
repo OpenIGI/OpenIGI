@@ -79,7 +79,8 @@ public sealed class Igi2WorldBuilder : ITitleWorldBuilder
             result.Scene,
             result.UnresolvedCount,
             result.LightmappedCount,
-            ground.IsEmpty ? null : ground);
+            ground.IsEmpty ? null : ground,
+            Igi2RotateAttachments.Build(request.LevelRoot, result.Attachments));
     }
 
     /// <inheritdoc/>

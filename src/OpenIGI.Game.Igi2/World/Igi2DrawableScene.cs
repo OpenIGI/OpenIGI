@@ -88,6 +88,10 @@ public static class Igi2DrawableScene
         int attached = 0;
         int attachmentsUnresolved = 0;
 
+        // The parts hanging directly off each placed object, kept with the object's task id. Only a
+        // RotateAttachment consumes this, and only this moment has both in hand.
+        List<Igi2AttachedPlacement> parts = [];
+
         // One node of an object's tree: its own model, then everything hanging off it. Returns false
         // only when the model itself cannot be found, which for a root is what "unresolved" counts.
         //
@@ -224,6 +228,7 @@ public static class Igi2DrawableScene
                     unitsPosition.Y + offset.Y,
                     unitsPosition.Z + offset.Z);
 
+                int at = drawable.Count;
                 if (Emit(
                     attachment.Name,
                     childPosition,
@@ -236,6 +241,13 @@ public static class Igi2DrawableScene
                     ref index))
                 {
                     attached++;
+
+                    // Only an object's OWN parts, because that is the list the original walks: the
+                    // attachment list of the task's model, not of everything under it.
+                    if (depth == 0)
+                    {
+                        parts.Add(new Igi2AttachedPlacement(placementId, attachment.Name, drawable[at]));
+                    }
                 }
                 else
                 {
@@ -284,6 +296,7 @@ public static class Igi2DrawableScene
         return new Igi2DrawableSceneResult(
             WorldScene.FromPlacements(mission, drawable),
             placed,
+            parts,
             unresolved,
             lit,
             attached);
@@ -367,6 +380,11 @@ public static class Igi2DrawableScene
 /// <summary>What building an I.G.I. 2 level's drawable scene produced.</summary>
 /// <param name="Scene">The scene, ready for the shared world renderer.</param>
 /// <param name="Placed">Everything the level places, characters included, before the world filter.</param>
+/// <param name="Attachments">
+/// Every part hanging directly off a placed object, with the task id of the object carrying it. Kept
+/// because nothing downstream can get from a placement back to the task it belonged to, and a
+/// <c>RotateAttachment</c> needs exactly that. See <see cref="Igi2RotateAttachments"/>.
+/// </param>
 /// <param name="UnresolvedCount">How many static placements named something the open packs do not hold.</param>
 /// <param name="LightmappedCount">How many drawable placements a baked lightmap covers.</param>
 /// <param name="AttachedCount">
@@ -376,6 +394,7 @@ public static class Igi2DrawableScene
 public readonly record struct Igi2DrawableSceneResult(
     WorldScene Scene,
     Igi2WorldScene Placed,
+    IReadOnlyList<Igi2AttachedPlacement> Attachments,
     int UnresolvedCount,
     int LightmappedCount,
     int AttachedCount);

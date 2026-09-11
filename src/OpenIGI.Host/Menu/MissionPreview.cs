@@ -42,6 +42,11 @@ namespace OpenIGI.Host.Menu;
 /// </param>
 /// <param name="LevelRoot">The level's task tree, in the preview's own private tree.</param>
 /// <param name="Scene">The placements the world renderer draws.</param>
+/// <param name="Spins">
+/// The placements this title turns on the spot, or null when none do. Carried through the backdrop
+/// because a promoted mission IS the backdrop, and a fan that only turns when the mission was entered
+/// from the command line is the kind of difference nobody sees until they play from the menu.
+/// </param>
 /// <param name="Solids">The collision index built from those placements.</param>
 /// <param name="TerrainSurface">The terrain's material surface, or <see langword="null"/> for a level with no usable terrain.</param>
 /// <param name="GroundDetail">
@@ -99,4 +104,5 @@ public sealed record MissionPreview(
     DistanceFieldBake? PendingDistanceField,
     int DistanceFieldResolution,
     TextureDecodeCache? Decoded,
-    IGroundHeightField? Ground = null);
+    IGroundHeightField? Ground = null,
+    IPlacementSpin? Spins = null);
