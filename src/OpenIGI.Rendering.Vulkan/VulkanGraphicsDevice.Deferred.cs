@@ -211,6 +211,10 @@ public sealed partial class VulkanGraphicsDevice
         }
 
         EnsureFrame();
+
+        // Asserted again by every frame whose title draws its own sky, so a title swap cannot leave the
+        // last one's answer behind.
+        _frameHasPaintedSky = false;
         _captureWidth = Math.Max(1, description.Width);
         _captureHeight = Math.Max(1, description.Height);
         _presentWidth = Math.Max(1, description.PresentWidth);
@@ -1797,12 +1801,19 @@ public sealed partial class VulkanGraphicsDevice
     {
         ThrowIfDisposed();
         _paintedSky = painted;
+        _frameHasPaintedSky |= painted;
     }
 
-    // Whether the title draws a sky of its own that the lighting pass should keep. Also marks the draws
-    // in between as pictures rather than radiances, which is the same thing said to the other end of the
-    // frame: the dome is divided by the exposure the resolve will multiply back.
+    // Whether the draws being recorded are the sky itself. A bracket, and it has to be one: what it
+    // turns on is the division by the exposure, and that belongs to the dome's own draws. Left set for
+    // the rest of the frame it divided every LAMP in the level by the exposure as well, which under a
+    // night adaptation is most of a lamp's brightness gone.
     private bool _paintedSky;
+
+    // And whether the frame HAS one, which is a different question with a different lifetime. The
+    // lighting pass is recorded after every draw in the frame, so a bracket would always have closed by
+    // the time it asks; this is what it reads. Reset when the capture opens.
+    private bool _frameHasPaintedSky;
 
     /// <summary>The exposure a display-referred draw has to be divided by to survive the resolve.</summary>
     /// <remarks>
@@ -2679,8 +2690,9 @@ public sealed partial class VulkanGraphicsDevice
         light[11] = (int)_debugView;
 
         // Whether the lighting pass should keep what the game drew where there is no depth, rather than
-        // substituting the atmosphere for it.
-        light[12] = _paintedSky ? 1f : 0f;
+        // substituting the atmosphere for it. The frame's fact, not the bracket's -- the sky was drawn
+        // and finished long before this pass is recorded.
+        light[12] = _frameHasPaintedSky ? 1f : 0f;
         light[13] = 0f;
         light[14] = 0f;
         light[15] = 0f;

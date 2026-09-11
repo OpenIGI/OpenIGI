@@ -4501,12 +4501,22 @@ internal sealed partial class GameHost : IDisposable
                     // Kept rather than replaced by the atmosphere, and divided by the exposure on the way
                     // in because what it carries is a picture. Only where there IS a resolve to survive:
                     // vanilla draws straight to the back buffer.
-                    if (captured)
+                    //
+                    // A BRACKET, closed below. The division is the sky's own, and everything drawn after
+                    // this is the world: leaving it open divided every emissive surface in the level --
+                    // every lamp -- by the exposure too.
+                    bool paintedSky = captured && _sky is { IsGameOwnSky: true };
+                    if (paintedSky)
                     {
-                        _device.SetPaintedSky(_sky is { IsGameOwnSky: true });
+                        _device.SetPaintedSky(true);
                     }
 
                     _sky?.Draw(new SkyFrame(eye, projection, _loop.TimeSource.Milliseconds / 1000f));
+
+                    if (paintedSky)
+                    {
+                        _device.SetPaintedSky(false);
+                    }
                 }
 
                 if (captured)
