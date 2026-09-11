@@ -505,13 +505,30 @@ public static class RenderCVars
     /// blows out, the sun-facing hillsides go white, and the mission reads as an overcast noon.
     /// </para>
     /// <para>
-    /// Fitted against the vanilla picture, which is the retail-matched reference: mission 1 came out at
-    /// 2.24 times vanilla's mean luminance with the adaptation unchecked and 0.28 times with it off
-    /// altogether, and this lands it between. It is a bias on the adapted value, not a fixed exposure, so
-    /// a dark interior in the same mission still opens up.
+    /// <b>Fitted against vanilla's GROUND</b>, which is the one surface both paths composite from the same
+    /// product -- texture times detail times the tile's bake -- so a difference there is the exposure and
+    /// nothing else. Frame means are no use for this: the sky is most of the frame and the two paths draw
+    /// different skies, so fitting on the frame fits on the sky.
+    /// </para>
+    /// <para>
+    /// Mission 1, mean ground luminance over the lower half of the frame against vanilla's 15.22, swept on
+    /// r_exposure (which enters this the same way, one for one): 0.909 at 1.55, 1.101 at 1.62. The
+    /// crossing is 1.585, and subtracting the player's 1.414 and the sweep's own night term leaves this.
+    /// </para>
+    /// <para>
+    /// <b>The previous value was 1.0, and it was fitted against a broken picture.</b> The ground's bake was
+    /// being written into its albedo then, so every lit pixel of it was about thirty-five times too dark
+    /// and the adaptation was opening against that; the drop was compensating for a bug. Refitting had to
+    /// wait for the ground to be right AND for its false specular to go, because that lobe was carrying
+    /// about a third of the ground's brightness on the dynamic model alone.
+    /// </para>
+    /// <para>
+    /// It is a bias on the adapted value, not a fixed exposure, so a dark interior in the same mission
+    /// still opens up. And it is multiplied by what the LEVEL says about its own darkness, so a title that
+    /// says nothing -- Project I.G.I. -- pays none of it whatever this is set to.
     /// </para>
     /// </remarks>
-    public const float AuthoredNightDrop = 1.0f;
+    public const float AuthoredNightDrop = 0.8f;
 
     /// <summary>How dark a title says its own level is, 0 to 1; 0 for a title that does not say.</summary>
     /// <remarks>
