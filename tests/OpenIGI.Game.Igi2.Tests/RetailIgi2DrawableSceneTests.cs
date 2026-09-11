@@ -60,9 +60,9 @@ public sealed class RetailIgi2DrawableSceneTests
         }
 
         Assert.Equal(24, levels);
-        Assert.Equal(10_487, placements);
-        Assert.Equal(7_669, lightmapped);
-        Assert.Equal(1_643_577L, triangles);
+        Assert.Equal(16_447, placements);
+        Assert.Equal(12_225, lightmapped);
+        Assert.Equal(2_620_042L, triangles);
 
         // The two are `soldier_1`, which is in no archive anywhere in the installation -- the residue
         // RetailIgi2ModelTableTests names. A scene that silently dropped more than that would still look
@@ -118,7 +118,7 @@ public sealed class RetailIgi2DrawableSceneTests
             }
         }
 
-        Assert.Equal(7_669, checkedEntries);
+        Assert.Equal(12_225, checkedEntries);
     }
 
     /// <summary>The world scene carries no characters.</summary>
@@ -134,6 +134,7 @@ public sealed class RetailIgi2DrawableSceneTests
         int placed = 0;
         int characters = 0;
         int drawable = 0;
+        int attached = 0;
 
         foreach (Igi2Level level in Igi2Level.All())
         {
@@ -141,6 +142,7 @@ public sealed class RetailIgi2DrawableSceneTests
             placed += built.Placed.Placements.Count;
             characters += built.Placed.Placements.Count(static p => Igi2WorldScene.CharacterTypes.Contains(p.TypeName));
             drawable += built.Scene.Placements.Count;
+            attached += built.AttachedCount;
 
             foreach (WorldPlacement placement in built.Scene.Placements)
             {
@@ -152,8 +154,10 @@ public sealed class RetailIgi2DrawableSceneTests
         // 1,210 rather than 1,229: the nineteen the levels declare as HumanPlayer are no longer
         // placements at all, having become the player the mission stands up.
         Assert.Equal(1_210, characters);
-        // Everything placed, less the characters, less the two the shipped data cannot resolve.
-        Assert.Equal(placed - characters - 2, drawable);
+        // Everything placed, less the characters, less the two the shipped data cannot resolve, plus
+        // every part attached to one of them -- each of which is a placement in its own right.
+        Assert.Equal(placed - characters - 2 + attached, drawable);
+        Assert.Equal(5_960, attached);
     }
 
     /// <summary>A drawable placement is in metres, and the walk it came from is in engine units.</summary>
@@ -181,21 +185,27 @@ public sealed class RetailIgi2DrawableSceneTests
     {
         Igi2DrawableSceneResult built = Build(Igi2Level.All().First());
 
-        // Every authored position, converted. A set rather than a pairing, because the walk drops the
-        // characters and the unresolved on the way through and keeps no id to pair the rest back by --
-        // and the claim does not need one: it is that a drawable position IS an authored position over
-        // 4096, whichever authored one it came from.
-        HashSet<(double X, double Y, double Z)> inMetres = [.. built.Placed.Placements.Select(static p =>
-            (p.Position.X / WorldScene.UnitsPerMetre,
-             p.Position.Y / WorldScene.UnitsPerMetre,
-             p.Position.Z / WorldScene.UnitsPerMetre))];
+        // Asked of the AUTHORED placements rather than of the drawable ones, because the drawable list
+        // holds more than the level authors: an object's attached parts are placements of their own, at
+        // their parent's position plus a model-space offset, so a drawable position is not in general an
+        // authored one. What still holds -- and is the claim about the conversion -- is that every
+        // authored placement the walk keeps turns up among them, at its own position over 4096.
+        HashSet<(double X, double Y, double Z)> drawableMetres = [.. built.Scene.Placements.Select(static p =>
+            (p.Position.X, p.Position.Y, p.Position.Z))];
 
         Assert.NotEmpty(built.Scene.Placements);
-        Assert.All(
-            built.Scene.Placements,
-            placement => Assert.Contains(
-                (placement.Position.X, placement.Position.Y, placement.Position.Z),
-                inMetres));
+        int authored = built.Placed.StaticPlacements.Count();
+        int found = built.Placed.StaticPlacements.Count(p => drawableMetres.Contains(
+            (p.Position.X / WorldScene.UnitsPerMetre,
+             p.Position.Y / WorldScene.UnitsPerMetre,
+             p.Position.Z / WorldScene.UnitsPerMetre)));
+
+        Assert.Equal(authored - built.UnresolvedCount, found);
+
+        // And there are more drawn than authored, which is the attachments.
+        Assert.True(
+            built.Scene.Placements.Count > authored,
+            $"{built.Scene.Placements.Count} drawable is no more than {authored} authored, so nothing attached.");
 
         // The negative half: the authored units are NOT the drawable ones, so the assertion above is
         // about a conversion rather than about two collections that happen to agree.

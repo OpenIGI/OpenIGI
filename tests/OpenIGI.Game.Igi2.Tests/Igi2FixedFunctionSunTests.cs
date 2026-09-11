@@ -112,12 +112,18 @@ public sealed class Igi2FixedFunctionSunTests
             }
 
             unlit++;
-            MeshGeometry geometry = Assert.IsType<MeshGeometry>(
-                MefMeshBuilder.Build(placement.Model, (float)(1.0 / WorldScene.UnitsPerMetre)));
+
+            // Null for a model with no draw records at all -- an attached trigger volume such as
+            // level 1's `killbox` is an object the original creates and draws nothing for.
+            if (MefMeshBuilder.Build(placement.Model, (float)(1.0 / WorldScene.UnitsPerMetre)) is not { } geometry)
+            {
+                continue;
+            }
+
             Assert.All(geometry.Vertices, vertex => Assert.Equal(Bgra32.White, vertex.Colour));
         }
 
-        Assert.Equal(108, unlit);
+        Assert.Equal(152, unlit);
     }
 
     private static Igi2Level LevelOne() =>
