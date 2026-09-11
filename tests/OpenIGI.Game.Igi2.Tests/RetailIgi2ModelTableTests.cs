@@ -119,9 +119,9 @@ public sealed class RetailIgi2ModelTableTests
         // Exact, because the corpus is fixed and the residue is now small enough to name. Of the 10,550
         // placements 9,536 resolve by file name alone and 10,545 through the packs -- the ones the packs
         // add are the characters and everything else the global pack carries.
-        Assert.Equal(11_724, total);
-        Assert.Equal(10_710, byFileName);
-        Assert.Equal(11_719, byTable);
+        Assert.Equal(12_402, total);
+        Assert.Equal(10_804, byFileName);
+        Assert.Equal(11_813, byTable);
     }
 
     /// <summary>The five placements the shipped data cannot resolve, and why they are the data's fault.</summary>
@@ -139,7 +139,7 @@ public sealed class RetailIgi2ModelTableTests
     /// </para>
     /// </remarks>
     [RequiresTitleDataFact("igi2")]
-    public void The_five_that_do_not_resolve_are_missing_from_the_shipped_data()
+    public void The_models_that_do_not_resolve_are_missing_from_the_shipped_data()
     {
         Dictionary<string, int> unresolved = new(StringComparer.OrdinalIgnoreCase);
 
@@ -163,7 +163,14 @@ public sealed class RetailIgi2ModelTableTests
         Assert.Equal(1, unresolved["igiagent_1"]);
         Assert.Equal(1, unresolved["231_15_1"]);
         Assert.Equal(1, unresolved["730_01_1"]);
-        Assert.Equal(4, unresolved.Count);
+
+        // The editor's waypoint marker. No file of that name is anywhere in the retail installation, and
+        // the only thing that mentions it is the level scripts that name it -- which is the case
+        // SplineObjWaypoint_CreateHandler (igi2ed 0x641250) handles by asking MTP_GetLODVirModelExists
+        // first and creating the object without a model. So these 584 are placed and draw nothing, which
+        // is what retail does with them too.
+        Assert.Equal(584, unresolved["ai-arrow"]);
+        Assert.Equal(5, unresolved.Count);
     }
 
     /// <summary>The global pack is what carries the characters, and it is loaded first.</summary>

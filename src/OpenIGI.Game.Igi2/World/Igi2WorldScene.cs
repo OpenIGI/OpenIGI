@@ -141,17 +141,26 @@ public sealed class Igi2WorldScene
     /// its endpoints rather than by the usual parameter names; see <see cref="WireTransform"/>.
     /// </description></item>
     /// <item><description>
+    /// <c>SplineObjWaypoint</c> — the waypoint itself is a <c>RigidDynCubeObj</c> whose model is its
+    /// <c>Waypoint Model</c>: <c>SplineObjWaypoint_CreateHandler</c> (<c>0x641250</c>) passes that
+    /// parameter to <c>MTP_GetLODVirModelExists</c> and hands the result to <c>RigidDynCubeObj_Init</c>,
+    /// so a waypoint naming a model the installation does not ship is created with none and draws
+    /// nothing. 584 of the corpus's 713 name <c>ai-arrow</c>, which is that case — no file of that name
+    /// exists anywhere in the retail data, and the level scripts are the only thing that mention it. The
+    /// other 94 name a real model and are drawn. Its <c>Orientation</c> is a <c>Real32x9</c>, which level
+    /// data stores as the same three Euler angles every other type's is.
+    /// </description></item>
+    /// <item><description>
     /// <c>Lift</c> — the authored start. <c>Lift_SetPositionToFirstFloor</c> (<c>0x46DD50</c>) moves a
     /// lift onto its first <c>Floor</c> child at load, which this does not do; the eight lifts in the
     /// corpus stand where the editor left them until it does.
     /// </description></item>
     /// </list>
     /// <para>
-    /// <b>Not here, and why.</b> <c>SplineObjWaypoint</c> (678) carries a <c>Segment Model</c> that is
-    /// extruded along the spline between waypoints by <c>SplineObjSegment_Update</c>, and a
-    /// <c>Waypoint Model</c> that is the editor's own <c>ai-arrow</c>; drawing either at the waypoint
-    /// would be wrong. <c>RotateAttachment</c> (250) has no position at all — it hangs off its parent.
-    /// <c>Train</c> (9) rides a spline.
+    /// <b>Not here, and why.</b> A <c>SplineObjWaypoint</c>'s <c>Segment Model</c> is swept along the
+    /// spline between consecutive waypoints rather than placed at either — 678 of them, and a subsystem
+    /// rather than a name. <c>RotateAttachment</c> (250) has no position at all — it hangs off its
+    /// parent. <c>Train</c> (9) rides a spline.
     /// <c>ComputerHilight</c> (108) names <c>MARKER_NONE</c>, a sentinel for the computer overlay rather
     /// than a model, and <c>LevelInfo</c> (19) names a script path. Each is a subsystem, not a name.
     /// </para>
@@ -181,6 +190,7 @@ public sealed class Igi2WorldScene
                 OrientationParameter,
                 MountedModel: "Barrel model"),
             ["Lift"] = new("Model", "Start Position", "Start Orientation"),
+            ["SplineObjWaypoint"] = new("Waypoint Model", PositionParameter, OrientationParameter),
         };
 
     private Igi2WorldScene(IReadOnlyList<Igi2Placement> placements) => Placements = placements;

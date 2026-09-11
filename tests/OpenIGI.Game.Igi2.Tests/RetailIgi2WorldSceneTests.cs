@@ -51,11 +51,12 @@ public sealed class RetailIgi2WorldSceneTests
         }
 
         Assert.Equal(24, levels);
-        Assert.Equal(11_724, placements);
+        Assert.Equal(12_402, placements);
         // Fourteen, not fifteen: HumanPlayer became a class of its own when the sequel's player was
         // registered, and a character is not a static placement. Wire is the twenty-first, and is the
         // one type here that is not placed at a position it authors -- it is strung between two.
-        Assert.Equal(21, types.Count);
+        // SplineObjWaypoint is the twenty-second, and most of its models do not ship.
+        Assert.Equal(22, types.Count);
     }
 
     /// <summary>
@@ -68,10 +69,16 @@ public sealed class RetailIgi2WorldSceneTests
     /// suffix, so appending one resolved exactly nothing.
     /// </para>
     /// <para>
-    /// A tolerance rather than an equality, because 370 of the 10,489 static placements name a model
+    /// A tolerance rather than an equality, because several hundred static placements name a model
     /// neither archive holds by file name. Those are not a decoding fault: they resolve through the
     /// level's <c>.mtp</c> pack, which this walk does not read and <c>RetailIgi2ModelTableTests</c>
-    /// does — after which the whole corpus leaves only two unresolved.
+    /// does — after which the whole corpus leaves a residue that suite names one by one.
+    /// </para>
+    /// <para>
+    /// The editor's waypoint marker is skipped rather than counted against the tolerance. It ships with
+    /// nothing, so every one of the 584 waypoints that names it would fail here and drag the figure down
+    /// by five points for a reason that has nothing to do with decoding — and one that
+    /// <c>The_models_that_do_not_resolve_are_missing_from_the_shipped_data</c> already pins exactly.
     /// </para>
     /// </remarks>
     [RequiresTitleDataFact("igi2")]
@@ -84,13 +91,18 @@ public sealed class RetailIgi2WorldSceneTests
         {
             foreach (Igi2Placement placement in scene.StaticPlacements)
             {
+                if (string.Equals(placement.Model, "ai-arrow", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 total++;
                 string name = Igi2WorldScene.ModelResourceName(placement.Model);
                 resolved += archives.Any(a => a.TryGetEntry(name, out _)) ? 1 : 0;
             }
         }
 
-        Assert.Equal(10_514, total);
+        Assert.Equal(10_608, total);
         Assert.True(
             resolved >= total * 96 / 100,
             $"Only {resolved} of {total} static placements resolved, below the 96% the corpus reaches.");

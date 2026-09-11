@@ -60,14 +60,17 @@ public sealed class RetailIgi2DrawableSceneTests
         }
 
         Assert.Equal(24, levels);
-        Assert.Equal(16_637, placements);
+        Assert.Equal(16_731, placements);
         Assert.Equal(12_239, lightmapped);
-        Assert.Equal(2_652_000L, triangles);
+        Assert.Equal(2_653_692L, triangles);
 
-        // The two are `soldier_1`, which is in no archive anywhere in the installation -- the residue
-        // RetailIgi2ModelTableTests names. A scene that silently dropped more than that would still look
-        // fine on screen, which is why the number is pinned rather than tolerated.
-        Assert.Equal(2, unresolved);
+        // The residue RetailIgi2ModelTableTests names one by one: two `soldier_1`, which is in no
+        // archive anywhere in the installation, and 584 spline waypoints naming the editor's `ai-arrow`
+        // marker, which is not in the installation either. Both are placements the level data makes and
+        // the shipped data cannot draw, which is what retail does with them too. A scene that silently
+        // dropped more than that would still look fine on screen, which is why the number is pinned
+        // rather than tolerated.
+        Assert.Equal(586, unresolved);
     }
 
     /// <summary>A lightmapped placement names an entry the level's archive really holds.</summary>
@@ -150,13 +153,13 @@ public sealed class RetailIgi2DrawableSceneTests
             }
         }
 
-        Assert.Equal(11_724, placed);
+        Assert.Equal(12_402, placed);
         // 1,210 rather than 1,229: the nineteen the levels declare as HumanPlayer are no longer
         // placements at all, having become the player the mission stands up.
         Assert.Equal(1_210, characters);
-        // Everything placed, less the characters, less the two the shipped data cannot resolve, plus
+        // Everything placed, less the characters, less the 586 the shipped data cannot resolve, plus
         // every part attached to one of them -- each of which is a placement in its own right.
-        Assert.Equal(placed - characters - 2 + attached, drawable);
+        Assert.Equal(placed - characters - 586 + attached, drawable);
         Assert.Equal(6_125, attached);
     }
 

@@ -28,7 +28,9 @@ public sealed class Igi2PlacementBindingTests
     /// <summary>Every bound type places all of its tasks, across the whole corpus.</summary>
     /// <remarks>
     /// A task of these types always carries the parameters its binding names, so anything short of the
-    /// whole population means a binding is reading a name the data does not use.
+    /// whole population means a binding is reading a name the data does not use. The exception is a task
+    /// that names no model at all, which places nothing by design; 35 of the corpus's 713 spline
+    /// waypoints are that, and they are counted here rather than waved past.
     /// </remarks>
     [RequiresTitleDataFact("igi2")]
     public void Every_bound_type_places_all_of_its_tasks()
@@ -65,9 +67,20 @@ public sealed class Igi2PlacementBindingTests
         Assert.Equal(41, declared["AIStationaryGunHolder"]);
         Assert.Equal(19, declared["StationaryGun"]);
         Assert.Equal(8, declared["Lift"]);
+        Assert.Equal(713, declared["SplineObjWaypoint"]);
+
+        // A waypoint with an empty Waypoint Model has nothing to place. The rest of the type's tasks
+        // are placed like any other, so the shortfall is exactly those.
+        Assert.Equal(678, placed["SplineObjWaypoint"]);
+        Assert.Equal(35, declared["SplineObjWaypoint"] - placed["SplineObjWaypoint"]);
 
         foreach ((string type, int count) in declared)
         {
+            if (type == "SplineObjWaypoint")
+            {
+                continue;
+            }
+
             Assert.Equal(count, placed.GetValueOrDefault(type));
         }
     }
