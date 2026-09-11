@@ -66,7 +66,14 @@ public static class Igi2DrawableScene
         ArgumentNullException.ThrowIfNull(packs);
 
         IIgiLogger log = logger ?? NullLogger.Instance;
-        Igi2WorldScene placed = Igi2WorldScene.Build(levelRoot);
+        // The walk is given the models because one type cannot be placed without them: a train's
+        // carriages are spaced by the distance between their model's two couplings, which nothing
+        // authors. See Igi2Train.
+        Igi2WorldScene placed = Igi2WorldScene.Build(
+            levelRoot,
+            name => table.TryResolveMesh(name, out string? mesh) && TryFind(packs, mesh, out _, out MefModel? model)
+                ? model
+                : null);
 
         List<WorldPlacement> drawable = [];
         int unresolved = 0;

@@ -1,6 +1,7 @@
 using System.Globalization;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Igi2.World;
@@ -206,14 +207,26 @@ public sealed class Igi2WorldScene
 
     /// <summary>Walks a loaded level and collects everything it places.</summary>
     /// <param name="levelRoot">The level's task tree.</param>
+    /// <param name="models">
+    /// Resolves a model name to its mesh, or <see langword="null"/> when the caller has no models to
+    /// hand. Only a <c>Train</c> needs one — its carriages are spaced by the distance between their
+    /// model's two couplings, which nothing authors — so a walk given none places no trains and
+    /// everything else the same. See <see cref="Igi2Train"/>.
+    /// </param>
     /// <returns>The scene.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="levelRoot"/> is <see langword="null"/>.</exception>
-    public static Igi2WorldScene Build(GameTask levelRoot)
+    public static Igi2WorldScene Build(GameTask levelRoot, Func<string, MefModel?>? models = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
 
+        // The splines first, and in one pass, because a train names the track it rides by task id and may
+        // be declared anywhere in the tree relative to it. Reading them up front also means each curve is
+        // built once and then used twice: as the shape a segment's model is bent into, and as the track.
+        Dictionary<int, Igi2SplineRun> splines = [];
+        CollectSplines(levelRoot, splines);
+
         List<Igi2Placement> placements = [];
-        Collect(levelRoot, placements);
+        Collect(levelRoot, placements, splines, models);
         return new Igi2WorldScene(placements);
     }
 
@@ -275,7 +288,26 @@ public sealed class Igi2WorldScene
     /// <inheritdoc/>
     public override string ToString() => $"I.G.I. 2 scene, {Placements.Count} placements";
 
-    private static void Collect(GameTask task, List<Igi2Placement> into)
+    private static void CollectSplines(GameTask task, Dictionary<int, Igi2SplineRun> into)
+    {
+        foreach (GameTask child in task.Children)
+        {
+            if (child is DeclaredTask declared
+                && string.Equals(declared.Type.Name, Igi2SplineObject.SplineType, StringComparison.Ordinal)
+                && declared.Id != GameTask.NoId)
+            {
+                into[declared.Id] = Igi2SplineObject.Read(declared);
+            }
+
+            CollectSplines(child, into);
+        }
+    }
+
+    private static void Collect(
+        GameTask task,
+        List<Igi2Placement> into,
+        Dictionary<int, Igi2SplineRun> splines,
+        Func<string, MefModel?>? models)
     {
         foreach (GameTask child in task.Children)
         {
@@ -289,15 +321,33 @@ public sealed class Igi2WorldScene
                 // A spline's segments are not declared by anything -- they are made at load, between
                 // consecutive waypoints -- so they are read from the run as a whole rather than from a
                 // task. See <see cref="Igi2SplineObject"/>.
-                if (string.Equals(declared.Type.Name, Igi2SplineObject.SplineType, StringComparison.Ordinal))
+                if (string.Equals(declared.Type.Name, Igi2SplineObject.SplineType, StringComparison.Ordinal)
+                    && splines.TryGetValue(declared.Id, out Igi2SplineRun run))
                 {
-                    into.AddRange(Igi2SplineObject.Segments(declared));
+                    into.AddRange(run.Segments);
+                }
+
+                // A locomotive places its whole rake. A carriage is a Train whose parent is one, and it
+                // carries no distance of its own -- Train_UpdateInternalDataHandler (igi2ed 0x47F8E0)
+                // calls Train_Move only for the one at the front, and that moves all of them.
+                if (models is not null
+                    && string.Equals(declared.Type.Name, Igi2Train.TrainType, StringComparison.Ordinal)
+                    && !IsTrain(declared.Parent)
+                    && declared.TryGetValue(Igi2Train.RailroadParameter, out object? rawRail)
+                    && rawRail is int railroad
+                    && splines.TryGetValue(railroad, out Igi2SplineRun rails))
+                {
+                    into.AddRange(Igi2Train.Carriages(declared, rails.Path, models));
                 }
             }
 
-            Collect(child, into);
+            Collect(child, into, splines, models);
         }
     }
+
+    private static bool IsTrain(GameTask? task) =>
+        task is DeclaredTask declared
+        && string.Equals(declared.Type.Name, Igi2Train.TrainType, StringComparison.Ordinal);
 
     /// <summary>Reads one task's placement, if it declares the three parameters that make one.</summary>
     /// <param name="task">The placeholder task.</param>

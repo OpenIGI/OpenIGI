@@ -119,9 +119,9 @@ public sealed class RetailIgi2ModelTableTests
         // Exact, because the corpus is fixed and the residue is now small enough to name. Of the 10,550
         // placements 9,536 resolve by file name alone and 10,545 through the packs -- the ones the packs
         // add are the characters and everything else the global pack carries.
-        Assert.Equal(13_035, total);
-        Assert.Equal(11_437, byFileName);
-        Assert.Equal(12_446, byTable);
+        Assert.Equal(13_044, total);
+        Assert.Equal(11_446, byFileName);
+        Assert.Equal(12_455, byTable);
     }
 
     /// <summary>The five placements the shipped data cannot resolve, and why they are the data's fault.</summary>

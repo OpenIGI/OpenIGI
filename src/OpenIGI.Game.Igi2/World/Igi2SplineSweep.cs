@@ -51,6 +51,7 @@ public readonly record struct Igi2SplineFrame(Matrix3f Orientation, Vector3f Pos
 public sealed class Igi2SplineSweep : IIgi2PlacementGeometry
 {
     private readonly Igi2SplineFrame[] _frames;
+    private readonly float[] _areaLengths;
     private readonly Vector3f _chord;
     private readonly bool _linear;
     private readonly bool _flipped;
@@ -62,6 +63,36 @@ public sealed class Igi2SplineSweep : IIgi2PlacementGeometry
         _linear = linear;
         _flipped = flipped;
         Midpoint = midpoint;
+
+        _areaLengths = new float[frames.Length - 1];
+        float total = 0f;
+        for (int i = 0; i < _areaLengths.Length; i++)
+        {
+            Vector3f step = new(
+                frames[i + 1].Position.X - frames[i].Position.X,
+                frames[i + 1].Position.Y - frames[i].Position.Y,
+                frames[i + 1].Position.Z - frames[i].Position.Z);
+            _areaLengths[i] = MathF.Sqrt((step.X * step.X) + (step.Y * step.Y) + (step.Z * step.Z));
+            total += _areaLengths[i];
+        }
+
+        Length = total;
+    }
+
+    /// <summary>Gets one frame's point, in engine units, in the world rather than in the segment.</summary>
+    /// <param name="index">The frame.</param>
+    /// <returns>The world point.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">There is no such frame.</exception>
+    public Vector3d PointAt(int index)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, _frames.Length);
+
+        Igi2SplineFrame frame = _frames[index];
+        return new Vector3d(
+            Midpoint.X + frame.Position.X,
+            Midpoint.Y + frame.Position.Y,
+            Midpoint.Z + frame.Position.Z);
     }
 
     /// <summary>The most frames a segment is sampled at, which is the cap the editor applies.</summary>
@@ -84,6 +115,17 @@ public sealed class Igi2SplineSweep : IIgi2PlacementGeometry
 
     /// <summary>Gets whether the model is stretched straight from end to end rather than bent.</summary>
     public bool IsLinear => _linear;
+
+    /// <summary>Gets the straight-line length of each area, in engine units.</summary>
+    /// <remarks>
+    /// <c>SplineObjSegment_Update</c> (<c>igi2ed 0x611FB0</c>) measures each area as it samples it and
+    /// keeps the array at <c>+1456</c>. It is what a train walks when it steps along the track, so it is
+    /// the curve's length as the engine reckons it: a chain of chords, not an integral.
+    /// </remarks>
+    public IReadOnlyList<float> AreaLengths => _areaLengths;
+
+    /// <summary>Gets the whole segment's length, in engine units: the sum of its areas.</summary>
+    public float Length { get; }
 
     /// <summary>Builds the curve between two waypoints.</summary>
     /// <param name="start">The earlier waypoint's position, in engine units.</param>

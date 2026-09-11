@@ -30,6 +30,7 @@ internal sealed class Igi2Level
     private readonly Lazy<IresArchive> _lightmapArchive;
     private readonly Lazy<Igi2LightmapIndex> _lightmaps;
     private readonly Lazy<IReadOnlySet<int>> _taskIds;
+    private readonly Lazy<Igi2WorldScene> _scene;
 
     private readonly string _commonDirectory;
 
@@ -38,9 +39,9 @@ internal sealed class Igi2Level
         _commonDirectory = commonDirectory;
         Directory = directory;
         Root = root;
-        Scene = Igi2WorldScene.Build(root);
         Table = table;
 
+        _scene = new(() => Igi2WorldScene.Build(root, ModelFor));
         _models = new(() => Archives(directory, commonDirectory, "models"));
         _textures = new(() => Archives(directory, commonDirectory, "textures"));
         _lightmapArchive = new(() => IresArchive.Read(File.ReadAllBytes(LightmapArchivePath(directory))));
@@ -60,7 +61,18 @@ internal sealed class Igi2Level
     public string Directory { get; }
 
     /// <summary>Gets everything the level places in the world.</summary>
-    public Igi2WorldScene Scene { get; }
+    /// <remarks>
+    /// Built with the level's own models to hand, because a <c>Train</c> cannot be placed without one:
+    /// its carriages are spaced by the distance between their model's two couplings. Lazy for the same
+    /// reason -- the archives are, and a harness that never looks at the scene should not open them.
+    /// </remarks>
+    public Igi2WorldScene Scene => _scene.Value;
+
+    /// <summary>Resolves a placement's model name to the mesh behind it, through the pack table.</summary>
+    /// <param name="model">The name as level data writes it.</param>
+    /// <returns>The mesh, or <see langword="null"/> when nothing the level ships holds it.</returns>
+    public MefModel? ModelFor(string model) =>
+        Table.TryResolveMesh(model, out string? mesh) && TryReadModel(mesh, out MefModel? read) ? read : null;
 
     /// <summary>Gets the level's pack table, over its own pack and its location's common one.</summary>
     public Igi2ModelTable Table { get; }

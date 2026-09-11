@@ -42,11 +42,17 @@ public static class Igi2SplineObject
     /// <summary>The parameter a waypoint names the model swept towards it with.</summary>
     public const string SegmentModelParameter = "Segment Model";
 
-    /// <summary>Reads every segment a spline draws.</summary>
+    /// <summary>Reads a spline: the segments it draws, and the track they lie along.</summary>
     /// <param name="spline">The <c>SplineObj</c> task.</param>
-    /// <returns>One placement per segment, in waypoint order.</returns>
+    /// <returns>The run. A spline of fewer than two waypoints has neither segments nor length.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="spline"/> is <see langword="null"/>.</exception>
-    public static IReadOnlyList<Igi2Placement> Segments(DeclaredTask spline)
+    /// <remarks>
+    /// Both come out of one read because they are one thing seen twice: the curve between each pair of
+    /// waypoints is the shape a segment's model is bent into AND the piece of track a train rides over.
+    /// A pair whose waypoint names no <c>Segment Model</c> still belongs to the track — it simply draws
+    /// nothing — which is why the two lists are not the same length.
+    /// </remarks>
+    public static Igi2SplineRun Read(DeclaredTask spline)
     {
         ArgumentNullException.ThrowIfNull(spline);
 
@@ -63,7 +69,7 @@ public static class Igi2SplineObject
 
         if (waypoints.Count < 2)
         {
-            return [];
+            return new Igi2SplineRun(new Igi2SplinePath(spline.Id, []), []);
         }
 
         bool straight = Flag(spline, "Linear Segments");
@@ -93,14 +99,10 @@ public static class Igi2SplineObject
         }
 
         List<Igi2Placement> segments = [];
+        Igi2SplineSweep[] track = new Igi2SplineSweep[waypoints.Count - 1];
         for (int i = 1; i < waypoints.Count; i++)
         {
             Waypoint owner = waypoints[i];
-            if (owner.Model.Length == 0)
-            {
-                continue;
-            }
-
             Igi2SplineSweep sweep = Igi2SplineSweep.Create(
                 waypoints[i - 1].Position,
                 owner.Position,
@@ -112,6 +114,12 @@ public static class Igi2SplineObject
                 // own for one of them. No waypoint in the shipped corpus sets its own.
                 straight || owner.Straight,
                 owner.Flipped);
+
+            track[i - 1] = sweep;
+            if (owner.Model.Length == 0)
+            {
+                continue;
+            }
 
             segments.Add(new Igi2Placement(
                 owner.Id,
@@ -130,7 +138,7 @@ public static class Igi2SplineObject
                 Geometry: sweep));
         }
 
-        return segments;
+        return new Igi2SplineRun(new Igi2SplinePath(spline.Id, track), segments);
     }
 
     /// <summary>

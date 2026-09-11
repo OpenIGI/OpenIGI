@@ -51,13 +51,18 @@ public sealed class RetailIgi2WorldSceneTests
         }
 
         Assert.Equal(24, levels);
+
+        // Nine short of the 13,044 the drawable scene reaches, and deliberately: this walk is given no
+        // models, and a Train cannot be placed without one -- its carriages are spaced by the distance
+        // between their model's two couplings, which nothing authors. See Igi2Train.
         Assert.Equal(13_035, placements);
         // Fourteen, not fifteen: HumanPlayer became a class of its own when the sequel's player was
         // registered, and a character is not a static placement. Wire is the twenty-first, and is the
         // one type here that is not placed at a position it authors -- it is strung between two.
         // SplineObjWaypoint is the twenty-second, and most of its models do not ship. SplineObjSegment
         // is the twenty-third and is not a task type at all: no level declares one, and every one of
-        // them is made between a pair of waypoints. See Igi2SplineObject.
+        // them is made between a pair of waypoints. See Igi2SplineObject. Train would be the
+        // twenty-fourth and is absent for the reason given above.
         Assert.Equal(23, types.Count);
     }
 
