@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -186,6 +186,9 @@ public sealed class WorldRenderer : IDisposable
 
     /// <summary>Gets or sets the live generic pickups whose consumed models no longer draw.</summary>
     public GenericPickupRegistry? GenericPickups { get; set; }
+
+    /// <summary>Gets or sets the live rotating world objects (radar dishes and rotating tasks).</summary>
+    public RotatingObjectRegistry? RotatingObjects { get; set; }
 
     /// <summary>Sets the shared presentation point used by every tick-driven world transform.</summary>
     /// <remarks>
@@ -1121,6 +1124,16 @@ public sealed class WorldRenderer : IDisposable
         {
             drawPosition = cinematicPosition;
             drawOrientation = cinematicOrientation;
+        }
+        else if (RotatingObjects?.TryGetDrawTransform(
+            placement,
+            _frameAlpha,
+            _frameSmooth,
+            out Vector3d rotatingPosition,
+            out Matrix3f rotatingOrientation) == true)
+        {
+            drawPosition = rotatingPosition;
+            drawOrientation = rotatingOrientation;
         }
     }
 
