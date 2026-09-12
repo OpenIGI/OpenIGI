@@ -782,7 +782,10 @@ public sealed class SoldierRenderer : IDisposable
                 origin.Z + (ray.Z * fraction));
         }
 
-        return true;
+        // The traversal budget is a safety bound, not evidence that the remainder is clear. One
+        // final query distinguishes a genuinely clear remainder from a wall, but does not step
+        // through a ninth transparent layer.
+        return !cast(origin, to, out _);
     }
 
     /// <summary>Gets or sets the active authored cutscene transform source.</summary>
@@ -1510,18 +1513,12 @@ public sealed class SoldierRenderer : IDisposable
                 }
                 if (sight is not null)
                 {
-                    // A world hit before the target is cover. In particular, a wall enclosing the player
-                    // must not be treated as a late corner clip that leaves the player visible.
-                    brain.SetLineOfSight((from, to) =>
-                    {
-                        if (!sight(from, to, out WorldRayHit blocked))
-                        {
-                            return true;
-                        }
-
-                        double total = Length(from, to);
-                        return AiSoldier.WorldBlockerAllowsSight(total, blocked.Distance);
-                    });
+                    // HumanAI and the binocular overlay share the same transparent-surface rule. A raw
+                    // nearest-hit query stops at Level 4's material-14 window and made the village gunner
+                    // blind to a player immediately outside, even though the remainder of the ray was clear.
+                    // Step past retail Glass/Water/Fence/Ladder faces, while an ordinary wall or physical
+                    // closed-door leaf remains cover.
+                    brain.SetLineOfSight((from, to) => HasLineOfSight(sight, from, to));
                 }
 
                 // Which script this soldier runs: its own MISSION:AI/<taskid>.qvm when the level ships one,

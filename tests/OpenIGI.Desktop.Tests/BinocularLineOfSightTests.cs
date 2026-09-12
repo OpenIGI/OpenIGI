@@ -71,4 +71,27 @@ public sealed class BinocularLineOfSightTests
     {
         Assert.True(SoldierRenderer.HasLineOfSight(Surfaces((200d, Glass), (350d, Fence)), Eye, Target));
     }
+
+    [Fact]
+    public void TransparentTraversalLimitFailsClosedBeforeAWall()
+    {
+        Assert.False(SoldierRenderer.HasLineOfSight(
+            Surfaces(
+                (100d, Glass), (200d, Glass), (300d, Glass), (400d, Glass),
+                (500d, Glass), (600d, Glass), (700d, Glass), (800d, Glass),
+                (900d, Concrete)),
+            Eye,
+            Target));
+    }
+
+    [Fact]
+    public void TransparentTraversalLimitAcceptsAProvenClearRemainder()
+    {
+        Assert.True(SoldierRenderer.HasLineOfSight(
+            Surfaces(
+                (100d, Glass), (200d, Glass), (300d, Glass), (400d, Glass),
+                (500d, Glass), (600d, Glass), (700d, Glass), (800d, Glass)),
+            Eye,
+            Target));
+    }
 }
