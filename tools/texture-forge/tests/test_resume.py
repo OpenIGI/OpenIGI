@@ -5,9 +5,9 @@ can notice: a short container still decodes into a plausible picture, and a 4x d
 just a soft one. So the interesting cases here are all the ones where a file EXISTS and the texture is
 still not done.
 
-Two things changed the shape of this. The output is now the game's own container rather than a pair of
-PNGs in parallel directories -- so "finished" is a question about what is INSIDE a file, including how many
-layers it holds, which is what tells an upscale-only pack from one carrying maps. And one image is now
+Two things shape this. A finished picture is one that is present AT THE RIGHT SIZE, because a file that is
+there proves nothing -- a half-written one exists, and so does one an earlier run wrote at a different
+`--scale`, which would otherwise resume onto a pack that is quietly two scales at once. And one image is
 written to every path that addresses it, because the same art is packed into every level that draws it, so
 a run interrupted between those writes has to come back for the rest.
 """
@@ -17,7 +17,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from texture_forge import images, pipeline, resume, tex
+from texture_forge import images, pipeline, resume
 
 
 def _source(directory, name: str, size: int = 8):
@@ -37,7 +37,10 @@ def _finish(outputs, names, *, scale: int, size: int = 8, derive: bool, inspecti
     detail = (rgb, alpha) if derive else None
 
     for name in names:
-        tex.write(outputs.asset(name), rgb, alpha, detail)
+        images.write(outputs.asset(name), rgb, alpha)
+
+        if detail is not None:
+            images.write(outputs.surface(name), *detail)
 
     for path in resume.expected(outputs, names, derive=derive, inspection=inspection):
         images.write_grey(path, np.zeros((side, side), dtype=np.float32))
@@ -73,7 +76,6 @@ def test_a_truncated_asset_is_not_done(tmp_path):
     asset = outputs.asset("common/textures/wall")
     asset.write_bytes(asset.read_bytes()[:-40])
 
-    assert tex.describe(asset) is None
     assert not resume.completed(
         source, ["common/textures/wall"], outputs, scale=4, derive=True, inspection=True
     )
@@ -103,10 +105,10 @@ def test_the_wrong_scale_is_not_done(tmp_path):
 
 
 def test_a_pack_without_maps_is_unfinished_for_a_run_that_derives_them(tmp_path):
-    """The layer count is the distinction, and it is inside the file.
+    """A run without `--pbr` writes a complete, correct picture and no map beside it.
 
-    `--no-pbr` writes a complete, correct asset with one layer. Asked for maps afterwards, that asset is
-    not finished -- and nothing about its name or size says so, which is why the check opens it.
+    Asked for maps afterwards, that picture is not finished, and nothing about the picture itself says so
+    -- which is why the check looks for the map as well as for the picture.
     """
     source = _source(tmp_path / "png", "common/textures/wall")
     outputs = pipeline.Outputs(tmp_path / "out")

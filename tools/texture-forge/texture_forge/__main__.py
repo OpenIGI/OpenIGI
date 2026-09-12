@@ -300,19 +300,53 @@ def _run(arguments: argparse.Namespace, *, upscale: bool, derive: bool) -> int:
 
     skipped = f" [dim]({done} already done)[/dim]" if done else ""
     console.print(f"[green]Wrote {written} image(s).[/green]{skipped}")
+
+    carried = _carry_manifest(source, destination)
+
     console.print()
-    console.print("This directory IS an overrides folder. Install it by moving or copying it into")
-    console.print("the installation, next to [cyan]missions[/cyan] and [cyan]common[/cyan]:")
+    console.print("This is a tree of pictures, not a pack. Turn it into one with:")
     console.print()
-    console.print(f"  [dim]<game>/overrides/[/dim]        <- the contents of [dim]{destination}[/dim]")
+    console.print(f"  [cyan]ResExtract pack[/cyan] [dim]{destination} <game>/overrides[/dim]")
     console.print()
-    console.print(
-        "Nothing else to configure -- the assets are found by the paths they already had. "
-        "[cyan]F8[/cyan] takes them out of the frame and puts them back, and "
-        "[cyan]overrides[/cyan] in the console re-reads the folder without a restart."
-    )
+
+    if carried:
+        console.print(
+            "Nothing else to configure -- the assets are found by the paths they already had. "
+            "[cyan]F8[/cyan] takes them out of the frame and puts them back, and "
+            "[cyan]overrides[/cyan] in the console re-reads the folder without a restart."
+        )
+    else:
+        console.print(
+            f"[yellow]warning:[/yellow] no [cyan]{MANIFEST}[/cyan] was found beside the source images, so "
+            "none was carried across. The packer needs it to know which archive each picture came from; "
+            "re-extract with [cyan]ResExtract images[/cyan] and run this over that tree."
+        )
 
     return 0
+
+
+MANIFEST = "pack.json"
+"""What `ResExtract images` writes beside the pictures, and what `ResExtract pack` reads back."""
+
+
+def _carry_manifest(source: Path, destination: Path) -> bool:
+    """Copies the extractor's manifest across, unchanged.
+
+    This tool has no business editing it. The manifest says what each picture IS -- which archive it came
+    out of, whether it is one of 150 tiles of a loading screen, what size the menu lays it out at -- and
+    none of that is altered by making the picture larger. Copying it rather than regenerating it also
+    means there is exactly one description of the installation, written by the thing that read the
+    installation.
+    """
+    import shutil
+
+    origin = source / MANIFEST
+
+    if not origin.is_file():
+        return False
+
+    shutil.copyfile(origin, destination / MANIFEST)
+    return True
 
 
 def _sheet_command(arguments: argparse.Namespace) -> int:

@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-__all__ = ["read", "write_rgb", "write_rgba", "write_grey", "quantise", "PARTIAL_SUFFIX"]
+__all__ = ["read", "write", "write_rgb", "write_rgba", "write_grey", "quantise", "PARTIAL_SUFFIX"]
 
 
 PARTIAL_SUFFIX = ".partial"
@@ -78,6 +78,19 @@ def quantise(values: np.ndarray) -> np.ndarray:
     round-half-to-even, which is what MathF.Round does by default. They agree.
     """
     return np.clip(np.rint(values * 255.0), 0, 255).astype(np.uint8)
+
+
+def write(path: Path, rgb: np.ndarray, alpha: np.ndarray | None = None) -> None:
+    """Writes a PNG with an alpha channel when there is one to write, and without when there is not.
+
+    The distinction is not cosmetic downstream. A picture with no alpha channel is opaque BY CONSTRUCTION,
+    and adding a full one turns every later stage's "does this have a cut-out?" into a question that has to
+    be answered by looking at the pixels.
+    """
+    if alpha is None:
+        write_rgb(path, rgb)
+    else:
+        write_rgba(path, rgb, alpha)
 
 
 def write_rgb(path: Path, rgb: np.ndarray) -> None:

@@ -178,6 +178,92 @@ public sealed class PackPictureTests
     }
 
     [Fact]
+    public void ASurfaceMapTravelsInItsOwnSlot()
+    {
+        // Not as a second frame. Under the arrangement this replaces, a map lived in layer 1 of a
+        // multi-image container -- which collides with a ground atlas's second tile and a sprite's
+        // second animation frame, and the collision is silent because both decode perfectly well.
+        PackPicture.Content content = PackPicture.Read(
+            PackPicture.Write(
+                new PackPicture.Content(
+                    [new PackPicture.Frame(Solid(8, 8, 1), 8, 8, Surface: Solid(8, 8, 200))],
+                    8,
+                    8,
+                    0,
+                    0,
+                    default),
+                buildMips: false));
+
+        Assert.Single(content.Frames);
+        Assert.Equal(1, content.Frames[0].Image.GetLevel(0)[0].R);
+        Assert.NotNull(content.Frames[0].Surface);
+        Assert.Equal(200, content.Frames[0].Surface!.GetLevel(0)[0].R);
+    }
+
+    [Fact]
+    public void AFrameWithoutASurfaceMapSaysSo()
+    {
+        PackPicture.Content content = PackPicture.Read(
+            PackPicture.Write(Single(Solid(4, 4, 1), 4, 4), buildMips: false));
+
+        Assert.Null(content.Frames[0].Surface);
+    }
+
+    [Fact]
+    public void ASurfaceMapIsNeverMipped()
+    {
+        // Averaging normals down a chain is how a bumpy surface becomes a flat one, and the shader that
+        // reads this samples it at one resolution anyway.
+        PackPicture.Content content = PackPicture.Read(
+            PackPicture.Write(
+                new PackPicture.Content(
+                    [new PackPicture.Frame(Solid(16, 16, 1), 16, 16, Surface: Solid(16, 16, 9))],
+                    16,
+                    16,
+                    0,
+                    0,
+                    default),
+                buildMips: true));
+
+        Assert.True(content.Frames[0].Image.MipLevels > 1);
+        Assert.Equal(1, content.Frames[0].Surface!.MipLevels);
+    }
+
+    [Fact]
+    public void TheSurfaceReaderTakesAPackPicture()
+    {
+        // SurfaceAssetReader asks IsAtlas, and a pack picture answers yes -- so without an explicit
+        // branch it would read frame 1 as somebody's normal map.
+        byte[] file = PackPicture.Write(
+            new PackPicture.Content(
+                [new PackPicture.Frame(Solid(4, 4, 3), 4, 4, Surface: Solid(4, 4, 77))],
+                4,
+                4,
+                0,
+                0,
+                default),
+            buildMips: false);
+
+        SurfaceAsset surface = SurfaceAssetReader.Read(file);
+
+        Assert.Equal(3, surface.Diffuse.GetLevel(0)[0].R);
+        Assert.NotNull(surface.Detail);
+        Assert.Equal(77, surface.Detail!.GetLevel(0)[0].R);
+    }
+
+    [Fact]
+    public void AGroundAtlasIsNotMistakenForAPictureAndItsMap()
+    {
+        // The collision the slot exists to prevent: eighteen ground tiles, and the second one is a tile.
+        byte[] file = PackPicture.Write(
+            new PackPicture.Content(
+                [new(Solid(4, 4, 1), 4, 4), new(Solid(4, 4, 2), 4, 4)], 4, 4, 0, 0, default),
+            buildMips: false);
+
+        Assert.Null(SurfaceAssetReader.Read(file).Detail);
+    }
+
+    [Fact]
     public void NothingInARetailInstallationIsAPackPicture()
     {
         // The container borrows the game's magic, so it is worth stating that the version is free. If a

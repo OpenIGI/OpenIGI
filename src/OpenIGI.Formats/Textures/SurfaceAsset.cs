@@ -35,7 +35,13 @@ public readonly record struct SurfaceAsset(TextureImage Diffuse, TextureImage? D
 /// </remarks>
 public static class SurfaceAssetReader
 {
-    /// <summary>The layer a replacement carries its derived surface map in.</summary>
+    /// <summary>The layer the first arrangement carried a derived surface map in.</summary>
+    /// <remarks>
+    /// Kept for the packs built before <see cref="PackPicture"/> existed. Putting the map in layer 1 of a
+    /// multi-image container works only while nothing else means anything by layer 1 — and a ground atlas
+    /// means its second tile, and a sprite means its second animation frame. A pack picture gives the map
+    /// its own slot for that reason, and this is the compatibility path, not the one to write.
+    /// </remarks>
     public const int DetailLayer = 1;
 
     /// <summary>Reads a surface, with its derived map when the asset carries one.</summary>
@@ -57,6 +63,15 @@ public static class SurfaceAssetReader
     /// </remarks>
     public static SurfaceAsset Read(ReadOnlySpan<byte> data, ReadOnlySpan<Bgra32> palette = default)
     {
+        // Asked first, because a pack picture answers to IsAtlas as well -- it stands in for every one
+        // of the game's containers -- and reading one as an atlas would take its second FRAME for a
+        // surface map. Its map is in a slot of its own and says so.
+        if (PackPicture.Is(data))
+        {
+            PackPicture.Frame frame = PackPicture.Read(data.ToArray()).Frames[0];
+            return new SurfaceAsset(frame.Image, frame.Surface);
+        }
+
         if (!TexAtlasFile.IsAtlas(data))
         {
             return new SurfaceAsset(TexFile.Load(data, palette), null);

@@ -54,16 +54,26 @@ namespace OpenIGI.Formats.Textures;
 ///   0x20  grid cell offset, u32      columns*rows bytes of one-based frame numbers
 ///   0x24  three reserved dwords
 ///
-/// frame table, 24 bytes each, immediately after the header
-///   0x00  payload offset, u32        from the start of the file
-///   0x04  payload length, u32
-///   0x08  logical width, u16         NOT the pixel width; what layout uses
-///   0x0A  logical height, u16
-///   0x0C  advance, u16
-///   0x0E  offset x, i16
-///   0x10  offset y, i16
-///   0x12  reserved, u16 then u32
+/// frame table, 32 bytes each, immediately after the header
+///   0x00  picture offset, u32        from the start of the file
+///   0x04  picture length, u32
+///   0x08  surface offset, u32        0 when the frame carries no derived map
+///   0x0C  surface length, u32
+///   0x10  logical width, u16         NOT the pixel width; what layout uses
+///   0x12  logical height, u16
+///   0x14  advance, u16
+///   0x16  offset x, i16
+///   0x18  offset y, i16
+///   0x1A  reserved, u16 then u32
 /// </code>
+/// <para>
+/// THE SURFACE MAP IS ITS OWN SLOT, not a second frame, and that distinction is load-bearing. The
+/// arrangement it replaces put the picture in layer 0 and its packed normal-roughness-occlusion map in
+/// layer 1 of a multi-image container — which works only for as long as nothing else uses layer 1 for
+/// something else. A level's ground atlas is eighteen tiles in eighteen layers, and a sprite is its
+/// animation frames, so under that rule the second ground tile and the second frame of an explosion both
+/// read as somebody's normal map. Here a frame is always a picture and a map is always a map.
+/// </para>
 /// </remarks>
 public static class PackPicture
 {
@@ -74,7 +84,7 @@ public static class PackPicture
     public const int HeaderSize = 48;
 
     /// <summary>The size of one frame record in bytes.</summary>
-    public const int FrameSize = 24;
+    public const int FrameSize = 32;
 
     /// <summary>Set when every frame payload is a PNG rather than raw BGRA8 rows.</summary>
     public const uint PngFlag = 1;
@@ -94,13 +104,18 @@ public static class PackPicture
     /// <param name="Advance">The sprite advance, in logical units; zero for anything that is not a glyph.</param>
     /// <param name="OffsetX">The sprite's draw offset, in logical units.</param>
     /// <param name="OffsetY">The sprite's draw offset, in logical units.</param>
+    /// <param name="Surface">
+    /// The packed normal, roughness and occlusion map derived for this picture, or <see langword="null"/>
+    /// when none was. Derived data, never the game's: nothing shipped with a map.
+    /// </param>
     public readonly record struct Frame(
         TextureImage Image,
         int LogicalWidth,
         int LogicalHeight,
         int Advance = 0,
         int OffsetX = 0,
-        int OffsetY = 0);
+        int OffsetY = 0,
+        TextureImage? Surface = null);
 
     /// <summary>Everything a pack container holds.</summary>
     /// <param name="Frames">The pictures, in the order anything that indexes them expects.</param>
@@ -149,20 +164,26 @@ public static class PackPicture
         }
 
         byte[][] payloads = new byte[frames.Count][];
+        byte[]?[] surfaces = new byte[frames.Count][];
 
         for (int i = 0; i < frames.Count; i++)
         {
             TextureImage image = frames[i].Image
                 ?? throw new TextureFormatException($"Frame {i} has no image.");
 
-            using MemoryStream encoded = new();
-            PngWriter.Write(encoded, image.GetLevel(0), image.Width, image.Height);
-            payloads[i] = encoded.ToArray();
+            payloads[i] = Encode(image);
+
+            if (frames[i].Surface is { } surface)
+            {
+                surfaces[i] = Encode(surface);
+            }
         }
 
         int table = HeaderSize + (FrameSize * frames.Count);
         int body = table + cells;
-        long total = body + payloads.Sum(payload => (long)payload.Length);
+        long total = body
+            + payloads.Sum(payload => (long)payload.Length)
+            + surfaces.Sum(surface => (long)(surface?.Length ?? 0));
 
         if (total > int.MaxValue)
         {
@@ -195,14 +216,22 @@ public static class PackPicture
 
             BinaryPrimitives.WriteUInt32LittleEndian(record, (uint)at);
             BinaryPrimitives.WriteUInt32LittleEndian(record[4..], (uint)payloads[i].Length);
-            BinaryPrimitives.WriteUInt16LittleEndian(record[8..], Checked(frame.LogicalWidth, "logical width"));
-            BinaryPrimitives.WriteUInt16LittleEndian(record[10..], Checked(frame.LogicalHeight, "logical height"));
-            BinaryPrimitives.WriteUInt16LittleEndian(record[12..], Checked(frame.Advance, "advance"));
-            BinaryPrimitives.WriteInt16LittleEndian(record[14..], (short)frame.OffsetX);
-            BinaryPrimitives.WriteInt16LittleEndian(record[16..], (short)frame.OffsetY);
+            BinaryPrimitives.WriteUInt16LittleEndian(record[16..], Checked(frame.LogicalWidth, "logical width"));
+            BinaryPrimitives.WriteUInt16LittleEndian(record[18..], Checked(frame.LogicalHeight, "logical height"));
+            BinaryPrimitives.WriteUInt16LittleEndian(record[20..], Checked(frame.Advance, "advance"));
+            BinaryPrimitives.WriteInt16LittleEndian(record[22..], (short)frame.OffsetX);
+            BinaryPrimitives.WriteInt16LittleEndian(record[24..], (short)frame.OffsetY);
 
             payloads[i].CopyTo(span[at..]);
             at += payloads[i].Length;
+
+            if (surfaces[i] is { } surface)
+            {
+                BinaryPrimitives.WriteUInt32LittleEndian(record[8..], (uint)at);
+                BinaryPrimitives.WriteUInt32LittleEndian(record[12..], (uint)surface.Length);
+                surface.CopyTo(span[at..]);
+                at += surface.Length;
+            }
         }
 
         return file;
@@ -257,30 +286,27 @@ public static class PackPicture
         {
             ReadOnlySpan<byte> record = span.Slice(HeaderSize + (i * FrameSize), FrameSize);
 
-            int offset = ReadBounded(record, "frame payload offset");
-            int length = ReadBounded(record[4..], "frame payload length");
-
-            if (offset < 0 || length < 0 || (long)offset + length > span.Length)
-            {
-                throw new TextureFormatException(
-                    $"Frame {i} needs {length} bytes at offset {offset}, past the {span.Length}-byte file.");
-            }
-
             if ((flags & PngFlag) == 0)
             {
                 throw new TextureFormatException("A pack picture with no PNG flag has no other encoding defined.");
             }
 
-            (Bgra32[] pixels, int width, int height) = PngReader.Read(span.Slice(offset, length));
-            TextureImage image = TextureImage.FromPixels(width, height, pixels);
+            TextureImage image = Decode(span, record, i, "picture");
+            TextureImage? surface = BinaryPrimitives.ReadUInt32LittleEndian(record[8..]) == 0
+                ? null
+                : Decode(span, record[8..], i, "surface map");
 
             frames[i] = new Frame(
                 mips ? image.WithMipChain() : image,
-                BinaryPrimitives.ReadUInt16LittleEndian(record[8..]),
-                BinaryPrimitives.ReadUInt16LittleEndian(record[10..]),
-                BinaryPrimitives.ReadUInt16LittleEndian(record[12..]),
-                BinaryPrimitives.ReadInt16LittleEndian(record[14..]),
-                BinaryPrimitives.ReadInt16LittleEndian(record[16..]));
+                BinaryPrimitives.ReadUInt16LittleEndian(record[16..]),
+                BinaryPrimitives.ReadUInt16LittleEndian(record[18..]),
+                BinaryPrimitives.ReadUInt16LittleEndian(record[20..]),
+                BinaryPrimitives.ReadInt16LittleEndian(record[22..]),
+                BinaryPrimitives.ReadInt16LittleEndian(record[24..]),
+
+                // Never mipped. A surface map is sampled at one resolution by the shader that reads it,
+                // and averaging normals down a chain is how a bumpy surface becomes a flat one.
+                surface);
         }
 
         return new Content(
@@ -290,6 +316,28 @@ public static class PackPicture
             columns,
             rows,
             cells == 0 ? default : data.Slice(cellOffset, (int)cells));
+    }
+
+    private static byte[] Encode(TextureImage image)
+    {
+        using MemoryStream encoded = new();
+        PngWriter.Write(encoded, image.GetLevel(0), image.Width, image.Height);
+        return encoded.ToArray();
+    }
+
+    private static TextureImage Decode(ReadOnlySpan<byte> span, ReadOnlySpan<byte> record, int frame, string what)
+    {
+        int offset = ReadBounded(record, $"frame {what} offset");
+        int length = ReadBounded(record[4..], $"frame {what} length");
+
+        if (offset < 0 || length < 0 || (long)offset + length > span.Length)
+        {
+            throw new TextureFormatException(
+                $"Frame {frame}'s {what} needs {length} bytes at offset {offset}, past the {span.Length}-byte file.");
+        }
+
+        (Bgra32[] pixels, int width, int height) = PngReader.Read(span.Slice(offset, length));
+        return TextureImage.FromPixels(width, height, pixels);
     }
 
     private static ushort Checked(int value, string what)

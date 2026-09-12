@@ -39,8 +39,6 @@ from pathlib import Path
 
 from PIL import Image
 
-from . import tex
-
 from . import images
 
 __all__ = ["INSPECTION_KINDS", "finished", "expected", "completed", "pending", "sweep"]
@@ -72,9 +70,8 @@ def finished(path: Path) -> bool:
 def expected(outputs, names: Sequence[str], *, derive: bool, inspection: bool) -> list[Path]:
     """Every inspection file the current command writes for one texture.
 
-    The assets themselves are checked by `completed`, which has to look INSIDE them -- a container says
-    how many layers it holds, and that is what distinguishes an upscale-only pack from one carrying maps.
-    This covers the maps written beside it, which are ordinary PNGs.
+    The pictures themselves are checked by `completed`, which asks for their size and their last twelve
+    bytes rather than for their presence. This covers the inspection maps written beside them.
 
     Follows the command, not the directory: `upscale` writes no inspection maps, so a pack that has only
     assets is complete for `upscale` and unfinished for `all`. That is what lets the two be resumed
@@ -111,13 +108,23 @@ def completed(
 
     width, height = source_size
     wanted = (max(width * scale, 1), max(height * scale, 1))
-    layers = 2 if derive else 1
 
     for name in names:
-        described = tex.describe(outputs.asset(name))
+        # PRESENT, WHOLE, AND THE RIGHT SIZE, and all three are load-bearing. A file that exists proves
+        # nothing: one truncated by an interrupted run still answers with the size it was going to be,
+        # because a PNG records its dimensions in the first chunk; and one an earlier run wrote at a
+        # different `--scale` is complete and decodes perfectly into a picture of the wrong size. Skipping
+        # either leaves a pack that is quietly torn, or quietly two scales at once.
+        picture = outputs.asset(name)
 
-        if described is None or described[:2] != wanted or described[2] != layers:
+        if _dimensions(picture) != wanted or not finished(picture):
             return False
+
+        if derive:
+            surface = outputs.surface(name)
+
+            if _dimensions(surface) != wanted or not finished(surface):
+                return False
 
     return all(finished(path) for path in expected(outputs, names, derive=derive, inspection=inspection))
 

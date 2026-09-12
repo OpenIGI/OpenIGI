@@ -32,7 +32,7 @@ from pathlib import Path
 import numpy as np
 
 from . import alpha as alpha_ops
-from . import classical, images, pack, tex, tiling
+from . import classical, images, pack, tiling
 from . import delight as delight_ops
 
 __all__ = [
@@ -196,21 +196,38 @@ class Texture:
 class Outputs:
     """Where each kind of result is written.
 
-    THE ROOT IS AN OVERRIDES FOLDER. Not a directory of PNGs the renderer is pointed at by a setting of
-    its own -- that is gone -- but the game's own layout, holding the game's own container format, so the
-    whole output can be dropped in as `<game>/overrides` and every asset is found by the path it already
-    had. See `tex.py` for why one file carries both the diffuse and the map derived from it.
+    THE ROOT IS A MIRROR OF THE INPUT TREE, PNG for PNG. This tool used to write the game's own container
+    format and hand back a finished overrides folder; it does not any more, and the reason is worth
+    stating because it looks like a step backwards.
 
-    The inspection maps are NOT part of that tree. They are for looking at, nothing loads them, and a
-    thousand stray files inside the overrides folder would be indexed by the game on every scan for no
-    reason -- so they go to a sibling directory.
+    Building that folder means writing four different `LOOP` containers and an ILFF archive, and every one
+    of those formats already has a reader in the C# tree next to the game that consumes them. Writing them
+    a second time here meant two implementations of each, in two languages, drifting apart quietly -- and
+    a format bug is exactly the kind that produces a file which loads and is subtly wrong. So `ResExtract
+    pack` builds the folder from what this writes, using the same code the game reads it with.
+
+    What that leaves is a tool that does the thing only it can do: pixels in, pixels out, at the same
+    paths. Everything about where a picture came from and what it is stays in the manifest, which is
+    copied across untouched.
+
+    The inspection maps are NOT part of that tree. They are for looking at and nothing loads them, so they
+    go to a sibling directory rather than into something that will be packed.
     """
 
     root: Path
 
     def asset(self, name: str) -> Path:
-        """The container for one texture, at the path the installation addresses it by."""
-        return self.root / f"{name}.tex"
+        """The upscaled picture, at the same relative path it arrived at."""
+        return self.root / f"{name}.png"
+
+    def surface(self, name: str) -> Path:
+        """The derived map for that picture, which the packer picks up by this name.
+
+        By convention rather than by manifest, and beside the picture rather than in a tree of its own:
+        the packer looks for `x.orm.png` next to `x.png`. The manifest describes the GAME, and a derived
+        map is not part of the game -- it is something this tool chose to produce.
+        """
+        return self.root / f"{name}.orm.png"
 
     def inspection(self, kind: str) -> Path:
         return self.root.with_name(self.root.name + ".inspection") / kind
@@ -525,18 +542,21 @@ def write_asset(
     outputs: Outputs,
     detail: tuple[np.ndarray, np.ndarray] | None = None,
 ) -> None:
-    """Writes one texture's container to every path that addresses it.
-
-    ONE FILE, not two. The upscaled diffuse and the map derived from it travel as layers of the same
-    asset, so they cannot be half-installed or pointed at by two settings that disagree; `detail` absent
-    means the run derived none and the file carries the diffuse alone.
+    """Writes one texture to every path that addresses it.
 
     WRITTEN ONCE PER NAME. An image packed into eight levels is addressed at eight paths, and each of
     those has to be replaceable on its own -- but it was upscaled once. Writing bytes is not what a run
-    spends its time on.
+    spends its time on; running a network over 1,363 distinct images is.
+
+    The derived map, when there is one, goes beside the picture rather than inside it. What keeps the two
+    from disagreeing is not that they share a file -- it is that the packer reads them together, from this
+    pair of names, in one pass.
     """
     for name in texture.names or (texture.name,):
-        tex.write(outputs.asset(name), texture.rgb, texture.alpha, detail)
+        images.write(outputs.asset(name), texture.rgb, texture.alpha)
+
+        if detail is not None:
+            images.write(outputs.surface(name), *detail)
 
 
 def derive_all(

@@ -139,10 +139,31 @@ internal static class PackBuild
                 frame.Height,
                 frame.Advance,
                 frame.OffsetX,
-                frame.OffsetY));
+                frame.OffsetY,
+                Surface(path)));
         }
 
         return frames.Count > 0;
+    }
+
+    /// <summary>Picks up the derived surface map beside a picture, when whatever made it left one.</summary>
+    /// <remarks>
+    /// By convention rather than by manifest: a picture at <c>x.png</c> takes its map from <c>x.orm.png</c>.
+    /// The manifest describes the GAME -- what each picture is and where it came from -- and a derived map
+    /// is not that; it is something a tool chose to produce, and a tool that produces one should not have
+    /// to rewrite a description of the installation to say so.
+    /// </remarks>
+    private static TextureImage? Surface(string picture)
+    {
+        string path = Path.ChangeExtension(picture, null) + ".orm.png";
+
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        (Bgra32[] pixels, int width, int height) = PngReader.Read(File.ReadAllBytes(path));
+        return TextureImage.FromPixels(width, height, pixels);
     }
 
     private static byte[] Encode(PackAsset asset, List<PackPicture.Frame> frames)
