@@ -57,6 +57,9 @@ public static class PngReader
         int height = 0;
         int channels = 0;
         int bytesPerSample = 1;
+        bool seenHeader = false;
+        bool seenData = false;
+        bool seenEnd = false;
         using MemoryStream compressed = new();
 
         int at = Signature.Length;
@@ -79,8 +82,18 @@ public static class PngReader
                 throw new InvalidDataException("Invalid PNG: a chunk CRC does not match its contents.");
             }
 
+            if (!seenHeader && !type.SequenceEqual("IHDR"u8))
+            {
+                throw new InvalidDataException("Invalid PNG: IHDR must be the first chunk.");
+            }
+
             if (type.SequenceEqual("IHDR"u8))
             {
+                if (seenHeader)
+                {
+                    throw new InvalidDataException("Invalid PNG: IHDR must be the first and only header chunk.");
+                }
+
                 if (length != 13)
                 {
                     throw new InvalidDataException("Invalid PNG: IHDR must be 13 bytes.");
@@ -124,9 +137,16 @@ public static class PngReader
                 {
                     throw new InvalidDataException("PNG dimensions exceed the reader's pixel limit.");
                 }
+
+                seenHeader = true;
             }
             else if (type.SequenceEqual("IDAT"u8))
             {
+                if (!seenHeader)
+                {
+                    throw new InvalidDataException("Invalid PNG: IDAT appears before IHDR.");
+                }
+
                 // Concatenated, because the pixel data may be split across any number of chunks and
                 // the zlib stream runs across all of them as one.
                 if (compressed.Length > MaxCompressedBytes - length)
@@ -135,14 +155,36 @@ public static class PngReader
                 }
 
                 compressed.Write(data.Slice(payload, length));
+                seenData = true;
             }
             else if (type.SequenceEqual("IEND"u8))
             {
+                if (!seenHeader || !seenData || length != 0)
+                {
+                    throw new InvalidDataException("Invalid PNG: IEND must close a header and image data.");
+                }
+
+                seenEnd = true;
+                at = payload + length + 4;
                 break;
+            }
+            else if ((type[0] & 0x20) == 0)
+            {
+                throw new InvalidDataException("PNG has an unsupported critical chunk.");
             }
 
             // Chunk, plus its four-byte length and four-byte check.
             at = payload + length + 4;
+        }
+
+        if (!seenEnd)
+        {
+            throw new InvalidDataException("Invalid PNG: the mandatory IEND chunk is missing.");
+        }
+
+        if (at != data.Length)
+        {
+            throw new InvalidDataException("Invalid PNG: bytes follow the IEND chunk.");
         }
 
         if (width <= 0 || height <= 0 || channels == 0)

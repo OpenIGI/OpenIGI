@@ -161,6 +161,31 @@ public sealed class PngCodecTests
         Assert.Contains("pixel limit", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void ReaderRejectsACompleteImageWhoseMandatoryEndChunkIsMissing()
+    {
+        using MemoryStream stream = new();
+        PngWriter.Write(stream, new Bgra32[1], 1, 1);
+
+        // IEND is a zero-length chunk: length, type, and CRC are still mandatory framing.
+        byte[] withoutEnd = stream.ToArray()[..^12];
+
+        InvalidDataException error = Assert.Throws<InvalidDataException>(() => PngReader.Read(withoutEnd));
+        Assert.Contains("IEND", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReaderRejectsBytesAfterTheEndChunk()
+    {
+        using MemoryStream stream = new();
+        PngWriter.Write(stream, new Bgra32[1], 1, 1);
+        byte[] complete = stream.ToArray();
+        byte[] trailing = [.. complete, 0x00];
+
+        InvalidDataException error = Assert.Throws<InvalidDataException>(() => PngReader.Read(trailing));
+        Assert.Contains("IEND", error.Message, StringComparison.Ordinal);
+    }
+
     /// <summary>CRC-32 as the format defines it, computed bit by bit.</summary>
     /// <remarks>
     /// Deliberately not the production implementation's approach. That one drives a precomputed table,
