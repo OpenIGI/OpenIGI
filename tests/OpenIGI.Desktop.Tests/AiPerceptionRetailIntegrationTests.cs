@@ -21,7 +21,7 @@ public sealed class AiPerceptionRetailIntegrationTests
     private const double Metre = 4096.0;
 
     [RequiresGameDataFact]
-    public void ARepresentativeLiveEyeInEveryLevelSeesAStandingTargetAlongTheSoldiersForwardAxis()
+    public void ARepresentativeLiveBrainInEveryLevelDetectsAStandingTargetAlongItsForwardAxis()
     {
         List<string> failures = [];
         for (int level = 1; level <= 14; level++)
@@ -46,6 +46,20 @@ public sealed class AiPerceptionRetailIntegrationTests
             {
                 failures.Add(
                     $"Level {level}'s live bone-5 eye rejected a body mark {distance / Metre:0.00} m along body +Y");
+                continue;
+            }
+
+            bool detected = false;
+            for (int tick = 1; tick <= 60; tick++)
+            {
+                soldier.Tick(tick, mark, rootMotionThisTick: 0.0);
+                detected |= soldier.SeesEnemy;
+            }
+
+            if (!detected)
+            {
+                failures.Add(
+                    $"Level {level}'s live brain kept an in-cone target out of the detection schedule");
             }
         }
 

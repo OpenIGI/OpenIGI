@@ -53,7 +53,7 @@ public enum AiSoldierActivity
 /// <para>
 /// <b>What is faithful:</b> the cones and their alert-selected ranges, the detection phase gate and rate
 /// limits, the 0.3 m box arrival test, the route table being followed one step at a time with no A*, the
-/// walk-versus-run gait, the idle fallback, and the line-of-sight rule including its retail late-hit tolerance.
+/// walk-versus-run gait, the idle fallback, and strict occlusion by the port's world-only sight cast.
 /// Script events/actions, authored patrol routes, combat target sharing, and hearing are handled by the
 /// same facade so they consume the same HumanAI state rather than a second coarse activity model.
 /// </para>
@@ -69,16 +69,18 @@ public sealed class AiSoldier
     private readonly AiPendingActionList _pendingActions = new();
     private AiPendingAction? _activePendingAction;
     private bool _pendingRanDuringDispatch;
-    private bool _scriptedReactionDispatchedThisTick;
 
     /// <summary>
-    /// The fraction of the way to the target at which an obstruction still counts as seen through.
+    /// The late-contact threshold read by retail's native sight query.
     /// </summary>
     /// <remarks>
     /// Retail <c>0x489B20</c> is a real five-block function in both Ghidra and radare2. After
     /// its world query it accepts a clear result or a hit parameter at least as large as the
     /// float stored at <c>0x534230</c>, whose retail value is <c>0.790000021</c>. Replacing that
-    /// threshold with 1.0 made legitimate late contacts reject an otherwise visible target.
+    /// threshold with 1.0 changes that native query. The port's current sight cast excludes human
+    /// hulls, however, so this value must not be applied to its world-only contacts: doing so makes
+    /// solid cover in the final 21% of the segment transparent. Keep the recovered value as evidence
+    /// until the port can identify the target-human contact separately.
     /// </remarks>
     public const double SightObstructionTolerance = 0.79000002;
 
@@ -108,10 +110,9 @@ public sealed class AiSoldier
     /// <summary>Returns whether a world hit leaves the target visible.</summary>
     /// <param name="targetDistance">The distance from the observer to the target.</param>
     /// <param name="blockerDistance">The distance from the observer to the nearest world hit.</param>
-    /// <returns><see langword="true"/> when no hit occurs before the target.</returns>
+    /// <returns><see langword="true"/> when no world hit occurs before the target.</returns>
     public static bool WorldBlockerAllowsSight(double targetDistance, double blockerDistance) =>
-        targetDistance <= 0.0
-            || (blockerDistance / targetDistance) >= SightObstructionTolerance;
+        targetDistance <= 0.0 || blockerDistance >= targetDistance;
 
     /// <summary>Finds the ground height at a world position.</summary>
     /// <param name="x">World X, in engine units.</param>
@@ -1872,7 +1873,6 @@ public sealed class AiSoldier
         _lastTick = tick;
         _rawInputWrites.Clear();
         DetectionShoutRequestedThisTick = false;
-        _scriptedReactionDispatchedThisTick = false;
 
         // A scripted one-shot clip releases the animation slot the moment the renderer says it ended,
         // so the soldier goes back to whatever its activity plays. Staged cutscene actors are exempt:
@@ -2026,41 +2026,11 @@ public sealed class AiSoldier
         // ONE event type dispatches per tick, in priority order, and the script decides what to do about it.
         RunScript();
 
-        // AIEVENT_COMBAT INSTALLS THE COMBAT ACTION, whatever the script's branch looks like: every
-        // archetype answers COMBAT with AIFunction_DefaultHandler, and 0x44E060 hands the event to the
-        // engine, which is what reaches AIAction_Combat (0x44D160) and installs the per-type arm.
-        //
-        // The port used to install it only when a script PRODUCED AIAction_Combat, which the archetype
-        // scripts never do -- so only the scriptless fallback below ever armed the behaviour. Once the
-        // machine ended (a targeting timeout, or a target it had no slot for), nothing re-armed it and
-        // the soldier stayed Engaging with a dead machine: seeing the player, holding its gun, and
-        // never firing again for the rest of the level. Re-installing here is what the original's
-        // action install does on the next COMBAT event.
-        if (enemyAlive && _playerSlot.IsVisible
-            && Activity != AiSoldierActivity.FallenFlat
-            && !_scriptedReactionDispatchedThisTick
-            // The guard QVM's AIEVENT_FLASHBANG branch is a one-shot animation. Its combat
-            // command was cancelled when the event dispatched; do not recreate it on the next
-            // visibility sweep while that same animation still owns the body, or the guard fires
-            // through its retail flash reaction.
-            && !_scriptedAnimation
-            && (Activity != AiSoldierActivity.Engaging || CombatPhase == AiCombatPhase.Ended))
-        {
-            EnterCombat();
-
-            // The engagement must OCCUPY the pending-action list, exactly as retail's AIAction_Combat
-            // does through 0x450E10: while it runs, the interrupt cap is COMBAT's position in the
-            // priority order and only strictly-more-important events can dispatch. Installing the arm
-            // outside the list left the cap unbounded, so every heard footstep or shot re-dispatched
-            // the script (WALK/GUNSHOT -> SetCombat) and the re-entry tore down the chase route --
-            // guards visibly never followed. The script's own COMBAT branch usually installs this
-            // pending entry itself (guard.qvm calls AIAction_Combat there); this covers the re-arm
-            // path and any script whose branch produced nothing.
-            if (!_pendingActions.HasPending)
-            {
-                InstallEngineCombatAction();
-            }
-        }
+        // A scripted AI's event handlers are authoritative. In particular, retail mission scripts can
+        // deliberately ignore EnemyDetection/Combat or replace them with panic. Forcing a combat arm
+        // here bypassed those authored branches. Scriptless soldiers are handled inside RunScript(); a
+        // normal guard/patrol script reaches AIAction_SetCombat and then AIAction_Combat through its
+        // shipped QVM on subsequent event dispatches.
 
         // The target is dead: leave combat outright rather than keep firing at where it fell. The script
         // drops out on its own once the Combat events stop, but a guard already engaging would empty its
@@ -2373,18 +2343,6 @@ public sealed class AiSoldier
             LastDispatchedEvent = type;
             if (handled)
             {
-                // A scripted explosive reaction owns this tick. The native event dispatcher does not
-                // immediately run the engine COMBAT fallback after FLASHBANG/GRENADE*/EXPLOSION has
-                // installed its reaction action; doing that here made the guard cancel its own
-                // animation/panic and re-enter Engaging before the renderer saw the reaction.
-                if (_host.CurrentEvent is AiEvent.Flashbang
-                    or AiEvent.GrenadeThrown
-                    or AiEvent.GrenadeLand
-                    or AiEvent.Explosion)
-                {
-                    _scriptedReactionDispatchedThisTick = true;
-                }
-
                 QueueActions(_host.Produced);
             }
 

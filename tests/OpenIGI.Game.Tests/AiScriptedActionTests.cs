@@ -207,7 +207,7 @@ public sealed class AiScriptedActionTests
             AiType.GuardAk,
             new AiCombatParameters(new HumanAiConfigItemTask()),
             () => new AiCombatWeaponState(30, 30, 1, WeaponCategory.Gun));
-        soldier.SetScript(new AiScriptHost(new NativeRegistry()), guard);
+        soldier.SetScript(new AiScriptHost(RetailAiNatives()), guard);
         soldier.ApplyActions([new AiProducedAction("AIAction_Combat", [], 0)]);
 
         Vector3d flash = new(0, 4 * 4096, soldier.EyePosition().Z);
@@ -232,7 +232,7 @@ public sealed class AiScriptedActionTests
             AiType.GuardAk,
             new AiCombatParameters(new HumanAiConfigItemTask()),
             () => new AiCombatWeaponState(30, 30, 1, WeaponCategory.Gun));
-        soldier.SetScript(new AiScriptHost(new NativeRegistry()), guard);
+        soldier.SetScript(new AiScriptHost(RetailAiNatives()), guard);
 
         Vector3d feet = new(0, 5 * 4096, 0);
         Vector3d enemy = new(feet.X, feet.Y, feet.Z + (5 * 4096 / 4));
@@ -295,7 +295,7 @@ public sealed class AiScriptedActionTests
                 new AiCombatParameters(new HumanAiConfigItemTask()),
                 () => new AiCombatWeaponState(30, 30, 1, WeaponCategory.Gun));
             soldier.SetScript(
-                new AiScriptHost(new NativeRegistry(), random: new IgiRandom(seed)),
+                new AiScriptHost(RetailAiNatives(), random: new IgiRandom(seed)),
                 guard);
 
             Vector3d feet = new(start.X, start.Y + (5 * 4096), start.Z);
@@ -369,6 +369,17 @@ public sealed class AiScriptedActionTests
         Vector3d alreadySafe = new(source.Position.X + 1.0, source.Position.Y, source.Position.Z);
         Assert.Null(AiRunPanicking.FindDestination(
             graph, alreadySafe, source.Position, distanceMetres: 0.0));
+    }
+
+    private static NativeRegistry RetailAiNatives()
+    {
+        NativeRegistry natives = new();
+        natives.RegisterConstant("TRUE", 1);
+        natives.RegisterConstant("FALSE", 0);
+        natives.RegisterConstant("GAME_FREQUENCY", 30);
+        natives.RegisterRealConstant("WORLD_METER", 4096.0);
+        natives.RegisterRealConstant("MATH_PI", Math.PI);
+        return natives;
     }
 
     private static AiSoldier SoldierWithEmptyWeapon(Vector3d position, Vector3d target)

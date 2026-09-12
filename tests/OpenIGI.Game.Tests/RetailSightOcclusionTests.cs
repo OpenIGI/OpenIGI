@@ -71,13 +71,14 @@ public sealed class RetailSightOcclusionTests
         double rayHalfLength = 0.5 * U;
         Vector3d from = new(centre.X - rayHalfLength, centre.Y, centre.Z);
         Vector3d to = new(centre.X + rayHalfLength, centre.Y, centre.Z);
-        Assert.True(
-            index.TryTrace(new WorldTraceRequest(from, to, TraceDoorPortals: true), out _),
-            "closed door slab should block sight");
+        // TryCast excludes every portal face. A hit here therefore proves the physical, non-portal
+        // door leaf blocks; the assertion cannot pass merely because a Door-owned portal was included.
+        Assert.True(index.TryCast(from, to, out _), "physical closed door leaf should block sight");
 
         index.SetSightOpening(door.Owner, open: true);
         index.SetPassable(door.Owner, passable: true);
 
+        Assert.False(index.TryCast(from, to, out _), "passable open door retained its physical leaf");
         Assert.False(
             index.TryTrace(new WorldTraceRequest(from, to, TraceDoorPortals: true), out WorldTraceHit leftover),
             $"open doorway still blocked sight via '{leftover.Label}'");
@@ -104,12 +105,11 @@ public sealed class RetailSightOcclusionTests
         Vector3d translatedCentre = centre + displacementUnits;
         Vector3d from = new(translatedCentre.X - rayHalfLength, translatedCentre.Y, translatedCentre.Z);
         Vector3d to = new(translatedCentre.X + rayHalfLength, translatedCentre.Y, translatedCentre.Z);
-        Assert.True(
-            index.TryTrace(new WorldTraceRequest(from, to, TraceDoorPortals: true), out _),
-            "translated closed door should block sight");
+        Assert.True(index.TryCast(from, to, out _), "translated physical closed door leaf should block sight");
 
         index.SetPassable(door.Owner, passable: true);
         index.SetSightOpening(door.Owner, open: true);
+        Assert.False(index.TryCast(from, to, out _), "translated passable door retained its physical leaf");
         Assert.False(
             index.TryTrace(new WorldTraceRequest(from, to, TraceDoorPortals: true), out WorldTraceHit authored),
             $"the passable door still hit '{authored.Label}' through a building portal");
