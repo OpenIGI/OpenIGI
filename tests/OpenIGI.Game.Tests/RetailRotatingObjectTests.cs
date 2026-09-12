@@ -14,8 +14,8 @@ using Xunit;
 namespace OpenIGI.Game.Tests;
 
 /// <summary>
-/// Verifies retail rotating-object data and behavior in Levels 3 and 5, including Level 5's radar tower rotor
-/// (model 436_02_1 on 436_01_1) and separately declared radar dome task.
+/// Verifies the rotating objects in retail levels, specifically Level 5's radar tower rotor
+/// (model 436_02_1 on 436_01_1) and radar dome rotating tasks.
 /// </summary>
 public sealed class RetailRotatingObjectTests
 {
