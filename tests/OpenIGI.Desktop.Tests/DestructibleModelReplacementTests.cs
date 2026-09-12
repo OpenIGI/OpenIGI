@@ -23,9 +23,11 @@ public sealed class DestructibleModelReplacementTests
         for (int mission = 1; mission <= 14; mission++)
         {
             using Scenario scenario = CreateMission(mission);
-            WorldPlacement[] explosivePlacements = [.. scenario.Scene.Placements.Where(IsObjectsQvmExplosive)];
+            (WorldPlacement Placement, int Index)[] explosivePlacements = [.. scenario.Scene.Placements
+                .Select((placement, index) => (placement, index))
+                .Where(entry => IsObjectsQvmExplosive(entry.placement))];
 
-            foreach (WorldPlacement placement in explosivePlacements)
+            foreach ((WorldPlacement placement, int index) in explosivePlacements)
             {
                 DeclaredTask task = Assert.IsType<DeclaredTask>(placement.Owner);
                 Assert.True(task.TryGetValue("Destroyed model", out object? rawDestroyed));
@@ -40,6 +42,12 @@ public sealed class DestructibleModelReplacementTests
 
                 Assert.Equal(destroyedModel, replacement.Instance.Name);
                 Assert.Equal(destroyedModel, destructible.DestroyedModelName);
+                Assert.Same(destructible, scenario.Destructibles.TryDestroy(placement.Owner, placement));
+                Assert.True(scenario.Destructibles.IsDestroyed(placement));
+
+                // MakeResident selects DisplayedPlacement, so this proves the hit state is not merely
+                // registered: the renderer can bind the task's authored wreck model on the next frame.
+                Assert.True(scenario.Renderer.MakeResident(scenario.Scene, index));
             }
         }
     }

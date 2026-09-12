@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.Weapons.Ballistics;
@@ -231,6 +232,47 @@ public sealed class BallisticSimulationTests
         Assert.Equal(25f * UnitsPerMetre, impact.Wall.Position.Y, 1.0);
         Assert.False(simulation.Rounds[0].Alive);
         Assert.Equal(3, wallCasts);
+    }
+
+    [Fact]
+    public void AWorldTracePreservesTheExactPlacementForDestruction()
+    {
+        BallisticSimulation simulation = Spawn(rangeMetres: 300f);
+        GameTask owner = new DeclaredTask();
+        WorldPlacement placement = new(default, default, default, null!, null!, "terminal", owner);
+
+        WorldTraceCast richWalls = (in WorldTraceRequest request, out WorldTraceHit hit) =>
+        {
+            if (TryWall(request.Origin, request.End, 25f * UnitsPerMetre, out WorldRayHit wall))
+            {
+                hit = WorldTraceHit.FromRayHit(
+                    request,
+                    wall,
+                    WorldTraceHitKind.StaticObject,
+                    owner,
+                    "terminal",
+                    placement);
+                return true;
+            }
+
+            hit = default;
+            return false;
+        };
+
+        for (int tick = 0; tick < 3; tick++)
+        {
+            simulation.Tick(
+                walls: null,
+                humans: null,
+                gravityScale: 0f,
+                dragScale: 0f,
+                richWalls: richWalls);
+        }
+
+        BallisticImpact impact = Assert.Single(simulation.Impacts);
+        Assert.True(impact.StruckWall);
+        Assert.Same(owner, impact.Owner);
+        Assert.Same(placement, impact.Placement);
     }
 
     /// <summary>A human in front of the wall takes the round; the wall stays clean.</summary>

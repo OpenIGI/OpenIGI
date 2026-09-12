@@ -2501,7 +2501,8 @@ public sealed class PlayerCamera
             walls,
             Humans,
             GameplayCVars.BallisticsGravity.Value,
-            GameplayCVars.BallisticsDrag.Value);
+            GameplayCVars.BallisticsDrag.Value,
+            _walls?.Tracer());
 
         foreach (BallisticImpact impact in _ballistics.Impacts)
         {
@@ -2525,6 +2526,8 @@ public sealed class PlayerCamera
                 impact.Position,
                 impact.StruckHuman || impact.StruckWall,
                 impact.RangeInUnits,
+                impact.Owner,
+                impact.Placement,
                 StruckHuman: impact.StruckHuman,
                 Wall: impact.StruckWall ? impact.Wall : default,
                 Direction: impact.Direction));

@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Time;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Game.Weapons;
@@ -14,6 +15,8 @@ namespace OpenIGI.Game.Weapons.Ballistics;
 /// <param name="Wall">The world contact, when a surface stopped it.</param>
 /// <param name="RangeInUnits">The weapon's whole range, carried for the impact record.</param>
 /// <param name="Direction">Which way the round was travelling when it landed, unit length.</param>
+/// <param name="Owner">The exact task owning the struck world placement, when available.</param>
+/// <param name="Placement">The exact rendered placement struck, when available.</param>
 public readonly record struct BallisticImpact(
     Vector3d Position,
     bool StruckHuman,
@@ -21,7 +24,9 @@ public readonly record struct BallisticImpact(
     bool StruckWall,
     WorldRayHit Wall,
     float RangeInUnits,
-    Vector3f Direction = default);
+    Vector3f Direction = default,
+    GameTask? Owner = null,
+    WorldPlacement? Placement = null);
 
 /// <summary>
 /// The rounds in flight under the tactical-ballistics option, stepped once per game tick.
@@ -199,7 +204,13 @@ public sealed class BallisticSimulation
     /// <param name="humans">Who a round may strike — the delegate applies the damage itself.</param>
     /// <param name="gravityScale">What fraction of real gravity to drop at (<c>g_ballistics_gravity</c>).</param>
     /// <param name="dragScale">What fraction of profile drag to fly against (<c>g_ballistics_drag</c>).</param>
-    public void Tick(WorldRayCast? walls, HumanShot? humans, float gravityScale = 1f, float dragScale = 1f)
+    /// <param name="richWalls">The identity-preserving world trace used for live object-hit callbacks.</param>
+    public void Tick(
+        WorldRayCast? walls,
+        HumanShot? humans,
+        float gravityScale = 1f,
+        float dragScale = 1f,
+        WorldTraceCast? richWalls = null)
     {
         _impacts.Clear();
 
@@ -287,7 +298,16 @@ public sealed class BallisticSimulation
                 // Both, then the nearer -- exactly the hit-scan path's order, so a guard in front of
                 // a wall takes the round and the wall stays clean.
                 WorldRayHit wallHit = default;
-                bool struckWall = walls is not null && walls(start, position, out wallHit);
+                WorldTraceHit richWallHit = default;
+                bool struckWall = richWalls is not null
+                    ? richWalls(
+                        new WorldTraceRequest(start, position, WorldTraceMask.World),
+                        out richWallHit)
+                    : walls is not null && walls(start, position, out wallHit);
+                if (struckWall && richWalls is not null)
+                {
+                    wallHit = richWallHit.RayHit;
+                }
 
                 HumanHit humanHit = default;
                 bool struckHuman = humans is not null
@@ -315,7 +335,9 @@ public sealed class BallisticSimulation
                         !struckHuman && struckWall,
                         wallHit,
                         RangeOf(round),
-                        travel));
+                        travel,
+                        richWallHit.Owner,
+                        richWallHit.Placement));
                     stopped = true;
                 }
                 else if (spent)
