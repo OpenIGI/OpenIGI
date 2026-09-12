@@ -8,13 +8,32 @@ sharper one: of the 671 models catalogued on OpenModelDB, 280 are CC-BY-NC or CC
 licence at all. Every model the popular "best game texture upscaler" guides recommend -- 4x-UltraSharp,
 UltraSharpV2, Remacri, ClearRealityV1 -- is CC-BY-NC-SA, and therefore unusable here.
 
-Everything below is CC0-1.0, verified twice: from PBRify_Remix's own LICENSE file, and from the per-model
-licence field OpenModelDB publishes. They were trained exclusively on CC0 scans from ambientCG and Poly
-Haven, and the upscalers were trained for this exact job -- the publisher's description is "meant to take
-existing game textures from older 2000s era games, and upscale them to usable quality".
+WHAT IS ALLOWED HERE. Anything whose licence lets a user of this tool use the result and pass it on:
+CC0-1.0, CC-BY-4.0, WTFPL, MIT, Apache-2.0, BSD. NOT CC-BY-NC-SA, which is where every famous "best game
+texture upscaler" lives -- 4x-UltraSharp, UltraSharpV2, Remacri, ClearRealityV1.
+
+The NonCommercial exclusion is not legal timidity; a person upscaling their own copy of a game they own is
+plainly not trading. It is that the moment the tool's own catalogue depends on an NC weight, it can no
+longer tell anyone "everything this downloads is free to use and to redistribute" -- and that sentence is
+worth more than any one model. It costs nothing here: the CC-BY models below were trained on 30,000 game
+textures, where UltraSharpV2 is a general-purpose model that happens to be good at them. Domain beat
+reputation.
+
+CC-BY asks for credit, and `texture-forge models` prints the author and licence of everything it can
+fetch, which discharges it.
+
+WHAT IS NOT HERE AND WHY. 4x-NMKD-Superscale (WTFPL, and otherwise a fair candidate) is published on
+Icedrive, which needs a browser. `ensure` is a plain urlopen, and a catalogue whose whole purpose is
+fetching-and-verifying has no room for an entry a person has to go and get by hand.
 
 So the hashes ARE the licence audit. A weight that does not match the hash recorded here is not the weight
 whose licence was checked, and the tool refuses to run it rather than quietly using something unvetted.
+
+WHAT THE HASHES DO AND DO NOT PROVE, stated rather than hidden. Every digest here was computed from the
+file as downloaded, because no publisher in this catalogue ships one to check against. So a hash proves the
+weights have not changed since the licence was read against them; it cannot independently prove the
+download was not already wrong. Trust-on-first-use, which is the strongest thing available, and it is worth
+saying which of the two it is.
 
 The files are downloaded rather than committed. They are CC0, so committing them would be perfectly legal;
 200 MB of binaries in a source tree is simply a bad trade, and `texture-forge models` exists so the licence
@@ -143,11 +162,60 @@ CATALOGUE: tuple[Model, ...] = (
         role="Albedo to height. Feeds the occlusion search.",
         half_ok=True,
     ),
+    Model(
+        key="texturedat2",
+        filename="4xTextureDAT2_otf.pth",
+        url=(
+            "https://github.com/Phhofm/models/releases/download/"
+            "4xTextureDAT2_otf/4xTextureDAT2_otf.pth"
+        ),
+        sha256="201fd1cfe380cab32a036f5b35f50b40d79fd25f28e7ed378a385973b1b2887f",
+        size=140339286,
+        architecture="DAT-2",
+        scale=4,
+        licence="CC-BY-4.0 (Philip Hofmann)",
+        role="Remaster, default. Trained on 30,122 GTA V game textures; reinterprets rather than enlarges.",
+        half_ok=False,
+    ),
+    Model(
+        key="gtavrgt",
+        filename="4xTextures_GTAV_rgt-s.pth",
+        url=(
+            "https://github.com/Phhofm/models/releases/download/"
+            "4xTextures_GTAV_rgt-s/4xTextures_GTAV_rgt-s.pth"
+        ),
+        sha256="5a1f614d41d7043e7e8de32081d1d7e9d1b2ae30f1ecf89b4e059bcb331e5deb",
+        size=136009036,
+        architecture="RGT-S",
+        scale=4,
+        licence="CC-BY-4.0 (Helaman)",
+        role="Remaster, alternative. Same art, a different architecture -- so it sees the image differently.",
+        half_ok=False,
+    ),
 )
 
 _BY_KEY: dict[str, Model] = {model.key: model for model in CATALOGUE}
 
 UPSCALERS: tuple[str, ...] = tuple(model.key for model in CATALOGUE if model.scale > 1)
+
+DEFAULT_REMASTERER = "texturedat2"
+"""What a bare `--remaster` runs: the one of these trained on the most game art, and the one measured."""
+
+REMASTERERS: tuple[str, ...] = (DEFAULT_REMASTERER,) + tuple(
+    model.key for model in CATALOGUE if model.scale > 1 and model.key != DEFAULT_REMASTERER
+)
+"""Which models may run as the remaster pass, the default first.
+
+Every enlarging model qualifies, including the one used as the primary upscaler: the pass runs a model over
+the ALREADY-UPSCALED image and resamples back, so what it does is reinterpret at the size the texture
+already has. Running the same weights twice is a legitimate choice and a mild one; running a different
+architecture is the point of the option, because two passes of the same network mostly deepen what the
+first pass already decided.
+
+Derived rather than listed, so a model added to the catalogue is offered here without anyone remembering
+to. The one thing worth stating by hand is which comes first, because that is the default and argparse
+prints this tuple in order.
+"""
 
 
 def lookup(key: str) -> Model:

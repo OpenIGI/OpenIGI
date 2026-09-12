@@ -49,6 +49,7 @@ __all__ = [
     "load_textures",
     "prepare",
     "upscale_all",
+    "remaster_all",
     "finish_alpha",
     "derive_all",
 ]
@@ -128,6 +129,19 @@ class Settings:
     delight_strength: float = 0.7
     metallic: float = 0.0
     normal_strength: float = 1.0
+    remaster: str | None = None
+    """Which model runs the remaster pass over the upscaled image, or None to skip it.
+
+    UPSCALING ALONE DOES NOT MODERNISE ANYTHING. It resolves what is there: a 2001 texture enlarged four
+    times is a larger 2001 texture, because the thing that dates it is not its size. It is 5 bits of colour
+    per channel, lighting painted into the albedo, and no material detail finer than the brush that made
+    it -- and none of that is a resolution problem.
+
+    So this is a SECOND network over the already-upscaled image: one trained on modern game textures,
+    asked what this surface would look like if it had been authored now. It is the one stage here that is
+    allowed to invent, and it is off by default for that reason.
+    """
+
     derive_pbr: bool = True
     """Whether any surface map is derived at all, or the run only upscales the diffuse.
 
@@ -385,6 +399,56 @@ def upscale_all(
 
             if texture.alpha is not None:
                 texture.alpha = _resample(texture.alpha, correction)
+
+
+def remaster_all(
+    textures: Sequence[Texture],
+    settings: Settings,
+    session: Session,
+    *,
+    progress: Callable[[int], None] | None = None,
+) -> None:
+    """Runs a second network over the upscaled colour, to make it look like art of this decade.
+
+    THE SHAPE OF IT. A 4x model is run over an image that is already the size it should be, and the result
+    is resampled straight back down. That sounds wasteful and is the entire point: the network is only
+    willing to synthesise detail when it believes it is enlarging, so asking it to enlarge and then
+    discarding the enlargement is how its invention is obtained at the size the texture actually needs.
+
+    COLOUR ONLY, DELIBERATELY. The upscale pass puts alpha through the model because a cut-out's edge is
+    real high-frequency detail that a resize would smear. This pass must not: it exists to invent, and
+    invention along a silhouette moves the silhouette -- a wire fence grows or loses wire, and the
+    coverage restore downstream cannot tell it back. The alpha is already at its final size and correct,
+    so it is left exactly alone.
+
+    WHAT IT COSTS AND WHAT IT RISKS. A second pass at four times the finished size is the most expensive
+    stage in the tool, and it compounds: whatever the first model decided, this one elaborates, including
+    its mistakes. The rails that survive are the structural ones -- wrap padding, so a tiling texture
+    still tiles, and the size, which is unchanged -- because those protect the mesh. The look is not
+    protected, and is not meant to be.
+    """
+    if settings.remaster is None:
+        return
+
+    model = session.get(settings.remaster)
+
+    if model is None:
+        # Reported once by the session. Skipping is right: the pack is complete without this pass, and a
+        # run that got as far as a finished upscale should not throw it away over an optional stage.
+        if progress is not None:
+            progress(len(textures))
+
+        return
+
+    wrapping = [(item.tiles.x, item.tiles.y) for item in textures]
+
+    for texture, result in zip(
+        textures, model.run([item.rgb for item in textures], wrap=wrapping)
+    ):
+        texture.rgb = _resample(result, 1.0 / model.scale)
+
+    if progress is not None:
+        progress(len(textures))
 
 
 def finish_alpha(textures: Sequence[Texture]) -> None:

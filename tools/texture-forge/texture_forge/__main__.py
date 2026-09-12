@@ -98,7 +98,7 @@ def _run(arguments: argparse.Namespace, *, upscale: bool, derive: bool) -> int:
         TimeRemainingColumn,
     )
 
-    from . import pipeline, resume
+    from . import models, pipeline, resume
 
     console = _console()
     source = Path(arguments.source)
@@ -123,6 +123,7 @@ def _run(arguments: argparse.Namespace, *, upscale: bool, derive: bool) -> int:
         delight_strength=arguments.delight_strength,
         metallic=arguments.metallic,
         normal_strength=arguments.normal_strength,
+        remaster=arguments.remaster if upscale else None,
         derive_pbr=derive_pbr,
         write_inspection=not arguments.no_inspection and derive_pbr,
     )
@@ -193,6 +194,16 @@ def _run(arguments: argparse.Namespace, *, upscale: bool, derive: bool) -> int:
 
         console.print(f"[dim]{runner.torch_device_report()}[/dim]")
 
+    if settings.remaster is not None:
+        remasterer = models.lookup(settings.remaster)
+        console.print(
+            f"[yellow]--remaster {settings.remaster} is on.[/yellow] A second pass "
+            f"[dim]({remasterer.architecture}, {remasterer.licence})[/dim] will INVENT detail these "
+            "textures never had, so judge it on a handful before committing a corpus to it. It also "
+            "dominates the run: it puts a 4x model over an image the upscaler has already enlarged, "
+            "which is sixteen times the pixels the upscale itself saw."
+        )
+
     if settings.delight:
         console.print(
             "[yellow]--delight is on.[/yellow] This is a classical estimate, not a model; "
@@ -220,6 +231,11 @@ def _run(arguments: argparse.Namespace, *, upscale: bool, derive: bool) -> int:
         upscale_task = (
             progress.add_task("upscaling", total=total) if upscale else None
         )
+        remaster_task = (
+            progress.add_task(f"remastering ({settings.remaster})", total=total)
+            if upscale and settings.remaster is not None
+            else None
+        )
         derive_task = progress.add_task(
             "deriving maps" if derive and derive_pbr else "writing", total=total
         )
@@ -245,6 +261,19 @@ def _run(arguments: argparse.Namespace, *, upscale: bool, derive: bool) -> int:
                     session,
                     progress=lambda step: progress.advance(upscale_task, step),
                 )
+
+                # Between the upscale and the alpha restore, and that order is not free. The remaster
+                # touches colour only, so the silhouette it must not move is still the one the upscaler
+                # produced -- and finish_alpha then hardens that silhouette and re-bleeds the colour
+                # under it, which has to happen after the last thing that writes colour.
+                if remaster_task is not None:
+                    pipeline.remaster_all(
+                        chunk,
+                        settings,
+                        session,
+                        progress=lambda step: progress.advance(remaster_task, step),
+                    )
+
                 pipeline.finish_alpha(chunk)
 
             if derive:
@@ -390,6 +419,22 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
             "redo textures that are already in the output directory. A run resumes by default: any "
             "texture whose outputs are all present, whole, and the size this command would produce is "
             "left alone, so an interrupted run is restarted by repeating the same command"
+        ),
+    )
+    parser.add_argument(
+        "--remaster",
+        nargs="?",
+        const=models.DEFAULT_REMASTERER,
+        default=None,
+        choices=models.REMASTERERS,
+        metavar="MODEL",
+        help=(
+            "run a second network over the upscaled colour to modernise it, instead of only resolving "
+            "what is already there. An upscale makes a 2001 texture larger; what dates it is 5-bit "
+            "colour, lighting painted into the albedo and no detail finer than the brush that made it, "
+            "and none of that is a resolution problem. OFF by default because this stage INVENTS: it is "
+            "the only one here allowed to put detail on a surface that was never drawn. Bare --remaster "
+            "uses texturedat2 (trained on 30,122 game textures); name another to compare"
         ),
     )
     parser.add_argument(
