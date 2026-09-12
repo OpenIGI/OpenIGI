@@ -99,6 +99,33 @@ public sealed class HumanWallSweepTests
     }
 
     [Fact]
+    public void AnExitFaceLetsAWedgedBodyLeaveADoorway()
+    {
+        // Object collision faces every reported normal back towards the ray, then preserves which
+        // side was crossed in IsExit. The exit normal therefore still opposes this +X move: without
+        // reading IsExit the sweep mistakes leaving the doorway edge for entering it and pins the
+        // body against the same face on every attempt.
+        WorldRayCast plane = Plane(new Vector3f(-1f, 0f, 0f), new Vector3d(Metre, 0.0, 0.0));
+        bool DoorwayExit(Vector3d origin, Vector3d end, out WorldRayHit hit)
+        {
+            if (!plane(origin, end, out hit))
+            {
+                return false;
+            }
+
+            hit = hit with { IsExit = true };
+            return true;
+        }
+
+        Vector3d destination = new(2.0 * Metre, 0.0, 0.0);
+        HumanWallSweepResult result = HumanWallSweep.Sweep(
+            new Vector3d(0.0, 0.0, 0.0), destination, true, false, DoorwayExit);
+
+        Assert.False(result.TouchedWall);
+        Assert.Equal(destination, result.Destination);
+    }
+
+    [Fact]
     public void TheAnkleRayIsLiveOnlyWhileAirborne()
     {
         // On the ground the low probe is skipped so you walk over kerbs; in the air it is live so you
