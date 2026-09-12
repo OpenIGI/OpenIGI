@@ -464,6 +464,65 @@ public sealed class RetailCutsceneRuntimeTests
     }
 
     [RequiresGameDataFact]
+    public void MissionFiveIntroShowsAuthoredBinocularOverlayOnlyDuringScene3501()
+    {
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fileSystem);
+        GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new();
+        missions.Register(loop.Natives);
+        missions.Scan(fileSystem, resources, loop.Natives);
+        _ = new MissionLoader(
+            missions,
+            fileSystem,
+            resources,
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(5);
+
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        CutsceneRuntime runtime = new(root, loop.Variables);
+
+        // LEVEL5/objects.qsc authors the holder as
+        // CutScene_3500.isFinished && !CutScene_3501.isFinished && ConditionalContainer_1000.isRun.
+        // The boundary ticks below are the frames produced by the retail 30 Hz completion contract.
+        CutsceneFrame opening = Assert.IsType<CutsceneFrame>(runtime.Frame);
+        Assert.Equal(3500, opening.Scene.Id);
+        Assert.Equal(0, opening.Scene.Ticks);
+        Assert.False(opening.BinocularOverlayVisible);
+
+        CutsceneFrame lastEstablishingFrame = opening;
+        while (runtime.ActiveScene?.Id == 3500)
+        {
+            lastEstablishingFrame = Assert.IsType<CutsceneFrame>(runtime.Frame);
+            runtime.Tick();
+        }
+
+        Assert.Equal(107, lastEstablishingFrame.Scene.Ticks);
+        Assert.False(lastEstablishingFrame.BinocularOverlayVisible);
+
+        CutsceneFrame firstBinocularFrame = Assert.IsType<CutsceneFrame>(runtime.Frame);
+        Assert.Equal(3501, firstBinocularFrame.Scene.Id);
+        Assert.Equal(1, firstBinocularFrame.Scene.Ticks);
+        Assert.True(firstBinocularFrame.BinocularOverlayVisible);
+
+        CutsceneFrame lastBinocularFrame = firstBinocularFrame;
+        while (runtime.ActiveScene?.Id == 3501)
+        {
+            lastBinocularFrame = Assert.IsType<CutsceneFrame>(runtime.Frame);
+            Assert.True(lastBinocularFrame.BinocularOverlayVisible);
+            runtime.Tick();
+        }
+
+        Assert.Equal(744, lastBinocularFrame.Scene.Ticks);
+        CutsceneFrame firstClosingFrame = Assert.IsType<CutsceneFrame>(runtime.Frame);
+        Assert.Equal(3502, firstClosingFrame.Scene.Id);
+        Assert.Equal(1, firstClosingFrame.Scene.Ticks);
+        Assert.False(firstClosingFrame.BinocularOverlayVisible);
+    }
+
+    [RequiresGameDataFact]
     public void MissionOneStartsItsAuthoredIntroAndAdvancesItsCamera()
     {
         VirtualFileSystem fileSystem = new();
