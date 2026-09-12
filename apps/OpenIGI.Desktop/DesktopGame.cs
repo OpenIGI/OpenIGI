@@ -5055,11 +5055,7 @@ internal sealed partial class DesktopGame : IDisposable
                     // aspect-invariant. Dividing the tangent by the aspect instead (the world's widescreen
                     // rule) shrinks the view model's vertical reach at 16:9 and pushes the hand off the
                     // bottom of the frame. At 4:3 the two rules coincide, tanY = 0.433 and tanX = tan(30).
-                    float viewModelFieldOfView = 2f * MathF.Atan(0.75f * sight.ViewModelTanX);
-                    Matrix4f viewModelProjection = ViewModelProjection.Create(
-                        viewModelFieldOfView,
-                        aspectRatio,
-                        FarPlane);
+                    Matrix4f viewModelProjection = ViewModelProjection.Create(sight.ViewModelTanX, FarPlane);
 
                     // Between-tick smoothing for everything the rig steps at 30 Hz: its origin (the eye
                     // the body carried plus the clip's hold offset), its skin, and the weapon bone. The
@@ -5300,17 +5296,14 @@ internal sealed partial class DesktopGame : IDisposable
                         computerEye = _player.SmoothedCamera(tickBlend);
                     }
 
-                    float computerViewModelFov = 2f * MathF.Atan(0.75f * sight.ViewModelTanX);
                     Matrix4f computerViewModelProjection = ViewModelProjection.Create(
-                        computerViewModelFov,
-                        (float)_window.Width / Math.Max(1, _window.Height),
+                        sight.ViewModelTanX,
                         FarPlane);
 
                     if (_mapComputerDevice is { IsReady: true } deviceModel)
                     {
                         Viewport deviceViewport = MapComputerRenderer.DeviceViewport(_window.Width, _window.Height);
-                        float horizontalHalfTangent = MathF.Tan(computerViewModelFov * 0.5f)
-                            * _window.Width / Math.Max(1f, _window.Height);
+                        float horizontalHalfTangent = sight.ViewModelTanX;
                         // The mapcomputer mesh is a close foreground prop. Its housing extends past the
                         // view just as it does in retail; 2.50 is the retail asset's aperture-to-frame
                         // calibration against the map task's 91% screen viewport. The casing is intentionally
