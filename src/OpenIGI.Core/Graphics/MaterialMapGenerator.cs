@@ -70,8 +70,17 @@ public static class MaterialMapGenerator
     /// soft) to 1 (fine only, crisp and noisy).
     /// </param>
     /// <param name="RoughnessRange">
-    /// How far either side of the material's own roughness the derived value may move it. Deliberately
-    /// mild: this is a texture's busyness standing in for a measurement.
+    /// How far either side of the material's own roughness the derived value may move it, as a
+    /// fraction: 0.4 lets the map multiply it by anything from 0.6 to 1.4. Deliberately mild, because
+    /// this is a texture's busyness standing in for a measurement.
+    /// <para>
+    /// <b>Either side, and it used to be one.</b> The mapping was <c>1 + t * range</c>, so the channel
+    /// could only ever make a surface rougher -- measured over 400 of the derived maps, not one texel
+    /// in the corpus asked for a surface smoother than its material said, while 14% sat pinned at the
+    /// ceiling. On a base of 0.8 that put every surface in the game between 0.8 and 1.0, which is a
+    /// twelve-per-cent spread at the matte end of GGX where the lobe is already a hemisphere -- and is
+    /// why turning the roughness channel on changed nothing anyone could see.
+    /// </para>
     /// </param>
     /// <param name="OcclusionStrength">How deeply the derived occlusion may darken. Zero disables it.</param>
     /// <param name="OcclusionDirections">
@@ -82,7 +91,7 @@ public static class MaterialMapGenerator
         float NormalStrength = 1f,
         float Relief = 0.12f,
         float DetailBalance = 0.6f,
-        float RoughnessRange = 0.35f,
+        float RoughnessRange = 0.4f,
         float OcclusionStrength = 1f,
         int OcclusionDirections = 8)
     {
@@ -236,23 +245,27 @@ public static class MaterialMapGenerator
     /// <param name="destination">
     /// Receives the packed texture. Read through a sampler its channels are, in order: the normal's x
     /// and y biased into [0,1], a roughness multiplier halved so 0.5 means "unchanged", and — in alpha
-    /// — <b>how dielectric the surface is</b>, which is one minus metallic.
+    /// — <b>occlusion</b>, white for open and dark for a crease.
     /// <para>
-    /// Alpha is inverted for a practical reason rather than a principled one. Metallic is nearly always
-    /// zero, so storing it directly makes every one of these files fully transparent, and a fully
-    /// transparent PNG opens in an image viewer as nothing at all — which is exactly how the first
-    /// build of this was reported, as "the generated images are invalid". Storing its complement makes
-    /// the ordinary case opaque and inspectable, and has the useful property that a map flattened to
-    /// opaque by some other tool reads back as the safe default rather than as solid metal.
+    /// <b>Alpha used to hold metallic, inverted, and does not any more.</b> Metal in this game is a
+    /// property of a MATERIAL rather than of a texel — a fuel tank is steel over its whole surface and
+    /// a wall is not steel anywhere on its — so it belongs in materials.json, where somebody can look
+    /// at a texture and say so, and not in a channel derived from a photograph that cannot possibly
+    /// know. It was also never written: both callers took the default of zero, so alpha was 255 in
+    /// every texel of every map ever produced and the shader's <c>max(metallic, 1 - alpha)</c> was a
+    /// literal no-op. Meanwhile <see cref="DeriveOcclusion"/> ran a real eight-direction horizon search
+    /// whose output was written out for inspection and never sampled by anything.
     /// </para>
-    /// </param>
-    /// <param name="metallic">
-    /// What to write into the metallic channel, for the caller that has authored data saying so. It
-    /// cannot be derived — see the type's remarks.
+    /// <para>
+    /// Swapping the two costs no migration, which is the happy part of a channel having been dead. An
+    /// existing map carries 255 there because its metallic was zero; read as occlusion, 255 is "fully
+    /// open", which is exactly the right answer for a map that never measured any. So every pack
+    /// already on disk stays correct, and regenerating one only adds the contact shading.
+    /// </para>
     /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="maps"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="destination"/> is too small.</exception>
-    public static void PackDetail(Maps maps, Span<Bgra32> destination, float metallic = 0f)
+    public static void PackDetail(Maps maps, Span<Bgra32> destination)
     {
         ArgumentNullException.ThrowIfNull(maps);
 
@@ -265,8 +278,6 @@ public static class MaterialMapGenerator
                 nameof(destination));
         }
 
-        byte dielectric = Quantise(1f - Math.Clamp(metallic, 0f, 1f));
-
         for (int i = 0; i < count; i++)
         {
             // Named arguments, and not for tidiness. Bgra32's constructor takes its channels in MEMORY
@@ -278,7 +289,7 @@ public static class MaterialMapGenerator
                 r: Quantise((maps.NormalX[i] * 0.5f) + 0.5f),
                 g: Quantise((maps.NormalY[i] * 0.5f) + 0.5f),
                 b: Quantise(maps.Roughness[i] * 0.5f),
-                a: dielectric);
+                a: Quantise(maps.Occlusion[i]));
         }
     }
 
@@ -1256,6 +1267,7 @@ public static class MaterialMapGenerator
             Vector<float> zero = Vector<float>.Zero;
             Vector<float> one = Vector<float>.One;
             Vector<float> five = new(5f);
+            Vector<float> two = new(2f);
             Vector<float> span = new(range);
 
             for (; i <= roughness.Length - Vector<float>.Count; i += Vector<float>.Count)
@@ -1268,7 +1280,12 @@ public static class MaterialMapGenerator
                 // neighbourhood at that spread is an ordinarily detailed one and saturates the range.
                 Vector<float> deviation = Vector.SquareRoot(variance);
 
-                (one + (Vector.Min(deviation * five, one) * span)).CopyTo(roughness[i..]);
+                // Centred on one, so a neighbourhood quieter than the texture's own average asks for a
+                // SMOOTHER surface and a busier one asks for a rougher: the two halves of the range are
+                // what make this channel able to say anything, and the old form only had the upper one.
+                Vector<float> busyness = Vector.Min(deviation * five, one);
+
+                (one + (((busyness * two) - one) * span)).CopyTo(roughness[i..]);
             }
         }
 
@@ -1277,7 +1294,8 @@ public static class MaterialMapGenerator
             float mean = localMean[i];
             float variance = MathF.Max(localMeanOfSquares[i] - (mean * mean), 0f);
 
-            roughness[i] = 1f + (Math.Min(MathF.Sqrt(variance) * 5f, 1f) * range);
+            float busyness = Math.Min(MathF.Sqrt(variance) * 5f, 1f);
+            roughness[i] = 1f + (((busyness * 2f) - 1f) * range);
         }
     }
 

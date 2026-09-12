@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Rendering;
@@ -69,6 +70,10 @@ public sealed class TextureDecodeCache
     /// The session's detail-map pack, told to read the same names' PNGs on the pool. Optional; without it
     /// the maps are read on the render thread as they always were.
     /// </param>
+    /// <param name="upscaled">
+    /// The session's upscaled-texture pack, consulted before the archive for every name. Optional; without
+    /// it, and for every name it does not have, the game's own texture is decoded exactly as before.
+    /// </param>
     /// <returns>The cache, already decoding.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="resources"/> is <see langword="null"/>.</exception>
     /// <remarks>
@@ -77,7 +82,10 @@ public sealed class TextureDecodeCache
     /// working out which by walking geometry would cost more than decoding the few extra.
     /// </remarks>
     public static TextureDecodeCache StartFor(
-        ResourceRegistry resources, float cutoff, MaterialDetailPack? detail = null)
+        ResourceRegistry resources,
+        float cutoff,
+        MaterialDetailPack? detail = null,
+        HdTexturePack? upscaled = null)
     {
         ArgumentNullException.ThrowIfNull(resources);
 
@@ -100,7 +108,7 @@ public sealed class TextureDecodeCache
             // decodes it itself instead of queueing behind everything else, and one already in flight is
             // waited for rather than done twice.
             Lazy<TextureImage?> lazy = new(
-                () => Decode(bytes, cutoff), LazyThreadSafetyMode.ExecutionAndPublication);
+                () => Decode(name, bytes, cutoff, upscaled), LazyThreadSafetyMode.ExecutionAndPublication);
 
             if (cache._images.TryAdd(name, lazy))
             {
@@ -145,11 +153,19 @@ public sealed class TextureDecodeCache
         return true;
     }
 
-    private static TextureImage? Decode(ReadOnlyMemory<byte> bytes, float cutoff)
+    private static TextureImage? Decode(
+        string name, ReadOnlyMemory<byte> bytes, float cutoff, HdTexturePack? upscaled)
     {
         try
         {
-            TextureImage image = TexFile.Load(bytes.Span);
+            // An upscaled replacement, if the player built one, and the game's own texture otherwise. The
+            // substitution is HERE and nowhere else -- everything below this line is the correction
+            // sequence, and it has to be the same sequence for both or the two would be subtly different
+            // renderers. A replacement that will not decode has already warned and fallen through.
+            TextureImage image =
+                upscaled is not null && upscaled.TryRead(name, out Bgra32[] pixels, out int width, out int height)
+                    ? TextureImage.FromPixels(width, height, pixels)
+                    : TexFile.Load(bytes.Span);
 
             // The same sequence WorldRenderer.GetTexture ran inline, in the same order and for the same
             // reasons -- classify the cut-out from level zero before the alpha is touched, widen it,

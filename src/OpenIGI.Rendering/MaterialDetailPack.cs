@@ -327,9 +327,10 @@ public sealed class MaterialDetailPack : IDisposable
 
         try
         {
+            (Bgra32[] chain, int levels) = LinearMipChain.Build(packed, width, height);
             TextureHandle map = _device.CreateTexture(
-                new TextureDescription(width, height, 1, TextureFilter.Linear, TextureAddressMode.Repeat),
-                packed);
+                new TextureDescription(width, height, levels, TextureFilter.Linear, TextureAddressMode.Repeat),
+                chain);
 
             // Keyed by the diffuse it was made for, so Dispose releases it. The name is synthetic
             // because there is none -- that is the whole reason this overload exists.
@@ -374,10 +375,11 @@ public sealed class MaterialDetailPack : IDisposable
 
             try
             {
+                (Bgra32[] chain, int levels) = LinearMipChain.Build(item.Pixels, item.Width, item.Height);
                 map = _device.CreateTexture(
                     new TextureDescription(
-                        item.Width, item.Height, 1, TextureFilter.Linear, TextureAddressMode.Repeat),
-                    item.Pixels);
+                        item.Width, item.Height, levels, TextureFilter.Linear, TextureAddressMode.Repeat),
+                    chain);
             }
             catch (Exception error) when (error is ArgumentException or GraphicsDeviceException)
             {
@@ -568,10 +570,16 @@ public sealed class MaterialDetailPack : IDisposable
             // Repeat, because the map tiles exactly as the texture it belongs to does -- and mipmapped,
             // because a normal map minified without one aliases far worse than a colour does. A wrong
             // normal is a wrong lighting direction, and the eye reads that as sparkle rather than as
-            // detail.
+            // detail. The chain also restores what a single level silently costs: the sampler picks its
+            // mip mode and its anisotropy from the level count, so with one level it was sampling
+            // nearest-mip and no anisotropy as well.
+            //
+            // LinearMipChain rather than the picture one: these channels are numbers, and putting a
+            // normal's x through a display decode and re-encode biases every average it takes.
+            (Bgra32[] chain, int levels) = LinearMipChain.Build(read.Pixels, read.Width, read.Height);
             return _device.CreateTexture(
-                new TextureDescription(read.Width, read.Height, 1, TextureFilter.Linear, TextureAddressMode.Repeat),
-                read.Pixels);
+                new TextureDescription(read.Width, read.Height, levels, TextureFilter.Linear, TextureAddressMode.Repeat),
+                chain);
         }
         catch (GraphicsDeviceException error)
         {

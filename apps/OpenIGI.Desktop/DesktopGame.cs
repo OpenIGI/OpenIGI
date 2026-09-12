@@ -107,6 +107,12 @@ internal sealed partial class DesktopGame : IDisposable
     private AnimTriggerRegistry? _animationTriggers;
     private MaterialLibrary _materials = null!;
     private MaterialDetailPack _detailMaps = null!;
+    private HdTexturePack _hdTextures = null!;
+
+    // Whether the renderer is currently holding the pack, against r_hd's request. Tracked rather than
+    // read, because acting on it means reloading every texture in the level -- so it has to happen on the
+    // frame the variable CHANGES and not on every frame it is false.
+    private bool _hdTexturesApplied = true;
 
     // --- The player's own life, damage and death ---
     private int _playerDifficulty;
@@ -596,6 +602,7 @@ internal sealed partial class DesktopGame : IDisposable
         // the command already there.
         RegisterLampCommands(console.System);
         RegisterImpactCommands(console.System);
+        RegisterCameraCommands(console.System);
 
         console.Start(_fileSystem, _options.StartupCommands, useSavedSettings: !_options.Lockstep);
         _logger = console.WrapLogger(_logger);
@@ -975,6 +982,23 @@ internal sealed partial class DesktopGame : IDisposable
             _logger,
             Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "detail"));
 
+        // Set HERE as well as on the frame, and the difference only shows on the path a capture takes.
+        // The loop assigns this every pass so that turning r_material_detail up mid-session starts
+        // deriving for whatever loads next -- but a level reached with -mission loads its textures BEFORE
+        // the first pass, so every one of them saw the default of false and cached the answer "no map".
+        // A mission started from the menu never hit it, because the loop is already running by then.
+        // Measured: 27 maps derived over 600 frames of -mission, against a level's worth of textures.
+        _detailMaps.DeriveMissing = RenderCVars.MaterialDetail.Value > 0f;
+
+        // The upscaled diffuse this game could not have had, built by `texture-forge` and pointed at by
+        // r_hd_textures. Session-scoped for the same reason the detail maps are: a texture belongs to the
+        // art rather than to a level, and every mission that uses it wants the same replacement.
+        //
+        // Unlike the detail maps there is no derive-on-demand cache behind this, and there should not be:
+        // deriving a normal map is a millisecond of arithmetic on a worker, where upscaling is a neural
+        // network and a gigabyte of weights. That is a tool's job, run once, not a frame's.
+        _hdTextures = new HdTexturePack(RenderCVars.HdTextures.Value, _logger);
+
         // What a menu backdrop needs to be promotable into the played mission rather than thrown away,
         // and what it needs to be LIT the way that mission will be: the lamp manifest its proposal is
         // checked against and the field cache it reads. Built here because every part of it is finished
@@ -986,6 +1010,7 @@ internal sealed partial class DesktopGame : IDisposable
             _scheduler,
             missionState,
             _detailMaps,
+            _hdTextures,
             _sessionArchives,
             _lampManifest,
             _sdfCache,
@@ -2248,6 +2273,38 @@ internal sealed partial class DesktopGame : IDisposable
             // light resolves back in from nothing over the next seconds -- the way to see a change to the
             // bake without reloading the level, and to watch it generate. Ignored where there is nothing to
             // bake (GI off, or the level's scene or cast not yet set up).
+            // F8 puts the upscaled textures in and out of the frame. Watched as a VARIABLE rather than as
+            // a key press, so `r_hd 0` from the console does the same thing as the key -- the bind sets
+            // the variable and this notices, which is one path rather than two that must agree.
+            //
+            // Nothing happens without a pack configured: the flag is meaningful only against something to
+            // compare with, and reloading a level's textures to show the same textures again would be a
+            // long hitch for no picture.
+            if (_hdTexturesApplied != RenderCVars.HdTexturesEnabled.Value && _hdTextures.IsAvailable)
+            {
+                _hdTexturesApplied = RenderCVars.HdTexturesEnabled.Value;
+
+                // The pack stays loaded either way; what changes is whether the renderer is holding it.
+                HdTexturePack? wanted = _hdTexturesApplied ? _hdTextures : null;
+
+                if (_world is not null)
+                {
+                    _world.UpscaledTextures = wanted;
+                    _world.ReloadTextures();
+                }
+
+                // The card atlas has the diffuse baked into it, so the indirect light is still bouncing
+                // off the old pixels until it is captured again. Discarding it is the existing
+                // invalidation -- the same one a density change uses -- and it re-converges the GI with it.
+                DiscardSurfaceCache();
+
+                _logger.Information(
+                    "Texture",
+                    _hdTexturesApplied
+                        ? "Upscaled textures on (F8); reloading the level's textures."
+                        : "Upscaled textures off (F8); back to the game's own.");
+            }
+
             if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F11)
                 && RenderCVars.GlobalIllumination.Value
                 && _scene is not null
@@ -4100,8 +4157,15 @@ internal sealed partial class DesktopGame : IDisposable
 
                 // The derived detail is a deferred-path feature: it changes the normal and the roughness
                 // written into the G-buffer, and without one there is nothing to write them into.
+                //
+                // r_pbr (F9) multiplies the authored strength by one or zero rather than replacing it, so
+                // the maps can be taken out of the frame and put back without disturbing what the preset
+                // chose. Read here, every frame, because that is what makes it instant: nothing is
+                // unloaded and nothing is rebuilt -- the shader simply stops scaling its slope by it.
                 _device.SetMaterialDetail(
-                    RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
+                    RenderCVars.OffscreenScene.Value
+                    && RenderCVars.Deferred.Value
+                    && RenderCVars.MaterialDetailEnabled.Value
                         ? RenderCVars.MaterialDetail.Value
                         : 0f);
                 _device.SetFloorGloss(
@@ -5751,6 +5815,7 @@ internal sealed partial class DesktopGame : IDisposable
                         // produced it, and the answer is two cvars deep -- r_rt_shadows does nothing
                         // while r_rt is off, and neither means anything with shadows turned off.
                         I($"shadow   {ShadowModeLabel()}"),
+                        I($"texture  {TextureModeLabel()}"),
                         I($"fps {frame.FramesPerSecond:0.0}  frame {frame.AverageMilliseconds:0.00} ms  1% {frame.OnePercentLowFramesPerSecond:0.0}"),
 
                         // The whole GPU frame measured end to end, against the sum of the stages listed
@@ -6464,6 +6529,33 @@ internal sealed partial class DesktopGame : IDisposable
 
         return FormattableString.Invariant(
             $"gpu      {measured.Milliseconds:0.00} measured   {summed.Milliseconds:0.00} summed   lost {measured.Milliseconds - summed.Milliseconds:0.00}");
+    }
+
+    /// <summary>What the remaster's two texture features are doing, and the keys that move them.</summary>
+    /// <remarks>
+    /// Both are comparison switches, so the thing worth saying is which side of the comparison is on
+    /// screen right now — a frame is worth nothing as evidence if you cannot tell which picture it is.
+    /// Spelled out with the keys for the same reason <see cref="ShadowModeLabel"/> is: the answer is two
+    /// variables deep, and "no pack configured" looks exactly like "pack turned off" in the picture.
+    /// </remarks>
+    private string TextureModeLabel()
+    {
+        string upscaled = !_hdTextures.IsAvailable
+            ? "original (no pack; r_hd_textures is empty)"
+            : RenderCVars.HdTexturesEnabled.Value
+                ? "upscaled [F8 for the originals]"
+                : "original [F8 for the upscaled]";
+
+        // Zero at every preset but high, so "off" here is usually the authored answer rather than a key
+        // somebody pressed -- worth distinguishing, because the maps look identical to absent when the
+        // strength is nothing.
+        string detail = RenderCVars.MaterialDetail.Value <= 0f
+            ? "no detail (r_material_detail is 0)"
+            : RenderCVars.MaterialDetailEnabled.Value
+                ? $"detail {RenderCVars.MaterialDetail.Value:0.##} [F9 off]"
+                : $"detail off [F9 back to {RenderCVars.MaterialDetail.Value:0.##}]";
+
+        return $"{upscaled}, {detail}";
     }
 
     private string ShadowModeLabel()

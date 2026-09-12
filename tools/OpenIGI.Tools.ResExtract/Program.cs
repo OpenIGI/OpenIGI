@@ -25,6 +25,7 @@ static int Run(string[] args)
             "EXTRACT" => Extract(args),
             "IMAGES" => Images(args),
             "MAPS" => Maps(args),
+            "TERRAIN" => Terrain(args),
             "SOUNDS" => Sounds(args),
             _ => Fail($"Unknown command '{args[0]}'."),
         };
@@ -178,6 +179,99 @@ static int Images(string[] args)
         $"{duplicates} repeat(s), {notTextures} non-texture entr(ies), {failed} failure(s)."));
 
     return failed > 0 && written == 0 ? ExitCode.Failure : ExitCode.Ok;
+}
+
+// Writes out every level's ground tiles, which are the one part of this game's art that "images" cannot
+// reach.
+//
+// The ground is not textured from the .res archives. Each level carries its own atlas at
+// missions/<location>/<level>/terrain/terrain.tex -- a loose file holding eighteen 128x128 tiles -- and a
+// chunk names one by INDEX. So the tiles have no names, "images" never walks them, and nothing downstream
+// could upscale or replace them: the terrain rendered from 1998 art at every preset while every building
+// around it was replaced. On an outdoor view that is most of the screen.
+//
+// TexAtlasFile.MakeTileName manufactures the missing name from the level directory, and the renderer asks
+// the same function for the same string, so a pack built from this is found without a manifest.
+static int Terrain(string[] args)
+{
+    if (args.Length != 3)
+    {
+        return Fail("usage: ResExtract terrain <game-dir> <outdir>");
+    }
+
+    string gameRoot = Path.GetFullPath(args[1]);
+    string outputRoot = Path.GetFullPath(args[2]);
+
+    if (!Directory.Exists(gameRoot))
+    {
+        return Fail($"'{gameRoot}' is not a directory.");
+    }
+
+    Directory.CreateDirectory(outputRoot);
+
+    string[] atlases =
+    [
+        .. Directory.EnumerateFiles(gameRoot, "terrain.tex", SearchOption.AllDirectories)
+            .Order(StringComparer.OrdinalIgnoreCase),
+    ];
+
+    int written = 0;
+    int failed = 0;
+    int sets = 0;
+
+    foreach (string atlasPath in atlases)
+    {
+        // The key is built from the path RELATIVE to the game directory, because that is what the
+        // renderer sees: its resource paths start at the installation root.
+        string relative = Path.GetRelativePath(gameRoot, Path.ChangeExtension(atlasPath, null));
+        string key = TexAtlasFile.MakeTileSetKey(relative);
+
+        if (key.Length == 0)
+        {
+            Console.Error.WriteLine($"warning: '{relative}' is not under a level directory; skipped.");
+            continue;
+        }
+
+        TexAtlasFile atlas;
+
+        try
+        {
+            atlas = TexAtlasFile.Read(File.ReadAllBytes(atlasPath));
+        }
+        catch (Exception error) when (error is TextureFormatException or IOException or ArgumentException)
+        {
+            Console.Error.WriteLine($"warning: '{relative}' did not read: {error.Message}");
+            failed++;
+            continue;
+        }
+
+        sets++;
+
+        for (int i = 0; i < atlas.Tiles.Count; i++)
+        {
+            TextureImage tile = atlas.Tiles[i];
+            string name = TexAtlasFile.MakeTileName(key, i);
+
+            try
+            {
+                // Level zero only, as "images" does: whatever consumes these builds its own chain.
+                PngWriter.Write(
+                    Path.Combine(outputRoot, name + ".png"), tile.GetLevel(0), tile.Width, tile.Height);
+                written++;
+            }
+            catch (Exception error) when (error is TextureFormatException or ArgumentException or IOException)
+            {
+                Console.Error.WriteLine($"warning: '{name}' did not write: {error.Message}");
+                failed++;
+            }
+        }
+    }
+
+    Console.WriteLine(string.Create(
+        CultureInfo.InvariantCulture,
+        $"Wrote {written} ground tile(s) from {sets} level(s) to {outputRoot}; {failed} failure(s)."));
+
+    return written == 0 ? ExitCode.Failure : ExitCode.Ok;
 }
 
 // Decodes every ILSF sound found below a path and writes each one out as an ordinary WAV.
@@ -473,6 +567,10 @@ static void PrintUsage() =>
         "images" decodes every texture it finds to an 8-bit RGBA PNG, named after the texture and
         flattened into one directory. Given a directory it walks every .res below it and writes
         each distinct texture once, however many levels pack a copy of it.
+
+        "terrain" writes out every level's ground tiles. They live in a loose per-level atlas
+        rather than in the .res archives and are named by index rather than by name, so "images"
+        cannot reach them -- which is why the ground was the one surface no texture pack replaced.
 
         "sounds" decodes every ILSF sound it finds -- expanding the ADPCM forms -- to an ordinary
         PCM WAV. The game's own ".wav" files are ILSF, not WAV, so nothing else will open them.

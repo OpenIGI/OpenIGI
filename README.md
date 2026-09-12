@@ -102,6 +102,18 @@ to be downloaded and nothing is committed here — the maps come from your own i
 `ResExtract maps` pre-bakes them in one pass if you would rather not pay for it as you play, and
 `r_material_pack` points at the result.
 
+### Upscaled textures
+
+The art itself is 1,363 textures between 8x8 and 128x128, which is the largest remaining gap between
+this renderer and a modern one: no amount of indirect lighting fixes a 64-pixel brick wall.
+`tools/texture-forge` enlarges them four times with CC0-licensed models and derives better surface maps
+from the result than the tiny originals can support. `r_hd_textures` points at the upscaled diffuse and
+`r_material_pack` at the maps.
+
+Optional, like the detail maps and for the same reason -- the game's art with a filter over it is still
+Innerloop's, so the pack is something you build from your own installation rather than something this
+repository can ship. See `tools/texture-forge/README.md`.
+
 ## Platforms
 
 Rendering is Vulkan only. There is no OpenGL path: the deferred G-buffer, the temporal resolve and the
@@ -139,6 +151,7 @@ src/     Core Engine Formats Scripting Game Modding UI Frontend
          + Rendering/Audio/Input/Platform abstractions and their backends
 apps/    OpenIGI.Desktop            composition root and executable
 tools/   ResExtract, QvmDisasm      archive/texture extraction and QVM disassembly
+         texture-forge (Python)     AI texture upscaling and PBR map generation
 tests/   xUnit projects, one per source project
 ```
 

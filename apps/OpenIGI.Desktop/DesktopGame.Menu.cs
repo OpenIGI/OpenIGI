@@ -62,6 +62,7 @@ internal sealed partial class DesktopGame
         {
             Materials = _materials,
             DetailMaps = _detailMaps,
+            UpscaledTextures = _hdTextures,
 
             // Decoded on the pool while this backdrop was being built, so the capture below uploads
             // rather than decodes. Null on a preview built before there was a cache to fill, which the
@@ -75,7 +76,7 @@ internal sealed partial class DesktopGame
 
         _terrain?.Dispose();
         _terrain = preview.TerrainSurface is { } surface
-            ? new TerrainRenderer(_device, surface, _logger, _detailMaps, preview.GroundDetail)
+            ? new TerrainRenderer(_device, surface, _logger, _detailMaps, preview.GroundDetail, _hdTextures)
             : null;
 
         // The mission's soldiers, built while the player is still reading the briefing. They are not drawn

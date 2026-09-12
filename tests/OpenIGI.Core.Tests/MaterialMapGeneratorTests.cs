@@ -59,17 +59,71 @@ public sealed class MaterialMapGeneratorTests
         Assert.All(maps.NormalY, y => Assert.Equal(0f, y, 4));
     }
 
-    /// <summary>A flat texture cannot occlude itself, and cannot be rougher than it was asked to be.</summary>
+    /// <summary>A flat texture cannot occlude itself, and asks for the smooth end of the range.</summary>
+    /// <remarks>
+    /// The roughness half of this used to assert exactly one — the multiplier's neutral — on the reading
+    /// that a texture with no detail painted on it is no evidence the surface is polished. That reading
+    /// is what made the channel one-sided and, in the finished picture, invisible: with nothing ever
+    /// below one the map could only roughen an already-matte material, and every surface in the game
+    /// ended up inside a band where a GGX lobe is a hemisphere. The channel is two-sided now, so the
+    /// quietest neighbourhood there is asks for the bottom of the range, which at the default half-width
+    /// of 0.4 is 0.6. What a surface is made of is materials.json's job; this says only how its grain
+    /// moves that, and it has to be able to move it both ways.
+    /// </remarks>
     [Fact]
-    public void FlatTextureIsUnoccludedAndUnroughened()
+    public void FlatTextureIsUnoccludedAndAsksForTheSmoothEnd()
     {
         Bgra32[] pixels = new Bgra32[16 * 16];
         Array.Fill(pixels, new Bgra32(200, 180, 160, 255));
 
         MaterialMapGenerator.Maps maps = MaterialMapGenerator.Generate(pixels, 16, 16);
 
+        float floor = 1f - MaterialMapGenerator.Options.Default.RoughnessRange;
+
         Assert.All(maps.Occlusion, value => Assert.Equal(1f, value, 3));
-        Assert.All(maps.Roughness, value => Assert.Equal(1f, value, 3));
+        Assert.All(maps.Roughness, value => Assert.Equal(floor, value, 3));
+    }
+
+    /// <summary>The roughness channel has to be able to say "smoother" as well as "rougher".</summary>
+    /// <remarks>
+    /// The regression guard for the fault above. A one-sided channel passes every test that checks a
+    /// range or a packing and still carries no information the renderer can use, so this asserts the
+    /// thing that actually went wrong: that the derived multiplier straddles one.
+    /// </remarks>
+    [Fact]
+    public void RoughnessStraddlesTheMaterialItMultiplies()
+    {
+        const int Size = 64;
+
+        // Two textures rather than two halves of one. The height field is normalised to a fixed global
+        // spread before the local deviation is measured, so a quiet region inside a busy texture is
+        // judged against that texture's own busyness -- which is the right behaviour and makes a single
+        // image a poor way to ask this question.
+        Bgra32[] flat = new Bgra32[Size * Size];
+        Array.Fill(flat, new Bgra32(128, 128, 128, 255));
+
+        // A coarse checker rather than fine noise, and the difference matters: the local spread is
+        // measured over a box a twelfth of the texture wide, which averages single-texel grain away
+        // almost entirely. What reads as a rough surface is structure at the SIZE OF THAT WINDOW -- a
+        // brick and its mortar, not film grain -- and a checker is the cleanest way to ask for it.
+        Bgra32[] speckled = new Bgra32[Size * Size];
+        for (int y = 0; y < Size; y++)
+        {
+            for (int x = 0; x < Size; x++)
+            {
+                byte value = ((x / 8) + (y / 8)) % 2 == 0 ? (byte)0 : (byte)255;
+                speckled[(y * Size) + x] = new Bgra32(value, value, value, 255);
+            }
+        }
+
+        float range = MaterialMapGenerator.Options.Default.RoughnessRange;
+        float[] quiet = MaterialMapGenerator.Generate(flat, Size, Size).Roughness;
+        float[] busy = MaterialMapGenerator.Generate(speckled, Size, Size).Roughness;
+
+        Assert.All(quiet, value => Assert.True(value < 1f, $"a flat texture asked for {value}"));
+        Assert.Contains(busy, value => value > 1f);
+        Assert.All(quiet, value => Assert.InRange(value, 1f - range, 1f + range));
+        Assert.All(busy, value => Assert.InRange(value, 1f - range, 1f + range));
     }
 
     /// <summary>A step in luminance must tilt the normal across it, and only across it.</summary>
@@ -133,27 +187,33 @@ public sealed class MaterialMapGeneratorTests
             Occlusion: [0.25f]);
 
         Bgra32[] packed = new Bgra32[1];
-        MaterialMapGenerator.PackDetail(maps, packed, metallic: 0f);
+        MaterialMapGenerator.PackDetail(maps, packed);
 
         Assert.Equal(255, packed[0].R);
         Assert.Equal(0, packed[0].G);
         Assert.Equal(191, packed[0].B);
 
-        // Alpha holds how DIELECTRIC the surface is, so an ordinary non-metal map is opaque -- which is
-        // also what makes these files openable in an image viewer.
-        Assert.Equal(255, packed[0].A);
+        // Alpha holds OCCLUSION, so a quarter-open texel is a quarter of 255.
+        Assert.Equal(64, packed[0].A);
     }
 
-    /// <summary>Metallic is stored inverted, so that the ordinary case is opaque.</summary>
+    /// <summary>An unoccluded texel is opaque, which is what keeps these files openable.</summary>
+    /// <remarks>
+    /// Alpha used to carry the complement of metallic, and this test used to assert that. It carries
+    /// occlusion now: metal is a property of a material rather than of a texel, so it moved to
+    /// materials.json, and the eight-direction horizon search whose output nothing had ever sampled
+    /// took the channel over. The two happen to agree on the ordinary case -- a non-metal wrote 255
+    /// there and an unoccluded texel writes 255 there -- which is why no pack on disk needs rewriting.
+    /// </remarks>
     [Fact]
-    public void PackedDetailStoresMetallicAsItsComplement()
+    public void PackedDetailStoresOcclusionInAlpha()
     {
         MaterialMapGenerator.Maps maps = new(1, 1, [0.5f], [0f], [0f], [1f], [1f]);
 
         Bgra32[] packed = new Bgra32[1];
-        MaterialMapGenerator.PackDetail(maps, packed, metallic: 1f);
+        MaterialMapGenerator.PackDetail(maps, packed);
 
-        Assert.Equal(0, packed[0].A);
+        Assert.Equal(255, packed[0].A);
     }
 
     /// <summary>The ORM map must follow the arrangement every other tool expects.</summary>

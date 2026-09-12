@@ -489,6 +489,7 @@ internal sealed partial class DesktopGame
             {
                 Materials = _materials,
                 DetailMaps = _detailMaps,
+                UpscaledTextures = _hdTextures,
                 Lamps = _lamps,
             };
             _world = world;
@@ -1369,7 +1370,7 @@ internal sealed partial class DesktopGame
             // The surface comes from the level's own TextureModifier tasks, so it needs the loaded tree.
             _terrain?.Dispose();
             _terrain = loaded.Terrain is { IsUsable: true } usable
-                ? new TerrainRenderer(_device, TerrainSurface.Build(usable, levelRoot, _logger), _logger, _detailMaps)
+                ? new TerrainRenderer(_device, TerrainSurface.Build(usable, levelRoot, _logger), _logger, _detailMaps, derivedDetail: null, upscaled: _hdTextures)
                 : null;
 
             // The sky is script data on the level's task tree; its fog colour is also what the frame
@@ -1954,6 +1955,12 @@ internal sealed partial class DesktopGame
                     "Nothing to stand on at the level's spawn, so this mission opens in the free camera.");
             }
         }
+
+        // How much of what this level asked for the upscaled pack actually had. Reported per mission
+        // because the answer varies enormously between them -- the pack covers whatever somebody ran the
+        // tool over, and a level built mostly from textures outside it renders as the original with no
+        // indication why. "The remaster looks the same as the original" is the report this line answers.
+        _hdTextures.ReportCoverage($"mission {id}");
 
         // The menus are done; without dropping the renderer the last screen would keep drawing over
         // the world.

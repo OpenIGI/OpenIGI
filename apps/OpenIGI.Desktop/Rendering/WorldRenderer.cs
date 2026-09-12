@@ -1392,6 +1392,51 @@ public sealed class WorldRenderer : IDisposable
         }
     }
 
+    /// <summary>Drops every uploaded diffuse texture so the next draw loads them all again.</summary>
+    /// <remarks>
+    /// <para>
+    /// For swapping the upscaled pack in and out of a level that is already running, which is a
+    /// comparison tool rather than a feature: the two pictures have to be the same frame, and a reload
+    /// between them is the only way to be sure nothing else moved.
+    /// </para>
+    /// <para>
+    /// <b>Clearing the dictionary is not enough, and that is the whole subtlety.</b> A resolved model
+    /// caches its subsets, and a <c>SubsetDraw</c> carries its diffuse <i>by value</i> — so a texture
+    /// dropped here would still be drawn from the cached draw list, by a handle that no longer exists.
+    /// <see cref="MeltResolvedSubsets"/> is the existing answer to exactly that, already used when the
+    /// material library or the switchboard is replaced; the subsets re-resolve on next use at the cost of
+    /// a dictionary lookup.
+    /// </para>
+    /// <para>
+    /// <b>And the decode cache has to go with them.</b> It holds images decoded on workers during the
+    /// load, and <see cref="GetTexture"/> prefers it over the archive — so leaving it would hand back the
+    /// very pixels this is trying to replace. It is an optimisation with no semantics of its own, so
+    /// dropping it costs a slower reload and nothing else.
+    /// </para>
+    /// <para>
+    /// Safe mid-frame: <c>DestroyTexture</c> queues the image and its descriptor sets for deletion once
+    /// the frames that may still name them have cycled, rather than freeing under a frame in flight.
+    /// </para>
+    /// </remarks>
+    public void ReloadTextures()
+    {
+        foreach (TextureHandle texture in _textures.Values)
+        {
+            if (texture.IsValid)
+            {
+                _device.DestroyTexture(texture);
+            }
+        }
+
+        _textures.Clear();
+
+        // A name that had no texture before may well have one now, and the other way round.
+        _missingTextures.Clear();
+
+        Decoded = null;
+        MeltResolvedSubsets();
+    }
+
     /// <summary>Gets or sets the derived surface-detail maps, or <see langword="null"/> for none.</summary>
     /// <remarks>
     /// Settable for the same reason <see cref="Materials"/> is, and owned by the shell rather than by
@@ -1406,6 +1451,14 @@ public sealed class WorldRenderer : IDisposable
     /// draws it, which is what this renderer always did. See <see cref="TextureDecodeCache"/>.
     /// </remarks>
     public TextureDecodeCache? Decoded { get; set; }
+
+    /// <summary>Gets or sets the upscaled diffuse textures, or <see langword="null"/> for the game's own.</summary>
+    /// <remarks>
+    /// Owned by the shell alongside <see cref="DetailMaps"/> and for the same reason — one pack serves the
+    /// world, the soldiers and the terrain. Normally the decode cache has already applied it on a worker;
+    /// this is here for the textures the cache never saw, so both paths substitute or neither does.
+    /// </remarks>
+    public HdTexturePack? UpscaledTextures { get; set; }
 
     /// <summary>Captures every distinct model's surface into the card atlas.</summary>
     /// <param name="scene">The level, for the placements that name which models are used.</param>
@@ -1547,7 +1600,16 @@ public sealed class WorldRenderer : IDisposable
         {
             try
             {
-                TextureImage image = TexFile.Load(bytes.Span);
+                // An upscaled replacement if the player built one, the game's own texture otherwise. Asked
+                // only for names the registry HAS -- a name the level never declared is still one the level
+                // never declared, and letting a stray PNG conjure one would let a pack add textures the game
+                // does not ask for. Normally the decode cache has already done this on a worker; this is the
+                // same substitution for whatever the cache never saw, so the two paths cannot disagree.
+                TextureImage image =
+                    UpscaledTextures is not null
+                    && UpscaledTextures.TryRead(name, out Bgra32[] replacement, out int width, out int height)
+                        ? TextureImage.FromPixels(width, height, replacement)
+                        : TexFile.Load(bytes.Span);
 
                 // The wire of a fence, the slats of a grille, the leaves of a canopy: everything drawn as
                 // a cut-out quad loses its coverage as the chain averages down, so it thins with distance

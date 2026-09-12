@@ -1994,9 +1994,17 @@ public static class RenderCVars
             "r_material_detail",
             0f,
             0f,
+
+            // Two, not the twenty this used to allow. The strength blends the surface normal towards the
+            // mapped one, so one is the map exactly and anything above it is extrapolation past what the
+            // generator derived -- useful for a mild map on a flat wall, meaningless past a doubling. The
+            // old ceiling was inherited from the arrangement where the strength scaled a slope, where the
+            // number had no upper meaning at all because the maths silently degenerated instead of
+            // saturating; anyone who found their way to 3 there got a wall of normals lying flat along
+            // the surface.
             2f,
             CVarOptions.Archive,
-            "How strongly derived normal and roughness maps are applied; 0 ignores them."),
+            "How strongly derived normal and roughness maps are applied; 0 ignores them, 1 is the map."),
         vanilla: "0",
         enhanced: "0",
 
@@ -2054,6 +2062,77 @@ public static class RenderCVars
         string.Empty,
         CVarOptions.Archive | CVarOptions.RequiresRestart,
         "Directory of derived surface-detail maps; empty for none.");
+
+    /// <summary>Where upscaled replacements for the game's own diffuse textures are read from.</summary>
+    /// <remarks>
+    /// <para>
+    /// A directory of PNGs named after the textures they replace, as <c>texture-forge</c> writes. The same
+    /// shape as <see cref="MaterialPack"/> and for the same reasons: flat, the filename is the key, and an
+    /// absent pack is a supported state that renders exactly as it always did rather than failing.
+    /// </para>
+    /// <para>
+    /// <b>Why this is a pack and not a mod format.</b> The game's art with a filter over it is still
+    /// Innerloop's, so an upscaled texture is not something this project can ship — it has to be built from
+    /// the player's own installation, by a tool, into a directory the player names. That is the whole
+    /// reason this is a path rather than a boolean.
+    /// </para>
+    /// <para>
+    /// <b>Video memory is the limit, not disk.</b> The device uploads uncompressed <c>Bgra32</c> and there
+    /// is no block-compressed path anywhere in <c>IGraphicsDevice</c>, so a pack costs its scale factor
+    /// squared: a 128-pixel texture at four times is a megabyte, and a level holds a few hundred of them.
+    /// Four is comfortable on a 10 GB card and eight is not.
+    /// </para>
+    /// </remarks>
+    public static readonly StringCVar HdTextures = CVar.Text(
+        "r_hd_textures",
+        string.Empty,
+        CVarOptions.Archive | CVarOptions.RequiresRestart,
+        "Directory of upscaled diffuse textures; empty for the game's own.");
+
+    /// <summary>Whether the loaded upscaled textures are actually drawn, for comparing against the originals.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not archived, and that is the whole point.</b> This is the F8 half of a pair of comparison
+    /// switches: a key pressed to LOOK at something must not decide what the game starts as tomorrow. See
+    /// <c>DefaultBinds</c> for the time an archived toggle quietly wrote the worse path into settings.cfg
+    /// and nothing on screen said why.
+    /// </para>
+    /// <para>
+    /// Separate from <see cref="HdTextures"/> because the two answer different questions. That one is
+    /// <i>where the pack is</i>, it is a path the player built with a tool, and it survives restarts. This
+    /// one is <i>whether to use it right now</i>, and it does not. Turning it off does not unload the
+    /// pack: the textures are re-read from the archives and the upscaled ones are read again when it goes
+    /// back on, which costs a hitch each way and no memory in between.
+    /// </para>
+    /// <para>
+    /// Does nothing when no pack is configured, which is the common case.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar HdTexturesEnabled = CVar.Bool(
+        "r_hd",
+        true,
+        CVarOptions.None,
+        "Whether the upscaled texture pack is drawn; off shows the game's own textures. Not saved.");
+
+    /// <summary>Whether the derived surface maps are applied, for comparing against flat shading.</summary>
+    /// <remarks>
+    /// <para>
+    /// The F9 half of the same pair, and not archived for the same reason. <see cref="MaterialDetail"/> is
+    /// the authored strength and is a quality level the presets own; this multiplies it by one or zero so
+    /// the normal, the roughness and the metal can be taken out of the frame and put back without
+    /// disturbing what the player chose or what the preset set.
+    /// </para>
+    /// <para>
+    /// Toggling <c>r_material_detail</c> directly would do the same thing visually and would write the
+    /// player's setting to zero on the way past, which is exactly the fault this arrangement exists to
+    /// avoid.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar MaterialDetailEnabled = CVar.Bool(
+        "r_pbr",
+        true,
+        CVarOptions.None,
+        "Whether derived normal/roughness/metal maps are applied. Not saved.");
 
     /// <summary>Whether every model's surface is captured into the card atlas.</summary>
     /// <remarks>
@@ -2584,10 +2663,26 @@ public static class RenderCVars
             1f,
             CVarOptions.Archive,
             "Roughest surface that still marches a screen ray; rougher ones keep the smooth probe fallback."),
+
+        // 0.5 above vanilla, and the number matters less than what stopped being true. This was 0.22 at
+        // every preset while the ROUGHEST surface in the game was 0.8 and the smoothest was also 0.8 --
+        // materials.json gave every texture the same value -- so the test rejected every pixel that was
+        // not standing water, and the setting was a way of writing "off". It now admits the surfaces
+        // materials.json names as metal, which sit at 0.45 and go below it where the detail map asks
+        // for smoother.
+        //
+        // Measured before changing it: at 0.5, 0.18% of the office viewpoint and 0.01% of the wall
+        // differ from 0.22, because with a base roughness of 0.6 there is barely anything down there
+        // yet. At 0.7 -- above the base, so ordinary concrete marches -- 6.68% of the office changes and
+        // its high-frequency energy FALLS slightly, so on a still frame it is not noise. That is not
+        // enough to justify going there: the fault this number was lowered for was a single ray
+        // wandering under MOTION, which a still frame cannot show.
+        //
+        // The binding constraint is no longer this value, it is the roughness floor above it.
         vanilla: "0.22",
-        enhanced: "0.22",
-        high: "0.22",
-        ultra: "0.22");
+        enhanced: "0.5",
+        high: "0.5",
+        ultra: "0.5");
 
     /// <summary>Whether surfaces take their indirect light from the baked probe field.</summary>
     /// <remarks>
@@ -2815,7 +2910,7 @@ public static class RenderCVars
         "r_debug_view",
         DebugView.None,
         CVarOptions.Developer,
-        "Show a render buffer instead of the scene: none, albedo, normal, depth, material, motion, bakedlight, wetness.");
+        "Show a render buffer instead of the scene: none, albedo, normal, depth, material, motion, bakedlight, wetness, roughness, metallic, materialao.");
 
     /// <summary>How much of the resolved pixel is this frame, or 1 for no accumulation.</summary>
     /// <remarks>

@@ -29,6 +29,12 @@ public static class DefaultBinds
         // rasterised shadows can be flipped between without changing anything else in the picture.
         ("f7", "toggle r_rt_shadows"),
 
+        // The two halves of the remaster's texture work, each taken out of the frame and put back while
+        // looking at it. r_hd reloads the level's textures, so it costs a hitch each way; r_pbr is a
+        // multiplier the shader reads every frame and is instant. Neither is archived -- see above.
+        ("f8", "toggle r_hd"),
+        ("f9", "toggle r_pbr"),
+
         // The wall switch for whichever of the level's lamps the crosshair is on, and the fault. Neither
         // writes a setting -- they act on the level that is loaded and nothing survives it -- so the rule
         // this table exists for has nothing to check on them.

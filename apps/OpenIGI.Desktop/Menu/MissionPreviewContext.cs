@@ -53,6 +53,11 @@ namespace OpenIGI.Desktop;
 /// are read there too rather than on the frame that uploads them; the pack is shared across missions, so
 /// this is the session's own and not the preview's.
 /// </param>
+/// <param name="UpscaledTextures">
+/// The session's upscaled-texture pack, for the same reason and on the same worker: substituting the
+/// replacement has to happen where the original would have been decoded, so that everything after it —
+/// the cut-out classification, the alpha widening, the mip chain — runs once and identically for both.
+/// </param>
 /// <param name="ComputeSupported">
 /// Whether the device can run compute at all. A distance field is only ever traced against on a device
 /// that can, so a backdrop built for one that cannot should not spend a worker baking one.
@@ -63,6 +68,7 @@ public sealed record MissionPreviewContext(
     IRenderScheduler Scheduler,
     GameMissionState MissionState,
     OpenIGI.Rendering.MaterialDetailPack? DetailMaps,
+    OpenIGI.Rendering.HdTexturePack? UpscaledTextures,
     IReadOnlyDictionary<string, byte[]> SessionArchives,
     LampManifest Lamps,
     DistanceFieldCache DistanceFields,
