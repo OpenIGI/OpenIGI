@@ -19,11 +19,11 @@ namespace OpenIGI.Desktop;
 /// a scroll speed, a tint and an alpha. Everything here is read from those tasks.
 /// </para>
 /// <para>
-/// The dome is the original's exactly (<c>sub_52CB30</c>/<c>sub_52CC40</c>): an apex, fifteen rings six
-/// degrees apart, twenty vertices per ring, a skirt half a radius below the horizon, over a sphere of
-/// <c>0.8 ×</c> the far plane. Colours run top → middle across <c>[angle, 90°]</c> and middle → bottom
-/// across <c>[angle/2, angle]</c> (<c>sub_52CE90</c> is the bilinear blend, with the azimuth picking
-/// within each colour pair). It is drawn first, with no depth, centred on the camera.
+/// The dome follows the observed retail topology: an apex, fifteen rings six degrees apart, twenty
+/// vertices per ring, and a skirt half a radius below the horizon. The paired native listing confirms
+/// the <c>0.8</c> radius multiplier at <c>0x52CC40</c>; the source of its base radius remains deliberately
+/// unnamed here until its renderer type is recovered. Colours run top → middle across <c>[angle, 90°]</c>
+/// and middle → bottom across <c>[angle/2, angle]</c>. It is drawn first, with no depth, centred on the camera.
 /// </para>
 /// <para>
 /// A cloud layer is the plane <c>Z Pos</c> metres above the camera (<c>sub_51E1F0</c>): each vertex is
@@ -51,7 +51,7 @@ public sealed class SkyRenderer : IDisposable
     /// <summary>Vertices around each ring, eighteen degrees apart.</summary>
     private const int DomeSegments = 20;
 
-    /// <summary>The dome's radius as a fraction of the far plane, as <c>sub_52CC40</c> scales it.</summary>
+    /// <summary>The paired-listing-confirmed multiplier applied to the dome's base radius.</summary>
     private const float DomeRadiusOfFar = 0.8f;
 
     /// <summary>Rows of quads in the cloud strip, as <c>sub_51E1F0</c> steps it across the screen.</summary>
@@ -220,11 +220,9 @@ public sealed class SkyRenderer : IDisposable
         _device.SetCullMode(CullMode.None);
         _device.SetDepthState(DepthState.Disabled);
 
-        // The sky is not fogged. sub_52D060 turns FOGENABLE off with its depth states before drawing the
-        // dome, and that is what leaves a gradient up there instead of a flat wash of the fog colour --
-        // the dome is drawn at four fifths of a hundred-kilometre far plane, where any fog at all would
-        // have swallowed it whole. The clouds ride the same state; their own fade is the distance ramp
-        // the FlatSky task authors.
+        // The sky is isolated from world fog so its authored gradient remains visible. Retail's sky draw
+        // performs a state sequence at 0x52D060, but naming an individual call FOGENABLE needs recovered
+        // Direct3D types; do not claim that mapping before then. Clouds use their authored distance ramp.
         SceneFog fog = _device.Fog;
         Vector3f ambient = _device.ModelAmbient;
         _device.SetFog(SceneFog.None);
@@ -333,7 +331,7 @@ public sealed class SkyRenderer : IDisposable
     private static int DomeIndexCount =>
         ((DomeSegments + (DomeSegments * 2 * (DomeRings - 1)) + (DomeSegments * 2)) * 3);
 
-    /// <summary>Builds the dome exactly as <c>sub_52CC40</c> lays it out.</summary>
+    /// <summary>Builds the paired-listing-confirmed dome topology.</summary>
     private MeshHandle BuildDome(
         float radius,
         float angle,

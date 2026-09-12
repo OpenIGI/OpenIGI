@@ -20,7 +20,7 @@ namespace OpenIGI.Desktop.Tests;
 /// <remarks>
 /// The fog is the difference between the original's picture and a postcard. Every shipping level asks
 /// for enough of it that half a surface is gone by four hundred metres, which is why retail can afford a
-/// hundred-kilometre far plane and still look like a mission rather than a flight simulator.
+/// very large render distance and still look like a mission rather than a flight simulator.
 /// </remarks>
 public sealed class RetailSkyFogTests
 {
@@ -122,10 +122,9 @@ public sealed class RetailSkyFogTests
 
     /// <summary>The sky is drawn unfogged and untinted, and gives back what it found.</summary>
     /// <remarks>
-    /// <c>sub_52D060</c> turns <c>FOGENABLE</c> off with its depth states before the dome and the cloud
-    /// layers. It has to: the dome is a sphere of eighty kilometres, which is several times past the
-    /// distance at which this fog leaves nothing of a surface, so a fogged dome is a flat wash of the
-    /// fog colour and the level has no sky at all.
+    /// The renderer deliberately isolates the dome and cloud layers from world fog. This protects the
+    /// authored sky gradient and is regression-tested as state restoration; mapping retail's opaque
+    /// Direct3D state calls at <c>0x52D060</c> to individual named states remains future RE work.
     /// </remarks>
     [RequiresGameDataFact]
     public void TheSkyDrawsUnfoggedAndUntintedAndLeavesTheFrameAsItFoundIt()
@@ -150,14 +149,13 @@ public sealed class RetailSkyFogTests
         Assert.Equal(level.GlobalLight.ObjectAmbient, level.Device.ModelAmbient);
     }
 
-    /// <summary>The dome is sized to the original's four fifths of the far plane.</summary>
+    /// <summary>The dome uses the paired-listing-confirmed 0.8 base-radius multiplier.</summary>
     /// <remarks>
-    /// <c>sub_52CC40</c> scales every dome vertex by <c>dword_BCADBC * 0.8</c>, and that global holds the
-    /// same 409,600,000 units — a hundred kilometres — as the far clip. Eighty kilometres of dome behind
-    /// a hundred of frustum is what keeps the sky behind the furthest ground the descent can reach.
+    /// At <c>0x52CC40</c>, both Ghidra and r2 show every dome position multiplied by the literal
+    /// <c>0.8</c>. The base-radius global's renderer meaning is not assumed by this test.
     /// </remarks>
     [Fact]
-    public void TheDomeIsFourFifthsOfTheRetailFarPlane()
+    public void TheDomeUsesTheRetailBaseRadiusMultiplier()
     {
         Assert.Equal(100_000f, ViewPlanes.FarMetres);
         Assert.Equal(409_600_000f, ViewPlanes.FarMetres * 4096f);
