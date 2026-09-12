@@ -27,6 +27,13 @@ namespace OpenIGI.Core.Graphics;
 public static class PngReader
 {
     private static readonly byte[] Signature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    private static readonly uint[] CrcTable = BuildCrcTable();
+
+    // A texture above this is not usable by the renderer and is large enough to turn a malformed PNG
+    // into an allocation or decompression bomb before the caller can reject it.
+    private const int MaxPixelCount = 16 * 1024 * 1024;
+    private const int MaxCompressedBytes = 64 * 1024 * 1024;
+    private const int MaxDecodedBytes = 64 * 1024 * 1024;
 
     /// <summary>Reads a PNG file.</summary>
     /// <param name="path">The file to read.</param>
@@ -60,13 +67,25 @@ public static class PngReader
             ReadOnlySpan<byte> type = data.Slice(at + 4, 4);
             int payload = at + 8;
 
-            if (length < 0 || payload + length > data.Length)
+            if (length < 0 || payload > data.Length - length - 4)
             {
                 throw new InvalidDataException("Truncated PNG: a chunk runs past the end of the file.");
             }
 
+            uint storedCrc = BinaryPrimitives.ReadUInt32BigEndian(data.Slice(payload + length, 4));
+            uint actualCrc = Crc(type, data.Slice(payload, length));
+            if (storedCrc != actualCrc)
+            {
+                throw new InvalidDataException("Invalid PNG: a chunk CRC does not match its contents.");
+            }
+
             if (type.SequenceEqual("IHDR"u8))
             {
+                if (length != 13)
+                {
+                    throw new InvalidDataException("Invalid PNG: IHDR must be 13 bytes.");
+                }
+
                 width = BinaryPrimitives.ReadInt32BigEndian(data.Slice(payload, 4));
                 height = BinaryPrimitives.ReadInt32BigEndian(data.Slice(payload + 4, 4));
                 byte depth = data[payload + 8];
@@ -100,11 +119,21 @@ public static class PngReader
                     6 => 4,     // truecolour with alpha
                     _ => throw new InvalidDataException($"PNG colour type {colourType} is not supported."),
                 };
+
+                if (width <= 0 || height <= 0 || (long)width * height > MaxPixelCount)
+                {
+                    throw new InvalidDataException("PNG dimensions exceed the reader's pixel limit.");
+                }
             }
             else if (type.SequenceEqual("IDAT"u8))
             {
                 // Concatenated, because the pixel data may be split across any number of chunks and
                 // the zlib stream runs across all of them as one.
+                if (compressed.Length > MaxCompressedBytes - length)
+                {
+                    throw new InvalidDataException("PNG compressed data exceeds the reader's size limit.");
+                }
+
                 compressed.Write(data.Slice(payload, length));
             }
             else if (type.SequenceEqual("IEND"u8))
@@ -126,10 +155,67 @@ public static class PngReader
 
         using (ZLibStream inflate = new(compressed, CompressionMode.Decompress, leaveOpen: true))
         {
-            inflate.CopyTo(raw);
+            CopyLimited(inflate, raw, MaxDecodedBytes);
         }
 
         return (Unfilter(raw.GetBuffer(), (int)raw.Length, width, height, channels, bytesPerSample), width, height);
+    }
+
+    private static void CopyLimited(Stream source, Stream destination, int limit)
+    {
+        byte[] buffer = new byte[81920];
+        int total = 0;
+
+        while (true)
+        {
+            int read = source.Read(buffer, 0, buffer.Length);
+            if (read == 0)
+            {
+                return;
+            }
+
+            if (read > limit - total)
+            {
+                throw new InvalidDataException("PNG decompressed data exceeds the reader's size limit.");
+            }
+
+            destination.Write(buffer, 0, read);
+            total += read;
+        }
+    }
+
+    private static uint Crc(ReadOnlySpan<byte> type, ReadOnlySpan<byte> payload)
+    {
+        uint crc = Accumulate(0xFFFFFFFFu, type);
+        return Accumulate(crc, payload) ^ 0xFFFFFFFFu;
+    }
+
+    private static uint Accumulate(uint crc, ReadOnlySpan<byte> data)
+    {
+        foreach (byte value in data)
+        {
+            crc = CrcTable[(crc ^ value) & 0xFF] ^ (crc >> 8);
+        }
+
+        return crc;
+    }
+
+    private static uint[] BuildCrcTable()
+    {
+        uint[] table = new uint[256];
+
+        for (uint n = 0; n < table.Length; n++)
+        {
+            uint crc = n;
+            for (int bit = 0; bit < 8; bit++)
+            {
+                crc = (crc & 1) != 0 ? 0xEDB88320u ^ (crc >> 1) : crc >> 1;
+            }
+
+            table[n] = crc;
+        }
+
+        return table;
     }
 
     /// <summary>Undoes the per-scanline prediction and converts to pixels.</summary>

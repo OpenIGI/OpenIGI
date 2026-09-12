@@ -16,6 +16,13 @@ namespace OpenIGI.Core.Tests;
 /// </remarks>
 public sealed class MaterialMapGeneratorTests
 {
+    [Fact]
+    public void RejectsDimensionsWhosePixelCountWouldOverflow()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => MaterialMapGenerator.Generate([], 50_000, 50_000));
+    }
+
     /// <summary>Deriving with no options given must derive something.</summary>
     /// <remarks>
     /// A record struct always has an implicit parameterless constructor, and it wins overload

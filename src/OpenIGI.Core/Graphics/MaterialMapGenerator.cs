@@ -145,6 +145,13 @@ public static class MaterialMapGenerator
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
 
+        if (width > int.MaxValue / height)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(width),
+                "The dimensions describe more pixels than this process can address.");
+        }
+
         int count = width * height;
 
         if (pixels.Length < count)

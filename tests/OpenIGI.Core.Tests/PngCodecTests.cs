@@ -132,6 +132,35 @@ public sealed class PngCodecTests
     public void ReaderRejectsWhatIsNotAPng() =>
         Assert.Throws<InvalidDataException>(() => PngReader.Read("not a png at all"u8));
 
+    [Fact]
+    public void ReaderRejectsACorruptChunkCheckBeforeInflatingIt()
+    {
+        using MemoryStream stream = new();
+        PngWriter.Write(stream, new Bgra32[1], 1, 1);
+        byte[] png = stream.ToArray();
+
+        // IHDR begins at byte 8. Its CRC is the four bytes after its 13-byte payload.
+        png[8 + 8 + 13] ^= 0x01;
+
+        InvalidDataException error = Assert.Throws<InvalidDataException>(() => PngReader.Read(png));
+        Assert.Contains("CRC", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ReaderRejectsDimensionsThatExceedItsPixelLimit()
+    {
+        using MemoryStream stream = new();
+        PngWriter.Write(stream, new Bgra32[1], 1, 1);
+        byte[] png = stream.ToArray();
+
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(png.AsSpan(16, 4), int.MaxValue);
+        uint crc = Crc32(png.AsSpan(12, 17));
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(png.AsSpan(29, 4), crc);
+
+        InvalidDataException error = Assert.Throws<InvalidDataException>(() => PngReader.Read(png));
+        Assert.Contains("pixel limit", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>CRC-32 as the format defines it, computed bit by bit.</summary>
     /// <remarks>
     /// Deliberately not the production implementation's approach. That one drives a precomputed table,
