@@ -959,6 +959,9 @@ public sealed class ObjectCollisionIndex
             WorldTraceMask category = entry.IsDynamic
                 ? WorldTraceMask.DynamicObjects
                 : WorldTraceMask.StaticObjects;
+            bool includePortals = request.TracePortals
+                || (request.TraceDoorPortals
+                    && string.Equals(entry.Owner.Type.Name, "Door", StringComparison.Ordinal));
             if ((request.Mask & category) == 0
                 || !MeetsSphere(origin, direction, entry.Centre, entry.Radius)
                 || !entry.TryCast(
@@ -966,8 +969,8 @@ public sealed class ObjectCollisionIndex
                     direction,
                     ref nearest,
                     useClosedTransform: false,
-                    includePortals: request.TracePortals,
-                    portalIsOpening: request.TracePortals ? index.PortalIsSightOpening : null,
+                    includePortals,
+                    portalIsOpening: includePortals ? index.PortalIsSightOpening : null,
                     out WorldRayHit candidate))
             {
                 return false;
@@ -1566,10 +1569,9 @@ public sealed class ObjectCollisionIndex
 
             foreach (MefCollisionFace face in Mesh.Faces)
             {
-                // Portal polygons are visibility boundaries, not solid geometry. IGI1's human
-                // movement trace leaves them clear so a body walks through a doorway. AI sight
-                // includes them (0x489B00 → 0x4C4630) so a closed room is cover; an open door
-                // punches a hole through the portal it occupied.
+                // Portal polygons are visibility boundaries, not solid building geometry. Generic
+                // doorway/window portals stay clear for sight, while a Door task may opt its own
+                // portal faces into the cast so the authored closed/open state remains effective.
                 if (Mesh.IsPortal(face.Material))
                 {
                     if (!includePortals)

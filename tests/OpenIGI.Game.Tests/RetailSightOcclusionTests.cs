@@ -8,11 +8,11 @@ using Xunit;
 namespace OpenIGI.Game.Tests;
 
 /// <summary>
-/// Retail M1 must hide the player behind a closed door and behind a room wall.
+/// Retail sight must pass through authored openings while physical doors and room walls remain cover.
 /// </summary>
 /// <remarks>
-/// Building doorways and windows are portal faces. Walking skips them; AI sight (r2 <c>0x489B00</c>
-/// → <c>0x4C4630</c>) must not, or a guard sees through the closed opening into the room.
+/// Building doorways and windows are portal faces rather than solid geometry. AI sight includes portal
+/// faces only when the owning task is an actual Door, so an opening stays open and a closed leaf blocks.
 /// </remarks>
 public sealed class RetailSightOcclusionTests
 {
@@ -22,7 +22,7 @@ public sealed class RetailSightOcclusionTests
     private static readonly Vector3d DoorwayFeet = new(24501169, -55966720, 174413291);
 
     [RequiresGameDataFact]
-    public void ClosedDoorwayPortalBlocksSightAndStaysWalkable()
+    public void BuildingDoorwayPortalDoesNotBecomeAnInvisibleSightWall()
     {
         ObjectCollisionIndex index = ObjectCollisionIndex.Build(RetailLevelOneGround.Scene().Placements);
         Vector3d from = Mark(DoorwayFeet, -4.0);
@@ -30,14 +30,11 @@ public sealed class RetailSightOcclusionTests
 
         Assert.False(index.TryCast(from, to, out _), "walking through the doorway must stay clear");
 
-        Assert.True(
-            index.TryTrace(
-                new WorldTraceRequest(from, to, WorldTraceMask.World, TracePortals: true),
-                out WorldTraceHit blocked),
-            "sight through the closed M1 doorway found no portal or door");
         Assert.False(
-            AiSoldier.WorldBlockerAllowsSight(Length(from, to), blocked.Distance),
-            $"doorway hit '{blocked.Label}' at t={blocked.Fraction:0.###} still counted as visible");
+            index.TryTrace(
+                new WorldTraceRequest(from, to, WorldTraceMask.World, TraceDoorPortals: true),
+                out WorldTraceHit blocked),
+            $"the clear M1 doorway hit invisible portal '{blocked.Label}' at t={blocked.Fraction:0.###}");
     }
 
     [RequiresGameDataFact]
@@ -51,7 +48,7 @@ public sealed class RetailSightOcclusionTests
 
         Assert.True(
             index.TryTrace(
-                new WorldTraceRequest(from, to, WorldTraceMask.World, TracePortals: true),
+                new WorldTraceRequest(from, to, WorldTraceMask.World, TraceDoorPortals: true),
                 out WorldTraceHit blocked),
             "room wall missed");
         Assert.False(
@@ -75,19 +72,19 @@ public sealed class RetailSightOcclusionTests
         Vector3d from = new(centre.X - rayHalfLength, centre.Y, centre.Z);
         Vector3d to = new(centre.X + rayHalfLength, centre.Y, centre.Z);
         Assert.True(
-            index.TryTrace(new WorldTraceRequest(from, to, TracePortals: true), out _),
+            index.TryTrace(new WorldTraceRequest(from, to, TraceDoorPortals: true), out _),
             "closed door slab should block sight");
 
         index.SetSightOpening(door.Owner, open: true);
         index.SetPassable(door.Owner, passable: true);
 
         Assert.False(
-            index.TryTrace(new WorldTraceRequest(from, to, TracePortals: true), out WorldTraceHit leftover),
+            index.TryTrace(new WorldTraceRequest(from, to, TraceDoorPortals: true), out WorldTraceHit leftover),
             $"open doorway still blocked sight via '{leftover.Label}'");
     }
 
     [RequiresGameDataFact]
-    public void TranslatedOpenDoorUsesTheTranslatedSightOpening()
+    public void TranslatedOpenDoorStaysClearWithoutSolidifyingTheBuildingPortal()
     {
         WorldScene scene = RetailLevelOneGround.Scene();
         WorldPlacement door = scene.Placements.First(placement =>
@@ -108,18 +105,18 @@ public sealed class RetailSightOcclusionTests
         Vector3d from = new(translatedCentre.X - rayHalfLength, translatedCentre.Y, translatedCentre.Z);
         Vector3d to = new(translatedCentre.X + rayHalfLength, translatedCentre.Y, translatedCentre.Z);
         Assert.True(
-            index.TryTrace(new WorldTraceRequest(from, to, TracePortals: true), out _),
+            index.TryTrace(new WorldTraceRequest(from, to, TraceDoorPortals: true), out _),
             "translated closed door should block sight");
 
         index.SetPassable(door.Owner, passable: true);
         index.SetSightOpening(door.Owner, open: true);
-        Assert.True(
-            index.TryTrace(new WorldTraceRequest(from, to, TracePortals: true), out _),
-            "an authored-position opening must not open a translated doorway");
+        Assert.False(
+            index.TryTrace(new WorldTraceRequest(from, to, TraceDoorPortals: true), out WorldTraceHit authored),
+            $"the passable door still hit '{authored.Label}' through a building portal");
 
         index.SetSightOpening(door.Owner, open: true, displacementMetres: displacementMetres);
         Assert.False(
-            index.TryTrace(new WorldTraceRequest(from, to, TracePortals: true), out WorldTraceHit leftover),
+            index.TryTrace(new WorldTraceRequest(from, to, TraceDoorPortals: true), out WorldTraceHit leftover),
             $"translated open doorway still blocked sight via '{leftover.Label}'");
     }
 

@@ -105,11 +105,14 @@ public enum WorldTraceHitKind
 /// Human registration so staged actors can acquire their moving parent before the scene is activated.
 /// </param>
 /// <param name="TracePortals">
-/// Whether doorway and window portal faces are solid. Human movement leaves this clear so a body
-/// walks through an opening; AI sight sets it so a closed room or an unwound door is cover. An
-/// open door registers a sight opening on the collision index so its portal becomes a hole again.
+/// Whether every doorway and window portal face is solid. Most callers leave this clear because
+/// portal polygons mark openings rather than physical cover.
 /// </param>
 /// <param name="IgnoredPlacement">One exact placed mesh to skip, without skipping its sibling attachments.</param>
+/// <param name="TraceDoorPortals">
+/// Whether portal faces owned by an actual <c>Door</c> task participate while building portals stay open.
+/// AI sight uses this so a closed door leaf blocks without turning every authored window into a wall.
+/// </param>
 public readonly record struct WorldTraceRequest(
     Vector3d Origin,
     Vector3d End,
@@ -118,7 +121,8 @@ public readonly record struct WorldTraceRequest(
     GameTask? IgnoredSubject = null,
     bool IncludeInactiveOwners = false,
     bool TracePortals = false,
-    WorldPlacement? IgnoredPlacement = null)
+    WorldPlacement? IgnoredPlacement = null,
+    bool TraceDoorPortals = false)
 {
     /// <summary>Gets the segment length in world units.</summary>
     public double Length
@@ -231,13 +235,19 @@ public static class WorldTrace
     public static WorldRayCast AsRayCast(
         WorldTraceCast cast,
         WorldTraceMask mask = WorldTraceMask.World,
-        bool tracePortals = false)
+        bool tracePortals = false,
+        bool traceDoorPortals = false)
     {
         ArgumentNullException.ThrowIfNull(cast);
         return (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
         {
             bool found = cast(
-                new WorldTraceRequest(origin, end, mask, TracePortals: tracePortals),
+                new WorldTraceRequest(
+                    origin,
+                    end,
+                    mask,
+                    TracePortals: tracePortals,
+                    TraceDoorPortals: traceDoorPortals),
                 out WorldTraceHit rich);
             hit = found ? rich.RayHit : default;
             return found;

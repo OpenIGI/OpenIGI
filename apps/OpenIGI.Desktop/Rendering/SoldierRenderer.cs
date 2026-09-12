@@ -736,6 +736,18 @@ public sealed class SoldierRenderer : IDisposable
     /// <summary>The most see-through layers a single sight probe steps through before giving up.</summary>
     private const int SightSkipLimit = 8;
 
+    /// <summary>Adapts the shared world trace for AI sight without solidifying authored portals.</summary>
+    /// <remarks>
+    /// MEF portal faces describe doorway and window openings; they are not physical cover. Actual
+    /// closed door leaves remain ordinary collision geometry and still block this cast.
+    /// </remarks>
+    internal static WorldRayCast AiSightCast(WorldTraceCast cast) =>
+        WorldTrace.AsRayCast(
+            cast,
+            WorldTraceMask.World,
+            tracePortals: false,
+            traceDoorPortals: true);
+
     /// <summary>Whether the eye can see a point, treating glass and fences as non-occluding.</summary>
     /// <remarks>
     /// The retail detector culls by sector/portal visibility, which see-through surfaces do not bound.
@@ -2985,13 +2997,11 @@ public sealed class SoldierRenderer : IDisposable
                     view.Position.Y + eye.Y,
                     view.Position.Z + eye.Z);
             },
-            () =>
-            {
-                BonePose pose = view.Pose();
-                return HumanAttachPoints.AiEye < pose.BoneCount
-                    ? pose.Rotations[HumanAttachPoints.AiEye]
-                    : view.Orientation;
-            });
+            // The attachment supplies the eye POSITION only. Its animated local rotation differs by
+            // skeleton/clip (and can face sideways or backwards), while the detector snapshot's view
+            // basis is the Human's world orientation. Using bone 5 as the cone basis made identical
+            // guards in several campaign levels blind to a target directly along body +Y.
+            () => view.Orientation);
     }
 
     private static IEnumerable<GuardGeneratorTask> FindGuardGenerators(GameTask task)

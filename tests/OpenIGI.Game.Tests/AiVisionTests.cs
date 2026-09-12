@@ -44,18 +44,21 @@ public sealed class AiVisionTests
     }
 
     [Fact]
-    public void WorldOcclusionAllowsClearSightAndBlocksBuildingWalls()
+    public void WorldOcclusionKeepsRetailsLateHitTolerance()
     {
-        Assert.Equal(1.0, AiSoldier.SightObstructionTolerance);
+        // IGI.EXE 0x489B20 reads the float at 0x534230 after the ray query. Both Ghidra and
+        // radare2 identify a real five-block function here and the retail dword is 0.790000021.
+        Assert.Equal(0.79000002, AiSoldier.SightObstructionTolerance, 8);
 
-        // No hit is a clear path. Any world hit before the mark is cover: a closed door or the
-        // far wall of a room sits at 0.8–0.99 of the segment once human hulls are out of the
-        // index (r2 0x4C4630 returns clear=1; 0.79 is only for a native ray that can hit the body).
+        // No hit is a clear path. Retail rejects an early blocker but accepts a contact in the
+        // final 21% of the probe instead of replacing the native threshold with a port-side 1.0.
         Assert.True(AiSoldier.WorldBlockerAllowsSight(100.0, double.PositiveInfinity));
         Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 0.0));
         Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 50.0));
-        Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 90.0));
-        Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 99.9));
+        Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 78.9));
+        Assert.True(AiSoldier.WorldBlockerAllowsSight(100.0, 79.1));
+        Assert.True(AiSoldier.WorldBlockerAllowsSight(100.0, 90.0));
+        Assert.True(AiSoldier.WorldBlockerAllowsSight(100.0, 99.9));
 
         // A collision exactly at the mark is the detection point itself, not an intervening wall.
         Assert.True(AiSoldier.WorldBlockerAllowsSight(100.0, 100.0));

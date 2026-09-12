@@ -53,7 +53,7 @@ public enum AiSoldierActivity
 /// <para>
 /// <b>What is faithful:</b> the cones and their alert-selected ranges, the detection phase gate and rate
 /// limits, the 0.3 m box arrival test, the route table being followed one step at a time with no A*, the
-/// walk-versus-run gait, the idle fallback, and the line-of-sight rule including its 1.0 world-blocker tolerance.
+/// walk-versus-run gait, the idle fallback, and the line-of-sight rule including its retail late-hit tolerance.
 /// Script events/actions, authored patrol routes, combat target sharing, and hearing are handled by the
 /// same facade so they consume the same HumanAI state rather than a second coarse activity model.
 /// </para>
@@ -75,15 +75,12 @@ public sealed class AiSoldier
     /// The fraction of the way to the target at which an obstruction still counts as seen through.
     /// </summary>
     /// <remarks>
-    /// Retail <c>0x489B00</c> calls <c>0x4C4630</c>, which returns 1 when the ray is clear
-    /// (<c>sete al</c> on the hit flag). On a hit it then allows sight only if the hit parameter
-    /// is at least <c>DAT_00532218</c> (0.79f). That 0.79 exists because the native ray can
-    /// strike the target human itself. This port omits <c>HumanPlayer</c> / <c>HumanSoldier</c>
-    /// hulls from the world index, so every remaining hit is world geometry — a closed door or
-    /// the wall of the room the player is in. Treating those as the 0.79 “target body” lets
-    /// guards see through rooms. Any world hit before the mark is cover.
+    /// Retail <c>0x489B20</c> is a real five-block function in both Ghidra and radare2. After
+    /// its world query it accepts a clear result or a hit parameter at least as large as the
+    /// float stored at <c>0x534230</c>, whose retail value is <c>0.790000021</c>. Replacing that
+    /// threshold with 1.0 made legitimate late contacts reject an otherwise visible target.
     /// </remarks>
-    public const double SightObstructionTolerance = 1.0;
+    public const double SightObstructionTolerance = 0.79000002;
 
     /// <summary>
     /// How far above its feet a standing human reports itself to detection — the Z offset the descriptor

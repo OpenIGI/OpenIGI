@@ -55,6 +55,35 @@ public sealed class AiSoldierCombatWiringTests
         Assert.True(fired, $"the soldier engaged and never pulled the trigger (phase {soldier.CombatPhase})");
     }
 
+    /// <summary>A retail-accepted late ray contact must still drive the complete combat handoff.</summary>
+    [RequiresGameDataFact]
+    public void ALateSightContactStillEndsInACombatTrigger()
+    {
+        AiSoldier soldier = Soldier(out Vector3d position);
+        soldier.SetLineOfSight((from, to) =>
+        {
+            double dx = to.X - from.X;
+            double dy = to.Y - from.Y;
+            double dz = to.Z - from.Z;
+            double distance = Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
+            return AiSoldier.WorldBlockerAllowsSight(distance, distance * 0.9);
+        });
+        Vector3d enemy = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
+
+        bool sawIt = false;
+        bool fired = false;
+        for (int tick = 1; tick <= 300; tick++)
+        {
+            soldier.Tick(tick, enemy, rootMotionThisTick: 0.0);
+            Spend(soldier);
+            sawIt |= soldier.SeesEnemy;
+            fired |= soldier.Combat.PullTrigger;
+        }
+
+        Assert.True(sawIt, "the 90%-distance contact was rejected despite retail's 0.79 threshold");
+        Assert.True(fired, $"the accepted target never reached the trigger (phase {soldier.CombatPhase})");
+    }
+
     [RequiresGameDataFact]
     public void VisibleEngagementRequestsExactlyOneDetectionShout()
     {
