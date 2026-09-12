@@ -125,6 +125,15 @@ public static class HumanWallSweep
                     continue;
                 }
 
+                // Object collision turns every reported normal towards the ray so impact effects sit
+                // on the side that was crossed. IsExit retains the lost front/back distinction: a
+                // back-face contact means the probe is leaving solid, so it must not pin a body that
+                // is already wedged in a doorway to the same face on every recovery attempt.
+                if (probe.IsExit)
+                {
+                    continue;
+                }
+
                 if (i == 0)
                 {
                     lowHit = probe;
