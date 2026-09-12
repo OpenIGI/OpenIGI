@@ -73,6 +73,7 @@ internal sealed partial class DesktopGame : IDisposable
 
     // --- Services built during startup ---
     private ResourceRegistry _resources = null!;
+    private ResourceOverrides _overrides = null!;
 
     // Normally the session file system above. A promoted preview brings a registry backed by its own
     // private file system, while long-lived services such as audio stay on the session one. Mission
@@ -107,12 +108,11 @@ internal sealed partial class DesktopGame : IDisposable
     private AnimTriggerRegistry? _animationTriggers;
     private MaterialLibrary _materials = null!;
     private MaterialDetailPack _detailMaps = null!;
-    private HdTexturePack _hdTextures = null!;
 
     // Whether the renderer is currently holding the pack, against r_hd's request. Tracked rather than
     // read, because acting on it means reloading every texture in the level -- so it has to happen on the
     // frame the variable CHANGES and not on every frame it is false.
-    private bool _hdTexturesApplied = true;
+    private bool _overridesApplied = true;
 
     // --- The player's own life, damage and death ---
     private int _playerDifficulty;
@@ -518,6 +518,24 @@ internal sealed partial class DesktopGame : IDisposable
         _resourceFileSystem = _fileSystem;
         _resources = new(_resourceFileSystem, _logger);
 
+        // The overrides folder, beside the game's own directories. Anything dropped in there replaces the
+        // asset that lives at the same path in the installation -- an archived texture by the directory
+        // its archive sits in, a loose file by its own path -- so a replacement pack is just the game
+        // folder with the files somebody changed and nothing else.
+        _overrides = new ResourceOverrides(
+            _resourceFileSystem.TryGetDevice(LocalFileDevice.DeviceName, out IFileDevice? local)
+                && local is LocalFileDevice localDevice
+                    ? Path.Combine(localDevice.RootDirectory, ResourceOverrides.DirectoryName)
+                    : null,
+            _logger);
+
+        _resources.Overrides = _overrides;
+
+        // Scanned here, because the archives mounted below consult it -- but REPORTED after the console
+        // has started, because until then the log verbosity the player configured has not been applied
+        // and an information line goes nowhere anybody can see.
+        ResourceOverrides.ScanResult overrideScan = _overrides.Rescan();
+
         // menusystem.res holds the menu's own labels; missions.res holds the mission names and briefings,
         // because a descriptor's "Mission 1 Name" is a key into it rather than the title itself.
         //
@@ -603,9 +621,11 @@ internal sealed partial class DesktopGame : IDisposable
         RegisterLampCommands(console.System);
         RegisterImpactCommands(console.System);
         RegisterCameraCommands(console.System);
+        RegisterOverrideCommands(console.System);
 
         console.Start(_fileSystem, _options.StartupCommands, useSavedSettings: !_options.Lockstep);
         _logger = console.WrapLogger(_logger);
+        ReportOverrideScan(overrideScan);
 
         WarnAboutSettingsTheBackendIgnores();
 
@@ -965,7 +985,7 @@ internal sealed partial class DesktopGame : IDisposable
             _logger);
 
         // The derived surface detail this game never shipped -- normals, roughness, metal. Built by
-        // `ResExtract maps` and pointed at by r_material_pack; an installation that has never run the tool
+        // derived here for anything no replacement carries a map for; an installation that has never run a tool
         // has none, and renders exactly as it did before any of this existed.
         //
         // Constructed once for the whole session rather than per level, because a texture pack is shared
@@ -978,7 +998,6 @@ internal sealed partial class DesktopGame : IDisposable
         // per-user data, and because the game's art with a filter over it is not ours to redistribute.
         _detailMaps = new(
             _device,
-            RenderCVars.MaterialPack.Value,
             _logger,
             Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "detail"));
 
@@ -990,14 +1009,6 @@ internal sealed partial class DesktopGame : IDisposable
         // Measured: 27 maps derived over 600 frames of -mission, against a level's worth of textures.
         _detailMaps.DeriveMissing = RenderCVars.MaterialDetail.Value > 0f;
 
-        // The upscaled diffuse this game could not have had, built by `texture-forge` and pointed at by
-        // r_hd_textures. Session-scoped for the same reason the detail maps are: a texture belongs to the
-        // art rather than to a level, and every mission that uses it wants the same replacement.
-        //
-        // Unlike the detail maps there is no derive-on-demand cache behind this, and there should not be:
-        // deriving a normal map is a millisecond of arithmetic on a worker, where upscaling is a neural
-        // network and a gigabyte of weights. That is a tool's job, run once, not a frame's.
-        _hdTextures = new HdTexturePack(RenderCVars.HdTextures.Value, _logger);
 
         // What a menu backdrop needs to be promotable into the played mission rather than thrown away,
         // and what it needs to be LIT the way that mission will be: the lamp manifest its proposal is
@@ -1010,7 +1021,6 @@ internal sealed partial class DesktopGame : IDisposable
             _scheduler,
             missionState,
             _detailMaps,
-            _hdTextures,
             _sessionArchives,
             _lampManifest,
             _sdfCache,
@@ -2273,36 +2283,36 @@ internal sealed partial class DesktopGame : IDisposable
             // light resolves back in from nothing over the next seconds -- the way to see a change to the
             // bake without reloading the level, and to watch it generate. Ignored where there is nothing to
             // bake (GI off, or the level's scene or cast not yet set up).
-            // F8 puts the upscaled textures in and out of the frame. Watched as a VARIABLE rather than as
-            // a key press, so `r_hd 0` from the console does the same thing as the key -- the bind sets
-            // the variable and this notices, which is one path rather than two that must agree.
+            // F8 puts the overrides folder in and out of the frame. Watched as a VARIABLE rather than as
+            // a key press, so `r_overrides 0` from the console does the same thing as the key -- the bind
+            // sets the variable and this notices, which is one path rather than two that must agree.
             //
-            // Nothing happens without a pack configured: the flag is meaningful only against something to
-            // compare with, and reloading a level's textures to show the same textures again would be a
+            // Nothing happens with an empty folder: the flag is meaningful only against something to
+            // compare with, and reloading a level's textures to show the same assets again would be a
             // long hitch for no picture.
-            if (_hdTexturesApplied != RenderCVars.HdTexturesEnabled.Value && _hdTextures.IsAvailable)
+            if (_overridesApplied != RenderCVars.OverridesEnabled.Value && _overrides.Count > 0)
             {
-                _hdTexturesApplied = RenderCVars.HdTexturesEnabled.Value;
+                _overridesApplied = RenderCVars.OverridesEnabled.Value;
+                _overrides.Bypassed = !_overridesApplied;
 
-                // The pack stays loaded either way; what changes is whether the renderer is holding it.
-                HdTexturePack? wanted = _hdTexturesApplied ? _hdTextures : null;
+                int swapped = _resources.ReapplyOverrides();
 
-                if (_world is not null)
+                if (swapped > 0)
                 {
-                    _world.UpscaledTextures = wanted;
-                    _world.ReloadTextures();
+                    _world?.ReloadTextures();
+
+                    // The card atlas has the diffuse baked into it, so the indirect light is still
+                    // bouncing off the old pixels until it is captured again. Discarding it is the
+                    // existing invalidation -- the same one a density change uses -- and it re-converges
+                    // the GI with it.
+                    DiscardSurfaceCache();
                 }
 
-                // The card atlas has the diffuse baked into it, so the indirect light is still bouncing
-                // off the old pixels until it is captured again. Discarding it is the existing
-                // invalidation -- the same one a density change uses -- and it re-converges the GI with it.
-                DiscardSurfaceCache();
-
                 _logger.Information(
-                    "Texture",
-                    _hdTexturesApplied
-                        ? "Upscaled textures on (F8); reloading the level's textures."
-                        : "Upscaled textures off (F8); back to the game's own.");
+                    "Overrides",
+                    _overridesApplied
+                        ? $"Overrides on (F8); {swapped} resource(s) swapped in."
+                        : $"Overrides off (F8); {swapped} resource(s) back to the game's own.");
             }
 
             if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F11)
@@ -6531,20 +6541,20 @@ internal sealed partial class DesktopGame : IDisposable
             $"gpu      {measured.Milliseconds:0.00} measured   {summed.Milliseconds:0.00} summed   lost {measured.Milliseconds - summed.Milliseconds:0.00}");
     }
 
-    /// <summary>What the remaster's two texture features are doing, and the keys that move them.</summary>
+    /// <summary>What the remaster's two asset features are doing, and the keys that move them.</summary>
     /// <remarks>
     /// Both are comparison switches, so the thing worth saying is which side of the comparison is on
     /// screen right now — a frame is worth nothing as evidence if you cannot tell which picture it is.
     /// Spelled out with the keys for the same reason <see cref="ShadowModeLabel"/> is: the answer is two
-    /// variables deep, and "no pack configured" looks exactly like "pack turned off" in the picture.
+    /// variables deep, and "no overrides present" looks exactly like "overrides turned off" in the picture.
     /// </remarks>
     private string TextureModeLabel()
     {
-        string upscaled = !_hdTextures.IsAvailable
-            ? "original (no pack; r_hd_textures is empty)"
-            : RenderCVars.HdTexturesEnabled.Value
-                ? "upscaled [F8 for the originals]"
-                : "original [F8 for the upscaled]";
+        string upscaled = _overrides.Count == 0
+            ? "original (no overrides folder)"
+            : RenderCVars.OverridesEnabled.Value
+                ? $"{_resources.OverriddenCount} override(s) [F8 for the originals]"
+                : $"original [F8 for the {_overrides.Count} override(s)]";
 
         // Zero at every preset but high, so "off" here is usually the authored answer rather than a key
         // somebody pressed -- worth distinguishing, because the maps look identical to absent when the

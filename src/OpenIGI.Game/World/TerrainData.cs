@@ -29,7 +29,6 @@ public sealed class TerrainData
     /// <param name="materials">The materials the terrain script declared, keyed by id.</param>
     /// <param name="tileMaps">The tile maps the terrain script declared, keyed by id.</param>
     /// <param name="defects">Why the terrain is not usable, empty when it is.</param>
-    /// <param name="basePath">The extensionless resource path the terrain was loaded from, for <see cref="TileSetKey"/>.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public TerrainData(
         TerrainOctree octree,
@@ -40,8 +39,7 @@ public sealed class TerrainData
         TexAtlasFile? tiles,
         IReadOnlyDictionary<int, TerrainMaterial> materials,
         IReadOnlyDictionary<int, TerrainTileMap> tileMaps,
-        IReadOnlyList<string> defects,
-        string? basePath = null)
+        IReadOnlyList<string> defects)
     {
         ArgumentNullException.ThrowIfNull(octree);
         ArgumentNullException.ThrowIfNull(commands);
@@ -59,25 +57,7 @@ public sealed class TerrainData
         Materials = materials;
         TileMaps = tileMaps;
         Defects = defects;
-        TileSetKey = TexAtlasFile.MakeTileSetKey(basePath);
     }
-
-    /// <summary>Gets the name this level's ground tiles are looked up by, or empty when unknown.</summary>
-    /// <remarks>
-    /// <para>
-    /// A ground tile arrives as an INDEX into a per-level atlas and carries no name of its own, which is
-    /// why nothing could ever look one up in a replacement pack: the packs are flat directories keyed by
-    /// texture name. This manufactures the missing name from the one thing that does identify the atlas,
-    /// the level it belongs to, so <c>ResExtract terrain</c> and the renderer can agree on it without
-    /// either needing to know anything the other does not.
-    /// </para>
-    /// <para>
-    /// <c>LOCAL:missions/location0/level1/terrain/terrain</c> becomes
-    /// <c>terrain_missions_location0_level1</c>, and tile 3 of it is <c>..._03</c>. The whole directory
-    /// rather than the last segment of it, because <c>level1</c> alone is not unique across locations.
-    /// </para>
-    /// </remarks>
-    public string TileSetKey { get; }
 
     /// <summary>Gets the octree the traversal descends.</summary>
     public TerrainOctree Octree { get; }

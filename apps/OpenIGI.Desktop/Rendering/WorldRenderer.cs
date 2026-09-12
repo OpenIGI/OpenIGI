@@ -1452,13 +1452,6 @@ public sealed class WorldRenderer : IDisposable
     /// </remarks>
     public TextureDecodeCache? Decoded { get; set; }
 
-    /// <summary>Gets or sets the upscaled diffuse textures, or <see langword="null"/> for the game's own.</summary>
-    /// <remarks>
-    /// Owned by the shell alongside <see cref="DetailMaps"/> and for the same reason — one pack serves the
-    /// world, the soldiers and the terrain. Normally the decode cache has already applied it on a worker;
-    /// this is here for the textures the cache never saw, so both paths substitute or neither does.
-    /// </remarks>
-    public HdTexturePack? UpscaledTextures { get; set; }
 
     /// <summary>Captures every distinct model's surface into the card atlas.</summary>
     /// <param name="scene">The level, for the placements that name which models are used.</param>
@@ -1574,14 +1567,14 @@ public sealed class WorldRenderer : IDisposable
         // Decoded on a worker while the backdrop was being built, if one was offered. Everything from
         // the file down to the corrected mip chain has then already happened, and what is left here is
         // the upload -- which is the only part that had to be on this thread in the first place.
-        if (Decoded is not null && Decoded.TryTake(name, out TextureImage? ready))
+        if (Decoded is not null && Decoded.TryTake(name, out TextureImage? ready, out TextureImage? readyDetail))
         {
             TextureHandle prepared = TextureHandle.None;
             if (ready is not null)
             {
                 try
                 {
-                    prepared = CreateFromDecoded(name, ready);
+                    prepared = CreateFromDecoded(name, ready, readyDetail);
                 }
                 catch (GraphicsDeviceException ex)
                 {
@@ -1605,11 +1598,8 @@ public sealed class WorldRenderer : IDisposable
                 // never declared, and letting a stray PNG conjure one would let a pack add textures the game
                 // does not ask for. Normally the decode cache has already done this on a worker; this is the
                 // same substitution for whatever the cache never saw, so the two paths cannot disagree.
-                TextureImage image =
-                    UpscaledTextures is not null
-                    && UpscaledTextures.TryRead(name, out Bgra32[] replacement, out int width, out int height)
-                        ? TextureImage.FromPixels(width, height, replacement)
-                        : TexFile.Load(bytes.Span);
+                SurfaceAsset asset = SurfaceAssetReader.Read(bytes.Span);
+                TextureImage image = asset.Diffuse;
 
                 // The wire of a fence, the slats of a grille, the leaves of a canopy: everything drawn as
                 // a cut-out quad loses its coverage as the chain averages down, so it thins with distance
@@ -1637,7 +1627,7 @@ public sealed class WorldRenderer : IDisposable
                 image = cutout ? image.RebuildMipChain() : image.WithMipChain();
                 image.PreserveAlphaCoverage(AlphaTestCutoff);
 
-                handle = CreateFromDecoded(name, image);
+                handle = CreateFromDecoded(name, image, asset.Detail);
             }
             catch (Exception ex) when (ex is TextureFormatException or ArgumentException or GraphicsDeviceException)
             {
@@ -1656,22 +1646,37 @@ public sealed class WorldRenderer : IDisposable
     /// <summary>Uploads an already-decoded image and registers whatever derives from it.</summary>
     /// <param name="name">The texture's name, which the detail pack keys its maps by.</param>
     /// <param name="image">The decoded chain, from the cache or from this thread.</param>
+    /// <param name="detail">
+    /// The packed surface map the asset carried, or <see langword="null"/> when it carried none — which
+    /// is every texture the game itself ships, and every replacement built without them.
+    /// </param>
     /// <returns>The uploaded texture.</returns>
     /// <remarks>
     /// The half of <see cref="GetTexture"/> that has to be on the render thread, split out so the
     /// decoded-ahead path and the decode-here path upload through exactly the same code.
     /// </remarks>
-    private TextureHandle CreateFromDecoded(string name, TextureImage image)
+    private TextureHandle CreateFromDecoded(string name, TextureImage image, TextureImage? detail = null)
     {
         TextureHandle handle = _device.CreateTexture(
             new TextureDescription(image.Width, image.Height, image.MipLevels, TextureFilter.Linear, TextureAddressMode.Repeat),
             image.Pixels);
 
-        // The derived normal and roughness this game never shipped, if a pack has been built.
-        // Registered against the texture rather than carried through the draw, so nothing below
-        // this line knows the maps exist. The top level goes with it so a texture the pack has
-        // never seen can derive its own map instead of staying flat forever.
-        DetailMaps?.Attach(name, handle, image.GetLevel(0), image.Width, image.Height);
+        // The derived normal, roughness and occlusion this game never shipped. Registered against the
+        // texture rather than carried through the draw, so nothing below this line knows the maps exist.
+        //
+        // The asset's OWN map wins when it carries one: a replacement in the overrides folder holds the
+        // map derived from the picture it replaces, at the same resolution and by a better estimator than
+        // the one this process can run between frames. Without one, the top level goes to the pack so a
+        // texture nothing has derived for can derive its own instead of staying flat forever.
+        if (detail is not null)
+        {
+            DetailMaps?.AttachPacked(handle, detail.GetLevel(0), detail.Width, detail.Height);
+        }
+        else
+        {
+            DetailMaps?.Attach(name, handle, image.GetLevel(0), image.Width, image.Height);
+        }
+
         return handle;
     }
 }

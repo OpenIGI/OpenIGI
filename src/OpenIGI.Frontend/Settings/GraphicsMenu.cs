@@ -602,7 +602,6 @@ public static class GraphicsMenu
         "r_perflog",
         "r_debug_view",
         "r_lut_table",
-        "r_material_pack",
 
         // The level's own authored weather, overridden. The Weather row on the Gameplay page turns the
         // level's weather on and off; choosing a different one than the level ships with is authoring.

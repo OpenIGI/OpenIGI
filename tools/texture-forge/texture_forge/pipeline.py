@@ -23,6 +23,8 @@ seconds, and the batches are still easily large enough to keep the card busy.
 
 from __future__ import annotations
 
+import hashlib
+
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,7 +32,7 @@ from pathlib import Path
 import numpy as np
 
 from . import alpha as alpha_ops
-from . import classical, images, pack, tiling
+from . import classical, images, pack, tex, tiling
 from . import delight as delight_ops
 
 __all__ = [
@@ -40,6 +42,9 @@ __all__ = [
     "Session",
     "CHUNK",
     "source_paths",
+    "group_by_content",
+    "relative_name",
+    "write_asset",
     "read_texture",
     "load_textures",
     "prepare",
@@ -123,6 +128,16 @@ class Settings:
     delight_strength: float = 0.7
     metallic: float = 0.0
     normal_strength: float = 1.0
+    derive_pbr: bool = True
+    """Whether any surface map is derived at all, or the run only upscales the diffuse.
+
+    The maps are INVENTED DATA -- a normal, a roughness and an occlusion inferred from a photograph of a
+    surface, none of which the game ever shipped. A player who wants the original art at a higher
+    resolution and nothing else should not have to take them, and should not pay for them either: the
+    derivation is the slow half of a run and the detail maps are most of the output on disk. Off means no
+    detail map is written, no inspection map is written, and the three 1x models never load.
+    """
+
     write_inspection: bool = True
     """Whether the normal/orm/roughness/occlusion/height PNGs are written beside the detail map.
 
@@ -151,39 +166,93 @@ class Texture:
     source is the only version of it nothing has altered yet.
     """
 
+    names: tuple[str, ...] = ()
+    """Every path this identical image is addressed at, `name` included.
+
+    The overrides folder mirrors the installation, so an asset packed into eight levels is addressed at
+    eight paths -- and the extractor writes it eight times, because each of those paths has to be
+    replaceable on its own. The IMAGE is the same one. Upscaling it eight times would be five times the
+    GPU work for byte-identical output, so it is upscaled once and written to every path.
+
+    Measured on the retail game: 7199 paths, 1444 distinct images.
+    """
+
 
 @dataclass
 class Outputs:
-    """Where each kind of result is written. Flat directories, the filename as the key."""
+    """Where each kind of result is written.
+
+    THE ROOT IS AN OVERRIDES FOLDER. Not a directory of PNGs the renderer is pointed at by a setting of
+    its own -- that is gone -- but the game's own layout, holding the game's own container format, so the
+    whole output can be dropped in as `<game>/overrides` and every asset is found by the path it already
+    had. See `tex.py` for why one file carries both the diffuse and the map derived from it.
+
+    The inspection maps are NOT part of that tree. They are for looking at, nothing loads them, and a
+    thousand stray files inside the overrides folder would be indexed by the game on every scan for no
+    reason -- so they go to a sibling directory.
+    """
 
     root: Path
 
-    @property
-    def hd(self) -> Path:
-        return self.root / "hd"
-
-    @property
-    def detail(self) -> Path:
-        return self.root / "detail"
+    def asset(self, name: str) -> Path:
+        """The container for one texture, at the path the installation addresses it by."""
+        return self.root / f"{name}.tex"
 
     def inspection(self, kind: str) -> Path:
-        return self.root / kind
+        return self.root.with_name(self.root.name + ".inspection") / kind
 
 
 def source_paths(source: Path) -> list[Path]:
-    """Every PNG in a directory, as `ResExtract images` wrote them: flat, named after the texture.
+    """Every PNG under a directory, as `ResExtract images` wrote them: a tree, not a flat directory.
 
-    Paths rather than pixels, and sorted, for two reasons. `resume` decides what to skip from the filename
-    alone, so a skipped texture is never decoded; and a stable order means an interrupted run resumes where
-    it stopped instead of somewhere else in the corpus.
+    A tree because a texture NAME is not unique in this game -- the art is layered, and a level can ship
+    its own `000_04_1` that looks nothing like the shared one. The path disambiguates them, and it is the
+    path the overrides folder addresses each by, so the tree is carried through unchanged from the
+    extractor to the finished pack.
+
+    Paths rather than pixels, and sorted, for two reasons. `resume` decides what to skip from the path
+    alone, so a skipped texture is never decoded; and a stable order means an interrupted run resumes
+    where it stopped instead of somewhere else in the corpus.
     """
-    return sorted(source.glob("*.png"), key=lambda item: item.name.lower())
+    return sorted(source.rglob("*.png"), key=lambda item: item.as_posix().lower())
 
 
-def read_texture(path: Path) -> Texture:
+def relative_name(source: Path, path: Path) -> str:
+    """The name a texture is addressed by: its path under the source, without the extension."""
+    return path.relative_to(source).with_suffix("").as_posix()
+
+
+def group_by_content(source: Path, paths: Sequence[Path]) -> list[tuple[Path, tuple[str, ...]]]:
+    """Collapses byte-identical sources into one job each, keeping every name they answer to.
+
+    Most of this game's art is packed into every level that draws it, so the extractor's tree holds the
+    same image many times over -- 7199 paths for 1444 distinct images. Upscaling each path would be five
+    times the GPU work for output that is identical byte for byte.
+
+    Grouped on the FILE, not the decoded pixels: the extractor wrote these, so identical assets produce
+    identical PNGs, and hashing bytes is a read where decoding is a decode. The representative is the
+    first path in sorted order, so a run is reproducible and an interrupted one resumes in the same place.
+    """
+    digests: dict[bytes, list[Path]] = {}
+
+    for path in paths:
+        digest = hashlib.sha256(path.read_bytes()).digest()
+        digests.setdefault(digest, []).append(path)
+
+    groups = [
+        (members[0], tuple(relative_name(source, member) for member in members))
+        for members in digests.values()
+    ]
+
+    return sorted(groups, key=lambda group: group[0].as_posix().lower())
+
+
+def read_texture(path: Path, source: Path | None = None, names: tuple[str, ...] = ()) -> Texture:
     """Reads one PNG into the form the stages want."""
     rgb, alpha = images.read(path)
-    return Texture(name=path.stem, path=path, rgb=rgb, alpha=alpha)
+    name = path.stem if source is None else relative_name(source, path)
+
+    return Texture(name=name, path=path, rgb=rgb, alpha=alpha, names=names or (name,))
 
 
 def load_textures(source: Path) -> list[Texture]:
@@ -193,7 +262,7 @@ def load_textures(source: Path) -> list[Texture]:
     megabytes for no reason, and pays it before the first texture is written. This stays for tests and for
     anything driving the stages directly over a handful of files.
     """
-    return [read_texture(path) for path in source_paths(source)]
+    return [read_texture(path, source) for path in source_paths(source)]
 
 
 def prepare(texture: Texture, settings: Settings) -> Texture:
@@ -387,6 +456,25 @@ def _ai_maps(
     return produced
 
 
+def write_asset(
+    texture: Texture,
+    outputs: Outputs,
+    detail: tuple[np.ndarray, np.ndarray] | None = None,
+) -> None:
+    """Writes one texture's container to every path that addresses it.
+
+    ONE FILE, not two. The upscaled diffuse and the map derived from it travel as layers of the same
+    asset, so they cannot be half-installed or pointed at by two settings that disagree; `detail` absent
+    means the run derived none and the file carries the diffuse alone.
+
+    WRITTEN ONCE PER NAME. An image packed into eight levels is addressed at eight paths, and each of
+    those has to be replaceable on its own -- but it was upscaled once. Writing bytes is not what a run
+    spends its time on.
+    """
+    for name in texture.names or (texture.name,):
+        tex.write(outputs.asset(name), texture.rgb, texture.alpha, detail)
+
+
 def derive_all(
     textures: Sequence[Texture],
     settings: Settings,
@@ -405,12 +493,24 @@ def derive_all(
     options = classical.Options(normal_strength=settings.normal_strength)
     ai: dict[str, list[np.ndarray]] = {}
 
-    if settings.use_ai and settings.use_ai_maps:
+    if settings.derive_pbr and settings.use_ai and settings.use_ai_maps:
         ai = _ai_maps(textures, options, session)
 
     written = 0
 
     for index, texture in enumerate(textures):
+        if not settings.derive_pbr:
+            # Upscale only. Written here and skipped entirely rather than derived and thrown away: the
+            # derivation is the slow half of a run, and a player who asked for the original art at a
+            # higher resolution has not asked for a normal map inferred from a photograph of it.
+            write_asset(texture, outputs)
+            written += 1
+
+            if progress is not None:
+                progress(written)
+
+            continue
+
         # The classical elevation, always, because two things below need a field whose DEPTH means
         # something rather than one that merely has the right shape. The height model's output is an
         # estimate with no absolute scale and is markedly smoother than this; anything that measures a
@@ -464,25 +564,15 @@ def derive_all(
         # run this.
         occlusion = classical.occlusion_from(classical_field, options, texture.tiles)
 
-        if texture.alpha is not None:
-            images.write_rgba(outputs.hd / f"{texture.name}.png", texture.rgb, texture.alpha)
-        else:
-            images.write_rgb(outputs.hd / f"{texture.name}.png", texture.rgb)
-
         # Occlusion rather than settings.metallic in the fourth slot: the detail map's alpha carries the
         # horizon search now. Metal is per-material and lives in materials.json, which is the only place
         # anything here could honestly say a surface is steel -- the inspection ORM below still carries
         # settings.metallic, because that file exists for interchange with tools that expect it there.
-        pack.write_detail(
-            outputs.detail / f"{texture.name}.png",
-            normal_x,
-            normal_y,
-            roughness,
-            occlusion,
-        )
+        write_asset(texture, outputs, pack.detail(normal_x, normal_y, roughness, occlusion))
 
         if settings.write_inspection:
             name = f"{texture.name}.png"
+
             images.write_rgb(
                 outputs.inspection("normal") / name, pack.normal_image(normal_x, normal_y)
             )

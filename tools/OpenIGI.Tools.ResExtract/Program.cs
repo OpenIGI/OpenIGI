@@ -2,6 +2,7 @@ using System.Globalization;
 using OpenIGI.Core;
 using OpenIGI.Core.Audio;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Resources;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Legacy;
 using OpenIGI.Formats.Sound;
@@ -25,7 +26,6 @@ static int Run(string[] args)
             "EXTRACT" => Extract(args),
             "IMAGES" => Images(args),
             "MAPS" => Maps(args),
-            "TERRAIN" => Terrain(args),
             "SOUNDS" => Sounds(args),
             _ => Fail($"Unknown command '{args[0]}'."),
         };
@@ -120,7 +120,12 @@ static int Images(string[] args)
         ? [.. Directory.EnumerateFiles(args[1], "*.res", SearchOption.AllDirectories).Order(StringComparer.OrdinalIgnoreCase)]
         : [args[1]];
 
-    HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+    // Keyed by the path the OVERRIDES FOLDER addresses each asset at, which is the archive's own
+    // directory plus the file's name. That path is unique where the NAME is not: the art is layered, so
+    // a level can ship its own 000_04_1 that looks nothing like the shared one -- 79 of this game's 1363
+    // names are shared by files that differ. Flattening by name kept whichever archive was walked first,
+    // which for those names is not the file the level actually draws.
+    Dictionary<string, ReadOnlyMemory<byte>> byPath = new(StringComparer.OrdinalIgnoreCase);
     int written = 0;
     int duplicates = 0;
     int notTextures = 0;
@@ -140,6 +145,13 @@ static int Images(string[] args)
             continue;
         }
 
+        // Where this archive sits in the installation, which is what decides where its entries are
+        // overridden. Relative to the directory the caller pointed at, so pointing at the game root
+        // produces exactly the tree the overrides folder expects.
+        string archiveName = Directory.Exists(args[1])
+            ? Path.GetRelativePath(args[1], archive)
+            : Path.GetFileName(archive);
+
         foreach (ArchiveItem item in items)
         {
             if (!TexFile.IsTexture(item.Data.Span))
@@ -148,130 +160,54 @@ static int Images(string[] args)
                 continue;
             }
 
-            string stem = Path.GetFileNameWithoutExtension(ToRelativePath(item) ?? item.Name);
+            string overridePath = OverridePath.For(archiveName, item.Name);
 
-            if (stem.Length == 0 || !seen.Add(stem))
+            if (overridePath.Length == 0)
             {
-                duplicates++;
+                notTextures++;
                 continue;
             }
 
-            try
+            if (!byPath.TryAdd(overridePath, item.Data))
             {
-                // Level zero only. The mip chain is the same image at lower resolutions, and whatever
-                // consumes these will build its own from whatever it produces.
-                TextureImage image = TexFile.Load(item.Data.Span);
-                PngWriter.Write(
-                    Path.Combine(outputRoot, stem + ".png"), image.GetLevel(0), image.Width, image.Height);
-                written++;
-            }
-            catch (Exception error) when (error is TextureFormatException or ArgumentException or IOException)
-            {
-                Console.Error.WriteLine($"warning: '{stem}' did not decode: {error.Message}");
-                failed++;
+                // The same asset packed into another level as well, which is the ordinary case: most of
+                // this game's art is repeated into every level that draws it.
+                duplicates++;
             }
         }
     }
 
-    Console.WriteLine(string.Create(
-        CultureInfo.InvariantCulture,
-        $"Wrote {written} texture(s) to {outputRoot} from {archives.Length} archive(s); " +
-        $"{duplicates} repeat(s), {notTextures} non-texture entr(ies), {failed} failure(s)."));
-
-    return failed > 0 && written == 0 ? ExitCode.Failure : ExitCode.Ok;
-}
-
-// Writes out every level's ground tiles, which are the one part of this game's art that "images" cannot
-// reach.
-//
-// The ground is not textured from the .res archives. Each level carries its own atlas at
-// missions/<location>/<level>/terrain/terrain.tex -- a loose file holding eighteen 128x128 tiles -- and a
-// chunk names one by INDEX. So the tiles have no names, "images" never walks them, and nothing downstream
-// could upscale or replace them: the terrain rendered from 1998 art at every preset while every building
-// around it was replaced. On an outdoor view that is most of the screen.
-//
-// TexAtlasFile.MakeTileName manufactures the missing name from the level directory, and the renderer asks
-// the same function for the same string, so a pack built from this is found without a manifest.
-static int Terrain(string[] args)
-{
-    if (args.Length != 3)
+    foreach ((string overridePath, ReadOnlyMemory<byte> data) in byPath)
     {
-        return Fail("usage: ResExtract terrain <game-dir> <outdir>");
-    }
-
-    string gameRoot = Path.GetFullPath(args[1]);
-    string outputRoot = Path.GetFullPath(args[2]);
-
-    if (!Directory.Exists(gameRoot))
-    {
-        return Fail($"'{gameRoot}' is not a directory.");
-    }
-
-    Directory.CreateDirectory(outputRoot);
-
-    string[] atlases =
-    [
-        .. Directory.EnumerateFiles(gameRoot, "terrain.tex", SearchOption.AllDirectories)
-            .Order(StringComparer.OrdinalIgnoreCase),
-    ];
-
-    int written = 0;
-    int failed = 0;
-    int sets = 0;
-
-    foreach (string atlasPath in atlases)
-    {
-        // The key is built from the path RELATIVE to the game directory, because that is what the
-        // renderer sees: its resource paths start at the installation root.
-        string relative = Path.GetRelativePath(gameRoot, Path.ChangeExtension(atlasPath, null));
-        string key = TexAtlasFile.MakeTileSetKey(relative);
-
-        if (key.Length == 0)
-        {
-            Console.Error.WriteLine($"warning: '{relative}' is not under a level directory; skipped.");
-            continue;
-        }
-
-        TexAtlasFile atlas;
+        // Laid out exactly as the overrides folder is, so a tool can upscale this tree in place and the
+        // result drops straight in -- no manifest, and no naming rule of the tool's own to keep in step.
+        string relative = Path.ChangeExtension(overridePath, ".png");
+        string destination = Path.Combine(outputRoot, relative.Replace('/', Path.DirectorySeparatorChar));
 
         try
         {
-            atlas = TexAtlasFile.Read(File.ReadAllBytes(atlasPath));
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+
+            // Level zero only. The mip chain is the same image at lower resolutions, and whatever
+            // consumes these will build its own from whatever it produces.
+            TextureImage image = TexFile.Load(data.Span);
+            PngWriter.Write(destination, image.GetLevel(0), image.Width, image.Height);
+            written++;
         }
-        catch (Exception error) when (error is TextureFormatException or IOException or ArgumentException)
+        catch (Exception error) when (error is TextureFormatException or ArgumentException or IOException)
         {
-            Console.Error.WriteLine($"warning: '{relative}' did not read: {error.Message}");
+            Console.Error.WriteLine($"warning: '{overridePath}' did not decode: {error.Message}");
             failed++;
-            continue;
-        }
-
-        sets++;
-
-        for (int i = 0; i < atlas.Tiles.Count; i++)
-        {
-            TextureImage tile = atlas.Tiles[i];
-            string name = TexAtlasFile.MakeTileName(key, i);
-
-            try
-            {
-                // Level zero only, as "images" does: whatever consumes these builds its own chain.
-                PngWriter.Write(
-                    Path.Combine(outputRoot, name + ".png"), tile.GetLevel(0), tile.Width, tile.Height);
-                written++;
-            }
-            catch (Exception error) when (error is TextureFormatException or ArgumentException or IOException)
-            {
-                Console.Error.WriteLine($"warning: '{name}' did not write: {error.Message}");
-                failed++;
-            }
         }
     }
 
     Console.WriteLine(string.Create(
         CultureInfo.InvariantCulture,
-        $"Wrote {written} ground tile(s) from {sets} level(s) to {outputRoot}; {failed} failure(s)."));
+        $"Wrote {written} texture(s) to {outputRoot} from {archives.Length} archive(s), laid out as an " +
+        $"overrides folder; {duplicates} repeat(s), {notTextures} non-texture entr(ies), " +
+        $"{failed} failure(s)."));
 
-    return written == 0 ? ExitCode.Failure : ExitCode.Ok;
+    return failed > 0 && written == 0 ? ExitCode.Failure : ExitCode.Ok;
 }
 
 // Decodes every ILSF sound found below a path and writes each one out as an ordinary WAV.
@@ -564,13 +500,15 @@ static void PrintUsage() =>
         "RESOURCE" flat archive. Extracted entries keep their layout below <outdir>, with the
         virtual file system namespace ("LOCAL:") stripped.
 
-        "images" decodes every texture it finds to an 8-bit RGBA PNG, named after the texture and
-        flattened into one directory. Given a directory it walks every .res below it and writes
-        each distinct texture once, however many levels pack a copy of it.
+        "images" decodes every texture it finds to an 8-bit RGBA PNG, laid out the way the game's
+        overrides folder is: each asset under the directory its archive sits in. Given a directory
+        it walks every .res below it and writes each distinct asset once, however many levels pack
+        a copy of it.
 
-        "terrain" writes out every level's ground tiles. They live in a loose per-level atlas
-        rather than in the .res archives and are named by index rather than by name, so "images"
-        cannot reach them -- which is why the ground was the one surface no texture pack replaced.
+        NOT FLATTENED, and that matters. A texture name is not unique here -- the art is layered,
+        and 79 of the retail game's 1363 names are shared by files that differ -- so a flat
+        directory can hold only one of them, and it is usually not the one the level draws.
+
 
         "sounds" decodes every ILSF sound it finds -- expanding the ADPCM forms -- to an ordinary
         PCM WAV. The game's own ".wav" files are ILSF, not WAV, so nothing else will open them.

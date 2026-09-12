@@ -128,8 +128,7 @@ public sealed class TerrainLoader
             tiles,
             materials,
             tileMaps,
-            defects,
-            basePath);
+            defects);
 
         _logger.Information(
             LogCategory,

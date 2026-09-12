@@ -119,7 +119,7 @@ public sealed class GraphicsPresetRegistryTests
         [
             "r_weather_enabled", "r_weather_kind", "r_weather_speed",
             "r_storm_intensity", "r_weather_force", "r_day_night_cycle", "r_day_length",
-            "r_vsync", "r_material_pack", "r_hd_textures", "r_world_briefing",
+            "r_vsync", "r_world_briefing",
         ];
 
         _ = RenderCVars.Lighting;

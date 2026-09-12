@@ -170,12 +170,6 @@ public sealed class TerrainRenderer : IDisposable
     /// level's worth of them is most of a second; the menu's backdrop loader does the arithmetic on a
     /// worker and passes the results in, leaving this constructor with only the upload.
     /// </param>
-    /// <param name="upscaled">
-    /// Upscaled replacements for the ground tiles, or <see langword="null"/> to draw the level's own. The
-    /// ground was the one surface no texture pack could reach: a tile is an index into a per-level atlas
-    /// and carries no name, so nothing could look one up, and the terrain went on rendering from the
-    /// original art while every building around it was replaced.
-    /// </param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">The terrain is not drawable.</exception>
     public TerrainRenderer(
@@ -183,8 +177,7 @@ public sealed class TerrainRenderer : IDisposable
         TerrainSurface surface,
         IIgiLogger? logger = null,
         MaterialDetailPack? detailMaps = null,
-        IReadOnlyList<Bgra32[]>? derivedDetail = null,
-        HdTexturePack? upscaled = null)
+        IReadOnlyList<Bgra32[]>? derivedDetail = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(surface);
@@ -201,7 +194,6 @@ public sealed class TerrainRenderer : IDisposable
         _terrain = surface.Terrain;
         _logger = logger ?? NullLogger.Instance;
         DetailMaps = detailMaps;
-        _upscaled = upscaled;
         _tiles = UploadTiles(derivedDetail);
         _caster = new TerrainShadowCaster(device);
     }
@@ -231,8 +223,6 @@ public sealed class TerrainRenderer : IDisposable
     /// <summary>Gets the derived surface-detail maps, or <see langword="null"/> for none.</summary>
     /// <remarks>Owned by the shell: one pack serves every renderer that loads a texture.</remarks>
     public MaterialDetailPack? DetailMaps { get; }
-
-    private readonly HdTexturePack? _upscaled;
 
     /// <summary>Gets how many octree nodes the last descent entered.</summary>
     public int LastVisitedCount { get; private set; }
@@ -788,33 +778,11 @@ public sealed class TerrainRenderer : IDisposable
         }
 
         TextureHandle[] handles = new TextureHandle[atlas.Tiles.Count];
-        int upscaledTiles = 0;
         int uploadedWidth = atlas.TileWidth;
         int uploadedHeight = atlas.TileHeight;
         for (int i = 0; i < handles.Length; i++)
         {
-            // The upscaled replacement, if a pack has one. The ground was the one surface no texture pack
-            // ever reached: a tile is an INDEX into this atlas and has no name, so nothing could look one
-            // up -- and the terrain went on rendering from 1998 art while every building around it was
-            // replaced. On an outdoor view that is most of the screen. TexAtlasFile manufactures the
-            // missing name from the level the atlas belongs to, and `ResExtract terrain` writes the files
-            // under the same one.
-            TextureImage source = atlas.Tiles[i];
-            string tileName = TexAtlasFile.MakeTileName(_terrain.TileSetKey, i);
-
-            if (_upscaled is not null
-                && tileName.Length > 0
-                && _upscaled.TryRead(tileName, out Bgra32[] replacement, out int hdWidth, out int hdHeight))
-            {
-                source = TextureImage.FromPixels(hdWidth, hdHeight, replacement);
-                upscaledTiles++;
-            }
-
-            // The ground tiles ship with a single level and this backend generates none, so without this
-            // the terrain -- which covers more of the screen than anything else -- was sampled at full
-            // resolution however far away it was. That is what makes distant ground sparkle as the camera
-            // turns, and it is the same gap the world textures had.
-            TextureImage tile = source.WithMipChain();
+            TextureImage tile = atlas.Tiles[i].WithMipChain();
             uploadedWidth = tile.Width;
             uploadedHeight = tile.Height;
             try
@@ -835,17 +803,12 @@ public sealed class TerrainRenderer : IDisposable
                 {
                     DetailMaps?.AttachPacked(handles[i], derivedDetail[i], tile.Width, tile.Height);
                 }
-                else if (tileName.Length > 0)
-                {
-                    // By NAME now, which this could not do before: a ground tile is an index into an
-                    // atlas, so there was nothing to look up and the map was always derived in process
-                    // from the level's own small tile. With a manufactured name the pack's own map is
-                    // found instead -- derived offline from the upscaled image, and by the better
-                    // estimator -- and the in-process derivation stays as the fallback it was.
-                    DetailMaps?.Attach(tileName, handles[i], tile.GetLevel(0), tile.Width, tile.Height);
-                }
                 else
                 {
+                    // Derived in process from whatever the tile turned out to be. A ground tile has no
+                    // name to look a map up by -- it is an index into an atlas -- and it does not need
+                    // one: when the overrides folder replaces the atlas, this derives from the
+                    // replacement, which is the picture actually on the ground.
                     DetailMaps?.AttachDerived(
                         handles[i], tile.GetLevel(0), tile.Width, tile.Height);
                 }
@@ -856,13 +819,13 @@ public sealed class TerrainRenderer : IDisposable
             }
         }
 
-        // The UPLOADED size, not the atlas's declared one. Those are the same number until a pack
-        // replaces a tile, and then reporting the atlas's is actively misleading -- it says 128x128 for
-        // ground that went up at 1024.
+        // The UPLOADED size, not the atlas's declared one. Those are the same number until the overrides
+        // folder replaces the atlas, and then reporting the header's is actively misleading -- it would
+        // say 128x128 for ground that went up at 1024.
         _logger.Information(
             LogCategory,
             $"Ground tiles: {handles.Length} of {uploadedWidth}x{uploadedHeight}"
-                + (upscaledTiles > 0 ? $"; {upscaledTiles} upscaled from {atlas.TileWidth}x{atlas.TileHeight}." : "."));
+                + (uploadedWidth != atlas.TileWidth ? $" (atlas declares {atlas.TileWidth}x{atlas.TileHeight})." : "."));
         return handles;
     }
 

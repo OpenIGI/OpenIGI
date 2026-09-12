@@ -2050,69 +2050,30 @@ public static class RenderCVars
         // screen trace is not; left off until the probe field can carry the specular instead.
         ultra: "1");
 
-    /// <summary>Where the derived surface-detail maps are read from.</summary>
-    /// <remarks>
-    /// A directory of PNGs named after the textures they belong to, as
-    /// <c>ResExtract maps</c> writes. Empty means there is no pack and nothing is derived, which is
-    /// what an installation that has never run the tool gets — and it renders exactly as it did before
-    /// the maps existed rather than failing.
-    /// </remarks>
-    public static readonly StringCVar MaterialPack = CVar.Text(
-        "r_material_pack",
-        string.Empty,
-        CVarOptions.Archive | CVarOptions.RequiresRestart,
-        "Directory of derived surface-detail maps; empty for none.");
-
-    /// <summary>Where upscaled replacements for the game's own diffuse textures are read from.</summary>
+    /// <summary>Whether the overrides folder is drawn, for comparing against the game's own assets.</summary>
     /// <remarks>
     /// <para>
-    /// A directory of PNGs named after the textures they replace, as <c>texture-forge</c> writes. The same
-    /// shape as <see cref="MaterialPack"/> and for the same reasons: flat, the filename is the key, and an
-    /// absent pack is a supported state that renders exactly as it always did rather than failing.
+    /// The successor to <c>r_hd</c>, which switched an upscaled-texture pack in and out of the frame.
+    /// That pack no longer exists: replacement art goes in the installation's <c>overrides</c> folder and
+    /// arrives through the ordinary resource path, which is how every other asset arrives and is why it
+    /// needs no setting of its own to point at it.
     /// </para>
     /// <para>
-    /// <b>Why this is a pack and not a mod format.</b> The game's art with a filter over it is still
-    /// Innerloop's, so an upscaled texture is not something this project can ship — it has to be built from
-    /// the player's own installation, by a tool, into a directory the player names. That is the whole
-    /// reason this is a path rather than a boolean.
+    /// The comparison it made is worth keeping, though, and it is worth more now — the folder can replace
+    /// anything, not only a texture. Off bypasses every override without deleting a file, so the two
+    /// pictures are one keypress apart. Not saved: it is a switch for looking at something, and a player
+    /// who put files in the folder meant them to be used.
     /// </para>
     /// <para>
-    /// <b>Video memory is the limit, not disk.</b> The device uploads uncompressed <c>Bgra32</c> and there
-    /// is no block-compressed path anywhere in <c>IGraphicsDevice</c>, so a pack costs its scale factor
-    /// squared: a 128-pixel texture at four times is a megabyte, and a level holds a few hundred of them.
-    /// Four is comfortable on a 10 GB card and eight is not.
+    /// Toggling costs a reload of the level's textures, because what is already uploaded was decoded from
+    /// the bytes this changes.
     /// </para>
     /// </remarks>
-    public static readonly StringCVar HdTextures = CVar.Text(
-        "r_hd_textures",
-        string.Empty,
-        CVarOptions.Archive | CVarOptions.RequiresRestart,
-        "Directory of upscaled diffuse textures; empty for the game's own.");
-
-    /// <summary>Whether the loaded upscaled textures are actually drawn, for comparing against the originals.</summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Not archived, and that is the whole point.</b> This is the F8 half of a pair of comparison
-    /// switches: a key pressed to LOOK at something must not decide what the game starts as tomorrow. See
-    /// <c>DefaultBinds</c> for the time an archived toggle quietly wrote the worse path into settings.cfg
-    /// and nothing on screen said why.
-    /// </para>
-    /// <para>
-    /// Separate from <see cref="HdTextures"/> because the two answer different questions. That one is
-    /// <i>where the pack is</i>, it is a path the player built with a tool, and it survives restarts. This
-    /// one is <i>whether to use it right now</i>, and it does not. Turning it off does not unload the
-    /// pack: the textures are re-read from the archives and the upscaled ones are read again when it goes
-    /// back on, which costs a hitch each way and no memory in between.
-    /// </para>
-    /// <para>
-    /// Does nothing when no pack is configured, which is the common case.
-    /// </para>
-    /// </remarks>
-    public static readonly BoolCVar HdTexturesEnabled = CVar.Bool(
-        "r_hd",
+    public static readonly BoolCVar OverridesEnabled = CVar.Bool(
+        "r_overrides",
         true,
         CVarOptions.None,
-        "Whether the upscaled texture pack is drawn; off shows the game's own textures. Not saved.");
+        "Whether the overrides folder is used; off shows the game's own assets. Not saved.");
 
     /// <summary>Whether the derived surface maps are applied, for comparing against flat shading.</summary>
     /// <remarks>

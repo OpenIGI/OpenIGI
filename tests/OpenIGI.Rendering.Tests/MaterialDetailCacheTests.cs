@@ -45,7 +45,7 @@ public sealed class MaterialDetailCacheTests : IDisposable
     public void AMissDerivesAMapWritesItToTheCacheAndAttachesIt()
     {
         RecordingGraphicsDevice device = new();
-        using MaterialDetailPack pack = new(device, directory: null, logger: null, cacheDirectory: _cache);
+        using MaterialDetailPack pack = new(device, logger: null, cacheDirectory: _cache);
         pack.DeriveMissing = true;
 
         TextureHandle diffuse = device.CreateTexture(
@@ -70,7 +70,7 @@ public sealed class MaterialDetailCacheTests : IDisposable
         TextureHandle diffuse = device.CreateTexture(
             new TextureDescription(8, 8, 1, TextureFilter.Linear, TextureAddressMode.Repeat), Checker(8));
 
-        using (MaterialDetailPack first = new(device, null, null, _cache))
+        using (MaterialDetailPack first = new(device, null, _cache))
         {
             first.DeriveMissing = true;
             first.Attach("crate", diffuse, Checker(8), 8, 8);
@@ -79,7 +79,7 @@ public sealed class MaterialDetailCacheTests : IDisposable
 
         // A second pack over the same cache, with derivation switched OFF. It can only succeed by
         // reading the file the first one wrote -- which is the whole point of the cache.
-        using MaterialDetailPack second = new(device, null, null, _cache);
+        using MaterialDetailPack second = new(device, null, _cache);
         second.DeriveMissing = false;
 
         second.Attach("crate", diffuse, Checker(8), 8, 8);
@@ -92,7 +92,7 @@ public sealed class MaterialDetailCacheTests : IDisposable
     public void WithoutDeriveMissingAMissStaysAMissAndNothingIsWritten()
     {
         RecordingGraphicsDevice device = new();
-        using MaterialDetailPack pack = new(device, null, null, _cache);
+        using MaterialDetailPack pack = new(device, null, _cache);
         pack.DeriveMissing = false;
 
         TextureHandle diffuse = device.CreateTexture(
@@ -109,7 +109,7 @@ public sealed class MaterialDetailCacheTests : IDisposable
     public void DisabledDetailDoesNotSynchronouslyDeriveAnUnnamedGroundTile()
     {
         RecordingGraphicsDevice device = new();
-        using MaterialDetailPack pack = new(device, directory: null, logger: null);
+        using MaterialDetailPack pack = new(device, logger: null);
         pack.DeriveMissing = false;
 
         TextureHandle diffuse = device.CreateTexture(
@@ -125,7 +125,7 @@ public sealed class MaterialDetailCacheTests : IDisposable
     public void EnabledDetailStillDerivesAndAttachesAnUnnamedGroundTile()
     {
         RecordingGraphicsDevice device = new();
-        using MaterialDetailPack pack = new(device, directory: null, logger: null);
+        using MaterialDetailPack pack = new(device, logger: null);
         pack.DeriveMissing = true;
 
         TextureHandle diffuse = device.CreateTexture(
@@ -141,7 +141,7 @@ public sealed class MaterialDetailCacheTests : IDisposable
     public void TwoTexturesAskingForOneNameShareASingleDerivation()
     {
         RecordingGraphicsDevice device = new();
-        using MaterialDetailPack pack = new(device, null, null, _cache);
+        using MaterialDetailPack pack = new(device, null, _cache);
         pack.DeriveMissing = true;
 
         TextureDescription description = new(8, 8, 1, TextureFilter.Linear, TextureAddressMode.Repeat);
@@ -162,7 +162,7 @@ public sealed class MaterialDetailCacheTests : IDisposable
     public void ANameThatCannotBeAFileNameIsNotCached(string name)
     {
         RecordingGraphicsDevice device = new();
-        using MaterialDetailPack pack = new(device, null, null, _cache);
+        using MaterialDetailPack pack = new(device, null, _cache);
         pack.DeriveMissing = true;
 
         TextureHandle diffuse = device.CreateTexture(

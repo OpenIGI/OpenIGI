@@ -34,10 +34,12 @@ texture whose output is not the size THIS command would produce is not done.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from PIL import Image
+
+from . import tex
 
 from . import images
 
@@ -67,22 +69,21 @@ def finished(path: Path) -> bool:
         return False
 
 
-def expected(outputs, name: str, *, derive: bool, inspection: bool) -> list[Path]:
-    """Every file the current command writes for one texture.
+def expected(outputs, names: Sequence[str], *, derive: bool, inspection: bool) -> list[Path]:
+    """Every inspection file the current command writes for one texture.
 
-    Follows the command, not the directory: `upscale` writes the diffuse alone, so a pack that has only
-    diffuses is complete for `upscale` and unfinished for `all`. That is what lets the two be resumed
+    The assets themselves are checked by `completed`, which has to look INSIDE them -- a container says
+    how many layers it holds, and that is what distinguishes an upscale-only pack from one carrying maps.
+    This covers the maps written beside it, which are ordinary PNGs.
+
+    Follows the command, not the directory: `upscale` writes no inspection maps, so a pack that has only
+    assets is complete for `upscale` and unfinished for `all`. That is what lets the two be resumed
     independently over the same output directory.
     """
-    paths = [outputs.hd / f"{name}.png"]
+    if not derive or not inspection:
+        return []
 
-    if derive:
-        paths.append(outputs.detail / f"{name}.png")
-
-        if inspection:
-            paths.extend(outputs.inspection(kind) / f"{name}.png" for kind in INSPECTION_KINDS)
-
-    return paths
+    return [outputs.inspection(kind) / f"{names[0]}.png" for kind in INSPECTION_KINDS]
 
 
 def _dimensions(path: Path) -> tuple[int, int] | None:
@@ -94,31 +95,46 @@ def _dimensions(path: Path) -> tuple[int, int] | None:
         return None
 
 
-def completed(source: Path, outputs, *, scale: int, derive: bool, inspection: bool) -> bool:
-    """Whether this texture is already done to the settings this run was asked for."""
-    for path in expected(outputs, source.stem, derive=derive, inspection=inspection):
-        if not finished(path):
-            return False
+def completed(
+    source: Path, names: Sequence[str], outputs, *, scale: int, derive: bool, inspection: bool
+) -> bool:
+    """Whether this texture is already done, at every path it is addressed at, to this run's settings.
 
+    EVERY path, not just the first. One image can be addressed at eight of them -- the same art packed
+    into eight levels -- and a run interrupted between writes leaves some present and some not. Checking
+    only the representative would call that finished and leave the rest missing for good.
+    """
     source_size = _dimensions(source)
-    hd_size = _dimensions(outputs.hd / f"{source.stem}.png")
 
-    if source_size is None or hd_size is None:
+    if source_size is None:
         return False
 
     width, height = source_size
+    wanted = (max(width * scale, 1), max(height * scale, 1))
+    layers = 2 if derive else 1
 
-    return hd_size == (max(width * scale, 1), max(height * scale, 1))
+    for name in names:
+        described = tex.describe(outputs.asset(name))
+
+        if described is None or described[:2] != wanted or described[2] != layers:
+            return False
+
+    return all(finished(path) for path in expected(outputs, names, derive=derive, inspection=inspection))
 
 
 def pending(
-    sources: Iterable[Path], outputs, *, scale: int, derive: bool, inspection: bool
-) -> list[Path]:
-    """The sources still to do, in the order they were given."""
+    work: Iterable[tuple[Path, Sequence[str]]],
+    outputs,
+    *,
+    scale: int,
+    derive: bool,
+    inspection: bool,
+) -> list[tuple[Path, Sequence[str]]]:
+    """The jobs still to do, in the order they were given."""
     return [
-        path
-        for path in sources
-        if not completed(path, outputs, scale=scale, derive=derive, inspection=inspection)
+        item
+        for item in work
+        if not completed(item[0], item[1], outputs, scale=scale, derive=derive, inspection=inspection)
     ]
 
 

@@ -6,21 +6,17 @@
 # and the cvars decide whether they are drawn, so the two frames differ only in what is sampled --
 # not in what was uploaded, which would also change memory, load time and mip selection.
 #
-# -lockstep ignores settings.cfg, so r_hd_textures and r_material_pack have to be named here or the
-# "remastered" capture quietly renders the original art. That trap is the reason this file exists.
+# The replacement art is whatever is in <game>/overrides, so there is nothing to point at: r_overrides
+# decides whether it is drawn. -lockstep still ignores settings.cfg, which is why the preset is named.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 GAME="$ROOT/apps/OpenIGI.Desktop/bin/Release/net10.0/OpenIGI.Desktop.exe"
-HD="${OPENIGI_HD_TEXTURES:-}"
-PACK="${OPENIGI_MATERIAL_PACK:-}"
 OUT="${1:?usage: compare-remaster.sh <out-dir> [detail-strength] [size] [frames]}"
 DETAIL="${2:-1}"
 SIZE="${3:-1280x720}"
 FRAMES="${4:-25}"
 
-[ -n "$HD" ]   || { echo "Set OPENIGI_HD_TEXTURES to the upscaled diffuse directory." >&2; exit 1; }
-[ -n "$PACK" ] || { echo "Set OPENIGI_MATERIAL_PACK to the detail pack directory." >&2; exit 1; }
 mkdir -p "$OUT"
 
 win() { cygpath -w "$1" 2>/dev/null || printf '%s' "$1"; }
@@ -44,8 +40,8 @@ shoot() {   # mission name pose tag hd pbr
   # shellcheck disable=SC2086
   "$GAME" -mission "$1" -lockstep -skipcutscene -freecam -size "$SIZE" -frames "$FRAMES" \
     $3 -screenshot "$(win "$bmp")" \
-    +gfx_preset ultra +r_hd_textures "$HD" +r_material_pack "$PACK" \
-    +r_material_detail "$DETAIL" +r_hd "$5" +r_pbr "$6" >"$OUT/$2_$4.log" 2>&1
+    +gfx_preset ultra +r_material_detail "$DETAIL" +r_overrides "$5" +r_pbr "$6" \
+    >"$OUT/$2_$4.log" 2>&1
   python -c "
 from PIL import Image
 Image.open(r'$(win "$bmp")').save(r'$(win "${bmp%.bmp}.png")')"

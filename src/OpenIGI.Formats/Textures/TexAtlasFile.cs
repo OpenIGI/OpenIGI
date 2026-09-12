@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Buffers.Binary;
 using System.Collections.ObjectModel;
 using OpenIGI.Core;
@@ -79,68 +78,6 @@ public sealed class TexAtlasFile
         uint version = BinaryPrimitives.ReadUInt32LittleEndian(data[4..]);
         return version is Version7 or Version9;
     }
-
-    /// <summary>Builds the name a level's ground tiles are looked up by in a replacement pack.</summary>
-    /// <param name="basePath">The extensionless path the terrain was loaded from, resource alias and all.</param>
-    /// <returns>The key, or an empty string when there is no path to build one from.</returns>
-    /// <remarks>
-    /// <para>
-    /// A ground tile arrives as an INDEX into a per-level atlas and carries no name of its own, which is
-    /// why nothing could ever look one up in a replacement pack: those are flat directories keyed by
-    /// texture name. This manufactures the missing name from the one thing that does identify the atlas,
-    /// the level it belongs to.
-    /// </para>
-    /// <para>
-    /// <c>LOCAL:missions/location0/level1/terrain/terrain</c> becomes
-    /// <c>terrain_missions_location0_level1</c>. The whole directory rather than its last segment,
-    /// because <c>level1</c> alone is not unique across locations.
-    /// </para>
-    /// <para>
-    /// <b>It lives here, in the format layer, so that one function makes the name.</b> The extractor
-    /// produces these files from a path on disk and the renderer looks them up from a resource path, and
-    /// those are different programs in different assemblies. Two implementations of a naming rule agree
-    /// until the day one of them is edited, and the failure then is silent -- a pack that loads and
-    /// replaces nothing.
-    /// </para>
-    /// </remarks>
-    public static string MakeTileSetKey(string? basePath)
-    {
-        if (string.IsNullOrWhiteSpace(basePath))
-        {
-            return string.Empty;
-        }
-
-        string path = basePath.Replace('\\', '/');
-
-        int colon = path.IndexOf(':', StringComparison.Ordinal);
-        if (colon >= 0)
-        {
-            path = path[(colon + 1)..];
-        }
-
-        const string Suffix = "/terrain/terrain";
-        if (path.EndsWith(Suffix, StringComparison.OrdinalIgnoreCase))
-        {
-            path = path[..^Suffix.Length];
-        }
-
-        path = path.Trim('/');
-
-        return path.Length == 0 ? string.Empty : "terrain_" + path.Replace('/', '_').ToLowerInvariant();
-    }
-
-    /// <summary>Builds the name one tile of a set is looked up by.</summary>
-    /// <param name="tileSetKey">The set's key, from <see cref="MakeTileSetKey"/>.</param>
-    /// <param name="index">The tile's index in the atlas.</param>
-    /// <returns>The name, or an empty string when the set has no key.</returns>
-    /// <remarks>
-    /// Two digits, because every retail level ships eighteen tiles and a name that sorts the way the
-    /// atlas is ordered is worth more than one that saves a character.
-    /// </remarks>
-    public static string MakeTileName(string tileSetKey, int index) =>
-        string.IsNullOrEmpty(tileSetKey)
-            ? string.Empty
-            : string.Create(CultureInfo.InvariantCulture, $"{tileSetKey}_{index:D2}");
 
     /// <summary>Reads every tile of an atlas.</summary>
     /// <param name="data">The file bytes.</param>

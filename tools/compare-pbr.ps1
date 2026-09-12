@@ -18,16 +18,6 @@
     What r_material_detail is set to for the 'on' capture. The preset's own value is ignored: ultra
     ships zero, which would compare nothing against nothing.
 
-.PARAMETER Pack
-    The derived detail pack to read (r_material_pack). Defaults to $env:OPENIGI_MATERIAL_PACK.
-
-    It has to be said explicitly because -lockstep ignores settings.cfg, and the derive-on-demand cache
-    only fills in for textures seen AFTER the loop starts -- so a capture with no pack named measures a
-    level most of whose surfaces have no map at all, which reads exactly like the feature being broken.
-    Point it at the `detail` subdirectory of what `texture-forge maps` or `ResExtract maps` wrote. With
-    no pack at all the script still runs and says so, and its numbers then describe the renderer with
-    the maps absent, which is a different question from the one it is usually asked.
-
 .PARAMETER DebugView
     Capture a G-buffer channel (roughness, metallic, materialao, normal, albedo, material) instead of
     the shaded scene. Use it to answer 'is the channel reaching the shader' before asking whether the
@@ -41,7 +31,6 @@
 param(
     [double] $Strength = 1.0,
     [string] $Preset = 'ultra',
-    [string] $Pack = $env:OPENIGI_MATERIAL_PACK,
     [string] $DebugView = '',
     [int] $Frames = 30,
     [string] $Size = '960x540',
@@ -87,7 +76,6 @@ function Invoke-Capture {
     # Order matters: gfx_preset rewrites every graphics variable it owns, so the two this comparison
     # is actually about have to be set AFTER it or the preset's own values win.
     $console = @('+gfx_preset', $Preset, '+r_material_detail', ([string] $Detail), '+r_pbr', $(if ($Detail -gt 0) { '1' } else { '0' }))
-    if ($Pack) { $console += @('+r_material_pack', $Pack) }
     if ($DebugView) { $console += @('+r_debug_view', $DebugView) }
     $console += $Extra
 
@@ -99,13 +87,6 @@ function Invoke-Capture {
     & $game @arguments 2>&1 | Out-File -FilePath (Join-Path $output "$($View.Name)_$Tag.log") -Encoding utf8
     if (-not (Test-Path $bmp)) { throw "No capture written for $($View.Name)/$Tag; see $output" }
     return $bmp
-}
-
-if (-not $Pack) {
-    Write-Host 'compare-pbr: no detail pack named. Set OPENIGI_MATERIAL_PACK or pass -Pack; without one' -ForegroundColor Yellow
-    Write-Host '             the derived maps are absent and every A/B below measures nothing.' -ForegroundColor Yellow
-} elseif (-not (Test-Path $Pack)) {
-    throw "No detail pack at '$Pack'. Pass -Pack, or set OPENIGI_MATERIAL_PACK."
 }
 
 $label = if ($DebugView) { "G-buffer '$DebugView'" } else { 'shaded scene' }

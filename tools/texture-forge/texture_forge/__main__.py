@@ -14,11 +14,14 @@ A run RESUMES by default: a texture whose outputs are all present, whole, and th
 produce is left alone, so an interrupted run is continued by repeating the command. `--force` redoes
 everything. See `resume.py` for what counts as finished, and why existence alone does not.
 
-The output is two directories the renderer reads, plus five it does not:
+THE OUTPUT IS AN OVERRIDES FOLDER. Move or copy its contents into <game>/overrides and the game
+finds every asset by the path it already had -- there is nothing to configure and no setting to
+point at it. Each file is the game's own container: layer 0 the upscaled diffuse, and layer 1 the
+packed surface map when maps were derived.
 
-    <out-dir>/hd/            the upscaled diffuse          -> r_hd_textures
-    <out-dir>/detail/        the packed surface map        -> r_material_pack
-    <out-dir>/{normal,orm,roughness,occlusion,height}/     for looking at, and for hand-correcting
+    <out-dir>/common/textures/000_04_1.tex                 -> <game>/overrides/common/textures/...
+    <out-dir>/missions/location0/level1/textures/...       -> the same, under that level
+    <out-dir>.inspection/{normal,orm,roughness,...}/       for looking at, and outside the tree
 
 NOTHING HERE MAY BE COMMITTED. The game's art with a filter over it is still Innerloop's -- CONTRIBUTING.md
 says so in those words -- which is why the renderer derives its maps from the player's own installation at
@@ -115,6 +118,7 @@ def _run(arguments: argparse.Namespace, *, upscale: bool, derive: bool) -> int:
         delight_strength=arguments.delight_strength,
         metallic=arguments.metallic,
         normal_strength=arguments.normal_strength,
+        derive_pbr=not arguments.no_pbr,
         write_inspection=not arguments.no_inspection,
     )
 
@@ -123,6 +127,13 @@ def _run(arguments: argparse.Namespace, *, upscale: bool, derive: bool) -> int:
     if not sources:
         console.print(f"[bold red]error:[/bold red] no PNGs in {source}.")
         return 2
+
+    # One job per distinct IMAGE, carrying every path that image is addressed at. Most of this game's art
+    # is packed into every level that draws it, so the extractor's tree holds the same picture many times
+    # over -- 7199 paths for 1444 images on the retail data. Each path has to exist in the finished pack,
+    # because each is separately replaceable, but upscaling them all would be five times the GPU work for
+    # byte-identical output.
+    work = pipeline.group_by_content(source, sources)
 
     outputs = pipeline.Outputs(destination)
     swept = resume.sweep(outputs)
@@ -136,22 +147,28 @@ def _run(arguments: argparse.Namespace, *, upscale: bool, derive: bool) -> int:
     effective_scale = arguments.scale if upscale else 1
 
     if arguments.force:
-        todo = sources
+        todo = work
     else:
         todo = resume.pending(
-            sources,
+            work,
             outputs,
             scale=effective_scale,
             derive=derive,
             inspection=settings.write_inspection,
         )
 
-    done = len(sources) - len(todo)
+    done = len(work) - len(todo)
 
     console.print(
-        f"[bold]{len(sources)}[/bold] texture(s) from [cyan]{source}[/cyan] "
+        f"[bold]{len(sources)}[/bold] path(s) from [cyan]{source}[/cyan] "
         f"-> [cyan]{destination}[/cyan]"
     )
+
+    if len(work) != len(sources):
+        console.print(
+            f"[dim]{len(work)} distinct image(s); the rest are the same art packed into another level "
+            f"and are upscaled once and written to every path.[/dim]"
+        )
 
     if done:
         console.print(
@@ -203,7 +220,10 @@ def _run(arguments: argparse.Namespace, *, upscale: bool, derive: bool) -> int:
         for start in range(0, total, pipeline.CHUNK):
             # Read here rather than up front. Reading the corpus first would decode every texture the
             # resume scan just decided to skip, and would hold all of them for the length of the run.
-            chunk = [pipeline.read_texture(path) for path in todo[start : start + pipeline.CHUNK]]
+            chunk = [
+                pipeline.read_texture(path, source, tuple(names))
+                for path, names in todo[start : start + pipeline.CHUNK]
+            ]
 
             for texture in chunk:
                 pipeline.prepare(texture, settings)
@@ -227,13 +247,7 @@ def _run(arguments: argparse.Namespace, *, upscale: bool, derive: bool) -> int:
                 )
             else:
                 for texture in chunk:
-                    path = outputs.hd / f"{texture.name}.png"
-
-                    if texture.alpha is not None:
-                        images.write_rgba(path, texture.rgb, texture.alpha)
-                    else:
-                        images.write_rgb(path, texture.rgb)
-
+                    pipeline.write_asset(texture, outputs)
                     written += 1
                     progress.advance(derive_task)
 
@@ -246,14 +260,17 @@ def _run(arguments: argparse.Namespace, *, upscale: bool, derive: bool) -> int:
         console.print(f"[yellow]warning:[/yellow] {warning}")
 
     skipped = f" [dim]({done} already done)[/dim]" if done else ""
-    console.print(f"[green]Wrote {written} texture(s).[/green]{skipped}")
+    console.print(f"[green]Wrote {written} image(s).[/green]{skipped}")
     console.print()
-    console.print("Point the renderer at them (note [cyan]-lockstep[/cyan]: without it the saved")
-    console.print("settings silently override every [cyan]+cvar[/cyan] on the command line):")
+    console.print("This directory IS an overrides folder. Install it by moving or copying it into")
+    console.print("the installation, next to [cyan]missions[/cyan] and [cyan]common[/cyan]:")
+    console.print()
+    console.print(f"  [dim]<game>/overrides/[/dim]        <- the contents of [dim]{destination}[/dim]")
     console.print()
     console.print(
-        f"  [dim]OpenIGI.Desktop.exe -lockstep +r_hd_textures {outputs.hd} "
-        f"+r_material_pack {outputs.detail} +r_material_detail 0.5[/dim]"
+        "Nothing else to configure -- the assets are found by the paths they already had. "
+        "[cyan]F8[/cyan] takes them out of the frame and puts them back, and "
+        "[cyan]overrides[/cyan] in the console re-reads the folder without a restart."
     )
 
     return 0
@@ -363,6 +380,16 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
             "redo textures that are already in the output directory. A run resumes by default: any "
             "texture whose outputs are all present, whole, and the size this command would produce is "
             "left alone, so an interrupted run is restarted by repeating the same command"
+        ),
+    )
+    parser.add_argument(
+        "--no-pbr",
+        action="store_true",
+        help=(
+            "upscale only: derive no normal, roughness or occlusion at all. The maps are invented data "
+            "-- inferred from a photograph of a surface, none of it shipped with the game -- and this is "
+            "for a player who wants the original art larger and nothing else. It is also much faster and "
+            "roughly halves what a run writes"
         ),
     )
     parser.add_argument(
