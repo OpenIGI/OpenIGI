@@ -15,7 +15,27 @@ internal static class ViewModelProjection
     /// <summary>The retail layer-zero near plane, in metres.</summary>
     internal const float NearPlane = 0.05f;
 
-    /// <summary>Creates the first-person model projection for the supplied field of view.</summary>
-    public static Matrix4f Create(float verticalFieldOfView, float aspectRatio, float farPlane) =>
-        Matrix4f.CreatePerspective(verticalFieldOfView, aspectRatio, NearPlane, farPlane);
+    /// <summary>
+    /// Creates the first-person model projection for the supplied retail horizontal half-tangent.
+    /// </summary>
+    /// <remarks>
+    /// Retail's <c>0x497D70</c> publishes independent pixel scales: the horizontal aperture is the
+    /// supplied tangent and the vertical aperture is three quarters of it. This is deliberately not an
+    /// aspect-correct world projection. Passing a 16:9 aspect ratio to <see cref="Matrix4f.CreatePerspective"/>
+    /// widens a <c>tan(30 degrees)</c> foreground lens to about 75 degrees; retail keeps it at 60 degrees.
+    /// </remarks>
+    public static Matrix4f Create(float horizontalHalfTangent, float farPlane)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(horizontalHalfTangent);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(farPlane);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(farPlane, NearPlane);
+
+        float verticalHalfTangent = 0.75f * horizontalHalfTangent;
+        return new Matrix4f(
+            1f / horizontalHalfTangent, 0f, 0f, 0f,
+            0f, 1f / verticalHalfTangent, 0f, 0f,
+            0f, 0f, (farPlane + NearPlane) / (farPlane - NearPlane),
+            -2f * farPlane * NearPlane / (farPlane - NearPlane),
+            0f, 0f, 1f, 0f);
+    }
 }
