@@ -502,12 +502,14 @@ internal sealed partial class DesktopGame
         {
             _cutscenes.EnableTerminalTerrainLanding(getawayBell);
         }
-        // Mission 5's extraction Bell likewise has a one-shot approach: AnimTask 3333 lowers
-        // Heli 3322 onto the helipad and then waits. Stop the live rigid body at that first terrain
-        // contact so its residual horizontal velocity cannot carry it beyond the pad.
-        if (id == 5 && levelRoot.Tree.FromId(3322) is { } extractionBell)
+        // Mission 5's extraction Bell likewise has a one-shot approach. At AnimTask 3333's terminal
+        // gate the retail QVM replaces Heli 3322 with parked Heli 1234, whose authored pose is on the
+        // helipad. Use that position for touchdown, then stop the residual rigid-body motion.
+        if (id == 5
+            && levelRoot.Tree.FromId(3322) is { } extractionBell
+            && levelRoot.Tree.FromId(1234) is { } parkedBell)
         {
-            _cutscenes.EnableTerminalTerrainLanding(extractionBell);
+            _cutscenes.EnableTerminalTerrainLanding(extractionBell, parkedBell);
         }
 
         // Every mission: a car's suspension reads this for the surface under each wheel, and much
