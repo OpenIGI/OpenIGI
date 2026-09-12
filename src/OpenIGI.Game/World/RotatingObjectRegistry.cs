@@ -281,7 +281,38 @@ public sealed class RotatingObjectRegistry
 
         foreach (WorldPlacement placement in placements)
         {
-            // Case 1: TASKTYPE_RADARDISH (or known radar dish model attachment)
+            // A task-authored RotatingObject owns its behavior even when its model also has a
+            // magic-object definition (Level 5's standalone 436_02_1 is exactly that case).
+            if (!placement.IsAttached
+                && string.Equals(placement.Owner.Type.Name, RotatingObjectTaskType, StringComparison.Ordinal)
+                && placement.Owner is DeclaredTask declared)
+            {
+                float speedX = ReadFloat(declared, "Degrees per second X-axis");
+                float speedY = ReadFloat(declared, "Degrees per second Y-axis");
+                float speedZ = ReadFloat(declared, "Degrees per second Z-axis");
+
+                float accelX = ReadFloat(declared, "Acceleration, degrees per second X-axis");
+                float accelY = ReadFloat(declared, "Acceleration, degrees per second Y-axis");
+                float accelZ = ReadFloat(declared, "Acceleration, degrees per second Z-axis");
+
+                string onExpr = ReadString(declared, "On expression");
+                string sound = ReadString(declared, "Rotate sound");
+
+                registry.Add(new PlacedRotatingObject(
+                    placement,
+                    speedX,
+                    speedY,
+                    speedZ,
+                    accelX,
+                    accelY,
+                    accelZ,
+                    onExpr,
+                    isActive: true,
+                    sound: sound));
+                continue;
+            }
+
+            // TASKTYPE_RADARDISH (or known radar dish model attachment)
             bool isRadarDish = string.Equals(placement.MagicTaskTypeName, RadarDishTaskType, StringComparison.Ordinal);
             if (!isRadarDish && magic is not null && magic.TryGet(placement.Instance.Name, out MagicObjectDefinition childDef))
             {
@@ -330,38 +361,6 @@ public sealed class RotatingObjectRegistry
                     onExpression: string.Empty,
                     isActive: true,
                     sound: sound);
-
-                registry.Add(obj);
-                continue;
-            }
-
-            // Case 2: Declared RotatingObject task
-            if (string.Equals(placement.Owner.Type.Name, RotatingObjectTaskType, StringComparison.Ordinal)
-                && placement.Owner is DeclaredTask declared)
-            {
-                float speedX = ReadFloat(declared, "Degrees per second X-axis");
-                float speedY = ReadFloat(declared, "Degrees per second Y-axis");
-                float speedZ = ReadFloat(declared, "Degrees per second Z-axis");
-
-                float accelX = ReadFloat(declared, "Acceleration X-axis");
-                float accelY = ReadFloat(declared, "Acceleration Y-axis");
-                float accelZ = ReadFloat(declared, "Acceleration Z-axis");
-
-                bool active = ReadBool(declared, "Active", fallback: true);
-                string onExpr = ReadString(declared, "On-expression");
-                string sound = ReadString(declared, "Rotate sound");
-
-                PlacedRotatingObject obj = new(
-                    placement,
-                    speedX,
-                    speedY,
-                    speedZ,
-                    accelX,
-                    accelY,
-                    accelZ,
-                    onExpr,
-                    active,
-                    sound);
 
                 registry.Add(obj);
             }
@@ -475,23 +474,6 @@ public sealed class RotatingObjectRegistry
             };
         }
         return 0f;
-    }
-
-    private static bool ReadBool(DeclaredTask task, string name, bool fallback)
-    {
-        if (task.TryGetValue(name, out object? raw))
-        {
-            return raw switch
-            {
-                bool b => b,
-                int i => i != 0,
-                short s => s != 0,
-                byte by => by != 0,
-                string str => bool.TryParse(str, out bool parsed) ? parsed : fallback,
-                _ => fallback,
-            };
-        }
-        return fallback;
     }
 
     private static string ReadString(DeclaredTask task, string name)

@@ -20,31 +20,32 @@ namespace OpenIGI.Game.Tests;
 public sealed class RetailRotatingObjectTests
 {
     [RequiresGameDataFact]
+    public void LevelThreeReadsDeclaredRotationAccelerationAndCondition()
+    {
+        RotatingObjectRegistry registry = LoadRegistry(3);
+        PlacedRotatingObject rotor = Assert.Single(
+            registry.Objects,
+            obj => !obj.Placement.IsAttached && obj.Placement.Instance.Name == "436_02_1");
+
+        Assert.Equal(0f, rotor.TargetSpeedX);
+        Assert.Equal(0f, rotor.TargetSpeedY);
+        Assert.Equal(90f, rotor.TargetSpeedZ);
+        Assert.Equal(0f, rotor.AccelX);
+        Assert.Equal(0f, rotor.AccelY);
+        Assert.Equal(1f, rotor.AccelZ);
+        Assert.Equal("1", rotor.OnExpression);
+        Assert.Equal(string.Empty, rotor.Sound);
+
+        registry.Tick();
+
+        Assert.True(rotor.IsActive);
+        Assert.Equal(3f, rotor.AngleZ, precision: 5);
+    }
+
+    [RequiresGameDataFact]
     public void LevelFiveDiscoversRadarTowerRotorAndRadarDome()
     {
-        VirtualFileSystem fileSystem = new();
-        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
-        ResourceRegistry resources = new(fileSystem);
-
-        GameLoop loop = new(new ManualTimeSource());
-        PlayerTaskTypes.RegisterAll(loop.Types);
-        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
-        LevelTask levelRoot = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
-
-        MissionRegistry missionRegistry = new();
-        missionRegistry.Register(loop.Natives);
-        missionRegistry.Scan(fileSystem, resources, loop.Natives);
-
-        MagicObjectRegistry magic = new();
-        magic.Register(loop.Natives);
-        magic.Load(resources, loop.Natives);
-
-        LevelLoader levelLoader = new(levelRoot, loop.TaskCommands, loop.Natives, resources);
-        LoadedMission mission = new MissionLoader(missionRegistry, fileSystem, resources, levelLoader).Load(5);
-        new ConditionalContainerGate(loop.Variables).Prepare(levelRoot);
-
-        WorldScene scene = WorldScene.Build(mission, levelRoot, magic);
-        RotatingObjectRegistry registry = RotatingObjectRegistry.Build(levelRoot, scene.Placements, loop.Variables, magic);
+        RotatingObjectRegistry registry = LoadRegistry(5);
 
         Assert.True(registry.Count >= 2, $"Expected at least 2 rotating objects in Level 5, found {registry.Count}");
 
@@ -70,6 +71,17 @@ public sealed class RetailRotatingObjectTests
         Assert.Equal(90f, towerRotor.TargetSpeedZ);
         Assert.Equal(15f, towerRotor.AccelZ);
 
+        // The separate dome is a declared RotatingObject even though its model also appears in
+        // magicobj.qvm. Its task-authored behavior must win over the model-level radar defaults.
+        Assert.Equal(0f, domeRotor.TargetSpeedX);
+        Assert.Equal(0f, domeRotor.TargetSpeedY);
+        Assert.Equal(25f, domeRotor.TargetSpeedZ);
+        Assert.Equal(0f, domeRotor.AccelX);
+        Assert.Equal(0f, domeRotor.AccelY);
+        Assert.Equal(0f, domeRotor.AccelZ);
+        Assert.Equal("0", domeRotor.OnExpression);
+        Assert.Equal("generator_run", domeRotor.Sound);
+
         // Initial orientation transform check
         Assert.True(registry.TryGetDrawTransform(
             towerRotor.Placement,
@@ -91,6 +103,10 @@ public sealed class RetailRotatingObjectTests
         Assert.True(towerRotor.CurrentSpeedZ > 0f);
         Assert.True(towerRotor.AngleZ > 0f);
 
+        // Retail explicitly authors this separate RotatingObject with the false expression "0".
+        Assert.False(domeRotor.IsActive);
+        Assert.Equal(0f, domeRotor.AngleZ);
+
         Assert.True(registry.TryGetDrawTransform(
             towerRotor.Placement,
             tickFraction: 1f,
@@ -106,5 +122,32 @@ public sealed class RetailRotatingObjectTests
         Matrix3f oriInterp0 = towerRotor.PresentedOrientation(0f, true);
         Matrix3f oriInterp1 = towerRotor.PresentedOrientation(1f, true);
         Assert.NotEqual(oriInterp0, oriInterp1);
+    }
+
+    private static RotatingObjectRegistry LoadRegistry(int levelNumber)
+    {
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fileSystem);
+
+        GameLoop loop = new(new ManualTimeSource());
+        PlayerTaskTypes.RegisterAll(loop.Types);
+        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        LevelTask levelRoot = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+
+        MissionRegistry missionRegistry = new();
+        missionRegistry.Register(loop.Natives);
+        missionRegistry.Scan(fileSystem, resources, loop.Natives);
+
+        MagicObjectRegistry magic = new();
+        magic.Register(loop.Natives);
+        magic.Load(resources, loop.Natives);
+
+        LevelLoader levelLoader = new(levelRoot, loop.TaskCommands, loop.Natives, resources);
+        LoadedMission mission = new MissionLoader(missionRegistry, fileSystem, resources, levelLoader).Load(levelNumber);
+        new ConditionalContainerGate(loop.Variables).Prepare(levelRoot);
+
+        WorldScene scene = WorldScene.Build(mission, levelRoot, magic);
+        return RotatingObjectRegistry.Build(levelRoot, scene.Placements, loop.Variables, magic);
     }
 }
