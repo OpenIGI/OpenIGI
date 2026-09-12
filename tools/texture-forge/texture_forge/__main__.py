@@ -1,9 +1,9 @@
 """Upscales Project I.G.I.'s textures and derives the surface maps a physically-based renderer needs.
 
     texture-forge models                          what weights are catalogued, and under what licence
-    texture-forge all      <png-dir> <out-dir>    upscale and derive, the whole job
+    texture-forge all      <png-dir> <out-dir>    upscale (add --pbr to derive surface maps too)
     texture-forge upscale  <png-dir> <out-dir>    upscale only
-    texture-forge maps     <png-dir> <out-dir>    derive only, from PNGs that are already the size you want
+    texture-forge maps     <png-dir> <out-dir>    derive surface maps only, from PNGs already the right size
     texture-forge sheet    <png-dir> <out.png>    a contact sheet of before and after, for judging a setting
 
 The input is whatever `ResExtract images` wrote -- a flat directory of PNGs named after the textures:
@@ -109,6 +109,11 @@ def _run(arguments: argparse.Namespace, *, upscale: bool, derive: bool) -> int:
         console.print("Run [cyan]ResExtract images[/cyan] first; see --help for the command.")
         return 2
 
+    # OFF unless asked for, or unless the command exists to derive them. An upscale is the game's own
+    # art at a higher resolution; a surface map is a guess about what the art is made of, and the two
+    # should not arrive together just because one command runs both stages.
+    derive_pbr = arguments.pbr or not upscale
+
     settings = pipeline.Settings(
         scale=arguments.scale,
         upscaler=arguments.model,
@@ -118,8 +123,8 @@ def _run(arguments: argparse.Namespace, *, upscale: bool, derive: bool) -> int:
         delight_strength=arguments.delight_strength,
         metallic=arguments.metallic,
         normal_strength=arguments.normal_strength,
-        derive_pbr=not arguments.no_pbr,
-        write_inspection=not arguments.no_inspection,
+        derive_pbr=derive_pbr,
+        write_inspection=not arguments.no_inspection and derive_pbr,
     )
 
     sources = pipeline.source_paths(source)
@@ -153,7 +158,10 @@ def _run(arguments: argparse.Namespace, *, upscale: bool, derive: bool) -> int:
             work,
             outputs,
             scale=effective_scale,
-            derive=derive,
+            # The RESOLVED flag, not the command's stage. `all` without --pbr runs the derive stage and
+            # writes one layer; asking resume for two would declare every finished asset unfinished and
+            # redo the corpus on the next run.
+            derive=derive and derive_pbr,
             inspection=settings.write_inspection,
         )
 
@@ -212,7 +220,9 @@ def _run(arguments: argparse.Namespace, *, upscale: bool, derive: bool) -> int:
         upscale_task = (
             progress.add_task("upscaling", total=total) if upscale else None
         )
-        derive_task = progress.add_task("deriving maps" if derive else "writing", total=total)
+        derive_task = progress.add_task(
+            "deriving maps" if derive and derive_pbr else "writing", total=total
+        )
 
         # Chunked, so memory is bounded by the chunk rather than by the corpus and the first files land in
         # seconds. The models are held by the session across every chunk; reloading them per chunk would
@@ -383,13 +393,14 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
-        "--no-pbr",
+        "--pbr",
         action="store_true",
         help=(
-            "upscale only: derive no normal, roughness or occlusion at all. The maps are invented data "
-            "-- inferred from a photograph of a surface, none of it shipped with the game -- and this is "
-            "for a player who wants the original art larger and nothing else. It is also much faster and "
-            "roughly halves what a run writes"
+            "also derive a normal, roughness and occlusion map for every texture, and carry it in the "
+            "asset beside the diffuse. OFF by default: the maps are INVENTED DATA -- inferred from a "
+            "photograph of a surface, none of it shipped with the game -- where an upscale is the game's "
+            "own art at a higher resolution. Deriving them is also the slow half of a run and roughly "
+            "doubles what it writes. `maps` implies it, since deriving them is what that command is for"
         ),
     )
     parser.add_argument(
@@ -414,7 +425,7 @@ def main(argv: list[str] | None = None) -> int:
     models_parser.set_defaults(handler=_models_command)
 
     for name, help_text, does_upscale, does_derive in (
-        ("all", "upscale and derive: the whole job", True, True),
+        ("all", "upscale, and derive surface maps too with --pbr", True, True),
         ("upscale", "upscale only", True, False),
         ("maps", "derive surface maps only, from PNGs already the size you want", False, True),
     ):
