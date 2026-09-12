@@ -493,13 +493,16 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.False(opening.BinocularOverlayVisible);
 
         CutsceneFrame lastEstablishingFrame = opening;
-        while (runtime.ActiveScene?.Id == 3500)
+        int lastEstablishingTick = opening.Scene.Ticks;
+        for (int tick = 0; tick < 1_000 && runtime.ActiveScene?.Id == 3500; tick++)
         {
             lastEstablishingFrame = Assert.IsType<CutsceneFrame>(runtime.Frame);
+            lastEstablishingTick = lastEstablishingFrame.Scene.Ticks;
             runtime.Tick();
         }
 
-        Assert.Equal(107, lastEstablishingFrame.Scene.Ticks);
+        Assert.NotEqual(3500, runtime.ActiveScene?.Id);
+        Assert.Equal(107, lastEstablishingTick);
         Assert.False(lastEstablishingFrame.BinocularOverlayVisible);
 
         CutsceneFrame firstBinocularFrame = Assert.IsType<CutsceneFrame>(runtime.Frame);
@@ -508,14 +511,17 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.True(firstBinocularFrame.BinocularOverlayVisible);
 
         CutsceneFrame lastBinocularFrame = firstBinocularFrame;
-        while (runtime.ActiveScene?.Id == 3501)
+        int lastBinocularTick = firstBinocularFrame.Scene.Ticks;
+        for (int tick = 0; tick < 1_000 && runtime.ActiveScene?.Id == 3501; tick++)
         {
             lastBinocularFrame = Assert.IsType<CutsceneFrame>(runtime.Frame);
+            lastBinocularTick = lastBinocularFrame.Scene.Ticks;
             Assert.True(lastBinocularFrame.BinocularOverlayVisible);
             runtime.Tick();
         }
 
-        Assert.Equal(744, lastBinocularFrame.Scene.Ticks);
+        Assert.NotEqual(3501, runtime.ActiveScene?.Id);
+        Assert.Equal(744, lastBinocularTick);
         CutsceneFrame firstClosingFrame = Assert.IsType<CutsceneFrame>(runtime.Frame);
         Assert.Equal(3502, firstClosingFrame.Scene.Id);
         Assert.Equal(1, firstClosingFrame.Scene.Ticks);
