@@ -154,4 +154,79 @@ public sealed class PngCodecTests
 
         return crc ^ 0xFFFFFFFFu;
     }
+
+    /// <summary>Every filter a row can be encoded under survives the trip back.</summary>
+    /// <remarks>
+    /// The encoder now picks a filter per row, so a picture wide enough and varied enough exercises all
+    /// five in one file. A predictor implemented with the wrong neighbour still round-trips ITS OWN rows
+    /// under a matching bug, which is why the pixels are checked against the source rather than against
+    /// a second encode.
+    /// </remarks>
+    [Fact]
+    public void AnImageUsingEveryFilterComesBackExactly()
+    {
+        const int Width = 61;
+        const int Height = 47;
+
+        Bgra32[] pixels = new Bgra32[Width * Height];
+
+        for (int y = 0; y < Height; y++)
+        {
+            for (int x = 0; x < Width; x++)
+            {
+                // Flat bands, horizontal ramps, vertical ramps and noise in one picture, so no single
+                // filter wins every row.
+                byte value = (y % 4) switch
+                {
+                    0 => 128,
+                    1 => (byte)(x * 4),
+                    2 => (byte)(y * 5),
+                    _ => (byte)((x * 37) + (y * 17)),
+                };
+
+                pixels[(y * Width) + x] = new Bgra32(value, (byte)(255 - value), (byte)(x + y), (byte)(x % 256));
+            }
+        }
+
+        using MemoryStream stream = new();
+        PngWriter.Write(stream, pixels, Width, Height);
+
+        (Bgra32[] Pixels, int Width, int Height) read = PngReader.Read(stream.ToArray());
+
+        Assert.Equal(Width, read.Width);
+        Assert.Equal(Height, read.Height);
+        Assert.Equal(pixels, read.Pixels);
+    }
+
+    /// <summary>Filtering is doing something: a smooth picture encodes far below its raw size.</summary>
+    /// <remarks>
+    /// The guard against a silent regression to filter zero everywhere, which is correct, passes every
+    /// round-trip test, and quietly costs most of the compression on exactly the material a texture pack
+    /// is made of. A gradient is the clearest case: left-predicted, it is almost entirely zeroes.
+    /// </remarks>
+    [Fact]
+    public void ASmoothGradientCompressesFarBelowItsRawSize()
+    {
+        const int Side = 256;
+
+        Bgra32[] pixels = new Bgra32[Side * Side];
+
+        for (int y = 0; y < Side; y++)
+        {
+            for (int x = 0; x < Side; x++)
+            {
+                pixels[(y * Side) + x] = new Bgra32((byte)x, (byte)y, (byte)((x + y) / 2), 255);
+            }
+        }
+
+        using MemoryStream stream = new();
+        PngWriter.Write(stream, pixels, Side, Side);
+
+        long raw = (long)Side * Side * 4;
+
+        Assert.True(
+            stream.Length * 20 < raw,
+            $"A {Side}x{Side} gradient encoded to {stream.Length} bytes against {raw} raw, which is not "
+                + "the shape of a filtered encode -- filter selection has probably regressed to zero.");
+    }
 }
