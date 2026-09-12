@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
@@ -664,6 +664,11 @@ internal sealed partial class DesktopGame
             "Ai",
             $"{_securityCameras.Cameras.Count} security camera(s), "
                 + $"{_securityCameras.ControlCount} camera control(s) placed.");
+        _rotatingObjects = RotatingObjectRegistry.Build(levelRoot, scene.Placements, _loop.Variables, _magic);
+        world.RotatingObjects = _rotatingObjects;
+        _logger.Information(
+            "World",
+            $"{_rotatingObjects.Count} rotating object(s) registered.");
 
         // The level's nav graphs. A level ships ONE PER AIGraph TASK, named by that task's id (ai.md 1.1),
         // and every HumanAI names the one it walks through its own "Graph ID" parameter (ai.md 7.6).
@@ -2224,6 +2229,7 @@ internal sealed partial class DesktopGame
         _missionObjectives = null;
         _cutscenes = null;
         _securityCameras = null;
+        _rotatingObjects = null;
         _cameraBeepVoices.Clear();
         _cameraMoveVoices.Clear();
         StopCutsceneSounds();

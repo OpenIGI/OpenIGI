@@ -1,4 +1,4 @@
-﻿using OpenIGI.Audio;
+using OpenIGI.Audio;
 using OpenIGI.Audio.OpenAL;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
@@ -153,6 +153,7 @@ internal sealed partial class DesktopGame : IDisposable
     private SecurityCameraRegistry? _securityCameras;
     private readonly Dictionary<SecurityCamera, (string Sound, AudioVoiceHandle Voice)> _cameraBeepVoices = [];
     private readonly Dictionary<SecurityCamera, AudioVoiceHandle> _cameraMoveVoices = [];
+    private RotatingObjectRegistry? _rotatingObjects;
 
     // --- Global illumination, distance fields and the surface cache ---
     private IrradianceVolume? _probeField;
@@ -2859,6 +2860,15 @@ internal sealed partial class DesktopGame : IDisposable
                                 headMetres,
                                 camera.Orientation);
                         }
+                    }
+                }
+
+                if (_rotatingObjects is { } rotatingObjects)
+                {
+                    rotatingObjects.Tick();
+                    if (_worldSolids is { } rotatingSolids)
+                    {
+                        rotatingObjects.ApplyCollision(rotatingSolids);
                     }
                 }
 
