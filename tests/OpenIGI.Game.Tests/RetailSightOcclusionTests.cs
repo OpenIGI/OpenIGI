@@ -32,7 +32,7 @@ public sealed class RetailSightOcclusionTests
 
         Assert.False(
             index.TryTrace(
-                new WorldTraceRequest(from, to, WorldTraceMask.World, TraceDoorPortals: true),
+                new WorldTraceRequest(from, to, WorldTraceMask.World),
                 out WorldTraceHit blocked),
             $"the clear M1 doorway hit invisible portal '{blocked.Label}' at t={blocked.Fraction:0.###}");
     }
@@ -48,7 +48,7 @@ public sealed class RetailSightOcclusionTests
 
         Assert.True(
             index.TryTrace(
-                new WorldTraceRequest(from, to, WorldTraceMask.World, TraceDoorPortals: true),
+                new WorldTraceRequest(from, to, WorldTraceMask.World),
                 out WorldTraceHit blocked),
             "room wall missed");
         Assert.False(
@@ -80,7 +80,7 @@ public sealed class RetailSightOcclusionTests
 
         Assert.False(index.TryCast(from, to, out _), "passable open door retained its physical leaf");
         Assert.False(
-            index.TryTrace(new WorldTraceRequest(from, to, TraceDoorPortals: true), out WorldTraceHit leftover),
+            index.TryTrace(new WorldTraceRequest(from, to), out WorldTraceHit leftover),
             $"open doorway still blocked sight via '{leftover.Label}'");
     }
 
@@ -111,12 +111,12 @@ public sealed class RetailSightOcclusionTests
         index.SetSightOpening(door.Owner, open: true);
         Assert.False(index.TryCast(from, to, out _), "translated passable door retained its physical leaf");
         Assert.False(
-            index.TryTrace(new WorldTraceRequest(from, to, TraceDoorPortals: true), out WorldTraceHit authored),
+            index.TryTrace(new WorldTraceRequest(from, to), out WorldTraceHit authored),
             $"the passable door still hit '{authored.Label}' through a building portal");
 
         index.SetSightOpening(door.Owner, open: true, displacementMetres: displacementMetres);
         Assert.False(
-            index.TryTrace(new WorldTraceRequest(from, to, TraceDoorPortals: true), out WorldTraceHit leftover),
+            index.TryTrace(new WorldTraceRequest(from, to), out WorldTraceHit leftover),
             $"translated open doorway still blocked sight via '{leftover.Label}'");
     }
 

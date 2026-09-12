@@ -109,10 +109,6 @@ public enum WorldTraceHitKind
 /// portal polygons mark openings rather than physical cover.
 /// </param>
 /// <param name="IgnoredPlacement">One exact placed mesh to skip, without skipping its sibling attachments.</param>
-/// <param name="TraceDoorPortals">
-/// Whether portal faces owned by an actual <c>Door</c> task participate while building portals stay open.
-/// AI sight uses this so a closed door leaf blocks without turning every authored window into a wall.
-/// </param>
 public readonly record struct WorldTraceRequest(
     Vector3d Origin,
     Vector3d End,
@@ -121,8 +117,7 @@ public readonly record struct WorldTraceRequest(
     GameTask? IgnoredSubject = null,
     bool IncludeInactiveOwners = false,
     bool TracePortals = false,
-    WorldPlacement? IgnoredPlacement = null,
-    bool TraceDoorPortals = false)
+    WorldPlacement? IgnoredPlacement = null)
 {
     /// <summary>Gets the segment length in world units.</summary>
     public double Length
@@ -235,8 +230,7 @@ public static class WorldTrace
     public static WorldRayCast AsRayCast(
         WorldTraceCast cast,
         WorldTraceMask mask = WorldTraceMask.World,
-        bool tracePortals = false,
-        bool traceDoorPortals = false)
+        bool tracePortals = false)
     {
         ArgumentNullException.ThrowIfNull(cast);
         return (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
@@ -246,8 +240,7 @@ public static class WorldTrace
                     origin,
                     end,
                     mask,
-                    TracePortals: tracePortals,
-                    TraceDoorPortals: traceDoorPortals),
+                    TracePortals: tracePortals),
                 out WorldTraceHit rich);
             hit = found ? rich.RayHit : default;
             return found;

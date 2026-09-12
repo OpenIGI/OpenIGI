@@ -27,6 +27,5 @@ public sealed class AiSightWiringTests
         Assert.True(called);
         Assert.Equal(WorldTraceMask.World, captured.Mask);
         Assert.False(captured.TracePortals);
-        Assert.True(captured.TraceDoorPortals);
     }
 }

@@ -742,11 +742,7 @@ public sealed class SoldierRenderer : IDisposable
     /// closed door leaves remain ordinary collision geometry and still block this cast.
     /// </remarks>
     internal static WorldRayCast AiSightCast(WorldTraceCast cast) =>
-        WorldTrace.AsRayCast(
-            cast,
-            WorldTraceMask.World,
-            tracePortals: false,
-            traceDoorPortals: true);
+        WorldTrace.AsRayCast(cast, WorldTraceMask.World, tracePortals: false);
 
     /// <summary>Whether the eye can see a point, treating glass and fences as non-occluding.</summary>
     /// <remarks>
@@ -2997,10 +2993,11 @@ public sealed class SoldierRenderer : IDisposable
                     view.Position.Y + eye.Y,
                     view.Position.Z + eye.Z);
             },
-            // The attachment supplies the eye POSITION only. Its animated local rotation differs by
-            // skeleton/clip (and can face sideways or backwards), while the detector snapshot's view
-            // basis is the Human's world orientation. Using bone 5 as the cone basis made identical
-            // guards in several campaign levels blind to a target directly along body +Y.
+            // The attachment supplies the animated eye POSITION only. Its local rotation differs by
+            // skeleton/clip and made the detector face sideways or backwards in the Level 14 retail
+            // rig. Use the stable Human orientation for the port's perception frame. This is an
+            // empirical port correction; the native snapshot matrix's exact source dataflow still
+            // requires a Windows trace or additional dual-tool field analysis.
             () => view.Orientation);
     }
 

@@ -959,9 +959,7 @@ public sealed class ObjectCollisionIndex
             WorldTraceMask category = entry.IsDynamic
                 ? WorldTraceMask.DynamicObjects
                 : WorldTraceMask.StaticObjects;
-            bool includePortals = request.TracePortals
-                || (request.TraceDoorPortals
-                    && string.Equals(entry.Owner.Type.Name, "Door", StringComparison.Ordinal));
+            bool includePortals = request.TracePortals;
             if ((request.Mask & category) == 0
                 || !MeetsSphere(origin, direction, entry.Centre, entry.Radius)
                 || !entry.TryCast(
