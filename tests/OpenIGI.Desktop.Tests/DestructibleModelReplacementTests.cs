@@ -18,9 +18,36 @@ namespace OpenIGI.Desktop.Tests;
 public sealed class DestructibleModelReplacementTests
 {
     [RequiresGameDataFact]
+    public void EveryLevelObjectsQvmExplosiveModelPairIsRegisteredForReplacement()
+    {
+        for (int mission = 1; mission <= 14; mission++)
+        {
+            using Scenario scenario = CreateMission(mission);
+            WorldPlacement[] explosivePlacements = [.. scenario.Scene.Placements.Where(IsObjectsQvmExplosive)];
+
+            foreach (WorldPlacement placement in explosivePlacements)
+            {
+                DeclaredTask task = Assert.IsType<DeclaredTask>(placement.Owner);
+                Assert.True(task.TryGetValue("Destroyed model", out object? rawDestroyed));
+                string destroyedModel = Assert.IsType<string>(rawDestroyed);
+                Assert.True(
+                    placement.DestroyedReplacement is not null,
+                    $"Mission {mission}, {task.Type.Name} '{task.Name}': {placement.Instance.Name} has no binding for {destroyedModel}.");
+                WorldModelBinding replacement = placement.DestroyedReplacement!;
+                DestructibleObject destructible = Assert.Single(
+                    scenario.Destructibles.Objects,
+                    candidate => ReferenceEquals(candidate.Placement, placement));
+
+                Assert.Equal(destroyedModel, replacement.Instance.Name);
+                Assert.Equal(destroyedModel, destructible.DestroyedModelName);
+            }
+        }
+    }
+
+    [RequiresGameDataFact]
     public void DestroyedLevelOneTerminalUsesItsAuthoredReplacementModel()
     {
-        using Scenario scenario = CreateLevelOne();
+        using Scenario scenario = CreateMission(1);
         WorldPlacement placement = scenario.Scene.Placements.First(
             candidate => candidate.Instance.Name == "252_01_1"
                 && candidate.DestroyedReplacement?.Instance.Name == "203_02_1");
@@ -37,7 +64,7 @@ public sealed class DestructibleModelReplacementTests
     [RequiresGameDataFact]
     public void DestroyedLevelOneComputerReplacesItsIntactModelOnTheNextFrame()
     {
-        using Scenario scenario = CreateLevelOne();
+        using Scenario scenario = CreateMission(1);
         (WorldPlacement placement, int index) = scenario.Scene.Placements
             .Select((placement, index) => (placement, index))
             .First(entry => entry.placement.Instance.Name == "203_01_1"
@@ -67,7 +94,13 @@ public sealed class DestructibleModelReplacementTests
         Assert.Contains(scenario.Device.MeshDraws, draw => draw.Mesh.Id == destroyedMesh);
     }
 
-    private static Scenario CreateLevelOne()
+    private static bool IsObjectsQvmExplosive(WorldPlacement placement) =>
+        placement.Owner is DeclaredTask task
+        && task.TryGetValue("Destroyed model", out object? destroyed)
+        && destroyed is string { Length: > 0 }
+        && task.TryGetValue("Damage scale", out _);
+
+    private static Scenario CreateMission(int missionId)
     {
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -87,7 +120,7 @@ public sealed class DestructibleModelReplacementTests
             missions,
             fileSystem,
             resources,
-            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(1);
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(missionId);
         WorldScene scene = WorldScene.Build(mission, root, magic);
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         DestructibleObjectRegistry destructibles = DestructibleObjectRegistry.Build(

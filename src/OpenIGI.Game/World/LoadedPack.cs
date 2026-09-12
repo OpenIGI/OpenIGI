@@ -210,6 +210,14 @@ public sealed class LoadedPack
         return _registered.Contains(name) && _models.TryGetValue(name, out model);
     }
 
+    /// <summary>Resolves a model stored in this pack's archive even when no <c>INST</c> record names it.</summary>
+    /// <remarks>
+    /// Most scene geometry must remain limited to the pack's <c>MODS</c>/<c>INST</c> tables.  Retail
+    /// <c>OBJECTS.QVM</c> destroyed-model fields are an exception: Level 6's terminal, for example,
+    /// names <c>252_02_1</c> only as a replacement and therefore has no ordinary instance record.
+    /// </remarks>
+    public bool TryGetArchiveModel(string name, out MefModel? model) => _models.TryGetValue(name, out model);
+
     /// <summary>Resolves the diffuse texture a draw record samples.</summary>
     /// <param name="instance">The instance being drawn.</param>
     /// <param name="materialSlot">The draw record's material slot.</param>
