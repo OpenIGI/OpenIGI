@@ -45,8 +45,19 @@ public readonly struct Vertex3D
     /// <param name="diffuseV">The diffuse texture V coordinate.</param>
     /// <param name="lightmapU">The lightmap U coordinate.</param>
     /// <param name="lightmapV">The lightmap V coordinate.</param>
-    /// <param name="colour">The modulating colour; white leaves the sampled texture alone.</param>
+    /// <param name="colour">
+    /// The modulating colour, or <see langword="null"/> for <see cref="Bgra32.White"/>, which leaves the
+    /// sampled texture alone.
+    /// </param>
     /// <param name="surfaceNormal">A packed shading normal for a mesh whose normal channel is spoken for.</param>
+    /// <remarks>
+    /// The colour is optional rather than defaulted-by-value, and it has to be: transparent black IS the
+    /// zero value, so a constructor that read "white" off a zero colour substituted opaque white for
+    /// every vertex a caller had faded all the way out. Anything that fades a dark thing to nothing hit
+    /// it — the sky's cloud layers made a bright opaque quad of the one row of their strip the fade had
+    /// reached zero on, which in missions 3 and 9, whose layers are authored black, was a white box in
+    /// the sky. Omitting the argument still means white; passing one now always means what it says.
+    /// </remarks>
     public Vertex3D(
         Vector3f position,
         Vector3f normal,
@@ -54,7 +65,7 @@ public readonly struct Vertex3D
         float diffuseV,
         float lightmapU = 0f,
         float lightmapV = 0f,
-        Bgra32 colour = default,
+        Bgra32? colour = null,
         Bgra32 surfaceNormal = default)
     {
         Position = position;
@@ -63,7 +74,7 @@ public readonly struct Vertex3D
         DiffuseV = diffuseV;
         LightmapU = lightmapU;
         LightmapV = lightmapV;
-        Colour = colour == default ? Bgra32.White : colour;
+        Colour = colour ?? Bgra32.White;
         SurfaceNormal = surfaceNormal;
     }
 
