@@ -318,6 +318,88 @@ public sealed class ContainerWriterTests
         Assert.True(atlases > 0, "No terrain atlas was round-tripped; those are the ground of every level.");
     }
 
+    [Fact]
+    public void TheIndexFindsTheSameEntriesAsTheReader()
+    {
+        IresWriter.Entry[] entries =
+        [
+            new("LOCAL:a.tex", IresEntryKind.Body, new byte[] { 1, 2, 3 }),
+            new("LOCAL:b.tex", IresEntryKind.Body, new byte[] { 4, 5 }),
+            new("LOCAL:dir", IresEntryKind.Path, new byte[] { 6 }),
+        ];
+
+        byte[] archive = IresWriter.Write(entries);
+        using MemoryStream stream = new(archive);
+
+        IReadOnlyList<IresIndex.Located> located = IresIndex.Read(stream);
+        IresArchive read = IresArchive.Read(archive);
+
+        Assert.Equal(read.Entries.Count, located.Count);
+
+        for (int i = 0; i < located.Count; i++)
+        {
+            Assert.Equal(read.Entries[i].Name, located[i].Name);
+            Assert.Equal(read.Entries[i].Kind, located[i].Kind);
+            Assert.Equal(
+                read.Entries[i].Data.ToArray(),
+                archive.AsSpan((int)located[i].Offset, located[i].Length).ToArray());
+        }
+    }
+
+    [RequiresGameDataFact]
+    public void TheIndexAgreesWithTheReaderOnEveryRetailArchive()
+    {
+        // The index exists so the override folder can be scanned without loading a quarter-gigabyte
+        // archive per level. It walks the chunk list itself rather than reusing the reader, which means
+        // it is a second implementation of the same layout -- so it is worth checking the two agree
+        // across the whole corpus rather than on a file made by the writer they both trust.
+        int walked = 0;
+        List<string> failures = [];
+
+        foreach (string path in GameData.EnumerateFiles("*.res"))
+        {
+            byte[] bytes = File.ReadAllBytes(path);
+
+            if (!IlffContainer.IsIlff(bytes))
+            {
+                continue;
+            }
+
+            IlffContainer container = IlffContainer.Read(bytes);
+
+            if (container.FormType != IlffTags.Ires || container.Chunks.Any(chunk => chunk.IsContainer))
+            {
+                continue;
+            }
+
+            IresArchive read = IresArchive.FromContainer(container);
+            using MemoryStream stream = new(bytes);
+            IReadOnlyList<IresIndex.Located> located = IresIndex.Read(stream);
+
+            if (located.Count != read.Entries.Count)
+            {
+                failures.Add($"{Path.GetFileName(path)}: reader saw {read.Entries.Count}, index saw {located.Count}");
+                continue;
+            }
+
+            for (int i = 0; i < located.Count; i++)
+            {
+                if (located[i].Name != read.Entries[i].Name
+                    || located[i].Length != read.Entries[i].Data.Length
+                    || !bytes.AsSpan((int)located[i].Offset, located[i].Length).SequenceEqual(read.Entries[i].Data.Span))
+                {
+                    failures.Add($"{Path.GetFileName(path)}: entry {i} '{read.Entries[i].Name}' differs");
+                    break;
+                }
+            }
+
+            walked++;
+        }
+
+        Assert.Empty(failures);
+        Assert.True(walked > 0, "No retail archive was indexed.");
+    }
+
     private static TextureImage Checkerboard(int width, int height)
     {
         Bgra32[] pixels = new Bgra32[width * height];

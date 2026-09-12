@@ -1,6 +1,7 @@
 using OpenIGI.Core;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Resources;
+using OpenIGI.Formats.Ilff;
 
 namespace OpenIGI.Engine.Resources;
 
@@ -24,10 +25,29 @@ namespace OpenIGI.Engine.Resources;
 /// replacement keyed by WHERE THE ARCHIVE IS can, because an archive has exactly one place.
 /// </para>
 /// <para>
+/// <b>An archive in the folder works too, and means the same thing.</b> A <c>.res</c> file under
+/// <c>overrides</c> is opened and every entry in it is registered at the path that entry would have been
+/// overridden at individually — so <c>overrides/common/textures/textures.res</c> holding
+/// <c>water_igi.tex</c> is exactly equivalent to <c>overrides/common/textures/water_igi.tex</c>. That is
+/// what lets a generated pack ship the game's own file types without the loader needing a second idea of
+/// what an override is: the archive is a delivery mechanism, not a new rule.
+/// </para>
+/// <para>
+/// An override archive holds only what it replaces. It is not a copy of the game's archive with some
+/// entries swapped, so nothing falls out of the installation by being left out of the pack — a name the
+/// override does not carry simply resolves the way it always did.
+/// </para>
+/// <para>
+/// <b>A loose file wins over an archived one.</b> Someone who drops a single <c>.tex</c> next to a
+/// generated pack is correcting that pack, and the more specific, hand-placed thing is what they meant.
+/// </para>
+/// <para>
 /// <b>Rescannable by design.</b> <see cref="Rescan"/> rebuilds the index and reports what moved, so a
 /// file dropped in while the game is running can be picked up without a restart. The bytes are read on
 /// demand and cached against the file's timestamp and length, so a rescan that finds nothing new costs
-/// a directory walk and nothing else.
+/// a directory walk and nothing else. An archive is INDEXED rather than loaded: the walk reads chunk
+/// headers and names and seeks past every payload, because a 4x pack's level archive is a quarter of a
+/// gigabyte and there may be fifteen of them.
 /// </para>
 /// </remarks>
 public sealed class ResourceOverrides
@@ -36,6 +56,9 @@ public sealed class ResourceOverrides
 
     /// <summary>The directory name, relative to the installation root.</summary>
     public const string DirectoryName = "overrides";
+
+    /// <summary>The extension that marks a file in the folder as an archive of overrides, not an asset.</summary>
+    public const string ArchiveExtension = ".res";
 
     private readonly IIgiLogger _logger;
     private readonly Dictionary<string, Candidate> _files = new(StringComparer.OrdinalIgnoreCase);
@@ -91,6 +114,7 @@ public sealed class ResourceOverrides
 
         int added = 0;
         int changed = 0;
+        List<string> archives = [];
 
         foreach (string path in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories))
         {
@@ -112,28 +136,112 @@ public sealed class ResourceOverrides
                 continue;
             }
 
-            Candidate candidate = new(path, info.Length, info.LastWriteTimeUtc);
-
-            if (!previous.TryGetValue(relative, out Candidate existing))
+            if (relative.EndsWith(ArchiveExtension, StringComparison.OrdinalIgnoreCase))
             {
-                added++;
-            }
-            else if (existing.Length != candidate.Length || existing.Written != candidate.Written)
-            {
-                changed++;
-            }
-            else
-            {
-                // Unchanged: carry the decoded bytes across so a rescan does not throw away work.
-                candidate = existing;
+                // Held back and indexed after the loose files, so that a hand-placed file already holds
+                // its path by the time the archive's copy of that name is offered.
+                archives.Add(path);
+                continue;
             }
 
-            _files[relative] = candidate;
+            Record(relative, new Candidate(path, info.Length, info.LastWriteTimeUtc), previous, ref added, ref changed);
+        }
+
+        foreach (string path in archives)
+        {
+            IndexArchive(path, previous, ref added, ref changed);
         }
 
         int removed = previous.Keys.Count(key => !_files.ContainsKey(key));
 
         return new ScanResult(_files.Count, added, removed, changed);
+    }
+
+    private void Record(
+        string relative,
+        Candidate candidate,
+        Dictionary<string, Candidate> previous,
+        ref int added,
+        ref int changed)
+    {
+        if (_files.ContainsKey(relative))
+        {
+            // A loose file already claimed this path. Archives are indexed second precisely so this is
+            // the direction the collision resolves in.
+            return;
+        }
+
+        if (!previous.TryGetValue(relative, out Candidate existing))
+        {
+            added++;
+        }
+        else if (existing.Length != candidate.Length
+            || existing.Written != candidate.Written
+            || existing.Offset != candidate.Offset)
+        {
+            changed++;
+        }
+        else
+        {
+            // Unchanged: carry the decoded bytes across so a rescan does not throw away work.
+            candidate = existing;
+        }
+
+        _files[relative] = candidate;
+    }
+
+    private void IndexArchive(
+        string path,
+        Dictionary<string, Candidate> previous,
+        ref int added,
+        ref int changed)
+    {
+        FileInfo info;
+        IReadOnlyList<IresIndex.Located> entries;
+
+        try
+        {
+            info = new FileInfo(path);
+
+            using FileStream stream = File.OpenRead(path);
+            entries = IresIndex.Read(stream);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or IlffFormatException)
+        {
+            _logger.Warning(LogCategory, $"Override archive '{path}' could not be read: {error.Message}");
+            return;
+        }
+
+        string archive = ResourcePath.Normalize(Path.GetRelativePath(Root!, path));
+        int registered = 0;
+
+        foreach (IresIndex.Located entry in entries)
+        {
+            if (entry.Kind != IresEntryKind.Body)
+            {
+                // Only a body is an asset. PATH and CSTR describe the archive's own structure, which an
+                // overlay has no business replacing.
+                continue;
+            }
+
+            string relative = OverridePath.For(archive, entry.Name);
+
+            if (relative.Length == 0)
+            {
+                continue;
+            }
+
+            Record(
+                relative,
+                new Candidate(path, entry.Length, info.LastWriteTimeUtc) { Offset = entry.Offset },
+                previous,
+                ref added,
+                ref changed);
+
+            registered++;
+        }
+
+        _logger.Information(LogCategory, $"'{archive}' contributes {registered} override(s).");
     }
 
     /// <summary>Determines whether a path is overridden.</summary>
@@ -167,7 +275,23 @@ public sealed class ResourceOverrides
 
         try
         {
-            byte[] bytes = File.ReadAllBytes(candidate.Path);
+            byte[] bytes;
+
+            if (candidate.Offset < 0)
+            {
+                bytes = File.ReadAllBytes(candidate.Path);
+            }
+            else
+            {
+                // A slice of an override archive, read now rather than at scan time. The index recorded
+                // where it is precisely so that a folder of large archives costs a walk of their headers.
+                bytes = new byte[candidate.Length];
+
+                using FileStream stream = File.OpenRead(candidate.Path);
+                stream.Position = candidate.Offset;
+                stream.ReadExactly(bytes);
+            }
+
             _files[relativePath] = candidate with { Data = bytes };
             data = bytes;
             return true;
@@ -196,6 +320,9 @@ public sealed class ResourceOverrides
 
     private readonly record struct Candidate(string Path, long Length, DateTime Written)
     {
+        /// <summary>Where the bytes start in <see cref="Path"/>, or -1 when the file itself is the asset.</summary>
+        public long Offset { get; init; } = -1;
+
         public byte[]? Data { get; init; }
     }
 }

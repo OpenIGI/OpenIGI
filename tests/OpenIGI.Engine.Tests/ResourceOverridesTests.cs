@@ -1,5 +1,6 @@
 using OpenIGI.Core.Resources;
 using OpenIGI.Engine.Resources;
+using OpenIGI.Formats.Ilff;
 using Xunit;
 
 namespace OpenIGI.Engine.Tests;
@@ -151,5 +152,103 @@ public sealed class ResourceOverridesTests : IDisposable
         string path = Path.Combine(_root, relative.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllBytes(path, bytes);
+    }
+
+    /// <summary>An archive in the folder overrides the same paths its loose entries would have.</summary>
+    /// <remarks>
+    /// The point of the whole arrangement. A generated pack ships the game's own file types, and the
+    /// loader is not told a second idea of what an override is: the archive's entries are registered at
+    /// exactly the paths individual files would have claimed, so everything downstream is unchanged.
+    /// </remarks>
+    [Fact]
+    public void AnArchiveContributesItsEntriesAsOverrides()
+    {
+        WriteArchive(
+            "common/textures/textures.res",
+            ("LOCAL:common/textures/water_igi.tex", [1, 2, 3]),
+            ("LOCAL:common/textures/shadow1.tex", [4, 5]));
+
+        ResourceOverrides overrides = new(_root);
+        ResourceOverrides.ScanResult result = overrides.Rescan();
+
+        Assert.Equal(2, result.Total);
+        Assert.True(overrides.Has("common/textures/water_igi.tex"));
+        Assert.True(overrides.TryRead("common/textures/shadow1.tex", out ReadOnlyMemory<byte> data));
+        Assert.Equal(new byte[] { 4, 5 }, data.ToArray());
+    }
+
+    /// <summary>The archive file itself is not offered as an asset.</summary>
+    /// <remarks>
+    /// Registering it under its own path as well would mean an override for
+    /// <c>common/textures/textures.res</c> -- which the game does load, as an archive -- and it would be
+    /// this overlay, holding a fraction of the entries. Everything not in the pack would vanish.
+    /// </remarks>
+    [Fact]
+    public void TheArchiveItselfIsNotAnOverride()
+    {
+        WriteArchive("common/textures/textures.res", ("LOCAL:common/textures/a.tex", [1]));
+
+        ResourceOverrides overrides = new(_root);
+        _ = overrides.Rescan();
+
+        Assert.False(overrides.Has("common/textures/textures.res"));
+    }
+
+    /// <summary>A loose file beats an archived entry for the same path.</summary>
+    /// <remarks>
+    /// Someone who drops a single file next to a generated pack is correcting that pack. The specific,
+    /// hand-placed thing is what they meant, whichever order the directory happens to enumerate in.
+    /// </remarks>
+    [Fact]
+    public void ALooseFileWinsOverAnArchivedOne()
+    {
+        WriteArchive("common/textures/textures.res", ("LOCAL:common/textures/a.tex", [9, 9, 9]));
+        Write("common/textures/a.tex", [7]);
+
+        ResourceOverrides overrides = new(_root);
+        _ = overrides.Rescan();
+
+        Assert.True(overrides.TryRead("common/textures/a.tex", out ReadOnlyMemory<byte> data));
+        Assert.Equal(new byte[] { 7 }, data.ToArray());
+    }
+
+    /// <summary>A rewritten archive is noticed by a rescan.</summary>
+    [Fact]
+    public void RewritingAnArchiveShowsUpAsAChange()
+    {
+        WriteArchive("common/textures/textures.res", ("LOCAL:common/textures/a.tex", [1, 2]));
+
+        ResourceOverrides overrides = new(_root);
+        _ = overrides.Rescan();
+        Assert.True(overrides.TryRead("common/textures/a.tex", out ReadOnlyMemory<byte> first));
+        Assert.Equal(new byte[] { 1, 2 }, first.ToArray());
+
+        WriteArchive("common/textures/textures.res", ("LOCAL:common/textures/a.tex", [3, 4, 5]));
+
+        ResourceOverrides.ScanResult result = overrides.Rescan();
+
+        Assert.Equal(1, result.Changed);
+        Assert.True(overrides.TryRead("common/textures/a.tex", out ReadOnlyMemory<byte> second));
+        Assert.Equal(new byte[] { 3, 4, 5 }, second.ToArray());
+    }
+
+    /// <summary>A file that is not an archive at all is reported, not thrown.</summary>
+    [Fact]
+    public void ARubbishArchiveIsSkipped()
+    {
+        Write("common/textures/broken.res", [0, 1, 2, 3, 4, 5, 6, 7]);
+
+        ResourceOverrides overrides = new(_root);
+        ResourceOverrides.ScanResult result = overrides.Rescan();
+
+        Assert.Equal(0, result.Total);
+    }
+
+    private void WriteArchive(string relative, params (string Name, byte[] Data)[] entries)
+    {
+        Write(
+            relative,
+            IresWriter.Write(
+                [.. entries.Select(entry => new IresWriter.Entry(entry.Name, IresEntryKind.Body, entry.Data))]));
     }
 }
