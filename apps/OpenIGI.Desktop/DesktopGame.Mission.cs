@@ -920,62 +920,62 @@ internal sealed partial class DesktopGame
                     // request (r_gi off, r_lightmap on -- the ultra preset is exactly that).
                     if (RenderCVars.GlobalIllumination.Value)
                     {
-                    // Whatever the console says, but never so fine that a big level spends a minute of
-                    // load tracing rays nobody asked for.
-                    float giSpacing = RenderCVars.GlobalIlluminationSpacing.Value;
+                        // Whatever the console says, but never so fine that a big level spends a minute of
+                        // load tracing rays nobody asked for.
+                        float giSpacing = RenderCVars.GlobalIlluminationSpacing.Value;
 
-                    // Remembered so the live re-bake (F11) can trace the field again from exactly the
-                    // inputs this load used -- the same cast, sun and spacing -- whether the field arrived
-                    // from the cache or the tracer below.
-                    _bakeCast = bakeCast;
-                    _probeBakeMission = id;
-                    _probeBakeSpacing = giSpacing;
-                    _probeBakeSun = bakeSunDirection;
+                        // Remembered so the live re-bake (F11) can trace the field again from exactly the
+                        // inputs this load used -- the same cast, sun and spacing -- whether the field arrived
+                        // from the cache or the tracer below.
+                        _bakeCast = bakeCast;
+                        _probeBakeMission = id;
+                        _probeBakeSpacing = giSpacing;
+                        _probeBakeSun = bakeSunDirection;
 
-                    // A shipped (or previously-written) bake loads instantly; only a mission without one
-                    // pays to trace it here, and then writes the result so no load pays for it again.
-                    if (_giCache.TryLoad(id, giSpacing, bakeSunDirection) is { } cachedField)
-                    {
-                        _probeField = cachedField;
-                    }
-                    else
-                    {
-                        _probeBake = IrradianceProbeBake.Start(
-                            _scene,
-                            bakeCast,
-                            bakeSunDirection,
-                            giSpacing,
-
-                            // One albedo for the whole level. The alternative is reading each hit's own
-                            // texture, which needs the ray to report a material rather than a triangle --
-                            // and IGI's palette is concrete, snow and dirt, so a warm grey is not far off
-                            // any of them.
-                            ProbeBakeAlbedo,
-                            _logger);
-
-                        if (_options.Lockstep)
+                        // A shipped (or previously-written) bake loads instantly; only a mission without one
+                        // pays to trace it here, and then writes the result so no load pays for it again.
+                        if (_giCache.TryLoad(id, giSpacing, bakeSunDirection) is { } cachedField)
                         {
-                            // A capture is not allowed to race the worker: a reference image has to either
-                            // contain the field or not, never "whatever frame 30 caught". So a lockstep run
-                            // blocks for the finished field and writes the cache inline.
-                            _probeField = _probeBake.WaitForResult();
-                            _probeBake = null;
-
-                            if (_probeField is not null)
-                            {
-                                _giCache.Save(id, giSpacing, bakeSunDirection, _probeField);
-                            }
+                            _probeField = cachedField;
                         }
                         else
                         {
-                            // Interactive play enters the level on flat ambient and watches the light
-                            // stream in: the render loop polls TryCollectLatest and eases each snapshot in
-                            // as it lands, so a room fills with light over the first seconds rather than the
-                            // load stalling until it is lit. The cache is written once the bake completes,
-                            // under the key already remembered above.
-                            _probeField = null;
+                            _probeBake = IrradianceProbeBake.Start(
+                                _scene,
+                                bakeCast,
+                                bakeSunDirection,
+                                giSpacing,
+
+                                // One albedo for the whole level. The alternative is reading each hit's own
+                                // texture, which needs the ray to report a material rather than a triangle --
+                                // and IGI's palette is concrete, snow and dirt, so a warm grey is not far off
+                                // any of them.
+                                ProbeBakeAlbedo,
+                                _logger);
+
+                            if (_options.Lockstep)
+                            {
+                                // A capture is not allowed to race the worker: a reference image has to either
+                                // contain the field or not, never "whatever frame 30 caught". So a lockstep run
+                                // blocks for the finished field and writes the cache inline.
+                                _probeField = _probeBake.WaitForResult();
+                                _probeBake = null;
+
+                                if (_probeField is not null)
+                                {
+                                    _giCache.Save(id, giSpacing, bakeSunDirection, _probeField);
+                                }
+                            }
+                            else
+                            {
+                                // Interactive play enters the level on flat ambient and watches the light
+                                // stream in: the render loop polls TryCollectLatest and eases each snapshot in
+                                // as it lands, so a room fills with light over the first seconds rather than the
+                                // load stalling until it is lit. The cache is written once the bake completes,
+                                // under the key already remembered above.
+                                _probeField = null;
+                            }
                         }
-                    }
                     }
                 }
 
@@ -1504,7 +1504,7 @@ internal sealed partial class DesktopGame
 
                 return true;
             }
-            : null;
+        : null;
         _player = null;
         _playerMode = false;
 
