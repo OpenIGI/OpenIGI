@@ -277,6 +277,30 @@ public sealed class CutsceneRuntime
     /// </remarks>
     public void EnableTerminalTerrainLanding(GameTask task)
     {
+        TransformState state = TerminalLandingState(task);
+        state.TerminalLandingOnTerrain = true;
+    }
+
+    /// <summary>Marks a helicopter for terminal landing at a separately authored final pose.</summary>
+    /// <param name="task">The helicopter task whose first terrain contact is terminal.</param>
+    /// <param name="authoredTouchdown">The retail task whose authored position is the landing target.</param>
+    public void EnableTerminalTerrainLanding(GameTask task, GameTask authoredTouchdown)
+    {
+        TransformState state = TerminalLandingState(task);
+        ArgumentNullException.ThrowIfNull(authoredTouchdown);
+        if (!_taskTransforms.TryGetValue(authoredTouchdown, out TransformState? touchdown))
+        {
+            throw new ArgumentException(
+                "Terminal terrain landing requires a captured touchdown task.",
+                nameof(authoredTouchdown));
+        }
+
+        state.TerminalLandingOnTerrain = true;
+        state.TerminalLandingTarget = touchdown.OriginPosition;
+    }
+
+    private TransformState TerminalLandingState(GameTask task)
+    {
         ArgumentNullException.ThrowIfNull(task);
         if (!_taskTransforms.TryGetValue(task, out TransformState? state)
             || !string.Equals(task.Type?.Name, "Heli", StringComparison.Ordinal))
@@ -284,7 +308,7 @@ public sealed class CutsceneRuntime
             throw new ArgumentException("Terminal terrain landing requires a captured Heli task.", nameof(task));
         }
 
-        state.TerminalLandingOnTerrain = true;
+        return state;
     }
 
     /// <summary>Gets the currently running scene, if any.</summary>
@@ -2545,7 +2569,11 @@ public sealed class CutsceneRuntime
                 && supportSource.StartsWith("terrain", StringComparison.Ordinal))
             {
                 transform.TerminalLandingLatched = true;
-                transform.TerminalLandingPosition = transform.Position;
+                // Mission 5 replaces its incoming Heli with a parked Heli at the QVM-authored
+                // touchdown pose once AnimTask 3333 crosses its terminal gate. Preserve the flown
+                // approach, then use that authored replacement position for the terminal contact.
+                transform.TerminalLandingPosition = transform.TerminalLandingTarget ?? transform.Position;
+                transform.Position = transform.TerminalLandingPosition;
                 transform.Thrust = 0f;
                 transform.TargetThrust = 0f;
                 transform.Velocity = default;
@@ -3122,6 +3150,7 @@ public sealed class CutsceneRuntime
         public bool TerminalLandingOnTerrain { get; set; }
         public bool TerminalLandingLatched { get; set; }
         public bool TerminalLandingEventLogged { get; set; }
+        public Vector3d? TerminalLandingTarget { get; set; }
         public Vector3d TerminalLandingPosition { get; set; }
         public float RotorPhase { get; set; }
         public int RotorPhaseTick { get; set; }

@@ -18,7 +18,7 @@ namespace OpenIGI.Game.Tests;
 public sealed class RetailMissionFiveHelicopterTests
 {
     [RequiresGameDataFact]
-    public void ExtractionBellStopsAtItsFirstLanding()
+    public void ExtractionBellTouchesDownAtTheAuthoredHelipadAndRemainsThere()
     {
         VirtualFileSystem fs = new();
         fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -48,7 +48,11 @@ public sealed class RetailMissionFiveHelicopterTests
         };
 
         GameTask extractionBell = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(3322));
-        runtime.EnableTerminalTerrainLanding(extractionBell);
+        // LEVEL5/OBJECTS.QVM replaces the incoming Bell with this parked Bell when
+        // AnimTask 3333 passes tick 1530, making its authored position the retail touchdown pose.
+        DeclaredTask parkedBell = Assert.IsType<DeclaredTask>(root.Tree.FromId(1234));
+        Assert.True(WorldScene.TryGetPosition(parkedBell, out Vector3d authoredTouchdown));
+        runtime.EnableTerminalTerrainLanding(extractionBell, parkedBell);
         Assert.IsType<ConditionalContainerTask>(root.Tree.FromId(1002)).Condition = "1";
         runtime.Tick();
         runtime.FinishExpressionTick();
@@ -78,6 +82,10 @@ public sealed class RetailMissionFiveHelicopterTests
         }
 
         Assert.True(landed, "extraction Bell 3322 never reached its authored terminal landing");
+        double horizontalMiss = Math.Sqrt(
+            ((touchdown.X - authoredTouchdown.X) * (touchdown.X - authoredTouchdown.X))
+            + ((touchdown.Y - authoredTouchdown.Y) * (touchdown.Y - authoredTouchdown.Y)));
+        Assert.Equal(0d, horizontalMiss);
         for (int tick = 0; tick < 500; tick++)
         {
             runtime.Tick();
