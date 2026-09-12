@@ -46,6 +46,7 @@ public sealed class CutsceneRuntime
     private readonly List<TimerState> _timers = [];
     private readonly List<AnimationState> _animations = [];
     private readonly List<SoundState> _sounds = [];
+    private readonly List<DeclaredTask> _binocularOverlayHolders = [];
     private readonly Dictionary<int, TransformState> _transforms = [];
     private readonly Dictionary<GameTask, TransformState> _taskTransforms = [];
     private readonly Dictionary<GameTask, int> _taskOrder = [];
@@ -189,6 +190,10 @@ public sealed class CutsceneRuntime
                         Bool(declared, "Simple"),
                         Bool(declared, "OneShot"),
                         Bool(declared, "Relative to microphone")));
+                }
+                else if (string.Equals(task.Type.Name, "BinocularOverlayHolder", StringComparison.Ordinal))
+                {
+                    _binocularOverlayHolders.Add(declared);
                 }
             }
         }
@@ -1254,7 +1259,25 @@ public sealed class CutsceneRuntime
             return;
         }
 
-        Frame = BuildFrame(state, state.Task.Ticks / (double)Frequency);
+        CutsceneFrame? frame = BuildFrame(state, state.Task.Ticks / (double)Frequency);
+        Frame = frame is null
+            ? null
+            : frame with { BinocularOverlayVisible = IsBinocularOverlayVisible() };
+    }
+
+    private bool IsBinocularOverlayVisible()
+    {
+        foreach (DeclaredTask holder in _binocularOverlayHolders)
+        {
+            if (ConditionalContainerGate.IsTaskActive(holder)
+                && _expressions.EvaluateCondition(
+                    Text(holder, "Visible expression"), emptyValue: false, holder))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Interpolates one scene's authored camera at an arbitrary scene time.</summary>
@@ -3173,7 +3196,11 @@ public sealed record CutsceneFrame(
     Vector3f FilterColor,
     float TimeOfDay,
     CutSceneTask Scene,
-    int ShotIndex);
+    int ShotIndex)
+{
+    /// <summary>Gets whether an authored binocular holder owns the retail optics overlay.</summary>
+    public bool BinocularOverlayVisible { get; init; }
+}
 
 /// <summary>A live target pose supplied to a cutscene in engine units.</summary>
 public readonly record struct CutsceneTargetPose(Vector3d Position, Matrix3f Orientation);
