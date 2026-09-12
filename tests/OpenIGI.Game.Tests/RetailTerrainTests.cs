@@ -998,6 +998,33 @@ public sealed class RetailTerrainTests
         Assert.True(onGround > missions / 2, $"only {onGround} of {missions} spawns resolved to ground");
     }
 
+    [RequiresGameDataTheory]
+    [InlineData(1, 3.09598708152771f)]
+    [InlineData(2, 3.6479880809783936f)]
+    [InlineData(3, -3.455751895904541f)]
+    [InlineData(4, 2.9321529865264893f)]
+    [InlineData(5, 2.5132739543914795f)]
+    [InlineData(6, 1.4660769701004028f)]
+    [InlineData(7, 4.2895960807800293f)]
+    [InlineData(8, 3.6651909351348877f)]
+    [InlineData(9, 4.2935090065002441f)]
+    [InlineData(10, 0f)]
+    [InlineData(11, 1.3071240186691284f)]
+    [InlineData(12, -0.31415900588035583f)]
+    [InlineData(13, 3.979351043701172f)]
+    [InlineData(14, -1.3799949884414673f)]
+    public void HumanPlayerTaskGammaMatchesTheAuthoredObjectsFile(int missionId, float expectedGamma)
+    {
+        // These values are the fourth argument of Task_New(0, "HumanPlayer", ...) in each shipped
+        // missions/location0/levelN/objects.qvm.  Keep the parser tied to the retail object task,
+        // rather than an opening camera or a hand-maintained spawn table.
+        Harness harness = Harness.Create();
+        (_, LevelTask levelRoot) = harness.LoadMissionTree(missionId);
+
+        Assert.True(PlayerSpawn.TryFindGameplay(levelRoot, out PlayerSpawnPoint spawn));
+        Assert.Equal(expectedGamma, spawn.Gamma, precision: 6);
+    }
+
     private static (double X, double Y, double Z) Medians(WorldScene scene)
     {
         double[] xs = new double[scene.Placements.Count];

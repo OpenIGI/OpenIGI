@@ -1045,7 +1045,10 @@ public sealed class PlayerCamera
     public bool PlaceAt(TerrainData? terrain, PlayerSpawnPoint spawn, WorldRayCast? registrationGround = null)
     {
         _body.Position = spawn.Position;
-        _body.Yaw = spawn.Gamma;
+        // HumanPlayer's objects.qvm Gamma is the engine object's facing angle. The camera stores a
+        // world-to-view yaw, whose horizontal convention is its inverse; this is the same conversion
+        // used when authored interaction poses hand the player's facing back to the camera.
+        _body.Yaw = -spawn.Gamma;
         _body.Pitch = 0f;
         HasViewTickPair = false;
         _landingKick.Reset();
