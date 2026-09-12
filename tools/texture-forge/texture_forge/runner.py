@@ -43,7 +43,7 @@ from pathlib import Path
 
 import numpy as np
 
-__all__ = ["Runner", "torch_device_report"]
+__all__ = ["Runner", "budget_for", "torch_device_report"]
 
 _MAX_BATCH = 32
 """
@@ -76,7 +76,17 @@ Kept as a constant per FAMILY rather than per model because the split is archite
 quadratic in the tokens it attends over, and everything on the other list is not.
 """
 
-_TRANSFORMERS = ("dat", "hat", "swinir", "atd", "drct", "srformer", "restormer", "omnisr")
+_TRANSFORMERS = (
+    "dat",
+    "hat",
+    "swinir",
+    "atd",
+    "drct",
+    "srformer",
+    "restormer",
+    "omnisr",
+    "rgt",
+)
 """
 Architecture names, lowercased and matched as substrings, whose memory grows like attention.
 
@@ -84,7 +94,29 @@ Matched loosely on purpose. spandrel reports names like "DAT" and "HAT", and a m
 not on this list gets the generous budget -- so a new transformer arriving would be wrong in the expensive
 direction. That is worth one more line here when it happens, and is still better than guessing low for
 everything and halving the throughput of the models that do not need it.
+
+"rgt" is that line, added when it happened. RGT-S arrived for the remaster pass, was not recognised, and
+asked a 10 GiB card for a 15.7 GiB allocation on its first batch. The recovery worked -- halve, retry,
+remember -- but recovery is not free: the same eight textures took 2m52s that way and 1m29s once the budget
+was right, because every halving throws away the work of the attempt that failed.
 """
+
+
+def budget_for(architecture: str) -> int:
+    """How many pixels one forward pass of this architecture may carry.
+
+    Separated from the runner so it can be checked without a card and without weights, which is the only
+    way a mistake here is ever caught early: getting it wrong does not fail, it runs -- slowly, through the
+    out-of-memory recovery -- and the cost hides inside a progress bar that was always going to take a
+    while.
+    """
+    lowered = architecture.lower()
+
+    if any(name in lowered for name in _TRANSFORMERS):
+        return _TRANSFORMER_BUDGET
+
+    return _CONVOLUTIONAL_BUDGET
+
 
 WRAP_MARGIN = 64
 """
@@ -181,18 +213,35 @@ class Runner:
                 descriptor.model.bfloat16()
                 self.dtype = torch.bfloat16
 
+        # PROVEN, not trusted. spandrel answers `supports_bfloat16` from the architecture's family, and for
+        # RGT-S that answer is wrong: the cast succeeds, the model loads, and the first real batch dies
+        # with "expected scalar type Float but found BFloat16" -- after the weights have been fetched and
+        # the run has started. So the claim is tested once, here, on a tensor small enough to cost nothing.
+        #
+        # A model that fails is RELOADED rather than cast back. These architectures build buffers lazily on
+        # their first forward pass, so the failed probe leaves some of them in the precision that did not
+        # work; casting the parameters afterwards fixes the parameters and not those, and the mixed state
+        # surfaces later as an unrelated-looking complaint about inference tensors. Reloading costs a
+        # second, once, and is the only way to be sure what precision the whole model is in.
+        if self.dtype is not torch.float32:
+            try:
+                with torch.no_grad():
+                    descriptor(
+                        torch.zeros((1, 3, 32, 32), device=self._device, dtype=self.dtype)
+                    )
+            except (RuntimeError, TypeError):
+                descriptor = ModelLoader().load_from_file(str(weights))
+                descriptor.to(self._device)
+                descriptor.eval()
+                self.dtype = torch.float32
+
         self._descriptor = descriptor
 
         # Sized to the architecture, then lowered permanently if the card still says no. Lowering it for the
         # RUN rather than just retrying the batch is what stops the next batch making the same mistake --
         # the first version retried, succeeded at half size, and then went straight back to full size for
         # the following batch, so a corpus hit the same wall a hundred times over.
-        lowered = self.architecture.lower()
-        self.budget = (
-            _TRANSFORMER_BUDGET
-            if any(name in lowered for name in _TRANSFORMERS)
-            else _CONVOLUTIONAL_BUDGET
-        )
+        self.budget = budget_for(self.architecture)
 
     @property
     def precision(self) -> str:
@@ -407,7 +456,11 @@ class Runner:
                 middle = len(batch) // 2
                 return self._forward(batch[:middle]) + self._forward(batch[middle:])
 
-        result = output.float().clamp_(0.0, 1.0).cpu().numpy().transpose(0, 2, 3, 1)
+        # clamp, not clamp_. On a model running in fp16 or bf16 `.float()` builds a new tensor and clamping
+        # that in place is free; on one running in fp32 it returns the SAME tensor -- an inference tensor,
+        # which may not be updated in place outside inference mode. Every model in the catalogue ran in
+        # reduced precision until RGT-S, which spandrel will not run in bf16, so this was never reached.
+        result = output.float().clamp(0.0, 1.0).cpu().numpy().transpose(0, 2, 3, 1)
         return [np.ascontiguousarray(item) for item in result]
 
     def _run_batch(
