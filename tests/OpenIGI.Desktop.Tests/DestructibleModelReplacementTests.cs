@@ -18,6 +18,23 @@ namespace OpenIGI.Desktop.Tests;
 public sealed class DestructibleModelReplacementTests
 {
     [RequiresGameDataFact]
+    public void DestroyedLevelOneTerminalUsesItsAuthoredReplacementModel()
+    {
+        using Scenario scenario = CreateLevelOne();
+        WorldPlacement placement = scenario.Scene.Placements.First(
+            candidate => candidate.Instance.Name == "252_01_1"
+                && candidate.DestroyedReplacement?.Instance.Name == "203_02_1");
+        DestructibleObject terminal = Assert.Single(
+            scenario.Destructibles.Objects,
+            candidate => ReferenceEquals(candidate.Placement, placement));
+
+        Assert.Equal("Terminal", terminal.TypeName);
+        Assert.Equal("203_02_1", terminal.DestroyedModelName);
+        Assert.Same(terminal, scenario.Destructibles.TryDestroy(terminal.Owner, placement));
+        Assert.True(scenario.Destructibles.IsDestroyed(placement));
+    }
+
+    [RequiresGameDataFact]
     public void DestroyedLevelOneComputerReplacesItsIntactModelOnTheNextFrame()
     {
         using Scenario scenario = CreateLevelOne();

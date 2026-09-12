@@ -124,7 +124,8 @@ public sealed class DestructibleObjectRegistry
     /// <summary>The default contact radius used when a legacy impact has no exact placement identity.</summary>
     public const float HitRadiusUnits = 3276.8f;
 
-    private const string ExplodeObjectType = "ExplodeObject";
+    private const string DestroyedModelParameter = "Destroyed model";
+    private const string ExplosionDamageScaleParameter = "Damage scale";
     private const string GlassType = "TASKTYPE_GLASS";
     private const string ExplodeMagicType = "TASKTYPE_EXPLODEMAGICOBJ";
 
@@ -156,7 +157,13 @@ public sealed class DestructibleObjectRegistry
 
         foreach (DeclaredTask task in Walk(root).OfType<DeclaredTask>())
         {
-            if (!string.Equals(task.Type.Name, ExplodeObjectType, StringComparison.Ordinal))
+            // OBJECTS.QVM uses the same live destruction contract for ExplodeObject, Terminal,
+            // AlarmControl, and SCameraControl: the first model is replaced by Destroyed model once
+            // a weapon hit destroys the task.  A Switch also has a field of that name, but has no
+            // explosion parameters and is governed by its separate destructable flag.
+            if (!task.TryGetValue(DestroyedModelParameter, out object? rawDestroyed)
+                || rawDestroyed is not string { Length: > 0 }
+                || !task.TryGetValue(ExplosionDamageScaleParameter, out _))
             {
                 continue;
             }
