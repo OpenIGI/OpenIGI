@@ -73,6 +73,50 @@ public sealed class DestructibleModelReplacementTests
     }
 
     [RequiresGameDataFact]
+    public void EveryLevelExplodeMagicObjectTransitionsToItsAuthoredDestroyedModelAtItsRetailThreshold()
+    {
+        int total = 0;
+        for (int mission = 1; mission <= 14; mission++)
+        {
+            using Scenario scenario = CreateMission(mission);
+            (WorldPlacement Placement, int Index)[] placements = [.. scenario.Scene.Placements
+                .Select((placement, index) => (placement, index))
+                .Where(entry => entry.placement.MagicTaskTypeName == "TASKTYPE_EXPLODEMAGICOBJ")];
+            total += placements.Length;
+
+            foreach ((WorldPlacement placement, int index) in placements)
+            {
+                Assert.NotEqual(string.Empty, placement.MagicDestroyedModel);
+                WorldModelBinding replacement = Assert.IsType<WorldModelBinding>(placement.DestroyedReplacement);
+                DestructibleObject explosive = Assert.Single(
+                    scenario.Destructibles.Objects,
+                    candidate => ReferenceEquals(candidate.Placement, placement));
+
+                Assert.Equal(placement.MagicDestroyedModel, replacement.Instance.Name);
+                Assert.Equal(placement.MagicDestroyedModel, explosive.DestroyedModelName);
+                int hits = Math.Max(1, (int)MathF.Ceiling(explosive.ExplosionDamageThreshold));
+                for (int hit = 1; hit <= hits; hit++)
+                {
+                    DestructibleObject? destroyed = scenario.Destructibles.TryDestroy(placement.Owner, placement);
+                    if (hit < hits)
+                    {
+                        Assert.Null(destroyed);
+                    }
+                    else
+                    {
+                        Assert.Same(explosive, destroyed);
+                    }
+                }
+
+                Assert.True(scenario.Destructibles.IsDestroyed(placement));
+                Assert.True(scenario.Renderer.MakeResident(scenario.Scene, index));
+            }
+        }
+
+        Assert.True(total > 0, "The retail campaign did not place any ExplodeMagicObj instances.");
+    }
+
+    [RequiresGameDataFact]
     public void DestroyedLevelOneTerminalUsesItsAuthoredReplacementModel()
     {
         using Scenario scenario = CreateMission(1);
