@@ -20,36 +20,56 @@ public sealed class DestructibleModelReplacementTests
     [RequiresGameDataFact]
     public void EveryLevelObjectsQvmExplosiveModelPairIsRegisteredForReplacement()
     {
+        int total = 0;
         for (int mission = 1; mission <= 14; mission++)
         {
             using Scenario scenario = CreateMission(mission);
-            (WorldPlacement Placement, int Index)[] explosivePlacements = [.. scenario.Scene.Placements
-                .Select((placement, index) => (placement, index))
-                .Where(entry => IsObjectsQvmExplosive(entry.placement))];
+            total += AssertDestroyedReplacement(scenario, mission, IsObjectsQvmExplosive, "destructible task");
+        }
 
-            foreach ((WorldPlacement placement, int index) in explosivePlacements)
+        Assert.True(total > 0, "The retail campaign did not provide any destructible OBJECTS.QVM tasks.");
+    }
+
+    [RequiresGameDataFact]
+    public void EveryLevelObjectsQvmExplodeObjectHonorsItsDestroyedModelDeclaration()
+    {
+        int total = 0;
+        for (int mission = 1; mission <= 14; mission++)
+        {
+            using Scenario scenario = CreateMission(mission);
+            WorldPlacement[] explodeObjects = [.. scenario.Scene.Placements.Where(IsObjectsQvmExplodeObject)];
+            total += explodeObjects.Length;
+
+            foreach (WorldPlacement placement in explodeObjects)
             {
                 DeclaredTask task = Assert.IsType<DeclaredTask>(placement.Owner);
                 Assert.True(task.TryGetValue("Destroyed model", out object? rawDestroyed));
                 string destroyedModel = Assert.IsType<string>(rawDestroyed);
-                Assert.True(
-                    placement.DestroyedReplacement is not null,
-                    $"Mission {mission}, {task.Type.Name} '{task.Name}': {placement.Instance.Name} has no binding for {destroyedModel}.");
-                WorldModelBinding replacement = placement.DestroyedReplacement!;
-                DestructibleObject destructible = Assert.Single(
-                    scenario.Destructibles.Objects,
-                    candidate => ReferenceEquals(candidate.Placement, placement));
 
-                Assert.Equal(destroyedModel, replacement.Instance.Name);
-                Assert.Equal(destroyedModel, destructible.DestroyedModelName);
-                Assert.Same(destructible, scenario.Destructibles.TryDestroy(placement.Owner, placement));
-                Assert.True(scenario.Destructibles.IsDestroyed(placement));
-
-                // MakeResident selects DisplayedPlacement, so this proves the hit state is not merely
-                // registered: the renderer can bind the task's authored wreck model on the next frame.
-                Assert.True(scenario.Renderer.MakeResident(scenario.Scene, index));
+                if (destroyedModel.Length == 0)
+                {
+                    Assert.Null(placement.DestroyedReplacement);
+                    Assert.DoesNotContain(
+                        scenario.Destructibles.Objects,
+                        candidate => ReferenceEquals(candidate.Placement, placement));
+                }
             }
         }
+
+        Assert.True(total > 0, "The retail campaign did not provide any ExplodeObject tasks.");
+    }
+
+    [RequiresGameDataFact]
+    public void EveryLevelObjectsQvmExplodeObjectWithDestroyedModelTransitionsToItsAuthoredDestroyedModel()
+    {
+        int total = 0;
+        for (int mission = 1; mission <= 14; mission++)
+        {
+            using Scenario scenario = CreateMission(mission);
+            total += AssertDestroyedReplacement(scenario, mission, IsObjectsQvmExplodeObjectWithDestroyedModel, "ExplodeObject");
+        }
+
+        Assert.True(total > 0, "The retail campaign did not provide any ExplodeObject destroyed-model declarations.");
     }
 
     [RequiresGameDataFact]
@@ -107,6 +127,50 @@ public sealed class DestructibleModelReplacementTests
         && task.TryGetValue("Destroyed model", out object? destroyed)
         && destroyed is string { Length: > 0 }
         && task.TryGetValue("Damage scale", out _);
+
+    private static bool IsObjectsQvmExplodeObject(WorldPlacement placement) =>
+        placement.Owner is DeclaredTask { Type.Name: "ExplodeObject" };
+
+    private static bool IsObjectsQvmExplodeObjectWithDestroyedModel(WorldPlacement placement) =>
+        IsObjectsQvmExplodeObject(placement)
+        && placement.Owner is DeclaredTask task
+        && task.TryGetValue("Destroyed model", out object? destroyed)
+        && destroyed is string { Length: > 0 };
+
+    private static int AssertDestroyedReplacement(
+        Scenario scenario,
+        int mission,
+        Func<WorldPlacement, bool> predicate,
+        string family)
+    {
+        (WorldPlacement Placement, int Index)[] placements = [.. scenario.Scene.Placements
+            .Select((placement, index) => (placement, index))
+            .Where(entry => predicate(entry.placement))];
+        foreach ((WorldPlacement placement, int index) in placements)
+        {
+            DeclaredTask task = Assert.IsType<DeclaredTask>(placement.Owner);
+            Assert.True(task.TryGetValue("Destroyed model", out object? rawDestroyed));
+            string destroyedModel = Assert.IsType<string>(rawDestroyed);
+            Assert.True(
+                placement.DestroyedReplacement is not null,
+                $"Mission {mission}, {family} '{task.Name}': {placement.Instance.Name} has no binding for {destroyedModel}.");
+            WorldModelBinding replacement = placement.DestroyedReplacement!;
+            DestructibleObject destructible = Assert.Single(
+                scenario.Destructibles.Objects,
+                candidate => ReferenceEquals(candidate.Placement, placement));
+
+            Assert.Equal(destroyedModel, replacement.Instance.Name);
+            Assert.Equal(destroyedModel, destructible.DestroyedModelName);
+            Assert.Same(destructible, scenario.Destructibles.TryDestroy(placement.Owner, placement));
+            Assert.True(scenario.Destructibles.IsDestroyed(placement));
+
+            // MakeResident selects DisplayedPlacement, so this proves the hit state is not merely
+            // registered: the renderer can bind the task's authored wreck model on the next frame.
+            Assert.True(scenario.Renderer.MakeResident(scenario.Scene, index));
+        }
+
+        return placements.Length;
+    }
 
     private static Scenario CreateMission(int missionId)
     {
