@@ -883,6 +883,33 @@ public sealed class ShellTests
         }
     }
 
+    [Fact]
+    public void Leaving_settings_persists_both_settings_and_profiles()
+    {
+        // Issue #230: rebinds mutate the live profile, but SettingsScreen.OnExit only saved engine
+        // settings — the profile (GOInRemap bindings, sensitivity, invert) was silently lost.
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, FakeHost host) = BuildShell(dir);
+            Assert.True(shell.OpenOn("settings"));
+            Pump(shell, 0.6f);
+            var screen = Assert.IsType<SettingsScreen>(shell.Stack.Top);
+            int settings = host.SaveSettingsCalls;
+            int profiles = host.SaveProfilesCalls;
+            screen.BeginExit();
+            Assert.Equal(settings + 1, host.SaveSettingsCalls);
+            Assert.Equal(profiles + 1, host.SaveProfilesCalls);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
     // Escape, the way the shell reads it -- one frame with the key down against a frame without.
     private static void Back(Shell shell)
     {

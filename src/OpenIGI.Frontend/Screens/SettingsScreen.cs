@@ -224,7 +224,14 @@ public sealed class SettingsScreen : ShellScreen
     }
 
     /// <inheritdoc/>
-    protected override void OnExit() => Context.Host.SaveSettings();
+    protected override void OnExit()
+    {
+        // The Controls tab mutates the live profile (rebinds, sensitivity, invert). Settings alone
+        // only persist engine CVars, so the profile — including GOInRemap bindings — must be saved
+        // here too, or every remap is silently lost on the next launch (issue #230).
+        Context.Host.SaveSettings();
+        Context.Host.SaveProfiles();
+    }
 
     /// <inheritdoc/>
     protected override void OnUpdate(float elapsedSeconds)
