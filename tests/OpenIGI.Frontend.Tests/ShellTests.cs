@@ -928,6 +928,17 @@ public sealed class ShellTests
             Pump(shell, 0.6f);
             Assert.Equal(settings + 1, host.SaveSettingsCalls);
             Assert.Equal(profiles + 1, host.SaveProfilesCalls);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void Controls_tab_binds_a_wheel_scroll_after_activation()
     {
         // Issue #232: scrolling while a row listens must bind the wheel direction like a button.

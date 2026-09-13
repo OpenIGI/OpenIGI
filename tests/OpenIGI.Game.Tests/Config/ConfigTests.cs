@@ -83,6 +83,9 @@ public sealed class ConfigTests
         stale.BeginFrame();
         stale.Keyboard.SetKey(previous, down: true);
         Assert.False(PlayerProfileInputBindings.IsDown(restored, stale, "MoveLeft"));
+    }
+
+    [Fact]
     public void AWheelBindingDrivesGameplayResolutionSurvivesReloadAndSwapsConflicts()
     {
         // Issue #232: wheel up/down are bindable controls with momentary (edge-only) semantics.
