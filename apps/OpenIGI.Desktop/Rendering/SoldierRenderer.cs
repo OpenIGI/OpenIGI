@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -222,6 +222,16 @@ public sealed class SoldierRenderer : IDisposable
     /// <remarks>The argument is the body's position in engine units.</remarks>
     public void SetHitSound(Action<Vector3d>? report) => _hitSound = report;
 
+    /// <summary>Reports a close-combat strike against the player, already probability-gated.</summary>
+    /// <param name="report">The sink, or <see langword="null"/> to drop strikes.</param>
+    /// <remarks>
+    /// Arguments are the attacker's position in engine units and the row's damage factor. The
+    /// mission owns the player's health, so it applies the hit; the renderer only reports it.
+    /// Strikes against non-player targets are consumed and discarded at the tick site: NPC-on-NPC
+    /// melee has no victim pipeline yet (issue #235 follow-up).
+    /// </remarks>
+    public void SetMeleeStrikeSink(Action<Vector3d, float>? report) => _meleeStrikeSink = report;
+
     /// <summary>Plays a definition requested by <c>AIAction_PlaySound</c>.</summary>
     public void SetScriptSound(Action<string, Vector3d, bool>? report) => _scriptSound = report;
 
@@ -311,6 +321,7 @@ public sealed class SoldierRenderer : IDisposable
 
     private Action<Vector3d>? _deathSound;
     private Action<Vector3d>? _hitSound;
+    private Action<Vector3d, float>? _meleeStrikeSink;
     private Func<int>? _hitCooldown;
     private readonly Dictionary<SoldierView, int> _hitQuietUntil = [];
     private Action<Footstep>? _footstepSound;
@@ -3424,6 +3435,14 @@ public sealed class SoldierRenderer : IDisposable
                     enemyFeet: feet, enemyCrouching: enemyCrouching);
             }
             SeparateFromOtherSoldiers(brain, before);
+
+            // A close-combat strike recorded this tick resolves here, at the brain's owner: the
+            // player-directed one goes to the mission's sink, an NPC-directed one is consumed and
+            // dropped (no NPC victim pipeline yet — issue #235 follow-up).
+            if (brain.ConsumeMeleeStrike(out float meleeDamage) && !useNpc && playerIsEnemyToBrain)
+            {
+                _meleeStrikeSink?.Invoke(brain.Position, meleeDamage);
+            }
 
             if (member is not null)
             {
