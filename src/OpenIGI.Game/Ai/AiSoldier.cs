@@ -1281,11 +1281,30 @@ public sealed class AiSoldier
     /// <summary>Gets what the patrol arm chose on the last tick it ran.</summary>
     public AiPatrolAction PatrolAction { get; private set; } = AiPatrolAction.LookForTarget;
 
+    /// <summary>Takes a recorded close-combat strike, if one is waiting.</summary>
+    /// <param name="damage">Receives the row's damage factor on a hit, or zero.</param>
+    /// <returns><see langword="true"/> when a strike was pending.</returns>
+    public bool ConsumeMeleeStrike(out float damage)
+    {
+        damage = _pendingMeleeStrike;
+        _pendingMeleeStrike = 0f;
+        return damage > 0f;
+    }
+
     private bool _movingInCombat;
     private bool _rpgKneeling;
     private AiPatrolAction? _patrolOneShotChild;
     private AiEvasiveAction? _patrolRollChild;
     private bool _patrolProne;
+
+    /// <summary>The damage of a close-combat strike chosen this tick, waiting to be consumed.</summary>
+    /// <remarks>
+    /// Recorded at the trigger tick (the <c>CloseCombat</c> case below) and read once by whoever
+    /// ticks the brain — the renderer forwards player-directed strikes to the mission, which owns
+    /// the player's health. Zero means no strike is pending. NPC-directed strikes are recorded
+    /// the same way but currently discarded there: NPC-on-NPC melee has no victim pipeline yet.
+    /// </remarks>
+    private float _pendingMeleeStrike;
 
     /// <summary>Gets a value indicating whether the soldier is walking a combat route this tick.</summary>
     /// <remarks>
@@ -3597,6 +3616,11 @@ public sealed class AiSoldier
                 _patrolOneShotChild = action;
                 WriteChannel(AiCombatChannel.CloseCombat, 1f);
                 TurnTowards(AimPointOf(enemy, _enemyCrouching), (float)AiGuardCombat.AimToleranceRadians);
+
+                // The strike resolves with the trigger: the damage model (probability-gated factor)
+                // is attested retail data, while the exact native strike tick is not — see
+                // AiPatrolCombat.RollMeleeStrike. Range was already established by the chooser.
+                _pendingMeleeStrike = _patrol.RollMeleeStrike();
                 return;
 
             case AiPatrolAction.ThrowGrenade:

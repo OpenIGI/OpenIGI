@@ -48,6 +48,26 @@ public sealed class AiPatrolCombatTests
     }
 
     [Fact]
+    public void RollMeleeStrikeReturnsDamageWhenProbabilityRollSucceeds()
+    {
+        AiCombatParameters parameters = Parameters(closeCombatHitProbability: 0.5f, closeCombatDamage: 0.65f);
+        // Random returns 0.3 <= 0.5 -> connects!
+        AiPatrolCombat patrol = new(parameters, () => 0.3);
+
+        Assert.Equal(0.65f, patrol.RollMeleeStrike());
+    }
+
+    [Fact]
+    public void RollMeleeStrikeReturnsZeroWhenProbabilityRollFails()
+    {
+        AiCombatParameters parameters = Parameters(closeCombatHitProbability: 0.5f, closeCombatDamage: 0.65f);
+        // Random returns 0.7 > 0.5 -> misses!
+        AiPatrolCombat patrol = new(parameters, () => 0.7);
+
+        Assert.Equal(0f, patrol.RollMeleeStrike());
+    }
+
+    [Fact]
     public void BeyondTheTrackingDistanceItAdvances()
     {
         AiPatrolCombat patrol = Patrol();
@@ -291,7 +311,9 @@ public sealed class AiPatrolCombatTests
         float targetingTimeoutSeconds = 15f,
         float evasiveActionProbability = 0f,
         float rollOrLieDownProbability = 0.5f,
-        float rollSideProbability = 0.5f) =>
+        float rollSideProbability = 0.5f,
+        float closeCombatHitProbability = 0.4f,
+        float closeCombatDamage = 0.5f) =>
         new(new HumanAiConfigItemTask
         {
             AiTypeName = "AITYPE_PATROL_AK",
@@ -304,6 +326,8 @@ public sealed class AiPatrolCombatTests
             EvasiveStandRollSideProbability = rollSideProbability,
             GrenadeThrowProbability = 0f,
             GrenadeThrowWhenReloadingProbability = 0f,
+            CloseCombatHitProbability = closeCombatHitProbability,
+            CloseCombatDamage = closeCombatDamage,
             MinimumClipFraction = 0.8f,
             RandomClipFraction = 0.2f,
             MaximumRoundsPerSequence = 30,
