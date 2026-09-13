@@ -28,9 +28,15 @@ class _Doubler:
         self.calls: list[int] = []
         self.wraps: list[object] = []
 
-    def run(self, items, wrap=True):
+    def run(self, items, wrap=True, progress=None):
         self.calls.append(len(items))
         self.wraps.append(wrap)
+
+        # The real runner reports each image as it finishes; this reports them one at a time so a test
+        # can see the shape of that without a card.
+        if progress is not None:
+            for _ in items:
+                progress(1)
 
         return [np.clip(np.repeat(np.repeat(item, 4, axis=0), 4, axis=1) + 0.25, 0.0, 1.0) for item in items]
 

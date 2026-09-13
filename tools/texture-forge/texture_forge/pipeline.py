@@ -347,7 +347,7 @@ def upscale_all(
     settings: Settings,
     session: Session,
     *,
-    progress: Callable[[int], None] | None = None,
+    progress: Callable[[float], None] | None = None,
 ) -> None:
     """Runs a chunk through the upscaler: colour first, then alpha as its own pass.
 
@@ -383,11 +383,22 @@ def upscale_all(
     while model.scale ** (rounds + 1) <= settings.scale:
         rounds += 1
 
+    # One tick per texture, spread over the rounds so the total still comes to exactly that however many
+    # there are. The COLOUR pass carries the ticks and the alpha pass is silent: alpha is a second pass
+    # over the keyed textures only, so counting it would need a per-texture weight to keep the total
+    # honest, and it is the cheaper half of the work. See the note below on what reporting per round cost.
+    share = 1.0 / rounds
+
     for _ in range(rounds):
         wrapping = [(item.tiles.x, item.tiles.y) for item in textures]
 
         for texture, result in zip(
-            textures, model.run([item.rgb for item in textures], wrap=wrapping)
+            textures,
+            model.run(
+                [item.rgb for item in textures],
+                wrap=wrapping,
+                progress=None if progress is None else (lambda done: progress(done * share)),
+            ),
         ):
             texture.rgb = result
 
@@ -399,12 +410,6 @@ def upscale_all(
 
             for texture, result in zip(keyed, model.run(greys, wrap=keyed_wrap)):
                 texture.alpha = result[..., 0]
-
-    # One tick per texture, whatever the chain did. Reporting a tick per ROUND meant the bar's total had to
-    # predict how many rounds there would be, and when the chain stopped overshooting the prediction was
-    # wrong and every run sat at half.
-    if progress is not None:
-        progress(len(textures))
 
     achieved = model.scale**rounds
 
@@ -423,7 +428,7 @@ def remaster_all(
     settings: Settings,
     session: Session,
     *,
-    progress: Callable[[int], None] | None = None,
+    progress: Callable[[float], None] | None = None,
 ) -> None:
     """Runs a second network over the upscaled colour, to make it look like art of this decade.
 
@@ -459,13 +464,14 @@ def remaster_all(
 
     wrapping = [(item.tiles.x, item.tiles.y) for item in textures]
 
+    # Reported as the model finishes each picture rather than when the chunk does. This stage is the run:
+    # every picture here is already four times the size the upscaler saw, so each one is tiled, and a
+    # chunk of them is minutes during which a bar that only speaks at the end has nothing to say.
     for texture, result in zip(
-        textures, model.run([item.rgb for item in textures], wrap=wrapping)
+        textures,
+        model.run([item.rgb for item in textures], wrap=wrapping, progress=progress),
     ):
         texture.rgb = _resample(result, 1.0 / model.scale)
-
-    if progress is not None:
-        progress(len(textures))
 
 
 def finish_alpha(textures: Sequence[Texture]) -> None:
@@ -565,7 +571,7 @@ def derive_all(
     outputs: Outputs,
     session: Session,
     *,
-    progress: Callable[[int], None] | None = None,
+    progress: Callable[[float], None] | None = None,
 ) -> int:
     """Derives every surface map from the upscaled albedo and writes the pack.
 
@@ -590,8 +596,13 @@ def derive_all(
             write_asset(texture, outputs)
             written += 1
 
+            # ONE, not `written`. The callback advances the bar BY what it is given, so handing it a
+            # running total advanced by 1, then 2, then 3 -- a chunk of 96 moved the bar 4,656 instead of
+            # 96, and the writing bar of an upscale-only run reached the end during the first chunk and
+            # sat there. The derive branch below always had this right, which is why it only showed
+            # without --pbr.
             if progress is not None:
-                progress(written)
+                progress(1)
 
             continue
 

@@ -2,13 +2,15 @@
 
 FOUR DECISIONS WORTH RECORDING, BECAUSE EACH ONE LOOKS LIKE AN OMISSION.
 
-**No tiling of the image itself.** Every upscaler front-end splits a large image into tiles and blends them
-back together, and they are right to: a 4K photograph does not fit in video memory. This corpus tops out at
-256x256, so the images go through whole and the entire class of tile-seam artefacts simply does not arise.
-Real-ESRGAN's tiler is worth knowing about anyway for what it gets wrong: it hard-crops rather than
+**Tiling, which this file once said it would never need.** The claim was that the corpus tops out at
+256x256 and every image goes through whole, so the whole class of tile-seam artefacts does not arise. That
+was true of the upscale and stopped being true twice over: the 1x map models run at the upscaled size, and
+`--remaster` hands an upscaler the FINISHED image, four times larger on each side. So `_tile_pass` exists,
+and what the front-ends get wrong is worth knowing after all. Real-ESRGAN hard-crops rather than
 feathering, its `pre_pad` passes `(0, pad, 0, pad)` to F.pad and so pads only right and bottom, and its
-out-of-memory handler prints and then carries on using the PREVIOUS tile's pixels. None of that can bite us
-here because none of it runs.
+out-of-memory handler prints and then carries on using the PREVIOUS tile's pixels. This one crops to an
+interior that had full context on every side, pads per axis, and recovers by re-running rather than by
+reusing.
 
 **Wrap padding, per axis, by a generous margin.** chaiNNer and joeyballentine/ESRGAN both wrap-pad by 16 and
 crop 16 * scale afterwards, and four independent implementations picking the same number is a strong
@@ -38,7 +40,7 @@ from __future__ import annotations
 
 import math
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
 import numpy as np
@@ -265,10 +267,15 @@ class Runner:
         images: Iterable[np.ndarray],
         *,
         wrap: bool | Sequence[tuple[bool, bool]] = True,
+        progress: Callable[[int], None] | None = None,
     ) -> list[np.ndarray]:
         """Runs every image through the model, grouped by shape and batched.
 
         Each image is (height, width, 3) float32 in [0, 1]. Results come back in input order.
+
+        `progress` is called with a count of images as they FINISH, which is the only place that count is
+        known. A caller reporting a chunk when the chunk returns has nothing to say for the minutes in
+        between -- and the expensive stage of a run is one call to this.
 
         `wrap` is either one answer for everything, or one (x, y) pair per image. Per-image, because
         whether a texture tiles is a property of that texture and getting it wrong in either direction
@@ -306,6 +313,9 @@ class Runner:
                 for index in indices:
                     results[index] = self._run_tiled(items[index], wrap_x, wrap_y)
 
+                    if progress is not None:
+                        progress(1)
+
                 continue
 
             for start in range(0, len(indices), size):
@@ -315,6 +325,9 @@ class Runner:
 
                 for index, output in zip(chunk, outputs):
                     results[index] = output
+
+                if progress is not None:
+                    progress(len(chunk))
 
         if any(result is None for result in results):
             # Every input must produce an output, in order. Silently dropping one would misalign every
