@@ -16,6 +16,16 @@ namespace OpenIGI.Rendering.Vulkan.Tests;
 /// </remarks>
 public sealed class ShaderCompilationTests
 {
+    [Fact]
+    public void TheUnlitFirstPersonMarkerIsNotFogged()
+    {
+        // Marker 2 is an unlit first-person draw. World (1) and translucent (-1) remain fogged; the
+        // marker range below excludes only that rig while the dynamic first-person marker (0) was
+        // already excluded.
+        Assert.Contains("abs(push.uMarkerExposure.x) > 0.5 && push.uMarkerExposure.x < 1.5", Mesh3DShaderSource.Vertex);
+        Assert.Contains("abs(marker) > 0.5 && marker < 1.5", Mesh3DShaderSource.Fragment);
+    }
+
     [RequiresGlslcTheory]
     [InlineData("shading.frag", "frag")]
     [InlineData("shading-rayquery.frag", "frag")]

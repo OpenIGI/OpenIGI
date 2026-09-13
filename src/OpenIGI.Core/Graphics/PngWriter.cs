@@ -69,6 +69,16 @@ public static class PngWriter
                 "The dimensions describe more pixels than this process can address.");
         }
 
+        // Every encoded row has four RGBA bytes per pixel plus its filter byte. Validate the actual
+        // staging buffer shape before accepting the pixel span, so a mathematically valid pixel count
+        // cannot wrap the allocation that Deflate needs.
+        if ((long)height * (((long)width * Bgra32.Size) + 1) > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(width),
+                "The filtered PNG scanlines exceed this process's addressable buffer limit.");
+        }
+
         int count = width * height;
 
         if (pixels.Length < count)

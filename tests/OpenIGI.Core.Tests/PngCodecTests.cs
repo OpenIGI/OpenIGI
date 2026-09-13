@@ -194,6 +194,15 @@ public sealed class PngCodecTests
         Assert.Throws<ArgumentOutOfRangeException>(() => PngWriter.Write(stream, [], 50_000, 50_000));
     }
 
+    [Fact]
+    public void WriterRejectsDimensionsWhoseFilteredScanlinesCannotFitInAnInt()
+    {
+        using MemoryStream stream = new();
+
+        // The pixel count fits Int32, but PNG stores four bytes plus one filter byte per pixel row.
+        Assert.Throws<ArgumentOutOfRangeException>(() => PngWriter.Write(stream, [], 40_000, 20_000));
+    }
+
     /// <summary>CRC-32 as the format defines it, computed bit by bit.</summary>
     /// <remarks>
     /// Deliberately not the production implementation's approach. That one drives a precomputed table,
