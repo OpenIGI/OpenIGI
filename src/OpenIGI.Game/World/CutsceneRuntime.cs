@@ -363,7 +363,7 @@ public sealed class CutsceneRuntime
         }
     }
 
-    private static void StepCarAiMovement(CarAiState state, int destinationId)
+    private void StepCarAiMovement(CarAiState state, int destinationId)
     {
         GraphNode? destination = state.Graph.NodeAt(destinationId);
         if (destination is null)
@@ -394,7 +394,14 @@ public sealed class CutsceneRuntime
             target = destination;
         }
 
-        Vector3d delta = target.Position - state.Transform.Position;
+        // Graph node Z is navigation metadata, not a vehicle-body altitude.  The first CarAI pass
+        // interpolated toward it directly, which pushed the APC and limo halfway through terrain on
+        // slopes.  Preserve the authored body-to-support offset and re-sample the normal car support
+        // path at every horizontal graph step, just as the dynamic CAR tick does.
+        Vector3d delta = new(
+            target.Position.X - state.Transform.Position.X,
+            target.Position.Y - state.Transform.Position.Y,
+            0d);
         double distance = delta.Length;
         // The source-like retail task calls this value km/h.  Convert the authored speed to its
         // fixed 30 Hz engine-unit step; this is a graph follower, while CarDynamics remains the
@@ -402,9 +409,7 @@ public sealed class CutsceneRuntime
         double step = state.SpeedKmh * (WorldScene.UnitsPerMetre / 3.6d) / Frequency;
         if (distance <= Math.Max(step, target.Radius * GraphNode.MetreInUnits))
         {
-            state.Transform.PreviousPosition = state.Transform.Position;
-            state.Transform.Position = target.Position;
-            state.Transform.IsDynamic = true;
+            PlaceCarAiOnSupport(state, new Vector3d(target.Position.X, target.Position.Y, state.Transform.Position.Z));
             state.TargetNodeId = -1;
             if (target.Id == destinationId)
             {
@@ -414,20 +419,38 @@ public sealed class CutsceneRuntime
             return;
         }
 
-        Vector3d planar = new(delta.X, delta.Y, 0d);
-        if (planar.Length > 1e-6d)
+        if (delta.Length > 1e-6d)
         {
-            state.Transform.Heading = (float)Math.Atan2(-planar.X, planar.Y);
+            state.Transform.Heading = (float)Math.Atan2(-delta.X, delta.Y);
             state.Transform.Orientation = Matrix3f.FromEngineEulerAngles(
                 state.Transform.Euler.X,
                 state.Transform.Euler.Y,
                 state.Transform.Heading);
         }
 
+        PlaceCarAiOnSupport(state, state.Transform.Position + (delta * (step / distance)));
+    }
+
+    /// <summary>Places a graph-driven car on the same terrain/object support used by car physics.</summary>
+    private void PlaceCarAiOnSupport(CarAiState state, Vector3d proposed)
+    {
+        if (double.IsNaN(state.SupportOffsetUnits)
+            && TryFindSupportHeight(state.Transform.Position, state.Car, allowDeepRecovery: true, out double originSupport))
+        {
+            state.SupportOffsetUnits = state.Transform.Position.Z - originSupport;
+        }
+
+        Vector3d grounded = proposed;
+        if (!double.IsNaN(state.SupportOffsetUnits)
+            && TryFindSupportHeight(proposed, state.Car, allowDeepRecovery: true, out double support))
+        {
+            grounded = new Vector3d(proposed.X, proposed.Y, support + state.SupportOffsetUnits);
+        }
+
         state.Transform.PreviousPosition = state.Transform.Position;
         state.Transform.PreviousOrientation = state.Transform.Orientation;
-        state.Transform.Position += delta * (step / distance);
-        state.Transform.Speed = (float)step;
+        state.Transform.Position = grounded;
+        state.Transform.Speed = state.SpeedKmh * (float)(WorldScene.UnitsPerMetre / 3.6d / Frequency);
         state.Transform.IsDynamic = true;
     }
 
@@ -3284,6 +3307,7 @@ public sealed class CutsceneRuntime
         public int TargetNodeId { get; set; } = -1;
         public int SpeedKmh { get; set; }
         public bool Stopped { get; set; }
+        public double SupportOffsetUnits { get; set; } = double.NaN;
     }
 
     private sealed record TimedShot(EditCameraShot Shot, double Start);

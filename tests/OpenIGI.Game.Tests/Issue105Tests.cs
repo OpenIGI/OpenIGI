@@ -115,7 +115,7 @@ public sealed class Issue105Tests
     [RequiresGameDataFact]
     public void MissionSixAlarmAppliesTheAuthoredApcSwapAndVehicleWreckBinding()
     {
-        (LevelTask root, _, ScriptVarRegistry variables) = Load(6);
+        (LevelTask root, LoadedMission mission, ScriptVarRegistry variables) = Load(6);
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         VehiclePhysicsRegistry physics = new();
@@ -124,7 +124,15 @@ public sealed class Issue105Tests
         Assert.Equal("601_08_1", apcPhysics.DestroyedModel);
 
         new ConditionalContainerGate(variables).Prepare(root);
-        CutsceneRuntime runtime = new(root, variables, vehiclePhysics: physics);
+        WorldScene scene = WorldScene.Build(mission, root);
+        CutsceneRuntime runtime = new(
+            root,
+            variables,
+            vehiclePhysics: physics,
+            terrain: mission.Terrain)
+        {
+            CollisionIndex = ObjectCollisionIndex.Build(scene.Placements),
+        };
         string graphPath = Path.Combine(GameData.RequireRoot(), "MISSIONS", "location0", "LEVEL6", "GRAPHS", "GRAPH1.DAT");
         GraphFile graph = GraphFile.Read(File.ReadAllBytes(graphPath));
         DeclaredTask graphTask = Assert.IsType<DeclaredTask>(root.Tree.FromId(1));
@@ -151,7 +159,11 @@ public sealed class Issue105Tests
         Assert.True(runtime.TryGetDrawTransform(alarmApc, out Vector3d movedApc, out _));
         Assert.NotEqual(new Vector3d(25047706d, 87471776d, 174684608d), movedApc * WorldScene.UnitsPerMetre);
 
-        DestructibleObjectRegistry destructibles = DestructibleObjectRegistry.Build(root, [], variables, physics);
+        DestructibleObjectRegistry destructibles = DestructibleObjectRegistry.Build(
+            root,
+            scene.Placements,
+            variables,
+            physics);
         DestructibleObject liveApc = Assert.Single(destructibles.Objects, item => ReferenceEquals(item.Owner, alarmApc));
         DestructibleObject dormantApc = Assert.Single(destructibles.Objects, item => ReferenceEquals(item.Owner, fakeApc));
         Assert.Equal(DestructibleObjectKind.Vehicle, liveApc.Kind);
@@ -177,6 +189,34 @@ public sealed class Issue105Tests
         runtime.Tick(); // SetSpeed(50) has advanced; this tick begins WalkTo(1).
         Assert.True(runtime.TryGetDrawTransform(limo, out Vector3d movedLimo, out _));
         Assert.NotEqual(new Vector3d(24374838d, 89438272d, 174505184d), movedLimo * WorldScene.UnitsPerMetre);
+    }
+
+    [RequiresGameDataFact]
+    public void MissionSixFuelTankCollisionResolvesToItsExactDestructibleOwner()
+    {
+        (LevelTask root, LoadedMission mission, ScriptVarRegistry variables) = Load(6);
+        WorldScene scene = WorldScene.Build(mission, root);
+        DeclaredTask tank = Assert.IsType<DeclaredTask>(root.Tree.FromId(1600));
+        WorldPlacement placement = Assert.Single(scene.Placements, candidate => ReferenceEquals(candidate.Owner, tank));
+        ObjectCollisionIndex collision = ObjectCollisionIndex.Build([placement]);
+        Assert.True(collision.Count > 0, "the visible fuel tank has no bullet collision mesh");
+
+        (Vector3d centre, double radius) = collision.Bounds(0);
+        double reach = Math.Max(radius * 2d, WorldScene.UnitsPerMetre * 2d);
+        Assert.True(
+            collision.TryTrace(
+                new WorldTraceRequest(
+                    new Vector3d(centre.X - reach, centre.Y, centre.Z),
+                    new Vector3d(centre.X + reach, centre.Y, centre.Z)),
+                out WorldTraceHit hit),
+            "a shot through the fuel-tank collision bounds did not hit the tank");
+        Assert.Same(tank, hit.Owner);
+        Assert.Same(placement, hit.Placement);
+
+        DestructibleObjectRegistry destructibles = DestructibleObjectRegistry.Build(root, scene.Placements, variables);
+        DestructibleObject? destroyed = destructibles.TryDestroy(hit.Owner, hit.Placement);
+        Assert.NotNull(destroyed);
+        Assert.True(destroyed.IsDestroyed);
     }
 
     private static (LevelTask Root, LoadedMission Mission, ScriptVarRegistry Variables) Load(int missionId)
