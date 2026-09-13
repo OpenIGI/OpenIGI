@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
@@ -23,6 +23,34 @@ internal sealed partial class DesktopGame
 {
     /// <summary>Test-only outro forcing writes re-applied on every logic tick.</summary>
     private List<(string Name, string Value)> _testOutroTickWrites = [];
+
+    /// <summary>
+    /// Handles the retail transient-object cleanup native without giving it ownership of cinematic state.
+    /// </summary>
+    /// <remarks>
+    /// <c>IGI.EXE!Game_CutsceneDelete</c> walks the mine/grenade/missile registry, not the QVM
+    /// <c>CutScene</c> registry.  Mission 3 calls it while scene 700 is starting, so completing
+    /// scene 700 here would immediately satisfy the authored mission-complete expression.
+    /// </remarks>
+    internal static QvmValue? TryHandleCutsceneCleanupNative(string name, Action clearTransientProjectiles)
+    {
+        ArgumentNullException.ThrowIfNull(clearTransientProjectiles);
+        if (!string.Equals(name, "Game_CutsceneDelete", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        clearTransientProjectiles();
+        return QvmValue.FromInt32(1);
+    }
+
+    private void ClearTransientCutsceneObjects()
+    {
+        _player?.Grenades.Clear();
+        _player?.Missiles.Clear();
+        _player?.M203.Clear();
+    }
+
     private void StartMission(int id)
     {
         if (!_missions.TryGet(id, out MissionDescriptor? chosen))
@@ -253,6 +281,12 @@ internal sealed partial class DesktopGame
             _loop.Variables,
             (name, arguments) =>
             {
+                QvmValue? cleanup = TryHandleCutsceneCleanupNative(name, ClearTransientCutsceneObjects);
+                if (cleanup.HasValue)
+                {
+                    return cleanup;
+                }
+
                 if (name == GameMusicNatives.EnableNative)
                 {
                     if (_music is not null)
@@ -280,12 +314,6 @@ internal sealed partial class DesktopGame
                         context.IsEnabled = arguments.GetBoolean(0);
                     }
 
-                    return QvmValue.FromInt32(1);
-                }
-
-                if (name == "Game_CutsceneDelete")
-                {
-                    _cutscenes?.DeleteCutscenes();
                     return QvmValue.FromInt32(1);
                 }
 
@@ -474,6 +502,15 @@ internal sealed partial class DesktopGame
         {
             _cutscenes.EnableTerminalTerrainLanding(getawayBell);
         }
+        // Mission 5's extraction Bell likewise has a one-shot approach. At AnimTask 3333's terminal
+        // gate the retail QVM replaces Heli 3322 with parked Heli 1234, whose authored pose is on the
+        // helipad. Use that position for touchdown, then stop the residual rigid-body motion.
+        if (id == 5
+            && levelRoot.Tree.FromId(3322) is { } extractionBell
+            && levelRoot.Tree.FromId(1234) is { } parkedBell)
+        {
+            _cutscenes.EnableTerminalTerrainLanding(extractionBell, parkedBell);
+        }
 
         // Every mission: a car's suspension reads this for the surface under each wheel, and much
         // of what a vehicle stands on is placed geometry -- Mission 1's outro truck starts on a
@@ -629,6 +666,11 @@ internal sealed partial class DesktopGame
             "Ai",
             $"{_securityCameras.Cameras.Count} security camera(s), "
                 + $"{_securityCameras.ControlCount} camera control(s) placed.");
+        _rotatingObjects = RotatingObjectRegistry.Build(levelRoot, scene.Placements, _loop.Variables, _magic);
+        world.RotatingObjects = _rotatingObjects;
+        _logger.Information(
+            "World",
+            $"{_rotatingObjects.Count} rotating object(s) registered.");
 
         // The level's nav graphs. A level ships ONE PER AIGraph TASK, named by that task's id (ai.md 1.1),
         // and every HumanAI names the one it walks through its own "Graph ID" parameter (ai.md 7.6).
@@ -1341,6 +1383,10 @@ internal sealed partial class DesktopGame
             // clears to, so the horizon meets sky-coloured backing rather than black.
             _sky?.Dispose();
             _sky = new SkyRenderer(_device, _fileSystem, levelRoot, FarPlane, _logger);
+
+            // The air the level is drawn through and the flat light on its models, both off the same
+            // GlobalLight keyframe -- see GlobalLightSettings for why that task and not FlatSky.
+            _globalLight = GlobalLightSettings.Read(levelRoot);
             _shadowPass = new ShadowCasterPass(_device);
 
             if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings readSun))
@@ -1916,6 +1962,7 @@ internal sealed partial class DesktopGame
             }
         }
 
+
         // The menus are done; without dropping the renderer the last screen would keep drawing over
         // the world.
         _renderer = null;
@@ -2189,6 +2236,7 @@ internal sealed partial class DesktopGame
         _missionObjectives = null;
         _cutscenes = null;
         _securityCameras = null;
+        _rotatingObjects = null;
         _cameraBeepVoices.Clear();
         _cameraMoveVoices.Clear();
         StopCutsceneSounds();

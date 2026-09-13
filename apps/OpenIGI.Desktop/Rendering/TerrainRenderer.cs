@@ -227,6 +227,15 @@ public sealed class TerrainRenderer : IDisposable
     /// <summary>Gets how many octree nodes the last descent entered.</summary>
     public int LastVisitedCount { get; private set; }
 
+    /// <summary>Gets how many chunks the last descent found and could not fit in its visible list.</summary>
+    /// <remarks>
+    /// Every one of them is ground the frame does not draw — a hole, not a saving. It should be zero at
+    /// every detail setting the presets offer; a non-zero figure means the list is bounded below what
+    /// <c>r_terrain_detail</c> asks for, which is what <see cref="CacheLimit"/> is passed to the descent
+    /// to prevent.
+    /// </remarks>
+    public int LastDroppedChunkCount { get; private set; }
+
     /// <summary>Gets how many uploaded chunks are held.</summary>
     public int CachedCount => _cache.Count;
 
@@ -350,7 +359,14 @@ public sealed class TerrainRenderer : IDisposable
             _terrain.Octree,
             view,
             _chunks,
-            _surface.Discards);
+            _surface.Discards,
+
+            // The visible list is bounded by what the cache can hold, not by retail's 4096: the detail
+            // setting is what decides how many chunks one frustum asks for, and the same setting sizes
+            // the cache. Left at 4096 a wide frustum at the ultra distance drops thousands of chunks a
+            // frame, and every dropped chunk is a piece of ground that is not there. Vanilla's cache is
+            // retail's 4096, so vanilla keeps retail's bound exactly.
+            CacheLimit);
 
         _frame++;
         _buildsThisFrame = 0;
@@ -500,13 +516,19 @@ public sealed class TerrainRenderer : IDisposable
         LastOccludedChunkCount = occludedChunks;
         LastTriangleCount = triangles;
         LastVisitedCount = result.Visited;
+        LastDroppedChunkCount = result.Dropped;
         _previousCamera = camera;
         _hasPreviousCamera = true;
         _previousOccludedChunks = occludedChunks;
 
         if (result.Dropped > 0)
         {
-            _logger.Warning(LogCategory, $"{result.Dropped} chunk(s) did not fit the visible list.");
+            // Every one of these is ground the descent chose and the frame will not draw, so it says
+            // which setting to raise rather than only that it happened.
+            _logger.Warning(
+                LogCategory,
+                $"{result.Dropped} chunk(s) did not fit the visible list of {CacheLimit}; "
+                    + "the ground has holes in it. Raise r_terrain_cache to match r_terrain_detail.");
         }
 
         Trim();
@@ -756,13 +778,13 @@ public sealed class TerrainRenderer : IDisposable
         }
 
         TextureHandle[] handles = new TextureHandle[atlas.Tiles.Count];
+        int uploadedWidth = atlas.TileWidth;
+        int uploadedHeight = atlas.TileHeight;
         for (int i = 0; i < handles.Length; i++)
         {
-            // The ground tiles ship with a single level and this backend generates none, so without this
-            // the terrain -- which covers more of the screen than anything else -- was sampled at full
-            // resolution however far away it was. That is what makes distant ground sparkle as the camera
-            // turns, and it is the same gap the world textures had.
             TextureImage tile = atlas.Tiles[i].WithMipChain();
+            uploadedWidth = tile.Width;
+            uploadedHeight = tile.Height;
             try
             {
                 handles[i] = _device.CreateTexture(
@@ -774,17 +796,19 @@ public sealed class TerrainRenderer : IDisposable
                         TextureAddressMode.Repeat),
                     tile.Pixels);
 
-                // Derived here rather than read from the pack, because a ground tile arrives as an
-                // index into an atlas and has no name to look one up with. There are a handful of them
-                // and they cover more of the screen than anything else, so this is both the cheapest
-                // case to derive in process and the one it would be most visible to skip. A caller that
-                // has already done the arithmetic off this thread hands the result in instead.
+                // A caller that has already done the arithmetic off this thread hands the result in; the
+                // menu's backdrop loader does, because deriving a tile measured at tens of milliseconds
+                // and a level's worth is most of a second on the thread holding the menu up.
                 if (derivedDetail is not null && i < derivedDetail.Count && derivedDetail[i].Length > 0)
                 {
                     DetailMaps?.AttachPacked(handles[i], derivedDetail[i], tile.Width, tile.Height);
                 }
                 else
                 {
+                    // Derived in process from whatever the tile turned out to be. A ground tile has no
+                    // name to look a map up by -- it is an index into an atlas -- and it does not need
+                    // one: when the overrides folder replaces the atlas, this derives from the
+                    // replacement, which is the picture actually on the ground.
                     DetailMaps?.AttachDerived(
                         handles[i], tile.GetLevel(0), tile.Width, tile.Height);
                 }
@@ -795,7 +819,13 @@ public sealed class TerrainRenderer : IDisposable
             }
         }
 
-        _logger.Information(LogCategory, $"Ground tiles: {handles.Length} of {atlas.TileWidth}x{atlas.TileHeight}.");
+        // The UPLOADED size, not the atlas's declared one. Those are the same number until the overrides
+        // folder replaces the atlas, and then reporting the header's is actively misleading -- it would
+        // say 128x128 for ground that went up at 1024.
+        _logger.Information(
+            LogCategory,
+            $"Ground tiles: {handles.Length} of {uploadedWidth}x{uploadedHeight}"
+                + (uploadedWidth != atlas.TileWidth ? $" (atlas declares {atlas.TileWidth}x{atlas.TileHeight})." : "."));
         return handles;
     }
 

@@ -104,10 +104,10 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.Equal(90, truck.ArgumentAt(36).Integer);
         Assert.Equal(45f, truck.ArgumentAt(41).ToSingle());
 
-        // The Level 3 outro plane (702_02_1) is backed by the SU27 definition with the
-        // same indexed scalar tail (mass/dims/thrust/speed/response). Retain it untouched
-        // while the 0x433B50 motion-path field mapping is translated; assigning smoothing
-        // semantics now would repeat the invented-constant substitute.
+        // The Level 3 outro plane (702_02_1) is backed by the SU27 definition.  The
+        // common parser consumes arguments 0..11; Plane_Physics (0x433B50) reads its
+        // task-specific config from argument 12 onward.  In particular, the three
+        // control retentions and the two thrust steps are not rendering guesses.
         Assert.True(physics.TryGetPlane("702_02_1", out PlanePhysicsDefinition su27));
         Assert.Equal(68, su27.ArgumentCount);
         Assert.Equal(QvmValueKind.Integer, su27.ArgumentAt(0).Kind);
@@ -116,6 +116,9 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.Equal(16f, su27.ArgumentAt(4).ToSingle());
         Assert.Equal(2.5f, su27.ArgumentAt(5).ToSingle());
         Assert.Equal("702_02_1", su27.ArgumentAt(8).Text);
+        Assert.Equal(new Vector3f(0.9f, 0.9f, 0.9f), su27.ControlRetention);
+        Assert.Equal(0.054f, su27.HighThrustStep, precision: 5);
+        Assert.Equal(0.006f, su27.LowThrustStep, precision: 5);
     }
 
     [RequiresGameDataFact]
@@ -458,6 +461,71 @@ public sealed class RetailCutsceneRuntimeTests
         }
 
         Assert.False(runtime.IsPlaying);
+    }
+
+    [RequiresGameDataFact]
+    public void MissionFiveIntroShowsAuthoredBinocularOverlayOnlyDuringScene3501()
+    {
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fileSystem);
+        GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new();
+        missions.Register(loop.Natives);
+        missions.Scan(fileSystem, resources, loop.Natives);
+        _ = new MissionLoader(
+            missions,
+            fileSystem,
+            resources,
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(5);
+
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        CutsceneRuntime runtime = new(root, loop.Variables);
+
+        // LEVEL5/objects.qsc authors the holder as
+        // CutScene_3500.isFinished && !CutScene_3501.isFinished && ConditionalContainer_1000.isRun.
+        // The boundary ticks below are the frames produced by the retail 30 Hz completion contract.
+        CutsceneFrame opening = Assert.IsType<CutsceneFrame>(runtime.Frame);
+        Assert.Equal(3500, opening.Scene.Id);
+        Assert.Equal(0, opening.Scene.Ticks);
+        Assert.False(opening.BinocularOverlayVisible);
+
+        CutsceneFrame lastEstablishingFrame = opening;
+        int lastEstablishingTick = opening.Scene.Ticks;
+        for (int tick = 0; tick < 1_000 && runtime.ActiveScene?.Id == 3500; tick++)
+        {
+            lastEstablishingFrame = Assert.IsType<CutsceneFrame>(runtime.Frame);
+            lastEstablishingTick = lastEstablishingFrame.Scene.Ticks;
+            runtime.Tick();
+        }
+
+        Assert.NotEqual(3500, runtime.ActiveScene?.Id);
+        Assert.Equal(107, lastEstablishingTick);
+        Assert.False(lastEstablishingFrame.BinocularOverlayVisible);
+
+        CutsceneFrame firstBinocularFrame = Assert.IsType<CutsceneFrame>(runtime.Frame);
+        Assert.Equal(3501, firstBinocularFrame.Scene.Id);
+        Assert.Equal(1, firstBinocularFrame.Scene.Ticks);
+        Assert.True(firstBinocularFrame.BinocularOverlayVisible);
+
+        CutsceneFrame lastBinocularFrame = firstBinocularFrame;
+        int lastBinocularTick = firstBinocularFrame.Scene.Ticks;
+        for (int tick = 0; tick < 1_000 && runtime.ActiveScene?.Id == 3501; tick++)
+        {
+            lastBinocularFrame = Assert.IsType<CutsceneFrame>(runtime.Frame);
+            lastBinocularTick = lastBinocularFrame.Scene.Ticks;
+            Assert.True(lastBinocularFrame.BinocularOverlayVisible);
+            runtime.Tick();
+        }
+
+        Assert.NotEqual(3501, runtime.ActiveScene?.Id);
+        Assert.Equal(744, lastBinocularTick);
+        CutsceneFrame firstClosingFrame = Assert.IsType<CutsceneFrame>(runtime.Frame);
+        Assert.Equal(3502, firstClosingFrame.Scene.Id);
+        Assert.Equal(1, firstClosingFrame.Scene.Ticks);
+        Assert.False(firstClosingFrame.BinocularOverlayVisible);
     }
 
     [RequiresGameDataFact]

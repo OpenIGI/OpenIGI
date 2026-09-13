@@ -19,21 +19,22 @@ namespace OpenIGI.Desktop;
 /// a scroll speed, a tint and an alpha. Everything here is read from those tasks.
 /// </para>
 /// <para>
-/// The dome is the original's exactly (<c>sub_52CB30</c>/<c>sub_52CC40</c>): an apex, fifteen rings six
-/// degrees apart, twenty vertices per ring, a skirt half a radius below the horizon, over a sphere of
-/// <c>0.8 ×</c> the far plane. Colours run top → middle across <c>[angle, 90°]</c> and middle → bottom
-/// across <c>[angle/2, angle]</c> (<c>sub_52CE90</c> is the bilinear blend, with the azimuth picking
-/// within each colour pair). It is drawn first, with no depth, centred on the camera.
+/// The dome follows the observed retail topology: an apex, fifteen rings six degrees apart, twenty
+/// vertices per ring, and a skirt half a radius below the horizon. The paired native listing confirms
+/// the <c>0.8</c> radius multiplier at <c>0x52CC40</c>; the source of its base radius remains deliberately
+/// unnamed here until its renderer type is recovered. Colours run top → middle across <c>[angle, 90°]</c>
+/// and middle → bottom across <c>[angle/2, angle]</c>. It is drawn first, with no depth, centred on the camera.
 /// </para>
 /// <para>
 /// A cloud layer is the plane <c>Z Pos</c> metres above the camera (<c>sub_51E1F0</c>): each vertex is
 /// textured by its camera-relative world position times the layer's scale plus the scroll, and faded by
 /// view depth — opaque nearer than <c>d0 = D − (D − 0.1m) × fogAmount</c>, then
 /// <c>d0 × (1 − D/d) / (d0 − D)</c> beyond it, clamped to <c>[0, 0.999]</c>, where <c>D</c> is the
-/// task's <c>Distance</c>. The original evaluates that on a screen-space grid re-projected every frame;
-/// here it is a camera-centred polar grid rebuilt every frame, which is the same plane sampled the same
-/// way. <b>Divergence:</b> the scroll's time base is the simulation tick assumed at 30 Hz; the original
-/// advances it per tick and the exact step has not been read.
+/// task's <c>Distance</c>. The grid it is drawn on is the original's and is laid out across the SCREEN,
+/// not around the camera -- see <see cref="TryBuildCloudGrid"/>, which is also where the two artefacts a
+/// camera-centred disc printed instead are written down. <b>Divergence:</b> the scroll's time base is the
+/// simulation tick assumed at 30 Hz; the original advances it per tick and the exact step has not been
+/// read.
 /// </para>
 /// <para>
 /// Mission 1 declares no <c>Lensflare</c> task, so dome, clouds and the fog colour are everything its
@@ -50,11 +51,27 @@ public sealed class SkyRenderer : IDisposable
     /// <summary>Vertices around each ring, eighteen degrees apart.</summary>
     private const int DomeSegments = 20;
 
-    /// <summary>The dome's radius as a fraction of the far plane, as <c>sub_52CC40</c> scales it.</summary>
+    /// <summary>The paired-listing-confirmed multiplier applied to the dome's base radius.</summary>
     private const float DomeRadiusOfFar = 0.8f;
 
-    /// <summary>Radial rows of the cloud grid, camera outwards.</summary>
-    private const int CloudRows = 16;
+    /// <summary>Rows of quads in the cloud strip, as <c>sub_51E1F0</c> steps it across the screen.</summary>
+    private const int CloudRows = 12;
+
+    /// <summary>Vertices across each row of the strip, which the original spans in one quad.</summary>
+    /// <remarks>
+    /// Two is exact rather than coarse for an upright camera, which is what the game plays in. The
+    /// texture coordinates are affine in the plane, so perspective interpolation across a quad reproduces
+    /// them however wide it is; and the fade is by view depth, which along a screen line parallel to the
+    /// horizon does not vary at all until the camera rolls. Rolled -- a cutscene, say -- the fade across
+    /// a row becomes the linear approximation it is in the original too.
+    /// </remarks>
+    private const int CloudColumns = 2;
+
+    /// <summary>The original's near plane, in engine units: <c>0.1 m</c>, as <c>sub_51E1F0</c> tests it.</summary>
+    private const float NearDepthUnits = 409.6f;
+
+    /// <summary>The original's overscan on the strip, so its edges clear the viewport's.</summary>
+    private const float StripOverscan = 1.001f;
 
     private readonly IGraphicsDevice _device;
     private readonly IIgiLogger _logger;
@@ -82,6 +99,9 @@ public sealed class SkyRenderer : IDisposable
     private MeshHandle[] _cloudMeshes = [];
     private Vertex3D[] _cloudVertices = [];
     private ushort[] _cloudIndices = [];
+
+    /// <summary>This frame's strip, cast onto the plane: shared by every layer, which differ only in shading.</summary>
+    private Vector3f[] _cloudPositions = [];
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="SkyRenderer"/> class.</summary>
@@ -200,15 +220,34 @@ public sealed class SkyRenderer : IDisposable
         _device.SetCullMode(CullMode.None);
         _device.SetDepthState(DepthState.Disabled);
 
+        // The sky is isolated from world fog so its authored gradient remains visible. Retail's sky draw
+        // performs a state sequence at 0x52D060, but naming an individual call FOGENABLE needs recovered
+        // Direct3D types; do not claim that mapping before then. Clouds use their authored distance ramp.
+        SceneFog fog = _device.Fog;
+        Vector3f ambient = _device.ModelAmbient;
+        _device.SetFog(SceneFog.None);
+
+        // Nor is the sky a model: its gradient is in its own vertices and the level's flat model light
+        // has no business multiplying it. The original keeps the dome in its own state block for the
+        // same reason it keeps it out of the depth buffer -- it is the backdrop, not the world.
+        _device.SetModelAmbient(Vector3f.One);
+
         // The dome follows the camera, so its model position is the camera's and only the rotation
         // remains in the model-view.
         Matrix4f modelView = camera.CreateModelView(camera.Position);
         _device.DrawMesh(_dome, 0, DomeIndexCount, modelView, TextureHandle.None, TextureHandle.None, BlendMode.Opaque);
 
-        for (int i = 0; i < _layers.Count; i++)
+        // One strip for every layer: they share the geometry and differ only in texture, tint and scroll.
+        if (_layers.Count > 0 && TryBuildCloudGrid(camera, projection))
         {
-            DrawCloudLayer(_layers[i], i, camera, modelView, seconds);
+            for (int i = 0; i < _layers.Count; i++)
+            {
+                DrawCloudLayer(_layers[i], i, camera, modelView, seconds);
+            }
         }
+
+        _device.SetFog(fog);
+        _device.SetModelAmbient(ambient);
     }
 
     /// <summary>Tints the dome to the sun's warmth, rebuilding it when the tint moves enough to matter.</summary>
@@ -292,7 +331,7 @@ public sealed class SkyRenderer : IDisposable
     private static int DomeIndexCount =>
         ((DomeSegments + (DomeSegments * 2 * (DomeRings - 1)) + (DomeSegments * 2)) * 3);
 
-    /// <summary>Builds the dome exactly as <c>sub_52CC40</c> lays it out.</summary>
+    /// <summary>Builds the paired-listing-confirmed dome topology.</summary>
     private MeshHandle BuildDome(
         float radius,
         float angle,
@@ -393,11 +432,188 @@ public sealed class SkyRenderer : IDisposable
         }
     }
 
-    /// <summary>Recomputes and draws one cloud layer for this frame's camera.</summary>
+    /// <summary>
+    /// Lays this frame's cloud strip across the screen and casts each of its vertices onto the plane,
+    /// exactly as <c>sub_51E1F0</c> does.
+    /// </summary>
+    /// <param name="camera">The camera the strip is laid out for.</param>
+    /// <param name="projection">The view-to-clip transform the strip is laid out in.</param>
+    /// <returns><see langword="true"/> when a strip was built; <see langword="false"/> when the plane is
+    /// not in front of the camera and nothing should be drawn.</returns>
     /// <remarks>
-    /// The vertices are a function of view depth, exactly as the original re-projects its grid per
-    /// frame — but the buffers are persistent: the vertex array is reused, the index topology is built
-    /// once, and the GPU mesh is updated in place rather than destroyed and recreated.
+    /// <para>
+    /// The original builds this grid in screen space, and that detail is the whole of it. Two points on
+    /// the plane -- the fade distance <c>D</c> ahead, and <c>D</c> to either side of that -- are
+    /// projected, and the line through them is the strip's first row; twelve more rows step from there
+    /// out to the edge of the viewport, each spanning the viewport's whole width. Every vertex is then
+    /// the ray through its own screen position cast onto the plane, which is the same surface the plane
+    /// always was, sampled where it is actually seen. Because the lateral axis is perpendicular to the
+    /// view axis, that first row is parallel to the horizon whatever the camera does, and lies on the
+    /// plane's side of it -- so no vertex can fall behind the camera, and the strip's outer edge sits
+    /// exactly where the fade has reached zero.
+    /// </para>
+    /// <para>
+    /// The version before this drew a disc of <c>1.5 x D</c> around the camera instead, and printed two
+    /// artefacts for it. The disc has a rim, at <c>atan(ZPos / 1.5D)</c> above the horizon, with cloud on
+    /// one side of it and bare sky on the other: missions 3 and 9 ask for <c>ZPos 6 / D 40</c>, which put
+    /// that rim five and a half degrees up, and it was photographed there as a lens hanging in the sky.
+    /// Every other mission asks for a plane 1.3 to 4 m up against 100 to 250 m of fade, which puts the
+    /// same rim within a degree of the horizon. And the fade is by view depth, which runs to zero abreast
+    /// of the camera and negative behind it, so the whole band of the disc level with the camera took the
+    /// formula's "nearer than the fade starts" branch and came out at full opacity however far away it
+    /// was. A screen-space strip has neither defect available to it: there is no rim on the screen to
+    /// see, and every vertex is in front of the camera by construction.
+    /// </para>
+    /// </remarks>
+    private bool TryBuildCloudGrid(in Camera3D camera, in Matrix4f projection)
+    {
+        if (PlaneHeight <= 0f || Distance <= 0f)
+        {
+            return false;
+        }
+
+        Vector3f right = camera.Orientation.Row1;
+        Vector3f up = camera.Orientation.Row2;
+        Vector3f forward = camera.Orientation.Row3;
+
+        // The view axis flattened onto the ground and the lateral axis across it. The original
+        // normalises the forward row's horizontal half for the same pair, and substitutes +X when the
+        // camera looks straight up or down and there is no horizontal half to normalise.
+        float horizontal = MathF.Sqrt((forward.X * forward.X) + (forward.Y * forward.Y));
+        float cos = horizontal > 1e-6f ? forward.X / horizontal : 1f;
+        float sin = horizontal > 1e-6f ? forward.Y / horizontal : 0f;
+        Vector3f lateral = new(-sin, cos, 0f);
+        Vector3f ahead = new(cos, sin, 0f);
+        Vector3f overhead = new(0f, 0f, PlaneHeight);
+
+        Vector3f leftEnd = (ahead * Distance) + (lateral * Distance) + overhead;
+        Vector3f rightEnd = (ahead * Distance) - (lateral * Distance) + overhead;
+
+        if (!TryProject(projection, right, up, forward, leftEnd, out float ax, out float ay)
+            || !TryProject(projection, right, up, forward, rightEnd, out float bx, out float by))
+        {
+            // Both ends must clear the near plane, as the original requires before it lays anything out.
+            return false;
+        }
+
+        float alongX = bx - ax;
+        float alongY = by - ay;
+        float alongLength = MathF.Sqrt((alongX * alongX) + (alongY * alongY));
+        if (alongLength < 1e-8f)
+        {
+            return false;
+        }
+
+        alongX /= alongLength;
+        alongY /= alongLength;
+        float acrossX = alongY;
+        float acrossY = -alongX;
+
+        // Which way off that line the plane lies. A ray's height above the camera is affine in its
+        // screen position, so this gradient is exact, and the plane is overhead -- so the side where
+        // the height climbs is the side with cloud on it.
+        float climbX = right.Z / projection.M11;
+        float climbY = up.Z / projection.M22;
+        float climb = (acrossX * climbX) + (acrossY * climbY);
+        if (climb < 0f)
+        {
+            acrossX = -acrossX;
+            acrossY = -acrossY;
+            climb = -climb;
+        }
+
+        float midX = (ax + bx) * 0.5f;
+        float midY = (ay + by) * 0.5f;
+
+        float minAlong = float.MaxValue;
+        float maxAlong = float.MinValue;
+        float minAcross = float.MaxValue;
+        float maxAcross = float.MinValue;
+        for (int corner = 0; corner < 4; corner++)
+        {
+            float dx = ((corner & 1) == 0 ? -1f : 1f) - midX;
+            float dy = ((corner & 2) == 0 ? -1f : 1f) - midY;
+            float along = (dx * alongX) + (dy * alongY);
+            float across = (dx * acrossX) + (dy * acrossY);
+            minAlong = MathF.Min(minAlong, along);
+            maxAlong = MathF.Max(maxAlong, along);
+            minAcross = MathF.Min(minAcross, across);
+            maxAcross = MathF.Max(maxAcross, across);
+        }
+
+        if (maxAcross < 0f)
+        {
+            // The plane's side of its own vanishing line is off the screen entirely.
+            return false;
+        }
+
+        // The strip starts on that line, as the original starts it: between the line and the horizon the
+        // fade has already reached zero, and starting there is what keeps every vertex off the horizon.
+        // Aimed straight up there is no vanishing line on the screen to start from -- the gradient goes
+        // flat -- and then the strip has to cover the viewport instead.
+        float startAcross = climb > 1e-9f ? 0f : minAcross;
+        float step = (maxAcross - startAcross) * StripOverscan / CloudRows;
+
+        // Bounds the crossing distance for a vertex floating point puts on the horizon rather than just
+        // above it. The fade reached zero long before here, so the clamp cannot be seen.
+        float minClimb = PlaneHeight / (Distance * 4f);
+
+        if (_cloudPositions.Length == 0)
+        {
+            _cloudPositions = new Vector3f[(CloudRows + 1) * CloudColumns];
+        }
+
+        for (int row = 0; row <= CloudRows; row++)
+        {
+            float across = startAcross + (step * row);
+            for (int column = 0; column < CloudColumns; column++)
+            {
+                float along = (column == 0 ? minAlong : maxAlong) * StripOverscan;
+                float ndcX = midX + (alongX * along) + (acrossX * across);
+                float ndcY = midY + (alongY * along) + (acrossY * across);
+
+                // The ray through that screen position, at a view depth of one so the crossing
+                // parameter is the view depth itself, and where it crosses the cloud plane.
+                float viewX = (ndcX - projection.M13) / projection.M11;
+                float viewY = (ndcY - projection.M23) / projection.M22;
+                Vector3f ray = (right * viewX) + (up * viewY) + forward;
+                _cloudPositions[(row * CloudColumns) + column] =
+                    ray * (PlaneHeight / MathF.Max(ray.Z, minClimb));
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Projects a camera-relative position, in metres, to normalised device coordinates.</summary>
+    /// <returns><see langword="false"/> when the position is nearer than the original's near plane.</returns>
+    private static bool TryProject(
+        in Matrix4f projection,
+        Vector3f right,
+        Vector3f up,
+        Vector3f forward,
+        Vector3f position,
+        out float ndcX,
+        out float ndcY)
+    {
+        ndcX = 0f;
+        ndcY = 0f;
+
+        float depth = Vector3f.Dot(forward, position);
+        if (depth * (float)WorldScene.UnitsPerMetre < NearDepthUnits)
+        {
+            return false;
+        }
+
+        ndcX = (projection.M11 * (Vector3f.Dot(right, position) / depth)) + projection.M13;
+        ndcY = (projection.M22 * (Vector3f.Dot(up, position) / depth)) + projection.M23;
+        return true;
+    }
+
+    /// <summary>Shades this frame's strip for one layer and draws it.</summary>
+    /// <remarks>
+    /// The buffers are persistent: the vertex array is reused, the index topology is built once, and the
+    /// GPU mesh is updated in place rather than destroyed and recreated.
     /// </remarks>
     private void DrawCloudLayer(
         in CloudLayer layer,
@@ -408,7 +624,7 @@ public sealed class SkyRenderer : IDisposable
     {
         // The fade window, in engine units: opaque out to nearDepth, gone by the task's Distance.
         float distanceUnits = Distance * (float)WorldScene.UnitsPerMetre;
-        float nearDepth = distanceUnits - ((distanceUnits - 409.6f) * FogAmount);
+        float nearDepth = distanceUnits - ((distanceUnits - NearDepthUnits) * FogAmount);
         float inverse = 1f / (nearDepth - distanceUnits);
 
         Vector3f forward = camera.Orientation.Row3;
@@ -417,10 +633,9 @@ public sealed class SkyRenderer : IDisposable
         float scrollX = seconds * layer.SpeedX * 30f;
         float scrollY = seconds * layer.SpeedY * 30f;
 
-        int columns = DomeSegments;
-        if (_cloudVertices.Length == 0)
+        if (_cloudVertices.Length != _cloudPositions.Length)
         {
-            _cloudVertices = new Vertex3D[(CloudRows + 1) * columns];
+            _cloudVertices = new Vertex3D[_cloudPositions.Length];
         }
 
         if (_cloudMeshes.Length != _layers.Count)
@@ -429,46 +644,32 @@ public sealed class SkyRenderer : IDisposable
         }
 
         Vertex3D[] vertices = _cloudVertices;
-        float maxRadius = Distance * 1.5f;
 
-        for (int row = 0; row <= CloudRows; row++)
+        for (int i = 0; i < _cloudPositions.Length; i++)
         {
-            // Quadratic spacing keeps the rows dense overhead where the texture is sharpest.
-            float t = row / (float)CloudRows;
-            float radial = maxRadius * t * t;
+            Vector3f position = _cloudPositions[i];
+            float depthUnits = Vector3f.Dot(forward, position) * (float)WorldScene.UnitsPerMetre;
 
-            for (int column = 0; column < columns; column++)
-            {
-                float azimuth = column * (MathF.Tau / columns);
-                Vector3f position = new(
-                    MathF.Cos(azimuth) * radial,
-                    MathF.Sin(azimuth) * radial,
-                    PlaneHeight);
+            float fade = depthUnits < nearDepth
+                ? 1f
+                : Math.Clamp((nearDepth - (nearDepth * distanceUnits / depthUnits)) * inverse, 0f, 0.999f);
 
-                float depthUnits = ((forward.X * position.X) + (forward.Y * position.Y) + (forward.Z * position.Z))
-                    * (float)WorldScene.UnitsPerMetre;
+            float u = (position.X * (float)WorldScene.UnitsPerMetre * layer.Scale) + scrollX;
+            float v = (position.Y * (float)WorldScene.UnitsPerMetre * layer.Scale) + scrollY;
 
-                float fade = depthUnits < nearDepth
-                    ? 1f
-                    : Math.Clamp((nearDepth - (nearDepth * distanceUnits / depthUnits)) * inverse, 0f, 0.999f);
-
-                float u = (position.X * (float)WorldScene.UnitsPerMetre * layer.Scale) + scrollX;
-                float v = (position.Y * (float)WorldScene.UnitsPerMetre * layer.Scale) + scrollY;
-
-                vertices[(row * columns) + column] = new Vertex3D(
-                    position,
-                    Vector3f.Zero,
-                    u,
-                    v,
-                    0f,
-                    0f,
-                    ToColour(layer.Colour, fade * layer.Alpha));
-            }
+            vertices[i] = new Vertex3D(
+                position,
+                Vector3f.Zero,
+                u,
+                v,
+                0f,
+                0f,
+                ToColour(layer.Colour, fade * layer.Alpha));
         }
 
         if (_cloudIndices.Length == 0)
         {
-            _cloudIndices = BuildCloudIndices(columns);
+            _cloudIndices = BuildCloudIndices();
         }
 
         try
@@ -500,20 +701,19 @@ public sealed class SkyRenderer : IDisposable
             BlendMode.AlphaBlend);
     }
 
-    /// <summary>Builds the cloud grid's triangle list, which never changes after that.</summary>
-    private static ushort[] BuildCloudIndices(int columns)
+    /// <summary>Builds the strip's triangle list, which never changes after that.</summary>
+    private static ushort[] BuildCloudIndices()
     {
-        ushort[] indices = new ushort[CloudRows * columns * 6];
+        ushort[] indices = new ushort[CloudRows * (CloudColumns - 1) * 6];
         int cursor = 0;
         for (int row = 0; row < CloudRows; row++)
         {
-            for (int column = 0; column < columns; column++)
+            for (int column = 0; column < CloudColumns - 1; column++)
             {
-                int next = (column + 1) % columns;
-                int a = (row * columns) + column;
-                int b = (row * columns) + next;
-                int c = ((row + 1) * columns) + column;
-                int d = ((row + 1) * columns) + next;
+                int a = (row * CloudColumns) + column;
+                int b = a + 1;
+                int c = a + CloudColumns;
+                int d = c + 1;
                 indices[cursor++] = (ushort)a;
                 indices[cursor++] = (ushort)c;
                 indices[cursor++] = (ushort)b;

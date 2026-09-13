@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
+using OpenIGI.Rendering.Vulkan.Deferred.Tsr;
 using OpenIGI.Rendering.Vulkan.Shaders;
 using Xunit;
 
@@ -32,6 +35,73 @@ public sealed class UpscaleShaderCompilationTests
             UpscaleRejectShadingShaderSource.Compute, ShaderStage.Compute, "upscale.rejectshading.comp");
 
         Assert.NotEmpty(spirv);
+    }
+
+    /// <summary>The narrow group an adapter without 48KB of shared memory gets is built the same way.</summary>
+    /// <remarks>
+    /// Only the group size differs, but everything downstream of it is derived: seven tile extents, the
+    /// stride of every cooperative loop and the group's own origin. A mistake in any of them is a source
+    /// no adapter that needs this path can compile, and no desktop driver would ever ask for it.
+    /// </remarks>
+    [RequiresShaderCompilerFact]
+    public void TheRejectShadingShaderCompilesAtTheCompactGroupSize()
+    {
+        using ShaderCompiler compiler = new();
+
+        byte[] spirv = compiler.Compile(
+            UpscaleRejectShadingShaderSource.For(UpscaleRejectShadingShaderSource.CompactGroupSize),
+            ShaderStage.Compute,
+            "upscale.rejectshading.comp");
+
+        Assert.NotEmpty(spirv);
+    }
+
+    /// <summary>
+    /// The shared-memory total the pass decides on is the total the source actually declares.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="RejectShadingPass"/> chooses its group size by comparing
+    /// <see cref="UpscaleRejectShadingShaderSource.SharedBytes"/> against the adapter's
+    /// <c>maxComputeSharedMemorySize</c>, so that arithmetic is load-bearing rather than documentation:
+    /// under-count it and the pipeline is rejected on the adapter the fallback exists for. It is
+    /// recomputed here from the declarations themselves -- the six tiles and the radii they are sized
+    /// from -- so that adding a tile or widening a radius fails here rather than on a Mac.
+    /// </remarks>
+    [Fact]
+    public void TheRejectShadingSharedTotalMatchesTheDeclaredTiles()
+    {
+        string source = UpscaleRejectShadingShaderSource.Compute;
+
+        // "const int R_LOAD = 6; const int T_LOAD = GROUP + 12;" -- the radius, and the extent it implies.
+        Dictionary<string, int> radii = [];
+        foreach (Match match in Regex.Matches(source, @"const int R_(\w+)\s*=\s*(\d+);\s*const int T_\1\s*=\s*GROUP \+ (\d+);"))
+        {
+            int radius = int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture);
+            Assert.Equal(2 * radius, int.Parse(match.Groups[3].Value, CultureInfo.InvariantCulture));
+            radii[match.Groups[1].Value] = radius;
+        }
+
+        Assert.NotEmpty(radii);
+
+        // "shared float sInput[T_LOAD * T_LOAD * 3];" -- which of those extents is actually claimed.
+        MatchCollection tiles = Regex.Matches(source, @"shared float \w+\[T_(\w+) \* T_\1 \* 3\];");
+        Assert.Equal(6, tiles.Count);
+
+        foreach (int groupSize in new[] { UpscaleRejectShadingShaderSource.PreferredGroupSize, UpscaleRejectShadingShaderSource.CompactGroupSize })
+        {
+            int declared = 0;
+            foreach (Match tile in tiles)
+            {
+                int edge = groupSize + (2 * radii[tile.Groups[1].Value]);
+                declared += edge * edge * 3 * sizeof(float);
+            }
+
+            Assert.Equal(declared, UpscaleRejectShadingShaderSource.SharedBytes(groupSize));
+        }
+
+        // The limit the fallback exists for: Metal's threadgroup memory on Apple silicon, which MoltenVK
+        // reports verbatim. The compact tile has to fit inside it or there is nothing to fall back to.
+        Assert.True(UpscaleRejectShadingShaderSource.SharedBytes(UpscaleRejectShadingShaderSource.CompactGroupSize) <= 32768);
     }
 
     /// <summary>

@@ -101,4 +101,25 @@ public enum DebugView
     /// is a fully converged history, black a texel that restarted this frame.
     /// </summary>
     UpscaleHistory = 17,
+
+    /// <summary>
+    /// The G-buffer's roughness alone, black for a mirror and white for fully matte. The view that
+    /// settles whether a derived roughness map is reaching the shader at all, because once it has been
+    /// through a GGX lobe a twelve-per-cent spread at the matte end is invisible.
+    /// </summary>
+    Roughness = 18,
+
+    /// <summary>
+    /// The G-buffer's metallic alone, black for a dielectric and white for bare metal. Expected to be
+    /// flat black everywhere the level has no authored metal, which is how a channel that is carrying
+    /// nothing is told apart from one that is carrying zero on purpose.
+    /// </summary>
+    Metallic = 19,
+
+    /// <summary>
+    /// The material occlusion the base colour's alpha carries, white for open and black for a crease.
+    /// Distinct from <see cref="Ao"/>, which is the screen-space horizon search: this one is baked into
+    /// the texture and is the same in every frame from every angle.
+    /// </summary>
+    MaterialAo = 20,
 }

@@ -34,6 +34,15 @@ internal sealed partial class DesktopGame
         _device.Set2DProjection(_window.Width, _window.Height);
         batch.Begin();
 
+        if (frame.BinocularOverlayVisible && _hud is { IsReady: true } binocularOverlay)
+        {
+            binocularOverlay.DrawBinocularOverlay(
+                batch,
+                _window.Width,
+                _window.Height,
+                simulationTick: _loop.Clock.TickCount);
+        }
+
         static void Quad(SpriteBatch target, float left, float top, float right, float bottom, Bgra32 colour) =>
             target.DrawQuad(
                 TextureHandle.None,

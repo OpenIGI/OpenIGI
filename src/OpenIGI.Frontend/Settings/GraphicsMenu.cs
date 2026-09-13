@@ -573,6 +573,12 @@ public static class GraphicsMenu
         "r_terrain_occlusion",
         "r_terrain_cache",  // how much streamed ground stays resident; the detail row is the player's version
 
+        // Which fog the picture wears, which the Preset row has already answered: vanilla draws the
+        // original's own per-vertex haze into the level's fog colour, and every tier above it marches
+        // the same authored haze through the froxel volume instead. A player who could set this
+        // separately could set both at once, which fogs the frame twice.
+        "r_fog_retail",
+
         "r_camera_taps",
 
         // Off at every preset by design: a first-person camera has no business deciding what the player
@@ -587,13 +593,15 @@ public static class GraphicsMenu
         "r_rt_lights",
         "r_rt_reflections",
         "r_lamp_denoise",
+        // Preset-invariant retail impact dust/chips/blood. This is a diagnostic kill switch, while
+        // r_impact_particles is the player-facing switch for the remaster's additional burst.
+        "r_impact_effects",
         "r_sdf_validate",
         "r_cards_dump",
         "r_cards_probe",
         "r_perflog",
         "r_debug_view",
         "r_lut_table",
-        "r_material_pack",
 
         // The level's own authored weather, overridden. The Weather row on the Gameplay page turns the
         // level's weather on and off; choosing a different one than the level ships with is authoring.

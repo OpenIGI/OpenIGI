@@ -1994,9 +1994,17 @@ public static class RenderCVars
             "r_material_detail",
             0f,
             0f,
+
+            // Two, not the twenty this used to allow. The strength blends the surface normal towards the
+            // mapped one, so one is the map exactly and anything above it is extrapolation past what the
+            // generator derived -- useful for a mild map on a flat wall, meaningless past a doubling. The
+            // old ceiling was inherited from the arrangement where the strength scaled a slope, where the
+            // number had no upper meaning at all because the maths silently degenerated instead of
+            // saturating; anyone who found their way to 3 there got a wall of normals lying flat along
+            // the surface.
             2f,
             CVarOptions.Archive,
-            "How strongly derived normal and roughness maps are applied; 0 ignores them."),
+            "How strongly derived normal and roughness maps are applied; 0 ignores them, 1 is the map."),
         vanilla: "0",
         enhanced: "0",
 
@@ -2042,18 +2050,50 @@ public static class RenderCVars
         // screen trace is not; left off until the probe field can carry the specular instead.
         ultra: "1");
 
-    /// <summary>Where the derived surface-detail maps are read from.</summary>
+    /// <summary>Whether the overrides folder is drawn, for comparing against the game's own assets.</summary>
     /// <remarks>
-    /// A directory of PNGs named after the textures they belong to, as
-    /// <c>ResExtract maps</c> writes. Empty means there is no pack and nothing is derived, which is
-    /// what an installation that has never run the tool gets — and it renders exactly as it did before
-    /// the maps existed rather than failing.
+    /// <para>
+    /// The successor to <c>r_hd</c>, which switched an upscaled-texture pack in and out of the frame.
+    /// That pack no longer exists: replacement art goes in the installation's <c>overrides</c> folder and
+    /// arrives through the ordinary resource path, which is how every other asset arrives and is why it
+    /// needs no setting of its own to point at it.
+    /// </para>
+    /// <para>
+    /// The comparison it made is worth keeping, though, and it is worth more now — the folder can replace
+    /// anything, not only a texture. Off bypasses every override without deleting a file, so the two
+    /// pictures are one keypress apart. Not saved: it is a switch for looking at something, and a player
+    /// who put files in the folder meant them to be used.
+    /// </para>
+    /// <para>
+    /// Toggling costs a reload of the level's textures, because what is already uploaded was decoded from
+    /// the bytes this changes.
+    /// </para>
     /// </remarks>
-    public static readonly StringCVar MaterialPack = CVar.Text(
-        "r_material_pack",
-        string.Empty,
-        CVarOptions.Archive | CVarOptions.RequiresRestart,
-        "Directory of derived surface-detail maps; empty for none.");
+    public static readonly BoolCVar OverridesEnabled = CVar.Bool(
+        "r_overrides",
+        true,
+        CVarOptions.None,
+        "Whether the overrides folder is used; off shows the game's own assets. Not saved.");
+
+    /// <summary>Whether the derived surface maps are applied, for comparing against flat shading.</summary>
+    /// <remarks>
+    /// <para>
+    /// The F9 half of the same pair, and not archived for the same reason. <see cref="MaterialDetail"/> is
+    /// the authored strength and is a quality level the presets own; this multiplies it by one or zero so
+    /// the normal, the roughness and the metal can be taken out of the frame and put back without
+    /// disturbing what the player chose or what the preset set.
+    /// </para>
+    /// <para>
+    /// Toggling <c>r_material_detail</c> directly would do the same thing visually and would write the
+    /// player's setting to zero on the way past, which is exactly the fault this arrangement exists to
+    /// avoid.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar MaterialDetailEnabled = CVar.Bool(
+        "r_pbr",
+        true,
+        CVarOptions.None,
+        "Whether derived normal/roughness/metal maps are applied. Not saved.");
 
     /// <summary>Whether every model's surface is captured into the card atlas.</summary>
     /// <remarks>
@@ -2584,10 +2624,26 @@ public static class RenderCVars
             1f,
             CVarOptions.Archive,
             "Roughest surface that still marches a screen ray; rougher ones keep the smooth probe fallback."),
+
+        // 0.5 above vanilla, and the number matters less than what stopped being true. This was 0.22 at
+        // every preset while the ROUGHEST surface in the game was 0.8 and the smoothest was also 0.8 --
+        // materials.json gave every texture the same value -- so the test rejected every pixel that was
+        // not standing water, and the setting was a way of writing "off". It now admits the surfaces
+        // materials.json names as metal, which sit at 0.45 and go below it where the detail map asks
+        // for smoother.
+        //
+        // Measured before changing it: at 0.5, 0.18% of the office viewpoint and 0.01% of the wall
+        // differ from 0.22, because with a base roughness of 0.6 there is barely anything down there
+        // yet. At 0.7 -- above the base, so ordinary concrete marches -- 6.68% of the office changes and
+        // its high-frequency energy FALLS slightly, so on a still frame it is not noise. That is not
+        // enough to justify going there: the fault this number was lowered for was a single ray
+        // wandering under MOTION, which a still frame cannot show.
+        //
+        // The binding constraint is no longer this value, it is the roughness floor above it.
         vanilla: "0.22",
-        enhanced: "0.22",
-        high: "0.22",
-        ultra: "0.22");
+        enhanced: "0.5",
+        high: "0.5",
+        ultra: "0.5");
 
     /// <summary>Whether surfaces take their indirect light from the baked probe field.</summary>
     /// <remarks>
@@ -2815,7 +2871,7 @@ public static class RenderCVars
         "r_debug_view",
         DebugView.None,
         CVarOptions.Developer,
-        "Show a render buffer instead of the scene: none, albedo, normal, depth, material, motion, bakedlight, wetness.");
+        "Show a render buffer instead of the scene: none, albedo, normal, depth, material, motion, bakedlight, wetness, roughness, metallic, materialao.");
 
     /// <summary>How much of the resolved pixel is this frame, or 1 for no accumulation.</summary>
     /// <remarks>
@@ -2894,6 +2950,33 @@ public static class RenderCVars
             CVarOptions.Archive,
             "Dither cut-out edges and let the temporal resolve average them, instead of a hard alpha test."),
         vanilla: "0",
+        enhanced: "0",
+        high: "0",
+        ultra: "0");
+
+    /// <summary>Whether the world wears the original's own per-vertex distance fog.</summary>
+    /// <remarks>
+    /// <para>
+    /// The retail picture is a fogged one. Every shipping level's <c>FlatSky</c> asks for a fog amount
+    /// between 0.70 and 0.975, which is half of a surface gone by four hundred metres and nearly all of
+    /// it by two and a half kilometres, and the same slate blue to fog into. Without it the ground runs
+    /// to the horizon in full colour and the mountain ranges of missions 5, 9 and 11 stand up sharp
+    /// behind the level -- which is not what the original draws, whatever the far plane is.
+    /// </para>
+    /// <para>
+    /// On for vanilla and off above it, because the modern tiers already integrate the same level data
+    /// through <see cref="FogQuality"/>'s froxel volume, which scatters and shadows it rather than
+    /// lerping towards a constant. Turning both on would fog the frame twice. See
+    /// <see cref="SceneFog"/> for the arithmetic and where it was read from.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar RetailFog = Presets.Define(
+        CVar.Bool(
+            "r_fog_retail",
+            false,
+            CVarOptions.Archive,
+            "Fog the world the way the original does: exp(-density * view depth) into the level's own fog colour."),
+        vanilla: "1",
         enhanced: "0",
         high: "0",
         ultra: "0");

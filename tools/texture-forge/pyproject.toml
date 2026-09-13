@@ -1,0 +1,52 @@
+[project]
+name = "texture-forge"
+version = "0.1.0"
+description = "Upscales Project I.G.I.'s textures and derives the surface maps the renderer wants."
+requires-python = ">=3.10"
+
+# Deliberately short. spandrel pulls torch and torchvision; everything else here is image plumbing.
+#
+# spandrel rather than any of the upscaler front-ends, and the reason is licensing as much as ergonomics:
+# it ships ONLY permissively-licensed architectures, and the restrictive ones live in a separate
+# `spandrel_extra_arches` package. Not installing that package is what makes this dependency tree clean by
+# construction rather than by audit.
+dependencies = [
+    # torch is listed even though spandrel already pulls it, and it has to be: uv's source mapping below
+    # only binds DIRECT dependencies, so leaving torch transitive silently installs the CPU wheel from
+    # PyPI -- which still runs, just a hundred times slower, with nothing to say why.
+    "torch>=2.4",
+    "spandrel>=0.4.2",
+    "numpy>=1.26",
+    "pillow>=10.0",
+    "rich>=13.7",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+texture-forge = "texture_forge.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["texture_forge"]
+
+# Torch from PyPI is the CPU build on Windows, which turns a two-minute job into an hour. This points the
+# resolver at the CUDA wheels instead.
+#
+# cu126 rather than the newest: it carries a build for every Python this project supports, and it runs on
+# drivers several releases old. cu130 also has one and is fine on a current driver. What does NOT work is
+# picking an index that has no wheel for your interpreter -- uv then falls back to PyPI and installs the
+# CPU build without complaint, which is how this was wrong the first time. `texture-forge all` prints the
+# device it actually got, so check that line rather than assuming.
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cuda" }
+torchvision = { index = "pytorch-cuda" }

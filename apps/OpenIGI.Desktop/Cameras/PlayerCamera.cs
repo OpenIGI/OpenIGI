@@ -1045,7 +1045,10 @@ public sealed class PlayerCamera
     public bool PlaceAt(TerrainData? terrain, PlayerSpawnPoint spawn, WorldRayCast? registrationGround = null)
     {
         _body.Position = spawn.Position;
-        _body.Yaw = spawn.Gamma;
+        // HumanPlayer's objects.qvm Gamma is the engine object's facing angle. The camera stores a
+        // world-to-view yaw, whose horizontal convention is its inverse; this is the same conversion
+        // used when authored interaction poses hand the player's facing back to the camera.
+        _body.Yaw = -spawn.Gamma;
         _body.Pitch = 0f;
         HasViewTickPair = false;
         _landingKick.Reset();
@@ -1339,9 +1342,10 @@ public sealed class PlayerCamera
                 _activeInteraction = interaction;
                 _interactionTick = 0;
                 _interactionUseArmed = false;
+                double standingHeight = _body.Position.Z;
                 (Vector3d position, float facing) = interaction.BodyPose(_body.Position);
                 _body.Position = position;
-                SnapBodyForInteraction(_body, interaction.Type, terrain);
+                SnapBodyForInteraction(_body, interaction.Type, terrain, standingHeight);
                 _interactionFacing = facing;
                 _body.Yaw = -facing;
                 _fenceExitPosition = interaction.Type == InteractionActivateType.Fence
@@ -1367,7 +1371,8 @@ public sealed class PlayerCamera
     internal static void SnapBodyForInteraction(
         PlayerBody body,
         InteractionActivateType type,
-        TerrainData? terrain)
+        TerrainData? terrain,
+        double? standingHeight = null)
     {
         if (type is InteractionActivateType.Door
             or InteractionActivateType.Cabinet
@@ -1375,6 +1380,15 @@ public sealed class PlayerCamera
             or InteractionActivateType.Generic
             or InteractionActivateType.PlaceExplosive)
         {
+            if (standingHeight is { } floorReference)
+            {
+                // The authored interaction root is relative to the task and can sit above the floor
+                // (Terminal_333's root is at keyboard height). Start Human_SnapToGround from the
+                // human's standing height so collision furniture above their feet cannot become the
+                // new floor. The 0.4 m probe still admits ordinary floor variation at the new X/Y.
+                body.Position = new Vector3d(body.Position.X, body.Position.Y, floorReference);
+            }
+
             // IGI2 HumanPlayer_InitStateActivate* names this sequence explicitly: Human_PopPosition,
             // then Human_SnapToGround. IGI1 has the same pair at sub_4631A0/sub_463260.
             body.SnapInteractionToGround(terrain);
@@ -2490,7 +2504,8 @@ public sealed class PlayerCamera
             walls,
             Humans,
             GameplayCVars.BallisticsGravity.Value,
-            GameplayCVars.BallisticsDrag.Value);
+            GameplayCVars.BallisticsDrag.Value,
+            _walls?.Tracer());
 
         foreach (BallisticImpact impact in _ballistics.Impacts)
         {
@@ -2514,6 +2529,8 @@ public sealed class PlayerCamera
                 impact.Position,
                 impact.StruckHuman || impact.StruckWall,
                 impact.RangeInUnits,
+                impact.Owner,
+                impact.Placement,
                 StruckHuman: impact.StruckHuman,
                 Wall: impact.StruckWall ? impact.Wall : default,
                 Direction: impact.Direction));

@@ -83,4 +83,10 @@ public sealed class MipChainBuilderTests
         Assert.Equal(0, mip.A);
         Assert.InRange(mip.R, 79, 81);
     }
+
+    [Fact]
+    public void RejectsDimensionsWhosePixelCountCannotFitInAnInt()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => MipChainBuilder.Build([], 50_000, 50_000));
+    }
 }

@@ -99,8 +99,34 @@ texture with no map derives one on a background thread the first time it is seen
 cached under your user profile, so the first run fills the cache and later runs read it. Nothing needs
 to be downloaded and nothing is committed here — the maps come from your own installation's art.
 
-`ResExtract maps` pre-bakes them in one pass if you would rather not pay for it as you play, and
-`r_material_pack` points at the result.
+`ResExtract maps` pre-bakes them in one pass if you would rather not pay for it as you play.
+
+### Replacing the art
+
+Put a file where an asset lives in the installation and the game loads yours instead:
+`<game>/overrides/common/textures/000_04_1.tex` replaces the shared texture,
+`<game>/overrides/missions/location0/level1/terrain/terrain.tex` replaces level 1's ground. Nothing has to
+be declared and there is no manifest -- the path is the identity, which is also the only thing that can
+tell two assets apart when their names cannot, as 79 of this game's texture names cannot. A `.res` archive
+in that folder works too and means the same thing: every entry in it is registered at the path that entry
+would have been overridden at individually.
+
+`overrides` in the console re-reads the folder without a restart, so a file dropped in while the game is
+running is picked up; **F8** takes the whole folder out of the frame and puts it back.
+
+That is what makes a texture pack possible. The art is 8,232 pictures between 8x8 and 640x480, which is
+the largest remaining gap between this renderer and a modern one: no amount of indirect lighting fixes a
+64-pixel brick wall. Three steps build one:
+
+```sh
+ResExtract images  "<game>"  D:/igi-work/png                # every picture, as PNGs
+texture-forge all  D:/igi-work/png D:/igi-work/hd --scale 4 # enlarge, and optionally remaster
+ResExtract pack    D:/igi-work/hd  "<game>/overrides"       # back into the game's own file types
+```
+
+Optional, like the detail maps and for the same reason -- the game's art with a filter over it is still
+Innerloop's, so the pack is something you build from your own installation rather than something this
+repository can ship. See `tools/texture-forge/README.md` and `tools/OpenIGI.Tools.ResExtract/README.md`.
 
 ## Platforms
 
@@ -122,8 +148,15 @@ screen-space gather. Everything is capability-gated, so this is a quieter pictur
 one, but the `ultra` preset does not look on macOS the way it looks on Windows. Reaching parity would
 mean a Metal backend built on `MTLAccelerationStructure`, not a change to this one.
 
-Build the bundle with `tools/package-macos.sh` — a loose executable runs but macOS gives it no focus,
-Dock icon or menu bar.
+MoltenVK is shipped twice over, under its own name for Silk's loader and as `libvulkan.1.dylib` for
+GLFW's, which will dlopen that name and no other. GLFW looks for it in the working directory and in the
+bundle's `Contents/Frameworks`, so a build output runs when started from its own folder, and an app
+bundle runs from anywhere. Build the bundle with `tools/package-macos.sh` — a loose executable runs but
+macOS gives it no focus, Dock icon or menu bar.
+
+MoltenVK also caps a workgroup's shared memory at Metal's 32KB rather than the 48KB a desktop driver
+offers, so the temporal resolve's shading-rejection pass builds on a narrower tile there. It is the same
+measure at a worse apron ratio, chosen from the adapter's reported limit.
 
 ## Repository layout
 
@@ -132,6 +165,7 @@ src/     Core Engine Formats Scripting Game Modding UI Frontend
          + Rendering/Audio/Input/Platform abstractions and their backends
 apps/    OpenIGI.Desktop            composition root and executable
 tools/   ResExtract, QvmDisasm      archive/texture extraction and QVM disassembly
+         texture-forge (Python)     AI texture upscaling and PBR map generation
 tests/   xUnit projects, one per source project
 ```
 

@@ -152,9 +152,14 @@ public sealed class MagicObjectRegistry
     private QvmValue Define(QvmCallContext call)
     {
         int taskType = call.GetInt32(2);
+        string typeName = TaskTypeName(taskType);
         bool explosive = string.Equals(
-            TaskTypeName(taskType),
+            typeName,
             "TASKTYPE_EXPLODEMAGICOBJ",
+            StringComparison.Ordinal);
+        bool isRadarDish = string.Equals(
+            typeName,
+            "TASKTYPE_RADARDISH",
             StringComparison.Ordinal);
 
         // ExplodeMagicObj extends DefineMagicObj with the native effect recipe. The first three
@@ -171,6 +176,12 @@ public sealed class MagicObjectRegistry
         float falloff = explosive && call.ArgumentCount > 9 ? call.GetSingle(9) : 0f;
         float radius = explosive && call.ArgumentCount > 10 ? call.GetSingle(10) : 0f;
         float threshold = explosive && call.ArgumentCount > 11 ? call.GetSingle(11) : 0f;
+
+        // TASKTYPE_RADARDISH (parsed by 0x449220): arg 3 sound name, arg 4 rotation speed (deg/s), arg 5 acceleration (deg/s^2).
+        string dishSound = isRadarDish && call.ArgumentCount > 3 ? call.GetString(3) : string.Empty;
+        float dishSpeed = isRadarDish && call.ArgumentCount > 4 ? call.GetSingle(4) : 0f;
+        float dishAccel = isRadarDish && call.ArgumentCount > 5 ? call.GetSingle(5) : 0f;
+
         MagicObjectDefinition definition = new(
             call.GetString(0),
             call.GetString(1),
@@ -183,7 +194,10 @@ public sealed class MagicObjectRegistry
             damageFactor,
             falloff,
             radius,
-            threshold);
+            threshold,
+            dishSound,
+            dishSpeed,
+            dishAccel);
 
         // The original appends unconditionally and its lookup takes the first match, so a repeated name
         // keeps the earlier definition.

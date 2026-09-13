@@ -18,6 +18,13 @@ namespace OpenIGI.Rendering;
 /// <param name="Roughness">
 /// How wide the surface scatters a reflection: 0 is a mirror, 1 is chalk. Drives both the specular
 /// highlight and, from stage R8, how sharp a screen-space reflection is allowed to be.
+/// <para>
+/// The default is 0.6 and it was 0.8, which turned out to be the quiet reason the whole material
+/// pipeline read as inert. Nothing in the renderer moves a surface's roughness DOWN from here -- the
+/// derived map multiplies around it, the floor-gloss term only touches up-facing surfaces -- so this
+/// is the floor for every wall in the game, and at 0.8 that floor was already inside the range where a
+/// GGX lobe is a hemisphere and one surface answers light exactly like the next.
+/// </para>
 /// </param>
 /// <param name="Metallic">
 /// Whether the surface reflects its own colour rather than the light's. Physically this is nearly
@@ -47,7 +54,7 @@ namespace OpenIGI.Rendering;
 /// stop, or the surface never converges.
 /// </param>
 public readonly record struct SurfaceMaterial(
-    float Roughness = 0.8f,
+    float Roughness = 0.6f,
     float Metallic = 0.0f,
     float Emissive = 0.0f,
     bool CastsOcclusion = true,
@@ -130,7 +137,7 @@ public readonly record struct SurfaceMaterial(
     /// surface with roughness nought — the opposite of what is wanted.
     /// </para>
     /// </remarks>
-    public static SurfaceMaterial Default { get; } = new(Roughness: 0.8f, Metallic: 0.0f, Emissive: 0.0f);
+    public static SurfaceMaterial Default { get; } = new(Roughness: 0.6f, Metallic: 0.0f, Emissive: 0.0f);
 
     /// <summary>Gets the material the sky dome is drawn with.</summary>
     /// <remarks>

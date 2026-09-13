@@ -270,6 +270,37 @@ public interface IGraphicsDevice : IDisposable
     /// <summary>Stops the terrain fade; subsequent <see cref="DrawMesh"/> calls draw unmodified.</summary>
     void ClearDetailFade();
 
+    /// <summary>Sets the distance fog every following world draw is blended into.</summary>
+    /// <param name="fog">The fog, or <see cref="SceneFog.None"/> to draw unfogged.</param>
+    /// <remarks>
+    /// A device state rather than a per-draw argument, because it is a property of the frame: the level
+    /// publishes one fog and every world draw in the frame wears it. The first-person rig and the sky
+    /// are the exceptions the original makes too — the rig is a separate layer and the sky dome is drawn
+    /// with <c>FOGENABLE</c> off (<c>sub_52D060</c>) — so the sky renderer clears this around its own
+    /// draws. See <see cref="SceneFog"/> for what the numbers are and where they were read from.
+    /// </remarks>
+    void SetFog(in SceneFog fog);
+
+    /// <summary>Gets the fog the last <see cref="SetFog"/> set.</summary>
+    /// <remarks>So that a renderer which must draw unfogged — the sky — can put back what it found.</remarks>
+    SceneFog Fog { get; }
+
+    /// <summary>Sets the flat colour every following model with no lightmap is multiplied by.</summary>
+    /// <param name="ambient">The level's ambient, or <see cref="Vector3f.One"/> to leave models alone.</param>
+    /// <remarks>
+    /// The original's model lighting, and nearly all of it: a model sub-mesh with no lightmap is drawn
+    /// with Direct3D lighting on (<c>sub_49F1C0</c>), whose whole contribution is the global
+    /// <c>D3DRENDERSTATE_AMBIENT</c> against a material that reflects it entirely — the directional
+    /// lights the state block sets alongside it arrive scaled by the world's own <c>0.001</c> and are
+    /// worth a quarter of one 8-bit level. A sub-mesh WITH a lightmap is drawn with lighting off and the
+    /// lightmap in the second texture stage, which is why this applies to one and not the other.
+    /// </remarks>
+    void SetModelAmbient(Vector3f ambient);
+
+    /// <summary>Gets the flat model light the last <see cref="SetModelAmbient"/> set.</summary>
+    /// <remarks>So that a renderer which must draw untinted — the sky — can put back what it found.</remarks>
+    Vector3f ModelAmbient { get; }
+
     /// <summary>Gets the part of the frame draws currently belong to.</summary>
     /// <remarks><see cref="ScenePass.None"/> outside a scene capture, which is the original's own path.</remarks>
     ScenePass CurrentPass { get; }

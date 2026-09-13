@@ -91,6 +91,17 @@ public sealed class MaterialLibrary
             {
                 foreach (JsonProperty entry in textures.EnumerateObject())
                 {
+                    // A dollar-prefixed key is a note to the reader rather than a texture. The file
+                    // already uses $comment inside an entry; this lets a run of entries be introduced by
+                    // one, instead of hanging the explanation for a whole family off whichever member of
+                    // it happens to come first. Without the skip such a key would be registered as a
+                    // material named "$comment" -- harmless, because nothing is called that, and wrong
+                    // in the count the loader reports.
+                    if (entry.Name.StartsWith('$'))
+                    {
+                        continue;
+                    }
+
                     if (entry.Name.StartsWith('*'))
                     {
                         library._bySuffix.Add(

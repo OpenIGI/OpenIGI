@@ -149,7 +149,21 @@ public sealed class SilkGameWindow : IGameWindow
         // window, negotiates the API version.
         WindowOptions attempt = options with { API = GraphicsAPI.DefaultVulkan };
         IWindow window = Window.Create(attempt);
-        window.Initialize();
+
+        try
+        {
+            window.Initialize();
+        }
+        catch (InvalidOperationException ex)
+        {
+            // GLFW decides whether Vulkan exists by dlopen'ing the loader, and it throws this the moment
+            // it cannot find one -- before a surface, a device or any of the reporting below. Left
+            // uncaught it reaches the user as a stack trace naming GLFW, which says nothing about the
+            // thing that is actually missing. Restated as the platform failure it is, so the caller's
+            // existing PlatformException path reports it like any other.
+            window.Dispose();
+            throw new PlatformException(NoVulkanLoaderMessage, ex);
+        }
 
         if (window.VkSurface is null)
         {
@@ -161,6 +175,23 @@ public sealed class SilkGameWindow : IGameWindow
 
         return window;
     }
+
+    /// <summary>What to say when no Vulkan loader could be opened at all.</summary>
+    /// <remarks>
+    /// Worth spelling out per platform, because the fix is completely different on each and the failure
+    /// looks identical. On macOS there is no system Vulkan to be missing: the loader is MoltenVK, which
+    /// the build carries under the one name GLFW will dlopen. GLFW then looks in exactly two places for
+    /// it -- the working directory, and the bundle's Contents/Frameworks -- so this is a build started
+    /// from somewhere neither of them names.
+    /// </remarks>
+    private static string NoVulkanLoaderMessage =>
+        OperatingSystem.IsMacOS()
+            ? "No Vulkan loader could be opened. macOS has no Vulkan of its own, so the build ships "
+                + "MoltenVK as libvulkan.1.dylib, which is only found in the working directory or in an "
+                + "app bundle's Contents/Frameworks. Run OpenIGI.app (tools/package-macos.sh builds it), "
+                + "or start the executable from the folder it was built into."
+            : "No Vulkan loader could be opened. Install or update the graphics driver for this adapter; "
+                + "a driver supporting Vulkan 1.2 or newer is required.";
 
     /// <inheritdoc/>
     public event EventHandler<WindowResizedEventArgs>? Resized;

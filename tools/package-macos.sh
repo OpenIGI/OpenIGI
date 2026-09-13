@@ -15,7 +15,7 @@ STAGE="$ROOT/artifacts/macos/$RID"
 APP="$STAGE/OpenIGI.app"
 
 rm -rf "$STAGE"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 
 dotnet publish "$ROOT/apps/OpenIGI.Desktop/OpenIGI.Desktop.csproj" \
   --configuration "$CONFIGURATION" \
@@ -25,15 +25,26 @@ dotnet publish "$ROOT/apps/OpenIGI.Desktop/OpenIGI.Desktop.csproj" \
 
 cp "$ROOT/apps/OpenIGI.Desktop/macOS/Info.plist" "$APP/Contents/Info.plist"
 
-# The Vulkan loader is MoltenVK itself: Apple ships no Vulkan, and Silk looks for libvulkan.dylib and
-# then libMoltenVK.dylib beside the executable. The package places it there through the RID's runtime
-# assets, so this is a check rather than a copy — if it is missing, the app would start and then fail
-# at instance creation with nothing to explain why.
-if [ ! -f "$APP/Contents/MacOS/libMoltenVK.dylib" ]; then
-  echo "error: libMoltenVK.dylib is not in the publish output." >&2
-  echo "       Check that Silk.NET.MoltenVK.Native restored for $RID." >&2
-  exit 1
-fi
+# The Vulkan loader is MoltenVK itself: Apple ships no Vulkan. Two names are wanted rather than one.
+# Silk's own loader looks for libMoltenVK.dylib, which arrives here through the RID's runtime assets;
+# GLFW will only dlopen a file named libvulkan.1.dylib and refuses to make a Vulkan window without one,
+# which the app's build copies alongside it. Both are checks rather than copies — a missing one is a
+# failure at window creation or at instance creation with nothing in it to say what is absent.
+for loader in libMoltenVK.dylib libvulkan.1.dylib; do
+  if [ ! -f "$APP/Contents/MacOS/$loader" ]; then
+    echo "error: $loader is not in the publish output." >&2
+    echo "       Check that Silk.NET.MoltenVK.Native restored for $RID." >&2
+    exit 1
+  fi
+done
+
+# GLFW asks for its loader in two places and neither is this one. It dlopens the bare name
+# libvulkan.1.dylib, which finds a copy in the working directory — the folder itself, for a published
+# folder run in place, but "/" for anything Finder or the Dock launches — and then falls back to asking
+# the main bundle for its private frameworks directory, which is Contents/Frameworks. So the copy the
+# build puts beside the executable is moved there: in a bundle it is the only one of the two that is
+# ever consulted, and leaving it in MacOS as well is twelve megabytes nothing would open.
+mv "$APP/Contents/MacOS/libvulkan.1.dylib" "$APP/Contents/Frameworks/libvulkan.1.dylib"
 
 # Ad-hoc, which is enough to run locally and on a machine the user tells to trust it. Distribution
 # needs a Developer ID signature and notarisation, neither of which belongs in a build script.

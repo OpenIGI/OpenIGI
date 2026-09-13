@@ -31,7 +31,9 @@ public sealed class DestructibleObject
         // ExplodeMagicObj_ExplosionHitHandler (0x43c2d0) passes the target's native model bound to
         // the shared contact-dose routine (0x416c90).  FUN_004d0950 reads that value from MESH+0x78;
         // keep the raw engine-unit value on the identity rather than substituting a generic radius.
-        ExplosionContactRadiusUnits = placement?.Model.NativeMarkerBound ?? 1f;
+        // A loaded world placement always has geometry, but preserve the default contact radius for
+        // model-less synthetic/modded task declarations just as we do for a model-less task.
+        ExplosionContactRadiusUnits = placement?.Model?.NativeMarkerBound ?? 1f;
     }
 
     /// <summary>Gets whether this is a glass pane or an explosive object.</summary>
@@ -124,7 +126,8 @@ public sealed class DestructibleObjectRegistry
     /// <summary>The default contact radius used when a legacy impact has no exact placement identity.</summary>
     public const float HitRadiusUnits = 3276.8f;
 
-    private const string ExplodeObjectType = "ExplodeObject";
+    private const string DestroyedModelParameter = "Destroyed model";
+    private const string ExplosionDamageScaleParameter = "Damage scale";
     private const string GlassType = "TASKTYPE_GLASS";
     private const string ExplodeMagicType = "TASKTYPE_EXPLODEMAGICOBJ";
 
@@ -156,13 +159,20 @@ public sealed class DestructibleObjectRegistry
 
         foreach (DeclaredTask task in Walk(root).OfType<DeclaredTask>())
         {
-            if (!string.Equals(task.Type.Name, ExplodeObjectType, StringComparison.Ordinal))
+            // OBJECTS.QVM uses the same live destruction contract for ExplodeObject, Terminal,
+            // AlarmControl, and SCameraControl: the first model is replaced by Destroyed model once
+            // a weapon hit destroys the task.  A Switch also has a field of that name, but has no
+            // explosion parameters and is governed by its separate destructable flag.
+            if (!task.TryGetValue(DestroyedModelParameter, out object? rawDestroyed)
+                || rawDestroyed is not string { Length: > 0 }
+                || !task.TryGetValue(ExplosionDamageScaleParameter, out _))
             {
                 continue;
             }
 
-            WorldPlacement? placement = resolved.FirstOrDefault(candidate =>
-                ReferenceEquals(candidate.Owner, task));
+            WorldPlacement[] taskPlacements = [.. resolved.Where(candidate =>
+                ReferenceEquals(candidate.Owner, task))];
+            WorldPlacement? placement = taskPlacements.FirstOrDefault();
             DestructibleObject item = registry.Add(
                 new DestructibleObject(
                     DestructibleObjectKind.Explosive,
@@ -170,6 +180,10 @@ public sealed class DestructibleObjectRegistry
                     placement,
                     task.Type.Name,
                     PositionOf(task, placement)));
+            foreach (WorldPlacement taskPlacement in taskPlacements)
+            {
+                registry.RegisterPlacement(item, taskPlacement);
+            }
             ReadExplodeParameters(task, item);
 
             variables.BindBool(task, "isExploded", () => item.IsDestroyed, value =>
@@ -278,8 +292,13 @@ public sealed class DestructibleObjectRegistry
             return null;
         }
 
-        DestructibleObject? exactOwner = items.FirstOrDefault(item =>
-            item.Placement is null && !item.IsDestroyed);
+        // A normal OBJECTS.QVM task produces one state object even when it places Model, Model 2,
+        // and further instances.  Attached magic objects deliberately produce several state objects
+        // beneath one owner, so an owner-only hit must retain the old "unplaced" fallback rather than
+        // accidentally choosing an arbitrary attachment.
+        DestructibleObject? exactOwner = items.Count == 1
+            ? items[0]
+            : items.FirstOrDefault(item => item.Placement is null && !item.IsDestroyed);
         if (exactOwner is not null)
         {
             return ApplyDamage(exactOwner, 1f);
@@ -302,7 +321,9 @@ public sealed class DestructibleObjectRegistry
 
         if (owner is not null
             && _byOwner.TryGetValue(owner, out List<DestructibleObject>? owned)
-            && owned.FirstOrDefault(item => item.Placement is null && !item.IsDestroyed) is { } exactOwner)
+            && (owned.Count == 1
+                ? owned[0]
+                : owned.FirstOrDefault(item => item.Placement is null && !item.IsDestroyed)) is { } exactOwner)
         {
             return ApplyDamage(exactOwner, 1f);
         }
@@ -455,6 +476,9 @@ public sealed class DestructibleObjectRegistry
 
         return item;
     }
+
+    private void RegisterPlacement(DestructibleObject item, WorldPlacement placement) =>
+        _byPlacement[placement] = item;
 
     private static bool TryMagicKind(string typeName, out DestructibleObjectKind kind)
     {

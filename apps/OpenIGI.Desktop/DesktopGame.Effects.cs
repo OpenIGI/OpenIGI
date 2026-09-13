@@ -1,4 +1,5 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Engine.Resources;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -214,6 +215,142 @@ internal sealed partial class DesktopGame
                     : "Blood is switched off, in the game options or by r_impact_effects.";
                 context.Print(report);
                 _logger.Information("Impact", report);
+            });
+    }
+
+    /// <summary>Reports what a scan of the overrides folder found.</summary>
+    /// <param name="scan">The scan result.</param>
+    private void ReportOverrideScan(ResourceOverrides.ScanResult scan)
+    {
+        if (_overrides.Root is null)
+        {
+            return;
+        }
+
+        if (scan.Total == 0 && !scan.Moved)
+        {
+            _logger.Debug("Overrides", $"No overrides in '{_overrides.Root}'.");
+            return;
+        }
+
+        _logger.Information("Overrides", $"{scan} in '{_overrides.Root}'.");
+    }
+
+    /// <summary>Registers the commands that manage the overrides folder.</summary>
+    /// <param name="console">The console to register with.</param>
+    /// <remarks>
+    /// <para>
+    /// An overrides folder that only took effect on a cold launch would make replacing an asset a
+    /// compile-run-look loop with a whole game start in the middle of it. Rescanning is cheap -- a
+    /// directory walk and a byte compare against what is registered -- so the loop becomes: save the
+    /// file, alt-tab, type the command.
+    /// </para>
+    /// <para>
+    /// Reloading the RESOURCES is only half of it. Everything already decoded from them -- an uploaded
+    /// texture, a built mesh -- holds its own copy, so the textures are reloaded too; that is the same
+    /// path r_hd uses to swap the upscaled pack in and out, and it is why this costs a hitch.
+    /// </para>
+    /// </remarks>
+    private void RegisterOverrideCommands(ConsoleSystem console)
+    {
+        console.Commands.Add(
+            "overrides",
+            "Rescans the overrides folder and reloads whatever changed. No argument reports what is there.",
+            context =>
+            {
+                if (_overrides.Root is null)
+                {
+                    context.Warn("No installation directory, so there is nowhere for an overrides folder to be.");
+                    return;
+                }
+
+                if (context.Count > 0 && context[0] is "list")
+                {
+                    // To the log as well as the scrollback: a headless -runat run has no scrollback, and
+                    // this is exactly the command somebody reaches for when a pack is not taking effect.
+                    _logger.Information(
+                        "Overrides",
+                        $"{_overrides.Count} override(s) under '{_overrides.Root}'; "
+                            + $"{_resources.OverriddenCount} standing in for a shipped asset.");
+
+                    if (!_overrides.IsActive)
+                    {
+                        context.Print($"No overrides in '{_overrides.Root}'.");
+                        return;
+                    }
+
+                    foreach (string listed in _overrides.Paths.Order(StringComparer.OrdinalIgnoreCase).Take(10))
+                    {
+                        _logger.Information("Overrides", $"  {listed}");
+                    }
+
+                    foreach (string path in _overrides.Paths.Order(StringComparer.OrdinalIgnoreCase).Take(40))
+                    {
+                        context.Print($"  {path}");
+                    }
+
+                    if (_overrides.Count > 40)
+                    {
+                        context.Print($"  ... and {_overrides.Count - 40} more.");
+                    }
+
+                    return;
+                }
+
+                ResourceOverrides.ScanResult scan = _overrides.Rescan();
+                int swapped = _resources.ReapplyOverrides();
+
+                string report =
+                    $"{scan}; {swapped} registered resource(s) swapped, {_resources.OverriddenCount} now standing in.";
+
+                // Only when something actually moved: the reload discards and re-uploads every texture in
+                // the level, which is a visible hitch and is not worth paying to be told nothing changed.
+                if (swapped > 0)
+                {
+                    _world?.ReloadTextures();
+                    DiscardSurfaceCache();
+                    report += " Textures reloaded.";
+                }
+
+                context.Print(report);
+                _logger.Information("Overrides", report);
+            },
+            "[list]");
+    }
+
+    /// <summary>Registers the command that reads the camera's pose back as command-line arguments.</summary>
+    /// <param name="console">The console to register with.</param>
+    /// <remarks>
+    /// A capture script needs absolute coordinates, and there is otherwise no way to get one out of the
+    /// game except by writing it down from a debugger. This prints the pose in the exact spelling
+    /// <c>-campos</c>, <c>-yaw</c> and <c>-pitch</c> take, so a viewpoint found by flying around is
+    /// copied into a script rather than retyped and rounded. The eye is the inspector's, which is
+    /// whichever camera is actually drawing -- the player's, the free camera's or a cinematic one.
+    /// </remarks>
+    private void RegisterCameraCommands(ConsoleSystem console)
+    {
+        console.Commands.Add(
+            "campos",
+            "Prints where the camera is, spelled as the -campos, -yaw and -pitch a capture takes.",
+            context =>
+            {
+                Camera3D eye = _inspectorEye;
+                Vector3f forward = eye.Orientation.Row3;
+
+                // The inverse of Camera3D.LookRotation: its forward is
+                // (sin yaw * cos pitch, cos yaw * cos pitch, sin pitch), so the pitch comes straight off
+                // z and the yaw off the other two -- atan2 with x FIRST, because yaw here is measured
+                // from +Y rather than from +X.
+                float pitch = MathF.Asin(Math.Clamp(forward.Z, -1f, 1f));
+                float yaw = MathF.Atan2(forward.X, forward.Y);
+
+                string pose = FormattableString.Invariant(
+                    $"-campos {eye.Position.X:0.##},{eye.Position.Y:0.##},{eye.Position.Z:0.##} -yaw {yaw:0.####} -pitch {pitch:0.####}");
+
+                // To the log as well as the scrollback, because the caller that most wants this is a
+                // headless -runat capture, which has no scrollback to read.
+                context.Print(pose);
+                _logger.Information("Camera", pose);
             });
     }
 

@@ -292,6 +292,50 @@ public sealed class PlayerProfile
         return conflict;
     }
 
+    /// <summary>Assigns a mouse-wheel direction to one action, swapping any conflicting assignment.</summary>
+    /// <param name="index">The binding row to change.</param>
+    /// <param name="direction">Positive scrolls up, negative scrolls down.</param>
+    /// <returns>The row that received the old assignment, or <c>-1</c> when there was no conflict.</returns>
+    /// <remarks>Up and down are distinct controls, like separate buttons: only the same direction conflicts.</remarks>
+    public int RebindMouseWheel(int index, int direction)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Bindings.Count);
+
+        direction = direction > 0 ? 1 : -1;
+        InputBinding previous = Bindings[index];
+        int conflict = -1;
+        for (int i = 0; i < Bindings.Count; i++)
+        {
+            InputBinding candidate = Bindings[i];
+            if (i != index
+                && string.Equals(candidate.Device, InputBindingKeyNames.MouseDevice, StringComparison.OrdinalIgnoreCase)
+                && InputBindingKeyNames.TryParseMouseWheel(candidate.Key, out int candidateDirection)
+                && candidateDirection == direction)
+            {
+                conflict = i;
+                break;
+            }
+        }
+
+        Bindings[index] = previous with
+        {
+            Device = InputBindingKeyNames.MouseDevice,
+            Key = InputBindingKeyNames.ToRetailMouseWheel(direction),
+        };
+
+        if (conflict >= 0)
+        {
+            Bindings[conflict] = Bindings[conflict] with
+            {
+                Device = previous.Device,
+                Key = previous.Key,
+            };
+        }
+
+        return conflict;
+    }
+
     /// <summary>Makes an independent copy.</summary>
     /// <returns>The copy.</returns>
     /// <remarks>
@@ -382,6 +426,44 @@ public static class InputBindingKeyNames
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, MouseState.ButtonCount, nameof(button));
         return $"MOUSE_BUTTON_{index + 1}";
     }
+
+    /// <summary>The stored name for an upward mouse-wheel notch.</summary>
+    /// <remarks>
+    /// The port's own spelling: retail never bound the wheel, so there is no original symbol to
+    /// keep. It travels through the same <c>GOInRemap</c> write/read path as <c>MOUSE_BUTTON_n</c>,
+    /// and older builds read it back as an inert string they preserve verbatim.
+    /// </remarks>
+    public const string MouseWheelUpKey = "MOUSE_WHEEL_UP";
+
+    /// <summary>The stored name for a downward mouse-wheel notch.</summary>
+    public const string MouseWheelDownKey = "MOUSE_WHEEL_DOWN";
+
+    /// <summary>Tries to turn a stored mouse-wheel name into a scroll direction.</summary>
+    /// <param name="storedName">The persisted key name.</param>
+    /// <param name="direction">Receives +1 for up, -1 for down.</param>
+    /// <returns><see langword="true"/> when the name is a wheel binding.</returns>
+    public static bool TryParseMouseWheel(string? storedName, out int direction)
+    {
+        if (string.Equals(storedName, MouseWheelUpKey, StringComparison.OrdinalIgnoreCase))
+        {
+            direction = 1;
+            return true;
+        }
+
+        if (string.Equals(storedName, MouseWheelDownKey, StringComparison.OrdinalIgnoreCase))
+        {
+            direction = -1;
+            return true;
+        }
+
+        direction = 0;
+        return false;
+    }
+
+    /// <summary>Returns the stored name for a mouse-wheel direction.</summary>
+    /// <param name="direction">Positive scrolls up, negative scrolls down.</param>
+    public static string ToRetailMouseWheel(int direction) =>
+        direction > 0 ? MouseWheelUpKey : MouseWheelDownKey;
 
     /// <summary>Tries to turn a stored key name into a keyboard scan-code enum.</summary>
     public static bool TryParseKeyboardKey(string? storedName, out KeyCode key)
@@ -485,6 +567,12 @@ public static class InputBindingKeyNames
     public static string DisplayName(InputBinding binding)
     {
         if (string.Equals(binding.Device, MouseDevice, StringComparison.OrdinalIgnoreCase)
+            && TryParseMouseWheel(binding.Key, out int wheel))
+        {
+            return wheel > 0 ? "Mouse Wheel Up" : "Mouse Wheel Down";
+        }
+
+        if (string.Equals(binding.Device, MouseDevice, StringComparison.OrdinalIgnoreCase)
             && binding.Key.StartsWith("MOUSE_BUTTON_", StringComparison.OrdinalIgnoreCase))
         {
             return $"Mouse Button {binding.Key["MOUSE_BUTTON_".Length..]}";
@@ -526,6 +614,20 @@ public static class InputBindingKeyNames
 /// <summary>Resolves a profile's persisted controls against the live input snapshot.</summary>
 public static class PlayerProfileInputBindings
 {
+    /// <summary>
+    /// The smallest wheel motion that counts as a notch, in scroll units. Discrete mice report
+    /// whole notches; precision trackpads report fractions, including feather-touch noise from
+    /// resting fingers. Below this floor motion is ignored rather than fired as input.
+    /// </summary>
+    /// <remarks>
+    /// A wheel notch is a momentary edge with no held state, so a bound action reads
+    /// <see langword="true"/> on every frame that scrolls past the floor in its direction — one
+    /// frame per scrolled frame, which is what makes scroll-to-switch-weapons track the gesture.
+    /// The same edge semantics apply to sustained actions: scrolling continuously holds them,
+    /// while a single notch nudges them for exactly one frame.
+    /// </remarks>
+    public const float WheelNoiseFloorNotches = 0.1f;
+
     /// <summary>Determines whether an action is currently held.</summary>
     public static bool IsDown(PlayerProfile? profile, InputState input, string action) =>
         Resolve(profile, input, action, pressed: false);
@@ -586,8 +688,21 @@ public static class PlayerProfileInputBindings
             {
                 return true;
             }
+
+            // A wheel notch is a momentary edge with no held state, so the pressed and held reads
+            // are the same test: did this frame's scroll move this direction.
+            if (string.Equals(binding.Device, InputBindingKeyNames.MouseDevice, StringComparison.OrdinalIgnoreCase)
+                && InputBindingKeyNames.TryParseMouseWheel(binding.Key, out int wheel)
+                && IsWheelNotch(input.Mouse.WheelDelta, wheel))
+            {
+                return true;
+            }
         }
 
         return false;
     }
+
+    private static bool IsWheelNotch(float delta, int direction) =>
+        MathF.Abs(delta) >= WheelNoiseFloorNotches
+        && ((direction > 0 && delta > 0f) || (direction < 0 && delta < 0f));
 }
