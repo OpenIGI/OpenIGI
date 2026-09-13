@@ -592,8 +592,7 @@ public sealed class WorldRenderer : IDisposable
             entry.Skip = false;
             entry.IsRotor = authored.IsRotor;
 
-            bool destroyed = authored.DestroyedReplacement is not null
-                && AlarmSpeakers?.IsDestroyed(authored.Owner) == true;
+            bool destroyed = UsesDestroyedReplacement(authored);
             Dictionary<WorldPlacement, ResolvedModel?> cache = destroyed ? _resolvedDestroyed : _resolved;
             if (!cache.TryGetValue(authored, out ResolvedModel? model))
             {
@@ -884,9 +883,7 @@ public sealed class WorldRenderer : IDisposable
     private WorldPlacement DisplayedPlacement(WorldPlacement placement)
     {
         WorldPlacement displayed = placement;
-        if (placement.DestroyedReplacement is { } replacement
-            && (AlarmSpeakers?.IsDestroyed(placement.Owner) == true
-                || Destructibles?.IsDestroyed(placement) == true))
+        if (placement.DestroyedReplacement is { } replacement && UsesDestroyedReplacement(placement))
         {
             displayed = placement with
             {
@@ -907,6 +904,12 @@ public sealed class WorldRenderer : IDisposable
 
         return displayed;
     }
+
+    /// <summary>Whether the renderer must swap an authored placement for its destroyed-model binding.</summary>
+    private bool UsesDestroyedReplacement(WorldPlacement placement) =>
+        placement.DestroyedReplacement is not null
+        && (AlarmSpeakers?.IsDestroyed(placement.Owner) == true
+            || Destructibles?.IsDestroyed(placement) == true);
 
     /// <inheritdoc/>
     public void Dispose()
@@ -943,6 +946,8 @@ public sealed class WorldRenderer : IDisposable
         _meshes.Clear();
         _textures.Clear();
         _geometry.Clear();
+        _resolved.Clear();
+        _resolvedDestroyed.Clear();
     }
 
     /// <summary>Overrides the retail object lightmaps with a path-traced bake, applied on the next draw.</summary>

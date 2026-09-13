@@ -606,14 +606,11 @@ public sealed class WorldScene
                     && declared.TryGetValue(SecurityCameraDestroyedModelParameter, out object? rawDestroyed)
                     && rawDestroyed is string destroyedName
                     && destroyedName.Length > 0
-                    && byName.TryGetValue(destroyedName, out var destroyed))
+                    && TryResolveDestroyedBinding(destroyedName, placement, mission, byName, out WorldModelBinding? destroyed))
                 {
                     placement = placement with
                     {
-                        DestroyedReplacement = new WorldModelBinding(
-                            destroyed.Instance,
-                            destroyed.Pack,
-                            destroyed.Model),
+                        DestroyedReplacement = destroyed,
                     };
                 }
 
@@ -625,14 +622,11 @@ public sealed class WorldScene
                     && declared.TryGetValue("Destroyed model", out object? rawGenericDestroyed)
                     && rawGenericDestroyed is string genericDestroyedName
                     && genericDestroyedName.Length > 0
-                    && byName.TryGetValue(genericDestroyedName, out var genericDestroyed))
+                    && TryResolveDestroyedBinding(genericDestroyedName, placement, mission, byName, out WorldModelBinding? genericDestroyed))
                 {
                     placement = placement with
                     {
-                        DestroyedReplacement = new WorldModelBinding(
-                            genericDestroyed.Instance,
-                            genericDestroyed.Pack,
-                            genericDestroyed.Model),
+                        DestroyedReplacement = genericDestroyed,
                     };
                 }
 
@@ -679,6 +673,59 @@ public sealed class WorldScene
             unresolved,
             unplaced,
             attached);
+    }
+
+    /// <summary>Resolves an authored destroyed model, including archive-only QVM replacement meshes.</summary>
+    private static bool TryResolveDestroyedBinding(
+        string modelName,
+        WorldPlacement intact,
+        LoadedMission mission,
+        Dictionary<string, (MtpInstance Instance, LoadedPack Pack, MefModel Model)> byName,
+        out WorldModelBinding? binding)
+    {
+        if (byName.TryGetValue(modelName, out var placed))
+        {
+            binding = new WorldModelBinding(placed.Instance, placed.Pack, placed.Model);
+            return true;
+        }
+
+        // Some QVM-only replacements (Level 6 Terminal_94's 252_02_1) have geometry in the
+        // archive but no INST record. Retain the intact pack and material-slot map while replacing
+        // only its name and geometry: an archive fallback may come from common, whose texture-table
+        // indices cannot safely be applied to a level instance.
+        foreach (LoadedPack pack in new[] { mission.LevelPack, mission.CommonPack })
+        {
+            if (TryGetDestroyedArchiveModel(mission.Descriptor.Id, pack, modelName, out MefModel? model) && model is not null)
+            {
+                MtpInstance instance = intact.Instance with { Name = modelName };
+                binding = new WorldModelBinding(instance, intact.Pack, model);
+                return true;
+            }
+        }
+
+        binding = null;
+        return false;
+    }
+
+    /// <summary>Resolves an archive-only destroyed mesh, including the retail terminal name inversion.</summary>
+    private static bool TryGetDestroyedArchiveModel(
+        int missionId,
+        LoadedPack pack,
+        string modelName,
+        out MefModel? model)
+    {
+        if (pack.TryGetArchiveModel(modelName, out model))
+        {
+            return true;
+        }
+
+        // Level 6 OBJECTS.QVM names Terminal_94's destroyed model 252_02_1, while the shipped archive
+        // stores the corresponding geometry only as 252_01_2. Keep the task's authored name while using
+        // that archive spelling for this known data-pair; do not apply a broad name rewrite to other
+        // missing replacement assets.
+        return missionId == 6
+            && string.Equals(modelName, "252_02_1", StringComparison.OrdinalIgnoreCase)
+            && pack.TryGetArchiveModel("252_01_2", out model);
     }
 
     private sealed record TrainPlacementState(
