@@ -18,6 +18,39 @@ namespace OpenIGI.Game.Tests;
 public sealed class Issue105Tests
 {
     [RequiresGameDataFact]
+    public void MissionSixRetailContractSeparatesApcLimoC4AndFuelTargets()
+    {
+        (LevelTask root, LoadedMission mission, ScriptVarRegistry variables) = Load(6);
+        DeclaredTask apc = Assert.IsType<DeclaredTask>(root.Tree.FromId(800));
+        DeclaredTask fakeApc = Assert.IsType<DeclaredTask>(root.Tree.FromId(803));
+        DeclaredTask limo = Assert.IsType<DeclaredTask>(root.Tree.FromId(801));
+
+        Assert.True(apc.TryGetValue("Can fire", out object? rawCanFire));
+        Assert.Equal("1", Assert.IsType<string>(rawCanFire));
+        Assert.True(fakeApc.TryGetValue("Can fire", out object? rawFakeCanFire));
+        Assert.Equal(string.Empty, Assert.IsType<string>(rawFakeCanFire));
+        Assert.True(limo.TryGetValue("Can fire", out object? rawLimoCanFire));
+        Assert.Equal(string.Empty, Assert.IsType<string>(rawLimoCanFire));
+
+        GenericPickupRegistry pickups = GenericPickupRegistry.Build(root, variables);
+        Assert.Equal([755, 756], pickups.Items
+            .Where(static item => item.Task.Id is 755 or 756)
+            .Select(static item => item.Task.Id)
+            .Order());
+
+        new ConditionalContainerGate(variables).Prepare(root);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+            root,
+            mission,
+            DoorRegistry.Build(root),
+            variables);
+        Assert.Equal([1602, 1603], interactions.Items
+            .Where(static item => item.Type == InteractionActivateType.PlaceExplosive)
+            .Select(static item => item.Task.Id)
+            .Order());
+    }
+
+    [RequiresGameDataFact]
     public void MissionSixFuelTanksOfferC4AtTheirAuthoredRetailRadius()
     {
         (LevelTask root, LoadedMission mission, ScriptVarRegistry variables) = Load(6);
