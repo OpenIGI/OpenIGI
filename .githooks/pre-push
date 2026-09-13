@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
+zero_oid=0000000000000000000000000000000000000000
+should_verify=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$local_ref" in
+    refs/heads/*)
+      [ "$local_sha" = "$zero_oid" ] || should_verify=1
+      ;;
+  esac
+done
+[ "$should_verify" -eq 1 ] || exit 0
 if [ "${SKIP_FULL_TESTS:-}" = "1" ]; then
   echo "WARNING: SKIP_FULL_TESTS=1 bypasses the pre-push Release build and test gate." >&2
   exit 0

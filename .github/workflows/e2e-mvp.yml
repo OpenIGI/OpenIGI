@@ -1,23 +1,13 @@
 name: MVP retail E2E
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'src/**'
-      - 'apps/**'
-      - 'tools/test/**'
-      - '.github/workflows/e2e-mvp.yml'
-      - '**/*.csproj'
-      - '**/*.props'
-      - '**/*.targets'
-      - '**/*.json'
-      - 'Directory.Build.props'
-      - 'Directory.Packages.props'
-      - 'global.json'
-      - '*.slnx'
+  push:
+    branches: [develop, master]
 jobs:
   live-mvp:
     runs-on: [self-hosted, macOS, igi-retail]
+    # A public PR must never execute arbitrary contributor code on this self-hosted machine.
+    # Pushes to protected branches and explicit maintainer dispatches are trusted entry points.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4

@@ -9,6 +9,7 @@ mkdir -p "$out_dir"
 dotnet build "$repo_root/apps/OpenIGI.Desktop/OpenIGI.Desktop.csproj" -c Release --nologo
 for mission in 1 2 3 4 5; do
   capture="$out_dir/mission-${mission}.bmp"
+  rm -f "$capture"
   dotnet run --project "$repo_root/apps/OpenIGI.Desktop" -c Release --no-build -- \
     -game "$game_path" -mission "$mission" -skipcutscene -lockstep -window -size 1280x720 \
     -frames 45 -screenshot "$capture"

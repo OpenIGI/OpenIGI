@@ -156,8 +156,9 @@ Retail smoke validation covers the MVP Levels 1–5 only:
 IGI_GAME_PATH=/path/to/Project\ IGI tools/test/verify-e2e-mvp.sh
 ```
 
-The landing-time retail job requires a self-hosted macOS runner labelled `igi-retail`. Retail data is
-never committed; the job uploads only generated capture evidence.
+The landing-time retail job requires a self-hosted runner with all three labels: `self-hosted`,
+`macOS`, and `igi-retail`. Retail data is never committed; the job uploads only generated capture
+evidence.
 
 ## Legal
 
