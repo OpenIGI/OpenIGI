@@ -31,7 +31,9 @@ public sealed class DestructibleObject
         // ExplodeMagicObj_ExplosionHitHandler (0x43c2d0) passes the target's native model bound to
         // the shared contact-dose routine (0x416c90).  FUN_004d0950 reads that value from MESH+0x78;
         // keep the raw engine-unit value on the identity rather than substituting a generic radius.
-        ExplosionContactRadiusUnits = placement?.Model.NativeMarkerBound ?? 1f;
+        // A loaded world placement always has geometry, but preserve the default contact radius for
+        // model-less synthetic/modded task declarations just as we do for a model-less task.
+        ExplosionContactRadiusUnits = placement?.Model?.NativeMarkerBound ?? 1f;
     }
 
     /// <summary>Gets whether this is a glass pane or an explosive object.</summary>

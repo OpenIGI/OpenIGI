@@ -4,6 +4,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.World;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
+using OpenIGI.TestSupport;
 using Xunit;
 
 namespace OpenIGI.Game.Tests;
@@ -52,7 +53,7 @@ public sealed class DestructibleObjectRegistryTests
     private static WorldPlacement Placement(GameTask owner, string taskName) => new(
         Position: default,
         Orientation: default,
-        Instance: null!,
+        Instance: default,
         Pack: null!,
         Model: null!,
         TaskName: taskName,
