@@ -79,6 +79,14 @@ public sealed class ScreenStack
     /// <param name="animate">Whether to animate the entrance.</param>
     public void Reset(Screen screen, bool animate = true)
     {
+        // Screens leaving this way get their exit hooks: clearing without them skips e.g.
+        // SettingsScreen's profile save when leaving via the top tabs (issue #230). SettingsScreen
+        // is currently the only OnExit override, so nothing else can observe the difference.
+        foreach (Screen leaving in _screens)
+        {
+            leaving.BeginExit();
+        }
+
         _screens.Clear();
         Push(screen, animate);
     }

@@ -1788,16 +1788,33 @@ internal sealed partial class DesktopGame : IDisposable
             console.Update(_window.Input, Math.Clamp((consoleNow - lastConsoleMilliseconds) / 1000f, 0f, 0.25f));
             lastConsoleMilliseconds = consoleNow;
 
-            // Key bindings fire here, with the console shut. The bind table, the `bind` command and
+            // Console key bindings fire with the console shut. The bind table, the `bind` command and
             // their tests have existed since the console was written, but nothing ever asked the table
             // whether a key had been pressed -- so a binding could be declared and saved and would
             // never once fire. Skipped during a capture run, whose input must stay exactly scripted.
-            if (!console.IsOpen && !console.IsolatedFromSavedSettings && !_window.Input.Captured)
+            //
+            // In menu mode the shell runs first (below) so a listening rebind row sees the press
+            // queue before anything consumes it (issue #230). The shell then owns the frame — it sets
+            // Captured right below — so game binds must not execute against the sim beneath a menu:
+            // what the shell leaves queued is discarded, never fired. Menu navigation is unaffected
+            // either way because it reads WasPressed shadow edges, not the queue.
+            void DrainPressQueue(bool executeBinds)
             {
-                while (_window.Input.Keyboard.TryDequeuePress(out Input.KeyCode boundKey))
+                if (!console.IsOpen && !console.IsolatedFromSavedSettings && !_window.Input.Captured)
                 {
-                    console.System.ExecuteBind(BindKeyNames.NameOf(boundKey));
+                    while (_window.Input.Keyboard.TryDequeuePress(out Input.KeyCode key))
+                    {
+                        if (executeBinds)
+                        {
+                            console.System.ExecuteBind(BindKeyNames.NameOf(key));
+                        }
+                    }
                 }
+            }
+
+            if (!(menuMode && shell is not null))
+            {
+                DrainPressQueue(executeBinds: true);
             }
 
             // The cinematic shell reads the frame's input after the console and, like it, marks the frame
@@ -1811,6 +1828,7 @@ internal sealed partial class DesktopGame : IDisposable
 
                 var shellFrame = new LayoutContext(_window.Width, _window.Height);
                 shell.Update(shellFrame, _window.Input, shellElapsed);
+                DrainPressQueue(executeBinds: false);
                 if (!console.IsOpen)
                 {
                     _window.Input.Captured = true;
