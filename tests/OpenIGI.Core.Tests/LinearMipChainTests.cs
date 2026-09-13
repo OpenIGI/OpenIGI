@@ -104,4 +104,13 @@ public sealed class LinearMipChainTests
 
         Assert.All(pixels, pixel => Assert.Equal(neutral, pixel));
     }
+
+    [Fact]
+    public void RejectsDimensionsWhosePixelCountCannotFitInAnInt()
+    {
+        ArgumentOutOfRangeException error = Assert.Throws<ArgumentOutOfRangeException>(
+            () => LinearMipChain.Build([], 50_000, 50_000));
+
+        Assert.Contains("address", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
 }

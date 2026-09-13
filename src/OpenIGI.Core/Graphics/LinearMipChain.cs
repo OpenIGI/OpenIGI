@@ -52,10 +52,19 @@ public static class LinearMipChain
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
 
-        if (levelZero.Length < width * height)
+        if (width > int.MaxValue / height)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(width),
+                "The dimensions describe more pixels than this process can address.");
+        }
+
+        int pixelCount = width * height;
+
+        if (levelZero.Length < pixelCount)
         {
             throw new ArgumentException(
-                $"A {width}x{height} texture needs {width * height} pixels, got {levelZero.Length}.",
+                $"A {width}x{height} texture needs {pixelCount} pixels, got {levelZero.Length}.",
                 nameof(levelZero));
         }
 
@@ -70,7 +79,7 @@ public static class LinearMipChain
         }
 
         Bgra32[] pixels = new Bgra32[total];
-        levelZero[..(width * height)].CopyTo(pixels);
+        levelZero[..pixelCount].CopyTo(pixels);
 
         for (int level = 1; level < levels; level++)
         {
