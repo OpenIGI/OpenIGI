@@ -51,6 +51,14 @@ public sealed class SettingsScreen : ShellScreen
     private readonly List<UiElement> _tabPanels = [];
     private KeyBindingRow? _armingBindingRow;
 
+    /// <summary>
+    /// Whether a wheel scroll may bind right now. Scrolling the list to reach a row leaves
+    /// inertial motion (trackpad momentum especially) that is still non-zero when the prompt arms;
+    /// capturing it would rebind without intent. The gate opens on the first quiet frame after
+    /// arming, so only motion that starts after the prompt does.
+    /// </summary>
+    private bool _wheelGateOpen = true;
+
     // Each category's focusable rows in reading order — down a column, then on to the top of the next. Up
     // and down walk THIS rather than the spatial traversal, because a control consumes left and right for
     // its own value, so nothing else could carry focus from one column to another. Parallel to _tabPanels.
@@ -159,6 +167,9 @@ public sealed class SettingsScreen : ShellScreen
                 }
 
                 _armingBindingRow = row;
+                // Quiet at arming means nothing is in motion, so the gate starts open; momentum
+                // keeps it shut until a still frame (see _wheelGateOpen).
+                _wheelGateOpen = input.Mouse.WheelDelta == 0f;
                 return false;
             }
 
@@ -180,6 +191,21 @@ public sealed class SettingsScreen : ShellScreen
                         row.TryCaptureMouseButton(button);
                         break;
                     }
+                }
+            }
+
+            // A scrolled wheel is a control like a pressed button; the scroll view stays still
+            // because the listening branch returns before the base input scrolls it. Motion already
+            // underway when the prompt armed waits for a quiet frame first (see _wheelGateOpen).
+            if (row.IsListening)
+            {
+                if (input.Mouse.WheelDelta == 0f)
+                {
+                    _wheelGateOpen = true;
+                }
+                else if (_wheelGateOpen)
+                {
+                    row.TryCaptureMouseWheel(input.Mouse.WheelDelta);
                 }
             }
 
@@ -578,7 +604,7 @@ public sealed class SettingsScreen : ShellScreen
             KeyCode current = InputBindingKeyNames.TryParseKeyboardKey(binding.Key, out KeyCode parsed) ? parsed : KeyCode.None;
             var row = new KeyBindingRow(theme, binding.Action, current, InputBindingKeyNames.DisplayName(binding))
             {
-                Tooltip = $"Press this row, then a key or mouse button, to rebind {binding.Action}.",
+                Tooltip = $"Press this row, then a key, mouse button or wheel scroll, to rebind {binding.Action}.",
             };
 
             row.BindingChanged += key =>
@@ -593,6 +619,15 @@ public sealed class SettingsScreen : ShellScreen
             row.MouseBindingChanged += button =>
             {
                 int conflict = profile.RebindMouseButton(index, button);
+                RefreshBindingRow(bindingRows[index], profile.Bindings[index]);
+                if (conflict >= 0)
+                {
+                    RefreshBindingRow(bindingRows[conflict], profile.Bindings[conflict]);
+                }
+            };
+            row.MouseWheelBindingChanged += direction =>
+            {
+                int conflict = profile.RebindMouseWheel(index, direction);
                 RefreshBindingRow(bindingRows[index], profile.Bindings[index]);
                 if (conflict >= 0)
                 {

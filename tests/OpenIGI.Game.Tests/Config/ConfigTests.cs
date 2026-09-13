@@ -85,6 +85,57 @@ public sealed class ConfigTests
         Assert.False(PlayerProfileInputBindings.IsDown(restored, stale, "MoveLeft"));
     }
 
+    [Fact]
+    public void AWheelBindingDrivesGameplayResolutionSurvivesReloadAndSwapsConflicts()
+    {
+        // Issue #232: wheel up/down are bindable controls with momentary (edge-only) semantics.
+        GameConfig config = GameConfig.CreateDefault();
+        PlayerProfile profile = config.Active!;
+        int nextIndex = profile.Bindings.FindIndex(
+            binding => string.Equals(binding.Action, "NextWeapon", StringComparison.OrdinalIgnoreCase));
+        int prevIndex = profile.Bindings.FindIndex(
+            binding => string.Equals(binding.Action, "PrevWeapon", StringComparison.OrdinalIgnoreCase));
+        Assert.InRange(nextIndex, 0, profile.Bindings.Count - 1);
+        Assert.InRange(prevIndex, 0, profile.Bindings.Count - 1);
+
+        Assert.Equal(-1, profile.RebindMouseWheel(nextIndex, 1));
+        Assert.Equal("MOUSE_WHEEL_UP", profile.Bindings[nextIndex].Key);
+        Assert.Equal("Mouse Wheel Up", InputBindingKeyNames.DisplayName(profile.Bindings[nextIndex]));
+
+        // Same-direction conflict swaps, like buttons: NextWeapon inherits PrevWeapon's old key.
+        Assert.Equal(nextIndex, profile.RebindMouseWheel(prevIndex, 1));
+        Assert.Equal("MOUSE_WHEEL_UP", profile.Bindings[prevIndex].Key);
+        Assert.Equal("KEY_O", profile.Bindings[nextIndex].Key);
+
+        GameConfig reloaded = ConfigScript.Load(ConfigScriptWriter.Write(config));
+        PlayerProfile restored = reloaded.Profiles[config.ActiveIndex];
+        Assert.Equal("MOUSE_WHEEL_UP", restored.Bindings[prevIndex].Key);
+
+        var up = new InputState();
+        up.BeginFrame();
+        up.Mouse.AddWheel(1f);
+        Assert.True(PlayerProfileInputBindings.IsDown(restored, up, "PrevWeapon"));
+        Assert.True(PlayerProfileInputBindings.WasPressed(restored, up, "PrevWeapon"));
+        Assert.False(PlayerProfileInputBindings.IsDown(restored, up, "NextWeapon"));
+
+        var down = new InputState();
+        down.BeginFrame();
+        down.Mouse.AddWheel(-1f);
+        Assert.False(PlayerProfileInputBindings.IsDown(restored, down, "PrevWeapon"));
+
+        var still = new InputState();
+        still.BeginFrame();
+        Assert.False(PlayerProfileInputBindings.IsDown(restored, still, "PrevWeapon"));
+
+        // Feather-touch noise below the floor fires nothing in either direction.
+        var feather = new InputState();
+        feather.BeginFrame();
+        feather.Mouse.AddWheel(0.05f);
+        Assert.False(PlayerProfileInputBindings.IsDown(restored, feather, "PrevWeapon"));
+        feather.Mouse.AddWheel(-0.1f);
+        Assert.False(PlayerProfileInputBindings.IsDown(restored, feather, "PrevWeapon"));
+    }
+
     [RequiresGameDataFact]
     public void WhatIsWrittenReadsBackIdentically()
     {
