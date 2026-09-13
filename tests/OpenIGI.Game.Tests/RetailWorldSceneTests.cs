@@ -56,8 +56,42 @@ public sealed class RetailWorldSceneTests
         Assert.True(
             player.PlaceOnGround(terrain: null),
             $"spawn {spawn.Position} found no floor in {solids.Count} solid placement(s)");
+    }
 
+    [RequiresGameDataFact]
+    public void LevelFiveHasRadarTowerAndRotorPlacements()
+    {
+        (WorldScene scene, _) = Build(5, includeMagic: true, out _);
+        var p436_01 = scene.Placements.Where(p => p.Instance.Name == "436_01_1").ToList();
+        var p436_02 = scene.Placements.Where(p => p.Instance.Name == "436_02_1").ToList();
+        Assert.Single(p436_01);
+        Assert.Equal(2, p436_02.Count);
 
+        var towerPlacement = p436_01[0];
+        Assert.Equal("436_01_1", towerPlacement.Instance.Name);
+        Assert.Equal(1208, towerPlacement.Owner.Id);
+
+        // One 436_02_1 is attached to the tower via MEF ATTA / MAGICOBJ.QVM
+        var attachedRotor = p436_02.Single(p => p.IsAttached);
+        Assert.Equal(1208, attachedRotor.Owner.Id);
+        Assert.Equal("TASKTYPE_RADARDISH", attachedRotor.MagicTaskTypeName);
+
+        // The other 436_02_1 is the RotatingObject task on the dome
+        var domeRotor = p436_02.Single(p => !p.IsAttached);
+        Assert.Equal("RotatingObject", domeRotor.Owner.Type.Name);
+
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fileSystem);
+        GameLoop loop = new(new ManualTimeSource());
+        MagicObjectRegistry magic = new();
+        magic.Register(loop.Natives);
+        magic.Load(resources, loop.Natives);
+        Assert.True(magic.TryGet("436_02_1", out MagicObjectDefinition def));
+        Assert.Equal("TASKTYPE_RADARDISH", magic.TaskTypeName(def.TaskType));
+        Assert.Equal("radardishsounds", def.Sound);
+        Assert.Equal(90f, def.Speed);
+        Assert.Equal(15f, def.Acceleration);
     }
 
     [RequiresGameDataFact]

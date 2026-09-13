@@ -12,9 +12,19 @@ namespace OpenIGI.Rendering;
 /// numbers describe.
 /// </para>
 /// <para>
-/// Together they come to 8.5 ms, which against a 16.6 ms frame leaves 8 ms for the G-buffer, the
-/// forward pass, the temporal resolve and the present. That is the sense in which this is a budget
-/// rather than a target: the parts have to add up to a frame.
+/// Together they come to 7.75 ms, which against a 16.67 ms frame leaves just under 9 ms for the
+/// G-buffer, the forward pass, the temporal resolve and the present. That is the sense in which this
+/// is a budget rather than a target: the parts have to add up to a frame.
+/// </para>
+/// <para>
+/// <b>The frame is 60 Hz, and was briefly 120.</b> The stage figures above were retargeted to a 120 Hz
+/// frame and tightened to fit it — they summed to 5.25 ms of 8.33, which held. What did not survive is
+/// what came after: the screen probe gather arrived and took a 2.5 ms line, and 7.75 ms does not fit
+/// in 8.33. Nor could any honest number have: the gather measures about 3.9 ms at ultra, so fitting it
+/// under a 120 Hz frame alongside everything else would need it written down at a twelfth of what it
+/// costs. Ultra runs the gather, so ultra is a 60 Hz configuration and this says so rather than
+/// carrying a target the preset was never going to meet. The presets that light from the bakes have
+/// the same stage set minus the gather and are not what these figures describe.
 /// </para>
 /// <para>
 /// The G-buffer fill, the forward pass and the temporal resolve carry no figure. They were never
@@ -25,7 +35,7 @@ namespace OpenIGI.Rendering;
 public static class RenderBudget
 {
     /// <summary>The frame time a 60 Hz presentation has to fit inside, in milliseconds.</summary>
-    public const double FrameMilliseconds = 1000.0 / 120.0;
+    public const double FrameMilliseconds = 1000.0 / 60.0;
 
     /// <summary>Gets what a stage is allowed to cost.</summary>
     /// <param name="stage">The stage.</param>
@@ -33,6 +43,7 @@ public static class RenderBudget
     public static double? For(RenderStage stage) => stage switch
     {
         RenderStage.Shadows => 0.7,
+        RenderStage.GlobalIllumination => 2.5,
         RenderStage.AmbientOcclusionSearch => 1.0,
         RenderStage.AmbientOcclusionReconstruct => 0.25,
         RenderStage.Lighting => 0.8,

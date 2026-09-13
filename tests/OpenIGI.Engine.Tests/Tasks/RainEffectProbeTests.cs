@@ -30,7 +30,7 @@ public sealed class RainEffectRetailTests
         // The levels the reference editor's Is Rain / Is Active gates actually fire on — rain that is
         // both authored and enabled. Authoring alone is not enough: 7/12 author a RainEffect with
         // Is Rain false, and 4/8/11 author one that is inactive.
-        var expected = new Dictionary<string, (bool IsRain, bool IsActive)>
+        var expected = new Dictionary<string, (bool IsRain, bool IsActive)>(StringComparer.OrdinalIgnoreCase)
         {
             ["level3"] = (true, true),
             ["level9"] = (true, true),
@@ -49,9 +49,15 @@ public sealed class RainEffectRetailTests
         };
 
         string missionsRoot = Path.Combine(GameData.RequireRoot(), "MISSIONS");
-        foreach (string script in Directory.GetFiles(missionsRoot, "objects.qvm", SearchOption.AllDirectories))
+        string[] scripts = Directory.GetFiles(missionsRoot, "*", SearchOption.AllDirectories)
+            .Where(path => string.Equals(Path.GetFileName(path), "objects.qvm", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        Assert.Equal(expected.Count, scripts.Length);
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string script in scripts)
         {
             string level = Path.GetFileName(Path.GetDirectoryName(script)!);
+            Assert.True(seen.Add(level), $"Duplicate level {level} in retail probe.");
             (TaskTree _, GameTask root) = Load(script);
 
             DeclaredTask? rain = FindRainEffect(root);
@@ -154,7 +160,7 @@ public sealed class RainEffectRetailTests
 
         QvmProgram program = QvmProgram.Read(File.ReadAllBytes(path));
         QvmInterpreter interpreter = new(program, natives);
-        interpreter.Run();
+        Assert.Equal(QvmError.None, interpreter.Run());
 
         return (tree, tree.Root);
     }

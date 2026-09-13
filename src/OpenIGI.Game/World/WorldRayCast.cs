@@ -18,12 +18,24 @@ namespace OpenIGI.Game.World;
 /// task class, so a round through glass and into brick leaves two different marks without the shot
 /// knowing about either. Carrying the index here is what makes that lookup possible at all.
 /// </para>
+/// <para>
+/// <b>Which side was crossed is carried for the same reason.</b> The original's surface test
+/// (<c>0x4CD300</c>) reports an entry row and an exit row as two complementary flags —
+/// <c>*a7 = c0; *a8 = !c0</c>, so exactly one is ever set — and the shot resolution branches on
+/// which: an entry crossing sounds and marks the surface, an exit crossing leaves only the exit
+/// decal and no sound at all. The test itself is the face's own facing against the ray, which is
+/// computed here anyway in order to turn the normal towards the ray.
+/// </para>
 /// </remarks>
+/// <param name="IsExit">
+/// Whether the ray crossed the surface's BACK face — leaving solid rather than entering it.
+/// </param>
 public readonly record struct WorldRayHit(
     Vector3d Position,
     Vector3f Normal,
     double Distance,
-    int Material = 0);
+    int Material = 0,
+    bool IsExit = false);
 
 /// <summary>Casts a ray at the world and reports the nearest surface it meets.</summary>
 /// <param name="origin">Where the ray starts, in world units.</param>
@@ -92,13 +104,21 @@ public enum WorldTraceHitKind
 /// Whether collision owned by a dormant conditional container participates. Retail uses this during
 /// Human registration so staged actors can acquire their moving parent before the scene is activated.
 /// </param>
+/// <param name="TracePortals">
+/// Whether doorway and window portal faces are solid. Human movement leaves this clear so a body
+/// walks through an opening; AI sight sets it so a closed room or an unwound door is cover. An
+/// open door registers a sight opening on the collision index so its portal becomes a hole again.
+/// </param>
+/// <param name="IgnoredPlacement">One exact placed mesh to skip, without skipping its sibling attachments.</param>
 public readonly record struct WorldTraceRequest(
     Vector3d Origin,
     Vector3d End,
     WorldTraceMask Mask = WorldTraceMask.World,
     GameTask? IgnoredOwner = null,
     GameTask? IgnoredSubject = null,
-    bool IncludeInactiveOwners = false)
+    bool IncludeInactiveOwners = false,
+    bool TracePortals = false,
+    WorldPlacement? IgnoredPlacement = null)
 {
     /// <summary>Gets the segment length in world units.</summary>
     public double Length
@@ -122,6 +142,7 @@ public readonly record struct WorldTraceRequest(
 /// <param name="Kind">The collision category that answered.</param>
 /// <param name="Owner">The exact task owning a placed collision mesh, when applicable.</param>
 /// <param name="Label">A stable diagnostic name for the blocker.</param>
+/// <param name="Placement">The exact rendered placement hit, including an attached magic object.</param>
 public readonly record struct WorldTraceHit(
     Vector3d Position,
     Vector3f Normal,
@@ -130,7 +151,8 @@ public readonly record struct WorldTraceHit(
     int Material,
     WorldTraceHitKind Kind,
     GameTask? Owner = null,
-    string Label = "")
+    string Label = "",
+    WorldPlacement? Placement = null)
 {
     /// <summary>Projects this rich contact into the legacy cast result.</summary>
     public WorldRayHit RayHit => new(Position, Normal, Distance, Material);
@@ -141,12 +163,13 @@ public readonly record struct WorldTraceHit(
         in WorldRayHit hit,
         WorldTraceHitKind kind,
         GameTask? owner = null,
-        string label = "")
+        string label = "",
+        WorldPlacement? placement = null)
     {
         double length = request.Length;
         double fraction = length > 0.0 ? Math.Clamp(hit.Distance / length, 0.0, 1.0) : 0.0;
         return new WorldTraceHit(
-            hit.Position, hit.Normal, hit.Distance, fraction, hit.Material, kind, owner, label);
+            hit.Position, hit.Normal, hit.Distance, fraction, hit.Material, kind, owner, label, placement);
     }
 }
 
@@ -205,12 +228,17 @@ public static class WorldTrace
     }
 
     /// <summary>Returns the legacy adapter used by movement and camera callers.</summary>
-    public static WorldRayCast AsRayCast(WorldTraceCast cast, WorldTraceMask mask = WorldTraceMask.World)
+    public static WorldRayCast AsRayCast(
+        WorldTraceCast cast,
+        WorldTraceMask mask = WorldTraceMask.World,
+        bool tracePortals = false)
     {
         ArgumentNullException.ThrowIfNull(cast);
         return (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
         {
-            bool found = cast(new WorldTraceRequest(origin, end, mask), out WorldTraceHit rich);
+            bool found = cast(
+                new WorldTraceRequest(origin, end, mask, TracePortals: tracePortals),
+                out WorldTraceHit rich);
             hit = found ? rich.RayHit : default;
             return found;
         };

@@ -36,3 +36,11 @@ jobs:
 
       - name: Test
         run: dotnet test OpenIGI.slnx --configuration Release --no-build --verbosity normal
+
+      # Vulkan on macOS is MoltenVK, which arrives through a NuGet package rather than a system loader.
+      # Building proves the C# compiles; only a publish for the real runtime identifier proves the dylib
+      # is actually restored and lands beside the executable, which is the difference between an app that
+      # starts and one that fails at vkCreateInstance with nothing to explain why.
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: tools/package-macos.sh osx-arm64 Release

@@ -63,29 +63,6 @@ public sealed class BulletMarks
         TotalAdded = 0;
     }
 
-    /// <summary>The material every impact is attributed to until the real lookup is read.</summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Divergence, and the only chosen value here.</b> Everything else about a mark — that there is
-    /// one at all, its texture, its size — comes out of the material. What is <i>not</i> read is how a
-    /// struck face names its material.
-    /// </para>
-    /// <para>
-    /// A collision face's fourth field selects a row of its own mesh's <c>TAMC</c> table (the selectors
-    /// span <c>0</c> to <c>materials−1</c> across every model, so it is a real per-face index), and each
-    /// 12-byte row carries a small number in its third dword. That number is <b>not</b> the game
-    /// material row: it reads 8 for almost every face of level 1's main building, and row 8 is
-    /// <c>Flesh</c>. The original does not do this lookup either — it takes the material straight off
-    /// the surface record the ray returns (<c>+596</c>/<c>+600</c>), and what fills that is unread.
-    /// </para>
-    /// <para>
-    /// So until it is, every hit is attributed to <c>Concrete</c> — a real row of the real table, and
-    /// the commonest wall in the game. The mark's size and texture are still the material's, not
-    /// invented; only <i>which</i> material is a stand-in.
-    /// </para>
-    /// </remarks>
-    public const string FallbackMaterial = "Concrete";
-
     /// <summary>Records what one impact leaves behind, if the material leaves anything.</summary>
     /// <param name="hit">Where the round landed, with the material its face names.</param>
     /// <param name="materials">The game material table.</param>
@@ -128,19 +105,37 @@ public sealed class BulletMarks
         return true;
     }
 
-    // The face's material index is carried and would be used directly if the mapping from it to a game
-    // material row were read. It is not, so the fallback stands in -- see FallbackMaterial.
-    private static bool TryResolve(in WorldRayHit hit, GameMaterialRegistry materials, out GameMaterial material)
+    /// <summary>Records a decal directly, for an effect that names its own texture rather than a material's.</summary>
+    /// <param name="position">Where it sits, in world units, already lifted off the surface.</param>
+    /// <param name="normal">The surface normal it faces along.</param>
+    /// <param name="texture">The decal texture name.</param>
+    /// <param name="sizeInUnits">How wide it is, in world units.</param>
+    /// <remarks>
+    /// The retail missile impact projects <c>burn1.tex</c> (<c>dword_5C1164</c>) onto the object it hits.
+    /// A body's zone material decides nothing here — the effect carries its own scorch — so this bypasses
+    /// the material lookup <see cref="TryAdd"/> does for a bullet.
+    /// </remarks>
+    public void AddMark(Vector3d position, Vector3f normal, string texture, float sizeInUnits)
     {
-        foreach (GameMaterial candidate in materials.ByIndex.Values)
+        if (string.IsNullOrEmpty(texture))
         {
-            if (string.Equals(candidate.Name, FallbackMaterial, StringComparison.Ordinal))
-            {
-                material = candidate;
-                return true;
-            }
+            return;
         }
 
-        return materials.TryGet(hit.Material, out material!);
+        if (_marks.Count >= _capacity)
+        {
+            _marks.RemoveAt(0);
+        }
+
+        _marks.Add(new BulletMark(position, normal, texture, sizeInUnits));
+        TotalAdded++;
     }
+
+    // The face's own row, which the collision index now reports as a global material index rather
+    // than a per-mesh face index. Standing Concrete in for every surface -- as this did while that
+    // mapping was unread -- put a concrete hole on wood, glass and metal alike, and put one on the
+    // rows that record no impact at all: Air, Water, Fence, MetalFence, MetalLadder and
+    // HumanCollision each name no entry texture, and the original skips them outright.
+    private static bool TryResolve(in WorldRayHit hit, GameMaterialRegistry materials, out GameMaterial material) =>
+        materials.TryGet(hit.Material, out material!);
 }

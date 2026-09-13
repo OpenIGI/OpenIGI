@@ -4,6 +4,7 @@ using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
+using OpenIGI.Rendering;
 
 namespace OpenIGI.Frontend.Screens;
 
@@ -36,6 +37,12 @@ namespace OpenIGI.Frontend.Screens;
 public sealed class CampaignScreen : ShellScreen
 {
     private static readonly string[] Difficulties = AiDifficultyNames.All;
+
+    // Indexed by MissionTimeOfDay and MissionWeather, whose Default is deliberately zero -- so a row's
+    // selected index IS the enumeration value and no lookup table can fall out of step with it.
+    private static readonly string[] TimesOfDay = ["Default", "Day", "Night"];
+
+    private static readonly string[] Weathers = ["Default", "Rain", "Snow"];
 
     private readonly List<ListCard> _cards = [];
 
@@ -220,10 +227,14 @@ public sealed class CampaignScreen : ShellScreen
         };
         column.Add(_briefing, 5, 0);
 
+        // A tighter gap than the row had, because the row now holds three label-and-dropdown pairs rather
+        // than one: at an even eighteen everywhere, "WEATHER" sat as far from its own dropdown as from the
+        // one before it, and the three pairs read as six unrelated controls. The gap is the WITHIN-pair
+        // spacing; each pair after the first is pushed off the one before it by the label's own margin.
         var actions = new FlexPanel
         {
             Orientation = Orientation.Horizontal,
-            Gap = 18f,
+            Gap = 10f,
             Justify = FlexJustify.Start,
             HorizontalAlignment = HorizontalAlignment.Left,
         };
@@ -240,6 +251,42 @@ public sealed class CampaignScreen : ShellScreen
             VerticalAlignment = VerticalAlignment.Center,
         };
         actions.Add(difficulty);
+
+        // The hour and the weather sit beside the difficulty because they are the same kind of choice:
+        // how the campaign is played rather than how it is drawn. Both are seeded from the context and
+        // not from a fresh default, so a player three missions into a night run is shown the run they are
+        // on -- this panel is rebuilt every time the section is opened.
+        actions.Add(new Label(theme.Body, "TIME", theme.BodyTextSize * 0.78f, theme.TextMuted)
+        {
+            CenterTextVertically = true,
+            Shadow = theme.Shadow,
+            Margin = new Thickness(20f, 0f, 0f, 0f),
+        });
+
+        var timeOfDay = new Dropdown(theme, "Time of day", TimesOfDay, (int)Context.Conditions.TimeOfDay)
+        {
+            Style = DropdownStyle.Compact,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        timeOfDay.SelectionChanged += index => ChooseConditions(
+            Context.Conditions with { TimeOfDay = (MissionTimeOfDay)index });
+        actions.Add(timeOfDay);
+
+        actions.Add(new Label(theme.Body, "WEATHER", theme.BodyTextSize * 0.78f, theme.TextMuted)
+        {
+            CenterTextVertically = true,
+            Shadow = theme.Shadow,
+            Margin = new Thickness(20f, 0f, 0f, 0f),
+        });
+
+        var weather = new Dropdown(theme, "Weather", Weathers, (int)Context.Conditions.Weather)
+        {
+            Style = DropdownStyle.Compact,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        weather.SelectionChanged += index => ChooseConditions(
+            Context.Conditions with { Weather = (MissionWeather)index });
+        actions.Add(weather);
 
         _play = new Button(theme, "PLAY")
         {
@@ -351,6 +398,14 @@ public sealed class CampaignScreen : ShellScreen
     private static string StatusOf(int missionIndex, int frontierIndex) =>
         missionIndex < frontierIndex ? "COMPLETED"
             : missionIndex == frontierIndex ? "AVAILABLE" : "LOCKED";
+
+    // Told as it is chosen rather than held until Play: the app puts the chosen hour on the level it is
+    // previewing behind this very menu, so the player sees the night they picked before they commit to it.
+    private void ChooseConditions(MissionConditions conditions)
+    {
+        Context.Conditions = conditions;
+        Context.Host.SetMissionConditions(conditions);
+    }
 
     private int DefaultDifficultyIndex() => Math.Clamp(Context.Config.Active?.Difficulty ?? 1, 0, Difficulties.Length - 1);
 }

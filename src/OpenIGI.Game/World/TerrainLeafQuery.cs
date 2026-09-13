@@ -15,11 +15,16 @@ namespace OpenIGI.Game.World;
 /// What one unit of a packed vertex coordinate is worth here — the leaf's extent over
 /// <see cref="TerrainPackedVertex.UnitsPerExtent"/>.
 /// </param>
+/// <param name="Heights">
+/// The heightmap the level binds over this leaf, if any — the displacement <c>0x4CA010</c> and
+/// <c>0x4C9020</c> add to every vertex when the descent has one pushed.
+/// </param>
 public readonly record struct TerrainLeaf(
     TerrainDescentCursor Cursor,
     TerrainCommandBlock Block,
     Vector3i Origin,
-    double UnitScale);
+    double UnitScale,
+    TerrainHeightBinding Heights = default);
 
 /// <summary>
 /// Takes a collision query from a world point down to the leaf whose geometry answers it.
@@ -90,7 +95,10 @@ public static class TerrainLeafQuery
             cursor.Extent + (point.Y & LeafCornerMask),
             cursor.Centre.Z);
 
+        // The heightmap the descent would have pushed on its way here: sub_4CA010 and sub_4C9020 both
+        // add its sample to every vertex of the leaf when dword_BA2058 names one.
         leaf = new TerrainLeaf(cursor, block, origin, UnitScaleFor(cursor.Extent));
+        leaf = leaf with { Heights = TerrainHeightBindings.For(terrain).Resolve(leaf) };
         return true;
     }
 

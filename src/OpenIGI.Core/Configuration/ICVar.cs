@@ -64,6 +64,25 @@ public interface ICVar
     /// </remarks>
     bool TrySetText(string text, out string? reason);
 
+    /// <summary>Whether <paramref name="text"/> denotes the value the variable currently holds.</summary>
+    /// <param name="text">The value to recognise.</param>
+    /// <returns><see langword="true"/> when <paramref name="text"/> parses to the current value.</returns>
+    /// <remarks>
+    /// <para>
+    /// Text equality is the wrong question to ask of a number. A float renders through its own shortest
+    /// round-trip form, so <c>0.70</c> is stored and read back as <c>0.7</c>; an out-of-range value is
+    /// clamped on the way in by <see cref="TrySetText"/>, which still reports success; and a boolean or an
+    /// enumeration accepts spellings it does not render. A caller comparing against
+    /// <see cref="ValueText"/> therefore fails to recognise values the variable genuinely holds — which is
+    /// how a graphics preset or a quality group comes to read as Custom for ever after.
+    /// </para>
+    /// <para>
+    /// Defaulted to that same text comparison so adding it costs no existing implementation anything;
+    /// <see cref="CVar{T}"/> overrides it with the parse every typed variable already carries.
+    /// </para>
+    /// </remarks>
+    bool MatchesText(string text) => string.Equals(text, ValueText, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Restores the default value.</summary>
     void Reset();
 }

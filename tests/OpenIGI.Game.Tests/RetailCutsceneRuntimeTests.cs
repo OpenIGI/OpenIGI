@@ -11,11 +11,19 @@ using OpenIGI.TestSupport;
 using OpenIGI.Formats.World;
 using OpenIGI.Scripting.Runtime;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace OpenIGI.Game.Tests;
 
 public sealed class RetailCutsceneRuntimeTests
 {
+    private readonly ITestOutputHelper _output;
+
+    public RetailCutsceneRuntimeTests(ITestOutputHelper output)
+    {
+        _output = output;
+    }
+
     [RequiresGameDataFact]
     public void RetailHelicopterScriptsPublishControlAndRotorRecords()
     {
@@ -31,6 +39,7 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.Equal(new Vector3f(0.4f, 0.4f, 0.4f), helicopter.Smoothing);
         Assert.Equal(0.027f, helicopter.HighCollectiveStep);
         Assert.Equal(0.003f, helicopter.LowCollectiveStep);
+        Assert.Equal(200f, helicopter.MaximumSpeed);
         Assert.Equal(3, helicopter.Aerodynamics.Count);
         Assert.Equal(new AerodynamicSurfaceDefinition(20f, Vector3f.UnitX, Vector3f.Zero),
             helicopter.Aerodynamics[0]);
@@ -47,6 +56,69 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.Equal(1.19f, mainBlade.PhasePerCollectiveTick, precision: 5);
         Assert.True(physics.TryGetRotor("712_01_1", out RotorPhysicsDefinition tailRotor));
         Assert.True(tailRotor.IsTailRotor);
+        Assert.True(physics.TryGetCar("622_01_1", out CarPhysicsDefinition truck));
+        Assert.Equal(3_000f, truck.Mass);
+        Assert.Equal(new Vector3f(2.2f, 7.8f, 3f), truck.Dimensions);
+        // The TYPE record declares four wheel bodies (argument 9) as 24-byte entries from argument 10.
+        Assert.Equal(4, truck.BodyCount);
+        Assert.Equal(4, truck.Bodies.Count);
+        Assert.Equal(new CarBodyDefinition(0, 0, 5, 0f, 0.95f, 0.05f), truck.Bodies[0]);
+        Assert.Equal(new CarBodyDefinition(1, 0, 5, 0f, 0.95f, 0.05f), truck.Bodies[1]);
+
+        // Retention is record +24/+32 and the engine force +28 -- arguments 42, 44 and 43, which sit
+        // in the tail after the wheel bodies, not in the header. Cars carry no aerodynamics.
+        Assert.Equal(0.95f, truck.SteeringRetention);
+        Assert.Equal(0.95f, truck.ThrottleRetention);
+        Assert.Equal(5_000f, truck.EngineForce);
+        Assert.Equal(0, truck.AerodynamicSurfaceCount);
+
+        // The CAR tail (0x42DB00) declares SIX wheels, each read as int, int, float, int, float,
+        // float. Both steered, driven entries are the front pair; the two negative body indices have
+        // no collision body and only draw.
+        Assert.Equal(6, truck.Wheels.Count);
+        Assert.Equal(
+            new CarWheelDefinition(true, true, 45f, 1, 0.3f * (float)WorldScene.UnitsPerMetre, 0.5f),
+            truck.Wheels[0]);
+        Assert.Equal(
+            new CarWheelDefinition(false, false, 0f, 0, 0.3f * (float)WorldScene.UnitsPerMetre, 0.5f),
+            truck.Wheels[1]);
+        Assert.Equal(-10, truck.Wheels[2].BodyIndex);
+        Assert.False(truck.Wheels[2].HasBody);
+        Assert.Equal(
+            new CarWheelDefinition(true, true, 45f, 2, 0.3f * (float)WorldScene.UnitsPerMetre, 0.5f),
+            truck.Wheels[3]);
+        Assert.Equal(-13, truck.Wheels[4].BodyIndex);
+        Assert.Equal(3, truck.Wheels[5].BodyIndex);
+        Assert.Equal(2, truck.DrivenWheelCount);
+        Assert.Equal(45f * (MathF.PI / 180f), truck.Wheels[0].MaximumSteerRadians, precision: 5);
+
+        // The native Car parser receives the complete 95-value cutscene-truck record.  Keep the
+        // unassigned tail available by index while its wheel/contact layout is being translated;
+        // reducing it to the seven header fields would silently discard the data used by 0x42D1D0.
+        Assert.Equal(95, truck.ArgumentCount);
+        Assert.Equal(QvmValueKind.Integer, truck.ArgumentAt(0).Kind);
+        Assert.Equal(1, truck.ArgumentAt(0).Integer); // TASKTYPE_CAR
+        Assert.Equal("622_01_1", truck.ArgumentAt(8).Text);
+        Assert.Equal(30, truck.ArgumentAt(34).Integer); // cutscene truck steering-point count
+        Assert.Equal(0.001f, truck.ArgumentAt(35).ToSingle());
+        Assert.Equal(90, truck.ArgumentAt(36).Integer);
+        Assert.Equal(45f, truck.ArgumentAt(41).ToSingle());
+
+        // The Level 3 outro plane (702_02_1) is backed by the SU27 definition.  The
+        // common parser consumes arguments 0..11; Plane_Physics (0x433B50) reads its
+        // task-specific config from argument 12 onward.  In particular, the three
+        // control retentions and the two thrust steps are not rendering guesses.
+        Assert.True(physics.TryGetPlane("702_02_1", out PlanePhysicsDefinition su27));
+        Assert.Equal(68, su27.ArgumentCount);
+        Assert.Equal(QvmValueKind.Integer, su27.ArgumentAt(0).Kind);
+        Assert.Equal(10_000f, su27.ArgumentAt(2).ToSingle());
+        Assert.Equal(5f, su27.ArgumentAt(3).ToSingle());
+        Assert.Equal(16f, su27.ArgumentAt(4).ToSingle());
+        Assert.Equal(2.5f, su27.ArgumentAt(5).ToSingle());
+        Assert.Equal("702_02_1", su27.ArgumentAt(8).Text);
+        Assert.Equal(new Vector3f(0.9f, 0.9f, 0.9f), su27.ControlRetention);
+        Assert.Equal(0.054f, su27.HighThrustStep, precision: 5);
+        Assert.Equal(0.006f, su27.LowThrustStep, precision: 5);
     }
 
     [RequiresGameDataFact]
@@ -79,6 +151,41 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.True(runtime.AdvanceAttachedActor(jones, Vector3f.Zero));
         Assert.True(runtime.TryGetAttachedDrawTransform(jones, out Vector3d stationary, out _));
         Assert.InRange((stationary - after).Length, 0d, 0.000001d);
+    }
+
+    [RequiresGameDataFact]
+    public void MissionOneHumanDetachesWhenItsMovingOwnerIsUnregistered()
+    {
+        VirtualFileSystem fs = new(); fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fs); GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new(); missions.Register(loop.Natives); missions.Scan(fs, resources, loop.Natives);
+        _ = new MissionLoader(missions, fs, resources,
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(1);
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        CutsceneRuntime runtime = new(root, loop.Variables);
+        HumanSoldierTask passenger = Assert.IsType<HumanSoldierTask>(root.Tree.FromId(1505));
+        GameTask helicopter = Assert.IsType<DeclaredTask>(root.Tree.FromId(1502));
+
+        runtime.Tick();
+        Assert.True(ConditionalContainerGate.IsTaskActive(helicopter));
+        Assert.True(runtime.TryAttachActorToTask(
+            passenger,
+            helicopter,
+            passenger.Position,
+            Matrix3f.FromEngineEulerAngles(0f, 0f, passenger.Gamma)));
+        Assert.True(runtime.TryGetAttachedDrawTransform(passenger, out _, out _));
+
+        // ConditionalContainer_RunHandler unregisters the moving subtree before the next Human ground
+        // pass. The native 0x463550 helper clears the parent only for this inactive-owner case.
+        Assert.True(loop.Variables.TryWrite(
+            "ConditionalContainer_4002.isRun",
+            QvmValue.Zero));
+        Assert.False(ConditionalContainerGate.IsTaskActive(helicopter));
+        Assert.True(runtime.TryDetachInactiveAttachment(passenger));
+        Assert.False(runtime.TryGetAttachedDrawTransform(passenger, out _, out _));
+        Assert.False(runtime.TryDetachInactiveAttachment(passenger));
     }
 
     [RequiresGameDataFact]
@@ -129,6 +236,93 @@ public sealed class RetailCutsceneRuntimeTests
             double dx = a.X - b.X, dy = a.Y - b.Y, dz = a.Z - b.Z;
             return Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
         }
+    }
+
+    [RequiresGameDataFact]
+    public void ParkedMissionThreeHelicopterKeepsItsAuthoredRotorPresentationMoving()
+    {
+        VirtualFileSystem fs = new(); fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fs); GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new(); missions.Register(loop.Natives); missions.Scan(fs, resources, loop.Natives);
+        MagicObjectRegistry magic = new(); magic.Register(loop.Natives); magic.Load(resources, loop.Natives);
+        LoadedMission mission = new MissionLoader(
+            missions, fs, resources, new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(3);
+        WorldScene world = WorldScene.Build(mission, root, magic);
+        VehiclePhysicsRegistry physics = new(); physics.Load(resources);
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        CutsceneRuntime runtime = new(root, loop.Variables, vehiclePhysics: physics, terrain: mission.Terrain);
+        WorldPlacement[] rotors = world.Placements.Where(
+            placement => placement.Owner.Id == 3339
+                && placement.Instance.Name == "711_02_1").ToArray();
+        Assert.Equal(2, rotors.Length);
+
+        runtime.Tick();
+        RotorDrawState[] before = rotors.Select(rotor =>
+        {
+            Assert.True(runtime.TryGetRotorDrawState(rotor, out RotorDrawState state));
+            return state;
+        }).ToArray();
+        runtime.Tick();
+        for (int i = 0; i < rotors.Length; i++)
+        {
+            Assert.True(runtime.TryGetRotorDrawState(rotors[i], out RotorDrawState after));
+            Assert.NotEqual(before[i].GetOrientation(0), after.GetOrientation(0));
+            Assert.Equal(before[i].Position, after.Position);
+            Assert.Equal(before[i].SampleCount, after.SampleCount);
+            Assert.True(after.SampleCount >= 2);
+        }
+    }
+
+    [RequiresGameDataFact]
+    public void MissionOneRotorDiscKeepsItsFlapInsideTheAuthoredRange()
+    {
+        VirtualFileSystem fs = new(); fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fs); GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new(); missions.Register(loop.Natives); missions.Scan(fs, resources, loop.Natives);
+        MagicObjectRegistry magic = new(); magic.Register(loop.Natives); magic.Load(resources, loop.Natives);
+        LoadedMission mission = new MissionLoader(
+            missions, fs, resources, new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(1);
+        WorldScene world = WorldScene.Build(mission, root, magic);
+        VehiclePhysicsRegistry physics = new(); physics.Load(resources);
+        Assert.True(physics.TryGetRotor("711_02_1", out RotorPhysicsDefinition mainBlade));
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        CutsceneRuntime runtime = new(root, loop.Variables, vehiclePhysics: physics, terrain: mission.Terrain);
+        WorldPlacement[] rotors = world.Placements.Where(
+            placement => placement.Owner.Id == 1502 && placement.Instance.Name == "711_02_1").ToArray();
+        Assert.NotEmpty(rotors);
+
+        // RotorPrimitive::Draw flaps the blade with the airframe's AXIAL speed measured against
+        // 0.4 of the model's maximum speed, so a flying Bell stays inside the collective's own
+        // -(1 - collective) .. +0.1 band: the flap is a trim, not a switch. Reading the sideways
+        // axis, or dividing by the live collective, saturated it at the authored five degrees on
+        // any movement and inverted it whenever the drift changed sign -- the blur samples then
+        // read as an umbrella and a reversed umbrella instead of a flat disc.
+        float lowest = float.PositiveInfinity;
+        float highest = float.NegativeInfinity;
+        for (int tick = 0; tick < 600; tick++)
+        {
+            runtime.Tick();
+            foreach (WorldPlacement rotor in rotors)
+            {
+                Assert.True(runtime.TryGetRotorDrawState(rotor, out RotorDrawState state));
+                lowest = Math.Min(lowest, state.Tilt);
+                highest = Math.Max(highest, state.Tilt);
+            }
+        }
+
+        Assert.True(
+            lowest > -mainBlade.MaximumTilt,
+            $"the rotor disc saturated its downward flap at {lowest:F5} rad");
+        // The collective band tops out at +0.1 * MaximumTilt. The axial trim is allowed a further
+        // hundredth of the authored deflection on top of it, which this flight uses less than a
+        // tenth of; the broken term reached the whole +MaximumTilt.
+        Assert.True(
+            highest <= 0.11f * mainBlade.MaximumTilt,
+            $"the rotor disc flapped upward to {highest:F5} rad, past the collective band");
     }
 
     [RequiresGameDataFact]
@@ -267,6 +461,71 @@ public sealed class RetailCutsceneRuntimeTests
         }
 
         Assert.False(runtime.IsPlaying);
+    }
+
+    [RequiresGameDataFact]
+    public void MissionFiveIntroShowsAuthoredBinocularOverlayOnlyDuringScene3501()
+    {
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fileSystem);
+        GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new();
+        missions.Register(loop.Natives);
+        missions.Scan(fileSystem, resources, loop.Natives);
+        _ = new MissionLoader(
+            missions,
+            fileSystem,
+            resources,
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(5);
+
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        CutsceneRuntime runtime = new(root, loop.Variables);
+
+        // LEVEL5/objects.qsc authors the holder as
+        // CutScene_3500.isFinished && !CutScene_3501.isFinished && ConditionalContainer_1000.isRun.
+        // The boundary ticks below are the frames produced by the retail 30 Hz completion contract.
+        CutsceneFrame opening = Assert.IsType<CutsceneFrame>(runtime.Frame);
+        Assert.Equal(3500, opening.Scene.Id);
+        Assert.Equal(0, opening.Scene.Ticks);
+        Assert.False(opening.BinocularOverlayVisible);
+
+        CutsceneFrame lastEstablishingFrame = opening;
+        int lastEstablishingTick = opening.Scene.Ticks;
+        for (int tick = 0; tick < 1_000 && runtime.ActiveScene?.Id == 3500; tick++)
+        {
+            lastEstablishingFrame = Assert.IsType<CutsceneFrame>(runtime.Frame);
+            lastEstablishingTick = lastEstablishingFrame.Scene.Ticks;
+            runtime.Tick();
+        }
+
+        Assert.NotEqual(3500, runtime.ActiveScene?.Id);
+        Assert.Equal(107, lastEstablishingTick);
+        Assert.False(lastEstablishingFrame.BinocularOverlayVisible);
+
+        CutsceneFrame firstBinocularFrame = Assert.IsType<CutsceneFrame>(runtime.Frame);
+        Assert.Equal(3501, firstBinocularFrame.Scene.Id);
+        Assert.Equal(1, firstBinocularFrame.Scene.Ticks);
+        Assert.True(firstBinocularFrame.BinocularOverlayVisible);
+
+        CutsceneFrame lastBinocularFrame = firstBinocularFrame;
+        int lastBinocularTick = firstBinocularFrame.Scene.Ticks;
+        for (int tick = 0; tick < 1_000 && runtime.ActiveScene?.Id == 3501; tick++)
+        {
+            lastBinocularFrame = Assert.IsType<CutsceneFrame>(runtime.Frame);
+            lastBinocularTick = lastBinocularFrame.Scene.Ticks;
+            Assert.True(lastBinocularFrame.BinocularOverlayVisible);
+            runtime.Tick();
+        }
+
+        Assert.NotEqual(3501, runtime.ActiveScene?.Id);
+        Assert.Equal(744, lastBinocularTick);
+        CutsceneFrame firstClosingFrame = Assert.IsType<CutsceneFrame>(runtime.Frame);
+        Assert.Equal(3502, firstClosingFrame.Scene.Id);
+        Assert.Equal(1, firstClosingFrame.Scene.Ticks);
+        Assert.False(firstClosingFrame.BinocularOverlayVisible);
     }
 
     [RequiresGameDataFact]
@@ -453,11 +712,13 @@ public sealed class RetailCutsceneRuntimeTests
             }
         }
 
-        Assert.True(solids.TryFindContainingDynamicOwner(
+        // The live renderer must not bind a staged actor to dormant geometry. The exact
+        // scene-1200 mesh has no active dynamic owner at Jones's authored point; searching
+        // inactive owners would select landing car1888 and mask the live attachment bug.
+        Assert.False(solids.TryFindContainingDynamicOwner(
             new Vector3d(22_205_644.0, -57_659_132.0, 174_528_880.0),
-            includeInactiveOwners: true,
-            out GameTask? stagedParent));
-        Assert.Equal(1888, stagedParent?.Id);
+            includeInactiveOwners: false,
+            out _));
 
         GameTask freightCar = Assert.IsType<DeclaredTask>(root.Tree.FromId(1888));
         Assert.True(runtime.TryGetDrawTransform(freightCar, out Vector3d initialFreightPosition, out _));
@@ -519,6 +780,254 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.True((wagonJonesPosition - retailWagonJones).Length <= 0.01d,
             $"retail wagon Jones={retailWagonJones}, runtime={wagonJonesPosition}, delta={(wagonJonesPosition - retailWagonJones).Length:R}");
 
+    }
+
+    [RequiresGameDataFact]
+    public void MissionOneIntroFollowsLiveContactParentsToScene1203()
+    {
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fileSystem);
+        GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new();
+        missions.Register(loop.Natives);
+        missions.Scan(fileSystem, resources, loop.Natives);
+        MagicObjectRegistry magic = new();
+        magic.Register(loop.Natives);
+        magic.Load(resources, loop.Natives);
+        LoadedMission loaded = new MissionLoader(missions, fileSystem, resources,
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(1);
+        WorldScene world = WorldScene.Build(loaded, root, magic);
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        CutsceneRuntime runtime = new(root, loop.Variables, modelLength: Length, modelPivot: Pivot);
+        MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(world.Placements);
+        RefreshCutsceneCollision(solids, world, runtime);
+
+        float Length(string name) => loaded.TryGetModel(name, out MefModel? model) && model is not null
+            ? WorldScene.TrainCouplingDistance(model)
+            : 0f;
+        float Pivot(string name) => loaded.TryGetModel(name, out MefModel? model) && model is not null
+            ? WorldScene.TrainCouplingPivotFraction(model)
+            : 0f;
+
+        HumanSoldierTask jones = Assert.IsType<HumanSoldierTask>(root.Tree.FromId(1666));
+        DeclaredTask heli = Assert.IsType<DeclaredTask>(root.Tree.FromId(1508));
+        Assert.Contains("Heli", heli.Label, StringComparison.Ordinal);
+        DeclaredTask train = Assert.IsType<DeclaredTask>(root.Tree.FromId(1507));
+        Assert.Contains("Train", train.Label, StringComparison.Ordinal);
+        GameTask? introContainerOrNull = root.Tree.FromId(4001);
+        Assert.NotNull(introContainerOrNull);
+        GameTask introContainer = introContainerOrNull;
+        GameTask car1888 = Assert.IsType<DeclaredTask>(root.Tree.FromId(1888));
+        GameTask train1999 = Assert.IsType<DeclaredTask>(root.Tree.FromId(1999));
+        GameTask wagon2333 = Assert.IsType<DeclaredTask>(root.Tree.FromId(2333));
+
+        // The renderer probes from the actor's current drawn base, attaches only to a
+        // moving-platform contact (retail task+0x64), and never supplies an expected owner.
+        // Reproduce that order here so the test observes the selection instead of assuming it.
+        // The jump ballistics themselves (clip 242 root motion steered by AiSoldier through
+        // SoldierView, a Desktop-side sampler) cannot run in this harness: once the authored
+        // landing tick arrives, the probe is placed over the passing wagon exactly where the
+        // jump delivers Jones, and from there the ride is fully simulated.
+        Vector3d probeBase = jones.Position;
+        List<string> timeline = new();
+        int scene1200Ticks = 0;
+        int scene1200AttachedTicks = 0;
+        int heliAttachedTicks = 0;
+        int wrongParentTicks = 0;
+        bool sawScene1203 = false;
+        bool landingSimulated = false;
+        Vector3d? frozenBase = null;
+        double maxFrozenDeviationMetres = 0d;
+        Vector3d? wagonOffset = null;
+        double maxOffsetDeviationMetres = 0d;
+        int wagonRidingTicks = 0;
+        int tick = 0;
+        while (tick++ < 6_000 && ConditionalContainerGate.IsTaskActive(introContainer))
+        {
+            objectives.TickLevelState();
+            runtime.Tick();
+            RefreshCutsceneCollision(solids, world, runtime);
+            objectives.TickAfterLevelState();
+            runtime.FinishExpressionTick();
+
+            int scene = runtime.ActiveScene?.Id ?? -1;
+            int sceneTicks = runtime.ActiveScene?.Ticks ?? -1;
+
+            // Authored landing: land_ground_2 at CutScene_1201.nTick > 0.25*GAME_FREQUENCY.
+            // From that tick the jump has delivered Jones above the passing wagon roof.
+            if (!landingSimulated && scene == 1201 && sceneTicks > 0.25d * CutsceneRuntime.Frequency
+                && runtime.TryGetDrawTransform(car1888, out Vector3d wagonAbove, out _))
+            {
+                probeBase = (wagonAbove * WorldScene.UnitsPerMetre)
+                    + new Vector3d(0d, 0d, 3d * WorldScene.UnitsPerMetre);
+                landingSimulated = true;
+            }
+
+            if (!runtime.TryDetachInactiveAttachment(jones))
+            {
+                if (!runtime.TryGetAttachedDrawTransform(jones, out Vector3d attachedMetres, out _))
+                {
+                    Vector3d origin = new(
+                        probeBase.X,
+                        probeBase.Y,
+                        probeBase.Z + (5d * WorldScene.UnitsPerMetre));
+                    Vector3d end = new(
+                        probeBase.X,
+                        probeBase.Y,
+                        probeBase.Z - (10d * WorldScene.UnitsPerMetre));
+                    WorldTraceRequest request = new(
+                        origin,
+                        end,
+                        WorldTraceMask.DynamicObjects,
+                        IgnoredOwner: jones,
+                        IncludeInactiveOwners: false);
+                    if (solids.TryTrace(request, out WorldTraceHit hit)
+                        && hit.Owner is not null
+                        && CinematicActor.IsMovingPlatform(hit.Owner))
+                    {
+                        runtime.TryAttachActorToTask(
+                            jones,
+                            hit.Owner,
+                            probeBase,
+                            Matrix3f.FromEngineEulerAngles(0f, 0f, jones.Gamma));
+                    }
+                }
+                else
+                {
+                    probeBase = attachedMetres * WorldScene.UnitsPerMetre;
+                }
+            }
+
+            bool attached = runtime.TryGetAttachmentParent(jones, out GameTask? parent);
+            if ((scene == 1201 || scene == 1202) && timeline.Count < 400)
+            {
+                runtime.TryGetDrawTransform(train, out Vector3d trainPos, out _);
+                runtime.TryGetDrawTransform(heli, out Vector3d heliPos, out _);
+                runtime.TryGetDrawTransform(jones, out Vector3d jonesPos, out _);
+                runtime.TryGetDrawTransform(car1888, out Vector3d car1888Pos, out _);
+                runtime.TryGetDrawTransform(train1999, out Vector3d train1999Pos, out _);
+                runtime.TryGetDrawTransform(wagon2333, out Vector3d wagon2333Pos, out _);
+                timeline.Add(
+                    $"t={tick} scene={scene} ntick={runtime.ActiveScene?.Ticks} "
+                    + $"parent={(attached && parent is not null ? parent.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) : "none")} "
+                    + $"jones=({jonesPos.X:F2},{jonesPos.Y:F2},{jonesPos.Z:F2}) "
+                    + $"t1507=({trainPos.X:F2},{trainPos.Y:F2},{trainPos.Z:F2}) "
+                    + $"c1888=({car1888Pos.X:F2},{car1888Pos.Y:F2},{car1888Pos.Z:F2}) "
+                    + $"t1999=({train1999Pos.X:F2},{train1999Pos.Y:F2},{train1999Pos.Z:F2}) "
+                    + $"w2333=({wagon2333Pos.X:F2},{wagon2333Pos.Y:F2},{wagon2333Pos.Z:F2}) "
+                    + $"heli=({heliPos.X:F2},{heliPos.Y:F2},{heliPos.Z:F2}) "
+                    + $"heliActive={ConditionalContainerGate.IsTaskActive(heli)} "
+                    + $"trainActive={ConditionalContainerGate.IsTaskActive(train)} "
+                    + $"c1888Active={ConditionalContainerGate.IsTaskActive(car1888)} "
+                    + $"t1999Active={ConditionalContainerGate.IsTaskActive(train1999)} "
+                    + $"w2333Active={ConditionalContainerGate.IsTaskActive(wagon2333)}");
+            }
+
+            if (scene == 1200)
+            {
+                scene1200Ticks++;
+                if (attached)
+                {
+                    scene1200AttachedTicks++;
+                }
+            }
+
+            if (attached && parent is not null && parent.Id == 1508)
+            {
+                heliAttachedTicks++;
+            }
+
+            if (attached && (parent is null || parent.Id != 1888))
+            {
+                wrongParentTicks++;
+            }
+
+            if (scene == 1202 && !attached
+                && runtime.TryGetDrawTransform(jones, out Vector3d frozenNow, out _))
+            {
+                if (frozenBase is null)
+                {
+                    frozenBase = frozenNow;
+                }
+                else
+                {
+                    double deviation = (frozenNow - frozenBase.Value).Length;
+                    if (deviation > maxFrozenDeviationMetres)
+                    {
+                        maxFrozenDeviationMetres = deviation;
+                    }
+                }
+            }
+
+            if (attached && parent is not null && parent.Id == 1888
+                && runtime.TryGetDrawTransform(jones, out Vector3d jonesMetres, out _)
+                && runtime.TryGetDrawTransform(car1888, out Vector3d wagonMetres, out _))
+            {
+                Vector3d offset = jonesMetres - wagonMetres;
+                if (wagonOffset is null)
+                {
+                    wagonOffset = offset;
+                }
+                else
+                {
+                    double deviation = (offset - wagonOffset.Value).Length;
+                    if (deviation > maxOffsetDeviationMetres)
+                    {
+                        maxOffsetDeviationMetres = deviation;
+                    }
+                }
+
+                wagonRidingTicks++;
+            }
+
+            if (scene == 1203)
+            {
+                sawScene1203 = true;
+            }
+        }
+
+        // Jones waits unattached through the opening-heli scene: the eager
+        // containing-sphere guess used to latch the opening train here and carry him
+        // ~349 m before the jump.
+        foreach (string row in timeline)
+        {
+            _output.WriteLine(row);
+        }
+
+        Assert.True(scene1200Ticks > 0, "scene 1200 was never observed");
+        Assert.Equal(0, scene1200AttachedTicks);
+
+        // The hovering insertion heli is not a moving platform (retail task+0x64): ground
+        // contact with it must never capture Jones. Capturing it rode him 90 m past the
+        // landing wagon and stranded him when scene 1201 ended.
+        Assert.Equal(0, heliAttachedTicks);
+
+        // Riding the landing wagon means a stable local offset: the world position may
+        // travel with the consist, but Jones must not drift relative to it. The 1201 ride
+        // only spans the landing tick to the scene boundary, so a few dozen stable ticks
+        // here plus the desktop no-drift trace cover it; the 200-tick FlakTower-style ride
+        // belongs to sequences whose vehicle stays registered.
+        Assert.True(landingSimulated, "the authored landing tick was never reached");
+        Assert.True(wagonRidingTicks >= 30,
+            $"Jones rode wagon1888 for only {wagonRidingTicks} ticks");
+        Assert.True(maxOffsetDeviationMetres <= 0.5d,
+            $"Jones drifted {maxOffsetDeviationMetres:F3} m relative to wagon1888");
+
+        // Past the 1201 boundary the landing consist unregisters: Jones must never latch a
+        // wrong vehicle (the opening train, the jump heli, the far driveby consist), and his
+        // world position must stay where the ride left it. Root-motion drift after the
+        // boundary is covered by the desktop trace (retained clip 242 yields zero delta).
+        Assert.Equal(0, wrongParentTicks);
+        Assert.True(maxFrozenDeviationMetres <= 2d,
+            $"Jones moved {maxFrozenDeviationMetres:F3} m after the landing consist unregistered");
+
+        // The full chain plays through the jump-off scene and closes the container.
+        Assert.True(sawScene1203, "scene 1203 was never reached");
+        Assert.False(ConditionalContainerGate.IsTaskActive(introContainer));
     }
 
     [RequiresGameDataFact]
@@ -600,6 +1109,80 @@ public sealed class RetailCutsceneRuntimeTests
             runtime.FinishExpressionTick();
         }
     }
+
+    [RequiresGameDataFact]
+    public void MissionOneOutroTruckRouteProbe()
+    {
+        TruckRouteResult closedThenOpen = RunMissionOneTruckRoute(gateStartsOpen: false);
+        TruckRouteResult alreadyOpen = RunMissionOneTruckRoute(gateStartsOpen: true);
+
+        Vector3d retailStart = new(
+            24_956_676.0 / WorldScene.UnitsPerMetre,
+            -56_086_240.0 / WorldScene.UnitsPerMetre,
+            174_414_610.0 / WorldScene.UnitsPerMetre);
+        Assert.InRange((closedThenOpen.InitialPosition - retailStart).Length, 0d, 0.001d);
+        Assert.InRange((alreadyOpen.InitialPosition - retailStart).Length, 0d, 0.001d);
+
+        Assert.True(closedThenOpen.OpenCommandIssued,
+            "the authored gate-open moment was not reached");
+        Assert.True(closedThenOpen.Gate.State.IsFullyOpen,
+            "the authored gate never reached the live fully-open state");
+        Assert.Equal(closedThenOpen.Gate.Position, alreadyOpen.Gate.Position);
+
+        AssertAuthoredRightExit(closedThenOpen);
+        AssertAuthoredRightExit(alreadyOpen);
+    }
+
+    /// <summary>
+    /// Mission 2 reuses the Mission 1 truck's model for a different inbound route. The obstacle
+    /// probe is now taken from the car's own authored dimensions rather than from a table keyed on
+    /// the Mission 1 task, so every car sweeps for obstacles and no level-specific route survives.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void MissionTwoTruckSharingTheModelSweepsWithItsOwnDimensions()
+    {
+        VirtualFileSystem fs = new();
+        fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fs);
+        GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new();
+        missions.Register(loop.Natives);
+        missions.Scan(fs, resources, loop.Natives);
+        _ = new MissionLoader(missions, fs, resources,
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(2);
+
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        int liveRouteProbes = 0;
+        CutsceneRuntime runtime = new(
+            root,
+            loop.Variables,
+            vehicleObstacleHit: (_, _, _) =>
+            {
+                liveRouteProbes++;
+                return null;
+            },
+            vehicleObstacleReleased: _ => false);
+        DeclaredTask truck = Assert.IsType<DeclaredTask>(root.Tree.FromId(778));
+        Assert.Equal("Car which Jones drives into base", truck.Label);
+        Assert.True(truck.TryGetValue(WorldScene.ModelParameter, out object? model));
+        Assert.Equal("622_01_1", model);
+        Assert.True(runtime.TryGetDrawTransform(truck, out Vector3d before, out _));
+
+        for (int tick = 0; tick < 60; tick++)
+        {
+            runtime.Tick();
+        }
+
+        Assert.True(runtime.TryGetDrawTransform(truck, out Vector3d after, out _));
+        Assert.True((after - before).Length > 0.1d, "the Mission 2 truck did not run its authored cutscene movement");
+
+        // The probe is generic: it runs for this truck too, driven by its own body length, and is
+        // no longer gated on the Mission 1 label and model.
+        Assert.True(liveRouteProbes > 0, "the Mission 2 truck never swept for obstacles");
+    }
+
 
     [RequiresGameDataFact]
     public void MissionOneJosefCameraFollowsItsFreightCar()
@@ -786,6 +1369,287 @@ public sealed class RetailCutsceneRuntimeTests
             }
         }
     }
+
+    private static TruckRouteResult RunMissionOneTruckRoute(bool gateStartsOpen)
+    {
+        VirtualFileSystem fs = new();
+        fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fs);
+        GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new();
+        missions.Register(loop.Natives);
+        missions.Scan(fs, resources, loop.Natives);
+        MagicObjectRegistry magic = new();
+        magic.Register(loop.Natives);
+        magic.Load(resources, loop.Natives);
+        VehiclePhysicsRegistry physics = new();
+        physics.Load(resources);
+        LoadedMission mission = new MissionLoader(missions, fs, resources,
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(1);
+        WorldScene world = WorldScene.Build(mission, root, magic);
+        DoorRegistry doors = DoorRegistry.Build(root);
+        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(world.Placements);
+
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        DeclaredTask truck = Assert.IsType<DeclaredTask>(root.Tree.FromId(1099));
+        Assert.Equal("Truck which Jones will steal", truck.Label);
+        Assert.True(truck.TryGetValue(WorldScene.ModelParameter, out object? model));
+        Assert.Equal("622_01_1", model);
+
+        PlacedDoor gate = Assert.Single(doors.Doors, door => door.Task.Id == 401);
+        Assert.Equal(new Vector3d(24_979_312.0, -56_202_112.0, 174_413_120.0), gate.Position);
+        if (gateStartsOpen)
+        {
+            gate.State.CommandOpen();
+            for (int tick = 0; tick < 300 && !gate.State.IsFullyOpen; tick++)
+            {
+                doors.Tick();
+                RefreshDoorCollision(solids, doors);
+            }
+            Assert.True(gate.State.IsFullyOpen, "the authored gate did not reach its open state");
+        }
+
+        bool openCommandIssued = false;
+        CutsceneRuntime runtime = new(
+            root,
+            loop.Variables,
+            vehiclePhysics: physics,
+            vehicleObstacleHit: (task, origin, end) =>
+                Contact(solids, task, origin, end),
+            vehicleObstacleReleased: obstacle => doors.Doors
+                .FirstOrDefault(door => ReferenceEquals(door.Task, obstacle))?.State.IsFullyOpen == true);
+        MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        RefreshCutsceneCollision(solids, world, runtime);
+        RefreshDoorCollision(solids, doors);
+        AssertGateCollisionState(solids, gate, expected: !gateStartsOpen);
+
+        runtime.RequestBreak();
+        Step(objectives, runtime, solids, world, doors, gate, ref openCommandIssued);
+        Assert.True(loop.Variables.TryWrite("EditVariable_199.nValue", QvmValue.FromInt32(1)));
+        Step(objectives, runtime, solids, world, doors, gate, ref openCommandIssued);
+        Assert.Equal(1204, runtime.ActiveScene?.Id);
+        Assert.True(runtime.TryGetDrawTransform(truck, out Vector3d initialPosition, out Matrix3f initialOrientation));
+
+        for (int tick = 0; tick < 600 && runtime.ActiveScene is not null; tick++)
+        {
+            Step(objectives, runtime, solids, world, doors, gate, ref openCommandIssued);
+        }
+
+        Assert.True(runtime.TryGetDrawTransform(truck, out Vector3d finalPosition, out Matrix3f finalOrientation));
+        AssertGateCollisionState(solids, gate, expected: false);
+        return new TruckRouteResult(
+            initialPosition,
+            initialOrientation.Column2,
+            finalPosition,
+            finalOrientation.Column2,
+            gate,
+            openCommandIssued);
+
+        static (GameTask Owner, WorldRayHit Hit, string Label)? Contact(
+            ObjectCollisionIndex solids,
+            GameTask ignoredOwner,
+            Vector3d origin,
+            Vector3d end)
+        {
+            if (!solids.TryCastIgnoring(ignoredOwner, origin, end, out WorldRayHit hit, out GameTask? owner, out string label)
+                || owner is null)
+            {
+                return null;
+            }
+
+            return (owner, hit, label);
+        }
+
+        static void Step(
+            MissionObjectiveRuntime objectives,
+            CutsceneRuntime runtime,
+            ObjectCollisionIndex solids,
+            WorldScene world,
+            DoorRegistry doors,
+            PlacedDoor gate,
+            ref bool openCommandIssued)
+        {
+            objectives.TickLevelState();
+            runtime.Tick();
+            RefreshCutsceneCollision(solids, world, runtime);
+            if (runtime.ActiveScene?.Ticks >= 11 * CutsceneRuntime.Frequency
+                && !gate.State.IsFullyOpen
+                && !openCommandIssued)
+            {
+                gate.State.CommandOpen();
+                openCommandIssued = true;
+            }
+            doors.Tick();
+            RefreshDoorCollision(solids, doors);
+            objectives.TickAfterLevelState();
+            runtime.FinishExpressionTick();
+        }
+    }
+
+    private static void RefreshCutsceneCollision(ObjectCollisionIndex solids, WorldScene world, CutsceneRuntime runtime)
+    {
+        foreach (WorldPlacement placement in world.Placements)
+        {
+            if (runtime.TryGetPlacementDrawTransform(
+                placement.Owner,
+                placement.Position,
+                placement.Orientation,
+                out Vector3d position,
+                out Matrix3f orientation))
+            {
+                solids.UpdateTransform(placement, position, orientation);
+            }
+        }
+    }
+
+    private static void RefreshDoorCollision(ObjectCollisionIndex solids, DoorRegistry doors)
+    {
+        foreach (PlacedDoor door in doors.Doors)
+        {
+            solids.SetPassable(door.Task, door.State.IsFullyOpen);
+            solids.UpdateTransform(door.Task, door.DrawPosition, door.DrawOrientation);
+        }
+    }
+
+    private static void AssertGateCollisionState(
+        ObjectCollisionIndex solids,
+        PlacedDoor gate,
+        bool expected)
+    {
+        Vector3d centre = gate.Position;
+        bool hitGate = false;
+        for (double x = -8d; x <= 8d && !hitGate; x += 1d)
+        {
+            for (double y = -8d; y <= 8d && !hitGate; y += 1d)
+            {
+                for (double z = 0.25d; z <= 4d; z += 0.5d)
+                {
+                    Vector3d point = centre + new Vector3d(x, y, z) * WorldScene.UnitsPerMetre;
+                    if (solids.IsPointInTaskVolume(point, gate.Task))
+                    {
+                        hitGate = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        Assert.Equal(expected, hitGate);
+    }
+
+    private static void AssertAuthoredRightExit(TruckRouteResult route)
+    {
+        float turnCross = (route.InitialForward.X * route.FinalForward.Y)
+            - (route.InitialForward.Y * route.FinalForward.X);
+        double travelled = (route.FinalPosition - route.InitialPosition).Length;
+        Assert.True(travelled > 10d,
+            $"truck did not leave its authored garage route: start={route.InitialPosition}, end={route.FinalPosition}");
+        Assert.True(turnCross > 0f && route.FinalForward.X > 0f,
+            $"truck did not take the authored right exit: initial={route.InitialForward}, final={route.FinalForward}, cross={turnCross}");
+    }
+
+    private sealed record TruckRouteResult(
+        Vector3d InitialPosition,
+        Vector3f InitialForward,
+        Vector3d FinalPosition,
+        Vector3f FinalForward,
+        PlacedDoor Gate,
+        bool OpenCommandIssued);
+
+    /// <summary>
+    /// Mission 4's parked Bell rests on its pad at the authored pose instead of sinking through the
+    /// terrain while its collective is below hover, then leaves the pad along the authored path
+    /// once cyclic pitches the disc. Retail's Heli collision flag grounds the airframe; excess
+    /// collective alone must not launch it up the world Z axis.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void MissionFourParkedHelicopterRestsOnTerrainThenLiftsOff()
+    {
+        VirtualFileSystem fs = new(); fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fs); GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new(); missions.Register(loop.Natives); missions.Scan(fs, resources, loop.Natives);
+        LoadedMission mission = new MissionLoader(
+            missions,
+            fs,
+            resources,
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources),
+            terrainLoader: new TerrainLoader(resources, loop.Natives)).Load(4);
+        MagicObjectRegistry magic = new(); magic.Register(loop.Natives); magic.Load(resources, loop.Natives);
+        WorldScene scene = WorldScene.Build(mission, root, magic);
+        VehiclePhysicsRegistry physics = new(); physics.Load(resources);
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        CutsceneRuntime runtime = new(root, loop.Variables, vehiclePhysics: physics, terrain: mission.Terrain);
+
+        // The parked Bell rests low (skids on its pad) while the airborne getaway Bell flies far above
+        // it; this ceiling separates the two 709_01_1 instances. It is the same parked-helicopter
+        // Z threshold the suite uses elsewhere to pick the parked copy.
+        const double ParkedBellZCeiling = 42_800d;
+        WorldPlacement parkedBell = Assert.Single(scene.Placements, placement =>
+            placement.Instance.Name == "709_01_1" && placement.Position.Z < ParkedBellZCeiling);
+        GameTask helicopter = parkedBell.Owner;
+
+        // The transport Bell rests on the pad inside a gated container whose authored condition needs
+        // the player to enter area 156 - something a headless runtime test cannot supply. Force the
+        // container active so the flight programme actually runs, matching how the intro activates it.
+        if (root.Tree.FromId(3902) is ConditionalContainerTask { } transportBell)
+        {
+            transportBell.Condition = "1";
+        }
+
+        // Tick until the Bell exposes its rest pose on the pad, then measure its take-off profile.
+        Vector3d parked = default;
+        int activatedTick = -1;
+        for (int t = 0; t < 20_000; t++)
+        {
+            runtime.Tick();
+            if (runtime.TryGetDrawTransform(helicopter, out parked, out _))
+            {
+                activatedTick = t;
+                break;
+            }
+        }
+        Assert.True(activatedTick >= 0, "parked Bell never exposed a draw transform");
+        double pad = parked.Z; // authored rest pose: skids on the pad, origin just above it
+        TerrainData terrain = Assert.IsAssignableFrom<TerrainData>(mission.Terrain);
+        Assert.True(TerrainProbe.TryGetGroundHeight(
+                terrain, parked.X, parked.Y, 45_000.0, 42_000.0, out double terrainAtPad),
+            "terrain lookup found no ground under the parked Bell");
+        Assert.True(terrainAtPad <= pad && pad - terrainAtPad < 8d,
+            $"parked Bell must sit on the pad: pad={pad:R}, terrain={terrainAtPad:R}");
+
+        double lowest = double.MaxValue;
+        double farthest = 0d;
+        for (int tick = 0; tick < 600; tick++)
+        {
+            runtime.Tick();
+            if (tick % 9 == 0)
+            {
+                Assert.True(runtime.TryGetDrawTransform(helicopter, out Vector3d position, out _));
+                lowest = Math.Min(lowest, position.Z);
+                double slide = Math.Sqrt(
+                    ((position.X - parked.X) * (position.X - parked.X))
+                    + ((position.Y - parked.Y) * (position.Y - parked.Y)));
+                farthest = Math.Max(farthest, slide);
+                Assert.True(TerrainProbe.TryGetGroundHeight(
+                        terrain, position.X, position.Y, 45_000.0, 42_000.0, out double ground),
+                    $"terrain lookup found no ground at tick={tick}");
+                Assert.True(position.Z >= ground - 0.05d,
+                    $"helicopter must not sink below the terrain: tick={tick}, z={position.Z:R}, terrain={ground:R}");
+            }
+        }
+
+        // Collision holds the skids through the pre-cyclic collective ramp. Lift-off is
+        // cyclic converting that lift into the authored path, not a vertical launch.
+        Assert.True(lowest >= pad - 0.1d,
+            $"parked Bell must stay on the pad until lift-off: lowest={lowest:R}, pad={pad:R}");
+        Assert.True(farthest > 20d,
+            $"parked Bell must leave the pad along its path after cyclic: slide={farthest:R}");
+    }
+
 
     private static void RegisterCutsceneTypes(TaskTypeRegistry types)
     {

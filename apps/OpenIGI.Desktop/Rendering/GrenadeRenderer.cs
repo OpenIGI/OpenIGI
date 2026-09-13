@@ -11,8 +11,8 @@ namespace OpenIGI.Desktop;
 /// <summary>Draws every grenade in the air with its own retail model, tumbling as it flies.</summary>
 /// <remarks>
 /// <para>
-/// The physics table names the models — <c>135_01_1</c> for the frag, <c>137_01_1</c> for the
-/// flashbang — and the multipart weapon renderer already knows how to load and draw one, so a
+/// The physics table names the models — <c>135_01_1</c> for the frag, <c>136_01_1</c> for the mine,
+/// and <c>137_01_1</c> for the flashbang — and the multipart weapon renderer already knows how to load and draw one, so a
 /// grenade in flight is the same machinery as a pickup on the ground, at a transform the simulation
 /// supplies. Positions interpolate between ticks like everything else drawn, and the tumble runs on
 /// the grenade's own moving-tick clock, so a settled grenade lies still on the floor it landed on
@@ -22,13 +22,14 @@ namespace OpenIGI.Desktop;
 internal sealed class GrenadeRenderer : IDisposable
 {
     /// <summary>How fast a flying grenade tumbles, in radians per tick.</summary>
-    public const float TumbleRadiansPerTick = 0.31f;
+    public const float TumbleRadiansPerTick = GrenadePhysics.TumbleRadiansPerTick;
 
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
     private readonly MagicObjectRegistry _magic;
     private readonly IIgiLogger _logger;
     private HeldWeaponRenderer? _frag;
+    private HeldWeaponRenderer? _mine;
     private HeldWeaponRenderer? _flashbang;
     private bool _disposed;
 
@@ -52,6 +53,7 @@ internal sealed class GrenadeRenderer : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         _frag = LoadModel(mission, "135_01_1");
+        _mine = LoadModel(mission, "136_01_1");
         _flashbang = LoadModel(mission, "137_01_1");
     }
 
@@ -67,9 +69,11 @@ internal sealed class GrenadeRenderer : IDisposable
 
         foreach (LiveGrenade grenade in grenades.Grenades)
         {
-            HeldWeaponRenderer? model = grenade.Type == GrenadeExplosionType.Flashbang
-                ? _flashbang ?? _frag
-                : _frag;
+            HeldWeaponRenderer? model = grenade.IsProximityMine
+                ? _mine ?? _frag
+                : grenade.Type == GrenadeExplosionType.Flashbang
+                    ? _flashbang ?? _frag
+                    : _frag;
             if (model is null)
             {
                 continue;
@@ -77,11 +81,9 @@ internal sealed class GrenadeRenderer : IDisposable
 
             Vector3d position = PresentationBlend.Lerp(grenade.PreviousPosition, grenade.Position, alpha);
 
-            // Two incommensurate spin axes give a believable tumble from one clock; frozen at the
-            // tick it came to rest.
-            float clock = grenade.TumbleTicks + (grenade.Resting ? 0f : alpha);
-            Matrix3f tumble = Matrix3f.RotationY(clock * TumbleRadiansPerTick)
-                * Matrix3f.FromEngineEulerAngles(clock * TumbleRadiansPerTick * 0.63f, 0f, 0f);
+            // The native task owns the orientation after landing. The helper also covers a settled
+            // object whose one-tick contact flag has already been cleared before this frame is drawn.
+            Matrix3f tumble = GrenadePhysics.PresentationOrientation(grenade, alpha);
 
             model.Draw(
                 new BoneAttachment(position, tumble),
@@ -102,8 +104,10 @@ internal sealed class GrenadeRenderer : IDisposable
 
         _disposed = true;
         _frag?.Dispose();
+        _mine?.Dispose();
         _flashbang?.Dispose();
         _frag = null;
+        _mine = null;
         _flashbang = null;
     }
 

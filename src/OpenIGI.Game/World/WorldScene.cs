@@ -61,6 +61,9 @@ public sealed class WorldScene
     /// <summary>The security-camera task type, whose models are engine-supplied rather than declared.</summary>
     public const string SecurityCameraType = "SCamera";
 
+    /// <summary>The stationary-gun task type, whose holder is engine-created outside lightmap enumeration.</summary>
+    public const string StationaryGunType = "StationaryGun";
+
     /// <summary>The interactive switch task type, whose model a task declares in <see cref="SwitchModelParameter"/>.</summary>
     public const string SwitchType = "Switch";
 
@@ -135,6 +138,28 @@ public sealed class WorldScene
             yield return genericAmmoModel;
         }
 
+        // StationaryGun carries its visible holder in "Holder model", not Model.
+        // The native task still owns the world transform, so this is a normal placement rather than an
+        // attachment to the enemy's animated gunner.
+        if (declaredModelName is null
+            && string.Equals(task.Type.Name, StationaryGunType, StringComparison.Ordinal)
+            && task.TryGetValue("Holder model", out object? rawHolderModel)
+            && rawHolderModel is string holderModel
+            && holderModel.Length > 0)
+        {
+            yield return holderModel;
+        }
+
+        // Keep a drawable default for older or hand-authored StationaryGun tasks that omit both model fields.
+        if (declaredModelName is null
+            && string.Equals(task.Type.Name, StationaryGunType, StringComparison.Ordinal)
+            && (!task.TryGetValue("Holder model", out object? rawFallbackHolderModel)
+                || rawFallbackHolderModel is not string fallbackHolderModel
+                || fallbackHolderModel.Length == 0))
+        {
+            yield return "456_13_1";
+        }
+
         if (string.Equals(task.Type.Name, SecurityCameraType, StringComparison.Ordinal))
         {
             for (int i = 0; i < SecurityCameraModelParameters.Count; i++)
@@ -186,6 +211,21 @@ public sealed class WorldScene
         task.TryGetValue(SwitchModelParameter, out object? model) && model is string name && name.Length > 0
             ? name
             : "switch";
+
+    /// <summary>Lists the models the retail lightmap walker enumerates for a task.</summary>
+    /// <remarks>StationaryGun's holder is created by the engine after the lightmap list is built.</remarks>
+    private static IEnumerable<string> LightmapModelNames(DeclaredTask task)
+    {
+        if (string.Equals(task.Type.Name, StationaryGunType, StringComparison.Ordinal))
+        {
+            yield break;
+        }
+
+        foreach (string name in PlacedModelNames(task))
+        {
+            yield return name;
+        }
+    }
 
     /// <summary>Tells whether a waypoint has a waypoint sibling before it under the same parent.</summary>
     private static bool HasEarlierWaypointSibling(DeclaredTask waypoint)
@@ -566,35 +606,28 @@ public sealed class WorldScene
                     && declared.TryGetValue(SecurityCameraDestroyedModelParameter, out object? rawDestroyed)
                     && rawDestroyed is string destroyedName
                     && destroyedName.Length > 0
-                    && byName.TryGetValue(destroyedName, out var destroyed))
+                    && TryResolveDestroyedBinding(destroyedName, placement, mission, byName, out WorldModelBinding? destroyed))
                 {
                     placement = placement with
                     {
-                        DestroyedReplacement = new WorldModelBinding(
-                            destroyed.Instance,
-                            destroyed.Pack,
-                            destroyed.Model),
+                        DestroyedReplacement = destroyed,
                     };
                 }
 
-                // GenericTBA uses the same replacement contract as SCameraLens. Level 2 leaves this
-                // name empty, which means the charge disappears after its authored blast rather than
-                // leaving the live 202_01_1 model in the scene. A named replacement remains drawable.
-                if (string.Equals(declared.Type.Name, "GenericTBA", StringComparison.Ordinal)
+                // ExplodeObject carries the same authored replacement convention as the camera head,
+                // but under the generic "Destroyed model" parameter. Keep the live placement in the
+                // scene so collision and lightmap identity remain stable; the renderer selects this
+                // binding only after the exact task has reached retail's destroyed state.
+                if (placement.DestroyedReplacement is null
                     && declared.TryGetValue("Destroyed model", out object? rawGenericDestroyed)
                     && rawGenericDestroyed is string genericDestroyedName
-                    && genericDestroyedName.Length > 0)
+                    && genericDestroyedName.Length > 0
+                    && TryResolveDestroyedBinding(genericDestroyedName, placement, mission, byName, out WorldModelBinding? genericDestroyed))
                 {
-                    if (byName.TryGetValue(genericDestroyedName, out var genericDestroyed))
+                    placement = placement with
                     {
-                        placement = placement with
-                        {
-                            DestroyedReplacement = new WorldModelBinding(
-                                genericDestroyed.Instance,
-                                genericDestroyed.Pack,
-                                genericDestroyed.Model),
-                        };
-                    }
+                        DestroyedReplacement = genericDestroyed,
+                    };
                 }
 
                 // Empty render geometry does not make this placement disposable. Attachment holders
@@ -640,6 +673,59 @@ public sealed class WorldScene
             unresolved,
             unplaced,
             attached);
+    }
+
+    /// <summary>Resolves an authored destroyed model, including archive-only QVM replacement meshes.</summary>
+    private static bool TryResolveDestroyedBinding(
+        string modelName,
+        WorldPlacement intact,
+        LoadedMission mission,
+        Dictionary<string, (MtpInstance Instance, LoadedPack Pack, MefModel Model)> byName,
+        out WorldModelBinding? binding)
+    {
+        if (byName.TryGetValue(modelName, out var placed))
+        {
+            binding = new WorldModelBinding(placed.Instance, placed.Pack, placed.Model);
+            return true;
+        }
+
+        // Some QVM-only replacements (Level 6 Terminal_94's 252_02_1) have geometry in the
+        // archive but no INST record. Retain the intact pack and material-slot map while replacing
+        // only its name and geometry: an archive fallback may come from common, whose texture-table
+        // indices cannot safely be applied to a level instance.
+        foreach (LoadedPack pack in new[] { mission.LevelPack, mission.CommonPack })
+        {
+            if (TryGetDestroyedArchiveModel(mission.Descriptor.Id, pack, modelName, out MefModel? model) && model is not null)
+            {
+                MtpInstance instance = intact.Instance with { Name = modelName };
+                binding = new WorldModelBinding(instance, intact.Pack, model);
+                return true;
+            }
+        }
+
+        binding = null;
+        return false;
+    }
+
+    /// <summary>Resolves an archive-only destroyed mesh, including the retail terminal name inversion.</summary>
+    private static bool TryGetDestroyedArchiveModel(
+        int missionId,
+        LoadedPack pack,
+        string modelName,
+        out MefModel? model)
+    {
+        if (pack.TryGetArchiveModel(modelName, out model))
+        {
+            return true;
+        }
+
+        // Level 6 OBJECTS.QVM names Terminal_94's destroyed model 252_02_1, while the shipped archive
+        // stores the corresponding geometry only as 252_01_2. Keep the task's authored name while using
+        // that archive spelling for this known data-pair; do not apply a broad name rewrite to other
+        // missing replacement assets.
+        return missionId == 6
+            && string.Equals(modelName, "252_02_1", StringComparison.OrdinalIgnoreCase)
+            && pack.TryGetArchiveModel("252_01_2", out model);
     }
 
     private sealed record TrainPlacementState(
@@ -765,6 +851,45 @@ public sealed class WorldScene
             && model.TryGetMagicVertex(1, out Vector3f rear)
                 ? MathF.Abs(front.X - rear.X)
                 : 0f;
+    }
+
+    /// <summary>Gets the rolling radius of a wheel model, in world units.</summary>
+    /// <param name="model">The wheel model.</param>
+    /// <returns>Half its largest extent, or nought when it has no geometry.</returns>
+    /// <remarks>
+    /// A wheel is a disc: its two largest extents are both the diameter and the smallest is the
+    /// tread width, so half the largest is the radius. Retail keeps a radius on each wheel task's
+    /// own record, which the port has no reader for; measuring the drawn model gets within a tenth
+    /// of it. The Mission 1 truck's wheel measures 0.46 m here, against the 0.50 m its spin rate on
+    /// a straight implies in a capture of the running game -- where the suspension travel that
+    /// stood in for it before was 0.3 m, forty per cent out.
+    /// </remarks>
+    public static float WheelRadius(MefModel model)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        ReadOnlySpan<MefVertex> vertices = model.Vertices;
+        if (vertices.Length == 0)
+        {
+            return 0f;
+        }
+
+        Vector3f least = vertices[0].Position;
+        Vector3f most = least;
+        for (int i = 1; i < vertices.Length; i++)
+        {
+            Vector3f position = vertices[i].Position;
+            least = new Vector3f(
+                MathF.Min(least.X, position.X),
+                MathF.Min(least.Y, position.Y),
+                MathF.Min(least.Z, position.Z));
+            most = new Vector3f(
+                MathF.Max(most.X, position.X),
+                MathF.Max(most.Y, position.Y),
+                MathF.Max(most.Z, position.Z));
+        }
+
+        float widest = MathF.Max(most.X - least.X, MathF.Max(most.Y - least.Y, most.Z - least.Z));
+        return widest * 0.5f;
     }
 
     /// <summary>Gets the retail model-origin fraction between a Train car's two couplers.</summary>
@@ -933,7 +1058,13 @@ public sealed class WorldScene
             subsets.Add(new MeshSubset(start, run.Length, record.MaterialSlot, record.LightmapPage));
         }
 
-        return new MeshGeometry(vertices, indices, new ReadOnlyCollection<MeshSubset>(subsets));
+        // The same repair the ordinary mesh builder makes, and for the same reason: a model's flattened
+        // draw order does not wind uniformly, and the world pass culls back faces. Without it a bent
+        // segment keeps whichever facing it was authored with and half of it is removed -- which is what
+        // hid the railway at the one preset that culls, while every other preset drew it.
+        MefMeshBuilder.RepairWinding(vertices, indices);
+
+        return new MeshGeometry(vertices, indices, [.. subsets]);
     }
 
     /// <summary>
@@ -962,7 +1093,7 @@ public sealed class WorldScene
                     continue;
                 }
 
-                foreach (string name in PlacedModelNames(declared))
+                foreach (string name in LightmapModelNames(declared))
                 {
                     placing.Add(task);
                     models.Add(name);
@@ -1031,12 +1162,49 @@ public sealed class WorldScene
         int added = 0;
         foreach (WorldObject child in node.Children)
         {
-            bool isRotor = magic is not null
-                && magic.TryGet(child.Name, out MagicObjectDefinition childDefinition)
-                && string.Equals(
-                    magic.TaskTypeName(childDefinition.TaskType),
-                    "TASKTYPE_ROTOR",
-                    StringComparison.Ordinal);
+            string magicTaskTypeName = string.Empty;
+            bool isRotor = false;
+            float magicExplosionFireballs = 0f;
+            int magicExplosionFragments = 0;
+            string magicExplosionSound = string.Empty;
+            string magicDestroyedModel = string.Empty;
+            int magicExplosionDelayTicks = 0;
+            float magicExplosionDamageFactor = 0f;
+            float magicExplosionFalloffMetres = 0f;
+            float magicExplosionRadiusMetres = 0f;
+            float magicExplosionDamageThreshold = 0f;
+            WorldModelBinding? magicDestroyedReplacement = null;
+            if (magic is not null && magic.TryGet(child.Name, out MagicObjectDefinition childDefinition))
+            {
+                magicTaskTypeName = magic.TaskTypeName(childDefinition.TaskType);
+                isRotor = string.Equals(magicTaskTypeName, "TASKTYPE_ROTOR", StringComparison.Ordinal);
+                magicExplosionFireballs = childDefinition.ExplosionFireballs;
+                magicExplosionFragments = childDefinition.ExplosionFragments;
+                magicExplosionSound = childDefinition.ExplosionSound;
+                magicDestroyedModel = childDefinition.DestroyedModel;
+                magicExplosionDelayTicks = childDefinition.ExplosionDelayTicks;
+                magicExplosionDamageFactor = childDefinition.ExplosionDamageFactor;
+                magicExplosionFalloffMetres = childDefinition.ExplosionFalloffMetres;
+                magicExplosionRadiusMetres = childDefinition.ExplosionRadiusMetres;
+                magicExplosionDamageThreshold = childDefinition.ExplosionDamageThreshold;
+                if (childDefinition.DestroyedModel.Length > 0
+                    && byName.TryGetValue(childDefinition.DestroyedModel, out var destroyed))
+                {
+                    magicDestroyedReplacement = new WorldModelBinding(
+                        destroyed.Instance,
+                        destroyed.Pack,
+                        destroyed.Model);
+                }
+            }
+            // Some retail rotor attachments have no magic-object entry in the level registry.  The
+            // verified Bell/Mil attachment families remain rotor presentation objects even when that
+            // lookup misses; keep this fallback alongside the develop-side destructible metadata.
+            if (!isRotor
+                && owner is DeclaredTask { Type.Name: "Heli" }
+                && HelicopterRotorCatalog.IsKnownRotorModel(child.Name))
+            {
+                isRotor = true;
+            }
             // Parent-to-world is the column-vector product M·v, matching how the renderer applies the
             // parent's own orientation (`uModelView * v`); Transform is the row-vector v·M, its
             // inverse, which placed a rotated parent's contents on the wrong side of it. The rotation
@@ -1090,6 +1258,17 @@ public sealed class WorldScene
                 {
                     IsRotor = isRotor,
                     IsAttached = true,
+                    MagicTaskTypeName = magicTaskTypeName,
+                    MagicExplosionFireballs = magicExplosionFireballs,
+                    MagicExplosionFragments = magicExplosionFragments,
+                    MagicExplosionSound = magicExplosionSound,
+                    MagicDestroyedModel = magicDestroyedModel,
+                    MagicExplosionDelayTicks = magicExplosionDelayTicks,
+                    MagicExplosionDamageFactor = magicExplosionDamageFactor,
+                    MagicExplosionFalloffMetres = magicExplosionFalloffMetres,
+                    MagicExplosionRadiusMetres = magicExplosionRadiusMetres,
+                    MagicExplosionDamageThreshold = magicExplosionDamageThreshold,
+                    DestroyedReplacement = magicDestroyedReplacement,
                 });
                 LogDerivedPlacement(
                     log,

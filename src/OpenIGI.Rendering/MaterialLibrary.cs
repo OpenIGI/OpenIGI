@@ -61,9 +61,13 @@ public sealed class MaterialLibrary
     {
         IIgiLogger log = logger ?? NullLogger.Instance;
 
+        // Its OWN library rather than the shared empty one, even with nothing to put in it: the level
+        // that follows will hand its detected emitters to whatever Load returned, and writing those onto
+        // a singleton every other renderer holds a reference to would carry one mission's lamps into the
+        // next -- and into the menu.
         if (!File.Exists(path))
         {
-            return Empty;
+            return new MaterialLibrary(SurfaceMaterial.Default);
         }
 
         try
@@ -87,6 +91,17 @@ public sealed class MaterialLibrary
             {
                 foreach (JsonProperty entry in textures.EnumerateObject())
                 {
+                    // A dollar-prefixed key is a note to the reader rather than a texture. The file
+                    // already uses $comment inside an entry; this lets a run of entries be introduced by
+                    // one, instead of hanging the explanation for a whole family off whichever member of
+                    // it happens to come first. Without the skip such a key would be registered as a
+                    // material named "$comment" -- harmless, because nothing is called that, and wrong
+                    // in the count the loader reports.
+                    if (entry.Name.StartsWith('$'))
+                    {
+                        continue;
+                    }
+
                     if (entry.Name.StartsWith('*'))
                     {
                         library._bySuffix.Add(
@@ -108,7 +123,7 @@ public sealed class MaterialLibrary
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
             log.Warning(LogCategory, $"Could not read {path}: {ex.Message}. Every surface takes the default.");
-            return Empty;
+            return new MaterialLibrary(SurfaceMaterial.Default);
         }
     }
 
@@ -145,6 +160,12 @@ public sealed class MaterialLibrary
             return named;
         }
 
+        return Beneath(textureName);
+    }
+
+    /// <summary>The material a texture takes from the suffix rules alone, or the default.</summary>
+    private SurfaceMaterial Beneath(string textureName)
+    {
         foreach ((string suffix, SurfaceMaterial material) in _bySuffix)
         {
             if (textureName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))

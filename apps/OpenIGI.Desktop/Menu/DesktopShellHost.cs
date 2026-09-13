@@ -1,5 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Frontend;
+using OpenIGI.Rendering;
 
 namespace OpenIGI.Desktop;
 
@@ -14,6 +15,7 @@ namespace OpenIGI.Desktop;
 /// <c>StartGame</c>/quit hooks, made into a full <see cref="IShellHost"/>.
 /// </remarks>
 /// <param name="startMission">Starts a mission at a difficulty and leaves the shell.</param>
+/// <param name="setMissionConditions">Sets the hour and weather the campaign is played under.</param>
 /// <param name="resumeMission">Closes the pause shell over the current mission.</param>
 /// <param name="restartMission">Reloads the current mission from its authored start.</param>
 /// <param name="abandonMission">Releases the current mission and returns to the campaign shell.</param>
@@ -24,6 +26,7 @@ namespace OpenIGI.Desktop;
 /// <param name="captureThumbnail">Captures the current frame as save-thumbnail pixels.</param>
 public sealed class DesktopShellHost(
     Action<int, int> startMission,
+    Action<MissionConditions> setMissionConditions,
     Action resumeMission,
     Action restartMission,
     Action abandonMission,
@@ -35,6 +38,9 @@ public sealed class DesktopShellHost(
 {
     /// <inheritdoc/>
     public void StartMission(int missionId, int difficulty) => startMission(missionId, difficulty);
+
+    /// <inheritdoc/>
+    public void SetMissionConditions(MissionConditions conditions) => setMissionConditions(conditions);
 
     /// <inheritdoc/>
     public void ResumeMission() => resumeMission();

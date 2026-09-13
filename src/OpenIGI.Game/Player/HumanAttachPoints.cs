@@ -18,6 +18,11 @@ namespace OpenIGI.Game.Player;
 /// 0x460210                 *(view->palette + 7284)           7284  = 132*55 + 24   bone 55
 /// </code>
 /// <para>
+/// The last two are what makes a reload animate. A weapon's magazine and its moving part are objects of
+/// their own, and their render handlers replace their transform with bone 52's and bone 55's on every
+/// frame, so they follow the view rig's clip instead of riding the gun body.
+/// </para>
+/// <para>
 /// The arithmetic is the evidence. <b>132</b> is the palette stride the skinning path indexes with, and
 /// <b>+24</b> and <b>+36</b> are the world position and the world 3×3 inside a record — so every one of
 /// the four offsets factors exactly, with no remainder, into a bone index and a known field. Two of the
@@ -63,13 +68,27 @@ public static class HumanAttachPoints
 
     /// <summary>A second attachment on the view rig, from <c>0x4601A0</c> — palette <c>+6888</c>.</summary>
     /// <remarks>
-    /// <b>Unnamed.</b> What asks for it has not been traced, so calling it a muzzle or a shell port
-    /// would be a guess. The bone index is measured; the meaning is open.
+    /// <para>
+    /// The bone a weapon's <b>magazine</b> hangs off. The three classes whose render handler is
+    /// <c>0x472880</c> ask the human for this message and replace their whole transform with the
+    /// answer: <c>GunClip</c> (<c>TASKTYPE_GUNCLIP</c>), <c>GunCABarrel</c> (<c>TASKTYPE_CABARREL</c>)
+    /// and <c>Gunx2</c> (<c>TASKTYPE_GUNX2</c>), registered at <c>0x477220</c>, <c>0x472670</c> and
+    /// <c>0x46DD00</c>.
+    /// </para>
+    /// <para>
+    /// The message is the fourth of the five <c>Gun</c> allocates (<c>0x477E30</c>, read back through
+    /// <c>0x477C30</c>), and <c>Human</c> answers it with <c>0x4601A0</c>.
+    /// </para>
     /// </remarks>
     public const int FirstPersonSecondary = 52;
 
     /// <summary>A third attachment on the view rig, from <c>0x460210</c> — palette <c>+7284</c>.</summary>
-    /// <remarks>Unnamed, for the same reason as <see cref="FirstPersonSecondary"/>.</remarks>
+    /// <remarks>
+    /// The bone a weapon's <b>moving part</b> — a slide, a bolt, a grenade lever — hangs off.
+    /// <c>GunMovingPart</c> (<c>TASKTYPE_GUNMOVINGPART</c>) and <c>GunCAClip</c>
+    /// (<c>TASKTYPE_CACLIP</c>) both render through <c>0x477B10</c>, which asks the human for the fifth
+    /// <c>Gun</c> message (<c>0x477C40</c>) and is answered by <c>0x460210</c>.
+    /// </remarks>
     public const int FirstPersonTertiary = 55;
 
     /// <summary>Recovers the bone index a palette byte offset addresses.</summary>

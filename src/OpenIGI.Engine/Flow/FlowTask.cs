@@ -1,3 +1,4 @@
+using System;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 
@@ -98,7 +99,10 @@ public sealed class FlowTask : GameTask
     /// </remarks>
     protected override void OnUpdate()
     {
-        int now = Clock.Now;
+        // One reading for the whole frame: the arbiter decides on it and, through
+        // Clock.FrameInstantMilliseconds, the picture is drawn at it. Truncated exactly as Clock.Now
+        // is, so the deadline comparison below is bit-for-bit the one it always made.
+        int now = unchecked((int)Math.Truncate(Clock.MarkFrameInstant()));
 
         if (_suspension.IsPaused || _suspension.IsLoading || _suspension.IsCutscenePlaying)
         {

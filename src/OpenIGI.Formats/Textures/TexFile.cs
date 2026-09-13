@@ -65,7 +65,11 @@ public static class TexFile
         }
 
         uint version = BinaryPrimitives.ReadUInt32LittleEndian(data[4..]);
-        return version is Version2 or Version11;
+
+        // Version 12 is not the original's. It is what a generated pack writes, and it is accepted here
+        // so a replacement can stand in for a retail texture without every caller learning a second
+        // name for "a picture". Nothing in an installation is version 12 until a pack is installed.
+        return version is Version2 or Version11 || PackPicture.Is(data);
     }
 
     /// <summary>Reads the header of a <c>.tex</c> file and reports where its payload starts.</summary>
@@ -97,6 +101,13 @@ public static class TexFile
     /// <exception cref="TextureFormatException">The bytes are not a usable <c>.tex</c> file.</exception>
     public static TextureImage Load(ReadOnlySpan<byte> data, ReadOnlySpan<Bgra32> palette = default)
     {
+        if (PackPicture.Is(data))
+        {
+            // A pack picture can hold several frames. Asked for one texture, it gives the first, which
+            // is what a container replacing a single-picture .tex will have written.
+            return PackPicture.Read(data.ToArray()).Frames[0].Image;
+        }
+
         TextureDescriptor descriptor = ReadHeader(data, out int payloadOffset);
         return TextureDecoder.Decode(descriptor, data[payloadOffset..], palette);
     }

@@ -1,0 +1,64 @@
+{
+  "$comment": [
+    "The lights the game has, named by hand. One list for the whole game, not one per level.",
+    "",
+    "I.G.I. declares no lights at all: every lamp is geometry with a texture, and the light it appears",
+    "to cast was painted into a lightmap. LampDetector infers the rest from the shape of the geometry",
+    "and the pages it is skinned with, and it is an inference -- it misses fittings and it occasionally",
+    "lights furniture. This file is where somebody who has LOOKED says what is actually a lamp, and it",
+    "wins over anything inferred.",
+    "",
+    "WHY IT IS NOT PER-MISSION. A model is a global asset: 226_01_1 is the same ceiling fitting in all",
+    "fourteen levels, and it binds the same textures in every one of them -- checked, for every model",
+    "the game names a light, across all fourteen. Nothing about a lamp changes between missions, so",
+    "keying this by mission only meant re-stating the same answer up to fourteen times and forgetting",
+    "it thirteen.",
+    "",
+    "Additive, not exclusive. Naming a model here makes it a lamp; it does not stop the detector",
+    "finding others -- a fitting modelled INTO a building shell has no model of its own to name, and is",
+    "still found by shape. Use \"lamp\": false to say a model the detector picked is NOT one.",
+    "",
+    "  model     the instance name, as the F12 target readout prints it (OBJECT <model> ...).",
+    "  textures  which of that model's sub-meshes emit, by the texture they draw with. A model is not",
+    "            all lamp: a fitting is a dark housing around bright glass, a vending machine is a",
+    "            cabinet with one lit panel, and a monitor is a desk with a screen on it. Omit to let",
+    "            the brightest sub-mesh of the model be chosen.",
+    "  radiance  how much light it appears to give off. 3 is an ordinary fitting; a floodlight is more,",
+    "            and a lit advert or a screen is much less -- those are lit panels, not light sources.",
+    "            The strength each texture is multiplied by is this over how bright the texture is, so",
+    "            two fittings painted differently still arrive at the same brightness.",
+    "  lamp      false to strike out a detection rather than add one.",
+    "  note      what it is, for whoever reads this next.",
+    "",
+    "One catalogued fitting is deliberately absent: 303_04_1 (FLOODLIGHT), in ten of the levels. Its",
+    "three pages are a metal body it shares with the floodlight masts (302_02_1, mean 0.46) and two",
+    "near-black alpha sheets (0.04 and 0.03); it carries no bright page at all, so which part of it is",
+    "supposed to burn cannot be read off the art. It has never been lit and is left alone rather than",
+    "guessed at."
+  ],
+
+  "lamps": [
+    { "model": "207_01_1", "textures": ["316_04_1"], "radiance": 3.0, "note": "LIGHTS_FLAT - flat ceiling panel" },
+    { "model": "208_01_1", "textures": ["208_03_1", "208_02_1"], "radiance": 3.0, "note": "LAMP_CIELING - ceiling batten" },
+    { "model": "209_01_1", "textures": ["316_04_1"], "radiance": 3.0, "note": "MEDIUM_LIGHTS - ceiling fitting" },
+    { "model": "210_01_1", "textures": ["316_04_1"], "radiance": 3.0, "note": "LARGE_LIGHTS - ceiling fitting" },
+    { "model": "216_01_1", "textures": ["216_03_1", "216_04_1", "216_05_1"], "radiance": 3.0, "note": "LAMP - desk lamp" },
+    { "model": "226_01_1", "textures": ["206_04_1", "208_02_1"], "radiance": 3.0, "note": "LAMP_CIELING - ceiling batten" },
+    { "model": "236_01_1", "textures": ["236_01_1"], "radiance": 3.0, "note": "LIGHTS_ROUND - round wall lamp" },
+    { "model": "316_01_1", "textures": ["316_01_1", "316_02_1", "316_04_1", "316_03_1"], "radiance": 3.0, "note": "LIGHT - wall/ceiling fitting" },
+    { "model": "324_01_1", "textures": ["324_01_1"], "radiance": 3.0, "note": "LIGHT - outdoor lamp over doors" },
+    { "model": "346_01_1", "textures": ["316_04_1"], "radiance": 3.0, "note": "HANGER_LIGHTS - hangar roof fitting" },
+
+    { "model": "318_01_1", "textures": ["316_04_1"], "radiance": 4.0, "note": "FLOODLIGHT - outdoor" },
+    { "model": "335_01_1", "textures": ["316_04_1", "316_03_1"], "radiance": 5.0, "note": "FLOODLIGHT - projector" },
+    { "model": "365_01_1", "textures": ["316_01_1", "316_04_1"], "radiance": 3.0, "note": "STREETLAMP" },
+    { "model": "455_06_1", "textures": ["455_04_1", "455_03_1_argb8888"], "radiance": 3.0, "note": "COMM_TOWER_LIGHT - mast head" },
+
+    { "model": "410_02_1", "textures": ["316_01_1"], "radiance": 3.0, "note": "GARAGE_INTERIOR - the ceiling strip modelled into the garage shell" },
+
+    { "model": "214_01_1", "textures": ["214_01_1"], "radiance": 1.0, "note": "SODA_MACHINE - lit advert panel, not a lamp" },
+    { "model": "252_01_1", "textures": ["252_01_1"], "radiance": 0.9, "note": "COMPUTER_MONITOR - screen, not a lamp" },
+
+    { "model": "206_01_1", "lamp": false, "note": "FILINGCABINET - an office cabinet skinned with the ceiling lamp's own page (206_04_1), which is the one thing shaped and skinned like a fitting that is not one" }
+  ]
+}

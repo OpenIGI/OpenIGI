@@ -15,19 +15,24 @@ public sealed record QualityLevel(string Name, IReadOnlyList<(string Variable, s
 }
 
 /// <summary>
-/// A coarse quality choice on the basic graphics page: one caption the player understands over several
-/// variables they should not have to.
+/// A coarse quality choice on the graphics page: one caption the player understands over several variables
+/// they should not have to.
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is the whole basic/advanced relationship in one type. Every variable a group names is still on the
-/// advanced page as its own row — nothing is hidden and nothing is duplicated in the settings file — and
-/// the group is a named point in the space those rows span. Choosing <c>Shadow Quality: High</c> writes the
-/// five shadow variables at once; opening the advanced page afterwards shows exactly what it wrote.
+/// A group is a named point in the space its variables span. Choosing <c>Shadow Quality: High</c> writes
+/// six shadow variables at once, and the point of the type is that six is the number it takes for the
+/// answer to mean anything — a shadow resolution without its cascade count and its distance is not a
+/// setting, it is a third of one.
 /// </para>
 /// <para>
-/// It follows that a group has to be able to say "none of my steps": the moment one of those five rows is
-/// moved by hand the group is between its steps, and reporting the step it used to be on would be a lie the
+/// Nothing is hidden by this and nothing is duplicated in the settings file: every variable a group names
+/// is still itself, still archived under its own name, and still reachable from the console — which is
+/// where somebody goes who wants one of the six on its own.
+/// </para>
+/// <para>
+/// It follows that a group has to be able to say "none of my steps": the moment one of those variables is
+/// set by hand the group is between its steps, and reporting the step it used to be on would be a lie the
 /// player can see through. That reading is <see cref="QualityBinding.Detect"/>'s, and is the same rule
 /// <c>GraphicsPresetRegistry</c> applies to the overall preset.
 /// </para>

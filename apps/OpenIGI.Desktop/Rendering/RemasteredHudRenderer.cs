@@ -23,10 +23,28 @@ internal sealed class RemasteredHudRenderer : IDisposable
     /// <summary>Leaves breathing room below the compact objective readout for the modern comms cards.</summary>
     public const float MessageTopInsetDesign = 116f;
 
+    /// <summary>The interaction badge's radius, in the marker's own design units.</summary>
+    /// <remarks>
+    /// Design units, not pixels: the marker stands in the level, so what fixes its size is
+    /// <see cref="MetresPerUnit"/> and how far away the player is, not the resolution.
+    /// </remarks>
+    public const float BadgeRadiusDesign = 21f;
+
+    /// <summary>How much of the world one of the marker's design units covers.</summary>
+    /// <remarks>
+    /// Sized so the badge is about eight centimetres across — a thing you could hang on a door handle.
+    /// Everything else in the marker is laid out against the badge, so this one number sets the whole
+    /// marker's presence in the level, and perspective does the rest: it grows as the player closes on
+    /// it and foreshortens when they look down at it, because it is standing there.
+    /// </remarks>
+    public const float MetresPerUnit = 0.0019f;
+
     private readonly IGraphicsDevice _device;
     private readonly IIgiLogger _logger;
     private UiFont? _body;
     private UiFont? _display;
+    private UiSurfaces? _surfaces;
+    private InteractionBadgeSprite? _badge;
     private bool _disposed;
 
     public RemasteredHudRenderer(IGraphicsDevice device, IIgiLogger logger)
@@ -58,6 +76,16 @@ internal sealed class RemasteredHudRenderer : IDisposable
             _display = UiFontLibrary.Exists(UiFontLibrary.Heading)
                 ? UiFontLibrary.Load(_device, UiFontLibrary.Heading, pixelHeight: 64f, FontAtlasKind.SignedDistanceField)
                 : null;
+
+            // The interface's antialiased corner atlas. Every curve this HUD draws over the world -- the
+            // interaction badge and its dial -- is a filled rounded rectangle sampled from it, because
+            // the painter rasterises triangles with no coverage and a circle built from them shows its
+            // facets at exactly the size a badge is drawn.
+            _surfaces = UiSurfaces.Create(_device);
+
+            // The interaction badge is a generated sprite rather than a stack of filled shapes; see
+            // InteractionBadgeSprite for why a marker that fades cannot be assembled at draw time.
+            _badge = InteractionBadgeSprite.Create(_device);
             return true;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException)
@@ -82,7 +110,10 @@ internal sealed class RemasteredHudRenderer : IDisposable
         DrawVitals(painter, context, body, snapshot.HealthFraction);
         DrawWeapon(painter, context, body, snapshot);
         DrawCrosshair(painter, context, snapshot.Weapon, snapshot.SniperScoped);
-        DrawInteraction(painter, context, body, snapshot.ActionSprite);
+        if (!snapshot.WorldInteractionPrompt)
+        {
+            DrawInteraction(painter, context, body, snapshot.ActionSprite);
+        }
     }
 
     /// <summary>Draws the remastered binocular optics overlay over the glass-lens post-process.</summary>
@@ -255,6 +286,322 @@ internal sealed class RemasteredHudRenderer : IDisposable
         painter.FillRect(new UiRect(frame.Right - weight, frame.Bottom - length, weight, length), colour);
     }
 
+    /// <summary>Draws the world-anchored interaction marker over the thing the player can use.</summary>
+    /// <param name="batch">The open sprite batch.</param>
+    /// <param name="view">The prompt to draw, from <see cref="InteractionPromptPresentation"/>.</param>
+    /// <param name="eye">The presented camera the frame was drawn from.</param>
+    /// <param name="horizontalTangent">The tangent of half the horizontal field of view.</param>
+    /// <param name="aspectRatio">The output's width over its height.</param>
+    /// <param name="screenWidth">The framebuffer width.</param>
+    /// <param name="screenHeight">The framebuffer height.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="batch"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// The marker is pinned to the object rather than printed across the middle of the screen, which is
+    /// what makes it read as a property of the door in front of the player instead of a caption about
+    /// it. The badge carries the key that is actually bound, the ring carries the hold, and the label
+    /// beside it names the action.
+    /// </para>
+    /// <para>
+    /// It is drawn on a <see cref="WorldCanvas"/> — a surface standing at the object, turned to the
+    /// player — rather than as an overlay at a projected point. That is what makes it behave like a
+    /// thing in the level: it grows as the player closes on it, foreshortens when they look down at it,
+    /// and holds its place on the door as they walk past, none of which a flat marker on the screen
+    /// does however carefully its size is scaled.
+    /// </para>
+    /// </remarks>
+    public void DrawInteractionPrompt(
+        SpriteBatch batch,
+        in InteractionPromptView view,
+        in Camera3D eye,
+        float horizontalTangent,
+        float aspectRatio,
+        int screenWidth,
+        int screenHeight)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        if (_body is not { } body || view.Opacity <= 0f)
+        {
+            return;
+        }
+
+        // The entry pop scales the canvas rather than the layout: one number, and every part of the
+        // marker grows into place together while the design keeps its proportions.
+        float pop = 0.62f + (0.38f * Math.Clamp(view.Pop, 0f, 1.15f));
+        var canvas = new WorldCanvas(
+            view.AnchorMetres,
+            eye,
+            horizontalTangent,
+            aspectRatio,
+            screenWidth,
+            screenHeight,
+            MetresPerUnit * pop);
+
+        byte alpha = (byte)(255f * Math.Clamp(view.Opacity, 0f, 1f));
+        float radius = BadgeRadiusDesign;
+        float ring = 2.4f;
+
+        bool wide = InteractionPromptPresentation.IsWideBadge(view.KeyLabel);
+        float keySize = wide ? 17f : 22f;
+        UiFont keyFont = _display ?? body;
+        float keyWidth = keyFont.MeasureWidth(view.KeyLabel, keySize);
+
+        // A key cap is as wide as its legend plus a cap's worth of shoulder on each side, so SPACE and
+        // ENTER keep the same breathing room a single letter has inside the circle.
+        float halfWidth = wide ? MathF.Max(radius, (keyWidth * 0.5f) + (radius * 0.8f)) : radius;
+
+        // Shadow, then the dial, then the badge over both: the badge's own face is what gives the dial
+        // its clean inner edge, and drawing the shadow last would darken the dial it sits inside.
+        DrawCanvasShadow(canvas, batch, halfWidth, radius, ring * 2.6f, alpha);
+        DrawCanvasProgress(canvas, batch, halfWidth, radius, ring, wide, view.Progress, alpha);
+        _badge?.Draw(canvas, batch, 0f, 0f, halfWidth, radius, Bgra32.FromRgba(255, 255, 255, alpha));
+
+        // The key is centred on its own ink, not on its line box: a capital measured by the font's
+        // ascent sits visibly high inside a circle, which is most of what makes a badge look homemade.
+        canvas.DrawText(
+            batch,
+            keyFont,
+            view.KeyLabel,
+            -keyWidth * 0.5f,
+            -InkCentre(keyFont, view.KeyLabel, keySize) - keyFont.Ascent(keySize),
+            keySize,
+            Text.WithAlpha(alpha),
+            OutlineOnly(keyFont, 120, 0.1f),
+            keyFont.Kind == FontAtlasKind.SignedDistanceField);
+
+        DrawPromptLabel(canvas, batch, body, view, halfWidth, alpha, screenWidth, screenHeight);
+    }
+
+    /// <summary>Lays the badge's shadow on the canvas, under everything else.</summary>
+    private void DrawCanvasShadow(
+        in WorldCanvas canvas,
+        SpriteBatch batch,
+        float halfWidth,
+        float radius,
+        float spread,
+        byte alpha)
+    {
+        if (_surfaces is not { } surfaces)
+        {
+            return;
+        }
+
+        canvas.DrawSlice(
+            batch, surfaces.Shadow, 0f, 0f, halfWidth + spread, radius + spread,
+            Bgra32.FromRgba(0, 0, 0, (byte)(118f * alpha / 255f)));
+    }
+
+    /// <summary>Draws the hold as a dial around a round badge, or a bar under a wide one.</summary>
+    /// <remarks>
+    /// The dial is a whole disc that the badge is then drawn over, which is what gives its inner edge
+    /// the same smooth silhouette as its outer one. The filled arc between them is the one part of the
+    /// marker that no rectangle describes, so it is built from quads and softened by hand.
+    /// </remarks>
+    private void DrawCanvasProgress(
+        in WorldCanvas canvas,
+        SpriteBatch batch,
+        float halfWidth,
+        float radius,
+        float ring,
+        bool wide,
+        float? progress,
+        byte alpha)
+    {
+        if (progress is not { } value || _surfaces is not { } surfaces)
+        {
+            return;
+        }
+
+        float fraction = Math.Clamp(value, 0f, 1f);
+        float band = MathF.Max(1.8f, ring * 1.3f);
+        float scale = alpha / 255f;
+        if (!wide)
+        {
+            float inner = (radius * InteractionBadgeSprite.OuterScale) + (ring * 0.5f);
+            float outer = inner + band;
+            canvas.DrawSlice(
+                batch, surfaces.Rounded, 0f, 0f, outer + 1f, outer + 1f,
+                Bgra32.FromRgba(0, 0, 0, (byte)(104f * scale)));
+            canvas.DrawSlice(batch, surfaces.Rounded, 0f, 0f, outer, outer, Text.WithAlpha((byte)(42f * scale)));
+            if (fraction <= 0f)
+            {
+                return;
+            }
+
+            float track = (inner + outer) * 0.5f;
+            float sweep = MathF.Tau * fraction;
+            canvas.DrawArc(batch, track, band, -MathF.PI * 0.5f, sweep, Accent.WithAlpha(alpha));
+
+            // A round cap at each end, so a part-filled dial does not end in two cut edges.
+            canvas.DrawSlice(batch, surfaces.Rounded, 0f, -track, band * 0.5f, band * 0.5f, Accent.WithAlpha(alpha));
+            canvas.DrawSlice(
+                batch,
+                surfaces.Rounded,
+                MathF.Cos(sweep - (MathF.PI * 0.5f)) * track,
+                MathF.Sin(sweep - (MathF.PI * 0.5f)) * track,
+                band * 0.5f,
+                band * 0.5f,
+                Accent.WithAlpha(alpha));
+            return;
+        }
+
+        float barRadius = band * 0.75f;
+        float barY = radius + (ring * 2.8f) + barRadius;
+        canvas.DrawSlice(
+            batch, surfaces.Rounded, 0f, barY, halfWidth + 1f, barRadius + 1f,
+            Bgra32.FromRgba(0, 0, 0, (byte)(165f * scale)));
+        canvas.DrawSlice(
+            batch, surfaces.Rounded, 0f, barY, halfWidth - (barRadius * 0.35f), barRadius * 0.65f,
+            Text.WithAlpha((byte)(52f * scale)));
+        if (fraction <= 0f)
+        {
+            return;
+        }
+
+        float filled = MathF.Max(barRadius, halfWidth * fraction);
+        canvas.DrawSlice(
+            batch, surfaces.Rounded, -halfWidth + filled, barY, filled, barRadius, Accent.WithAlpha(alpha));
+    }
+
+    /// <summary>Draws the action name and its qualifier beside the badge, flipping sides near an edge.</summary>
+    private void DrawPromptLabel(
+        in WorldCanvas canvas,
+        SpriteBatch batch,
+        UiFont body,
+        in InteractionPromptView view,
+        float halfWidth,
+        byte alpha,
+        int screenWidth,
+        int screenHeight)
+    {
+        if (view.Title.Length == 0)
+        {
+            return;
+        }
+
+        // Both lines are set in the distance-field face where there is one. The body atlas is
+        // rasterised at forty-eight pixels and a qualifier drawn at a fraction of that minifies it,
+        // which crawls along the letterforms; a distance field is exact at any size, and standing in
+        // the level that difference is the whole of whether the marker looks finished.
+        UiFont titleFont = _display ?? body;
+        UiFont detailFont = _display ?? body;
+        float titleSize = 23f;
+        float detailSize = 15f;
+        bool hasDetail = view.Detail.Length > 0;
+
+        // Measured and placed on ink, so the title's own middle lands on the badge's middle whether or
+        // not there is a second line under it.
+        float titleInk = InkHeight(titleFont, view.Title, titleSize);
+        float detailInk = hasDetail ? InkHeight(detailFont, view.Detail, detailSize) : 0f;
+        float gap = hasDetail ? 7f : 0f;
+        float blockTop = -(titleInk + gap + detailInk) * 0.5f;
+
+        float titleWidth = titleFont.MeasureWidth(view.Title, titleSize);
+        float detailWidth = hasDetail ? detailFont.MeasureWidth(view.Detail, detailSize) : 0f;
+        float blockWidth = MathF.Max(titleWidth, detailWidth);
+        float margin = halfWidth + 16f;
+
+        // Beside the badge, on whichever side has room. Where the far end of the name would land off
+        // the frame it goes the other way instead: a marker close to the edge of the screen would
+        // otherwise push its own name past it at exactly the moment the player needs to read it.
+        var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
+        float x = margin;
+        if (canvas.TryProject(x + blockWidth, 0f, out float endX, out _)
+            && endX > context.SafeRect.Right)
+        {
+            x = -margin - blockWidth;
+        }
+
+        DrawCanvasWorldLabel(
+            canvas, batch, titleFont, view.Title, x, InkTop(titleFont, view.Title, titleSize, blockTop),
+            titleSize, Text.WithAlpha(alpha));
+        if (hasDetail)
+        {
+            // Brighter than the HUD's ordinary muted grey: this line is read over sunlit ground rather
+            // than over the HUD's own dark chrome, and the readable grey there is not the readable grey
+            // in a corner of the screen.
+            float detailTop = InkTop(detailFont, view.Detail, detailSize, blockTop + titleInk + gap);
+            DrawCanvasWorldLabel(
+                canvas, batch, detailFont, view.Detail, x, detailTop, detailSize,
+                Bgra32.FromRgba(214, 223, 231, alpha));
+        }
+    }
+
+    /// <summary>Sets a label on the canvas, shadowed and outlined so it survives any background.</summary>
+    private static void DrawCanvasWorldLabel(
+        in WorldCanvas canvas,
+        SpriteBatch batch,
+        UiFont font,
+        string text,
+        float x,
+        float y,
+        float size,
+        Bgra32 colour)
+    {
+        // A cast shadow and a tight outline, deliberately kept thin: a heavy outline on a
+        // distance-field face fattens the letterforms until the name looks printed on the badge rather
+        // than set beside it. The shadow is offset within the canvas, so it falls on the plane the
+        // text stands on and turns with it.
+        byte shadowAlpha = (byte)(colour.A * 0.42f);
+        bool sdf = font.Kind == FontAtlasKind.SignedDistanceField;
+        canvas.DrawText(
+            batch, font, text, x + (size * 0.05f), y + (size * 0.07f), size,
+            Bgra32.FromRgba(0, 0, 0, shadowAlpha), OutlineOnly(font, (byte)(shadowAlpha * 0.8f), 0.16f), sdf);
+        canvas.DrawText(
+            batch, font, text, x, y, size, colour, OutlineOnly(font, (byte)(colour.A * 0.72f), 0.15f), sdf);
+    }
+
+    /// <summary>A distance-field face's plain shading with an outline, at the atlas's own range.</summary>
+    /// <remarks>
+    /// The range has to be set here. <see cref="UiPainter"/> fills it in from the font on the way past;
+    /// a quad handed straight to the batch carries whatever the caller put in it.
+    /// </remarks>
+    private static SdfTextParams OutlineOnly(UiFont font, byte outlineAlpha, float thickness) =>
+        SdfTextParams.Plain(font.Atlas.SdfPadding)
+            .WithOutline(Bgra32.FromRgba(0, 0, 0, outlineAlpha), thickness);
+
+    /// <summary>How far a run of text's inked middle sits below its baseline, in canvas units.</summary>
+    private static float InkCentre(UiFont font, ReadOnlySpan<char> text, float size)
+    {
+        (float top, float bottom) = Ink(font, text, size);
+        return (top + bottom) * 0.5f;
+    }
+
+    /// <summary>The height of a run of text's inked box, ignoring the empty space in its line.</summary>
+    private static float InkHeight(UiFont font, ReadOnlySpan<char> text, float size)
+    {
+        (float top, float bottom) = Ink(font, text, size);
+        return MathF.Max(0f, bottom - top);
+    }
+
+    /// <summary>The top-left Y that puts a run of text's ink at <paramref name="inkTop"/>.</summary>
+    private static float InkTop(UiFont font, ReadOnlySpan<char> text, float size, float inkTop)
+    {
+        (float top, _) = Ink(font, text, size);
+        return inkTop - top - font.Ascent(size);
+    }
+
+    /// <summary>The inked box of a run of text, relative to its baseline.</summary>
+    private static (float Top, float Bottom) Ink(UiFont font, ReadOnlySpan<char> text, float size)
+    {
+        float scale = font.ScaleFor(size);
+        float top = float.PositiveInfinity;
+        float bottom = float.NegativeInfinity;
+        foreach (char character in text)
+        {
+            GlyphInfo glyph = font.GetGlyph(character);
+            if (!glyph.HasBitmap)
+            {
+                continue;
+            }
+
+            top = MathF.Min(top, glyph.OffsetY * scale);
+            bottom = MathF.Max(bottom, (glyph.OffsetY + glyph.Height) * scale);
+        }
+
+        return float.IsFinite(top) ? (top, bottom) : (-font.Ascent(size), 0f);
+    }
+
     /// <summary>Draws the modern presentation of the same timed state progress the retail HUD exposes.</summary>
     public void DrawInteractionProgress(SpriteBatch batch, float progress, int screenWidth, int screenHeight)
     {
@@ -289,6 +636,10 @@ internal sealed class RemasteredHudRenderer : IDisposable
         _body = null;
         _display?.Dispose();
         _display = null;
+        _surfaces?.Dispose();
+        _surfaces = null;
+        _badge?.Dispose();
+        _badge = null;
     }
 
     private static void DrawObjectives(
@@ -487,6 +838,9 @@ internal sealed class RemasteredHudRenderer : IDisposable
             return;
         }
 
+        // Dead centre, in every view. Third person does not move it: the shot converges on what the
+        // centre of the screen is over (PlayerCamera.AimConvergencePointUnits), rather than the cross
+        // chasing a shot that leaves an eye the camera is no longer sitting at.
         float centreX = context.SafeRect.X + (context.SafeRect.Width * 0.5f);
         float centreY = context.SafeRect.Y + (context.SafeRect.Height * 0.5f);
         float gap = context.Px(7f);
@@ -526,6 +880,9 @@ internal sealed class RemasteredHudRenderer : IDisposable
         }
     }
 
+    /// <summary>The badge's face. Opaque, so each layer drawn over it composites predictably.</summary>
+    private static Bgra32 BadgeFace => Bgra32.FromRgb(13, 16, 21);
+
     private static Bgra32 Text => Bgra32.FromRgb(245, 248, 250);
     private static Bgra32 Muted => Bgra32.FromRgb(202, 213, 220);
     private static Bgra32 Accent => Bgra32.FromRgb(240, 176, 84);
@@ -542,4 +899,5 @@ internal readonly record struct RemasteredHudSnapshot(
     HumanWeaponState WeaponState,
     string? ActionSprite,
     IReadOnlyList<MissionObjective> Objectives,
-    bool SniperScoped);
+    bool SniperScoped,
+    bool WorldInteractionPrompt);

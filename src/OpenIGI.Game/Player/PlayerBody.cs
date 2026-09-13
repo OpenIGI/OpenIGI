@@ -8,7 +8,7 @@ namespace OpenIGI.Game.Player;
 /// <param name="Strafe">Sideways intent, −1 to 1.</param>
 /// <param name="YawDelta">How far to turn this tick, in radians.</param>
 /// <param name="PitchDelta">How far to look up or down this tick, in radians.</param>
-/// <param name="Run">Whether the run modifier is held.</param>
+/// <param name="Run">Whether the latched walk/run toggle selects running.</param>
 /// <param name="Crouch">Whether the crouch modifier is held.</param>
 /// <param name="Jump">Whether jump was pressed this tick — the rising edge, not the level.</param>
 public readonly record struct PlayerCommand(
@@ -43,6 +43,9 @@ public sealed class PlayerBody
 {
     private float? _pendingLandingVelocityZ;
     private Vector3f? _pendingWalkOffVelocity;
+
+    /// <summary>Last tick's world-space root step — what <c>Human+1312</c> holds when a state entry reads it.</summary>
+    private Vector3f _previousStep;
     private Action<HumanFallImpact>? _fallImpactSink;
 
     /// <summary>How high the eye sits above the feet while standing, in world units.</summary>
@@ -200,21 +203,39 @@ public sealed class PlayerBody
     /// </remarks>
     public Vector3f SlopeSlide { get; private set; }
 
+    /// <summary>Gets the shove taken from gunfire and blasts, in units per tick.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Its own accumulator, not the slope's.</b> <c>0x4614B0</c> damps and adds two separate triples
+    /// into the same move — the slope slide at <c>Human+1660</c>, and this one at <c>Human+1648</c>.
+    /// They cannot share storage, because the slide is <i>rewritten from scratch every tick</i>: the
+    /// bands over 60° assign it outright and anything under 45° — which is most ground a player stands
+    /// on — zeroes it. A shove folded in there would be erased on the tick after it landed instead of
+    /// decaying over the twenty-odd ticks 0.9 a tick buys it.
+    /// </para>
+    /// <para>
+    /// Nothing rebuilds this one; it is only ever added to, damped, and cleared outright by the events
+    /// that zero all six velocity words — the landing at <c>0x40BE40</c> and the ladder mount at
+    /// <c>0x4113E0</c>.
+    /// </para>
+    /// </remarks>
+    public Vector3f HitShove { get; private set; }
+
     /// <summary>The horizontal shove one connecting round gives the player, in units per tick.</summary>
     /// <remarks>
     /// <c>189.62962</c> — exactly <b>5 km/h</b> on the 37.9259 units-per-tick-per-km/h grid. The
     /// player's hit handler (<c>0x412440</c>) normalises the round's travel direction and adds
-    /// <c>x·189.62962</c> and <c>y·189.62962</c> into <c>Human+1648</c>/<c>+1652</c> — the same
-    /// damped accumulator the slope slide runs on, so the shove decays by 0.9 a tick on its own.
+    /// <c>x·189.62962</c> and <c>y·189.62962</c> into <c>Human+1648</c>/<c>+1652</c>, which decays by
+    /// 0.9 a tick on its own.
     /// </remarks>
     public const float HitShoveUnitsPerTick = 189.62962f;
 
     /// <summary>Shoves the body horizontally — the per-hit knock of the player's hit handler.</summary>
-    /// <param name="x">The X to add to the slide accumulator, in units per tick.</param>
+    /// <param name="x">The X to add to the shove accumulator, in units per tick.</param>
     /// <param name="y">The Y to add.</param>
     /// <remarks>See <see cref="HitShoveUnitsPerTick"/>. Z is never written — the original adds only X and Y.</remarks>
     public void AddHitShove(float x, float y) =>
-        SlopeSlide = new Vector3f(SlopeSlide.X + x, SlopeSlide.Y + y, SlopeSlide.Z);
+        HitShove = new Vector3f(HitShove.X + x, HitShove.Y + y, HitShove.Z);
 
     /// <summary>Gets the normal of the ground under the feet, or <see langword="null"/> when airborne.</summary>
     public Vector3f? GroundNormal { get; private set; }
@@ -243,6 +264,8 @@ public sealed class PlayerBody
         Velocity = default;
         InheritedVelocity = default;
         SlopeSlide = default;
+        HitShove = default;
+        _previousStep = default;
         GroundNormal = null;
         IsGrounded = false;
         TouchedWall = false;
@@ -288,6 +311,8 @@ public sealed class PlayerBody
         Velocity = default;
         InheritedVelocity = default;
         SlopeSlide = default;
+        HitShove = default;
+        _previousStep = default;
         TouchedWall = false;
         if (placeOnGround)
         {
@@ -337,26 +362,38 @@ public sealed class PlayerBody
         // The move is velocity PLUS the animation's step, always - 0x4614B0 adds them rather than
         // choosing between them. On the ground the velocity is zero and the step carries; in the air
         // the falling animation covers no ground and the velocity carries.
+        // 0x4614B0 damps each accumulator and adds it to the motion in turn: the slope slide first,
+        // then the shove. Both are horizontal in practice; the slide never writes Z and the hit handler
+        // never writes Z either.
         Vector3d next = new(
-            Position.X + step.X + SlopeSlide.X,
-            Position.Y + step.Y + SlopeSlide.Y,
-            Position.Z + SlopeSlide.Z);
+            Position.X + step.X + SlopeSlide.X + HitShove.X,
+            Position.Y + step.Y + SlopeSlide.Y + HitShove.Y,
+            Position.Z + SlopeSlide.Z + HitShove.Z);
 
         bool tookOff = false;
         TookOffThisTick = false;
 
-        if (IsGrounded && command.Jump)
+        // Crouching blocks the take-off outright rather than merely changing the pose: the velocity in
+        // 0x40BA70 is state 28's entry, and no crouched state can transition into 28.
+        if (IsGrounded && command.Jump && !command.Crouch)
         {
             // A jump takes the direction you are ALREADY moving, normalised, at a fixed horizontal
             // speed - it does not read the keys again. So the arc is set by the step you were mid-way
             // through, and the air control below can only lean it.
+            //
+            // It is the PREVIOUS tick's step, and that is not a detail. HumanPlayer_Update runs the
+            // locomotion state machine at 0x4109E7 and only samples the animation's root motion
+            // afterwards, at 0x410B7E -- so when state 28's entry (0x40BA70) reads Human+1312/+1316 it
+            // is reading what last tick left there, which is the run or walk step. Reading THIS tick's
+            // step instead would read the jump clip's own root motion, which covers no ground, and a
+            // running jump would stop dead and hop on the spot.
             float horizontalX = 0f;
             float horizontalY = 0f;
-            float length = MathF.Sqrt((step.X * step.X) + (step.Y * step.Y));
+            float length = MathF.Sqrt((_previousStep.X * _previousStep.X) + (_previousStep.Y * _previousStep.Y));
             if (length > 0f)
             {
-                horizontalX = step.X / length * (float)JumpHorizontalSpeed;
-                horizontalY = step.Y / length * (float)JumpHorizontalSpeed;
+                horizontalX = _previousStep.X / length * (float)JumpHorizontalSpeed;
+                horizontalY = _previousStep.Y / length * (float)JumpHorizontalSpeed;
             }
 
             // The inherited velocity is added and then consumed - 0x4632D0 zeroes it in the same breath
@@ -418,9 +455,19 @@ public sealed class PlayerBody
         bool wasAirborne = !IsGrounded;
         float landingVelocityZ = Velocity.Z;
         Settle(ref next, terrain, Position);
-        if (wasAirborne && IsGrounded && landingVelocityZ < 0f)
+        if (wasAirborne && IsGrounded)
         {
-            _pendingLandingVelocityZ = landingVelocityZ;
+            // Reaching the ground is where 0x40BE40 zeroes all six velocity words -- Human+1636 through
+            // +1656 -- rather than only the vertical: you arrive stopped, and a shove you were still
+            // carrying dies with the fall. It is the transition that clears them, not standing there,
+            // so a shove taken with both feet down keeps decaying on its own.
+            Velocity = default;
+            HitShove = default;
+
+            if (landingVelocityZ < 0f)
+            {
+                _pendingLandingVelocityZ = landingVelocityZ;
+            }
         }
         else if (!wasAirborne && !IsGrounded)
         {
@@ -439,6 +486,15 @@ public sealed class PlayerBody
         // pressing anything.
         SlopeSlide = HumanSlopeSlide.Damp(
             HumanSlopeSlide.Accumulate(SlopeSlide, IsGrounded ? GroundNormal : null));
+
+        // The shove is damped by the same 0.9 in the same function, but it is never rebuilt: what a
+        // bullet put in stays there, decaying, until a landing or a ladder clears it.
+        HitShove = HumanSlopeSlide.Damp(HitShove);
+
+        // 0x410B7E overwrites Human+1312 with this tick's step once the state machine has had its look
+        // at the previous one. Keep the same one-tick lag so a state entry next tick reads what the
+        // original would have read.
+        _previousStep = step;
 
         Position = next;
         DamageFlash.Tick();
@@ -474,8 +530,8 @@ public sealed class PlayerBody
     /// <summary>Turns this tick's intent into the locomotion state the original would be in.</summary>
     /// <remarks>
     /// <para>
-    /// Airborne first, then the stance, then the four movement bits, and
-    /// <see cref="HumanLocomotionStates.ForDirection"/> turns them into a state.
+    /// Airborne first, then the four movement bits. A running command selects states 1–8 and a walking
+    /// command selects 9–16; crouch bypasses both gait sets for states 19–27.
     /// </para>
     /// <para>
     /// <b>Correction.</b> This used to take the first movement bit that matched, on the reading that
@@ -494,9 +550,9 @@ public sealed class PlayerBody
 
         HumanMotionState flags = HumanMotionState.OnGround;
 
-        if (command.Crouch)
+        if (!command.Run)
         {
-            flags |= HumanMotionState.Crouched;
+            flags |= HumanMotionState.Walking;
         }
 
         if (command.Forward > 0f)
@@ -517,7 +573,19 @@ public sealed class PlayerBody
             flags |= HumanMotionState.MoveLeft;
         }
 
-        return HumanLocomotionStates.ForDirection(flags);
+        int state = command.Crouch
+            ? HumanLocomotionStates.CrouchingForDirection(flags)
+            : HumanLocomotionStates.ForDirection(flags);
+
+        // Every standing state reaches 28 on the jump edge within the tick, moving or not. State 0
+        // tests its four directions first, but the movement state it hands off to tests the jump edge
+        // as its very next branch (0x408AA0, state 1: falling, the two deaths, the run/walk toggle,
+        // then the jump), and a transition calls its target straight away -- so the tick still ends in
+        // 28. No crouched state has a jump branch at all: 19 and 20 through 27 never name it, which is
+        // why a crouched player cannot jump in the original.
+        return command.Jump && !command.Crouch
+            ? HumanLocomotionGraph.Jump
+            : state;
     }
 
     /// <summary>The body's orientation about the vertical, as the root-motion rotation uses it.</summary>
@@ -618,13 +686,21 @@ public sealed class PlayerBody
             return;
         }
 
-        double stepDown = IsGrounded
-            ? HumanGroundQuery.GroundedStepDownInUnits
-            : HumanGroundQuery.AirborneStepDownInUnits;
+        // 0x4614B0 chooses the budget it hands the ground query from the slide it computed at the top of
+        // the same tick: 8192 while the slope is steep enough to slide on, 2048 merely standing, 0 in
+        // the air. Reading the accumulator here reads the same thing, because it still holds what last
+        // tick built from last tick's normal -- which is the normal the original is looking at too.
+        // Without the sliding case a body on a steep slope detaches and re-lands every tick.
+        // Grounded is part of the test, not a separate one: the original guards the whole slide block
+        // with `(flags & 4) != 0`, so the tick a jump clears the ground bit the budget drops to zero
+        // and the take-off is not swallowed by the 2 m the slope was being given.
+        bool sliding = IsGrounded && (SlopeSlide.X != 0f || SlopeSlide.Y != 0f);
+        double stepDown = HumanGroundQuery.StepDownBudget(IsGrounded, sliding);
 
         if (position.Z <= height + stepDown)
         {
             position = new Vector3d(position.X, position.Y, height);
+
             Velocity = new Vector3f(Velocity.X, Velocity.Y, 0f);
             IsGrounded = true;
             GroundNormal = normal;

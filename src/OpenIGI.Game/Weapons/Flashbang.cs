@@ -5,24 +5,28 @@ namespace OpenIGI.Game.Weapons;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>A flashbang only affects the player.</b> The blast broadcasts to every human, but of the classes
-/// that register for the message only <c>HumanPlayer</c> supplies a handler — the four AI soldier
-/// classes all register the empty one. So a flashbang is a hazard to the player and nothing else, and
-/// throwing one into a room full of guards does not blind them.
+/// <b>This class models the player's whiteout only.</b> IGI1 also broadcasts a separate
+/// <c>AIEVENT_FLASHBANG</c> (type 19) to nearby guards; that event drives their scripted panic/stun
+/// response, but it does not write the player's whiteout fields and is delivered by the AI renderer.
+/// Keeping the two handlers separate prevents a distant world smoke task from flashing the player.
 /// </para>
 /// <para>
 /// The effect is two independent tests against two different distances, and both can apply at once.
+/// </para>
+/// <para>
+/// The player callback is distance-only. In particular, <c>0x00413090</c> compares the event position
+/// with the player's eye and does not perform a world line-of-sight trace.
 /// </para>
 /// </remarks>
 public static class Flashbang
 {
     /// <summary>How far the flash itself is seen, regardless of the grenade's radius.</summary>
     /// <remarks>
-    /// <c>102400</c> world units — <b>25 metres</b>, and hardcoded. It has nothing to do with the
+    /// <c>100000</c> world units — <b>100000 engine units</b>, and hardcoded. It has nothing to do with the
     /// grenade's own explosion radius, so the flash reaches five times further than the blast does at
     /// the default tuning.
     /// </remarks>
-    public const float VisibleRangeUnits = 102400f;
+    public const float VisibleRangeUnits = 100000f;
 
     /// <summary>The strength written when the player is inside <see cref="VisibleRangeUnits"/>.</summary>
     public const float VisibleStrength = 1f;
@@ -37,7 +41,7 @@ public static class Flashbang
     /// view position rather than the body's.
     /// </param>
     /// <returns><see langword="true"/> when the flash registers.</returns>
-    /// <remarks>The test is strictly less than, so a player at exactly 25 metres is unaffected.</remarks>
+    /// <remarks>The test is strictly less than, so a player at exactly 100000 units is unaffected.</remarks>
     public static bool IsVisible(float distanceInUnits) => distanceInUnits < VisibleRangeUnits;
 
     /// <summary>Whether the player is inside the flash's own radius.</summary>
@@ -51,7 +55,7 @@ public static class Flashbang
     public static bool IsClose(float distanceInUnits, float radiusInUnits) =>
         distanceInUnits - radiusInUnits < 0f;
 
-    /// <summary>Both effects a flash has on the player at a distance.</summary>
+    /// <summary>Both effects the native player handler writes at a distance.</summary>
     /// <param name="distanceInUnits">Distance from the flash to the player's eye.</param>
     /// <param name="radiusInUnits">The radius the grenade passed.</param>
     /// <returns>
@@ -61,4 +65,5 @@ public static class Flashbang
     public static (float Visible, float Close) Effect(float distanceInUnits, float radiusInUnits) =>
         (IsVisible(distanceInUnits) ? VisibleStrength : 0f,
          IsClose(distanceInUnits, radiusInUnits) ? CloseStrength : 0f);
+
 }

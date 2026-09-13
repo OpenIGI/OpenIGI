@@ -85,6 +85,26 @@ public sealed record PlacedDoor(
             (Position.Z / WorldScene.UnitsPerMetre) + offset.Z);
     }
 
+    /// <summary>Gets the door's pose as this frame presents it, between its last two ticks.</summary>
+    /// <param name="tickFraction">How far the frame stands between the two simulation states.</param>
+    /// <param name="smooth">Whether to interpolate at all; <see langword="false"/> takes the newer state.</param>
+    /// <returns>The position in metres and the swing orientation.</returns>
+    /// <remarks>
+    /// The door moves on the thirty-hertz tick and is drawn far more often than that, so everything
+    /// that has to sit on the door — its mesh, and any mark placed on it — has to ask for the same
+    /// blended pose. Reading the tick state directly is what makes a thing on a moving door judder
+    /// while the door itself glides.
+    /// </remarks>
+    public (Vector3d Position, Matrix3f Orientation) PresentedPose(float tickFraction, bool smooth)
+    {
+        float alpha = smooth ? Math.Clamp(tickFraction, 0f, 1f) : 1f;
+        float slide = State.PreviousSlideFraction
+            + ((State.SlideFraction - State.PreviousSlideFraction) * alpha);
+        float angle = State.PreviousAngleDegrees
+            + ((State.AngleDegrees - State.PreviousAngleDegrees) * alpha);
+        return (DrawPositionAt(slide), DrawOrientationAt(angle));
+    }
+
     /// <summary>Gets the door's current drawable swing orientation.</summary>
     public Matrix3f DrawOrientation =>
         DrawOrientationAt(State.AngleDegrees);
@@ -109,6 +129,14 @@ public sealed record PlacedDoor(
 public sealed class DoorRegistry
 {
     private readonly List<PlacedDoor> _doors = [];
+
+    /// <summary>The doors by their task, for the per-placement draw query.</summary>
+    /// <remarks>
+    /// The renderer asks every placement in the level whether it is a door, every frame; a linear scan
+    /// there was a placements-times-doors product that showed in the profile.
+    /// </remarks>
+    private readonly Dictionary<GameTask, PlacedDoor> _doorsByTask = new(ReferenceEqualityComparer.Instance);
+
     private Action<PlacedDoor, DoorSoundEvent>? _sounds;
     private Func<Vector3d, Vector3d, bool>? _doorwayBlocked;
 
@@ -154,7 +182,7 @@ public sealed class DoorRegistry
                 };
             }
 
-            registry._doors.Add(new PlacedDoor(
+            PlacedDoor door = new(
                 declared,
                 position,
                 orientation,
@@ -164,7 +192,9 @@ public sealed class DoorRegistry
                 new DoorState(maxAngle, openTime <= 0f ? 1f : openTime, slides),
                 ReadSound(declared, "Open sound"),
                 ReadSound(declared, "Close sound"),
-                ReadSound(declared, "Move sound")));
+                ReadSound(declared, "Move sound"));
+            registry._doors.Add(door);
+            registry._doorsByTask[declared] = door;
         }
 
         foreach (GameTask child in task.Children)
@@ -297,20 +327,12 @@ public sealed class DoorRegistry
         out Vector3d position,
         out Matrix3f orientation)
     {
-        foreach (PlacedDoor door in _doors)
+        if (_doorsByTask.TryGetValue(task, out PlacedDoor? door))
         {
-            if (ReferenceEquals(door.Task, task))
-            {
-                float alpha = smooth ? Math.Clamp(tickFraction, 0f, 1f) : 1f;
-                float slide = door.State.PreviousSlideFraction
-                    + ((door.State.SlideFraction - door.State.PreviousSlideFraction) * alpha);
-                float angle = door.State.PreviousAngleDegrees
-                    + ((door.State.AngleDegrees - door.State.PreviousAngleDegrees) * alpha);
-                position = door.DrawPositionAt(slide);
-                orientation = door.DrawOrientationAt(angle);
-                return true;
-            }
+            (position, orientation) = door.PresentedPose(tickFraction, smooth);
+            return true;
         }
+
         position = default;
         orientation = default;
         return false;

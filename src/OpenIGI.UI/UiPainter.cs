@@ -148,41 +148,23 @@ public sealed class UiPainter
         float radius,
         BlendMode blend = BlendMode.AlphaBlend)
     {
-        float r = MathF.Min(radius, MathF.Min(rect.Width, rect.Height) * 0.5f);
-        if (!slice.IsValid || r <= 0.5f || rect.IsEmpty)
+        if (!slice.IsValid || radius <= 0.5f || rect.IsEmpty)
         {
             FillRect(rect, color, blend);
             return;
         }
 
-        float l = rect.X;
-        float t = rect.Y;
-        float rt = rect.Right;
-        float b = rect.Bottom;
-
-        DrawSprite(slice.Texture, new UiRect(l, t, r, r), slice.Corner(false, false), color, blend);
-        DrawSprite(slice.Texture, new UiRect(rt - r, t, r, r), slice.Corner(true, false), color, blend);
-        DrawSprite(slice.Texture, new UiRect(l, b - r, r, r), slice.Corner(false, true), color, blend);
-        DrawSprite(slice.Texture, new UiRect(rt - r, b - r, r, r), slice.Corner(true, true), color, blend);
-
-        float innerWidth = MathF.Max(0f, rect.Width - (r * 2f));
-        float innerHeight = MathF.Max(0f, rect.Height - (r * 2f));
-
-        if (innerWidth > 0f)
+        Span<NineSlicePiece> pieces = stackalloc NineSlicePiece[NineSlice.MaxPieces];
+        int count = slice.GetPieces(rect, radius, pieces);
+        if (count == 0)
         {
-            DrawSprite(slice.Texture, new UiRect(l + r, t, innerWidth, r), slice.HorizontalEdge(false), color, blend);
-            DrawSprite(slice.Texture, new UiRect(l + r, b - r, innerWidth, r), slice.HorizontalEdge(true), color, blend);
+            FillRect(rect, color, blend);
+            return;
         }
 
-        if (innerHeight > 0f)
+        for (int piece = 0; piece < count; piece++)
         {
-            DrawSprite(slice.Texture, new UiRect(l, t + r, r, innerHeight), slice.VerticalEdge(false), color, blend);
-            DrawSprite(slice.Texture, new UiRect(rt - r, t + r, r, innerHeight), slice.VerticalEdge(true), color, blend);
-        }
-
-        if (innerWidth > 0f && innerHeight > 0f)
-        {
-            FillRect(new UiRect(l + r, t + r, innerWidth, innerHeight), color, blend);
+            DrawSprite(slice.Texture, pieces[piece].Destination, pieces[piece].Source, color, blend);
         }
     }
 
@@ -404,47 +386,29 @@ public sealed class UiPainter
             throw new InvalidOperationException("This font was built for measurement only and cannot draw.");
         }
 
-        float scale = font.ScaleFor(sizePx);
-        float penX = topLeft.X;
-        float baseline = topLeft.Y + font.Ascent(sizePx);
         UiRect clip = Clip;
-
-        foreach (char c in text)
+        var run = new GlyphRun(font, text, sizePx, topLeft);
+        while (run.MoveNext())
         {
-            if (c == '\n')
+            UiRect dest = run.Current.Destination;
+            RectF source = run.Current.Source;
+            if (!TryClip(clip, ref dest, ref source))
             {
-                penX = topLeft.X;
-                baseline += font.LineHeight(sizePx);
                 continue;
             }
 
-            GlyphInfo glyph = font.GetGlyph(c);
-            if (glyph.HasBitmap)
+            Bgra32 faded = Fade(color);
+            if (useSdf)
             {
-                UiRect dest = new(
-                    penX + (glyph.OffsetX * scale),
-                    baseline + (glyph.OffsetY * scale),
-                    glyph.Width * scale,
-                    glyph.Height * scale);
-                RectF source = glyph.SourceRect(font.Atlas.Width, font.Atlas.Height);
-                if (TryClip(clip, ref dest, ref source))
-                {
-                    Bgra32 faded = Fade(color);
-                    if (useSdf)
-                    {
-                        _batch.DrawText(font.Texture, dest.ToRectF(), source, faded, parameters, blend);
-                    }
-                    else
-                    {
-                        _batch.Draw(font.Texture, dest.ToRectF(), source, faded, blend);
-                    }
-                }
+                _batch.DrawText(font.Texture, dest.ToRectF(), source, faded, parameters, blend);
             }
-
-            penX += glyph.Advance * scale;
+            else
+            {
+                _batch.Draw(font.Texture, dest.ToRectF(), source, faded, blend);
+            }
         }
 
-        return new UiVec2(penX, baseline - font.Ascent(sizePx));
+        return run.Pen;
     }
 
     /// <summary>Draws a string with a soft drop shadow, then the text on top.</summary>

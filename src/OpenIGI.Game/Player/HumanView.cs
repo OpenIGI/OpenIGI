@@ -309,6 +309,25 @@ public sealed class HumanView
     /// </remarks>
     public BoneAttachment HeldWeapon => Attachment(HumanAttachPoints.FirstPersonWeapon);
 
+    /// <summary>Gets the magazine attachment — bone 52, from <c>0x4601A0</c>.</summary>
+    /// <remarks>
+    /// The native handler reads palette offset <c>+6888</c>. A weapon's <c>TASKTYPE_GUNCLIP</c> and
+    /// <c>TASKTYPE_CABARREL</c> children hang here, and so does the dual-Uzi's <c>TASKTYPE_GUNX2</c>
+    /// child, which is why the two Uzis occupy opposite hands rather than sharing bone 3. Because the
+    /// bone animates on its own, a magazine drops out of the gun over a reload clip while the gun body
+    /// stays on bone 3.
+    /// </remarks>
+    public BoneAttachment HeldWeaponSecondary => Attachment(HumanAttachPoints.FirstPersonSecondary);
+
+    /// <summary>Gets the moving-part attachment — bone 55, from <c>0x460210</c>.</summary>
+    /// <remarks>
+    /// Palette offset <c>+7284</c>. A weapon's <c>TASKTYPE_GUNMOVINGPART</c> and <c>TASKTYPE_CACLIP</c>
+    /// children hang here: the slide, the bolt, the grenade's lever. It is the bone that racks a slide
+    /// on a shot as well as on a reload — over the Glock's firing clip it travels an order of magnitude
+    /// further along the rig's forward axis than bone 3 does.
+    /// </remarks>
+    public BoneAttachment HeldWeaponTertiary => Attachment(HumanAttachPoints.FirstPersonTertiary);
+
     /// <summary>Resolves an attachment out of any posed rig.</summary>
     /// <param name="pose">The posed skeleton, in its object's space.</param>
     /// <param name="origin">The object's world position, in engine units.</param>

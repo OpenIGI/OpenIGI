@@ -176,6 +176,22 @@ public sealed class AiGuardCombat
         _shotDelayTicks = 0;
     }
 
+    /// <summary>Cancels the whole engagement because a higher-priority AI event took control.</summary>
+    /// <remarks>
+    /// Flashbang, grenade and explosion handlers replace the combat action in the retail pending-action
+    /// list. Marking only the child as ended leaves the soldier's outer <c>Engaging</c> activity alive, so
+    /// <see cref="AiSoldier.Tick"/> reaches <c>Fight</c> before the scripted animation or panic runner and
+    /// the guard keeps firing through the reaction. Re-entry is deliberate: <see cref="Begin"/> arms a
+    /// fresh engagement after the interrupt action finishes.
+    /// </remarks>
+    public void Cancel()
+    {
+        Phase = AiCombatPhase.Ended;
+        _roundsLeft = 0;
+        _shotDelayTicks = 0;
+        Aimed = false;
+    }
+
     /// <summary>Gets whether the next burst is the first of this engagement, and so half as accurate.</summary>
     /// <remarks>
     /// The engagement's argument block carries a byte that <c>sub_48B9C0</c> takes as its second

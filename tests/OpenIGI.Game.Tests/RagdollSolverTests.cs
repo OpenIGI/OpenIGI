@@ -3,6 +3,7 @@ using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Game.World;
 using Xunit;
 
 namespace OpenIGI.Game.Tests;
@@ -383,6 +384,39 @@ public sealed class RagdollSolverTests
         }
 
         Assert.True(nearest < 2048.0, $"The body stopped {nearest:F0} units short and never touched it.");
+    }
+
+    /// <summary>
+    /// One wall ray is enough when the velocity probe and the radial probe are the same ray. The solver
+    /// stores a contact slot for each purpose, so the shared result still gives both contact passes the
+    /// same wall response; it merely avoids traversing the unchanged world twice.
+    /// </summary>
+    [Fact]
+    public void AParallelWallProbeIsQueriedOnceAndItsContactIsShared()
+    {
+        RagdollSkeleton rig = RagdollSkeleton.Build(BoneSkeleton.Create(
+            [BoneSkeleton.NoParent, 0],
+            [Vector3f.Zero, new Vector3f(1_000f, 0f, 0f)]));
+        BonePose pose = BonePose.Evaluate(
+            rig.Skeleton,
+            [Quaternion32.Identity, Quaternion32.Identity]);
+        RagdollBody body = RagdollBody.Seed(rig, pose, Vector3d.Zero, Matrix3f.Identity);
+        body.AddVelocity(new Vector3d(100.0, 0.0, 0.0));
+
+        int queries = 0;
+        RagdollWorld world = new(cast: (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+        {
+            queries++;
+            hit = default;
+            return false;
+        });
+
+        body.Step(world, substeps: 1);
+
+        // The root still needs its forward and outward rays (they point in opposite directions). The
+        // child has both rays along +X from the same origin with the same reach, so the second ray would
+        // be a byte-for-byte duplicate world query.
+        Assert.Equal(3, queries);
     }
 
     /// <summary>The same body, stepped the same way twice, produces bit-identical results.</summary>

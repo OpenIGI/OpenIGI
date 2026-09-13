@@ -1,0 +1,548 @@
+"""Upscales Project I.G.I.'s textures and derives the surface maps a physically-based renderer needs.
+
+    texture-forge models                          what weights are catalogued, and under what licence
+    texture-forge all      <png-dir> <out-dir>    upscale (add --pbr to derive surface maps too)
+    texture-forge upscale  <png-dir> <out-dir>    upscale only
+    texture-forge maps     <png-dir> <out-dir>    derive surface maps only, from PNGs already the right size
+    texture-forge sheet    <png-dir> <out.png>    a contact sheet of before and after, for judging a setting
+
+The input is whatever `ResExtract images` wrote -- a flat directory of PNGs named after the textures:
+
+    dotnet run --project tools/OpenIGI.Tools.ResExtract -- images "<game>" <png-dir>
+
+A run RESUMES by default: a texture whose outputs are all present, whole, and the size this command would
+produce is left alone, so an interrupted run is continued by repeating the command. `--force` redoes
+everything. See `resume.py` for what counts as finished, and why existence alone does not.
+
+THE OUTPUT IS AN OVERRIDES FOLDER. Move or copy its contents into <game>/overrides and the game
+finds every asset by the path it already had -- there is nothing to configure and no setting to
+point at it. Each file is the game's own container: layer 0 the upscaled diffuse, and layer 1 the
+packed surface map when maps were derived.
+
+    <out-dir>/common/textures/000_04_1.tex                 -> <game>/overrides/common/textures/...
+    <out-dir>/missions/location0/level1/textures/...       -> the same, under that level
+    <out-dir>.inspection/{normal,orm,roughness,...}/       for looking at, and outside the tree
+
+NOTHING HERE MAY BE COMMITTED. The game's art with a filter over it is still Innerloop's -- CONTRIBUTING.md
+says so in those words -- which is why the renderer derives its maps from the player's own installation at
+runtime and caches them per user. Point the cvars at whatever this writes; do not add it to the tree.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+__all__ = ["main"]
+
+
+def _console():
+    from rich.console import Console
+
+    return Console(stderr=True, highlight=False)
+
+
+def _models_command(_: argparse.Namespace) -> int:
+    from rich.table import Table
+
+    from . import models
+
+    console = _console()
+    root = models.cache_root()
+
+    table = Table(title="texture-forge weights", title_style="bold", header_style="bold")
+    table.add_column("key")
+    table.add_column("licence")
+    table.add_column("architecture")
+    table.add_column("x", justify="right")
+    table.add_column("state")
+    table.add_column("role", overflow="fold")
+
+    for model in models.CATALOGUE:
+        path = root / model.filename
+        state = "[dim]not fetched[/dim]"
+
+        if path.exists():
+            ok = models._digest(path) == model.sha256  # noqa: SLF001 - the audit is the point
+            state = "[green]ok[/green]" if ok else "[bold red]BAD HASH[/bold red]"
+
+        table.add_row(
+            model.key, model.licence, model.architecture, str(model.scale), state, model.role
+        )
+
+    console.print(table)
+    console.print(f"[dim]Weights directory:[/dim] {root}")
+    console.print()
+    console.print(
+        "Every weight above is [bold]CC0-1.0[/bold], verified from the publisher's LICENSE and from\n"
+        "OpenModelDB's catalogue. The recorded SHA-256 is the audit: a file that does not match it is\n"
+        "not the file whose licence was checked, and will be refused."
+    )
+    console.print()
+
+    for model in models.CATALOGUE:
+        console.print(f"  [cyan]{model.key:<10}[/cyan] [dim]{model.url}[/dim]")
+
+    return 0
+
+
+def _run(arguments: argparse.Namespace, *, upscale: bool, derive: bool) -> int:
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        SpinnerColumn,
+        TextColumn,
+        TimeElapsedColumn,
+        TimeRemainingColumn,
+    )
+
+    from . import models, pipeline, resume
+
+    console = _console()
+    source = Path(arguments.source)
+    destination = Path(arguments.destination)
+
+    if not source.is_dir():
+        console.print(f"[bold red]error:[/bold red] {source} is not a directory.")
+        console.print("Run [cyan]ResExtract images[/cyan] first; see --help for the command.")
+        return 2
+
+    # OFF unless asked for, or unless the command exists to derive them. An upscale is the game's own
+    # art at a higher resolution; a surface map is a guess about what the art is made of, and the two
+    # should not arrive together just because one command runs both stages.
+    derive_pbr = arguments.pbr or not upscale
+
+    settings = pipeline.Settings(
+        scale=arguments.scale,
+        upscaler=arguments.model,
+        use_ai=not arguments.no_ai,
+        use_ai_maps=not arguments.classical_maps,
+        delight=arguments.delight,
+        delight_strength=arguments.delight_strength,
+        metallic=arguments.metallic,
+        normal_strength=arguments.normal_strength,
+        remaster=arguments.remaster if upscale else None,
+        derive_pbr=derive_pbr,
+        write_inspection=not arguments.no_inspection and derive_pbr,
+    )
+
+    sources = pipeline.source_paths(source)
+
+    if not sources:
+        console.print(f"[bold red]error:[/bold red] no PNGs in {source}.")
+        return 2
+
+    # One job per distinct IMAGE, carrying every path that image is addressed at. Most of this game's art
+    # is packed into every level that draws it, so the extractor's tree holds the same picture many times
+    # over -- 7199 paths for 1444 images on the retail data. Each path has to exist in the finished pack,
+    # because each is separately replaceable, but upscaling them all would be five times the GPU work for
+    # byte-identical output.
+    work = pipeline.group_by_content(source, sources)
+
+    outputs = pipeline.Outputs(destination)
+    swept = resume.sweep(outputs)
+
+    if swept:
+        console.print(f"[dim]Removed {swept} half-written file(s) from an interrupted run.[/dim]")
+
+    # `maps` does not upscale, so its diffuse comes out the size it went in -- and the size is half of how
+    # a finished texture is recognised. Passing the requested scale here regardless would declare every
+    # already-derived texture unfinished and redo the whole corpus, which is the bug this guards against.
+    effective_scale = arguments.scale if upscale else 1
+
+    if arguments.force:
+        todo = work
+    else:
+        todo = resume.pending(
+            work,
+            outputs,
+            scale=effective_scale,
+            # The RESOLVED flag, not the command's stage. `all` without --pbr runs the derive stage and
+            # writes one layer; asking resume for two would declare every finished asset unfinished and
+            # redo the corpus on the next run.
+            derive=derive and derive_pbr,
+            inspection=settings.write_inspection,
+        )
+
+    done = len(work) - len(todo)
+
+    console.print(
+        f"[bold]{len(sources)}[/bold] path(s) from [cyan]{source}[/cyan] "
+        f"-> [cyan]{destination}[/cyan]"
+    )
+
+    if len(work) != len(sources):
+        console.print(
+            f"[dim]{len(work)} distinct image(s); the rest are the same art packed into another level "
+            f"and are upscaled once and written to every path.[/dim]"
+        )
+
+    if done:
+        console.print(
+            f"[green]{done}[/green] already finished in the output; "
+            f"[bold]{len(todo)}[/bold] to do. [dim](--force redoes everything.)[/dim]"
+        )
+
+    if not todo:
+        console.print("[green]Nothing to do -- every texture is already there.[/green]")
+        return 0
+
+    if settings.use_ai:
+        from . import runner
+
+        console.print(f"[dim]{runner.torch_device_report()}[/dim]")
+
+    if settings.remaster is not None:
+        remasterer = models.lookup(settings.remaster)
+        console.print(
+            f"[yellow]--remaster {settings.remaster} is on.[/yellow] A second pass "
+            f"[dim]({remasterer.architecture}, {remasterer.licence})[/dim] will INVENT detail these "
+            "textures never had, so judge it on a handful before committing a corpus to it. It also "
+            "dominates the run: it puts a 4x model over an image the upscaler has already enlarged, "
+            "which is sixteen times the pixels the upscale itself saw."
+        )
+
+    if settings.delight:
+        console.print(
+            "[yellow]--delight is on.[/yellow] This is a classical estimate, not a model; "
+            "judge it on a contact sheet before trusting a whole run."
+        )
+
+    warnings: list[str] = []
+    columns = (
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+    )
+
+    from . import images
+
+    written = 0
+    total = len(todo)
+
+    with Progress(*columns, console=console) as progress, pipeline.Session(
+        warn=warnings.append
+    ) as session:
+        upscale_task = (
+            progress.add_task("upscaling", total=total) if upscale else None
+        )
+        remaster_task = (
+            progress.add_task(f"remastering ({settings.remaster})", total=total)
+            if upscale and settings.remaster is not None
+            else None
+        )
+        derive_task = progress.add_task(
+            "deriving maps" if derive and derive_pbr else "writing", total=total
+        )
+
+        # Chunked, so memory is bounded by the chunk rather than by the corpus and the first files land in
+        # seconds. The models are held by the session across every chunk; reloading them per chunk would
+        # reintroduce, at a coarser grain, the per-file reload this whole design exists to avoid.
+        for start in range(0, total, pipeline.CHUNK):
+            # Read here rather than up front. Reading the corpus first would decode every texture the
+            # resume scan just decided to skip, and would hold all of them for the length of the run.
+            chunk = [
+                pipeline.read_texture(path, source, tuple(names))
+                for path, names in todo[start : start + pipeline.CHUNK]
+            ]
+
+            for texture in chunk:
+                pipeline.prepare(texture, settings)
+
+            if upscale:
+                pipeline.upscale_all(
+                    chunk,
+                    settings,
+                    session,
+                    progress=lambda step: progress.advance(upscale_task, step),
+                )
+
+                # Between the upscale and the alpha restore, and that order is not free. The remaster
+                # touches colour only, so the silhouette it must not move is still the one the upscaler
+                # produced -- and finish_alpha then hardens that silhouette and re-bleeds the colour
+                # under it, which has to happen after the last thing that writes colour.
+                if remaster_task is not None:
+                    pipeline.remaster_all(
+                        chunk,
+                        settings,
+                        session,
+                        progress=lambda step: progress.advance(remaster_task, step),
+                    )
+
+                pipeline.finish_alpha(chunk)
+
+            if derive:
+                written += pipeline.derive_all(
+                    chunk,
+                    settings,
+                    outputs,
+                    session,
+                    progress=lambda step: progress.advance(derive_task, step),
+                )
+            else:
+                for texture in chunk:
+                    pipeline.write_asset(texture, outputs)
+                    written += 1
+                    progress.advance(derive_task)
+
+            # The chunk's pixels are on disk now. Dropping them is what keeps the peak bounded.
+            for texture in chunk:
+                texture.rgb = None  # type: ignore[assignment]
+                texture.alpha = None
+
+    for warning in dict.fromkeys(warnings):
+        console.print(f"[yellow]warning:[/yellow] {warning}")
+
+    skipped = f" [dim]({done} already done)[/dim]" if done else ""
+    console.print(f"[green]Wrote {written} image(s).[/green]{skipped}")
+
+    carried = _carry_manifest(source, destination)
+
+    console.print()
+    console.print("This is a tree of pictures, not a pack. Turn it into one with:")
+    console.print()
+    console.print(f"  [cyan]ResExtract pack[/cyan] [dim]{destination} <game>/overrides[/dim]")
+    console.print()
+
+    if carried:
+        console.print(
+            "Nothing else to configure -- the assets are found by the paths they already had. "
+            "[cyan]F8[/cyan] takes them out of the frame and puts them back, and "
+            "[cyan]overrides[/cyan] in the console re-reads the folder without a restart."
+        )
+    else:
+        console.print(
+            f"[yellow]warning:[/yellow] no [cyan]{MANIFEST}[/cyan] was found beside the source images, so "
+            "none was carried across. The packer needs it to know which archive each picture came from; "
+            "re-extract with [cyan]ResExtract images[/cyan] and run this over that tree."
+        )
+
+    return 0
+
+
+MANIFEST = "pack.json"
+"""What `ResExtract images` writes beside the pictures, and what `ResExtract pack` reads back."""
+
+
+def _carry_manifest(source: Path, destination: Path) -> bool:
+    """Copies the extractor's manifest across, unchanged.
+
+    This tool has no business editing it. The manifest says what each picture IS -- which archive it came
+    out of, whether it is one of 150 tiles of a loading screen, what size the menu lays it out at -- and
+    none of that is altered by making the picture larger. Copying it rather than regenerating it also
+    means there is exactly one description of the installation, written by the thing that read the
+    installation.
+    """
+    import shutil
+
+    origin = source / MANIFEST
+
+    if not origin.is_file():
+        return False
+
+    shutil.copyfile(origin, destination / MANIFEST)
+    return True
+
+
+def _sheet_command(arguments: argparse.Namespace) -> int:
+    from . import sheet
+
+    console = _console()
+    source = Path(arguments.source)
+
+    if not source.is_dir():
+        console.print(f"[bold red]error:[/bold red] {source} is not a directory.")
+        return 2
+
+    destination = Path(arguments.destination)
+    count = sheet.write(
+        source,
+        destination,
+        Path(arguments.compare) if arguments.compare else None,
+        limit=arguments.limit,
+        width=arguments.columns,
+    )
+
+    if count == 0:
+        console.print("[bold red]error:[/bold red] nothing to put on the sheet.")
+        return 2
+
+    console.print(f"[green]Wrote {destination}[/green] ({count} texture(s)).")
+    return 0
+
+
+def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
+    from . import models
+
+    parser.add_argument("source", help="directory of PNGs, as ResExtract images writes")
+    parser.add_argument("destination", help="where the packs are written")
+    parser.add_argument(
+        "--scale",
+        type=int,
+        default=4,
+        choices=(1, 2, 4, 8),
+        help=(
+            "how much larger. 4 is the default and the sensible one: the renderer uploads uncompressed "
+            "RGBA8, so 8x is four times the video memory for a level and will not fit comfortably on a "
+            "10 GB card"
+        ),
+    )
+    parser.add_argument(
+        "--model",
+        default="dat2",
+        choices=models.UPSCALERS,
+        help=(
+            "which upscaler. dat2 is the default and was chosen by measurement, not by reading the model "
+            "cards: on this game's art rplksr leaves a quarter of adjacent pixels EXACTLY equal (45%% of "
+            "them on a wrapped portrait), which is visible posterisation, against 16%% for dat2 -- and "
+            "unlike rplksr, dat2 is indifferent to whether the texture was wrapped. rplksr is roughly "
+            "eight times faster and is the right choice for a quick look"
+        ),
+    )
+    parser.add_argument(
+        "--no-ai",
+        action="store_true",
+        help="use no models at all; resample and derive everything classically",
+    )
+    parser.add_argument(
+        "--classical-maps",
+        action="store_true",
+        help="keep the AI upscale but derive the surface maps the way the renderer does",
+    )
+    parser.add_argument(
+        "--delight",
+        action="store_true",
+        help=(
+            "try to remove the painted-in lighting. OFF by default and deliberately so: there is no "
+            "delighting model at any usable licence, this is a classical estimate, and it cannot tell a "
+            "painted shadow from a genuinely dark material"
+        ),
+    )
+    parser.add_argument("--delight-strength", type=float, default=0.7, help="0 to 1 (default 0.7)")
+    parser.add_argument(
+        "--normal-strength",
+        type=float,
+        default=1.0,
+        help=(
+            "how far the derived normal may tilt (default 1.0). It reaches BOTH paths: the classical one "
+            "scales its gradient by this, and the model's output is calibrated against that same "
+            "gradient, so raising it raises both together"
+        ),
+    )
+    parser.add_argument(
+        "--metallic",
+        type=float,
+        default=0.0,
+        help=(
+            "what to write into the INSPECTION ORM's metallic channel, for interchange with tools that "
+            "expect one there. It no longer reaches the renderer: the detail map's alpha carries "
+            "occlusion now, and metal is authored per material in materials.json, because no diffuse "
+            "texture distinguishes painted steel from grey paint and guessing puts a mirror on half the "
+            "level"
+        ),
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "redo textures that are already in the output directory. A run resumes by default: any "
+            "texture whose outputs are all present, whole, and the size this command would produce is "
+            "left alone, so an interrupted run is restarted by repeating the same command"
+        ),
+    )
+    parser.add_argument(
+        "--remaster",
+        nargs="?",
+        const=models.DEFAULT_REMASTERER,
+        default=None,
+        choices=models.REMASTERERS,
+        metavar="MODEL",
+        help=(
+            "run a second network over the upscaled colour to modernise it, instead of only resolving "
+            "what is already there. An upscale makes a 2001 texture larger; what dates it is 5-bit "
+            "colour, lighting painted into the albedo and no detail finer than the brush that made it, "
+            "and none of that is a resolution problem. OFF by default because this stage INVENTS: it is "
+            "the only one here allowed to put detail on a surface that was never drawn. Bare --remaster "
+            "uses texturedat2 (trained on 30,122 game textures); name another to compare"
+        ),
+    )
+    parser.add_argument(
+        "--pbr",
+        action="store_true",
+        help=(
+            "also derive a normal, roughness and occlusion map for every texture, and carry it in the "
+            "asset beside the diffuse. OFF by default: the maps are INVENTED DATA -- inferred from a "
+            "photograph of a surface, none of it shipped with the game -- where an upscale is the game's "
+            "own art at a higher resolution. Deriving them is also the slow half of a run and roughly "
+            "doubles what it writes. `maps` implies it, since deriving them is what that command is for"
+        ),
+    )
+    parser.add_argument(
+        "--no-inspection",
+        action="store_true",
+        help="write only the two packs the renderer reads, not the five for looking at",
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Entry point. Returns a process exit code: 0 success, 1 usage, 2 failure."""
+    parser = argparse.ArgumentParser(
+        prog="texture-forge",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    commands = parser.add_subparsers(dest="command")
+
+    models_parser = commands.add_parser(
+        "models", help="list the catalogued weights, their licences and their sources"
+    )
+    models_parser.set_defaults(handler=_models_command)
+
+    for name, help_text, does_upscale, does_derive in (
+        ("all", "upscale, and derive surface maps too with --pbr", True, True),
+        ("upscale", "upscale only", True, False),
+        ("maps", "derive surface maps only, from PNGs already the size you want", False, True),
+    ):
+        command_parser = commands.add_parser(name, help=help_text)
+        _add_run_arguments(command_parser)
+        command_parser.set_defaults(
+            handler=lambda arguments, up=does_upscale, dr=does_derive: _run(
+                arguments, upscale=up, derive=dr
+            )
+        )
+
+    sheet_parser = commands.add_parser(
+        "sheet", help="a contact sheet of before and after, for judging a setting before a whole run"
+    )
+    sheet_parser.add_argument("source", help="directory of PNGs")
+    sheet_parser.add_argument("destination", help="the PNG to write")
+    sheet_parser.add_argument(
+        "--compare", help="a second directory to show beside the first, matched by filename"
+    )
+    sheet_parser.add_argument("--limit", type=int, default=64, help="how many textures (default 64)")
+    sheet_parser.add_argument("--columns", type=int, default=8, help="how many across (default 8)")
+    sheet_parser.set_defaults(handler=_sheet_command)
+
+    arguments = parser.parse_args(argv)
+
+    if arguments.command is None:
+        parser.print_help()
+        return 1
+
+    try:
+        return arguments.handler(arguments)
+    except KeyboardInterrupt:
+        print("\ninterrupted", file=sys.stderr)
+        return 2
+    except (OSError, KeyError, ValueError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

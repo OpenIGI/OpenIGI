@@ -1,7 +1,7 @@
 namespace OpenIGI.Game.Weapons;
 
 /// <summary>
-/// The <c>MISSILE_TYPE_*</c> constants, as <c>0x427FF0</c> registers them.
+/// The <c>MISSILE_TYPE_*</c> constants, as <c>0x004277EB</c> registers them.
 /// </summary>
 /// <remarks>
 /// Real values read from the registration block, and they are <b>not</b> in the order the strings sit
@@ -28,7 +28,7 @@ public enum MissileType
     Bomb = 5,
 }
 
-/// <summary>The <c>MISSILE_SMOKE_*</c> constants, as <c>0x427FF0</c> registers them.</summary>
+/// <summary>The <c>MISSILE_SMOKE_*</c> constants, as <c>0x004277D3</c> registers them.</summary>
 public enum MissileSmoke
 {
     /// <summary>No trail.</summary>

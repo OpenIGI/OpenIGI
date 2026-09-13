@@ -121,10 +121,7 @@ internal sealed partial class DesktopGame
     private readonly List<PendingGenericTbaExplosion> _pendingGenericTbaExplosions = [];
 
     private sealed class PendingGenericTbaExplosion(
-        WorldInteraction interaction,
-        Vector3d position,
-        GenericTbaExplosionParameters parameters,
-        int remainingTicks)
+        WorldInteraction interaction, Vector3d position, GenericTbaExplosionParameters parameters, int remainingTicks)
     {
         public WorldInteraction Interaction { get; } = interaction;
         public Vector3d Position { get; } = position;
@@ -135,8 +132,48 @@ internal sealed partial class DesktopGame
     /// <summary>Makes the player's weapon sound. Null until the device is open.</summary>
     private WeaponSoundPlayer? _weaponSounds;
 
+    /// <summary>The cook-tick voice held while a grenade throw charges.</summary>
+    private AudioVoiceHandle _grenadeCookVoice = AudioVoiceHandle.None;
+
+    /// <summary>Whether the cook tick has already been started for the current charge.</summary>
+    private bool _grenadeCookStarted;
+
     /// <summary>One automatic-loop owner per AI human, so simultaneous rifles never share a voice.</summary>
     private readonly Dictionary<int, WeaponSoundPlayer> _soldierWeaponSounds = [];
+
+    /// <summary>Holds the grenade cook tick for as long as the throw is charged.</summary>
+    /// <remarks>
+    /// The retail throw plays <c>grenade_tick_1</c> <b>once</b> as it enters the throw state
+    /// (<c>0x40F590</c> calls <c>sub_4E6B00</c> a single time) and stops it on release (<c>0x40F640</c>) —
+    /// the audible cook while holding the pin. It is started once per charge and never re-triggered, and
+    /// whether it loops is the sound's own to decide (<c>sub_4E6B00</c> does not force it), not this
+    /// caller's, non-positional like the rest of the player's own weapon sound.
+    /// </remarks>
+    private void TickGrenadeCook()
+    {
+        if (_sounds is null || _player is null || !_player.IsChargingThrow)
+        {
+            StopGrenadeCook();
+            return;
+        }
+
+        if (!_grenadeCookStarted)
+        {
+            _grenadeCookVoice = _sounds.PlayDefinition("grenade_tick_1", priority: 200);
+            _grenadeCookStarted = true;
+        }
+    }
+
+    private void StopGrenadeCook()
+    {
+        if (_grenadeCookVoice.IsValidHandle)
+        {
+            _sounds?.Stop(_grenadeCookVoice);
+        }
+
+        _grenadeCookVoice = AudioVoiceHandle.None;
+        _grenadeCookStarted = false;
+    }
 
     private void TickSoldierWeaponSound(int runtimeId, bool fired, WeaponType? weapon, Vector3d position)
     {
@@ -268,6 +305,12 @@ internal sealed partial class DesktopGame
         _sounds?.PlayDefinition("pickup", priority: 180);
     }
 
+    /// <summary>The weather, heard. Null until the device is open; silent until a level rains.</summary>
+    private RainAmbience? _rainAmbience;
+
+    /// <summary>When the rain mix was last reported to the log, as a stopwatch timestamp.</summary>
+    private long _rainDebugTimestamp;
+
     /// <summary>When the score's fade was last advanced, as a stopwatch timestamp.</summary>
     private long _audioTimestamp;
 
@@ -296,7 +339,7 @@ internal sealed partial class DesktopGame
         _sounds = new SoundSystem(_audio, _soundBank, _fileSystem, _logger);
         _soldierWeaponSounds.Clear();
         MountMenuSounds();
-        LoadExternalImpactSound();
+        LoadRainAmbience();
 
         // The original hard-cuts between menu and mission themes, so a fade is an addition and belongs
         // to the enhanced profile only. Under vanilla this stays zero and the cut is exact.
@@ -353,6 +396,7 @@ internal sealed partial class DesktopGame
 
         _audioTimestamp = now;
         _music?.Update(delta);
+        UpdateRainAmbience(delta);
     }
 
     /// <summary>Puts the listener where the player's eye is.</summary>
@@ -378,7 +422,7 @@ internal sealed partial class DesktopGame
 
         // The same blend the presentation uses, so the ear and the eye agree about where the head is.
         float alpha = RenderCVars.SmoothPresentation.Value
-            ? _loop.Clock.TickFraction(_loop.TimeSource.PreciseMilliseconds)
+            ? _loop.Clock.TickFraction(_loop.Clock.FrameInstantMilliseconds)
             : 1f;
 
         // The EYE, not the feet: an ear 1.8 m below the head is a metre and a half of error against
@@ -407,19 +451,37 @@ internal sealed partial class DesktopGame
 
     /// <summary>Empties the bank and re-mounts what does not belong to a mission.</summary>
     /// <remarks>
+    /// <para>
     /// Called before each mission load, so the mission's own directory is mounted into a bank holding
     /// only the menu sounds. The original rebuilds its table the same way; leaving the previous level's
     /// sounds in place would let a name resolve to a sound the new level never shipped.
+    /// </para>
+    /// <para>
+    /// Clearing is the only thing that can retire a name, because the bank keeps the FIRST mount of one
+    /// — faithfully, since the original's loader reports <c>"SOUND - File %s already loaded!"</c> rather
+    /// than replacing. Every mission ships its own <c>sounds/game_music.wav</c>, and a mounted entry
+    /// holds the path it was found at rather than the <c>MISSION:</c> alias it was found through, so a
+    /// bank carried across a load answers <c>game_music</c> with the previous level's score forever.
+    /// </para>
     /// </remarks>
     private void ResetSoundsForMission()
     {
         StopBinocularTransitionSound();
+        StopGrenadeCook();
         _weaponSounds?.Reset();
         foreach (WeaponSoundPlayer soldier in _soldierWeaponSounds.Values)
         {
             soldier.Reset();
         }
         _soldierWeaponSounds.Clear();
+        _rainAmbience?.Stop();
+
+        // Before the buffers, and explicitly rather than through the device-wide stop UnloadBuffers
+        // does: the score has to be told, not merely silenced. It treats a repeat of the playing track
+        // as a no-op so that re-entering the mission state does not stutter the music, and a track it
+        // still believes is playing is a track the next Play(game_music) would decline to start.
+        _music?.Stop();
+
         _sounds?.UnloadBuffers();
         _soundBank?.Clear();
         MountMenuSounds();
@@ -600,159 +662,212 @@ internal sealed partial class DesktopGame
             return;
         }
 
+        // One pitch for the whole step: 0x463920 computes it once and hands the same value to the
+        // material voice and to the rain voice, so the two halves of a wet step stay together.
+        float pitch = FootstepSounds.Pitch(_soundRandom);
+
         _sounds.PlayDefinition(
             step.Sound,
             step.PositionInUnits,
-            pitch: FootstepSounds.Pitch(_soundRandom),
+            gain: step.VolumeScale,
+            pitch: pitch,
             priority: 40);
+
+        // The wet layer is played AS WELL AS the material's own sound, never instead of it. Its gate
+        // is 0x416FB0, a single global byte -- the level's weather flag rather than a shelter test --
+        // which is what the rain ambience already reads through the RainEffect task.
+        if (_rain?.IsWeatherEnabled == true)
+        {
+            _sounds.PlayDefinition(
+                FootstepSounds.RainSoundName(step.CycleSlot),
+                step.PositionInUnits,
+                gain: step.VolumeScale,
+                pitch: pitch,
+                priority: 40);
+        }
     }
 
-    /// <summary>The name the remaster's own impact sound is registered and played under.</summary>
-    private const string CustomImpactSoundName = "remaster_bullet_impact";
-
-    /// <summary>The most custom impact sounds one tick starts.</summary>
+    /// <summary>Plays the sound the ground itself makes when the player lands on it.</summary>
+    /// <param name="landing">The definition name and where the feet touched down.</param>
     /// <remarks>
-    /// The custom sound deliberately skips retail's global rand(6)+6-tick quiet spell — an automatic
-    /// rifle lands a round every couple of ticks, and a limit built for one impact a fifth of a
-    /// second swallowed most of a burst. What still needs a bound is the shotgun: thirty pellets
-    /// arrive on ONE tick, and thirty simultaneous copies of one sample is a 30× volume spike, not
-    /// thirty impacts. Six covers every automatic weapon's densest tick with room to spare.
+    /// Flat: <c>0x40BE40</c> and <c>0x40BBD0</c> both start this voice and then leave it alone -- no
+    /// pitch variation and no volume change, unlike a footstep. Priority sits above a footfall because
+    /// a landing is a single deliberate event rather than one of a stream.
     /// </remarks>
-    private const int MaximumCustomImpactSoundsPerTick = 6;
-
-    /// <summary>Loads the port's own bullet-impact sound, when the asset ships beside the game.</summary>
-    /// <remarks>
-    /// A mono 16-bit PCM WAV under <c>Assets/sounds</c> — mono deliberately, because only a mono
-    /// source is positioned in 3D; a stereo buffer plays flat on the listener. Registered through
-    /// <see cref="SoundSystem.RegisterExternal"/> so the retail bank stays exactly what the game
-    /// data says. Missing file simply means the material table's own sounds carry on.
-    /// </remarks>
-    private void LoadExternalImpactSound()
+    private void PlayLandingSound((string Sound, Vector3d PositionInUnits) landing)
     {
+        if (_sounds is null || landing.Sound.Length == 0)
+        {
+            return;
+        }
+
+        _sounds.PlayDefinition(landing.Sound, landing.PositionInUnits, priority: 60);
+    }
+
+    /// <summary>Loads the rain recording the weather bed is built from.</summary>
+    /// <remarks>
+    /// A mono 16-bit PCM WAV under <c>Assets/sounds</c>, prepared as a seamless loop — see the notes
+    /// beside the asset. Mono is a requirement rather than a preference: only a mono source is placed
+    /// in three dimensions, and placing the rain is the whole point. A missing file is not a fault;
+    /// the weather simply stays silent, exactly as it did before this existed.
+    /// </remarks>
+    private void LoadRainAmbience()
+    {
+        _rainAmbience?.Dispose();
+        _rainAmbience = null;
+
         if (_sounds is null)
         {
             return;
         }
 
-        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "sounds", "bullet-impact.wav");
-        if (!File.Exists(path))
+        RainAmbience rain = new(_sounds, _logger);
+        if (rain.TryLoad(Path.Combine(AppContext.BaseDirectory, "Assets", "sounds", "rain-loop.wav")))
         {
-            return;
+            _rainAmbience = rain;
         }
-
-        byte[] bytes;
-        try
-        {
-            bytes = File.ReadAllBytes(path);
-        }
-        catch (IOException error)
-        {
-            _logger.Warning("Audio", $"Impact sound would not read: {error.Message}");
-            return;
-        }
-
-        if (!WavPcm.TryRead(bytes, out AudioFormat format, out byte[] pcm))
-        {
-            _logger.Warning("Audio", $"'{path}' is not an uncompressed PCM WAV; the material sounds stand.");
-            return;
-        }
-
-        _sounds.RegisterExternal(CustomImpactSoundName, format, pcm);
-        _logger.Information(
-            "Audio",
-            $"Impact sound: {format.SampleRate} Hz, {format.Channels} ch, {format.BitsPerSample}-bit, {pcm.Length} bytes.");
     }
 
-    /// <summary>Plays what this tick's arrived ballistic rounds struck.</summary>
+    /// <summary>Drives the weather bed from the level the player is standing in.</summary>
     /// <remarks>
-    /// The retail rules through the retail data: the struck material's own six sounds, one picked at
-    /// random, and the whole set rate-limited globally so a burst into a wall does not stack six
-    /// samples — see <see cref="BulletImpactSounds"/>. A human resolves to the <c>Flesh</c> row; a
-    /// surface whose row names no sounds falls back to <c>Ground</c>, the same row a step on bare
-    /// terrain takes, because a terrain face names no material row of its own.
+    /// <para>
+    /// After <see cref="UpdateListener"/> and from the listener's own position, so the ear the rain is
+    /// measured around is the same ear everything else is heard with. Taking the eye from the camera a
+    /// second time here would be one blend away from the first and would drift.
+    /// </para>
+    /// <para>
+    /// <b>Whether it rains is the renderer's answer, not a second opinion.</b> The level's own
+    /// <c>RainEffect</c> task decides, through the same <c>IsWeatherEnabled</c> the draw path reads,
+    /// so forcing the weather on from the console or the campaign screen is heard as well as seen.
+    /// What must NOT be consulted is the storm's <c>IsActive</c>: that goes false the moment the
+    /// camera is under a roof, which is precisely the case this whole system exists to sound different
+    /// in rather than to fall silent in.
+    /// </para>
     /// </remarks>
-    private void PlayBallisticImpactSounds()
+    private void UpdateRainAmbience(float delta)
     {
-        if (_sounds is null
-            || _player is null
-            || _worldMaterials is null
-            || !GameplayCVars.BallisticsImpactSounds.Value)
+        if (_rainAmbience is not { } rain)
         {
             return;
         }
 
-        int customPlayedThisTick = 0;
-        foreach (BallisticImpact impact in _player.Ballistics.Impacts)
+        // No player is the menu, where there is no ear to place the weather around.
+        bool raining = AudioCVars.Rain.Value && _player is not null && (_rain?.IsWeatherEnabled ?? false);
+        float intensity = raining
+            ? (_storm is { Enabled: true } ? RenderCVars.StormIntensity.Value : 1f)
+            : 0f;
+
+        rain.Update(
+            _audio.Listener.Position,
+            _shelterField,
+            _player?.GrenadeWalls,
+            WorldScene.UnitsPerMetre,
+            intensity,
+            AudioCVars.RainVolume.Value,
+            delta);
+
+        if (!AudioCVars.RainDebug.Value || !rain.IsSounding)
         {
-            if (!impact.StruckHuman && !impact.StruckWall)
+            return;
+        }
+
+        long now = Stopwatch.GetTimestamp();
+        if (_rainDebugTimestamp != 0 && Stopwatch.GetElapsedTime(_rainDebugTimestamp, now).TotalSeconds < 1.0)
+        {
+            return;
+        }
+
+        _rainDebugTimestamp = now;
+        _logger.Information("Audio", $"Rain: {rain.Describe()}");
+    }
+
+    /// <summary>Plays what this tick's bullet impacts struck.</summary>
+    /// <remarks>
+    /// Hit-scan and ballistic contacts share the retail material table, exactly as the original's shot
+    /// resolution does at <c>0x47BA95</c>: the struck material's own six sounds at row <c>+340</c>, one
+    /// picked by <c>rand() % 6</c>, and the whole set rate-limited by ONE global timestamp — see
+    /// <see cref="BulletImpactSounds"/>. A human resolves to the <c>Flesh</c> row, which is the only
+    /// row naming the <c>bul_flesh_*</c> samples at all.
+    /// </remarks>
+    private void PlayBulletImpactSounds()
+    {
+        if (_player is null)
+        {
+            return;
+        }
+
+        foreach (GunImpact impact in _player.Impacts)
+        {
+            if (!impact.HitSomething)
             {
                 continue;
             }
 
-            // The port's own impact sound, when its asset ships, takes every material for now --
-            // positional at the impact, pitch-jittered so a burst is not one sample five times.
-            // EVERY round of an automatic burst plays; only a same-tick pellet storm is capped.
-            // Per-material variants can hang off the same seam later.
-            if (_sounds.HasExternal(CustomImpactSoundName))
-            {
-                if (++customPlayedThisTick > MaximumCustomImpactSoundsPerTick)
-                {
-                    continue;
-                }
+            PlayBulletImpactSound(impact.Position, impact.StruckHuman, impact.Wall.Material);
+        }
+    }
 
-                _sounds.PlayExternal(
-                    CustomImpactSoundName,
-                    impact.Position,
-                    gain: 0.85f,
-                    priority: 45,
-                    pitch: FootstepSounds.Pitch(_soundRandom),
-                    minimumDistanceInMetres: 2f,
-                    maximumDistanceInMetres: 70f);
-                continue;
-            }
+    /// <summary>Plays one player or AI bullet contact through the retail sound definitions.</summary>
+    private void PlayBulletImpactSound(Vector3d position, bool struckHuman, int surfaceMaterial)
+    {
+        if (_sounds is null
+            || _worldMaterials is null
+            || !GameplayCVars.BallisticsImpactSounds.Value
+            || _loop.Clock.TickCount < _impactSoundQuietUntil)
+        {
+            return;
+        }
 
-            // The retail limit is GLOBAL -- one timestamp for every impact of every round -- so the
-            // first strike of a burst speaks for all of it. It stays on the retail sounds only: it
-            // is the original's own restraint, not the added asset's.
-            if (_loop.Clock.TickCount < _impactSoundQuietUntil)
-            {
-                return;
-            }
+        string sound = BulletImpactSounds.PickForImpact(
+            _worldMaterials,
+            struckHuman,
+            surfaceMaterial,
+            _soundRandom);
 
-            string sound = string.Empty;
-            if (impact.StruckHuman)
-            {
-                if (_worldMaterials.TryGetByName(BulletImpactSounds.FleshMaterialName, out GameMaterial flesh))
-                {
-                    sound = BulletImpactSounds.Pick(flesh, _soundRandom);
-                }
-            }
-            else
-            {
-                if (_worldMaterials.TryGet(impact.Wall.Material, out GameMaterial struck))
-                {
-                    sound = BulletImpactSounds.Pick(struck, _soundRandom);
-                }
+        // The quiet window opens on the CONTACT, not on the sample. 0x47BABE's jump skips only the
+        // playback call: 0x47BAE1 timestamps and 0x47BAFB re-rolls the interval on the merge path, so a
+        // slot that names nothing still spends the window. Half the authored rows are silent for at
+        // least half their slots -- Air, Water and Snow name a sound in one slot of six, and
+        // HumanCollision, MetalLadder and MetalFence in none -- so returning early here would let a
+        // burst into a ladder re-arm on every round and machine-gun the next surface it caught.
+        _impactSoundQuietUntil = _loop.Clock.TickCount + BulletImpactSounds.QuietTicks(_soundRandom);
 
-                if (sound.Length == 0
-                    && _worldMaterials.TryGetByName(FootstepSounds.TerrainMaterialName, out GameMaterial ground))
-                {
-                    sound = BulletImpactSounds.Pick(ground, _soundRandom);
-                }
-            }
-
-            if (sound.Length == 0)
-            {
-                continue;
-            }
-
-            _impactSoundQuietUntil = _loop.Clock.TickCount + BulletImpactSounds.QuietTicks(_soundRandom);
+        if (sound.Length > 0)
+        {
             _sounds.PlayDefinition(
                 sound,
-                impact.Position,
+                position,
                 pitch: FootstepSounds.Pitch(_soundRandom),
                 priority: 45);
         }
+
+        // The second half of a retail impact. 0x47C330 runs on the merge path inside the material
+        // window, keeps a SEPARATE timestamp and rand(6)+6 interval of its own, and picks one of four
+        // riccochet_* samples without reading the material at all -- which is why a burst into a fence
+        // is the fence's own ping AND a whizz, arriving on their own two rhythms rather than together.
+        PlayRicochetSound(position);
+    }
+
+    /// <summary>Plays the whizz a round makes coming off a surface, on its own retail limit.</summary>
+    /// <remarks>
+    /// Separate from the material's sample in every way that matters: its own global timestamp, its own
+    /// <c>rand(6)+6</c> interval, and a fixed table of four it reads without consulting the surface.
+    /// A round that glances off calls it directly (<c>0x47BD7B</c>) rather than through the material
+    /// window, so a ricochet always gets its turn.
+    /// </remarks>
+    private void PlayRicochetSound(Vector3d position)
+    {
+        if (_sounds is null || _loop.Clock.TickCount < _ricochetSoundQuietUntil)
+        {
+            return;
+        }
+
+        _ricochetSoundQuietUntil = _loop.Clock.TickCount + BulletImpactSounds.QuietTicks(_soundRandom);
+        _sounds.PlayDefinition(
+            BulletImpactSounds.PickRicochet(_soundRandom),
+            position,
+            pitch: FootstepSounds.Pitch(_soundRandom),
+            priority: 45);
     }
 
     /// <summary>Spawns the particle bursts for whatever ballistic rounds landed this tick.</summary>
@@ -794,6 +909,64 @@ internal sealed partial class DesktopGame
         }
     }
 
+    /// <summary>Delivers native grenade/explosion AI events before the soldier tick.</summary>
+    /// <remarks>
+    /// IGI1 broadcasts these from the task update itself: type 17 when a grenade is created, type 18 on
+    /// the debounced landing sound, type 19 for a flashbang, and type 21 for an explosion. They are
+    /// deliberately separate from gunshot/walk noise. The physics lists stay available until the effect
+    /// pass below, so this method only consumes the one-shot throw list.
+    /// </remarks>
+    private void NotifyGrenadeAiEvents()
+    {
+        if (_player is null || _soldiers is null)
+        {
+            return;
+        }
+
+        foreach (Vector3d origin in _player.Grenades.Thrown)
+        {
+            _soldiers.NotifyGrenadeThrown(origin);
+        }
+
+        _player.Grenades.ClearThrownEvents();
+
+        foreach (Vector3d origin in _player.Grenades.Bounces)
+        {
+            _soldiers.NotifyGrenadeLand(origin);
+        }
+
+        // IGI1's proximity task emits proxy_arm on the first human entering its activation radius.
+        // This is a one-shot rising-edge cue, not the mine's placement/arming sound.
+        foreach (Vector3d origin in _player.Grenades.MineTriggers)
+        {
+            _sounds?.PlayDefinition("proxy_arm", origin, priority: 180);
+        }
+
+        _player.Grenades.ClearMineTriggerEvents();
+
+        foreach (GrenadeDetonation blast in _player.Grenades.Detonations)
+        {
+            if (blast.Type == GrenadeExplosionType.Flashbang)
+            {
+                _soldiers.NotifyFlashbang(blast.Position, blast.RadiusUnits);
+            }
+            else
+            {
+                _soldiers.NotifyExplosion(blast.Position, blast.RadiusUnits);
+            }
+        }
+
+        foreach (MissileDetonation blast in _player.Missiles.Detonations)
+        {
+            _soldiers.NotifyExplosion(blast.Position, blast.RadiusUnits);
+        }
+
+        foreach (M203Detonation blast in _player.M203.Detonations)
+        {
+            _soldiers.NotifyExplosion(blast.Position, blast.RadiusUnits);
+        }
+    }
+
     /// <summary>Applies and shows whatever grenades went off this tick.</summary>
     /// <remarks>
     /// <para>
@@ -804,10 +977,7 @@ internal sealed partial class DesktopGame
     /// affected (<see cref="Flashbang"/>), measured to the <b>eye</b>: any flash inside 25 m
     /// registers, one inside its own radius blinds outright.
     /// </para>
-    /// <para>
-    /// The visible fireball is this port's particle burst rather than the retail <c>1009_01_1</c>
-    /// fireball model — a recorded stand-in, the numbers around it retail.
-    /// </para>
+    /// <para>The visible fireball is resolved by the retail effect assets loaded by the impact renderer.</para>
     /// </remarks>
     private void ResolveGrenadeDetonations()
     {
@@ -818,24 +988,46 @@ internal sealed partial class DesktopGame
 
         foreach (GrenadeDetonation blast in _player.Grenades.Detonations)
         {
-            // 122880 units -- the 30 m HUMANAI_DETECTIONEVENT_GUNSHOT_RANGE an unsuppressed shot
-            // carries; an explosion is at least as loud as the rifle that could have caused it.
-            _sounds?.PlayDefinition("explo_02_m", blast.Position, priority: 90);
-            _soldiers?.NotifyGunshot(blast.Position, 122880f);
-            _impactParticles?.SpawnExplosion(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
-
             if (blast.Type == GrenadeExplosionType.Flashbang)
             {
+                // 0x00476AC0's type-1 branch spawns only the flash (0x0047E9A0) and plays explo_flash
+                // (0x0047E820) -- no fireball and no explo_02_m. The world residue is a smoke task
+                // (smoke2.spr), while the player handler at 0x00413090 writes the distance-based
+                // whiteout fields from the player's eye. That handler does not perform a wall trace.
+                _sounds?.PlayDefinition("explo_flash", blast.Position, priority: 90);
+                SpawnFlashbangSmoke(blast.Position);
                 float eyeDistance = (float)(_player.EyeUnits - blast.Position).Length;
                 (float visible, float close) = Flashbang.Effect(eyeDistance, blast.RadiusUnits);
-                _flashbangStrength = Math.Max(_flashbangStrength, Math.Max(visible, close));
+                // 0x00413090 writes the player fields only when one of its two distance tests passes.
+                // The world smoke belongs to 0x47E9A0 and is deliberately independent, so a distant
+                // flash event never turns into a zero-strength (but still scheduled) screen flash.
+                if (visible > 0f || close > 0f)
+                {
+                    _flashbangScreenFlash.Apply(visible, close);
+                }
                 continue;
             }
 
+            // The frag (type 0): the 1009_01_1 / explo_02_m fireball and the blast's casualties.
+            _sounds?.PlayDefinition("explo_02_m", blast.Position, priority: 90);
+            SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
             _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
+            // AIEVENT_EXPLOSION was already posted by NotifyGrenadeAiEvents before the soldier tick.
+            // Do not post it again here: leaving a second record behind makes a guard react twice to
+            // one retail blast, with the duplicate consumed on the following tick.
+
+            // Explosion0 dispatches its collision callbacks to every nearby authored glass pane and
+            // explosive magic object. Do this before the speaker pass so a barrel-to-barrel chain is
+            // resolved in the same simulation tick as the grenade that started it.
+            HandleDestructibleBlast(
+                source: null,
+                originUnits: blast.Position,
+                radiusUnits: blast.RadiusUnits,
+                falloffUnits: blast.FalloffUnits,
+                damageFactor: blast.DamageFactor);
 
             // A blast in reach of a speaker takes it off the wall too.
-            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits);
+            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, affectDestructibles: false);
 
             float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
             float dose = ExplosionDamage.Dose(
@@ -859,22 +1051,105 @@ internal sealed partial class DesktopGame
         }
     }
 
-    /// <summary>Consumes and presents authored GenericTBA explosions.</summary>
-    /// <remarks>
-    /// GenericTBA uses the same world blast paths as a grenade, but its radius, falloff, damage scale,
-    /// delay, sound and particle counts come from the task. The interaction registry emits one edge;
-    /// this method owns the optional delayed presentation without re-reading the script state.
-    /// </remarks>
+    /// <summary>Applies and shows launcher missile impacts produced by the missile task.</summary>
+    private void ResolveMissileDetonations()
+    {
+        if (_player is null)
+        {
+            return;
+        }
+
+        foreach (MissileDetonation blast in _player.Missiles.Detonations)
+        {
+            _sounds?.PlayDefinition("explo_02_m", blast.Position, priority: 90);
+            SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
+            ScorchSurface(blast.Position, blast.Normal);
+            _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
+            // Launcher impacts use Explosion0's full collision envelope. Keep the speaker pass for
+            // alarms, but disable its legacy nearest-destructible fallback so one object cannot be
+            // destroyed twice or hide the other authored contacts in the blast.
+            HandleDestructibleBlast(
+                source: null,
+                originUnits: blast.Position,
+                radiusUnits: blast.RadiusUnits,
+                falloffUnits: blast.FalloffUnits,
+                damageFactor: blast.DamageFactor);
+            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, affectDestructibles: false);
+
+            float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
+            float dose = ExplosionDamage.Dose(
+                playerDistance,
+                ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
+                blast.RadiusUnits,
+                blast.FalloffUnits,
+                blast.DamageFactor);
+            if (dose > 0f && !_playerHealth.IsDead)
+            {
+                _playerHealth.Apply(ExplosionDamage.Zone, dose);
+                _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
+                if (_playerHealth.IsDead)
+                {
+                    BeginPlayerDeath(blast.Position, ExplosionDamage.Zone, -1, WeaponCategory.Gun);
+                }
+            }
+        }
+    }
+
+    /// <summary>Applies M203 impacts emitted by the native-style projectile task.</summary>
+    private void ResolveM203Detonations()
+    {
+        if (_player is null)
+        {
+            return;
+        }
+
+        foreach (M203Detonation blast in _player.M203.Detonations)
+        {
+            // GunM203's native projectile callback (0x476340) sends the proxy explosion tag, not the
+            // hand-grenade fireball. The distinct sound/effect is audible proof that the M203 task
+            // reached its own detonation path.
+            _sounds?.PlayDefinition("explo_proxy", blast.Position, priority: 90);
+            SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
+            ScorchSurface(blast.Position, blast.Normal);
+            _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
+            // Match the native explosion callback: visit every visible destructible in the blast
+            // envelope, then handle alarms separately without the nearest-object fallback.
+            HandleDestructibleBlast(
+                source: null,
+                originUnits: blast.Position,
+                radiusUnits: blast.RadiusUnits,
+                falloffUnits: blast.FalloffUnits,
+                damageFactor: blast.DamageFactor);
+            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, affectDestructibles: false);
+
+            float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
+            float dose = ExplosionDamage.Dose(
+                playerDistance,
+                ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
+                blast.RadiusUnits,
+                blast.FalloffUnits,
+                blast.DamageFactor);
+            if (dose > 0f && !_playerHealth.IsDead)
+            {
+                _playerHealth.Apply(ExplosionDamage.Zone, dose);
+                _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
+                if (_playerHealth.IsDead)
+                {
+                    BeginPlayerDeath(blast.Position, ExplosionDamage.Zone, -1, WeaponCategory.Gun);
+                }
+            }
+        }
+    }
+
+    /// <summary>Consumes and presents authored GenericTBA explosions once per completed interaction.</summary>
     private void ResolveGenericTbaExplosions()
     {
         if (_interactions is { } interactions)
         {
-            foreach ((WorldInteraction interaction, GenericTbaExplosionParameters parameters)
-                in interactions.ConsumeExplosions())
+            foreach ((WorldInteraction interaction, GenericTbaExplosionParameters parameters) in interactions.ConsumeExplosions())
             {
-                int delayTicks = Math.Max(
-                    0,
-                    (int)MathF.Round(Math.Max(0f, parameters.ExplosionDelaySeconds) * GameClock.DefaultTickRate));
+                int delayTicks = Math.Max(0, (int)MathF.Round(
+                    Math.Max(0f, parameters.ExplosionDelaySeconds) * GameClock.DefaultTickRate));
                 _pendingGenericTbaExplosions.Add(
                     new PendingGenericTbaExplosion(interaction, interaction.Anchor, parameters, delayTicks));
             }
@@ -895,9 +1170,7 @@ internal sealed partial class DesktopGame
         }
     }
 
-    private void PresentGenericTbaExplosion(
-        Vector3d position,
-        GenericTbaExplosionParameters parameters)
+    private void PresentGenericTbaExplosion(Vector3d position, GenericTbaExplosionParameters parameters)
     {
         string sound = parameters.ExplosionSound.Length > 0 ? parameters.ExplosionSound : "explo_02_m";
         _sounds?.PlayDefinition(sound, position, priority: 90);
@@ -905,8 +1178,8 @@ internal sealed partial class DesktopGame
         _impactParticles?.SpawnExplosion(
             position,
             Math.Max(1f, RenderCVars.ImpactParticles.Value),
-            parameters.FragmentCount,
-            parameters.FireballCount);
+            Math.Max(1f, parameters.FireballCount),
+            parameters.FragmentCount);
 
         if (parameters.ExplosionExpression.Length > 0)
         {
@@ -914,11 +1187,7 @@ internal sealed partial class DesktopGame
         }
 
         float damageFactor = parameters.DamageScale * parameters.ExplosionDamageScale;
-        _soldiers?.ApplyExplosion(
-            position,
-            parameters.ExplosionRadiusUnits,
-            parameters.ExplosionFalloffUnits,
-            damageFactor);
+        _soldiers?.ApplyExplosion(position, parameters.ExplosionRadiusUnits, parameters.ExplosionFalloffUnits, damageFactor);
         DamageAlarmSpeakers(position, parameters.ExplosionRadiusUnits);
 
         if (_player is null)
@@ -948,6 +1217,8 @@ internal sealed partial class DesktopGame
     /// <param name="impactUnits">Where the round or blast hit, in world units.</param>
     /// <param name="radiusUnits">The destruction's reach — a bullet's touch by default.</param>
     /// <param name="owner">The exact placed task struck by a rich trace, when available.</param>
+    /// <param name="placement">The exact rendered placement struck, including an attached magic object.</param>
+    /// <param name="affectDestructibles">Whether this contact should also run the destructible-object path.</param>
     /// <remarks>
     /// Retail routes a weapon hit to the exact task. AlarmLight_Explode (<c>0x43A5F0</c>) and the
     /// SCameraLens destruction branch (<c>0x441770</c>) permanently silence it, play its report,
@@ -957,8 +1228,26 @@ internal sealed partial class DesktopGame
     private void DamageAlarmSpeakers(
         Vector3d impactUnits,
         float radiusUnits = AlarmSpeakerRegistry.HitRadiusUnits,
-        GameTask? owner = null)
+        GameTask? owner = null,
+        WorldPlacement? placement = null,
+        bool affectDestructibles = true)
     {
+        // The same world contact drives both families. The placement is essential for windows and
+        // barrels: their Owner is the enclosing Building task, while retail destroys only the exact
+        // attached magic object that the round touched.
+        if (affectDestructibles)
+        {
+            DestructibleObject? destructible = _destructibles?.TryDestroyAt(
+                impactUnits,
+                radiusUnits,
+                owner,
+                placement);
+            if (destructible is not null)
+            {
+                HandleDestructibleImpact(destructible, impactUnits);
+            }
+        }
+
         if (_alarmSpeakers is not { } speakers)
         {
             return;
@@ -1002,8 +1291,161 @@ internal sealed partial class DesktopGame
         float intensity = string.Equals(destroyed.Task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal)
             ? 1f
             : 0.6f;
-        _impactParticles?.SpawnExplosion(destroyed.PositionUnits, intensity);
+        // Destructible parity owns this effect path: unlike the legacy speaker fallback, retail
+        // destroyed objects spawn the authored fireball without an ExplosionSmoke child.
+        _impactParticles?.SpawnExplosion(destroyed.PositionUnits, intensity, includeSmoke: false);
         _logger.Information("Ai", $"{destroyed.Task.Name} was shot out.");
+    }
+
+    /// <summary>Runs the native explosion-hit callbacks for every authored object in a blast.</summary>
+    private void HandleDestructibleBlast(
+        DestructibleObject? source,
+        Vector3d originUnits,
+        float radiusUnits,
+        float falloffUnits,
+        float damageFactor = 1f)
+    {
+        if (_destructibles is not { } registry)
+        {
+            return;
+        }
+
+        foreach (DestructibleObject target in registry.ApplyExplosionHits(
+            source,
+            originUnits,
+            radiusUnits,
+            falloffUnits,
+            damageFactor,
+            target => ExplosionCanReach(source, originUnits, target)))
+        {
+            // Passing the blast origin is deliberate. GlassShatter uses the incoming contact to pick
+            // nearby collision faces, just as Glass_ExplosionHitHandler hands the native shatter task
+            // the fireball's contact point rather than the pane's origin.
+            HandleDestructibleImpact(target, originUnits);
+        }
+    }
+
+    /// <summary>Checks the native blast contact envelope against the live world occluders.</summary>
+    /// <remarks>
+    /// Explosion0 dispatches its callbacks from the collision object, so an authored pane or barrel
+    /// behind a solid building is not a contact. The source placement is the one mesh that must be
+    /// ignored; using <c>IgnoredOwner</c> for an attached source would incorrectly remove every sibling
+    /// pane owned by the same building from the trace.
+    /// </remarks>
+    private bool ExplosionCanReach(
+        DestructibleObject? source,
+        Vector3d originUnits,
+        DestructibleObject target)
+    {
+        if (_worldTrace is not { } trace)
+        {
+            return true;
+        }
+
+        WorldTraceRequest request = new(
+            originUnits,
+            target.PositionUnits,
+            WorldTraceMask.World,
+            IgnoredOwner: source?.Placement is null ? source?.Owner : null,
+            IgnoredPlacement: source?.Placement);
+
+        if (!trace(request, out WorldTraceHit hit))
+        {
+            return true;
+        }
+
+        if (target.Placement is { } placement)
+        {
+            return ReferenceEquals(hit.Placement, placement);
+        }
+
+        return target.Owner is { } owner && ReferenceEquals(hit.Owner, owner);
+    }
+
+    /// <summary>Applies the retail presentation and blast side effects of one destroyed world object.</summary>
+    private void HandleDestructibleImpact(DestructibleObject item, Vector3d? impactUnits = null)
+    {
+        if (item.Kind == DestructibleObjectKind.Glass)
+        {
+            // magicobj.qvm registers three retail glass-crush variants. Retail chooses one randomly
+            // at shatter time and creates GlassShatter shards from the pane collision faces.
+            int variant = (int)_soundRandom.NextBounded(3u) + 1;
+            _sounds?.PlayDefinition($"glass_crush_{variant}", item.PositionUnits, priority: 55);
+            if (item.Placement is { } placement)
+            {
+                _impactParticles?.SpawnGlassShatter(placement, impactUnits ?? item.PositionUnits);
+            }
+            // GlassShatter_Sound is a world noise. The existing retail ground-impact route is the
+            // matching AI event used for non-human world contacts; it also keeps a pane behind a wall
+            // from becoming a global alert.
+            _soldiers?.NotifyGroundImpact(
+                impactUnits ?? item.PositionUnits,
+                _player?.Body.Position ?? item.PositionUnits);
+            _logger.Information("World", $"{item.TypeName} at {item.PositionUnits} shattered.");
+            return;
+        }
+
+        if (_destructibles is not { } registry || !registry.ScheduleExplosion(item))
+        {
+            return;
+        }
+
+        HandleDestructibleExplosion(item);
+    }
+
+    /// <summary>Applies the blast side effects after an authored explosive object's delay expires.</summary>
+    private void HandleDestructibleExplosion(DestructibleObject item)
+    {
+
+        float radius = item.ExplosionRadiusUnits > 0f
+            ? item.ExplosionRadiusUnits
+            : ExplosionDamage.ToUnits(ExplosionDamage.DefaultGrenadeRadiusMetres);
+        float falloff = Math.Max(0f, item.ExplosionFalloffUnits);
+        float damageFactor = item.ExplosionDamageFactor > 0f
+            ? item.ExplosionDamageFactor
+            : ExplosionDamage.DefaultGrenadeDamageFactor;
+
+        if (item.ExplosionSound.Length > 0)
+        {
+            _sounds?.PlayDefinition(item.ExplosionSound, item.PositionUnits, priority: 90);
+        }
+
+        float intensity = item.ExplosionFireballs > 0
+            ? Math.Clamp(item.ExplosionFireballs, 0.6f, 2f)
+            : 0.8f;
+        _impactParticles?.SpawnExplosion(
+            item.PositionUnits,
+            intensity,
+            item.ExplosionFireballs,
+            item.ExplosionFragments,
+            item.HasExplosionSmoke);
+        HandleDestructibleBlast(item, item.PositionUnits, radius, falloff, damageFactor);
+        _soldiers?.ApplyExplosion(item.PositionUnits, radius, falloff, damageFactor);
+        _soldiers?.NotifyExplosion(item.PositionUnits, radius + falloff);
+
+        if (_player is not null && !_playerHealth.IsDead)
+        {
+            float distance = (float)(_player.Body.Position - item.PositionUnits).Length;
+            float dose = ExplosionDamage.Dose(
+                distance,
+                ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
+                radius,
+                falloff,
+                damageFactor);
+            if (dose > 0f)
+            {
+                _playerHealth.Apply(ExplosionDamage.Zone, dose);
+                _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
+                if (_playerHealth.IsDead)
+                {
+                    BeginPlayerDeath(item.PositionUnits, ExplosionDamage.Zone, -1, WeaponCategory.Grenade);
+                }
+            }
+        }
+
+        _logger.Information(
+            "World",
+            $"{item.TypeName} at {item.PositionUnits} exploded: radius={radius}, falloff={falloff}, damage={damageFactor}.");
     }
 
     /// <summary>Keeps every alarm speaker's siren matched to its own expression, positionally.</summary>

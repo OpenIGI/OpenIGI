@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>OpenIGI</string>
+  <key>CFBundleDisplayName</key>
+  <string>OpenIGI</string>
+  <key>CFBundleIdentifier</key>
+  <string>org.openigi.desktop</string>
+  <key>CFBundleExecutable</key>
+  <string>OpenIGI.Desktop</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleVersion</key>
+  <string>1.0</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.0</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+
+  <!-- Without this the window is rendered at 1x and scaled up by the compositor, which on a Retina
+       display is exactly the blur the temporal work exists to avoid. With it the framebuffer is the
+       panel's real pixel count, which is what SilkGameWindow.Width/Height report and what the
+       swapchain is sized to. -->
+  <key>NSHighResolutionCapable</key>
+  <true/>
+
+  <!-- Metal 3 argument buffers, which is what MoltenVK implements descriptor indexing on top of. -->
+  <key>LSMinimumSystemVersion</key>
+  <string>13.0</string>
+
+  <key>NSSupportsAutomaticGraphicsSwitching</key>
+  <true/>
+
+  <!-- The game reads its data from a folder the player points it at, never from inside the bundle, so
+       it needs no document types and declares no URL schemes. -->
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.action-games</string>
+</dict>
+</plist>

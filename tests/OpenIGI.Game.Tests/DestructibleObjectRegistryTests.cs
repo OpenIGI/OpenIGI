@@ -1,0 +1,61 @@
+using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Flow;
+using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.World;
+using OpenIGI.Scripting.Qvm;
+using OpenIGI.Scripting.Runtime;
+using OpenIGI.TestSupport;
+using Xunit;
+
+namespace OpenIGI.Game.Tests;
+
+/// <summary>Headless regression coverage for authored destructible task placement identity.</summary>
+public sealed class DestructibleObjectRegistryTests
+{
+    [Fact]
+    public void OneDeclaredExplodeObjectSharesItsDestroyedStateWithEveryOwnedPlacement()
+    {
+        GameLoop loop = new();
+        QvmProgram script = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("ExplodeObject"),
+                QvmExpression.Text("Position"), QvmExpression.Text("ObjectPos"),
+                QvmExpression.Text("Model"), QvmExpression.Text("String16"),
+                QvmExpression.Text("Destroyed model"), QvmExpression.Text("String16"),
+                QvmExpression.Text("Damage scale"), QvmExpression.Text("Real32")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(7),
+                QvmExpression.Text("ExplodeObject"),
+                QvmExpression.Text("Two monitors"),
+                QvmExpression.Real(1f), QvmExpression.Real(2f), QvmExpression.Real(3f),
+                QvmExpression.Text("203_01_1"),
+                QvmExpression.Text("203_02_1"),
+                QvmExpression.Real(1f))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(script, loop.Natives).Run());
+
+        DeclaredTask task = Assert.IsType<DeclaredTask>(loop.Tasks.FromId(7));
+        WorldPlacement first = Placement(task, "Model");
+        WorldPlacement second = Placement(task, "Model 2");
+        DestructibleObjectRegistry registry = DestructibleObjectRegistry.Build(
+            loop.Tasks.Root,
+            [first, second],
+            loop.Variables);
+
+        DestructibleObject item = Assert.Single(registry.Objects);
+        Assert.Same(item, registry.TryDestroy(task, second));
+        Assert.True(registry.IsDestroyed(first));
+        Assert.True(registry.IsDestroyed(second));
+        Assert.Equal("203_02_1", item.DestroyedModelName);
+    }
+
+    private static WorldPlacement Placement(GameTask owner, string taskName) => new(
+        Position: default,
+        Orientation: default,
+        Instance: default,
+        Pack: null!,
+        Model: null!,
+        TaskName: taskName,
+        Owner: owner);
+}

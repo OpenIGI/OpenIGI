@@ -43,6 +43,28 @@ public sealed class AiVisionTests
         Assert.True(secondary.Length < primary.Length / 2);
     }
 
+    [Fact]
+    public void WorldOcclusionAllowsClearSightAndBlocksBuildingWalls()
+    {
+        Assert.Equal(1.0, AiSoldier.SightObstructionTolerance);
+
+        // No hit is a clear path. Any world hit before the mark is cover: a closed door or the
+        // far wall of a room sits at 0.8–0.99 of the segment once human hulls are out of the
+        // index (r2 0x4C4630 returns clear=1; 0.79 is only for a native ray that can hit the body).
+        Assert.True(AiSoldier.WorldBlockerAllowsSight(100.0, double.PositiveInfinity));
+        Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 0.0));
+        Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 50.0));
+        Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 90.0));
+        Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 99.9));
+
+        // A collision exactly at the mark is the detection point itself, not an intervening wall.
+        Assert.True(AiSoldier.WorldBlockerAllowsSight(100.0, 100.0));
+
+        // Degenerate targets have no ray to occlude. Keep the renderer's zero-distance behavior stable.
+        Assert.True(AiSoldier.WorldBlockerAllowsSight(0.0, 0.0));
+        Assert.True(AiSoldier.WorldBlockerAllowsSight(0.0, 25.0));
+    }
+
     /// <summary>A point straight ahead and in range is seen; one behind is refused before any trigonometry.</summary>
     [Fact]
     public void StraightAheadIsSeenAndBehindIsNot()

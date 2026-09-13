@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 
@@ -16,8 +16,6 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     private uint _nextTexture = 1;
     private uint _nextMesh = 1;
     private uint _nextOcclusionQuery = 1;
-
-    public event EventHandler? DeviceRestored;
 
     public List<DrawCall> Draws { get; } = [];
 
@@ -90,6 +88,22 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public void SetMaterialOverride(in SurfaceMaterial material) => Materials.Add(material);
 
+    /// <inheritdoc/>
+    public void SetLightmapScale(float scale)
+    {
+    }
+
+    /// <inheritdoc/>
+    public void SetAlphaHash(float seed)
+    {
+    }
+
+    /// <summary>Gets a value indicating whether the draws being recorded were marked first-person.</summary>
+    public bool FirstPersonGeometry { get; private set; }
+
+    /// <inheritdoc/>
+    public void SetFirstPersonGeometry(bool firstPerson) => FirstPersonGeometry = firstPerson;
+
     /// <summary>The detail map attached to each diffuse texture, in the order they were attached.</summary>
     public List<(TextureHandle Diffuse, TextureHandle Detail)> TextureDetails { get; } = [];
 
@@ -102,6 +116,11 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 
     /// <inheritdoc/>
     public void SetMaterialDetail(float strength) => MaterialDetail = strength;
+
+    /// <inheritdoc/>
+    public void SetFloorGloss(float gloss)
+    {
+    }
 
     /// <summary>The compute programs asked for, by the name they were given.</summary>
     public List<string> ComputeShaders { get; } = [];
@@ -123,6 +142,69 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     // anything CreateTexture hands out -- a test that confuses the two would otherwise pass.
     private uint _nextVolumeId = 10_000;
 
+    /// <summary>The card atlases opened, as their dimensions.</summary>
+    public List<(int Width, int Height)> CardCaptures { get; } = [];
+
+    /// <summary>The pages drawn into, in order.</summary>
+    public List<(int X, int Y, int Width, int Height)> CardPages { get; } = [];
+
+    /// <summary>Whether a card capture is open right now.</summary>
+    public bool IsCapturingCards { get; private set; }
+
+    /// <inheritdoc/>
+    public bool BeginCardCapture(int width, int height)
+    {
+        if (IsCapturingCards)
+        {
+            throw new GraphicsDeviceException("A card capture is already in progress.");
+        }
+
+        CardCaptures.Add((width, height));
+        IsCapturingCards = true;
+        CurrentPass = ScenePass.Card;
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public void SetCardPage(int x, int y, int width, int height)
+    {
+        if (!IsCapturingCards)
+        {
+            throw new GraphicsDeviceException("No card capture is in progress.");
+        }
+
+        CardPages.Add((x, y, width, height));
+    }
+
+    /// <inheritdoc/>
+    public void EndCardCapture()
+    {
+        if (!IsCapturingCards)
+        {
+            throw new GraphicsDeviceException("No card capture is in progress.");
+        }
+
+        IsCapturingCards = false;
+        CurrentPass = ScenePass.None;
+    }
+
+    /// <inheritdoc/>
+    public void ReadCardAtlas(int attachment, Span<Bgra32> destination)
+    {
+    }
+
+    /// <inheritdoc/>
+    public TextureHandle CardAlbedo => new(90_001);
+
+    /// <inheritdoc/>
+    public TextureHandle CardNormal => new(90_002);
+
+    /// <inheritdoc/>
+    public TextureHandle CardMaterial => new(90_003);
+
+    /// <inheritdoc/>
+    public TextureHandle CardDepth => new(90_004);
+
     /// <inheritdoc/>
     public TextureHandle SceneDepth => new(90_005);
 
@@ -132,7 +214,35 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public TextureHandle SceneColour => new(90_007);
 
+    public bool TryGetSkyIrradiance(Span<float> coefficients) => false;
+
+    /// <inheritdoc/>
+    public void SetScreenIndirect(TextureHandle indirect, float strength, bool fullResolution = false)
+    {
+    }
+
+    /// <summary>Gets the local lights the last frame submitted, in the order they were given.</summary>
+    /// <remarks>
+    /// Recorded rather than dropped: a lamp reaching the device at all is the thing that was silently
+    /// missing before -- the fixtures were proposed, written to a file and handed to the surface cache,
+    /// and the field the deferred pass read from was never assigned, so no punctual light was ever
+    /// submitted by anything.
+    /// </remarks>
+    public List<DeferredLocalLight> LocalLights { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetLocalLights(ReadOnlySpan<DeferredLocalLight> lights)
+    {
+        LocalLights.Clear();
+
+        foreach (DeferredLocalLight light in lights)
+        {
+            LocalLights.Add(light);
+        }
+    }
+
     /// <summary>The volume textures allocated, as name, dimensions and format.</summary>
+    /// <remarks>Not to be confused with <see cref="Volumes"/>, which is the probe field.</remarks>
     public List<(string Name, int Width, int Height, int Depth, VolumeFormat Format)> VolumeTextures { get; } = [];
 
     /// <inheritdoc/>
@@ -304,6 +414,38 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public void SetDebugView(DebugView view) => DebugViews.Add(view);
 
+    /// <summary>The probe volumes handed over, in order; a null entry is a clear.</summary>
+    public List<IrradianceVolume?> Volumes { get; } = [];
+
+    /// <summary>The volume settings each frame was given, in order.</summary>
+    public List<IrradianceVolumeSettings> VolumeSettings { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetIrradianceVolume(IrradianceVolume? volume) => Volumes.Add(volume);
+
+    /// <inheritdoc/>
+    public void SetRealtimeProbeVolume(
+        TextureHandle red,
+        TextureHandle green,
+        TextureHandle blue,
+        TextureHandle distance,
+        Vector3f origin,
+        float spacing,
+        int countX,
+        int countY,
+        int countZ)
+    {
+    }
+
+    /// <inheritdoc/>
+    public void ClearRealtimeProbeVolume()
+    {
+    }
+
+    /// <inheritdoc/>
+    public void SetIrradianceVolumeSettings(in IrradianceVolumeSettings settings) =>
+        VolumeSettings.Add(settings);
+
     /// <summary>The occlusion settings each frame was given, in order.</summary>
     public List<AmbientOcclusionSettings> Occlusion { get; } = [];
 
@@ -312,12 +454,6 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 
     /// <summary>The previous poses reported, in order; a null entry is a clear.</summary>
     public List<Matrix4f?> PreviousPoses { get; } = [];
-
-    /// <inheritdoc/>
-    public void SetPreviousPose(in Matrix4f previousModelView) => PreviousPoses.Add(previousModelView);
-
-    /// <inheritdoc/>
-    public void ClearPreviousPose() => PreviousPoses.Add(null);
 
     /// <summary>The pose blends reported, in order; a null entry is a clear.</summary>
     public List<(float Current, float Previous)?> PoseInterpolations { get; } = [];
@@ -336,7 +472,7 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     public void SetTemporalAntiAliasing(
         in TemporalAaSettings settings,
         in Matrix4f projection,
-        Vector3f cameraPosition,
+        Vector3d cameraPosition,
         Matrix3f viewToWorld) => Temporal.Add(settings);
 
     /// <summary>The cascade indices that were rendered, in order.</summary>
@@ -348,12 +484,49 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <summary>The fog settings each frame was given, in order.</summary>
     public List<VolumetricFogSettings> Fogs { get; } = [];
 
-    /// <summary>The texture-quality settings applied, in order.</summary>
-    public List<(int Anisotropy, bool Mipmaps)> TextureQuality { get; } = [];
+    /// <summary>The wetness settings applied, in order, with the shelter count each carried.</summary>
+    public List<WetnessSettings> Wetness { get; } = [];
+
+    /// <summary>Every shelter map handed over, newest last.</summary>
+    public List<(TextureHandle Map, ShelterMapTransform Transform)> ShelterMaps { get; } = [];
 
     /// <inheritdoc/>
-    public void SetTextureQuality(int maxAnisotropy, bool generateMissingMipmaps) =>
-        TextureQuality.Add((maxAnisotropy, generateMissingMipmaps));
+    public void SetWetness(in WetnessSettings wetness) => Wetness.Add(wetness);
+
+    /// <inheritdoc/>
+    public void SetShelterMap(TextureHandle map, in ShelterMapTransform transform) =>
+        ShelterMaps.Add((map, transform));
+
+    /// <summary>What <see cref="GpuMeasuredTiming"/> reports. Zero unless a test sets it.</summary>
+    public GpuFrameTiming MeasuredTiming { get; set; }
+
+    /// <inheritdoc/>
+    public GpuFrameTiming GpuMeasuredTiming() => MeasuredTiming;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// False unless a test says otherwise: this double rasterises nothing, so the cascades are the
+    /// only sun shadow it could be said to have.
+    /// </remarks>
+    public bool SunShadowTraced { get; set; }
+
+    /// <inheritdoc/>
+    /// <remarks>One unless a test says otherwise: this double resolves nothing, so a colour written
+    /// through it means what it says.</remarks>
+    public float SceneExposure { get; set; } = 1f;
+
+    /// <summary>The shadow casters submitted, in order.</summary>
+    public List<(MeshHandle Mesh, Matrix4f ModelView, int IndexCount)> ShadowCasters { get; } = [];
+
+    /// <inheritdoc/>
+    public void SubmitShadowCaster(MeshHandle mesh, in Matrix4f modelView, int indexCount) =>
+        ShadowCasters.Add((mesh, modelView, indexCount));
+
+    /// <summary>The texture-quality settings applied, in order.</summary>
+    public List<int> TextureQuality { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetTextureQuality(int maxAnisotropy) => TextureQuality.Add(maxAnisotropy);
 
     /// <inheritdoc/>
     public void SetVolumetricFog(
@@ -417,6 +590,12 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         CurrentPass = ScenePass.None;
     }
 
+    /// <summary>Gets how many times the level's accumulated world has been released.</summary>
+    public int WorldReleaseCount { get; private set; }
+
+    /// <inheritdoc/>
+    public void ReleaseWorld() => WorldReleaseCount++;
+
     /// <inheritdoc/>
     public void EndSceneCapture()
     {
@@ -453,15 +632,7 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 
     public bool VSyncEnabled { get; set; }
 
-    public IReadOnlyList<DisplayMode> EnumerateDisplayModes() => [CurrentMode];
-
     public void SetMode(in DisplayMode mode) => CurrentMode = mode;
-
-    public void UnsetMode()
-    {
-    }
-
-    public void Restore() => DeviceRestored?.Invoke(this, EventArgs.Empty);
 
     public void Clear(Bgra32 color) => Clears.Add(color);
 
@@ -480,6 +651,10 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     public void CaptureFrame(int width, int height, Span<Bgra32> destination) => destination.Clear();
 
     public void CopyFrameToTexture(TextureHandle texture, int width, int height)
+    {
+    }
+
+    public void DrawLoadingBackdrop(TextureHandle texture, in LoadingBackdropSettings settings)
     {
     }
 
@@ -514,6 +689,71 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         MeshHandle handle = new(_nextMesh++);
         Meshes[handle.Id] = (vertices.ToArray(), indices.ToArray());
         return handle;
+    }
+
+    /// <summary>The storage meshes' capacities, by mesh id.</summary>
+    public Dictionary<uint, (int VertexCapacity, int IndexCapacity)> MeshStorageCapacities { get; } = [];
+
+    /// <summary>How many ranges each storage mesh received.</summary>
+    public Dictionary<uint, int> MeshRangeUploads { get; } = [];
+
+    public MeshHandle CreateMeshStorage(int vertexCapacity, int indexCapacity)
+    {
+        if (vertexCapacity <= 0 || indexCapacity <= 0)
+        {
+            throw new ArgumentException(
+                $"A storage mesh needs positive capacities, got {vertexCapacity} vertices and {indexCapacity} indices.",
+                nameof(vertexCapacity));
+        }
+
+        if (vertexCapacity > ushort.MaxValue + 1)
+        {
+            throw new ArgumentException(
+                $"A 16-bit index buffer addresses at most {ushort.MaxValue + 1} vertices, got {vertexCapacity}.",
+                nameof(vertexCapacity));
+        }
+
+        MeshHandle handle = new(_nextMesh++);
+        Meshes[handle.Id] = (new Vertex3D[vertexCapacity], new ushort[indexCapacity]);
+        MeshStorageCapacities[handle.Id] = (vertexCapacity, indexCapacity);
+        MeshRangeUploads[handle.Id] = 0;
+        return handle;
+    }
+
+    public void UploadMeshRange(
+        MeshHandle mesh,
+        int vertexOffset,
+        ReadOnlySpan<Vertex3D> vertices,
+        int indexOffset,
+        ReadOnlySpan<ushort> indices)
+    {
+        if (!Meshes.TryGetValue(mesh.Id, out (Vertex3D[] Vertices, ushort[] Indices) entry))
+        {
+            throw new ArgumentException($"{mesh} does not belong to this device.", nameof(mesh));
+        }
+
+        if (!MeshStorageCapacities.TryGetValue(mesh.Id, out (int VertexCapacity, int IndexCapacity) capacity))
+        {
+            throw new ArgumentException($"{mesh} was not created with {nameof(CreateMeshStorage)}.", nameof(mesh));
+        }
+
+        if (vertexOffset < 0 || vertexOffset + vertices.Length > capacity.VertexCapacity)
+        {
+            throw new ArgumentException(
+                $"Vertices {vertexOffset}..{vertexOffset + vertices.Length} lie outside the mesh's capacity of {capacity.VertexCapacity}.",
+                nameof(vertices));
+        }
+
+        if (indexOffset < 0 || indexOffset + indices.Length > capacity.IndexCapacity)
+        {
+            throw new ArgumentException(
+                $"Indices {indexOffset}..{indexOffset + indices.Length} lie outside the mesh's capacity of {capacity.IndexCapacity}.",
+                nameof(indices));
+        }
+
+        vertices.CopyTo(entry.Vertices.AsSpan(vertexOffset));
+        indices.CopyTo(entry.Indices.AsSpan(indexOffset));
+        MeshRangeUploads[mesh.Id]++;
     }
 
     /// <summary>The meshes created animated, with each one's previous-pose vertices.</summary>
@@ -560,6 +800,8 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         Meshes.Remove(mesh.Id);
         PreviousPoseStreams.Remove(mesh.Id);
         AnimatedMeshUpdates.Remove(mesh.Id);
+        MeshStorageCapacities.Remove(mesh.Id);
+        MeshRangeUploads.Remove(mesh.Id);
     }
 
     public void SetDepthState(DepthState state) => DepthState = state;
@@ -575,6 +817,16 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 
     public (float Scale, float Offset, float Slope, bool FadeAlpha)? DetailFade { get; private set; }
 
+    public void SetFog(in SceneFog fog) => Fog = fog;
+
+    /// <summary>Gets the fog the last <see cref="SetFog"/> asked for.</summary>
+    public SceneFog Fog { get; private set; } = SceneFog.None;
+
+    public void SetModelAmbient(Vector3f ambient) => ModelAmbient = ambient;
+
+    /// <summary>Gets the flat model light the last <see cref="SetModelAmbient"/> asked for.</summary>
+    public Vector3f ModelAmbient { get; private set; } = Vector3f.One;
+
     public void DrawMesh(
         MeshHandle mesh,
         int indexOffset,
@@ -583,7 +835,7 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         TextureHandle diffuse,
         TextureHandle lightmap,
         BlendMode blend) =>
-        MeshDraws.Add(new MeshDrawCall(mesh, indexOffset, indexCount, modelView, diffuse, lightmap, blend, DepthState, CullMode));
+        MeshDraws.Add(new MeshDrawCall(mesh, indexOffset, indexCount, modelView, diffuse, lightmap, blend, DepthState, CullMode, Fog, ModelAmbient));
 
     public void DrawMeshRanges(
         MeshHandle mesh,
@@ -643,7 +895,9 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         TextureHandle Lightmap,
         BlendMode Blend,
         DepthState DepthState,
-        CullMode CullMode)
+        CullMode CullMode,
+        SceneFog Fog = default,
+        Vector3f ModelAmbient = default)
     {
         public int TriangleCount => IndexCount / 3;
     }

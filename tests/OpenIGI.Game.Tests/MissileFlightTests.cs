@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Weapons;
 using Xunit;
 
@@ -22,12 +23,101 @@ public sealed class MissileFlightTests
     }
 
     [Fact]
+    public void DummyTableMuzzleVelocityDoesNotLaunchAtFiveMetresPerSecond()
+    {
+        Assert.Equal(
+            MissileFlight.FallbackLaunchMetresPerSecond,
+            MissileFlight.LaunchSpeedMetresPerSecond(new WeaponType { MuzzleVelocity = 5f }));
+        Assert.Equal(
+            290f,
+            MissileFlight.LaunchSpeedMetresPerSecond(new WeaponType { MuzzleVelocity = 290f }));
+    }
+
+    [Fact]
+    public void LauncherTypeComesFromTheBindingNotAHardCodedAntiTank()
+    {
+        Assert.Equal(
+            MissileType.MissileDirect,
+            MissileFlight.TypeForLauncher(new WeaponType { ScriptId = "WEAPON_ID_RPG18", DisplayName = "RPG-18" }));
+        Assert.Equal(
+            MissileType.MissileAntiTank,
+            MissileFlight.TypeForLauncher(new WeaponType { DisplayName = "TOW AntiTank" }));
+        Assert.Equal(
+            MissileType.HindHelicopter,
+            MissileFlight.TypeForLauncher(new WeaponType { ScriptId = "WEAPON_ID_HIND" }));
+    }
+
+    [Fact]
+    public void UnrelatedWeaponTaskValuesDoNotSelectMissileGuidance()
+    {
+        WeaponType weapon = new()
+        {
+            ScriptId = "WEAPON_ID_M16A2",
+            DisplayName = "M16A2",
+            Weapon = new WeaponTaskBinding("TASKTYPE_GUNM16A2", 0, [85f, 3f, 1f], string.Empty, 3),
+            Projectile = new WeaponTaskBinding("TASKTYPE_MISSILE", 0, [], "108_01_1", 0),
+        };
+
+        Assert.Equal(MissileType.MissileDirect, MissileFlight.TypeForLauncher(weapon));
+    }
+
+    [Fact]
+    public void AntiTankNearRegimeUsesTheThreeDimensionalBallisticLob()
+    {
+        // 0x004280B0 flattens Z only to choose the regime, then 0x00428040 lobs with the 3D length.
+        Vector3d origin = new(0, 0, 0);
+        Vector3d target = new(40960, 0, 40960);
+        float horizontal = 40960f;
+        float threeD = (float)Math.Sqrt((40960d * 40960d) + (40960d * 40960d));
+        Assert.True(horizontal < MissileFlight.AntiTankDirectRangeUnits);
+
+        float height = MissileFlight.AntiTankAimHeight(40960f, horizontal, threeD);
+        Assert.Equal(MissileFlight.BallisticAimHeight(40960f, threeD), height);
+        Assert.True(height > MissileFlight.BallisticAimHeight(40960f, horizontal));
+    }
+
+    [Fact]
     public void TheDirectMissileFliesStraightOnPurposeRatherThanByOmission()
     {
         // It does have a case; that case just clears both steering inputs. Worth distinguishing from
         // the bomb, which has no case.
         Assert.True(MissileFlight.IsSteered(MissileType.MissileDirect));
     }
+
+    [Fact]
+    public void LaunchVelocityUsesTheGuidanceRegimeRatherThanTheWeaponName()
+    {
+        Vector3d origin = new(0, 0, 0);
+        Vector3d target = new(409600, 0, 0);
+
+        Vector3f ballistic = MissileFlight.LaunchVelocity(origin, target, MissileType.MissileBallistic, 30f);
+        Assert.True(ballistic.Z > 0f);
+        Assert.Equal(30f * MissileFlight.UnitsPerMetre / MissileFlight.TicksPerSecond, Length(ballistic), 0.01f);
+
+        Vector3f antiTank = MissileFlight.LaunchVelocity(origin, target, MissileType.MissileAntiTank, 30f);
+        Assert.True(antiTank.Z > ballistic.Z);
+
+        Vector3f direct = MissileFlight.LaunchVelocity(origin, target, MissileType.MissileDirect, 30f);
+        Assert.Equal(0f, direct.Z);
+        Assert.Equal(30f * MissileFlight.UnitsPerMetre / MissileFlight.TicksPerSecond, direct.X, 0.01f);
+    }
+
+    [Fact]
+    public void HindLaunchUsesItsThreeMetreForwardOffset()
+    {
+        Vector3d aim = MissileFlight.AimPoint(
+            Vector3d.Zero,
+            new Vector3d(100, 200, 300),
+            MissileType.HindHelicopter,
+            Vector3f.UnitY);
+
+        Assert.Equal(MissileFlight.HindOffsetUnits, aim.Y);
+        Assert.Equal(0d, aim.X);
+        Assert.Equal(0d, aim.Z);
+    }
+
+    private static float Length(Vector3f value) =>
+        MathF.Sqrt((value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z));
 
     [Fact]
     public void TheBallisticLobGrowsWithTheRange()
@@ -87,21 +177,19 @@ public sealed class MissileFlightTests
     [Fact]
     public void AMissileBlastIsSmallerThanAGrenadesButFarStronger()
     {
-        // Five times the damage over half the radius - a missile is a precise, powerful blast where a
-        // grenade is a wide, weak one.
+        // A missile is a precise, powerful blast where a grenade is a wide, weak one. The damage is
+        // fixed by the missile impact callback; the grenade's now comes from its weapon config, so the
+        // two are no longer stated as a ratio of one another.
         Assert.Equal(5f, MissileExplosion.DamageFactor);
-        Assert.Equal(ExplosionDamage.DefaultGrenadeDamageFactor * 5f, MissileExplosion.DamageFactor);
 
         float grenadeRadius = ExplosionDamage.ToUnits(ExplosionDamage.DefaultGrenadeRadiusMetres);
-        Assert.Equal(MissileExplosion.RadiusUnits, grenadeRadius / 2f);
+        Assert.True(MissileExplosion.RadiusUnits < grenadeRadius);
     }
 
     [Fact]
     public void OnlyTheMissileActuallyTapers()
     {
-        // The grenade ships with a falloff of zero, so its damage is a step. The missile's is hardcoded
-        // at 1.75 metres, so it is the one blast in the game whose damage actually falls off.
-        Assert.Equal(0f, ExplosionDamage.DefaultGrenadeFalloffMetres);
+        // The missile's falloff is fixed at 1.75 metres; the grenade uses its authored config falloff.
         Assert.Equal(1.75f, MissileExplosion.FalloffUnits / MissileFlight.UnitsPerMetre);
 
         // Halfway across the falloff gives half the damage.

@@ -127,30 +127,17 @@ public sealed class DesktopConsole : IDisposable
             GraphicsPresetRegistry.Default.Apply(GraphicsPreset.Enhanced);
         }
 
-        GraphicsPreset detectedPreset = GraphicsPresetRegistry.Default.Detect();
-
-        // Builds which shipped Ultra as dynamic wrote that value into settings.cfg. Merely correcting
-        // the preset would leave those installations on the broken tower/interior path until the player
-        // happened to reselect Ultra. Identify that old preset narrowly: if changing only lighting back
-        // to baked makes every managed value match today's Ultra, migrate it. Any other custom setting
-        // keeps the player's explicit dynamic choice.
-        if (settingsLoaded
-            && detectedPreset == GraphicsPreset.Custom
-            && RenderCVars.Lighting.Value == LightingModel.Dynamic)
-        {
-            RenderCVars.Lighting.Value = LightingModel.Baked;
-            if (GraphicsPresetRegistry.Default.Detect() == GraphicsPreset.Ultra)
-            {
-                _logger.Information(
-                    LogCategory,
-                    "Migrated the former Ultra dynamic-lighting default to authored baked lighting.");
-            }
-            else
-            {
-                RenderCVars.Lighting.Value = LightingModel.Dynamic;
-                GraphicsPresetRegistry.Default.Detect();
-            }
-        }
+        // Labels the restored settings, so a player who saved on High and has touched nothing since is
+        // shown High rather than Custom.
+        //
+        // There was a migration here and it is gone. It existed for builds that shipped Ultra as dynamic
+        // when Ultra was meant to be baked: on a settings file that read Custom with dynamic lighting, it
+        // forced baked and kept that only if the file then matched Ultra. It has been unreachable since
+        // Ultra became dynamic again -- forcing baked cannot make a preset match an Ultra that requires
+        // dynamic, so the branch always undid itself -- and now that enhanced and high are dynamic too it
+        // would be actively wrong. A settings file from those old builds is simply Custom, which is what
+        // it honestly is.
+        GraphicsPresetRegistry.Default.Detect();
 
         foreach (string statement in startupCommands ?? [])
         {

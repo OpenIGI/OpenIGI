@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using OpenIGI.Rendering;
@@ -76,6 +75,48 @@ public static class MefMeshBuilder
             subsets.Add(new MeshSubset(start, source2.Length, record.MaterialSlot, record.LightmapPage));
         }
 
-        return new MeshGeometry(vertices, indices, new ReadOnlyCollection<MeshSubset>(subsets));
+        RepairWinding(vertices, indices);
+        return new MeshGeometry(vertices, indices, [.. subsets]);
+    }
+
+    /// <summary>Makes every triangle wind to agree with its vertices' own normals, so a front face exists.</summary>
+    /// <remarks>
+    /// Public because it is not only this builder's business: anything that assembles world geometry from a
+    /// model's raw draw records has the same unwound triangles and must be repaired the same way, or back
+    /// face culling removes it. Spline segments are bent into shape rather than built here, and were the
+    /// case that proved it.
+    /// </remarks>
+    /// <param name="vertices">The mesh's vertices, whose normals point out of the surface.</param>
+    /// <param name="indices">The triangle-list indices, rewound in place.</param>
+    /// <remarks>
+    /// The flattened draw order does not wind uniformly -- some triangles face out and some in -- which is
+    /// why the world pass could not cull: culling either facing dropped real walls. But every vertex carries
+    /// a normal the lighting already trusts, and it points out of the surface. So a triangle's intended front
+    /// is the side its vertex normals face; where its winding disagrees (its own cross product opposes the
+    /// vertex normals) the two indices are swapped to bring it into line. With every triangle then wound the
+    /// same way relative to its outward normal, back-face culling has a consistent facing to remove -- which
+    /// is what stops a thin object's two coincident faces from fighting over the same pixel, and halves the
+    /// indoor fill besides. A degenerate triangle, whose cross product is near zero, is left as it is.
+    /// </remarks>
+    public static void RepairWinding(Vertex3D[] vertices, ushort[] indices)
+    {
+        for (int t = 0; t + 2 < indices.Length; t += 3)
+        {
+            int i0 = indices[t];
+            int i1 = indices[t + 1];
+            int i2 = indices[t + 2];
+
+            Vector3f faceNormal = Vector3f.Cross(
+                vertices[i1].Position - vertices[i0].Position,
+                vertices[i2].Position - vertices[i0].Position);
+
+            Vector3f vertexNormal = vertices[i0].Normal + vertices[i1].Normal + vertices[i2].Normal;
+
+            if (Vector3f.Dot(faceNormal, vertexNormal) < 0f)
+            {
+                indices[t + 1] = (ushort)i2;
+                indices[t + 2] = (ushort)i1;
+            }
+        }
     }
 }

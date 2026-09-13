@@ -30,7 +30,7 @@ public sealed class SoldierView
     /// <remarks>Every shipped set starts its ids at 2, so the fallback resolves in all six.</remarks>
     public const int FallbackStandAnimation = 2;
 
-    private readonly BoneObject _bones;
+    private BoneObject _bones;
     private BonePose? _pose;
     private BonePose? _unrotatedPose;
 
@@ -154,6 +154,144 @@ public sealed class SoldierView
         return true;
     }
 
+    /// <summary>Plays a weapon's <c>UpperBody*</c> clip on the torso, leaving the legs alone.</summary>
+    /// <param name="animation">The upper-body animation id out of the weapon record.</param>
+    /// <param name="loops">Whether the clip repeats.</param>
+    /// <param name="blendSeconds">How long to cross-fade into it.</param>
+    /// <returns><see langword="true"/> when the clip resolved in this rig's set.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Bone 1, which is the whole of the split.</b> <c>0x4137E0</c> picks one full-body and one
+    /// upper-body id per weapon action; the full-body id goes to bone 0 of the first-person rig
+    /// (<c>0x489F20</c>) and the upper-body id to <b>bone 1 of the human's own skeleton-0 rig</b>
+    /// (<c>0x489ED0</c> → <c>0x4D6130</c>, with bone 1 written as a literal). So retail plays these on
+    /// the body every time the player fires or reloads, invisibly — the data and the dispatch were
+    /// always there, and the third-person view is only what makes them visible.
+    /// </para>
+    /// <para>
+    /// The split works because of how the rig is shaped (<c>weapons.md</c> §26.1): bones 0–3 are the
+    /// pelvis and spine, the head and both arms hang off the spine top, the weapon chain 20–22 hangs off
+    /// <b>bone 1</b>, and the two legs hang off the root. So bone 1's subtree is exactly torso, head,
+    /// arms and weapon, and bone 0's clip keeps the legs.
+    /// </para>
+    /// </remarks>
+    public bool PlayUpperBodyAnimation(int animation, bool loops, float blendSeconds = 0f)
+    {
+        if (IsDead || animation < 0 || !_bones.Set.TryGet(animation, out _))
+        {
+            return false;
+        }
+
+        if (animation == UpperBodyAnimation
+            && _bones.SourceOf(HumanUpperBody.Bone) is { } current
+            && current.Loops == loops)
+        {
+            return true;
+        }
+
+        UpperBodyAnimation = animation;
+        _bones.Play(HumanUpperBody.Bone, animation, loops, backwards: false, blendSeconds);
+        _pose = null;
+        _unrotatedPose = null;
+        return true;
+    }
+
+    /// <summary>Gets the upper-body clip playing on bone 1, or <c>-1</c> when the torso is unclaimed.</summary>
+    public int UpperBodyAnimation { get; private set; } = -1;
+
+    /// <summary>Hands the torso back to the full-body clip on bone 0.</summary>
+    /// <remarks>
+    /// <c>0x489F00</c>, which <c>0x4137E0</c> calls when the action is zero — the human is holding
+    /// nothing and the upper body has no weapon clip to be in.
+    /// </remarks>
+    public void StopUpperBodyAnimation()
+    {
+        if (UpperBodyAnimation < 0)
+        {
+            return;
+        }
+
+        UpperBodyAnimation = -1;
+        _bones.Stop(HumanUpperBody.Bone);
+        _pose = null;
+        _unrotatedPose = null;
+    }
+
+    /// <summary>Gives the whole rig back to whatever is playing on bone 0.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>An authored full-body clip owns the whole body.</b> A ladder, a wire, a keypad and a death are
+    /// each one clip that animates the character from the boots up, and they play on bone 0 — so a
+    /// weapon stance still sitting on bone 1, or a spine still bent to an aim, replaces the half of that
+    /// clip above the waist and leaves a man climbing a ladder in a rifle pose. Every one of those
+    /// entries comes through here first.
+    /// </para>
+    /// <para>
+    /// A port decision, not a retail one, and it exists only because the port draws this body. Retail's
+    /// bone 1 keeps its weapon clip through a climb, which costs it nothing: nobody ever sees the
+    /// player's own body, and its <em>own</em> upper-body track is what the first-person arms are.
+    /// </para>
+    /// </remarks>
+    public void ReleaseUpperBody()
+    {
+        StopUpperBodyAnimation();
+        AimAlong(0f);
+    }
+
+    /// <summary>Bends the torso and head to look along an aim pitch.</summary>
+    /// <param name="pitchRadians">Where the human is looking, positive up; zero stands the rig level.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>A remaster addition, and not a transcription.</b> IGI1 has one orientation source in the whole
+    /// engine — the node <c>0x4D6130</c> builds for the upper body — and its quaternion
+    /// (<c>Human+1616</c>) is written exactly once, by the human's constructor at <c>0x410424</c>, from
+    /// the rig's own bone 0 after the palette build. Nothing else in <c>.text</c> writes it, and
+    /// <c>0x4D5790</c> copies it <i>by value</i> into the node when a clip starts, so even a hypothetical
+    /// writer could not steer it live. Retail's body does not follow the eye, because retail never draws
+    /// it. See <c>REMASTER.md</c> §R15.
+    /// </para>
+    /// <para>
+    /// The split follows the rig rather than taste. Bone 1 carries the arms, the head and the weapon
+    /// chain, so bending it is what actually points the gun; bone 4 is the neck, so bending it is what
+    /// moves the head alone. Each is capped well short of the player's own ±89° pitch limit, because a
+    /// spine folded to 89° is a bow rather than an aim, and the remainder is simply not expressed.
+    /// </para>
+    /// </remarks>
+    public void AimAlong(float pitchRadians)
+    {
+        float chest = Math.Clamp(
+            pitchRadians * HumanUpperBody.ChestShare,
+            -HumanUpperBody.ChestLimitRadians,
+            HumanUpperBody.ChestLimitRadians);
+        float head = Math.Clamp(
+            pitchRadians * HumanUpperBody.HeadShare,
+            -HumanUpperBody.HeadLimitRadians,
+            HumanUpperBody.HeadLimitRadians);
+
+        if (chest == _chestBend && head == _headBend)
+        {
+            return;
+        }
+
+        _chestBend = chest;
+        _headBend = head;
+
+        // About X, which is the rig's own right: the weapon chain's rest translations run +Y out of the
+        // chest (weapons.md section 26.1 measures 1.08 m forward), so +Y is forward and a pitch is a
+        // turn about X. Positive leans back and looks up, matching the camera's own pitch sign.
+        _bones.Bend(HumanUpperBody.Bone, Pitch(chest));
+        _bones.Bend(HumanUpperBody.NeckBone, Pitch(head));
+        _pose = null;
+        _unrotatedPose = null;
+    }
+
+    private float _chestBend;
+    private float _headBend;
+
+    private static Quaternion32? Pitch(float radians) => radians == 0f
+        ? null
+        : Quaternion32.FromAxisAngle(new Vector3f(1f, 0f, 0f), radians);
+
     /// <summary>Starts one of the three authored ladder animations.</summary>
     /// <param name="animation">The state's animation id: 168, 169 or 170 in the player set.</param>
     /// <param name="loops">Whether the state loops its clip.</param>
@@ -170,6 +308,9 @@ public sealed class SoldierView
         {
             return false;
         }
+
+        // The clip is a whole body; see ReleaseUpperBody for why it has to be handed one.
+        ReleaseUpperBody();
 
         CurrentAnimation = animation;
         BoneClip? clip = _bones.Play(0, animation, loops, backwards);
@@ -317,6 +458,10 @@ public sealed class SoldierView
             return;
         }
 
+        // Before IsDead, which the release's own guards test: a fall is an authored full-body clip like
+        // a climb, and a corpse must not go down still holding a rifle stance in its shoulders.
+        ReleaseUpperBody();
+
         IsDead = true;
         if (deathAnimation >= 0 && _bones.Set.TryGet(deathAnimation, out _))
         {
@@ -325,6 +470,26 @@ public sealed class SoldierView
             _pose = null;
             _unrotatedPose = null;
         }
+    }
+
+    /// <summary>Rebuilds this body at its authored spawn, as a GuardGenerator clone does.</summary>
+    /// <remarks>
+    /// The native generator recursively clones the stored task template rather than reviving the corpse
+    /// object in place. Replacing the bone object clears every animation channel and event cursor while
+    /// retaining this managed view's identity, which is important because renderer registries key on it.
+    /// </remarks>
+    public void Respawn()
+    {
+        BoneAnimationSet set = _bones.Set;
+        _bones = new BoneObject(set);
+        _bones.Play(0, StandAnimation, loops: true);
+
+        IsDead = false;
+        CurrentAnimation = StandAnimation;
+        Position = Soldier.Position;
+        Orientation = Matrix3f.FromEngineEulerAngles(0f, 0f, Soldier.Gamma);
+        _pose = null;
+        _unrotatedPose = null;
     }
 
     /// <summary>Gets the current pose, in the object's own space with the facing baked in.</summary>

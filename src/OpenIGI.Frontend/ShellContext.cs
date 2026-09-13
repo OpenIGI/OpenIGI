@@ -2,6 +2,7 @@ using OpenIGI.Core.Configuration;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Profiles;
 using OpenIGI.Frontend.Saves;
+using OpenIGI.Rendering;
 using OpenIGI.Rendering.Presets;
 using OpenIGI.UI.Widgets;
 
@@ -71,6 +72,14 @@ public sealed class ShellContext
     /// level over the one being played — and Back leads to the pause menu rather than to the landing page.
     /// </remarks>
     public bool InGame { get; set; }
+
+    /// <summary>Gets or sets the conditions the campaign is being played under.</summary>
+    /// <remarks>
+    /// The shell's own copy of what it last told <see cref="IShellHost.SetMissionConditions"/>, kept here
+    /// rather than on the campaign screen because the screen is rebuilt every time the section is opened
+    /// and would otherwise offer "default" back to a player who is three missions into a night run.
+    /// </remarks>
+    public MissionConditions Conditions { get; set; } = MissionConditions.Default;
 
     /// <summary>Gets the theme screens draw from.</summary>
     public UiTheme Theme { get; }

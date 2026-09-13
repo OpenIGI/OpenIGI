@@ -22,9 +22,10 @@ namespace OpenIGI.Desktop;
 /// <c>Camera3D.CreateModelView</c> folds the camera offset into each object's transform.
 /// </para>
 /// <para>
-/// <b>Terrain does not cast.</b> Its level of detail is chosen from the camera's position, so drawing
-/// it from the light would pick a tessellation for a viewpoint kilometres away — and its own shadowing
-/// is already in the baked lightmaps. Objects and soldiers are what throw the shadows a player reads.
+/// <b>Terrain does not cast here.</b> Its level of detail is chosen from the camera's position, so
+/// drawing it from the light would pick a tessellation for a viewpoint kilometres away — and its own
+/// shadowing is already in the baked lightmaps. Objects and soldiers are what throw the shadows a player
+/// reads. The ray-traced sun does see it, through <see cref="TerrainShadowCaster"/>.
 /// </para>
 /// </remarks>
 public sealed class ShadowCasterPass
@@ -73,10 +74,20 @@ public sealed class ShadowCasterPass
 
                 if (scene is not null && world is not null)
                 {
-                    world.Draw(scene, lightCamera, cascades[i].Projection);
+                    // An object smaller than a handful of texels of this cascade cannot cast a shadow
+                    // anyone reads, and the cascades redraw the whole scene once each — so each one
+                    // skips casters below 1/256th of its own radius. The near cascade's threshold is
+                    // centimetres, which skips nothing a player could stand next to.
+                    world.Draw(scene, lightCamera, cascades[i].Projection, cascades[i].Radius * (1f / 256f));
                 }
 
                 soldiers?.Draw(lightCamera, cascades[i].Projection);
+
+                // The player's own body, which is not one of the soldiers and so is not in that draw.
+                // It costs a shadow only while something is showing it -- the third-person view, a ladder,
+                // a death -- and without it a character walking across open ground in third person is the
+                // one thing in the level with no shadow under it.
+                soldiers?.DrawPlayerBody(lightCamera, cascades[i].Projection);
             }
             finally
             {

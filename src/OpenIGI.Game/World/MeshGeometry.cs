@@ -6,7 +6,7 @@ namespace OpenIGI.Game.World;
 /// <param name="Vertices">The vertices, in the model's own order.</param>
 /// <param name="Indices">Absolute indices into <paramref name="Vertices"/>, three per triangle.</param>
 /// <param name="Subsets">One entry per draw record, in record order.</param>
-public sealed record MeshGeometry(Vertex3D[] Vertices, ushort[] Indices, IReadOnlyList<MeshSubset> Subsets)
+public sealed record MeshGeometry(Vertex3D[] Vertices, ushort[] Indices, MeshSubset[] Subsets)
 {
     /// <summary>Gets a conservative local-space bound calculated once when geometry is built.</summary>
     public BoundingSphere Bounds { get; } = BoundingSphere.FromVertices(Vertices);
@@ -16,7 +16,7 @@ public sealed record MeshGeometry(Vertex3D[] Vertices, ushort[] Indices, IReadOn
 
     /// <inheritdoc/>
     public override string ToString() =>
-        $"{Vertices.Length} vertices, {TriangleCount} triangles, {Subsets.Count} subset(s)";
+        $"{Vertices.Length} vertices, {TriangleCount} triangles, {Subsets.Length} subset(s)";
 }
 
 /// <summary>One draw record's slice of a <see cref="MeshGeometry"/>.</summary>

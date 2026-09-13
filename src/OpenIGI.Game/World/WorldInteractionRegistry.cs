@@ -3,6 +3,7 @@ using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Rendering;
 
@@ -10,32 +11,13 @@ using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.World;
 
-/// <summary>Authored explosion data carried by a <c>GenericTBA</c> interaction.</summary>
-/// <remarks>
-/// This is the interaction-to-runtime handoff. The desktop presentation owns applying the event to
-/// models, actors, particles and audio; keeping the authored values here prevents that layer from
-/// falling back to the generic <c>isFinished</c> flag or to grenade defaults.
-/// </remarks>
+/// <summary>Authored explosion data carried by a GenericTBA interaction.</summary>
 public sealed record GenericTbaExplosionParameters(
-    bool Explodable,
-    string DestroyedModelName,
-    float DamageScale,
-    float ExplosionRadiusMetres,
-    float ExplosionFalloffMetres,
-    float ExplosionDamageScale,
-    float ExplosionDelaySeconds,
-    int FragmentCount,
-    int FireballCount,
-    string ExplosionExpression,
-    string ExplosionSound)
+    bool Explodable, string DestroyedModelName, float DamageScale, float ExplosionRadiusMetres,
+    float ExplosionFalloffMetres, float ExplosionDamageScale, float ExplosionDelaySeconds,
+    int FragmentCount, int FireballCount, string ExplosionExpression, string ExplosionSound)
 {
-    /// <summary>Gets whether the authored task marks itself as explodable.</summary>
-    public bool IsExplodable => Explodable;
-
-    /// <summary>Gets the full-damage radius in the engine's world units.</summary>
     public float ExplosionRadiusUnits => ExplosionDamage.ToUnits(ExplosionRadiusMetres);
-
-    /// <summary>Gets the falloff distance in the engine's world units.</summary>
     public float ExplosionFalloffUnits => ExplosionDamage.ToUnits(ExplosionFalloffMetres);
 }
 
@@ -51,11 +33,16 @@ public sealed class WorldInteraction
     private Func<bool>? _lockedCondition;
     private Func<bool>? _openCondition;
     private Func<bool>? _closeCondition;
+    private Func<bool>? _electricCondition;
     private Action? _onPress;
     private readonly Vector3d _authoredAnchor;
     private readonly Vector3d _authoredEnd;
     private Func<Vector3d>? _dynamicOffset;
+    private Func<float, Vector3d>? _presentedOffset;
     private Vector3d _offset;
+    private readonly PlacedDoor? _placedDoor;
+    private readonly Vector3d _authoredMarker;
+    private readonly Vector3d _markerLocal;
     private bool _explosionConsumed;
     private bool _explosionPending;
 
@@ -68,23 +55,27 @@ public sealed class WorldInteraction
         float facing,
         int durationTicks,
         string actionSprite,
-        DoorState? door,
+        PlacedDoor? door,
         bool isPickable,
         AiStationaryGun? stationaryGun,
         Vector3d localBoundsMinimum,
         Vector3d localBoundsMaximum,
         bool hasLocalBounds,
-        GenericTbaExplosionParameters? explosion)
+        Vector3d markerPoint,
+        Vector3d markerLocal,
+        GenericTbaExplosionParameters? explosion = null)
     {
         Task = task;
         Type = type;
+        _placedDoor = door;
+        _authoredMarker = markerPoint;
+        _markerLocal = markerLocal;
         _authoredAnchor = anchor;
         _authoredEnd = end;
         Orientation = orientation;
         Facing = facing;
         DurationTicks = durationTicks;
         ActionSprite = actionSprite;
-        Door = door;
         IsPickable = isPickable;
         StationaryGun = stationaryGun;
         LocalBoundsMinimum = localBoundsMinimum;
@@ -101,7 +92,7 @@ public sealed class WorldInteraction
     public float Facing { get; }
     public int DurationTicks { get; }
     public string ActionSprite { get; }
-    public DoorState? Door { get; }
+    public DoorState? Door => _placedDoor?.State;
     /// <summary>Whether a locked door allows the player to pick its lock.</summary>
     public bool IsPickable { get; }
     public AiStationaryGun? StationaryGun { get; }
@@ -111,14 +102,20 @@ public sealed class WorldInteraction
     public ScriptFlag InUse { get; } = new();
     public ScriptFlag Pressed { get; } = new();
     public bool IsOn { get; set; } = true;
+    /// <summary>Whether this interaction's player-use state currently owns its stationary gun.</summary>
+    public bool IsPlayerUsingStationaryGun => StationaryGun is { } gun
+        && InUse.Value
+        && gun.IsOccupiedBy(_userOccupant);
+    /// <summary>Whether an authored electric fence is currently powered.</summary>
+    public bool IsElectrified { get; private set; }
     public bool IsCompleted { get; private set; }
     public bool CompletedThisTick { get; private set; }
-    public bool IsDestroyed { get; private set; }
-    public bool ExplosionTriggeredThisTick { get; private set; }
-    public GenericTbaExplosionParameters? Explosion { get; }
     public bool IsSearched { get; private set; }
     public bool IsPicked { get; private set; }
     public bool IsLocked { get; private set; }
+    public bool IsDestroyed { get; private set; }
+    public bool ExplosionTriggeredThisTick { get; private set; }
+    public GenericTbaExplosionParameters? Explosion { get; }
 
     /// <summary>Whether the task still offers itself to the retail activation scan.</summary>
     public bool IsAvailable => Type switch
@@ -129,6 +126,46 @@ public sealed class WorldInteraction
         InteractionActivateType.Door => !IsLocked || IsPickable,
         _ => true,
     };
+
+    /// <summary>Where a marker for this task belongs, in world units.</summary>
+    /// <param name="from">The human's view position, for the tasks whose answer depends on it.</param>
+    /// <param name="tickBlend">How far the frame stands between the last two simulation states.</param>
+    /// <returns>A point on the thing itself.</returns>
+    /// <remarks>
+    /// <para>
+    /// The middle of the model, not the task's own origin and not <see cref="CandidatePoint"/>. An
+    /// origin is wherever the author put it — the hinge edge of a door, the floor under a terminal —
+    /// and the activation point moves with the player by design, which is exactly what a marker must
+    /// not do: it belongs to the object, and an object does not move when you take a step sideways.
+    /// </para>
+    /// <para>
+    /// A door is the exception that proves it. Its marker rides the leaf's live swing and slide, so it
+    /// stays on the door as the door moves — and only then, because the door has moved. It rides the
+    /// <em>presented</em> pose, not the tick's: everything moves on the thirty-hertz tick and is drawn
+    /// far more often than that, so a mark that reads the tick state judders along beside a door that
+    /// glides.
+    /// </para>
+    /// <para>
+    /// A fence and a wire are the other exception: they are longer than a player can use at once, so
+    /// the part of them being offered is the part being marked, which is what
+    /// <see cref="CandidatePoint"/> already answers.
+    /// </para>
+    /// </remarks>
+    public Vector3d MarkerPoint(Vector3d from, float tickBlend = 1f)
+    {
+        if (_placedDoor is { } door)
+        {
+            (Vector3d position, Matrix3f orientation) = door.PresentedPose(tickBlend, smooth: true);
+            Vector3f local = new((float)_markerLocal.X, (float)_markerLocal.Y, (float)_markerLocal.Z);
+            Vector3f swung = orientation.Transposed().Transform(local);
+            Vector3d leaf = position * WorldScene.UnitsPerMetre;
+            return new Vector3d(leaf.X + swung.X, leaf.Y + swung.Y, leaf.Z + swung.Z);
+        }
+
+        return Type is InteractionActivateType.Fence or InteractionActivateType.Wire
+            ? CandidatePoint(from)
+            : _authoredMarker + (_presentedOffset?.Invoke(tickBlend) ?? _offset);
+    }
 
     /// <summary>The nearest point offered to the shared activation resolver.</summary>
     public Vector3d CandidatePoint(Vector3d from)
@@ -339,14 +376,17 @@ public sealed class WorldInteraction
         _onPress?.Invoke();
     }
 
-    public void BeginUse()
+    /// <summary>Begins use and reports whether this interaction acquired its resource.</summary>
+    /// <returns><see langword="false"/> when another occupant owns a stationary gun.</returns>
+    public bool BeginUse()
     {
         if (StationaryGun is not null && !StationaryGun.TryMount(_userOccupant))
         {
-            return;
+            return false;
         }
 
         InUse.Value = true;
+        return true;
     }
 
     public void CancelUse()
@@ -361,7 +401,6 @@ public sealed class WorldInteraction
         {
             return;
         }
-
         StationaryGun?.Dismount(_userOccupant);
         InUse.Value = false;
         CompletedThisTick = true;
@@ -378,9 +417,6 @@ public sealed class WorldInteraction
                 IsCompleted = true;
                 if (Type == InteractionActivateType.Generic && Explosion is not null)
                 {
-                    // GenericTBA has a second authored lifecycle on top of isFinished. The runtime
-                    // owner marks the object destroyed when the authored blast is presented; this
-                    // preserves the live model during a nonzero Explosion delay.
                     ExplosionTriggeredThisTick = true;
                     _explosionPending = true;
                 }
@@ -388,8 +424,7 @@ public sealed class WorldInteraction
         }
     }
 
-    /// <summary>Marks a GenericTBA destroyed when its authored explosion reaches presentation.</summary>
-    /// <param name="collision">The live collision index, when the placement must become passable.</param>
+    /// <summary>Applies the delayed destruction edge once its authored blast is presented.</summary>
     public void MarkExplosionPresented(ObjectCollisionIndex? collision = null)
     {
         if (Type == InteractionActivateType.Generic && Explosion is not null && IsCompleted)
@@ -399,11 +434,7 @@ public sealed class WorldInteraction
         }
     }
 
-    /// <summary>
-    /// Consumes the authored GenericTBA explosion edge exactly once. The pending edge survives the
-    /// interaction pulse reset when an AI completes after the desktop resolver has already run.
-    /// </summary>
-    public bool TryConsumeExplosion(out GenericTbaExplosionParameters parameters)
+    internal bool TryConsumeExplosion(out GenericTbaExplosionParameters parameters)
     {
         if (!_explosionPending || _explosionConsumed || Explosion is null)
         {
@@ -421,6 +452,7 @@ public sealed class WorldInteraction
     {
         _offset = _dynamicOffset?.Invoke() ?? default;
         IsOn = _onCondition?.Invoke() ?? IsOn;
+        IsElectrified = _electricCondition?.Invoke() ?? false;
         IsLocked = !IsPicked && (_lockedCondition?.Invoke() ?? false);
         // Door_RunHandler only evaluates the open expression while fully closed and the close
         // expression while fully open (0x446DF0 / 0x446E38). Evaluating close during the opening
@@ -460,19 +492,79 @@ public sealed class WorldInteraction
         Func<bool>? on,
         Func<bool>? locked,
         Func<bool>? open = null,
-        Func<bool>? close = null)
+        Func<bool>? close = null,
+        Func<bool>? electric = null)
     {
         _onCondition = on;
         _lockedCondition = locked;
         _openCondition = open;
         _closeCondition = close;
+        _electricCondition = electric;
         IsOn = on?.Invoke() ?? true;
+        IsElectrified = electric?.Invoke() ?? false;
         IsLocked = locked?.Invoke() ?? false;
     }
 
     internal void SetDynamicOffset(Func<Vector3d> offset) => _dynamicOffset = offset;
 
+    /// <summary>Sets where this task's marker is carried to, as the frame presents it.</summary>
+    /// <remarks>
+    /// The counterpart to <see cref="SetDynamicOffset"/>, and deliberately separate from it: the
+    /// simulation's own offset has to be the tick's exact value, because activation is decided on it,
+    /// while a marker has to sit where the object is being drawn this frame or it judders against it.
+    /// </remarks>
+    internal void SetPresentedOffset(Func<float, Vector3d> offset) => _presentedOffset = offset;
+
     internal void SetPressHandler(Action handler) => _onPress = handler;
+
+    internal bool SegmentTouchesFence(Vector3d from, Vector3d to)
+    {
+        if (Type != InteractionActivateType.Fence || !IsElectrified || !HasLocalBounds)
+        {
+            return false;
+        }
+
+        Vector3d localFrom = Orientation.Transform(from - Anchor);
+        Vector3d localTo = Orientation.Transform(to - Anchor);
+        Vector3d delta = localTo - localFrom;
+        const double tolerance = HumanSeparation.RadiusInUnits;
+        double enter = 0.0;
+        double exit = 1.0;
+        return Slab(localFrom.X, delta.X, LocalBoundsMinimum.X - tolerance, LocalBoundsMaximum.X + tolerance,
+                ref enter, ref exit)
+            && Slab(localFrom.Y, delta.Y, LocalBoundsMinimum.Y - tolerance, LocalBoundsMaximum.Y + tolerance,
+                ref enter, ref exit)
+            && Slab(localFrom.Z, delta.Z, LocalBoundsMinimum.Z - tolerance, LocalBoundsMaximum.Z + tolerance,
+                ref enter, ref exit);
+    }
+
+    internal bool PointTouchesFence(Vector3d point)
+        => SegmentTouchesFence(point, point);
+
+    private static bool Slab(
+        double origin,
+        double direction,
+        double minimum,
+        double maximum,
+        ref double enter,
+        ref double exit)
+    {
+        if (Math.Abs(direction) < double.Epsilon)
+        {
+            return origin >= minimum && origin <= maximum;
+        }
+
+        double near = (minimum - origin) / direction;
+        double far = (maximum - origin) / direction;
+        if (near > far)
+        {
+            (near, far) = (far, near);
+        }
+
+        enter = Math.Max(enter, near);
+        exit = Math.Min(exit, far);
+        return enter <= exit;
+    }
 }
 
 /// <summary>
@@ -549,6 +641,10 @@ public sealed class WorldInteractionRegistry
             case InteractionActivateType.Door:
                 item.Door?.Toggle();
                 break;
+            case InteractionActivateType.StationaryGun:
+                // AIAction_Activate reaches the gunner's own mount state. Player interaction's
+                // BeginUse/CompleteUse pair uses a private player sentinel and would dismount it.
+                break;
             default:
                 item.BeginUse();
                 item.CompleteUse();
@@ -570,7 +666,7 @@ public sealed class WorldInteractionRegistry
         return interaction is not null;
     }
 
-    /// <summary>Consumes authored GenericTBA explosion edges emitted during the current tick.</summary>
+    /// <summary>Consumes each authored GenericTBA explosion edge at most once.</summary>
     public IEnumerable<(WorldInteraction Interaction, GenericTbaExplosionParameters Parameters)> ConsumeExplosions()
     {
         foreach (WorldInteraction item in _items)
@@ -581,6 +677,14 @@ public sealed class WorldInteractionRegistry
             }
         }
     }
+
+    /// <summary>Finds a powered electric fence touched by a player movement segment.</summary>
+    public WorldInteraction? FindElectrifiedFenceContact(Vector3d from, Vector3d to) =>
+        _items.FirstOrDefault(item => item.SegmentTouchesFence(from, to));
+
+    /// <summary>Finds the powered fence whose collision volume contains a nearby player centre.</summary>
+    public WorldInteraction? FindElectrifiedFenceNear(Vector3d point) =>
+        _items.FirstOrDefault(item => item.PointTouchesFence(point));
 
     /// <summary>Finds the eligible task nearest the centre of the player's aim.</summary>
     public WorldInteraction? Resolve(Vector3d eye, float yaw, float pitch = 0f)
@@ -604,7 +708,12 @@ public sealed class WorldInteractionRegistry
             }
 
             double radius = item.Type == InteractionActivateType.PlaceExplosive
-                ? Math.Max(ActivateRadius, ReadReal(item.Task, "Activate radius(meters)", 2f) * WorldScene.UnitsPerMetre)
+                ? Math.Max(
+                    ActivateRadius,
+                    ReadReal(
+                        item.Task,
+                        "Activate radius (meters)",
+                        ReadReal(item.Task, "Activate radius(meters)", 2f)) * WorldScene.UnitsPerMetre)
                 : ActivateRadius;
             Consider(item, item.CandidatePoint(eye), radius);
             if (item.Type == InteractionActivateType.Door)
@@ -684,8 +793,8 @@ public sealed class WorldInteractionRegistry
                 start += new Vector3d(offset.X, offset.Y, offset.Z);
             }
 
-            DoorState? door = type == InteractionActivateType.Door
-                ? doors.Doors.FirstOrDefault(candidate => ReferenceEquals(candidate.Task, task))?.State
+            PlacedDoor? door = type == InteractionActivateType.Door
+                ? doors.Doors.FirstOrDefault(candidate => ReferenceEquals(candidate.Task, task))
                 : null;
             AiStationaryGun? stationaryGun = type == InteractionActivateType.StationaryGun
                 ? new AiStationaryGun(
@@ -703,17 +812,30 @@ public sealed class WorldInteractionRegistry
                     && models.TryGetValue(modelName, out MefModel? fenceModel)
                     ? BoundsOf(fenceModel)
                     : default;
+            // Where a marker for this task goes: the middle of its model, in the task's own frame and
+            // then in the world. Every activatable in the level has a model, and its middle is the one
+            // point unarguably on the thing; the task position is only where the author dropped its
+            // origin, which for a door is the hinge edge and for a terminal the floor beneath it.
+            (Vector3d markerPoint, Vector3d markerLocal) =
+                MarkerOf(taskPosition, orientation, start, models, modelName);
             WorldInteraction item = new(
                 declared, type, start, end, orientation, facing,
                 DurationOf(declared, type), SpriteOf(declared, type), door,
                 ReadBool(declared, "Pickable"), stationaryGun,
                 localBoundsMinimum, localBoundsMaximum, hasLocalBounds,
+                markerPoint, markerLocal,
                 type == InteractionActivateType.Generic ? ExplosionOf(declared) : null);
             if (elevators is not null)
             {
                 // Interaction anchors, activation radii and player positions are engine units. The
                 // render path uses metres, so do not reuse its converted elevator displacement here.
                 item.SetDynamicOffset(() => elevators.GetCurrentDisplacementInUnits(item.Task));
+
+                // The lift's mesh is drawn between ticks; a marker on a button riding it has to be too.
+                item.SetPresentedOffset(blend =>
+                    elevators.TryGetDisplacement(item.Task, blend, smooth: true, out Vector3d metres)
+                        ? metres * WorldScene.UnitsPerMetre
+                        : elevators.GetCurrentDisplacementInUnits(item.Task));
                 if (type == InteractionActivateType.Switch)
                 {
                     item.SetPressHandler(() => elevators.RequestFromSwitch(item.Task));
@@ -723,19 +845,23 @@ public sealed class WorldInteractionRegistry
             string lockedExpression = ReadString(declared, "Locked expression", string.Empty);
             string openExpression = ReadString(declared, "Open door expression", string.Empty);
             string closeExpression = ReadString(declared, "Close door expression", string.Empty);
+            string electricExpression = ReadString(declared, "Electric Expression", string.Empty);
             item.SetConditions(
                 type is InteractionActivateType.Terminal or InteractionActivateType.Generic
                     or InteractionActivateType.PlaceExplosive
-                    ? () => expressions.EvaluateCondition(onExpression, emptyValue: true)
+                    ? () => expressions.EvaluateCondition(onExpression, emptyValue: true, declared)
                     : null,
                 type == InteractionActivateType.Door
-                    ? () => expressions.EvaluateCondition(lockedExpression, emptyValue: false)
+                    ? () => expressions.EvaluateCondition(lockedExpression, emptyValue: false, declared)
                     : null,
                 type == InteractionActivateType.Door && !string.IsNullOrWhiteSpace(openExpression)
-                    ? () => expressions.EvaluateCondition(openExpression, emptyValue: false)
+                    ? () => expressions.EvaluateCondition(openExpression, emptyValue: false, declared)
                     : null,
                 type == InteractionActivateType.Door && !string.IsNullOrWhiteSpace(closeExpression)
-                    ? () => expressions.EvaluateCondition(closeExpression, emptyValue: false)
+                    ? () => expressions.EvaluateCondition(closeExpression, emptyValue: false, declared)
+                    : null,
+                type == InteractionActivateType.Fence && !string.IsNullOrWhiteSpace(electricExpression)
+                    ? () => expressions.EvaluateCondition(electricExpression, emptyValue: false, declared)
                     : null);
             registry._items.Add(item);
             BindVariables(item, variables);
@@ -766,7 +892,7 @@ public sealed class WorldInteractionRegistry
                 "On expression",
                 ReadString(declared, "On Expression", string.Empty));
             GeneratorPowerState state = new(
-                () => expressions.EvaluateCondition(onExpression, emptyValue: true),
+                () => expressions.EvaluateCondition(onExpression, emptyValue: true, declared),
                 ReadBool(declared, "Use backup timer"),
                 Math.Max(0, (int)(ReadReal(declared, "Seconds until power backup", 10f) * 30f)));
             registry._generators.Add(state);
@@ -902,6 +1028,37 @@ public sealed class WorldInteractionRegistry
         _ => string.Empty,
     };
 
+    /// <summary>The middle of a task's model, in the world and in the model's own frame.</summary>
+    /// <remarks>
+    /// Falls back to the task's activation anchor for anything whose model is missing, which keeps a
+    /// marker on the object rather than at the origin of the level.
+    /// </remarks>
+    private static (Vector3d World, Vector3d Local) MarkerOf(
+        Vector3d taskPosition,
+        Matrix3f orientation,
+        Vector3d anchor,
+        IReadOnlyDictionary<string, MefModel> models,
+        string modelName)
+    {
+        if (!models.TryGetValue(modelName, out MefModel? model))
+        {
+            return (anchor, default);
+        }
+
+        (Vector3d minimum, Vector3d maximum, bool hasBounds) = BoundsOf(model);
+        if (!hasBounds)
+        {
+            return (anchor, default);
+        }
+
+        Vector3d local = (minimum + maximum) * 0.5;
+        Vector3f world = orientation.Transposed()
+            .Transform(new Vector3f((float)local.X, (float)local.Y, (float)local.Z));
+        return (
+            new Vector3d(taskPosition.X + world.X, taskPosition.Y + world.Y, taskPosition.Z + world.Z),
+            local);
+    }
+
     private static (Vector3d Minimum, Vector3d Maximum, bool HasBounds) BoundsOf(MefModel model)
     {
         ReadOnlySpan<MefVertex> vertices = model.Vertices;
@@ -996,36 +1153,12 @@ public sealed class WorldInteractionRegistry
         string expression = ReadString(task, "Explosion expression", string.Empty);
         string sound = ReadString(task, "Explosion sound", string.Empty);
         bool explodable = ReadBool(task, "Explodable");
-
-        // A GenericTBA type is shared by non-explosive authored interactions. Retail Level 2 carries
-        // the complete blast tuple but stores the legacy Explodable flag as FALSE, so the presence of
-        // authored blast content is the authoritative discriminator rather than that flag alone.
-        bool hasExplosionContent = explodable
-            || destroyedModel.Length > 0
-            || fragments > 0
-            || fireballs > 0
-            || expression.Length > 0
-            || sound.Length > 0
-            || radius > 0f
-            || falloff > 0f
-            || delay > 0f;
-        if (!hasExplosionContent)
-        {
-            return null;
-        }
-
-        return new GenericTbaExplosionParameters(
-            explodable,
-            destroyedModel,
-            damageScale,
-            radius,
-            falloff,
-            explosionDamageScale,
-            delay,
-            fragments,
-            fireballs,
-            expression,
-            sound);
+        bool hasExplosionContent = explodable || destroyedModel.Length > 0 || fragments > 0 || fireballs > 0
+            || expression.Length > 0 || sound.Length > 0 || radius > 0f || falloff > 0f || delay > 0f;
+        return hasExplosionContent
+            ? new(explodable, destroyedModel, damageScale, radius, falloff, explosionDamageScale, delay,
+                fragments, fireballs, expression, sound)
+            : null;
     }
 
     private static int ReadInt(DeclaredTask task, string name, int fallback) =>

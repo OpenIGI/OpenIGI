@@ -151,7 +151,53 @@ public sealed class MagicObjectRegistry
 
     private QvmValue Define(QvmCallContext call)
     {
-        MagicObjectDefinition definition = new(call.GetString(0), call.GetString(1), call.GetInt32(2));
+        int taskType = call.GetInt32(2);
+        string typeName = TaskTypeName(taskType);
+        bool explosive = string.Equals(
+            typeName,
+            "TASKTYPE_EXPLODEMAGICOBJ",
+            StringComparison.Ordinal);
+        bool isRadarDish = string.Equals(
+            typeName,
+            "TASKTYPE_RADARDISH",
+            StringComparison.Ordinal);
+
+        // ExplodeMagicObj extends DefineMagicObj with the native effect recipe. The first three
+        // arguments are shared by every definition. The retail QVM's extra arguments are, in order:
+        // damaged model, sound, FireBalls, Fragments, Delay, damage scale, falloff radius, full radius,
+        // and maximum damage before explosion. Other magic families do not own an explosion recipe,
+        // even when they use a longer call signature for their own data.
+        string damagedModel = explosive && call.ArgumentCount > 3 ? call.GetString(3) : string.Empty;
+        string sound = explosive && call.ArgumentCount > 4 ? call.GetString(4) : string.Empty;
+        float fireballs = explosive && call.ArgumentCount > 5 ? call.GetSingle(5) : 0f;
+        int fragments = explosive && call.ArgumentCount > 6 ? call.GetInt32(6) : 0;
+        int delayTicks = explosive && call.ArgumentCount > 7 ? call.GetInt32(7) : 0;
+        float damageFactor = explosive && call.ArgumentCount > 8 ? call.GetSingle(8) : 0f;
+        float falloff = explosive && call.ArgumentCount > 9 ? call.GetSingle(9) : 0f;
+        float radius = explosive && call.ArgumentCount > 10 ? call.GetSingle(10) : 0f;
+        float threshold = explosive && call.ArgumentCount > 11 ? call.GetSingle(11) : 0f;
+
+        // TASKTYPE_RADARDISH (parsed by 0x449220): arg 3 sound name, arg 4 rotation speed (deg/s), arg 5 acceleration (deg/s^2).
+        string dishSound = isRadarDish && call.ArgumentCount > 3 ? call.GetString(3) : string.Empty;
+        float dishSpeed = isRadarDish && call.ArgumentCount > 4 ? call.GetSingle(4) : 0f;
+        float dishAccel = isRadarDish && call.ArgumentCount > 5 ? call.GetSingle(5) : 0f;
+
+        MagicObjectDefinition definition = new(
+            call.GetString(0),
+            call.GetString(1),
+            taskType,
+            damagedModel,
+            sound,
+            fireballs,
+            fragments,
+            delayTicks,
+            damageFactor,
+            falloff,
+            radius,
+            threshold,
+            dishSound,
+            dishSpeed,
+            dishAccel);
 
         // The original appends unconditionally and its lookup takes the first match, so a repeated name
         // keeps the earlier definition.

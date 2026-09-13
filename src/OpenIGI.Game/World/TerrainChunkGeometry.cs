@@ -14,14 +14,14 @@ namespace OpenIGI.Game.World;
 public sealed record TerrainChunkGeometry(
     Vertex3D[] Vertices,
     ushort[] Indices,
-    IReadOnlyList<TerrainChunkLayer> Layers)
+    TerrainChunkLayer[] Layers)
 {
     /// <summary>Gets the total triangle count across every pass.</summary>
     public int TriangleCount => Indices.Length / 3;
 
     /// <inheritdoc/>
     public override string ToString() =>
-        $"{Vertices.Length} vertices, {TriangleCount} triangles, {Layers.Count} pass(es)";
+        $"{Vertices.Length} vertices, {TriangleCount} triangles, {Layers.Length} pass(es)";
 }
 
 /// <summary>One ground material's pass over a chunk.</summary>

@@ -235,11 +235,11 @@ public sealed class RetailTerrainTests
 
         // Level 1's objects.qsc declares nine TextureModifiers: three "Grass" and one more at a coarser
         // level on material 1, two "Rock" and one "Rock around base" on 5, two "Dirt inside base" on 4.
-        Assert.Equal(9, surface.Layers.Count);
+        Assert.Equal(9, surface.Layers.Length);
         Assert.Equal([1, 4, 5], surface.Layers.Select(l => l.MaterialId).Distinct().Order());
 
         // Sorted most specific first, which is the order the original's stack tests them in.
-        for (int i = 1; i < surface.Layers.Count; i++)
+        for (int i = 1; i < surface.Layers.Length; i++)
         {
             Assert.True(surface.Layers[i - 1].Level >= surface.Layers[i].Level);
         }
@@ -320,7 +320,7 @@ public sealed class RetailTerrainTests
 
         // Mission 3's TerrainDiscards container declares fourteen cubes. This level-15 one contains the
         // ammunition building's entrance and is the sheet of ground that otherwise covers its ramp.
-        Assert.Equal(14, surface.Discards.Count);
+        Assert.Equal(14, surface.Discards.Length);
         TerrainDiscardRegion ramp = Assert.Single(
             surface.Discards,
             discard => discard.Contains(23749052, -55320144, 174413136));
@@ -534,11 +534,10 @@ public sealed class RetailTerrainTests
         Assert.NotNull(terrain);
         Assert.NotNull(terrain.Heightmap);
 
-        // Level 1 is one of the six that ship a heightmap. The binding a chunk samples it through comes
-        // from a level-script task that has not been read out of the binary yet, so this drives the
-        // sampling directly rather than through a load.
+        // Level 1 is one of the six that ship a heightmap. This drives the sampling directly with a
+        // binding of its own; TerrainHeightBindingTests covers the ones the level's tasks publish.
         TerrainHeightGrid grid = default;
-        for (int id = 1; id < TerrainGridTable.RecordCount && grid.Corners.IsEmpty; id++)
+        for (int id = 0; id < TerrainGridTable.RecordCount && grid.Corners.IsEmpty; id++)
         {
             terrain.Heightmap.TryGetGrid(id, out grid);
         }
@@ -546,9 +545,18 @@ public sealed class RetailTerrainTests
         Assert.False(grid.Corners.IsEmpty);
         Assert.Equal(grid.Size + 1, grid.Stride);
 
-        // A sample outside the grid reads flat rather than wrapping into the next row.
+        // A sample outside the grid reads flat rather than wrapping into the next row; the far edge is
+        // inside it and reads the last corner, which is what keeps two cells' grids continuous.
         Assert.Equal(0.0, grid.Sample(-1.0, 0.0));
-        Assert.Equal(0.0, grid.Sample(grid.Size, 0.0));
+        Assert.Equal(0.0, grid.Sample(grid.Size + 1.0, 0.0));
+        Assert.Equal(
+            (grid.Corner(grid.Size, 0) - TerrainHeightGrid.Bias) * TerrainHeightGrid.UnitsPerSample,
+            grid.Sample(grid.Size, 0.0),
+            6);
+        Assert.Equal(
+            (grid.Corner(grid.Size, grid.Size) - TerrainHeightGrid.Bias) * TerrainHeightGrid.UnitsPerSample,
+            grid.Sample(grid.Size, grid.Size),
+            6);
 
         // Interpolating between two corners has to land between their two heights.
         double left = (grid.Corner(0, 0) - TerrainHeightGrid.Bias) * TerrainHeightGrid.UnitsPerSample;
@@ -988,6 +996,33 @@ public sealed class RetailTerrainTests
             withSpawn == missions,
             $"{missions - withSpawn} mission(s) declared no player start: {string.Join("; ", misses)}");
         Assert.True(onGround > missions / 2, $"only {onGround} of {missions} spawns resolved to ground");
+    }
+
+    [RequiresGameDataTheory]
+    [InlineData(1, 3.09598708152771f)]
+    [InlineData(2, 3.6479880809783936f)]
+    [InlineData(3, -3.455751895904541f)]
+    [InlineData(4, 2.9321529865264893f)]
+    [InlineData(5, 2.5132739543914795f)]
+    [InlineData(6, 1.4660769701004028f)]
+    [InlineData(7, 4.2895960807800293f)]
+    [InlineData(8, 3.6651909351348877f)]
+    [InlineData(9, 4.2935090065002441f)]
+    [InlineData(10, 0f)]
+    [InlineData(11, 1.3071240186691284f)]
+    [InlineData(12, -0.31415900588035583f)]
+    [InlineData(13, 3.979351043701172f)]
+    [InlineData(14, -1.3799949884414673f)]
+    public void HumanPlayerTaskGammaMatchesTheAuthoredObjectsFile(int missionId, float expectedGamma)
+    {
+        // These values are the fourth argument of Task_New(0, "HumanPlayer", ...) in each shipped
+        // missions/location0/levelN/objects.qvm.  Keep the parser tied to the retail object task,
+        // rather than an opening camera or a hand-maintained spawn table.
+        Harness harness = Harness.Create();
+        (_, LevelTask levelRoot) = harness.LoadMissionTree(missionId);
+
+        Assert.True(PlayerSpawn.TryFindGameplay(levelRoot, out PlayerSpawnPoint spawn));
+        Assert.Equal(expectedGamma, spawn.Gamma, precision: 6);
     }
 
     private static (double X, double Y, double Z) Medians(WorldScene scene)

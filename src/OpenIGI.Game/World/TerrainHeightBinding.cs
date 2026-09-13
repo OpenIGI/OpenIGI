@@ -11,9 +11,8 @@ namespace OpenIGI.Game.World;
 /// octree.
 /// </para>
 /// <para>
-/// <b>That publication path has not been read out of the binary yet</b>, so nothing constructs a bound
-/// instance during a normal load and terrain draws with the shape <c>terrain.cmd</c> gives it. The
-/// sampling itself is complete and tested, so binding it is a matter of finding the task type.
+/// <see cref="TerrainHeightBindings"/> reconstructs those records from the level's <c>HeightMap</c>
+/// tasks and resolves which one a chunk or a collision leaf falls under.
 /// </para>
 /// </remarks>
 /// <param name="Grid">The grid to sample.</param>

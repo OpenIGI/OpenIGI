@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Player;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
 
@@ -38,11 +39,14 @@ public sealed class MissionObjectiveRuntime
     /// </remarks>
     private readonly StatusMessage?[] _messageSlots = new StatusMessage?[MessageSlotCount];
     private readonly List<MissionComputerLogEntry> _log = [];
+    private readonly Dictionary<int, HumanOccupant> _soldierOccupants = [];
     private readonly string _completeExpression = string.Empty;
     private readonly string _failedExpression = string.Empty;
+    private readonly DeclaredTask? _levelFlowTask;
     private readonly bool _hasLevelFlow;
     private readonly bool _interfaceTimerEnabled;
     private readonly float _maximumLevelPlayTimeSeconds;
+    private bool _playerAlive = true;
     private int _tick;
     private int _levelFlowTick;
 
@@ -63,6 +67,11 @@ public sealed class MissionObjectiveRuntime
 
         foreach (GameTask task in tasks)
         {
+            // isDead is NOT bound here. HumanTask exports it, and eTeam beside it, the way the
+            // original exports both on the shared Human class rather than per subclass -- see
+            // HumanTask.OnExportVars. What this runtime still owns is feeding the latch: the host
+            // reports occupants and player state, and SetSoldierOccupants and TickLevelState write
+            // through to the tasks so the binding reads a live value.
             if (task is not DeclaredTask declared)
             {
                 continue;
@@ -85,6 +94,7 @@ public sealed class MissionObjectiveRuntime
             else if (string.Equals(task.Type.Name, "EditVariable", StringComparison.Ordinal))
             {
                 EditVariable edit = new(
+                    declared,
                     Int(declared, "Initial value", 0),
                     String(declared, "Add"),
                     String(declared, "Sub"));
@@ -94,6 +104,7 @@ public sealed class MissionObjectiveRuntime
             else if (string.Equals(task.Type.Name, "LevelFlow", StringComparison.Ordinal))
             {
                 _hasLevelFlow = true;
+                _levelFlowTask = declared;
                 _completeExpression = String(declared, "Complete");
                 _failedExpression = String(declared, "Failed");
                 _interfaceTimerEnabled = Bool(declared, "Interface timer enabled");
@@ -102,6 +113,7 @@ public sealed class MissionObjectiveRuntime
             else if (string.Equals(task.Type.Name, "StatusMessage", StringComparison.Ordinal))
             {
                 StatusMessage message = new(
+                    declared,
                     String(declared, "Send"),
                     String(declared, "Text"),
                     Bool(declared, "Is send once"),
@@ -178,7 +190,13 @@ public sealed class MissionObjectiveRuntime
             throw new ArgumentOutOfRangeException(nameof(durationSeconds));
         }
 
-        StatusMessage message = new(string.Empty, string.Empty, sendOnce: true, cutscene: false, durationSeconds)
+        StatusMessage message = new(
+            owner: null,
+            string.Empty,
+            string.Empty,
+            sendOnce: true,
+            cutscene: false,
+            durationSeconds)
         {
             IsSent = true,
             SentTick = _tick,
@@ -291,19 +309,68 @@ public sealed class MissionObjectiveRuntime
 
     /// <summary>Advances area and edit-variable tasks before dependent alarm controls run.</summary>
     /// <param name="playerPosition">The player's current world position, when one exists.</param>
+    /// <param name="playerTeam">The player's team, for criteria that name a team (CRITERIA_HUMAN0).</param>
+    public void TickLevelState(Vector3d? playerPosition = null, int playerTeam = 0) =>
+        TickLevelState(playerPosition, playerTeam, extraPlayerPosition: null, playerAlive: true);
+
+    /// <summary>Advances level state with alternate player projection and liveness information.</summary>
+    /// <param name="playerPosition">The player's primary world projection, when one exists.</param>
+    /// <param name="playerTeam">The player's team, for criteria that name a team (CRITERIA_HUMAN0).</param>
+    /// <param name="extraPlayerPosition">
+    /// An alternate projection of the same logical player in world units. The two positions contribute
+    /// at most one player to each area. The host chooses projections according to its camera/body policy.
+    /// </param>
+    /// <param name="playerAlive">
+    /// Whether the logical player can occupy authored areas. A dead player contributes no occupancy,
+    /// matching the retail human-registration scan used by <c>AreaActivate</c>.
+    /// </param>
     /// <remarks>
     /// These tasks precede the mission's <c>AlarmControl</c>s in retail update order. Keeping this phase
     /// separate lets the desktop host preserve that ordering while evaluating the remaining objectives
     /// and messages after the rest of the simulation tick.
+    ///
+    /// AreaActivate::Update (0x5048A0) clears nActive, queries the authored oriented volume and sums
+    /// matching occupants. The volume's criteria names whose occupants count: a team (CRITERIA_HUMAN0
+    /// counts team 0 — the player and the friendly squad — while CRITERIA_HUMAN1 counts team 1, the
+    /// guards) or the player object itself. Dead humans are not occupants, exactly as the detection scan
+    /// unregisters a corpse. The renderer reports every brain to preserve <c>isDead</c> bindings, so this
+    /// query also excludes soldier tasks outside the live task world, just as the collision-body pass does.
     /// </remarks>
-    public void TickLevelState(Vector3d? playerPosition = null)
+    public void TickLevelState(
+        Vector3d? playerPosition,
+        int playerTeam,
+        Vector3d? extraPlayerPosition,
+        bool playerAlive = true)
     {
-        // AreaActivate::Update (0x5048A0) clears nActive, queries the authored oriented volume and
-        // sums matching occupants. The current world exposes the player as the sole mission-query
-        // occupant; the criteria filter is retained so explicitly non-player areas do not fire.
+        _playerAlive = playerAlive;
+        if (_levelRoot.Tree.FromId(0) is HumanPlayerTask player && !playerAlive)
+        {
+            player.IsDead = true;
+        }
+
         foreach (AreaActivation area in _areaActivations)
         {
-            area.ActiveCount = playerPosition is { } point && area.AcceptsPlayer && area.Contains(point) ? 1 : 0;
+            int count = 0;
+            if (playerAlive
+                && area.AcceptsPlayer(playerTeam)
+                && ((playerPosition is { } point && area.Contains(point))
+                    || (extraPlayerPosition is { } extra && area.Contains(extra))))
+            {
+                count++;
+            }
+            foreach (HumanOccupant occupant in _soldierOccupants.Values)
+            {
+                GameTask? soldier = _levelRoot.Tree.FromId(occupant.TaskId);
+                if (soldier is not null
+                    && !occupant.IsDead
+                    && ConditionalContainerGate.IsTaskActive(soldier)
+                    && area.AcceptsSoldier(occupant.Team)
+                    && area.Contains(occupant.Position))
+                {
+                    count++;
+                }
+            }
+            area.ActiveCount = count;
         }
 
         // EditVariable::Update (0x4889B0) evaluates Add first and Sub second on every simulation tick.
@@ -311,14 +378,46 @@ public sealed class MissionObjectiveRuntime
         {
             if (!string.IsNullOrEmpty(edit.AddExpression))
             {
-                edit.Value += _expressions.EvaluateInt32(edit.AddExpression);
+                edit.Value += _expressions.EvaluateInt32(edit.AddExpression, owner: edit.Task);
             }
             if (!string.IsNullOrEmpty(edit.SubExpression))
             {
-                edit.Value -= _expressions.EvaluateInt32(edit.SubExpression);
+                edit.Value -= _expressions.EvaluateInt32(edit.SubExpression, owner: edit.Task);
             }
         }
     }
+
+    /// <summary>Feeds the per-tick state of every soldier the host is simulating.</summary>
+    /// <param name="occupants">One entry per placed soldier, with its current position, team and death.</param>
+    /// <remarks>
+    /// The mission runtime is built from the level's task tree before the soldiers exist, so the script
+    /// variables it binds (<c>isDead</c>) and the <c>AreaActivate</c> volume counts both read from this
+    /// snapshot. Every reported occupant remains available to the death bindings, while AreaActivate
+    /// independently projects the task through <see cref="ConditionalContainerGate.IsTaskActive"/> before
+    /// counting it. The host calls this on the same tick it feeds the player position, so area occupancy
+    /// and death gates never lag a full frame behind the simulation.
+    /// </remarks>
+    public void SetSoldierOccupants(IEnumerable<HumanOccupant> occupants)
+    {
+        ArgumentNullException.ThrowIfNull(occupants);
+        _soldierOccupants.Clear();
+        foreach (HumanOccupant occupant in occupants)
+        {
+            _soldierOccupants[occupant.TaskId] = occupant;
+
+            // Write the report through to the task itself, which is where the original keeps it and
+            // where HumanTask's export reads it from. A soldier the host has not reported keeps the
+            // latch it already had, and a freshly declared one starts alive.
+            if (_levelRoot.Tree.FromId(occupant.TaskId) is HumanTask human && occupant.IsDead)
+            {
+                human.IsDead = true;
+            }
+        }
+    }
+
+    /// <summary>Whether the named soldier's last reported state was dead.</summary>
+    private bool IsSoldierDead(int taskId) =>
+        _soldierOccupants.TryGetValue(taskId, out HumanOccupant occupant) && occupant.IsDead;
 
     /// <summary>Evaluates objectives, messages, cutscenes, and level flow after live level state has advanced.</summary>
     public void TickAfterLevelState()
@@ -326,7 +425,8 @@ public sealed class MissionObjectiveRuntime
         Definition? active = null;
         foreach (Definition definition in _definitions)
         {
-            if (_expressions.EvaluateCondition(definition.ValidExpression, emptyValue: true))
+            if (_expressions.EvaluateCondition(
+                    definition.ValidExpression, emptyValue: true, definition.Task))
             {
                 active = definition;
             }
@@ -342,8 +442,10 @@ public sealed class MissionObjectiveRuntime
                     continue;
                 }
 
-                bool complete = _expressions.EvaluateCondition(slot.CompleteExpression, emptyValue: false);
-                bool failed = _expressions.EvaluateCondition(slot.FailedExpression, emptyValue: false);
+                bool complete = _expressions.EvaluateCondition(
+                    slot.CompleteExpression, emptyValue: false, active.Task);
+                bool failed = _expressions.EvaluateCondition(
+                    slot.FailedExpression, emptyValue: false, active.Task);
                 MissionObjectiveState state = failed ? MissionObjectiveState.Failed
                     : complete ? MissionObjectiveState.Complete
                     : MissionObjectiveState.Incomplete;
@@ -365,7 +467,8 @@ public sealed class MissionObjectiveRuntime
         {
             if ((!message.SendOnce || !message.IsSent)
                 && _tick > message.SentTick + 210
-                && _expressions.EvaluateCondition(message.SendExpression, emptyValue: false))
+                && _expressions.EvaluateCondition(
+                    message.SendExpression, emptyValue: false, message.Task))
             {
                 message.IsSent = true;
                 message.SentTick = _tick;
@@ -411,8 +514,10 @@ public sealed class MissionObjectiveRuntime
             }
         }
 
-        bool failedLevel = _expressions.EvaluateCondition(_failedExpression, emptyValue: false);
-        bool completeLevel = _expressions.EvaluateCondition(_completeExpression, emptyValue: false);
+        bool failedLevel = _expressions.EvaluateCondition(
+            _failedExpression, emptyValue: false, _levelFlowTask);
+        bool completeLevel = _expressions.EvaluateCondition(
+            _completeExpression, emptyValue: false, _levelFlowTask);
         IsFailed = failedLevel;
         IsComplete = completeLevel && !failedLevel;
         _tick++;
@@ -431,7 +536,7 @@ public sealed class MissionObjectiveRuntime
                 String(task, $"Objective {number} Failed Expression")));
         }
 
-        return new Definition(String(task, "Objectives Valid"), slots);
+        return new Definition(task, String(task, "Objectives Valid"), slots);
     }
 
     private static string String(DeclaredTask task, string name) =>
@@ -538,11 +643,19 @@ public sealed class MissionObjectiveRuntime
         return default;
     }
 
-    private sealed record Definition(string ValidExpression, IReadOnlyList<Slot> Slots);
+    private sealed record Definition(
+        DeclaredTask Task,
+        string ValidExpression,
+        IReadOnlyList<Slot> Slots);
     private sealed record Slot(string TextResource, int LinkTaskId, string CompleteExpression, string FailedExpression);
 
-    private sealed class EditVariable(int initialValue, string addExpression, string subExpression)
+    private sealed class EditVariable(
+        DeclaredTask task,
+        int initialValue,
+        string addExpression,
+        string subExpression)
     {
+        public DeclaredTask Task { get; } = task;
         public int Value { get; set; } = initialValue;
         public string AddExpression { get; } = addExpression;
         public string SubExpression { get; } = subExpression;
@@ -552,6 +665,7 @@ public sealed class MissionObjectiveRuntime
     {
         private readonly Vector3d _minimum;
         private readonly Vector3d _maximum;
+        private readonly OccupantFilter _filter;
 
         public AreaActivation(Vector3d position, Matrix3f orientation, Vector3f dimensions, string criteria)
         {
@@ -573,28 +687,73 @@ public sealed class MissionObjectiveRuntime
             }
             _minimum = new Vector3d(minX, minY, minZ);
             _maximum = new Vector3d(maxX, maxY, maxZ);
+
+            // The criteria names which humans the volume counts. An empty or unknown criteria counts
+            // every human; CRITERIA_HUMAN0/HUMAN1 count a team; the player-only spellings count just the
+            // player object. Mission 4's gate volumes use CRITERIA_HUMAN0 so the FRIENDLY squad's advance
+            // -- not just the player walking in -- registers an occupant, which is what turns the
+            // objective-complete trigger once the squad reaches the internal plateau.
             string filter = criteria.Trim();
-            AcceptsPlayer = filter.Length == 0
-                || filter.Equals("CRITERIA_HUMAN0", StringComparison.OrdinalIgnoreCase)
-                || filter.Contains("HumanPlayer", StringComparison.OrdinalIgnoreCase)
-                || filter.Equals("PLAYER", StringComparison.OrdinalIgnoreCase);
+            if (filter.Equals("CRITERIA_HUMAN0", StringComparison.OrdinalIgnoreCase))
+            {
+                _filter = OccupantFilter.Team0;
+            }
+            else if (filter.Equals("CRITERIA_HUMAN1", StringComparison.OrdinalIgnoreCase))
+            {
+                _filter = OccupantFilter.Team1;
+            }
+            else if (filter.Contains("HumanPlayer", StringComparison.OrdinalIgnoreCase)
+                || filter.Equals("PLAYER", StringComparison.OrdinalIgnoreCase))
+            {
+                _filter = OccupantFilter.PlayerOnly;
+            }
+            else
+            {
+                _filter = OccupantFilter.All;
+            }
         }
 
+        /// <summary>Whether the player (on the given team) counts toward this volume.</summary>
+        public bool AcceptsPlayer(int team) => _filter switch
+        {
+            OccupantFilter.Team0 => team == 0,
+            OccupantFilter.Team1 => team == 1,
+            _ => true, // All, or PlayerOnly (the player is the player)
+        };
+
+        /// <summary>Whether a soldier on the given team counts toward this volume.</summary>
+        public bool AcceptsSoldier(int team) => _filter switch
+        {
+            OccupantFilter.Team0 => team == 0,
+            OccupantFilter.Team1 => team == 1,
+            OccupantFilter.PlayerOnly => false,
+            _ => true, // All
+        };
+
         public int ActiveCount { get; set; }
-        public bool AcceptsPlayer { get; }
         public bool Contains(Vector3d point) =>
             point.X >= _minimum.X && point.X <= _maximum.X
             && point.Y >= _minimum.Y && point.Y <= _maximum.Y
             && point.Z >= _minimum.Z && point.Z <= _maximum.Z;
     }
 
+    private enum OccupantFilter
+    {
+        All,
+        Team0,
+        Team1,
+        PlayerOnly,
+    }
+
     private sealed class StatusMessage(
+        DeclaredTask? owner,
         string sendExpression,
         string textResource,
         bool sendOnce,
         bool cutscene,
         float duration)
     {
+        public DeclaredTask? Task { get; } = owner;
         public string SendExpression { get; } = sendExpression;
         public string TextResource { get; } = textResource;
         public bool SendOnce { get; } = sendOnce;

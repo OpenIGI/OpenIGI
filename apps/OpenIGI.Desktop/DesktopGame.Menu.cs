@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
@@ -18,7 +18,7 @@ internal sealed partial class DesktopGame
     /// <remarks>
     /// <para>
     /// Everything a backdrop is made of — the packs, the task tree, the scene, the collision index, the
-    /// terrain surface, the level's sun — arrived already built. What is left is the
+    /// terrain surface, the level's sun, its baked probe field — arrived already built. What is left is the
     /// part that cannot leave this thread: a GL texture, buffer and framebuffer all belong to the context
     /// that made them, so the three renderers are constructed here. That is a handful of milliseconds
     /// against the several hundred the whole load used to cost the frame.
@@ -44,6 +44,9 @@ internal sealed partial class DesktopGame
         _scene = preview.Scene;
         _worldSolids = preview.Solids;
         _sun = preview.Sun;
+
+        // Under the level's own sun, at the level's own hour -- see DayNightCycle.ResetForLevel.
+        _dayNight.ResetForLevel(preview.Sun, RenderCVars.TimeOfDay.Value);
         _playerTerrain = preview.Mission.Terrain is { IsUsable: true } standable ? standable : null;
 
         // Nobody stands in a backdrop, and the previous mission's player must not be left holding a scene
@@ -59,6 +62,11 @@ internal sealed partial class DesktopGame
         {
             Materials = _materials,
             DetailMaps = _detailMaps,
+
+            // Decoded on the pool while this backdrop was being built, so the capture below uploads
+            // rather than decodes. Null on a preview built before there was a cache to fill, which the
+            // renderer handles by decoding as it always did.
+            Decoded = preview.Decoded,
         };
 
         // Held because the renderers read through the preview's own resource registry and file system for
@@ -97,7 +105,52 @@ internal sealed partial class DesktopGame
 
         _sky?.Dispose();
         _sky = new SkyRenderer(_device, preview.FileSystem, preview.LevelRoot, FarPlane, _logger);
+        _globalLight = GlobalLightSettings.Read(preview.LevelRoot);
         _shadowPass ??= new ShadowCasterPass(_device);
+
+        // A mission with no shipped bake previews on sun and sky alone. Tracing one is seconds of CPU for a
+        // backdrop, and the trace belongs to the mission's real load, which caches it for good.
+        _probeField = preview.ProbeField;
+        _device.SetIrradianceVolume(_probeField);
+
+        // The outgoing level's surface cache and distance fields go first: the cards were captured from
+        // the level that has just been replaced, and the clipmaps were traced against it.
+        DiscardSurfaceCache();
+        DiscardDistanceFields();
+
+        // Then this level's own. A backdrop used to be a picture lit by the artists' bakes, with no lamps,
+        // no cards and no field, while the mission it became was lit by the real-time model -- so the
+        // picture changed the instant Play was pressed, and every one of those structures was then built
+        // on the render thread in front of the player. The preview worker has surveyed the lamps and read
+        // (or is baking) the field; what is left here is the upload and the capture, a few tens of
+        // milliseconds under the held frame the dissolve is about to fade off.
+        //
+        // The lamps first, and always: a model name means different art in different levels, so carrying
+        // one mission's lamps into the backdrop of the next glows whatever shares a name. The switches
+        // index the fixture list and nothing else, so they are rebuilt with it.
+        ApplyLamps(preview.Lamps, preview.MissionId);
+
+        if (RenderCVars.DistanceFields.Value && _device.Capabilities.SupportsCompute)
+        {
+            _attemptedFieldResolution = preview.DistanceFieldResolution;
+            _builtFieldResolution = preview.DistanceFieldResolution;
+
+            if (preview.DistanceField is { } readField)
+            {
+                AdoptDistanceField(readField, DistanceFieldAtlas.Build(readField.Fields), fromCache: true);
+            }
+            else if (preview.PendingDistanceField is { } baking)
+            {
+                // Handed to the same per-frame collect a played mission's bake uses, which adopts it and
+                // writes the cache when it lands -- under a held frame, so the menu does not show the
+                // cross-over either.
+                _sdfBake = baking;
+            }
+        }
+
+        // The capture is a render pass over every distinct model and has to run here. It reads the
+        // lamps' emission off the geometry, so it comes after them.
+        EnsureSurfaceCache();
 
         if (_sky.HasSky)
         {
@@ -118,7 +171,8 @@ internal sealed partial class DesktopGame
         // worker, so this is the whole of what a backdrop swap costs the render thread.
         _logger.Information(
             "Preview",
-            $"The backdrop is now mission {preview.MissionId}; the handover took {handover.ElapsedMilliseconds} ms.");
+            FormattableString.Invariant(
+                $"The backdrop is now mission {preview.MissionId}; the handover took {handover.ElapsedMilliseconds} ms, {SinceProcessStart():0} ms after the process started."));
     }
 
     /// <summary>Builds every mission and writes out the places its menu backdrop should circle.</summary>
@@ -136,7 +190,7 @@ internal sealed partial class DesktopGame
             Path.Combine(AppContext.BaseDirectory, "Assets", "menu-cameras.json"), _logger);
 
         using var loader = new MissionPreviewLoader(
-            _gamePath, _missions, _magic, cameras, _previewContext, _logger);
+            _gamePath, _missions, _magic, _giCache, cameras, _previewContext, _logger);
         var entries = new List<ShowcasePointFile.Entry>();
 
         foreach (MissionDescriptor descriptor in _missions.InCampaignOrder())
@@ -144,6 +198,10 @@ internal sealed partial class DesktopGame
             try
             {
                 MissionPreview preview = loader.BuildForTooling(descriptor.Id);
+
+                // A tool wants the places, not a field; a bake started for a level nobody will look at
+                // would run to completion on a thread-pool thread for nothing.
+                preview.PendingDistanceField?.Cancel();
                 entries.Add(new ShowcasePointFile.Entry(
                     descriptor.Id,
                     strings.Get(descriptor.Name),
@@ -214,8 +272,7 @@ internal sealed partial class DesktopGame
             _dissolveTexture,
             new UiRect(0f, 0f, _window.Width, _window.Height),
 
-            // GL copied the frame bottom-up, so the source runs from the top of the texture downwards.
-            new RectF(0f, 1f, 1f, -1f),
+            RectF.Unit,
             Bgra32.White.WithAlpha((byte)(255f * Math.Clamp(amount, 0f, 1f))));
     }
 

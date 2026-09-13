@@ -199,6 +199,29 @@ public sealed class WeaponTypeRegistry
         return weapon is not null;
     }
 
+    /// <summary>Replaces the executable-style records with the matching weaponconfig.qvm values.</summary>
+    /// <remarks>
+    /// The task bindings remain from each weapon's own script because they are class-specific tails;
+    /// every shared weapon field comes from the config roster after this method returns.
+    /// </remarks>
+    public void ApplyRetailConfig(WeaponConfigRegistry config)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+
+        for (int i = 0; i < _weapons.Count; i++)
+        {
+            WeaponType current = _weapons[i];
+            if (!config.TryGet(current.WeaponId, out WeaponConfigTask declared))
+            {
+                throw new EngineFatalException($"Weapon config is missing {current.ScriptId} ({current.WeaponId}).");
+            }
+
+            WeaponType configured = current.WithRetailConfig(declared);
+            _weapons[i] = configured;
+            _byId[current.WeaponId] = configured;
+        }
+    }
+
     /// <summary>Gets the script constant a task type id came from, for diagnostics.</summary>
     /// <param name="taskType">The id.</param>
     /// <returns>The constant's name, or an empty string when the id is not one this registry allocated.</returns>

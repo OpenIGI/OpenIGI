@@ -130,10 +130,17 @@ public static class TerrainRayTrace
         {
             TerrainPackedVertex packed = block.Vertex(i);
             (int x, int y) = TerrainOrientation.Transform(leaf.Cursor.Orientation, packed.X, packed.Y);
-            vertices[i] = new Vector3d(
-                leaf.Origin.X + (x * leaf.UnitScale),
-                leaf.Origin.Y + (y * leaf.UnitScale),
-                leaf.Origin.Z + (packed.Z * leaf.UnitScale));
+            double worldX = leaf.Origin.X + (x * leaf.UnitScale);
+            double worldY = leaf.Origin.Y + (y * leaf.UnitScale);
+            double worldZ = leaf.Origin.Z + (packed.Z * leaf.UnitScale);
+
+            // 0x4C9020 adds the bound heightmap's sample exactly as the ground query does.
+            if (leaf.Heights.IsBound)
+            {
+                worldZ += leaf.Heights.Sample(worldX, worldY);
+            }
+
+            vertices[i] = new Vector3d(worldX, worldY, worldZ);
         }
 
         for (int i = 0; i < block.TriangleCount; i++)

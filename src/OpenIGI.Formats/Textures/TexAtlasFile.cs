@@ -76,7 +76,10 @@ public sealed class TexAtlasFile
         }
 
         uint version = BinaryPrimitives.ReadUInt32LittleEndian(data[4..]);
-        return version is Version7 or Version9;
+
+        // As in TexFile: version 12 is the pack's own container, accepted so a replacement ground atlas
+        // arrives through exactly the path the level's own one does.
+        return version is Version7 or Version9 || PackPicture.Is(data);
     }
 
     /// <summary>Reads every tile of an atlas.</summary>
@@ -85,6 +88,18 @@ public sealed class TexAtlasFile
     /// <exception cref="TextureFormatException">The file is not a multi-image container, or a layer does not fit.</exception>
     public static TexAtlasFile Read(ReadOnlyMemory<byte> data)
     {
+        if (PackPicture.Is(data.Span))
+        {
+            PackPicture.Content content = PackPicture.Read(data);
+            TextureImage[] pictures = [.. content.Frames.Select(frame => frame.Image)];
+
+            return new TexAtlasFile(
+                PackPicture.Version,
+                pictures[0].Width,
+                pictures[0].Height,
+                new ReadOnlyCollection<TextureImage>(pictures));
+        }
+
         ReadOnlySpan<byte> span = data.Span;
         if (span.Length < HeaderSize || FourCc.FromBytes(span) != TexFile.Magic)
         {

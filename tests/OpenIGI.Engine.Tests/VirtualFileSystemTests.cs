@@ -165,11 +165,35 @@ public sealed class VirtualFileSystemTests : IDisposable
     }
 
     [Fact]
+    public void EnumeratesRetailFilesWithoutDependingOnHostCaseSensitivity()
+    {
+        Write("MISSIONS/LEVEL1/GRAPHS/GRAPH9.DAT", "graph");
+
+        VirtualFileSystem vfs = CreateFileSystem();
+
+        IReadOnlyList<string> files = vfs.EnumerateFiles("LOCAL:missions/level1/graphs", "graph*.dat");
+
+        Assert.Single(files);
+        Assert.Equal("GRAPH9.DAT", Path.GetFileName(files[0]), ignoreCase: true);
+    }
+
+    [Fact]
     public void ConfinesDevicePathsToTheDeviceRoot()
     {
         var device = new LocalFileDevice(_root);
         Assert.Equal(device.RootDirectory, device.ToFullPath("../../secrets.txt"));
         Assert.Equal(device.RootDirectory, device.ToFullPath("/"));
+    }
+
+    [Fact]
+    public void RejectsAPathThatEscapesIntoASiblingWithTheSamePrefix()
+    {
+        var device = new LocalFileDevice(_root);
+        string sibling = _root + "-backup";
+
+        Assert.Equal(
+            device.RootDirectory,
+            device.ToFullPath($"../{Path.GetFileName(sibling)}/secrets.txt"));
     }
 
     private VirtualFileSystem CreateFileSystem()

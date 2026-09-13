@@ -35,12 +35,30 @@ namespace OpenIGI.Rendering;
 /// and hardly at all on concrete.
 /// </para>
 /// </param>
+/// <param name="SkyLightIntensity">
+/// How brightly the sky itself lights the world, where one is the sky's own physical brightness.
+/// </param>
+/// <param name="AtmosphereSunColour">
+/// The sun colour and source intensity used to build an atmospheric sky, before <paramref name="Scale"/>.
+/// When absent, <paramref name="SunColour"/> is used. Kept separate because calibrating the direct surface
+/// response must not also dim the sky and its irradiance harmonics.
+/// </param>
+/// <param name="SkyColour">
+/// The sky as a light source for the volumetric fog -- the level's own ambient, which the fog was
+/// calibrated against. Distinct from <see cref="AmbientColour"/> only in that it is NOT scaled by the
+/// <c>r_ambient_scale</c> diagnostic, so the haze does not collapse to black when the flat surface ambient
+/// is dialled to zero to watch the GI carry the surfaces. Deliberately not the <c>r_sky_light</c>-boosted
+/// surface fill: boosting the fog inscatter whites the frame out.
+/// </param>
 public readonly record struct SceneLighting(
     LightingModel Model,
     Vector3f SunDirection,
     Vector3f SunColour,
     Vector3f AmbientColour,
-    float Scale = 1f)
+    float Scale = 1f,
+    Vector3f SkyColour = default,
+    float SkyLightIntensity = 1f,
+    Vector3f? AtmosphereSunColour = null)
 {
     /// <summary>
     /// Gets the lighting that reproduces the original: the bakes and nothing else.

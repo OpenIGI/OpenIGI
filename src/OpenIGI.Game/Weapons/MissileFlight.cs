@@ -1,3 +1,5 @@
+using OpenIGI.Core.Numerics;
+
 namespace OpenIGI.Game.Weapons;
 
 /// <summary>
@@ -5,9 +7,8 @@ namespace OpenIGI.Game.Weapons;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The missile's per-tick (<c>0x428390</c>) switches on the type from its config and calls one small
-/// function per kind. They are genuinely small — the whole guidance model is four expressions and a
-/// deliberate gap.
+/// The missile's per-tick (<c>0x00427970</c>) switches on the task config type at <c>+0x11c</c>
+/// and calls one small steer function per kind. Type constants are registered at <c>0x004277EB</c>.
 /// </para>
 /// </remarks>
 public static class MissileFlight
@@ -34,6 +35,33 @@ public static class MissileFlight
     /// <remarks><c>102400</c> units — twenty-five metres, a fixed height rather than a fraction.</remarks>
     public const float AntiTankClimbUnits = 102400f;
 
+    /// <summary>The retail simulation tick rate used to turn muzzle speed into world units per tick.</summary>
+    public const float TicksPerSecond = 30f;
+
+    /// <summary>
+    /// Launch speed used when the weapon table's muzzle velocity is the dummy 5 m/s that keeps
+    /// rocket carriers out of <c>g_ballistics</c>.
+    /// </summary>
+    /// <remarks>
+    /// Retail missiles are thrust bodies, not 5 m/s grenades. Forty metres a second is a conservative
+    /// LAW/RPG visual speed that still crosses a 100 m courtyard in a few seconds.
+    /// </remarks>
+    public const float FallbackLaunchMetresPerSecond = 40f;
+
+    /// <summary>Resolves the speed a launcher actually fires at.</summary>
+    public static float LaunchSpeedMetresPerSecond(WeaponType weapon)
+    {
+        ArgumentNullException.ThrowIfNull(weapon);
+        return weapon.MuzzleVelocity >= 100f
+            ? weapon.MuzzleVelocity
+            : FallbackLaunchMetresPerSecond;
+    }
+
+    /// <summary>
+    /// Ballistic lob factor stored as a double at <c>0x005316A8</c> (<c>0x3FC0000000000000</c> = 0.125).
+    /// </summary>
+    public const double BallisticLobFactorDouble = 0.125d;
+
     /// <summary>Whether a type has a steering function at all.</summary>
     /// <param name="type">The missile type.</param>
     /// <returns><see langword="false"/> only for <see cref="MissileType.Bomb"/>.</returns>
@@ -44,6 +72,45 @@ public static class MissileFlight
     /// than by omission.
     /// </remarks>
     public static bool IsSteered(MissileType type) => type != MissileType.Bomb;
+
+    /// <summary>Selects the guidance regime from the launcher/projectile binding, not a hard-coded type.</summary>
+    public static MissileType TypeForLauncher(WeaponType weapon)
+    {
+        ArgumentNullException.ThrowIfNull(weapon);
+
+        string haystack = string.Join(
+            ' ',
+            weapon.ScriptId,
+            weapon.DisplayName,
+            weapon.Weapon.TypeName,
+            weapon.Projectile.TypeName);
+
+        if (Contains(haystack, "HIND"))
+        {
+            return MissileType.HindHelicopter;
+        }
+
+        if (Contains(haystack, "ANTITANK") || Contains(haystack, "ANTI-TANK") || Contains(haystack, "TOW"))
+        {
+            return MissileType.MissileAntiTank;
+        }
+
+        if (Contains(haystack, "BALLISTIC") || Contains(haystack, "MORTAR"))
+        {
+            return MissileType.MissileBallistic;
+        }
+
+        if (Contains(haystack, "BOMB"))
+        {
+            return MissileType.Bomb;
+        }
+
+        // Handheld LAW / RPG-18 / APC / T80 rockets fly along the barrel.
+        return MissileType.MissileDirect;
+    }
+
+    private static bool Contains(string haystack, string needle) =>
+        haystack.Contains(needle, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The aim point a ballistic missile steers toward.</summary>
     /// <param name="targetHeight">The target's height.</param>
@@ -59,24 +126,120 @@ public static class MissileFlight
     /// <summary>The aim point an anti-tank missile steers toward.</summary>
     /// <param name="targetHeight">The target's height.</param>
     /// <param name="horizontalDistance">
-    /// The distance to the target <b>with the height difference zeroed</b> — the original flattens the
-    /// vector before measuring, so a target directly above counts as being at zero range.
+    /// Flattened range from <c>0x004280B0</c>: Z of the delta is zeroed before <c>0x004A9410</c>.
+    /// </param>
+    /// <param name="threeDimensionalDistance">
+    /// Full range used by the near-regime fall-through into <c>0x00428040</c>, which multiplies the
+    /// 3D length by the 0.125 double at <c>0x005316A8</c>.
     /// </param>
     /// <returns>The height to aim at.</returns>
     /// <remarks>
-    /// Two regimes with a hard boundary. Within <see cref="AntiTankDirectRangeUnits"/> it falls through
-    /// to the ballistic lob, using the <i>horizontal</i> distance rather than the true one. Beyond it,
-    /// the missile aims a fixed twenty-five metres above the target and dives — a top-attack profile.
-    /// The boundary test is <c>&lt;=</c>, so exactly thirty metres still lobs.
+    /// <c>0x004280B0</c>: if flattened length <b>&gt;</b> <c>122880</c> (<c>0x005316B0</c>) raise
+    /// target Z by <c>102400</c> (<c>0x00531548</c>); otherwise call the ballistic steer on the
+    /// unflattened target. Exactly thirty metres still lobs.
     /// </remarks>
+    public static float AntiTankAimHeight(
+        float targetHeight,
+        float horizontalDistance,
+        float threeDimensionalDistance) =>
+        horizontalDistance > AntiTankDirectRangeUnits
+            ? targetHeight + AntiTankClimbUnits
+            : BallisticAimHeight(targetHeight, threeDimensionalDistance);
+
+    /// <summary>Near-regime helper when only the flattened range is known.</summary>
     public static float AntiTankAimHeight(float targetHeight, float horizontalDistance) =>
-        horizontalDistance <= AntiTankDirectRangeUnits
-            ? BallisticAimHeight(targetHeight, horizontalDistance)
-            : targetHeight + AntiTankClimbUnits;
+        AntiTankAimHeight(targetHeight, horizontalDistance, horizontalDistance);
+
+    /// <summary>
+    /// Builds the point a steered missile uses for its launch direction.
+    /// </summary>
+    /// <param name="origin">The launcher position, in world units.</param>
+    /// <param name="target">The target position, in world units.</param>
+    /// <param name="type">The missile guidance mode.</param>
+    /// <param name="launcherAxis">The launcher's forward axis, required for the Hind mode.</param>
+    /// <returns>The guidance point, in world units.</returns>
+    /// <remarks>
+    /// The anti-tank native first flattens the target vector before measuring its range; retaining
+    /// that detail here is important because using the three-dimensional range changes the thirty
+    /// metre regime for targets above or below the launcher. A bomb has no steering case, so its
+    /// authored target is returned only as a convenient caller-owned fallback.
+    /// </remarks>
+    public static Vector3d AimPoint(
+        Vector3d origin,
+        Vector3d target,
+        MissileType type,
+        Vector3f launcherAxis = default)
+    {
+        if (type == MissileType.HindHelicopter)
+        {
+            Vector3f axis = launcherAxis == default ? Vector3f.UnitY : launcherAxis;
+            return new Vector3d(
+                origin.X + (axis.X * HindOffsetUnits),
+                origin.Y + (axis.Y * HindOffsetUnits),
+                origin.Z + (axis.Z * HindOffsetUnits));
+        }
+
+        if (type is MissileType.MissileDirect or MissileType.MissileKeyboard or MissileType.Bomb)
+        {
+            return target;
+        }
+
+        double dx = target.X - origin.X;
+        double dy = target.Y - origin.Y;
+        double horizontalDistance = Math.Sqrt((dx * dx) + (dy * dy));
+        float height = type == MissileType.MissileAntiTank
+            ? AntiTankAimHeight(
+                (float)target.Z,
+                (float)horizontalDistance,
+                (float)Distance(origin, target))
+            : BallisticAimHeight((float)target.Z, (float)Distance(origin, target));
+
+        return new Vector3d(target.X, target.Y, height);
+    }
+
+    /// <summary>Converts a guidance point and muzzle speed into a launch velocity.</summary>
+    /// <param name="origin">The launcher position, in world units.</param>
+    /// <param name="target">The target position, in world units.</param>
+    /// <param name="type">The missile guidance mode.</param>
+    /// <param name="muzzleVelocityMetresPerSecond">The weapon record's muzzle velocity.</param>
+    /// <param name="launcherAxis">The launcher's forward axis, required for the Hind mode.</param>
+    /// <returns>A normalized launch direction scaled to world units per tick.</returns>
+    public static Vector3f LaunchVelocity(
+        Vector3d origin,
+        Vector3d target,
+        MissileType type,
+        float muzzleVelocityMetresPerSecond,
+        Vector3f launcherAxis = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(muzzleVelocityMetresPerSecond);
+
+        Vector3d aim = AimPoint(origin, target, type, launcherAxis);
+        Vector3d delta = aim - origin;
+        double length = Distance(Vector3d.Zero, delta);
+        if (length <= double.Epsilon)
+        {
+            return default;
+        }
+
+        float speedUnitsPerTick = muzzleVelocityMetresPerSecond * UnitsPerMetre / TicksPerSecond;
+        return new Vector3f(
+            (float)(delta.X / length) * speedUnitsPerTick,
+            (float)(delta.Y / length) * speedUnitsPerTick,
+            (float)(delta.Z / length) * speedUnitsPerTick);
+    }
+
+    private static double Distance(Vector3d left, Vector3d right)
+    {
+        double x = right.X - left.X;
+        double y = right.Y - left.Y;
+        double z = right.Z - left.Z;
+        return Math.Sqrt((x * x) + (y * y) + (z * z));
+    }
 }
 
 /// <summary>
-/// What a missile's impact explosion is, from the literals at the tail of <c>0x428390</c>.
+/// What a missile's impact explosion is, from the <c>0x0047F350</c> call at the tail of
+/// <c>0x00427970</c>.
 /// </summary>
 /// <remarks>
 /// Unlike a grenade's, none of these come from level tags — a missile's blast is fixed in code.
@@ -84,19 +247,15 @@ public static class MissileFlight
 public static class MissileExplosion
 {
     /// <summary>The damage factor.</summary>
-    /// <remarks><b>Five times</b> a grenade's, which is 1.0.</remarks>
+    /// <remarks>Fixed by the missile impact callback; it is independent of grenade weaponconfig tags.</remarks>
     public const float DamageFactor = 5f;
 
     /// <summary>The blast radius, in world units.</summary>
-    /// <remarks><c>10240</c> — 2.5 metres, and so only <b>half</b> a grenade's five.</remarks>
+    /// <remarks><c>10240</c> — 2.5 metres.</remarks>
     public const float RadiusUnits = 10240f;
 
     /// <summary>The falloff distance, in world units.</summary>
-    /// <remarks>
-    /// <c>7168</c> — 1.75 metres. A grenade ships with a falloff of zero, so a missile is the one that
-    /// actually tapers: its damage falls off over the 1.75 metres past its radius instead of stopping
-    /// dead.
-    /// </remarks>
+    /// <remarks><c>7168</c> — 1.75 metres, from the missile impact callback.</remarks>
     public const float FalloffUnits = 7168f;
 
     /// <summary>How many bursts the explosion fires.</summary>

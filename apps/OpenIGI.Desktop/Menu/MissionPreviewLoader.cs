@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
@@ -41,7 +41,8 @@ namespace OpenIGI.Desktop;
 /// <para>
 /// <b>What is left on the render thread.</b> Only the uploads: a GL texture belongs to the context that
 /// made it, so the terrain's tiles, the sky and the world renderer are built in
-/// <c>DesktopGame</c> when the result is collected.
+/// <c>DesktopGame</c> when the result is collected. That is the same handover
+/// <see cref="IrradianceProbeBake"/> and <c>DistanceFieldBake</c> already use.
 /// </para>
 /// <para>
 /// A request supersedes whatever was in flight: the worker's result carries the mission it was for, and a
@@ -53,6 +54,7 @@ namespace OpenIGI.Desktop;
 /// <param name="gamePath">The installation to read from.</param>
 /// <param name="missions">The mission table, complete and read-only after the start-up scan.</param>
 /// <param name="magic">The magic-object table, likewise read-only after start-up.</param>
+/// <param name="probeFields">The shipped and per-user probe caches, read for a mission's baked lighting.</param>
 /// <param name="cameras">The authored orbit styles each mission's showcase points are based on.</param>
 /// <param name="context">What a built preview needs to be promotable into the played mission.</param>
 /// <param name="logger">The logger.</param>
@@ -60,6 +62,7 @@ public sealed class MissionPreviewLoader(
     string gamePath,
     MissionRegistry missions,
     MagicObjectRegistry magic,
+    GiBakeCache probeFields,
     MenuCameraLibrary cameras,
     MissionPreviewContext context,
     IIgiLogger logger) : IDisposable
@@ -109,9 +112,11 @@ public sealed class MissionPreviewLoader(
 
             _wanted = missionId;
 
-            // A result for a mission nobody wants any more is not worth handing over.
+            // A result for a mission nobody wants any more is not worth handing over -- nor is the field it
+            // may still be baking for a level nobody is going to look at.
             if (_ready is not null && _ready.MissionId != missionId)
             {
+                _ready.PendingDistanceField?.Cancel();
                 _ready = null;
             }
 
@@ -160,6 +165,7 @@ public sealed class MissionPreviewLoader(
         lock (_gate)
         {
             _disposed = true;
+            _ready?.PendingDistanceField?.Cancel();
             _ready = null;
             _wanted = -1;
         }
@@ -196,6 +202,7 @@ public sealed class MissionPreviewLoader(
             }
             else if (built is not null)
             {
+                built.PendingDistanceField?.Cancel();
                 logger.Debug(LogCategory, $"Mission {missionId}'s backdrop finished after the selection moved on; dropped.");
             }
 
@@ -307,7 +314,49 @@ public sealed class MissionPreviewLoader(
         DirectionalLightSettings? sun =
             DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings read) ? read : null;
 
+        // A shipped or previously-written bake is a file read and a parse, both of which belong here. A
+        // mission with no bake previews unbounced rather than tracing one: the trace is seconds of CPU for
+        // a backdrop, and its result could not be cached from this context anyway.
+        Vector3f bakeSun = sun is { IsBelowHorizon: false } lit ? lit.Direction : default;
+        IrradianceVolume? probeField = RenderCVars.GlobalIllumination.Value
+            ? probeFields.TryLoad(missionId, RenderCVars.GlobalIlluminationSpacing.Value, bakeSun)
+            : null;
+
+        // The level's lamps, surveyed here for two reasons that happen to coincide. It is the single
+        // largest cost promotion used to pay on the render thread -- decoding every emitter texture ran
+        // to about 140 ms -- and it is half of what makes a backdrop look like the mission: a lamplit
+        // interior previewed with its lamps out is simply a different, darker picture.
+        EmissiveLightProposer.Proposal lamps = RenderCVars.GlobalIlluminationLamps.Value != 0
+            ? EmissiveLightProposer.Propose(scene, resources, context.Lamps, missionId, logger)
+            : EmissiveLightProposer.Proposal.None;
+
+        // The other half: the distance field the real-time lighting traces against. Cached, it is a file
+        // read and belongs here; missed, the bake is started here and carried, so a mission that is
+        // browsed for a few seconds before Play has its field ready and one that is not hands the game
+        // the bake in flight rather than starting one from nothing on the way in. Single-threaded, so it
+        // takes one core and leaves the frame alone. The same gate the render loop applies.
+        int fieldResolution = RenderCVars.DistanceFieldResolution.Value;
+        SceneDistanceField? distanceField = null;
+        DistanceFieldBake? pendingField = null;
+        if (RenderCVars.DistanceFields.Value && context.ComputeSupported)
+        {
+            distanceField = context.DistanceFields.TryLoad(missionId, fieldResolution);
+            if (distanceField is null)
+            {
+                pendingField = DistanceFieldBake.Start(scene.Placements, fieldResolution, logger);
+                logger.Information(
+                    LogCategory,
+                    $"Mission {missionId} has no cached distance field; baking one at {fieldResolution} voxels behind the menu.");
+            }
+        }
+
         Bgra32[][] detail = groundDetail.GetAwaiter().GetResult();
+
+        // The level's textures, decoded on the pool from here on. Started last, after everything that
+        // reads the registry on this thread has finished with it: the cache takes the bytes it needs now
+        // and touches the registry no further, so nothing races the render thread's own loads later.
+        TextureDecodeCache decoded = TextureDecodeCache.StartFor(
+            resources, WorldRenderer.AlphaTestCutoff, context.DetailMaps);
 
         logger.Information(
             LogCategory,
@@ -324,8 +373,14 @@ public sealed class MissionPreviewLoader(
             detail,
             pointsOfInterest,
             sun,
+            probeField,
             resources,
-            fileSystem);
+            fileSystem,
+            lamps,
+            distanceField,
+            pendingField,
+            fieldResolution,
+            decoded);
     }
 
     /// <summary>Gets whether the selected render preset can consume derived ground detail.</summary>

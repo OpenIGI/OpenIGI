@@ -48,8 +48,10 @@ public enum HumanMotionState : uint
     /// <summary>Moving backward.</summary>
     MoveBackward = 0x100,
 
-    /// <summary>Drives idle → state 19, the lowest-priority transition out of idle.</summary>
-    Turn = 0x2000,
+    /// <summary>
+    /// Drives idle → the stationary crouch state, 19, as the lowest-priority transition out of idle.
+    /// </summary>
+    Crouch = 0x2000,
 
     /// <summary>
     /// Cleared at the top of every <c>HumanPlayer_Update</c>. Drives idle → state 46, one of the two
@@ -64,8 +66,9 @@ public enum HumanMotionState : uint
     Death47 = 0x20000,
 
     /// <summary>
-    /// Selects the crouched variant of every movement transition. Inferred: it is the one bit that
-    /// re-targets all four directions at once, and the states it selects carry the crouched animations.
+    /// Selects the walking variant of every standing movement transition. Its input action is
+    /// <see cref="PlayerAction.ToggleWalkRun"/>: set selects states 9–16, clear selects states 1–8.
+    /// Crouching instead takes the separate state 19–27 path.
     /// </summary>
-    Crouched = 0x40000,
+    Walking = 0x40000,
 }

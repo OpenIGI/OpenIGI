@@ -64,6 +64,8 @@ public sealed class PlayerCamera
     private readonly List<GunImpact> _impacts = [];
     private readonly BallisticSimulation _ballistics = new();
     private readonly GrenadeSimulation _grenades = new();
+    private readonly MissileSimulation _missiles = new();
+    private readonly M203Simulation _m203 = new();
     private readonly HumanLadderClimb _climb = new();
     private HumanLocomotionAnimator? _animator;
     private ObjectCollisionIndex? _walls;
@@ -78,6 +80,7 @@ public sealed class PlayerCamera
     private LadderPlacement? _nearLadder;
     private bool _nearLadderAtTop;
     private double _nearLadderAngle = double.MaxValue;
+    private int _nearLadderIndex = -1;
     private WorldInteractionRegistry? _interactions;
     private GunPickupRegistry? _gunPickups;
     private WorldInteraction? _nearInteraction;
@@ -85,11 +88,19 @@ public sealed class PlayerCamera
     private int _interactionTick;
     private bool _interactionUseArmed;
     private Vector3d _fenceExitPosition;
+    private int _electricFenceCooldown;
     private float _interactionFacing;
     private Vector3d _wireDirection;
     private double _wireSpeed;
     private bool _mapComputerOpen;
-    private bool _running;
+    /// <summary>
+    /// The walk/run latch. <b>True is the retail default</b>: the byte the toggle flips,
+    /// <c>HumanPlayer+3397</c>, is zeroed by the constructor at <c>0x410370</c>, and the flag word is
+    /// built with <c>if (byte) flags |= 0x40000; else flags &amp;= ~0x40000</c> at <c>0x4105EA</c> — so a
+    /// zero byte means the <i>walking</i> bit is clear, which selects the running set, states 1–8.
+    /// A player therefore spawns running and the first press of the toggle makes them walk.
+    /// </summary>
+    private bool _running = true;
     private GenericPickupRegistry? _genericPickups;
 
     /// <summary>Initializes the player camera.</summary>
@@ -108,15 +119,14 @@ public sealed class PlayerCamera
     // to the view however fast the frames come.
     private Vector3d _prevTickEye;
     private Vector3d _tickEye;
+    private readonly HumanLandingViewKick _landingKick = new();
     private double _prevTickWallPullback;
     private double _tickWallPullback;
     private Vector3f _prevTickRootMotion;
     private Vector3f _tickRootMotion;
-    private Vector3f _prevTickWeaponBonePosition;
-    private Vector3f _tickWeaponBonePosition;
-    private Matrix3f _prevTickWeaponBoneRotation = Matrix3f.Identity;
-    private Matrix3f _tickWeaponBoneRotation = Matrix3f.Identity;
-    private bool _hasWeaponBonePair;
+    private ViewBonePair _weaponBone;
+    private ViewBonePair _magazineBone;
+    private ViewBonePair _movingPartBone;
     private float _prevTickSwayPitch;
     private float _tickSwayPitch;
     private float _prevTickSwayYaw;
@@ -212,6 +222,12 @@ public sealed class PlayerCamera
     /// </remarks>
     public GrenadeSimulation Grenades => _grenades;
 
+    /// <summary>Gets the launcher missiles currently in flight.</summary>
+    public MissileSimulation Missiles => _missiles;
+
+    /// <summary>Gets the M203 rounds currently in flight.</summary>
+    public M203Simulation M203 => _m203;
+
     /// <summary>Gets or sets what a grenade bounces off — the world <b>including the terrain</b>.</summary>
     /// <remarks>
     /// Deliberately not <see cref="PlayerBody.Walls"/>: that is the object index alone, because the
@@ -220,12 +236,26 @@ public sealed class PlayerCamera
     /// </remarks>
     public WorldRayCast? GrenadeWalls { get; set; }
 
+    /// <summary>
+    /// Gets or sets the rich world trace used by proximity mines to distinguish an object from terrain.
+    /// </summary>
+    public WorldTraceCast? GrenadeTrace { get; set; }
+
+    /// <summary>Gets or sets the world cast used by launcher missiles.</summary>
+    public WorldRayCast? MissileWalls { get; set; }
+
     /// <summary>Gets or sets what offers this player's rounds to the humans in the world.</summary>
     /// <remarks>
     /// Without it rounds stop at walls and hit nobody. A round takes whichever of the two is
     /// <b>nearer</b>, so a guard standing in front of a wall is hit and the wall is not marked.
     /// </remarks>
     public HumanShot? Humans { get; set; }
+
+    /// <summary>Gets or sets a non-mutating human intersection used by launcher missiles.</summary>
+    public HumanRayCast? HumanProbes { get; set; }
+
+    /// <summary>Gets or sets the living-human query used by armed proximity mines.</summary>
+    public HumanProximityCast? HumanProximityTargets { get; set; }
 
     /// <summary>Gets or sets where actual projectile contacts are offered to the AI event broadcaster.</summary>
     /// <remarks>
@@ -253,6 +283,15 @@ public sealed class PlayerCamera
         _materials = materials;
     }
 
+    /// <summary>The game material the level's terrain is made of, or null to fall back to <c>Ground</c>.</summary>
+    /// <remarks>
+    /// Read from the level's own terrain materials — see
+    /// <see cref="FootstepSounds.TerrainGameMaterialIndex"/>. It is <c>Snow</c> in the four Arctic
+    /// missions and <c>Ground</c> everywhere else, which is the difference between crunching through
+    /// snow and treading on earth.
+    /// </remarks>
+    public int? TerrainGameMaterialIndex { get; set; }
+
     /// <summary>
     /// Gets the pitch the view is actually drawn at — the look, plus the recoil sitting on top of it.
     /// </summary>
@@ -265,6 +304,16 @@ public sealed class PlayerCamera
 
     /// <summary>Gets whether the weapon in hand fired on the last tick.</summary>
     public bool FiredThisTick => _weapons?.FiredThisTick ?? false;
+
+    /// <summary>Gets whether the M16A2 launched an M203 round on the last tick.</summary>
+    /// <remarks>
+    /// The alternate callback is a separate native weapon task. Keeping this bit visible to the host
+    /// prevents the rifle's ordinary automatic sound from replacing the launch report.
+    /// </remarks>
+    public bool M203LaunchedThisTick => _weapons is not null && _weapons.M203Shots.Count > 0;
+
+    /// <summary>Gets whether a grenade throw is being charged — the hand cooking it.</summary>
+    public bool IsChargingThrow => _weapons?.IsChargingThrow ?? false;
 
     /// <summary>Gets the serial of the last round fired.</summary>
     public int ShotSequence => _weapons?.ShotSequence ?? 0;
@@ -363,6 +412,23 @@ public sealed class PlayerCamera
         int animationId = animations.FullBody;
         bool loops = animations.LoopFullBody;
 
+        // The upper-body half, recorded for the third-person body to play on bone 1. 0x4137E0 tests the
+        // two ids INDEPENDENTLY -- `if (v4 != -1) sub_489F20(...); if (v5 != -1) sub_489ED0(...)` -- so
+        // this is settled before the full-body early-out below rather than after it. An action whose
+        // full-body id is -1 still moves the torso in retail.
+        //
+        // Bumped on every request rather than only on a change: PlayerWeapons clears RequestedAction at
+        // the top of each tick and raises it only when the machine actually dispatches, so this is
+        // called at exactly the cadence 0x4137E0 runs at — and a second shot asks for the SAME clip and
+        // has to restart it, which a change test would swallow.
+        if (animations.UpperBody >= 0)
+        {
+            _upperBodyAnimation = animations.UpperBody;
+            _upperBodyLoops = animations.LoopUpperBody;
+            _upperBodyBlendSeconds = animations.UpperBodyBlendSeconds;
+            _upperBodySequence++;
+        }
+
         // Retail's 0x40FB90 forwards FireAnimation2 to the animation dispatcher verbatim, and the
         // shipped medipack leaves that slot at -1. 0x4D61D0 leaves the view untouched for a negative
         // id, so the one-shot entry clip ("insert syringe") simply holds its final frame for the whole
@@ -394,6 +460,21 @@ public sealed class PlayerCamera
 
     /// <summary>Gets where the held weapon's model goes, in engine units, or <see langword="null"/>.</summary>
     public BoneAttachment? HeldWeapon => _view is null ? null : _view.HeldWeapon;
+
+    /// <summary>Gets where the held weapon's magazine goes, in engine units, or <see langword="null"/>.</summary>
+    /// <remarks>
+    /// Retail's <c>TASKTYPE_GUNCLIP</c>, <c>TASKTYPE_CABARREL</c> and <c>TASKTYPE_GUNX2</c> children all
+    /// ask the first-person human for attachment 2, which is palette bone 52 (<c>0x4601A0</c>), rather
+    /// than reusing the gun attachment at bone 3.
+    /// </remarks>
+    public BoneAttachment? HeldWeaponSecondary => _view is null ? null : _view.HeldWeaponSecondary;
+
+    /// <summary>Gets where the held weapon's slide or bolt goes, in engine units, or <see langword="null"/>.</summary>
+    /// <remarks>
+    /// <c>TASKTYPE_GUNMOVINGPART</c> and <c>TASKTYPE_CACLIP</c> ask for attachment 3 — palette bone 55
+    /// (<c>0x460210</c>).
+    /// </remarks>
+    public BoneAttachment? HeldWeaponTertiary => _view is null ? null : _view.HeldWeaponTertiary;
 
     /// <summary>Gets whether the rig's pose has advanced since it was last acknowledged.</summary>
     /// <remarks>
@@ -505,7 +586,9 @@ public sealed class PlayerCamera
     {
         ReleaseLook();
         HasViewTickPair = false;
-        _hasWeaponBonePair = false;
+        _weaponBone.Forget();
+        _magazineBone.Forget();
+        _movingPartBone.Forget();
     }
 
     /// <summary>Gives the pointer up without disturbing the presentation, and re-arms the settling frame.</summary>
@@ -529,7 +612,24 @@ public sealed class PlayerCamera
     }
 
     /// <summary>Gets the eye the scene is drawn from, in the renderer's metres.</summary>
-    public Camera3D Camera => new(ToMetres(_body.Eye), Camera3D.LookRotation(_body.Yaw, AimPitch));
+    public Camera3D Camera =>
+        new(ToMetres(_body.Eye + LandingKickOffsetUnits), Camera3D.LookRotation(_body.Yaw, AimPitch));
+
+    /// <summary>Gets the dip the last landing installed in the view.</summary>
+    /// <remarks>
+    /// Armed by <see cref="InstallLandingViewKick"/> off the body's fall impact and stepped beside the
+    /// weapon sway, which is where <c>0x464BD0</c> steps both.
+    /// </remarks>
+    public HumanLandingViewKick LandingKick => _landingKick;
+
+    /// <summary>The landing dip as a world-space displacement, in units — <c>0x464BD0</c> adds it to Z.</summary>
+    private Vector3d LandingKickOffsetUnits => new(0.0, 0.0, _landingKick.OffsetUnits);
+
+    /// <summary>Arms the landing dip, as <c>0x408460</c> does through <c>0x4659B0</c>.</summary>
+    /// <param name="amplitudeUnits">
+    /// <see cref="HumanFallImpact.ViewKickUnits"/> from the landing the body just resolved.
+    /// </param>
+    public void InstallLandingViewKick(float amplitudeUnits) => _landingKick.Install(amplitudeUnits);
 
     /// <summary>Gets where the player is standing, in metres, for diagnostics.</summary>
     public Vector3d Position => ToMetres(_body.Position);
@@ -572,29 +672,91 @@ public sealed class PlayerCamera
             return null;
         }
 
-        // The probe answers only for OBJECTS. A step that finds nothing solid landed on open terrain,
-        // which the original resolves by asking the terrain's own task -- something this port has no
-        // equivalent of, so it takes the Ground row by name instead.
-        (Vector3d from, Vector3d to) = FootstepSounds.Probe(_body.Position);
-        Vector3d where = _body.Position;
-        GameMaterial material;
-
-        if (_body.Walls is { } walls
-            && walls(from, to, out WorldRayHit hit)
-            && _materials.TryGet(hit.Material, out GameMaterial struck))
-        {
-            material = struck;
-            where = hit.Position;
-        }
-        else if (!_materials.TryGetByName(FootstepSounds.TerrainMaterialName, out material))
+        if (!TryGetGroundMaterial(out GameMaterial material, out Vector3d where))
         {
             return null;
         }
 
-        string sound = FootstepSounds.Next(material, ref _footCursor);
-        return sound.Length == 0
-            ? null
-            : new Footstep(sound, where, FootstepSounds.HearingRadiusInUnits(material));
+        string sound = FootstepSounds.Next(material, ref _footCursor, out int slot);
+        if (sound.Length == 0)
+        {
+            return null;
+        }
+
+        // The crouch byte does two things in 0x463920: it drops the voice to two thirds and it skips
+        // the AI hearing event. A zero radius carries the second half to the caller.
+        bool crouched = _body.IsCrouched;
+        return new Footstep(
+            sound,
+            where,
+            crouched ? 0.0 : FootstepSounds.HearingRadiusInUnits(material),
+            slot,
+            crouched ? FootstepSounds.CrouchedVolumeScale : 1f);
+    }
+
+    /// <summary>The sound the ground makes when the player lands on it, or null when it names none.</summary>
+    /// <returns>The definition name and where to play it, in engine units.</returns>
+    /// <remarks>
+    /// Both airborne states play the struck material's land sound on contact — <c>0x40BE40</c> for a
+    /// fall and <c>0x40BBD0</c> for a jump — reading the same <c>Human+1772</c> the footstep handler
+    /// reads. It is separate from, and additional to, the <c>player_fall_N</c> that a damaging drop
+    /// plays out of <c>0x408460</c>.
+    /// </remarks>
+    public (string Sound, Vector3d PositionInUnits)? TakeLandingSound()
+    {
+        if (!TryGetGroundMaterial(out GameMaterial material, out Vector3d where))
+        {
+            return null;
+        }
+
+        string sound = FootstepSounds.LandSound(material);
+        return sound.Length == 0 ? null : (sound, where);
+    }
+
+    /// <summary>Finds the material under the feet with the original's own short downward probe.</summary>
+    /// <param name="material">Receives the material.</param>
+    /// <param name="where">Receives the ground contact point, in engine units.</param>
+    /// <returns><see langword="false"/> when there is no material table, or no row to fall back to.</returns>
+    /// <remarks>
+    /// The probe answers only for OBJECTS. A step that finds nothing solid landed on open terrain,
+    /// which the original resolves by asking the terrain's own task -- something this port has no
+    /// equivalent of, so it takes the Ground row by name instead.
+    /// </remarks>
+    private bool TryGetGroundMaterial(out GameMaterial material, out Vector3d where)
+    {
+        (Vector3d from, Vector3d to) = FootstepSounds.Probe(_body.Position);
+        where = _body.Position;
+
+        if (_materials is null)
+        {
+            material = null!;
+            return false;
+        }
+
+        // The SURFACE cast, not the body's. The player moves against collision level one -- the
+        // human-collision hull, every face of which is material 21 and names no walk sound at all --
+        // so probing with it found a floor made of nothing and left every step on placed geometry
+        // silent. The general cast is the geometry bullets hit, and its faces carry the real materials:
+        // wood, concrete, metal, gravel. The guards were already using it.
+        //
+        // A struck face still only answers if it names something to walk on; see FootstepSounds.NamesAWalk.
+        if (_walls?.Caster() is { } walls
+            && walls(from, to, out WorldRayHit hit)
+            && _materials.TryGet(hit.Material, out GameMaterial struck)
+            && FootstepSounds.NamesAWalk(struck))
+        {
+            material = struck;
+            where = hit.Position;
+            return true;
+        }
+
+        // Open terrain: the level says what its ground is made of, exactly as a face does.
+        if (TerrainGameMaterialIndex is int terrain && _materials.TryGet(terrain, out material))
+        {
+            return true;
+        }
+
+        return _materials.TryGetByName(FootstepSounds.TerrainMaterialName, out material);
     }
 
     /// <summary>Gets whether the player is crouched.</summary>
@@ -613,8 +775,10 @@ public sealed class PlayerCamera
         _body.Position = new Vector3d(at.X * UnitsPerMetre, at.Y * UnitsPerMetre, at.Z * UnitsPerMetre);
         _body.Yaw = yaw;
 
-        // A placement is a teleport; the rig's tick pair must not be interpolated across it.
+        // A placement is a teleport; the rig's tick pair must not be interpolated across it, and a
+        // landing dip still playing belongs to the ground that was left behind.
         HasViewTickPair = false;
+        _landingKick.Reset();
         return _body.PlaceOnGround(terrain);
     }
 
@@ -662,6 +826,22 @@ public sealed class PlayerCamera
     /// <summary>Gets the locomotion state the player is in, for diagnostics.</summary>
     public int LocomotionState => _animator?.State ?? 0;
 
+    /// <summary>Gets the clip the player's legs are actually playing, for the third-person body to mirror.</summary>
+    /// <value>
+    /// The animation id the current locomotion state names, or
+    /// <see cref="HumanLocomotionStates.NoAnimation"/> for the states that name none.
+    /// </value>
+    /// <remarks>
+    /// Asked of the animator rather than looked up again from the state, so there is one answer to the
+    /// question of what the player is doing rather than two that can disagree — the body drawn from
+    /// outside is the same character the simulation is moving.
+    /// </remarks>
+    public int LocomotionAnimation => _animator?.AnimationId ?? HumanLocomotionStates.NoAnimation;
+
+    /// <summary>Gets whether the clip <see cref="LocomotionAnimation"/> names repeats.</summary>
+    /// <remarks>The state table's mode of one; every movement state carries it, the one-shots do not.</remarks>
+    public bool LocomotionAnimationLoops => _animator?.Loops ?? true;
+
     /// <summary>Makes the level's ladders climbable.</summary>
     /// <param name="ladders">The ladders the scene collected, in world units.</param>
     /// <exception cref="ArgumentNullException"><paramref name="ladders"/> is <see langword="null"/>.</exception>
@@ -700,6 +880,9 @@ public sealed class PlayerCamera
 
     /// <summary>Raised when a task is pressed or a held interaction completes.</summary>
     public event Action<int>? TaskActivated;
+
+    /// <summary>Raised when a powered electric fence contact passes the retail 45-tick guard.</summary>
+    public event Action<WorldInteraction>? ElectrifiedFenceTouched;
 
     /// <summary>Gets whether a non-ladder interaction currently owns locomotion.</summary>
     public bool IsInWorldInteraction => _activeInteraction is not null;
@@ -781,6 +964,45 @@ public sealed class PlayerCamera
         ? DoorNeedsPicking(interaction) ? "action_picklock.spr" : interaction.ActionSprite
         : ShowLadderAction ? StatusScreenLayout.LadderActionSprite : null;
 
+    /// <summary>What the remaster's world-anchored interaction marker should point at.</summary>
+    /// <param name="tickBlend">
+    /// How far this frame stands between the last two simulation states, so a marker on something that
+    /// moves — a swinging door, a button riding a lift — sits where that thing is being drawn rather
+    /// than where the tick left it.
+    /// </param>
+    /// <returns>The offer to mark, or <see langword="null"/> when there is none.</returns>
+    /// <remarks>
+    /// <para>
+    /// The same three offers the retail action sprite is chosen from — the resolved activatable, the
+    /// ladder in reach, and the timed state currently running — described as flat data so the prompt
+    /// can be laid out and tested without reaching back into the simulation.
+    /// </para>
+    /// <para>
+    /// A running interaction is only offered while it has a progress reading. That is the retail
+    /// condition for a progress display (HumanPlayer+3432 is set by states 30, 31, 32, 35 and 36 alone),
+    /// and it is the right one here too: a fence vault, a wire ride and a mounted gun are not things the
+    /// player is being invited to press a key for while they happen.
+    /// </para>
+    /// </remarks>
+    public InteractionPromptTarget? InteractionPrompt(float tickBlend)
+    {
+        if (_activeInteraction is { } running)
+        {
+            return InteractionProgress is { } progress
+                ? Describe(running, _body.Eye, tickBlend, progress)
+                : null;
+        }
+
+        if (_nearInteraction is { } offered)
+        {
+            return Describe(offered, _body.Eye, tickBlend, progress: null);
+        }
+
+        return ShowLadderAction && _nearLadder is { } ladder
+            ? DescribeLadder(ladder, _nearLadderAtTop, _nearLadderIndex)
+            : null;
+    }
+
     /// <summary>Gets whether the player is on a ladder.</summary>
     public bool IsOnLadder => _climb.IsOnLadder;
 
@@ -823,9 +1045,13 @@ public sealed class PlayerCamera
     public bool PlaceAt(TerrainData? terrain, PlayerSpawnPoint spawn, WorldRayCast? registrationGround = null)
     {
         _body.Position = spawn.Position;
-        _body.Yaw = spawn.Gamma;
+        // HumanPlayer's objects.qvm Gamma is the engine object's facing angle. The camera stores a
+        // world-to-view yaw, whose horizontal convention is its inverse; this is the same conversion
+        // used when authored interaction poses hand the player's facing back to the camera.
+        _body.Yaw = -spawn.Gamma;
         _body.Pitch = 0f;
         HasViewTickPair = false;
+        _landingKick.Reset();
 
         WorldRayCast? liveWalls = _body.Walls;
         if (registrationGround is not null)
@@ -975,6 +1201,8 @@ public sealed class PlayerCamera
 
         PlayerCommand command = new(forward, strafe, 0f, 0f, _running, crouch, jump);
 
+        Vector3d previousPosition = _body.Position;
+
         // The weapon machine, before the clips advance: 0x4EC1E0 over the weapon table runs in
         // HumanPlayer_Update ahead of 0x464800, so its clip-end flag is last tick's.
         TickWeapons();
@@ -988,6 +1216,14 @@ public sealed class PlayerCamera
         else
         {
             _body.TickAnimated(command, terrain, _animator);
+        }
+
+        WorldInteraction? electricFence = _interactions?.FindElectrifiedFenceContact(
+            previousPosition,
+            _body.Position);
+        if (ElectricFenceContact.Advance(ref _electricFenceCooldown, electricFence) is { } touchedFence)
+        {
+            ElectrifiedFenceTouched?.Invoke(touchedFence);
         }
 
         // Diagnostic: name whatever the wall sweep stopped the body against, so a doorway you cannot walk
@@ -1024,11 +1260,15 @@ public sealed class PlayerCamera
         // Where 0x464BD0 steps it: after the state machines have read it and before the rig is placed.
         _weapons?.Sway.Advance();
 
+        // The landing dip is stepped by the same function, in the same place, and for the same reason:
+        // it displaces the camera this tick places rather than the body the state machines just moved.
+        _landingKick.Advance();
+
         PoseChanged = true;
         SyncView();
 
         // 0x462E50, which HumanPlayer_Update calls after 0x464BD0 has committed the view.
-        ResolveFire();
+        ResolveFire(terrain);
 
         // After the fire, so a round spawned this tick flies its first segment in the same tick --
         // otherwise every shot would carry a one-tick delay on top of its real travel time.
@@ -1057,6 +1297,10 @@ public sealed class PlayerCamera
         TickWeapons();
         _view?.Tick();
         _weapons?.Sway.Advance();
+
+        // 0x464BD0 runs whatever the locomotion state is, so a dip that began before the computer was
+        // opened keeps playing out rather than freezing the view part-way down.
+        _landingKick.Advance();
         PoseChanged = true;
         SyncView();
         CaptureViewTickState();
@@ -1089,18 +1333,35 @@ public sealed class PlayerCamera
             case InteractionAction.ClimbFence:
             case InteractionAction.PickLock:
             case InteractionAction.EnterState:
+                if (interaction.Type == InteractionActivateType.StationaryGun && !interaction.BeginUse())
+                {
+                    _nearInteraction = null;
+                    return;
+                }
+
                 _activeInteraction = interaction;
                 _interactionTick = 0;
                 _interactionUseArmed = false;
+                double standingHeight = _body.Position.Z;
                 (Vector3d position, float facing) = interaction.BodyPose(_body.Position);
                 _body.Position = position;
-                SnapBodyForInteraction(_body, interaction.Type, terrain);
+                SnapBodyForInteraction(_body, interaction.Type, terrain, standingHeight);
                 _interactionFacing = facing;
                 _body.Yaw = -facing;
                 _fenceExitPosition = interaction.Type == InteractionActivateType.Fence
                     ? interaction.FenceExitPoint(position)
                     : position;
-                interaction.BeginUse();
+                if (interaction.Type != InteractionActivateType.StationaryGun)
+                {
+                    interaction.BeginUse();
+                }
+                if (interaction.Type == InteractionActivateType.Fence && interaction.IsElectrified)
+                {
+                    if (ElectricFenceContact.TryShock(ref _electricFenceCooldown, interaction) is { } touchedFence)
+                    {
+                        ElectrifiedFenceTouched?.Invoke(touchedFence);
+                    }
+                }
                 break;
         }
 
@@ -1110,7 +1371,8 @@ public sealed class PlayerCamera
     internal static void SnapBodyForInteraction(
         PlayerBody body,
         InteractionActivateType type,
-        TerrainData? terrain)
+        TerrainData? terrain,
+        double? standingHeight = null)
     {
         if (type is InteractionActivateType.Door
             or InteractionActivateType.Cabinet
@@ -1118,6 +1380,15 @@ public sealed class PlayerCamera
             or InteractionActivateType.Generic
             or InteractionActivateType.PlaceExplosive)
         {
+            if (standingHeight is { } floorReference)
+            {
+                // The authored interaction root is relative to the task and can sit above the floor
+                // (Terminal_333's root is at keyboard height). Start Human_SnapToGround from the
+                // human's standing height so collision furniture above their feet cannot become the
+                // new floor. The 0.4 m probe still admits ordinary floor variation at the new X/Y.
+                body.Position = new Vector3d(body.Position.X, body.Position.Y, floorReference);
+            }
+
             // IGI2 HumanPlayer_InitStateActivate* names this sequence explicitly: Human_PopPosition,
             // then Human_SnapToGround. IGI1 has the same pair at sub_4631A0/sub_463260.
             body.SnapInteractionToGround(terrain);
@@ -1284,8 +1555,93 @@ public sealed class PlayerCamera
         return interaction.Type == InteractionActivateType.Door && interaction.IsLocked;
     }
 
+    private static InteractionPromptTarget Describe(
+        WorldInteraction interaction,
+        Vector3d eye,
+        float tickBlend,
+        float? progress) =>
+        new(
+            interaction.Task.Id,
+            interaction.Type,
+            interaction.ActionSprite,
+            interaction.MarkerPoint(eye, tickBlend),
+            interaction.DurationTicks,
+            DoorNeedsPicking(interaction),
+
+            // A door that is not fully closed is offered as one to close, because that is what the
+            // toggle this prompt is describing will do to it.
+            interaction.Door is { IsFullyClosed: false },
+            progress);
+
+    private static InteractionPromptTarget DescribeLadder(LadderPlacement ladder, bool atTop, int index) =>
+        new(
+            // Negative, so a ladder's identity can never collide with a declared task's id.
+            -(index + 1),
+            InteractionActivateType.Ladder,
+            StatusScreenLayout.LadderActionSprite,
+            LadderMarker(ladder, atTop),
+            DurationTicks: 0,
+            Locked: false,
+            DoorOpen: false,
+            Progress: null);
+
+    /// <summary>The rung a ladder's marker sits on: the one the player is about to take hold of.</summary>
+    /// <remarks>
+    /// Fixed to the end being mounted rather than tracking the player up and down the stile. A ladder
+    /// is metres long and a marker in the middle of one marks nothing, but a marker that slides as the
+    /// player walks belongs to the player rather than to the ladder.
+    /// </remarks>
+    private static Vector3d LadderMarker(LadderPlacement ladder, bool atTop)
+    {
+        if (atTop)
+        {
+            return ladder.Top;
+        }
+
+        Vector3d climb = ladder.Top - ladder.Bottom;
+        double length = climb.Length;
+        return length <= 0.0
+            ? ladder.Bottom
+            : ladder.Bottom + (climb / length * Math.Min(length, LadderGrabHeightUnits));
+    }
+
+    /// <summary>How far up a ladder a climber takes hold — chest height, in world units.</summary>
+    private const double LadderGrabHeightUnits = 1.25 * WorldScene.UnitsPerMetre;
+
     private static int ActiveAnimationParameter(DeclaredTask task) =>
         task.TryGetValue("Activate Anim", out object? raw) && raw is int animation ? animation : -1;
+
+    private int _upperBodyAnimation = -1;
+    private bool _upperBodyLoops;
+    private float _upperBodyBlendSeconds;
+    private int _upperBodySequence;
+
+    /// <summary>Gets the weapon clip the player's TORSO is playing, or <c>-1</c> when it has none.</summary>
+    /// <value>An animation id in the human's own skeleton-0 set, not the first-person rig's.</value>
+    /// <remarks>
+    /// <para>
+    /// The other half of every weapon action. <c>0x4137E0</c> picks a pair — a full-body clip for the
+    /// first-person rig and an <c>UpperBody*</c> clip for the human's own body — and plays them on two
+    /// different skeletons. Only the first is visible through the player's own eyes, which is why the
+    /// second went unused here until there was a camera that could see the body.
+    /// </para>
+    /// <para>
+    /// Reported rather than played, because the body belongs to the renderer: this object owns the
+    /// simulation's copy of what the torso was asked to do, and <see cref="UpperBodySequence"/> is how a
+    /// consumer notices a new request without having to diff the id — a second shot plays the same clip
+    /// again and must restart it.
+    /// </para>
+    /// </remarks>
+    public int UpperBodyAnimation => _upperBodyAnimation;
+
+    /// <summary>Gets whether <see cref="UpperBodyAnimation"/> repeats.</summary>
+    public bool UpperBodyAnimationLoops => _upperBodyLoops;
+
+    /// <summary>Gets how long the torso clip eases in — 0.4 s for stances, immediate for a shot.</summary>
+    public float UpperBodyBlendSeconds => _upperBodyBlendSeconds;
+
+    /// <summary>Gets a counter bumped every time a new torso clip is requested.</summary>
+    public int UpperBodySequence => _upperBodySequence;
 
     /// <summary>Gets whether the rig has two tick states for the presentation to draw between.</summary>
     public bool HasViewTickPair { get; private set; }
@@ -1299,8 +1655,12 @@ public sealed class PlayerCamera
             return;
         }
 
-        _prevTickEye = HasViewTickPair ? _tickEye : view.Eye;
-        _tickEye = view.Eye;
+        // The dip belongs to the camera the frame is drawn from, so it is folded in here rather than at
+        // the eye the body reports: the blend between the two ticks then carries it for free, and the
+        // listener and the rig stay on the same head they always were.
+        Vector3d eye = view.Eye + LandingKickOffsetUnits;
+        _prevTickEye = HasViewTickPair ? _tickEye : eye;
+        _tickEye = eye;
 
         double wallPullback = view.WallPullbackInUnits;
         _prevTickWallPullback = HasViewTickPair ? _tickWallPullback : wallPullback;
@@ -1338,16 +1698,13 @@ public sealed class PlayerCamera
         // applied per frame at draw. Equivalent by the same argument the third-person draw leans on:
         // the root rotation only ever left-multiplies every bone.
         BonePose unrotated = view.Bones.Pose();
-        if (HumanAttachPoints.FirstPersonWeapon < unrotated.BoneCount)
-        {
-            Vector3f position = unrotated.Positions[HumanAttachPoints.FirstPersonWeapon];
-            Matrix3f rotation = unrotated.Rotations[HumanAttachPoints.FirstPersonWeapon];
-            _prevTickWeaponBonePosition = _hasWeaponBonePair ? _tickWeaponBonePosition : position;
-            _prevTickWeaponBoneRotation = _hasWeaponBonePair ? _tickWeaponBoneRotation : rotation;
-            _tickWeaponBonePosition = position;
-            _tickWeaponBoneRotation = rotation;
-            _hasWeaponBonePair = true;
-        }
+        _weaponBone.Capture(unrotated, HumanAttachPoints.FirstPersonWeapon);
+
+        // The magazine and the moving part ride bones of their own, and a reload clip moves all three
+        // independently -- so all three need the pair an uncapped presentation interpolates between, or
+        // a slide would step at 30 Hz against a gun body that glides.
+        _magazineBone.Capture(unrotated, HumanAttachPoints.FirstPersonSecondary);
+        _movingPartBone.Capture(unrotated, HumanAttachPoints.FirstPersonTertiary);
 
         HasViewTickPair = true;
     }
@@ -1387,6 +1744,71 @@ public sealed class PlayerCamera
     public Camera3D SmoothedCamera(float alpha) =>
         new(SmoothedEyeMetres(alpha), SmoothedLookRotation(alpha));
 
+    /// <summary>Gets or sets the ray the crosshair sits on — the drawn camera's own centre line.</summary>
+    /// <value>
+    /// The camera's position in engine units and its unit forward, or <see langword="null"/> — the
+    /// default, and the only value first person ever holds — to fire straight along the eye's own
+    /// forward, exactly as the original does.
+    /// </value>
+    /// <remarks>
+    /// <para>
+    /// <b>The one thing the third-person view changes about the game rather than about the picture.</b>
+    /// A camera behind and to the side of the eye does not share its sight line, so a fixed crosshair
+    /// and a shot along the body's forward cannot both be right. Rather than let the crosshair wander to
+    /// wherever the round would land — truthful, and unusable — the shot converges on what the middle of
+    /// the screen is over.
+    /// </para>
+    /// <para>
+    /// <b>A ray rather than a point, and this is the whole of the fix.</b> Handing in a point meant the
+    /// renderer decided what the crosshair was over, and it answered with a different test from the one
+    /// the bullet uses — it saw walls and terrain and looked straight through people. So a shot aimed at
+    /// a guard converged on the hillside behind him and landed half a metre wide, which is exactly the
+    /// distance between the camera and the eye. Resolving the ray HERE settles it against
+    /// <see cref="HumanProbes"/> and the same <c>WorldTraceMask.World</c> trace <see cref="ResolveShot"/>
+    /// marches, so the crosshair's target and the round's target are found by one query and cannot
+    /// disagree.
+    /// </para>
+    /// <para>
+    /// The round still <b>leaves the eye</b>: only its direction is turned, which keeps the muzzle, the
+    /// tracer and the wall probe where they were. And the turn is the identity whenever the camera is at
+    /// the eye, so first person needs no flag to be unaffected.
+    /// </para>
+    /// </remarks>
+    public (Vector3d OriginUnits, Vector3f Direction)? AimConvergenceRay { get; set; }
+
+    /// <summary>How far the convergence probe reaches, in engine units — 300 m.</summary>
+    /// <remarks>
+    /// Past this the angle between a shot from the eye and one from a camera 2.6 m behind it is a
+    /// fraction of a degree. A ray that reaches the end unobstructed converges on the end, which is the
+    /// same answer as not converging at all.
+    /// </remarks>
+    public const double AimConvergenceReachInUnits = 300.0 * UnitsPerMetre;
+
+    /// <summary>Finds what the crosshair is over, with the tests a round would meet on the way.</summary>
+    /// <param name="terrain">The level's ground, which the placed-object index does not carry.</param>
+    /// <returns>The world point, in engine units, or <see langword="null"/> when nothing is aimed.</returns>
+    /// <remarks>
+    /// The picking rule itself is <see cref="AimConvergence"/>, which is where the reasoning lives and
+    /// where it is tested; this only names the three sources. They are the SAME ones a round meets:
+    /// <see cref="_walls"/> is what <see cref="ResolveShot"/> marches, and <see cref="HumanProbes"/> is
+    /// the reporting half of the <see cref="Humans"/> cast it offers rounds to.
+    /// </remarks>
+    private Vector3d? ResolveAimConvergence(TerrainData? terrain)
+    {
+        if (AimConvergenceRay is not { } ray)
+        {
+            return null;
+        }
+
+        return AimConvergence.Resolve(
+            ray.OriginUnits,
+            ray.Direction,
+            AimConvergenceReachInUnits,
+            _walls?.Tracer(),
+            terrain is null ? null : TerrainRayTrace.Caster(terrain),
+            HumanProbes);
+    }
+
     /// <summary>Gets the two FOV tangents blended for an uncapped presentation frame.</summary>
     /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
     /// <remarks>
@@ -1412,11 +1834,11 @@ public sealed class PlayerCamera
             _prevTickViewModelTanX + ((_tickViewModelTanX - _prevTickViewModelTanX) * t));
     }
 
-    /// <summary>The rig's transform and held-weapon attachment for a frame between two ticks.</summary>
+    /// <summary>The rig's transform and held-weapon attachments for a frame between two ticks.</summary>
     /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
     /// <returns>
-    /// The rig origin in engine units, its orientation, and the weapon attachment when the bone
-    /// exists.
+    /// The rig origin in engine units, its orientation, and the three weapon attachments — the body's
+    /// bone, the magazine's and the moving part's — when those bones exist.
     /// </returns>
     /// <remarks>
     /// The tick-stepped halves — the eye the body carried, the wall pullback, the clip's hold offset,
@@ -1424,11 +1846,21 @@ public sealed class PlayerCamera
     /// the LOOK is this frame's own, because the mouse already runs per frame and the arms must stay
     /// welded to it. At <paramref name="alpha"/> 1 this is the rig's un-smoothed transform exactly.
     /// </remarks>
-    public (Vector3d OriginUnits, Matrix3f Orientation, BoneAttachment? HeldWeapon) SmoothedRig(float alpha)
+    public (
+        Vector3d OriginUnits,
+        Matrix3f Orientation,
+        BoneAttachment? HeldWeapon,
+        BoneAttachment? Magazine,
+        BoneAttachment? MovingPart) SmoothedRig(float alpha)
     {
         if (_view is not { } view || !HasViewTickPair)
         {
-            return (_view?.Position ?? default, _view?.Orientation ?? Matrix3f.Identity, _view?.HeldWeapon);
+            return (
+                _view?.Position ?? default,
+                _view?.Orientation ?? Matrix3f.Identity,
+                _view?.HeldWeapon,
+                _view?.HeldWeaponSecondary,
+                _view?.HeldWeaponTertiary);
         }
 
         // The same composition SyncView commits — eye orientation times sway — with the tick-stepped
@@ -1451,18 +1883,70 @@ public sealed class PlayerCamera
             eye.Y + held.Y + (eyeLook.M22 * wallPullback),
             eye.Z + held.Z + (eyeLook.M32 * wallPullback));
 
-        BoneAttachment? weapon = null;
-        if (_hasWeaponBonePair)
+        return (
+            origin,
+            look,
+            _weaponBone.Smoothed(origin, look, alpha),
+            _magazineBone.Smoothed(origin, look, alpha),
+            _movingPartBone.Smoothed(origin, look, alpha));
+    }
+
+    /// <summary>One view-rig attachment bone over the last two ticks, ready to interpolate.</summary>
+    /// <remarks>
+    /// The bone is taken from the UNROTATED pose — the identity-root one — so the look can be applied
+    /// per frame at draw. Equivalent by the argument the third-person draw leans on: the root rotation
+    /// only ever left-multiplies every bone.
+    /// </remarks>
+    private struct ViewBonePair()
+    {
+        private Vector3f _previousPosition;
+        private Vector3f _position;
+        private Matrix3f _previousRotation = Matrix3f.Identity;
+        private Matrix3f _rotation = Matrix3f.Identity;
+        private bool _hasPair;
+
+        /// <summary>Reads this tick's value, keeping the previous one, when the rig has the bone.</summary>
+        /// <param name="pose">The rig's unrotated pose.</param>
+        /// <param name="bone">The bone index, from <see cref="HumanAttachPoints"/>.</param>
+        public void Capture(BonePose pose, int bone)
         {
-            Vector3f bone = look.Transposed().Transform(
-                PresentationBlend.Lerp(_prevTickWeaponBonePosition, _tickWeaponBonePosition, alpha));
-            weapon = new BoneAttachment(
-                new Vector3d(origin.X + bone.X, origin.Y + bone.Y, origin.Z + bone.Z),
-                look * PresentationBlend.InterpolateRotation(
-                    _prevTickWeaponBoneRotation, _tickWeaponBoneRotation, alpha));
+            if (bone >= pose.BoneCount)
+            {
+                _hasPair = false;
+                return;
+            }
+
+            Vector3f position = pose.Positions[bone];
+            Matrix3f rotation = pose.Rotations[bone];
+            _previousPosition = _hasPair ? _position : position;
+            _previousRotation = _hasPair ? _rotation : rotation;
+            _position = position;
+            _rotation = rotation;
+            _hasPair = true;
         }
 
-        return (origin, look, weapon);
+        /// <summary>Drops the pair, so the next capture starts a fresh one from where the rig now is.</summary>
+        public void Forget() => _hasPair = false;
+
+        /// <summary>Resolves the attachment for a frame between the two ticks.</summary>
+        /// <param name="origin">The rig origin the frame drew at, in engine units.</param>
+        /// <param name="look">The rig's orientation this frame.</param>
+        /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
+        /// <returns>The attachment, or <see langword="null"/> when the rig has no such bone.</returns>
+        public readonly BoneAttachment? Smoothed(Vector3d origin, Matrix3f look, float alpha)
+        {
+            if (!_hasPair)
+            {
+                return null;
+            }
+
+            // M . v -- the palette's own convention -- is the transpose of the row-vector Transform.
+            Vector3f bone = look.Transposed().Transform(
+                PresentationBlend.Lerp(_previousPosition, _position, alpha));
+            return new BoneAttachment(
+                new Vector3d(origin.X + bone.X, origin.Y + bone.Y, origin.Z + bone.Z),
+                look * PresentationBlend.InterpolateRotation(_previousRotation, _rotation, alpha));
+        }
     }
 
     private WorldRayCast ViewModelWalls(TerrainData? terrain)
@@ -1542,6 +2026,16 @@ public sealed class PlayerCamera
             $"BLOCKED by {label} at ({nearest.Position.X:F0}, {nearest.Position.Y:F0}, {nearest.Position.Z:F0}) — probe {probeMetres:F2}m, {aheadMetres:F2}m ahead; player ({_body.Position.X:F0}, {_body.Position.Y:F0}, {_body.Position.Z:F0}) yaw {_body.Yaw:F2}");
 
         _logger.Information("Player", line);
+        if (label.Contains("Fence", StringComparison.OrdinalIgnoreCase))
+        {
+            WorldInteraction? fence = _interactions?.FindElectrifiedFenceNear(nearest.Position);
+            _logger.Information(
+                "Player",
+                $"[fence] wall contact task={(fence is null ? "-" : fence.Task.Id.ToString(System.Globalization.CultureInfo.InvariantCulture))} "
+                    + $"powered={(fence?.IsElectrified == true ? "true" : "false")} "
+                    + $"contact={(fence is null ? "miss" : "candidate")} "
+                    + $"player=({_body.Position.X:F0},{_body.Position.Y:F0},{_body.Position.Z:F0})");
+        }
     }
 
     // The nearest ladder that is close enough, faced and within height to mount.
@@ -1550,10 +2044,13 @@ public sealed class PlayerCamera
         _nearLadder = null;
         _nearLadderAtTop = false;
         _nearLadderAngle = double.MaxValue;
+        _nearLadderIndex = -1;
         double best = double.MaxValue;
 
-        foreach (LadderPlacement ladder in _ladders)
+        for (int index = 0; index < _ladders.Count; index++)
         {
+            LadderPlacement ladder = _ladders[index];
+
             // Human_UpdateActivate evaluates tasks from the HumanView position, not the task's feet.
             // Using the feet makes the strict ladder-origin height test fail until the player jumps.
             if (!ladder.CanActivate(_body.Eye, _body.Yaw, out bool atTop, out double angle))
@@ -1568,6 +2065,10 @@ public sealed class PlayerCamera
                 _nearLadder = ladder;
                 _nearLadderAtTop = atTop;
                 _nearLadderAngle = angle;
+
+                // Kept so the marker can tell one ladder from another: a level declares no task id for
+                // them, and the prompt has to know when the thing under the player's aim has changed.
+                _nearLadderIndex = index;
             }
         }
     }
@@ -1583,6 +2084,7 @@ public sealed class PlayerCamera
         _body.Yaw = ladder.PlayerYaw;
         _body.Position = _climb.Position;
         _nearLadder = null;
+        _nearLadderIndex = -1;
         PoseChanged = true;
         SyncView();
     }
@@ -1698,9 +2200,18 @@ public sealed class PlayerCamera
         {
             PlayWeaponAction(held.Weapon, action, _weapons.RequestedFireVariant);
         }
+        else if (_weapons.InHand is null && _upperBodyAnimation >= 0)
+        {
+            // 0x4137E0's action zero: it clears Human+3420 and calls 0x489F00, which stands the upper
+            // body down. Empty hands are the state that reaches it — there is no weapon record to pick a
+            // torso clip out of — and without this the body holds the last weapon's stance after the
+            // player puts it away.
+            _upperBodyAnimation = -1;
+            _upperBodySequence++;
+        }
     }
 
-    private void ResolveFire()
+    private void ResolveFire(TerrainData? terrain = null)
     {
         _impacts.Clear();
 
@@ -1779,11 +2290,31 @@ public sealed class PlayerCamera
         Vector3f right = new(m.M11, m.M21, m.M31);
         Vector3f up = new(m.M13, m.M23, m.M33);
 
+        // ...unless a camera that is not at the eye has said what the crosshair is over. See
+        // AimConvergencePointUnits: null in first person, and null is the retail path untouched.
+        AimBasis.Converge(_view.Eye, ResolveAimConvergence(terrain), ref forward, ref right, ref up);
+
         // A scoped rifle is braced: 0x472E50 multiplies the round's sampled kick by 0.05 before the
         // accumulators see it, and this is the same factor at the same point.
         float recoilScale = _dragunovScope.IsScoped ? DragunovScope.ScopedRecoilFactor : 1f;
         if (!_weapons.ResolveFire(_view.Eye, forward, right, up, recoilScale))
         {
+            return;
+        }
+
+        if (_weapons.M203Shots.Count > 0)
+        {
+            bool rejected = false;
+            foreach (M203Projectile shot in _weapons.M203Shots)
+            {
+                rejected |= !_m203.Spawn(shot);
+            }
+
+            if (rejected)
+            {
+                _weapons.RefundRejectedSimulationShot();
+            }
+
             return;
         }
 
@@ -1797,6 +2328,31 @@ public sealed class PlayerCamera
         // A thrown round is a GRENADE, and a grenade was never hit-scan in the original either --
         // it is a physics object with a four-second fuse. It flies the same on every profile.
         WeaponType? thrownWeapon = _weapons.InHand?.Weapon;
+        if (thrownWeapon is not null && thrownWeapon.Category == WeaponCategory.ProximityMine)
+        {
+            WorldTraceCast? mineTrace = GrenadeTrace;
+            if (mineTrace is null && GrenadeWalls is { } mineWalls)
+            {
+                mineTrace = WorldTrace.FromRayCast(mineWalls);
+            }
+
+            foreach (GunProjectile shot in _weapons.Shots)
+            {
+                // The mine task is placed at the first surface under the crosshair. It is not a
+                // thrown grenade: starting it at the muzzle with zero velocity made it drop through
+                // the level until the physics solver happened to find a floor, which is visibly
+                // different from retail and makes wall/prop placement impossible.
+                _grenades.PlaceMine(
+                    shot.Origin,
+                    _body.Position,
+                    shot.Direction,
+                    shot.RangeInUnits,
+                    mineTrace);
+            }
+
+            return;
+        }
+
         if (thrownWeapon is not null && thrownWeapon.Category == WeaponCategory.Grenade)
         {
             // The physics table keys the explosion type by MODEL: 135_01_1 is the frag, 137_01_1
@@ -1810,9 +2366,74 @@ public sealed class PlayerCamera
             float throwSpeed = PlayerWeapons.ChargedThrowSpeed(
                 thrownWeapon.MuzzleVelocity, _weapons.ThrowChargeTicks);
 
+            float radius = ExplosionDamage.DefaultGrenadeRadiusMetres;
+            float falloff = ExplosionDamage.DefaultGrenadeFalloffMetres;
+            float damage = ExplosionDamage.DefaultGrenadeDamageFactor;
+            if (thrownWeapon.RetailConfig is { } config)
+            {
+                if (WeaponConfigRegistry.TryGetRealTag(config, "Grenade - Explosion radius (meters)", out float configured))
+                {
+                    radius = configured;
+                }
+                if (WeaponConfigRegistry.TryGetRealTag(config, "Grenade - Explosion falloff (meters)", out configured))
+                {
+                    falloff = configured;
+                }
+                if (WeaponConfigRegistry.TryGetRealTag(config, "Grenade - Explosion damage factor", out configured))
+                {
+                    damage = configured;
+                }
+            }
+
             foreach (GunProjectile shot in _weapons.Shots)
             {
-                _grenades.Spawn(shot.Origin, shot.Direction, throwSpeed, explosion);
+                _grenades.Spawn(
+                    shot.Origin,
+                    shot.Direction,
+                    throwSpeed,
+                    explosion,
+                    radiusMetres: radius,
+                    falloffMetres: falloff,
+                    damageFactor: damage);
+            }
+
+            return;
+        }
+
+        // A missile task is a physics object, not a gun ray. The launcher binding selects this path
+        // for every missile carrier; no weapon id or model name is special-cased here.
+        WeaponType? missileWeapon = _weapons.InHand?.Weapon;
+        if (missileWeapon is not null
+            && string.Equals(missileWeapon.Projectile.TypeName, "TASKTYPE_MISSILE", StringComparison.Ordinal))
+        {
+            bool rejected = false;
+            foreach (GunProjectile shot in _weapons.Shots)
+            {
+                MissileType missileType = MissileFlight.TypeForLauncher(missileWeapon);
+                // Direct / keyboard rockets fly along the barrel. Using hit-scan EffectiveRange as
+                // the aim point lofted anti-tank shots 25 m above a phantom far point.
+                Vector3d target = missileType is MissileType.MissileDirect or MissileType.MissileKeyboard
+                    ? shot.Origin + new Vector3d(
+                        shot.Direction.X * MissileFlight.UnitsPerMetre,
+                        shot.Direction.Y * MissileFlight.UnitsPerMetre,
+                        shot.Direction.Z * MissileFlight.UnitsPerMetre)
+                    : shot.Origin + new Vector3d(
+                        shot.Direction.X * shot.RangeInUnits,
+                        shot.Direction.Y * shot.RangeInUnits,
+                        shot.Direction.Z * shot.RangeInUnits);
+
+                rejected |= !_missiles.Spawn(
+                    shot.Origin,
+                    target,
+                    missileType,
+                    MissileFlight.LaunchSpeedMetresPerSecond(missileWeapon),
+                    shot.Direction,
+                    string.IsNullOrWhiteSpace(missileWeapon.Projectile.Text) ? "110_02_1" : missileWeapon.Projectile.Text);
+            }
+
+            if (rejected)
+            {
+                _weapons.RefundRejectedSimulationShot();
             }
 
             return;
@@ -1852,14 +2473,14 @@ public sealed class PlayerCamera
             }
             else
             {
-                _impacts.Add(Trace(shot, damageFactor, category));
+                ResolveShot(shot, damageFactor, category, held?.PenetrationPower ?? 0f);
             }
         }
     }
 
     /// <summary>Advances the ballistic rounds and lands whatever arrived this tick.</summary>
     /// <remarks>
-    /// The impact side-effects are exactly <see cref="Trace"/>'s, applied on the tick the round
+    /// The impact side-effects are exactly <see cref="ResolveShot"/>'s, applied on the tick the round
     /// arrives rather than the tick it was fired: the hit counters, the AI's ground-impact notice and
     /// the decal. Damage needs nothing here — the <see cref="Humans"/> delegate applied it during the
     /// cast, the same way it does for a ray.
@@ -1869,7 +2490,9 @@ public sealed class PlayerCamera
         // The grenades fly every tick regardless of the tracer option -- they are the retail
         // behaviour, not a remaster one. Detonations are drained by the game, which owns the
         // effects and the blast's victims.
-        _grenades.Tick(GrenadeWalls ?? _body.Walls);
+        _grenades.Tick(GrenadeWalls ?? _body.Walls, HumanProximityTargets, GrenadeTrace);
+        _missiles.Tick(MissileWalls ?? GrenadeWalls ?? _body.Walls, HumanProbes);
+        _m203.Tick(GrenadeWalls ?? _body.Walls, HumanProbes);
 
         if (_ballistics.Rounds.Count == 0)
         {
@@ -1881,7 +2504,8 @@ public sealed class PlayerCamera
             walls,
             Humans,
             GameplayCVars.BallisticsGravity.Value,
-            GameplayCVars.BallisticsDrag.Value);
+            GameplayCVars.BallisticsDrag.Value,
+            _walls?.Tracer());
 
         foreach (BallisticImpact impact in _ballistics.Impacts)
         {
@@ -1904,55 +2528,230 @@ public sealed class PlayerCamera
             _impacts.Add(new GunImpact(
                 impact.Position,
                 impact.StruckHuman || impact.StruckWall,
-                impact.RangeInUnits));
+                impact.RangeInUnits,
+                impact.Owner,
+                impact.Placement,
+                StruckHuman: impact.StruckHuman,
+                Wall: impact.StruckWall ? impact.Wall : default,
+                Direction: impact.Direction));
         }
     }
 
-    // One cast, not the full loop. 0x47B750 keeps casting while range is left, penetrating and
-    // ricocheting; that needs the surface properties the collision index does not carry yet, so this
-    // stops at the first thing hit. What IS retail is where the ray starts, which way it goes and how
-    // long it is -- all three come out of the weapon record. Recorded in TODO.md.
-    private GunImpact Trace(GunProjectile shot, float damageFactor, WeaponCategory category)
+    /// <summary>Resolves one round the way <c>0x47B750</c> does — as a march, not a single cast.</summary>
+    /// <remarks>
+    /// <para>
+    /// The round is hit-scan and settled entirely in the tick it is fired, but it does not stop at the
+    /// first thing it meets. The original loops while range is left, and each surface either stops the
+    /// round, is penetrated, or deflects it — the rules are <see cref="GunShotBallistics"/>, which had
+    /// been written from this same function and then never driven by anything.
+    /// </para>
+    /// <para>
+    /// Each surface's own row supplies the two numbers: <see cref="GameMaterial.BulletResistance"/>
+    /// against the weapon's penetration power (<c>0x47BD88</c>), and
+    /// <see cref="GameMaterial.RicochetAngleDegrees"/> against the angle of arrival (<c>0x47BB96</c>).
+    /// A deflection is allowed once per round and is tested BEFORE penetration, exactly as the original
+    /// orders them, so a grazing round glances rather than punching through.
+    /// </para>
+    /// <para>
+    /// A crossing is an <b>entry</b> or an <b>exit</b>, never both: <c>0x4CD300</c> reports the two as
+    /// the halves of one condition (<c>*a7 = c0; *a8 = !c0</c>), so the pair the trace hands back always
+    /// has exactly one side set. An entry sounds and marks the surface and is what penetration and
+    /// deflection are tested on; an exit leaves only the far-side decal, silently, and arms the latch
+    /// that stops the round on its next entry (<c>0x47BB0A</c>) — which is what keeps a round that
+    /// punched through a wall from carrying on through the whole level.
+    /// </para>
+    /// </remarks>
+    private void ResolveShot(
+        GunProjectile shot,
+        float damageFactor,
+        WeaponCategory category,
+        float penetrationPower)
     {
         Vector3d direction = new(shot.Direction.X, shot.Direction.Y, shot.Direction.Z);
-        Vector3d end = shot.Origin + (direction * shot.RangeInUnits);
+        Vector3d origin = shot.Origin;
+        float remaining = shot.RangeInUnits;
+        bool deflected = false;
+        bool leftASurface = false;
 
-        WorldTraceHit richHit = default;
-        bool struckWall = _walls is not null
-            && _walls.TryTrace(
-                new WorldTraceRequest(shot.Origin, end, WorldTraceMask.World),
-                out richHit);
-        WorldRayHit hit = struckWall ? richHit.RayHit : default;
-
-        // Both, then the nearer. A guard in front of a wall takes the round and the wall stays clean;
-        // one behind it does not, and the wall is marked.
-        HumanHit human = default;
-        bool struckHuman = Humans is { } humans
-            && humans(shot.Origin, end, damageFactor, category, out human)
-            && (!struckWall || human.Distance < hit.Distance);
-
-        if (struckHuman)
+        // The march is bounded by the range it spends, but a surface reporting a zero-length step would
+        // spend none. Cap the passes at the number of impacts one round may record.
+        for (int pass = 0; pass < GunShotBallistics.MaximumRecordedImpacts && remaining > 0f; pass++)
         {
-            HumanHits++;
-            LastHumanZone = human.Zone;
-            return new GunImpact(human.Position, true, shot.RangeInUnits);
-        }
+            Vector3d end = origin + (direction * remaining);
 
-        if (struckWall)
-        {
-            GroundImpact?.Invoke(hit.Position);
+            // The direction the effect dispatcher carries with the contact. It changes mid-march when
+            // the round glances, so it is taken fresh each pass rather than from the shot.
+            Vector3f travel = new((float)direction.X, (float)direction.Y, (float)direction.Z);
 
-            // The surface decides what the hit looks like, out of the material its own face names.
-            if (_materials is { } materials)
+            WorldTraceHit richHit = default;
+            bool struckWall = _walls is not null
+                && _walls.TryTrace(new WorldTraceRequest(origin, end, WorldTraceMask.World), out richHit);
+            WorldRayHit hit = struckWall ? richHit.RayHit : default;
+
+            // Both, then the nearer. A guard in front of a wall takes the round and the wall stays
+            // clean; one behind it does not, and the wall is marked.
+            HumanHit human = default;
+            bool struckHuman = Humans is { } humans
+                && humans(origin, end, damageFactor, category, out human)
+                && (!struckWall || human.Distance < hit.Distance);
+
+            if (struckHuman)
             {
-                Marks.TryAdd(hit, materials);
+                HumanHits++;
+                LastHumanZone = human.Zone;
+                _impacts.Add(
+                    new GunImpact(human.Position, true, remaining, StruckHuman: true, Direction: travel));
+                return;
             }
 
-            return new GunImpact(hit.Position, true, shot.RangeInUnits, richHit.Owner);
+            if (!struckWall)
+            {
+                _impacts.Add(new GunImpact(end, false, remaining, Direction: travel));
+                return;
+            }
+
+            remaining = GunShotBallistics.ConsumeRange(remaining, (float)hit.Distance);
+
+            // Coming OUT of something. The original marks the far side and says nothing: no sound, no
+            // hit message, no penetration test. It only remembers that it happened.
+            if (hit.IsExit)
+            {
+                if (_materials is { } far)
+                {
+                    Marks.TryAdd(hit, far, isEntry: false);
+                }
+
+                leftASurface = true;
+                if (remaining <= 0f)
+                {
+                    return;
+                }
+
+                origin = StepOff(hit.Position, direction);
+                continue;
+            }
+
+            GroundImpact?.Invoke(hit.Position);
+
+            _impacts.Add(new GunImpact(
+                hit.Position,
+                true,
+                remaining,
+                richHit.Owner,
+                richHit.Placement,
+                Wall: hit,
+                Direction: travel));
+
+            // A round that has already come out of something stops on the next thing it enters,
+            // whatever that thing is made of — it has spent its one pass through.
+            if (leftASurface)
+            {
+                Mark(hit, isEntry: !deflected);
+                return;
+            }
+
+            GameMaterial? struck = _materials is { } rows && rows.TryGet(hit.Material, out GameMaterial row)
+                ? row
+                : null;
+            if (struck is null || remaining <= 0f)
+            {
+                Mark(hit, isEntry: !deflected);
+                return;
+            }
+
+            // The graze first. The collision index has already turned the normal to face the ray, so
+            // the angle between the reversed travel and that normal is the incidence 0x4B2B30 returns:
+            // near zero arriving square on, near a right angle arriving along the surface.
+            if (GunShotBallistics.CanDeflect(deflected))
+            {
+                float incidence = IncidenceRadians(direction, hit.Normal);
+                if (_random.NextSingle()
+                    < GunShotBallistics.DeflectionChance(struck.RicochetAngleDegrees, incidence))
+                {
+                    // 0x47BD7B sounds the whizz directly here rather than through the material's
+                    // window, so a round that glances always gets one.
+                    deflected = true;
+                    Deflected?.Invoke(hit.Position);
+
+                    // 0x47C262: a round that has glanced marks every surface it met as an EXIT, which
+                    // on metal and concrete is the dent rather than the hole. The latch is set here,
+                    // before the impact is recorded at 0x47BDED.
+                    Mark(hit, isEntry: false);
+                    direction = Reflect(direction, hit.Normal);
+                    origin = StepOff(hit.Position, direction);
+                    continue;
+                }
+            }
+
+            // Then the bite. The original will not let a round through a surface whose trace named no
+            // object, whatever the margin, so a hit on the bare level shell always stops it.
+            if (richHit.Owner is null
+                || !GunShotBallistics.Penetrates(
+                    penetrationPower, struck.BulletResistance, _random.NextSingle()))
+            {
+                Mark(hit, isEntry: !deflected);
+                return;
+            }
+
+            Mark(hit, isEntry: !deflected);
+            origin = StepOff(hit.Position, direction);
         }
 
-        return new GunImpact(end, false, shot.RangeInUnits);
+        // The surface decides what the hit looks like, out of the material its own face names. A row
+        // that records no impact leaves nothing -- Fence and MetalFence are two such rows.
+        void Mark(in WorldRayHit surface, bool isEntry)
+        {
+            if (_materials is { } table)
+            {
+                Marks.TryAdd(surface, table, isEntry);
+            }
+        }
     }
+
+    /// <summary>Raised where a round glanced off a surface, so the whizz can be sounded there.</summary>
+    /// <remarks>
+    /// Separate from the ordinary contact notice because the original sounds a deflection directly at
+    /// <c>0x47BD7B</c>, outside the material's own quiet window.
+    /// </remarks>
+    public Action<Vector3d>? Deflected { get; set; }
+
+    /// <summary>The angle a round arrives at, measured off the surface normal.</summary>
+    internal static float IncidenceRadians(Vector3d direction, Vector3f normal)
+    {
+        double length = Math.Sqrt(
+            (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
+        if (length <= 0.0)
+        {
+            return 0f;
+        }
+
+        double dot = ((-direction.X / length) * normal.X)
+            + ((-direction.Y / length) * normal.Y)
+            + ((-direction.Z / length) * normal.Z);
+        return (float)Math.Acos(Math.Clamp(dot, -1.0, 1.0));
+    }
+
+    /// <summary>Mirrors a direction about a surface normal, as the deflection at <c>0x47BC8E</c> does.</summary>
+    internal static Vector3d Reflect(Vector3d direction, Vector3f normal)
+    {
+        double dot = (direction.X * normal.X) + (direction.Y * normal.Y) + (direction.Z * normal.Z);
+        Vector3d reflected = new(
+            direction.X - (2.0 * dot * normal.X),
+            direction.Y - (2.0 * dot * normal.Y),
+            direction.Z - (2.0 * dot * normal.Z));
+        double length = Math.Sqrt(
+            (reflected.X * reflected.X) + (reflected.Y * reflected.Y) + (reflected.Z * reflected.Z));
+        return length > 0.0
+            ? new Vector3d(reflected.X / length, reflected.Y / length, reflected.Z / length)
+            : direction;
+    }
+
+    /// <summary>Where the next cast starts — five millimetres past the face, so it cannot meet it again.</summary>
+    private static Vector3d StepOff(Vector3d position, Vector3d direction) =>
+        new(
+            position.X + (direction.X * GunShotBallistics.PenetrationStepOffUnits),
+            position.Y + (direction.Y * GunShotBallistics.PenetrationStepOffUnits),
+            position.Z + (direction.Z * GunShotBallistics.PenetrationStepOffUnits));
 
     // 0x45E060, for the slots this port can supply. Every action slot carries the MASKED BIT VALUE and
     // never 1, because the original stores `mask & bit` -- a consumer that compared against 1 would

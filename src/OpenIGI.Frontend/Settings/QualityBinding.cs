@@ -11,9 +11,9 @@ namespace OpenIGI.Frontend.Settings;
 /// <para>
 /// The counterpart to <see cref="CVarBinding"/>, which binds one control to one variable. Here one control
 /// stands over several, so the two directions are not symmetrical: choosing a step writes them all, while
-/// reading back has to <em>recognise</em> a step from what the variables happen to say — and often none of
-/// them fits, because the advanced page has just moved one of the variables on its own. That is what the
-/// extra <c>Custom</c> step is for. It is shown so the row can tell the truth, and disabled so it cannot be
+/// reading back has to <em>recognise</em> a step from what the variables happen to say — and sometimes none
+/// of them fits, because a variable has been set from the console on its own. That is what the extra
+/// <c>Custom</c> step is for. It is shown so the row can tell the truth, and disabled so it cannot be
 /// chosen: there is nothing for "make it custom" to write.
 /// </para>
 /// <para>
@@ -89,9 +89,9 @@ public static class QualityBinding
             });
         };
 
-        // Every variable is watched, because the advanced page is where they are moved one at a time and
-        // this row has to notice. A change that lands the set on one of the steps shows that step; anything
-        // else shows Custom, which is the honest answer.
+        // Every variable is watched, because the console can move them one at a time and this row has to
+        // notice. A change that lands the set on one of the steps shows that step; anything else shows
+        // Custom, which is the honest answer.
         foreach (ICVar cvar in managed)
         {
             cvar.Changed += (_, _) => gate.Run(() => dropdown.SelectedIndex = Detect(cvars, group) ?? customIndex);
@@ -115,9 +115,10 @@ public static class QualityBinding
             bool matches = true;
             foreach ((string variable, string value) in group.Levels[index].Values)
             {
-                if (!cvars.TryGet(variable, out ICVar? cvar)
-                    || cvar is null
-                    || !string.Equals(value, cvar.ValueText, StringComparison.OrdinalIgnoreCase))
+                // MatchesText rather than a comparison against ValueText, for the reason
+                // GraphicsPresetRegistry.Detect records: a step declaring 0.70 reads back as 0.7 and the
+                // row would report Custom for ever after.
+                if (!cvars.TryGet(variable, out ICVar? cvar) || cvar is null || !cvar.MatchesText(value))
                 {
                     matches = false;
                     break;

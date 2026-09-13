@@ -15,17 +15,18 @@ namespace OpenIGI.Rendering;
 /// registers each one against the texture it belongs to.
 /// </para>
 /// <para>
-/// <b>Absent is a supported state, not an error.</b> An installation that has never run the tool has no
-/// pack, and it renders exactly as it did before any of this existed. That is what lets the pack be an
-/// optional asset rather than a shipping requirement, and it is why every failure below is a warning
-/// and a null handle rather than an exception.
+/// <b>Absent is a supported state, not an error.</b> An installation with no derived maps renders
+/// exactly as it did before any of this existed, which is why every failure below is a warning and a
+/// null handle rather than an exception.
 /// </para>
 /// <para>
-/// <b>The pack does not have to exist up front.</b> Given a cache directory and
-/// <see cref="DeriveMissing"/>, a texture with no map derives its own on first sight and the result is
-/// written out, so the second run reads a PNG where the first computed one. That is what lets the maps
-/// be a per-user cache built from the player's own installation rather than an asset this repository
-/// carries — the game's art with a filter over it is not ours to redistribute.
+/// <b>Maps built by a tool do not come through here.</b> Those travel inside the asset they describe, as
+/// a second layer of a replacement in the overrides folder, and reach the device with the texture. This
+/// is the fallback for everything else: given a cache directory and <see cref="DeriveMissing"/>, a
+/// texture with no map derives its own on first sight and the result is written out, so the second run
+/// reads a PNG where the first computed one. That is what lets the maps be a per-user cache built from
+/// the player's own installation rather than an asset this repository carries — the game's art with a
+/// filter over it is not ours to redistribute.
 /// </para>
 /// <para>
 /// One instance per device. It owns the textures it uploads, so disposing it releases them; the
@@ -38,7 +39,11 @@ public sealed class MaterialDetailPack : IDisposable
 
     private readonly IGraphicsDevice _device;
     private readonly IIgiLogger _logger;
-    private readonly string? _root;
+
+    // Detail PNGs read and decoded ahead of the render thread by Prewarm. A name maps to its pixels, or
+    // to null when the pack has no map for it -- which is an answer worth remembering, because a level
+    // full of textures with no maps would otherwise be a level's worth of File.Exists on the frame.
+    private readonly ConcurrentDictionary<string, ReadMap?> _read = new(StringComparer.OrdinalIgnoreCase);
     private readonly string? _cacheRoot;
     private readonly Dictionary<string, TextureHandle> _maps = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _missing = new(StringComparer.OrdinalIgnoreCase);
@@ -52,16 +57,21 @@ public sealed class MaterialDetailPack : IDisposable
 
     /// <summary>Initialises a new instance of the <see cref="MaterialDetailPack"/> class.</summary>
     /// <param name="device">The device the maps are uploaded to.</param>
-    /// <param name="directory">Where the maps are, or empty or missing for no pack at all.</param>
     /// <param name="logger">Where to report what was found and what would not load.</param>
     /// <param name="cacheDirectory">
     /// Where maps derived on demand are written, or empty for none. Read from as well as written to, and
-    /// created on first write, so a fresh installation with no pack at all still fills it in.
+    /// created on first write, so an installation with no replacement art still fills it in.
     /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="device"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <b>There is no authored-pack directory any more.</b> A map built by a tool travels inside the
+    /// asset it belongs to, as a second layer of the replacement in the overrides folder, and reaches the
+    /// device through the ordinary texture path — so there is nothing left for a separate directory of
+    /// PNGs to be the source of, and nothing to keep in step with the textures it describes. What remains
+    /// here is the derivation this process does for itself, for the surfaces nothing has built a map for.
+    /// </remarks>
     public MaterialDetailPack(
         IGraphicsDevice device,
-        string? directory,
         IIgiLogger? logger = null,
         string? cacheDirectory = null)
     {
@@ -74,31 +84,10 @@ public sealed class MaterialDetailPack : IDisposable
         {
             _cacheRoot = Path.GetFullPath(cacheDirectory);
         }
-
-        if (string.IsNullOrWhiteSpace(directory))
-        {
-            return;
-        }
-
-        string resolved = Path.GetFullPath(directory);
-
-        if (!Directory.Exists(resolved))
-        {
-            _logger.Warning(LogCategory, $"No detail maps at '{resolved}'; surfaces keep their flat normals.");
-            return;
-        }
-
-        _root = resolved;
-        _logger.Information(LogCategory, $"Detail maps from '{resolved}'.");
     }
 
-    /// <summary>Gets a value indicating whether an authored pack was found to read from.</summary>
-    /// <remarks>
-    /// Specifically the directory <c>r_material_pack</c> names. A pack is no longer the only source —
-    /// with a cache directory and <see cref="DeriveMissing"/> the maps arrive without one — so this
-    /// answers where they come from rather than whether there will be any.
-    /// </remarks>
-    public bool IsAvailable => _root is not null;
+    /// <summary>Gets a value indicating whether maps can be derived and cached at all.</summary>
+    public bool IsAvailable => _cacheRoot is not null;
 
     /// <summary>
     /// Gets or sets a value indicating whether a texture with no map derives one and caches it.
@@ -119,6 +108,52 @@ public sealed class MaterialDetailPack : IDisposable
 
     /// <summary>Gets how many maps have been uploaded.</summary>
     public int Count => _maps.Count(entry => entry.Value.IsValid);
+
+    /// <summary>Reads and decodes the maps for a set of textures on the thread pool.</summary>
+    /// <param name="names">The texture names, as the pack records them.</param>
+    /// <remarks>
+    /// <para>
+    /// A detail map is a PNG on disk, and finding and inflating one is file I/O and CPU with no graphics
+    /// in it at all -- yet it happened inside <c>Attach</c>, on the thread that was uploading the
+    /// texture it belongs to. Measured over one level's surface-cache capture: 219 ms of the render
+    /// thread, most of it inside the inflater.
+    /// </para>
+    /// <para>
+    /// So the reading is done here instead, wherever the caller has a worker to spare, and
+    /// <c>Attach</c> finds the pixels already in hand and does nothing but upload. Optional in
+    /// exactly the way the pack itself is: a name that was never prewarmed, or one prewarmed after the
+    /// frame asked for it, is read inline as it always was.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="names"/> is <see langword="null"/>.</exception>
+    public void Prewarm(IEnumerable<string> names)
+    {
+        ArgumentNullException.ThrowIfNull(names);
+
+        if (_disposed || _cacheRoot is null)
+        {
+            return;
+        }
+
+        string[] wanted = [.. names];
+        if (wanted.Length == 0)
+        {
+            return;
+        }
+
+        // Capped, and the cap matters: unbounded this took every core, and the thread it took them from
+        // was the one drawing the frame. See TextureDecodeCache.MaxDecodeThreads, which is the same
+        // bargain -- the reads finish well inside the swap either way.
+        ParallelOptions options = new() { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount / 4) };
+
+        _ = Task.Run(() => Parallel.ForEach(wanted, options, name =>
+        {
+            if (!_disposed && !string.IsNullOrEmpty(name) && !_read.ContainsKey(name))
+            {
+                _read[name] = ReadMap.From(FindMapPath(name));
+            }
+        }));
+    }
 
     /// <summary>Attaches this texture's detail map, if the pack has one.</summary>
     /// <param name="name">The texture's name, as the pack records it and as the file is named.</param>
@@ -175,7 +210,7 @@ public sealed class MaterialDetailPack : IDisposable
             return;
         }
 
-        if (_root is not null || _cacheRoot is not null)
+        if (_cacheRoot is not null)
         {
             map = Load(name);
 
@@ -276,9 +311,10 @@ public sealed class MaterialDetailPack : IDisposable
 
         try
         {
+            (Bgra32[] chain, int levels) = LinearMipChain.Build(packed, width, height);
             TextureHandle map = _device.CreateTexture(
-                new TextureDescription(width, height, 1, TextureFilter.Linear, TextureAddressMode.Repeat),
-                packed);
+                new TextureDescription(width, height, levels, TextureFilter.Linear, TextureAddressMode.Repeat),
+                chain);
 
             // Keyed by the diffuse it was made for, so Dispose releases it. The name is synthetic
             // because there is none -- that is the whole reason this overload exists.
@@ -323,10 +359,11 @@ public sealed class MaterialDetailPack : IDisposable
 
             try
             {
+                (Bgra32[] chain, int levels) = LinearMipChain.Build(item.Pixels, item.Width, item.Height);
                 map = _device.CreateTexture(
                     new TextureDescription(
-                        item.Width, item.Height, 1, TextureFilter.Linear, TextureAddressMode.Repeat),
-                    item.Pixels);
+                        item.Width, item.Height, levels, TextureFilter.Linear, TextureAddressMode.Repeat),
+                    chain);
             }
             catch (Exception error) when (error is ArgumentException or GraphicsDeviceException)
             {
@@ -489,15 +526,14 @@ public sealed class MaterialDetailPack : IDisposable
 
     private TextureHandle Load(string name)
     {
-        string path = Path.Combine(_root ?? _cacheRoot!, name + ".png");
-
-        if (!File.Exists(path) && _root is not null && _cacheRoot is not null)
+        // Decoded by Prewarm if a worker got to it, and read here if not. Taken rather than looked at:
+        // the pixels are about to become a texture and the only copy that matters after that is the GPU's.
+        if (!_read.TryRemove(name, out ReadMap? read))
         {
-            // The pack proper does not have it. A map derived on an earlier run might.
-            path = Path.Combine(_cacheRoot, name + ".png");
+            read = ReadMap.From(FindMapPath(name));
         }
 
-        if (!File.Exists(path))
+        if (read is null)
         {
             if (_missing.Add(name))
             {
@@ -507,23 +543,77 @@ public sealed class MaterialDetailPack : IDisposable
             return TextureHandle.None;
         }
 
+        if (read.Error is not null)
+        {
+            _logger.Warning(LogCategory, $"Detail map for '{name}' did not load: {read.Error}");
+            return TextureHandle.None;
+        }
+
         try
         {
-            (Bgra32[] pixels, int width, int height) = PngReader.Read(path);
-
             // Repeat, because the map tiles exactly as the texture it belongs to does -- and mipmapped,
             // because a normal map minified without one aliases far worse than a colour does. A wrong
             // normal is a wrong lighting direction, and the eye reads that as sparkle rather than as
-            // detail.
+            // detail. The chain also restores what a single level silently costs: the sampler picks its
+            // mip mode and its anisotropy from the level count, so with one level it was sampling
+            // nearest-mip and no anisotropy as well.
+            //
+            // LinearMipChain rather than the picture one: these channels are numbers, and putting a
+            // normal's x through a display decode and re-encode biases every average it takes.
+            (Bgra32[] chain, int levels) = LinearMipChain.Build(read.Pixels, read.Width, read.Height);
             return _device.CreateTexture(
-                new TextureDescription(width, height, 1, TextureFilter.Linear, TextureAddressMode.Repeat),
-                pixels);
+                new TextureDescription(read.Width, read.Height, levels, TextureFilter.Linear, TextureAddressMode.Repeat),
+                chain);
         }
-        catch (Exception error)
-            when (error is InvalidDataException or IOException or ArgumentException or GraphicsDeviceException)
+        catch (GraphicsDeviceException error)
         {
             _logger.Warning(LogCategory, $"Detail map for '{name}' did not load: {error.Message}");
             return TextureHandle.None;
+        }
+    }
+
+    /// <summary>Finds the cached map for a texture, if an earlier run derived one.</summary>
+    /// <param name="name">The texture's name.</param>
+    /// <returns>The path, or <see langword="null"/> when there is none.</returns>
+    private string? FindMapPath(string name)
+    {
+        if (_cacheRoot is null)
+        {
+            return null;
+        }
+
+        string path = Path.Combine(_cacheRoot, name + ".png");
+
+        return File.Exists(path) ? path : null;
+    }
+
+    /// <summary>A detail PNG decoded off the device thread, or the reason it could not be.</summary>
+    /// <param name="Pixels">The decoded pixels.</param>
+    /// <param name="Width">The map width.</param>
+    /// <param name="Height">The map height.</param>
+    /// <param name="Error">Why the decode failed, or <see langword="null"/> when it did not.</param>
+    private sealed record ReadMap(Bgra32[] Pixels, int Width, int Height, string? Error)
+    {
+        /// <summary>Reads and decodes a map, on whichever thread asks. Touches no graphics state.</summary>
+        /// <param name="path">The file, or <see langword="null"/> when the pack has none.</param>
+        /// <returns>The decoded map, or <see langword="null"/> when there is no file to read.</returns>
+        public static ReadMap? From(string? path)
+        {
+            if (path is null)
+            {
+                return null;
+            }
+
+            try
+            {
+                (Bgra32[] pixels, int width, int height) = PngReader.Read(path);
+                return new ReadMap(pixels, width, height, null);
+            }
+            catch (Exception error)
+                when (error is InvalidDataException or IOException or ArgumentException)
+            {
+                return new ReadMap([], 0, 0, error.Message);
+            }
         }
     }
 

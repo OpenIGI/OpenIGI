@@ -20,7 +20,7 @@ public sealed class HumanIdleTransitionTests
         // First test in the chain: even a dying human that is also moving and jumping falls.
         HumanMotionState everything =
             HumanMotionState.Death46 | HumanMotionState.Death47 |
-            HumanMotionState.MoveForward | HumanMotionState.Turn;
+            HumanMotionState.MoveForward | HumanMotionState.Crouch;
 
         Assert.Equal(
             HumanIdleTransitions.Falling,
@@ -40,7 +40,7 @@ public sealed class HumanIdleTransitionTests
     }
 
     [Fact]
-    public void TheFourDirectionsMapToTheirStandingStates()
+    public void TheFourDirectionsMapToTheirRunningStates()
     {
         Assert.Equal(1, HumanIdleTransitions.Next(Grounded | HumanMotionState.MoveForward, false));
         Assert.Equal(4, HumanIdleTransitions.Next(Grounded | HumanMotionState.MoveBackward, false));
@@ -49,14 +49,14 @@ public sealed class HumanIdleTransitionTests
     }
 
     [Fact]
-    public void CrouchingRetargetsAllFourAtOnce()
+    public void WalkingRetargetsAllFourAtOnce()
     {
-        HumanMotionState crouched = Grounded | HumanMotionState.Crouched;
+        HumanMotionState walking = Grounded | HumanMotionState.Walking;
 
-        Assert.Equal(9, HumanIdleTransitions.Next(crouched | HumanMotionState.MoveForward, false));
-        Assert.Equal(12, HumanIdleTransitions.Next(crouched | HumanMotionState.MoveBackward, false));
-        Assert.Equal(15, HumanIdleTransitions.Next(crouched | HumanMotionState.MoveRight, false));
-        Assert.Equal(16, HumanIdleTransitions.Next(crouched | HumanMotionState.MoveLeft, false));
+        Assert.Equal(9, HumanIdleTransitions.Next(walking | HumanMotionState.MoveForward, false));
+        Assert.Equal(12, HumanIdleTransitions.Next(walking | HumanMotionState.MoveBackward, false));
+        Assert.Equal(15, HumanIdleTransitions.Next(walking | HumanMotionState.MoveRight, false));
+        Assert.Equal(16, HumanIdleTransitions.Next(walking | HumanMotionState.MoveLeft, false));
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public sealed class HumanIdleTransitionTests
     public void MovementBeatsTheJumpEdge()
     {
         // The jump test comes after all four directions, so holding a direction the tick the jump
-        // button goes down takes the walk state and the jump edge is spent.
+        // button goes down takes the run state and the jump edge is spent.
         Assert.Equal(
             1,
             HumanIdleTransitions.Next(Grounded | HumanMotionState.MoveForward, jumpEdge: true));
@@ -86,15 +86,15 @@ public sealed class HumanIdleTransitionTests
     }
 
     [Fact]
-    public void TheJumpEdgeBeatsTurning()
+    public void TheJumpEdgeBeatsCrouching()
     {
         Assert.Equal(
             HumanIdleTransitions.Jump,
-            HumanIdleTransitions.Next(Grounded | HumanMotionState.Turn, jumpEdge: true));
+            HumanIdleTransitions.Next(Grounded | HumanMotionState.Crouch, jumpEdge: true));
 
         Assert.Equal(
-            HumanIdleTransitions.Turn,
-            HumanIdleTransitions.Next(Grounded | HumanMotionState.Turn, jumpEdge: false));
+            HumanIdleTransitions.CrouchingIdle,
+            HumanIdleTransitions.Next(Grounded | HumanMotionState.Crouch, jumpEdge: false));
     }
 
     [Fact]
@@ -123,5 +123,5 @@ public sealed class HumanIdleTransitionTests
     [Fact]
     public void ANonMovementBitIsRejectedByTheDirectionLookup() =>
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => HumanIdleTransitions.ForDirection(HumanMotionState.Turn, crouched: false));
+            () => HumanIdleTransitions.ForDirection(HumanMotionState.Crouch, walking: false));
 }

@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
@@ -54,24 +54,6 @@ public sealed class RainRenderer : IDisposable
         Emissive: 1f,
         CastsOcclusion: false,
         NoHistory: true);
-
-    /// <summary>The task-name prefix used by level-authored building shells.</summary>
-    public const string BuildingTaskPrefix = "Building_";
-
-    /// <summary>An axis-aligned world-space box one building's shell occupies, in meters.</summary>
-    /// <remarks>
-    /// The reference editor's indoor test is exactly this: the camera is inside the building's mesh
-    /// bounding box, so rain is suppressed (<c>Renderer_Rain::SetIndoors</c>). One volume per
-    /// building placement, precomputed from the model geometry.
-    /// </remarks>
-    public readonly record struct BuildingVolume(Vector3d Minimum, Vector3d Maximum)
-    {
-        /// <summary>Reports whether a world position (in meters) lies inside the shell's box.</summary>
-        public bool Contains(Vector3d position) =>
-            position.X >= Minimum.X && position.X <= Maximum.X
-            && position.Y >= Minimum.Y && position.Y <= Maximum.Y
-            && position.Z >= Minimum.Z && position.Z <= Maximum.Z;
-    }
 
     private readonly IGraphicsDevice _device;
     private readonly IIgiLogger _logger;
@@ -154,9 +136,12 @@ public sealed class RainRenderer : IDisposable
     }
 
     /// <summary>Applies the live weather settings without changing the level-authored particle band.</summary>
-    public void ApplySettings(bool enabled, WeatherKind kind, float speedMultiplier)
+    public void ApplySettings(bool enabled, WeatherKind kind, float speedMultiplier, bool force = false)
     {
-        _active = enabled && _authoredAvailable && kind == WeatherKind.Rain;
+        // Forcing skips only the level's own answer, not the player's: r_weather_enabled still turns it
+        // off, and asking for snow still means no rain. A forced level keeps this renderer's default
+        // band, because a level with no RainEffect task has no authored band to read.
+        _active = enabled && (_authoredAvailable || force) && kind == WeatherKind.Rain;
         _speedMultiplier = Math.Clamp(speedMultiplier, 0f, 2f);
     }
 
@@ -270,118 +255,6 @@ public sealed class RainRenderer : IDisposable
         float heightStart = (float)cameraZ + _startMeters;
         float heightEnd = (float)cameraZ - _endMeters;
         return (heightStart, heightEnd);
-    }
-
-    /// <summary>Collects the world-space shells of every authored building placement.</summary>
-    /// <param name="placements">The level's placed objects, in world meters.</param>
-    /// <returns>The buildings' axis-aligned world boxes; empty when the level places none.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="placements"/> is <see langword="null"/>.</exception>
-    /// <remarks>
-    /// Port of the reference indoor test in <c>renderer_draw.cpp</c>, which scans the level's buildings
-    /// and suppresses rain while the camera is inside one. The mesh box is computed once here rather than
-    /// per frame; only buildings (the shells a player walks into) participate.
-    /// </remarks>
-    public static IReadOnlyList<BuildingVolume> BuildBuildingVolumes(IEnumerable<WorldPlacement> placements)
-    {
-        ArgumentNullException.ThrowIfNull(placements);
-
-        List<BuildingVolume> volumes = [];
-        foreach (WorldPlacement placement in placements)
-        {
-            if (!IsBuildingPlacement(placement) || placement.Model.IsEmpty)
-            {
-                continue;
-            }
-
-            // The model's axis-aligned box in its own engine-unit space.
-            float minX = float.MaxValue, minY = float.MaxValue, minZ = float.MaxValue;
-            float maxX = float.MinValue, maxY = float.MinValue, maxZ = float.MinValue;
-            foreach (MefVertex vertex in placement.Model.Vertices)
-            {
-                minX = MathF.Min(minX, vertex.Position.X);
-                minY = MathF.Min(minY, vertex.Position.Y);
-                minZ = MathF.Min(minZ, vertex.Position.Z);
-                maxX = MathF.Max(maxX, vertex.Position.X);
-                maxY = MathF.Max(maxY, vertex.Position.Y);
-                maxZ = MathF.Max(maxZ, vertex.Position.Z);
-            }
-
-            if (minX > maxX)
-            {
-                continue;
-            }
-
-            volumes.Add(FromLocalBounds(
-                placement.Position,
-                placement.Orientation,
-                new Vector3f(minX, minY, minZ),
-                new Vector3f(maxX, maxY, maxZ)));
-        }
-
-        return volumes;
-    }
-
-    /// <summary>Reports whether a scene placement belongs to a level-authored building shell.</summary>
-    /// <remarks>
-    /// The QVM task type is commonly <c>EditRigidObj</c>; the semantic building classification is carried
-    /// by the task instance name (<c>Building_...</c>), which is also the convention used by the menu's
-    /// building selection code. Accepting an exact <c>Building</c> name keeps custom levels compatible.
-    /// </remarks>
-    internal static bool IsBuildingPlacement(WorldPlacement placement) =>
-        IsBuildingTaskName(placement.TaskName)
-        || placement.Owner is DeclaredTask owner && IsBuildingTaskName(owner.Name);
-
-    internal static bool IsBuildingTaskName(string name) =>
-        name.StartsWith(BuildingTaskPrefix, StringComparison.OrdinalIgnoreCase)
-        || string.Equals(name, "Building", StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>Transforms a model-local axis-aligned box into its axis-aligned world box, in meters.</summary>
-    /// <param name="positionMetres">The placement's world position, in meters.</param>
-    /// <param name="orientation">The placement's world orientation.</param>
-    /// <param name="localMinimumUnits">The local box's lower corner, in engine units.</param>
-    /// <param name="localMaximumUnits">The local box's upper corner, in engine units.</param>
-    /// <returns>The world-space box the rotated shell sweeps.</returns>
-    public static BuildingVolume FromLocalBounds(
-        Vector3d positionMetres,
-        Matrix3f orientation,
-        Vector3f localMinimumUnits,
-        Vector3f localMaximumUnits)
-    {
-        float unitsToMetres = 1.0f / (float)WorldScene.UnitsPerMetre;
-        Vector3f centreLocal = ((localMinimumUnits + localMaximumUnits) * 0.5f) * unitsToMetres;
-        Vector3f halfLocal = ((localMaximumUnits - localMinimumUnits) * 0.5f) * unitsToMetres;
-
-        // Local-to-world is the column-vector product M·v — the same convention the collision index and
-        // renderer use — which here means rotating the local offset by the transposed stored basis.
-        Matrix3f rotation = orientation.Transposed();
-
-        double minX = double.MaxValue, minY = double.MaxValue, minZ = double.MaxValue;
-        double maxX = double.MinValue, maxY = double.MinValue, maxZ = double.MinValue;
-        for (int sx = -1; sx <= 1; sx += 2)
-        {
-            for (int sy = -1; sy <= 1; sy += 2)
-            {
-                for (int sz = -1; sz <= 1; sz += 2)
-                {
-                    Vector3f cornerLocal = new(
-                        centreLocal.X + (sx * halfLocal.X),
-                        centreLocal.Y + (sy * halfLocal.Y),
-                        centreLocal.Z + (sz * halfLocal.Z));
-                    Vector3f offset = rotation.Transform(cornerLocal);
-                    double x = positionMetres.X + offset.X;
-                    double y = positionMetres.Y + offset.Y;
-                    double z = positionMetres.Z + offset.Z;
-                    minX = Math.Min(minX, x);
-                    minY = Math.Min(minY, y);
-                    minZ = Math.Min(minZ, z);
-                    maxX = Math.Max(maxX, x);
-                    maxY = Math.Max(maxY, y);
-                    maxZ = Math.Max(maxZ, z);
-                }
-            }
-        }
-
-        return new BuildingVolume(new Vector3d(minX, minY, minZ), new Vector3d(maxX, maxY, maxZ));
     }
 
     /// <summary>Draws falling rain particle streaks around the camera.</summary>

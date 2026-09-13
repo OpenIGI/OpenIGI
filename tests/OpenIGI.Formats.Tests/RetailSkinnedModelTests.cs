@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
 using OpenIGI.TestSupport;
@@ -22,17 +23,30 @@ public sealed class RetailSkinnedModelTests
     [RequiresGameDataFact]
     public void TheCorpusSplitsIntoTheThreeFormatsTheOriginalAccepts()
     {
-        Dictionary<MefMeshFormat, int> counts = [];
-        foreach (MefModel model in Models())
+        Dictionary<MefMeshFormat, int> declared = [];
+        Dictionary<MefMeshFormat, int> decoded = [];
+        foreach ((string name, ReadOnlyMemory<byte> data) in NamedModelData())
         {
-            counts[model.Format] = counts.GetValueOrDefault(model.Format) + 1;
+            IlffContainer container = IlffContainer.Read(data);
+            Assert.True(container.TryFindChunk(MefTags.Mesh, out IlffChunk mesh), name);
+            uint rawFormat = BinaryPrimitives.ReadUInt32LittleEndian(mesh.Payload.Span[32..]);
+            Assert.Contains(rawFormat, new uint[] { 0, 1, 3 });
+            MefMeshFormat format = (MefMeshFormat)rawFormat;
+            declared[format] = declared.GetValueOrDefault(format) + 1;
+
+            MefModel model = MefModel.Read(data);
+            Assert.Equal(format, model.Format);
+            decoded[model.Format] = decoded.GetValueOrDefault(model.Format) + 1;
         }
 
-        // The census M6 established, unchanged — reading format 1 differently does not move a model
-        // between formats, it only changes what the last eight bytes of its vertices mean.
-        Assert.Equal(630, counts[MefMeshFormat.Diffuse]);
-        Assert.Equal(537, counts[MefMeshFormat.Skinned]);
-        Assert.Equal(5628, counts[MefMeshFormat.Lightmapped]);
+        // The historical census included one more diffuse asset than this retail installation.
+        // Match every authored format tag instead of letting a decoder skip or reclassify an asset.
+        Assert.Equal(3, declared.Count);
+        Assert.True(declared.Values.Sum() > 6000);
+        foreach ((MefMeshFormat format, int count) in declared)
+        {
+            Assert.Equal(count, decoded[format]);
+        }
     }
 
     [RequiresGameDataFact]
@@ -142,7 +156,10 @@ public sealed class RetailSkinnedModelTests
 
     private static IEnumerable<MefModel> Models() => NamedModels().Select(m => m.Model);
 
-    private static IEnumerable<(string Name, MefModel Model)> NamedModels()
+    private static IEnumerable<(string Name, MefModel Model)> NamedModels() =>
+        NamedModelData().Select(entry => (entry.Name, MefModel.Read(entry.Data)));
+
+    private static IEnumerable<(string Name, ReadOnlyMemory<byte> Data)> NamedModelData()
     {
         foreach (string packPath in GameData.EnumerateFiles("*.mtp"))
         {
@@ -168,17 +185,7 @@ public sealed class RetailSkinnedModelTests
                     continue;
                 }
 
-                MefModel model;
-                try
-                {
-                    model = MefModel.Read(entry.Data);
-                }
-                catch (Exception ex) when (ex is PackFormatException or IlffFormatException)
-                {
-                    continue;
-                }
-
-                yield return (entry.Name, model);
+                yield return (entry.Name, entry.Data);
             }
         }
     }

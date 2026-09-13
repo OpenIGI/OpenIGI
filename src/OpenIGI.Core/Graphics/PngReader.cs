@@ -27,6 +27,13 @@ namespace OpenIGI.Core.Graphics;
 public static class PngReader
 {
     private static readonly byte[] Signature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    private static readonly uint[] CrcTable = BuildCrcTable();
+
+    // A texture above this is not usable by the renderer and is large enough to turn a malformed PNG
+    // into an allocation or decompression bomb before the caller can reject it.
+    private const int MaxPixelCount = 16 * 1024 * 1024;
+    private const int MaxCompressedBytes = 64 * 1024 * 1024;
+    private const int MaxDecodedBytes = 64 * 1024 * 1024;
 
     /// <summary>Reads a PNG file.</summary>
     /// <param name="path">The file to read.</param>
@@ -49,6 +56,10 @@ public static class PngReader
         int width = 0;
         int height = 0;
         int channels = 0;
+        int bytesPerSample = 1;
+        bool seenHeader = false;
+        bool seenData = false;
+        bool seenEnd = false;
         using MemoryStream compressed = new();
 
         int at = Signature.Length;
@@ -59,23 +70,54 @@ public static class PngReader
             ReadOnlySpan<byte> type = data.Slice(at + 4, 4);
             int payload = at + 8;
 
-            if (length < 0 || payload + length > data.Length)
+            if (length < 0 || payload > data.Length - length - 4)
             {
                 throw new InvalidDataException("Truncated PNG: a chunk runs past the end of the file.");
             }
 
+            uint storedCrc = BinaryPrimitives.ReadUInt32BigEndian(data.Slice(payload + length, 4));
+            uint actualCrc = Crc(type, data.Slice(payload, length));
+            if (storedCrc != actualCrc)
+            {
+                throw new InvalidDataException("Invalid PNG: a chunk CRC does not match its contents.");
+            }
+
+            if (!seenHeader && !type.SequenceEqual("IHDR"u8))
+            {
+                throw new InvalidDataException("Invalid PNG: IHDR must be the first chunk.");
+            }
+
             if (type.SequenceEqual("IHDR"u8))
             {
+                if (seenHeader)
+                {
+                    throw new InvalidDataException("Invalid PNG: IHDR must be the first and only header chunk.");
+                }
+
+                if (length != 13)
+                {
+                    throw new InvalidDataException("Invalid PNG: IHDR must be 13 bytes.");
+                }
+
                 width = BinaryPrimitives.ReadInt32BigEndian(data.Slice(payload, 4));
                 height = BinaryPrimitives.ReadInt32BigEndian(data.Slice(payload + 4, 4));
                 byte depth = data[payload + 8];
                 byte colourType = data[payload + 9];
                 byte interlace = data[payload + 12];
 
-                if (depth != 8)
+                // Eight and sixteen bits a sample. Sixteen is narrowed to eight on the way in — the
+                // pixel this returns is four bytes and there is nowhere to put the low half — which is
+                // exact for the authoring tools that write sixteen-bit files holding eight bits of real
+                // range, and a clean round-down for the ones that do not. Refusing them outright meant
+                // an asset exported at sixteen bits simply did not load, and the caller drew whatever
+                // it falls back to without ever saying why.
+                if (depth is not (8 or 16))
                 {
-                    throw new InvalidDataException($"Only 8-bit PNGs are supported, this one is {depth}-bit.");
+                    throw new InvalidDataException(
+                        $"Only 8- and 16-bit PNGs are supported, this one is {depth}-bit.");
                 }
+
+                bytesPerSample = depth / 8;
 
                 if (interlace != 0)
                 {
@@ -90,20 +132,59 @@ public static class PngReader
                     6 => 4,     // truecolour with alpha
                     _ => throw new InvalidDataException($"PNG colour type {colourType} is not supported."),
                 };
+
+                if (width <= 0 || height <= 0 || (long)width * height > MaxPixelCount)
+                {
+                    throw new InvalidDataException("PNG dimensions exceed the reader's pixel limit.");
+                }
+
+                seenHeader = true;
             }
             else if (type.SequenceEqual("IDAT"u8))
             {
+                if (!seenHeader)
+                {
+                    throw new InvalidDataException("Invalid PNG: IDAT appears before IHDR.");
+                }
+
                 // Concatenated, because the pixel data may be split across any number of chunks and
                 // the zlib stream runs across all of them as one.
+                if (compressed.Length > MaxCompressedBytes - length)
+                {
+                    throw new InvalidDataException("PNG compressed data exceeds the reader's size limit.");
+                }
+
                 compressed.Write(data.Slice(payload, length));
+                seenData = true;
             }
             else if (type.SequenceEqual("IEND"u8))
             {
+                if (!seenHeader || !seenData || length != 0)
+                {
+                    throw new InvalidDataException("Invalid PNG: IEND must close a header and image data.");
+                }
+
+                seenEnd = true;
+                at = payload + length + 4;
                 break;
+            }
+            else if ((type[0] & 0x20) == 0)
+            {
+                throw new InvalidDataException("PNG has an unsupported critical chunk.");
             }
 
             // Chunk, plus its four-byte length and four-byte check.
             at = payload + length + 4;
+        }
+
+        if (!seenEnd)
+        {
+            throw new InvalidDataException("Invalid PNG: the mandatory IEND chunk is missing.");
+        }
+
+        if (at != data.Length)
+        {
+            throw new InvalidDataException("Invalid PNG: bytes follow the IEND chunk.");
         }
 
         if (width <= 0 || height <= 0 || channels == 0)
@@ -116,10 +197,67 @@ public static class PngReader
 
         using (ZLibStream inflate = new(compressed, CompressionMode.Decompress, leaveOpen: true))
         {
-            inflate.CopyTo(raw);
+            CopyLimited(inflate, raw, MaxDecodedBytes);
         }
 
-        return (Unfilter(raw.GetBuffer(), (int)raw.Length, width, height, channels), width, height);
+        return (Unfilter(raw.GetBuffer(), (int)raw.Length, width, height, channels, bytesPerSample), width, height);
+    }
+
+    private static void CopyLimited(Stream source, Stream destination, int limit)
+    {
+        byte[] buffer = new byte[81920];
+        int total = 0;
+
+        while (true)
+        {
+            int read = source.Read(buffer, 0, buffer.Length);
+            if (read == 0)
+            {
+                return;
+            }
+
+            if (read > limit - total)
+            {
+                throw new InvalidDataException("PNG decompressed data exceeds the reader's size limit.");
+            }
+
+            destination.Write(buffer, 0, read);
+            total += read;
+        }
+    }
+
+    private static uint Crc(ReadOnlySpan<byte> type, ReadOnlySpan<byte> payload)
+    {
+        uint crc = Accumulate(0xFFFFFFFFu, type);
+        return Accumulate(crc, payload) ^ 0xFFFFFFFFu;
+    }
+
+    private static uint Accumulate(uint crc, ReadOnlySpan<byte> data)
+    {
+        foreach (byte value in data)
+        {
+            crc = CrcTable[(crc ^ value) & 0xFF] ^ (crc >> 8);
+        }
+
+        return crc;
+    }
+
+    private static uint[] BuildCrcTable()
+    {
+        uint[] table = new uint[256];
+
+        for (uint n = 0; n < table.Length; n++)
+        {
+            uint crc = n;
+            for (int bit = 0; bit < 8; bit++)
+            {
+                crc = (crc & 1) != 0 ? 0xEDB88320u ^ (crc >> 1) : crc >> 1;
+            }
+
+            table[n] = crc;
+        }
+
+        return table;
     }
 
     /// <summary>Undoes the per-scanline prediction and converts to pixels.</summary>
@@ -129,9 +267,14 @@ public static class PngReader
     /// and in place, because each row's prediction refers to the row above it <em>after</em> that row
     /// has itself been undone.
     /// </remarks>
-    private static Bgra32[] Unfilter(byte[] raw, int length, int width, int height, int channels)
+    private static Bgra32[] Unfilter(byte[] raw, int length, int width, int height, int channels, int bytesPerSample)
     {
-        int stride = (width * channels) + 1;
+        // The filters predict a byte from the byte one WHOLE PIXEL to its left, not one sample: at
+        // sixteen bits that is two bytes per sample, so the stride between a byte and its predictor
+        // doubles. Using the sample count here instead is the classic way to decode a sixteen-bit PNG
+        // into noise that still has roughly the right shape.
+        int bytesPerPixel = channels * bytesPerSample;
+        int stride = (width * bytesPerPixel) + 1;
 
         if (length < stride * height)
         {
@@ -139,8 +282,8 @@ public static class PngReader
                 $"Truncated PNG: {length} bytes of pixel data, {stride * height} expected.");
         }
 
-        byte[] previous = new byte[width * channels];
-        byte[] current = new byte[width * channels];
+        byte[] previous = new byte[width * bytesPerPixel];
+        byte[] current = new byte[width * bytesPerPixel];
         Bgra32[] pixels = new Bgra32[width * height];
 
         for (int row = 0; row < height; row++)
@@ -151,9 +294,9 @@ public static class PngReader
 
             for (int i = 0; i < current.Length; i++)
             {
-                int left = i >= channels ? current[i - channels] : 0;
+                int left = i >= bytesPerPixel ? current[i - bytesPerPixel] : 0;
                 int above = previous[i];
-                int aboveLeft = i >= channels ? previous[i - channels] : 0;
+                int aboveLeft = i >= bytesPerPixel ? previous[i - bytesPerPixel] : 0;
 
                 current[i] = filter switch
                 {
@@ -168,14 +311,18 @@ public static class PngReader
 
             for (int column = 0; column < width; column++)
             {
-                int source = column * channels;
+                // The high byte of each sample, which for a big-endian sixteen-bit sample is the byte
+                // it starts on -- so one index step covers both depths.
+                int source = column * bytesPerPixel;
+                int step = bytesPerSample;
 
                 (byte r, byte g, byte b, byte a) = channels switch
                 {
                     1 => (current[source], current[source], current[source], (byte)255),
-                    2 => (current[source], current[source], current[source], current[source + 1]),
-                    3 => (current[source], current[source + 1], current[source + 2], (byte)255),
-                    _ => (current[source], current[source + 1], current[source + 2], current[source + 3]),
+                    2 => (current[source], current[source], current[source], current[source + step]),
+                    3 => (current[source], current[source + step], current[source + (2 * step)], (byte)255),
+                    _ => (current[source], current[source + step], current[source + (2 * step)],
+                          current[source + (3 * step)]),
                 };
 
                 pixels[(row * width) + column] = new Bgra32(b, g, r, a);

@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Vulkan is a pointer-first API: every create-info is populated through fixed pointers and the
+         command buffers take raw handles, so the whole backend is unsafe by construction. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The pipeline cache's on-disk header decides whether a saved blob is usable, and a comparison
+         that wrongly rejects one is a permanent miss that reports nothing. It is therefore pinned by a
+         test. That check is implementation detail and stays internal; the test project is the one
+         thing allowed to see it. -->
+    <InternalsVisibleTo Include="OpenIGI.Rendering.Vulkan.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Silk.NET.Vulkan" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" />
+    <PackageReference Include="Silk.NET.Shaderc" />
+    <PackageReference Include="Silk.NET.SPIRV.Reflect" />
+    <PackageReference Include="Silk.NET.MoltenVK.Native" />
+  </ItemGroup>
+
+</Project>

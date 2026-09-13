@@ -1,0 +1,125 @@
+using System.Diagnostics;
+using OpenIGI.Rendering.Vulkan.Shaders;
+using Xunit;
+
+namespace OpenIGI.Rendering.Vulkan.Tests;
+
+/// <summary>
+/// Compiles the shader sources that read the level's shelter map, so a syntax error in them is a
+/// failing test rather than a black frame.
+/// </summary>
+/// <remarks>
+/// These strings are assembled at runtime out of several files — the wetness description is shared by
+/// the pass that draws the water and the pass that reflects in it, the fog reads the same map from a
+/// third, and each splices it into its own uniform layout — so nothing at build time reads them at all.
+/// Handing them to <c>glslc</c> is the only way a broken splice is caught before a level is loaded.
+/// </remarks>
+public sealed class ShaderCompilationTests
+{
+    [Fact]
+    public void TheUnlitFirstPersonMarkerIsNotFogged()
+    {
+        // Marker 2 is an unlit first-person draw. World (1) and translucent (-1) remain fogged; the
+        // marker range below excludes only that rig while the dynamic first-person marker (0) was
+        // already excluded.
+        Assert.Contains("abs(push.uMarkerExposure.x) > 0.5 && push.uMarkerExposure.x < 1.5", Mesh3DShaderSource.Vertex);
+        Assert.Contains("abs(marker) > 0.5 && marker < 1.5", Mesh3DShaderSource.Fragment);
+    }
+
+    [RequiresGlslcTheory]
+    [InlineData("shading.frag", "frag")]
+    [InlineData("shading-rayquery.frag", "frag")]
+    [InlineData("reflect.comp", "comp")]
+    [InlineData("fog.scatter.comp", "comp")]
+    [InlineData("fog.integrate.comp", "comp")]
+
+    // The forward mesh pair is the whole of the vanilla picture -- terrain, world, sky and rig all go
+    // through it -- and it carries the level-of-detail morph, the retail distance fog and the rig's key
+    // light in one push block that is exactly the guaranteed 128 bytes. Nothing at build time reads it
+    // either, and a broken splice there is a black frame rather than a compile error.
+    [InlineData("mesh3d.vert", "vert")]
+    [InlineData("mesh3d.frag", "frag")]
+    public void TheShadersThatReadTheShelterMapCompile(string name, string stage)
+    {
+        string compiler = Glslc.Path;
+
+        string source = name switch
+        {
+            "shading.frag" => DeferredShaderSource.LightingFragment(rayQuery: false),
+            "shading-rayquery.frag" => DeferredShaderSource.LightingFragment(rayQuery: true),
+            "fog.scatter.comp" => VolumetricFogShaderSource.Scatter,
+            "fog.integrate.comp" => VolumetricFogShaderSource.Integrate,
+            "mesh3d.vert" => Mesh3DShaderSource.Vertex,
+            "mesh3d.frag" => Mesh3DShaderSource.Fragment,
+            _ => ReflectionShaderSource.Reflect,
+        };
+
+        string directory = Path.Combine(Path.GetTempPath(), "openigi-shader-tests");
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, name);
+        string output = path + ".spv";
+        File.WriteAllText(path, source);
+
+        using Process process = new()
+        {
+            StartInfo = new ProcessStartInfo(compiler)
+            {
+                ArgumentList = { $"-fshader-stage={stage}", "--target-env=vulkan1.2", "-o", output, path },
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            },
+        };
+
+        process.Start();
+        string errors = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        Assert.True(process.ExitCode == 0, $"{name} did not compile:{Environment.NewLine}{errors}");
+    }
+
+    internal static string FindGlslc()
+    {
+        string executable = OperatingSystem.IsWindows() ? "glslc.exe" : "glslc";
+
+        if (Environment.GetEnvironmentVariable("VULKAN_SDK") is { Length: > 0 } sdk)
+        {
+            string candidate = Path.Combine(sdk, "Bin", executable);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        foreach (string directory in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            string candidate = Path.Combine(directory, executable);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return string.Empty;
+    }
+}
+
+/// <summary>A <see cref="TheoryAttribute"/> that skips when the Vulkan SDK's compiler is not installed.</summary>
+public sealed class RequiresGlslcTheoryAttribute : TheoryAttribute
+{
+    /// <summary>Initializes a new instance of the <see cref="RequiresGlslcTheoryAttribute"/> class.</summary>
+    public RequiresGlslcTheoryAttribute()
+    {
+        if (Glslc.Path.Length == 0)
+        {
+            Skip = "Install the Vulkan SDK, or put glslc on PATH, to compile the shaders in a test.";
+        }
+    }
+}
+
+/// <summary>Where the shader compiler is, looked for once.</summary>
+internal static class Glslc
+{
+    /// <summary>The path to glslc, or empty when it is not installed.</summary>
+    public static string Path { get; } = ShaderCompilationTests.FindGlslc();
+}

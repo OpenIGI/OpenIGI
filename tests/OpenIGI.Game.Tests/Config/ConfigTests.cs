@@ -20,25 +20,120 @@ public sealed class ConfigTests
     {
         GameConfig config = LoadRetail();
 
-        // The first profile is always the default "Joe", and GOStart names which one is in play.
+        // The retail game rewrites this file; names and bindings belong to the player.
         Assert.NotEmpty(config.Profiles);
-        Assert.Equal("Joe", config.Profiles[0].Name);
+        Assert.All(config.Profiles, profile => Assert.False(string.IsNullOrWhiteSpace(profile.Name)));
         Assert.InRange(config.ActiveIndex, 0, config.Profiles.Count - 1);
     }
 
-    [RequiresGameDataFact]
+    [Fact]
     public void EveryProfileCarriesItsOwnSettingsAndBindings()
     {
-        GameConfig config = LoadRetail();
+        GameConfig input = GameConfig.CreateDefault();
+        input.Active!.Name = "First";
+        input.Active.Bindings[0] = new("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT");
+        input.Active.MouseSensitivity = 0.25f;
+        Assert.True(input.CreateProfile("Second", 2));
+        input.Active!.Bindings[0] = new("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_A");
+        input.Active.MouseSensitivity = 0.75f;
+        input.Active.DeviceGuid = "custom-device";
 
-        foreach (PlayerProfile profile in config.Profiles)
-        {
-            // Twenty-seven bindings, stored by name so they survive a renumbering.
-            Assert.Equal(PlayerProfile.BindingCount, profile.Bindings.Count);
-            Assert.Contains(profile.Bindings, b => b.Action == "MoveLeft" && b.Key == "KEY_LEFT");
-            Assert.Contains(profile.Bindings, b => b.Device == "INPUTPORT_DEVICE_MOUSE");
-            Assert.Equal(PlayerProfile.DefaultDeviceGuid, profile.DeviceGuid);
-        }
+        GameConfig config = ConfigScript.Load(ConfigScriptWriter.Write(input));
+
+        Assert.Equal(2, config.Profiles.Count);
+        Assert.Equal(1, config.ActiveIndex);
+        Assert.Equal("First", config.Profiles[0].Name);
+        Assert.Equal("Second", config.Profiles[1].Name);
+        Assert.Equal("KEY_LEFT", config.Profiles[0].Bindings[0].Key);
+        Assert.Equal("KEY_A", config.Profiles[1].Bindings[0].Key);
+        Assert.Equal(0.25f, config.Profiles[0].MouseSensitivity);
+        Assert.Equal(0.75f, config.Profiles[1].MouseSensitivity);
+        Assert.Equal(PlayerProfile.DefaultDeviceGuid, config.Profiles[0].DeviceGuid);
+        Assert.Equal("custom-device", config.Profiles[1].DeviceGuid);
+        Assert.All(config.Profiles, profile => Assert.Equal(PlayerProfile.BindingCount, profile.Bindings.Count));
+    }
+
+    [Fact]
+    public void ARemappedBindingSurvivesASaveReloadCycleAndDrivesGameplayResolution()
+    {
+        // Issue #230: the exact player scenario — remap in Controls, save, relaunch, and the new
+        // key must drive the action while the old one no longer does.
+        GameConfig config = GameConfig.CreateDefault();
+        PlayerProfile profile = config.Active!;
+        int moveIndex = profile.Bindings.FindIndex(
+            binding => string.Equals(binding.Action, "MoveLeft", StringComparison.OrdinalIgnoreCase));
+        Assert.InRange(moveIndex, 0, profile.Bindings.Count - 1);
+        Assert.True(
+            InputBindingKeyNames.TryParseKeyboardKey(profile.Bindings[moveIndex].Key, out KeyCode previous));
+        Assert.NotEqual(KeyCode.F, previous); // F is unbound in the defaults, so no swap interferes.
+
+        Assert.Equal(-1, profile.RebindKeyboard(moveIndex, KeyCode.F));
+
+        GameConfig reloaded = ConfigScript.Load(ConfigScriptWriter.Write(config));
+        PlayerProfile restored = reloaded.Profiles[config.ActiveIndex];
+
+        Assert.Equal(InputBindingKeyNames.ToRetailKeyboardKey(KeyCode.F), restored.Bindings[moveIndex].Key);
+
+        var fresh = new InputState();
+        fresh.BeginFrame();
+        fresh.Keyboard.SetKey(KeyCode.F, down: true);
+        Assert.True(PlayerProfileInputBindings.IsDown(restored, fresh, "MoveLeft"));
+
+        var stale = new InputState();
+        stale.BeginFrame();
+        stale.Keyboard.SetKey(previous, down: true);
+        Assert.False(PlayerProfileInputBindings.IsDown(restored, stale, "MoveLeft"));
+    }
+
+    [Fact]
+    public void AWheelBindingDrivesGameplayResolutionSurvivesReloadAndSwapsConflicts()
+    {
+        // Issue #232: wheel up/down are bindable controls with momentary (edge-only) semantics.
+        GameConfig config = GameConfig.CreateDefault();
+        PlayerProfile profile = config.Active!;
+        int nextIndex = profile.Bindings.FindIndex(
+            binding => string.Equals(binding.Action, "NextWeapon", StringComparison.OrdinalIgnoreCase));
+        int prevIndex = profile.Bindings.FindIndex(
+            binding => string.Equals(binding.Action, "PrevWeapon", StringComparison.OrdinalIgnoreCase));
+        Assert.InRange(nextIndex, 0, profile.Bindings.Count - 1);
+        Assert.InRange(prevIndex, 0, profile.Bindings.Count - 1);
+
+        Assert.Equal(-1, profile.RebindMouseWheel(nextIndex, 1));
+        Assert.Equal("MOUSE_WHEEL_UP", profile.Bindings[nextIndex].Key);
+        Assert.Equal("Mouse Wheel Up", InputBindingKeyNames.DisplayName(profile.Bindings[nextIndex]));
+
+        // Same-direction conflict swaps, like buttons: NextWeapon inherits PrevWeapon's old key.
+        Assert.Equal(nextIndex, profile.RebindMouseWheel(prevIndex, 1));
+        Assert.Equal("MOUSE_WHEEL_UP", profile.Bindings[prevIndex].Key);
+        Assert.Equal("KEY_O", profile.Bindings[nextIndex].Key);
+
+        GameConfig reloaded = ConfigScript.Load(ConfigScriptWriter.Write(config));
+        PlayerProfile restored = reloaded.Profiles[config.ActiveIndex];
+        Assert.Equal("MOUSE_WHEEL_UP", restored.Bindings[prevIndex].Key);
+
+        var up = new InputState();
+        up.BeginFrame();
+        up.Mouse.AddWheel(1f);
+        Assert.True(PlayerProfileInputBindings.IsDown(restored, up, "PrevWeapon"));
+        Assert.True(PlayerProfileInputBindings.WasPressed(restored, up, "PrevWeapon"));
+        Assert.False(PlayerProfileInputBindings.IsDown(restored, up, "NextWeapon"));
+
+        var down = new InputState();
+        down.BeginFrame();
+        down.Mouse.AddWheel(-1f);
+        Assert.False(PlayerProfileInputBindings.IsDown(restored, down, "PrevWeapon"));
+
+        var still = new InputState();
+        still.BeginFrame();
+        Assert.False(PlayerProfileInputBindings.IsDown(restored, still, "PrevWeapon"));
+
+        // Feather-touch noise below the floor fires nothing in either direction.
+        var feather = new InputState();
+        feather.BeginFrame();
+        feather.Mouse.AddWheel(0.05f);
+        Assert.False(PlayerProfileInputBindings.IsDown(restored, feather, "PrevWeapon"));
+        feather.Mouse.AddWheel(-0.1f);
+        Assert.False(PlayerProfileInputBindings.IsDown(restored, feather, "PrevWeapon"));
     }
 
     [RequiresGameDataFact]

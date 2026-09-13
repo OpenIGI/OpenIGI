@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Config;
 using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Player;
@@ -58,6 +59,12 @@ public sealed class PlayerWeapons
     /// <summary>The category that is placed rather than fired.</summary>
     public const int PlacedCategory = 7;
 
+    /// <summary>The retail weapon id used by the M16A2/M203 alternate-fire callback.</summary>
+    public const string M16A2WeaponScriptId = "WEAPON_ID_M16A2";
+
+    /// <summary>The roster id for the retail two-Uzi weapon whose model owns the dual-hand child task.</summary>
+    public const string DualUziWeaponScriptId = "WEAPON_ID_UZIX2";
+
     /// <summary>How high the fire-variant counter may go before the state stops asking.</summary>
     /// <remarks>
     /// Three, which is exactly the number of firing animations a weapon record carries. The dispatch
@@ -78,6 +85,7 @@ public sealed class PlayerWeapons
 
     private readonly List<CarriedWeapon> _carried = [];
     private readonly List<GunProjectile> _shots = [];
+    private readonly List<M203Projectile> _m203Shots = [];
     private readonly IgiRandom _random;
     private readonly List<int> _cycle = [];
     private readonly List<HumanPlayerWeaponCategory> _categories = [];
@@ -88,9 +96,12 @@ public sealed class PlayerWeapons
     private int _pendingWeaponId = -1;
     private int _heldIndex = -1;
     private bool _wantFire;
+    private bool _wantAlternateFire;
+    private AmmoType? _m203Ammunition;
     private bool _firedThisTick;
     private int _throwChargeTicks;
     private bool _throwReleased;
+    private bool _placingFirePending;
     private int _shotSequence;
     private bool _actionComplete;
     private bool _medipackUsed;
@@ -212,6 +223,9 @@ public sealed class PlayerWeapons
     /// </remarks>
     public IReadOnlyList<GunProjectile> Shots => _shots;
 
+    /// <summary>Gets the M203 projectiles produced by the last alternate-fire resolution.</summary>
+    public IReadOnlyList<M203Projectile> M203Shots => _m203Shots;
+
     /// <summary>Gets whether a medipack was consumed during the most recent weapon tick.</summary>
     public bool MedipackUsedThisTick { get; private set; }
 
@@ -229,6 +243,17 @@ public sealed class PlayerWeapons
     /// here the caller drives the rig from it, so it is exposed rather than applied.
     /// </remarks>
     public WeaponAction? RequestedAction { get; private set; }
+
+    /// <summary>Gets whether the retail first-person weapon is hidden for the current reload action.</summary>
+    /// <remarks>
+    /// <c>TASKTYPE_GUNX2</c> reloads are the special first-person hand presentation: the two Uzi models
+    /// leave the view while the reload sound/action runs. The native M16A2 path still keeps its gun
+    /// attachment while <c>0x4137E0</c> dispatches view clip 5, so hiding every weapon here made its
+    /// retail reload appear missing.
+    /// </remarks>
+    public bool HideFirstPersonWeapon =>
+        (State == HumanWeaponState.Reloading || CurrentAction == WeaponAction.Reload)
+        && string.Equals(InHand?.Weapon.ScriptId, DualUziWeaponScriptId, StringComparison.Ordinal);
 
     /// <summary>
     /// Gets the fire variant <see cref="RequestedAction"/> was raised with.
@@ -265,6 +290,18 @@ public sealed class PlayerWeapons
         HeldGun gun = new(weapon, ammo);
         _carried.Add(new CarriedWeapon(weapon, gun));
         return gun;
+    }
+
+    /// <summary>Associates the separately declared M203 ammunition with the carried M16A2.</summary>
+    /// <remarks>
+    /// The retail loadout declares M16A2's primary calibre on the gun and M203 rounds as a separate
+    /// <c>AddAmmo(AMMO_ID_M203)</c> child. It is therefore not correct to replace the gun's cached
+    /// primary ammunition record with this one.
+    /// </remarks>
+    public void SetM203Ammunition(AmmoType ammunition)
+    {
+        ArgumentNullException.ThrowIfNull(ammunition);
+        _m203Ammunition = ammunition;
     }
 
     /// <summary>Applies a <c>GunPickup</c> to this inventory.</summary>
@@ -363,6 +400,7 @@ public sealed class PlayerWeapons
         RequestedAction = null;
         RequestedFireVariant = 0;
         _wantFire = false;
+        _wantAlternateFire = false;
         _actionComplete = false;
         // FUN_0040FBE0 is called once per sustained-handler tick. This latch prevents duplicate
         // calls within one tick (PlayerCamera is the production caller) but must not survive into
@@ -519,11 +557,67 @@ public sealed class PlayerWeapons
             | HumanWeaponFlagWord.Dead
             | HumanWeaponFlagWord.Dying;
         _wantFire = false;
+        _wantAlternateFire = false;
         _firedThisTick = false;
         _shots.Clear();
+        _m203Shots.Clear();
         _throwReleased = false;
         _actionComplete = false;
         Request(WeaponAction.None);
+    }
+
+    /// <summary>Refunds a projectile whose simulation could not accept the round.</summary>
+    /// <returns><see langword="true"/> when one fired round was returned to its source.</returns>
+    /// <remarks>
+    /// The launcher simulation has a finite live-object pool. A rejected spawn is not an impact and
+    /// must not consume ammunition or leave the presentation layer reporting a shot that never entered
+    /// the world. This is called immediately after <see cref="ResolveFire"/> for a rejected launcher
+    /// or M203 round, before the next weapon tick clears the scratch projectile list.
+    /// </remarks>
+    public bool RefundRejectedSimulationShot()
+    {
+        if (_m203Shots.Count > 0)
+        {
+            if (_m203Ammunition is null)
+            {
+                return false;
+            }
+
+            Ammunition.Add(_m203Ammunition.AmmoId, _m203Shots.Count);
+            _m203Shots.Clear();
+            _firedThisTick = false;
+            if (_shotSequence > 0)
+            {
+                _shotSequence--;
+            }
+
+            return true;
+        }
+
+        if (_shots.Count == 0
+            || InHand is not { } held
+            || !held.Gun.ConsumesAmmunition
+            || held.Gun.State.RoundsInClip < 0)
+        {
+            return false;
+        }
+
+        int bulletsPerRound = Math.Max(1, held.Weapon.BulletsPerRound);
+        int rounds = _shots.Count / bulletsPerRound;
+        if (rounds <= 0)
+        {
+            return false;
+        }
+
+        held.Gun.State.RoundsInClip += rounds;
+        _shots.Clear();
+        _firedThisTick = false;
+        if (_shotSequence > 0)
+        {
+            _shotSequence--;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -551,6 +645,7 @@ public sealed class PlayerWeapons
     public bool ResolveFire(Vector3d eye, Vector3f forward, Vector3f right, Vector3f up, float recoilScale = 1f)
     {
         _shots.Clear();
+        _m203Shots.Clear();
         _firedThisTick = false;
 
         if (InHand is not { } held)
@@ -558,10 +653,71 @@ public sealed class PlayerWeapons
             return false;
         }
 
+        // Native 0x40F4A0 raises Human+0x4D2 and 0x473510 consumes that marker in GunM16A2's
+        // alternate callback. It never calls the ordinary magazine path, so an M203 launch must not
+        // consume a 5.56 round or sample the rifle's bullet spread/recoil.
+        if (_wantAlternateFire && IsM16A2(held.Weapon))
+        {
+            if (_m203Ammunition is null || Ammunition.Count(_m203Ammunition.AmmoId) <= 0)
+            {
+                return false;
+            }
+
+            Ammunition.Take(_m203Ammunition.AmmoId, 1);
+
+            WeaponConfigTask? config = held.Weapon.RetailConfig;
+            float muzzleVelocity = M203Physics.DefaultMuzzleVelocityKilometresPerHour;
+            float explosionRadius = M203Physics.DefaultExplosionRadiusMetres;
+            float activateRadius = M203Physics.DefaultActivateRadiusMetres;
+            if (config is not null)
+            {
+                if (WeaponConfigRegistry.TryGetRealTag(config, "M203 - Muzzle velocity (km/h)", out float configured))
+                {
+                    muzzleVelocity = configured;
+                }
+                if (WeaponConfigRegistry.TryGetRealTag(config, "M203 - Explosion radius (meters)", out configured))
+                {
+                    explosionRadius = configured;
+                }
+                if (WeaponConfigRegistry.TryGetRealTag(config, "M203 - Activate radius (meters)", out configured))
+                {
+                    activateRadius = configured;
+                }
+            }
+            string model = config is not null
+                && WeaponConfigRegistry.TryGetStringTag(config, "M203 - Model", out string configuredModel)
+                && configuredModel.Length > 0
+                ? configuredModel
+                : "108_05_1";
+            _m203Shots.Add(new M203Projectile(
+                eye,
+                forward,
+                muzzleVelocity,
+                explosionRadius,
+                activateRadius,
+                model,
+                M203Physics.LaunchOrientation(forward)));
+            _firedThisTick = true;
+            unchecked
+            {
+                _shotSequence++;
+            }
+
+            return true;
+        }
+
         held.Gun.Tick(_wantFire);
 
-        GunFireResult result = held.Gun.Fire(_wantFire, eye, forward, right, up, _random);
+        float? speedOverride = held.Weapon.Category == WeaponCategory.Grenade && _throwReleased
+            ? ChargedThrowSpeed(held.Weapon.MuzzleVelocity, _throwChargeTicks)
+            : null;
+        GunFireResult result = held.Gun.Fire(_wantFire, eye, forward, right, up, _random, speedOverride);
         _firedThisTick = result.Fired;
+
+        if (result.Fired && held.Weapon.Category == (WeaponCategory)PlacedCategory)
+        {
+            _placingFirePending = false;
+        }
 
         if (result.Fired)
         {
@@ -636,6 +792,16 @@ public sealed class PlayerWeapons
             if (IndexOf(id) >= 0)
             {
                 _categoryPick = id;
+                // Number-key selection and the weapon wheel are two views over the same retail
+                // cycle. Keep the wheel cursor on the member selected here; otherwise the next/prev
+                // edge starts from the cursor's old position and can return the weapon just selected
+                // (or jump to the wrong category) instead of advancing from it.
+                int cycleIndex = _cycle.IndexOf(id);
+                if (cycleIndex >= 0)
+                {
+                    _cycleIndex = cycleIndex;
+                }
+
                 break;
             }
         }
@@ -738,6 +904,40 @@ public sealed class PlayerWeapons
         }
     }
 
+    /// <summary>Whether the grenade in hand has nothing left to throw — clip and reserve both empty.</summary>
+    private bool OutOfThrowables() =>
+        InHand is not { } held || (held.Gun.RoundsInClip <= 0 && held.Gun.Reserve(Ammunition) <= 0);
+
+    /// <summary>Steps the cycle to the next carried weapon, for the auto-switch off a spent grenade.</summary>
+    /// <returns><see langword="true"/> when a different carried weapon was selected.</returns>
+    /// <remarks>The <c>a2 = 1</c> path of <c>0x40F760</c>, reduced to stepping to the next carried entry.</remarks>
+    private bool SelectNextCarried()
+    {
+        if (_cycle.Count == 0)
+        {
+            return false;
+        }
+
+        int heldId = InHand is { } held ? held.Weapon.WeaponId : -1;
+        for (int n = _cycle.Count; n > 0; n--)
+        {
+            _cycleIndex++;
+            if (_cycleIndex >= _cycle.Count)
+            {
+                _cycleIndex = 0;
+            }
+
+            int candidate = _cycle[_cycleIndex];
+            if (IndexOf(candidate) >= 0 && candidate != heldId)
+            {
+                _pendingWeaponId = candidate;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private void Step(PlayerInputState input)
     {
         // A transition runs its target's entry immediately, so the loop is bounded rather than
@@ -767,7 +967,9 @@ public sealed class PlayerWeapons
         HumanWeaponState.ChangingWeapon => ChangingWeapon(),
         HumanWeaponState.Peeking => Peeking(input),
         HumanWeaponState.Throwing => Throwing(input),
+        HumanWeaponState.Placing => Placing(input),
         HumanWeaponState.Medipack => Medipack(),
+        HumanWeaponState.AlternateFire => AlternateFireState(),
         _ => Flags.HasFlag(HumanWeaponFlagWord.ClipEnded) ? HumanWeaponState.Ready : State,
     };
 
@@ -786,6 +988,14 @@ public sealed class PlayerWeapons
         {
             int clip = held.Gun.RoundsInClip;
             int reserve = held.Gun.Reserve(Ammunition);
+
+            if (Flags.HasFlag(HumanWeaponFlagWord.AlternateFire)
+                && input.IsRisingEdge(PlayerInputSlot.AlternateFire)
+                && IsM16A2(held.Weapon)
+                && HasM203Round())
+            {
+                return HumanWeaponState.AlternateFire;
+            }
 
             // Level-triggered, deliberately: there is no edge test here in the original, which is what
             // lets an automatic weapon keep firing while the button is down.
@@ -860,6 +1070,17 @@ public sealed class PlayerWeapons
         return HumanWeaponState.Ready;
     }
 
+    /// <summary>Raises one M203 callback request and returns to the ready hub.</summary>
+    private HumanWeaponState AlternateFireState()
+    {
+        _wantAlternateFire = true;
+        // IGI1's 0x40F4A0 callback calls the animation dispatcher with the M16A2's
+        // FireAnimation2 field (0x4137E0 action 8, variant 1). That is clip 39 in
+        // WEAPONS/M16A2/WEAPON.QVM; variant 0 is the ordinary rifle shot (clip 4).
+        Request(WeaponAction.Fire, fireVariant: 1);
+        return HumanWeaponState.Ready;
+    }
+
     // 0x40EF70. It does not fire; it asks, on every tick the trigger is down.
     private HumanWeaponState Firing(PlayerInputState input)
     {
@@ -928,6 +1149,14 @@ public sealed class PlayerWeapons
     /// </remarks>
     public int ThrowChargeTicks => _throwChargeTicks;
 
+    /// <summary>Gets whether a grenade throw is being charged — the hand cooking it.</summary>
+    /// <remarks>
+    /// The retail throw handler starts <c>grenade_tick_1</c> as it enters the throw state
+    /// (<c>0x40F590</c>) and stops it on release (<c>0x40F640</c>). This is that window: in the throw
+    /// state with the fire button still held.
+    /// </remarks>
+    public bool IsChargingThrow => State == HumanWeaponState.Throwing && !_throwReleased;
+
     /// <summary>Turns a throw's charge into its release speed, in metres a second.</summary>
     /// <param name="muzzleVelocity">The weapon's own muzzle velocity — fifteen for both grenades.</param>
     /// <param name="chargeTicks">How many ticks the button was held.</param>
@@ -993,11 +1222,50 @@ public sealed class PlayerWeapons
             // first is the wind-up the entry already played and holding it again would read as the
             // hand pocketing the grenade rather than releasing it.
             Request(WeaponAction.Fire, InHand?.Weapon.FireAnimation2 >= 0 ? 1 : 0);
+
+            // 0x40F640 snaps the rig out of the frame the instant the round leaves the hand -- the
+            // throw's own follow-through, the same lowering a weapon change and a peek use.
+            Sway.SnapTo(HumanViewSway.LoweredPitch, HumanViewSway.LoweredYaw);
+
+            // Out of grenades, 0x40F640's else branch (sub_40F760) selects the next carried weapon rather
+            // than staying on the spent one; the rig is already lowered for the change. With more in the
+            // pouch it stays and eases the rig back up, ready to throw again.
+            if (OutOfThrowables() && SelectNextCarried())
+            {
+                BeginChange();
+                return HumanWeaponState.ChangingWeapon;
+            }
+
+            Sway.Raise();
         }
 
         return Flags.HasFlag(HumanWeaponFlagWord.ClipEnded)
             ? HumanWeaponState.Ready
             : HumanWeaponState.Throwing;
+    }
+
+    // 0x40F930/0x40F950. A mine is a one-shot placed task: entering the state lowers the rig and
+    // requests one gun round, then the state returns as soon as that round has been accepted. The
+    // old port entered Placing but never set the fire request, which made every mine a silent no-op.
+    private HumanWeaponState Placing(PlayerInputState input)
+    {
+        if (_placingFirePending)
+        {
+            _wantFire = true;
+            return HumanWeaponState.Placing;
+        }
+
+        // A held trigger must not place a mine again when the state returns through Ready. Wait for
+        // the release edge, just as the grenade throw waits for its release before accepting another
+        // round.
+        if (input.IsSet(PlayerInputSlot.Fire))
+        {
+            return HumanWeaponState.Placing;
+        }
+
+        return OutOfThrowables() && SelectNextCarried()
+            ? HumanWeaponState.ChangingWeapon
+            : HumanWeaponState.Ready;
     }
 
     // 0x479990, the gun's own reload handler, which 0x40F180 drives. It is a two-phase machine: play
@@ -1184,6 +1452,20 @@ public sealed class PlayerWeapons
                 Request(WeaponAction.Fire);
                 break;
 
+            case HumanWeaponState.Placing:
+                _placingFirePending = true;
+                Request(WeaponAction.Fire);
+                Sway.SnapTo(HumanViewSway.LoweredPitch, HumanViewSway.LoweredYaw);
+                break;
+
+            case HumanWeaponState.AlternateFire:
+                // Native 0x40F4A0 lowers/raises the weapon through the alternate-fire animation and
+                // sets the callback marker. The actual M203 object is created after the view has been
+                // committed, in ResolveFire, exactly like the 0x462E50 bridge.
+                _wantAlternateFire = true;
+                Request(WeaponAction.Fire);
+                break;
+
             case HumanWeaponState.Medipack:
                 _medipackUsed = false;
                 _medipackAdvanced = false;
@@ -1237,4 +1519,11 @@ public sealed class PlayerWeapons
 
     /// <summary>Gets whether a one-shot action finished on the last tick — the original's <c>Human+1232</c>.</summary>
     public bool ActionCompleted => _actionComplete;
+
+    private bool HasM203Round() =>
+        _m203Ammunition is not null
+        && Ammunition.Count(_m203Ammunition.AmmoId) > 0;
+
+    private static bool IsM16A2(WeaponType weapon) =>
+        string.Equals(weapon.ScriptId, M16A2WeaponScriptId, StringComparison.Ordinal);
 }

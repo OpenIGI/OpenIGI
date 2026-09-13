@@ -192,4 +192,73 @@ public sealed class ConditionalContainerGateTests
             QvmExpression.Text(model),
             QvmExpression.Int(0));
     }
+
+    [Fact]
+    public void ARetailSelfLatchingContainerHoldsAfterItsTriggerClears()
+    {
+        // Missions 4, 6, 7, 8, 9, 10, 11 and 14 write 36 of their container conditions as
+        // "<trigger> || this.isRun": the container latches itself on when the trigger first fires and
+        // holds once it clears. `this` is the task that owns the expression -- the original rewrites the
+        // token to "<owning task name>.<field>" in its expression preprocessor (0x4F1400,
+        // sprintf("%s.%s", Task_GetName(owner), rest)) before the text is ever compiled. Container 301 is
+        // the control: the same trigger without the self-reference, which must drop out again.
+        (TaskTree tree, ScriptVarRegistry variables) = BuildLevel(
+            Scene(1203),
+            Gate(300, "CutScene_1203.isTriggered || this.isRun"),
+            Gate(301, "CutScene_1203.isTriggered"));
+
+        bool triggered = false;
+        variables.BindBool(Find(tree.Root, 1203), "isTriggered", () => triggered, _ => { });
+        new ConditionalContainerGate(variables).Prepare(tree.Root);
+
+        Assert.False(Container(tree, 300).IsRun);
+        Assert.False(Container(tree, 301).IsRun);
+
+        triggered = true;
+        Container(tree, 300).Refresh(out _);
+        Container(tree, 301).Refresh(out _);
+        Assert.True(Container(tree, 300).IsRun);
+        Assert.True(Container(tree, 301).IsRun);
+
+        triggered = false;
+        Container(tree, 300).Refresh(out _);
+        Container(tree, 301).Refresh(out _);
+        Assert.True(Container(tree, 300).IsRun);
+        Assert.False(Container(tree, 301).IsRun);
+    }
+
+    [Fact]
+    public void TwoContainersSharingAConditionResolveThisAgainstTheirOwnNames()
+    {
+        // Both conditions are the same string, so they share one parse-cache entry. `this` must still
+        // resolve per evaluation against the container being resolved: pinning 300's own isRun must not
+        // hold 301 open through the cached expression.
+        (TaskTree tree, ScriptVarRegistry variables) = BuildLevel(
+            Scene(1203),
+            Gate(300, "CutScene_1203.isTriggered || this.isRun"),
+            Gate(301, "CutScene_1203.isTriggered || this.isRun"));
+
+        bool triggered = false;
+        variables.BindBool(Find(tree.Root, 1203), "isTriggered", () => triggered, _ => { });
+        new ConditionalContainerGate(variables).Prepare(tree.Root);
+
+        Assert.True(variables.TryWrite("ConditionalContainer_300.isRun", QvmValue.FromInt32(1)));
+        Container(tree, 300).Refresh(out _);
+        Container(tree, 301).Refresh(out _);
+
+        Assert.True(Container(tree, 300).IsRun);
+        Assert.False(Container(tree, 301).IsRun);
+    }
+
+    private static QvmExpression Scene(int id) => QvmExpression.Call(
+        "Task_New", QvmExpression.Int(id), QvmExpression.Text("CutScene"), QvmExpression.Text(""));
+
+    private static QvmExpression Gate(int id, string condition) => QvmExpression.Call(
+        "Task_New",
+        QvmExpression.Int(id),
+        QvmExpression.Text("ConditionalContainer"),
+        QvmExpression.Text("container"),
+        QvmExpression.Text(condition),
+        QvmExpression.Text(""),
+        QvmExpression.Text(""));
 }

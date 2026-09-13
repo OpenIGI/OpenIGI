@@ -32,6 +32,7 @@ internal sealed class ComputerHighlightCatalog
             }
 
             _entries.Add(new Entry(
+                declared,
                 position,
                 String(declared, "Title text resource"),
                 FileName(String(declared, "Click to select sprite")),
@@ -43,7 +44,7 @@ internal sealed class ComputerHighlightCatalog
     {
         foreach (Entry entry in _entries)
         {
-            if (_expressions.EvaluateCondition(entry.Condition, emptyValue: true))
+            if (_expressions.EvaluateCondition(entry.Condition, emptyValue: true, entry.Task))
             {
                 yield return new ComputerMapHighlight(entry.Position, entry.TitleResource, entry.Sprite);
             }
@@ -71,7 +72,12 @@ internal sealed class ComputerHighlightCatalog
         }
     }
 
-    private sealed record Entry(Vector3d Position, string TitleResource, string Sprite, string Condition);
+    private sealed record Entry(
+        DeclaredTask Task,
+        Vector3d Position,
+        string TitleResource,
+        string Sprite,
+        string Condition);
 }
 
 internal readonly record struct ComputerMapHighlight(Vector3d Position, string TitleResource, string Sprite);

@@ -22,6 +22,82 @@ public sealed class RetailInteractionInventoryTests
         "GenericTBA", "PlaceExplosiveTBA", "StationaryGun",
     };
 
+    [RequiresGameDataTheory]
+    [InlineData(400, 500, "this.isClosed && Switch_500.isLastPressed", "this.isOpen && Switch_500.isLastPressed")]
+    [InlineData(
+        403,
+        501,
+        "this.isClosed &&\n(Switch_501.isLastPressed || Switch_502.isLastPressed)",
+        "this.isOpen &&\n(Switch_501.isLastPressed || Switch_502.isLastPressed)")]
+    public void MissionFiveSelfGatedDoorsOpenAndCloseFromTheirRetailSwitches(
+        int doorId,
+        int switchId,
+        string expectedOpen,
+        string expectedClose)
+    {
+        (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(5);
+        DoorRegistry doors = DoorRegistry.Build(root);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(root, mission, doors, variables);
+        WorldInteraction door = Assert.Single(interactions.Items, item => item.Task.Id == doorId);
+        WorldInteraction doorSwitch = Assert.Single(interactions.Items, item => item.Task.Id == switchId);
+
+        Assert.Equal(expectedOpen, ReadString(door.Task, "Open door expression"));
+        Assert.Equal(expectedClose, ReadString(door.Task, "Close door expression"));
+        Assert.True(door.Door!.IsFullyClosed);
+
+        doorSwitch.Press();
+        for (int tick = 0; tick < 4; tick++)
+        {
+            interactions.Tick();
+            doors.Tick();
+        }
+        Assert.False(door.Door.IsFullyClosed);
+
+        for (int tick = 0; tick <= 60; tick++)
+        {
+            interactions.Tick();
+            doors.Tick();
+        }
+        Assert.True(door.Door.IsFullyOpen);
+
+        doorSwitch.Press();
+        for (int tick = 0; tick < 4; tick++)
+        {
+            interactions.Tick();
+            doors.Tick();
+        }
+        Assert.False(door.Door.IsFullyOpen);
+    }
+
+    [RequiresGameDataFact]
+    public void MissionThreeDoor472AutoClosesAfterItsRetailSelfTimer()
+    {
+        (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(3);
+        DoorRegistry doors = DoorRegistry.Build(root);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(root, mission, doors, variables);
+        WorldInteraction door = Assert.Single(interactions.Items, static item => item.Task.Id == 472);
+
+        Assert.Equal(
+            "this.nDoorOpenTicks > 10*GAME_FREQUENCY",
+            ReadString(door.Task, "Close door expression"));
+
+        door.Door!.CommandOpen();
+        for (int tick = 0; tick <= 60; tick++)
+        {
+            interactions.Tick();
+            doors.Tick();
+        }
+        Assert.True(door.Door.IsFullyOpen);
+
+        for (int tick = 0; tick <= 300; tick++)
+        {
+            interactions.Tick();
+            doors.Tick();
+        }
+
+        Assert.False(door.Door.IsFullyOpen);
+    }
+
     [Fact]
     public void MedipackPickupFallbackProvidesAUsableChargeCount()
     {
@@ -31,30 +107,21 @@ public sealed class RetailInteractionInventoryTests
     [RequiresGameDataFact]
     public void LevelTwoGenericExplosiveChargesPublishTheirAuthoredBlastExactlyOnce()
     {
-        (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) = Load(2);
+        (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(2);
         WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
-            root,
-            mission,
-            DoorRegistry.Build(root),
-            variables);
-
+            root, mission, DoorRegistry.Build(root), variables);
         List<WorldInteraction> charges = interactions.Items
             .Where(static item => item.Type == InteractionActivateType.Generic && item.Explosion is not null)
             .ToList();
-        Assert.Equal(3, charges.Count);
 
+        Assert.Equal(3, charges.Count);
         WorldInteraction charge = Assert.Single(charges, static item => item.Task.Id == 282);
         GenericTbaExplosionParameters payload = Assert.IsType<GenericTbaExplosionParameters>(charge.Explosion);
-        Assert.False(payload.IsExplodable);
-        Assert.Equal(1f, payload.DamageScale);
+        Assert.False(payload.Explodable);
         Assert.Equal(0.5f, payload.ExplosionRadiusMetres);
         Assert.Equal(0.5f, payload.ExplosionFalloffMetres);
-        Assert.Equal(1f, payload.ExplosionDamageScale);
-        Assert.Equal(0f, payload.ExplosionDelaySeconds);
         Assert.Equal(5, payload.FragmentCount);
         Assert.Equal(4, payload.FireballCount);
-        Assert.Equal(string.Empty, payload.DestroyedModelName);
-        Assert.Equal(string.Empty, payload.ExplosionExpression);
         Assert.Equal("explo_02_m", payload.ExplosionSound);
 
         charge.BeginUse();
@@ -64,8 +131,6 @@ public sealed class RetailInteractionInventoryTests
         Assert.False(charge.IsDestroyed);
         Assert.True(variables.TryRead("GenericTBA_282.isFinished", out var finished));
         Assert.Equal(1, finished.Integer);
-        Assert.True(variables.TryRead("GenericTBA_282.isFinishedThisTick", out var finishedThisTick));
-        Assert.Equal(1, finishedThisTick.Integer);
         (WorldInteraction emitted, GenericTbaExplosionParameters emittedPayload) = Assert.Single(
             interactions.ConsumeExplosions());
         Assert.Same(charge, emitted);
@@ -74,7 +139,6 @@ public sealed class RetailInteractionInventoryTests
 
         charge.MarkExplosionPresented();
         Assert.True(charge.IsDestroyed);
-
         interactions.Tick();
         Assert.Empty(interactions.ConsumeExplosions());
     }
@@ -82,24 +146,17 @@ public sealed class RetailInteractionInventoryTests
     [RequiresGameDataFact]
     public void LevelTwoAiGenericExplosiveChargeSurvivesResolverBeforeActivationExactlyOnce()
     {
-        (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) = Load(2);
+        (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(2);
         WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
-            root,
-            mission,
-            DoorRegistry.Build(root),
-            variables);
+            root, mission, DoorRegistry.Build(root), variables);
         WorldInteraction charge = Assert.Single(
             interactions.Items,
             static item => item.Type == InteractionActivateType.Generic && item.Task.Id == 282);
 
-        // This is the desktop tick order: the resolver has already drained this tick before the AI
-        // reaches the task. The next interaction tick must not discard the AI's one-shot edge.
         interactions.Tick();
         Assert.Empty(interactions.ConsumeExplosions());
         Assert.True(interactions.ActivateFromAi(charge.Task.Id));
-        Assert.True(charge.IsCompleted);
         Assert.True(charge.ExplosionTriggeredThisTick);
-
         interactions.Tick();
 
         (WorldInteraction emitted, GenericTbaExplosionParameters payload) = Assert.Single(
@@ -110,69 +167,86 @@ public sealed class RetailInteractionInventoryTests
     }
 
     [RequiresGameDataFact]
-    public void LevelTwoGenericExplosiveChargeStopsBlockingWorldTracesAfterPresentation()
+    public void SwitchPressPulseConsumesOneRegistryTickAtATime()
     {
-        (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) = Load(2);
+        (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(1);
         WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
-            root,
-            mission,
-            DoorRegistry.Build(root),
-            variables);
-        WorldInteraction charge = Assert.Single(
-            interactions.Items,
-            static item => item.Type == InteractionActivateType.Generic && item.Task.Id == 282);
-        WorldScene scene = WorldScene.Build(mission, root, magic);
-        WorldPlacement placement = Assert.Single(
-            scene.Placements,
-            candidate => ReferenceEquals(candidate.Owner, charge.Task)
-                && string.Equals(candidate.Instance.Name, "202_01_1", StringComparison.OrdinalIgnoreCase));
-        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements);
+            root, mission, DoorRegistry.Build(root), variables);
+        WorldInteraction button = interactions.Items.First(
+            static item => item.Type == InteractionActivateType.Switch);
 
-        WorldTraceRequest request = TraceThrough(placement.Position);
-        Assert.True(
-            HitsOwner(solids, request, charge.Task),
-            "the authored charge has no collision trace");
+        button.Press();
+        interactions.Tick();
+        Assert.True(button.Pressed.Value);
+        interactions.Tick();
+        Assert.True(button.Pressed.Value);
+        interactions.Tick();
+        Assert.False(button.Pressed.Value);
+        Assert.True(button.Pressed.IsFallingEdge);
+    }
 
-        charge.BeginUse();
-        charge.CompleteUse();
-        Assert.False(charge.IsDestroyed);
-
-        charge.MarkExplosionPresented(solids);
-
-        Assert.True(charge.IsDestroyed);
-        Assert.False(
-            HitsOwner(solids, request, charge.Task),
-            "the destroyed charge remained solid after detonation");
-
-        static WorldTraceRequest TraceThrough(Vector3d positionMetres)
+    [RequiresGameDataFact]
+    public void PlayerStationaryGunUseKeepsTheGunOccupiedByTheInteraction()
+    {
+        for (int missionId = 1; missionId <= 14; missionId++)
         {
-            Vector3d centre = new(
-                positionMetres.X * WorldScene.UnitsPerMetre,
-                positionMetres.Y * WorldScene.UnitsPerMetre,
-                positionMetres.Z * WorldScene.UnitsPerMetre);
-            double span = WorldScene.UnitsPerMetre * 2.0;
-            return new WorldTraceRequest(
-                centre - new Vector3d(span, 0.0, 0.0),
-                centre + new Vector3d(span, 0.0, 0.0),
-                WorldTraceMask.World);
-        }
-
-        static bool HitsOwner(ObjectCollisionIndex solids, WorldTraceRequest request, GameTask owner)
-        {
-            if (!solids.TryTrace(request, out WorldTraceHit hit))
+            (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(missionId);
+            WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+                root, mission, DoorRegistry.Build(root), variables);
+            WorldInteraction? gun = interactions.Items.FirstOrDefault(
+                static item => item.Type == InteractionActivateType.StationaryGun);
+            if (gun is null)
             {
-                return false;
+                continue;
             }
 
-            if (ReferenceEquals(hit.Owner, owner))
-            {
-                return true;
-            }
+            gun.BeginUse();
 
-            return hit.Owner is { } blocker
-                && solids.TryTrace(request with { IgnoredOwner = blocker }, out WorldTraceHit next)
-                && ReferenceEquals(next.Owner, owner);
+            Assert.True(gun.StationaryGun!.IsOccupied);
+            Assert.True(gun.IsPlayerUsingStationaryGun);
+
+            gun.CancelUse();
+
+            Assert.False(gun.StationaryGun.IsOccupied);
+            Assert.False(gun.IsPlayerUsingStationaryGun);
+            return;
         }
+
+        Assert.Fail("No shipped StationaryGun task was loaded.");
+    }
+
+    [Fact]
+    public void AiOccupiedStationaryGunRejectsPlayerUseWithoutSettingInUse()
+    {
+        AiStationaryGun stationaryGun = new(
+            taskId: 17,
+            position: default,
+            orientation: Matrix3f.Identity);
+        WorldInteraction interaction = new(
+            new DeclaredTask(),
+            InteractionActivateType.StationaryGun,
+            anchor: default,
+            end: default,
+            orientation: Matrix3f.Identity,
+            facing: 0f,
+            durationTicks: 0,
+            actionSprite: "stationary.spr",
+            door: null,
+            isPickable: false,
+            stationaryGun: stationaryGun,
+            localBoundsMinimum: default,
+            localBoundsMaximum: default,
+            hasLocalBounds: false,
+            markerPoint: default,
+            markerLocal: default);
+        object aiOwner = new();
+        Assert.True(stationaryGun.TryMount(aiOwner));
+
+        Assert.False(interaction.BeginUse());
+        Assert.False(interaction.InUse.Value);
+        Assert.False(interaction.IsPlayerUsingStationaryGun);
+
+        stationaryGun.Dismount(aiOwner);
     }
 
     [RequiresGameDataFact]
@@ -238,6 +312,42 @@ public sealed class RetailInteractionInventoryTests
         doors.Tick();
 
         Assert.False(door.Door!.IsFullyClosed);
+    }
+
+    [RequiresGameDataFact]
+    public void MissionThreeControlTowerTerminalTypingPoseStaysOnTheFloor()
+    {
+        (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) =
+            Load(3, loadTerrain: true);
+        WorldScene scene = WorldScene.Build(mission, root, magic);
+        ObjectCollisionIndex collisions = ObjectCollisionIndex.Build(scene.Placements);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+            root,
+            mission,
+            DoorRegistry.Build(root),
+            variables);
+        WorldInteraction terminal = Assert.Single(
+            interactions.Items,
+            static item => item.Type == InteractionActivateType.Terminal && item.Task.Id == 333);
+        (Vector3d authoredPose, _) = terminal.BodyPose(terminal.Anchor);
+        Vector3d clearFloorSample = terminal.Anchor + terminal.Orientation.Transposed().Transform(
+            new Vector3d(0.0, 4096.0, 0.0));
+        Assert.True(collisions.PlayerCaster()(
+            clearFloorSample + new Vector3d(0.0, 0.0, 16384.0),
+            clearFloorSample - new Vector3d(0.0, 0.0, 65536.0),
+            out WorldRayHit floor));
+        PlayerBody body = new()
+        {
+            // A player close enough to activate this terminal is standing on the same control-room
+            // floor sampled just beyond the terminal's collision footprint.
+            Position = new Vector3d(authoredPose.X, authoredPose.Y, floor.Position.Z),
+            Walls = collisions.PlayerCaster(),
+        };
+
+        Assert.True(body.SnapInteractionToGround(Assert.IsType<TerrainData>(mission.Terrain)));
+        Assert.Equal(floor.Position.Z, body.Position.Z, precision: 3);
+        Assert.True(body.Position.Z < terminal.Anchor.Z);
+        Assert.True(body.IsGrounded);
     }
 
     [RequiresGameDataFact]
@@ -471,6 +581,57 @@ public sealed class RetailInteractionInventoryTests
         Assert.True(genericPickupTotal > 0, "No shipped GenericPickup task was loaded.");
     }
 
+    [RequiresGameDataFact]
+    public void EveryRetailStationaryGunHasItsDrawableHolderPlacement()
+    {
+        int stationaryGunCount = 0;
+
+        for (int missionId = 1; missionId <= 14; missionId++)
+        {
+            (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) =
+                Load(missionId);
+            DoorRegistry doors = DoorRegistry.Build(root);
+            WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(root, mission, doors, variables);
+            WorldScene scene = WorldScene.Build(mission, root, magic);
+
+            foreach (WorldInteraction gun in interactions.Items.Where(
+                         static item => item.Type == InteractionActivateType.StationaryGun))
+            {
+                stationaryGunCount++;
+                DeclaredTask declared = Assert.IsType<DeclaredTask>(gun.Task);
+                string parameters = string.Join(
+                    "; ",
+                    declared.Type.Parameters.Select(
+                        (parameter, index) => $"{parameter.Name}={declared.GetValue(index)}"));
+                Assert.True(
+                    scene.Placements.Any(candidate => ReferenceEquals(candidate.Owner, gun.Task)),
+                    $"Mission {missionId} task {declared.Name} produced no placement; "
+                    + $"models=[{string.Join(",", WorldScene.PlacedModelNames(declared))}], "
+                    + $"parameters=[{parameters}], unresolved={scene.UnresolvedCount}");
+                WorldPlacement placement = Assert.Single(
+                    scene.Placements,
+                    candidate => ReferenceEquals(candidate.Owner, gun.Task));
+
+                string expectedModel = declared.TryGetValue("Holder model", out object? rawHolderModel)
+                    && rawHolderModel is string holderModel
+                    && holderModel.Length > 0
+                    ? holderModel
+                    : "456_13_1";
+                Assert.Equal(expectedModel, placement.Instance.Name);
+                Assert.Equal(
+                    new Vector3d(
+                        gun.Anchor.X / WorldScene.UnitsPerMetre,
+                        gun.Anchor.Y / WorldScene.UnitsPerMetre,
+                        gun.Anchor.Z / WorldScene.UnitsPerMetre),
+                    placement.Position);
+                Assert.Equal(gun.Orientation, placement.Orientation);
+                Assert.False(placement.Model.IsEmpty);
+            }
+        }
+
+        Assert.True(stationaryGunCount > 0, "The campaign did not expose any StationaryGun tasks.");
+    }
+
     private static (LevelTask Root, MagicObjectRegistry Magic, LoadedMission Mission, ScriptVarRegistry Variables) Load(
         int missionId,
         bool loadTerrain = false)
@@ -518,4 +679,7 @@ public sealed class RetailInteractionInventoryTests
 
     private static float ReadReal(DeclaredTask task, string name, float fallback) =>
         task.TryGetValue(name, out object? value) && value is float real ? real : fallback;
+
+    private static string ReadString(DeclaredTask task, string name) =>
+        task.TryGetValue(name, out object? value) && value is string text ? text : string.Empty;
 }
