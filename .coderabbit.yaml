@@ -8,12 +8,15 @@ reviews:
   high_level_summary: true
   poem: false
   collapse_walkthrough: true
-
-path_filters:
-  - "!**/bin/**"
-  - "!**/obj/**"
-  - "!src/OpenIGI.Game/Resources/IGIModels.json"
-  - "!scratch/**"
+  path_filters:
+    - "!**/bin/**"
+    - "!**/obj/**"
+    - "!src/OpenIGI.Game/Resources/IGIModels.json"
+    - "!scratch/**"
+  auto_review:
+    enabled: true
+    base_branches:
+      - "develop"
 
 chat:
   auto_reply: true
