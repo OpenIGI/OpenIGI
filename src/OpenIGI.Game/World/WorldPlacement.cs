@@ -43,6 +43,9 @@ public sealed record WorldPlacement(
     /// </remarks>
     public WorldModelBinding? DestroyedReplacement { get; init; }
 
+    /// <summary>Gets whether the live task has no authored replacement and should no longer draw.</summary>
+    public bool IsSuppressed { get; init; }
+
     /// <summary>Gets pre-deformed geometry that replaces the model's own, or <see langword="null"/>.</summary>
     /// <remarks>
     /// A spline segment's vertices are bent along its waypoints' curve, so the mesh is unique to the

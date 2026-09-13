@@ -4,11 +4,22 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Rendering;
 
 #pragma warning disable CS1591 // Public data members are documented by the owning interaction contract.
 
 namespace OpenIGI.Game.World;
+
+/// <summary>Authored explosion data carried by a GenericTBA interaction.</summary>
+public sealed record GenericTbaExplosionParameters(
+    bool Explodable, string DestroyedModelName, float DamageScale, float ExplosionRadiusMetres,
+    float ExplosionFalloffMetres, float ExplosionDamageScale, float ExplosionDelaySeconds,
+    int FragmentCount, int FireballCount, string ExplosionExpression, string ExplosionSound)
+{
+    public float ExplosionRadiusUnits => ExplosionDamage.ToUnits(ExplosionRadiusMetres);
+    public float ExplosionFalloffUnits => ExplosionDamage.ToUnits(ExplosionFalloffMetres);
+}
 
 /// <summary>One retail task which can answer the human player's <c>GetActivate</c> query.</summary>
 public sealed class WorldInteraction
@@ -32,6 +43,8 @@ public sealed class WorldInteraction
     private readonly PlacedDoor? _placedDoor;
     private readonly Vector3d _authoredMarker;
     private readonly Vector3d _markerLocal;
+    private bool _explosionConsumed;
+    private bool _explosionPending;
 
     internal WorldInteraction(
         DeclaredTask task,
@@ -49,7 +62,8 @@ public sealed class WorldInteraction
         Vector3d localBoundsMaximum,
         bool hasLocalBounds,
         Vector3d markerPoint,
-        Vector3d markerLocal)
+        Vector3d markerLocal,
+        GenericTbaExplosionParameters? explosion = null)
     {
         Task = task;
         Type = type;
@@ -67,6 +81,7 @@ public sealed class WorldInteraction
         LocalBoundsMinimum = localBoundsMinimum;
         LocalBoundsMaximum = localBoundsMaximum;
         HasLocalBounds = hasLocalBounds;
+        Explosion = explosion;
     }
 
     public DeclaredTask Task { get; }
@@ -98,6 +113,9 @@ public sealed class WorldInteraction
     public bool IsSearched { get; private set; }
     public bool IsPicked { get; private set; }
     public bool IsLocked { get; private set; }
+    public bool IsDestroyed { get; private set; }
+    public bool ExplosionTriggeredThisTick { get; private set; }
+    public GenericTbaExplosionParameters? Explosion { get; }
 
     /// <summary>Whether the task still offers itself to the retail activation scan.</summary>
     public bool IsAvailable => Type switch
@@ -389,6 +407,10 @@ public sealed class WorldInteraction
 
     public void CompleteUse()
     {
+        if (Type == InteractionActivateType.Generic && IsCompleted)
+        {
+            return;
+        }
         StationaryGun?.Dismount(_userOccupant);
         InUse.Value = false;
         CompletedThisTick = true;
@@ -403,8 +425,37 @@ public sealed class WorldInteraction
                 break;
             default:
                 IsCompleted = true;
+                if (Type == InteractionActivateType.Generic && Explosion is not null)
+                {
+                    ExplosionTriggeredThisTick = true;
+                    _explosionPending = true;
+                }
                 break;
         }
+    }
+
+    /// <summary>Applies the delayed destruction edge once its authored blast is presented.</summary>
+    public void MarkExplosionPresented(ObjectCollisionIndex? collision = null)
+    {
+        if (Type == InteractionActivateType.Generic && Explosion is not null && IsCompleted)
+        {
+            IsDestroyed = true;
+            collision?.SetPassable(Task, passable: true);
+        }
+    }
+
+    internal bool TryConsumeExplosion(out GenericTbaExplosionParameters parameters)
+    {
+        if (!_explosionPending || _explosionConsumed || Explosion is null)
+        {
+            parameters = null!;
+            return false;
+        }
+
+        _explosionConsumed = true;
+        _explosionPending = false;
+        parameters = Explosion;
+        return true;
     }
 
     internal void EvaluateConditions()
@@ -429,6 +480,7 @@ public sealed class WorldInteraction
     internal void CommitTick()
     {
         CompletedThisTick = false;
+        ExplosionTriggeredThisTick = false;
         InUse.CommitTick();
         if (_pressedTicks > 0)
         {
@@ -616,6 +668,26 @@ public sealed class WorldInteractionRegistry
     public AiStationaryGun? FindStationaryGun(int taskId) =>
         _items.FirstOrDefault(item => item.Task.Id == taskId)?.StationaryGun;
 
+    /// <summary>Finds the interaction owned by a placed task.</summary>
+    public bool TryGet(GameTask task, out WorldInteraction? interaction)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        interaction = _items.FirstOrDefault(item => ReferenceEquals(item.Task, task));
+        return interaction is not null;
+    }
+
+    /// <summary>Consumes each authored GenericTBA explosion edge at most once.</summary>
+    public IEnumerable<(WorldInteraction Interaction, GenericTbaExplosionParameters Parameters)> ConsumeExplosions()
+    {
+        foreach (WorldInteraction item in _items)
+        {
+            if (item.TryConsumeExplosion(out GenericTbaExplosionParameters parameters))
+            {
+                yield return (item, parameters);
+            }
+        }
+    }
+
     /// <summary>Finds a powered electric fence touched by a player movement segment.</summary>
     public WorldInteraction? FindElectrifiedFenceContact(Vector3d from, Vector3d to) =>
         _items.FirstOrDefault(item => item.SegmentTouchesFence(from, to));
@@ -761,7 +833,8 @@ public sealed class WorldInteractionRegistry
                 DurationOf(declared, type), SpriteOf(declared, type), door,
                 ReadBool(declared, "Pickable"), stationaryGun,
                 localBoundsMinimum, localBoundsMaximum, hasLocalBounds,
-                markerPoint, markerLocal);
+                markerPoint, markerLocal,
+                type == InteractionActivateType.Generic ? ExplosionOf(declared) : null);
             if (elevators is not null)
             {
                 // Interaction anchors, activation radii and player positions are engine units. The
@@ -1076,6 +1149,37 @@ public sealed class WorldInteractionRegistry
 
     private static string ReadString(DeclaredTask task, string name, string fallback) =>
         task.TryGetValue(name, out object? value) && value is string text && text.Length > 0 ? text : fallback;
+
+    private static GenericTbaExplosionParameters? ExplosionOf(DeclaredTask task)
+    {
+        string destroyedModel = ReadString(task, "Destroyed model", string.Empty);
+        float damageScale = ReadReal(task, "Damage scale", 1f);
+        float radius = ReadReal(task, "Explosion radius", 0f);
+        float falloff = ReadReal(task, "Explosion falloff radius", 0f);
+        float explosionDamageScale = ReadReal(task, "Explosion damage scale", 1f);
+        float delay = ReadReal(task, "Explosion delay", 0f);
+        int fragments = ReadInt(task, "Explosion fragments", 0);
+        int fireballs = ReadInt(task, "Explosion fireballs", 0);
+        string expression = ReadString(task, "Explosion expression", string.Empty);
+        string sound = ReadString(task, "Explosion sound", string.Empty);
+        bool explodable = ReadBool(task, "Explodable");
+        bool hasExplosionContent = explodable || destroyedModel.Length > 0 || fragments > 0 || fireballs > 0
+            || expression.Length > 0 || sound.Length > 0 || radius > 0f || falloff > 0f || delay > 0f;
+        return hasExplosionContent
+            ? new(explodable, destroyedModel, damageScale, radius, falloff, explosionDamageScale, delay,
+                fragments, fireballs, expression, sound)
+            : null;
+    }
+
+    private static int ReadInt(DeclaredTask task, string name, int fallback) =>
+        task.TryGetValue(name, out object? value) ? value switch
+        {
+            int integer => integer,
+            short small => small,
+            float real => (int)real,
+            double real => (int)real,
+            _ => fallback,
+        } : fallback;
 
     private static Dictionary<string, MefModel> ModelsByName(LoadedMission mission)
     {

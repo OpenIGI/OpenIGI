@@ -2790,6 +2790,7 @@ internal sealed partial class DesktopGame : IDisposable
                     // Whatever grenades ran out of fuse this tick -- the blast, the flash, the noise
                     // and the casualties.
                     ResolveGrenadeDetonations();
+                    ResolveGenericTbaExplosions();
                     ResolveMissileDetonations();
                     ResolveM203Detonations();
                     PlayGrenadeBounces();

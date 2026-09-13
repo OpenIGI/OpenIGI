@@ -187,6 +187,9 @@ public sealed class WorldRenderer : IDisposable
     /// <summary>Gets or sets the live generic pickups whose consumed models no longer draw.</summary>
     public GenericPickupRegistry? GenericPickups { get; set; }
 
+    /// <summary>Gets or sets GenericTBA destruction state for authored interaction placements.</summary>
+    public WorldInteractionRegistry? Interactions { get; set; }
+
     /// <summary>Gets or sets the live rotating world objects (radar dishes and rotating tasks).</summary>
     public RotatingObjectRegistry? RotatingObjects { get; set; }
 
@@ -891,6 +894,14 @@ public sealed class WorldRenderer : IDisposable
                 Pack = replacement.Pack,
                 Model = replacement.Model,
             };
+        }
+
+        if (Interactions?.TryGet(placement.Owner, out WorldInteraction? interaction) == true
+            && interaction is { IsDestroyed: true })
+        {
+            displayed = placement.DestroyedReplacement is { } genericReplacement
+                ? placement with { Instance = genericReplacement.Instance, Pack = genericReplacement.Pack, Model = genericReplacement.Model }
+                : placement with { IsSuppressed = true };
         }
 
         if (SecurityCameras?.TryGetHeadOrientation(
