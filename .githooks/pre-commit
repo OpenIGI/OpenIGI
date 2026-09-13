@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+git diff --cached --check
+paths=$(git diff --cached --name-only --diff-filter=ACMRD)
+[ -n "$paths" ] || exit 0
+if printf '%s\n' "$paths" | grep -Eq '(^|/)([^/]+\.py)$'; then
+  if find tests -name '*test*.py' -print -quit | grep -q .; then
+    python3 -m unittest discover -s tests -p '*test*.py'
+  fi
+fi
+if printf '%s\n' "$paths" | grep -Eq '\.(cs|csproj|props|targets|slnx)$|^(src|apps|tests)/'; then
+  # Keep commit feedback focused. A source/test pair maps directly; shared files and anything
+  # without a matching test assembly fall back to the complete pre-push gate.
+  projects=()
+  full_suite=0
+  while IFS= read -r path; do
+    case "$path" in
+      src/OpenIGI.*/*)
+        name=${path#src/}; name=${name%%/*}
+        candidate="$root/tests/${name}.Tests/${name}.Tests.csproj"
+        [ -f "$candidate" ] && projects+=("$candidate") || full_suite=1
+        ;;
+      apps/OpenIGI.*/*)
+        name=${path#apps/}; name=${name%%/*}
+        candidate="$root/tests/${name}.Tests/${name}.Tests.csproj"
+        [ -f "$candidate" ] && projects+=("$candidate") || full_suite=1
+        ;;
+      tests/OpenIGI.*.Tests/*)
+        name=${path#tests/}; name=${name%%/*}
+        candidate="$root/tests/${name}/${name}.csproj"
+        [ -f "$candidate" ] && projects+=("$candidate") || full_suite=1
+        ;;
+      *) full_suite=1 ;;
+    esac
+  done <<< "$paths"
+
+  if [ "$full_suite" -eq 1 ] || [ "${#projects[@]}" -eq 0 ]; then
+    "$root/tools/test/verify-dotnet.sh"
+  else
+    printf '%s\n' "${projects[@]}" | sort -u | while IFS= read -r project; do
+      dotnet test "$project" -c Release --nologo
+    done
+  fi
+fi

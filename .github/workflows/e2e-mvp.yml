@@ -1,0 +1,37 @@
+name: MVP retail E2E
+on:
+  workflow_dispatch:
+  push:
+    branches: [develop, master]
+jobs:
+  live-mvp:
+    runs-on: [self-hosted, macOS, igi-retail]
+    # A public PR must never execute arbitrary contributor code on this self-hosted machine.
+    # Pushes to protected branches and explicit maintainer dispatches are trusted entry points.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Validate retail data
+        run: test -d "$IGI_GAME_PATH" && test -f "$IGI_GAME_PATH/IGI.EXE"
+      - name: Run focused Levels 3 and 5 regression tests
+        run: |
+          set -o pipefail
+          mkdir -p scratch/mvp-e2e
+          dotnet restore tests/OpenIGI.Game.Tests/OpenIGI.Game.Tests.csproj
+          dotnet test tests/OpenIGI.Game.Tests/OpenIGI.Game.Tests.csproj \
+            -c Release --no-restore \
+            --filter 'FullyQualifiedName~LevelThreeOutroFidelityTests|FullyQualifiedName~RetailMissionFiveHelicopterTests' \
+            --logger "trx;LogFileName=levels-3-5-regressions.trx" \
+            --results-directory scratch/mvp-e2e \
+            --nologo 2>&1 | tee scratch/mvp-e2e/levels-3-5-regressions.log
+      - name: Run Levels 1-5 smoke captures
+        run: tools/test/verify-e2e-mvp.sh
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mvp-e2e-captures
+          path: scratch/mvp-e2e/
