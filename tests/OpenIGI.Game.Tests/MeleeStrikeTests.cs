@@ -3,6 +3,7 @@ using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
+using OpenIGI.TestSupport;
 using Xunit;
 
 namespace OpenIGI.Game.Tests;
@@ -154,5 +155,41 @@ public sealed class MeleeStrikeTests
             }),
             () => new AiCombatWeaponState(30, 30, 30, WeaponCategory.Gun));
         return soldier;
+    }
+
+    [RequiresGameDataFact]
+    public void Animation70CarriesEvent1052ForGunpunchAudioAtImpactTime()
+    {
+        string path = System.IO.Path.Combine(OpenIGI.TestSupport.GameData.RequireRoot(), "common", "anims", "001.iff");
+        Formats.Animation.BoneAnimationSet set = Formats.Animation.BoneAnimationSet.Read(System.IO.File.ReadAllBytes(path));
+        Assert.True(set.TryGet(70, out Formats.Animation.BoneAnimation anim));
+        Assert.Equal(5760f, anim.Duration);
+
+        Formats.Animation.BoneAnimationEvent meleeEvent = Assert.Single(anim.Events, e => e.EventId == 1052);
+        Assert.Equal(1280f, meleeEvent.Time);
+
+        HumanSoldierTask task = new()
+        {
+            Model = "test",
+            BoneHierarchy = set.Skeleton.Id,
+            StandAnimation = 2,
+            Position = default,
+            Gamma = 0f,
+        };
+        SoldierView view = new(task, set);
+        Assert.True(view.PlayStateAnimation(70, loops: false));
+
+        // Tick at 30 fps: Event 1052 at 1280.0 should fire exactly at tick 8 (1280 / 160).
+        int eventFiredTick = -1;
+        for (int tick = 1; tick <= 15; tick++)
+        {
+            view.Tick();
+            if (view.Bones.SourceOf(0)?.CrossedEvent(1052) == true)
+            {
+                eventFiredTick = tick;
+            }
+        }
+
+        Assert.Equal(8, eventFiredTick);
     }
 }

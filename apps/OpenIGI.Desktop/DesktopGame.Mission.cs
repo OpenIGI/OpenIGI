@@ -630,6 +630,7 @@ internal sealed partial class DesktopGame
 
         // Close-combat strikes: punch or strike landing on the player within melee range (issue #235).
         _soldiers.SetMeleeStrikeSink(ResolvePlayerMeleeStrike);
+        _soldiers.SetAnimationTriggers(_animationTriggers);
 
         // Footsteps: animation event 1010, picked from the six walk sounds of whatever is underfoot.
         _soldiers.SetFootstepSound(step => PlayFootstep(step));
@@ -2685,6 +2686,11 @@ internal sealed partial class DesktopGame
             (float)strikeVector.Z);
         Vector3f viewIncoming = _player.Camera.Orientation.Transposed().Transform(incoming);
         _damageFlash.Hit(viewIncoming, _soundRandom.NextSingle());
+
+        // Retail 0x412CE0 / 0x412E60 plays punched_01 or punched_02 (50/50) flat on the listener
+        // when struck by melee.
+        string punchSound = _soundRandom.NextBounded(2) == 0 ? "punched_01" : "punched_02";
+        _sounds?.PlayDefinition(punchSound, priority: 220);
 
         if (!_playerHealth.IsDead && _loop.Clock.TickCount >= _playerHitQuietUntil)
         {
