@@ -183,6 +183,13 @@ public sealed class SettingsScreen : ShellScreen
                 }
             }
 
+            // A scrolled wheel is a control like a pressed button; the scroll view stays still
+            // because the listening branch returns before the base input scrolls it.
+            if (row.IsListening && input.Mouse.WheelDelta != 0f)
+            {
+                row.TryCaptureMouseWheel(input.Mouse.WheelDelta);
+            }
+
             if (!row.IsListening)
             {
                 _armingBindingRow = null;
@@ -578,7 +585,7 @@ public sealed class SettingsScreen : ShellScreen
             KeyCode current = InputBindingKeyNames.TryParseKeyboardKey(binding.Key, out KeyCode parsed) ? parsed : KeyCode.None;
             var row = new KeyBindingRow(theme, binding.Action, current, InputBindingKeyNames.DisplayName(binding))
             {
-                Tooltip = $"Press this row, then a key or mouse button, to rebind {binding.Action}.",
+                Tooltip = $"Press this row, then a key, mouse button or wheel scroll, to rebind {binding.Action}.",
             };
 
             row.BindingChanged += key =>
@@ -593,6 +600,15 @@ public sealed class SettingsScreen : ShellScreen
             row.MouseBindingChanged += button =>
             {
                 int conflict = profile.RebindMouseButton(index, button);
+                RefreshBindingRow(bindingRows[index], profile.Bindings[index]);
+                if (conflict >= 0)
+                {
+                    RefreshBindingRow(bindingRows[conflict], profile.Bindings[conflict]);
+                }
+            };
+            row.MouseWheelBindingChanged += direction =>
+            {
+                int conflict = profile.RebindMouseWheel(index, direction);
                 RefreshBindingRow(bindingRows[index], profile.Bindings[index]);
                 if (conflict >= 0)
                 {

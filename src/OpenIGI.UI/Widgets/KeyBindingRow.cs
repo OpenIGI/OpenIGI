@@ -41,6 +41,9 @@ public class KeyBindingRow : Control
     /// <summary>Raised when the action is rebound to a mouse button.</summary>
     public event Action<MouseButton>? MouseBindingChanged;
 
+    /// <summary>Raised when the action is rebound to a mouse-wheel notch: +1 up, -1 down.</summary>
+    public event Action<int>? MouseWheelBindingChanged;
+
     /// <summary>Gets or sets the action name.</summary>
     public string Action { get; set; }
 
@@ -103,6 +106,24 @@ public class KeyBindingRow : Control
         BoundKey = KeyCode.None;
         BoundKeyName = $"Mouse Button {(int)button + 1}";
         MouseBindingChanged?.Invoke(button);
+        return true;
+    }
+
+    /// <summary>Feeds mouse-wheel motion to a listening row, binding the scrolled direction.</summary>
+    /// <param name="delta">This frame's wheel motion in notches: positive is up.</param>
+    /// <returns><see langword="true"/> when the row consumed the motion.</returns>
+    public bool TryCaptureMouseWheel(float delta)
+    {
+        if (!IsListening || delta == 0f)
+        {
+            return false;
+        }
+
+        IsListening = false;
+        int direction = delta > 0f ? 1 : -1;
+        BoundKey = KeyCode.None;
+        BoundKeyName = direction > 0 ? "Mouse Wheel Up" : "Mouse Wheel Down";
+        MouseWheelBindingChanged?.Invoke(direction);
         return true;
     }
 
