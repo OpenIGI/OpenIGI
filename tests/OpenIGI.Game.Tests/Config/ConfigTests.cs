@@ -53,6 +53,38 @@ public sealed class ConfigTests
         Assert.All(config.Profiles, profile => Assert.Equal(PlayerProfile.BindingCount, profile.Bindings.Count));
     }
 
+    [Fact]
+    public void ARemappedBindingSurvivesASaveReloadCycleAndDrivesGameplayResolution()
+    {
+        // Issue #230: the exact player scenario — remap in Controls, save, relaunch, and the new
+        // key must drive the action while the old one no longer does.
+        GameConfig config = GameConfig.CreateDefault();
+        PlayerProfile profile = config.Active!;
+        int moveIndex = profile.Bindings.FindIndex(
+            binding => string.Equals(binding.Action, "MoveLeft", StringComparison.OrdinalIgnoreCase));
+        Assert.InRange(moveIndex, 0, profile.Bindings.Count - 1);
+        Assert.True(
+            InputBindingKeyNames.TryParseKeyboardKey(profile.Bindings[moveIndex].Key, out KeyCode previous));
+        Assert.NotEqual(KeyCode.F, previous); // F is unbound in the defaults, so no swap interferes.
+
+        Assert.Equal(-1, profile.RebindKeyboard(moveIndex, KeyCode.F));
+
+        GameConfig reloaded = ConfigScript.Load(ConfigScriptWriter.Write(config));
+        PlayerProfile restored = reloaded.Profiles[config.ActiveIndex];
+
+        Assert.Equal(InputBindingKeyNames.ToRetailKeyboardKey(KeyCode.F), restored.Bindings[moveIndex].Key);
+
+        var fresh = new InputState();
+        fresh.BeginFrame();
+        fresh.Keyboard.SetKey(KeyCode.F, down: true);
+        Assert.True(PlayerProfileInputBindings.IsDown(restored, fresh, "MoveLeft"));
+
+        var stale = new InputState();
+        stale.BeginFrame();
+        stale.Keyboard.SetKey(previous, down: true);
+        Assert.False(PlayerProfileInputBindings.IsDown(restored, stale, "MoveLeft"));
+    }
+
     [RequiresGameDataFact]
     public void WhatIsWrittenReadsBackIdentically()
     {
