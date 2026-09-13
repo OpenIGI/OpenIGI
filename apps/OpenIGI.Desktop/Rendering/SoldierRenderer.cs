@@ -736,6 +736,14 @@ public sealed class SoldierRenderer : IDisposable
     /// <summary>The most see-through layers a single sight probe steps through before giving up.</summary>
     private const int SightSkipLimit = 8;
 
+    /// <summary>Adapts the shared world trace for AI sight without solidifying authored portals.</summary>
+    /// <remarks>
+    /// MEF portal faces describe doorway and window openings; they are not physical cover. Actual
+    /// closed door leaves remain ordinary collision geometry and still block this cast.
+    /// </remarks>
+    internal static WorldRayCast AiSightCast(WorldTraceCast cast) =>
+        WorldTrace.AsRayCast(cast, WorldTraceMask.World, tracePortals: false);
+
     /// <summary>Whether the eye can see a point, treating glass and fences as non-occluding.</summary>
     /// <remarks>
     /// The retail detector culls by sector/portal visibility, which see-through surfaces do not bound.
@@ -774,7 +782,10 @@ public sealed class SoldierRenderer : IDisposable
                 origin.Z + (ray.Z * fraction));
         }
 
-        return true;
+        // The traversal budget is a safety bound, not evidence that the remainder is clear. One
+        // final query distinguishes a genuinely clear remainder from a wall, but does not step
+        // through a ninth transparent layer.
+        return !cast(origin, to, out _);
     }
 
     /// <summary>Gets or sets the active authored cutscene transform source.</summary>
@@ -1502,18 +1513,12 @@ public sealed class SoldierRenderer : IDisposable
                 }
                 if (sight is not null)
                 {
-                    // A world hit before the target is cover. In particular, a wall enclosing the player
-                    // must not be treated as a late corner clip that leaves the player visible.
-                    brain.SetLineOfSight((from, to) =>
-                    {
-                        if (!sight(from, to, out WorldRayHit blocked))
-                        {
-                            return true;
-                        }
-
-                        double total = Length(from, to);
-                        return AiSoldier.WorldBlockerAllowsSight(total, blocked.Distance);
-                    });
+                    // HumanAI and the binocular overlay share the same transparent-surface rule. A raw
+                    // nearest-hit query stops at Level 4's material-14 window and made the village gunner
+                    // blind to a player immediately outside, even though the remainder of the ray was clear.
+                    // Step past retail Glass/Water/Fence/Ladder faces, while an ordinary wall or physical
+                    // closed-door leaf remains cover.
+                    brain.SetLineOfSight((from, to) => HasLineOfSight(sight, from, to));
                 }
 
                 // Which script this soldier runs: its own MISSION:AI/<taskid>.qvm when the level ships one,
@@ -2985,13 +2990,12 @@ public sealed class SoldierRenderer : IDisposable
                     view.Position.Y + eye.Y,
                     view.Position.Z + eye.Z);
             },
-            () =>
-            {
-                BonePose pose = view.Pose();
-                return HumanAttachPoints.AiEye < pose.BoneCount
-                    ? pose.Rotations[HumanAttachPoints.AiEye]
-                    : view.Orientation;
-            });
+            // The attachment supplies the animated eye POSITION only. Its local rotation differs by
+            // skeleton/clip and made the detector face sideways or backwards in the Level 14 retail
+            // rig. Use the stable Human orientation for the port's perception frame. This is an
+            // empirical port correction; the native snapshot matrix's exact source dataflow still
+            // requires a Windows trace or additional dual-tool field analysis.
+            () => view.Orientation);
     }
 
     private static IEnumerable<GuardGeneratorTask> FindGuardGenerators(GameTask task)

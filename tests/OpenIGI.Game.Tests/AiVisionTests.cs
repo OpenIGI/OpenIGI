@@ -44,16 +44,19 @@ public sealed class AiVisionTests
     }
 
     [Fact]
-    public void WorldOcclusionAllowsClearSightAndBlocksBuildingWalls()
+    public void WorldOcclusionNeverTreatsSolidCoverAsTheTarget()
     {
-        Assert.Equal(1.0, AiSoldier.SightObstructionTolerance);
+        // IGI.EXE 0x489B20 reads the float at 0x534230 after the ray query. Both Ghidra and
+        // radare2 identify a real five-block function here and the retail dword is 0.790000021.
+        Assert.Equal(0.79000002, AiSoldier.SightObstructionTolerance, 8);
 
-        // No hit is a clear path. Any world hit before the mark is cover: a closed door or the
-        // far wall of a room sits at 0.8–0.99 of the segment once human hulls are out of the
-        // index (r2 0x4C4630 returns clear=1; 0.79 is only for a native ray that can hit the body).
+        // The recovered value belongs to a richer native query. This port's sight cast excludes
+        // Humans, so every finite early hit is world geometry and must remain opaque.
         Assert.True(AiSoldier.WorldBlockerAllowsSight(100.0, double.PositiveInfinity));
         Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 0.0));
         Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 50.0));
+        Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 78.9));
+        Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 79.1));
         Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 90.0));
         Assert.False(AiSoldier.WorldBlockerAllowsSight(100.0, 99.9));
 

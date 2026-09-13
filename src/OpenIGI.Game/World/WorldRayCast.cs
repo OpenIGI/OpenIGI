@@ -105,9 +105,8 @@ public enum WorldTraceHitKind
 /// Human registration so staged actors can acquire their moving parent before the scene is activated.
 /// </param>
 /// <param name="TracePortals">
-/// Whether doorway and window portal faces are solid. Human movement leaves this clear so a body
-/// walks through an opening; AI sight sets it so a closed room or an unwound door is cover. An
-/// open door registers a sight opening on the collision index so its portal becomes a hole again.
+/// Whether every doorway and window portal face is solid. Most callers leave this clear because
+/// portal polygons mark openings rather than physical cover.
 /// </param>
 /// <param name="IgnoredPlacement">One exact placed mesh to skip, without skipping its sibling attachments.</param>
 public readonly record struct WorldTraceRequest(
@@ -237,7 +236,11 @@ public static class WorldTrace
         return (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
         {
             bool found = cast(
-                new WorldTraceRequest(origin, end, mask, TracePortals: tracePortals),
+                new WorldTraceRequest(
+                    origin,
+                    end,
+                    mask,
+                    TracePortals: tracePortals),
                 out WorldTraceHit rich);
             hit = found ? rich.RayHit : default;
             return found;

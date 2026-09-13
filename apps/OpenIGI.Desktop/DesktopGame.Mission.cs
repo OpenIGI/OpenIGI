@@ -746,10 +746,9 @@ internal sealed partial class DesktopGame
                 // 0x4CDB20 does (both of the sight ray's passes send the -1 mask whose sign bit turns
                 // the terrain arm on -- player.md 7.6). Objects alone let guards see and shoot through
                 // hills. Nearest contact wins.
-                // Movement still skips portal faces (walk through a doorway). Sight must not:
-                // those faces are the room/window openings, and skipping them lets a guard see
-                // through a closed door and into the room on the other side.
-                WorldRayCast levelCast = WorldTrace.AsRayCast(worldTrace, tracePortals: true);
+                // Portal faces describe openings, not cover. Physical walls, terrain and the actual
+                // collision mesh of a closed door still participate in the AI sight cast.
+                WorldRayCast levelCast = SoldierRenderer.AiSightCast(worldTrace);
 
                 // The level's sun has to be known BEFORE the bakes below, not after: the Dirlight was read
                 // some hundreds of lines further down (the `if (!promoted)` block), so every probe field and
@@ -1352,7 +1351,7 @@ internal sealed partial class DesktopGame
                         _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal,
                         (int)AiDifficulty.Easy,
                         (int)AiDifficulty.Hard);
-                WorldRayCast levelCast = WorldTrace.AsRayCast(worldTrace, tracePortals: true);
+                WorldRayCast levelCast = SoldierRenderer.AiSightCast(worldTrace);
                 _soldiers.Animate(
                     graphs, levelCast, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty,
                     _loop.Variables);

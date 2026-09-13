@@ -55,6 +55,35 @@ public sealed class AiSoldierCombatWiringTests
         Assert.True(fired, $"the soldier engaged and never pulled the trigger (phase {soldier.CombatPhase})");
     }
 
+    /// <summary>A solid world blocker near the target must not drive the combat handoff.</summary>
+    [RequiresGameDataFact]
+    public void ALateWorldBlockerStillOccludesTheTarget()
+    {
+        AiSoldier soldier = Soldier(out Vector3d position);
+        soldier.SetLineOfSight((from, to) =>
+        {
+            double dx = to.X - from.X;
+            double dy = to.Y - from.Y;
+            double dz = to.Z - from.Z;
+            double distance = Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
+            return AiSoldier.WorldBlockerAllowsSight(distance, distance * 0.9);
+        });
+        Vector3d enemy = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
+
+        bool sawIt = false;
+        bool fired = false;
+        for (int tick = 1; tick <= 300; tick++)
+        {
+            soldier.Tick(tick, enemy, rootMotionThisTick: 0.0);
+            Spend(soldier);
+            sawIt |= soldier.SeesEnemy;
+            fired |= soldier.Combat.PullTrigger;
+        }
+
+        Assert.False(sawIt, "a solid world blocker at 90% of the segment became transparent");
+        Assert.False(fired, "the soldier fired through solid world geometry");
+    }
+
     [RequiresGameDataFact]
     public void VisibleEngagementRequestsExactlyOneDetectionShout()
     {
@@ -123,21 +152,16 @@ public sealed class AiSoldierCombatWiringTests
     }
 
     /// <summary>
-    /// A <b>scripted</b> soldier re-arms its combat behaviour when it sees the target again — the case
-    /// the scriptless fallback hid.
+    /// A soldier running the shipped guard QVM re-arms its combat behaviour when it sees the target again.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <c>AIEVENT_COMBAT</c> is what installs the combat action: every archetype answers it with
-    /// <c>AIFunction_DefaultHandler</c>, and <c>0x44E060</c> hands the event back to the engine, which
-    /// reaches <c>AIAction_Combat</c> (<c>0x44D160</c>). The port used to install the arm only when a
-    /// script <i>produced</i> the action — which no archetype does — so only soldiers with <b>no</b>
-    /// script ever armed it, and every real, scripted guard whose machine had ended stood there
-    /// "Engaging" and never fired again.
+    /// <c>AIEVENT_ENEMYDETECTION</c> produces <c>AIAction_SetCombat</c>; that posts
+    /// <c>AIEVENT_COMBAT</c>, whose shipped guard branch produces <c>AIAction_Combat</c>. This test uses
+    /// the retail QVM so an invented empty handler cannot justify bypassing authored mission scripts.
     /// </para>
     /// <para>
-    /// The script here is the archetype's own shape: answer everything with the default handler, so it
-    /// produces no action at all.
+    /// The script must remain the authority for installing the combat action.
     /// </para>
     /// </remarks>
     [RequiresGameDataFact]
@@ -145,10 +169,16 @@ public sealed class AiSoldierCombatWiringTests
     {
         AiSoldier soldier = Soldier(out Vector3d position);
 
-        // The archetype's answer to every event: the default handler, producing nothing.
         NativeRegistry natives = new();
+        natives.RegisterConstant("TRUE", 1);
+        natives.RegisterConstant("FALSE", 0);
+        natives.RegisterConstant("GAME_FREQUENCY", 30);
+        natives.RegisterRealConstant("WORLD_METER", 4096.0);
+        natives.RegisterRealConstant("MATH_PI", Math.PI);
         AiScriptHost host = new(natives);
-        soldier.SetScript(host, DefaultHandlerScript());
+        QvmProgram guard = QvmProgram.Read(File.ReadAllBytes(Path.Combine(
+            GameData.RequireRoot(), "common", "ai", "guard.qvm")));
+        soldier.SetScript(host, guard);
 
         Vector3d enemy = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
         Vector3d gone = new(position.X, position.Y + (5000 * Metre), position.Z);
@@ -181,17 +211,6 @@ public sealed class AiSoldierCombatWiringTests
             firedAgain,
             $"the scripted soldier saw the target again and never fired (activity {soldier.Activity}, "
                 + $"phase {soldier.CombatPhase})");
-    }
-
-    // A script shaped like every shipped archetype's: one call to the default handler, no action.
-    // The host registers every AI native itself, so nothing is registered here.
-    private static QvmProgram DefaultHandlerScript()
-    {
-        QvmWriter writer = new();
-        writer.PushSymbol("AIFunction_DefaultHandler");
-        writer.Code.Call([]);
-        writer.Code.Emit(QvmOpcode.Brk);
-        return QvmProgram.Read(writer.Build());
     }
 
     /// <summary>A soldier given no combat row falls back to standing and facing, as it did before.</summary>
