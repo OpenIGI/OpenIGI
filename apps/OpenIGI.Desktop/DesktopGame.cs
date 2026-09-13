@@ -46,9 +46,11 @@ internal sealed partial class DesktopGame : IDisposable
         WriteIndented = true,
     };
 
-    // The camera's far plane -- the original's HumanView far distance. Shared with the sky, which sizes
-    // its dome from it, and with the terrain traversal, which culls against the same frustum.
-    private const float FarPlane = 4000f;
+    // The camera's clip planes, both measured out of the original's own renderer setup -- see
+    // ViewPlanes. The far one is shared with the sky, which sizes its dome to four fifths of it exactly
+    // as sub_52CC40 does, and with the first-person layer's shallower projection.
+    private const float NearPlane = ViewPlanes.NearMetres;
+    private const float FarPlane = ViewPlanes.FarMetres;
 
     // How long a load will hold for the lighting before giving up and letting the player in anyway. A
     // level that somehow never finishes tracing must not become a game that never starts.
@@ -71,6 +73,7 @@ internal sealed partial class DesktopGame : IDisposable
 
     // --- Services built during startup ---
     private ResourceRegistry _resources = null!;
+    private ResourceOverrides _overrides = null!;
 
     // Normally the session file system above. A promoted preview brings a registry backed by its own
     // private file system, while long-lived services such as audio stay on the session one. Mission
@@ -105,6 +108,11 @@ internal sealed partial class DesktopGame : IDisposable
     private AnimTriggerRegistry? _animationTriggers;
     private MaterialLibrary _materials = null!;
     private MaterialDetailPack _detailMaps = null!;
+
+    // Whether the renderer is currently holding the pack, against r_hd's request. Tracked rather than
+    // read, because acting on it means reloading every texture in the level -- so it has to happen on the
+    // frame the variable CHANGES and not on every frame it is false.
+    private bool _overridesApplied = true;
 
     // --- The player's own life, damage and death ---
     private int _playerDifficulty;
@@ -286,6 +294,10 @@ internal sealed partial class DesktopGame : IDisposable
     private WorldRenderer? _world;
     private TerrainRenderer? _terrain;
     private SkyRenderer? _sky;
+
+    // The level's own GlobalLight keyframe: the fog the ground and the models are drawn into, and the
+    // flat light a model with no lightmap wears. Read once per level, used every frame.
+    private GlobalLightSettings _globalLight = GlobalLightSettings.None;
     private RainRenderer? _rain;
     private StormRenderer? _storm;
     private SnowRenderer? _snow;
@@ -507,6 +519,24 @@ internal sealed partial class DesktopGame : IDisposable
         _resourceFileSystem = _fileSystem;
         _resources = new(_resourceFileSystem, _logger);
 
+        // The overrides folder, beside the game's own directories. Anything dropped in there replaces the
+        // asset that lives at the same path in the installation -- an archived texture by the directory
+        // its archive sits in, a loose file by its own path -- so a replacement pack is just the game
+        // folder with the files somebody changed and nothing else.
+        _overrides = new ResourceOverrides(
+            _resourceFileSystem.TryGetDevice(LocalFileDevice.DeviceName, out IFileDevice? local)
+                && local is LocalFileDevice localDevice
+                    ? Path.Combine(localDevice.RootDirectory, ResourceOverrides.DirectoryName)
+                    : null,
+            _logger);
+
+        _resources.Overrides = _overrides;
+
+        // Scanned here, because the archives mounted below consult it -- but REPORTED after the console
+        // has started, because until then the log verbosity the player configured has not been applied
+        // and an information line goes nowhere anybody can see.
+        ResourceOverrides.ScanResult overrideScan = _overrides.Rescan();
+
         // menusystem.res holds the menu's own labels; missions.res holds the mission names and briefings,
         // because a descriptor's "Mission 1 Name" is a key into it rather than the title itself.
         //
@@ -591,9 +621,12 @@ internal sealed partial class DesktopGame : IDisposable
         // the command already there.
         RegisterLampCommands(console.System);
         RegisterImpactCommands(console.System);
+        RegisterCameraCommands(console.System);
+        RegisterOverrideCommands(console.System);
 
         console.Start(_fileSystem, _options.StartupCommands, useSavedSettings: !_options.Lockstep);
         _logger = console.WrapLogger(_logger);
+        ReportOverrideScan(overrideScan);
 
         WarnAboutSettingsTheBackendIgnores();
 
@@ -953,7 +986,7 @@ internal sealed partial class DesktopGame : IDisposable
             _logger);
 
         // The derived surface detail this game never shipped -- normals, roughness, metal. Built by
-        // `ResExtract maps` and pointed at by r_material_pack; an installation that has never run the tool
+        // derived here for anything no replacement carries a map for; an installation that has never run a tool
         // has none, and renders exactly as it did before any of this existed.
         //
         // Constructed once for the whole session rather than per level, because a texture pack is shared
@@ -966,9 +999,17 @@ internal sealed partial class DesktopGame : IDisposable
         // per-user data, and because the game's art with a filter over it is not ours to redistribute.
         _detailMaps = new(
             _device,
-            RenderCVars.MaterialPack.Value,
             _logger,
             Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "detail"));
+
+        // Set HERE as well as on the frame, and the difference only shows on the path a capture takes.
+        // The loop assigns this every pass so that turning r_material_detail up mid-session starts
+        // deriving for whatever loads next -- but a level reached with -mission loads its textures BEFORE
+        // the first pass, so every one of them saw the default of false and cached the answer "no map".
+        // A mission started from the menu never hit it, because the loop is already running by then.
+        // Measured: 27 maps derived over 600 frames of -mission, against a level's worth of textures.
+        _detailMaps.DeriveMissing = RenderCVars.MaterialDetail.Value > 0f;
+
 
         // What a menu backdrop needs to be promotable into the played mission rather than thrown away,
         // and what it needs to be LIT the way that mission will be: the lamp manifest its proposal is
@@ -2243,6 +2284,38 @@ internal sealed partial class DesktopGame : IDisposable
             // light resolves back in from nothing over the next seconds -- the way to see a change to the
             // bake without reloading the level, and to watch it generate. Ignored where there is nothing to
             // bake (GI off, or the level's scene or cast not yet set up).
+            // F8 puts the overrides folder in and out of the frame. Watched as a VARIABLE rather than as
+            // a key press, so `r_overrides 0` from the console does the same thing as the key -- the bind
+            // sets the variable and this notices, which is one path rather than two that must agree.
+            //
+            // Nothing happens with an empty folder: the flag is meaningful only against something to
+            // compare with, and reloading a level's textures to show the same assets again would be a
+            // long hitch for no picture.
+            if (_overridesApplied != RenderCVars.OverridesEnabled.Value && _overrides.Count > 0)
+            {
+                _overridesApplied = RenderCVars.OverridesEnabled.Value;
+                _overrides.Bypassed = !_overridesApplied;
+
+                int swapped = _resources.ReapplyOverrides();
+
+                if (swapped > 0)
+                {
+                    _world?.ReloadTextures();
+
+                    // The card atlas has the diffuse baked into it, so the indirect light is still
+                    // bouncing off the old pixels until it is captured again. Discarding it is the
+                    // existing invalidation -- the same one a density change uses -- and it re-converges
+                    // the GI with it.
+                    DiscardSurfaceCache();
+                }
+
+                _logger.Information(
+                    "Overrides",
+                    _overridesApplied
+                        ? $"Overrides on (F8); {swapped} resource(s) swapped in."
+                        : $"Overrides off (F8); {swapped} resource(s) back to the game's own.");
+            }
+
             if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F11)
                 && RenderCVars.GlobalIllumination.Value
                 && _scene is not null
@@ -3460,14 +3533,16 @@ internal sealed partial class DesktopGame : IDisposable
 
                     verticalFieldOfView = mapView.FieldOfView;
                 }
-                // The near plane is the original's default: 0x493580 initialises it to 409.6 units, which
-                // is 0.1 m. (Scripts can move it through the SetNearClippingPlane native, 0x497D00.) At
-                // 0.2 the plane reached twice as far as retail's and cut into any wall the sweep lets the
-                // body stand 2.5 mm from.
+                // Both planes are the original's own: 0x493580 initialises the near one to 409.6 units,
+                // which is 0.1 m, and the far one to 409,600,000, which is 100 km. (Scripts can move the
+                // near plane through the SetNearClippingPlane native, 0x497D00.) At 0.2 the near plane
+                // reached twice as far as retail's and cut into any wall the sweep lets the body stand
+                // 2.5 mm from; at the 4000 m the far plane carried since the first fly-through, every
+                // mountain past four kilometres was clipped away. See ViewPlanes.
                 Matrix4f unjitteredProjection = Matrix4f.CreatePerspective(
                     verticalFieldOfView,
                     aspectRatio,
-                    near: 0.1f,
+                    near: NearPlane,
                     far: FarPlane);
 
                 // Temporal accumulation works by sampling a different point inside each pixel every frame
@@ -3762,7 +3837,7 @@ internal sealed partial class DesktopGame : IDisposable
                 // feeds straight back into the cycle, the same knob the numpad keys turn.
                 _sunGizmo.Update(
                     eye,
-                    DepthUnprojection.From(unjitteredProjection, 0.1f, FarPlane),
+                    DepthUnprojection.From(unjitteredProjection, NearPlane, FarPlane),
                     light.Direction,
                     _window.Width,
                     _window.Height,
@@ -3804,13 +3879,13 @@ internal sealed partial class DesktopGame : IDisposable
                     shadowSettings,
                     verticalFieldOfView,
                     aspectRatio,
-                    0.1f,
+                    NearPlane,
                     cascadeStorage);
 
                 _device.SetShadows(
                     shadowSettings,
                     cascadeStorage.AsSpan(0, cascadeCount),
-                    DepthUnprojection.From(unjitteredProjection, 0.1f, FarPlane),
+                    DepthUnprojection.From(unjitteredProjection, NearPlane, FarPlane),
 
                     // View space back into camera-relative world space, which is the frame the cascades
                     // are fitted in. The same transpose, for the same reason.
@@ -4102,8 +4177,15 @@ internal sealed partial class DesktopGame : IDisposable
 
                 // The derived detail is a deferred-path feature: it changes the normal and the roughness
                 // written into the G-buffer, and without one there is nothing to write them into.
+                //
+                // r_pbr (F9) multiplies the authored strength by one or zero rather than replacing it, so
+                // the maps can be taken out of the frame and put back without disturbing what the preset
+                // chose. Read here, every frame, because that is what makes it instant: nothing is
+                // unloaded and nothing is rebuilt -- the shader simply stops scaling its slope by it.
                 _device.SetMaterialDetail(
-                    RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
+                    RenderCVars.OffscreenScene.Value
+                    && RenderCVars.Deferred.Value
+                    && RenderCVars.MaterialDetailEnabled.Value
                         ? RenderCVars.MaterialDetail.Value
                         : 0f);
                 _device.SetFloorGloss(
@@ -4276,6 +4358,18 @@ internal sealed partial class DesktopGame : IDisposable
                 // horizon across the middle of the frame and only reaches straight down at the top, so
                 // dropping the sky for the whole of it would leave the first half of the shot rising out
                 // of a black void.
+                // The level's own distance fog, which the whole world below is drawn into, and its flat
+                // model light. Set before the sky, because the sky renderer puts back whatever it finds
+                // here after drawing its unfogged dome. The modern tiers leave the fog off and march the
+                // same authored haze through the froxel volume instead, and their models are lit by the
+                // G-buffer pass rather than by this one.
+                bool retailFog = RenderCVars.RetailFog.Value;
+                _device.SetFog(retailFog ? _globalLight.ObjectFog : SceneFog.None);
+                _device.SetModelAmbient(
+                    EffectiveLighting == LightingModel.Baked
+                        ? _globalLight.ObjectAmbient
+                        : GlobalLightSettings.DefaultAmbient);
+
                 if (mapScene is null || _computerFlight.IsFlying)
                 {
                     // Warm the sky dome towards the horizon as the sun sinks, so a window shows a golden dusk
@@ -4313,6 +4407,14 @@ internal sealed partial class DesktopGame : IDisposable
                     _terrain.CacheLimit = RenderCVars.TerrainCache.Value;
                 }
 
+                // The ground is drawn through its own band of the same keyframe. Retail keeps two --
+                // "terrain" and "object category 1" -- and publishes them to different globals; every
+                // shipping level happens to author them alike, which is not a reason to draw them alike.
+                if (retailFog)
+                {
+                    _device.SetFog(_globalLight.TerrainFog);
+                }
+
                 _terrain?.Draw(
                     eye,
                     projection,
@@ -4325,6 +4427,11 @@ internal sealed partial class DesktopGame : IDisposable
                     GraphicsPresetRegistry.Default.Current != GraphicsPreset.Vanilla,
                     RenderCVars.TerrainOcclusion.Value);
                 EndStageIfSlow("the terrain");
+
+                if (retailFog)
+                {
+                    _device.SetFog(_globalLight.ObjectFog);
+                }
 
                 // With the world and the terrain both in the depth buffer, the world's occlusion
                 // queries can be answered honestly: walls hide the outdoors, and hills hide buildings.
@@ -4566,7 +4673,7 @@ internal sealed partial class DesktopGame : IDisposable
                             liveGiField,
                             _device.SceneDepth,
                             _device.SceneNormal,
-                            DepthUnprojection.From(unjitteredProjection, 0.1f, FarPlane),
+                            DepthUnprojection.From(unjitteredProjection, NearPlane, FarPlane),
                             eye.Orientation.Transposed(),
                             giCameraToCache,
                             giSourceWidth,
@@ -4658,7 +4765,7 @@ internal sealed partial class DesktopGame : IDisposable
                         giRead,
                         _device.SceneDepth,
                         _device.SceneNormal,
-                        DepthUnprojection.From(unjitteredProjection, 0.1f, FarPlane),
+                        DepthUnprojection.From(unjitteredProjection, NearPlane, FarPlane),
                         eye.Orientation.Transposed(),
                         giCameraToCache,
                         giResolvePrevWorldToView,
@@ -5721,6 +5828,7 @@ internal sealed partial class DesktopGame : IDisposable
                         // produced it, and the answer is two cvars deep -- r_rt_shadows does nothing
                         // while r_rt is off, and neither means anything with shadows turned off.
                         I($"shadow   {ShadowModeLabel()}"),
+                        I($"texture  {TextureModeLabel()}"),
                         I($"fps {frame.FramesPerSecond:0.0}  frame {frame.AverageMilliseconds:0.00} ms  1% {frame.OnePercentLowFramesPerSecond:0.0}"),
 
                         // The whole GPU frame measured end to end, against the sum of the stages listed
@@ -6434,6 +6542,33 @@ internal sealed partial class DesktopGame : IDisposable
 
         return FormattableString.Invariant(
             $"gpu      {measured.Milliseconds:0.00} measured   {summed.Milliseconds:0.00} summed   lost {measured.Milliseconds - summed.Milliseconds:0.00}");
+    }
+
+    /// <summary>What the remaster's two asset features are doing, and the keys that move them.</summary>
+    /// <remarks>
+    /// Both are comparison switches, so the thing worth saying is which side of the comparison is on
+    /// screen right now — a frame is worth nothing as evidence if you cannot tell which picture it is.
+    /// Spelled out with the keys for the same reason <see cref="ShadowModeLabel"/> is: the answer is two
+    /// variables deep, and "no overrides present" looks exactly like "overrides turned off" in the picture.
+    /// </remarks>
+    private string TextureModeLabel()
+    {
+        string upscaled = _overrides.Count == 0
+            ? "original (no overrides folder)"
+            : RenderCVars.OverridesEnabled.Value
+                ? $"{_resources.OverriddenCount} override(s) [F8 for the originals]"
+                : $"original [F8 for the {_overrides.Count} override(s)]";
+
+        // Zero at every preset but high, so "off" here is usually the authored answer rather than a key
+        // somebody pressed -- worth distinguishing, because the maps look identical to absent when the
+        // strength is nothing.
+        string detail = RenderCVars.MaterialDetail.Value <= 0f
+            ? "no detail (r_material_detail is 0)"
+            : RenderCVars.MaterialDetailEnabled.Value
+                ? $"detail {RenderCVars.MaterialDetail.Value:0.##} [F9 off]"
+                : $"detail off [F9 back to {RenderCVars.MaterialDetail.Value:0.##}]";
+
+        return $"{upscaled}, {detail}";
     }
 
     private string ShadowModeLabel()

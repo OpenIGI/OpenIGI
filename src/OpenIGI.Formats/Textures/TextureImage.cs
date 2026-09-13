@@ -23,6 +23,45 @@ public sealed class TextureImage
         _levelOffsets = levelOffsets;
     }
 
+    /// <summary>Wraps already-decoded pixels as a single-level texture.</summary>
+    /// <param name="width">The image width in pixels.</param>
+    /// <param name="height">The image height in pixels.</param>
+    /// <param name="pixels">The image, row-major, <paramref name="width"/> per row.</param>
+    /// <returns>The image as a texture with one level, ready to have a chain built onto it.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="pixels"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">A dimension is not positive.</exception>
+    /// <exception cref="ArgumentException"><paramref name="pixels"/> is too small.</exception>
+    /// <remarks>
+    /// For pixels that came from somewhere other than a <c>.tex</c> — an upscaled replacement read off
+    /// disk, a test fixture — so that everything downstream of the decode is reached by exactly one path.
+    /// The correction sequence a texture needs (classify the cut-out, widen its alpha, build the chain,
+    /// preserve its coverage) is load-bearing for every fence and canopy in the game, and a second entry
+    /// point that skipped it would be a second, subtly different renderer.
+    /// </remarks>
+    public static TextureImage FromPixels(int width, int height, Bgra32[] pixels)
+    {
+        ArgumentNullException.ThrowIfNull(pixels);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+
+        if (width > int.MaxValue / height)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(width),
+                "The dimensions describe more pixels than this process can address.");
+        }
+
+        int count = width * height;
+
+        if (pixels.Length < count)
+        {
+            throw new ArgumentException(
+                $"A {width}x{height} image needs {count} pixels, got {pixels.Length}.", nameof(pixels));
+        }
+
+        return new TextureImage(width, height, 1, pixels, [0]);
+    }
+
     /// <summary>
     /// Returns this texture with a complete mip chain, building one if it shipped without.
     /// </summary>
@@ -111,7 +150,7 @@ public sealed class TextureImage
     {
         ArgumentOutOfRangeException.ThrowIfNegative(level);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(level, MipLevels);
-        return (Width >> level, Height >> level);
+        return (Math.Max(1, Width >> level), Math.Max(1, Height >> level));
     }
 
     /// <summary>Gets one mip level's pixels.</summary>

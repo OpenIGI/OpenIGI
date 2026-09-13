@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Rendering;
@@ -50,7 +51,7 @@ public sealed class TextureDecodeCache
     /// </remarks>
     internal static int MaxDecodeThreads => Math.Max(1, Environment.ProcessorCount / 2);
 
-    private readonly ConcurrentDictionary<string, Lazy<TextureImage?>> _images =
+    private readonly ConcurrentDictionary<string, Lazy<Decoded?>> _images =
         new(StringComparer.OrdinalIgnoreCase);
 
     private TextureDecodeCache()
@@ -77,12 +78,14 @@ public sealed class TextureDecodeCache
     /// working out which by walking geometry would cost more than decoding the few extra.
     /// </remarks>
     public static TextureDecodeCache StartFor(
-        ResourceRegistry resources, float cutoff, MaterialDetailPack? detail = null)
+        ResourceRegistry resources,
+        float cutoff,
+        MaterialDetailPack? detail = null)
     {
         ArgumentNullException.ThrowIfNull(resources);
 
         TextureDecodeCache cache = new();
-        List<Lazy<TextureImage?>> pending = [];
+        List<Lazy<Decoded?>> pending = [];
         List<string> names = [];
 
         foreach (ResourceEntry entry in resources.Entries)
@@ -99,8 +102,8 @@ public sealed class TextureDecodeCache
             // Lazy rather than a bare task, so the render thread asking for one the pool has not reached
             // decodes it itself instead of queueing behind everything else, and one already in flight is
             // waited for rather than done twice.
-            Lazy<TextureImage?> lazy = new(
-                () => Decode(bytes, cutoff), LazyThreadSafetyMode.ExecutionAndPublication);
+            Lazy<Decoded?> lazy = new(
+                () => Decode(name, bytes, cutoff), LazyThreadSafetyMode.ExecutionAndPublication);
 
             if (cache._images.TryAdd(name, lazy))
             {
@@ -133,23 +136,46 @@ public sealed class TextureDecodeCache
     /// memory between them and the caller is about to put the only copy that matters on the GPU, so
     /// holding them after that would be keeping every texture of every backdrop ever shown.
     /// </remarks>
-    public bool TryTake(string name, out TextureImage? image)
+    public bool TryTake(string name, out TextureImage? image) =>
+        TryTake(name, out image, out _);
+
+    /// <summary>Takes a decoded texture and the surface map its asset carried, if any.</summary>
+    /// <param name="name">The bare texture name, without the resource prefix or extension.</param>
+    /// <param name="image">The decoded image, or <see langword="null"/> when there is none to be had.</param>
+    /// <param name="detail">The packed surface map the asset carried, or <see langword="null"/>.</param>
+    /// <returns><see langword="true"/> when the cache owned this name, whether or not it decoded.</returns>
+    public bool TryTake(string name, out TextureImage? image, out TextureImage? detail)
     {
-        if (!_images.TryRemove(name, out Lazy<TextureImage?>? lazy))
+        if (!_images.TryRemove(name, out Lazy<Decoded?>? lazy))
         {
             image = null;
+            detail = null;
             return false;
         }
 
-        image = lazy.Value;
+        Decoded? decoded = lazy.Value;
+        image = decoded?.Image;
+        detail = decoded?.Detail;
         return true;
     }
 
-    private static TextureImage? Decode(ReadOnlyMemory<byte> bytes, float cutoff)
+    /// <summary>A decoded surface: the chain to upload, and the map the asset carried with it.</summary>
+    /// <param name="Image">The diffuse, corrected and mipped.</param>
+    /// <param name="Detail">The packed surface map, or <see langword="null"/> when the asset had none.</param>
+    internal readonly record struct Decoded(TextureImage Image, TextureImage? Detail);
+
+    private static Decoded? Decode(
+        string name, ReadOnlyMemory<byte> bytes, float cutoff)
     {
         try
         {
-            TextureImage image = TexFile.Load(bytes.Span);
+            // The game's own texture, or whatever the overrides folder put in its place -- the
+            // substitution happens in the resource registry now, so by the time bytes reach here they are
+            // already the ones that should be drawn and this path does not need to know which. It does
+            // need to know the FORM: a replacement may carry its derived surface map as a second layer,
+            // and that map has to travel with the picture rather than be looked up separately.
+            SurfaceAsset asset = SurfaceAssetReader.Read(bytes.Span);
+            TextureImage image = asset.Diffuse;
 
             // The same sequence WorldRenderer.GetTexture ran inline, in the same order and for the same
             // reasons -- classify the cut-out from level zero before the alpha is touched, widen it,
@@ -160,7 +186,12 @@ public sealed class TextureDecodeCache
             image.WidenCutoutAlpha(cutoff);
             image = cutout ? image.RebuildMipChain() : image.WithMipChain();
             image.PreserveAlphaCoverage(cutoff);
-            return image;
+
+            // The map is NOT put through that sequence. It is not a picture: its channels are a normal's
+            // x and y, a roughness and an occlusion, so widening an alpha cutoff in it would corrupt the
+            // occlusion and rebuilding its chain in display-encoded space would bias every level. The
+            // device builds its chain linearly when it uploads.
+            return new Decoded(image, asset.Detail);
         }
         catch (Exception ex) when (ex is TextureFormatException or ArgumentException)
         {

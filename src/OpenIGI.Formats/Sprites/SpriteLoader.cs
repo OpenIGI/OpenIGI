@@ -53,6 +53,12 @@ public static class SpriteLoader
         }
 
         uint version = TexFile.ReadVersion(span);
+
+        if (version == PackPicture.Version)
+        {
+            return LoadPack(data, name);
+        }
+
         return version switch
         {
             1 => LoadLoop1(span, name),
@@ -63,6 +69,63 @@ public static class SpriteLoader
                 + "\"The font '%s' must be packed.\" — no retail file uses it."),
             _ => throw new TextureFormatException($"Invalid sprite file '{name}': unknown 'LOOP' version {version}."),
         };
+    }
+
+    /// <summary>Loads the container a generated pack writes.</summary>
+    /// <remarks>
+    /// <para>
+    /// The frames come back at whatever resolution the pack produced, and every size this reports is the
+    /// LOGICAL one the container recorded beside them. That is the whole point of the extra field. The
+    /// menu measures its logo as <c>grid.Columns * Frames[0].Width</c>, so a frame that answered with
+    /// its pixel width would draw a four-times picture four times too large — a sharper menu has to stay
+    /// a menu of the same shape.
+    /// </para>
+    /// <para>
+    /// Flags follow the retail branches: <c>0x10000</c> for a single frame, nothing for several.
+    /// </para>
+    /// </remarks>
+    private static SpriteAsset LoadPack(ReadOnlyMemory<byte> data, string name)
+    {
+        PackPicture.Content content = PackPicture.Read(data);
+
+        TextureImage[] textures = new TextureImage[content.Frames.Count];
+        SpriteFrame[] frames = new SpriteFrame[content.Frames.Count];
+
+        for (int i = 0; i < content.Frames.Count; i++)
+        {
+            PackPicture.Frame frame = content.Frames[i];
+
+            textures[i] = frame.Image;
+            frames[i] = new SpriteFrame(
+                i,
+                frame.LogicalWidth,
+                frame.LogicalHeight,
+                frame.OffsetX,
+                frame.OffsetY,
+                frame.Advance,
+                0,
+                0.0f,
+                0.0f,
+                1.0f,
+                1.0f);
+        }
+
+        SpriteTileLayout? layout = content.GridColumns > 0 && content.GridRows > 0
+            ? new SpriteTileLayout(content.GridColumns, content.GridRows, content.GridCells.ToArray())
+            : null;
+
+        return new SpriteAsset(
+            name,
+            SpriteKind.Loop9,
+            textures,
+            frames,
+            content.LogicalWidth,
+            content.LogicalHeight,
+            0,
+            frames.Length == 1 ? 0x10000u : 0u,
+            palette: null,
+            characterMap: null,
+            layout);
     }
 
     /// <summary>Loads an ILFF <c>FONT</c> container.</summary>

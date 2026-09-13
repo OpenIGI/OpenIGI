@@ -118,3 +118,10 @@ BenchmarkDotNet.Artifacts/
 # proprietary redistributables and this repository is GPL-3.0, so an accidental `git add -A` must not
 # be able to pull one in.
 third-party/
+
+# Python. The repository had no Python dependency before tools/texture-forge, so this section starts here.
+# uv.lock IS committed -- it is what makes a run reproducible; the environment it builds is not.
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/

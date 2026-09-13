@@ -2,10 +2,12 @@ using System.Globalization;
 using OpenIGI.Core;
 using OpenIGI.Core.Audio;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Resources;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Legacy;
 using OpenIGI.Formats.Sound;
 using OpenIGI.Formats.Textures;
+using OpenIGI.Tools.ResExtract;
 
 return Run(args);
 
@@ -24,6 +26,7 @@ static int Run(string[] args)
             "LIST" => List(args),
             "EXTRACT" => Extract(args),
             "IMAGES" => Images(args),
+            "PACK" => Pack(args),
             "MAPS" => Maps(args),
             "SOUNDS" => Sounds(args),
             _ => Fail($"Unknown command '{args[0]}'."),
@@ -95,16 +98,19 @@ static int Extract(string[] args)
     return ExitCode.Ok;
 }
 
-// Decodes every texture found below a path and writes each one out as a PNG.
+// Writes every picture in an installation out as a PNG, with a manifest saying where each came from.
 //
-// This exists to get the game's art OUT, so that the maps a physically-based renderer needs and this
-// game never had -- normal, roughness, metallic, occlusion -- can be authored or generated against it
-// and read back in. The game's own textures are the input to that, and they are locked inside archives
-// in a format nothing else reads.
+// This exists to get the game's art OUT so it can be worked on -- upscaled, remastered, or given the
+// surface maps a physically-based renderer needs and this game never had -- and then put back through
+// `pack`. The pair is the whole point: what comes out has to carry enough about where it came from that
+// what goes back is the game's own files, in the game's own containers, at the game's own paths.
 //
-// Deduplicated by name across archives, and the reason is worth stating: the same texture is packed
-// into every level that uses it, so a naive walk over a game folder writes '203_04_1' fourteen times
-// and leaves whoever is processing them to work out that thirteen were redundant.
+// EVERY picture, established by scanning a retail installation for the "LOOP" magic rather than by
+// trusting a list of extensions: 8,232 of them in 7,388 containers, all of them either inside a .res
+// archive or in a loose .tex. The version of this command that this replaced found the 7,199 single-image
+// entries inside archives and silently passed over the rest -- which is why an upscale pack visibly
+// improved the world and left the menu, the loading screens, the HUD, the computer terminals, the sprites
+// and every square metre of ground exactly as they were.
 static int Images(string[] args)
 {
     if (args.Length != 3)
@@ -112,72 +118,83 @@ static int Images(string[] args)
         return Fail("usage: ResExtract images <archive|dir> <outdir>");
     }
 
-    string outputRoot = Path.GetFullPath(args[2]);
-    Directory.CreateDirectory(outputRoot);
+    ImageExport.Result result = ImageExport.Run(args[1], Path.GetFullPath(args[2]));
 
-    string[] archives = Directory.Exists(args[1])
-        ? [.. Directory.EnumerateFiles(args[1], "*.res", SearchOption.AllDirectories).Order(StringComparer.OrdinalIgnoreCase)]
-        : [args[1]];
-
-    HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
-    int written = 0;
-    int duplicates = 0;
-    int notTextures = 0;
-    int failed = 0;
-
-    foreach (string archive in archives)
+    foreach (string failure in result.Failures.Take(20))
     {
-        IReadOnlyList<ArchiveItem> items;
+        Console.Error.WriteLine($"warning: {failure}");
+    }
 
-        try
-        {
-            items = ReadArchive(archive);
-        }
-        catch (Exception error) when (error is IlffFormatException or FlatResourceFormatException)
-        {
-            Console.Error.WriteLine($"warning: skipping '{archive}': {error.Message}");
-            continue;
-        }
-
-        foreach (ArchiveItem item in items)
-        {
-            if (!TexFile.IsTexture(item.Data.Span))
-            {
-                notTextures++;
-                continue;
-            }
-
-            string stem = Path.GetFileNameWithoutExtension(ToRelativePath(item) ?? item.Name);
-
-            if (stem.Length == 0 || !seen.Add(stem))
-            {
-                duplicates++;
-                continue;
-            }
-
-            try
-            {
-                // Level zero only. The mip chain is the same image at lower resolutions, and whatever
-                // consumes these will build its own from whatever it produces.
-                TextureImage image = TexFile.Load(item.Data.Span);
-                PngWriter.Write(
-                    Path.Combine(outputRoot, stem + ".png"), image.GetLevel(0), image.Width, image.Height);
-                written++;
-            }
-            catch (Exception error) when (error is TextureFormatException or ArgumentException or IOException)
-            {
-                Console.Error.WriteLine($"warning: '{stem}' did not decode: {error.Message}");
-                failed++;
-            }
-        }
+    if (result.Failures.Count > 20)
+    {
+        Console.Error.WriteLine($"warning: and {result.Failures.Count - 20} more.");
     }
 
     Console.WriteLine(string.Create(
         CultureInfo.InvariantCulture,
-        $"Wrote {written} texture(s) to {outputRoot} from {archives.Length} archive(s); " +
-        $"{duplicates} repeat(s), {notTextures} non-texture entr(ies), {failed} failure(s)."));
+        $"Wrote {result.Assets} picture(s) as {result.Frames} PNG(s) to {Path.GetFullPath(args[2])}, with " +
+        $"{PackManifest.FileName}; {result.Repeats} repeat(s), {result.Failures.Count} failure(s)."));
 
-    return failed > 0 && written == 0 ? ExitCode.Failure : ExitCode.Ok;
+    return result.Assets == 0 ? ExitCode.Failure : ExitCode.Ok;
+}
+
+// Turns a worked-on PNG tree back into an overrides folder of the game's own files.
+//
+// The output goes straight into <game>/overrides: archived pictures back into an archive at the archive's
+// own path, loose ones at their own path, and the game finds every one of them by the path it already had.
+//
+// An override archive holds only what the pack replaces. It is an overlay rather than a copy of the
+// game's archive with some entries swapped, so nothing falls out of the installation by being left out of
+// a pack, and a half-finished upscale packs what exists and leaves the rest to the game's own copy.
+static int Pack(string[] args)
+{
+    if (args.Length != 3)
+    {
+        return Fail("usage: ResExtract pack <png-dir> <overrides-dir>");
+    }
+
+    string source = Path.GetFullPath(args[1]);
+    string manifest = Path.Combine(source, PackManifest.FileName);
+
+    if (!File.Exists(manifest))
+    {
+        return Fail(
+            $"'{source}' holds no {PackManifest.FileName}. A pack is built from what `ResExtract images` " +
+            "wrote, so run that first and work on the PNGs in place.");
+    }
+
+    string destination = Path.GetFullPath(args[2]);
+    PackBuild.Result result = PackBuild.Run(source, destination);
+
+    foreach (string failure in result.Failures.Take(20))
+    {
+        Console.Error.WriteLine($"warning: {failure}");
+    }
+
+    if (result.Failures.Count > 20)
+    {
+        Console.Error.WriteLine($"warning: and {result.Failures.Count - 20} more.");
+    }
+
+    Console.WriteLine(string.Create(
+        CultureInfo.InvariantCulture,
+        $"Packed {result.Assets} picture(s) into {result.Archives} archive(s) and {result.Loose} loose " +
+        $"file(s), {result.Bytes / (1024.0 * 1024.0):F1} MiB in all; {result.Missing} not yet upscaled, " +
+        $"{result.Failures.Count} failure(s)."));
+
+    if (result.Assets == 0)
+    {
+        return Fail("Nothing was packed.");
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("Move or copy the contents of");
+    Console.WriteLine($"  {destination}");
+    Console.WriteLine("into <game>/overrides, beside missions and common. Nothing else to configure --");
+    Console.WriteLine("the assets are found by the paths they already had, and `overrides` in the console");
+    Console.WriteLine("re-reads the folder without a restart.");
+
+    return ExitCode.Ok;
 }
 
 // Decodes every ILSF sound found below a path and writes each one out as an ordinary WAV.
@@ -464,15 +481,27 @@ static void PrintUsage() =>
           ResExtract list    <archive>
           ResExtract extract <archive> <outdir>
           ResExtract images  <archive|dir> <outdir>
+          ResExtract pack    <png-dir> <overrides-dir>
           ResExtract sounds  <archive|file|dir> <outdir>
 
         Reads ILFF archives (.res), model and font containers (.mef, .fnt) and the legacy
         "RESOURCE" flat archive. Extracted entries keep their layout below <outdir>, with the
         virtual file system namespace ("LOCAL:") stripped.
 
-        "images" decodes every texture it finds to an 8-bit RGBA PNG, named after the texture and
-        flattened into one directory. Given a directory it walks every .res below it and writes
-        each distinct texture once, however many levels pack a copy of it.
+        "images" decodes every picture it finds to an 8-bit RGBA PNG, laid out the way the game's
+        overrides folder is: each asset under the directory its archive sits in. That means all of
+        them -- the textures inside .res archives, the loose terrain, sky, flare and shadow files,
+        and the multi-frame sprites and pictures. A picture stored as a tile grid, like the 150
+        tiles of the main menu, is written whole so that working on it leaves no seams.
+
+        It also writes pack.json, which says where each picture came from and what size the game
+        lays it out at. "pack" reads that back and builds an overrides folder of the game's own
+        files. Work on the PNGs in place between the two.
+
+        NOT FLATTENED, and that matters. A texture name is not unique here -- the art is layered,
+        and 79 of the retail game's 1363 names are shared by files that differ -- so a flat
+        directory can hold only one of them, and it is usually not the one the level draws.
+
 
         "sounds" decodes every ILSF sound it finds -- expanding the ADPCM forms -- to an ordinary
         PCM WAV. The game's own ".wav" files are ILSF, not WAV, so nothing else will open them.

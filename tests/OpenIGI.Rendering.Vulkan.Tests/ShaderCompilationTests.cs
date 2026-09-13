@@ -16,12 +16,29 @@ namespace OpenIGI.Rendering.Vulkan.Tests;
 /// </remarks>
 public sealed class ShaderCompilationTests
 {
+    [Fact]
+    public void TheUnlitFirstPersonMarkerIsNotFogged()
+    {
+        // Marker 2 is an unlit first-person draw. World (1) and translucent (-1) remain fogged; the
+        // marker range below excludes only that rig while the dynamic first-person marker (0) was
+        // already excluded.
+        Assert.Contains("abs(push.uMarkerExposure.x) > 0.5 && push.uMarkerExposure.x < 1.5", Mesh3DShaderSource.Vertex);
+        Assert.Contains("abs(marker) > 0.5 && marker < 1.5", Mesh3DShaderSource.Fragment);
+    }
+
     [RequiresGlslcTheory]
     [InlineData("shading.frag", "frag")]
     [InlineData("shading-rayquery.frag", "frag")]
     [InlineData("reflect.comp", "comp")]
     [InlineData("fog.scatter.comp", "comp")]
     [InlineData("fog.integrate.comp", "comp")]
+
+    // The forward mesh pair is the whole of the vanilla picture -- terrain, world, sky and rig all go
+    // through it -- and it carries the level-of-detail morph, the retail distance fog and the rig's key
+    // light in one push block that is exactly the guaranteed 128 bytes. Nothing at build time reads it
+    // either, and a broken splice there is a black frame rather than a compile error.
+    [InlineData("mesh3d.vert", "vert")]
+    [InlineData("mesh3d.frag", "frag")]
     public void TheShadersThatReadTheShelterMapCompile(string name, string stage)
     {
         string compiler = Glslc.Path;
@@ -32,6 +49,8 @@ public sealed class ShaderCompilationTests
             "shading-rayquery.frag" => DeferredShaderSource.LightingFragment(rayQuery: true),
             "fog.scatter.comp" => VolumetricFogShaderSource.Scatter,
             "fog.integrate.comp" => VolumetricFogShaderSource.Integrate,
+            "mesh3d.vert" => Mesh3DShaderSource.Vertex,
+            "mesh3d.frag" => Mesh3DShaderSource.Fragment,
             _ => ReflectionShaderSource.Reflect,
         };
 

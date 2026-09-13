@@ -185,6 +185,17 @@ public sealed class VirtualFileSystemTests : IDisposable
         Assert.Equal(device.RootDirectory, device.ToFullPath("/"));
     }
 
+    [Fact]
+    public void RejectsAPathThatEscapesIntoASiblingWithTheSamePrefix()
+    {
+        var device = new LocalFileDevice(_root);
+        string sibling = _root + "-backup";
+
+        Assert.Equal(
+            device.RootDirectory,
+            device.ToFullPath($"../{Path.GetFileName(sibling)}/secrets.txt"));
+    }
+
     private VirtualFileSystem CreateFileSystem()
     {
         var vfs = new VirtualFileSystem();

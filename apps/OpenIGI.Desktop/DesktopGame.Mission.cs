@@ -1383,6 +1383,10 @@ internal sealed partial class DesktopGame
             // clears to, so the horizon meets sky-coloured backing rather than black.
             _sky?.Dispose();
             _sky = new SkyRenderer(_device, _fileSystem, levelRoot, FarPlane, _logger);
+
+            // The air the level is drawn through and the flat light on its models, both off the same
+            // GlobalLight keyframe -- see GlobalLightSettings for why that task and not FlatSky.
+            _globalLight = GlobalLightSettings.Read(levelRoot);
             _shadowPass = new ShadowCasterPass(_device);
 
             if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings readSun))
@@ -1957,6 +1961,7 @@ internal sealed partial class DesktopGame
                     "Nothing to stand on at the level's spawn, so this mission opens in the free camera.");
             }
         }
+
 
         // The menus are done; without dropping the renderer the last screen would keep drawing over
         // the world.

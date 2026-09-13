@@ -147,18 +147,74 @@ public sealed class TerrainStreamingTests
         Assert.Equal(TerrainTraversal.MaximumChunks, harness.Terrain.CacheLimit);
     }
 
+    /// <summary>The visible list is bounded by what the detail setting asks for, not by retail's 4096.</summary>
+    /// <remarks>
+    /// <para>
+    /// Retail's chunk buffer holds 4096, and it belongs with retail's own view distance, which is 163 at
+    /// most. The remaster resolves the ground to 450 and offers 600, where a wide frustum's descent asks
+    /// for eight thousand chunks in one frame. Everything past the bound is dropped, and a dropped chunk
+    /// is a piece of missing ground — measured across the campaign at up to 2500 a frame at 600, and in
+    /// the thousands at the ultra 450 on anything wider than 16:9.
+    /// </para>
+    /// <para>
+    /// So the renderer hands the descent its own cache limit, which is the setting sized to the same
+    /// view. The check is both ways round: nothing is dropped through the raised bound, and the same
+    /// view through retail's own bound does drop — otherwise this test would pass on a build where the
+    /// bound never mattered.
+    /// </para>
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void NoGroundIsDroppedAtTheUltraDetailDistance()
+    {
+        using Harness harness = Harness.Load(1);
+        harness.Terrain.CacheLimit = UltraCacheLimit;
+        harness.ViewDistance = 600;
+
+        // A wide frustum, which is where the retail bound bites first: an ultrawide display, or any of
+        // the field-of-view settings past the authored one.
+        harness.Frame(harness.Eye, 0f, verticalFieldOfView: 1.6f, aspectRatio: 21f / 9f);
+
+        Assert.True(harness.Terrain.LastChunkCount > TerrainTraversal.MaximumChunks,
+            $"the view only asked for {harness.Terrain.LastChunkCount} chunks, so it cannot show the bound matters");
+        Assert.Equal(0, harness.Terrain.LastDroppedChunkCount);
+
+        // The same descent through the bound the original carries drops what will not fit.
+        List<TerrainChunk> chunks = [];
+        TerrainTraversalResult retail = TerrainTraversal.Collect(
+            harness.Surface.Terrain.Octree,
+            TerrainView.FromPerspective(
+                new Camera3D(
+                    new Vector3d(
+                        harness.Eye.X * WorldScene.UnitsPerMetre,
+                        harness.Eye.Y * WorldScene.UnitsPerMetre,
+                        harness.Eye.Z * WorldScene.UnitsPerMetre),
+                    Camera3D.LookRotation(0f, 0f)),
+                1.6f,
+                21f / 9f,
+                600),
+            chunks,
+            harness.Surface.Discards,
+            TerrainTraversal.MaximumChunks);
+
+        Assert.True(retail.Dropped > 0, "the retail bound dropped nothing, so the raised one proves nothing");
+    }
+
     /// <summary>A retail level, its terrain renderer, and a camera to point at it.</summary>
     private sealed class Harness : IDisposable
     {
         private readonly Matrix4f _projection = Matrix4f.CreatePerspective(FieldOfView, AspectRatio, 0.1f, 4000f);
 
-        private Harness(TerrainRenderer terrain, Vector3d eye)
+        private Harness(TerrainRenderer terrain, TerrainSurface surface, Vector3d eye)
         {
             Terrain = terrain;
+            Surface = surface;
             Eye = eye;
         }
 
         public TerrainRenderer Terrain { get; }
+
+        /// <summary>Gets the level's terrain and the layers that texture it.</summary>
+        public TerrainSurface Surface { get; }
 
         /// <summary>Gets a viewpoint over the level's own placed objects, which is where its terrain is.</summary>
         public Vector3d Eye { get; }
@@ -191,19 +247,23 @@ public sealed class TerrainStreamingTests
             TerrainSurface surface = TerrainSurface.Build(loaded.Terrain, levelRoot);
             WorldScene scene = WorldScene.Build(loaded, levelRoot, magic);
 
-            return new Harness(new TerrainRenderer(new RecordingGraphicsDevice(), surface), Median(scene));
+            return new Harness(new TerrainRenderer(new RecordingGraphicsDevice(), surface), surface, Median(scene));
         }
 
         /// <summary>Draws one frame and returns how many terrain triangles it submitted.</summary>
         /// <param name="eye">The camera position in metres.</param>
         /// <param name="yaw">The heading in radians; zero looks along <c>+Y</c>.</param>
-        public int Frame(Vector3d eye, float yaw)
+        public int Frame(
+            Vector3d eye,
+            float yaw,
+            float verticalFieldOfView = FieldOfView,
+            float aspectRatio = AspectRatio)
         {
             Terrain.Draw(
                 new Camera3D(eye, Camera3D.LookRotation(yaw, 0f)),
                 _projection,
-                FieldOfView,
-                AspectRatio,
+                verticalFieldOfView,
+                aspectRatio,
                 ViewDistance,
                 batching: true,
                 occlusionCulling: false);

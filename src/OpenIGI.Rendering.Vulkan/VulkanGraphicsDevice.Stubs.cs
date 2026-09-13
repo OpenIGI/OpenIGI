@@ -47,6 +47,26 @@ public sealed partial class VulkanGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void SetFog(in SceneFog fog)
+    {
+        ThrowIfDisposed();
+        _fog = fog;
+    }
+
+    /// <inheritdoc/>
+    public SceneFog Fog => _fog;
+
+    /// <inheritdoc/>
+    public void SetModelAmbient(Vector3f ambient)
+    {
+        ThrowIfDisposed();
+        _modelAmbient = ambient;
+    }
+
+    /// <inheritdoc/>
+    public Vector3f ModelAmbient => _modelAmbient;
+
+    /// <inheritdoc/>
     public void SetAlphaHash(float seed)
     {
         ThrowIfDisposed();

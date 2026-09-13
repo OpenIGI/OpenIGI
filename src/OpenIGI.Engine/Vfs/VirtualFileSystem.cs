@@ -65,6 +65,22 @@ public sealed class VirtualFileSystem
     /// <param name="logger">The logger for mount and rebind diagnostics; defaults to a sink that discards them.</param>
     public VirtualFileSystem(IIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
 
+    /// <summary>Finds a registered device by name.</summary>
+    /// <param name="name">The device name, with or without its trailing colon.</param>
+    /// <param name="device">Receives the device, or <see langword="null"/> when none is registered.</param>
+    /// <returns><see langword="true"/> when the device is registered.</returns>
+    /// <remarks>
+    /// For the callers that need a device's own properties rather than a file from it — the override
+    /// store wants where <c>LOCAL:</c> is rooted, because that is the installation directory and the
+    /// overrides folder sits beside the game's own.
+    /// </remarks>
+    public bool TryGetDevice(string name, [NotNullWhen(true)] out IFileDevice? device)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+
+        return _devices.TryGetValue(name.TrimEnd(ResourcePath.NamespaceSeparator), out device);
+    }
+
     /// <summary>Gets the registered device names.</summary>
     public IReadOnlyCollection<string> DeviceNames => _devices.Keys;
 

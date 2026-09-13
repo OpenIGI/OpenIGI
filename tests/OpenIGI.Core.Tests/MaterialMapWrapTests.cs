@@ -68,7 +68,10 @@ public sealed class MaterialMapWrapTests
         Assert.All(maps.Occlusion, value => Assert.InRange(value, 0f, 1f));
         Assert.All(maps.NormalX, value => Assert.InRange(value, -1f, 1f));
         Assert.All(maps.NormalY, value => Assert.InRange(value, -1f, 1f));
-        Assert.All(maps.Roughness, value => Assert.InRange(value, 1f, 2f));
+
+        // Either side of one: the multiplier is two-sided, so the floor is 1 - the range and not 1.
+        float range = MaterialMapGenerator.Options.Default.RoughnessRange;
+        Assert.All(maps.Roughness, value => Assert.InRange(value, 1f - range, 1f + range));
     }
 
     /// <summary>A non-square, non-power-of-two texture must derive over its whole area.</summary>

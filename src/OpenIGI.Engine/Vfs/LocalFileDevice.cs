@@ -124,7 +124,7 @@ public sealed class LocalFileDevice : IFileDevice
         string relative = ResourcePath.Normalize(path).TrimStart(ResourcePath.DirectorySeparator);
         string combined = Path.GetFullPath(Path.Combine(RootDirectory, relative));
 
-        if (!combined.StartsWith(RootDirectory, StringComparison.OrdinalIgnoreCase))
+        if (!IsInsideRoot(combined))
         {
             return RootDirectory;
         }
@@ -175,6 +175,19 @@ public sealed class LocalFileDevice : IFileDevice
         }
 
         return current;
+    }
+
+    private bool IsInsideRoot(string path)
+    {
+        if (string.Equals(path, RootDirectory, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        string rootWithSeparator = RootDirectory.EndsWith(Path.DirectorySeparatorChar)
+            ? RootDirectory
+            : RootDirectory + Path.DirectorySeparatorChar;
+        return path.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <inheritdoc/>

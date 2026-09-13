@@ -15,17 +15,18 @@ namespace OpenIGI.Rendering;
 /// registers each one against the texture it belongs to.
 /// </para>
 /// <para>
-/// <b>Absent is a supported state, not an error.</b> An installation that has never run the tool has no
-/// pack, and it renders exactly as it did before any of this existed. That is what lets the pack be an
-/// optional asset rather than a shipping requirement, and it is why every failure below is a warning
-/// and a null handle rather than an exception.
+/// <b>Absent is a supported state, not an error.</b> An installation with no derived maps renders
+/// exactly as it did before any of this existed, which is why every failure below is a warning and a
+/// null handle rather than an exception.
 /// </para>
 /// <para>
-/// <b>The pack does not have to exist up front.</b> Given a cache directory and
-/// <see cref="DeriveMissing"/>, a texture with no map derives its own on first sight and the result is
-/// written out, so the second run reads a PNG where the first computed one. That is what lets the maps
-/// be a per-user cache built from the player's own installation rather than an asset this repository
-/// carries — the game's art with a filter over it is not ours to redistribute.
+/// <b>Maps built by a tool do not come through here.</b> Those travel inside the asset they describe, as
+/// a second layer of a replacement in the overrides folder, and reach the device with the texture. This
+/// is the fallback for everything else: given a cache directory and <see cref="DeriveMissing"/>, a
+/// texture with no map derives its own on first sight and the result is written out, so the second run
+/// reads a PNG where the first computed one. That is what lets the maps be a per-user cache built from
+/// the player's own installation rather than an asset this repository carries — the game's art with a
+/// filter over it is not ours to redistribute.
 /// </para>
 /// <para>
 /// One instance per device. It owns the textures it uploads, so disposing it releases them; the
@@ -43,7 +44,6 @@ public sealed class MaterialDetailPack : IDisposable
     // to null when the pack has no map for it -- which is an answer worth remembering, because a level
     // full of textures with no maps would otherwise be a level's worth of File.Exists on the frame.
     private readonly ConcurrentDictionary<string, ReadMap?> _read = new(StringComparer.OrdinalIgnoreCase);
-    private readonly string? _root;
     private readonly string? _cacheRoot;
     private readonly Dictionary<string, TextureHandle> _maps = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _missing = new(StringComparer.OrdinalIgnoreCase);
@@ -57,16 +57,21 @@ public sealed class MaterialDetailPack : IDisposable
 
     /// <summary>Initialises a new instance of the <see cref="MaterialDetailPack"/> class.</summary>
     /// <param name="device">The device the maps are uploaded to.</param>
-    /// <param name="directory">Where the maps are, or empty or missing for no pack at all.</param>
     /// <param name="logger">Where to report what was found and what would not load.</param>
     /// <param name="cacheDirectory">
     /// Where maps derived on demand are written, or empty for none. Read from as well as written to, and
-    /// created on first write, so a fresh installation with no pack at all still fills it in.
+    /// created on first write, so an installation with no replacement art still fills it in.
     /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="device"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <b>There is no authored-pack directory any more.</b> A map built by a tool travels inside the
+    /// asset it belongs to, as a second layer of the replacement in the overrides folder, and reaches the
+    /// device through the ordinary texture path — so there is nothing left for a separate directory of
+    /// PNGs to be the source of, and nothing to keep in step with the textures it describes. What remains
+    /// here is the derivation this process does for itself, for the surfaces nothing has built a map for.
+    /// </remarks>
     public MaterialDetailPack(
         IGraphicsDevice device,
-        string? directory,
         IIgiLogger? logger = null,
         string? cacheDirectory = null)
     {
@@ -79,31 +84,10 @@ public sealed class MaterialDetailPack : IDisposable
         {
             _cacheRoot = Path.GetFullPath(cacheDirectory);
         }
-
-        if (string.IsNullOrWhiteSpace(directory))
-        {
-            return;
-        }
-
-        string resolved = Path.GetFullPath(directory);
-
-        if (!Directory.Exists(resolved))
-        {
-            _logger.Warning(LogCategory, $"No detail maps at '{resolved}'; surfaces keep their flat normals.");
-            return;
-        }
-
-        _root = resolved;
-        _logger.Information(LogCategory, $"Detail maps from '{resolved}'.");
     }
 
-    /// <summary>Gets a value indicating whether an authored pack was found to read from.</summary>
-    /// <remarks>
-    /// Specifically the directory <c>r_material_pack</c> names. A pack is no longer the only source —
-    /// with a cache directory and <see cref="DeriveMissing"/> the maps arrive without one — so this
-    /// answers where they come from rather than whether there will be any.
-    /// </remarks>
-    public bool IsAvailable => _root is not null;
+    /// <summary>Gets a value indicating whether maps can be derived and cached at all.</summary>
+    public bool IsAvailable => _cacheRoot is not null;
 
     /// <summary>
     /// Gets or sets a value indicating whether a texture with no map derives one and caches it.
@@ -146,7 +130,7 @@ public sealed class MaterialDetailPack : IDisposable
     {
         ArgumentNullException.ThrowIfNull(names);
 
-        if (_disposed || (_root is null && _cacheRoot is null))
+        if (_disposed || _cacheRoot is null)
         {
             return;
         }
@@ -226,7 +210,7 @@ public sealed class MaterialDetailPack : IDisposable
             return;
         }
 
-        if (_root is not null || _cacheRoot is not null)
+        if (_cacheRoot is not null)
         {
             map = Load(name);
 
@@ -327,9 +311,10 @@ public sealed class MaterialDetailPack : IDisposable
 
         try
         {
+            (Bgra32[] chain, int levels) = LinearMipChain.Build(packed, width, height);
             TextureHandle map = _device.CreateTexture(
-                new TextureDescription(width, height, 1, TextureFilter.Linear, TextureAddressMode.Repeat),
-                packed);
+                new TextureDescription(width, height, levels, TextureFilter.Linear, TextureAddressMode.Repeat),
+                chain);
 
             // Keyed by the diffuse it was made for, so Dispose releases it. The name is synthetic
             // because there is none -- that is the whole reason this overload exists.
@@ -374,10 +359,11 @@ public sealed class MaterialDetailPack : IDisposable
 
             try
             {
+                (Bgra32[] chain, int levels) = LinearMipChain.Build(item.Pixels, item.Width, item.Height);
                 map = _device.CreateTexture(
                     new TextureDescription(
-                        item.Width, item.Height, 1, TextureFilter.Linear, TextureAddressMode.Repeat),
-                    item.Pixels);
+                        item.Width, item.Height, levels, TextureFilter.Linear, TextureAddressMode.Repeat),
+                    chain);
             }
             catch (Exception error) when (error is ArgumentException or GraphicsDeviceException)
             {
@@ -568,10 +554,16 @@ public sealed class MaterialDetailPack : IDisposable
             // Repeat, because the map tiles exactly as the texture it belongs to does -- and mipmapped,
             // because a normal map minified without one aliases far worse than a colour does. A wrong
             // normal is a wrong lighting direction, and the eye reads that as sparkle rather than as
-            // detail.
+            // detail. The chain also restores what a single level silently costs: the sampler picks its
+            // mip mode and its anisotropy from the level count, so with one level it was sampling
+            // nearest-mip and no anisotropy as well.
+            //
+            // LinearMipChain rather than the picture one: these channels are numbers, and putting a
+            // normal's x through a display decode and re-encode biases every average it takes.
+            (Bgra32[] chain, int levels) = LinearMipChain.Build(read.Pixels, read.Width, read.Height);
             return _device.CreateTexture(
-                new TextureDescription(read.Width, read.Height, 1, TextureFilter.Linear, TextureAddressMode.Repeat),
-                read.Pixels);
+                new TextureDescription(read.Width, read.Height, levels, TextureFilter.Linear, TextureAddressMode.Repeat),
+                chain);
         }
         catch (GraphicsDeviceException error)
         {
@@ -580,33 +572,19 @@ public sealed class MaterialDetailPack : IDisposable
         }
     }
 
-    /// <summary>Finds which file holds a texture's map, preferring the authored pack over the cache.</summary>
+    /// <summary>Finds the cached map for a texture, if an earlier run derived one.</summary>
     /// <param name="name">The texture's name.</param>
-    /// <returns>The path, or <see langword="null"/> when neither has one.</returns>
+    /// <returns>The path, or <see langword="null"/> when there is none.</returns>
     private string? FindMapPath(string name)
     {
-        if (_root is null && _cacheRoot is null)
+        if (_cacheRoot is null)
         {
             return null;
         }
 
-        string path = Path.Combine(_root ?? _cacheRoot!, name + ".png");
-        if (File.Exists(path))
-        {
-            return path;
-        }
+        string path = Path.Combine(_cacheRoot, name + ".png");
 
-        if (_root is not null && _cacheRoot is not null)
-        {
-            // The pack proper does not have it. A map derived on an earlier run might.
-            path = Path.Combine(_cacheRoot, name + ".png");
-            if (File.Exists(path))
-            {
-                return path;
-            }
-        }
-
-        return null;
+        return File.Exists(path) ? path : null;
     }
 
     /// <summary>A detail PNG decoded off the device thread, or the reason it could not be.</summary>

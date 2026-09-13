@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using OpenIGI.Core;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Resources;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Legacy;
@@ -29,6 +30,8 @@ public sealed class ResourceRegistry
     private const string LogCategory = "Resources";
 
     private readonly Dictionary<string, ResourceEntry> _entries = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, ReadOnlyMemory<byte>> _shipped = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _overridden = new(StringComparer.OrdinalIgnoreCase);
     private readonly VirtualFileSystem _fileSystem;
     private readonly IIgiLogger _logger;
 
@@ -42,6 +45,29 @@ public sealed class ResourceRegistry
         _fileSystem = fileSystem;
         _logger = logger ?? NullLogger.Instance;
     }
+
+    /// <summary>Gets or sets the loose files that stand in for the game's own assets.</summary>
+    /// <remarks>
+    /// The seam this type's remarks describe. Consulted as each archive entry is registered and as each
+    /// loose file is opened, so an override replaces an asset wherever that asset came from; and
+    /// re-appliable by <see cref="ReapplyOverrides"/> so one dropped in mid-session takes effect without
+    /// a restart.
+    /// </remarks>
+    public ResourceOverrides? Overrides { get; set; }
+
+    /// <summary>Gets how many registered resources are currently standing in for a shipped asset.</summary>
+    /// <remarks>
+    /// The number that answers "is my overrides folder doing anything". A folder can be present, spelled
+    /// correctly and full of files and still replace nothing, because a path that matches no asset is
+    /// indistinguishable from one that matches — until this is zero.
+    /// </remarks>
+    /// <remarks>
+    /// Counted by NAME rather than by substitution. The same name is registered more than once whenever
+    /// two archives carry it -- the registry keeps the first and warns -- and counting each attempt made
+    /// the total exceed the number of files in the folder, which is the kind of diagnostic that sends
+    /// somebody looking for a bug that is not there.
+    /// </remarks>
+    public int OverriddenCount => _overridden.Count;
 
     /// <summary>Gets the number of registered resources, exploded archive entries included.</summary>
     public int Count => _entries.Count;
@@ -111,6 +137,19 @@ public sealed class ResourceRegistry
 
         foreach (string candidate in _fileSystem.ResolveCandidates(name))
         {
+            // An override stands in for a LOOSE file too, and is checked before the file itself rather
+            // than after: the terrain atlases, the menu scripts and the language tables never go through
+            // an archive, so a replacement for one of those has nothing to shadow and would otherwise
+            // never be reached. The candidate path is the device path, which is where the installation
+            // keeps the file and therefore where a person puts the replacement.
+            if (Overrides is { IsActive: true } loose
+                && loose.TryRead(OverridePath.For(candidate), out ReadOnlyMemory<byte> replaced))
+            {
+                Add(candidate, ResourceKind.Body, replaced, parent: null, replaceExisting: true);
+                data = replaced;
+                return true;
+            }
+
             if (!candidate.Equals(name, StringComparison.OrdinalIgnoreCase)
                 && TryGetEntry(candidate, out entry))
             {
@@ -207,7 +246,7 @@ public sealed class ResourceRegistry
         ResourceEntry entry = Add(key, ResourceKind.Container, data, parent: null, replaceExisting);
         foreach (IresEntry item in archive.Entries)
         {
-            Add(item.Name, ToResourceKind(item.Kind), item.Data, key, replaceExisting);
+            Add(item.Name, ToResourceKind(item.Kind), Substitute(key, item.Name, item.Data), key, replaceExisting);
         }
 
         _logger.Debug(LogCategory, $"Registered archive '{key}' with {archive.Entries.Count} entries.");
@@ -229,7 +268,7 @@ public sealed class ResourceRegistry
         ResourceEntry entry = Add(key, ResourceKind.Container, data, parent: null, replaceExisting);
         foreach (FlatResourceEntry item in archive.Entries)
         {
-            Add(item.Name, ResourceKind.Body, item.Data, key, replaceExisting);
+            Add(item.Name, ResourceKind.Body, Substitute(key, item.Name, item.Data), key, replaceExisting);
         }
 
         _logger.Debug(LogCategory, $"Registered flat archive '{key}' with {archive.Entries.Count} entries.");
@@ -254,6 +293,104 @@ public sealed class ResourceRegistry
         IresEntryKind.Path => ResourceKind.Path,
         _ => ResourceKind.ContextString,
     };
+
+    /// <summary>Replaces an archive entry's bytes with an override's, when one is present.</summary>
+    /// <param name="archiveName">The archive being exploded.</param>
+    /// <param name="entryName">The entry's resource name.</param>
+    /// <param name="shipped">What the archive holds.</param>
+    /// <returns>The override's bytes, or the archive's.</returns>
+    /// <remarks>
+    /// The shipped bytes are remembered either way, so <see cref="ReapplyOverrides"/> can put them back
+    /// when an override is deleted mid-session. They cost nothing to keep: an archive entry is a slice
+    /// of a buffer the registry is already holding.
+    /// </remarks>
+    private ReadOnlyMemory<byte> Substitute(string archiveName, string entryName, ReadOnlyMemory<byte> shipped)
+    {
+        // FIRST wins, exactly as the registry itself does. A name carried by two archives is registered
+        // once and keeps the earlier registration, so remembering the later archive's bytes here would
+        // have a rescan "restore" a texture to a variant the game never used -- and this game has 79
+        // names that two archives disagree about, so that is not a hypothetical.
+        string key = ResourcePath.Normalize(entryName);
+        _shipped.TryAdd(key, shipped);
+
+        if (Overrides is not { IsActive: true } overrides)
+        {
+            return shipped;
+        }
+
+        string candidate = OverridePath.For(archiveName, entryName);
+
+        if (!overrides.TryRead(candidate, out ReadOnlyMemory<byte> replacement))
+        {
+            return shipped;
+        }
+
+        _overridden.Add(key);
+        _logger.Debug(LogCategory, $"'{key}' is overridden by '{candidate}'.");
+        return replacement;
+    }
+
+    /// <summary>Re-applies every override to the resources already registered.</summary>
+    /// <returns>How many entries changed.</returns>
+    /// <remarks>
+    /// <para>
+    /// What makes an override folder editable while the game runs. A mission's archives are exploded
+    /// once at load, so a file dropped in afterwards would otherwise not be seen until the next launch.
+    /// This walks what is registered, asks the override store for each entry again, and swaps the bytes
+    /// — in both directions, so DELETING an override restores the asset the game shipped rather than
+    /// leaving the replacement in place until a restart.
+    /// </para>
+    /// <para>
+    /// It changes what a later load returns. Anything already decoded from these bytes — an uploaded
+    /// texture, a parsed model — holds its own copy and has to be rebuilt separately; that is the
+    /// caller's business, because only the caller knows what it has built.
+    /// </para>
+    /// </remarks>
+    public int ReapplyOverrides()
+    {
+        int changed = 0;
+
+        foreach (ResourceEntry entry in _entries.Values.ToList())
+        {
+            if (entry.Parent is null)
+            {
+                continue;
+            }
+
+            if (!_shipped.TryGetValue(entry.Name, out ReadOnlyMemory<byte> shipped))
+            {
+                continue;
+            }
+
+            string candidate = OverridePath.For(entry.Parent, entry.Name);
+            ReadOnlyMemory<byte> wanted = shipped;
+
+            if (Overrides is { IsActive: true } overrides
+                && overrides.TryRead(candidate, out ReadOnlyMemory<byte> replacement))
+            {
+                wanted = replacement;
+            }
+
+            if (wanted.Length == entry.Data.Length && wanted.Span.SequenceEqual(entry.Data.Span))
+            {
+                continue;
+            }
+
+            _entries[entry.Name] = new ResourceEntry(entry.Name, entry.Kind, wanted, entry.Parent);
+            changed++;
+
+            if (wanted.Span.SequenceEqual(shipped.Span))
+            {
+                _overridden.Remove(entry.Name);
+            }
+            else
+            {
+                _overridden.Add(entry.Name);
+            }
+        }
+
+        return changed;
+    }
 
     private ResourceEntry Add(
         string name,

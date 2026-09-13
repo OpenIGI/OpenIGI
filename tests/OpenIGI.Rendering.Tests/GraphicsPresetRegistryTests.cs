@@ -100,8 +100,13 @@ public sealed class GraphicsPresetRegistryTests
     public void EveryArchivedRenderSettingIsNamedByThePresets()
     {
         // Not quality levels: the first six are the scene's own state rather than how well it is drawn,
-        // r_vsync is the player's own display preference, and the last names a directory on their disk.
-        // A preset has no business overwriting any of them.
+        // r_vsync is the player's own display preference, and the last three name a directory on their
+        // disk. A preset has no business overwriting any of them.
+        //
+        // The two pack paths especially. They point at assets a player built for themselves with a tool,
+        // from their own installation, because this project cannot ship the game's art -- so a preset
+        // clearing one would silently throw away work that took an hour and a graphics card, and there is
+        // no quality tier at which "forget where the player put their textures" is the right answer.
         //
         // r_scale used to be listed here and no longer is. It is the internal resolution the temporal
         // upscaler reconstructs from, which is the single largest difference between the quality tiers,
@@ -114,7 +119,7 @@ public sealed class GraphicsPresetRegistryTests
         [
             "r_weather_enabled", "r_weather_kind", "r_weather_speed",
             "r_storm_intensity", "r_weather_force", "r_day_night_cycle", "r_day_length",
-            "r_vsync", "r_material_pack", "r_world_briefing",
+            "r_vsync", "r_world_briefing",
         ];
 
         _ = RenderCVars.Lighting;

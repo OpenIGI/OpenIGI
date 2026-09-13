@@ -36,6 +36,15 @@ public static class TerrainTraversal
     public const int HeightmapExponent = 14;
 
     /// <summary>How many chunks the original's descriptor buffer holds.</summary>
+    /// <remarks>
+    /// It is retail's bound and it belongs with retail's view distance, which is at most
+    /// <see cref="TerrainView.HighViewDistance"/>. The remaster's detail settings resolve the ground two
+    /// and three times further out, where one frame's descent can ask for several times as many chunks —
+    /// measured at up to 4062 across the campaign at the ultra distance on a 16:9 frustum, and straight
+    /// through this bound on a wider one. Everything past the bound is dropped, which is a hole in the
+    /// ground, so <see cref="Collect"/> takes the bound as an argument and the renderer raises it with
+    /// the detail setting.
+    /// </remarks>
     public const int MaximumChunks = 4096;
 
     /// <summary>Descends the tree and collects the chunks to draw.</summary>
@@ -43,8 +52,14 @@ public static class TerrainTraversal
     /// <param name="view">The camera and its frustum.</param>
     /// <param name="chunks">Receives the chunks; cleared first.</param>
     /// <param name="discards">The level's authored terrain holes, or <see langword="null"/> for none.</param>
+    /// <param name="maximumChunks">
+    /// How many chunks may be collected before the rest are counted as
+    /// <see cref="TerrainTraversalResult.Dropped"/>. Defaults to retail's
+    /// <see cref="MaximumChunks"/>; a caller resolving further out must raise it or lose ground.
+    /// </param>
     /// <returns>What the descent did.</returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maximumChunks"/> is not positive.</exception>
     /// <remarks>
     /// A tree with <see cref="TerrainOctree.Defects"/> is walked anyway but cannot run off the end: every
     /// child index is re-checked here. That is a deliberate divergence — the original trusts the file and
@@ -54,10 +69,12 @@ public static class TerrainTraversal
         TerrainOctree tree,
         in TerrainView view,
         List<TerrainChunk> chunks,
-        IReadOnlyList<TerrainDiscardRegion>? discards = null)
+        IReadOnlyList<TerrainDiscardRegion>? discards = null,
+        int maximumChunks = MaximumChunks)
     {
         ArgumentNullException.ThrowIfNull(tree);
         ArgumentNullException.ThrowIfNull(chunks);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumChunks);
 
         chunks.Clear();
 
@@ -96,7 +113,8 @@ public static class TerrainTraversal
             chunks,
             discardRegions,
             new Vector3i((int)cameraX, (int)cameraY, (int)cameraZ),
-            octants);
+            octants,
+            maximumChunks);
 
         Descend(ref state, TerrainOctree.RootIndex, TerrainOrientation.Identity, 0, world, view.SlackX, view.SlackY);
 
@@ -234,7 +252,7 @@ public static class TerrainTraversal
                 continue;
             }
 
-            if (state.Chunks.Count >= MaximumChunks)
+            if (state.Chunks.Count >= state.MaximumChunks)
             {
                 state.Dropped++;
                 continue;
@@ -274,7 +292,8 @@ public static class TerrainTraversal
         List<TerrainChunk> chunks,
         TerrainDiscardRegion[] discards,
         Vector3i camera,
-        Span<Octant> octants)
+        Span<Octant> octants,
+        int maximumChunks)
     {
         public readonly TerrainOctree Tree = tree;
         public readonly TerrainView View = view;
@@ -282,6 +301,7 @@ public static class TerrainTraversal
         public readonly TerrainDiscardRegion[] Discards = discards;
         public readonly Vector3i Camera = camera;
         public readonly Span<Octant> Octants = octants;
+        public readonly int MaximumChunks = maximumChunks;
         public int Dropped;
         public int Visited;
     }
