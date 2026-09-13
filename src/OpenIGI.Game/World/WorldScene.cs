@@ -690,14 +690,15 @@ public sealed class WorldScene
         }
 
         // Some QVM-only replacements (Level 6 Terminal_94's 252_02_1) have geometry in the
-        // archive but no INST record. Retain the intact instance's material-slot map, while replacing
-        // only its name and geometry; this is the binding the authored task swaps at destruction.
+        // archive but no INST record. Retain the intact pack and material-slot map while replacing
+        // only its name and geometry: an archive fallback may come from common, whose texture-table
+        // indices cannot safely be applied to a level instance.
         foreach (LoadedPack pack in new[] { mission.LevelPack, mission.CommonPack })
         {
-            if (TryGetDestroyedArchiveModel(pack, modelName, out MefModel? model) && model is not null)
+            if (TryGetDestroyedArchiveModel(mission.Descriptor.Id, pack, modelName, out MefModel? model) && model is not null)
             {
                 MtpInstance instance = intact.Instance with { Name = modelName };
-                binding = new WorldModelBinding(instance, pack, model);
+                binding = new WorldModelBinding(instance, intact.Pack, model);
                 return true;
             }
         }
@@ -707,7 +708,11 @@ public sealed class WorldScene
     }
 
     /// <summary>Resolves an archive-only destroyed mesh, including the retail terminal name inversion.</summary>
-    private static bool TryGetDestroyedArchiveModel(LoadedPack pack, string modelName, out MefModel? model)
+    private static bool TryGetDestroyedArchiveModel(
+        int missionId,
+        LoadedPack pack,
+        string modelName,
+        out MefModel? model)
     {
         if (pack.TryGetArchiveModel(modelName, out model))
         {
@@ -718,7 +723,8 @@ public sealed class WorldScene
         // stores the corresponding geometry only as 252_01_2. Keep the task's authored name while using
         // that archive spelling for this known data-pair; do not apply a broad name rewrite to other
         // missing replacement assets.
-        return string.Equals(modelName, "252_02_1", StringComparison.OrdinalIgnoreCase)
+        return missionId == 6
+            && string.Equals(modelName, "252_02_1", StringComparison.OrdinalIgnoreCase)
             && pack.TryGetArchiveModel("252_01_2", out model);
     }
 

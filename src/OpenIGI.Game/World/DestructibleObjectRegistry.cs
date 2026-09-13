@@ -168,8 +168,9 @@ public sealed class DestructibleObjectRegistry
                 continue;
             }
 
-            WorldPlacement? placement = resolved.FirstOrDefault(candidate =>
-                ReferenceEquals(candidate.Owner, task));
+            WorldPlacement[] taskPlacements = [.. resolved.Where(candidate =>
+                ReferenceEquals(candidate.Owner, task))];
+            WorldPlacement? placement = taskPlacements.FirstOrDefault();
             DestructibleObject item = registry.Add(
                 new DestructibleObject(
                     DestructibleObjectKind.Explosive,
@@ -177,6 +178,10 @@ public sealed class DestructibleObjectRegistry
                     placement,
                     task.Type.Name,
                     PositionOf(task, placement)));
+            foreach (WorldPlacement taskPlacement in taskPlacements)
+            {
+                registry.RegisterPlacement(item, taskPlacement);
+            }
             ReadExplodeParameters(task, item);
 
             variables.BindBool(task, "isExploded", () => item.IsDestroyed, value =>
@@ -285,8 +290,13 @@ public sealed class DestructibleObjectRegistry
             return null;
         }
 
-        DestructibleObject? exactOwner = items.FirstOrDefault(item =>
-            item.Placement is null && !item.IsDestroyed);
+        // A normal OBJECTS.QVM task produces one state object even when it places Model, Model 2,
+        // and further instances.  Attached magic objects deliberately produce several state objects
+        // beneath one owner, so an owner-only hit must retain the old "unplaced" fallback rather than
+        // accidentally choosing an arbitrary attachment.
+        DestructibleObject? exactOwner = items.Count == 1
+            ? items[0]
+            : items.FirstOrDefault(item => item.Placement is null && !item.IsDestroyed);
         if (exactOwner is not null)
         {
             return ApplyDamage(exactOwner, 1f);
@@ -309,7 +319,9 @@ public sealed class DestructibleObjectRegistry
 
         if (owner is not null
             && _byOwner.TryGetValue(owner, out List<DestructibleObject>? owned)
-            && owned.FirstOrDefault(item => item.Placement is null && !item.IsDestroyed) is { } exactOwner)
+            && (owned.Count == 1
+                ? owned[0]
+                : owned.FirstOrDefault(item => item.Placement is null && !item.IsDestroyed)) is { } exactOwner)
         {
             return ApplyDamage(exactOwner, 1f);
         }
@@ -462,6 +474,9 @@ public sealed class DestructibleObjectRegistry
 
         return item;
     }
+
+    private void RegisterPlacement(DestructibleObject item, WorldPlacement placement) =>
+        _byPlacement[placement] = item;
 
     private static bool TryMagicKind(string typeName, out DestructibleObjectKind kind)
     {

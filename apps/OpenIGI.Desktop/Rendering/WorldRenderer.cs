@@ -943,6 +943,8 @@ public sealed class WorldRenderer : IDisposable
         _meshes.Clear();
         _textures.Clear();
         _geometry.Clear();
+        _resolved.Clear();
+        _resolvedDestroyed.Clear();
     }
 
     /// <summary>Overrides the retail object lightmaps with a path-traced bake, applied on the next draw.</summary>

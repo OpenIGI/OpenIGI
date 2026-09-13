@@ -300,13 +300,24 @@ public sealed class BallisticSimulation
                 WorldRayHit wallHit = default;
                 WorldTraceHit richWallHit = default;
                 bool struckWall = richWalls is not null
-                    ? richWalls(
+                    && richWalls(
                         new WorldTraceRequest(start, position, WorldTraceMask.World),
-                        out richWallHit)
-                    : walls is not null && walls(start, position, out wallHit);
-                if (struckWall && richWalls is not null)
+                        out richWallHit);
+                if (struckWall)
                 {
                     wallHit = richWallHit.RayHit;
+                }
+
+                // The rich trace supplies placement identity for static objects, but does not own
+                // terrain.  Keep the body's world cast in the query so an object-free ground hit
+                // remains a collision, and discard rich identity if terrain is the nearer surface.
+                if (walls is not null
+                    && walls(start, position, out WorldRayHit plainWallHit)
+                    && (!struckWall || plainWallHit.Distance < wallHit.Distance))
+                {
+                    struckWall = true;
+                    wallHit = plainWallHit;
+                    richWallHit = default;
                 }
 
                 HumanHit humanHit = default;
@@ -336,8 +347,8 @@ public sealed class BallisticSimulation
                         wallHit,
                         RangeOf(round),
                         travel,
-                        richWallHit.Owner,
-                        richWallHit.Placement));
+                        struckHuman ? null : richWallHit.Owner,
+                        struckHuman ? null : richWallHit.Placement));
                     stopped = true;
                 }
                 else if (spent)

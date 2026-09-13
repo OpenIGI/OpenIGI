@@ -190,27 +190,34 @@ public sealed class DestructibleModelReplacementTests
         (WorldPlacement Placement, int Index)[] placements = [.. scenario.Scene.Placements
             .Select((placement, index) => (placement, index))
             .Where(entry => predicate(entry.placement))];
-        foreach ((WorldPlacement placement, int index) in placements)
+        foreach (IGrouping<GameTask, (WorldPlacement Placement, int Index)> group in placements.GroupBy(entry => entry.Placement.Owner))
         {
+            WorldPlacement placement = group.Last().Placement;
             DeclaredTask task = Assert.IsType<DeclaredTask>(placement.Owner);
             Assert.True(task.TryGetValue("Destroyed model", out object? rawDestroyed));
             string destroyedModel = Assert.IsType<string>(rawDestroyed);
-            Assert.True(
-                placement.DestroyedReplacement is not null,
-                $"Mission {mission}, {family} '{task.Name}': {placement.Instance.Name} has no binding for {destroyedModel}.");
-            WorldModelBinding replacement = placement.DestroyedReplacement!;
             DestructibleObject destructible = Assert.Single(
                 scenario.Destructibles.Objects,
-                candidate => ReferenceEquals(candidate.Placement, placement));
+                candidate => ReferenceEquals(candidate.Owner, placement.Owner));
 
-            Assert.Equal(destroyedModel, replacement.Instance.Name);
-            Assert.Equal(destroyedModel, destructible.DestroyedModelName);
+            // Hit the last placement deliberately: one declared task may own Model, Model 2, and
+            // further instances. All of them must share its state and renderer replacement.
             Assert.Same(destructible, scenario.Destructibles.TryDestroy(placement.Owner, placement));
-            Assert.True(scenario.Destructibles.IsDestroyed(placement));
+            foreach ((WorldPlacement ownedPlacement, int ownedIndex) in group)
+            {
+                Assert.True(
+                    ownedPlacement.DestroyedReplacement is not null,
+                    $"Mission {mission}, {family} '{task.Name}': {ownedPlacement.Instance.Name} has no binding for {destroyedModel}.");
+                WorldModelBinding replacement = ownedPlacement.DestroyedReplacement!;
 
-            // MakeResident selects DisplayedPlacement, so this proves the hit state is not merely
-            // registered: the renderer can bind the task's authored wreck model on the next frame.
-            Assert.True(scenario.Renderer.MakeResident(scenario.Scene, index));
+                Assert.Equal(destroyedModel, replacement.Instance.Name);
+                Assert.Equal(destroyedModel, destructible.DestroyedModelName);
+                Assert.True(scenario.Destructibles.IsDestroyed(ownedPlacement));
+
+                // MakeResident selects DisplayedPlacement, so this proves the hit state is not merely
+                // registered: the renderer can bind every task-owned wreck model on the next frame.
+                Assert.True(scenario.Renderer.MakeResident(scenario.Scene, ownedIndex));
+            }
         }
 
         return placements.Length;

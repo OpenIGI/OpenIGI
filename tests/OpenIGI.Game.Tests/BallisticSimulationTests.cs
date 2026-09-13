@@ -275,6 +275,86 @@ public sealed class BallisticSimulationTests
         Assert.Same(placement, impact.Placement);
     }
 
+    [Fact]
+    public void AWorldTraceMissStillUsesTheTerrainWall()
+    {
+        BallisticSimulation simulation = Spawn(rangeMetres: 300f);
+        int richCasts = 0;
+        int terrainCasts = 0;
+        WorldTraceCast richWalls = (in WorldTraceRequest _, out WorldTraceHit hit) =>
+        {
+            richCasts++;
+            hit = default;
+            return false;
+        };
+        WorldRayCast walls = (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+        {
+            terrainCasts++;
+            return TryWall(origin, end, 25f * UnitsPerMetre, out hit);
+        };
+
+        for (int tick = 0; tick < 3; tick++)
+        {
+            simulation.Tick(walls, humans: null, gravityScale: 0f, dragScale: 0f, richWalls: richWalls);
+        }
+
+        BallisticImpact impact = Assert.Single(simulation.Impacts);
+        Assert.True(impact.StruckWall);
+        Assert.Equal(25f * UnitsPerMetre, impact.Wall.Position.Y, 1.0);
+        Assert.True(richCasts > 0);
+        Assert.True(terrainCasts > 0);
+        Assert.Null(impact.Owner);
+        Assert.Null(impact.Placement);
+    }
+
+    [Fact]
+    public void AHumanHitDoesNotBorrowTheWorldTracesDestructibleIdentity()
+    {
+        BallisticSimulation simulation = Spawn(rangeMetres: 300f);
+        GameTask owner = new DeclaredTask();
+        WorldPlacement placement = new(default, default, default, null!, null!, "terminal", owner);
+        WorldTraceCast richWalls = (in WorldTraceRequest request, out WorldTraceHit hit) =>
+        {
+            if (TryWall(request.Origin, request.End, 25f * UnitsPerMetre, out WorldRayHit wall))
+            {
+                hit = WorldTraceHit.FromRayHit(
+                    request,
+                    wall,
+                    WorldTraceHitKind.StaticObject,
+                    owner,
+                    "terminal",
+                    placement);
+                return true;
+            }
+
+            hit = default;
+            return false;
+        };
+        HumanShot humans = (Vector3d origin, Vector3d end, float _, WeaponCategory _, out HumanHit hit) =>
+        {
+            double humanY = 22f * UnitsPerMetre;
+            if (origin.Y <= humanY && end.Y >= humanY)
+            {
+                hit = new HumanHit(new Vector3d(origin.X, humanY, origin.Z), humanY - origin.Y, Zone: 4, 0f, 0f);
+                return true;
+            }
+
+            hit = default;
+            return false;
+        };
+
+        for (int tick = 0; tick < 3; tick++)
+        {
+            simulation.Tick(walls: null, humans: humans, gravityScale: 0f, dragScale: 0f, richWalls: richWalls);
+        }
+
+        BallisticImpact impact = Assert.Single(simulation.Impacts);
+        Assert.True(impact.StruckHuman);
+        Assert.False(impact.StruckWall);
+        Assert.Null(impact.Owner);
+        Assert.Null(impact.Placement);
+    }
+
     /// <summary>A human in front of the wall takes the round; the wall stays clean.</summary>
     [Fact]
     public void TheNearerOfWallAndHumanWins()
