@@ -1174,7 +1174,9 @@ internal sealed partial class DesktopGame
     {
         string sound = parameters.ExplosionSound.Length > 0 ? parameters.ExplosionSound : "explo_02_m";
         _sounds?.PlayDefinition(sound, position, priority: 90);
-        _soldiers?.NotifyGunshot(position, 122880f);
+        // GenericTBA is an authored Explosion0 path, not a gunshot proxy. Post the same AI event
+        // at presentation time as the other world blasts, including after an authored delay.
+        _soldiers?.NotifyExplosion(position, parameters.ExplosionRadiusUnits);
         _impactParticles?.SpawnExplosion(
             position,
             Math.Max(1f, RenderCVars.ImpactParticles.Value),
@@ -1188,7 +1190,13 @@ internal sealed partial class DesktopGame
 
         float damageFactor = parameters.DamageScale * parameters.ExplosionDamageScale;
         _soldiers?.ApplyExplosion(position, parameters.ExplosionRadiusUnits, parameters.ExplosionFalloffUnits, damageFactor);
-        DamageAlarmSpeakers(position, parameters.ExplosionRadiusUnits);
+        HandleDestructibleBlast(
+            source: null,
+            originUnits: position,
+            radiusUnits: parameters.ExplosionRadiusUnits,
+            falloffUnits: parameters.ExplosionFalloffUnits,
+            damageFactor: damageFactor);
+        DamageAlarmSpeakers(position, parameters.ExplosionRadiusUnits, affectDestructibles: false);
 
         if (_player is null)
         {
