@@ -53,6 +53,14 @@ Past this the launch overhead a batch exists to amortise is already amortised, a
 is a longer stall if it has to be retried.
 """
 
+_MIN_BUDGET = 4096
+"""
+The smallest budget the recovery will halve its way down to: a 64x64 pass.
+
+The floor exists so a card that cannot manage the model fails saying so, instead of halving towards zero
+and tiling an image into single texels on the way.
+"""
+
 _CONVOLUTIONAL_BUDGET = 2_000_000
 """
 The most PIXELS in one forward pass for a plain convolutional network (SPAN, PLKSR, ESRGAN).
@@ -317,7 +325,35 @@ class Runner:
         return [result for result in results if result is not None]
 
     def _run_tiled(self, image: np.ndarray, wrap_x: bool, wrap_y: bool) -> np.ndarray:
-        """Runs one image that is too large to fit, in pieces, and reassembles the result.
+        """Runs one image that is too large to fit in pieces, shrinking the pieces if the card says no.
+
+        The pass itself is :meth:`_tile_pass`; this is the retry around it. A budget is an estimate, and
+        the one that turns out to be wrong should cost time rather than the run -- the whole-image path
+        already falls back to tiling rather than failing, and this is the same bargain one level down.
+        Each failed pass halves the budget (in `_forward`), which re-cuts the image into smaller tiles.
+
+        The retry runs OUTSIDE the handler, deliberately: see :meth:`_forward`.
+        """
+        while True:
+            before = self.budget
+
+            try:
+                return self._tile_pass(image, wrap_x, wrap_y)
+            except Exception as error:  # noqa: BLE001 - narrowed by _is_out_of_memory
+                if not _is_out_of_memory(error):
+                    raise
+
+            _release(self._torch)
+
+            if self.budget >= before:
+                # Already at the floor, so a smaller tile is not on offer and retrying would spin.
+                raise self._torch.cuda.OutOfMemoryError(
+                    f"out of memory tiling a {image.shape[1]}x{image.shape[0]} image at the smallest "
+                    f"tile this runner will cut ({self.budget} pixels a pass)."
+                )
+
+    def _tile_pass(self, image: np.ndarray, wrap_x: bool, wrap_y: bool) -> np.ndarray:
+        """Runs one image in pieces at the current budget, and reassembles the result.
 
         THE PIECES OVERLAP AND THE OVERLAP IS THROWN AWAY. Each tile is cut with a margin of context around
         it, run, and then cropped back to its own interior -- so every output texel was produced by a
@@ -346,9 +382,14 @@ class Runner:
         widening the context does NOT close the gap, which rules out the receptive field as the cause --
         so a tile of them is not the same arithmetic as a slice of the whole.
 
-        That is comfortable rather than lucky, because after the upscale chain was fixed to stop
-        overshooting, the ONLY thing that ever exceeds the budget is a 1x map model at a high scale. The
-        upscalers see the source texture, which tops out at 256 pixels and fits whole.
+        THAT USED TO BE COMFORTABLE AND IS NOT ANY MORE, and the stale version of this paragraph is what
+        hid a fault for a release. It read: after the upscale chain was fixed to stop overshooting, the
+        only thing that ever exceeds the budget is a 1x map model at a high scale, because the upscalers
+        see the source texture, which tops out at 256 pixels and fits whole. The remaster pass broke both
+        halves of that -- it hands an upscaler the FINISHED image, four times larger on each side, so a
+        DAT-2 tile of 23.9/255 against the whole is now a real cost on real output, and a 640x480 picture
+        arrives at 2560x1920 and is cut into forty-two tiles. So this path is no longer the map models'
+        alone, and anything measured above applies to the colour the player sees.
         """
         height, width = image.shape[:2]
         channels = image.shape[2]
@@ -404,9 +445,18 @@ class Runner:
                 key = (cut.shape[0], cut.shape[1], y - y0, x - x0, tile_h, tile_w)
                 pieces.setdefault(key, []).append((top, left, cut))
 
-        for (_, _, lead_y, lead_x, tile_h, tile_w), group in pieces.items():
-            for start in range(0, len(group), _MAX_BATCH):
-                chunk = group[start : start + _MAX_BATCH]
+        for (cut_h, cut_w, lead_y, lead_x, tile_h, tile_w), group in pieces.items():
+            # Sized by the BUDGET, exactly as the whole-image path sizes its batches. The side above was
+            # chosen so that ONE tile with its context fills the budget, so batching by _MAX_BATCH alone
+            # asked for up to thirty-two times it in a single pass -- 7.9 M pixels through an attention
+            # network whose budget is 250 k. That is not a near miss the halving can walk back from, and
+            # nothing had exercised it: until the remaster pass existed the upscalers only ever saw a
+            # source texture, which fits whole. The remaster pass hands them the FINISHED size, four times
+            # larger, so it is the first caller to tile an upscaler at all.
+            per_pass = max(1, min(_MAX_BATCH, self.budget // max(cut_h * cut_w, 1)))
+
+            for start in range(0, len(group), per_pass):
+                chunk = group[start : start + per_pass]
                 outputs = self._forward([item[2] for item in chunk])
 
                 for (top, left, _), produced in zip(chunk, outputs):
@@ -426,6 +476,16 @@ class Runner:
 
         The one place a tensor is built and the model is called, so the out-of-memory recovery lives here
         once and both the whole-image and the tiled path get it.
+
+        THE RETRY HAPPENS OUTSIDE THE HANDLER, AND THAT IS THE WHOLE TRICK. A live exception owns its
+        traceback, a traceback owns the frames it passed through, and those frames own their locals --
+        which, halfway down an attention block, is the entire activation set of the attempt that just
+        failed. Retrying from inside `except` therefore holds that memory for the duration of the retry,
+        so each halving ADDS a failed attempt's worth instead of replacing it: the halving that exists to
+        recover memory was the reason there was none. Five deep on a 10 GiB card it reported 32 GiB
+        allocated (Windows pages the overflow into system memory rather than failing), and then could not
+        fit a single tile. `del tensor` and `empty_cache` cannot touch any of it -- the allocator only
+        hands back blocks nothing references, and the traceback is a reference.
         """
         torch = self._torch
         tensor = torch.from_numpy(np.ascontiguousarray(np.stack(batch, axis=0).transpose(0, 3, 1, 2)))
@@ -441,27 +501,35 @@ class Runner:
                 # Anything that is not an out-of-memory is re-raised immediately.
                 if not _is_out_of_memory(error):
                     raise
+            else:
+                # clamp, not clamp_. On a model running in fp16 or bf16 `.float()` builds a new tensor and
+                # clamping that in place is free; on one running in fp32 it returns the SAME tensor -- an
+                # inference tensor, which may not be updated in place outside inference mode. Every model
+                # in the catalogue ran in reduced precision until RGT-S, which spandrel will not run in
+                # bf16, so this was never reached.
+                result = output.float().clamp(0.0, 1.0).cpu().numpy().transpose(0, 2, 3, 1)
+                return [np.ascontiguousarray(item) for item in result]
 
-                # Halve and retry, rather than printing and carrying on with the PREVIOUS tile's pixels,
-                # which is what Real-ESRGAN's handler does.
-                del tensor
-                _release(torch)
+        # Out of memory, and now clear of the handler: the failed attempt is unreferenced and the cache
+        # can actually be given back. Halve and retry, rather than printing and carrying on with the
+        # PREVIOUS tile's pixels, which is what Real-ESRGAN's handler does.
+        del tensor
+        _release(torch)
 
-                # Remember it, or the next batch is sized by the budget that just failed.
-                self.budget = max(self.budget // 2, 4096)
+        # Remember it, or the next batch is sized by the budget that just failed.
+        self.budget = max(self.budget // 2, _MIN_BUDGET)
 
-                if len(batch) == 1:
-                    raise
+        if len(batch) == 1:
+            # Raised fresh rather than re-raised: chaining every halving's traceback together is what
+            # made one of these reports three stacked megabytes, and each link in that chain pins its
+            # own attempt's memory while the stack unwinds.
+            height, width = batch[0].shape[:2]
+            raise torch.cuda.OutOfMemoryError(
+                f"out of memory on a single {width}x{height} pass; the budget is now {self.budget} pixels."
+            ) from None
 
-                middle = len(batch) // 2
-                return self._forward(batch[:middle]) + self._forward(batch[middle:])
-
-        # clamp, not clamp_. On a model running in fp16 or bf16 `.float()` builds a new tensor and clamping
-        # that in place is free; on one running in fp32 it returns the SAME tensor -- an inference tensor,
-        # which may not be updated in place outside inference mode. Every model in the catalogue ran in
-        # reduced precision until RGT-S, which spandrel will not run in bf16, so this was never reached.
-        result = output.float().clamp(0.0, 1.0).cpu().numpy().transpose(0, 2, 3, 1)
-        return [np.ascontiguousarray(item) for item in result]
+        middle = len(batch) // 2
+        return self._forward(batch[:middle]) + self._forward(batch[middle:])
 
     def _run_batch(
         self, batch: list[np.ndarray], shape: tuple[int, int], wrap_x: bool, wrap_y: bool
