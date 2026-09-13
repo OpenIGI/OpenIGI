@@ -955,15 +955,14 @@ public sealed class ShellTests
             shell.Update(new LayoutContext(1920f, 1080f), input, 1f / 60f);
             Assert.True(fire.IsListening);
 
-            // The first listening update arms the boundary; a scroll here must not bind.
+            // The first listening update arms the boundary (quiet here, so the wheel gate opens).
             input.BeginFrame();
             input.Mouse.SetButton(MouseButton.Left, down: false);
-            input.Mouse.AddWheel(1f);
             shell.Update(new LayoutContext(1920f, 1080f), input, 1f / 60f);
             Assert.True(fire.IsListening);
             Assert.Equal("Mouse Button 1", fire.BoundKeyName);
 
-            // A scroll after arming binds wheel-up and ends listening.
+            // A scroll after arming binds wheel-down and ends listening.
             input.BeginFrame();
             input.Mouse.AddWheel(-1f);
             shell.Update(new LayoutContext(1920f, 1080f), input, 1f / 60f);
@@ -971,6 +970,69 @@ public sealed class ShellTests
             Assert.False(fire.IsListening);
             Assert.Equal(KeyCode.None, fire.BoundKey);
             Assert.Equal("Mouse Wheel Down", fire.BoundKeyName);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Controls_tab_ignores_wheel_inertia_until_a_quiet_frame()
+    {
+        // Review follow-up: clicking a row mid-scroll (trackpad momentum) must not bind the
+        // leftover motion — only a scroll that starts after a quiet frame does.
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, _) = BuildShell(dir);
+            Pump(shell, 0.1f);
+            Find<Button>(shell.Stack.Top!, button => button.Text == "Settings")!.Activate();
+            Pump(shell, 0.6f);
+
+            SettingsScreen screen = Assert.IsType<SettingsScreen>(shell.Stack.Top);
+            TabStrip tabs = screen.Root!.Descendants().OfType<TabStrip>().First();
+            tabs.SelectedIndex = 3;
+            Pump(shell, 0.1f);
+
+            KeyBindingRow fire = screen.Root!.Descendants().OfType<KeyBindingRow>()
+                .Single(row => row.Action == "Fire");
+            UiVec2 centre = fire.Bounds.Center;
+            InputState input = new();
+
+            input.BeginFrame();
+            input.Mouse.SetPosition(centre.X, centre.Y);
+            input.Mouse.SetButton(MouseButton.Left, down: true);
+            shell.Update(new LayoutContext(1920f, 1080f), input, 1f / 60f);
+            Assert.True(fire.IsListening);
+
+            // Arming frame carries leftover scroll momentum.
+            input.BeginFrame();
+            input.Mouse.SetButton(MouseButton.Left, down: false);
+            input.Mouse.AddWheel(1f);
+            shell.Update(new LayoutContext(1920f, 1080f), input, 1f / 60f);
+            Assert.True(fire.IsListening);
+
+            // Momentum continues on the next frame: still must not bind.
+            input.BeginFrame();
+            input.Mouse.AddWheel(1f);
+            shell.Update(new LayoutContext(1920f, 1080f), input, 1f / 60f);
+            Assert.True(fire.IsListening);
+            Assert.Equal("Mouse Button 1", fire.BoundKeyName);
+
+            // A quiet frame opens the gate; the next scroll binds.
+            input.BeginFrame();
+            shell.Update(new LayoutContext(1920f, 1080f), input, 1f / 60f);
+            Assert.True(fire.IsListening);
+
+            input.BeginFrame();
+            input.Mouse.AddWheel(1f);
+            shell.Update(new LayoutContext(1920f, 1080f), input, 1f / 60f);
+            Assert.False(fire.IsListening);
+            Assert.Equal("Mouse Wheel Up", fire.BoundKeyName);
         }
         finally
         {

@@ -614,6 +614,20 @@ public static class InputBindingKeyNames
 /// <summary>Resolves a profile's persisted controls against the live input snapshot.</summary>
 public static class PlayerProfileInputBindings
 {
+    /// <summary>
+    /// The smallest wheel motion that counts as a notch, in scroll units. Discrete mice report
+    /// whole notches; precision trackpads report fractions, including feather-touch noise from
+    /// resting fingers. Below this floor motion is ignored rather than fired as input.
+    /// </summary>
+    /// <remarks>
+    /// A wheel notch is a momentary edge with no held state, so a bound action reads
+    /// <see langword="true"/> on every frame that scrolls past the floor in its direction — one
+    /// frame per scrolled frame, which is what makes scroll-to-switch-weapons track the gesture.
+    /// The same edge semantics apply to sustained actions: scrolling continuously holds them,
+    /// while a single notch nudges them for exactly one frame.
+    /// </remarks>
+    public const float WheelNoiseFloorNotches = 0.1f;
+
     /// <summary>Determines whether an action is currently held.</summary>
     public static bool IsDown(PlayerProfile? profile, InputState input, string action) =>
         Resolve(profile, input, action, pressed: false);
@@ -689,5 +703,6 @@ public static class PlayerProfileInputBindings
     }
 
     private static bool IsWheelNotch(float delta, int direction) =>
-        (direction > 0 && delta > 0f) || (direction < 0 && delta < 0f);
+        MathF.Abs(delta) >= WheelNoiseFloorNotches
+        && ((direction > 0 && delta > 0f) || (direction < 0 && delta < 0f));
 }

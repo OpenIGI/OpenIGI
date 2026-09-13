@@ -123,6 +123,14 @@ public sealed class ConfigTests
         var still = new InputState();
         still.BeginFrame();
         Assert.False(PlayerProfileInputBindings.IsDown(restored, still, "PrevWeapon"));
+
+        // Feather-touch noise below the floor fires nothing in either direction.
+        var feather = new InputState();
+        feather.BeginFrame();
+        feather.Mouse.AddWheel(0.05f);
+        Assert.False(PlayerProfileInputBindings.IsDown(restored, feather, "PrevWeapon"));
+        feather.Mouse.AddWheel(-0.1f);
+        Assert.False(PlayerProfileInputBindings.IsDown(restored, feather, "PrevWeapon"));
     }
 
     [RequiresGameDataFact]
