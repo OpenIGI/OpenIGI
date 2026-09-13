@@ -1324,7 +1324,8 @@ internal sealed partial class DesktopGame
             radiusUnits,
             falloffUnits,
             damageFactor,
-            target => ExplosionCanReach(source, originUnits, target)))
+            target => ConditionalContainerGate.IsTaskActive(target.Owner)
+                && ExplosionCanReach(source, originUnits, target)))
         {
             // Passing the blast origin is deliberate. GlassShatter uses the incoming contact to pick
             // nearby collision faces, just as Glass_ExplosionHitHandler hands the native shatter task

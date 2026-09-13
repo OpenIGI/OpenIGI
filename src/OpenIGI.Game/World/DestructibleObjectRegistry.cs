@@ -11,6 +11,9 @@ public enum DestructibleObjectKind
 
     /// <summary>An authored ExplodeObject task or explosive magic-object attachment.</summary>
     Explosive,
+
+    /// <summary>A physics-object vehicle whose CAR definition authors a wreck model.</summary>
+    Vehicle,
 }
 
 /// <summary>One exact destructible object, including an attached magic-object placement when present.</summary>
@@ -148,7 +151,8 @@ public sealed class DestructibleObjectRegistry
     public static DestructibleObjectRegistry Build(
         GameTask root,
         IEnumerable<WorldPlacement> placements,
-        ScriptVarRegistry variables)
+        ScriptVarRegistry variables,
+        VehiclePhysicsRegistry? vehiclePhysics = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(placements);
@@ -194,6 +198,51 @@ public sealed class DestructibleObjectRegistry
                 }
             });
             variables.BindBool(task, "isLastExploded", () => item.IsLastDestroyed, _ => { });
+        }
+
+        // Vehicle damage is not an ExplodeObject task.  The CAR physics definition owns the
+        // replacement model (e.g. the retail Level 6 APC's 601_08_1), while the vehicle's native
+        // explosion callback exports the same isExploded/isLastExploded state that level gates use.
+        // Register only models that actually publish a wreck binding; ordinary cars remain intact.
+        if (vehiclePhysics is not null)
+        {
+            foreach (DeclaredTask task in Walk(root).OfType<DeclaredTask>())
+            {
+                if (!string.Equals(task.Type.Name, "Car", StringComparison.Ordinal)
+                    || !task.TryGetValue(WorldScene.ModelParameter, out object? rawModel)
+                    || rawModel is not string model
+                    || !vehiclePhysics.TryGetCar(model, out CarPhysicsDefinition car)
+                    || car.DestroyedModel.Length == 0)
+                {
+                    continue;
+                }
+
+                WorldPlacement[] taskPlacements = [.. resolved.Where(candidate =>
+                    ReferenceEquals(candidate.Owner, task))];
+                WorldPlacement? placement = taskPlacements.FirstOrDefault();
+                DestructibleObject item = registry.Add(new DestructibleObject(
+                    DestructibleObjectKind.Vehicle,
+                    task,
+                    placement,
+                    "Car",
+                    PositionOf(task, placement))
+                {
+                    DestroyedModelName = car.DestroyedModel,
+                });
+                foreach (WorldPlacement taskPlacement in taskPlacements)
+                {
+                    registry.RegisterPlacement(item, taskPlacement);
+                }
+
+                variables.BindBool(task, "isExploded", () => item.IsDestroyed, value =>
+                {
+                    if (value)
+                    {
+                        item.IsDestroyed = true;
+                    }
+                });
+                variables.BindBool(task, "isLastExploded", () => item.IsLastDestroyed, _ => { });
+            }
         }
 
         foreach (WorldPlacement placement in resolved)

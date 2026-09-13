@@ -2,6 +2,8 @@ using System.Globalization;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Formats.Ai;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Rendering;
 using OpenIGI.Scripting.Expressions;
@@ -46,6 +48,7 @@ public sealed class CutsceneRuntime
     private readonly List<TimerState> _timers = [];
     private readonly List<AnimationState> _animations = [];
     private readonly List<SoundState> _sounds = [];
+    private readonly List<CarAiState> _carAis = [];
     private readonly List<DeclaredTask> _binocularOverlayHolders = [];
     private readonly Dictionary<int, TransformState> _transforms = [];
     private readonly Dictionary<GameTask, TransformState> _taskTransforms = [];
@@ -273,6 +276,161 @@ public sealed class CutsceneRuntime
     /// <summary>Supplies live poses for targets owned by another simulation, such as animated humans.</summary>
     public void SetTargetPoseResolver(Func<int, CutsceneTargetPose?>? resolver) => _targetPoseResolver = resolver;
 
+    /// <summary>Supplies the loaded graph corpus to authored vehicle patrol tasks.</summary>
+    /// <remarks>
+    /// CarAI is a normal level task, not a cutscene animation. Retail's callback at 0x425DE0 starts
+    /// its PatrolPath, uses the graph route table to select each next node, and applies its vehicle-only
+    /// speed command on the fixed game tick. The desktop loader owns graph-file I/O, so it passes the
+    /// already offset world graphs here after they have parsed.
+    /// </remarks>
+    public void ConfigureCarAi(IReadOnlyDictionary<int, GraphFile> graphs)
+    {
+        ArgumentNullException.ThrowIfNull(graphs);
+        _carAis.Clear();
+        AiPatrolPathRegistry paths = AiPatrolPathRegistry.Build(_root);
+        foreach (GameTask task in Walk(_root))
+        {
+            if (task is not DeclaredTask declared
+                || !string.Equals(task.Type.Name, "CarAI", StringComparison.Ordinal)
+                || !declared.TryGetValue("Car ID", out object? rawCarId)
+                || !declared.TryGetValue("Graph ID", out object? rawGraphId)
+                || !declared.TryGetValue("Route ID", out object? rawRouteId)
+                || rawCarId is not int carId
+                || rawGraphId is not int graphId
+                || rawRouteId is not int routeId
+                || graphId < 0
+                || routeId < 0
+                || _root.Tree.FromId(carId) is not { } car
+                || !_taskTransforms.TryGetValue(car, out TransformState? transform)
+                || !graphs.TryGetValue(graphId, out GraphFile? graph)
+                || paths.Find(routeId) is not { } path)
+            {
+                continue;
+            }
+
+            _carAis.Add(new CarAiState(declared, car, transform, graph, AiPatrolRoute.Start(path)));
+        }
+    }
+
+    /// <summary>Runs the graph/path portion of retail's registered CarAI callback once per game tick.</summary>
+    private void TickCarAi()
+    {
+        foreach (CarAiState state in _carAis)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(state.Task) || state.Stopped || state.Route is null || state.Route.HasStopped)
+            {
+                continue;
+            }
+
+            AiPatrolCommand? command = state.Route.Current;
+            if (command is null)
+            {
+                continue;
+            }
+
+            switch (command.Value.Kind)
+            {
+                case AiPatrolCommandKind.SetSpeed:
+                    state.SpeedKmh = Math.Max(0, command.Value.Operand);
+                    state.Route.Advance();
+                    state.TargetNodeId = -1;
+                    break;
+
+                case AiPatrolCommandKind.Delay:
+                    if (state.Route.Begin(SimulationTick))
+                    {
+                        state.Route.Advance();
+                    }
+                    break;
+
+                case AiPatrolCommandKind.WalkTo:
+                case AiPatrolCommandKind.RunTo:
+                    StepCarAiMovement(state, command.Value.Operand);
+                    break;
+
+                case AiPatrolCommandKind.Quit:
+                    // CarAI's Quit arm clears its active patrol action; it is not a normal cursor
+                    // advance that could wrap through an End marker into the route again.
+                    state.Stopped = true;
+                    break;
+
+                default:
+                    // Retail's default arm logs and advances unsupported command types; it does not
+                    // wedge the vehicle path (the human walker is intentionally different).
+                    state.Route.Advance();
+                    break;
+            }
+        }
+    }
+
+    private static void StepCarAiMovement(CarAiState state, int destinationId)
+    {
+        GraphNode? destination = state.Graph.NodeAt(destinationId);
+        if (destination is null)
+        {
+            state.Route!.Advance();
+            state.TargetNodeId = -1;
+            return;
+        }
+
+        if (state.TargetNodeId < 0)
+        {
+            GraphNearestNode.Find(state.Graph, state.Transform.Position, out GraphNode? nearest, out _);
+            int next = destinationId;
+            if (nearest is not null
+                && nearest.Id != destinationId
+                && state.Graph.RouteTable?.TryGetStep(nearest.Id, destinationId, out int routed, out _) == true)
+            {
+                next = routed;
+            }
+
+            state.TargetNodeId = next;
+        }
+
+        GraphNode? target = state.Graph.NodeAt(state.TargetNodeId);
+        if (target is null)
+        {
+            state.TargetNodeId = destinationId;
+            target = destination;
+        }
+
+        Vector3d delta = target.Position - state.Transform.Position;
+        double distance = delta.Length;
+        // The source-like retail task calls this value km/h.  Convert the authored speed to its
+        // fixed 30 Hz engine-unit step; this is a graph follower, while CarDynamics remains the
+        // force/suspension implementation for animated vehicle physics.
+        double step = state.SpeedKmh * (WorldScene.UnitsPerMetre / 3.6d) / Frequency;
+        if (distance <= Math.Max(step, target.Radius * GraphNode.MetreInUnits))
+        {
+            state.Transform.PreviousPosition = state.Transform.Position;
+            state.Transform.Position = target.Position;
+            state.Transform.IsDynamic = true;
+            state.TargetNodeId = -1;
+            if (target.Id == destinationId)
+            {
+                state.Route!.Advance();
+            }
+
+            return;
+        }
+
+        Vector3d planar = new(delta.X, delta.Y, 0d);
+        if (planar.Length > 1e-6d)
+        {
+            state.Transform.Heading = (float)Math.Atan2(-planar.X, planar.Y);
+            state.Transform.Orientation = Matrix3f.FromEngineEulerAngles(
+                state.Transform.Euler.X,
+                state.Transform.Euler.Y,
+                state.Transform.Heading);
+        }
+
+        state.Transform.PreviousPosition = state.Transform.Position;
+        state.Transform.PreviousOrientation = state.Transform.Orientation;
+        state.Transform.Position += delta * (step / distance);
+        state.Transform.Speed = (float)step;
+        state.Transform.IsDynamic = true;
+    }
+
     /// <summary>Marks an explicitly configured helicopter for terminal terrain landing.</summary>
     /// <param name="task">The helicopter task whose first terrain contact is terminal.</param>
     /// <remarks>
@@ -493,6 +651,7 @@ public sealed class CutsceneRuntime
             ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
         }
 
+        TickCarAi();
         UpdateFrame();
     }
 
@@ -579,6 +738,7 @@ public sealed class CutsceneRuntime
         0.95f,
         0,
         [new CarWheelDefinition(false, true, 0f, 0, (float)WorldScene.UnitsPerMetre * 0.3f, 0.5f)],
+        string.Empty,
         []);
 
     /// <summary>
@@ -3108,6 +3268,24 @@ public sealed class CutsceneRuntime
         public bool IsRun { get; set; }
         public bool HasPlayed { get; set; }
     }
+
+    private sealed class CarAiState(
+        DeclaredTask task,
+        GameTask car,
+        TransformState transform,
+        GraphFile graph,
+        AiPatrolRoute? route)
+    {
+        public DeclaredTask Task { get; } = task;
+        public GameTask Car { get; } = car;
+        public TransformState Transform { get; } = transform;
+        public GraphFile Graph { get; } = graph;
+        public AiPatrolRoute? Route { get; } = route;
+        public int TargetNodeId { get; set; } = -1;
+        public int SpeedKmh { get; set; }
+        public bool Stopped { get; set; }
+    }
+
     private sealed record TimedShot(EditCameraShot Shot, double Start);
     private sealed class AttachmentState(
         GameTask parentTask,

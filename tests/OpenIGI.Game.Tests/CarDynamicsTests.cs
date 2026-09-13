@@ -232,6 +232,7 @@ public sealed class CarDynamicsTests
                 new CarWheelDefinition(false, false, 0f, -13, suspension, 0.5f),
                 new CarWheelDefinition(false, false, 0f, 3, suspension, 0.5f),
             ],
+            string.Empty,
             []);
     }
 

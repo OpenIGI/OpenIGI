@@ -483,7 +483,7 @@ internal sealed partial class DesktopGame
         }
         else
         {
-            scene = WorldScene.Build(loaded, levelRoot, _magic, _logger);
+            scene = WorldScene.Build(loaded, levelRoot, _magic, _logger, _vehiclePhysics);
             _scene = scene;
             world = new WorldRenderer(_device, _resources, _logger)
             {
@@ -528,7 +528,8 @@ internal sealed partial class DesktopGame
         _destructibles = DestructibleObjectRegistry.Build(
             levelRoot,
             scene.Placements,
-            _loop.Variables);
+            _loop.Variables,
+            _vehiclePhysics);
         world.Destructibles = _destructibles;
         solids.Destructibles = _destructibles;
         world.Cutscenes = _cutscenes;
@@ -725,6 +726,11 @@ internal sealed partial class DesktopGame
                     "Ai",
                     $"Nav graphs: {graphs.Count} — " +
                     string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n")));
+
+                // CarAI is a separate retail task family from HumanAI. Give the runtime the same
+                // graph corpus the soldier system receives so alarm-gated APCs and objective-gated
+                // limousines follow their authored PatrolPath routes instead of remaining parked.
+                _cutscenes?.ConfigureCarAi(graphs);
 
                 // The difficulty every guard reads its combat row at. Faithfully the ACTIVE PLAYER PROFILE's
                 // (sub_406F70 takes it from sub_406220()'s first field), so the difficulty the player picked
