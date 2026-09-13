@@ -151,6 +151,8 @@ public static class TexWriter
     {
         // Version 2 has no depth field, no format parameter, and a u16 format word. It also has nowhere
         // to record a mip chain, so level zero is all there is to write.
+        ValidateDimensions(image, TexFile.Version2, ushort.MaxValue / Bgra32.Size);
+
         byte[] file = new byte[TextureDescriptor.TexVersion2HeaderSize + LevelZeroBytes(image)];
         Span<byte> span = file;
 
@@ -172,8 +174,14 @@ public static class TexWriter
         // the renderer would otherwise rebuild it per texture at load. The flag and the payload have to
         // agree in both directions: MipLevels is derived from the flag, so a chain written without it is
         // read as one level, and a flag set without a chain reads past the end of the file.
-        bool mipped = image.MipLevels > 1;
-        int levels = mipped ? image.MipLevels : 1;
+        ValidateDimensions(image, TexFile.Version11, ushort.MaxValue);
+
+        // The retail header counts a chain only while BOTH axes can be halved. An image object may carry
+        // further levels for GPU sampling after its narrow axis reaches one, but version 11 has no way
+        // to describe those levels; writing them would append unreachable bytes to an otherwise valid
+        // texture.
+        int levels = Math.Min(image.MipLevels, HeaderMipLevels(image.Width, image.Height));
+        bool mipped = levels > 1;
         int payload = 0;
 
         for (int level = 0; level < levels; level++)
@@ -207,6 +215,28 @@ public static class TexWriter
         }
 
         return file;
+    }
+
+    private static void ValidateDimensions(TextureImage image, uint version, int maximumWidth)
+    {
+        if (image.Width > maximumWidth || image.Height > ushort.MaxValue)
+        {
+            throw new TextureFormatException(
+                $"A {image.Width}x{image.Height} texture does not fit version {version}'s 16-bit header fields.");
+        }
+    }
+
+    private static int HeaderMipLevels(int width, int height)
+    {
+        int levels = 1;
+        while ((width >> 1) > 0 && (height >> 1) > 0)
+        {
+            width >>= 1;
+            height >>= 1;
+            levels++;
+        }
+
+        return levels;
     }
 
     private static int LevelZeroBytes(TextureImage image) => image.Width * image.Height * Bgra32.Size;

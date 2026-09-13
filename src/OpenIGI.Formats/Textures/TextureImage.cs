@@ -44,6 +44,13 @@ public sealed class TextureImage
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
 
+        if (width > int.MaxValue / height)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(width),
+                "The dimensions describe more pixels than this process can address.");
+        }
+
         int count = width * height;
 
         if (pixels.Length < count)
@@ -143,7 +150,7 @@ public sealed class TextureImage
     {
         ArgumentOutOfRangeException.ThrowIfNegative(level);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(level, MipLevels);
-        return (Width >> level, Height >> level);
+        return (Math.Max(1, Width >> level), Math.Max(1, Height >> level));
     }
 
     /// <summary>Gets one mip level's pixels.</summary>

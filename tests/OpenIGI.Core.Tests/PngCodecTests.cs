@@ -186,6 +186,14 @@ public sealed class PngCodecTests
         Assert.Contains("IEND", error.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void WriterRejectsDimensionsWhosePixelCountCannotFitInAnInt()
+    {
+        using MemoryStream stream = new();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => PngWriter.Write(stream, [], 50_000, 50_000));
+    }
+
     /// <summary>CRC-32 as the format defines it, computed bit by bit.</summary>
     /// <remarks>
     /// Deliberately not the production implementation's approach. That one drives a precomputed table,

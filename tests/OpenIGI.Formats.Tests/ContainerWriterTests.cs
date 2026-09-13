@@ -103,6 +103,24 @@ public sealed class ContainerWriterTests
         Assert.Equal(source.GetLevel(source.MipLevels - 1).ToArray(), written.GetLevel(written.MipLevels - 1).ToArray());
     }
 
+    [Fact]
+    public void AOnePixelWideMipChainDoesNotWriteUnrepresentableLevels()
+    {
+        TextureImage source = Checkerboard(1, 8).WithMipChain();
+
+        Assert.Equal((1, 4), source.GetLevelSize(1));
+        Assert.Equal(4, source.GetLevel(1).Length);
+
+        byte[] bytes = TexWriter.WriteTexture(source, TexFile.Version11);
+        TextureImage written = TexFile.Load(bytes);
+
+        // Retail's texture header ends a chain once either axis reaches one, so later levels would be
+        // unreachable on read. The writer must omit them rather than append bytes no reader consumes.
+        Assert.Equal(1, written.MipLevels);
+        Assert.Equal(TextureDescriptor.TexVersion11HeaderSize + (8 * Bgra32.Size), bytes.Length);
+        Assert.Equal(source.GetLevel(0).ToArray(), written.GetLevel(0).ToArray());
+    }
+
     [Theory]
     [InlineData(TexAtlasFile.Version7)]
     [InlineData(TexAtlasFile.Version9)]
@@ -127,6 +145,22 @@ public sealed class ContainerWriterTests
     [Fact]
     public void AVersionTheOriginalDoesNotLoadIsRefused() =>
         Assert.Throws<TextureFormatException>(() => TexWriter.WriteTexture(Checkerboard(2, 2), 5));
+
+    [Theory]
+    [InlineData(TexFile.Version2, 16_384)]
+    [InlineData(TexFile.Version11, 65_536)]
+    public void ATextureTooWideForItsHeaderIsRefused(uint version, int width)
+    {
+        TextureImage image = TextureImage.FromPixels(width, 1, new Bgra32[width]);
+
+        Assert.Throws<TextureFormatException>(() => TexWriter.WriteTexture(image, version));
+    }
+
+    [Fact]
+    public void AnImageWhosePixelCountOverflowsIsRefused()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => TextureImage.FromPixels(50_000, 50_000, []));
+    }
 
     [RequiresGameDataFact]
     public void EveryRetailArchiveRebuildsWithTheSameContents()

@@ -61,6 +61,24 @@ public static class MipChainBuilder
     /// <returns>The whole chain including level zero, and the offset of each level.</returns>
     public static (Bgra32[] Pixels, int[] Offsets) Build(ReadOnlySpan<Bgra32> levelZero, int width, int height)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+
+        if (width > int.MaxValue / height)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(width),
+                "The dimensions describe more pixels than this process can address.");
+        }
+
+        int pixelCount = width * height;
+        if (levelZero.Length < pixelCount)
+        {
+            throw new ArgumentException(
+                $"A {width}x{height} texture needs {pixelCount} pixels, got {levelZero.Length}.",
+                nameof(levelZero));
+        }
+
         int levels = LevelCount(width, height);
 
         int total = 0;
@@ -72,7 +90,7 @@ public static class MipChainBuilder
         }
 
         Bgra32[] pixels = new Bgra32[total];
-        levelZero[..(width * height)].CopyTo(pixels);
+        levelZero[..pixelCount].CopyTo(pixels);
 
         for (int level = 1; level < levels; level++)
         {
