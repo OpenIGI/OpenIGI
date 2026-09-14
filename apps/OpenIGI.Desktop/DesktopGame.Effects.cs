@@ -516,7 +516,13 @@ internal sealed partial class DesktopGame
         bool haveSprite = _missileSmoke is not null && _missileSmoke.IsAvailable;
         float intensity = Math.Max(1f, RenderCVars.ImpactParticles.Value);
 
-        foreach (LiveMissile missile in _player.Missiles.Missiles)
+        SpawnMissileSmoke(_player.Missiles, haveSprite, intensity);
+        SpawnMissileSmoke(_vehicleMissiles, haveSprite, intensity);
+    }
+
+    private void SpawnMissileSmoke(MissileSimulation simulation, bool haveSprite, float intensity)
+    {
+        foreach (LiveMissile missile in simulation.Missiles)
         {
             if (!missile.Powered)
             {

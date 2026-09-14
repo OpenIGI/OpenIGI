@@ -960,6 +960,10 @@ internal sealed partial class DesktopGame
         {
             _soldiers.NotifyExplosion(blast.Position, blast.RadiusUnits);
         }
+        foreach (MissileDetonation blast in _vehicleMissiles.Detonations)
+        {
+            _soldiers.NotifyExplosion(blast.Position, blast.RadiusUnits);
+        }
 
         foreach (M203Detonation blast in _player.M203.Detonations)
         {
@@ -1061,36 +1065,50 @@ internal sealed partial class DesktopGame
 
         foreach (MissileDetonation blast in _player.Missiles.Detonations)
         {
-            _sounds?.PlayDefinition("explo_02_m", blast.Position, priority: 90);
-            SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
-            ScorchSurface(blast.Position, blast.Normal);
-            _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
-            // Launcher impacts use Explosion0's full collision envelope. Keep the speaker pass for
-            // alarms, but disable its legacy nearest-destructible fallback so one object cannot be
-            // destroyed twice or hide the other authored contacts in the blast.
-            HandleDestructibleBlast(
-                source: null,
-                originUnits: blast.Position,
-                radiusUnits: blast.RadiusUnits,
-                falloffUnits: blast.FalloffUnits,
-                damageFactor: blast.DamageFactor);
-            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, affectDestructibles: false);
+            ResolveMissileDetonation(blast);
+        }
+        foreach (MissileDetonation blast in _vehicleMissiles.Detonations)
+        {
+            ResolveMissileDetonation(blast);
+        }
+    }
 
-            float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
-            float dose = ExplosionDamage.Dose(
-                playerDistance,
-                ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
-                blast.RadiusUnits,
-                blast.FalloffUnits,
-                blast.DamageFactor);
-            if (dose > 0f && !_playerHealth.IsDead)
+    private void ResolveMissileDetonation(MissileDetonation blast)
+    {
+        if (_player is null)
+        {
+            return;
+        }
+
+        _sounds?.PlayDefinition("explo_02_m", blast.Position, priority: 90);
+        SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
+        ScorchSurface(blast.Position, blast.Normal);
+        _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
+        // Launcher impacts use Explosion0's full collision envelope. Keep the speaker pass for
+        // alarms, but disable its legacy nearest-destructible fallback so one object cannot be
+        // destroyed twice or hide the other authored contacts in the blast.
+        HandleDestructibleBlast(
+            source: null,
+            originUnits: blast.Position,
+            radiusUnits: blast.RadiusUnits,
+            falloffUnits: blast.FalloffUnits,
+            damageFactor: blast.DamageFactor);
+        DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, affectDestructibles: false);
+
+        float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
+        float dose = ExplosionDamage.Dose(
+            playerDistance,
+            ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
+            blast.RadiusUnits,
+            blast.FalloffUnits,
+            blast.DamageFactor);
+        if (dose > 0f && !_playerHealth.IsDead)
+        {
+            _playerHealth.Apply(ExplosionDamage.Zone, dose);
+            _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
+            if (_playerHealth.IsDead)
             {
-                _playerHealth.Apply(ExplosionDamage.Zone, dose);
-                _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
-                if (_playerHealth.IsDead)
-                {
-                    BeginPlayerDeath(blast.Position, ExplosionDamage.Zone, -1, WeaponCategory.Gun);
-                }
+                BeginPlayerDeath(blast.Position, ExplosionDamage.Zone, -1, WeaponCategory.Gun);
             }
         }
     }

@@ -328,6 +328,47 @@ public sealed class Issue105Tests
         Assert.True(liveApc.IsDestroyed);
     }
 
+    [RequiresGameDataFact]
+    public void MissionSixAlarmApcAcquiresPlayerAndEmitsRetailDirectMissile()
+    {
+        (LevelTask root, LoadedMission mission, ScriptVarRegistry variables) = Load(6);
+        new ConditionalContainerGate(variables).Prepare(root);
+        DeclaredTask apc = Assert.IsType<DeclaredTask>(root.Tree.FromId(800));
+        Assert.True(apc.TryGetValue("Position", out object? rawPosition));
+        Vector3d playerEye = Assert.IsType<Vector3d>(rawPosition)
+            + new Vector3d(0d, 37.0137d * WorldScene.UnitsPerMetre, 0d);
+
+        CutsceneRuntime runtime = new(root, variables, terrain: mission.Terrain);
+        string graphPath = Path.Combine(
+            GameData.RequireRoot(), "MISSIONS", "location0", "LEVEL6", "GRAPHS", "GRAPH1.DAT");
+        GraphFile graph = GraphFile.Read(File.ReadAllBytes(graphPath));
+        DeclaredTask graphTask = Assert.IsType<DeclaredTask>(root.Tree.FromId(1));
+        Assert.True(graphTask.TryGetValue("Graph position", out object? rawGraphPosition));
+        graph.ApplyWorldOffset(Assert.IsType<Vector3d>(rawGraphPosition));
+        runtime.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph });
+        runtime.ConfigureVehicleCombat(new WeaponType
+        {
+            ScriptId = "WEAPON_ID_APC",
+            MuzzleVelocity = 5f,
+            RoundsPerMinute = 12,
+        });
+
+        List<VehicleCombatShot> shots = [];
+        runtime.VehicleCombatTarget = () => playerEye;
+        runtime.VehicleCombatLineOfSight = static (_, _, _) => true;
+        runtime.VehicleCombatShotFired = shots.Add;
+
+        Assert.True(variables.TryWrite("ConditionalContainer_350.isRun", QvmValue.FromInt32(1)));
+        runtime.Tick(); // Target becomes visible and is retained; retail does not fire in this pass.
+        Assert.Empty(shots);
+        runtime.Tick(); // The following CarAI/Gun_Fire pass submits the first missile.
+
+        VehicleCombatShot shot = Assert.Single(shots);
+        Assert.Equal(MissileType.MissileDirect, shot.MissileType);
+        Assert.Equal(MissileFlight.FallbackLaunchMetresPerSecond, shot.MuzzleVelocityMetresPerSecond);
+        Assert.Equal("110_02_1", shot.ModelName);
+    }
+
     private static (LevelTask Root, LoadedMission Mission, ScriptVarRegistry Variables) Load(int missionId)
     {
         VirtualFileSystem fileSystem = new();

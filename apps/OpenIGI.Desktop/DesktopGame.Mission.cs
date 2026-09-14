@@ -48,7 +48,47 @@ internal sealed partial class DesktopGame
     {
         _player?.Grenades.Clear();
         _player?.Missiles.Clear();
+        _vehicleMissiles.Clear();
+        _vehicleMissileOwner = null;
         _player?.M203.Clear();
+    }
+
+    /// <summary>Advances missiles fired by authored vehicles against the player's own body.</summary>
+    private void TickVehicleMissiles()
+    {
+        if (_player is not { } player)
+        {
+            return;
+        }
+
+        bool PlayerProbe(Vector3d from, Vector3d to, out HumanHit hit)
+        {
+            hit = default;
+            if (_playerHealth.IsDead)
+            {
+                return false;
+            }
+
+            if (_soldiers?.TryHitPlayerBody(from, to, player.Body.Position, player.Body.Yaw, out hit) == true)
+            {
+                return true;
+            }
+
+            Vector3f facing = new(-MathF.Sin(player.Body.Yaw), MathF.Cos(player.Body.Yaw), 0f);
+            return HumanHitTest.TryCast(from, to, player.Body.Position, facing, pose: null, out hit);
+        }
+
+        WorldRayCast? walls = _worldTrace is { } trace
+            ? (Vector3d from, Vector3d to, out WorldRayHit hit) =>
+            {
+                bool found = trace(
+                    new WorldTraceRequest(from, to, WorldTraceMask.World, IgnoredOwner: _vehicleMissileOwner),
+                    out WorldTraceHit rich);
+                hit = found ? rich.RayHit : default;
+                return found;
+            }
+            : _effectWalls;
+        _vehicleMissiles.Tick(walls, PlayerProbe);
     }
 
     private void StartMission(int id)
@@ -1675,6 +1715,31 @@ internal sealed partial class DesktopGame
             }
 
             EndStage("the player's animation sets, walls, ladders and the weapon tables");
+
+            if (_cutscenes is { } vehicleRuntime
+                && weaponRoster.TryGetByScriptId("WEAPON_ID_APC", out WeaponType apcWeapon))
+            {
+                vehicleRuntime.ConfigureVehicleCombat(apcWeapon);
+                vehicleRuntime.VehicleCombatTarget = () => !_playerHealth.IsDead ? candidate.EyeUnits : null;
+                vehicleRuntime.VehicleCombatLineOfSight = (owner, from, to) =>
+                    _worldTrace is null
+                    || !_worldTrace(
+                        new WorldTraceRequest(from, to, WorldTraceMask.World, IgnoredOwner: owner), out _);
+                vehicleRuntime.VehicleCombatShotFired = shot =>
+                {
+                    _vehicleMissileOwner = shot.Owner;
+                    if (_vehicleMissiles.Spawn(
+                        shot.Origin,
+                        shot.Target,
+                        shot.MissileType,
+                        shot.MuzzleVelocityMetresPerSecond,
+                        shot.Direction,
+                        shot.ModelName))
+                    {
+                        _sounds?.PlayDefinition("rpg_launch_1", shot.Origin, priority: 250);
+                    }
+                };
+            }
 
             // The guards' weapons, which have to wait for the roster: a soldier's gun is an authored
             // Gun child task naming a WEAPON_ID_*, and only the table knows which model that draws.

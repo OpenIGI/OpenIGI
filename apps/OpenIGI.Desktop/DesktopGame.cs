@@ -433,6 +433,8 @@ internal sealed partial class DesktopGame : IDisposable
     private CameraStatusLightRenderer? _cameraStatusLights;
     private GrenadeRenderer? _grenadeRenderer;
     private MissileRenderer? _missileRenderer;
+    private readonly MissileSimulation _vehicleMissiles = new();
+    private GameTask? _vehicleMissileOwner;
     private LoadedMission? _loadedMissionForWeapon;
     private ViewModelRenderer? _arms;
     private SoldierRenderer? _soldiers;
@@ -2678,6 +2680,7 @@ internal sealed partial class DesktopGame : IDisposable
                         // tick's activate target. Do not advance the same registry again below.
                         interactionsTickedByPlayer = true;
                     }
+                    TickVehicleMissiles();
 
                     // Grenade physics runs inside PlayerCamera.Tick. IGI1 broadcasts the grenade task's
                     // AI events before the HumanAI pass, so deliver the queued records here rather than
@@ -4469,6 +4472,7 @@ internal sealed partial class DesktopGame : IDisposable
                 if (_missileRenderer is not null && _player is not null)
                 {
                     _missileRenderer.Draw(_player.Missiles, eye, projection, smoothPresentation ? tickBlend : 1f);
+                    _missileRenderer.Draw(_vehicleMissiles, eye, projection, smoothPresentation ? tickBlend : 1f);
                     _missileRenderer.Draw(_player.M203, eye, projection, smoothPresentation ? tickBlend : 1f);
                 }
 

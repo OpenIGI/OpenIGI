@@ -5,6 +5,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Rendering;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
@@ -69,6 +70,7 @@ public sealed class CutsceneRuntime
     private ObjectCollisionIndex? _collisionIndex;
     private DestructibleObjectRegistry? _destructibles;
     private Func<int, CutsceneTargetPose?>? _targetPoseResolver;
+    private WeaponType? _vehicleWeapon;
     private bool _breakRequested;
     private readonly List<string> _diagnostics = [];
 
@@ -99,6 +101,18 @@ public sealed class CutsceneRuntime
         get => _destructibles;
         set => _destructibles = value;
     }
+
+    /// <summary>Supplies the living player eye used by firing vehicles.</summary>
+    public Func<Vector3d?>? VehicleCombatTarget { get; set; }
+
+    /// <summary>Tests the firing vehicle's muzzle-to-player sight segment.</summary>
+    public Func<GameTask, Vector3d, Vector3d, bool>? VehicleCombatLineOfSight { get; set; }
+
+    /// <summary>Receives a vehicle missile only after sight, retention and gun cadence allow it.</summary>
+    public Action<VehicleCombatShot>? VehicleCombatShotFired { get; set; }
+
+    /// <summary>Binds the retail weapon row used by firing cars.</summary>
+    public void ConfigureVehicleCombat(WeaponType? weapon) => _vehicleWeapon = weapon;
 
     /// <summary>Settles every collision-enabled helicopter onto whatever is under it.</summary>
     /// <remarks>
@@ -308,7 +322,7 @@ public sealed class CutsceneRuntime
                 || rawRouteId is not int routeId
                 || graphId < 0
                 || routeId < 0
-                || _root.Tree.FromId(carId) is not { } car
+                || _root.Tree.FromId(carId) is not DeclaredTask car
                 || !_taskTransforms.TryGetValue(car, out TransformState? transform)
                 || !graphs.TryGetValue(graphId, out GraphFile? graph)
                 || paths.Find(routeId) is not { } path)
@@ -367,6 +381,56 @@ public sealed class CutsceneRuntime
                     // wedge the vehicle path (the human walker is intentionally different).
                     state.Route.Advance();
                     break;
+            }
+        }
+
+        TickVehicleCombat();
+    }
+
+    private void TickVehicleCombat()
+    {
+        if (_vehicleWeapon is not { } weapon
+            || VehicleCombatTarget?.Invoke() is not { } target)
+        {
+            return;
+        }
+
+        foreach (CarAiState state in _carAis)
+        {
+            if (state.Combat is null)
+            {
+                continue;
+            }
+
+            Vector3f forward = state.Transform.Orientation.Column2;
+            Vector3d sightOrigin = state.Transform.Position + new Vector3d(
+                forward.X * AiVehicleCombat.CapturedMuzzleForwardMetres * WorldScene.UnitsPerMetre,
+                forward.Y * AiVehicleCombat.CapturedMuzzleForwardMetres * WorldScene.UnitsPerMetre,
+                (forward.Z * AiVehicleCombat.CapturedMuzzleForwardMetres
+                    + AiVehicleCombat.CapturedMuzzleHeightMetres) * WorldScene.UnitsPerMetre);
+            bool visible = VehicleCombatLineOfSight?.Invoke(state.Car, sightOrigin, target) ?? true;
+            VehicleCombatShot? shot = state.Combat.Tick(new AiVehicleCombatInput(
+                state.Transform.Position,
+                state.Transform.Orientation,
+                target,
+                ConditionalContainerGate.IsTaskActive(state.Car),
+                !string.IsNullOrWhiteSpace(Text(state.Car, "Can fire")),
+                Single(state.Car, "ViewCone Alpha (degrees)", 180f),
+                Single(state.Car, "ViewCone Gamma (degrees)", 360f),
+                Single(state.Car, "ViewCone Length (meter)", 0f),
+                visible,
+                weapon.RoundsPerMinute));
+            if (shot is { } fired)
+            {
+                VehicleCombatShotFired?.Invoke(fired with
+                {
+                    Owner = state.Car,
+                    MissileType = MissileFlight.TypeForLauncher(weapon),
+                    MuzzleVelocityMetresPerSecond = MissileFlight.LaunchSpeedMetresPerSecond(weapon),
+                    ModelName = string.IsNullOrWhiteSpace(weapon.Projectile.Text)
+                        ? fired.ModelName
+                        : weapon.Projectile.Text,
+                });
             }
         }
     }
@@ -2454,6 +2518,10 @@ public sealed class CutsceneRuntime
 
     private static string Text(DeclaredTask task, string name) => task.TryGetValue(name, out object? value) && value is string text ? text : string.Empty;
     private static bool Bool(DeclaredTask task, string name) => task.TryGetValue(name, out object? value) && value is bool flag && flag;
+    private static float Single(DeclaredTask task, string name, float fallback) =>
+        task.TryGetValue(name, out object? value) && value is IConvertible convertible
+            ? convertible.ToSingle(CultureInfo.InvariantCulture)
+            : fallback;
     private static int Int(DeclaredTask task, string name, int fallback = 0) => task.TryGetValue(name, out object? value) && value is int number ? number : fallback;
     private static float Real(DeclaredTask task, string name, float fallback = 0f) => task.TryGetValue(name, out object? value) && value is float number ? number : fallback;
     private static float RealNamed(DeclaredTask task, string compactName, float fallback = 0f)
@@ -3312,13 +3380,13 @@ public sealed class CutsceneRuntime
 
     private sealed class CarAiState(
         DeclaredTask task,
-        GameTask car,
+        DeclaredTask car,
         TransformState transform,
         GraphFile graph,
         AiPatrolRoute? route)
     {
         public DeclaredTask Task { get; } = task;
-        public GameTask Car { get; } = car;
+        public DeclaredTask Car { get; } = car;
         public TransformState Transform { get; } = transform;
         public GraphFile Graph { get; } = graph;
         public AiPatrolRoute? Route { get; } = route;
@@ -3326,6 +3394,9 @@ public sealed class CutsceneRuntime
         public int SpeedKmh { get; set; }
         public bool Stopped { get; set; }
         public double SupportOffsetUnits { get; set; } = double.NaN;
+        public AiVehicleCombat? Combat { get; } = string.IsNullOrWhiteSpace(Text(car, "Can fire"))
+            ? null
+            : new AiVehicleCombat();
     }
 
     private sealed record TimedShot(EditCameraShot Shot, double Start);
