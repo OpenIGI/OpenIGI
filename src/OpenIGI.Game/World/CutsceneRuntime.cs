@@ -430,7 +430,8 @@ public sealed class CutsceneRuntime
                 state.Transform.Position,
                 state.Transform.Orientation,
                 target,
-                ConditionalContainerGate.IsTaskActive(state.Car)
+                ConditionalContainerGate.IsTaskActive(state.Task)
+                    && ConditionalContainerGate.IsTaskActive(state.Car)
                     && _destructibles?.IsDestroyed(state.Car) != true,
                 !string.IsNullOrWhiteSpace(Text(state.Car, "Can fire")),
                 Single(state.Car, "ViewCone Alpha (degrees)", 180f),
