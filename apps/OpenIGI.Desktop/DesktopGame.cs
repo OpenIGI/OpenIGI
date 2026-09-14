@@ -2821,7 +2821,8 @@ internal sealed partial class DesktopGame : IDisposable
                             DamageAlarmSpeakers(
                                 playerImpact.Position,
                                 owner: playerImpact.Owner,
-                                placement: playerImpact.Placement);
+                                placement: playerImpact.Placement,
+                                destructibleDamage: _player.HeldWeaponType?.DamageFactor ?? 1f);
                         }
                     }
 

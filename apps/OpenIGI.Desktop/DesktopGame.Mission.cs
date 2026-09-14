@@ -1244,7 +1244,8 @@ internal sealed partial class DesktopGame
                         DamageAlarmSpeakers(
                             worldHit.Position,
                             owner: blocker.Owner,
-                            placement: blocker.Placement);
+                            placement: blocker.Placement,
+                            destructibleDamage: weapon.DamageFactor);
 
                         // A guard's round kicks the same burst a player's does -- misses landing
                         // around you are half of what sells incoming fire.

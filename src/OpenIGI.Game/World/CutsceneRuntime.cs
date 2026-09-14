@@ -344,6 +344,12 @@ public sealed class CutsceneRuntime
     {
         foreach (CarAiState state in _carAis)
         {
+            if (_destructibles?.IsDestroyed(state.Car) == true)
+            {
+                state.Stopped = true;
+                continue;
+            }
+
             if (!ConditionalContainerGate.IsTaskActive(state.Task) || state.Stopped || state.Route is null || state.Route.HasStopped)
             {
                 continue;
@@ -417,7 +423,8 @@ public sealed class CutsceneRuntime
                 state.Transform.Position,
                 state.Transform.Orientation,
                 target,
-                ConditionalContainerGate.IsTaskActive(state.Car),
+                ConditionalContainerGate.IsTaskActive(state.Car)
+                    && _destructibles?.IsDestroyed(state.Car) != true,
                 !string.IsNullOrWhiteSpace(Text(state.Car, "Can fire")),
                 Single(state.Car, "ViewCone Alpha (degrees)", 180f),
                 Single(state.Car, "ViewCone Gamma (degrees)", 360f),

@@ -81,15 +81,139 @@ public sealed class Issue105Tests
         Assert.Equal(2, tanks.Length);
         Assert.All(tanks, static tank => Assert.True(tank.IsAvailable));
 
-        WorldInteraction tank = tanks[0];
-        Vector3d eye = tank.Anchor + new Vector3d(0.0, -20000.0, 0.0);
-        Assert.Same(tank, interactions.Resolve(eye, yaw: 0f));
+        foreach (WorldInteraction tank in tanks)
+        {
+            Vector3d feet = tank.Anchor + new Vector3d(0.0, -2.0 * WorldScene.UnitsPerMetre, 0.0);
+            Vector3d eye = feet + new Vector3d(0.0, 0.0, PlayerBody.StandingEyeHeight);
+            Vector3d aim = tank.Anchor - eye;
+            float yaw = (float)Math.Atan2(aim.X, aim.Y);
+            float pitch = (float)Math.Atan2(aim.Z, Math.Sqrt((aim.X * aim.X) + (aim.Y * aim.Y)));
+            Assert.Same(tank, interactions.Resolve(eye, yaw, pitch));
 
-        tank.BeginUse();
-        tank.CompleteUse();
+            Assert.True(tank.BeginUse());
+            tank.CompleteUse();
+            interactions.Tick();
+            Assert.True(tank.IsCompleted);
+            Assert.False(tank.IsAvailable);
+        }
+    }
+
+    [RequiresGameDataFact]
+    public void MissionSixAllFiveAuthoredCabinetsCanBeSearchedFromTheirUsePoses()
+    {
+        (LevelTask root, LoadedMission mission, ScriptVarRegistry variables) = Load(6);
+        new ConditionalContainerGate(variables).Prepare(root);
+        MissionObjectiveRuntime objectives = new(root, variables);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+            root,
+            mission,
+            DoorRegistry.Build(root),
+            variables);
+
+        WorldInteraction[] cabinets = interactions.Items
+            .Where(static item => item.Type == InteractionActivateType.Cabinet
+                && item.Task.Id is >= 1500 and <= 1504)
+            .OrderBy(static item => item.Task.Id)
+            .ToArray();
+        Assert.Equal([1500, 1501, 1502, 1503, 1504], cabinets.Select(static item => item.Task.Id));
+
+        foreach (WorldInteraction cabinet in cabinets)
+        {
+            Vector3d feet = cabinet.BodyPose(cabinet.Anchor).Position;
+            Vector3d eye = feet + new Vector3d(0.0, 0.0, PlayerBody.StandingEyeHeight);
+            Vector3d aim = cabinet.Anchor - eye;
+            float yaw = (float)Math.Atan2(aim.X, aim.Y);
+            float pitch = (float)Math.Atan2(aim.Z, Math.Sqrt((aim.X * aim.X) + (aim.Y * aim.Y)));
+
+            Assert.Same(cabinet, interactions.Resolve(eye, yaw, pitch));
+            Assert.True(cabinet.BeginUse());
+            cabinet.CompleteUse();
+            interactions.Tick();
+            Assert.True(cabinet.IsSearched);
+        }
+
+        objectives.Tick();
+        Assert.True(variables.TryRead("StatusMessage_706.isSendt", out QvmValue completed));
+        Assert.Equal(1, completed.Integer);
+    }
+
+    [RequiresGameDataFact]
+    public void MissionSixC4TimerExplodesBothFuelTanksAndReleasesTheLimo()
+    {
+        (LevelTask root, LoadedMission mission, ScriptVarRegistry variables) = Load(6);
+        new ConditionalContainerGate(variables).Prepare(root);
+        WorldScene scene = WorldScene.Build(mission, root);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+            root, mission, DoorRegistry.Build(root), variables);
+        GenericPickupRegistry pickups = GenericPickupRegistry.Build(root, variables);
+        DestructibleObjectRegistry destructibles = DestructibleObjectRegistry.Build(
+            root, scene.Placements, variables);
+        CutsceneRuntime runtime = new(root, variables, terrain: mission.Terrain);
+
+        foreach (GenericPickup pickup in pickups.Items.Where(static item => item.Task.Id is 755 or 756))
+        {
+            pickups.CollectAt(pickup.Position);
+        }
         interactions.Tick();
-        Assert.True(tank.IsCompleted);
-        Assert.False(tank.IsAvailable);
+        foreach (WorldInteraction charge in interactions.Items.Where(
+                     static item => item.Task.Id is 1602 or 1603))
+        {
+            Assert.True(charge.BeginUse());
+            charge.CompleteUse();
+        }
+
+        DestructibleObject[] tanks = destructibles.Objects
+            .Where(static item => item.Owner.Id is 1600 or 1601)
+            .OrderBy(static item => item.Owner.Id)
+            .ToArray();
+        Assert.Equal([1600, 1601], tanks.Select(static item => item.Owner.Id));
+        for (int tick = 1; tick < 20 * GameClock.DefaultTickRate; tick++)
+        {
+            runtime.Tick();
+            destructibles.Tick();
+            Assert.Empty(destructibles.ConsumeReadyExplosions());
+        }
+
+        runtime.Tick();
+        destructibles.Tick();
+        Assert.Equal(tanks, destructibles.ConsumeReadyExplosions().OrderBy(static item => item.Owner.Id));
+        Assert.All(tanks, static item => Assert.True(item.IsDestroyed));
+
+        runtime.Tick();
+        GameTask limo = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(801));
+        Assert.True(ConditionalContainerGate.IsTaskActive(limo));
+    }
+
+    [RequiresGameDataFact]
+    public void MissionSixExplodeObjectsUseTheirAuthoredDamageScaleAsHitPoints()
+    {
+        (LevelTask root, LoadedMission mission, ScriptVarRegistry variables) = Load(6);
+        WorldScene scene = WorldScene.Build(mission, root);
+        DestructibleObjectRegistry destructibles = DestructibleObjectRegistry.Build(
+            root, scene.Placements, variables);
+        DestructibleObject tank = Assert.Single(
+            destructibles.Objects, static item => item.Owner.Id == 1600);
+        DestructibleObject fuelTruck = Assert.Single(destructibles.Objects, static item =>
+            item.Owner is DeclaredTask task
+            && task.TryGetValue("Model", out object? model)
+            && Equals(model, "439_01_1"));
+
+        Assert.Equal(100f, tank.ExplosionDamageThreshold);
+        Assert.Equal(8f, fuelTruck.ExplosionDamageThreshold);
+        for (int shot = 0; shot < 333; shot++)
+        {
+            Assert.Null(destructibles.TryDestroy(tank.Owner, tank.Placement, damage: 0.3f));
+        }
+        Assert.False(tank.IsDestroyed);
+        Assert.Same(tank, destructibles.TryDestroy(tank.Owner, tank.Placement, damage: 0.3f));
+
+        for (int shot = 0; shot < 26; shot++)
+        {
+            Assert.Null(destructibles.TryDestroy(fuelTruck.Owner, fuelTruck.Placement, damage: 0.3f));
+        }
+        Assert.False(fuelTruck.IsDestroyed);
+        Assert.Same(fuelTruck, destructibles.TryDestroy(
+            fuelTruck.Owner, fuelTruck.Placement, damage: 0.3f));
     }
 
     [RequiresGameDataFact]
@@ -216,8 +340,8 @@ public sealed class Issue105Tests
         GameTask fuelTankTwo = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(1601));
         GameTask limo = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(801));
         Assert.False(ConditionalContainerGate.IsTaskActive(limo));
-        Assert.NotNull(destructibles.TryDestroy(fuelTankOne));
-        Assert.NotNull(destructibles.TryDestroy(fuelTankTwo));
+        Assert.NotNull(destructibles.TryDestroy(fuelTankOne, damage: 100f));
+        Assert.NotNull(destructibles.TryDestroy(fuelTankTwo, damage: 100f));
         runtime.Tick();
         Assert.True(ConditionalContainerGate.IsTaskActive(limo));
         runtime.Tick(); // SetSpeed(50) has advanced; this tick begins WalkTo(1).
@@ -248,7 +372,11 @@ public sealed class Issue105Tests
         Assert.Same(placement, hit.Placement);
 
         DestructibleObjectRegistry destructibles = DestructibleObjectRegistry.Build(root, scene.Placements, variables);
-        DestructibleObject? destroyed = destructibles.TryDestroy(hit.Owner, hit.Placement);
+        Assert.Null(destructibles.TryDestroy(hit.Owner, hit.Placement, damage: 0.3f));
+        Assert.Equal(0.3f, Assert.Single(destructibles.Objects, item => ReferenceEquals(item.Owner, tank))
+            .ExplosionDamageAccumulated, precision: 3);
+        DestructibleObject? destroyed = destructibles.TryDestroy(
+            hit.Owner, hit.Placement, damage: 99.7f);
         Assert.NotNull(destroyed);
         Assert.True(destroyed.IsDestroyed);
     }
@@ -326,6 +454,30 @@ public sealed class Issue105Tests
             item => ConditionalContainerGate.IsTaskActive(item.Owner));
         Assert.Contains(liveApc, destroyed);
         Assert.True(liveApc.IsDestroyed);
+
+        Assert.True(runtime.TryGetDrawTransform(apc, out Vector3d wreckPosition, out _));
+        runtime.ConfigureVehicleCombat(apc, new WeaponType
+        {
+            ScriptId = "WEAPON_ID_APC",
+            MuzzleVelocity = 5f,
+            RoundsPerMinute = 12,
+        });
+        List<VehicleCombatShot> postDestructionShots = [];
+        runtime.VehicleCombatTarget = () => wreckPosition * WorldScene.UnitsPerMetre
+            + new Vector3d(0d, 37.0137d * WorldScene.UnitsPerMetre, 0d);
+        runtime.VehicleCombatLineOfSight = static (_, _, _) => true;
+        runtime.VehicleCombatShotFired = postDestructionShots.Add;
+
+        for (int tick = 0; tick < 8; tick++)
+        {
+            runtime.Tick();
+        }
+
+        Assert.True(runtime.TryGetDrawTransform(apc, out Vector3d stoppedWreckPosition, out _));
+        Assert.Equal(wreckPosition.X, stoppedWreckPosition.X, precision: 6);
+        Assert.Equal(wreckPosition.Y, stoppedWreckPosition.Y, precision: 6);
+        Assert.Equal(wreckPosition.Z, stoppedWreckPosition.Z, precision: 6);
+        Assert.Empty(postDestructionShots);
     }
 
     [RequiresGameDataFact]

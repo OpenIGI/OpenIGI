@@ -76,8 +76,11 @@ public sealed class DestructibleObject
     /// <summary>Gets the authored explosion damage factor.</summary>
     public float ExplosionDamageFactor { get; internal set; }
 
-    /// <summary>Gets the authored damage required by <c>ExplodeMagicObj</c> before it detonates.</summary>
-    /// <remarks>Retail compares the accumulated hit value at <c>+0x13c</c> with the threshold at <c>+0x140</c>.</remarks>
+    /// <summary>Gets the accumulated damage required before this explosive object detonates.</summary>
+    /// <remarks>
+    /// Retail <c>ExplodeObject</c> compares <c>+0x1e8</c> with <c>+0x1ec</c>; attached
+    /// <c>ExplodeMagicObj</c> uses the equivalent <c>+0x13c</c>/<c>+0x140</c> pair.
+    /// </remarks>
     public float ExplosionDamageThreshold { get; internal set; } = 1f;
 
     /// <summary>Gets the damage accumulated by this object since it was created.</summary>
@@ -328,6 +331,18 @@ public sealed class DestructibleObjectRegistry
         foreach (DestructibleObject item in _objects)
         {
             item.IsLastDestroyed = item.IsDestroyed;
+            if (!item.IsDestroyed
+                && item.ExplosionExpression.Length > 0
+                && ExplosionEnabled(item))
+            {
+                // ExplodeObject::Update (IGI1 0x481970) evaluates the authored expression on every
+                // tick and enters the explosion path immediately when it becomes true. This is the
+                // Level 6 C4 chain: LevelTimer_1604 reaches tick 600, then tanks 1600/1601 explode.
+                item.IsDestroyed = true;
+                _readyExplosions.Add(item);
+                continue;
+            }
+
             if (item.PendingExplosionTicks > 0 && --item.PendingExplosionTicks == 0)
             {
                 _readyExplosions.Add(item);
@@ -353,13 +368,16 @@ public sealed class DestructibleObjectRegistry
         return ready;
     }
 
-    /// <summary>Destroys the exact impact placement or owner, preserving attached-object identity.</summary>
-    public DestructibleObject? TryDestroy(GameTask? owner, WorldPlacement? placement = null)
+    /// <summary>Applies one weapon hit to the exact placement or owner.</summary>
+    public DestructibleObject? TryDestroy(
+        GameTask? owner,
+        WorldPlacement? placement = null,
+        float damage = 1f)
     {
         if (placement is not null
             && _byPlacement.TryGetValue(placement, out DestructibleObject? exactPlacement))
         {
-            return ApplyDamage(exactPlacement, 1f);
+            return ApplyDamage(exactPlacement, damage);
         }
 
         if (owner is null || !_byOwner.TryGetValue(owner, out List<DestructibleObject>? items))
@@ -376,22 +394,23 @@ public sealed class DestructibleObjectRegistry
             : items.FirstOrDefault(item => item.Placement is null && !item.IsDestroyed);
         if (exactOwner is not null)
         {
-            return ApplyDamage(exactOwner, 1f);
+            return ApplyDamage(exactOwner, damage);
         }
 
         return null;
     }
 
-    /// <summary>Destroys the nearest live destructible object within the supplied impact radius.</summary>
+    /// <summary>Applies one weapon hit to the nearest live destructible within the supplied radius.</summary>
     public DestructibleObject? TryDestroyAt(
         Vector3d impactUnits,
         float radiusUnits = HitRadiusUnits,
         GameTask? owner = null,
-        WorldPlacement? placement = null)
+        WorldPlacement? placement = null,
+        float damage = 1f)
     {
         if (placement is not null && _byPlacement.TryGetValue(placement, out DestructibleObject? exactPlacement))
         {
-            return ApplyDamage(exactPlacement, 1f);
+            return ApplyDamage(exactPlacement, damage);
         }
 
         if (owner is not null
@@ -400,7 +419,7 @@ public sealed class DestructibleObjectRegistry
                 ? owned[0]
                 : owned.FirstOrDefault(item => item.Placement is null && !item.IsDestroyed)) is { } exactOwner)
         {
-            return ApplyDamage(exactOwner, 1f);
+            return ApplyDamage(exactOwner, damage);
         }
 
         DestructibleObject? nearest = null;
@@ -420,7 +439,7 @@ public sealed class DestructibleObjectRegistry
             }
         }
 
-        return nearest is null ? null : ApplyDamage(nearest, 1f);
+        return nearest is null ? null : ApplyDamage(nearest, damage);
     }
 
     /// <summary>
@@ -513,9 +532,10 @@ public sealed class DestructibleObjectRegistry
             return null;
         }
 
-        // Glass and top-level ExplodeObject use their native immediate weapon-hit path. Only the
-        // ExplodeMagicObj family owns the +0x13c accumulator and +0x140 threshold.
-        if (!string.Equals(item.TypeName, ExplodeMagicType, StringComparison.Ordinal))
+        // Vehicle and glass callbacks are binary state transitions. ExplodeObject and the attached
+        // ExplodeMagicObj family instead accumulate the incoming hit value and compare it with their
+        // authored damage scale (IGI1 0x481e60: +0x1e8 against +0x1ec).
+        if (item.Kind != DestructibleObjectKind.Explosive)
         {
             item.IsDestroyed = true;
             return item;
@@ -593,8 +613,11 @@ public sealed class DestructibleObjectRegistry
         item.ExplosionDamageFactor = ReadFloat(task, "Explosion damage scale", ExplosionDamageDefaults.DamageFactor);
         item.ExplosionDamageThreshold = ReadFloat(
             task,
-            "Max damage before explosion",
-            ExplosionDamageDefaults.DamageThreshold);
+            "Damage scale",
+            ReadFloat(
+                task,
+                "Max damage before explosion",
+                ExplosionDamageDefaults.DamageThreshold));
         item.ExplosionDelayTicks = Math.Max(0, (int)(ReadFloat(task, "Explosion delay") * 30f));
         item.ExplosionSound = ReadString(task, "Explosion sound");
         item.ExplosionFireballs = ReadFloat(task, "Explosion fireballs");

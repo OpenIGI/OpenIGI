@@ -355,6 +355,15 @@ public sealed class WorldInteraction
             return local.Y > 0.0 && Math.Abs(local.X) < 8192.0;
         }
 
+        if (Type == InteractionActivateType.Cabinet)
+        {
+            // Cabinet::GetActivate and the state-34 search pose both use the task's model frame.
+            // Reconstructing its front from Gamma reverses the usable side for quarter-turned
+            // cabinets, including Level 6's three upper-office cabinets (1500-1502).
+            Vector3d local = Orientation.Transform(from - Anchor);
+            return local.Y > 0.0 && Math.Abs(local.X) < 8192.0;
+        }
+
         if (Type == InteractionActivateType.Switch)
         {
             // Switch::GetActivate 0x444500: offer from magic-vertex 0 (already in Anchor).
@@ -372,8 +381,7 @@ public sealed class WorldInteraction
 
         return Type switch
         {
-            InteractionActivateType.Cabinet
-                or InteractionActivateType.StationaryGun => inFront > 0.0 && lateral < 8192.0,
+            InteractionActivateType.StationaryGun => inFront > 0.0 && lateral < 8192.0,
             InteractionActivateType.PlaceExplosive => inFront > 0.0,
             _ => true,
         };

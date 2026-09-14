@@ -1245,6 +1245,7 @@ internal sealed partial class DesktopGame
     /// <param name="owner">The exact placed task struck by a rich trace, when available.</param>
     /// <param name="placement">The exact rendered placement struck, including an attached magic object.</param>
     /// <param name="affectDestructibles">Whether this contact should also run the destructible-object path.</param>
+    /// <param name="destructibleDamage">The firing weapon row's native damage factor.</param>
     /// <remarks>
     /// Retail routes a weapon hit to the exact task. AlarmLight_Explode (<c>0x43A5F0</c>) and the
     /// SCameraLens destruction branch (<c>0x441770</c>) permanently silence it, play its report,
@@ -1256,7 +1257,8 @@ internal sealed partial class DesktopGame
         float radiusUnits = AlarmSpeakerRegistry.HitRadiusUnits,
         GameTask? owner = null,
         WorldPlacement? placement = null,
-        bool affectDestructibles = true)
+        bool affectDestructibles = true,
+        float destructibleDamage = 1f)
     {
         // The same world contact drives both families. The placement is essential for windows and
         // barrels: their Owner is the enclosing Building task, while retail destroys only the exact
@@ -1267,7 +1269,8 @@ internal sealed partial class DesktopGame
                 impactUnits,
                 radiusUnits,
                 owner,
-                placement);
+                placement,
+                destructibleDamage);
             if (destructible is not null)
             {
                 HandleDestructibleImpact(destructible, impactUnits);

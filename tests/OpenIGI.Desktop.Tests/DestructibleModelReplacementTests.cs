@@ -129,7 +129,8 @@ public sealed class DestructibleModelReplacementTests
 
         Assert.Equal("Terminal", terminal.TypeName);
         Assert.Equal("203_02_1", terminal.DestroyedModelName);
-        Assert.Same(terminal, scenario.Destructibles.TryDestroy(terminal.Owner, placement));
+        Assert.Same(terminal, scenario.Destructibles.TryDestroy(
+            terminal.Owner, placement, damage: DestructionDose(terminal)));
         Assert.True(scenario.Destructibles.IsDestroyed(placement));
     }
 
@@ -155,7 +156,8 @@ public sealed class DestructibleModelReplacementTests
         scenario.Renderer.Draw(scenario.Scene, camera, projection);
         HashSet<uint> intactMeshes = [.. scenario.Device.Meshes.Keys];
 
-        Assert.Same(target, scenario.Destructibles.TryDestroy(target.Owner, placement));
+        Assert.Same(target, scenario.Destructibles.TryDestroy(
+            target.Owner, placement, damage: DestructionDose(target)));
         scenario.Renderer.BeginFrame(tickFraction: 1f, smooth: false);
         Assert.True(scenario.Renderer.MakeResident(scenario.Scene, index));
         uint destroyedMesh = Assert.Single(scenario.Device.Meshes.Keys, id => !intactMeshes.Contains(id));
@@ -202,7 +204,8 @@ public sealed class DestructibleModelReplacementTests
 
             // Hit the last placement deliberately: one declared task may own Model, Model 2, and
             // further instances. All of them must share its state and renderer replacement.
-            Assert.Same(destructible, scenario.Destructibles.TryDestroy(placement.Owner, placement));
+            Assert.Same(destructible, scenario.Destructibles.TryDestroy(
+                placement.Owner, placement, damage: DestructionDose(destructible)));
             foreach ((WorldPlacement ownedPlacement, int ownedIndex) in group)
             {
                 Assert.True(
@@ -222,6 +225,9 @@ public sealed class DestructibleModelReplacementTests
 
         return placements.Length;
     }
+
+    private static float DestructionDose(DestructibleObject item) =>
+        Math.Max(1f, item.ExplosionDamageThreshold);
 
     private static Scenario CreateMission(int missionId)
     {
