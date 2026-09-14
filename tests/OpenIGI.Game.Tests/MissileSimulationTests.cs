@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -207,6 +208,40 @@ public sealed class MissileSimulationTests
         LiveMissile missile = Assert.Single(simulation.Missiles);
         Assert.Equal(z0, missile.Position.Z, 0.01);
         Assert.Equal(0f, missile.Velocity.Z, 0.01);
+    }
+
+    [Fact]
+    public void ContextualWorldTraceReceivesEachMissilesOwnCollisionOwner()
+    {
+        GameTask firstOwner = new DeclaredTask();
+        GameTask secondOwner = new DeclaredTask();
+        MissileSimulation simulation = new();
+        Assert.True(simulation.Spawn(
+            Vector3d.Zero,
+            new Vector3d(409600, 0, 0),
+            MissileType.MissileDirect,
+            muzzleVelocityMetresPerSecond: 30f,
+            collisionOwner: firstOwner));
+        Assert.True(simulation.Spawn(
+            new Vector3d(0, 4096, 0),
+            new Vector3d(409600, 4096, 0),
+            MissileType.MissileDirect,
+            muzzleVelocityMetresPerSecond: 30f,
+            collisionOwner: secondOwner));
+
+        HashSet<GameTask?> observedOwners = [];
+        simulation.TickWithMissileContext(
+            (LiveMissile missile, Vector3d _, Vector3d _, out WorldRayHit hit) =>
+            {
+                observedOwners.Add(missile.CollisionOwner);
+                hit = default;
+                return false;
+            },
+            humans: null);
+
+        Assert.Equal(2, observedOwners.Count);
+        Assert.Contains(firstOwner, observedOwners);
+        Assert.Contains(secondOwner, observedOwners);
     }
 
 }

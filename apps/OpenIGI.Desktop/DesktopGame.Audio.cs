@@ -1108,7 +1108,7 @@ internal sealed partial class DesktopGame
             _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
             if (_playerHealth.IsDead)
             {
-                BeginPlayerDeath(blast.Position, ExplosionDamage.Zone, -1, WeaponCategory.Gun);
+                BeginPlayerDeath(blast.Position, ExplosionDamage.Zone, -1, WeaponCategory.Grenade);
             }
         }
     }

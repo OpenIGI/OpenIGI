@@ -339,6 +339,13 @@ public sealed class CutsceneRuntime
         }
     }
 
+    /// <summary>Gets active graph-driven vehicles at their current world positions.</summary>
+    public IReadOnlyList<VehicleOccupant> VehicleOccupants() =>
+        _carAis
+            .Where(static state => ConditionalContainerGate.IsTaskActive(state.Car))
+            .Select(static state => new VehicleOccupant(state.Car.Id, state.Transform.Position))
+            .ToArray();
+
     /// <summary>Runs the graph/path portion of retail's registered CarAI callback once per game tick.</summary>
     private void TickCarAi()
     {
@@ -491,9 +498,21 @@ public sealed class CutsceneRuntime
         // fixed 30 Hz engine-unit step; this is a graph follower, while CarDynamics remains the
         // force/suspension implementation for animated vehicle physics.
         double step = state.SpeedKmh * (WorldScene.UnitsPerMetre / 3.6d) / Frequency;
+        Vector3d nextPosition = distance <= Math.Max(step, target.Radius * GraphNode.MetreInUnits)
+            ? new Vector3d(target.Position.X, target.Position.Y, state.Transform.Position.Z)
+            : state.Transform.Position + (delta * (step / distance));
+        if (CarAiBlockedByClosedDoor(state, nextPosition))
+        {
+            state.Transform.PreviousPosition = state.Transform.Position;
+            state.Transform.PreviousOrientation = state.Transform.Orientation;
+            state.Transform.Speed = 0f;
+            state.Transform.IsDynamic = true;
+            return;
+        }
+
         if (distance <= Math.Max(step, target.Radius * GraphNode.MetreInUnits))
         {
-            PlaceCarAiOnSupport(state, new Vector3d(target.Position.X, target.Position.Y, state.Transform.Position.Z));
+            PlaceCarAiOnSupport(state, nextPosition);
             state.TargetNodeId = -1;
             if (target.Id == destinationId)
             {
@@ -512,7 +531,35 @@ public sealed class CutsceneRuntime
                 state.Transform.Heading);
         }
 
-        PlaceCarAiOnSupport(state, state.Transform.Position + (delta * (step / distance)));
+        PlaceCarAiOnSupport(state, nextPosition);
+    }
+
+    /// <summary>Stops a graph follower at a closed authored door without consuming its route command.</summary>
+    private bool CarAiBlockedByClosedDoor(CarAiState state, Vector3d proposedPosition)
+    {
+        Vector3d translation = proposedPosition - state.Transform.Position;
+        if (_vehicleObstacleHit is null || translation.Length <= 1e-6d)
+        {
+            return false;
+        }
+
+        CarPhysicsDefinition physics = state.Transform.CarPhysics ?? DefaultCarPhysics;
+        Vector3d heading = translation / translation.Length;
+        double halfLengthUnits = physics.Dimensions.Y * 0.5d * WorldScene.UnitsPerMetre;
+        foreach (double probeHeightMetres in CarProbeHeightsMetres)
+        {
+            Vector3d offset = new(0d, 0d, probeHeightMetres * WorldScene.UnitsPerMetre);
+            Vector3d start = state.Transform.Position + (heading * halfLengthUnits) + offset;
+            Vector3d end = proposedPosition + (heading * (halfLengthUnits + CarProbeMarginUnits)) + offset;
+            if (_vehicleObstacleHit(state.Car, start, end) is { Owner: { } obstacle }
+                && string.Equals(obstacle.Type.Name, "Door", StringComparison.Ordinal)
+                && _vehicleObstacleReleased?.Invoke(obstacle) != true)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Places a graph-driven car on the same terrain/object support used by car physics.</summary>

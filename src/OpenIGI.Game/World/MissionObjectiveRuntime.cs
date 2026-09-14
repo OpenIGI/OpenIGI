@@ -40,6 +40,7 @@ public sealed class MissionObjectiveRuntime
     private readonly StatusMessage?[] _messageSlots = new StatusMessage?[MessageSlotCount];
     private readonly List<MissionComputerLogEntry> _log = [];
     private readonly Dictionary<int, HumanOccupant> _soldierOccupants = [];
+    private readonly Dictionary<int, VehicleOccupant> _vehicleOccupants = [];
     private readonly string _completeExpression = string.Empty;
     private readonly string _failedExpression = string.Empty;
     private readonly DeclaredTask? _levelFlowTask;
@@ -370,6 +371,17 @@ public sealed class MissionObjectiveRuntime
                     count++;
                 }
             }
+            foreach (VehicleOccupant occupant in _vehicleOccupants.Values)
+            {
+                GameTask? vehicle = _levelRoot.Tree.FromId(occupant.TaskId);
+                if (vehicle is not null
+                    && ConditionalContainerGate.IsTaskActive(vehicle)
+                    && area.AcceptsVehicle
+                    && area.Contains(occupant.Position))
+                {
+                    count++;
+                }
+            }
             area.ActiveCount = count;
         }
 
@@ -412,6 +424,17 @@ public sealed class MissionObjectiveRuntime
             {
                 human.IsDead = true;
             }
+        }
+    }
+
+    /// <summary>Feeds the live positions of graph-driven vehicles into vehicle-only areas.</summary>
+    public void SetVehicleOccupants(IEnumerable<VehicleOccupant> occupants)
+    {
+        ArgumentNullException.ThrowIfNull(occupants);
+        _vehicleOccupants.Clear();
+        foreach (VehicleOccupant occupant in occupants)
+        {
+            _vehicleOccupants[occupant.TaskId] = occupant;
         }
     }
 
@@ -707,6 +730,10 @@ public sealed class MissionObjectiveRuntime
             {
                 _filter = OccupantFilter.PlayerOnly;
             }
+            else if (filter.Equals("CRITERIA_VEHICLE", StringComparison.OrdinalIgnoreCase))
+            {
+                _filter = OccupantFilter.Vehicle;
+            }
             else
             {
                 _filter = OccupantFilter.All;
@@ -718,6 +745,7 @@ public sealed class MissionObjectiveRuntime
         {
             OccupantFilter.Team0 => team == 0,
             OccupantFilter.Team1 => team == 1,
+            OccupantFilter.Vehicle => false,
             _ => true, // All, or PlayerOnly (the player is the player)
         };
 
@@ -727,8 +755,12 @@ public sealed class MissionObjectiveRuntime
             OccupantFilter.Team0 => team == 0,
             OccupantFilter.Team1 => team == 1,
             OccupantFilter.PlayerOnly => false,
+            OccupantFilter.Vehicle => false,
             _ => true, // All
         };
+
+        /// <summary>Whether a vehicle counts toward this volume.</summary>
+        public bool AcceptsVehicle => _filter is OccupantFilter.Vehicle or OccupantFilter.All;
 
         public int ActiveCount { get; set; }
         public bool Contains(Vector3d point) =>
@@ -743,6 +775,7 @@ public sealed class MissionObjectiveRuntime
         Team0,
         Team1,
         PlayerOnly,
+        Vehicle,
     }
 
     private sealed class StatusMessage(

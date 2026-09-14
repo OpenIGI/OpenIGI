@@ -283,10 +283,16 @@ public sealed class Issue105Tests
 
         new ConditionalContainerGate(variables).Prepare(root);
         WorldScene scene = WorldScene.Build(mission, root);
+        GameTask internalGate = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(1114));
+        bool internalGateOpen = false;
         CutsceneRuntime runtime = new(
             root,
             variables,
             vehiclePhysics: physics,
+            vehicleObstacleHit: (vehicle, _, _) => vehicle.Id == 801
+                ? (internalGate, default, "test internal gate")
+                : null,
+            vehicleObstacleReleased: obstacle => ReferenceEquals(obstacle, internalGate) && internalGateOpen,
             terrain: mission.Terrain)
         {
             CollisionIndex = ObjectCollisionIndex.Build(scene.Placements),
@@ -322,6 +328,7 @@ public sealed class Issue105Tests
             scene.Placements,
             variables,
             physics);
+        runtime.Destructibles = destructibles;
         DestructibleObject liveApc = Assert.Single(destructibles.Objects, item => ReferenceEquals(item.Owner, alarmApc));
         DestructibleObject dormantApc = Assert.Single(destructibles.Objects, item => ReferenceEquals(item.Owner, fakeApc));
         Assert.Equal(DestructibleObjectKind.Vehicle, liveApc.Kind);
@@ -345,8 +352,36 @@ public sealed class Issue105Tests
         runtime.Tick();
         Assert.True(ConditionalContainerGate.IsTaskActive(limo));
         runtime.Tick(); // SetSpeed(50) has advanced; this tick begins WalkTo(1).
+        Assert.True(runtime.TryGetDrawTransform(limo, out Vector3d waitingLimo, out _));
+        Assert.Equal(new Vector3d(24374838d, 89438272d, 174505184d), waitingLimo * WorldScene.UnitsPerMetre);
+
+        internalGateOpen = true;
+        runtime.Tick();
         Assert.True(runtime.TryGetDrawTransform(limo, out Vector3d movedLimo, out _));
         Assert.NotEqual(new Vector3d(24374838d, 89438272d, 174505184d), movedLimo * WorldScene.UnitsPerMetre);
+
+        // Route 607 ends at the helipad. AreaActivate_162 is vehicle-only and disables the limo's
+        // conditional container as soon as the live car enters it, reproducing retail's disappearance.
+        MissionObjectiveRuntime objectives = new(root, variables);
+        bool reachedHelipad = false;
+        for (int tick = 0; tick < 12_000 && ConditionalContainerGate.IsTaskActive(limo); tick++)
+        {
+            objectives.SetVehicleOccupants(runtime.VehicleOccupants());
+            objectives.TickLevelState();
+            if (variables.TryRead("AreaActivate_162.nActive", out QvmValue active)
+                && active.ToInt32() > 0)
+            {
+                reachedHelipad = true;
+            }
+            runtime.Tick();
+        }
+
+        Assert.True(reachedHelipad, "the limo never entered retail's vehicle-only helipad volume");
+        Assert.False(ConditionalContainerGate.IsTaskActive(limo));
+        Assert.True(runtime.TryGetDrawTransform(limo, out Vector3d vanishedAt, out _));
+        runtime.Tick();
+        Assert.True(runtime.TryGetDrawTransform(limo, out Vector3d stillVanishedAt, out _));
+        Assert.Equal(vanishedAt, stillVanishedAt);
     }
 
     [RequiresGameDataFact]
@@ -454,6 +489,7 @@ public sealed class Issue105Tests
             item => ConditionalContainerGate.IsTaskActive(item.Owner));
         Assert.Contains(liveApc, destroyed);
         Assert.True(liveApc.IsDestroyed);
+        Assert.True(destructibles.ShouldExplode(liveApc));
 
         Assert.True(runtime.TryGetDrawTransform(apc, out Vector3d wreckPosition, out _));
         runtime.ConfigureVehicleCombat(apc, new WeaponType

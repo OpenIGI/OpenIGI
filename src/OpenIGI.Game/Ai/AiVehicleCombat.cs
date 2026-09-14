@@ -92,7 +92,11 @@ public sealed class AiVehicleCombat
 
         // The retail trace has one complete AI update between VISION's first visible result and
         // Gun_Fire's first request. Retaining the target here but firing next tick reproduces it.
-        if (!_hasTarget || !visible || acquiredThisTick || _cooldownTicks > 0)
+        // CarAI's target scan (IGI1 0x00426000) returns active while its retained task pointer is
+        // counting down, even when the current detection slots are empty. Keep firing at the last
+        // observed pose during that interval; visibility is the acquisition/update gate, not a
+        // second gun gate.
+        if (!_hasTarget || acquiredThisTick || _cooldownTicks > 0)
         {
             return null;
         }
@@ -128,16 +132,20 @@ public sealed class AiVehicleCombat
             return false;
         }
 
-        Vector3f forward = Normalized(input.VehicleOrientation.Column2, Vector3f.UnitY);
-        Vector3f to = new((float)(delta.X / distance), (float)(delta.Y / distance), (float)(delta.Z / distance));
+        Vector3f worldDirection = new(
+            (float)(delta.X / distance),
+            (float)(delta.Y / distance),
+            (float)(delta.Z / distance));
+        Vector3f localDirection = Normalized(
+            input.VehicleOrientation.Transform(worldDirection),
+            Vector3f.UnitY);
 
-        double horizontalLength = Math.Sqrt((to.X * to.X) + (to.Y * to.Y));
-        double forwardHorizontalLength = Math.Sqrt((forward.X * forward.X) + (forward.Y * forward.Y));
-        if (input.ViewGammaDegrees < 360f && horizontalLength > 1e-6 && forwardHorizontalLength > 1e-6)
+        double horizontalLength = Math.Sqrt(
+            (localDirection.X * localDirection.X) + (localDirection.Y * localDirection.Y));
+        if (input.ViewGammaDegrees < 360f && horizontalLength > 1e-6)
         {
-            double dot = ((to.X * forward.X) + (to.Y * forward.Y))
-                / (horizontalLength * forwardHorizontalLength);
-            double angle = Math.Acos(Math.Clamp(dot, -1d, 1d)) * 180d / Math.PI;
+            double angle = Math.Acos(Math.Clamp(localDirection.Y / horizontalLength, -1d, 1d))
+                * 180d / Math.PI;
             if (angle > input.ViewGammaDegrees * 0.5d)
             {
                 return false;
@@ -146,7 +154,8 @@ public sealed class AiVehicleCombat
 
         if (input.ViewAlphaDegrees < 180f)
         {
-            double elevation = Math.Abs(Math.Asin(Math.Clamp(to.Z, -1f, 1f)) * 180d / Math.PI);
+            double elevation = Math.Abs(
+                Math.Asin(Math.Clamp(localDirection.Z, -1f, 1f)) * 180d / Math.PI);
             if (elevation > input.ViewAlphaDegrees * 0.5d)
             {
                 return false;

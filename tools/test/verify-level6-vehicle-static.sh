@@ -43,7 +43,11 @@ rg -F 'Task_New(803, "Car"' "$qsc" | rg -F '"", "", 180.0, 360.0, 30.0' >/dev/nu
 rg -F 'Task_New(801, "Car", "Priboi' "$qsc" | rg -F '"", "", 180.0, 360.0, 30.0' >/dev/null
 rg -F 'PlaceExplosiveTBA' "$qsc" >/dev/null
 rg -F 'TASKTYPE_MISSILE' "$apc_qsc" >/dev/null
-sha256sum "$igi_exe" "$qsc" "$qas" "$apc_qsc" "$apc_qas" > "$artifact_dir/SHA256SUMS"
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum "$igi_exe" "$qsc" "$qas" "$apc_qsc" "$apc_qas" > "$artifact_dir/SHA256SUMS"
+else
+  shasum -a 256 "$igi_exe" "$qsc" "$qas" "$apc_qsc" "$apc_qas" > "$artifact_dir/SHA256SUMS"
+fi
 
 # Capture disassembly, xrefs and discovered function metadata. This does not assert semantics:
 # Vehicle fire/contact must still pass the dual-decompiler + live-capture gate before translation.

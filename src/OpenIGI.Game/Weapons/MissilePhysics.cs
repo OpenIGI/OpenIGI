@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using System.Collections.Generic;
@@ -18,6 +19,13 @@ public readonly record struct MissileDetonation(
     float FalloffUnits,
     Vector3f Normal = default);
 
+/// <summary>Tests one missile segment against the world with access to that missile's launch owner.</summary>
+public delegate bool MissileWorldRayCast(
+    LiveMissile missile,
+    Vector3d origin,
+    Vector3d end,
+    out WorldRayHit hit);
+
 /// <summary>A missile in flight, before its impact explosion.</summary>
 public sealed class LiveMissile
 {
@@ -28,13 +36,15 @@ public sealed class LiveMissile
     /// <param name="target">The launch aim point in engine units.</param>
     /// <param name="config">The retail flight parameters for this missile's guidance type.</param>
     /// <param name="modelName">The authored projectile model name.</param>
+    /// <param name="collisionOwner">The firing task excluded from this missile's world trace.</param>
     public LiveMissile(
         long id,
         Vector3d position,
         Vector3f velocity,
         Vector3d target,
         MissileConfig config,
-        string modelName)
+        string modelName,
+        GameTask? collisionOwner = null)
     {
         Id = id;
         Position = position;
@@ -43,6 +53,7 @@ public sealed class LiveMissile
         Target = target;
         Config = config;
         ModelName = modelName;
+        CollisionOwner = collisionOwner;
         MotorRemainingTicks = config.MotorBurnTicks;
     }
 
@@ -62,6 +73,8 @@ public sealed class LiveMissile
     public MissileType Type => Config.Type;
     /// <summary>Gets the authored model used by the projectile renderer.</summary>
     public string ModelName { get; }
+    /// <summary>Gets the firing task excluded from this missile's own world trace.</summary>
+    public GameTask? CollisionOwner { get; }
     /// <summary>Gets or sets the throttle, ramped from launch toward one (<c>0x00428D00</c>).</summary>
     public float Throttle { get; set; }
     /// <summary>Gets or sets how many ticks of motor burn remain (<c>a1+2148</c>).</summary>
@@ -108,6 +121,7 @@ public sealed class MissileSimulation
     /// <param name="launcherAxis">The launcher's forward axis.</param>
     /// <param name="modelName">The authored projectile model name.</param>
     /// <param name="config">The flight parameters; the type's retail preset when omitted.</param>
+    /// <param name="collisionOwner">The firing task excluded from this missile's world trace.</param>
     /// <returns><see langword="true"/> when the missile entered the simulation.</returns>
     public bool Spawn(
         Vector3d origin,
@@ -116,7 +130,8 @@ public sealed class MissileSimulation
         float muzzleVelocityMetresPerSecond,
         Vector3f launcherAxis = default,
         string modelName = "110_02_1",
-        MissileConfig? config = null)
+        MissileConfig? config = null,
+        GameTask? collisionOwner = null)
     {
         if (_missiles.Count >= MaximumLive || muzzleVelocityMetresPerSecond <= 0f)
         {
@@ -134,7 +149,8 @@ public sealed class MissileSimulation
             return false;
         }
 
-        _missiles.Add(new LiveMissile(_nextId++, origin, velocity, target, config, modelName));
+        _missiles.Add(new LiveMissile(
+            _nextId++, origin, velocity, target, config, modelName, collisionOwner));
         return true;
     }
 
@@ -142,6 +158,16 @@ public sealed class MissileSimulation
     /// <param name="walls">The world cast, including terrain where available.</param>
     /// <param name="humans">A non-mutating human intersection used for nearest-hit resolution.</param>
     public void Tick(WorldRayCast? walls, HumanRayCast? humans)
+    {
+        MissileWorldRayCast? contextualWalls = walls is null
+            ? null
+            : (LiveMissile _, Vector3d from, Vector3d to, out WorldRayHit hit) =>
+                walls(from, to, out hit);
+        TickWithMissileContext(contextualWalls, humans);
+    }
+
+    /// <summary>Advances missiles while exposing each launch owner to the world collision query.</summary>
+    public void TickWithMissileContext(MissileWorldRayCast? walls, HumanRayCast? humans)
     {
         _detonations.Clear();
 
@@ -159,7 +185,8 @@ public sealed class MissileSimulation
                 missile.Position.Z + missile.Velocity.Z);
 
             WorldRayHit wallHit = default;
-            bool struckWall = walls is not null && walls(missile.Position, candidate, out wallHit);
+            bool struckWall = walls is not null
+                && walls(missile, missile.Position, candidate, out wallHit);
             HumanHit humanHit = default;
             bool struckHuman = humans is not null
                 && humans(missile.Position, candidate, out humanHit)

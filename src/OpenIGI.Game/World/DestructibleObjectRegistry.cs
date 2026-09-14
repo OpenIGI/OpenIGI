@@ -634,7 +634,8 @@ public sealed class DestructibleObjectRegistry
     public bool ShouldExplode(DestructibleObject item)
     {
         ArgumentNullException.ThrowIfNull(item);
-        return item.Kind == DestructibleObjectKind.Explosive && ExplosionEnabled(item);
+        return (item.Kind is DestructibleObjectKind.Explosive or DestructibleObjectKind.Vehicle)
+            && ExplosionEnabled(item);
     }
 
     /// <summary>Starts an authored explosion immediately or arms its retail delay.</summary>

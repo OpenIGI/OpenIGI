@@ -434,7 +434,6 @@ internal sealed partial class DesktopGame : IDisposable
     private GrenadeRenderer? _grenadeRenderer;
     private MissileRenderer? _missileRenderer;
     private readonly MissileSimulation _vehicleMissiles = new();
-    private GameTask? _vehicleMissileOwner;
     private LoadedMission? _loadedMissionForWeapon;
     private ViewModelRenderer? _arms;
     private SoldierRenderer? _soldiers;
@@ -2920,6 +2919,7 @@ internal sealed partial class DesktopGame : IDisposable
                 Vector3d? cutsceneViewMetres = _cutscenes?.Frame?.Camera.Position;
                 Vector3d? freeViewMetres = !_playerMode ? _camera?.Position : null;
                 _missionObjectives?.SetSoldierOccupants(_soldiers?.Occupants() ?? []);
+                _missionObjectives?.SetVehicleOccupants(_cutscenes?.VehicleOccupants() ?? []);
                 TickAreaActivations(
                     _missionObjectives,
                     _player?.Body.Position,

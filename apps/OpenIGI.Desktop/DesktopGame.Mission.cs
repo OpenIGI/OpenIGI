@@ -49,7 +49,6 @@ internal sealed partial class DesktopGame
         _player?.Grenades.Clear();
         _player?.Missiles.Clear();
         _vehicleMissiles.Clear();
-        _vehicleMissileOwner = null;
         _player?.M203.Clear();
     }
 
@@ -78,17 +77,24 @@ internal sealed partial class DesktopGame
             return HumanHitTest.TryCast(from, to, player.Body.Position, facing, pose: null, out hit);
         }
 
-        WorldRayCast? walls = _worldTrace is { } trace
-            ? (Vector3d from, Vector3d to, out WorldRayHit hit) =>
+        MissileWorldRayCast? walls = _worldTrace is { } trace
+            ? (LiveMissile missile, Vector3d from, Vector3d to, out WorldRayHit hit) =>
             {
                 bool found = trace(
-                    new WorldTraceRequest(from, to, WorldTraceMask.World, IgnoredOwner: _vehicleMissileOwner),
+                    new WorldTraceRequest(
+                        from,
+                        to,
+                        WorldTraceMask.World,
+                        IgnoredOwner: missile.CollisionOwner),
                     out WorldTraceHit rich);
                 hit = found ? rich.RayHit : default;
                 return found;
             }
-            : _effectWalls;
-        _vehicleMissiles.Tick(walls, PlayerProbe);
+            : _effectWalls is { } effectWalls
+                ? (LiveMissile _, Vector3d from, Vector3d to, out WorldRayHit hit) =>
+                    effectWalls(from, to, out hit)
+                : null;
+        _vehicleMissiles.TickWithMissileContext(walls, PlayerProbe);
     }
 
     private void StartMission(int id)
@@ -1734,14 +1740,14 @@ internal sealed partial class DesktopGame
                         new WorldTraceRequest(from, to, WorldTraceMask.World, IgnoredOwner: owner), out _);
                 vehicleRuntime.VehicleCombatShotFired = shot =>
                 {
-                    _vehicleMissileOwner = shot.Owner;
                     if (_vehicleMissiles.Spawn(
                         shot.Origin,
                         shot.Target,
                         shot.MissileType,
                         shot.MuzzleVelocityMetresPerSecond,
                         shot.Direction,
-                        shot.ModelName))
+                        shot.ModelName,
+                        collisionOwner: shot.Owner))
                     {
                         _sounds?.PlayDefinition("rpg_launch_1", shot.Origin, priority: 250);
                     }
@@ -2287,6 +2293,10 @@ internal sealed partial class DesktopGame
 
     private void ReleasePlayedMission()
     {
+        // Vehicle missiles own task references from the outgoing level. Drop them before any old
+        // collision/render state is torn down so a restart cannot carry a projectile into the next run.
+        _vehicleMissiles.Clear();
+
         // First, because both are worker threads tracing the level that is going and they hold the whole
         // of what they trace: the lightmap bake's texel maps, triangles and BVH run to a few hundred
         // megabytes, and nothing here released them. A bake was only ever cancelled by the NEXT one

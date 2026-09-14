@@ -42,11 +42,13 @@ public sealed class AiVehicleCombatTests
         Assert.NotNull(combat.Tick(visible));
 
         AiVehicleCombatInput hidden = visible with { HasLineOfSight = false };
+        int retainedShots = 0;
         for (int i = 0; i < AiVehicleCombat.TargetRetentionTicks; i++)
         {
-            Assert.Null(combat.Tick(hidden));
+            retainedShots += combat.Tick(hidden) is null ? 0 : 1;
         }
 
+        Assert.Equal(4, retainedShots);
         Assert.Equal(0, combat.RetentionTicks);
         Assert.Null(combat.Tick(hidden));
         Assert.Equal(150, GunTiming.TicksPerRound(12));
@@ -66,6 +68,39 @@ public sealed class AiVehicleCombatTests
         }
 
         Assert.NotNull(combat.Tick(visible));
+    }
+
+    [Fact]
+    public void RetainedTargetCanBeFiredOnAtItsLastKnownPositionWhileOccluded()
+    {
+        AiVehicleCombat combat = new();
+        AiVehicleCombatInput visible = Input(targetMetres: 37f);
+
+        Assert.Null(combat.Tick(visible));
+
+        VehicleCombatShot shot = Assert.IsType<VehicleCombatShot>(combat.Tick(
+            visible with { HasLineOfSight = false }));
+        Assert.Equal(visible.TargetPosition, shot.Target);
+        Assert.Equal(AiVehicleCombat.TargetRetentionTicks - 1, combat.RetentionTicks);
+    }
+
+    [Fact]
+    public void AuthoredElevationConeFollowsVehiclePitchInsteadOfWorldHorizontal()
+    {
+        Matrix3f orientation = Matrix3f.RotationX(-20f * MathF.PI / 180f);
+        Vector3d target = orientation.Transposed().Transform(
+            new Vector3d(0d, 37d * WorldScene.UnitsPerMetre, 0d));
+        AiVehicleCombatInput pitched = Input(targetMetres: 37f) with
+        {
+            VehicleOrientation = orientation,
+            TargetPosition = target,
+            ViewAlphaDegrees = 10f,
+            ViewGammaDegrees = 10f,
+        };
+
+        AiVehicleCombat combat = new();
+        Assert.Null(combat.Tick(pitched));
+        Assert.NotNull(combat.Tick(pitched));
     }
 
     [Fact]

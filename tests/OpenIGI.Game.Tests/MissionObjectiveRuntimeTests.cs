@@ -17,6 +17,44 @@ namespace OpenIGI.Game.Tests;
 public sealed class MissionObjectiveRuntimeTests
 {
     [Fact]
+    public void VehicleCriteriaCountsCarsButNotHumans()
+    {
+        GameLoop loop = new();
+        QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("AreaActivate"),
+                QvmExpression.Text("Position"), QvmExpression.Text("ObjectPos"),
+                QvmExpression.Text("Orientation"), QvmExpression.Text("Real32x9"),
+                QvmExpression.Text("Dimensions"), QvmExpression.Text("Real32x3"),
+                QvmExpression.Text("Criteria"), QvmExpression.Text("String32")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(900),
+                QvmExpression.Text("AreaActivate"),
+                QvmExpression.Text("Vehicle volume"),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
+                QvmExpression.Real(20f), QvmExpression.Real(20f), QvmExpression.Real(20f),
+                QvmExpression.Text("CRITERIA_VEHICLE"))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, loop.Natives).Run());
+
+        MissionObjectiveRuntime runtime = new(loop.Tasks.Root, loop.Variables);
+        runtime.TickLevelState(new Vector3d(0d, 0d, 0d), playerTeam: 0, extraPlayerPosition: null, playerAlive: true);
+        Assert.Equal(0, ReadActive());
+
+        runtime.SetVehicleOccupants([new VehicleOccupant(900, Vector3d.Zero)]);
+        runtime.TickLevelState(new Vector3d(0d, 0d, 0d), playerTeam: 0, extraPlayerPosition: null, playerAlive: true);
+        Assert.Equal(1, ReadActive());
+
+        int ReadActive()
+        {
+            Assert.True(loop.Variables.TryRead("AreaActivate_900.nActive", out QvmValue value));
+            return value.ToInt32();
+        }
+    }
+
+    [Fact]
     public void AreaActivationCountsOnlySoldiersRegisteredIntoTheLiveWorld()
     {
         GameLoop loop = new();
