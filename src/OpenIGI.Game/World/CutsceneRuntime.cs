@@ -445,6 +445,7 @@ public sealed class CutsceneRuntime
                 VehicleCombatShotFired?.Invoke(fired with
                 {
                     Owner = state.Car,
+                    WeaponScriptId = weapon.ScriptId,
                     MissileType = MissileFlight.TypeForLauncher(weapon),
                     MuzzleVelocityMetresPerSecond = MissileFlight.LaunchSpeedMetresPerSecond(weapon),
                     ModelName = string.IsNullOrWhiteSpace(weapon.Projectile.Text)

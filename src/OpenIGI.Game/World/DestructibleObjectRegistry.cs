@@ -400,6 +400,28 @@ public sealed class DestructibleObjectRegistry
         return null;
     }
 
+    /// <summary>Applies retail's immediate direct-weapon-hit transition to one exact vehicle.</summary>
+    public DestructibleObject? TryDestroyDirectVehicle(GameTask? owner, WorldPlacement? placement = null)
+    {
+        DestructibleObject? item = null;
+        if (placement is not null)
+        {
+            _byPlacement.TryGetValue(placement, out item);
+        }
+
+        if (item is null
+            && owner is not null
+            && _byOwner.TryGetValue(owner, out List<DestructibleObject>? items)
+            && items.Count == 1)
+        {
+            item = items[0];
+        }
+
+        return item?.Kind == DestructibleObjectKind.Vehicle
+            ? ApplyDamage(item, 1f)
+            : null;
+    }
+
     /// <summary>Applies one weapon hit to the nearest live destructible within the supplied radius.</summary>
     public DestructibleObject? TryDestroyAt(
         Vector3d impactUnits,

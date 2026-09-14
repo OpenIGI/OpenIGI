@@ -480,14 +480,27 @@ public sealed class Issue105Tests
         Assert.Same(apc, hit.Owner);
         Assert.Same(placement, hit.Placement);
 
-        IReadOnlyList<DestructibleObject> destroyed = destructibles.ApplyExplosionHits(
-            source: null,
-            hit.RayHit.Position,
-            MissileExplosion.RadiusUnits,
-            MissileExplosion.FalloffUnits,
-            MissileExplosion.DamageFactor,
-            item => ConditionalContainerGate.IsTaskActive(item.Owner));
-        Assert.Contains(liveApc, destroyed);
+        MissileSimulation missile = new();
+        Assert.True(missile.Spawn(
+            hit.Position - new Vector3d(1024d, 0d, 0d),
+            hit.Position + new Vector3d(1024d, 0d, 0d),
+            MissileType.MissileDirect,
+            muzzleVelocityMetresPerSecond: 40f));
+        missile.TickWithMissileContext(
+            (LiveMissile _, Vector3d _, Vector3d _, out WorldTraceHit directHit) =>
+            {
+                directHit = hit;
+                return true;
+            },
+            humans: null);
+        MissileDetonation detonation = Assert.Single(missile.Detonations);
+        Assert.Same(apc, detonation.DirectHitOwner);
+        Assert.Same(placement, detonation.DirectHitPlacement);
+        Assert.Same(
+            liveApc,
+            destructibles.TryDestroyDirectVehicle(
+                detonation.DirectHitOwner,
+                detonation.DirectHitPlacement));
         Assert.True(liveApc.IsDestroyed);
         Assert.True(destructibles.ShouldExplode(liveApc));
 
@@ -552,6 +565,9 @@ public sealed class Issue105Tests
         runtime.Tick(); // The following CarAI/Gun_Fire pass submits the first missile.
 
         VehicleCombatShot shot = Assert.Single(shots);
+        Assert.Equal("WEAPON_ID_APC", shot.WeaponScriptId);
+        Assert.NotEqual("WEAPON_ID_RPG18", shot.WeaponScriptId);
+        Assert.NotEqual("WEAPON_ID_T80", shot.WeaponScriptId);
         Assert.Equal(MissileType.MissileDirect, shot.MissileType);
         Assert.Equal(MissileFlight.FallbackLaunchMetresPerSecond, shot.MuzzleVelocityMetresPerSecond);
         Assert.Equal("110_02_1", shot.ModelName);

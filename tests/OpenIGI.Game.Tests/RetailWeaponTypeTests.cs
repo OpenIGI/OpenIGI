@@ -109,6 +109,24 @@ public sealed class RetailWeaponTypeTests
     }
 
     [RequiresGameDataFact]
+    public void VehicleLaunchersRemainDistinctFromThePlayersLaw80()
+    {
+        WeaponTypeRegistry weapons = Load(out _, out _, out _);
+        WeaponType law80 = weapons.Weapons.Single(w => w.ScriptId == "WEAPON_ID_RPG18");
+        WeaponType apc = weapons.Weapons.Single(w => w.ScriptId == "WEAPON_ID_APC");
+        WeaponType t80 = weapons.Weapons.Single(w => w.ScriptId == "WEAPON_ID_T80");
+
+        Assert.Equal((12, "110_01_1", 40), (law80.WeaponId, law80.GunModel, law80.RoundsPerMinute));
+        Assert.Equal((40, "601_05_1", 12), (apc.WeaponId, apc.GunModel, apc.RoundsPerMinute));
+        Assert.Equal((43, "614_03_1", 12), (t80.WeaponId, t80.GunModel, t80.RoundsPerMinute));
+        Assert.Equal("110_02_1", law80.Projectile.Text);
+        Assert.Equal(law80.Projectile.Text, apc.Projectile.Text);
+        Assert.Equal(apc.Projectile.Text, t80.Projectile.Text);
+        Assert.NotEqual(law80.ScriptId, apc.ScriptId);
+        Assert.NotEqual(apc.ScriptId, t80.ScriptId);
+    }
+
+    [RequiresGameDataFact]
     public void AZoomAngleLosesItsHalfDegreeToIntegerDivision()
     {
         // 0x4732F0 halves the field of view with cdq/sub/sar - an integer divide - before converting to

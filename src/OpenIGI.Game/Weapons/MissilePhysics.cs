@@ -17,14 +17,16 @@ public readonly record struct MissileDetonation(
     float DamageFactor,
     float RadiusUnits,
     float FalloffUnits,
-    Vector3f Normal = default);
+    Vector3f Normal = default,
+    GameTask? DirectHitOwner = null,
+    WorldPlacement? DirectHitPlacement = null);
 
-/// <summary>Tests one missile segment against the world with access to that missile's launch owner.</summary>
-public delegate bool MissileWorldRayCast(
+/// <summary>Tests one missile segment and preserves the exact world object struck.</summary>
+public delegate bool MissileWorldTraceCast(
     LiveMissile missile,
     Vector3d origin,
     Vector3d end,
-    out WorldRayHit hit);
+    out WorldTraceHit hit);
 
 /// <summary>A missile in flight, before its impact explosion.</summary>
 public sealed class LiveMissile
@@ -159,15 +161,24 @@ public sealed class MissileSimulation
     /// <param name="humans">A non-mutating human intersection used for nearest-hit resolution.</param>
     public void Tick(WorldRayCast? walls, HumanRayCast? humans)
     {
-        MissileWorldRayCast? contextualWalls = walls is null
+        MissileWorldTraceCast? contextualWalls = walls is null
             ? null
-            : (LiveMissile _, Vector3d from, Vector3d to, out WorldRayHit hit) =>
-                walls(from, to, out hit);
+            : (LiveMissile _, Vector3d from, Vector3d to, out WorldTraceHit hit) =>
+            {
+                bool found = walls(from, to, out WorldRayHit rayHit);
+                hit = found
+                    ? WorldTraceHit.FromRayHit(
+                        new WorldTraceRequest(from, to, WorldTraceMask.World),
+                        rayHit,
+                        WorldTraceHitKind.StaticObject)
+                    : default;
+                return found;
+            };
         TickWithMissileContext(contextualWalls, humans);
     }
 
     /// <summary>Advances missiles while exposing each launch owner to the world collision query.</summary>
-    public void TickWithMissileContext(MissileWorldRayCast? walls, HumanRayCast? humans)
+    public void TickWithMissileContext(MissileWorldTraceCast? walls, HumanRayCast? humans)
     {
         _detonations.Clear();
 
@@ -184,7 +195,7 @@ public sealed class MissileSimulation
                 missile.Position.Y + missile.Velocity.Y,
                 missile.Position.Z + missile.Velocity.Z);
 
-            WorldRayHit wallHit = default;
+            WorldTraceHit wallHit = default;
             bool struckWall = walls is not null
                 && walls(missile, missile.Position, candidate, out wallHit);
             HumanHit humanHit = default;
@@ -201,7 +212,9 @@ public sealed class MissileSimulation
                     MissileExplosion.DamageFactor,
                     MissileExplosion.RadiusUnits,
                     MissileExplosion.FalloffUnits,
-                    normal));
+                    normal,
+                    struckHuman ? null : wallHit.Owner,
+                    struckHuman ? null : wallHit.Placement));
                 _missiles.RemoveAt(i);
                 continue;
             }

@@ -244,6 +244,9 @@ public sealed class PlayerCamera
     /// <summary>Gets or sets the world cast used by launcher missiles.</summary>
     public WorldRayCast? MissileWalls { get; set; }
 
+    /// <summary>Gets or sets the rich world trace used to retain a launcher's exact impact object.</summary>
+    public WorldTraceCast? MissileTrace { get; set; }
+
     /// <summary>Gets or sets what offers this player's rounds to the humans in the world.</summary>
     /// <remarks>
     /// Without it rounds stop at walls and hit nobody. A round takes whichever of the two is
@@ -2491,7 +2494,17 @@ public sealed class PlayerCamera
         // behaviour, not a remaster one. Detonations are drained by the game, which owns the
         // effects and the blast's victims.
         _grenades.Tick(GrenadeWalls ?? _body.Walls, HumanProximityTargets, GrenadeTrace);
-        _missiles.Tick(MissileWalls ?? GrenadeWalls ?? _body.Walls, HumanProbes);
+        if (MissileTrace is { } missileTrace)
+        {
+            _missiles.TickWithMissileContext(
+                (LiveMissile _, Vector3d from, Vector3d to, out WorldTraceHit hit) =>
+                    missileTrace(new WorldTraceRequest(from, to, WorldTraceMask.World), out hit),
+                HumanProbes);
+        }
+        else
+        {
+            _missiles.Tick(MissileWalls ?? GrenadeWalls ?? _body.Walls, HumanProbes);
+        }
         _m203.Tick(GrenadeWalls ?? _body.Walls, HumanProbes);
 
         if (_ballistics.Rounds.Count == 0)

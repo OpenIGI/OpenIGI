@@ -1084,6 +1084,15 @@ internal sealed partial class DesktopGame
         SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
         ScorchSurface(blast.Position, blast.Normal);
         _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
+        // Car's native direct-weapon callback (IGI1 0x42FC40) enters destruction immediately. Keep
+        // the exact collision identity from the missile trace so a hull hit cannot be reduced to a
+        // falloff/occlusion sample around the blast centre.
+        if (_destructibles?.TryDestroyDirectVehicle(
+                blast.DirectHitOwner,
+                blast.DirectHitPlacement) is { } directlyHitVehicle)
+        {
+            HandleDestructibleImpact(directlyHitVehicle, blast.Position);
+        }
         // Launcher impacts use Explosion0's full collision envelope. Keep the speaker pass for
         // alarms, but disable its legacy nearest-destructible fallback so one object cannot be
         // destroyed twice or hide the other authored contacts in the blast.

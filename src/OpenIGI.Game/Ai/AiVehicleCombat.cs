@@ -30,6 +30,9 @@ public readonly record struct VehicleCombatShot(
 {
     /// <summary>Gets the authored vehicle that owns this shot, when emitted by a mission runtime.</summary>
     public GameTask? Owner { get; init; }
+
+    /// <summary>Gets the exact retail weapon-table row that emitted this shot.</summary>
+    public string WeaponScriptId { get; init; } = string.Empty;
 }
 
 /// <summary>Runs the target-retention and gun gate shared by firing cars.</summary>

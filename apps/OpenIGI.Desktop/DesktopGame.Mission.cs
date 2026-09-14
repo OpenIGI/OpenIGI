@@ -77,8 +77,8 @@ internal sealed partial class DesktopGame
             return HumanHitTest.TryCast(from, to, player.Body.Position, facing, pose: null, out hit);
         }
 
-        MissileWorldRayCast? walls = _worldTrace is { } trace
-            ? (LiveMissile missile, Vector3d from, Vector3d to, out WorldRayHit hit) =>
+        MissileWorldTraceCast? walls = _worldTrace is { } trace
+            ? (LiveMissile missile, Vector3d from, Vector3d to, out WorldTraceHit hit) =>
             {
                 bool found = trace(
                     new WorldTraceRequest(
@@ -86,13 +86,21 @@ internal sealed partial class DesktopGame
                         to,
                         WorldTraceMask.World,
                         IgnoredOwner: missile.CollisionOwner),
-                    out WorldTraceHit rich);
-                hit = found ? rich.RayHit : default;
+                    out hit);
                 return found;
             }
             : _effectWalls is { } effectWalls
-                ? (LiveMissile _, Vector3d from, Vector3d to, out WorldRayHit hit) =>
-                    effectWalls(from, to, out hit)
+                ? (LiveMissile _, Vector3d from, Vector3d to, out WorldTraceHit hit) =>
+                {
+                    bool found = effectWalls(from, to, out WorldRayHit rayHit);
+                    hit = found
+                        ? WorldTraceHit.FromRayHit(
+                            new WorldTraceRequest(from, to, WorldTraceMask.World),
+                            rayHit,
+                            WorldTraceHitKind.StaticObject)
+                        : default;
+                    return found;
+                }
                 : null;
         _vehicleMissiles.TickWithMissileContext(walls, PlayerProbe);
     }
@@ -1619,6 +1627,7 @@ internal sealed partial class DesktopGame
             candidate.GrenadeTrace = _playerTerrain is { } grenadeTraceGround
                 ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeTraceGround))
                 : solids.Tracer();
+            candidate.MissileTrace = candidate.GrenadeTrace;
 
             // The ladders the level attaches to its buildings, so the player can climb them (E to mount,
             // W/S up and down, E held to slide).

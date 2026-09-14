@@ -231,7 +231,7 @@ public sealed class MissileSimulationTests
 
         HashSet<GameTask?> observedOwners = [];
         simulation.TickWithMissileContext(
-            (LiveMissile missile, Vector3d _, Vector3d _, out WorldRayHit hit) =>
+            (LiveMissile missile, Vector3d _, Vector3d _, out WorldTraceHit hit) =>
             {
                 observedOwners.Add(missile.CollisionOwner);
                 hit = default;
@@ -242,6 +242,38 @@ public sealed class MissileSimulationTests
         Assert.Equal(2, observedOwners.Count);
         Assert.Contains(firstOwner, observedOwners);
         Assert.Contains(secondOwner, observedOwners);
+    }
+
+    [Fact]
+    public void DetonationRetainsTheExactWorldObjectHitByTheMissile()
+    {
+        GameTask target = new DeclaredTask();
+        MissileSimulation simulation = new();
+        Assert.True(simulation.Spawn(
+            Vector3d.Zero,
+            new Vector3d(409600, 0, 0),
+            MissileType.MissileDirect,
+            muzzleVelocityMetresPerSecond: 30f));
+
+        simulation.TickWithMissileContext(
+            (LiveMissile _, Vector3d from, Vector3d to, out WorldTraceHit hit) =>
+            {
+                Vector3d position = from + ((to - from) * 0.5d);
+                hit = new WorldTraceHit(
+                    position,
+                    Vector3f.UnitX,
+                    Vector3d.Distance(from, position),
+                    0.5d,
+                    0,
+                    WorldTraceHitKind.DynamicObject,
+                    Owner: target);
+                return true;
+            },
+            humans: null);
+
+        MissileDetonation detonation = Assert.Single(simulation.Detonations);
+        Assert.Same(target, detonation.DirectHitOwner);
+        Assert.Null(detonation.DirectHitPlacement);
     }
 
 }
