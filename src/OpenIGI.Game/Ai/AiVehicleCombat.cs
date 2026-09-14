@@ -16,6 +16,7 @@ public readonly record struct AiVehicleCombatInput(
     float ViewGammaDegrees,
     float ViewLengthMetres,
     bool HasLineOfSight,
+    float MuzzleVelocityMetresPerSecond,
     int RoundsPerMinute);
 
 /// <summary>A retail vehicle-gun request ready to enter the missile task.</summary>
@@ -112,7 +113,9 @@ public sealed class AiVehicleCombat
             _lastTarget,
             direction,
             MissileType.MissileDirect,
-            MissileFlight.LaunchSpeedMetresPerSecond(new WeaponType { MuzzleVelocity = 5f }),
+            input.MuzzleVelocityMetresPerSecond >= 100f
+                ? input.MuzzleVelocityMetresPerSecond
+                : MissileFlight.FallbackLaunchMetresPerSecond,
             "110_02_1");
     }
 

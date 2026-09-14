@@ -70,7 +70,7 @@ public sealed class CutsceneRuntime
     private ObjectCollisionIndex? _collisionIndex;
     private DestructibleObjectRegistry? _destructibles;
     private Func<int, CutsceneTargetPose?>? _targetPoseResolver;
-    private WeaponType? _vehicleWeapon;
+    private readonly Dictionary<GameTask, WeaponType> _vehicleWeapons = [];
     private bool _breakRequested;
     private readonly List<string> _diagnostics = [];
 
@@ -111,8 +111,13 @@ public sealed class CutsceneRuntime
     /// <summary>Receives a vehicle missile only after sight, retention and gun cadence allow it.</summary>
     public Action<VehicleCombatShot>? VehicleCombatShotFired { get; set; }
 
-    /// <summary>Binds the retail weapon row used by firing cars.</summary>
-    public void ConfigureVehicleCombat(WeaponType? weapon) => _vehicleWeapon = weapon;
+    /// <summary>Binds one authored firing vehicle to its retail weapon row.</summary>
+    public void ConfigureVehicleCombat(GameTask vehicle, WeaponType weapon)
+    {
+        ArgumentNullException.ThrowIfNull(vehicle);
+        ArgumentNullException.ThrowIfNull(weapon);
+        _vehicleWeapons[vehicle] = weapon;
+    }
 
     /// <summary>Settles every collision-enabled helicopter onto whatever is under it.</summary>
     /// <remarks>
@@ -389,15 +394,14 @@ public sealed class CutsceneRuntime
 
     private void TickVehicleCombat()
     {
-        if (_vehicleWeapon is not { } weapon
-            || VehicleCombatTarget?.Invoke() is not { } target)
+        if (VehicleCombatTarget?.Invoke() is not { } target)
         {
             return;
         }
 
         foreach (CarAiState state in _carAis)
         {
-            if (state.Combat is null)
+            if (state.Combat is null || !_vehicleWeapons.TryGetValue(state.Car, out WeaponType? weapon))
             {
                 continue;
             }
@@ -419,6 +423,7 @@ public sealed class CutsceneRuntime
                 Single(state.Car, "ViewCone Gamma (degrees)", 360f),
                 Single(state.Car, "ViewCone Length (meter)", 0f),
                 visible,
+                weapon.MuzzleVelocity,
                 weapon.RoundsPerMinute));
             if (shot is { } fired)
             {

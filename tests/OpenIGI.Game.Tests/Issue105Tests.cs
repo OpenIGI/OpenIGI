@@ -346,7 +346,7 @@ public sealed class Issue105Tests
         Assert.True(graphTask.TryGetValue("Graph position", out object? rawGraphPosition));
         graph.ApplyWorldOffset(Assert.IsType<Vector3d>(rawGraphPosition));
         runtime.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph });
-        runtime.ConfigureVehicleCombat(new WeaponType
+        runtime.ConfigureVehicleCombat(apc, new WeaponType
         {
             ScriptId = "WEAPON_ID_APC",
             MuzzleVelocity = 5f,

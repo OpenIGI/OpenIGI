@@ -1716,10 +1716,12 @@ internal sealed partial class DesktopGame
 
             EndStage("the player's animation sets, walls, ladders and the weapon tables");
 
-            if (_cutscenes is { } vehicleRuntime
+            if (id == 6
+                && levelRoot.Tree.FromId(800) is { } alarmApc
+                && _cutscenes is { } vehicleRuntime
                 && weaponRoster.TryGetByScriptId("WEAPON_ID_APC", out WeaponType apcWeapon))
             {
-                vehicleRuntime.ConfigureVehicleCombat(apcWeapon);
+                vehicleRuntime.ConfigureVehicleCombat(alarmApc, apcWeapon);
                 vehicleRuntime.VehicleCombatTarget = () => !_playerHealth.IsDead ? candidate.EyeUnits : null;
                 vehicleRuntime.VehicleCombatLineOfSight = (owner, from, to) =>
                     _worldTrace is null

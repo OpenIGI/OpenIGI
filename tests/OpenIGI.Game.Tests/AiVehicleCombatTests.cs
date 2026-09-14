@@ -134,5 +134,6 @@ public sealed class AiVehicleCombatTests
         ViewGammaDegrees: 360f,
         ViewLengthMetres: 50f,
         HasLineOfSight: true,
+        MuzzleVelocityMetresPerSecond: 5f,
         RoundsPerMinute: 12);
 }
