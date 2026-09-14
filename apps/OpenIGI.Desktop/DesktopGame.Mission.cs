@@ -530,6 +530,7 @@ internal sealed partial class DesktopGame
             scene.Placements,
             _loop.Variables,
             _vehiclePhysics);
+        _cutscenes.Destructibles = _destructibles;
         world.Destructibles = _destructibles;
         solids.Destructibles = _destructibles;
         world.Cutscenes = _cutscenes;

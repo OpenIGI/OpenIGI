@@ -67,6 +67,7 @@ public sealed class CutsceneRuntime
     private readonly TerrainData? _terrain;
     private readonly IIgiLogger _logger;
     private ObjectCollisionIndex? _collisionIndex;
+    private DestructibleObjectRegistry? _destructibles;
     private Func<int, CutsceneTargetPose?>? _targetPoseResolver;
     private bool _breakRequested;
     private readonly List<string> _diagnostics = [];
@@ -90,6 +91,13 @@ public sealed class CutsceneRuntime
     {
         get => _collisionIndex;
         set => _collisionIndex = value;
+    }
+
+    /// <summary>Gets or sets the destruction state whose vehicle origins follow live CarAI transforms.</summary>
+    public DestructibleObjectRegistry? Destructibles
+    {
+        get => _destructibles;
+        set => _destructibles = value;
     }
 
     /// <summary>Settles every collision-enabled helicopter onto whatever is under it.</summary>
@@ -452,6 +460,16 @@ public sealed class CutsceneRuntime
         state.Transform.Position = grounded;
         state.Transform.Speed = state.SpeedKmh * (float)(WorldScene.UnitsPerMetre / 3.6d / Frequency);
         state.Transform.IsDynamic = true;
+
+        // Graph-driven CarAI updates the same placed body that missiles, bullets, and the player
+        // query through ObjectCollisionIndex. Keeping only the draw transform current left the
+        // physical APC at its authored spawn after the alarm route began, so shots crossed the
+        // visible vehicle without ever reaching its retail direct-hit destruction callback.
+        _collisionIndex?.UpdateTransform(
+            state.Car,
+            grounded / WorldScene.UnitsPerMetre,
+            state.Transform.Orientation);
+        _destructibles?.UpdatePosition(state.Car, grounded);
     }
 
     /// <summary>Marks an explicitly configured helicopter for terminal terrain landing.</summary>

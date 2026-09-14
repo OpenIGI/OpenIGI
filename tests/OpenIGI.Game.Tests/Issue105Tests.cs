@@ -9,6 +9,7 @@ using OpenIGI.Formats.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -182,9 +183,9 @@ public sealed class Issue105Tests
         Assert.True(ConditionalContainerGate.IsTaskActive(fakeApc));
         Assert.False(ConditionalContainerGate.IsTaskActive(alarmApc));
 
-        AiAlarmControlRegistry alarms = AiAlarmControlRegistry.Build(root, variables);
-        Assert.True(alarms.TryGet(98, out AiAlarmControlState? alarm));
-        alarm!.Update(tick: 1, disabled: false, enabled: true, triggerCondition: true, onCondition: true);
+        // ConditionalContainer_350's own isRun is the script-visible latch used by its alarm arm.
+        // Set it through the same exported variable rather than treating the inactive object as solid.
+        Assert.True(variables.TryWrite("ConditionalContainer_350.isRun", QvmValue.FromInt32(1)));
         runtime.Tick();
         Assert.False(ConditionalContainerGate.IsTaskActive(fakeApc));
         Assert.True(ConditionalContainerGate.IsTaskActive(alarmApc));
@@ -250,6 +251,81 @@ public sealed class Issue105Tests
         DestructibleObject? destroyed = destructibles.TryDestroy(hit.Owner, hit.Placement);
         Assert.NotNull(destroyed);
         Assert.True(destroyed.IsDestroyed);
+    }
+
+    [RequiresGameDataFact]
+    public void MissionSixAlarmApcHasAnActiveRocketCollisionTarget()
+    {
+        (LevelTask root, LoadedMission mission, ScriptVarRegistry variables) = Load(6);
+        new ConditionalContainerGate(variables).Prepare(root);
+        WorldScene scene = WorldScene.Build(mission, root);
+        GameTask apc = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(800));
+        WorldPlacement placement = Assert.Single(scene.Placements,
+            candidate => ReferenceEquals(candidate.Owner, apc));
+
+        // The live APC is alarm-gated. Its collision begins at the authored placement, then must
+        // follow the same graph-driven transform that rendering uses once the alarm releases it.
+        Assert.False(ConditionalContainerGate.IsTaskActive(apc));
+
+        ObjectCollisionIndex collision = ObjectCollisionIndex.Build([placement]);
+        Assert.True(collision.Count > 0, "the live APC has no rocket collision mesh");
+        (Vector3d initialCentre, double radius) = collision.Bounds(0);
+
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        VehiclePhysicsRegistry physics = new();
+        Assert.True(physics.Load(new ResourceRegistry(fileSystem)) > 0);
+        DestructibleObjectRegistry destructibles = DestructibleObjectRegistry.Build(
+            root, scene.Placements, variables, physics);
+        DestructibleObject liveApc = Assert.Single(
+            destructibles.Objects, item => ReferenceEquals(item.Owner, apc));
+        Vector3d initialDestructiblePosition = liveApc.PositionUnits;
+
+        CutsceneRuntime runtime = new(root, variables, terrain: mission.Terrain)
+        {
+            CollisionIndex = collision,
+            Destructibles = destructibles,
+        };
+        string graphPath = Path.Combine(
+            GameData.RequireRoot(), "MISSIONS", "location0", "LEVEL6", "GRAPHS", "GRAPH1.DAT");
+        GraphFile graph = GraphFile.Read(File.ReadAllBytes(graphPath));
+        DeclaredTask graphTask = Assert.IsType<DeclaredTask>(root.Tree.FromId(1));
+        Assert.True(graphTask.TryGetValue("Graph position", out object? rawGraphPosition));
+        graph.ApplyWorldOffset(Assert.IsType<Vector3d>(rawGraphPosition));
+        runtime.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph });
+
+        Assert.True(variables.TryWrite("ConditionalContainer_350.isRun", QvmValue.FromInt32(1)));
+        runtime.Tick(); // SetSpeed(20).
+        runtime.Tick(); // Begin WalkTo(1).
+        Assert.True(ConditionalContainerGate.IsTaskActive(apc));
+
+        (Vector3d centre, double movedRadius) = collision.Bounds(0);
+        Assert.NotEqual(initialCentre, centre);
+        Assert.Equal(radius, movedRadius, precision: 3);
+        Assert.NotEqual(initialDestructiblePosition, liveApc.PositionUnits);
+        Assert.True(runtime.TryGetDrawTransform(apc, out Vector3d drawPosition, out _));
+        Vector3d drawPositionUnits = drawPosition * WorldScene.UnitsPerMetre;
+        Assert.Equal(drawPositionUnits.X, liveApc.PositionUnits.X, precision: 3);
+        Assert.Equal(drawPositionUnits.Y, liveApc.PositionUnits.Y, precision: 3);
+        Assert.Equal(drawPositionUnits.Z, liveApc.PositionUnits.Z, precision: 3);
+        double reach = Math.Max(radius * 2d, WorldScene.UnitsPerMetre * 2d);
+        Assert.True(collision.TryTrace(
+            new WorldTraceRequest(
+                new Vector3d(centre.X - reach, centre.Y, centre.Z),
+                new Vector3d(centre.X + reach, centre.Y, centre.Z)),
+            out WorldTraceHit hit), "a rocket through the live APC bounds did not hit it");
+        Assert.Same(apc, hit.Owner);
+        Assert.Same(placement, hit.Placement);
+
+        IReadOnlyList<DestructibleObject> destroyed = destructibles.ApplyExplosionHits(
+            source: null,
+            hit.RayHit.Position,
+            MissileExplosion.RadiusUnits,
+            MissileExplosion.FalloffUnits,
+            MissileExplosion.DamageFactor,
+            item => ConditionalContainerGate.IsTaskActive(item.Owner));
+        Assert.Contains(liveApc, destroyed);
+        Assert.True(liveApc.IsDestroyed);
     }
 
     private static (LevelTask Root, LoadedMission Mission, ScriptVarRegistry Variables) Load(int missionId)

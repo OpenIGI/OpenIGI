@@ -296,6 +296,32 @@ public sealed class DestructibleObjectRegistry
         && _byOwner.TryGetValue(task, out List<DestructibleObject>? items)
         && items.Any(item => item.IsDestroyed);
 
+    /// <summary>Moves every destructible identity owned by a live task to its current world position.</summary>
+    /// <param name="owner">The exact moving task.</param>
+    /// <param name="positionUnits">Its current origin in engine units.</param>
+    /// <returns><see langword="true"/> when the task owns at least one destructible identity.</returns>
+    /// <remarks>
+    /// Vehicle destruction is dispatched after the missile has collided with the live world mesh.
+    /// The blast envelope must therefore use the same moving origin instead of the authored spawn;
+    /// otherwise an APC that has followed its alarm route can be visibly struck while its explosion
+    /// callback remains kilometres of engine units behind it.
+    /// </remarks>
+    public bool UpdatePosition(GameTask owner, Vector3d positionUnits)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        if (!_byOwner.TryGetValue(owner, out List<DestructibleObject>? items))
+        {
+            return false;
+        }
+
+        foreach (DestructibleObject item in items)
+        {
+            item.PositionUnits = positionUnits;
+        }
+
+        return true;
+    }
+
     /// <summary>Advances the script-visible previous-state flags by one simulation tick.</summary>
     public void Tick()
     {
