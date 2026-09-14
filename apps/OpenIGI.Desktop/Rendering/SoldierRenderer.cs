@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -222,6 +222,19 @@ public sealed class SoldierRenderer : IDisposable
     /// <remarks>The argument is the body's position in engine units.</remarks>
     public void SetHitSound(Action<Vector3d>? report) => _hitSound = report;
 
+    /// <summary>Reports a close-combat strike against the player, already probability-gated.</summary>
+    /// <param name="report">The sink, or <see langword="null"/> to drop strikes.</param>
+    /// <remarks>
+    /// Arguments are the attacker's position in engine units and the row's damage factor. The
+    /// mission owns the player's health, so it applies the hit; the renderer only reports it.
+    /// Strikes against non-player targets are consumed and discarded at the tick site: NPC-on-NPC
+    /// melee has no victim pipeline yet (issue #235 follow-up).
+    /// </remarks>
+    public void SetMeleeStrikeSink(Action<Vector3d, float>? report) => _meleeStrikeSink = report;
+
+    /// <summary>Supplies the authored animation triggers from <c>animtrigger/animtrigger.qvm</c>.</summary>
+    public void SetAnimationTriggers(AnimTriggerRegistry? triggers) => _animationTriggers = triggers;
+
     /// <summary>Plays a definition requested by <c>AIAction_PlaySound</c>.</summary>
     public void SetScriptSound(Action<string, Vector3d, bool>? report) => _scriptSound = report;
 
@@ -311,6 +324,8 @@ public sealed class SoldierRenderer : IDisposable
 
     private Action<Vector3d>? _deathSound;
     private Action<Vector3d>? _hitSound;
+    private Action<Vector3d, float>? _meleeStrikeSink;
+    private AnimTriggerRegistry? _animationTriggers;
     private Func<int>? _hitCooldown;
     private readonly Dictionary<SoldierView, int> _hitQuietUntil = [];
     private Action<Footstep>? _footstepSound;
@@ -3143,7 +3158,7 @@ public sealed class SoldierRenderer : IDisposable
         // representative left every other soldier's BoneObject frozen, so its RootMotion() was zero and the
         // AI never moved it -- while the shared group mesh, posed from the representative, showed it walking
         // on the spot. Exactly one soldier per group actually moved: that group's representative.
-        foreach ((SoldierView view, AiSoldier _) in _brains)
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
         {
             if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
             {
@@ -3155,9 +3170,39 @@ public sealed class SoldierRenderer : IDisposable
             // Read here, not after the clip selection below: the event belongs to the interval this
             // Tick just advanced, and SetMoving may replace the clip further down. A fresh BoneClip has
             // no interval yet, so asking afterwards would quietly swallow the step.
-            if (!view.IsDead && view.Bones.SourceOf(0)?.CrossedEvent(FootstepSounds.EventId) == true)
+            if (!view.IsDead && view.Bones.SourceOf(0) is { } bone0)
             {
-                ReportFootstep(view);
+                if (bone0.CrossedEvent(FootstepSounds.EventId))
+                {
+                    ReportFootstep(view);
+                }
+
+                // Authored animation triggers: event 1052 plays "gunpunch_01" (animation 70 swing),
+                // event 1040 plays "bodyfall_9", etc.
+                if (_animationTriggers is not null)
+                {
+                    foreach (AnimTriggerDefinition trigger in _animationTriggers.Definitions.Values)
+                    {
+                        if (bone0.CrossedEvent(trigger.EventId))
+                        {
+                            _scriptSound?.Invoke(trigger.Resource, view.Position, false);
+                        }
+                    }
+                }
+                else if (bone0.CrossedEvent(1052))
+                {
+                    _scriptSound?.Invoke("gunpunch_01", view.Position, false);
+                }
+
+                // Melee strike connects at the swing's impact frame (event 1052, time 1280.0 in 001.iff).
+                // If a strike is pending against the player, deliver it at this exact moment.
+                if (bone0.CrossedEvent(1052)
+                    && brain.ConsumeMeleeStrike(out float strikeDamage)
+                    && brain.PlayerIsEnemy
+                    && !_npcTargetByBrain.ContainsKey(view))
+                {
+                    _meleeStrikeSink?.Invoke(brain.Position, strikeDamage);
+                }
             }
         }
 
@@ -3424,6 +3469,17 @@ public sealed class SoldierRenderer : IDisposable
                     enemyFeet: feet, enemyCrouching: enemyCrouching);
             }
             SeparateFromOtherSoldiers(brain, before);
+
+            // Fallback for headless environments or missing animation clips: if event 1052 could not
+            // be evaluated, deliver any pending strike immediately so damage is not dropped.
+            if (_combatClipMissing.Contains(view) || view.Bones.SourceOf(0) is null)
+            {
+                if (brain.ConsumeMeleeStrike(out float meleeDamage) && !useNpc && playerIsEnemyToBrain)
+                {
+                    _scriptSound?.Invoke("gunpunch_01", brain.Position, false);
+                    _meleeStrikeSink?.Invoke(brain.Position, meleeDamage);
+                }
+            }
 
             if (member is not null)
             {
