@@ -2,7 +2,10 @@ using System.Globalization;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Formats.Ai;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Rendering;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
@@ -46,6 +49,7 @@ public sealed class CutsceneRuntime
     private readonly List<TimerState> _timers = [];
     private readonly List<AnimationState> _animations = [];
     private readonly List<SoundState> _sounds = [];
+    private readonly List<CarAiState> _carAis = [];
     private readonly List<DeclaredTask> _binocularOverlayHolders = [];
     private readonly Dictionary<int, TransformState> _transforms = [];
     private readonly Dictionary<GameTask, TransformState> _taskTransforms = [];
@@ -64,7 +68,9 @@ public sealed class CutsceneRuntime
     private readonly TerrainData? _terrain;
     private readonly IIgiLogger _logger;
     private ObjectCollisionIndex? _collisionIndex;
+    private DestructibleObjectRegistry? _destructibles;
     private Func<int, CutsceneTargetPose?>? _targetPoseResolver;
+    private readonly Dictionary<GameTask, WeaponType> _vehicleWeapons = [];
     private bool _breakRequested;
     private readonly List<string> _diagnostics = [];
 
@@ -87,6 +93,30 @@ public sealed class CutsceneRuntime
     {
         get => _collisionIndex;
         set => _collisionIndex = value;
+    }
+
+    /// <summary>Gets or sets the destruction state whose vehicle origins follow live CarAI transforms.</summary>
+    public DestructibleObjectRegistry? Destructibles
+    {
+        get => _destructibles;
+        set => _destructibles = value;
+    }
+
+    /// <summary>Supplies the living player eye used by firing vehicles.</summary>
+    public Func<Vector3d?>? VehicleCombatTarget { get; set; }
+
+    /// <summary>Tests the firing vehicle's muzzle-to-player sight segment.</summary>
+    public Func<GameTask, Vector3d, Vector3d, bool>? VehicleCombatLineOfSight { get; set; }
+
+    /// <summary>Receives a vehicle missile only after sight, retention and gun cadence allow it.</summary>
+    public Action<VehicleCombatShot>? VehicleCombatShotFired { get; set; }
+
+    /// <summary>Binds one authored firing vehicle to its retail weapon row.</summary>
+    public void ConfigureVehicleCombat(GameTask vehicle, WeaponType weapon)
+    {
+        ArgumentNullException.ThrowIfNull(vehicle);
+        ArgumentNullException.ThrowIfNull(weapon);
+        _vehicleWeapons[vehicle] = weapon;
     }
 
     /// <summary>Settles every collision-enabled helicopter onto whatever is under it.</summary>
@@ -272,6 +302,300 @@ public sealed class CutsceneRuntime
 
     /// <summary>Supplies live poses for targets owned by another simulation, such as animated humans.</summary>
     public void SetTargetPoseResolver(Func<int, CutsceneTargetPose?>? resolver) => _targetPoseResolver = resolver;
+
+    /// <summary>Supplies the loaded graph corpus to authored vehicle patrol tasks.</summary>
+    /// <remarks>
+    /// CarAI is a normal level task, not a cutscene animation. Retail's callback at 0x425DE0 starts
+    /// its PatrolPath, uses the graph route table to select each next node, and applies its vehicle-only
+    /// speed command on the fixed game tick. The desktop loader owns graph-file I/O, so it passes the
+    /// already offset world graphs here after they have parsed.
+    /// </remarks>
+    public void ConfigureCarAi(IReadOnlyDictionary<int, GraphFile> graphs)
+    {
+        ArgumentNullException.ThrowIfNull(graphs);
+        _carAis.Clear();
+        AiPatrolPathRegistry paths = AiPatrolPathRegistry.Build(_root);
+        foreach (GameTask task in Walk(_root))
+        {
+            if (task is not DeclaredTask declared
+                || !string.Equals(task.Type.Name, "CarAI", StringComparison.Ordinal)
+                || !declared.TryGetValue("Car ID", out object? rawCarId)
+                || !declared.TryGetValue("Graph ID", out object? rawGraphId)
+                || !declared.TryGetValue("Route ID", out object? rawRouteId)
+                || rawCarId is not int carId
+                || rawGraphId is not int graphId
+                || rawRouteId is not int routeId
+                || graphId < 0
+                || routeId < 0
+                || _root.Tree.FromId(carId) is not DeclaredTask car
+                || !_taskTransforms.TryGetValue(car, out TransformState? transform)
+                || !graphs.TryGetValue(graphId, out GraphFile? graph)
+                || paths.Find(routeId) is not { } path)
+            {
+                continue;
+            }
+
+            _carAis.Add(new CarAiState(declared, car, transform, graph, AiPatrolRoute.Start(path)));
+        }
+    }
+
+    /// <summary>Gets active graph-driven vehicles at their current world positions.</summary>
+    public IReadOnlyList<VehicleOccupant> VehicleOccupants() =>
+        _carAis
+            .Where(static state => ConditionalContainerGate.IsTaskActive(state.Car))
+            .Select(static state => new VehicleOccupant(state.Car.Id, state.Transform.Position))
+            .ToArray();
+
+    /// <summary>Runs the graph/path portion of retail's registered CarAI callback once per game tick.</summary>
+    private void TickCarAi()
+    {
+        foreach (CarAiState state in _carAis)
+        {
+            if (_destructibles?.IsDestroyed(state.Car) == true)
+            {
+                state.Stopped = true;
+                continue;
+            }
+
+            if (!ConditionalContainerGate.IsTaskActive(state.Task) || state.Stopped || state.Route is null || state.Route.HasStopped)
+            {
+                continue;
+            }
+
+            AiPatrolCommand? command = state.Route.Current;
+            if (command is null)
+            {
+                continue;
+            }
+
+            switch (command.Value.Kind)
+            {
+                case AiPatrolCommandKind.SetSpeed:
+                    state.SpeedKmh = Math.Max(0, command.Value.Operand);
+                    state.Route.Advance();
+                    state.TargetNodeId = -1;
+                    break;
+
+                case AiPatrolCommandKind.Delay:
+                    if (state.Route.Begin(SimulationTick))
+                    {
+                        state.Route.Advance();
+                    }
+                    break;
+
+                case AiPatrolCommandKind.WalkTo:
+                case AiPatrolCommandKind.RunTo:
+                    StepCarAiMovement(state, command.Value.Operand);
+                    break;
+
+                case AiPatrolCommandKind.Quit:
+                    // CarAI's Quit arm clears its active patrol action; it is not a normal cursor
+                    // advance that could wrap through an End marker into the route again.
+                    state.Stopped = true;
+                    break;
+
+                default:
+                    // Retail's default arm logs and advances unsupported command types; it does not
+                    // wedge the vehicle path (the human walker is intentionally different).
+                    state.Route.Advance();
+                    break;
+            }
+        }
+
+        TickVehicleCombat();
+    }
+
+    private void TickVehicleCombat()
+    {
+        if (VehicleCombatTarget?.Invoke() is not { } target)
+        {
+            return;
+        }
+
+        foreach (CarAiState state in _carAis)
+        {
+            if (state.Combat is null || !_vehicleWeapons.TryGetValue(state.Car, out WeaponType? weapon))
+            {
+                continue;
+            }
+
+            Vector3f forward = state.Transform.Orientation.Column2;
+            Vector3d sightOrigin = state.Transform.Position + new Vector3d(
+                forward.X * AiVehicleCombat.CapturedMuzzleForwardMetres * WorldScene.UnitsPerMetre,
+                forward.Y * AiVehicleCombat.CapturedMuzzleForwardMetres * WorldScene.UnitsPerMetre,
+                (forward.Z * AiVehicleCombat.CapturedMuzzleForwardMetres
+                    + AiVehicleCombat.CapturedMuzzleHeightMetres) * WorldScene.UnitsPerMetre);
+            bool visible = VehicleCombatLineOfSight?.Invoke(state.Car, sightOrigin, target) ?? true;
+            VehicleCombatShot? shot = state.Combat.Tick(new AiVehicleCombatInput(
+                state.Transform.Position,
+                state.Transform.Orientation,
+                target,
+                ConditionalContainerGate.IsTaskActive(state.Task)
+                    && ConditionalContainerGate.IsTaskActive(state.Car)
+                    && _destructibles?.IsDestroyed(state.Car) != true,
+                !string.IsNullOrWhiteSpace(Text(state.Car, "Can fire")),
+                Single(state.Car, "ViewCone Alpha (degrees)", 180f),
+                Single(state.Car, "ViewCone Gamma (degrees)", 360f),
+                Single(state.Car, "ViewCone Length (meter)", 0f),
+                visible,
+                weapon.MuzzleVelocity,
+                weapon.RoundsPerMinute));
+            if (shot is { } fired)
+            {
+                VehicleCombatShotFired?.Invoke(fired with
+                {
+                    Owner = state.Car,
+                    WeaponScriptId = weapon.ScriptId,
+                    MissileType = MissileFlight.TypeForLauncher(weapon),
+                    MuzzleVelocityMetresPerSecond = MissileFlight.LaunchSpeedMetresPerSecond(weapon),
+                    ModelName = string.IsNullOrWhiteSpace(weapon.Projectile.Text)
+                        ? fired.ModelName
+                        : weapon.Projectile.Text,
+                });
+            }
+        }
+    }
+
+    private void StepCarAiMovement(CarAiState state, int destinationId)
+    {
+        GraphNode? destination = state.Graph.NodeAt(destinationId);
+        if (destination is null)
+        {
+            state.Route!.Advance();
+            state.TargetNodeId = -1;
+            return;
+        }
+
+        if (state.TargetNodeId < 0)
+        {
+            GraphNearestNode.Find(state.Graph, state.Transform.Position, out GraphNode? nearest, out _);
+            int next = destinationId;
+            if (nearest is not null
+                && nearest.Id != destinationId
+                && state.Graph.RouteTable?.TryGetStep(nearest.Id, destinationId, out int routed, out _) == true)
+            {
+                next = routed;
+            }
+
+            state.TargetNodeId = next;
+        }
+
+        GraphNode? target = state.Graph.NodeAt(state.TargetNodeId);
+        if (target is null)
+        {
+            state.TargetNodeId = destinationId;
+            target = destination;
+        }
+
+        // Graph node Z is navigation metadata, not a vehicle-body altitude.  The first CarAI pass
+        // interpolated toward it directly, which pushed the APC and limo halfway through terrain on
+        // slopes.  Preserve the authored body-to-support offset and re-sample the normal car support
+        // path at every horizontal graph step, just as the dynamic CAR tick does.
+        Vector3d delta = new(
+            target.Position.X - state.Transform.Position.X,
+            target.Position.Y - state.Transform.Position.Y,
+            0d);
+        double distance = delta.Length;
+        // The source-like retail task calls this value km/h.  Convert the authored speed to its
+        // fixed 30 Hz engine-unit step; this is a graph follower, while CarDynamics remains the
+        // force/suspension implementation for animated vehicle physics.
+        double step = state.SpeedKmh * (WorldScene.UnitsPerMetre / 3.6d) / Frequency;
+        Vector3d nextPosition = distance <= Math.Max(step, target.Radius * GraphNode.MetreInUnits)
+            ? new Vector3d(target.Position.X, target.Position.Y, state.Transform.Position.Z)
+            : state.Transform.Position + (delta * (step / distance));
+        if (CarAiBlockedByClosedDoor(state, nextPosition))
+        {
+            state.Transform.PreviousPosition = state.Transform.Position;
+            state.Transform.PreviousOrientation = state.Transform.Orientation;
+            state.Transform.Speed = 0f;
+            state.Transform.IsDynamic = true;
+            return;
+        }
+
+        if (distance <= Math.Max(step, target.Radius * GraphNode.MetreInUnits))
+        {
+            PlaceCarAiOnSupport(state, nextPosition);
+            state.TargetNodeId = -1;
+            if (target.Id == destinationId)
+            {
+                state.Route!.Advance();
+            }
+
+            return;
+        }
+
+        if (delta.Length > 1e-6d)
+        {
+            state.Transform.Heading = (float)Math.Atan2(-delta.X, delta.Y);
+            state.Transform.Orientation = Matrix3f.FromEngineEulerAngles(
+                state.Transform.Euler.X,
+                state.Transform.Euler.Y,
+                state.Transform.Heading);
+        }
+
+        PlaceCarAiOnSupport(state, nextPosition);
+    }
+
+    /// <summary>Stops a graph follower at a closed authored door without consuming its route command.</summary>
+    private bool CarAiBlockedByClosedDoor(CarAiState state, Vector3d proposedPosition)
+    {
+        Vector3d translation = proposedPosition - state.Transform.Position;
+        if (_vehicleObstacleHit is null || translation.Length <= 1e-6d)
+        {
+            return false;
+        }
+
+        CarPhysicsDefinition physics = state.Transform.CarPhysics ?? DefaultCarPhysics;
+        Vector3d heading = translation / translation.Length;
+        double halfLengthUnits = physics.Dimensions.Y * 0.5d * WorldScene.UnitsPerMetre;
+        foreach (double probeHeightMetres in CarProbeHeightsMetres)
+        {
+            Vector3d offset = new(0d, 0d, probeHeightMetres * WorldScene.UnitsPerMetre);
+            Vector3d start = state.Transform.Position + (heading * halfLengthUnits) + offset;
+            Vector3d end = proposedPosition + (heading * (halfLengthUnits + CarProbeMarginUnits)) + offset;
+            if (_vehicleObstacleHit(state.Car, start, end) is { Owner: { } obstacle }
+                && string.Equals(obstacle.Type.Name, "Door", StringComparison.Ordinal)
+                && _vehicleObstacleReleased?.Invoke(obstacle) != true)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Places a graph-driven car on the same terrain/object support used by car physics.</summary>
+    private void PlaceCarAiOnSupport(CarAiState state, Vector3d proposed)
+    {
+        if (double.IsNaN(state.SupportOffsetUnits)
+            && TryFindSupportHeight(state.Transform.Position, state.Car, allowDeepRecovery: true, out double originSupport))
+        {
+            state.SupportOffsetUnits = state.Transform.Position.Z - originSupport;
+        }
+
+        Vector3d grounded = proposed;
+        if (!double.IsNaN(state.SupportOffsetUnits)
+            && TryFindSupportHeight(proposed, state.Car, allowDeepRecovery: true, out double support))
+        {
+            grounded = new Vector3d(proposed.X, proposed.Y, support + state.SupportOffsetUnits);
+        }
+
+        state.Transform.PreviousPosition = state.Transform.Position;
+        state.Transform.PreviousOrientation = state.Transform.Orientation;
+        state.Transform.Position = grounded;
+        state.Transform.Speed = state.SpeedKmh * (float)(WorldScene.UnitsPerMetre / 3.6d / Frequency);
+        state.Transform.IsDynamic = true;
+
+        // Graph-driven CarAI updates the same placed body that missiles, bullets, and the player
+        // query through ObjectCollisionIndex. Keeping only the draw transform current left the
+        // physical APC at its authored spawn after the alarm route began, so shots crossed the
+        // visible vehicle without ever reaching its retail direct-hit destruction callback.
+        _collisionIndex?.UpdateTransform(
+            state.Car,
+            grounded / WorldScene.UnitsPerMetre,
+            state.Transform.Orientation);
+        _destructibles?.UpdatePosition(state.Car, grounded);
+    }
 
     /// <summary>Marks an explicitly configured helicopter for terminal terrain landing.</summary>
     /// <param name="task">The helicopter task whose first terrain contact is terminal.</param>
@@ -493,6 +817,7 @@ public sealed class CutsceneRuntime
             ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
         }
 
+        TickCarAi();
         UpdateFrame();
     }
 
@@ -579,6 +904,7 @@ public sealed class CutsceneRuntime
         0.95f,
         0,
         [new CarWheelDefinition(false, true, 0f, 0, (float)WorldScene.UnitsPerMetre * 0.3f, 0.5f)],
+        string.Empty,
         []);
 
     /// <summary>
@@ -2253,6 +2579,10 @@ public sealed class CutsceneRuntime
 
     private static string Text(DeclaredTask task, string name) => task.TryGetValue(name, out object? value) && value is string text ? text : string.Empty;
     private static bool Bool(DeclaredTask task, string name) => task.TryGetValue(name, out object? value) && value is bool flag && flag;
+    private static float Single(DeclaredTask task, string name, float fallback) =>
+        task.TryGetValue(name, out object? value) && value is IConvertible convertible
+            ? convertible.ToSingle(CultureInfo.InvariantCulture)
+            : fallback;
     private static int Int(DeclaredTask task, string name, int fallback = 0) => task.TryGetValue(name, out object? value) && value is int number ? number : fallback;
     private static float Real(DeclaredTask task, string name, float fallback = 0f) => task.TryGetValue(name, out object? value) && value is float number ? number : fallback;
     private static float RealNamed(DeclaredTask task, string compactName, float fallback = 0f)
@@ -3108,6 +3438,28 @@ public sealed class CutsceneRuntime
         public bool IsRun { get; set; }
         public bool HasPlayed { get; set; }
     }
+
+    private sealed class CarAiState(
+        DeclaredTask task,
+        DeclaredTask car,
+        TransformState transform,
+        GraphFile graph,
+        AiPatrolRoute? route)
+    {
+        public DeclaredTask Task { get; } = task;
+        public DeclaredTask Car { get; } = car;
+        public TransformState Transform { get; } = transform;
+        public GraphFile Graph { get; } = graph;
+        public AiPatrolRoute? Route { get; } = route;
+        public int TargetNodeId { get; set; } = -1;
+        public int SpeedKmh { get; set; }
+        public bool Stopped { get; set; }
+        public double SupportOffsetUnits { get; set; } = double.NaN;
+        public AiVehicleCombat? Combat { get; } = string.IsNullOrWhiteSpace(Text(car, "Can fire"))
+            ? null
+            : new AiVehicleCombat();
+    }
+
     private sealed record TimedShot(EditCameraShot Shot, double Start);
     private sealed class AttachmentState(
         GameTask parentTask,

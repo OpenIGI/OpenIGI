@@ -960,6 +960,10 @@ internal sealed partial class DesktopGame
         {
             _soldiers.NotifyExplosion(blast.Position, blast.RadiusUnits);
         }
+        foreach (MissileDetonation blast in _vehicleMissiles.Detonations)
+        {
+            _soldiers.NotifyExplosion(blast.Position, blast.RadiusUnits);
+        }
 
         foreach (M203Detonation blast in _player.M203.Detonations)
         {
@@ -1061,36 +1065,59 @@ internal sealed partial class DesktopGame
 
         foreach (MissileDetonation blast in _player.Missiles.Detonations)
         {
-            _sounds?.PlayDefinition("explo_02_m", blast.Position, priority: 90);
-            SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
-            ScorchSurface(blast.Position, blast.Normal);
-            _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
-            // Launcher impacts use Explosion0's full collision envelope. Keep the speaker pass for
-            // alarms, but disable its legacy nearest-destructible fallback so one object cannot be
-            // destroyed twice or hide the other authored contacts in the blast.
-            HandleDestructibleBlast(
-                source: null,
-                originUnits: blast.Position,
-                radiusUnits: blast.RadiusUnits,
-                falloffUnits: blast.FalloffUnits,
-                damageFactor: blast.DamageFactor);
-            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, affectDestructibles: false);
+            ResolveMissileDetonation(blast);
+        }
+        foreach (MissileDetonation blast in _vehicleMissiles.Detonations)
+        {
+            ResolveMissileDetonation(blast);
+        }
+    }
 
-            float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
-            float dose = ExplosionDamage.Dose(
-                playerDistance,
-                ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
-                blast.RadiusUnits,
-                blast.FalloffUnits,
-                blast.DamageFactor);
-            if (dose > 0f && !_playerHealth.IsDead)
+    private void ResolveMissileDetonation(MissileDetonation blast)
+    {
+        if (_player is null)
+        {
+            return;
+        }
+
+        _sounds?.PlayDefinition("explo_02_m", blast.Position, priority: 90);
+        SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
+        ScorchSurface(blast.Position, blast.Normal);
+        _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
+        // Car's native direct-weapon callback (IGI1 0x42FC40) enters destruction immediately. Keep
+        // the exact collision identity from the missile trace so a hull hit cannot be reduced to a
+        // falloff/occlusion sample around the blast centre.
+        if (_destructibles?.TryDestroyDirectVehicle(
+                blast.DirectHitOwner,
+                blast.DirectHitPlacement) is { } directlyHitVehicle)
+        {
+            HandleDestructibleImpact(directlyHitVehicle, blast.Position);
+        }
+        // Launcher impacts use Explosion0's full collision envelope. Keep the speaker pass for
+        // alarms, but disable its legacy nearest-destructible fallback so one object cannot be
+        // destroyed twice or hide the other authored contacts in the blast.
+        HandleDestructibleBlast(
+            source: null,
+            originUnits: blast.Position,
+            radiusUnits: blast.RadiusUnits,
+            falloffUnits: blast.FalloffUnits,
+            damageFactor: blast.DamageFactor);
+        DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, affectDestructibles: false);
+
+        float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
+        float dose = ExplosionDamage.Dose(
+            playerDistance,
+            ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
+            blast.RadiusUnits,
+            blast.FalloffUnits,
+            blast.DamageFactor);
+        if (dose > 0f && !_playerHealth.IsDead)
+        {
+            _playerHealth.Apply(ExplosionDamage.Zone, dose);
+            _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
+            if (_playerHealth.IsDead)
             {
-                _playerHealth.Apply(ExplosionDamage.Zone, dose);
-                _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
-                if (_playerHealth.IsDead)
-                {
-                    BeginPlayerDeath(blast.Position, ExplosionDamage.Zone, -1, WeaponCategory.Gun);
-                }
+                BeginPlayerDeath(blast.Position, ExplosionDamage.Zone, -1, WeaponCategory.Grenade);
             }
         }
     }
@@ -1227,6 +1254,7 @@ internal sealed partial class DesktopGame
     /// <param name="owner">The exact placed task struck by a rich trace, when available.</param>
     /// <param name="placement">The exact rendered placement struck, including an attached magic object.</param>
     /// <param name="affectDestructibles">Whether this contact should also run the destructible-object path.</param>
+    /// <param name="destructibleDamage">The firing weapon row's native damage factor.</param>
     /// <remarks>
     /// Retail routes a weapon hit to the exact task. AlarmLight_Explode (<c>0x43A5F0</c>) and the
     /// SCameraLens destruction branch (<c>0x441770</c>) permanently silence it, play its report,
@@ -1238,7 +1266,8 @@ internal sealed partial class DesktopGame
         float radiusUnits = AlarmSpeakerRegistry.HitRadiusUnits,
         GameTask? owner = null,
         WorldPlacement? placement = null,
-        bool affectDestructibles = true)
+        bool affectDestructibles = true,
+        float destructibleDamage = 1f)
     {
         // The same world contact drives both families. The placement is essential for windows and
         // barrels: their Owner is the enclosing Building task, while retail destroys only the exact
@@ -1249,7 +1278,8 @@ internal sealed partial class DesktopGame
                 impactUnits,
                 radiusUnits,
                 owner,
-                placement);
+                placement,
+                destructibleDamage);
             if (destructible is not null)
             {
                 HandleDestructibleImpact(destructible, impactUnits);
@@ -1324,7 +1354,8 @@ internal sealed partial class DesktopGame
             radiusUnits,
             falloffUnits,
             damageFactor,
-            target => ExplosionCanReach(source, originUnits, target)))
+            target => ConditionalContainerGate.IsTaskActive(target.Owner)
+                && ExplosionCanReach(source, originUnits, target)))
         {
             // Passing the blast origin is deliberate. GlassShatter uses the incoming contact to pick
             // nearby collision faces, just as Glass_ExplosionHitHandler hands the native shatter task

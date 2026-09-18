@@ -356,13 +356,15 @@ public sealed class WorldScene
     /// attachments, and the baked-lightmap numbering that depends on them, are left out.
     /// </param>
     /// <param name="logger">Where to report placements that do not resolve.</param>
+    /// <param name="vehiclePhysics">Optional physics definitions used to bind a CAR's authored wreck model.</param>
     /// <returns>The scene.</returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public static WorldScene Build(
         LoadedMission mission,
         GameTask levelRoot,
         MagicObjectRegistry? magic = null,
-        IIgiLogger? logger = null)
+        IIgiLogger? logger = null,
+        VehiclePhysicsRegistry? vehiclePhysics = null)
     {
         ArgumentNullException.ThrowIfNull(mission);
         ArgumentNullException.ThrowIfNull(levelRoot);
@@ -627,6 +629,22 @@ public sealed class WorldScene
                     placement = placement with
                     {
                         DestroyedReplacement = genericDestroyed,
+                    };
+                }
+
+                // Cars do not declare a "Destroyed model" level parameter.  Their own retail
+                // physicsobj definition supplies it as the final DefinePhysicsObjType value (the
+                // Level 6 APC is 601_01_1 -> 601_08_1).  Preserve that authored binding on the
+                // placement so the shared destruction path can select it after a launcher hit.
+                if (placement.DestroyedReplacement is null
+                    && string.Equals(task.Type.Name, "Car", StringComparison.Ordinal)
+                    && vehiclePhysics?.TryGetCar(placement.Instance.Name, out CarPhysicsDefinition car) == true
+                    && car.DestroyedModel.Length > 0
+                    && TryResolveDestroyedBinding(car.DestroyedModel, placement, mission, byName, out WorldModelBinding? vehicleDestroyed))
+                {
+                    placement = placement with
+                    {
+                        DestroyedReplacement = vehicleDestroyed,
                     };
                 }
 

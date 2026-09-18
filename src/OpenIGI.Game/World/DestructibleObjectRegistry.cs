@@ -11,6 +11,9 @@ public enum DestructibleObjectKind
 
     /// <summary>An authored ExplodeObject task or explosive magic-object attachment.</summary>
     Explosive,
+
+    /// <summary>A physics-object vehicle whose CAR definition authors a wreck model.</summary>
+    Vehicle,
 }
 
 /// <summary>One exact destructible object, including an attached magic-object placement when present.</summary>
@@ -73,8 +76,11 @@ public sealed class DestructibleObject
     /// <summary>Gets the authored explosion damage factor.</summary>
     public float ExplosionDamageFactor { get; internal set; }
 
-    /// <summary>Gets the authored damage required by <c>ExplodeMagicObj</c> before it detonates.</summary>
-    /// <remarks>Retail compares the accumulated hit value at <c>+0x13c</c> with the threshold at <c>+0x140</c>.</remarks>
+    /// <summary>Gets the accumulated damage required before this explosive object detonates.</summary>
+    /// <remarks>
+    /// Retail <c>ExplodeObject</c> compares <c>+0x1e8</c> with <c>+0x1ec</c>; attached
+    /// <c>ExplodeMagicObj</c> uses the equivalent <c>+0x13c</c>/<c>+0x140</c> pair.
+    /// </remarks>
     public float ExplosionDamageThreshold { get; internal set; } = 1f;
 
     /// <summary>Gets the damage accumulated by this object since it was created.</summary>
@@ -148,7 +154,8 @@ public sealed class DestructibleObjectRegistry
     public static DestructibleObjectRegistry Build(
         GameTask root,
         IEnumerable<WorldPlacement> placements,
-        ScriptVarRegistry variables)
+        ScriptVarRegistry variables,
+        VehiclePhysicsRegistry? vehiclePhysics = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(placements);
@@ -194,6 +201,51 @@ public sealed class DestructibleObjectRegistry
                 }
             });
             variables.BindBool(task, "isLastExploded", () => item.IsLastDestroyed, _ => { });
+        }
+
+        // Vehicle damage is not an ExplodeObject task.  The CAR physics definition owns the
+        // replacement model (e.g. the retail Level 6 APC's 601_08_1), while the vehicle's native
+        // explosion callback exports the same isExploded/isLastExploded state that level gates use.
+        // Register only models that actually publish a wreck binding; ordinary cars remain intact.
+        if (vehiclePhysics is not null)
+        {
+            foreach (DeclaredTask task in Walk(root).OfType<DeclaredTask>())
+            {
+                if (!string.Equals(task.Type.Name, "Car", StringComparison.Ordinal)
+                    || !task.TryGetValue(WorldScene.ModelParameter, out object? rawModel)
+                    || rawModel is not string model
+                    || !vehiclePhysics.TryGetCar(model, out CarPhysicsDefinition car)
+                    || car.DestroyedModel.Length == 0)
+                {
+                    continue;
+                }
+
+                WorldPlacement[] taskPlacements = [.. resolved.Where(candidate =>
+                    ReferenceEquals(candidate.Owner, task))];
+                WorldPlacement? placement = taskPlacements.FirstOrDefault();
+                DestructibleObject item = registry.Add(new DestructibleObject(
+                    DestructibleObjectKind.Vehicle,
+                    task,
+                    placement,
+                    "Car",
+                    PositionOf(task, placement))
+                {
+                    DestroyedModelName = car.DestroyedModel,
+                });
+                foreach (WorldPlacement taskPlacement in taskPlacements)
+                {
+                    registry.RegisterPlacement(item, taskPlacement);
+                }
+
+                variables.BindBool(task, "isExploded", () => item.IsDestroyed, value =>
+                {
+                    if (value)
+                    {
+                        item.IsDestroyed = true;
+                    }
+                });
+                variables.BindBool(task, "isLastExploded", () => item.IsLastDestroyed, _ => { });
+            }
         }
 
         foreach (WorldPlacement placement in resolved)
@@ -247,12 +299,50 @@ public sealed class DestructibleObjectRegistry
         && _byOwner.TryGetValue(task, out List<DestructibleObject>? items)
         && items.Any(item => item.IsDestroyed);
 
+    /// <summary>Moves every destructible identity owned by a live task to its current world position.</summary>
+    /// <param name="owner">The exact moving task.</param>
+    /// <param name="positionUnits">Its current origin in engine units.</param>
+    /// <returns><see langword="true"/> when the task owns at least one destructible identity.</returns>
+    /// <remarks>
+    /// Vehicle destruction is dispatched after the missile has collided with the live world mesh.
+    /// The blast envelope must therefore use the same moving origin instead of the authored spawn;
+    /// otherwise an APC that has followed its alarm route can be visibly struck while its explosion
+    /// callback remains kilometres of engine units behind it.
+    /// </remarks>
+    public bool UpdatePosition(GameTask owner, Vector3d positionUnits)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        if (!_byOwner.TryGetValue(owner, out List<DestructibleObject>? items))
+        {
+            return false;
+        }
+
+        foreach (DestructibleObject item in items)
+        {
+            item.PositionUnits = positionUnits;
+        }
+
+        return true;
+    }
+
     /// <summary>Advances the script-visible previous-state flags by one simulation tick.</summary>
     public void Tick()
     {
         foreach (DestructibleObject item in _objects)
         {
             item.IsLastDestroyed = item.IsDestroyed;
+            if (!item.IsDestroyed
+                && item.ExplosionExpression.Length > 0
+                && ExplosionEnabled(item))
+            {
+                // ExplodeObject::Update (IGI1 0x481970) evaluates the authored expression on every
+                // tick and enters the explosion path immediately when it becomes true. This is the
+                // Level 6 C4 chain: LevelTimer_1604 reaches tick 600, then tanks 1600/1601 explode.
+                item.IsDestroyed = true;
+                _readyExplosions.Add(item);
+                continue;
+            }
+
             if (item.PendingExplosionTicks > 0 && --item.PendingExplosionTicks == 0)
             {
                 _readyExplosions.Add(item);
@@ -278,13 +368,16 @@ public sealed class DestructibleObjectRegistry
         return ready;
     }
 
-    /// <summary>Destroys the exact impact placement or owner, preserving attached-object identity.</summary>
-    public DestructibleObject? TryDestroy(GameTask? owner, WorldPlacement? placement = null)
+    /// <summary>Applies one weapon hit to the exact placement or owner.</summary>
+    public DestructibleObject? TryDestroy(
+        GameTask? owner,
+        WorldPlacement? placement = null,
+        float damage = 1f)
     {
         if (placement is not null
             && _byPlacement.TryGetValue(placement, out DestructibleObject? exactPlacement))
         {
-            return ApplyDamage(exactPlacement, 1f);
+            return ApplyDamage(exactPlacement, damage);
         }
 
         if (owner is null || !_byOwner.TryGetValue(owner, out List<DestructibleObject>? items))
@@ -301,22 +394,45 @@ public sealed class DestructibleObjectRegistry
             : items.FirstOrDefault(item => item.Placement is null && !item.IsDestroyed);
         if (exactOwner is not null)
         {
-            return ApplyDamage(exactOwner, 1f);
+            return ApplyDamage(exactOwner, damage);
         }
 
         return null;
     }
 
-    /// <summary>Destroys the nearest live destructible object within the supplied impact radius.</summary>
+    /// <summary>Applies retail's immediate direct-weapon-hit transition to one exact vehicle.</summary>
+    public DestructibleObject? TryDestroyDirectVehicle(GameTask? owner, WorldPlacement? placement = null)
+    {
+        DestructibleObject? item = null;
+        if (placement is not null)
+        {
+            _byPlacement.TryGetValue(placement, out item);
+        }
+
+        if (item is null
+            && owner is not null
+            && _byOwner.TryGetValue(owner, out List<DestructibleObject>? items)
+            && items.Count == 1)
+        {
+            item = items[0];
+        }
+
+        return item?.Kind == DestructibleObjectKind.Vehicle
+            ? ApplyDamage(item, 1f)
+            : null;
+    }
+
+    /// <summary>Applies one weapon hit to the nearest live destructible within the supplied radius.</summary>
     public DestructibleObject? TryDestroyAt(
         Vector3d impactUnits,
         float radiusUnits = HitRadiusUnits,
         GameTask? owner = null,
-        WorldPlacement? placement = null)
+        WorldPlacement? placement = null,
+        float damage = 1f)
     {
         if (placement is not null && _byPlacement.TryGetValue(placement, out DestructibleObject? exactPlacement))
         {
-            return ApplyDamage(exactPlacement, 1f);
+            return ApplyDamage(exactPlacement, damage);
         }
 
         if (owner is not null
@@ -325,7 +441,7 @@ public sealed class DestructibleObjectRegistry
                 ? owned[0]
                 : owned.FirstOrDefault(item => item.Placement is null && !item.IsDestroyed)) is { } exactOwner)
         {
-            return ApplyDamage(exactOwner, 1f);
+            return ApplyDamage(exactOwner, damage);
         }
 
         DestructibleObject? nearest = null;
@@ -345,7 +461,7 @@ public sealed class DestructibleObjectRegistry
             }
         }
 
-        return nearest is null ? null : ApplyDamage(nearest, 1f);
+        return nearest is null ? null : ApplyDamage(nearest, damage);
     }
 
     /// <summary>
@@ -438,9 +554,10 @@ public sealed class DestructibleObjectRegistry
             return null;
         }
 
-        // Glass and top-level ExplodeObject use their native immediate weapon-hit path. Only the
-        // ExplodeMagicObj family owns the +0x13c accumulator and +0x140 threshold.
-        if (!string.Equals(item.TypeName, ExplodeMagicType, StringComparison.Ordinal))
+        // Vehicle and glass callbacks are binary state transitions. ExplodeObject and the attached
+        // ExplodeMagicObj family instead accumulate the incoming hit value and compare it with their
+        // authored damage scale (IGI1 0x481e60: +0x1e8 against +0x1ec).
+        if (item.Kind != DestructibleObjectKind.Explosive)
         {
             item.IsDestroyed = true;
             return item;
@@ -518,8 +635,11 @@ public sealed class DestructibleObjectRegistry
         item.ExplosionDamageFactor = ReadFloat(task, "Explosion damage scale", ExplosionDamageDefaults.DamageFactor);
         item.ExplosionDamageThreshold = ReadFloat(
             task,
-            "Max damage before explosion",
-            ExplosionDamageDefaults.DamageThreshold);
+            "Damage scale",
+            ReadFloat(
+                task,
+                "Max damage before explosion",
+                ExplosionDamageDefaults.DamageThreshold));
         item.ExplosionDelayTicks = Math.Max(0, (int)(ReadFloat(task, "Explosion delay") * 30f));
         item.ExplosionSound = ReadString(task, "Explosion sound");
         item.ExplosionFireballs = ReadFloat(task, "Explosion fireballs");
@@ -536,7 +656,8 @@ public sealed class DestructibleObjectRegistry
     public bool ShouldExplode(DestructibleObject item)
     {
         ArgumentNullException.ThrowIfNull(item);
-        return item.Kind == DestructibleObjectKind.Explosive && ExplosionEnabled(item);
+        return (item.Kind is DestructibleObjectKind.Explosive or DestructibleObjectKind.Vehicle)
+            && ExplosionEnabled(item);
     }
 
     /// <summary>Starts an authored explosion immediately or arms its retail delay.</summary>

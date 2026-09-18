@@ -433,6 +433,7 @@ internal sealed partial class DesktopGame : IDisposable
     private CameraStatusLightRenderer? _cameraStatusLights;
     private GrenadeRenderer? _grenadeRenderer;
     private MissileRenderer? _missileRenderer;
+    private readonly MissileSimulation _vehicleMissiles = new();
     private LoadedMission? _loadedMissionForWeapon;
     private ViewModelRenderer? _arms;
     private SoldierRenderer? _soldiers;
@@ -2678,6 +2679,7 @@ internal sealed partial class DesktopGame : IDisposable
                         // tick's activate target. Do not advance the same registry again below.
                         interactionsTickedByPlayer = true;
                     }
+                    TickVehicleMissiles();
 
                     // Grenade physics runs inside PlayerCamera.Tick. IGI1 broadcasts the grenade task's
                     // AI events before the HumanAI pass, so deliver the queued records here rather than
@@ -2818,7 +2820,8 @@ internal sealed partial class DesktopGame : IDisposable
                             DamageAlarmSpeakers(
                                 playerImpact.Position,
                                 owner: playerImpact.Owner,
-                                placement: playerImpact.Placement);
+                                placement: playerImpact.Placement,
+                                destructibleDamage: _player.HeldWeaponType?.DamageFactor ?? 1f);
                         }
                     }
 
@@ -2916,6 +2919,7 @@ internal sealed partial class DesktopGame : IDisposable
                 Vector3d? cutsceneViewMetres = _cutscenes?.Frame?.Camera.Position;
                 Vector3d? freeViewMetres = !_playerMode ? _camera?.Position : null;
                 _missionObjectives?.SetSoldierOccupants(_soldiers?.Occupants() ?? []);
+                _missionObjectives?.SetVehicleOccupants(_cutscenes?.VehicleOccupants() ?? []);
                 TickAreaActivations(
                     _missionObjectives,
                     _player?.Body.Position,
@@ -4469,6 +4473,7 @@ internal sealed partial class DesktopGame : IDisposable
                 if (_missileRenderer is not null && _player is not null)
                 {
                     _missileRenderer.Draw(_player.Missiles, eye, projection, smoothPresentation ? tickBlend : 1f);
+                    _missileRenderer.Draw(_vehicleMissiles, eye, projection, smoothPresentation ? tickBlend : 1f);
                     _missileRenderer.Draw(_player.M203, eye, projection, smoothPresentation ? tickBlend : 1f);
                 }
 

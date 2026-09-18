@@ -48,7 +48,61 @@ internal sealed partial class DesktopGame
     {
         _player?.Grenades.Clear();
         _player?.Missiles.Clear();
+        _vehicleMissiles.Clear();
         _player?.M203.Clear();
+    }
+
+    /// <summary>Advances missiles fired by authored vehicles against the player's own body.</summary>
+    private void TickVehicleMissiles()
+    {
+        if (_player is not { } player)
+        {
+            return;
+        }
+
+        bool PlayerProbe(Vector3d from, Vector3d to, out HumanHit hit)
+        {
+            hit = default;
+            if (_playerHealth.IsDead)
+            {
+                return false;
+            }
+
+            if (_soldiers?.TryHitPlayerBody(from, to, player.Body.Position, player.Body.Yaw, out hit) == true)
+            {
+                return true;
+            }
+
+            Vector3f facing = new(-MathF.Sin(player.Body.Yaw), MathF.Cos(player.Body.Yaw), 0f);
+            return HumanHitTest.TryCast(from, to, player.Body.Position, facing, pose: null, out hit);
+        }
+
+        MissileWorldTraceCast? walls = _worldTrace is { } trace
+            ? (LiveMissile missile, Vector3d from, Vector3d to, out WorldTraceHit hit) =>
+            {
+                bool found = trace(
+                    new WorldTraceRequest(
+                        from,
+                        to,
+                        WorldTraceMask.World,
+                        IgnoredOwner: missile.CollisionOwner),
+                    out hit);
+                return found;
+            }
+            : _effectWalls is { } effectWalls
+                ? (LiveMissile _, Vector3d from, Vector3d to, out WorldTraceHit hit) =>
+                {
+                    bool found = effectWalls(from, to, out WorldRayHit rayHit);
+                    hit = found
+                        ? WorldTraceHit.FromRayHit(
+                            new WorldTraceRequest(from, to, WorldTraceMask.World),
+                            rayHit,
+                            WorldTraceHitKind.StaticObject)
+                        : default;
+                    return found;
+                }
+                : null;
+        _vehicleMissiles.TickWithMissileContext(walls, PlayerProbe);
     }
 
     private void StartMission(int id)
@@ -483,7 +537,7 @@ internal sealed partial class DesktopGame
         }
         else
         {
-            scene = WorldScene.Build(loaded, levelRoot, _magic, _logger);
+            scene = WorldScene.Build(loaded, levelRoot, _magic, _logger, _vehiclePhysics);
             _scene = scene;
             world = new WorldRenderer(_device, _resources, _logger)
             {
@@ -528,7 +582,9 @@ internal sealed partial class DesktopGame
         _destructibles = DestructibleObjectRegistry.Build(
             levelRoot,
             scene.Placements,
-            _loop.Variables);
+            _loop.Variables,
+            _vehiclePhysics);
+        _cutscenes.Destructibles = _destructibles;
         world.Destructibles = _destructibles;
         solids.Destructibles = _destructibles;
         world.Cutscenes = _cutscenes;
@@ -729,6 +785,11 @@ internal sealed partial class DesktopGame
                     "Ai",
                     $"Nav graphs: {graphs.Count} — " +
                     string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n")));
+
+                // CarAI is a separate retail task family from HumanAI. Give the runtime the same
+                // graph corpus the soldier system receives so alarm-gated APCs and objective-gated
+                // limousines follow their authored PatrolPath routes instead of remaining parked.
+                _cutscenes?.ConfigureCarAi(graphs);
 
                 // The difficulty every guard reads its combat row at. Faithfully the ACTIVE PLAYER PROFILE's
                 // (sub_406F70 takes it from sub_406220()'s first field), so the difficulty the player picked
@@ -1197,7 +1258,8 @@ internal sealed partial class DesktopGame
                         DamageAlarmSpeakers(
                             worldHit.Position,
                             owner: blocker.Owner,
-                            placement: blocker.Placement);
+                            placement: blocker.Placement,
+                            destructibleDamage: weapon.DamageFactor);
 
                         // A guard's round kicks the same burst a player's does -- misses landing
                         // around you are half of what sells incoming fire.
@@ -1565,6 +1627,7 @@ internal sealed partial class DesktopGame
             candidate.GrenadeTrace = _playerTerrain is { } grenadeTraceGround
                 ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeTraceGround))
                 : solids.Tracer();
+            candidate.MissileTrace = candidate.GrenadeTrace;
 
             // The ladders the level attaches to its buildings, so the player can climb them (E to mount,
             // W/S up and down, E held to slide).
@@ -1672,6 +1735,33 @@ internal sealed partial class DesktopGame
             }
 
             EndStage("the player's animation sets, walls, ladders and the weapon tables");
+
+            if (id == 6
+                && levelRoot.Tree.FromId(800) is { } alarmApc
+                && _cutscenes is { } vehicleRuntime
+                && weaponRoster.TryGetByScriptId("WEAPON_ID_APC", out WeaponType apcWeapon))
+            {
+                vehicleRuntime.ConfigureVehicleCombat(alarmApc, apcWeapon);
+                vehicleRuntime.VehicleCombatTarget = () => !_playerHealth.IsDead ? candidate.EyeUnits : null;
+                vehicleRuntime.VehicleCombatLineOfSight = (owner, from, to) =>
+                    _worldTrace is null
+                    || !_worldTrace(
+                        new WorldTraceRequest(from, to, WorldTraceMask.World, IgnoredOwner: owner), out _);
+                vehicleRuntime.VehicleCombatShotFired = shot =>
+                {
+                    if (_vehicleMissiles.Spawn(
+                        shot.Origin,
+                        shot.Target,
+                        shot.MissileType,
+                        shot.MuzzleVelocityMetresPerSecond,
+                        shot.Direction,
+                        shot.ModelName,
+                        collisionOwner: shot.Owner))
+                    {
+                        _sounds?.PlayDefinition("rpg_launch_1", shot.Origin, priority: 250);
+                    }
+                };
+            }
 
             // The guards' weapons, which have to wait for the roster: a soldier's gun is an authored
             // Gun child task naming a WEAPON_ID_*, and only the table knows which model that draws.
@@ -2212,6 +2302,10 @@ internal sealed partial class DesktopGame
 
     private void ReleasePlayedMission()
     {
+        // Vehicle missiles own task references from the outgoing level. Drop them before any old
+        // collision/render state is torn down so a restart cannot carry a projectile into the next run.
+        _vehicleMissiles.Clear();
+
         // First, because both are worker threads tracing the level that is going and they hold the whole
         // of what they trace: the lightmap bake's texel maps, triangles and BVH run to a few hundred
         // megabytes, and nothing here released them. A bake was only ever cancelled by the NEXT one

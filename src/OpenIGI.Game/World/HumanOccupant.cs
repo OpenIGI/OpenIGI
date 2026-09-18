@@ -13,3 +13,8 @@ namespace OpenIGI.Game.World;
 /// <param name="Position">The current world position in engine units.</param>
 /// <param name="IsDead">Whether the human has died; a dead human is not an area occupant and reports <c>isDead</c>.</param>
 public readonly record struct HumanOccupant(int TaskId, int Team, Vector3d Position, bool IsDead);
+
+/// <summary>A live vehicle's per-tick presence for mission area queries.</summary>
+/// <param name="TaskId">The owning vehicle task id.</param>
+/// <param name="Position">The current world position in engine units.</param>
+public readonly record struct VehicleOccupant(int TaskId, Vector3d Position);

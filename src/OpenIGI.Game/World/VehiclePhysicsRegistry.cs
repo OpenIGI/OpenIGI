@@ -282,6 +282,7 @@ public sealed class VehiclePhysicsRegistry
                 throttleRetention,
                 aerodynamicSurfaces,
                 wheels,
+                call.GetString(call.ArgumentCount - 1),
                 arguments));
         }
         else if (taskType == _planeType && call.ArgumentCount >= 9)
@@ -345,6 +346,7 @@ public readonly record struct HelicopterPhysicsDefinition(
 /// car publishes nought, so cars carry no aerodynamics.
 /// </param>
 /// <param name="Wheels">The wheel entries (record <c>+284</c>, stride 20).</param>
+/// <param name="DestroyedModel">The final CAR definition value: the authored wreck-model binding.</param>
 /// <param name="Arguments">The untouched definition values.</param>
 public readonly record struct CarPhysicsDefinition(
     float Mass,
@@ -356,6 +358,7 @@ public readonly record struct CarPhysicsDefinition(
     float ThrottleRetention,
     int AerodynamicSurfaceCount,
     IReadOnlyList<CarWheelDefinition> Wheels,
+    string DestroyedModel,
     IReadOnlyList<QvmValue> Arguments)
 {
     /// <summary>Number of values in the original <c>DefinePhysicsObjType</c> call.</summary>
