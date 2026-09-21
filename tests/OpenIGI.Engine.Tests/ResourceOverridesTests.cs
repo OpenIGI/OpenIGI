@@ -244,6 +244,63 @@ public sealed class ResourceOverridesTests : IDisposable
         Assert.Equal(0, result.Total);
     }
 
+    /// <summary>Reading from several threads while the folder is rescanned is safe and stays correct.</summary>
+    /// <remarks>
+    /// Not a hypothetical: a menu backdrop builds its level on a worker thread, and the registry it builds
+    /// into resolves every archived entry through this store — while the render thread is free to rescan
+    /// the folder from the console or take the pack out of the frame. A read mutates too, because a
+    /// candidate caches its bytes the first time it is asked for, so the two collide on writes and not
+    /// merely on reads.
+    /// </remarks>
+    [Fact]
+    public void ReadingWhileRescanningIsSafe()
+    {
+        (string Name, byte[] Data)[] entries =
+            [.. Enumerable.Range(0, 64).Select(i => ($"LOCAL:common/textures/{i}.tex", new byte[] { (byte)i, 7 }))];
+
+        WriteArchive("common/textures/textures.res", entries);
+
+        ResourceOverrides overrides = new(_root);
+        _ = overrides.Rescan();
+
+        List<Exception> failures = [];
+        int wrong = 0;
+
+        Parallel.For(0, 8, worker =>
+        {
+            try
+            {
+                for (int pass = 0; pass < 200; pass++)
+                {
+                    if (worker == 0)
+                    {
+                        _ = overrides.Rescan();
+                        continue;
+                    }
+
+                    int index = (pass + worker) % entries.Length;
+
+                    if (!overrides.TryRead($"common/textures/{index}.tex", out ReadOnlyMemory<byte> data)
+                        || data.Span[0] != (byte)index)
+                    {
+                        Interlocked.Increment(ref wrong);
+                    }
+                }
+            }
+            catch (Exception error)
+            {
+                lock (failures)
+                {
+                    failures.Add(error);
+                }
+            }
+        });
+
+        Assert.Empty(failures);
+        Assert.Equal(0, wrong);
+        Assert.Equal(entries.Length, overrides.Count);
+    }
+
     private void WriteArchive(string relative, params (string Name, byte[] Data)[] entries)
     {
         Write(

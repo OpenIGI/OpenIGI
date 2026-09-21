@@ -4,6 +4,7 @@ using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Formats.Textures;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
@@ -308,14 +309,54 @@ internal sealed partial class DesktopGame
                 if (swapped > 0)
                 {
                     _world?.ReloadTextures();
+                    report += ReloadTerrainTiles() ? " Textures and ground reloaded." : " Textures reloaded.";
                     DiscardSurfaceCache();
-                    report += " Textures reloaded.";
                 }
 
                 context.Print(report);
                 _logger.Information("Overrides", report);
             },
             "[list]");
+    }
+
+    /// <summary>Puts the ground back up from whatever the resource registry now hands over.</summary>
+    /// <returns><see langword="true"/> when the ground was re-uploaded.</returns>
+    /// <remarks>
+    /// <para>
+    /// A level's ground atlas is a LOOSE file, not an entry in an archive, and the two are replaced by
+    /// different halves of the machinery: an archived texture is swapped in the registry and picked up by
+    /// <c>WorldRenderer.ReloadTextures</c>, while a loose one is dropped from the registry and re-read on
+    /// the next load. Nothing re-loads the ground by itself, because the atlas is decoded once when the
+    /// level is built -- so without this the pack goes on and off every wall in the level and the ground
+    /// underneath it never moves.
+    /// </para>
+    /// <para>
+    /// Only for a mission being PLAYED. A menu backdrop's terrain was built by the preview's own private
+    /// registry, and the session's is not the one holding its bytes.
+    /// </para>
+    /// </remarks>
+    private bool ReloadTerrainTiles()
+    {
+        if (_terrain is null || _activeMission is not { } mission)
+        {
+            return false;
+        }
+
+        if (!_resources.TryLoad(mission.TerrainBasePath + ".tex", out ReadOnlyMemory<byte> bytes))
+        {
+            return false;
+        }
+
+        try
+        {
+            _terrain.ReloadTiles(TexAtlasFile.Read(bytes));
+            return true;
+        }
+        catch (TextureFormatException error)
+        {
+            _logger.Warning("Overrides", $"The ground atlas did not decode: {error.Message}");
+            return false;
+        }
     }
 
     /// <summary>Registers the command that reads the camera's pose back as command-line arguments.</summary>

@@ -1024,6 +1024,7 @@ internal sealed partial class DesktopGame : IDisposable
             missionState,
             _detailMaps,
             _sessionArchives,
+            _overrides,
             _lampManifest,
             _sdfCache,
             _device.Capabilities.SupportsCompute);
@@ -2320,6 +2321,7 @@ internal sealed partial class DesktopGame : IDisposable
                 if (swapped > 0)
                 {
                     _world?.ReloadTextures();
+                    _ = ReloadTerrainTiles();
 
                     // The card atlas has the diffuse baked into it, so the indirect light is still
                     // bouncing off the old pixels until it is captured again. Discarding it is the

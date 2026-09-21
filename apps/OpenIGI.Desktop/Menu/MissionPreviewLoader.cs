@@ -242,6 +242,13 @@ public sealed class MissionPreviewLoader(
         var fileSystem = new VirtualFileSystem(logger);
         fileSystem.RegisterDevice(new LocalFileDevice(gamePath));
         var resources = new ResourceRegistry(fileSystem, logger);
+
+        // Before a single Register call, because registering an archive substitutes its entries on the
+        // way in and a store attached afterwards would have missed every one of them. This is also the
+        // only place it can be attached at all: a preview's registry is private, and promotion hands it
+        // to the game wholesale -- so a registry built without it plays the mission from the game's own
+        // archives no matter what is in the folder.
+        resources.Overrides = context.Overrides;
         var loop = new GameLoop(
             time: context.TimeSource,
             host: context.Host,

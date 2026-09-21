@@ -244,6 +244,50 @@ public sealed class ResourceRegistryTests : IDisposable
         Assert.Equal(0, registry.Count);
     }
 
+    /// <summary>A loose file's override goes in and comes out again when the folder is bypassed.</summary>
+    /// <remarks>
+    /// The terrain atlases, the sky layers and the menu scripts are loose files, and they are the half of
+    /// the installation that never passes through an archive. An archived entry is swapped in place
+    /// because the registry is holding the shipped bytes anyway; a loose one has no such copy, so the
+    /// reapply forgets it instead and the next load resolves the name again. Without that, a pack went
+    /// on to every wall in the level and the ground under it never moved -- in either direction.
+    /// </remarks>
+    [Fact]
+    public void ReapplyingSwapsALooseFileBothWays()
+    {
+        string overrideRoot = Path.Combine(_root, "overrides");
+        Directory.CreateDirectory(Path.Combine(overrideRoot, "missions", "level1", "terrain"));
+        File.WriteAllBytes(
+            Path.Combine(overrideRoot, "missions", "level1", "terrain", "terrain.tex"),
+            [9, 9, 9, 9]);
+
+        Directory.CreateDirectory(Path.Combine(_root, "missions", "level1", "terrain"));
+        File.WriteAllBytes(Path.Combine(_root, "missions", "level1", "terrain", "terrain.tex"), [1, 2]);
+
+        ResourceRegistry registry = CreateRegistry();
+        ResourceOverrides overrides = new(overrideRoot);
+        _ = overrides.Rescan();
+        registry.Overrides = overrides;
+
+        const string Name = "LOCAL:missions/level1/terrain/terrain.tex";
+
+        Assert.True(registry.TryLoad(Name, out ReadOnlyMemory<byte> replaced));
+        Assert.Equal(new byte[] { 9, 9, 9, 9 }, replaced.ToArray());
+        Assert.Equal(1, registry.OverriddenCount);
+
+        overrides.Bypassed = true;
+        Assert.Equal(1, registry.ReapplyOverrides());
+
+        Assert.True(registry.TryLoad(Name, out ReadOnlyMemory<byte> shipped));
+        Assert.Equal(new byte[] { 1, 2 }, shipped.ToArray());
+
+        overrides.Bypassed = false;
+        Assert.Equal(1, registry.ReapplyOverrides());
+
+        Assert.True(registry.TryLoad(Name, out ReadOnlyMemory<byte> again));
+        Assert.Equal(new byte[] { 9, 9, 9, 9 }, again.ToArray());
+    }
+
     private ResourceRegistry CreateRegistry()
     {
         var vfs = new VirtualFileSystem();

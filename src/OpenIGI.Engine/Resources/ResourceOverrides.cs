@@ -61,6 +61,14 @@ public sealed class ResourceOverrides
     public const string ArchiveExtension = ".res";
 
     private readonly IIgiLogger _logger;
+
+    // The index is read from more than one thread. A menu backdrop builds its level on a worker, and the
+    // registry it builds into resolves every archived entry through this store while the render thread is
+    // free to rescan the folder or swap the pack out of the frame. Reads mutate too -- a candidate caches
+    // its bytes on first use -- so a reader lock would not be enough and there is nothing here worth the
+    // complication of one: a hit is a dictionary lookup, and the file read that misses is rare by
+    // construction because the answer is kept.
+    private readonly Lock _gate = new();
     private readonly Dictionary<string, Candidate> _files = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Initializes a new instance of the <see cref="ResourceOverrides"/> class.</summary>
@@ -80,7 +88,16 @@ public sealed class ResourceOverrides
     public string? Root { get; }
 
     /// <summary>Gets how many files the last scan found.</summary>
-    public int Count => _files.Count;
+    public int Count
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _files.Count;
+            }
+        }
+    }
 
     /// <summary>Gets or sets a value indicating whether every override is ignored.</summary>
     /// <remarks>
@@ -91,10 +108,21 @@ public sealed class ResourceOverrides
     public bool Bypassed { get; set; }
 
     /// <summary>Gets a value indicating whether any override is present and in use.</summary>
-    public bool IsActive => !Bypassed && _files.Count > 0;
+    public bool IsActive => !Bypassed && Count > 0;
 
     /// <summary>Gets every override path found, relative to the root and normalised.</summary>
-    public IReadOnlyCollection<string> Paths => _files.Keys;
+    public IReadOnlyCollection<string> Paths
+    {
+        get
+        {
+            lock (_gate)
+            {
+                // A copy, not the live key collection: the caller orders and pages through it, and a
+                // rescan on another thread would invalidate the enumerator half way down the listing.
+                return _files.Keys.ToArray();
+            }
+        }
+    }
 
     /// <summary>Rebuilds the index from the directory.</summary>
     /// <returns>What changed since the previous scan.</returns>
@@ -104,13 +132,26 @@ public sealed class ResourceOverrides
     /// </remarks>
     public ScanResult Rescan()
     {
-        Dictionary<string, Candidate> previous = new(_files, StringComparer.OrdinalIgnoreCase);
-        _files.Clear();
+        Dictionary<string, Candidate> previous;
+
+        lock (_gate)
+        {
+            previous = new(_files, StringComparer.OrdinalIgnoreCase);
+        }
 
         if (Root is null || !Directory.Exists(Root))
         {
+            lock (_gate)
+            {
+                _files.Clear();
+            }
+
             return new ScanResult(0, 0, previous.Count, 0);
         }
+
+        // Built off to the side and published at the end, so the walk -- which opens and reads the header
+        // of every archive in the folder -- never holds the lock a level load is resolving through.
+        Dictionary<string, Candidate> next = new(StringComparer.OrdinalIgnoreCase);
 
         int added = 0;
         int changed = 0;
@@ -144,27 +185,38 @@ public sealed class ResourceOverrides
                 continue;
             }
 
-            Record(relative, new Candidate(path, info.Length, info.LastWriteTimeUtc), previous, ref added, ref changed);
+            Record(next, relative, new Candidate(path, info.Length, info.LastWriteTimeUtc), previous, ref added, ref changed);
         }
 
         foreach (string path in archives)
         {
-            IndexArchive(path, previous, ref added, ref changed);
+            IndexArchive(next, path, previous, ref added, ref changed);
         }
 
-        int removed = previous.Keys.Count(key => !_files.ContainsKey(key));
+        int removed = previous.Keys.Count(key => !next.ContainsKey(key));
 
-        return new ScanResult(_files.Count, added, removed, changed);
+        lock (_gate)
+        {
+            _files.Clear();
+
+            foreach (KeyValuePair<string, Candidate> file in next)
+            {
+                _files[file.Key] = file.Value;
+            }
+        }
+
+        return new ScanResult(next.Count, added, removed, changed);
     }
 
-    private void Record(
+    private static void Record(
+        Dictionary<string, Candidate> index,
         string relative,
         Candidate candidate,
         Dictionary<string, Candidate> previous,
         ref int added,
         ref int changed)
     {
-        if (_files.ContainsKey(relative))
+        if (index.ContainsKey(relative))
         {
             // A loose file already claimed this path. Archives are indexed second precisely so this is
             // the direction the collision resolves in.
@@ -187,10 +239,11 @@ public sealed class ResourceOverrides
             candidate = existing;
         }
 
-        _files[relative] = candidate;
+        index[relative] = candidate;
     }
 
     private void IndexArchive(
+        Dictionary<string, Candidate> index,
         string path,
         Dictionary<string, Candidate> previous,
         ref int added,
@@ -232,6 +285,7 @@ public sealed class ResourceOverrides
             }
 
             Record(
+                index,
                 relative,
                 new Candidate(path, entry.Length, info.LastWriteTimeUtc) { Offset = entry.Offset },
                 previous,
@@ -247,8 +301,18 @@ public sealed class ResourceOverrides
     /// <summary>Determines whether a path is overridden.</summary>
     /// <param name="relativePath">The path, from one of the <see cref="OverridePath"/>.</param>
     /// <returns><see langword="true"/> when an override file is present.</returns>
-    public bool Has(string relativePath) =>
-        relativePath.Length > 0 && _files.ContainsKey(relativePath);
+    public bool Has(string relativePath)
+    {
+        if (relativePath.Length == 0)
+        {
+            return false;
+        }
+
+        lock (_gate)
+        {
+            return _files.ContainsKey(relativePath);
+        }
+    }
 
     /// <summary>Reads an override's bytes.</summary>
     /// <param name="relativePath">The path, from one of the <see cref="OverridePath"/>.</param>
@@ -262,15 +326,25 @@ public sealed class ResourceOverrides
     {
         data = default;
 
-        if (Bypassed || relativePath.Length == 0 || !_files.TryGetValue(relativePath, out Candidate candidate))
+        if (Bypassed || relativePath.Length == 0)
         {
             return false;
         }
 
-        if (candidate.Data is { } cached)
+        Candidate candidate;
+
+        lock (_gate)
         {
-            data = cached;
-            return true;
+            if (!_files.TryGetValue(relativePath, out candidate))
+            {
+                return false;
+            }
+
+            if (candidate.Data is { } cached)
+            {
+                data = cached;
+                return true;
+            }
         }
 
         try
@@ -292,7 +366,29 @@ public sealed class ResourceOverrides
                 stream.ReadExactly(bytes);
             }
 
-            _files[relativePath] = candidate with { Data = bytes };
+            // Read outside the lock, because a slice of a 4x pack's level archive is megabytes and the
+            // render thread must not wait on that disk read. Re-checked on the way back in: a rescan may
+            // have replaced or dropped this entry meanwhile, and its answer is the newer one.
+            lock (_gate)
+            {
+                if (!_files.TryGetValue(relativePath, out Candidate current))
+                {
+                    data = bytes;
+                    return true;
+                }
+
+                if (current.Data is { } raced)
+                {
+                    data = raced;
+                    return true;
+                }
+
+                if (current == candidate)
+                {
+                    _files[relativePath] = current with { Data = bytes };
+                }
+            }
+
             data = bytes;
             return true;
         }

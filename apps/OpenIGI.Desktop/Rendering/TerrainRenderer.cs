@@ -136,7 +136,7 @@ public sealed class TerrainRenderer : IDisposable
     /// <summary>The most emptied pages kept for re-use before the rest go back to the device.</summary>
     private const int MaximumSparePages = 512;
     private readonly List<BatchKey> _emptyBatchKeys = [];
-    private readonly TextureHandle[] _tiles;
+    private TextureHandle[] _tiles;
     private long _frame;
     private int _pageMeshCreates;
     private int _pageMeshDestroys;
@@ -194,7 +194,7 @@ public sealed class TerrainRenderer : IDisposable
         _terrain = surface.Terrain;
         _logger = logger ?? NullLogger.Instance;
         DetailMaps = detailMaps;
-        _tiles = UploadTiles(derivedDetail);
+        _tiles = UploadTiles(surface.Terrain.Tiles, derivedDetail);
         _caster = new TerrainShadowCaster(device);
     }
 
@@ -769,9 +769,9 @@ public sealed class TerrainRenderer : IDisposable
     /// Eighteen 128×128 tiles is a third of a megabyte, and a chunk can name any of them, so there is
     /// nothing to gain from doing this on demand. They repeat across the ground, hence the wrapping.
     /// </remarks>
-    private TextureHandle[] UploadTiles(IReadOnlyList<Bgra32[]>? derivedDetail)
+    private TextureHandle[] UploadTiles(TexAtlasFile? tiles, IReadOnlyList<Bgra32[]>? derivedDetail)
     {
-        if (_terrain.Tiles is not { } atlas || atlas.Tiles.Count == 0)
+        if (tiles is not { } atlas || atlas.Tiles.Count == 0)
         {
             _logger.Warning(LogCategory, "The level ships no ground texture atlas; the terrain draws untextured.");
             return [];
@@ -827,6 +827,36 @@ public sealed class TerrainRenderer : IDisposable
             $"Ground tiles: {handles.Length} of {uploadedWidth}x{uploadedHeight}"
                 + (uploadedWidth != atlas.TileWidth ? $" (atlas declares {atlas.TileWidth}x{atlas.TileHeight})." : "."));
         return handles;
+    }
+
+    /// <summary>Re-uploads the ground from a freshly-read atlas.</summary>
+    /// <param name="tiles">The atlas to draw the ground from, or <see langword="null"/> for none.</param>
+    /// <remarks>
+    /// <para>
+    /// The terrain's half of taking the overrides folder in and out of the frame. The geometry is
+    /// untouched -- the ground does not change shape when its pictures do -- so this destroys the tile
+    /// textures and puts the new ones up in their place, and the chunk cache, which names tiles by index
+    /// rather than by handle, never notices.
+    /// </para>
+    /// <para>
+    /// The derived surface maps come with them. A ground tile has no name to look a map up by, so its
+    /// maps are derived from whatever the tile turned out to be -- which means an atlas swapped under it
+    /// must re-derive, or the ground would wear the replacement's colour with the original's normals.
+    /// That is the expensive part of this and the reason it is a keypress rather than something done
+    /// every frame.
+    /// </para>
+    /// </remarks>
+    public void ReloadTiles(TexAtlasFile? tiles)
+    {
+        foreach (TextureHandle tile in _tiles)
+        {
+            if (tile.IsValid)
+            {
+                _device.DestroyTexture(tile);
+            }
+        }
+
+        _tiles = UploadTiles(tiles, derivedDetail: null);
     }
 
     private TextureHandle TileTexture(int index) =>
