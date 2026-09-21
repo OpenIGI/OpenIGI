@@ -2,7 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Player;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>
 /// The over-the-shoulder view, and the move between it and the player's own eyes.

@@ -5130,7 +5130,7 @@ if (retailFog)
                     // the finished picture. It writes no depth, because the tracers and the smoke are
                     // drawn after it through the same buffer.
                     _device.BeginPass(ScenePass.GlassLayer);
-                    _world.Draw(_scene, eye, projection, glassOnly: true);
+                    _world.Draw(_scene, eye, projection, new WorldDrawOptions(GlassOnly: true));
 
                     _device.EndPass();
                     _device.BeginPass(ScenePass.Forward);

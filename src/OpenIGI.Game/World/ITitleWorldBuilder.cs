@@ -10,6 +10,9 @@ namespace OpenIGI.Game.World;
 /// <param name="Resources">The registry the level's own files are read from.</param>
 /// <param name="Magic">The magic-object table, for a title that resolves placements through one.</param>
 /// <param name="Logger">Where load diagnostics go.</param>
+/// <param name="VehiclePhysics">
+/// The registry a walk reads a vehicle's mass and contact points from, or null for a title with none.
+/// </param>
 public readonly record struct WorldBuildRequest(
     LoadedMission Mission,
     GameTask LevelRoot,

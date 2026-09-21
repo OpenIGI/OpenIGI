@@ -53,6 +53,16 @@ public readonly record struct WorldDrawOptions(
 /// </remarks>
 public interface IWorldPresenter : IDisposable
 {
+    /// <summary>Re-reads every texture this presenter holds, after the override folder has changed.</summary>
+    /// <remarks>
+    /// A replacement pack is dropped in while the game runs and <c>r_overrides</c> is toggled; what it
+    /// replaces has already been uploaded, so each presenter has to be told to read its own again.
+    /// Defaulted to nothing, for a title that caches none.
+    /// </remarks>
+    void ReloadTextures()
+    {
+    }
+
     /// <summary>Gets how many sub-meshes the last draw issued.</summary>
     int LastDrawCount { get; }
 
@@ -76,6 +86,13 @@ public interface IWorldPresenter : IDisposable
     /// compositing the port always had, and what a title that answers nothing gets.
     /// </remarks>
     ObjectShading Shading { get; set; }
+
+    /// <summary>Gets or sets the live rotating world objects, or null for a title with none.</summary>
+    /// <remarks>
+    /// Radar dishes and the authored <c>Rotating</c> tasks. The scene walk places them; this turns them,
+    /// so the presenter asks it for a transform per draw rather than holding an angle of its own.
+    /// </remarks>
+    RotatingObjectRegistry? RotatingObjects { get; set; }
 
     /// <summary>Gets or sets the detail textures the world is shaded with, or null for none.</summary>
     MaterialDetailPack? DetailMaps { get; set; }

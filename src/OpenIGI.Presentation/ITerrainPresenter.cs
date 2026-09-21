@@ -1,5 +1,6 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
+using OpenIGI.Formats.Textures;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
@@ -57,6 +58,14 @@ public interface ITerrainPresenter : IDisposable
     /// <summary>Draws the ground.</summary>
     /// <param name="frame">The frame to draw for.</param>
     void Draw(in TerrainFrame frame);
+
+    /// <summary>Re-reads the tile atlas, after the override folder has changed.</summary>
+    /// <param name="tiles">The replacement atlas, or null to fall back to the installation's own.</param>
+    /// <remarks>Defaulted to nothing, for a ground that is not built from a tile atlas.</remarks>
+    void ReloadTiles(TexAtlasFile? tiles)
+    {
+        _ = tiles;
+    }
 
     /// <summary>Appends the presenter's per-frame counters, one line each.</summary>
     /// <param name="into">Receives the lines, already formatted.</param>

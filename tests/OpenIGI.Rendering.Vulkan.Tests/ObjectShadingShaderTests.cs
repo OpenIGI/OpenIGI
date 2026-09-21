@@ -61,24 +61,42 @@ public sealed class ObjectShadingShaderTests
             Mesh3DShaderSource.Fragment,
             StringComparison.Ordinal);
         Assert.Contains(
-            "vec3 base = diffuse.rgb * lightmap * lightmapGain * vColor.rgb * vFade;",
+            "vec3 base = diffuse.rgb * lightmap * lightmapGain * vColor.rgb * vFade * modelTint;",
             Mesh3DShaderSource.Fragment,
             StringComparison.Ordinal);
     }
 
-    /// <summary>The fragment stage declares the fog target and fogs towards half the scene's colour or white on request.</summary>
+    /// <summary>The fragment stage fogs towards the frame's own air, through the factor the vertex stage sent.</summary>
     /// <remarks>
-    /// TerrainRender_SetBlendMode (igi2ed 0x666B90) writes the fog colour times 127 for the ground's base
-    /// and overlay passes and white for its lightmap pass; the default of zero must fold back to the fog
-    /// the shader always had.
+    /// <para>
+    /// <b>This used to guard a second fog and no longer does.</b> Two were built independently: the
+    /// sequel's air as pipeline specialization constants with a per-pass target (<c>cFogTarget</c>,
+    /// <c>Fogged</c>), and Project I.G.I.'s retail fog as device state with a per-vertex factor. They
+    /// met at the rebase onto develop, and the second was kept: it changes per draw without a pipeline
+    /// variant, and <c>SceneFog.ColourFor</c> already knows an additive pass fogs to black.
+    /// </para>
+    /// <para>
+    /// <b>What is not yet carried across</b> is the ground's PER-PASS target --
+    /// <c>TerrainRender_SetBlendMode</c> (<c>igi2ed 0x666B90</c>) writes the fog colour times 127 for the
+    /// base and overlay passes and white for the lightmap pass. The device still takes it
+    /// (<c>SetFogTarget</c>) and the sequel's ground still asks for it, but nothing reads it: it wants
+    /// re-expressing as three <c>SetFog</c> calls with pre-scaled colours, which is where the game side
+    /// already computes them.
+    /// </para>
     /// </remarks>
     [Fact]
-    public void The_fragment_stage_fogs_towards_the_variants_target()
+    public void The_fragment_stage_fogs_towards_the_frames_air()
     {
-        Assert.Contains("layout(constant_id = 12) const int cFogTarget = 0;", Mesh3DShaderSource.Fragment, StringComparison.Ordinal);
-        Assert.Contains("fogColour *= 127.0 / 255.0;", Mesh3DShaderSource.Fragment, StringComparison.Ordinal);
-        Assert.Contains("fogColour = vec3(1.0);", Mesh3DShaderSource.Fragment, StringComparison.Ordinal);
-        Assert.Contains("return mix(fogColour, colour, exp(-cFogDensity * vFogDepth));", Mesh3DShaderSource.Fragment, StringComparison.Ordinal);
+        Assert.Contains("layout(location = 5) in float vFog;", Mesh3DShaderSource.Fragment, StringComparison.Ordinal);
+        Assert.Contains(
+            "outColor = vec4(mix(push.uNormalKey2.xyz, base, vFog), alpha);",
+            Mesh3DShaderSource.Fragment,
+            StringComparison.Ordinal);
+
+        // And the mechanism it replaced is gone rather than half-present, which is the thing a reader
+        // of the shader would otherwise trip over.
+        Assert.DoesNotContain("cFogTarget", Mesh3DShaderSource.Fragment, StringComparison.Ordinal);
+        Assert.DoesNotContain("vFogDepth", Mesh3DShaderSource.Fragment, StringComparison.Ordinal);
     }
 
     /// <summary>The vertex stage compiles with the constants at their defaults and with a sun supplied.</summary>

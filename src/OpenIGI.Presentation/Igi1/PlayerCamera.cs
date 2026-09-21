@@ -1282,7 +1282,7 @@ public sealed class PlayerCamera
         SyncView();
 
         // 0x462E50, which HumanPlayer_Update calls after 0x464BD0 has committed the view.
-        ResolveFire(terrain);
+        ResolveFire();
 
         // After the fire, so a round spawned this tick flies its first segment in the same tick --
         // otherwise every shot would carry a one-tick delay on top of its real travel time.
@@ -1799,15 +1799,15 @@ public sealed class PlayerCamera
     public const double AimConvergenceReachInUnits = 300.0 * UnitsPerMetre;
 
     /// <summary>Finds what the crosshair is over, with the tests a round would meet on the way.</summary>
-    /// <param name="terrain">The level's ground, which the placed-object index does not carry.</param>
     /// <returns>The world point, in engine units, or <see langword="null"/> when nothing is aimed.</returns>
     /// <remarks>
     /// The picking rule itself is <see cref="AimConvergence"/>, which is where the reasoning lives and
     /// where it is tested; this only names the three sources. They are the SAME ones a round meets:
-    /// <see cref="_walls"/> is what <see cref="ResolveShot"/> marches, and <see cref="HumanProbes"/> is
+    /// <see cref="_walls"/> is what <see cref="ResolveShot"/> marches, <see cref="TerrainTrace"/> is the
+    /// cast through the ground the height field cannot answer, and <see cref="HumanProbes"/> is
     /// the reporting half of the <see cref="Humans"/> cast it offers rounds to.
     /// </remarks>
-    private Vector3d? ResolveAimConvergence(TerrainData? terrain)
+    private Vector3d? ResolveAimConvergence()
     {
         if (AimConvergenceRay is not { } ray)
         {
@@ -1819,7 +1819,7 @@ public sealed class PlayerCamera
             ray.Direction,
             AimConvergenceReachInUnits,
             _walls?.Tracer(),
-            terrain is null ? null : TerrainRayTrace.Caster(terrain),
+            TerrainTrace,
             HumanProbes);
     }
 
@@ -2225,7 +2225,7 @@ public sealed class PlayerCamera
         }
     }
 
-    private void ResolveFire(TerrainData? terrain = null)
+    private void ResolveFire()
     {
         _impacts.Clear();
 
@@ -2306,7 +2306,7 @@ public sealed class PlayerCamera
 
         // ...unless a camera that is not at the eye has said what the crosshair is over. See
         // AimConvergencePointUnits: null in first person, and null is the retail path untouched.
-        AimBasis.Converge(_view.Eye, ResolveAimConvergence(terrain), ref forward, ref right, ref up);
+        AimBasis.Converge(_view.Eye, ResolveAimConvergence(), ref forward, ref right, ref up);
 
         // A scoped rifle is braced: 0x472E50 multiplies the round's sampled kick by 0.05 before the
         // accumulators see it, and this is the same factor at the same point.

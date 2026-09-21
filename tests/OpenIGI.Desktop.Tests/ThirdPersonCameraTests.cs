@@ -1,7 +1,7 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Desktop;
 using OpenIGI.Rendering;
 using Xunit;
+using OpenIGI.Presentation.Igi1;
 
 namespace OpenIGI.Desktop.Tests;
 

@@ -9,8 +9,9 @@ using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
+using OpenIGI.Presentation.Rendering;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>
 /// Draws the retail impact effects: the dust a round kicks off a wall, the chips it knocks loose, and

@@ -285,6 +285,87 @@ internal sealed partial class GameHost
         }
     }
 
+    /// <summary>
+    /// Handles the retail transient-object cleanup native without giving it ownership of cinematic state.
+    /// </summary>
+    /// <param name="name">The native the script called.</param>
+    /// <param name="clearTransientProjectiles">What to run when it is the cleanup one.</param>
+    /// <returns>The script's answer, or null when this native is not the one.</returns>
+    /// <remarks>
+    /// <c>IGI.EXE!Game_CutsceneDelete</c> walks the mine/grenade/missile registry, not the QVM
+    /// <c>CutScene</c> registry. Mission 3 calls it while scene 700 is starting, so completing scene 700
+    /// here would immediately satisfy the authored mission-complete expression.
+    /// </remarks>
+    internal static QvmValue? TryHandleCutsceneCleanupNative(string name, Action clearTransientProjectiles)
+    {
+        ArgumentNullException.ThrowIfNull(clearTransientProjectiles);
+        if (!string.Equals(name, "Game_CutsceneDelete", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        clearTransientProjectiles();
+        return QvmValue.FromInt32(1);
+    }
+
+    private void ClearTransientCutsceneObjects()
+    {
+        _player?.Grenades.Clear();
+        _player?.Missiles.Clear();
+        _vehicleMissiles.Clear();
+        _player?.M203.Clear();
+    }
+    /// <summary>Advances missiles fired by authored vehicles against the player's own body.</summary>
+    private void TickVehicleMissiles()
+    {
+        if (_player is not { } player)
+        {
+            return;
+        }
+        bool PlayerProbe(Vector3d from, Vector3d to, out HumanHit hit)
+        {
+            hit = default;
+            if (_playerHealth.IsDead)
+            {
+                return false;
+            }
+            if (_soldiers?.TryHitPlayerBody(from, to, player.Body.Position, player.Body.Yaw, out hit) == true)
+            {
+                return true;
+            }
+            Vector3f facing = new(-MathF.Sin(player.Body.Yaw), MathF.Cos(player.Body.Yaw), 0f);
+            return HumanHitTest.TryCast(from, to, player.Body.Position, facing, pose: null, out hit);
+        }
+        MissileWorldTraceCast? walls = _worldTrace is { } trace
+            ? (LiveMissile missile, Vector3d from, Vector3d to, out WorldTraceHit hit) =>
+            {
+                bool found = trace(
+                    new WorldTraceRequest(
+                        from,
+                        to,
+                        WorldTraceMask.World,
+                        IgnoredOwner: missile.CollisionOwner),
+                    out hit);
+                return found;
+            }
+            : _effectWalls is { } effectWalls
+                ? (LiveMissile _, Vector3d from, Vector3d to, out WorldTraceHit hit) =>
+                {
+                    bool found = effectWalls(from, to, out WorldRayHit rayHit);
+                    hit = found
+                        ? WorldTraceHit.FromRayHit(
+                            new WorldTraceRequest(from, to, WorldTraceMask.World),
+                            rayHit,
+                            WorldTraceHitKind.StaticObject)
+                        : default;
+                    return found;
+                }
+                : null;
+        _vehicleMissiles.TickWithMissileContext(walls, PlayerProbe);
+    }
+
+
+
     /// <summary>Builds everything a loaded level needs in order to be played, and stands the player in it.</summary>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
     /// <param name="levelRoot">The level's task tree, already loaded and gated.</param>
@@ -374,10 +455,9 @@ internal sealed partial class GameHost
                     return QvmValue.FromInt32(1);
                 }
 
-                if (name == "Game_CutsceneDelete")
+                if (TryHandleCutsceneCleanupNative(name, ClearTransientCutsceneObjects) is { } cleanup)
                 {
-                    _cutscenes?.DeleteCutscenes();
-                    return QvmValue.FromInt32(1);
+                    return cleanup;
                 }
 
                 return null;
@@ -744,6 +824,11 @@ internal sealed partial class GameHost
             "Ai",
             $"{_securityCameras.Cameras.Count} security camera(s), "
                 + $"{_securityCameras.ControlCount} camera control(s) placed.");
+
+        // Radar dishes and the authored Rotating tasks. Built here and handed to the presenter, which is
+        // what turns them: the walk gives a placement, this gives it an angle per tick.
+        _rotatingObjects = RotatingObjectRegistry.Build(levelRoot, scene.Placements, _loop.Variables, _magic);
+        world.RotatingObjects = _rotatingObjects;
 
         // The level's nav graphs. A level ships ONE PER AIGraph TASK, named by that task's id (ai.md 1.1),
         // and every HumanAI names the one it walks through its own "Graph ID" parameter (ai.md 7.6).
@@ -1671,6 +1756,7 @@ internal sealed partial class GameHost
                     ? FootstepSounds.TerrainGameMaterialIndex(terrainData.Materials)
                     : null;
                 candidate.TerrainGameMaterialIndex = terrainRow;
+                _effectTerrainRow = terrainRow;
                 if (_soldiers is not null)
                 {
                     _soldiers.TerrainGameMaterialIndex = terrainRow;

@@ -82,9 +82,8 @@ public sealed class ShaderCompilationTests
             "glassreflect.comp" => GlassReflectionShaderSource.Reflect(rayQuery: false),
             "glassreflect-rayquery.comp" => GlassReflectionShaderSource.Reflect(rayQuery: true),
             "reflect-rayquery.comp" => ReflectionShaderSource.Reflect(rayQuery: true),
-            _ => ReflectionShaderSource.Reflect(rayQuery: false),
             "gbuffer.frag" => DeferredShaderSource.GBufferFragment,
-            _ => ReflectionShaderSource.Reflect,
+            _ => ReflectionShaderSource.Reflect(rayQuery: false),
         };
 
         string directory = Path.Combine(Path.GetTempPath(), "openigi-shader-tests");

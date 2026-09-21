@@ -4,7 +4,6 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
-using System.Collections.Concurrent;
 
 namespace OpenIGI.Presentation.Rendering;
 

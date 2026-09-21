@@ -340,6 +340,7 @@ internal sealed partial class GameHost
             _missionState,
             _detailMaps,
             _sessionArchives,
+            _overrides,
             _lampManifest,
             _sdfCache,
             _title.Services,

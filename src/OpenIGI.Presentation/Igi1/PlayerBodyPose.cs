@@ -1,4 +1,4 @@
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Presentation.Igi1;
 
 /// <summary>
 /// Everything above the player's waist, for the frame their own body is drawn in.

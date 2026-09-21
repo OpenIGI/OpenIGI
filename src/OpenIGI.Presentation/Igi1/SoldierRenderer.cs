@@ -19,7 +19,6 @@ using OpenIGI.Presentation.Rendering;
 using OpenIGI.Rendering;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
-using System.Runtime.InteropServices;
 
 namespace OpenIGI.Presentation.Igi1;
 

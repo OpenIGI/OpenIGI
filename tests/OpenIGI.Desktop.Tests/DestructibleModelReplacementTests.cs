@@ -11,6 +11,8 @@ using OpenIGI.Rendering;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
+using OpenIGI.Presentation.Rendering;
+using OpenIGI.Formats;
 
 namespace OpenIGI.Desktop.Tests;
 
@@ -257,7 +259,7 @@ public sealed class DestructibleModelReplacementTests
             scene.Placements,
             loop.Variables);
         RecordingGraphicsDevice device = new();
-        WorldRenderer renderer = new(device, resources) { Destructibles = destructibles };
+        WorldRenderer renderer = new(device, resources, AssetFormatProfile.Igi1) { Destructibles = destructibles };
         return new Scenario(scene, destructibles, device, renderer);
     }
 

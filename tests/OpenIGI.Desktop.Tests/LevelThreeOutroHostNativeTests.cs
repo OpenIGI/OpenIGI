@@ -1,6 +1,7 @@
 using OpenIGI.Desktop;
 using OpenIGI.Scripting.Runtime;
 using Xunit;
+using OpenIGI.Host;
 
 namespace OpenIGI.Desktop.Tests;
 
@@ -12,10 +13,10 @@ public sealed class LevelThreeOutroHostNativeTests
     {
         int clears = 0;
 
-        QvmValue? handled = DesktopGame.TryHandleCutsceneCleanupNative(
+        QvmValue? handled = GameHost.TryHandleCutsceneCleanupNative(
             "Game_CutsceneDelete",
             () => clears++);
-        QvmValue? ignored = DesktopGame.TryHandleCutsceneCleanupNative(
+        QvmValue? ignored = GameHost.TryHandleCutsceneCleanupNative(
             "Game_EnableMusic",
             () => clears++);
 
