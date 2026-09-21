@@ -1742,6 +1742,44 @@ internal sealed partial class GameHost
         }
     }
 
+    /// <summary>Empties the bank and the score for a different game, and starts that game's theme.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The menu's sounds belong to the title, not to the session.</b> Everything under
+    /// <c>menusystem/sound/</c> is read through <c>LOCAL:</c>, and a title switch re-points that device
+    /// at the other installation — so a bank left standing across the switch answers every menu name
+    /// with the outgoing game's sound. The bank keeps the FIRST mount of a name and reports a repeat
+    /// rather than replacing it, faithfully to the original, which means re-mounting alone cannot
+    /// retire anything: only clearing can.
+    /// </para>
+    /// <para>
+    /// The score has to be told as well as silenced, and for two reasons. The player treats a repeat of
+    /// the playing track as a no-op so that re-entering the menu does not stutter it, so a switch that
+    /// merely asked for <c>menu_music</c> again would be declined; and a voice already streaming holds
+    /// the handle it opened, so the outgoing game's theme would go on playing under the incoming game's
+    /// menu whatever the bank now says. That is the bug this exists for.
+    /// </para>
+    /// <para>
+    /// The definitions go too. They are loaded per mission from the title's own resources, and
+    /// <c>MountMissionSounds</c> only builds a registry when there is none — so a registry carried
+    /// across a switch would hand the incoming game the outgoing one's names.
+    /// </para>
+    /// </remarks>
+    private void ResetSoundsForTitle()
+    {
+        ResetSoundsForMission();
+
+        _soundDefinitions = null;
+        if (_sounds is not null)
+        {
+            _sounds.Definitions = null;
+        }
+
+        // A switch always lands in the front end: the played mission was released and the incoming
+        // title has not been asked for one, so the menu theme is what should be sounding.
+        _music?.Play(MusicPlayer.MenuMusic);
+    }
+
     /// <summary>Mounts the menu system's sound archive, which belongs to no mission.</summary>
     private void MountMenuSounds()
     {

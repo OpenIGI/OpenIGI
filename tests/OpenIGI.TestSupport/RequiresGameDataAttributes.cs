@@ -101,3 +101,35 @@ public sealed class RequiresDirectoryFactAttribute(string variable, string what)
         set => base.Skip = value;
     }
 }
+
+/// <summary>A <see cref="FactAttribute"/> that skips unless every named title's installation is configured.</summary>
+/// <remarks>
+/// For the handful of checks that are about the two games <em>together</em> — what a session has to do
+/// to its state when it stops running one and starts running the other. Such a check cannot be written
+/// against one installation, and running it against one would prove nothing, so it needs both or it
+/// needs to say it did not run.
+/// </remarks>
+/// <param name="titleIds">The titles' stable ids, for example <c>igi1</c> and <c>igi2</c>.</param>
+public sealed class RequiresTitlesDataFactAttribute(params string[] titleIds) : FactAttribute
+{
+    private string[] TitleIds { get; } = titleIds;
+
+    /// <inheritdoc/>
+    public override string? Skip
+    {
+        get
+        {
+            foreach (string titleId in TitleIds)
+            {
+                if (RequiresTitleDataFactAttribute.SkipFor(titleId) is { } skip)
+                {
+                    return skip;
+                }
+            }
+
+            return base.Skip;
+        }
+
+        set => base.Skip = value;
+    }
+}

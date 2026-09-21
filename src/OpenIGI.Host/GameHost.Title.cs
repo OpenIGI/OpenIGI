@@ -30,6 +30,13 @@ namespace OpenIGI.Host;
 /// replaces all of them together.
 /// </para>
 /// <para>
+/// The audio <em>device</em> is the session's and what plays through it is the title's, which is a line
+/// worth stating because the first version of this did not draw it: the sound bank, the sound
+/// definitions and the score all read through the <c>LOCAL</c> device, so a switch that left them
+/// standing kept the outgoing game's menu theme playing under the incoming game's menu.
+/// <see cref="ResetSoundsForTitle"/> is where that is put right.
+/// </para>
+/// <para>
 /// The mechanism is not new. Promoting a menu backdrop into the played mission already swaps
 /// <c>_loop</c>, <c>_resources</c> and <c>_resourceFileSystem</c> for a set built elsewhere, and the
 /// mission preview loader already builds a complete title session off the render thread. This is that
@@ -171,6 +178,11 @@ internal sealed partial class GameHost
 
         LoadTitleResources();
         LoadTitleSession();
+
+        // After the session, because the score is one of the things it registers natives against, and
+        // after the LOCAL device above, because the menu archive this re-mounts is read through it.
+        ResetSoundsForTitle();
+
         RebuildPreviewContext();
 
         _logger.Information(
