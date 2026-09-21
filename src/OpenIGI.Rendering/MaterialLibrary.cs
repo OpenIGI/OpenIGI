@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using OpenIGI.Core.Diagnostics;
 
@@ -32,7 +33,17 @@ public sealed class MaterialLibrary
 
     private readonly Dictionary<string, SurfaceMaterial> _byName = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<(string Suffix, SurfaceMaterial Material)> _bySuffix = [];
-    private readonly Dictionary<string, SurfaceMaterial> _resolved = new(StringComparer.OrdinalIgnoreCase);
+    // The memo of what every texture name resolved to. CONCURRENT because this is read from more than
+    // one thread: the world renderer asks for a material per sub-mesh while a mission worker is building
+    // the next level's scene, and the surface cache's bake asks from its own tasks. The two above it are
+    // filled once at load and only read afterwards, so they stay ordinary dictionaries; this one is
+    // written on every miss, and an unsynchronised write against a concurrent read can resize the buckets
+    // under the reader and return a wrong entry or loop forever.
+    //
+    // It surfaced as WorldRendererRotorCullingTests failing perhaps one run in ten, which is exactly what
+    // a data race looks like from the outside: no bad input, no bad logic, just an answer that is wrong
+    // when two things happen at once.
+    private readonly ConcurrentDictionary<string, SurfaceMaterial> _resolved = new(StringComparer.OrdinalIgnoreCase);
     private readonly SurfaceMaterial _default;
 
     private MaterialLibrary(SurfaceMaterial defaultMaterial) => _default = defaultMaterial;
@@ -141,14 +152,10 @@ public sealed class MaterialLibrary
             return _default;
         }
 
-        if (_resolved.TryGetValue(textureName, out SurfaceMaterial cached))
-        {
-            return cached;
-        }
-
-        SurfaceMaterial material = Resolve(textureName);
-        _resolved[textureName] = material;
-        return material;
+        // GetOrAdd rather than a lock: Resolve is a pure function of the name and the load-time tables,
+        // so two threads racing on the same name compute the same answer and one of them is simply
+        // discarded. That is cheaper than serialising every lookup in the frame to make a rare miss tidy.
+        return _resolved.GetOrAdd(textureName, static (name, self) => self.Resolve(name), this);
     }
 
     private SurfaceMaterial Resolve(string textureName)
