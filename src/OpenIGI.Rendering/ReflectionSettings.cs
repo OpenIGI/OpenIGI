@@ -1,4 +1,4 @@
-namespace OpenIGI.Rendering;
+﻿namespace OpenIGI.Rendering;
 
 /// <summary>
 /// What surfaces reflect, and how far the frame is searched to find it.
@@ -17,6 +17,14 @@ namespace OpenIGI.Rendering;
 /// hidden: a ray that finds nothing must fall back to a plausible answer and fade into it, because the
 /// alternative — a black hole where the reflection should be — is far more distracting than a
 /// reflection that is merely approximate.
+/// </para>
+/// <para>
+/// <b>Where the adapter can trace, none of that applies: the march does not run and a ray answers every
+/// reflective pixel</b>, with the hit resolved against <see cref="SurfaceCacheBinding"/> — see
+/// <c>r_rt_reflections</c>. What is described above is the fallback, for the machines and the moments
+/// that have no structure to trace. <see cref="Quality"/> then governs only the march; the other two
+/// govern both, being statements about which surfaces reflect and how much, not about how the answer is
+/// found.
 /// </para>
 /// </remarks>
 /// <param name="Quality">

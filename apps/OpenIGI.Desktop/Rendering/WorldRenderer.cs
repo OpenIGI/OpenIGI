@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -96,6 +96,9 @@ public sealed class WorldRenderer : IDisposable
     /// </remarks>
     private FrameEntry[] _frame = [];
     private int[] _drawOrder = [];
+
+    // The glass pass's own order, rebuilt per frame. See the comment where it is filled.
+    private readonly List<int> _glassOrder = [];
     private WorldScene? _frameScene;
     private bool _framePrepared;
     private float _frameAlpha = 1f;
@@ -287,6 +290,13 @@ public sealed class WorldRenderer : IDisposable
     /// has to follow every opaque draw and test depth without writing it. Its tallies accumulate
     /// onto the opaque pass's rather than replacing them, so the overlay still reads one frame.
     /// </param>
+    /// <param name="glassOnly">
+    /// Draws the level's glazing in place of the opaque world, over a picture the lighting has already
+    /// finished. A SECOND pass over the same subsets rather than a diversion of them: a window texture
+    /// holds the frame and the pane together, the opaque pass keeps the frame as it always did, and this
+    /// keeps what that pass discarded. Like the rotors it tests depth without writing it, and its tallies
+    /// accumulate onto the opaque pass's rather than replacing them.
+    /// </param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public void Draw(
         WorldScene scene,
@@ -294,7 +304,8 @@ public sealed class WorldRenderer : IDisposable
         in Matrix4f projection,
         float minimumRadius = 0f,
         bool occlusionCulling = false,
-        bool rotorsOnly = false)
+        bool rotorsOnly = false,
+        bool glassOnly = false)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -305,7 +316,7 @@ public sealed class WorldRenderer : IDisposable
         }
 
         _device.SetProjection(projection);
-        _device.SetDepthState(rotorsOnly ? DepthState.TestOnly : DepthState.TestAndWrite);
+        _device.SetDepthState(rotorsOnly || glassOnly ? DepthState.TestOnly : DepthState.TestAndWrite);
 
         // Back faces are culled once the mesh builder has repaired winding (r_world_cull): every triangle
         // is rewound to agree with its outward vertex normals there, so CCW is reliably the front and
@@ -333,7 +344,48 @@ public sealed class WorldRenderer : IDisposable
         // In model order rather than authored order: every draw is opaque and depth tested, so the
         // order is free — and taking placements grouped by model keeps the vertex array and usually
         // the textures bound from one draw to the next, which is where the driver's time went.
-        foreach (int index in _drawOrder)
+        // GLASS IS DRAWN FARTHEST FIRST, and the opaque pass's model order will not do.
+        //
+        // Two reasons, and the second is the one that shows. The panes blend, so back to front is simply
+        // the right order to composite them in. But the glazing also RECORDS each pane pixel into a layer
+        // the reflection pass reads, and that layer holds one pane per pixel: where two panes overlap --
+        // a window seen through another window, which a building with glass on both faces is full of --
+        // the last write wins. In model order which one that is, is arbitrary. So a pixel showing the
+        // near pane could be carrying the FAR pane's normal and distance, and the reflection pass would
+        // dutifully reflect about a plane that is not the one you are looking at. That reads as a patch
+        // of window reflecting something at a plainly wrong angle.
+        //
+        // Sorted farthest first, the last writer is the nearest pane, which is the one whose surface the
+        // pixel mostly is. Cheap: almost nothing in a level is a window.
+        // The opaque pass keeps its own array untouched -- it holds every placement in the level and
+        // copying it per frame to share one loop would be a real cost for no gain.
+        // Whether this pass is the one that feeds the traced world. Exactly one of the three must be,
+        // or every placement behind the camera would be submitted three times a frame.
+        bool tracedOnly = !glassOnly && !rotorsOnly && RenderCVars.TracedWorldRadius.Value > 0f;
+
+        ReadOnlySpan<int> order = _drawOrder;
+        if (glassOnly)
+        {
+            _glassOrder.Clear();
+            for (int i = 0; i < _drawOrder.Length; i++)
+            {
+                int candidate = _drawOrder[i];
+                ref FrameEntry glass = ref _frame[candidate];
+                if (!glass.Skip && glass.Model is { HasGlass: true })
+                {
+                    _glassOrder.Add(candidate);
+                }
+            }
+
+            Vector3d eye = camera.Position;
+            _glassOrder.Sort((left, right) =>
+                (_frame[right].Position - eye).LengthSquared.CompareTo(
+                    (_frame[left].Position - eye).LengthSquared));
+
+            order = CollectionsMarshal.AsSpan(_glassOrder);
+        }
+
+        foreach (int index in order)
         {
             ref FrameEntry entry = ref _frame[index];
             if (entry.Skip || entry.Model is not { } model)
@@ -344,6 +396,13 @@ public sealed class WorldRenderer : IDisposable
             // Each pass takes only the half of the placements it is for: the rotors blend against the
             // opaque world, so they cannot be drawn in the middle of building it.
             if (entry.IsRotor != rotorsOnly)
+            {
+                continue;
+            }
+
+            // Almost nothing is a window, so the glass pass gets out before the frustum test rather than
+            // after it.
+            if (glassOnly && !model.HasGlass)
             {
                 continue;
             }
@@ -375,6 +434,12 @@ public sealed class WorldRenderer : IDisposable
                 + (cullModelView.M33 * cullBounds.Centre.Z) + cullModelView.M34;
             if (!frustum.SphereVisible(viewX, viewY, viewZ, cullBounds.Radius))
             {
+                // DRAWN BY VISIBILITY, TRACED BY DISTANCE, and the two must not be the same question.
+                // See SubmitTracedOnly: a reflection shows what is BEHIND the camera, so a structure
+                // built only from what the frustum passed can never hold it.
+                SubmitTracedOnly(
+                    scene, model, entry.Displayed!, baseModelView, viewX, viewY, viewZ, cullBounds.Radius,
+                    tracedOnly);
                 continue;
             }
 
@@ -410,6 +475,12 @@ public sealed class WorldRenderer : IDisposable
                     if (!visible)
                     {
                         occluded++;
+
+                        // Hidden from the camera is not hidden from a ray. A wall standing between the
+                        // two is exactly what a window reflects around.
+                        SubmitTracedOnly(
+                            scene, model, entry.Displayed!, baseModelView,
+                            viewX, viewY, viewZ, bounds.Radius, tracedOnly);
                         continue;
                     }
                 }
@@ -426,6 +497,15 @@ public sealed class WorldRenderer : IDisposable
 
             foreach (SubsetDraw subset in subsets)
             {
+                // The glass pass takes only the glazing; every other pass takes everything, the glazing
+                // included. That asymmetry is the point: a window's frame belongs in the G-buffer and its
+                // pane does not, and the two are the same subset, so the opaque pass must still draw it
+                // and let the alpha cut decide which half of it survives.
+                if (glassOnly && !subset.Material.Glass)
+                {
+                    continue;
+                }
+
                 _device.SetMaterialOverride(subset.IsLamp && glow < 1f ? Dimmed(subset.Material, glow) : subset.Material);
                 int sampleCount = entry.HasRotor ? entry.Rotor.SampleCount : 1;
                 for (int sample = 0; sample < sampleCount; sample++)
@@ -440,7 +520,7 @@ public sealed class WorldRenderer : IDisposable
                         modelView,
                         subset.Diffuse,
                         subset.Lightmap,
-                        rotorsOnly ? BlendMode.AlphaBlend : BlendMode.Opaque);
+                        rotorsOnly || glassOnly ? BlendMode.AlphaBlend : BlendMode.Opaque);
 
                     draws++;
                     triangles += subset.TriangleCount;
@@ -461,10 +541,10 @@ public sealed class WorldRenderer : IDisposable
 
         // The rotor pass adds to the opaque pass's tallies rather than replacing them: the two are
         // halves of one frame's world draw, and the overlay is reading the frame.
-        LastDrawCount = (rotorsOnly ? LastDrawCount : 0) + draws;
-        LastTriangleCount = (rotorsOnly ? LastTriangleCount : 0) + triangles;
-        LastLightmappedCount = (rotorsOnly ? LastLightmappedCount : 0) + lit;
-        LastOccludedCount = (rotorsOnly ? LastOccludedCount : 0) + occluded;
+        LastDrawCount = (rotorsOnly || glassOnly ? LastDrawCount : 0) + draws;
+        LastTriangleCount = (rotorsOnly || glassOnly ? LastTriangleCount : 0) + triangles;
+        LastLightmappedCount = (rotorsOnly || glassOnly ? LastLightmappedCount : 0) + lit;
+        LastOccludedCount = (rotorsOnly || glassOnly ? LastOccludedCount : 0) + occluded;
 
         // Back to one for whatever draws next -- the terrain keeps its shipped LDR lightmaps.
         if (_lightmapScale != 1f)
@@ -729,6 +809,83 @@ public sealed class WorldRenderer : IDisposable
         return material with { Emissive = emissive < 0.3f ? 0f : emissive };
     }
 
+    /// <summary>Offers a placement the camera will not draw to the traced world anyway.</summary>
+    /// <param name="scene">The level, for resolving the model's subsets.</param>
+    /// <param name="model">The model that was culled.</param>
+    /// <param name="displayed">Its placement as displayed.</param>
+    /// <param name="modelView">Where it stands, relative to the camera.</param>
+    /// <param name="viewX">Its bounding sphere's centre in view space.</param>
+    /// <param name="viewY">Its bounding sphere's centre in view space.</param>
+    /// <param name="viewZ">Its bounding sphere's centre in view space.</param>
+    /// <param name="radius">That sphere's radius, in metres.</param>
+    /// <param name="wanted">Whether this pass is the one that feeds the traced world at all.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>The bug this exists for.</b> The acceleration structure was filled from the DRAW path, so it
+    /// held exactly what the camera had at some point had in frame. A window reflects what is behind the
+    /// camera, which by definition is the geometry the frustum just threw away — so a pane could only
+    /// ever show a place the player had already stood and looked at. Measured at one window on mission
+    /// one: 82 geometries and 587 placements in the structure facing the glass, against 150 and 1800
+    /// after sweeping the camera once across the yard behind it. The same window therefore reflected
+    /// different things in two sessions, and more of the level the longer one played — which is not a
+    /// tuning problem, it is the reflection being a function of where the player has looked.
+    /// </para>
+    /// <para>
+    /// <b>The rule, which is the reference's.</b> Visibility decides what is DRAWN; distance and
+    /// projected size decide what is TRACED. A placement is admitted unless it is both too far away and
+    /// too small to matter — near things stay in whatever their size, and a hillside stays in at any
+    /// distance because it still subtends an angle. The reference culls its own ray tracing scene on
+    /// exactly this pair (a radius of three hundred metres and a projected angle of one degree) and
+    /// never on the view frustum.
+    /// </para>
+    /// <para>
+    /// Cheap on the frames that do not trace: the backend's submission returns at once when there is no
+    /// traced world, and the radius test rejects most of a level before the subsets are even resolved.
+    /// </para>
+    /// </remarks>
+    private void SubmitTracedOnly(
+        WorldScene scene,
+        ResolvedModel model,
+        WorldPlacement displayed,
+        in Matrix4f modelView,
+        float viewX,
+        float viewY,
+        float viewZ,
+        float radius,
+        bool wanted)
+    {
+        if (!wanted)
+        {
+            return;
+        }
+
+        float centreSq = (viewX * viewX) + (viewY * viewY) + (viewZ * viewZ);
+
+        // To the sphere's SURFACE, not its centre, so a large object standing close is not judged by how
+        // far away the middle of it is.
+        float reach = RenderCVars.TracedWorldRadius.Value;
+        float surface = MathF.Max(MathF.Sqrt(centreSq) - radius, 0f);
+        bool tooFar = surface > reach;
+
+        // And its projected size, as the tangent of the half-angle it subtends. Squared on both sides so
+        // neither a square root nor a trigonometric call is needed per placement.
+        float tangent = MathF.Tan(Math.Clamp(RenderCVars.TracedWorldAngle.Value, 0.01f, 89.99f)
+            * MathF.PI / 180f);
+        bool tooSmall = centreSq > 0f && (radius * radius) < (tangent * tangent * centreSq);
+
+        if (tooFar && tooSmall)
+        {
+            return;
+        }
+
+        SubsetDraw[] subsets = model.Subsets ?? ResolveSubsets(scene, model, displayed);
+        foreach (SubsetDraw subset in subsets)
+        {
+            _device.SubmitTracedMesh(
+                model.Mesh, subset.IndexOffset, subset.IndexCount, modelView, subset.Diffuse);
+        }
+    }
+
     /// <summary>Resolves a model's per-subset textures, materials and lightmap pages, once.</summary>
     private SubsetDraw[] ResolveSubsets(WorldScene scene, ResolvedModel model, WorldPlacement displayed)
     {
@@ -823,6 +980,14 @@ public sealed class WorldRenderer : IDisposable
             : -1;
 
         model.Subsets = subsets;
+
+        bool glass = false;
+        foreach (SubsetDraw drawn in subsets)
+        {
+            glass |= drawn.Material.Glass;
+        }
+
+        model.HasGlass = glass;
         return subsets;
     }
 
@@ -848,6 +1013,14 @@ public sealed class WorldRenderer : IDisposable
         public MeshHandle Mesh { get; } = mesh;
 
         public SubsetDraw[]? Subsets { get; set; }
+
+        /// <summary>Gets or sets whether any of those subsets is glazing.</summary>
+        /// <remarks>
+        /// So the glass pass can reject a placement before it frustum-tests it. Almost nothing in a level
+        /// is a window, and without this the pass would walk every crate, tree and oil drum in the draw
+        /// order to find the handful of models that have a pane in them.
+        /// </remarks>
+        public bool HasGlass { get; set; }
 
         /// <summary>The light this placement is the fixture of, or -1 when it is not one.</summary>
         /// <remarks>Resolved with the subsets, and melted with them whenever the switchboard changes.</remarks>
@@ -1538,6 +1711,7 @@ public sealed class WorldRenderer : IDisposable
             {
                 continue;
             }
+
 
             // Captured by value so the closure does not depend on which placement the loop is on when
             // the capture actually runs.

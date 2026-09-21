@@ -30,6 +30,28 @@ public enum ScenePass
     /// </remarks>
     Forward,
 
+    /// <summary>
+    /// The front layer of the level's glazing: which pane is nearest at each pixel, and which way it
+    /// faces, recorded before anything translucent is blended.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A pane's reflection is computed once per pixel, from one surface — so where two windows overlap,
+    /// something has to decide WHICH. Writing each pane's normal into an image from the translucency pass
+    /// does not decide it: blending is ordered by the rasteriser, but an image store is not ordered at
+    /// all, between triangles or between draws, so whichever fragment landed last won and the answer
+    /// changed from frame to frame. That is a reflection that fizzes with per-pixel noise.
+    /// </para>
+    /// <para>
+    /// So the question is asked in a pass with a DEPTH BUFFER OF ITS OWN, where the depth unit decides it
+    /// — nearest wins, by construction, with no ordering to get right. The reference does exactly this and
+    /// for exactly this reason. It has to be a separate pass rather than depth writes in the translucency
+    /// subpass, because the glazing there shares its depth buffer with the tracers, the muzzle flame and
+    /// the smoke, and glass that wrote depth would occlude all three.
+    /// </para>
+    /// </remarks>
+    GlassLayer,
+
     /// <summary>Depth-only rendering from a light's point of view.</summary>
     Shadow,
 

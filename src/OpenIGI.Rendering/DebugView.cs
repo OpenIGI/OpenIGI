@@ -122,4 +122,81 @@ public enum DebugView
     /// the texture and is the same in every frame from every angle.
     /// </summary>
     MaterialAo = 20,
+
+    /// <summary>
+    /// What the level's glazing reflects, on its own, with the scene under it removed and BEFORE the
+    /// Fresnel term is applied.
+    /// </summary>
+    /// <remarks>
+    /// The one view that tells the three ways glass can come out wrong apart, which nothing in the final
+    /// picture can: a reflection is a few per cent of a lit pixel head-on, so all three look identical
+    /// there. Nothing visible anywhere means the panes never reached the layer at all — the raster half
+    /// is not writing it. Panes visible as flat black shapes means the layer is right and the trace found
+    /// nothing to resolve. Panes visible carrying the room means both halves work and the only thing left
+    /// between here and the picture is the Fresnel weight.
+    /// </remarks>
+    Glass = 21,
+
+    /// <summary>
+    /// Which ROUTE each pane pixel's reflection came from, as a flat colour per route rather than as
+    /// light.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Glass"/> says whether a reflection arrived; this says where it came from, and the two
+    /// answer different questions. A pane can be carrying the room convincingly and still be resolving
+    /// almost every pixel out of the surface cache, because a card of a wall looks like that wall — just
+    /// flatter, coarser and lit by a bake rather than by this frame. That is invisible in the finished
+    /// picture and invisible in the raw view, and it is the whole difference between a window that can
+    /// show a person standing at it and one that never can.
+    /// </para>
+    /// <para>
+    /// Green is the LIT FRAME: full detail, this frame's shadows, and the only route by which anything
+    /// that moves — a soldier, the weapon, the player's own body — can appear in glass at all. Blue is a
+    /// surface-cache CARD: static geometry only. Red is a ray that struck something solid neither could
+    /// put a colour to, which is a body the camera cannot see. Grey is the SKY on a clean miss.
+    /// </para>
+    /// <para>
+    /// Mostly blue means the frame route is being rejected and everything is falling through to the
+    /// cards, which is a bug in the resolve rather than in the trace.
+    /// </para>
+    /// </remarks>
+    GlassRoute = 22,
+
+    /// <summary>
+    /// The TEXTURE a reflected ray found at the point it struck, with no lighting applied to it at all.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A reflected body that comes out flat and colourless has two causes that are indistinguishable in
+    /// the finished picture, and this is what separates them. If the body appears here carrying its own
+    /// colours and markings, the texture reached the shader and the LIGHTING crushed it. If it appears as
+    /// a uniform mid-grey, that grey is the albedo array's own clear value, and the layer the hit named
+    /// was never written — a registration problem, not a lighting one.
+    /// </para>
+    /// <para>
+    /// Only the material route writes anything here; a pixel resolved from the lit frame or from a card
+    /// is black, because neither of those ever reads a texture.
+    /// </para>
+    /// </remarks>
+    GlassAlbedo = 23,
+
+    /// <summary>The DIRECTION each pane pixel reflects in, as a colour.</summary>
+    /// <remarks>
+    /// Red is east, green is north, blue is UP, and each is centred on mid-grey so a negative component
+    /// reads dark — so a pane reflecting the ground is dark blue and one reflecting the sky is bright.
+    /// The question it answers is the one no other view can: whether a reflection that shows the wrong
+    /// part of the world is aiming somewhere wrong, or aiming correctly and failing to find what is
+    /// there. Those have nothing in common and look identical in every other view.
+    /// </remarks>
+    GlassRay = 24,
+
+    /// <summary>The pane's own world normal, already turned to face the camera.</summary>
+    /// <remarks>
+    /// One step behind <see cref="GlassRay"/>: the aim is twice the normal's error, so a reflection that
+    /// points somewhere impossible is nearly always this. Blue is the UP component, and a vertical pane
+    /// should have almost none of it — a window whose normal tilts is a window reflecting the sky where
+    /// it should reflect the ground.
+    /// </remarks>
+    GlassNormal = 25,
 }

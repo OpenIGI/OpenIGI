@@ -318,6 +318,28 @@ public sealed partial class VulkanGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void SubmitTracedMesh(
+        MeshHandle mesh,
+        int indexOffset,
+        int indexCount,
+        in Matrix4f modelView,
+        TextureHandle diffuse)
+    {
+        ThrowIfDisposed();
+
+        if (_worldScene is null)
+        {
+            return;
+        }
+
+        // Everything the drawn path does for the traced world and nothing it does for the picture. The
+        // stage and capture checks live in ObserveForRayTracing, which turns this away unless the caller
+        // is where a world transform can be composed -- the same restriction a drawn submission is under,
+        // for the same reason.
+        ObserveForRayTracing(Resolve(mesh), modelView, diffuse, indexOffset, indexCount);
+    }
+
+    /// <inheritdoc/>
     public unsafe void DrawMesh(
         MeshHandle mesh,
         int indexOffset,
@@ -342,7 +364,21 @@ public sealed partial class VulkanGraphicsDevice
         // Tell the traceable world this run is here, with the range it covered: a mesh is not a material,
         // so what the structure is built from is the run rather than the whole mesh. The transform it
         // wants is object to absolute world, which ObserveForRayTracing composes.
-        ObserveForRayTracing(resource, modelView, diffuse, indexOffset, indexCount);
+        // The first-person rig's opaque, depth-writing draws. Read here for two things: the velocity
+        // stamp below, and whether this draw belongs in the traceable world.
+        bool firstPersonForward = _firstPersonGeometry
+            && _deferredStage == DeferredStage.Forward
+            && blend == BlendMode.Opaque
+            && _depthState == DepthState.TestAndWrite;
+
+        // The lens the rig is drawn with, kept for the reflections. See _viewModelLens.
+        if (firstPersonForward)
+        {
+            _viewModelLensX = _projection.M11;
+            _viewModelLensY = _projection.M22;
+        }
+
+        ObserveForRayTracing(resource, modelView, diffuse, indexOffset, indexCount, firstPersonForward);
 
         // An animated mesh in the G-buffer is a thing that moves under its own power — a soldier, a
         // door — and the camera-derived velocity is wrong for it. The first-person layer needs the same
@@ -360,10 +396,6 @@ public sealed partial class VulkanGraphicsDevice
         // that followed the terrain, while the near ground below stayed sharp.
         bool animatedGeometry = resource.Animated
             && _deferredStage == DeferredStage.Geometry
-            && _depthState == DepthState.TestAndWrite;
-        bool firstPersonForward = _firstPersonGeometry
-            && _deferredStage == DeferredStage.Forward
-            && blend == BlendMode.Opaque
             && _depthState == DepthState.TestAndWrite;
         if (_capturing && (animatedGeometry || firstPersonForward))
         {
@@ -484,6 +516,16 @@ public sealed partial class VulkanGraphicsDevice
         if (_capturing && _deferredStage == DeferredStage.Geometry)
         {
             BindGeometry(mesh, modelView, diffuse, lightmap, blend);
+        }
+        else if (_capturing
+            && _deferredStage is DeferredStage.Forward or DeferredStage.GlassLayer
+            && _material.Glass)
+        {
+            // Glazing, which is the one forward draw that does not go through the world pipeline. It
+            // needs the acceleration structure and the lit cards bound beside its textures, and a view
+            // position its vertex stage does not pass -- see GlassPipeline for why that is a second
+            // pipeline rather than another state of the first.
+            BindGlass(mesh, modelView, diffuse, lightmap);
         }
         else if (_capturing && _deferredStage == DeferredStage.Forward)
         {
@@ -636,7 +678,14 @@ public sealed partial class VulkanGraphicsDevice
         // three and a rotated mesh a matrix column, and neither has a use for the fourth.
         data[23] = _poseBlend;
 
-        data[28] = _material.Roughness;
+        // The pane's roughness is NOT the frame's, and this is where the two part company. A glass
+        // texture holds both, and everything of it that reaches the G-buffer is by definition the opaque
+        // remainder -- the mullions, the surround, the putty -- because the pane's own texels fail the
+        // alpha cut a few lines into the fragment stage and are drawn by the glazing pass instead. A
+        // window's authored 0.08 describes the glass; applied to what is left here it makes painted
+        // metal read as polished chrome, which is exactly what it did while the pane was being discarded
+        // and the frame was all that survived.
+        data[28] = _material.Glass ? SurfaceMaterial.Default.Roughness : _material.Roughness;
         data[29] = _material.Metallic;
         data[30] = _material.Emissive;
         data[31] = _lightmapScale;
@@ -646,6 +695,84 @@ public sealed partial class VulkanGraphicsDevice
             ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
             0,
             128,
+            data);
+    }
+
+    /// <summary>Binds the glazing pipeline for one pane draw.</summary>
+    /// <param name="mesh">The mesh being drawn.</param>
+    /// <param name="modelView">Its model-to-view transform.</param>
+    /// <param name="diffuse">The window texture, whose sub-half alpha is the glass.</param>
+    /// <param name="lightmap">The baked lightmap, which tints what comes through.</param>
+    /// <remarks>
+    /// <para>
+    /// Set 1 is bound here and written once a frame in <c>BeginPass</c>, so a level with a hundred panes
+    /// updates no descriptors at all while it draws them. It is bound on every glass draw regardless,
+    /// because the texture set bound between two panes is set 0 under the same layout and binding set 0
+    /// does not disturb set 1 — but a draw that followed a world draw would otherwise inherit whatever
+    /// that pipeline's layout left in slot 1.
+    /// </para>
+    /// <para>
+    /// The push block is the glazing's own: the transform, and the view-to-world rotation the fragment
+    /// stage needs to fire a ray in the space the acceleration structure was built in.
+    /// </para>
+    /// </remarks>
+    private unsafe void BindGlass(
+        VulkanMesh mesh,
+        in Matrix4f modelView,
+        TextureHandle diffuse,
+        TextureHandle lightmap)
+    {
+        Vk vk = _instance.Vk;
+        CommandBuffer cmd = _frameCommandBuffer;
+        Pipelines.GlassPipeline glass = _deferred.Glass;
+
+        // The FRONT LAYER variant writes depth into a buffer of its own and does not blend; the
+        // transmission variant is the reverse of both. Same vertex stage, same descriptor sets, same
+        // push block -- only the target and those two states differ.
+        bool frontLayer = _deferredStage == DeferredStage.GlassLayer;
+
+        // Counted once, on the layer pass, which sees every pane the transmission pass will.
+        if (frontLayer)
+        {
+            _glassDraws++;
+        }
+
+        BindGraphicsPipeline(glass.ForCull(_cullMode, frontLayer));
+        BindMeshBuffers(mesh);
+        BindMeshTextures(glass.PipelineLayout, diffuse, lightmap);
+
+        DescriptorSet layer = glass.GlassSet(_frameLoop.CurrentFrame);
+        vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, glass.PipelineLayout, 1, 1, &layer, 0, null);
+
+        Matrix4f mvp = _projection * modelView;
+        float* data = stackalloc float[32];
+        mvp.CopyColumnMajorTo(new Span<float>(data, 16));
+
+        // The OBJECT-TO-WORLD rotation, composed and laid out exactly as the G-buffer pass does it: the
+        // model-view's own rotation followed by the view-to-world one, pushed a column at a time so the
+        // shader can build a mat3 straight from the three rows.
+        //
+        // The vertex stage is handed a MODEL-space normal. It used to be given the view-to-world rotation
+        // instead, which is the wrong matrix for that normal by exactly the model's own orientation -- so
+        // every pane reflected the room about the wrong plane and the floor came out at the top of the
+        // glass.
+        Matrix3f modelViewRotation = new(
+            modelView.M11, modelView.M12, modelView.M13,
+            modelView.M21, modelView.M22, modelView.M23,
+            modelView.M31, modelView.M32, modelView.M33);
+        Matrix3f normalMatrix = _viewToWorld * modelViewRotation;
+
+        data[16] = normalMatrix.M11; data[17] = normalMatrix.M21; data[18] = normalMatrix.M31; data[19] = 0f;
+        data[20] = normalMatrix.M12; data[21] = normalMatrix.M22; data[22] = normalMatrix.M32; data[23] = 0f;
+        data[24] = normalMatrix.M13; data[25] = normalMatrix.M23; data[26] = normalMatrix.M33; data[27] = 0f;
+        data[28] = 0f; data[29] = 0f; data[30] = 0f; data[31] = 0f;
+
+        vk.CmdPushConstants(
+            cmd,
+            glass.PipelineLayout,
+            ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
+            0,
+            sizeof(float) * 32,
             data);
     }
 
@@ -964,22 +1091,36 @@ public sealed partial class VulkanGraphicsDevice
     /// <param name="diffuse">Its colour texture, whose alpha decides how the run occludes.</param>
     /// <param name="indexOffset">Where in the index buffer this draw started.</param>
     /// <param name="indexCount">How many indices it covered.</param>
+    /// <param name="firstPerson">
+    /// Whether this is an opaque, depth-writing draw of the first-person rig. Such a draw is admitted
+    /// although it belongs to the forward pass rather than the G-buffer, and is marked so that only a
+    /// reflection can find it — see <see cref="RayTracing.VulkanRayTracingInstance.FirstPersonOnly"/>.
+    /// </param>
     private void ObserveForRayTracing(
         VulkanMesh mesh,
         in Matrix4f modelView,
         TextureHandle diffuse,
         int indexOffset,
-        int indexCount)
+        int indexCount,
+        bool firstPerson = false)
     {
         if (_worldScene is null)
         {
             return;
         }
 
-        // Only what the G-buffer pass draws. The same mesh goes through the shadow cascades and the card
-        // atlas with a camera that is not the frame's, and the transform composed below is only the world
-        // transform for the one that is.
-        if (!_capturing || _deferredStage != DeferredStage.Geometry)
+        // What the G-buffer pass draws, and the first-person rig besides.
+        //
+        // The restriction is about the CAMERA, not the pass: the same mesh goes through the shadow
+        // cascades and the card atlas with a camera that is not the frame's, and the transform composed
+        // below is the world transform only for the one that is. The forward pass draws with the frame's
+        // own camera, so the rig's transform composes correctly there too -- which is why it can be
+        // admitted at all, and why the shadow and card passes still cannot.
+        //
+        // The rig is otherwise exactly what this structure is for: rigid geometry at a transform that
+        // changes every frame. The scene's own mover detection picks it up within a few frames and stops
+        // it accumulating a placement per frame, which is the same treatment a door or a carried gun gets.
+        if (!_capturing || (_deferredStage != DeferredStage.Geometry && !firstPerson))
         {
             return;
         }
@@ -1037,11 +1178,34 @@ public sealed partial class VulkanGraphicsDevice
             return;
         }
 
+        // The colour a reflection shades this run with when it strikes it somewhere the camera cannot
+        // see. Absent is fine and common -- the surface then resolves the way it did before -- so unlike
+        // the mask above, a miss here is not a reason to keep the run out of the traceable world.
+        // Assigned only on a hit: TryGetValue writes the default on a miss, and nought is a real layer,
+        // so taking its out parameter unconditionally would shade every unregistered texture with
+        // whatever happens to be in layer zero.
+        int albedoLayer = -1;
+        if (_tracedAlbedo is null || !_tracedAlbedo.TryGetLayer(textureId, out albedoLayer))
+        {
+            albedoLayer = -1;
+        }
+
         _worldScene.Observe(
             meshId,
             mesh,
             WorldTransform(modelView),
-            new RayTracing.RayTracedSurface(indexOffset, indexCount, !cutout, maskLayer));
+            new RayTracing.RayTracedSurface(
+                indexOffset,
+                indexCount,
+                !cutout,
+                maskLayer,
+                albedoLayer,
+
+                // Skinned, so no card can describe it. See RayTracedSurface.Dynamic.
+                mesh.Animated),
+            firstPerson
+                ? RayTracing.VulkanRayTracingInstance.FirstPersonOnly
+                : RayTracing.VulkanRayTracingInstance.VisibleToAll);
     }
 
     /// <inheritdoc/>

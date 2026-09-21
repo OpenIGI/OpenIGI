@@ -59,7 +59,13 @@ internal sealed class RayTracedShadowPass : IDisposable
     private readonly VulkanComputePass _pass;
     private bool _disposed;
 
-    private const string Source =
+    /// <summary>The pass's GLSL.</summary>
+    /// <remarks>
+    /// Internal rather than private so a test can pin the one thing this shares with the reflection's hit
+    /// shading: both reach into the SAME per-geometry material record by a hand-written word offset, and
+    /// the two offsets landing on each other is a fault neither shader can detect.
+    /// </remarks>
+    internal const string Source =
         """
         // 4.60, not 4.50: ray query is defined against the later language, and a 4.50 shader is told the
         // type does not exist rather than that the version is too low.
@@ -306,7 +312,11 @@ internal sealed class RayTracedShadowPass : IDisposable
                 // traversal asks about those triangles and the loop below answers from the alpha. Solid
                 // geometry is still committed by traversal itself and never reaches the loop.
                 gl_RayFlagsTerminateOnFirstHitEXT,
-                0xFF,
+
+                // Everything but the first-person rig. A rifle held at the eye would otherwise lay its
+                // shadow on the ground in front of a player who has no body to hold it. See
+                // VulkanRayTracingInstance.FirstPersonOnly.
+                0x7F,
                 worldPos + (normal * offset),
                 0.01,
                 traceDirection,

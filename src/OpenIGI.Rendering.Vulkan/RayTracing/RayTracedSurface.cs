@@ -26,4 +26,21 @@ namespace OpenIGI.Rendering.Vulkan.RayTracing;
 /// Which layer of <see cref="VulkanOpacityMasks"/> holds this run's cut-out shape, or <c>-1</c> when it
 /// is solid and no mask is needed.
 /// </param>
-internal readonly record struct RayTracedSurface(int IndexOffset, int IndexCount, bool Opaque, int MaskLayer);
+/// <param name="AlbedoLayer">
+/// Which layer of <see cref="VulkanTracedAlbedo"/> holds this run's colour, or <c>-1</c> when it has
+/// none. Read where a reflection struck something the camera cannot see and the surface cache never
+/// baked — which is every body in the level.
+/// </param>
+/// <param name="Dynamic">
+/// Whether this run belongs to geometry that MOVES — a soldier, the player, anything skinned. The
+/// surface cache is a bake of the static level, so no card can describe it, and a reflection must not
+/// let one try: a card's box is a slab, so a body standing near a wall sits inside that wall's box and
+/// would be resolved to the wall's baked lighting.
+/// </param>
+internal readonly record struct RayTracedSurface(
+    int IndexOffset,
+    int IndexCount,
+    bool Opaque,
+    int MaskLayer,
+    int AlbedoLayer = -1,
+    bool Dynamic = false);

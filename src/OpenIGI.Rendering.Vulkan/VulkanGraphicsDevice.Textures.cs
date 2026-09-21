@@ -48,6 +48,11 @@ public sealed partial class VulkanGraphicsDevice
             _opacityMasks?.Register(id, pixels, description.Width, description.Height);
         }
 
+        // And its colour, for every texture large enough to be a world surface rather than interface art
+        // -- a reflected ray can strike anything, not only the cut-outs. The array turns away what it
+        // does not want, so the size question lives there rather than here.
+        _tracedAlbedo?.Register(id, pixels, description.Width, description.Height);
+
         return new TextureHandle(id);
     }
 
@@ -84,6 +89,11 @@ public sealed partial class VulkanGraphicsDevice
         {
             return;
         }
+
+        // The albedo layer goes back to the array. Unlike the masks, which are a handful per level, this
+        // holds hundreds -- so a second mission would exhaust it during its own load if the first
+        // mission's textures never let go of theirs.
+        _tracedAlbedo?.Release(texture.Id);
 
         // The texture and the descriptor sets that name it may still be referenced by a frame in flight;
         // both the descriptor frees and the image dispose are queued and run once those frames cycle,

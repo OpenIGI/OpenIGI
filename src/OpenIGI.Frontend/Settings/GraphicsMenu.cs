@@ -538,6 +538,16 @@ public static class GraphicsMenu
         "r_atmosphere_sun_scale",
         "r_sky_light",
         "r_sun_angle",
+        // Read once when the graphics device is created, because it sizes an image allocated there. A
+        // slider that did nothing until the next launch would be worse than no slider.
+        "r_reflection_texture",
+
+        // What enters the traced world, which is a correctness control rather than a quality dial: the
+        // defaults are what make a reflection the same in two sessions, and a player has no way to judge
+        // a radius by looking. See RenderCVars.TracedWorldRadius.
+        "r_rt_world_radius",
+        "r_rt_world_angle",
+
         "r_gi_bounce",
         "r_gi_boost",
         "r_gi_intensity",
@@ -592,6 +602,10 @@ public static class GraphicsMenu
         "r_rt_shadows",
         "r_rt_lights",
         "r_rt_reflections",
+        "r_rt_reflection_clamp",
+        "r_rt_reflection_roughness",
+        "r_glass_reflection",
+        "r_player_body",
         "r_lamp_denoise",
         // Preset-invariant retail impact dust/chips/blood. This is a diagnostic kill switch, while
         // r_impact_particles is the player-facing switch for the remaster's additional burst.

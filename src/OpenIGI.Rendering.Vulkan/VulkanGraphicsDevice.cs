@@ -58,6 +58,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     // ReleaseWorld, which asks, and ReleaseWorldIfAsked, which is where it is safe to do.
     private bool _worldReleasePending;
     private readonly RayTracing.VulkanOpacityMasks? _opacityMasks;
+    private readonly RayTracing.VulkanTracedAlbedo? _tracedAlbedo;
 
     // Something legal for a tracing shader to bind before the world's own structure exists.
     private readonly RayTracing.VulkanPlaceholderScene? _placeholderScene;
@@ -252,6 +253,11 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
                 // only be reduced to its mask while its pixels are still in hand.
                 _opacityMasks = new RayTracing.VulkanOpacityMasks(
                     _instance.Vk, _device, _allocator, _commands);
+
+                // And the colour, for the same reason and at the same moment: a reflection has to shade
+                // what it struck, and a texture's pixels are only in hand while it is being created.
+                _tracedAlbedo = new RayTracing.VulkanTracedAlbedo(
+                    _instance.Vk, _device, _allocator, _commands, RenderCVars.ReflectionTexture.Value);
             }
 
             // Built whenever the adapter can trace, world scene or not: a shader that names a structure
@@ -576,6 +582,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _submission.Dispose();
         _worldScene?.Dispose();
         _opacityMasks?.Dispose();
+        _tracedAlbedo?.Dispose();
         _rayTracing?.Dispose();
         _bindless?.Dispose();
         _occlusion.Dispose();

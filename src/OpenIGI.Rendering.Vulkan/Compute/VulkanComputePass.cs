@@ -1,4 +1,4 @@
-using OpenIGI.Rendering;
+﻿using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Shaders;
@@ -32,17 +32,49 @@ internal enum ComputeBindingKind
 
     /// <summary>The scene's acceleration structure, for a pass that traces rays against it.</summary>
     AccelerationStructure,
+
+    /// <summary>
+    /// A buffer of records read by index, for a pass that walks a structure the engine built.
+    /// </summary>
+    /// <remarks>
+    /// Read-only in practice — nothing here writes one — but bound as a storage buffer all the same,
+    /// because the alternative is a uniform buffer whose size a driver may cap at sixteen kilobytes and
+    /// these run to megabytes.
+    /// </remarks>
+    StorageBuffer,
 }
 
 /// <summary>One resource bound for a dispatch.</summary>
 /// <param name="View">The image view, for an image binding.</param>
 /// <param name="Structure">The acceleration structure, for a binding that traces.</param>
-internal readonly record struct ComputeResource(ImageView View, AccelerationStructureKHR Structure = default)
+/// <param name="Buffer">The buffer, for a storage-buffer binding.</param>
+/// <param name="Bytes">How much of that buffer the shader may read. Zero binds the whole of it.</param>
+/// <param name="Sampler">
+/// A sampler for this binding alone, or nothing to take the pass's own.
+/// <para>
+/// The pass's sampler clamps, because almost everything it reads is a table whose edges are the extremes
+/// of what it encodes — the horizon, the zenith, the top of the atmosphere — and wrapping one of those
+/// fetches the opposite extreme. A WORLD TEXTURE is the exception and needs the opposite: its UVs run
+/// well past one along a wall or around a tank, and clamping them was leaving a seam at every repeat.
+/// </para>
+/// </param>
+internal readonly record struct ComputeResource(
+    ImageView View,
+    AccelerationStructureKHR Structure = default,
+    Buffer Buffer = default,
+    ulong Bytes = 0,
+    Sampler Sampler = default)
 {
     /// <summary>Wraps an acceleration structure as a bindable resource.</summary>
     /// <param name="structure">The structure to bind.</param>
     /// <returns>The resource.</returns>
     public static ComputeResource Scene(AccelerationStructureKHR structure) => new(default, structure);
+
+    /// <summary>Wraps a buffer of records as a bindable resource.</summary>
+    /// <param name="buffer">The buffer to bind.</param>
+    /// <param name="bytes">How much of it the shader may read.</param>
+    /// <returns>The resource.</returns>
+    public static ComputeResource Records(Buffer buffer, ulong bytes) => new(default, default, buffer, bytes);
 }
 
 /// <summary>
@@ -221,6 +253,7 @@ internal sealed unsafe class VulkanComputePass : IDisposable
         ComputeBindingKind.SampledImage or ComputeBindingKind.SampledStorageImage
             => DescriptorType.CombinedImageSampler,
         ComputeBindingKind.AccelerationStructure => DescriptorType.AccelerationStructureKhr,
+        ComputeBindingKind.StorageBuffer => DescriptorType.StorageBuffer,
         _ => DescriptorType.StorageImage,
     };
 
@@ -232,10 +265,35 @@ internal sealed unsafe class VulkanComputePass : IDisposable
         AccelerationStructureKHR* structures = stackalloc AccelerationStructureKHR[Math.Max(1, _bindings.Length)];
         WriteDescriptorSetAccelerationStructureKHR* sceneInfos =
             stackalloc WriteDescriptorSetAccelerationStructureKHR[Math.Max(1, _bindings.Length)];
+        DescriptorBufferInfo* buffers = stackalloc DescriptorBufferInfo[Math.Max(1, _bindings.Length)];
 
         for (int i = 0; i < _bindings.Length; i++)
         {
             ComputeBindingKind kind = _bindings[i];
+            if (kind == ComputeBindingKind.StorageBuffer)
+            {
+                buffers[i] = new DescriptorBufferInfo
+                {
+                    Buffer = resources[i].Buffer,
+                    Offset = 0,
+
+                    // Whole-size rather than the byte count when none was given: a descriptor's range may
+                    // not be zero, and a pass that does not care how long its records are should not have
+                    // to find out.
+                    Range = resources[i].Bytes > 0 ? resources[i].Bytes : Vk.WholeSize,
+                };
+                writes[i] = new WriteDescriptorSet
+                {
+                    SType = StructureType.WriteDescriptorSet,
+                    DstSet = _sets[frame],
+                    DstBinding = (uint)i,
+                    DescriptorType = DescriptorType.StorageBuffer,
+                    DescriptorCount = 1,
+                    PBufferInfo = &buffers[i],
+                };
+                continue;
+            }
+
             if (kind == ComputeBindingKind.AccelerationStructure)
             {
                 structures[i] = resources[i].Structure;
@@ -260,7 +318,11 @@ internal sealed unsafe class VulkanComputePass : IDisposable
             bool sampled = kind is ComputeBindingKind.SampledImage or ComputeBindingKind.SampledStorageImage;
             images[i] = new DescriptorImageInfo
             {
-                Sampler = sampled ? _sampler : default,
+                // The resource's own sampler where it brought one, and the pass's otherwise. See
+                // ComputeResource.Sampler for why a world texture cannot share the pass's.
+                Sampler = sampled
+                    ? (resources[i].Sampler.Handle != 0 ? resources[i].Sampler : _sampler)
+                    : default,
                 ImageView = resources[i].View,
                 ImageLayout = kind == ComputeBindingKind.SampledImage
                     ? ImageLayout.ShaderReadOnlyOptimal
@@ -391,10 +453,11 @@ internal sealed unsafe class VulkanComputePass : IDisposable
 
     private DescriptorPool CreatePool()
     {
-        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[4];
+        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[5];
         uint sampled = 0;
         uint storage = 0;
         uint scenes = 0;
+        uint records = 0;
         foreach (ComputeBindingKind kind in _bindings)
         {
             if (kind is ComputeBindingKind.SampledImage or ComputeBindingKind.SampledStorageImage)
@@ -404,6 +467,10 @@ internal sealed unsafe class VulkanComputePass : IDisposable
             else if (kind == ComputeBindingKind.AccelerationStructure)
             {
                 scenes++;
+            }
+            else if (kind == ComputeBindingKind.StorageBuffer)
+            {
+                records++;
             }
             else
             {
@@ -436,6 +503,15 @@ internal sealed unsafe class VulkanComputePass : IDisposable
             {
                 Type = DescriptorType.AccelerationStructureKhr,
                 DescriptorCount = scenes * (uint)_frames,
+            };
+        }
+
+        if (records > 0)
+        {
+            sizes[count++] = new DescriptorPoolSize
+            {
+                Type = DescriptorType.StorageBuffer,
+                DescriptorCount = records * (uint)_frames,
             };
         }
 

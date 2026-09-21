@@ -114,6 +114,10 @@
     "204_08_1": { "roughness": 0.45, "metallic": 1.0 },
     "205_02_1": { "roughness": 0.45, "metallic": 1.0 },
     "205_03_1": { "roughness": 0.45, "metallic": 1.0 },
+
+    "206_01_1": { "roughness": 0.55, "metallic": 1.0 },
+    "206_02_1": { "roughness": 0.45, "metallic": 1.0 },
+
     "206_05_1": { "roughness": 0.45, "metallic": 1.0 },
     "216_04_1": { "roughness": 0.45, "metallic": 1.0 },
     "216_05_1": { "roughness": 0.45, "metallic": 1.0 },
@@ -177,6 +181,69 @@
         "solid slab reaching to infinity and darkens everything behind it."
       ],
       "castsOcclusion": false
-    }
+    },
+
+    "$glass": [
+      "THE TEN THAT REALLY ARE GLASS, named individually as the note above asks for.",
+      "",
+      "Found by a metric the perimeter ranking could not supply. Perimeter per unit of solid area",
+      "finds surfaces with a lot of CUT-OUT edge, which is the right question for wire and foliage and",
+      "the wrong one for glazing: the windows it put at the top of the list -- 425_02_1, 425_03_1,",
+      "346_01_1, 405_01_1, 454_02_1 -- are frames around a hole. Their panes are FULLY transparent,",
+      "there is no glass in the texture at all, and the only pixels a material would reach are the",
+      "painted frame. Giving those a mirror finish would polish the window surround and nothing else.",
+      "",
+      "Glass is where alpha is PARTIAL: a surface seen through but not completely. Ranking the",
+      "sixty-nine by the fraction of texels at intermediate alpha separates the two cleanly -- framed",
+      "panes and plain sheets at the top, then smoke, then the cut-outs, which carry almost no",
+      "intermediate alpha because a cut-out is a binary stencil.",
+      "",
+      "Seven are architectural glazing and each is majority pane by area, so the frame in the same",
+      "texture is the minority the per-texture material has to lose. Three are plain translucent",
+      "sheets with no structure at all, which is what a pane fill looks like at 8x8.",
+      "",
+      "DELIBERATELY LEFT OUT, all of them translucent and none of them glass: 433_01_1 (water),",
+      "121_03_1 (a curtain), 1010_anim000-002 (smoke), 1118_08_1 and 600_35_1 (glows), 472_02_1 (a",
+      "map display), 301_02_1 (a sign), 344_01_1 (a flat red tint that may be a lamp lens or may be",
+      "an additive glow -- it is 16x16 and there is no way to tell from the texture), 700_28_1 (a",
+      "64x8 alpha gradient, which reads as a soft edge rather than a pane) and 009_09_1.",
+      "",
+      "castsOcclusion is repeated on every entry and that is not redundant: an exact name BEATS the",
+      "suffix rule rather than extending it, and an entry that omits the flag takes the file default,",
+      "which is true. Leaving it off would have each of these start blocking the ambient occlusion and",
+      "the gather rays -- so naming a pane as glass would stop light passing through it.",
+      "",
+      "0.08 is the figure the suffix rule used to carry, and it is well under r_ssr_max_roughness",
+      "(0.5 on enhanced and above, 0.22 on vanilla), so these march a screen ray on every preset.",
+      "",
+      "glass:true is what actually puts a pane on screen, and without it the roughness above reached",
+      "only the FRAME. Deferred shading cannot blend, so the geometry pass resolves partial alpha into",
+      "keep-or-discard: the dithered coverage path needs an alpha GRADIENT, which a cut-out edge has and",
+      "a flat pane does not, so a pane at alpha 72 took the hard alpha<0.5 cut and every texel of it was",
+      "thrown away. That left the opaque frame in the same texture as the only part of these seven that",
+      "survived -- so the 0.08 landed on the glazing bars and made them read as polished metal, while",
+      "the glass itself was not transparent but absent. The flag holds these out of the G-buffer and",
+      "draws them in the forward translucency subpass instead, which is the one place a pane can both",
+      "show the room behind it and carry a reflection of its own."
+    ],
+
+    "$glass-windows": [
+      "Framed panes: a mullioned window with translucent glass between the bars."
+    ],
+    "418_05_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
+    "400_15_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
+    "458_04_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
+    "490_07_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
+    "402_03_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
+    "459_08_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
+    "426_01_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
+
+    "$glass-panes": [
+      "Plain sheets: uniform partial alpha, no structure. 716_01_1 is 8x8 and every texel of it is",
+      "alpha 72, which is a pane fill and cannot be anything else."
+    ],
+    "600_30_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
+    "716_01_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true },
+    "402_10_1_argb8888": { "roughness": 0.08, "metallic": 0.0, "castsOcclusion": false, "glass": true }
   }
 }

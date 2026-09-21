@@ -483,6 +483,37 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetReflections(in ReflectionSettings settings);
 
+    /// <summary>Hands the backend the surface cache, so a traced ray can be turned into light.</summary>
+    /// <param name="binding">
+    /// The cards, the grid and the lighting atlas, or <see cref="SurfaceCacheBinding.None"/> while the
+    /// level has no cache — during loading, or on a mission whose cards failed to build.
+    /// </param>
+    /// <remarks>
+    /// Called every frame rather than once per mission, because the camera offset in it moves. Everything
+    /// else is a property of the level and is simply repeated; the backend stores the struct and resolves
+    /// nothing until a pass that traces actually runs.
+    /// </remarks>
+    void SetSurfaceCache(in SurfaceCacheBinding binding);
+
+    /// <summary>Hands over the level's distance field, for the passes that march it.</summary>
+    /// <param name="binding">The clipmaps and their boxes, or <see cref="DistanceFieldBinding.None"/>.</param>
+    /// <remarks>
+    /// <para>
+    /// The counterpart to <see cref="SetSurfaceCache"/>, and handed over the same way and at the same
+    /// point: every frame, because the boxes are camera-relative and move with the camera, with the
+    /// backend storing the struct and resolving nothing until a pass that marches actually runs.
+    /// </para>
+    /// <para>
+    /// This exists so a reflection can find a hit on an adapter that cannot trace. The field is the only
+    /// description of the world a shader can walk without an acceleration structure, and it lived
+    /// entirely on the game's side until now — which is why glass without ray tracing reflected the sky
+    /// and nothing else. A no-op by default: a backend that marches nothing has nowhere to put it.
+    /// </para>
+    /// </remarks>
+    void SetDistanceField(in DistanceFieldBinding binding)
+    {
+    }
+
     /// <summary>Hands over the authored colour grade, or clears it.</summary>
     /// <param name="table">The table, or <see langword="null"/> to forget the one held.</param>
     /// <remarks>
@@ -1177,6 +1208,38 @@ public interface IGraphicsDevice : IDisposable
         TextureHandle diffuse,
         TextureHandle lightmap,
         BlendMode blend);
+
+    /// <summary>Puts part of a mesh into the traced world without drawing it.</summary>
+    /// <param name="mesh">The mesh to admit.</param>
+    /// <param name="indexOffset">The first index of the run.</param>
+    /// <param name="indexCount">How many indices the run covers; a multiple of three.</param>
+    /// <param name="modelView">The model-to-view transform, as <see cref="DrawMesh"/> takes it.</param>
+    /// <param name="diffuse">The diffuse texture, which is what names the run's material to a ray.</param>
+    /// <remarks>
+    /// <para>
+    /// For geometry that must be THERE for a ray and absent for the camera. The player's own body in
+    /// first person is the case this exists for: it has to be in the acceleration structure or no
+    /// reflected ray can strike it and no window can show the player standing at it, and it must not be
+    /// in the G-buffer or the camera is inside its head.
+    /// </para>
+    /// <para>
+    /// Only meaningful once a pass can shade a hit from the hit's own material. Before that, geometry the
+    /// camera could not see had no colour available to it and admitting it only produced a silhouette of
+    /// nothing.
+    /// </para>
+    /// <para>
+    /// A no-op by default: a backend that traces nothing has nowhere to put this, and the callers are
+    /// written so that skipping it costs only the reflection.
+    /// </para>
+    /// </remarks>
+    void SubmitTracedMesh(
+        MeshHandle mesh,
+        int indexOffset,
+        int indexCount,
+        in Matrix4f modelView,
+        TextureHandle diffuse)
+    {
+    }
 
     /// <summary>Draws several ranges from one mesh with shared transform, texture and state.</summary>
     /// <remarks>

@@ -1,4 +1,4 @@
-using OpenIGI.Rendering.Vulkan.Memory;
+﻿using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Queues;
 using OpenIGI.Rendering.Vulkan.Sync;
 using Silk.NET.Vulkan;
@@ -327,7 +327,7 @@ internal sealed class VulkanRayTracingScene : IDisposable
         ulong total = VulkanRayTracingApi.Align(_topLevel.BuildScratchSize, _api.ScratchAlignment);
         foreach (VulkanBottomLevelStructure structure in _pendingBuilds)
         {
-            total += VulkanRayTracingApi.Align(structure.BuildScratchSize, _api.ScratchAlignment);
+            total += VulkanRayTracingApi.Align(ScratchFor(structure), _api.ScratchAlignment);
         }
 
         // The scratch handed back is one no build still in flight is using, which is why the completed
@@ -335,6 +335,29 @@ internal sealed class VulkanRayTracingScene : IDisposable
         // out of.
         _scratch.BeginBatch(total, submissionValue, completedValue);
     }
+
+    /// <summary>Whether this structure is being refitted this batch rather than built from scratch.</summary>
+    /// <param name="structure">The structure about to be recorded.</param>
+    /// <returns><see langword="true"/> for a refit.</returns>
+    /// <remarks>
+    /// Asked in two places -- when the batch's scratch is sized and when the build is recorded -- and it
+    /// has to give the same answer to both, or a refit is handed the scratch a full build asked for or,
+    /// far worse, the other way round. Nothing between the two calls can change it: a structure is only
+    /// marked built at the end of its own record.
+    /// </remarks>
+    private static bool Refits(VulkanBottomLevelStructure structure) =>
+        structure.AllowUpdate && structure.IsBuilt;
+
+    /// <summary>How much scratch one structure's turn in this batch needs.</summary>
+    /// <param name="structure">The structure about to be recorded.</param>
+    /// <returns>The update scratch for a refit, the build scratch otherwise.</returns>
+    /// <remarks>
+    /// The distinction pays for itself the moment skinned geometry is in the world: every soldier and the
+    /// player's own body is refitted EVERY frame, and a refit's scratch is a fraction of a build's. Asking
+    /// for the build size thirty times a frame would reserve megabytes nothing writes to.
+    /// </remarks>
+    private static ulong ScratchFor(VulkanBottomLevelStructure structure) =>
+        Refits(structure) ? structure.UpdateScratchSize : structure.BuildScratchSize;
 
     private void RecordGeometryBuilds(CommandBuffer commandBuffer, ulong submissionValue)
     {
@@ -345,8 +368,8 @@ internal sealed class VulkanRayTracingScene : IDisposable
 
         foreach (VulkanBottomLevelStructure structure in _pendingBuilds)
         {
-            ulong scratch = _scratch.Allocate(structure.BuildScratchSize);
-            structure.RecordBuild(commandBuffer, scratch, update: structure.AllowUpdate && structure.IsBuilt);
+            ulong scratch = _scratch.Allocate(ScratchFor(structure));
+            structure.RecordBuild(commandBuffer, scratch, update: Refits(structure));
             _compaction.Request(structure, submissionValue);
         }
 

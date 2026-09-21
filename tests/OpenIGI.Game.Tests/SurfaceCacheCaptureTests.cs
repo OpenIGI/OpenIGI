@@ -145,6 +145,61 @@ public sealed class SurfaceCacheCaptureTests
     }
 
     /// <summary>A model with no uploaded mesh is skipped rather than drawn with a null handle.</summary>
+    /// <summary>Every card's camera sits on its own face and looks in at the model.</summary>
+    /// <remarks>
+    /// The rotation and the translation of the card's view have to agree: the model goes through the
+    /// rotation, so the eye must too, rows dotted with the vector as the scene camera does it. Multiplied
+    /// by the columns instead, the eye lands where the transpose puts it, and the two Z cards hide the
+    /// mistake -- their frame is its own transpose -- while every X and Y card shifts the model off its
+    /// page. Three quarters of a level's side pages came back empty that way, every wall was then resolved
+    /// through its roof card's silhouette, and a storage tank read as a fan of stripes in a window.
+    /// </remarks>
+    [Theory]
+    [InlineData(MeshCardAxis.PositiveX)]
+    [InlineData(MeshCardAxis.NegativeX)]
+    [InlineData(MeshCardAxis.PositiveY)]
+    [InlineData(MeshCardAxis.NegativeY)]
+    [InlineData(MeshCardAxis.PositiveZ)]
+    [InlineData(MeshCardAxis.NegativeZ)]
+    public void EveryCardLooksInwardFromItsOwnFace(MeshCardAxis axis)
+    {
+        RecordingGraphicsDevice device = new();
+        MeshHandle mesh = device.CreateMesh(Quad().Vertices, Quad().Indices);
+
+        // Off the origin, and a different size every way, so that a transposed frame or a swapped axis
+        // cannot land on the right answer by symmetry.
+        MeshCard card = new(
+            axis,
+            new Vector3f(3f, -2f, 5f),
+            HalfWidth: 1.5f,
+            HalfHeight: 2.5f,
+            Depth: 4f,
+            ResolutionU: 16,
+            ResolutionV: 16,
+            AreaShare: 1f / 6f);
+
+        SurfaceCacheCapture.Capture(device, [Subject(card)], [mesh]);
+
+        RecordingGraphicsDevice.MeshDrawCall draw = Assert.Single(device.MeshDraws);
+        Matrix4f modelView = draw.ModelView;
+
+        // The card's own centre is the eye.
+        AssertClose(Vector3f.Zero, modelView.TransformPoint(card.Centre));
+
+        // A point across the card by (a, b) and c behind its plane is seen at (a, -b, c): right is
+        // right, up runs down the page as the vertex stage then flips it back, and forward is INTO the
+        // model, which is away from the face the card looks from.
+        Vector3f behind = card.Centre + (card.Right * 0.7f) + (card.Up * -0.4f) - (card.Direction * 1.3f);
+        AssertClose(new Vector3f(0.7f, 0.4f, 1.3f), modelView.TransformPoint(behind));
+    }
+
+    private static void AssertClose(Vector3f expected, Vector3f actual)
+    {
+        Assert.Equal(expected.X, actual.X, 1e-4f);
+        Assert.Equal(expected.Y, actual.Y, 1e-4f);
+        Assert.Equal(expected.Z, actual.Z, 1e-4f);
+    }
+
     [Fact]
     public void ModelsWithNoMeshAreSkipped()
     {
