@@ -59,15 +59,19 @@ public sealed class RetailIgi2TerrainMeshTests
 
         Assert.Equal(46, tiles);
 
-        // 215 rather than one per material per tile: a tile whose only samples of some material lie
+        // Every count here went up a little when a tile stopped handing its ground over exactly at
+        // a submap's edge and started keeping one sample of overlap: see Igi2TerrainTile.IsSuperseded,
+        // where meeting rather than overlapping was tearing holes in mission 11's hillside.
+
+        // 219 rather than one per material per tile: a tile whose only samples of some material lie
         // under a finer tile now issues no triangles for it, and a pass with nothing to draw is dropped.
-        Assert.Equal(215, passes);
+        Assert.Equal(219, passes);
         Assert.Equal(6_356_992L, vertices);
 
-        // 12,925,877 rather than the 12,939,092 the ground has before its holes: the four levels that
+        // 12,938,075 rather than the 12,951,290 the ground has before its holes: the four levels that
         // declare a DiscardTask lose 13,215 triangles between them, which is what a vehicle hangar, two
         // sewer mouths and ten multiplayer cellars cost.
-        Assert.Equal(12_925_877L, triangles);
+        Assert.Equal(12_938_075L, triangles);
     }
 
     /// <summary>A triangle is issued by every material at any of its corners, and by no other.</summary>
@@ -130,11 +134,12 @@ public sealed class RetailIgi2TerrainMeshTests
             }
         }
 
-        // 99,710 triangles straddle a boundary on the first tile of each level alone, so the rule is
+        // 101,310 triangles straddle a boundary on the first tile of each level alone, so the rule is
         // exercised heavily rather than being a corner case the corpus never reaches. It was 140,913
         // before the coarse tiles stopped drawing the ground their submaps own -- a boundary is exactly
-        // the kind of detail a level lays a finer tile over.
-        Assert.Equal(99_710, shared);
+        // the kind of detail a level lays a finer tile over -- and 99,710 before they began keeping one
+        // sample of that ground back, for the reason Igi2TerrainTile.IsSuperseded gives.
+        Assert.Equal(101_310, shared);
     }
 
     /// <summary>Texture coordinates come from the world, not from the tile's grid.</summary>

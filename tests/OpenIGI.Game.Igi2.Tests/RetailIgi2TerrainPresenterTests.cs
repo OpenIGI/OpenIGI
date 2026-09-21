@@ -91,19 +91,20 @@ public sealed class RetailIgi2TerrainPresenterTests
         // took it to 4,115; the tile's lightmap pass then draws every triangle once more, and since
         // most of a tile is a single material -- only the boundaries straddle -- that is nearly as
         // many triangles again. Nine fewer than before the DiscardTasks were honoured: a hole can take
-        // the last triangles a pass had.
-        Assert.Equal(7_840, chunks);
+        // the last triangles a pass had, and five more than before a tile kept one sample of its
+        // submaps' ground back -- see Igi2TerrainTile.IsSuperseded.
+        Assert.Equal(7_845, chunks);
 
-        // Every triangle the mesh builds is uploaded -- the 12,925,877 RetailIgi2TerrainMeshTests
-        // counts, the ground with its holes already cut -- and then 12,353,310 more for the lightmap
+        // Every triangle the mesh builds is uploaded -- the 12,938,075 RetailIgi2TerrainMeshTests
+        // counts, the ground with its holes already cut -- and then 12,363,806 more for the lightmap
         // pass, which draws each DISTINCT triangle once. The gap between those two numbers is the whole
-        // of the material straddling in the corpus: 572,567 triangles, four and a half per cent, are
+        // of the material straddling in the corpus: 574,269 triangles, four and a half per cent, are
         // claimed by more than one material.
         //
         // An earlier attempt kept one chunk per pass and dropped the 32 that overran a 16-bit index,
         // which lost whole materials from whole levels and did it quietly. Chunking at the original's
         // own 10,000-index budget makes the question go away rather than trading it off.
-        Assert.Equal(25_279_187L, triangles);
+        Assert.Equal(25_301_881L, triangles);
     }
 
     /// <summary>A tile is drawn about its own centre, so a distant level keeps its precision.</summary>
@@ -288,14 +289,14 @@ public sealed class RetailIgi2TerrainPresenterTests
 
         Assert.Equal(22, levels);
 
-        // 265,819 triangles across the corpus against 12,925,877 at full detail, from 54,940 quadtree
-        // leaves. 156,209 of those are the material passes; the other 109,610 are the lightmap pass,
-        // which draws every leaf triangle once and no more, because it is drawn from the passes' BASE
-        // lists. Two per leaf would be 109,880: the 270 missing are the leaf triangles that fell wholly
-        // inside a DiscardTask and were never issued into any pass at all. The leaf count itself does
-        // not move -- the quadtree still descends through a hole, it just emits nothing there.
-        Assert.Equal(265_819L, triangles);
-        Assert.Equal(54_940, squares);
+        // 267,891 triangles across the corpus against 12,938,075 at full detail, from 55,355 quadtree
+        // leaves. Part of that is the material passes; the rest is the lightmap pass, which draws every
+        // leaf triangle once and no more, because it is drawn from the passes' BASE lists -- fewer than
+        // two per leaf, because a leaf triangle that fell wholly inside a DiscardTask was never issued
+        // into any pass at all. The leaf count itself is not reduced by a hole: the quadtree still
+        // descends through one, it just emits nothing there.
+        Assert.Equal(267_891L, triangles);
+        Assert.Equal(55_355, squares);
     }
 
     /// <summary>A frame from an eye standing two metres above the middle of a tile.</summary>

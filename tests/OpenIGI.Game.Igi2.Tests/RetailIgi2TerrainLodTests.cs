@@ -236,14 +236,14 @@ public sealed class RetailIgi2TerrainLodTests
             }
         }
 
-        // 12,925,877 triangles at full detail against 198,867 tessellated -- 1.54 per cent, a factor
-        // of 65.0. 72,585 quadtree leaves produce those triangles, and the clipping planes reject the
+        // 12,938,075 triangles at full detail against 200,109 tessellated -- 1.55 per cent, a factor
+        // of 64.7. 73,000 quadtree leaves produce those triangles, and the clipping planes reject the
         // rest outright with their subtrees. Both counts are of the ground the levels actually draw:
         // the four levels with a DiscardTask have their holes cut out of each.
-        Assert.Equal(12_925_877L, full);
-        Assert.Equal(198_867L, tessellated);
-        Assert.Equal(72_585, squares);
-        Assert.Equal(7_542, culled);
+        Assert.Equal(12_938_075L, full);
+        Assert.Equal(200_109L, tessellated);
+        Assert.Equal(73_000, squares);
+        Assert.Equal(7_682, culled);
     }
 
     /// <summary>The clipping planes reject what is behind the camera.</summary>

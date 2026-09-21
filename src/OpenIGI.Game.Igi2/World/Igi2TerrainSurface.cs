@@ -218,10 +218,23 @@ public readonly record struct Igi2TerrainTile(
             return false;
         }
 
-        double left = SampleX(x);
-        double top = SampleY(y);
-        double right = SampleX(x + size);
-        double bottom = SampleY(y + size);
+        // ONE SAMPLE OF OVERLAP ON EVERY SIDE, and the ground depends on it.
+        //
+        // A finer tile is a SEPARATE height map of the same ground, not a subdivision of this one, so
+        // the two disagree about where the surface is -- by however much 24 metres between samples lost
+        // that 3 metres keeps. Handing over exactly at the finer tile's edge makes that disagreement a
+        // seam, and a seam between two surfaces that do not line up is a hole: at mission 11's opening
+        // the join runs across the far hillside and opens two wedges of sky into it, which close as the
+        // camera comes nearer -- because the two sides converge on the same detail -- and open again as
+        // it goes away. That is what was reported.
+        //
+        // So this tile keeps drawing one sample INTO the finer tile's ground, and the surfaces overlap
+        // along the join instead of meeting along it. What that costs is the second ground the remark
+        // above warns of, in a ring one square wide at the edge of a submap and nowhere else.
+        double left = SampleX(x - 1);
+        double top = SampleY(y - 1);
+        double right = SampleX(x + size + 1);
+        double bottom = SampleY(y + size + 1);
 
         foreach (Igi2TerrainExtent submap in Submaps)
         {
