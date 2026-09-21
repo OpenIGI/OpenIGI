@@ -425,6 +425,19 @@ public sealed class TerrainRenderer : ITerrainPresenter
         // while the opposite face removes every triangle.
         _device.SetCullMode(CullMode.CounterClockwise);
 
+        // NO ALPHA TEST. Where two materials meet the second is drawn over the first weighted by the
+        // per-vertex alpha, so alpha here is a material's SHARE of the pixel and not a cut-out. The
+        // deferred G-buffer tests diffuse.a * vColor.a against the port's default reference of 128 and
+        // discards below it, which throws away every overlay vertex covering less than half -- that is,
+        // exactly the fade that makes one material become another. What survives is the inner core of
+        // each overlay with a hard edge where the gradient used to be.
+        //
+        // The forward path never had this: it tests the TEXTURE alpha alone and only for opaque draws,
+        // and an overlay is additive. So the fault is the deferred presets only, and vanilla is the
+        // picture it should have been matching all along. The sequel's ground says the same thing for
+        // the same reason -- see Igi2TerrainPresenter.
+        _device.SetAlphaReference(0);
+
         // The detail cross-fade's window, from sub_50FE60: the offset is truncated to an integer there,
         // and 2.6666667 is the constant as the original spells it. The scale converts the shader's
         // metres back to the engine units the window is expressed in, per chunk below.
@@ -554,6 +567,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
             }
         }
         _device.ClearDetailFade();
+        _device.SetAlphaReference(IGraphicsDevice.DefaultAlphaReference);
         SubmitShadowCaster(camera, fadeOffset, fadeSlope);
 
         LastChunkCount = result.Emitted - occludedChunks;

@@ -201,16 +201,53 @@ public sealed class TerrainStreamingTests
     }
 
     /// <summary>A retail level, its terrain renderer, and a camera to point at it.</summary>
+
+    /// <summary>The ground draws with no alpha test, because its alpha is a share and not a cut-out.</summary>
+    /// <remarks>
+    /// <para>
+    /// Where two materials meet the second is drawn over the first weighted by the per-vertex alpha, so
+    /// alpha on the ground is a material's SHARE of the pixel. The deferred G-buffer tests
+    /// <c>diffuse.a * vColor.a</c> against the port's default reference of 128 and discards below it,
+    /// which throws away every overlay vertex covering less than half -- exactly the fade that makes one
+    /// material become another, leaving each overlay's inner core with a hard edge round it.
+    /// </para>
+    /// <para>
+    /// The forward path never had this: it tests the texture alpha alone and only for opaque draws, and
+    /// an overlay is additive. So this guards the deferred presets, and vanilla is what they should have
+    /// been matching.
+    /// </para>
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void TheGroundDrawsWithNoAlphaTest()
+    {
+        using Harness harness = Harness.Load(1);
+        harness.Frame(harness.Eye, 0f);
+
+        Assert.Contains((byte)0, harness.Device.AlphaReferences);
+
+        // And it puts the default back, or every draw after the ground in the frame loses its cut-outs --
+        // the foliage and the fencing above all, which are exactly what the test is for.
+        Assert.Equal(IGraphicsDevice.DefaultAlphaReference, harness.Device.AlphaReference);
+    }
+
     private sealed class Harness : IDisposable
     {
         private readonly Matrix4f _projection = Matrix4f.CreatePerspective(FieldOfView, AspectRatio, 0.1f, 4000f);
 
-        private Harness(TerrainRenderer terrain, TerrainSurface surface, Vector3d eye)
+        private Harness(
+            RecordingGraphicsDevice device,
+            TerrainRenderer terrain,
+            TerrainSurface surface,
+            Vector3d eye)
         {
+            Device = device;
             Terrain = terrain;
             Surface = surface;
             Eye = eye;
         }
+
+        /// <summary>Gets the device the draw was recorded against.</summary>
+        public RecordingGraphicsDevice Device { get; }
 
         public TerrainRenderer Terrain { get; }
 
@@ -248,7 +285,8 @@ public sealed class TerrainStreamingTests
             TerrainSurface surface = TerrainSurface.Build(loaded.Terrain, levelRoot);
             WorldScene scene = WorldScene.Build(loaded, levelRoot, magic);
 
-            return new Harness(new TerrainRenderer(new RecordingGraphicsDevice(), surface), surface, Median(scene));
+            RecordingGraphicsDevice device = new();
+            return new Harness(device, new TerrainRenderer(device, surface), surface, Median(scene));
         }
 
         /// <summary>Draws one frame and returns how many terrain triangles it submitted.</summary>
