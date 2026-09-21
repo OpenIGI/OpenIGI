@@ -249,7 +249,7 @@ internal sealed partial class GameHost
                 entries.Add(new ShowcasePointFile.Entry(
                     descriptor.Id,
                     strings.Get(descriptor.Name),
-                    cameras.For(descriptor.Id),
+                    cameras.For(descriptor.Id, _titleRuntime.Title.Id),
                     preview.PointsOfInterest));
 
                 _logger.Information(
@@ -344,6 +344,7 @@ internal sealed partial class GameHost
             centre = new Vector3d(centreXs[centreXs.Length / 2], centreYs[centreYs.Length / 2], showcaseScene.GroundHeight + 15.0);
         }
 
-        _showcaseCamera = new MenuShowcaseCamera(points, centre, _menuCameras.For(missionId));
+        _showcaseCamera = new MenuShowcaseCamera(
+            points, centre, _menuCameras.For(missionId, _titleRuntime.Title.Id));
     }
 }

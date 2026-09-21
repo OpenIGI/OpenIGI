@@ -332,9 +332,9 @@ public sealed class MissionPreviewLoader(
         // placements is arithmetic the render thread has no business doing. A mission with a hand-authored
         // set in menu-cameras.json uses that instead.
         IReadOnlyList<ShowcasePoint> pointsOfInterest =
-            !forceDerivedPoints && cameras.PointsFor(missionId) is { Count: > 0 } authored
+            !forceDerivedPoints && cameras.PointsFor(missionId, context.TitleId) is { Count: > 0 } authored
                 ? authored
-                : MissionShowcasePoints.Extract(scene, levelRoot, ShowcasePointCount, cameras.For(missionId), logger);
+                : MissionShowcasePoints.Extract(scene, levelRoot, ShowcasePointCount, cameras.For(missionId, context.TitleId), logger);
 
         DirectionalLightSettings? sun =
             DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings read) ? read : null;
