@@ -22,9 +22,19 @@ public sealed class Igi2DeferredLightingTests
 {
     /// <summary>The sequel's darkness is in its sun's colour, and not in its height.</summary>
     /// <remarks>
-    /// Two levels make the case on their own. The first mission is at night with its sun a third of the
-    /// way UP the sky; <c>location1/LEVEL6</c> is bright with its sun pointing almost straight DOWN. A
-    /// model that reads one off the other gets both exactly backwards.
+    /// <para>
+    /// The first mission is at night with its sun well UP the sky, so a model that reads darkness off
+    /// elevation gets it exactly backwards. That is what the night band exists for and it still holds.
+    /// </para>
+    /// <para>
+    /// <b>The second half of the old evidence turned out to be a bug in the reader.</b> Four bright
+    /// levels appeared to point their sun below the horizon, and this test pinned that count. They never
+    /// did: <c>DirectionFrom</c> was taking the forward row of an Euler composition, which discards Gamma
+    /// and swaps elevation for zenith, and the below-horizon suns were the artefact. Read as both
+    /// binaries read it -- <c>(cos β cos γ, −cos β sin γ, sin β)</c> -- not one of the twenty-four points
+    /// underground. The count is asserted at nought rather than deleted, because a return of it means the
+    /// reader has regressed.
+    /// </para>
     /// </remarks>
     [RequiresTitleDataFact("igi2")]
     public void The_darkness_is_in_the_suns_colour_and_not_in_its_height()
@@ -57,9 +67,9 @@ public sealed class Igi2DeferredLightingTests
         Assert.Equal(5, dark);
         Assert.Equal(19, bright);
 
-        // Four bright levels whose sun is below the horizon. The sweep fades a sun out as it sets, so
-        // every one of these would have gone dark.
-        Assert.Equal(4, belowHorizonAndBright);
+        // None. See the remark: the four this used to find were the old reader's artefact, and a sun
+        // back under the world would mean it had come back.
+        Assert.Equal(0, belowHorizonAndBright);
     }
 
     /// <summary>The night mission reads as night and the bright ones read as day.</summary>

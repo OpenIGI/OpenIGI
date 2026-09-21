@@ -26,11 +26,9 @@ namespace OpenIGI.Presentation;
 /// </para>
 /// <para>
 /// <b>I.G.I. 2 does not author a sun.</b> It authors a lighting DIRECTION and puts the darkness in the
-/// colour. Measured over all twenty-four of its levels: the first mission's sun stands a third of the
-/// way up the sky and is very nearly black (0.10, 0.15, 0.25) because the mission is at night, while
-/// <c>location1/LEVEL6</c>'s points almost straight DOWN and is very nearly white. Fed to a model that
-/// reads darkness off elevation, those two come out exactly backwards — the night mission is lit as
-/// noon, and four bright levels are put out entirely because their sun is "below the horizon".
+/// colour. Measured over all twenty-four of its levels: the first mission's sun stands well up the sky
+/// and is very nearly black (0.10, 0.15, 0.25) because the mission is at night. Fed to a model that
+/// reads darkness off elevation, that comes out exactly backwards — the night mission is lit as noon.
 /// </para>
 /// <para>
 /// So a title that answers this is saying: my sun is where I put it, my ambient is what I wrote, and
@@ -38,15 +36,18 @@ namespace OpenIGI.Presentation;
 /// exactly as it was, which is what Project I.G.I. does and what its regression captures depend on.
 /// </para>
 /// <para>
-/// <b>What this deliberately does NOT carry is a direction.</b> Five of the sequel's levels author a
-/// sun below the horizon, four of them bright — <c>location1/LEVEL6</c>'s points almost straight down
-/// at nearly full white. That costs retail nothing, because retail bakes: its directional light reaches
-/// only the objects that have no lightmap, so where it points barely shows. Tried both ways against a
-/// hillside in <c>location1/LEVEL7</c>: used as written it lights the ground from underneath and comes
-/// out flat, and mirrored above the horizon it is near vertical and comes out flat as well. The sweep's
-/// clamped arc happens to rake nicely, which is not a reason to believe it — but neither is an
-/// aesthetic preference a reason to change it, so the direction is left exactly as it was and this
-/// carries only the two things the level measurably does say.
+/// <b>What this deliberately does NOT carry is a direction.</b> It used to say so on the grounds that
+/// five of the sequel's levels authored a sun below the horizon, four of them bright — and that was the
+/// READER's fault, not the data's. <c>DirectionFrom</c> took the forward row of an Euler composition,
+/// which discards Gamma and swaps elevation for zenith; read as both binaries read it, not one of the
+/// twenty-four points underground. The underground suns are gone and so is that argument.
+/// </para>
+/// <para>
+/// It still carries no direction, for the reason that survived: retail BAKES. Its directional light
+/// reaches only the objects with no lightmap, so where it points barely shows, and the sweep's own arc
+/// is what the rest of the frame is calibrated against. Changing that is a picture decision with its own
+/// evidence to gather, not a correction to make in passing — so this carries the two things the level
+/// measurably says and leaves the arc alone.
 /// </para>
 /// </remarks>
 /// <param name="Night">

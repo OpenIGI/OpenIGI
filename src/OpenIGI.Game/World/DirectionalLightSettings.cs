@@ -104,18 +104,37 @@ public readonly record struct DirectionalLightSettings(
     }
 
     /// <summary>Turns the keyframe's two angles into a world-space direction towards the sun.</summary>
-    /// <param name="beta">The zenith angle in radians.</param>
-    /// <param name="gamma">The azimuth in radians.</param>
+    /// <param name="beta">The ELEVATION above the horizon, in radians.</param>
+    /// <param name="gamma">The azimuth, in radians.</param>
     /// <returns>The unit direction towards the sun, in the world's Z-up frame.</returns>
     /// <remarks>
-    /// The engine's own Euler composition with the first angle absent — a directional light needs only
-    /// two — and the <em>forward</em> row of the result. Across the missions probed that gives sun
-    /// elevations of 48° to 84° at a <c>Time</c> of 12, which is what noon should look like; the
-    /// competing readings put the sun on the horizon in every level, or underground in nine of ten.
-    /// Elevation works out to <c>90° − Beta</c>, which is what makes <c>Beta</c> a zenith angle.
+    /// <para>
+    /// As both binaries compute it: <c>IGI.exe sub_527320</c> and <c>igi2ed 0x6573C0</c> build
+    /// <c>(cos β cos γ, −cos β sin γ, sin β)</c>. So <c>Beta</c> is an ELEVATION and <c>Gamma</c> is the
+    /// compass bearing, which is the plain reading of a light that is placed by pointing it.
+    /// </para>
+    /// <para>
+    /// <b>What was here before took the forward row of the engine's Euler composition</b>, and that is
+    /// <c>Row3</c> of <c>RotationZ(γ) · RotationY(β)</c> — but <c>Row3</c> of a Z rotation is
+    /// <c>(0, 0, 1)</c>, so the product's third row is the Y rotation's alone: <c>(−sin β, 0, cos β)</c>.
+    /// Gamma fell out of the arithmetic entirely. Every level's sun stood in the same vertical plane
+    /// whatever bearing its authors gave it, and elevation and azimuth were swapped besides — which is
+    /// why <c>Beta</c> had to be described as a zenith angle to make the numbers look plausible.
+    /// </para>
+    /// <para>
+    /// The old note reasoned from the elevations the wrong formula produced looking reasonable at noon.
+    /// They did; a sun that ignores its bearing still rises to a believable height. Reading the two
+    /// binaries settles it in a way that squinting at outputs cannot.
+    /// </para>
     /// </remarks>
-    public static Vector3f DirectionFrom(float beta, float gamma) =>
-        Matrix3f.FromEngineEulerAngles(0f, beta, gamma).Row3;
+    public static Vector3f DirectionFrom(float beta, float gamma)
+    {
+        float cosBeta = MathF.Cos(beta);
+        return new Vector3f(
+            cosBeta * MathF.Cos(gamma),
+            -cosBeta * MathF.Sin(gamma),
+            MathF.Sin(beta));
+    }
 
     private static DeclaredTask? SelectKeyframe(DeclaredTask light)
     {
