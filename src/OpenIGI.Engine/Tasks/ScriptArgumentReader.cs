@@ -192,9 +192,22 @@ public sealed class ScriptArgumentReader
         return entries;
     }
 
-    /// <summary>Reads a <c>Graph</c>, which consumes no arguments.</summary>
-    /// <remarks>The original's Parse callback for <c>Graph</c> is a no-op, so the cursor does not move.</remarks>
-    public void ReadGraph() => Skip(ScriptParamTypeInfo.GetArgumentCount(ScriptParamType.Graph));
+    /// <summary>Reads a <c>Graph</c>, which stores three 32-bit floats.</summary>
+    /// <returns>The wire values for the graph field, in positional order.</returns>
+    /// <remarks>
+    /// The original's parser keeps the values available for downstream use rather than consuming them
+    /// as a single structured object, so this keeps behaviour aligned by storing the raw float triplet.
+    /// </remarks>
+    public float[] ReadGraph()
+    {
+        var values = new float[3];
+        for (int i = 0; i < values.Length; i++)
+        {
+            values[i] = ReadReal32();
+        }
+
+        return values;
+    }
 
     /// <summary>Skips a number of arguments.</summary>
     /// <param name="count">How many to skip.</param>

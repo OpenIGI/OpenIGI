@@ -226,7 +226,7 @@ public sealed class ScriptParamGenerator : IIncrementalGenerator
 
             if (entry.ClrType is null)
             {
-                // Graph: the reader advances by zero and yields nothing to assign.
+                // A parser with no CLR value still has to consume its authored arguments.
                 body.Append("        reader.").Append(entry.Method).AppendLine("();");
                 continue;
             }
