@@ -71,7 +71,7 @@ public sealed partial class VulkanGraphicsDevice
         _fogTarget = target;
     }
 
-    // The colour the draws in flight fog towards; a pipeline-variant key, not a push value.
+    // The colour the draws in flight fog towards; push data, written by WriteFog.
     private FogTarget _fogTarget;
 
     // The model-space direction towards the fixed-function sun for the draws in flight, or zero.

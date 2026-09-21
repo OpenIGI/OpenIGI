@@ -320,7 +320,8 @@ public interface IGraphicsDevice : IDisposable
     /// product lands on the scene's fog at distance — see <see cref="FogTarget"/> for the state blocks.
     /// Device state, like <see cref="SetLightmapModulates"/>: it spans a run of draws and must be put
     /// back to <see cref="FogTarget.Scene"/> after them. A title that never calls this fogs everything
-    /// to the scene's colour, which is what the forward path always did.
+    /// to the scene's colour, which is what the forward path always did. It reaches a draw through
+    /// <see cref="SceneFog.ColourFor(BlendMode, FogTarget)"/>, alongside the colour itself.
     /// </remarks>
     void SetFogTarget(FogTarget target)
     {

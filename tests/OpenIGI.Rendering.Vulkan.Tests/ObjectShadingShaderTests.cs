@@ -76,12 +76,12 @@ public sealed class ObjectShadingShaderTests
     /// variant, and <c>SceneFog.ColourFor</c> already knows an additive pass fogs to black.
     /// </para>
     /// <para>
-    /// <b>What is not yet carried across</b> is the ground's PER-PASS target --
-    /// <c>TerrainRender_SetBlendMode</c> (<c>igi2ed 0x666B90</c>) writes the fog colour times 127 for the
-    /// base and overlay passes and white for the lightmap pass. The device still takes it
-    /// (<c>SetFogTarget</c>) and the sequel's ground still asks for it, but nothing reads it: it wants
-    /// re-expressing as three <c>SetFog</c> calls with pre-scaled colours, which is where the game side
-    /// already computes them.
+    /// The ground's PER-PASS target came across with it, and by the same route. It had been built as a
+    /// specialization constant, <c>cFogTarget</c>, at a time when the fog colour was one too; the colour
+    /// became push data and the target did not follow, so the device took it, the pipeline key carried
+    /// it, and no shader declared <c>constant_id = 12</c> to read it. It now rides in the push row
+    /// beside the colour -- <c>SceneFog.ColourFor(BlendMode, FogTarget)</c> resolves the two together --
+    /// which is why <c>cFogTarget</c> is still absent from the shader below, and now correctly so.
     /// </para>
     /// </remarks>
     [Fact]
@@ -94,7 +94,8 @@ public sealed class ObjectShadingShaderTests
             StringComparison.Ordinal);
 
         // And the mechanism it replaced is gone rather than half-present, which is the thing a reader
-        // of the shader would otherwise trip over.
+        // of the shader would otherwise trip over. cFogTarget is absent because the target is push data
+        // now, not because it is unimplemented.
         Assert.DoesNotContain("cFogTarget", Mesh3DShaderSource.Fragment, StringComparison.Ordinal);
         Assert.DoesNotContain("vFogDepth", Mesh3DShaderSource.Fragment, StringComparison.Ordinal);
     }

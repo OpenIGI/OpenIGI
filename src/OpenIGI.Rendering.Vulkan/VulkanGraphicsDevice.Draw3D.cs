@@ -807,7 +807,7 @@ public sealed partial class VulkanGraphicsDevice
         // A draw reflects when the frame has handed over a cube, which is what SetEnvironmentCube means.
         bool reflective = TryGetEnvironmentCube(out Textures.VulkanCubeTexture? cube);
 
-        BindGraphicsPipeline(pipeline.ForState(_depthState, _cullMode, blend, _alphaReference, reflective, _fogTarget));
+        BindGraphicsPipeline(pipeline.ForState(_depthState, _cullMode, blend, _alphaReference, reflective));
         BindMeshBuffers(mesh);
         BindMeshTextures(pipeline.PipelineLayout, diffuse, lightmap);
         BindEnvironmentCube(pipeline, cube);
@@ -926,14 +926,27 @@ public sealed partial class VulkanGraphicsDevice
     /// <param name="data">The block being filled.</param>
     /// <param name="blend">The draw's blend, which decides what colour it fogs towards.</param>
     /// <remarks>
+    /// <para>
     /// The colour follows the blend the way <c>sub_5144E0</c> sets <c>FOGCOLOR</c> per blend mode: an
     /// additive pass fogs to black so that a surface drawn as several passes is fogged once and not once
     /// per pass. The density is per metre of view depth, and zero means the vertex stage leaves the
     /// draw alone.
+    /// </para>
+    /// <para>
+    /// <b>And the fog TARGET arrives here rather than in the pipeline.</b> It was built as a
+    /// specialization constant -- id 12, a dimension of the pipeline key, three variants of every
+    /// pipeline in the world -- at a time when the fog colour was a constant too. The colour has since
+    /// become push data, which is the row this writes, and the target was left behind: the game set it,
+    /// the device stored it, the key carried it, and no shader ever declared <c>constant_id = 12</c> to
+    /// read it. So I.G.I. 2's ground fogged all three of its passes to the scene's colour, and the
+    /// lightmap pass -- which should fade to white, the identity of what it multiplies -- darkened the
+    /// far hills instead of letting them go to haze. It costs nothing here: the row is written per draw
+    /// already.
+    /// </para>
     /// </remarks>
     private unsafe void WriteFog(float* data, BlendMode blend)
     {
-        Vector3f colour = _fog.ColourFor(blend);
+        Vector3f colour = _fog.ColourFor(blend, _fogTarget);
         data[28] = colour.X;
         data[29] = colour.Y;
         data[30] = colour.Z;

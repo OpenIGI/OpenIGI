@@ -20,6 +20,13 @@ namespace OpenIGI.Game.Igi2.Tests;
 /// <see cref="FogTarget"/> and <see cref="Igi2SceneAtmosphere.AuthoredDensityScale"/> for the state
 /// blocks and the unit.
 /// </para>
+/// <para>
+/// The colour is asserted as a pass RESOLVES it, through <see cref="SceneFog.ColourFor(BlendMode,
+/// FogTarget)"/> -- the same call the device makes when it fills the push row -- rather than as the
+/// enum the pass asked with. Asking was never the part that broke: the ground asked correctly for a
+/// long time and nothing read the answer, because the target was wired to a specialization constant
+/// no shader declares. A test that stops at the enum cannot tell those two apart.
+/// </para>
 /// </remarks>
 public sealed class Igi2TerrainFogTests
 {
@@ -46,6 +53,11 @@ public sealed class Igi2TerrainFogTests
         Igi2TerrainSurface surface = Igi2TerrainSurface.Build(level.Root, archive);
 
         RecordingGraphicsDevice device = new();
+
+        // A fog that is nobody's half and nobody's white, so a pass that ignored its target would show.
+        SceneFog scene = new(new Vector3f(0.30f, 0.44f, 0.62f), 0.0017408f);
+        device.SetFog(scene);
+
         using Igi2TerrainPresenter presenter = new(device, surface, _ => TextureHandle.None);
 
         // The spawn, looking back over the tank farm at the hills: the retail frame's view.
@@ -56,9 +68,29 @@ public sealed class Igi2TerrainFogTests
         Assert.NotEmpty(device.MeshDraws);
         Assert.Contains(device.MeshDraws, draw => draw.Blend == BlendMode.Modulate2X);
         Assert.All(device.MeshDraws, draw =>
-            Assert.Equal(draw.Blend == BlendMode.Modulate2X ? FogTarget.White : FogTarget.HalfScene, draw.FogTarget));
+        {
+            Assert.Equal(draw.Blend == BlendMode.Modulate2X ? FogTarget.White : FogTarget.HalfScene, draw.FogTarget);
 
-        // And nothing after the ground inherits it.
+            // And what it fogs towards, once the target and the blend are resolved together.
+            Vector3f towards = draw.Fog.ColourFor(draw.Blend, draw.FogTarget);
+            if (draw.Blend == BlendMode.Modulate2X)
+            {
+                Assert.Equal(Vector3f.One, towards);
+            }
+            else
+            {
+                Assert.Equal(scene.Colour.X * SceneFog.HalfTarget, towards.X, 5);
+                Assert.Equal(scene.Colour.Y * SceneFog.HalfTarget, towards.Y, 5);
+                Assert.Equal(scene.Colour.Z * SceneFog.HalfTarget, towards.Z, 5);
+
+                // Neither the scene's colour, nor the black an additive pass would take on its own.
+                Assert.NotEqual(scene.Colour, towards);
+                Assert.NotEqual(default, towards);
+            }
+        });
+
+        // And nothing after the ground inherits it: the next draw is back on the scene's own colour.
         Assert.Equal(FogTarget.Scene, device.FogTarget);
+        Assert.Equal(scene.Colour, scene.ColourFor(BlendMode.Opaque, device.FogTarget));
     }
 }
