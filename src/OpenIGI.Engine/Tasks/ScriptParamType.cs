@@ -65,7 +65,7 @@ public enum ScriptParamType
     /// <summary>A one-byte boolean.</summary>
     Bool8,
 
-    /// <summary>Editor curve data. Its parse callback is a no-op, so it consumes no script argument.</summary>
+    /// <summary>Editor curve data. It stores three 32-bit floats.</summary>
     Graph,
 
     /// <summary>An envelope curve.</summary>

@@ -70,8 +70,7 @@ internal static class ScriptParamTypeMap
         ["LevelExpression"] = new Entry("ReadString", "string"),
         ["DropDownCombo"] = new Entry("ReadString", "string"),
 
-        // Consume no arguments and produce no value; the member is left at its default.
-        ["Graph"] = new Entry("ReadGraph", null!),
+        ["Graph"] = new Entry("ReadGraph", "float[]"),
         ["QTaskNote"] = new Entry(null!, null!),
     };
 

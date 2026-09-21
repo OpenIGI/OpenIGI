@@ -84,8 +84,8 @@ public sealed class DeclaredTask : GameTask
             ScriptParamType.Real32x9 => reader.ReadReal32x9(),
             ScriptParamType.Quat32 => reader.ReadQuat32(),
             ScriptParamType.GraphEnvelope => reader.ReadGraphEnvelope(),
+            ScriptParamType.Graph => reader.ReadGraph(),
             ScriptParamType.AnimData => reader.ReadAnimData(),
-            ScriptParamType.Graph => null,
             ScriptParamType.QTaskNote => null,
             _ => reader.ReadString(),
         };
