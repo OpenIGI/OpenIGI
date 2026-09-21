@@ -4,4 +4,10 @@
     <ProjectReference Include="..\OpenIGI.Core\OpenIGI.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The MPEG-1 Layer III decoder behind MpegAudioStreamReader. I.G.I. 2's menu theme is the only
+         retail sound in either game that is not ILSF. -->
+    <PackageReference Include="NLayer" />
+  </ItemGroup>
+
 </Project>
