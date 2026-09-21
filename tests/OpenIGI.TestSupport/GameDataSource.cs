@@ -84,12 +84,36 @@ public sealed class GameDataSource
     /// <returns>The absolute path, which is not checked for existence.</returns>
     public string Resolve(string relativePath) => Path.Combine(RequireRoot(), relativePath);
 
-    /// <summary>Enumerates every file under the installation root matching a search pattern.</summary>
+    /// <summary>The folder a replacement pack is dropped into, which is not part of the installation.</summary>
+    /// <remarks>
+    /// It lives INSIDE the game directory by design -- a pack is the game folder with the files somebody
+    /// changed and nothing else -- so a recursive scan finds it unless it is told not to. See
+    /// <c>ResourceOverrides.DirectoryName</c>, whose value this mirrors; the test support cannot reference
+    /// the engine.
+    /// </remarks>
+    private const string OverridesDirectory = "overrides";
+
+    /// <summary>Enumerates the installation's own files matching a search pattern.</summary>
     /// <param name="searchPattern">A pattern such as <c>*.res</c>.</param>
     /// <returns>The matching absolute paths, in a stable sorted order.</returns>
+    /// <remarks>
+    /// <b>The overrides folder is excluded, and that is the point of this method.</b> Every caller is
+    /// asserting something about what the game SHIPPED -- that its textures round-trip, that its archives
+    /// rebuild byte for byte -- and a replacement somebody dropped in is not that. It is not even the same
+    /// format: a pack picture is version 12, which the retail readers rightly refuse.
+    /// <para>
+    /// Left in, the whole suite failed for anyone who had installed a pack, which the port itself writes
+    /// and encourages. The failure looked like a texture bug and was a scanning one.
+    /// </para>
+    /// </remarks>
     public IReadOnlyList<string> EnumerateFiles(string searchPattern)
     {
-        string[] files = Directory.GetFiles(RequireRoot(), searchPattern, SearchOption.AllDirectories);
+        string root = RequireRoot();
+        string overrides = Path.Combine(root, OverridesDirectory) + Path.DirectorySeparatorChar;
+
+        string[] files = [.. Directory
+            .GetFiles(root, searchPattern, SearchOption.AllDirectories)
+            .Where(path => !path.StartsWith(overrides, StringComparison.OrdinalIgnoreCase))];
         Array.Sort(files, StringComparer.OrdinalIgnoreCase);
         return files;
     }
