@@ -176,6 +176,70 @@ public sealed class RetailIgi2TerrainMeshTests
         Assert.Fail("No level shipped terrain to check.");
     }
 
+    /// <summary>Every face the discard test spares is drawn, whatever material covers it or fails to.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>TerrainRender_DrawFace</c> (<c>igi2ed 0x66AAB0</c>) issues a face into each material buffer
+    /// its corners name, and then -- after that loop and outside it -- into
+    /// <c>AllocateRenderChunk(iTerrainMap, 0, 3)</c> regardless. So the set of faces the ground draws
+    /// is decided by the discard test alone, and a face no material claims is still ground.
+    /// </para>
+    /// <para>
+    /// This port used to draw the terrain map's pass by walking the material passes, which is the same
+    /// set right up until it is not: 772 faces across the corpus have all three corners painted with a
+    /// material their level deleted, and those were drawn by nobody at all -- holes with the sky
+    /// behind them. The second count below is what keeps this test honest; if it ever reads zero, the
+    /// corpus stopped exercising the rule and the first assertion is passing for free.
+    /// </para>
+    /// </remarks>
+    [RequiresTitleDataFact("igi2")]
+    public void Every_face_the_discard_spares_reaches_the_terrain_maps_own_pass()
+    {
+        long unclaimed = 0;
+        long ground = 0;
+
+        foreach (Igi2Level level in Igi2Level.All())
+        {
+            Igi2TerrainSurface surface = Surface(level);
+            foreach (Igi2TerrainTile tile in surface.Tiles)
+            {
+                Igi2TerrainMesh mesh = Igi2TerrainMesh.Build(tile, surface.Materials, surface.Discards);
+
+                HashSet<(int A, int B, int C)> claimed = [];
+                foreach (Igi2TerrainPass pass in mesh.Passes)
+                {
+                    ReadOnlySpan<int> indices = pass.Indices.Span;
+                    for (int i = 0; i < indices.Length; i += 3)
+                    {
+                        claimed.Add((indices[i], indices[i + 1], indices[i + 2]));
+                    }
+                }
+
+                ReadOnlySpan<int> all = mesh.GroundIndices.Span;
+                Assert.Equal(0, all.Length % 3);
+                ground += all.Length / 3;
+
+                HashSet<(int A, int B, int C)> drawn = [];
+                for (int i = 0; i < all.Length; i += 3)
+                {
+                    drawn.Add((all[i], all[i + 1], all[i + 2]));
+                    unclaimed += claimed.Contains((all[i], all[i + 1], all[i + 2])) ? 0 : 1;
+                }
+
+                // Nothing a material claimed is missing from the pass that draws them all.
+                foreach ((int A, int B, int C) face in claimed)
+                {
+                    Assert.Contains(face, drawn);
+                }
+            }
+        }
+
+        Assert.Equal(12_364_578L, ground);
+
+        // Measured: 772 faces across the corpus are covered by no material and drawn by this pass alone.
+        Assert.Equal(772L, unclaimed);
+    }
+
     /// <summary>The weights at a sample sum to one, which is what makes the additive blend an average.</summary>
     /// <remarks>
     /// <para>
@@ -187,8 +251,14 @@ public sealed class RetailIgi2TerrainMeshTests
     /// <para>
     /// The exceptions are the samples painted with a material the level never declared: 758 across the
     /// corpus, one in eight thousand. Their weight sums to <b>zero</b>, and under an additive blend that
-    /// is not a fallback — it is a contribution of nothing, so the frame keeps whatever lies behind the
-    /// terrain. The original does the same, so they are counted rather than repaired.
+    /// is a contribution of nothing rather than a fallback to some default ground. The original is the
+    /// same, so they are counted rather than repaired.
+    /// </para>
+    /// <para>
+    /// What that does NOT mean is that the ground is missing there, and for a while in this port it
+    /// was: see <see cref="Every_face_the_discard_spares_reaches_the_terrain_maps_own_pass"/>. The
+    /// terrain map's pass draws the face whatever its material, so what stands over such a sample is
+    /// the tile's bake, and not the sky.
     /// </para>
     /// </remarks>
     [RequiresTitleDataFact("igi2")]

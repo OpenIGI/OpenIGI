@@ -459,9 +459,10 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         List<Vertex3D> vertices = [];
         List<ushort> compact = [];
 
-        foreach (Igi2TerrainPass pass in mesh.Passes)
+        // The terrain map's own pass, which the original issues for every face it did not discard --
+        // materials or none. Walking the material passes instead dropped the faces no material covers.
         {
-            ReadOnlySpan<int> indices = pass.BaseIndices;
+            ReadOnlySpan<int> indices = mesh.GroundIndices.Span;
             for (int i = 0; i < indices.Length; i += 3)
             {
                 if (compact.Count + 3 > MaximumIndicesPerChunk)
@@ -653,9 +654,9 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         _vertices.Clear();
         _compact.Clear();
 
-        foreach (Igi2TerrainPass pass in mesh.Passes)
+        // As above: the bake covers every face the ground draws, not only those a material claimed.
         {
-            ReadOnlySpan<int> indices = pass.BaseIndices;
+            ReadOnlySpan<int> indices = mesh.GroundIndices.Span;
             for (int i = 0; i < indices.Length; i += 3)
             {
                 if (_compact.Count + 3 > MaximumIndicesPerChunk)

@@ -96,15 +96,16 @@ public sealed class RetailIgi2TerrainPresenterTests
         Assert.Equal(7_845, chunks);
 
         // Every triangle the mesh builds is uploaded -- the 12,938,075 RetailIgi2TerrainMeshTests
-        // counts, the ground with its holes already cut -- and then 12,363,806 more for the lightmap
-        // pass, which draws each DISTINCT triangle once. The gap between those two numbers is the whole
-        // of the material straddling in the corpus: 574,269 triangles, four and a half per cent, are
-        // claimed by more than one material.
+        // counts, the ground with its holes already cut -- and then 12,364,578 more for the lightmap
+        // pass, which draws each DISTINCT triangle once, whatever material covers it. The gap between
+        // those two numbers is the material straddling in the corpus less the faces no material claims
+        // at all: 574,269 triangles are claimed by more than one material, four and a half per cent,
+        // and 772 are claimed by none and drawn by the terrain map's pass alone.
         //
         // An earlier attempt kept one chunk per pass and dropped the 32 that overran a 16-bit index,
         // which lost whole materials from whole levels and did it quietly. Chunking at the original's
         // own 10,000-index budget makes the question go away rather than trading it off.
-        Assert.Equal(25_301_881L, triangles);
+        Assert.Equal(25_302_653L, triangles);
     }
 
     /// <summary>A tile is drawn about its own centre, so a distant level keeps its precision.</summary>

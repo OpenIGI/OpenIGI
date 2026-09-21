@@ -102,6 +102,7 @@ public sealed class Igi2TerrainMesh
         IReadOnlyList<Vector3f> normals,
         IReadOnlyList<Bgra32> lights,
         IReadOnlyList<Igi2TerrainPass> passes,
+        ReadOnlyMemory<int> groundIndices,
         int width,
         int height)
     {
@@ -109,9 +110,36 @@ public sealed class Igi2TerrainMesh
         Normals = normals;
         Lights = lights;
         Passes = passes;
+        GroundIndices = groundIndices;
         Width = width;
         Height = height;
     }
+
+    /// <summary>Gets every triangle the ground draws, whatever material -- if any -- covers it.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The terrain map's own pass, and the original issues it unconditionally.</b>
+    /// <c>TerrainRender_DrawFace</c> (<c>igi2ed 0x66AAB0</c>) walks the tile's material buffers and
+    /// issues the face into each one whose bit is set in <c>mask[v0] | mask[v1] | mask[v2]</c> -- and
+    /// then, AFTER that loop and outside it, issues the same face once more into
+    /// <c>AllocateRenderChunk(iTerrainMap, 0, 3)</c>. Nothing about a material guards that second
+    /// issue. The only thing that can stop a face going anywhere is the discard AND of its three
+    /// corners, which is tested before either.
+    /// </para>
+    /// <para>
+    /// Which matters for the faces no material covers. A sample painted with a material its level
+    /// later deleted is in no buffer, so a face whose three corners are all such samples takes no
+    /// material pass -- and this port, which drew its pass 3 by walking the material passes, therefore
+    /// drew it NOWHERE. That is a hole in the ground with the sky behind it, and there are 758 samples
+    /// across the corpus that can open one.
+    /// </para>
+    /// <para>
+    /// So the pass is collected as the original collects it, and the ground's bake is drawn from here
+    /// rather than from the material passes' base lists. The two agree everywhere a material exists,
+    /// which is everywhere but those 758.
+    /// </para>
+    /// </remarks>
+    public ReadOnlyMemory<int> GroundIndices { get; }
 
     /// <summary>Gets each sample's world position, row-major.</summary>
     public IReadOnlyList<Vector3d> Positions { get; }
@@ -138,10 +166,11 @@ public sealed class Igi2TerrainMesh
 
     /// <summary>Gets how many samples no pass covers, and which therefore draw as nothing.</summary>
     /// <remarks>
-    /// A sample painted with a material the level never declared. Under an additive blend that is not a
-    /// fallback to some default ground — it is a contribution of zero, so the frame keeps whatever was
-    /// behind the terrain there. The original behaves the same way, which is why these are carried as a
-    /// count rather than repaired.
+    /// A sample painted with a material the level never declared. It takes no material pass — under an
+    /// additive blend that is a contribution of zero rather than a fallback to some default ground —
+    /// and the original is the same. What it does NOT mean is that the ground is missing there: the
+    /// terrain map's pass draws the face whatever its material, so what stands there is the tile's bake
+    /// over it. See <see cref="GroundIndices"/>, which is where that stopped being true and was fixed.
     /// </remarks>
     public int UncoveredSampleCount { get; private init; }
 
@@ -152,6 +181,7 @@ public sealed class Igi2TerrainMesh
     /// <param name="passes">The passes, one per material the geometry paints.</param>
     /// <param name="width">The tile's sample width, carried through for reference.</param>
     /// <param name="height">The tile's sample height.</param>
+    /// <param name="groundIndices">Every triangle drawn, for the terrain map's own pass.</param>
     /// <param name="uncovered">How many vertices name a material the level never declared.</param>
     /// <returns>The mesh.</returns>
     /// <remarks>
@@ -165,10 +195,14 @@ public sealed class Igi2TerrainMesh
         IReadOnlyList<Vector3f> normals,
         IReadOnlyList<Bgra32> lights,
         IReadOnlyList<Igi2TerrainPass> passes,
+        ReadOnlyMemory<int> groundIndices,
         int width,
         int height,
         int uncovered) =>
-        new(positions, normals, lights, passes, width, height) { UncoveredSampleCount = uncovered };
+        new(positions, normals, lights, passes, groundIndices, width, height)
+        {
+            UncoveredSampleCount = uncovered,
+        };
 
     /// <summary>Builds the geometry for one tile.</summary>
     /// <param name="tile">The tile.</param>
@@ -274,13 +308,34 @@ public sealed class Igi2TerrainMesh
                 weights));
         }
 
+        // And the terrain map's own pass, which no material guards. See GroundIndices.
+        List<int> ground = [];
+        for (int y = 0; y + 1 < height; y++)
+        {
+            for (int x = 0; x + 1 < width; x++)
+            {
+                if (tile.IsSuperseded(x, y, 1))
+                {
+                    continue;
+                }
+
+                int a = (y * width) + x;
+                int b = a + 1;
+                int c = a + width;
+                int d = c + 1;
+
+                EmitGround(ground, discarded, a, c, b);
+                EmitGround(ground, discarded, b, c, d);
+            }
+        }
+
         int uncovered = 0;
         foreach (byte id in material)
         {
             uncovered += materials.ContainsKey(id) ? 0 : 1;
         }
 
-        return new Igi2TerrainMesh(positions, normals, lights, passes, width, height)
+        return new Igi2TerrainMesh(positions, normals, lights, passes, ground.ToArray(), width, height)
         {
             UncoveredSampleCount = uncovered,
         };
@@ -307,6 +362,19 @@ public sealed class Igi2TerrainMesh
     /// <inheritdoc/>
     public override string ToString() =>
         $"I.G.I. 2 terrain mesh {Width}x{Height}, {Passes.Count} pass(es), {TriangleCount} triangles";
+
+    /// <summary>Issues a face into the terrain map's pass, which only the discard test can refuse.</summary>
+    private static void EmitGround(List<int> ground, bool[] discarded, int a, int b, int c)
+    {
+        if (discarded[a] && discarded[b] && discarded[c])
+        {
+            return;
+        }
+
+        ground.Add(a);
+        ground.Add(b);
+        ground.Add(c);
+    }
 
     private static void Emit(
         List<int> baseIndices,

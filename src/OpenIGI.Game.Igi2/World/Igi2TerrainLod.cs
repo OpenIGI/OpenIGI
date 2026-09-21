@@ -657,6 +657,9 @@ public sealed class Igi2TerrainLod
         private readonly List<List<int>> _indices = [];
         private readonly List<List<int>> _baseIndices = [];
 
+        // Every triangle drawn, for the terrain map's pass; see Igi2TerrainMesh.GroundIndices.
+        private readonly List<int> _ground = [];
+
         private int _culled;
         private int _visited;
         private int _drawn;
@@ -997,6 +1000,13 @@ public sealed class Igi2TerrainLod
                 return;
             }
 
+            // Past that test the face is drawn, whatever material covers it or fails to: the original
+            // issues it into the terrain map's own pass after the material loop and outside it. See
+            // Igi2TerrainMesh.GroundIndices for the reading of 0x66AAB0 and what it costs to skip.
+            _ground.Add(a);
+            _ground.Add(b);
+            _ground.Add(c);
+
             int slots = _owner._slotMaterial.Count;
             bool based = false;
             for (int slot = 0; slot < slots; slot++)
@@ -1061,6 +1071,7 @@ public sealed class Igi2TerrainLod
                 _normals,
                 _lights,
                 passes,
+                _ground.ToArray(),
                 _owner._tile.Width,
                 _owner._tile.Height,
                 _uncovered);
