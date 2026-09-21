@@ -1,4 +1,5 @@
 using OpenIGI.Engine.Flow;
+using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Time;
 using OpenIGI.Game.World;
 
@@ -39,6 +40,15 @@ namespace OpenIGI.Desktop;
 /// the registry everything resolves through, and reading them out of the session's own registry on a
 /// worker would be exactly the shared-state race the private context exists to avoid.
 /// </param>
+/// <param name="Overrides">
+/// The installation's overrides folder — the store itself, which reports an empty index when there is no
+/// such folder, rather than a null standing for one. A preview builds
+/// the level into its own registry, and that registry becomes the game's own the moment Play is pressed
+/// — so a replacement pack that is not attached HERE is a folder that replaces nothing, however
+/// correctly it was built. The store is shared rather than copied: it is the session's one index of what
+/// is on disk, and a rescan from the console has to reach the registry the played mission resolves
+/// through.
+/// </param>
 /// <param name="Lamps">
 /// The lamps a person named by hand, read once at start-up. A backdrop proposes its level's fixtures on
 /// the worker so the menu is lit the way the played mission will be, and the manifest is what the
@@ -64,6 +74,7 @@ public sealed record MissionPreviewContext(
     GameMissionState MissionState,
     OpenIGI.Rendering.MaterialDetailPack? DetailMaps,
     IReadOnlyDictionary<string, byte[]> SessionArchives,
+    ResourceOverrides Overrides,
     LampManifest Lamps,
     DistanceFieldCache DistanceFields,
     bool ComputeSupported);

@@ -146,6 +146,7 @@ public sealed class ResourceRegistry
                 && loose.TryRead(OverridePath.For(candidate), out ReadOnlyMemory<byte> replaced))
             {
                 Add(candidate, ResourceKind.Body, replaced, parent: null, replaceExisting: true);
+                _overridden.Add(ResourcePath.Normalize(candidate));
                 data = replaced;
                 return true;
             }
@@ -354,6 +355,25 @@ public sealed class ResourceRegistry
         {
             if (entry.Parent is null)
             {
+                // A loose file -- a terrain atlas, a sky layer, a menu script. It was never exploded from
+                // an archive, so there are no shipped bytes remembered to put back, and the swap cannot
+                // be done in place the way an archived entry's is.
+                //
+                // Forgetting it IS the swap, in both directions. The next load resolves the name from
+                // scratch and takes whichever of the two the folder's state now calls for -- exactly the
+                // path the first load took -- so one rule covers putting the replacement in and taking
+                // it out again, and neither direction needs a second copy of the bytes kept against the
+                // day somebody presses the key.
+                //
+                // Asked of the store rather than of Bypassed: a bypassed store still knows what it holds,
+                // which is what makes the "off" direction able to find the entries it has to drop.
+                if (Overrides is { } store && store.Has(OverridePath.For(entry.Name)))
+                {
+                    _entries.Remove(entry.Name);
+                    _overridden.Remove(entry.Name);
+                    changed++;
+                }
+
                 continue;
             }
 
