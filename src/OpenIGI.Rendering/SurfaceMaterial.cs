@@ -53,12 +53,38 @@ namespace OpenIGI.Rendering;
 /// wrong pixels. Per draw and per frame: set it for the one frame the discontinuity happens, then
 /// stop, or the surface never converges.
 /// </param>
+/// <param name="Glass">
+/// Whether the surface is seen THROUGH rather than merely cut out, and so cannot be drawn into the
+/// G-buffer at all.
+/// <para>
+/// Deferred shading has one surface per pixel and no way to blend, so the geometry pass resolves every
+/// partial alpha into a decision: keep the texel or discard it. For foliage and wire that is the right
+/// answer, because a cut-out really is a hole. For a pane it is not — a window at alpha 0.28 is flat,
+/// so it has no alpha gradient for the dithered coverage path to work from and takes the hard
+/// <c>alpha &lt; 0.5</c> cut instead, which throws away every texel of it. The glazing is not
+/// transparent in that picture; it is <em>absent</em>, and with it go the depth, the normal and the
+/// roughness that a reflection would have needed.
+/// </para>
+/// <para>
+/// So a surface marked here is held out of the geometry pass and drawn in the forward translucency
+/// subpass instead, where it keeps its own alpha and is blended over the lit scene. That is the only
+/// place in the frame where a pane can both let the room behind it through and carry a reflection of
+/// its own.
+/// </para>
+/// <para>
+/// It does NOT follow from a low roughness, and the two must not be conflated. Polished marble and a
+/// chrome fitting are as smooth as glazing and entirely opaque; what makes glass glass is being seen
+/// through. Nor does it follow from <see cref="CastsOcclusion"/> being false, which foliage and wire
+/// also set.
+/// </para>
+/// </param>
 public readonly record struct SurfaceMaterial(
     float Roughness = 0.6f,
     float Metallic = 0.0f,
     float Emissive = 0.0f,
     bool CastsOcclusion = true,
-    bool NoHistory = false)
+    bool NoHistory = false,
+    bool Glass = false)
 {
     /// <summary>The emissive channel's value for a surface excluded from ambient occlusion.</summary>
     /// <remarks>

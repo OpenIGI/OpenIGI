@@ -63,6 +63,9 @@ internal sealed class VulkanWorldScene : IDisposable
     // player is moving fast enough to trigger it, which is where the freeze came from.
     private readonly HashSet<uint> _forgotten = [];
 
+    // Which meshes are skinned, so the count can be reported. See SkinnedGeometryCount.
+    private readonly HashSet<uint> _skinned = [];
+
     // Meshes that turned out to move. A gun in a walking soldier's hands, a door on its hinge, the
     // player's own view model: rigid geometry -- so a structure built over it is sound -- drawn at a
     // transform that is different every frame. Remembering where such a thing WAS is what this set
@@ -179,6 +182,26 @@ internal sealed class VulkanWorldScene : IDisposable
     /// <summary>Gets how many meshes the scene holds structures for.</summary>
     public int GeometryCount => _geometries.Count;
 
+    /// <summary>Gets how many of the traced geometries are skinned, and so refitted every frame.</summary>
+    /// <remarks>
+    /// Reported rather than merely counted. Skinned geometry was excluded from the traced world for most
+    /// of this renderer's life, and the symptom of it being absent is not an error but a silence: rays
+    /// pass through every soldier and through the player, so a reflection shows an empty room and a
+    /// traced shadow falls where a body is standing. Nothing downstream can tell that apart from "the
+    /// reflection is working and there is simply nobody there", which is exactly the confusion this
+    /// number ends.
+    /// </remarks>
+    public int SkinnedGeometryCount => _skinned.Count;
+
+    /// <summary>How many CASTER geometries the world holds -- which in practice is the terrain.</summary>
+    /// <remarks>
+    /// Separate from the rest because the ground enters the traced world by a different door
+    /// (<see cref="ObserveCaster"/>) and can be absent while everything else is present. When it is, a
+    /// reflected ray pointing at the floor hits nothing at all and the surface reflects sky, which looks
+    /// like a reflection that is too bright rather than like missing ground.
+    /// </remarks>
+    public int CasterGeometryCount => _casterVersions.Count;
+
     /// <summary>Gets the device address of the material records a ray shader looks a hit up in.</summary>
     public ulong RecordAddress => _records.DeviceAddress;
 
@@ -187,12 +210,22 @@ internal sealed class VulkanWorldScene : IDisposable
     /// <param name="mesh">The mesh itself.</param>
     /// <param name="worldTransform">Where it is being drawn, in absolute world space.</param>
     /// <param name="surface">Which run of the mesh's indices this draw covered, and what it is made of.</param>
+    /// <param name="mask">
+    /// Which rays may find it. The world takes <see cref="VulkanRayTracingInstance.VisibleToAll"/>; the
+    /// first-person rig takes <see cref="VulkanRayTracingInstance.FirstPersonOnly"/>, which only a
+    /// reflection asks for.
+    /// </param>
     /// <remarks>
     /// Called for every geometry-pass draw, so it must be cheap when both the placement and the range are
     /// ones already known — which after the first seconds of a level is every one of them. A hash lookup
     /// and a walk of the handful of ranges a mesh has is the whole cost.
     /// </remarks>
-    public void Observe(uint meshId, VulkanMesh mesh, in Matrix4f worldTransform, in RayTracedSurface surface)
+    public void Observe(
+        uint meshId,
+        VulkanMesh mesh,
+        in Matrix4f worldTransform,
+        in RayTracedSurface surface,
+        byte mask = VulkanRayTracingInstance.VisibleToAll)
     {
         ArgumentNullException.ThrowIfNull(mesh);
 
@@ -202,12 +235,21 @@ internal sealed class VulkanWorldScene : IDisposable
             return;
         }
 
-        // Skinned geometry is rewritten every frame as the body moves, so the triangles a structure was
-        // built over are not the ones that are there now.
-        if (mesh.Animated)
-        {
-            return;
-        }
+        // Skinned geometry -- soldiers, and the player's own body -- is REFITTED rather than excluded.
+        //
+        // It used to return here, because the triangles a structure was built over are not the ones that
+        // are there a frame later. The consequence was that no character was in the traced world at all:
+        // a window or a puddle could reflect the room and the weapon and never a person, and the sun's
+        // traced shadow passed straight through everyone in the level. Nothing downstream could fix that,
+        // because a ray has to be able to HIT a body before anything can ask what colour it is.
+        //
+        // A refit is what this case is for. The topology never changes -- the same vertices, the same
+        // indices, the same counts, moved by a skeleton -- which is exactly the shape of problem an
+        // acceleration structure update is defined to handle, and it costs a fraction of a rebuild. The
+        // structure is created asking for updates, which also takes it out of compaction (a compacted
+        // structure cannot be updated, and AllowCompaction is false whenever AllowUpdate is true), so the
+        // three-frame compaction handshake never names one of these and cannot free it underneath a refit.
+        bool skinned = mesh.Animated;
 
         // Streamed geometry -- the terrain's batch pages, the only thing that uses mesh storage -- is not
         // traced as drawn. A page holds every chunk ever streamed into it at its level of detail, the
@@ -233,7 +275,7 @@ internal sealed class VulkanWorldScene : IDisposable
             && !_scene.IsCompacting(built.Structure)
             && _newThisFrame < MaxNewGeometriesPerFrame)
         {
-            _geometries[meshId] = BuildGeometry(mesh, surfaces);
+            _geometries[meshId] = BuildGeometry(mesh, surfaces, allowUpdate: skinned);
             _scene.RetireStructure(built.Structure);
             _stale.Remove(meshId);
             _newThisFrame++;
@@ -242,6 +284,20 @@ internal sealed class VulkanWorldScene : IDisposable
         // A mover is placed from the frame drawing it and nowhere else: no dedupe, because the whole
         // point is that this transform is not the last one, and no accumulation, because the tail of the
         // list it goes into is emptied at the start of every frame.
+        if (skinned)
+        {
+            _skinned.Add(meshId);
+        }
+
+        if (skinned && _movers.Add(meshId))
+        {
+            // A mover from the first frame rather than after sixty-four sightings. The promotion the
+            // counter below performs is a guess about geometry that keeps turning up somewhere new; a
+            // skinned mesh is known to move, and letting it accumulate a static placement per frame in
+            // the meantime would fill the instance list with a soldier's whole walk.
+            _instancesChanged = true;
+        }
+
         bool moving = _movers.Contains(meshId);
         Placement placement = default;
         if (!moving)
@@ -267,10 +323,22 @@ internal sealed class VulkanWorldScene : IDisposable
                 return;
             }
 
-            geometry = BuildGeometry(mesh, surfaces);
+            geometry = BuildGeometry(mesh, surfaces, allowUpdate: skinned);
             _geometries[meshId] = geometry;
             _stale.Remove(meshId);
             _newThisFrame++;
+        }
+        else if (skinned)
+        {
+            // This frame's pose, and a refit to go with it.
+            //
+            // The address matters as much as the request: the mesh keeps a RING of pose buffers so that a
+            // frame still in flight never reads the one being written, so the buffer the structure was
+            // built against is not the one holding the pose now. Refitting without re-pointing fits the
+            // structure to a pose two frames old, which reads as a body whose reflection lags its own
+            // movement.
+            geometry.Structure.RepointVertices(mesh.VertexBufferAddress);
+            _scene.Invalidate(geometry.Structure);
         }
 
         if (!moving)
@@ -300,7 +368,7 @@ internal sealed class VulkanWorldScene : IDisposable
             // Not the mesh: the first of this structure's material records. A hit adds the geometry index
             // traversal reports to it and lands on the record for the run it actually struck.
             customIndex: (uint)geometry.RecordBase & 0x00FFFFFFu,
-            VulkanRayTracingInstance.VisibleToAll,
+            mask,
             hitGroupOffset: 0,
 
             // The port's meshes do not wind consistently — the renderer draws them with culling off for
@@ -680,6 +748,10 @@ internal sealed class VulkanWorldScene : IDisposable
     /// <summary>Builds a structure over a mesh's material ranges, and the records a hit reads.</summary>
     /// <param name="mesh">The mesh to build over.</param>
     /// <param name="surfaces">Its ranges, in the order they become geometries in.</param>
+    /// <param name="allowUpdate">
+    /// Whether the structure is to be refittable, which is what skinned geometry needs and what also
+    /// keeps it out of compaction — a compacted structure cannot be updated.
+    /// </param>
     /// <returns>The structure, the run of records it was given, and the extent it covered.</returns>
     /// <remarks>
     /// The records are appended rather than written over the run the previous structure used. A frame in
@@ -687,7 +759,7 @@ internal sealed class VulkanWorldScene : IDisposable
     /// touching them again is a few bytes per rebuild against having to fence a host write behind the
     /// frames that might read it.
     /// </remarks>
-    private Geometry BuildGeometry(VulkanMesh mesh, List<RayTracedSurface> surfaces)
+    private Geometry BuildGeometry(VulkanMesh mesh, List<RayTracedSurface> surfaces, bool allowUpdate = false)
     {
         VulkanTriangleGeometry[] triangles = new VulkanTriangleGeometry[surfaces.Count];
         for (int i = 0; i < surfaces.Count; i++)
@@ -704,7 +776,7 @@ internal sealed class VulkanWorldScene : IDisposable
         }
 
         int recordBase = WriteRecords(mesh, surfaces);
-        return new Geometry(_scene.AddGeometry(triangles), mesh.DrawableIndexCount, recordBase);
+        return new Geometry(_scene.AddGeometry(triangles, allowUpdate), mesh.DrawableIndexCount, recordBase);
     }
 
     /// <summary>Appends one material record per range and returns where the run starts.</summary>
@@ -744,8 +816,8 @@ internal sealed class VulkanWorldScene : IDisposable
             record[3] = (uint)(indexAddress >> 32);
             record[4] = (uint)s.IndexOffset;
             record[5] = unchecked((uint)s.MaskLayer);
-            record[6] = 0;
-            record[7] = 0;
+            record[6] = unchecked((uint)s.AlbedoLayer);
+            record[7] = s.Dynamic ? 1u : 0u;
 
             _records.WriteAt((ulong)((start + i) * RecordSize), (ReadOnlySpan<uint>)record);
         }

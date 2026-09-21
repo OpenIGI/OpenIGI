@@ -1,3 +1,4 @@
+﻿using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
@@ -771,6 +772,32 @@ public sealed partial class VulkanGraphicsDevice
         }
 
         return resource;
+    }
+
+    /// <summary>Finds a storage buffer if the device still holds it, without throwing when it does not.</summary>
+    /// <param name="buffer">The handle to look up.</param>
+    /// <param name="resource">The buffer, or null.</param>
+    /// <returns>Whether it was found.</returns>
+    /// <remarks>
+    /// For the callers that are handed a handle every frame and have to cope with the frames on either
+    /// side of a mission change, where a handle names something already released. <see cref="ResolveStorage"/>
+    /// throws instead, which is right for a caller that was promised the resource.
+    /// </remarks>
+    private bool TryFindStorageBuffer(StorageBufferHandle buffer, [NotNullWhen(true)] out VulkanBuffer? resource)
+    {
+        resource = null;
+        return buffer.IsValid && _storageBuffers.TryGetValue(buffer.Id, out resource);
+    }
+
+    /// <summary>Finds a storage image if the device still holds it, without throwing when it does not.</summary>
+    /// <param name="texture">The handle to look up.</param>
+    /// <param name="resource">The image, or null.</param>
+    /// <returns>Whether it was found.</returns>
+    /// <remarks>The storage-image half of <see cref="TryFindStorageBuffer"/>, for the same callers.</remarks>
+    private bool TryFindStorageImage(TextureHandle texture, [NotNullWhen(true)] out Compute.VulkanStorageImage? resource)
+    {
+        resource = null;
+        return texture.IsValid && _storageImages.TryGetValue(texture.Id, out resource);
     }
 
     private VulkanBuffer ResolveStorage(StorageBufferHandle buffer)

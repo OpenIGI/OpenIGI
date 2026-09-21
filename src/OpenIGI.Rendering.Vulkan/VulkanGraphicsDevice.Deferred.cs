@@ -1,4 +1,6 @@
-﻿using OpenIGI.Core.Graphics;
+﻿using System.Diagnostics.CodeAnalysis;
+using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Deferred;
@@ -26,6 +28,18 @@ public sealed partial class VulkanGraphicsDevice
     private Vector3f _cameraPosition;
     private Matrix3f _viewToWorld = Matrix3f.Identity;
     private DepthUnprojection _unprojection = new(1f, 1f, 0.1f, 1000f);
+
+    // The first-person lens's own x and y scales, captured from the projection the rig is actually drawn
+    // with, and zero on a frame that drew no rig.
+    //
+    // The rig does NOT share the frame's projection: it has a retail foreground lens with a fixed
+    // horizontal half-tangent and a five centimetre near plane, so it is rasterised at screen positions
+    // the world projection disagrees with. A reflection looking for the weapon through the world lens
+    // reads pixels that are not the weapon, which is what made a reflected gun a smeared patch. Captured
+    // rather than plumbed through a new device call, because the projection in force while the rig draws
+    // IS that lens.
+    private float _viewModelLensX;
+    private float _viewModelLensY;
 
     // The camera in full double precision, and the frame-to-frame delta formed from it. This world's
     // coordinates run to tens of thousands of units, and every temporal pass reprojects the static world
@@ -95,6 +109,40 @@ public sealed partial class VulkanGraphicsDevice
     private int _fogVolumeCount;
     private bool _fogActive;
     private ReflectionSettings _reflectionSettings = ReflectionSettings.Off;
+
+    // The level's lit cards, handed over every frame. What a reflected ray that leaves the screen is
+    // resolved against; empty while no mission is loaded, which is what makes the traced half stand down.
+    private SurfaceCacheBinding _surfaceCache = SurfaceCacheBinding.None;
+
+    // The level's distance field, for the reflection passes on an adapter that cannot trace. Handed over
+    // every frame because its boxes are camera-relative; resolved only on a frame that marches.
+    private DistanceFieldBinding _distanceField = DistanceFieldBinding.None;
+
+    // The last thing the software glass report said, so it is logged on change rather than every frame.
+    private string _glassMarchState = string.Empty;
+
+    // One texel of everything the marched glazing declares, for the frames that have none of it. Built on
+    // first use rather than at start-up: a machine that always has a field and a cache never pays for it.
+    private TextureHandle _glassStandInField;
+    private TextureHandle _glassStandInCard;
+    private StorageBufferHandle _glassStandInRecords;
+
+    // How many glazing draws the forward subpass took, and the last thing said about them. Counted
+    // rather than inferred because "no reflection on the glass" has two completely different causes --
+    // no pane reached the pass at all, or every pane did and traced nothing -- and nothing in the picture
+    // tells the two apart. See ReportGlass.
+    private int _glassDraws;
+
+    // Whether this frame drew a front layer, so the translucency pass does not redo its bookkeeping.
+    private bool _glassLayerRan;
+    private string _glassState = string.Empty;
+
+    // The last thing said about what the traced world holds. See ReportTracedWorld.
+    private string _tracedWorldState = string.Empty;
+
+    // The last thing said about whether reflections are being traced, so the next frame only speaks when
+    // the answer has changed. See ReportReflectionTrace.
+    private string _reflectionTraceState = string.Empty;
 
     // The level's roofs, seen from above, and how to read them. Set once when a mission loads and held
     // until the next one replaces it: where the rain reaches is a property of the level, not the frame.
@@ -236,10 +284,48 @@ public sealed partial class VulkanGraphicsDevice
             // that fills the G-buffer ends.
             BeginStageTiming(RenderStage.Geometry);
         }
+        else if (pass == ScenePass.GlassLayer)
+        {
+            // The geometry pass has to be closed and its depth readable before this can start: the front
+            // layer tests every pane against what the opaque world drew, and it does that in the shader
+            // because its own depth buffer is private. Closed exactly the way EndPass closes it.
+            CloseGeometryForCompute();
+            if (_deferredStage == DeferredStage.Geometry)
+            {
+                _instance.Vk.CmdEndRenderPass(_frameCommandBuffer);
+                _deferredPassActive = false;
+                RecordBetweenPasses();
+            }
+
+            // Set 1 points at the scene depth for the whole of this pass and the translucency one after
+            // it. Written here because a descriptor write is a host call and must not land while a set is
+            // bound, and no glazing has been drawn yet.
+            ReportGlass();
+            ReportTracedWorld();
+            _glassDraws = 0;
+            UpdateGlassResources();
+
+            BeginFrontLayerPass();
+            _deferredStage = DeferredStage.GlassLayer;
+        }
         else if (pass == ScenePass.Forward)
         {
             // The shading pass is already open and its lighting subpass already drawn; translucency is its
             // second subpass.
+            // Only where no front-layer pass ran -- it does this itself, and doing it twice would reset
+            // the pane count after the panes had already been counted.
+            if (_glassLayerRan)
+            {
+                _glassLayerRan = false;
+            }
+            else
+            {
+                ReportGlass();
+                ReportTracedWorld();
+                _glassDraws = 0;
+                UpdateGlassResources();
+            }
+
             _instance.Vk.CmdNextSubpass(_frameCommandBuffer, SubpassContents.Inline);
             _deferredStage = DeferredStage.Forward;
 
@@ -261,6 +347,17 @@ public sealed partial class VulkanGraphicsDevice
         if (!_capturing)
         {
             throw new GraphicsDeviceException("No pass is open.");
+        }
+
+        // The glazing front layer is a render pass of its own, between the geometry pass and the shading
+        // one. Closing it drops the stage back to the gap, and everything below then runs exactly as it
+        // does when no panes were drawn at all.
+        if (_deferredStage == DeferredStage.GlassLayer)
+        {
+            _instance.Vk.CmdEndRenderPass(_frameCommandBuffer);
+            _deferredPassActive = false;
+            _deferredStage = DeferredStage.Gap;
+            _glassLayerRan = true;
         }
 
         // Ending the geometry pass is what closes it, runs everything that needs a finished G-buffer and
@@ -400,12 +497,19 @@ public sealed partial class VulkanGraphicsDevice
             // everything downstream reads it with the reflections already in.
             DispatchReflections();
 
+            // The glazing, after them. It reads the lit scene the reflections have just composited into,
+            // which is right: a window reflecting a wet road should show the road with its reflections in
+            // it, exactly as the eye would.
+            DispatchGlassReflections();
+
             DispatchTemporalResolve();
 
             // Everything temporal measures against this, so it moves on exactly once per captured frame.
             _previousViewToWorld = _viewToWorld;
             _previousCameraPosition = _cameraPosition;
             _previousCameraPositionPrecise = _cameraPositionPrecise;
+            _viewModelLensX = 0f;
+            _viewModelLensY = 0f;
             _previousUnprojection = _unprojection;
             _previousJitterX = _taaSettings.JitterX;
             _previousJitterY = _taaSettings.JitterY * VerticalJitterSign;
@@ -476,6 +580,17 @@ public sealed partial class VulkanGraphicsDevice
     // buildings and figures a wet street shows standing over it, short enough that the fixed number of
     // steps stays dense enough to land on them.
     private const float ReflectionReachMetres = 120f;
+
+    // How far, in metres, a TRACED reflected ray reaches before it counts as having left for the sky.
+    //
+    // Much further than the march, and for a reason that is not "the trace is cheaper per metre" -- it is
+    // that the two fail differently. A march that runs out of steps has simply stopped looking, so its
+    // reach is a budget; a ray that reaches the end of this has genuinely found nothing, and what it says
+    // about the world past this point is that there is sky there. So the number is set by how far the
+    // surface cache can actually answer rather than by cost: past the cards there is nothing to resolve a
+    // hit against, and a hit beyond them would read the lookup's empty answer and fall through to the sky
+    // anyway. A kilometre covers every level's built area with room to spare.
+    private const float TracedReflectionReachMetres = 1000f;
 
     private unsafe void DispatchTemporalResolve()
     {
@@ -790,17 +905,60 @@ public sealed partial class VulkanGraphicsDevice
     /// <summary>Reflects the scene into the wet ground and the glossy surfaces, and adds it to the lit
     /// colour before the temporal pass reads it.</summary>
     /// <remarks>
-    /// Runs on every adapter -- the march is screen space, no ray query in it -- and only when the
-    /// reflection setting asks for marching steps. The two dispatches are separated by the barriers a
-    /// read-then-write of the lit image needs: the march samples the lit scene, the composite writes it,
-    /// and between them the image moves from the read layout to the general layout a storage write wants
-    /// and back again for the temporal resolve.
+    /// <para>
+    /// Two ways to answer one question, and the pass uses exactly one of them per frame: a ray against the
+    /// world where there is a world to trace, and a march through the depth buffer everywhere else. The
+    /// march runs on every adapter and needs no ray query; the trace needs one, plus the switches and a
+    /// lit surface cache. See the shader for why the two are never mixed.
+    /// </para>
+    /// <para>
+    /// The two dispatches are separated by the barriers a read-then-write of the lit image needs: the
+    /// reflection samples the lit scene, the composite writes it, and between them the image moves from
+    /// the read layout to the general layout a storage write wants and back again for the temporal
+    /// resolve.
+    /// </para>
     /// </remarks>
     private unsafe void DispatchReflections()
     {
         // Not while a debug view is up: it composites into the lit image, and a view that isolates one
         // term of the lighting must not have the reflections of the whole scene added back over it.
-        if (_sceneTarget is null || !_reflectionSettings.Marches || _debugView is not DebugView.None)
+        //
+        // The reflection view itself is the exception, and the reason it exists. What a surface reflects
+        // is a small addition to an already lit picture -- a term nobody can see on its own, and therefore
+        // one nobody can tell is missing. Under this view the pass runs as usual and the composite REPLACES
+        // the lit scene instead of adding to it, so the reflection is the picture. It is the only way to
+        // answer "is the traced half contributing anything" by looking rather than by arithmetic.
+        bool isolate = _debugView is DebugView.Ssr;
+
+        if (_sceneTarget is null || (_debugView is not DebugView.None && !isolate))
+        {
+            return;
+        }
+
+        // What this frame has to trace against, asked once. It decides whether the pass runs at all, so it
+        // cannot wait until the parameters are packed.
+        //
+        // And what it has to MARCH against where it has nothing to trace -- which is the ordinary case,
+        // not merely the no-hardware one: every gate in TracedReflectionResources is a setting or a state
+        // that moves during a session. Behind the screen-space march there is now a second answer for the
+        // rays the screen cannot follow, instead of nothing at all.
+        Deferred.TracedResources traced = TracedReflectionResources();
+
+        if (!traced.Traces)
+        {
+            traced = SoftwareReflectionResources();
+        }
+
+        // The pass is worth running when EITHER answer is available. Reflections being wanted at all is
+        // r_ssr_intensity and r_ssr_max_roughness -- a surface reflecting nothing, or no surface smooth
+        // enough to reflect, and there is nothing to do either way.
+        //
+        // r_ssr is then the march's OWN step count, and no longer speaks for the pass as a whole: it used
+        // to, because the march was the only answer there was. Setting it to zero now means "do not march"
+        // rather than "no reflections", so a player who traces can turn the screen-space path off outright
+        // and keep their reflections -- which is the setting the name has always implied and never meant.
+        if (!_reflectionSettings.Enabled
+            || (!_reflectionSettings.Marches && !traced.Traces && !traced.Marches))
         {
             return;
         }
@@ -829,6 +987,7 @@ public sealed partial class VulkanGraphicsDevice
             target.NormalView,
             target.MaterialView,
             _deferred.Sky.SkyViewLut,
+            target.BaseColourView,
             target.ReflectionView,
             width,
             height,
@@ -843,7 +1002,13 @@ public sealed partial class VulkanGraphicsDevice
             _cameraPosition.Z,
             Sky.SkyAtmosphere.ViewHeightKm(2f),
             (int)(_frameCounter % 64UL),
-            ReflectionReachMetres);
+            ReflectionReachMetres,
+            traced,
+            RenderCVars.TracedReflectionClamp.Value,
+            TracedReflectionReachMetres,
+            RenderCVars.TracedReflectionMaxRoughness.Value,
+            _viewModelLensX,
+            _viewModelLensY);
 
         // The march's write, before the composite reads it; and the march's sampled read of the lit
         // scene, before the composite writes it -- for which the lit image moves to the general layout.
@@ -861,7 +1026,8 @@ public sealed partial class VulkanGraphicsDevice
             target.ReflectionView,
             target.LitView,
             width,
-            height);
+            height,
+            isolate);
 
         // Back to the read layout the temporal pass samples the lit scene in.
         LitLayoutBarrier(
@@ -1211,6 +1377,144 @@ public sealed partial class VulkanGraphicsDevice
             PipelineStageFlags.LateFragmentTestsBit | PipelineStageFlags.EarlyFragmentTestsBit,
             PipelineStageFlags.ComputeShaderBit,
             0, 0, null, 0, null, 1, &barrier);
+    }
+    /// <summary>Traces what the level's glazing reflects and adds it into the lit scene.</summary>
+    /// <remarks>
+    /// <para>
+    /// Beside the screen-space reflections and for the same reason: the render pass has closed, so the
+    /// lit image is a readable texture holding the finished frame — the room, the soldiers, and the
+    /// first-person rig the forward subpass drew a moment ago. That is the only state of the frame in
+    /// which a window can reflect anything that moves.
+    /// </para>
+    /// <para>
+    /// Runs whether or not the screen-space reflections did. They are a different question about
+    /// different surfaces, and a player who has turned the march off has not asked for windows to stop
+    /// being windows.
+    /// </para>
+    /// </remarks>
+    private unsafe void DispatchGlassReflections()
+    {
+        if (_sceneTarget is not { } target || _glassDraws == 0)
+        {
+            return;
+        }
+
+        // Not while a debug view is up, exactly as the screen-space reflections stand down: a view that
+        // isolates one term of the lighting must not have a window's reflection added back over it.
+        //
+        // The glazing view is the exception and the reason it exists. Under it the pass runs as usual, the
+        // trace writes what it found WITHOUT the Fresnel weight, and the composite replaces the lit scene
+        // instead of adding to it -- so the panes are the picture. Head-on a reflection is four per cent of
+        // a pixel, which is small enough that a trace returning the room and a trace returning nothing look
+        // identical in the finished frame; this is the only way to tell them apart by looking.
+        // Both glazing views isolate: each replaces the lit scene with something that is not light, so
+        // neither may have the rest of the picture left underneath it.
+        float route = _debugView switch
+        {
+            DebugView.GlassRoute => 1f,
+            DebugView.GlassAlbedo => 2f,
+            DebugView.GlassRay => 3f,
+            DebugView.GlassNormal => 4f,
+            _ => 0f,
+        };
+
+        bool isolate = _debugView is DebugView.Glass || route > 0f;
+        if (_debugView is not DebugView.None && !isolate)
+        {
+            return;
+        }
+
+        CommandBuffer cmd = _frameCommandBuffer;
+        int width = (int)target.Extent.Width;
+        int height = (int)target.Extent.Height;
+
+        using StageScope scope = Measure(RenderStage.Reflections);
+
+        // Traced where this frame can, MARCHED where it cannot -- and the second is asked for whenever the
+        // first comes back empty, not only on hardware that could never trace. Every gate in
+        // TracedReflectionResources is a setting or a state that moves during a session, so "no world to
+        // fire at" is the ordinary case on an adapter that owns a perfectly good acceleration structure
+        // and has been told, this frame, not to use it. The march is not a lesser version of the trace: it
+        // is a different way of finding the hit, resolved against the same lit frame and the same cards.
+        Deferred.TracedResources traced = _deferred.GlassReflection.Traces
+            ? TracedReflectionResources()
+            : Deferred.TracedResources.None;
+
+        if (!traced.Traces)
+        {
+            traced = SoftwareReflectionResources();
+        }
+
+        // The panes' own writes, before this reads them.
+        OcclusionBarrier(
+            cmd, target.GlassLayerImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+        LitReadBarrier(cmd, target.LitImage, PipelineStageFlags.ComputeShaderBit);
+
+        _deferred.GlassReflection.RecordReflect(
+            cmd,
+            _frameLoop.CurrentFrame,
+            target.LitView,
+            target.DepthView,
+            target.GlassLayerView,
+            _deferred.Sky.SkyViewLut,
+            target.ReflectionView,
+            width,
+            height,
+            _viewToWorld,
+            _unprojection,
+            traced,
+            TracedReflectionReachMetres,
+            RenderCVars.TracedReflectionClamp.Value,
+            Sky.SkyAtmosphere.ViewHeightKm(2f),
+            RenderCVars.GlassReflection.Value,
+            isolate && route <= 0f,
+            route,
+            new Vector3f(_cameraPosition.X, _cameraPosition.Y, _cameraPosition.Z),
+            _viewModelLensX,
+            _viewModelLensY,
+
+            // For the one route that shades a hit itself. WORLD space, like the ray: the lighting record
+            // carries the sun in VIEW space, which would swing a reflected body's shading around as the
+            // camera turned.
+            WorldSunDirection(),
+            _lighting.SunColour * _lighting.Scale,
+            _lighting.AmbientColour,
+
+            // The level's roofs, for the one question the marched half cannot answer without them:
+            // whether a ray that left the distance field found the sky or lost a ceiling.
+            ShelterMapView(),
+            HasShelterMap() ? _shelterTransform : ShelterMapTransform.None,
+
+            // And the albedo array's own WRAPPING sampler. The pass's shared one clamps, which is right
+            // for the tables it mostly reads and wrong for a world texture whose UV runs past one.
+            _tracedAlbedo?.Sampler ?? default);
+
+        // The trace's write, before the composite reads it; and the lit image into the layout a storage
+        // write wants, and back again for the temporal resolve.
+        OcclusionBarrier(
+            cmd, target.ReflectionImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+        LitLayoutBarrier(
+            cmd, target.LitImage, ImageLayout.ShaderReadOnlyOptimal, ImageLayout.General,
+            AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+        _deferred.GlassReflection.RecordComposite(
+            cmd,
+            _frameLoop.CurrentFrame,
+            target.ReflectionView,
+            target.LitView,
+            width,
+            height,
+            isolate);
+
+        LitLayoutBarrier(
+            cmd, target.LitImage, ImageLayout.General, ImageLayout.ShaderReadOnlyOptimal,
+            AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit,
+            PipelineStageFlags.ComputeShaderBit | PipelineStageFlags.FragmentShaderBit);
     }
 
     private unsafe void OcclusionBarrier(
@@ -1818,6 +2122,8 @@ public sealed partial class VulkanGraphicsDevice
             throw new GraphicsDeviceException("The scene target is not configured.");
         }
 
+        // The glazing layer, wiped before anything can write it.
+        //
         WriteSurfaceUniform();
 
         ClearValue* clears = stackalloc ClearValue[5];
@@ -1841,6 +2147,38 @@ public sealed partial class VulkanGraphicsDevice
         FlushComputeBeforePass();
         _instance.Vk.CmdBeginRenderPass(_frameCommandBuffer, &beginInfo, SubpassContents.Inline);
         _deferredPassActive = true;
+    }
+
+    // The glazing front layer: one colour attachment for the pane, one depth buffer nobody else shares.
+    //
+    // Both are cleared. The colour has to be, because the reflection pass reads a pixel with no pane as
+    // nought and last frame's pane would otherwise still be sitting there -- a window reflecting in a
+    // place a window no longer is. The depth has to be, because it is what decides which pane is nearest
+    // and it must start further away than any of them; REVERSE-Z, so that is nought and not one.
+    private unsafe void BeginFrontLayerPass()
+    {
+        if (_sceneTarget is null)
+        {
+            throw new GraphicsDeviceException("The scene target is not configured.");
+        }
+
+        ClearValue* clears = stackalloc ClearValue[2];
+        clears[0] = new ClearValue { Color = new ClearColorValue(0f, 0f, 0f, 0f) };
+        clears[1] = new ClearValue { DepthStencil = new ClearDepthStencilValue(0f, 0) };
+
+        RenderPassBeginInfo beginInfo = new()
+        {
+            SType = StructureType.RenderPassBeginInfo,
+            RenderPass = _deferred.FrontLayerPass,
+            Framebuffer = _sceneTarget.FrontLayerFramebuffer,
+            RenderArea = new Rect2D(new Offset2D(0, 0), _sceneTarget.Extent),
+            ClearValueCount = 2,
+            PClearValues = clears,
+        };
+
+        _instance.Vk.CmdBeginRenderPass(_frameCommandBuffer, &beginInfo, SubpassContents.Inline);
+        _deferredPassActive = true;
+        ApplyViewportAndScissor(_frameCommandBuffer, _sceneViewport);
     }
 
     private unsafe void BeginShadingPass()
@@ -2664,6 +3002,389 @@ public sealed partial class VulkanGraphicsDevice
         }
     }
 
+    /// <summary>Resolves what a reflected ray is traced against, or nothing for a frame that is not to trace.</summary>
+    /// <remarks>
+    /// <para>
+    /// Three things have to be true at once and any of them can be false on a given frame: the adapter can
+    /// trace, the player has asked for traced reflections, and the level has both a built world and a lit
+    /// surface cache. The first two are the switches; the third is why this is asked every frame rather
+    /// than once — a mission being loaded or torn down has a cache for only part of its life, and a trace
+    /// against half of one does not come out coarse, it comes out wrong.
+    /// </para>
+    /// <para>
+    /// <c>r_rt</c> gates this as well as <c>r_rt_reflections</c>, so that the one switch stands every trace
+    /// in the renderer down together, exactly as it does for the sun and the lamps. With either off the
+    /// reflections keep the screen march alone, which is what they were before this existed.
+    /// </para>
+    /// </remarks>
+    /// <summary>Points the glazing pass's descriptor set at this frame's layer and parameters.</summary>
+    /// <remarks>
+    /// Written before the subpass opens and once for however many panes the level draws into it. The
+    /// write is a host-side call rather than a command, so it has to land while this frame's set is not
+    /// yet bound anywhere — which is exactly here, since the first glass draw is still to come and the
+    /// frame before last has been waited on.
+    /// </remarks>
+    private void UpdateGlassResources()
+    {
+        if (_sceneTarget is not { } target)
+        {
+            return;
+        }
+
+        Vector3f fog = _fog.ColourFor(BlendMode.AlphaBlend);
+        Span<float> p = stackalloc float[Pipelines.GlassPipeline.ParamFloats];
+
+        p[0] = fog.X;
+        p[1] = fog.Y;
+        p[2] = fog.Z;
+        p[3] = _fog.DensityPerMetre;
+
+        _deferred.Glass.Update(_frameLoop.CurrentFrame, target.DepthView, p);
+    }
+
+    private Deferred.TracedResources TracedReflectionResources()
+    {
+        if (!_device.Capabilities.RayQuery)
+        {
+            ReportReflectionTrace("off: this adapter cannot trace");
+            return Deferred.TracedResources.None;
+        }
+
+        if (!RenderCVars.HardwareRayTracing.Value)
+        {
+            ReportReflectionTrace("off: r_rt is 0");
+            return Deferred.TracedResources.None;
+        }
+
+        if (!RenderCVars.TracedReflections.Value)
+        {
+            ReportReflectionTrace("off: r_rt_reflections is 0");
+            return Deferred.TracedResources.None;
+        }
+
+        if (!_deferred.Reflection.Traces)
+        {
+            ReportReflectionTrace("off: the reflection pass was built without a traced half");
+            return Deferred.TracedResources.None;
+        }
+
+        if (!_surfaceCache.IsPresent)
+        {
+            ReportReflectionTrace("off: no lit surface cache (SetSurfaceCache handed over nothing)");
+            return Deferred.TracedResources.None;
+        }
+
+        if (_worldScene is not { IsReady: true } scene || scene.TopLevel is not { } topLevel)
+        {
+            ReportReflectionTrace("off: the world's acceleration structure is not built yet");
+            return Deferred.TracedResources.None;
+        }
+
+        // Resolved only now, and only because the checks above passed. A handle whose resource the engine
+        // has already released throws on resolution, and a frame that was never going to trace has no
+        // business finding that out.
+        if (!TryResolveCache(
+            out Memory.VulkanBuffer? pages,
+            out Memory.VulkanBuffer? cells,
+            out Memory.VulkanBuffer? cellPages,
+            out Compute.VulkanStorageImage? albedo,
+            out Compute.VulkanStorageImage? cardDepth,
+            out Compute.VulkanStorageImage? lighting))
+        {
+            ReportReflectionTrace("off: the surface cache named a resource this device no longer holds");
+            return Deferred.TracedResources.None;
+        }
+
+        ReportReflectionTrace("on");
+
+        return new Deferred.TracedResources(
+            topLevel.Handle,
+            pages.Handle,
+            pages.Size,
+            cells.Handle,
+            cells.Size,
+            cellPages.Handle,
+            cellPages.Size,
+            albedo.View,
+            cardDepth.View,
+            lighting.View,
+            _surfaceCache.CameraToCache,
+            _surfaceCache.LookupMinimum,
+            _surfaceCache.LookupCell,
+            _surfaceCache.LookupBuckets,
+            _surfaceCache.AtlasWidth,
+            _surfaceCache.AtlasHeight,
+            _surfaceCache.BounceScale,
+
+            // The third resolve route. Both of these may be absent without the trace standing down: a
+            // pass that finds no records or no array shades the way it did before, out of the frame and
+            // the cards, which is a reflection that is incomplete rather than one that is wrong.
+            _tracedAlbedo is null ? 0UL : scene.RecordAddress,
+            _tracedAlbedo?.View ?? default);
+    }
+
+    /// <summary>The cards and the distance field, for a reflection that MARCHES rather than traces.</summary>
+    /// <returns>Everything the software half needs, or nothing when it cannot run.</returns>
+    /// <remarks>
+    /// <para>
+    /// The software counterpart of <see cref="TracedReflectionResources"/>, and it resolves the SAME
+    /// surface cache. That is the whole shape of the thing: an adapter without ray tracing is not missing
+    /// the cards, only the acceleration structure — so the only substitution is the level's distance
+    /// field, which a shader can walk to find where a ray stops.
+    /// </para>
+    /// <para>
+    /// Resolved only now, as the traced one is, because a handle whose resource the engine has already
+    /// released throws when resolved and a frame that was never going to march has no business finding
+    /// that out.
+    /// </para>
+    /// </remarks>
+    private Deferred.TracedResources SoftwareReflectionResources()
+    {
+        if (!_distanceField.IsPresent)
+        {
+            ReportGlassMarch("off: the level has no distance field yet");
+            return GlassStandIns();
+        }
+
+        if (!_surfaceCache.IsPresent)
+        {
+            ReportGlassMarch("off: no lit surface cache (SetSurfaceCache handed over nothing)");
+            return GlassStandIns();
+        }
+
+        if (!TryFindStorageImage(_distanceField.Clipmaps, out Compute.VulkanStorageImage? clipmaps))
+        {
+            ReportGlassMarch("off: the distance field named a volume this device no longer holds");
+            return GlassStandIns();
+        }
+
+        if (!TryResolveCache(
+            out Memory.VulkanBuffer? pages,
+            out Memory.VulkanBuffer? cells,
+            out Memory.VulkanBuffer? cellPages,
+            out Compute.VulkanStorageImage? albedo,
+            out Compute.VulkanStorageImage? cardDepth,
+            out Compute.VulkanStorageImage? lighting))
+        {
+            ReportGlassMarch("off: the surface cache named a resource this device no longer holds");
+            return GlassStandIns();
+        }
+
+        ReportGlassMarch("on: marching the distance field");
+
+        return new Deferred.TracedResources(
+            default,
+            pages.Handle,
+            pages.Size,
+            cells.Handle,
+            cells.Size,
+            cellPages.Handle,
+            cellPages.Size,
+            albedo.View,
+            cardDepth.View,
+            lighting.View,
+            _surfaceCache.CameraToCache,
+            _surfaceCache.LookupMinimum,
+            _surfaceCache.LookupCell,
+            _surfaceCache.LookupBuckets,
+            _surfaceCache.AtlasWidth,
+            _surfaceCache.AtlasHeight,
+            _surfaceCache.BounceScale,
+            0UL,
+            default,
+            clipmaps.View,
+            _distanceField);
+    }
+
+    /// <summary>A complete set of resources that describe nothing, for a frame that marches nothing.</summary>
+    /// <returns>Handles that are all real, and a field of nought levels.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Why a frame with nothing to say still needs real handles.</b> A descriptor set is bound whole.
+    /// Leaving a binding unwritten — or written with a null handle — is undefined at the moment of
+    /// BINDING, not merely at the moment something reads it, so "the shader will not touch these anyway"
+    /// is not an argument: the set is invalid before the shader runs. The marched half declares seven
+    /// resources beyond the screen's own, and the ordinary case for a pane is that none of them exist yet
+    /// — a mission still loading, baked lighting with no surface cache at all, a level whose distance
+    /// field has not been built. Every one of those frames still wants the pass, because a pane with
+    /// nothing to march still reflects the sky, and a window that goes black while a level loads is worse
+    /// than one that shows daylight.
+    /// </para>
+    /// <para>
+    /// One texel each, and shared by every binding that wants that shape. Nothing reads them: the field
+    /// carries nought levels, which is what the march reads as "no field to walk", and the cards are only
+    /// consulted after a hit the march can never report.
+    /// </para>
+    /// </remarks>
+    private Deferred.TracedResources GlassStandIns()
+    {
+        if (!_glassStandInField.IsValid)
+        {
+            _glassStandInField = CreateVolumeTexture(1, 1, 1, VolumeFormat.R8, "glass.standin.field");
+            _glassStandInCard = CreateStorageTexture(1, 1, VolumeFormat.R8, "glass.standin.card");
+            _glassStandInRecords = CreateStorageBuffer(sizeof(float) * 4, "glass.standin.records");
+        }
+
+        if (!TryFindStorageImage(_glassStandInField, out Compute.VulkanStorageImage? field)
+            || !TryFindStorageImage(_glassStandInCard, out Compute.VulkanStorageImage? card)
+            || !TryFindStorageBuffer(_glassStandInRecords, out Memory.VulkanBuffer? records))
+        {
+            return Deferred.TracedResources.None;
+        }
+
+        return new Deferred.TracedResources(
+            default,
+            records.Handle,
+            records.Size,
+            records.Handle,
+            records.Size,
+            records.Handle,
+            records.Size,
+            card.View,
+            card.View,
+            card.View,
+            default,
+            default,
+            0f,
+            0,
+            0,
+            0,
+            0f,
+            0UL,
+            default,
+            field.View,
+            DistanceFieldBinding.None);
+    }
+
+    /// <summary>Says whether glass is marching the field, and when it is not, which gate stopped it.</summary>
+    /// <param name="state">The answer, as a line a player can read in the console.</param>
+    /// <remarks>
+    /// On CHANGE, for the reason the traced report is: every gate here opens and closes during a session,
+    /// and the field and the cache both arrive part of the way through a mission load.
+    /// </remarks>
+    private void ReportGlassMarch(string state)
+    {
+        if (string.Equals(_glassMarchState, state, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _glassMarchState = state;
+        _logger.Log(LogLevel.Information, "Vulkan", $"Glass reflections (software): {state}.");
+    }
+
+    /// <summary>Says whether reflections are being traced, and when they are not, which gate stopped it.</summary>
+    /// <param name="state">The answer, as a line a player can read in the console.</param>
+    /// <remarks>
+    /// Logged on CHANGE rather than once, and rather than every frame. Every gate here can open and close
+    /// during a session — the switch is meant to be flipped live, and the world and the cards arrive part
+    /// of the way through a mission load — so a once-only line would report whichever answer happened to
+    /// be true on the first frame after a level opened and never correct itself. Every frame would be a
+    /// wall of text. What a player toggling the setting actually needs is one line each time the answer
+    /// moves, and that is this.
+    /// </remarks>
+    private void ReportReflectionTrace(string state)
+    {
+        if (string.Equals(_reflectionTraceState, state, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _reflectionTraceState = state;
+        _logger.Log(LogLevel.Information, "Vulkan", $"Traced reflections: {state}.");
+    }
+
+    /// <summary>Says, once per change, what the traced world actually contains.</summary>
+    /// <remarks>
+    /// Skinned geometry was excluded from the acceleration structure for most of this renderer's life,
+    /// and the way that fails is a silence rather than an error: rays pass through every soldier and
+    /// through the player, so a window reflects an empty room and a traced shadow falls where a body is
+    /// standing. Nothing in the picture separates that from a reflection that works and simply has nobody
+    /// in front of it, which is why the count is said out loud.
+    /// </remarks>
+    private void ReportTracedWorld()
+    {
+        if (_worldScene is not { } scene)
+        {
+            return;
+        }
+
+        string state =
+            $"{scene.GeometryCount} geometry(ies), {scene.SkinnedGeometryCount} skinned, "
+            + $"{scene.CasterGeometryCount} terrain caster(s), "
+            + $"{scene.PlacementCount} placement(s), "
+
+            // How many textures a ray can actually shade from. Nought here with a populated world means
+            // every material-route hit reads the array's clear value, which looks like flat grey geometry
+            // rather than like a registration that never happened.
+            + $"{_tracedAlbedo?.Count ?? 0} albedo layer(s)"
+            + (_tracedAlbedo?.Overflowed == true
+                ? " (EXHAUSTED -- geometry admitted after that shades from the frame and the cards only)"
+                : string.Empty);
+
+        if (string.Equals(_tracedWorldState, state, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _tracedWorldState = state;
+        _logger.Log(LogLevel.Information, "Vulkan", $"Traced world: {state}.");
+    }
+
+    /// <summary>Says, once per change, whether any glazing was drawn and whether it traced.</summary>
+    /// <remarks>
+    /// Reported for the previous frame's count, at the point the next frame's glazing is about to be set
+    /// up, because that is the one place in the frame where both numbers are known and neither has been
+    /// reset yet. Rate-limited to changes for the reason the traced-reflection report is: it would
+    /// otherwise be a line a frame forever.
+    /// </remarks>
+    private void ReportGlass()
+    {
+        string state = _glassDraws == 0
+            ? "no pane reached the forward pass (nothing in view is marked glass in materials.json)"
+            : _deferred.GlassReflection.Traces
+                ? $"{_glassDraws} pane draw(s), reflections traced against the lit frame"
+                : $"{_glassDraws} pane draw(s), sky reflection only (this adapter cannot trace)";
+
+        if (string.Equals(_glassState, state, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _glassState = state;
+        _logger.Log(LogLevel.Information, "Vulkan", $"Glazing: {state}.");
+    }
+
+    /// <summary>Looks up every resource the surface cache named, or reports that one of them is gone.</summary>
+    /// <remarks>
+    /// Looked up rather than resolved: the resolving forms throw, which is right for a caller that has
+    /// been handed a handle it was promised, and wrong here. The engine hands this over every frame,
+    /// including the frames on either side of a mission change, so a stale handle is an ordinary event
+    /// and the answer to it is to trace nothing this frame.
+    /// </remarks>
+    private bool TryResolveCache(
+        [NotNullWhen(true)] out Memory.VulkanBuffer? pages,
+        [NotNullWhen(true)] out Memory.VulkanBuffer? cells,
+        [NotNullWhen(true)] out Memory.VulkanBuffer? cellPages,
+        [NotNullWhen(true)] out Compute.VulkanStorageImage? albedo,
+        [NotNullWhen(true)] out Compute.VulkanStorageImage? cardDepth,
+        [NotNullWhen(true)] out Compute.VulkanStorageImage? lighting)
+    {
+        pages = null;
+        cells = null;
+        cellPages = null;
+        albedo = null;
+        cardDepth = null;
+        lighting = null;
+
+        return TryFindStorageBuffer(_surfaceCache.Pages, out pages)
+            && TryFindStorageBuffer(_surfaceCache.Cells, out cells)
+            && TryFindStorageBuffer(_surfaceCache.CellPages, out cellPages)
+            && TryFindStorageImage(_surfaceCache.Albedo, out albedo)
+            && TryFindStorageImage(_surfaceCache.Depth, out cardDepth)
+            && TryFindStorageImage(_surfaceCache.Lighting, out lighting);
+    }
+
     /// <summary>Resolves the screen-GI atlas to a view, sampler and layout, or the white texture when unset.</summary>
     private (ImageView View, Sampler Sampler, ImageLayout Layout) ResolveScreenGi()
     {
@@ -2696,6 +3417,9 @@ public sealed partial class VulkanGraphicsDevice
 
         /// <summary>The shading pass, on its lighting subpass.</summary>
         Lighting,
+
+        /// <summary>The glazing front layer, in a pass of its own between the two.</summary>
+        GlassLayer,
 
         /// <summary>The shading pass, on its translucency subpass.</summary>
         Forward,

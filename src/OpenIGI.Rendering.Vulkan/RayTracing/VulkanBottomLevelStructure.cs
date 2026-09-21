@@ -1,4 +1,4 @@
-using OpenIGI.Rendering.Vulkan.Memory;
+﻿using OpenIGI.Rendering.Vulkan.Memory;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.RayTracing;
@@ -121,6 +121,29 @@ internal sealed unsafe class VulkanBottomLevelStructure : IDisposable
 
     /// <summary>Gets a value indicating whether a build has been recorded at least once.</summary>
     public bool IsBuilt { get; private set; }
+
+    /// <summary>Points every geometry at a new vertex buffer, before a refit reads them.</summary>
+    /// <param name="vertexAddress">The buffer holding the pose this frame is to be refitted from.</param>
+    /// <remarks>
+    /// <para>
+    /// For skinned geometry, whose vertices are not merely rewritten but rewritten into a DIFFERENT
+    /// buffer each frame: the mesh keeps a ring of pose buffers so that a frame still in flight is never
+    /// reading the one being written, so the address the structure was built against is stale by the next
+    /// frame. A refit against it would fit the structure to the pose of two frames ago.
+    /// </para>
+    /// <para>
+    /// Legal because an update build re-describes its geometries: what an update may not change is the
+    /// shape of the problem -- the geometry count, the primitive counts, the flags -- and none of that
+    /// moves here. Only where the positions are read from does.
+    /// </para>
+    /// </remarks>
+    public void RepointVertices(ulong vertexAddress)
+    {
+        for (int i = 0; i < _geometries.Length; i++)
+        {
+            _geometries[i] = _geometries[i] with { VertexAddress = vertexAddress };
+        }
+    }
 
     /// <summary>Records the build into a command buffer.</summary>
     /// <param name="commandBuffer">Where to record.</param>

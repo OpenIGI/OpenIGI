@@ -153,8 +153,16 @@ public static class SurfaceCacheCapture
 
         // Negated because the rotation takes world into the card's frame and the translation has to be
         // expressed in that frame too, exactly as the world-to-view transform does it.
+        //
+        // ROWS DOT THE VECTOR, exactly as Camera3D.GetViewMatrix rotates its own translation.
+        // Matrix3f.Transform multiplies by the columns, which is the transpose of what CreateRigid then
+        // applies to every vertex, so the eye landed at R^T(-eye) while the model went through R. For
+        // the two Z cards the frame is its own transpose and nothing showed; for every X and Y card it
+        // is a permutation, and the model was shifted off its page -- three quarters of the level's
+        // side pages came back empty, walls were resolved through their roof card's silhouette, and a
+        // storage tank's side read as a fan of stripes in a window's reflection.
         Vector3f eye = card.Centre;
-        Vector3f offset = view.Transform(new Vector3f(-eye.X, -eye.Y, -eye.Z));
+        Vector3f offset = view.Transposed().Transform(new Vector3f(-eye.X, -eye.Y, -eye.Z));
 
         Matrix4f modelView = Matrix4f.CreateRigid(view, offset);
 

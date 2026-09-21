@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Compute;
 using OpenIGI.Rendering.Vulkan.Memory;
@@ -20,13 +20,26 @@ namespace OpenIGI.Rendering.Vulkan.Deferred;
 /// </remarks>
 internal sealed class ReflectionPass : IDisposable
 {
-    // mat4 + ten vec4s: the view-to-world rotation, the unprojection, the resolution, the SSR knobs,
-    // the wetness/frame block, two blocks of puddle and ripple, and then three of the shelter map's own
-    // transform. The layout matches the shader's Params exactly.
-    private const int ReflectParamSize = (16 + (10 * 4)) * sizeof(float);
+    // mat4 + fifteen vec4s: the view-to-world rotation, the unprojection, the resolution, the march's
+    // knobs, the wetness/frame block, two blocks of puddle and ripple, three of the shelter map's own
+    // transform, and then five of the trace. The layout matches the shader's Params exactly.
+    private const int ReflectParamSize = (16 + (24 * 4)) * sizeof(float);
 
     // Where the shelter map's transform starts, in floats: past the mat4 and the seven vec4s above it.
     private const int ShelterOffset = 16 + (7 * 4);
+
+    // Where the traced half's own block starts: past the mat4 and the ten vec4s the screen march uses.
+    private const int TraceOffset = 16 + (10 * 4);
+
+    // And where the distance field's own block starts: past everything above it. Declared in both
+    // variants of the shader although only the marched one reads it, so there is one layout rather than
+    // two that can drift.
+    private const int FieldOffset = 16 + (15 * 4);
+
+    // Its levels, which the standard layout spaces four floats apart in both arrays -- the boxes because
+    // they are vec4s, and the ranges although they are scalars.
+    private const int FieldOriginOffset = FieldOffset + 4;
+    private const int FieldRangeOffset = FieldOriginOffset + (DistanceFieldBinding.MaxLevels * 4);
 
     // One vec4 of resolution.
     private const int CompositeParamSize = 4 * sizeof(float);
@@ -48,7 +61,49 @@ internal sealed class ReflectionPass : IDisposable
         // that decided where the water was.
         ComputeBindingKind.SampledImage,
 
+        // The albedo, for the one thing a reflection needs it for: a metal reflects its own colour.
+        ComputeBindingKind.SampledImage,
+
         ComputeBindingKind.StorageImage,   // the reflection, written
+    ];
+
+    // What the traced half adds, on an adapter that can trace: the world to fire a ray at, and the
+    // surface cache to turn where it landed into light. Appended to the list above rather than mixed into
+    // it, because the shader's binding numbers are the list's own indices -- so the screen march's
+    // bindings keep the numbers they have whether or not this is present.
+    private static readonly ComputeBindingKind[] TracedBindings =
+    [
+        ComputeBindingKind.AccelerationStructure,  // the world
+
+        ComputeBindingKind.StorageBuffer,          // the card pages
+        ComputeBindingKind.StorageBuffer,          // the lookup grid's buckets
+        ComputeBindingKind.StorageBuffer,          // the page indices those buckets point into
+
+        // The three card atlases. All storage images the engine's own lighting passes write, so they are
+        // read in the general layout rather than moved between layouts around every frame -- the same
+        // arrangement the sky table above has.
+        ComputeBindingKind.SampledStorageImage,    // the cards' albedo
+        ComputeBindingKind.SampledStorageImage,    // the cards' depth
+        ComputeBindingKind.SampledStorageImage,    // the cards' lighting
+    ];
+
+    // What the SOFTWARE half adds instead, on an adapter that cannot trace -- and the cards are the
+    // same six, which is the point. Such an adapter is not missing the surface cache, only the
+    // acceleration structure, so the one substitution is the level's distance field: the only description
+    // of the world a shader can walk without a structure to trace. Seven either way, so the parameter
+    // block keeps its binding whichever variant is compiled.
+    private static readonly ComputeBindingKind[] SoftwareBindings =
+    [
+        ComputeBindingKind.StorageBuffer,           // the card pages
+        ComputeBindingKind.StorageBuffer,           // the lookup grid's buckets
+        ComputeBindingKind.StorageBuffer,           // the page indices those buckets point into
+
+        ComputeBindingKind.SampledStorageImage,     // the cards' albedo
+        ComputeBindingKind.SampledStorageImage,     // the cards' depth
+        ComputeBindingKind.SampledStorageImage,     // the cards' lighting
+
+        // The clipmaps, written by a compute pass the game drives and read here as a volume.
+        ComputeBindingKind.SampledStorageImage,     // the level's distance field
     ];
 
     private static readonly ComputeBindingKind[] CompositeBindings =
@@ -57,7 +112,12 @@ internal sealed class ReflectionPass : IDisposable
         ComputeBindingKind.StorageImage,   // the lit scene, added to in place
     ];
 
-    private readonly VulkanComputePass _reflect;
+    // BOTH PERMUTATIONS, on any adapter that can trace. Which one a frame wants is not a property of
+    // the hardware: r_rt and r_rt_reflections are flipped while the game runs, and a compute pipeline
+    // cannot be rebuilt mid-frame. The marched half is therefore built unconditionally, and it is what
+    // stands behind the screen march on every frame that is not tracing.
+    private readonly VulkanComputePass? _traced;
+    private readonly VulkanComputePass _marched;
     private readonly VulkanComputePass _composite;
     private bool _disposed;
 
@@ -67,18 +127,49 @@ internal sealed class ReflectionPass : IDisposable
         VulkanDevice device,
         VulkanAllocator allocator,
         ShaderCompiler compiler,
-        int framesInFlight)
+        int framesInFlight,
+        bool rayQuery)
     {
-        _reflect = new VulkanComputePass(
+        if (rayQuery)
+        {
+            _traced = new VulkanComputePass(
+                vk, device, allocator, compiler,
+                "reflect.comp", ReflectionShaderSource.Reflect(true),
+                [.. ReflectBindings, .. TracedBindings],
+                ReflectParamSize, framesInFlight);
+        }
+
+        _marched = new VulkanComputePass(
             vk, device, allocator, compiler,
-            "reflect.comp", ReflectionShaderSource.Reflect,
-            ReflectBindings, ReflectParamSize, framesInFlight);
+            "reflect.march.comp", ReflectionShaderSource.Reflect(false),
+            [.. ReflectBindings, .. SoftwareBindings],
+            ReflectParamSize, framesInFlight);
 
         _composite = new VulkanComputePass(
             vk, device, allocator, compiler,
             "reflectcomposite.comp", ReflectionShaderSource.Composite,
             CompositeBindings, CompositeParamSize, framesInFlight);
     }
+
+    /// <summary>Gets whether this pass was built with a traced half at all.</summary>
+    /// <remarks>
+    /// A compile-time property of the pass rather than a setting: the ray-query extension has to be
+    /// declared for the shader to parse, so an adapter that cannot trace gets a shader with no trace in
+    /// it. Asked by the caller so that it can say so rather than silently handing over resources nothing
+    /// will read.
+    /// </remarks>
+    public bool Traces => _traced is not null;
+
+    /// <summary>How many resources the pass declares, ahead of its parameter block.</summary>
+    /// <param name="rayQuery">Whether the traced variant is being asked about.</param>
+    /// <returns>The count.</returns>
+    /// <remarks>
+    /// Exposed for a test, for the reason the glazing pass exposes the same thing: the shader's binding
+    /// numbers and this list are two hand-written descriptions of one descriptor set, and a resource
+    /// added to one alone throws at the first dispatch of a level rather than at build time.
+    /// </remarks>
+    internal static int BindingCount(bool rayQuery) =>
+        ReflectBindings.Length + (rayQuery ? TracedBindings.Length : SoftwareBindings.Length);
 
     /// <summary>Records the screen-space march that fills the reflection image.</summary>
     /// <param name="cmd">The command buffer to record into.</param>
@@ -107,6 +198,22 @@ internal sealed class ReflectionPass : IDisposable
     /// <param name="viewHeightKm">The camera's height, for reading the sky table the same way.</param>
     /// <param name="frameIndex">Which frame this is, so the march's dither moves.</param>
     /// <param name="reach">How far, in metres, a reflected ray is marched.</param>
+    /// <param name="baseColour">The albedo, which is what a metal's reflection is tinted by.</param>
+    /// <param name="traced">
+    /// The world and the lit cards, or <see cref="TracedResources.None"/> for a frame that is not to
+    /// trace. Ignored outright on a pass compiled without the traced half.
+    /// </param>
+    /// <param name="maxRayIntensity">The ceiling on one traced ray's radiance, which stops a firefly.</param>
+    /// <param name="tracedReach">How far, in metres, a traced ray reaches before it counts as having left.</param>
+    /// <param name="rigLensX">The first-person lens x scale, or zero where no rig was drawn.</param>
+    /// <param name="rigLensY">
+    /// The first-person lens y scale. The rig is not projected with the frame's lens, so a reflection
+    /// has to look for it through this one.
+    /// </param>
+    /// <param name="tracedMaxRoughness">
+    /// The roughest surface a traced ray is fired for. Deliberately not the march's own ceiling — see
+    /// <c>r_rt_reflection_roughness</c> for why one number cannot serve both.
+    /// </param>
     public void RecordReflect(
         CommandBuffer cmd,
         int frame,
@@ -115,6 +222,7 @@ internal sealed class ReflectionPass : IDisposable
         ImageView normal,
         ImageView material,
         ImageView skyView,
+        ImageView baseColour,
         ImageView reflection,
         int width,
         int height,
@@ -129,7 +237,13 @@ internal sealed class ReflectionPass : IDisposable
         float cameraZ,
         float viewHeightKm,
         int frameIndex,
-        float reach)
+        float reach,
+        in TracedResources traced,
+        float maxRayIntensity,
+        float tracedReach,
+        float tracedMaxRoughness,
+        float rigLensX,
+        float rigLensY)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -193,7 +307,60 @@ internal sealed class ReflectionPass : IDisposable
         data[ShelterOffset + 8] = shelter.Width;
         data[ShelterOffset + 9] = shelter.Height;
 
-        ReadOnlySpan<ComputeResource> resources =
+        // Whether this frame traces at all. False on a pass compiled without the traced half, and false
+        // whenever the world or the cards are missing -- which is one test rather than several, because
+        // a lookup with a grid and no atlas does not degrade into a coarser answer, it reads whatever the
+        // descriptor happens to hold. See TracedResources.Traces.
+        // Which half actually runs. The traced one only where there IS one and the frame handed over a
+        // world to fire at; everything else marches, including a frame on traced hardware whose settings
+        // have tracing switched off.
+        VulkanComputePass reflect = _traced is not null && traced.Traces ? _traced : _marched;
+        bool traces = ReferenceEquals(reflect, _traced);
+
+        data[TraceOffset] = traces ? 1f : 0f;
+        data[TraceOffset + 1] = MathF.Max(tracedReach, 1f);
+        data[TraceOffset + 2] = MathF.Max(maxRayIntensity, 0f);
+        data[TraceOffset + 3] = MathF.Max(traced.BounceScale, 0f);
+
+        data[TraceOffset + 4] = traced.CameraToCache.X;
+        data[TraceOffset + 5] = traced.CameraToCache.Y;
+        data[TraceOffset + 6] = traced.CameraToCache.Z;
+        data[TraceOffset + 7] = traced.LookupCell;
+
+        data[TraceOffset + 8] = traced.LookupMinimum.X;
+        data[TraceOffset + 9] = traced.LookupMinimum.Y;
+        data[TraceOffset + 10] = traced.LookupMinimum.Z;
+        data[TraceOffset + 11] = traced.LookupBuckets;
+
+        data[TraceOffset + 12] = traced.AtlasWidth;
+        data[TraceOffset + 13] = traced.AtlasHeight;
+
+        data[TraceOffset + 16] = Math.Clamp(tracedMaxRoughness, 0f, 1f);
+        data[TraceOffset + 17] = rigLensX;
+        data[TraceOffset + 18] = rigLensY;
+
+        // The distance field. Nought levels is what the marched resolve reads as "no field to walk", and
+        // it is also what a traced frame leaves here, which costs that frame nothing because it never
+        // compiles the march at all.
+        DistanceFieldBinding field = traced.Field;
+        data[FieldOffset] = field.Levels;
+        data[FieldOffset + 1] = field.Resolution;
+
+        for (int level = 0; level < DistanceFieldBinding.MaxLevels && level < field.Levels; level++)
+        {
+            DistanceFieldLevel described = field[level];
+
+            int origin = FieldOriginOffset + (level * 4);
+            data[origin + 0] = described.Origin.X;
+            data[origin + 1] = described.Origin.Y;
+            data[origin + 2] = described.Origin.Z;
+            data[origin + 3] = described.VoxelSize;
+
+            // A SCALAR array in the block, which the standard layout still spaces four floats apart.
+            data[FieldRangeOffset + (level * 4)] = described.Range;
+        }
+
+        ReadOnlySpan<ComputeResource> screen =
         [
             new ComputeResource(lit),
             new ComputeResource(depth),
@@ -201,20 +368,71 @@ internal sealed class ReflectionPass : IDisposable
             new ComputeResource(material),
             new ComputeResource(skyView),
             new ComputeResource(shelterMap),
+            new ComputeResource(baseColour),
             new ComputeResource(reflection),
         ];
 
-        _reflect.Record(cmd, frame, resources, data, (uint)((width + 7) / 8), (uint)((height + 7) / 8));
+        uint groupsX = (uint)((width + 7) / 8);
+        uint groupsY = (uint)((height + 7) / 8);
+
+        if (!traces)
+        {
+            // The software set: the same cards a traced frame resolves against, plus the field this one
+            // marches instead of tracing.
+            ReadOnlySpan<ComputeResource> software =
+            [
+                .. screen,
+                ComputeResource.Records(traced.Pages, traced.PageBytes),
+                ComputeResource.Records(traced.Cells, traced.CellBytes),
+                ComputeResource.Records(traced.CellPages, traced.CellPageBytes),
+                new ComputeResource(traced.CardAlbedo),
+                new ComputeResource(traced.CardDepth),
+                new ComputeResource(traced.CardLighting),
+                new ComputeResource(traced.DistanceFieldVolume),
+            ];
+
+            reflect.Record(cmd, frame, software, data, groupsX, groupsY);
+            return;
+        }
+
+        // Every descriptor the layout declares has to be written whether or not this frame traces: a
+        // descriptor set with a hole in it is undefined to bind, not merely unread. So a frame with no
+        // world and no cards still binds the placeholders the caller hands over, and is told by the
+        // parameter above to fire no rays at them -- the same arrangement the lamps' traced shadow has.
+        ReadOnlySpan<ComputeResource> all =
+        [
+            .. screen,
+            ComputeResource.Scene(traced.Scene),
+            ComputeResource.Records(traced.Pages, traced.PageBytes),
+            ComputeResource.Records(traced.Cells, traced.CellBytes),
+            ComputeResource.Records(traced.CellPages, traced.CellPageBytes),
+            new ComputeResource(traced.CardAlbedo),
+            new ComputeResource(traced.CardDepth),
+            new ComputeResource(traced.CardLighting),
+        ];
+
+        reflect.Record(cmd, frame, all, data, groupsX, groupsY);
     }
 
     /// <summary>Records the add of the reflection back into the lit scene.</summary>
+    /// <param name="cmd">The command buffer to record into.</param>
+    /// <param name="frame">The frame-in-flight index.</param>
+    /// <param name="reflection">The reflection image the march and the trace filled.</param>
+    /// <param name="lit">The lit scene to add it to.</param>
+    /// <param name="width">The full-resolution width.</param>
+    /// <param name="height">The full-resolution height.</param>
+    /// <param name="isolate">
+    /// Whether to REPLACE the lit scene with the reflection rather than add to it — the debug view that
+    /// shows what surfaces reflect on its own.
+    /// </param>
     public void RecordComposite(
         CommandBuffer cmd,
         int frame,
         ImageView reflection,
         ImageView lit,
         int width,
-        int height)
+        int height,
+        bool isolate = false)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -222,6 +440,7 @@ internal sealed class ReflectionPass : IDisposable
         data.Clear();
         data[0] = width;
         data[1] = height;
+        data[2] = isolate ? 1f : 0f;
 
         ReadOnlySpan<ComputeResource> resources =
         [
@@ -241,7 +460,8 @@ internal sealed class ReflectionPass : IDisposable
         }
 
         _disposed = true;
-        _reflect.Dispose();
+        _traced?.Dispose();
+        _marched.Dispose();
         _composite.Dispose();
     }
 }

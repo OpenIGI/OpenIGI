@@ -114,7 +114,10 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _shadowPipeline = new ShadowPipeline(vk, device, compiler, _shadowMap.RenderPass, textureSetLayout);
         _ssao = new SsaoPass(vk, device, allocator, compiler, framesInFlight);
         _fog = new VolumetricFogPass(vk, device, allocator, commands, compiler, framesInFlight);
-        _reflection = new ReflectionPass(vk, device, allocator, compiler, framesInFlight);
+        // The reflections, with their traced half wherever the adapter can trace. Compiled in rather
+        // than switched on: the extension has to be declared for the shader to parse at all, so whether
+        // there IS a trace is settled here and whether a frame USES it is settled per frame.
+        _reflection = new ReflectionPass(vk, device, allocator, compiler, framesInFlight, _rayQuery);
         _velocity = new VelocityPass(vk, device, allocator, compiler, framesInFlight);
         _objectVelocity = new ObjectVelocityPass(vk, device, compiler, DeferredRenderPass.DepthFormat);
         _bloom = new BloomPass(vk, device, allocator, commands, compiler, framesInFlight);
@@ -199,12 +202,30 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             0);
         Forward = new Mesh3DPipeline(vk, device, compiler, _renderPass.Shading, DeferredRenderPass.ForwardSubpass);
 
+        // Glazing, on the same subpass and drawn from the same vertex buffers. Built with the Forward
+        // pipeline's own set-0 layout, so a texture pairing cached for an opaque draw binds under either
+        // without being built twice. It records each pane pixel into a layer; what a pane REFLECTS is
+        // finished by GlassReflection, after the render pass closes and the lit frame becomes readable.
+        Glass = new GlassPipeline(
+            vk,
+            device,
+            allocator,
+            compiler,
+            _renderPass.Shading,
+            DeferredRenderPass.ForwardSubpass,
+            _renderPass.FrontLayer,
+            _sampler,
+            Forward.DescriptorSetLayout,
+            framesInFlight);
+
+        GlassReflection = new GlassReflectionPass(vk, device, allocator, compiler, framesInFlight, _rayQuery);
+
         _targets = new SceneTarget[framesInFlight];
         for (int i = 0; i < framesInFlight; i++)
         {
             _targets[i] = new SceneTarget(
                 vk, device, allocator, commands,
-                _renderPass.Geometry, _renderPass.Shading,
+                _renderPass.Geometry, _renderPass.Shading, _renderPass.FrontLayer,
                 _lightingLayout, _resolveLayout, _pool, _sampler);
 
             // The object-velocity framebuffers are keyed on the velocity and depth view handles, so they
@@ -220,6 +241,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <summary>Gets the pass that shades the G-buffer and draws translucency over it.</summary>
     public RenderPass ShadingPass => _renderPass.Shading;
 
+    /// <summary>Gets the pass that records which pane of glazing is nearest at each pixel.</summary>
+    public RenderPass FrontLayerPass => _renderPass.FrontLayer;
+
     /// <summary>Gets the geometry (G-buffer) pipeline.</summary>
     public GBufferPipeline Geometry { get; }
 
@@ -231,6 +255,12 @@ internal sealed unsafe class DeferredRenderer : IDisposable
 
     /// <summary>Gets the forward pipeline for translucency, drawn into the lit scene.</summary>
     public Mesh3DPipeline Forward { get; }
+
+    /// <summary>Gets the glazing pipeline, which draws window panes over the lit scene.</summary>
+    public GlassPipeline Glass { get; }
+
+    /// <summary>Gets the pass that traces what the glazing reflects, once the frame is readable.</summary>
+    public GlassReflectionPass GlassReflection { get; }
 
     /// <summary>Gets the irradiance probe field the lighting pass samples.</summary>
     public ProbeVolumes Probes => _probes;
@@ -421,6 +451,8 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _shadowPipeline.Dispose();
         _shadowMap.Dispose();
         _probes.Dispose();
+        GlassReflection.Dispose();
+        Glass.Dispose();
         Forward.Dispose();
         Resolve.Dispose();
         Lighting.Dispose();

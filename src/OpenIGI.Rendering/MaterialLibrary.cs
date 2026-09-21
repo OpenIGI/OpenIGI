@@ -188,7 +188,14 @@ public sealed class MaterialLibrary
             Number(element, "roughness") ?? fallback.Roughness,
             Number(element, "metallic") ?? fallback.Metallic,
             Number(element, "emissive") ?? fallback.Emissive,
-            Flag(element, "castsOcclusion") ?? fallback.CastsOcclusion);
+            Flag(element, "castsOcclusion") ?? fallback.CastsOcclusion,
+
+            // Never inherited from the fallback, unlike every other field here. The default material is
+            // what an unclassified texture takes, and a file whose "default" block said glass would put
+            // every unnamed wall in the level into the translucency pass. Saying a surface is seen
+            // through is a statement about that surface and has no sensible blanket value.
+            NoHistory: false,
+            Glass: Flag(element, "glass") ?? false);
     }
 
     private static bool? Flag(JsonElement element, string name) =>

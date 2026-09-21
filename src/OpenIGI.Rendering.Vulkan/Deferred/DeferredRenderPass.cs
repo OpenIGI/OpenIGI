@@ -68,6 +68,15 @@ internal sealed unsafe class DeferredRenderPass : IDisposable
     /// <summary>The lit-scene format: 16-bit float HDR, the one attachment that survives the pass.</summary>
     public const Format LitFormat = Format.R16G16B16A16Sfloat;
 
+    /// <summary>The glazing front layer: a pane's world normal, and its view depth in the alpha.</summary>
+    /// <remarks>
+    /// Sixteen bits a channel and not the ten the opaque normals get. A pane is a MIRROR — the reflected
+    /// direction is twice the normal's error — so the coarse encoding that is invisible on a diffuse wall
+    /// smears a window's reflection. The reference reaches the same conclusion and says so in as many
+    /// words where it picks this format.
+    /// </remarks>
+    public const Format FrontLayerFormat = Format.R16G16B16A16Sfloat;
+
     /// <summary>The only subpass of the geometry pass, which writes the G-buffer.</summary>
     public const uint GeometrySubpass = 0;
 
@@ -92,6 +101,7 @@ internal sealed unsafe class DeferredRenderPass : IDisposable
         _device = device;
         Geometry = CreateGeometryPass();
         Shading = CreateShadingPass();
+        FrontLayer = CreateFrontLayerPass();
     }
 
     /// <summary>Gets the pass that fills the G-buffer.</summary>
@@ -99,6 +109,23 @@ internal sealed unsafe class DeferredRenderPass : IDisposable
 
     /// <summary>Gets the pass that shades the G-buffer and draws translucency.</summary>
     public RenderPass Shading { get; }
+
+    /// <summary>Gets the pass that records which pane of glazing is nearest at each pixel.</summary>
+    /// <remarks>
+    /// <para>
+    /// A colour target and a DEPTH target of its own. The depth is the whole point: a pane's reflection
+    /// is computed from one surface per pixel, and where two windows overlap the depth unit is what
+    /// decides which — nearest wins, by construction. The glazing used to answer that with an image store
+    /// from the translucency subpass, and an image store is not ordered between fragments, so the answer
+    /// changed every frame and the reflection fizzed.
+    /// </para>
+    /// <para>
+    /// Separate from the translucency subpass rather than depth-writing inside it, because there the
+    /// glazing shares a depth buffer with the tracers, the muzzle flame and the smoke — all drawn after
+    /// it, all of which glass would then occlude.
+    /// </para>
+    /// </remarks>
+    public RenderPass FrontLayer { get; }
 
     /// <inheritdoc/>
     public void Dispose()
@@ -109,6 +136,7 @@ internal sealed unsafe class DeferredRenderPass : IDisposable
         }
 
         _disposed = true;
+        _vk.DestroyRenderPass(_device, FrontLayer, null);
         _vk.DestroyRenderPass(_device, Shading, null);
         _vk.DestroyRenderPass(_device, Geometry, null);
     }
@@ -355,6 +383,81 @@ internal sealed unsafe class DeferredRenderPass : IDisposable
         InitialLayout = layout,
         FinalLayout = layout,
     };
+
+    private RenderPass CreateFrontLayerPass()
+    {
+        AttachmentDescription* attachments = stackalloc AttachmentDescription[2];
+
+        // Cleared, because a pixel no pane covers has to come out at nought -- that is what the
+        // reflection pass reads as "no glazing here". Left in GENERAL rather than the read-only layout so
+        // the compute pass that consumes it can keep binding it exactly as it did when this was a storage
+        // image: the change of who writes it is not a change of who reads it.
+        attachments[0] = ColourAttachment(FrontLayerFormat, ImageLayout.General, store: true);
+
+        // Its own depth, cleared to the far value every frame. Nothing reads it afterwards -- it exists
+        // only so the depth unit can pick the nearest pane -- so it is not stored.
+        attachments[1] = new AttachmentDescription
+        {
+            Format = DepthFormat,
+            Samples = SampleCountFlags.Count1Bit,
+            LoadOp = AttachmentLoadOp.Clear,
+            StoreOp = AttachmentStoreOp.DontCare,
+            StencilLoadOp = AttachmentLoadOp.DontCare,
+            StencilStoreOp = AttachmentStoreOp.DontCare,
+            InitialLayout = ImageLayout.Undefined,
+            FinalLayout = ImageLayout.DepthStencilAttachmentOptimal,
+        };
+
+        AttachmentReference colour = new() { Attachment = 0, Layout = ImageLayout.ColorAttachmentOptimal };
+        AttachmentReference depth = new() { Attachment = 1, Layout = ImageLayout.DepthStencilAttachmentOptimal };
+
+        SubpassDescription subpass = new()
+        {
+            PipelineBindPoint = PipelineBindPoint.Graphics,
+            ColorAttachmentCount = 1,
+            PColorAttachments = &colour,
+            PDepthStencilAttachment = &depth,
+        };
+
+        SubpassDependency* dependencies = stackalloc SubpassDependency[2];
+        dependencies[0] = new SubpassDependency
+        {
+            SrcSubpass = Vk.SubpassExternal,
+            DstSubpass = 0,
+
+            // The last frame's reflection pass read this layer, and the clear must wait for it.
+            SrcStageMask = PipelineStageFlags.ComputeShaderBit | PipelineStageFlags.FragmentShaderBit,
+            SrcAccessMask = AccessFlags.ShaderReadBit,
+            DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
+            DstAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit,
+        };
+        dependencies[1] = new SubpassDependency
+        {
+            SrcSubpass = 0,
+            DstSubpass = Vk.SubpassExternal,
+
+            // And what it wrote has to be visible to the compute pass that reflects in it.
+            SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
+            SrcAccessMask = AccessFlags.ColorAttachmentWriteBit,
+            DstStageMask = PipelineStageFlags.ComputeShaderBit | PipelineStageFlags.FragmentShaderBit,
+            DstAccessMask = AccessFlags.ShaderReadBit,
+        };
+
+        RenderPassCreateInfo createInfo = new()
+        {
+            SType = StructureType.RenderPassCreateInfo,
+            AttachmentCount = 2,
+            PAttachments = attachments,
+            SubpassCount = 1,
+            PSubpasses = &subpass,
+            DependencyCount = 2,
+            PDependencies = dependencies,
+        };
+
+        RenderPass renderPass;
+        VkCheck.Ok(_vk.CreateRenderPass(_device, &createInfo, null, &renderPass), "vkCreateRenderPass (front layer)");
+        return renderPass;
+    }
 
     private static AttachmentDescription ColourAttachment(Format format, ImageLayout finalLayout, bool store) => new()
     {

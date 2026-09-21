@@ -5217,14 +5217,30 @@ public sealed class SoldierRenderer : IDisposable
     public void DrawPlayerBody(in Camera3D camera, in Matrix4f projection)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!(_playerBodyActive
-                || _playerBodyClimbing
-                || _playerBodyShown
-                || (_playerBodyFollowing && PlayerBodyFollowVisible))
+
+        bool visible = _playerBodyActive
+            || _playerBodyClimbing
+            || _playerBodyShown
+            || (_playerBodyFollowing && PlayerBodyFollowVisible);
+
+        // Drawn for nobody, but THERE for a ray. In first person the body is not drawn -- the camera
+        // would be inside its head -- and until a reflection could shade a hit from the hit's own
+        // material, that also meant it could never appear in a window, because the only geometry a ray
+        // can strike is geometry something submitted. It can be shaded now, so it is submitted now: the
+        // player gets a reflection of themselves, and a shadow, without their own legs in shot.
+        bool tracedOnly = !visible && _playerBodyFollowing;
+
+        if ((!visible && !tracedOnly)
             || _playerBodyView is null
             || _playerBodyMember is not { } member
             || _playerBodyGroup is not { } group)
         {
+            return;
+        }
+
+        if (tracedOnly)
+        {
+            SubmitPlayerBodyToTracedWorld(camera, member, group);
             return;
         }
 
@@ -5274,6 +5290,69 @@ public sealed class SoldierRenderer : IDisposable
 
         _device.ClearPoseInterpolation();
     }
+
+    /// <summary>Puts the body into the traced world without drawing any of it.</summary>
+    /// <param name="camera">The eye, for the same model-view the drawn path composes.</param>
+    /// <param name="member">The body's frame state, which carries its posed mesh.</param>
+    /// <param name="group">The body's geometry and the pack its textures come from.</param>
+    /// <remarks>
+    /// No device state is touched — no projection, no cull mode, no depth state, no pose interpolation —
+    /// because none of it reaches a ray and every one of them would leak into whatever draws next. The
+    /// pose does not need setting either: the vertex buffer this admits already holds the skinned result,
+    /// written by <see cref="ReskinPlayerBody"/> on the animation tick rather than at the draw.
+    /// </remarks>
+    private void SubmitPlayerBodyToTracedWorld(in Camera3D camera, Member member, Group group)
+    {
+        Matrix4f modelView = camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation);
+
+        int subsets = 0;
+        int textured = 0;
+        string first = "none";
+
+        foreach (MeshSubset subset in group.Geometry.Subsets)
+        {
+            if (subset.IndexCount == 0)
+            {
+                continue;
+            }
+
+            TextureHandle diffuse = TextureHandle.None;
+            if (subset.HasMaterial
+                && group.Instance is { } instance
+                && group.Pack is { } pack
+                && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
+            {
+                diffuse = GetTexture(texture);
+                if (diffuse != TextureHandle.None)
+                {
+                    textured++;
+                    if (first == "none")
+                    {
+                        first = texture;
+                    }
+                }
+            }
+
+            subsets++;
+            _device.SubmitTracedMesh(member.Mesh, subset.IndexOffset, subset.IndexCount, modelView, diffuse);
+        }
+
+        // Once, and only for what a reflection needs to know. A body that reflects as a flat silhouette
+        // has run out of texture somewhere along a chain that crosses three files, and this says whether
+        // it got out of THIS one: no texture here and the ray has nothing to shade from whatever the
+        // renderer does later. Named rather than counted, so the name can be checked against the pack.
+        if (!_playerBodyTracedReported)
+        {
+            _playerBodyTracedReported = true;
+            _logger.Information(
+                LogCategory,
+                $"Player body in the traced world: {subsets} subset(s), {textured} with a texture "
+                    + $"(first '{first}'); instance {(group.Instance is null ? "absent" : "present")}, "
+                    + $"pack {(group.Pack is null ? "absent" : "present")}.");
+        }
+    }
+
+    private bool _playerBodyTracedReported;
 
     private void ReleasePlayerBody()
     {

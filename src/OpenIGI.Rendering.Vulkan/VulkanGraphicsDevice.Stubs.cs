@@ -204,6 +204,31 @@ public sealed partial class VulkanGraphicsDevice
 
     /// <inheritdoc/>
     /// <remarks>
+    /// Stored and nothing more. The handles are resolved where they are bound — in the reflection pass,
+    /// and only on a frame that actually traces — because a level between missions can hold handles whose
+    /// resources have already been released, and resolving one here would throw on a frame that was never
+    /// going to read it.
+    /// </remarks>
+    public void SetSurfaceCache(in SurfaceCacheBinding binding)
+    {
+        ThrowIfDisposed();
+        _surfaceCache = binding;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Stored and nothing more, exactly as the surface cache above is and for the same reason: the
+    /// handles in it may name resources a level change has already released, and resolving one on a
+    /// frame that was never going to march would throw for nothing.
+    /// </remarks>
+    public void SetDistanceField(in DistanceFieldBinding binding)
+    {
+        ThrowIfDisposed();
+        _distanceField = binding;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
     /// Uploaded here and read by the resolve, which applies it to the display-encoded picture — the only
     /// space a grade means anything in, because a colourist authored it looking at a picture rather than
     /// at radiance. A table is resident until another replaces it; the upload blocks, and it happens

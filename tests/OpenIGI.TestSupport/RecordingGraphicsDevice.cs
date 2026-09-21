@@ -371,6 +371,12 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public void SetReflections(in ReflectionSettings settings) => Reflections.Add(settings);
 
+    /// <summary>The surface caches handed over, in order.</summary>
+    public List<SurfaceCacheBinding> SurfaceCaches { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetSurfaceCache(in SurfaceCacheBinding binding) => SurfaceCaches.Add(binding);
+
     /// <summary>The colour tables handed over, in order; a null entry is a clear.</summary>
     public List<ColourLookupTable?> ColourLookups { get; } = [];
 

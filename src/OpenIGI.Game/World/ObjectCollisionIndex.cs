@@ -1141,10 +1141,32 @@ public sealed class ObjectCollisionIndex
     /// Unlike <see cref="TryCast"/> this reports <i>which</i> placement was hit, so a blocked doorway can
     /// be traced back to the exact model and task that walled it off. It walks the same flat list.
     /// </remarks>
-    public bool TryIdentify(Vector3d origin, Vector3d end, out string label, out WorldRayHit hit)
+    public bool TryIdentify(Vector3d origin, Vector3d end, out string label, out WorldRayHit hit) =>
+        TryIdentify(origin, end, out label, out _, out hit);
+
+    /// <summary>Casts a ray, names the object it meets, and hands back the placement that was struck.</summary>
+    /// <param name="origin">Where the ray starts, in world units.</param>
+    /// <param name="end">Where it stops.</param>
+    /// <param name="label">Receives the struck object's instance name (and placing task).</param>
+    /// <param name="placement">Receives the struck placement, for a caller that needs more than a name.</param>
+    /// <param name="hit">Receives the nearest contact.</param>
+    /// <returns><see langword="false"/> when the ray reaches its end unobstructed.</returns>
+    /// <remarks>
+    /// The contact is on the COLLISION mesh, so it carries the game-material row and nothing about what
+    /// is drawn. Handing the placement back is what lets a caller go on to ask the render mesh — see
+    /// <see cref="RenderSurfaceProbe"/>, which needs the model, its pack and its transform, all of which
+    /// live on the placement and none of which a label can carry.
+    /// </remarks>
+    public bool TryIdentify(
+        Vector3d origin,
+        Vector3d end,
+        out string label,
+        out WorldPlacement? placement,
+        out WorldRayHit hit)
     {
         hit = default;
         label = string.Empty;
+        placement = null;
 
         Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
         double length = Math.Sqrt((direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
@@ -1180,6 +1202,7 @@ public sealed class ObjectCollisionIndex
             {
                 hit = candidate;
                 label = entry.Label;
+                placement = entry.Placement;
                 found = true;
             }
         }
@@ -1197,7 +1220,7 @@ public sealed class ObjectCollisionIndex
     /// <remarks>
     /// The player trace (collision mesh level one) can contain volumes invisible to the default world
     /// trace — elevator-shaft boxes, door leaves — so this reports who blocks a human body the way
-    /// <see cref="TryIdentify"/> reports who blocks a world ray.
+    /// <see cref="TryIdentify(Vector3d, Vector3d, out string, out WorldRayHit)"/> reports who blocks a world ray.
     /// </remarks>
     public bool TryIdentifyForPlayer(Vector3d origin, Vector3d end, out string label, out GameTask? owner, out WorldRayHit hit)
     {

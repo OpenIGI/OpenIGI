@@ -1,4 +1,4 @@
-using OpenIGI.Audio;
+﻿using OpenIGI.Audio;
 using OpenIGI.Audio.OpenAL;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
@@ -3203,8 +3203,19 @@ internal sealed partial class DesktopGame : IDisposable
                         && !_entry.IsCameraActive
                         && _cutscenes?.IsPlaying != true
                         && (!menuMode || pauseMenu)
-                        && _player is { IsOnLadder: false, IsInWorldInteraction: false } walkingBody
-                        && (GameplayCVars.ThirdPerson.Value || _thirdPerson.IsEngaged))
+                        && _player is { IsOnLadder: false, IsInWorldInteraction: false } walkingBody)
+
+                        // ...and in FIRST person too, unconditionally, which it did not used to be.
+                        //
+                        // The follow is what POSES the body; the separate visibility latch below is what
+                        // draws it. Those were both held shut in first person, so the body did not exist
+                        // at all -- and geometry that does not exist cannot be struck by a reflected ray,
+                        // whatever the reflection is then able to do with the hit. A window could not
+                        // show the player because there was no player to show.
+                        //
+                        // So it is posed always and drawn as before. What that costs is one character
+                        // skinned per frame; what it buys is the player's own reflection and shadow,
+                        // through DrawPlayerBody's traced-only path.
                     {
                         followedBody.FollowPlayerBody(
                             walkingBody.Body.Position,
@@ -3707,7 +3718,13 @@ internal sealed partial class DesktopGame : IDisposable
                 // Whether the character is drawn at all, read here rather than at the draw because the
                 // SHADOW cascades run before it: deciding at the geometry pass left the body's shadow a
                 // frame behind the body on the frame it appeared.
-                bool thirdPersonBody = _thirdPerson.ShowsBody;
+                //
+                // TWO gates, and both have to open. The follow above places and animates the body; THIS
+                // is what actually draws it, and the third-person camera holds it shut until it has left
+                // the head far enough for a body to be a body rather than the inside of a skull filling
+                // the screen. r_player_body overrides that for first person deliberately -- see the cvar
+                // for what it buys and what it costs.
+                bool thirdPersonBody = _thirdPerson.ShowsBody || RenderCVars.PlayerBody.Value;
                 if (_soldiers is { } shownBody)
                 {
                     shownBody.PlayerBodyFollowVisible = thirdPersonBody;
@@ -4612,6 +4629,29 @@ internal sealed partial class DesktopGame : IDisposable
                 const int giTraceSteps = 32;
                 const float giTraceDistance = 24f;
                 const float giTraceThickness = 0.5f;
+                // The surface cache, handed to the backend for the reflection pass's traced half: a ray
+                // that leaves the screen has no answer in the frame, and the cards are the only record of
+                // what stands off it. Independent of whether the screen gather runs below -- the two read
+                // the same cards for different questions, and a player who has turned the indirect light
+                // off has not turned reflections off. Cleared to nothing while there is no lit cache, so
+                // the backend traces nothing rather than against stale handles.
+                _device.SetSurfaceCache(
+                    _cardLighting is { } reflectionCards && RenderCVars.SurfaceCacheProbe.Value == 0
+                        ? reflectionCards.Describe(
+                            new Vector3f(
+                                (float)(eye.Position.X - reflectionCards.Origin.X),
+                                (float)(eye.Position.Y - reflectionCards.Origin.Y),
+                                (float)(eye.Position.Z - reflectionCards.Origin.Z)),
+                            RenderCVars.GiBounce.Value)
+                        : SurfaceCacheBinding.None);
+
+                // And the distance field, for the same passes and by the same rule. Where the adapter can
+                // trace, the acceleration structure finds a reflection's hit; where it cannot, this is the
+                // only description of the world a shader can walk, and without it glass reflected the sky
+                // and nothing else. The boxes are CAMERA-RELATIVE, which is why this is handed over every
+                // frame rather than when the level loads: they move with the camera the clipmaps centre on.
+                _device.SetDistanceField(DescribeDistanceField(eye.Position));
+
                 float giStrength = RenderCVars.ScreenGather.Value;
                 bool giActive = captured
                     && giStrength > 0f
@@ -4934,6 +4974,21 @@ internal sealed partial class DesktopGame : IDisposable
 
                 if (captured)
                 {
+                    // THE GLAZING IS DRAWN TWICE, and the two draws answer different questions.
+                    //
+                    // This one records which pane is nearest at each pixel and which way it faces, into a
+                    // pass that owns a depth buffer. That pass exists because the question has one answer
+                    // per pixel and the translucency pass could not settle it: two windows in a line both
+                    // blend, both used to record, and an image store is not ordered between fragments, so
+                    // the answer changed every frame and the reflection fizzed. A depth test settles it
+                    // and cannot disagree with itself.
+                    //
+                    // The second draw, below, is the one you can see: the pane's own tint blended over
+                    // the finished picture. It writes no depth, because the tracers and the smoke are
+                    // drawn after it through the same buffer.
+                    _device.BeginPass(ScenePass.GlassLayer);
+                    _world.Draw(_scene, eye, projection, glassOnly: true);
+
                     _device.EndPass();
                     _device.BeginPass(ScenePass.Forward);
                 }
@@ -4950,6 +5005,13 @@ internal sealed partial class DesktopGame : IDisposable
                         Math.Max(1, (int)(rotorMap.Viewport.Height * renderScale))));
                 }
                 _world.Draw(_scene, eye, projection, rotorsOnly: true);
+
+                // The level's glazing, over a picture the lighting has finished. It has to follow the
+                // opaque world for the ordinary reason anything blended does, and it is a pass of its own
+                // rather than part of the rotor pass above because the two share nothing: a rotor is a
+                // whole placement that blends, and a pane is half of a texture on a placement whose other
+                // half was drawn into the G-buffer.
+                _world.Draw(_scene, eye, projection, glassOnly: true);
                 if (mapScene is not null)
                 {
                     _device.SetViewport(new Viewport(0, 0,
@@ -5725,10 +5787,34 @@ internal sealed partial class DesktopGame : IDisposable
                     string? detect = null;
                     double bestT = double.MaxValue;
                     if (_worldSolids is not null
-                        && _worldSolids.TryIdentify(originU, endU, out string objLabel, out WorldRayHit objHit))
+                        && _worldSolids.TryIdentify(
+                            originU,
+                            endU,
+                            out string objLabel,
+                            out WorldPlacement? objPlacement,
+                            out WorldRayHit objHit))
                     {
                         bestT = objHit.Distance;
-                        target = I($"target: OBJECT {objLabel} @ {objHit.Distance / WorldScene.UnitsPerMetre:F1}m ({objHit.Position.X:F0}, {objHit.Position.Y:F0}, {objHit.Position.Z:F0}) mat={objHit.Material}");
+
+                        // The texture, from the RENDER mesh, because mat= cannot give it. The contact
+                        // above is on the collision mesh and names a game-material row -- SoftMetal,
+                        // Glass -- which drives bullets and decals and is read by nothing in the
+                        // renderer. What the renderer reads is materials.json, keyed by texture name,
+                        // and until this line there was no way to learn that name from inside the game:
+                        // somebody wanting to say "this pane is glass" had to guess which of a level's
+                        // hundred numbered textures they were looking at.
+                        string surface =
+                            objPlacement is not null
+                            && RenderSurfaceProbe.TryFindTexture(
+                                objPlacement,
+                                originU,
+                                new Vector3d(endU.X - originU.X, endU.Y - originU.Y, endU.Z - originU.Z),
+                                out string objTexture,
+                                out _)
+                                ? objTexture
+                                : "?";
+
+                        target = I($"target: OBJECT {objLabel} @ {objHit.Distance / WorldScene.UnitsPerMetre:F1}m ({objHit.Position.X:F0}, {objHit.Position.Y:F0}, {objHit.Position.Z:F0}) mat={objHit.Material} tex={surface}");
                     }
 
                     if (_soldiers is not null
@@ -6626,6 +6712,52 @@ internal sealed partial class DesktopGame : IDisposable
 
         return FormattableString.Invariant(
             $"ray query, sun disc {RenderCVars.SunAngle.Value:0.0} deg  [F7 back to the map, F6 back to software]");
+    }
+
+    /// <summary>Describes the level's distance field for the backend, relative to the camera.</summary>
+    /// <param name="eye">Where the camera is, which every box is measured from.</param>
+    /// <returns>The clipmaps and their boxes, or nothing when there is no field to march.</returns>
+    /// <remarks>
+    /// CAMERA-RELATIVE, and that is not a convenience. These levels sit tens of kilometres from the world
+    /// origin, where a float has metres of precision left; the march that reads them is a loop of steps a
+    /// fraction of a voxel long, so it has to work in a space centred on the camera. Every other traced
+    /// pass in the renderer already does.
+    /// </remarks>
+    private DistanceFieldBinding DescribeDistanceField(Vector3d eye)
+    {
+        if (_sdfClipmaps is not { } field || !field.Clipmaps.IsValid)
+        {
+            return DistanceFieldBinding.None;
+        }
+
+        GlobalDistanceFieldSettings settings = field.Settings;
+        int levels = Math.Clamp(settings.Levels, 0, DistanceFieldBinding.MaxLevels);
+        if (levels <= 0)
+        {
+            return DistanceFieldBinding.None;
+        }
+
+        Span<DistanceFieldLevel> described = stackalloc DistanceFieldLevel[DistanceFieldBinding.MaxLevels];
+        for (int level = 0; level < levels; level++)
+        {
+            Vector3d corner = field.Origins[level];
+            described[level] = new DistanceFieldLevel(
+                new Vector3f(
+                    (float)(corner.X - eye.X),
+                    (float)(corner.Y - eye.Y),
+                    (float)(corner.Z - eye.Z)),
+                settings.VoxelSizeOf(level),
+                field.RangeOfLevel(level));
+        }
+
+        return new DistanceFieldBinding(
+            field.Clipmaps,
+            levels,
+            settings.Resolution,
+            described[0],
+            described[1],
+            described[2],
+            described[3]);
     }
 
     /// <summary>Reports whether the camera has a roof over it, so the frame is drawn as an interior.</summary>

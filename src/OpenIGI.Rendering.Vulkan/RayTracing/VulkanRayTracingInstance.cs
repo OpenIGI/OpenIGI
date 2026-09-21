@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using OpenIGI.Core.Numerics;
 using Silk.NET.Vulkan;
 
@@ -29,6 +29,29 @@ internal struct VulkanRayTracingInstance
 
     /// <summary>The mask value for geometry every ray should see.</summary>
     public const byte VisibleToAll = 0xFF;
+
+    /// <summary>The mask value for the first-person rig, which only a reflection may see.</summary>
+    /// <remarks>
+    /// <para>
+    /// The weapon and hands are real geometry standing half a metre from the eye, and a reflection is the
+    /// one thing that has any business finding them there. Every other trace in the renderer would be
+    /// made worse by them: the sun's would lay the shadow of a floating rifle on the ground in front of a
+    /// player who has no body to hold it, the lamps' would do the same indoors, and the indirect gather
+    /// would have a hand-sized occluder permanently wrapped around the camera, darkening whatever the
+    /// player happens to be facing.
+    /// </para>
+    /// <para>
+    /// So the rig goes into the same structure as everything else -- there is only one, and a second one
+    /// would have to be built and kept in step -- and is separated by the mask instead. It takes the top
+    /// bit alone; the world keeps <see cref="VisibleToAll"/>, so every ray that asks for
+    /// <see cref="ExcludingFirstPerson"/> still sees all of it and none of the rig. The reference divides
+    /// its own scene the same way and for the same reason: see its first-person world-space mask.
+    /// </para>
+    /// </remarks>
+    public const byte FirstPersonOnly = 0x80;
+
+    /// <summary>The cull mask for a ray that must not find the first-person rig, which is most of them.</summary>
+    public const uint ExcludingFirstPerson = 0x7F;
 
     /// <summary>The row-major three-by-four transform, twelve floats.</summary>
     public TransformMatrixKHR Transform;
