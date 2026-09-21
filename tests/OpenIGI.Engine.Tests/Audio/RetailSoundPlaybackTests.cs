@@ -17,6 +17,7 @@ namespace OpenIGI.Engine.Tests.Audio;
 /// Skipped when <c>IGI_GAME_PATH</c> is unset, and the parts that need hardware check for it first, so
 /// this passes on a continuous-integration runner with no sound card.
 /// </remarks>
+[Collection(OpenAlDeviceFixture.Name)]
 public sealed class RetailSoundPlaybackTests : IDisposable
 {
     private readonly ITestOutputHelper _output;

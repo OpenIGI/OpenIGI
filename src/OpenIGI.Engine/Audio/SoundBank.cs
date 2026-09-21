@@ -16,6 +16,13 @@ namespace OpenIGI.Engine.Audio;
 /// archive whose bodies are themselves sounds. Anything else is ignored.
 /// </para>
 /// <para>
+/// <c>.MP3</c> is the one addition, and it is the sequel's rather than an enhancement: I.G.I. 2 ships
+/// its menu theme as an MPEG stream inside <c>menusystem/sound/sounds.res</c> and its mission scores as
+/// loose <c>*_music.mp3</c> files, where I.G.I. 1 ships IMA ADPCM for both. What decides which decoder
+/// an entry gets is its <em>content</em> and not its name — see <see cref="SoundCodec"/> — so the
+/// extension governs nothing but which loose files are worth opening.
+/// </para>
+/// <para>
 /// Sounds are filed under the bare stem of their path — <c>ak47_1</c>, not
 /// <c>LOCAL:common/sounds/ak47_1.wav</c> — because that is all a script ever says. See
 /// <see cref="SoundName"/> for how the key is extracted and hashed.
@@ -71,7 +78,7 @@ public sealed class SoundBank
         return _sounds.TryGetValue(name.ToUpperInvariant(), out entry!);
     }
 
-    /// <summary>Mounts a directory of sounds, loading every <c>.wav</c> and <c>.res</c> in it.</summary>
+    /// <summary>Mounts a directory of sounds, loading every <c>.wav</c>, <c>.mp3</c> and <c>.res</c> in it.</summary>
     /// <param name="directory">A virtual file system directory such as <c>LOCAL:common/sounds</c>.</param>
     /// <returns>The number of sounds added.</returns>
     /// <remarks>
@@ -85,9 +92,12 @@ public sealed class SoundBank
         int added = 0;
         try
         {
-            foreach (string path in _fileSystem.EnumerateFiles(directory, "*.wav"))
+            foreach (string pattern in new[] { "*.wav", "*.mp3" })
             {
-                added += AddFile(path) ? 1 : 0;
+                foreach (string path in _fileSystem.EnumerateFiles(directory, pattern))
+                {
+                    added += AddFile(path) ? 1 : 0;
+                }
             }
 
             foreach (string path in _fileSystem.EnumerateFiles(directory, "*.res"))
@@ -135,7 +145,10 @@ public sealed class SoundBank
         int added = 0;
         foreach (IresEntry entry in archive.Entries)
         {
-            if (IlsfFile.IsIlsf(entry.Data.Span) && Add(entry.Name, entry.Data))
+            // An archived MPEG track has no file to reopen, so it keeps its packed bytes and is decoded
+            // out of memory. The first game's archives hold no such thing; the sequel's menu theme is
+            // one, and the whole difference between the two games' menu music is this branch.
+            if (Add(entry.Name, entry.Data, keepStreamedBytes: true))
             {
                 added++;
             }
@@ -161,8 +174,11 @@ public sealed class SoundBank
     {
         try
         {
+            // A loose file stays reopenable, so a streamed one keeps nothing but its path -- which for
+            // I.G.I. 2's mission scores is the difference between holding five megabytes per level and
+            // holding none.
             byte[] bytes = _fileSystem.ReadAllBytes(path);
-            return IlsfFile.IsIlsf(bytes) && Add(path, bytes);
+            return Add(path, bytes, keepStreamedBytes: false);
         }
         catch (Exception error) when (error is IOException or EngineFatalException)
         {
@@ -171,8 +187,30 @@ public sealed class SoundBank
         }
     }
 
-    private bool Add(string path, ReadOnlyMemory<byte> bytes)
+    /// <summary>Files one sound, having first worked out from its bytes what kind of sound it is.</summary>
+    /// <param name="path">The path the bytes came from, which is where the key is taken from.</param>
+    /// <param name="bytes">The file's contents.</param>
+    /// <param name="keepStreamedBytes">
+    /// Whether a streamed sound must hold its packed bytes because there is no file to reopen. True for
+    /// an archive member, false for a loose file.
+    /// </param>
+    /// <returns><see langword="true"/> when a sound was added.</returns>
+    /// <remarks>
+    /// The kind is read from the content rather than from the extension. The two games file the same
+    /// track under <c>menu_music.wav</c> and <c>menu_music.mp3</c>, and both answer to the same key once
+    /// the extension is stripped, so the name says nothing useful. The original's loader is no guide
+    /// here either, since every sound it can load is ILSF.
+    /// </remarks>
+    private bool Add(string path, ReadOnlyMemory<byte> bytes, bool keepStreamedBytes)
     {
+        bool isIlsf = IlsfHeader.IsIlsf(bytes.Span);
+        if (!isIlsf && !MpegAudioHeader.IsMpegAudio(bytes.Span))
+        {
+            // Not a sound at all. Archives hold other kinds of member and the original's directory
+            // walker ignores whatever it does not recognise, so this is silent rather than a warning.
+            return false;
+        }
+
         string key = SoundName.ToKey(path);
         if (key.Length == 0)
         {
@@ -187,24 +225,37 @@ public sealed class SoundBank
             return false;
         }
 
-        IlsfHeader header;
         try
         {
-            header = IlsfHeader.Read(bytes.Span);
+            if (!isIlsf)
+            {
+                MpegAudioHeader mpeg = MpegAudioHeader.Read(bytes.Span);
+                _sounds[key] = SoundEntry.Mpeg(
+                    key,
+                    path,
+                    mpeg,
+                    keepStreamedBytes ? bytes : ReadOnlyMemory<byte>.Empty,
+                    bytes.Length);
+                return true;
+            }
+
+            IlsfHeader header = IlsfHeader.Read(bytes.Span);
+
+            // A streamed sound keeps its path and nothing else, which is the whole point of the storage
+            // code: the music track is three megabytes packed and about thirteen expanded, and the
+            // original never holds either. Retail files no streamed ILSF sound inside an archive, so the
+            // keep-bytes case does not arise for one -- but honouring it costs nothing and stops a
+            // replacement pack that does it from producing an entry that can never be opened.
+            _sounds[key] = header.IsStreamed && !keepStreamedBytes
+                ? new SoundEntry(key, path, header, ReadOnlyMemory<byte>.Empty)
+                : new SoundEntry(key, path, header, bytes);
+
+            return true;
         }
-        catch (IlsfFormatException error)
+        catch (Exception error) when (error is IlsfFormatException or MpegAudioFormatException)
         {
             _logger.Warning(LogCategory, $"Sound '{path}' is not a valid format: {error.Message}");
             return false;
         }
-
-        // A streamed sound keeps its path and nothing else, which is the whole point of the storage
-        // code: the music track is three megabytes packed and about thirteen expanded, and the original
-        // never holds either.
-        _sounds[key] = header.IsStreamed
-            ? new SoundEntry(key, path, header, ReadOnlyMemory<byte>.Empty)
-            : new SoundEntry(key, path, header, bytes);
-
-        return true;
     }
 }

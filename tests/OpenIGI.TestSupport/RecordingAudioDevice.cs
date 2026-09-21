@@ -16,6 +16,7 @@ public sealed class RecordingAudioDevice : IAudioDevice
     private readonly Dictionary<int, VoiceParameters> _active = [];
     private readonly List<PlayedVoice> _played = [];
     private readonly List<AudioFormat> _createdBuffers = [];
+    private readonly Dictionary<int, ISampleSource> _streams = [];
     private int _nextHandle = 1;
 
     /// <summary>Gets every voice that has been started, in order, including ones since stopped.</summary>
@@ -43,7 +44,12 @@ public sealed class RecordingAudioDevice : IAudioDevice
     public AudioListenerState Listener { get; set; } = AudioListenerState.Default;
 
     /// <summary>Gets the sample sources handed to <see cref="PlayStream"/> that have not been disposed.</summary>
-    public int LiveStreamCount { get; private set; }
+    /// <remarks>
+    /// A real device owns a stream for as long as the voice it feeds, and releases it when the voice
+    /// stops. This double does the same, because a source that outlives its voice is a leak worth
+    /// catching: an MPEG track's decoder holds the whole packed stream.
+    /// </remarks>
+    public int LiveStreamCount => _streams.Count;
 
     /// <inheritdoc/>
     public void SetCategoryGain(SoundCategory category, float gain) =>
@@ -90,8 +96,8 @@ public sealed class RecordingAudioDevice : IAudioDevice
             return AudioVoiceHandle.None;
         }
 
-        LiveStreamCount++;
         int handle = _nextHandle++;
+        _streams[handle] = source;
         _active[handle] = parameters;
         _played.Add(new PlayedVoice(new AudioVoiceHandle(handle), AudioBufferHandle.None, parameters, IsStream: true));
         return new AudioVoiceHandle(handle);
@@ -116,13 +122,18 @@ public sealed class RecordingAudioDevice : IAudioDevice
         _active.TryGetValue(voice.Value, out VoiceParameters parameters) ? parameters : null;
 
     /// <inheritdoc/>
-    public void StopVoice(AudioVoiceHandle voice) => _active.Remove(voice.Value);
+    public void StopVoice(AudioVoiceHandle voice)
+    {
+        _active.Remove(voice.Value);
+        Release(voice.Value);
+    }
 
     /// <inheritdoc/>
     public void StopAll()
     {
         StopAllCount++;
         _active.Clear();
+        ReleaseAll();
     }
 
     /// <inheritdoc/>
@@ -138,7 +149,29 @@ public sealed class RecordingAudioDevice : IAudioDevice
     }
 
     /// <inheritdoc/>
-    public void Dispose() => _active.Clear();
+    public void Dispose()
+    {
+        _active.Clear();
+        ReleaseAll();
+    }
+
+    private void Release(int handle)
+    {
+        if (_streams.Remove(handle, out ISampleSource? source))
+        {
+            source.Dispose();
+        }
+    }
+
+    private void ReleaseAll()
+    {
+        foreach (ISampleSource source in _streams.Values)
+        {
+            source.Dispose();
+        }
+
+        _streams.Clear();
+    }
 
     /// <summary>One voice this device was asked to start.</summary>
     /// <param name="Voice">The handle it was given.</param>
