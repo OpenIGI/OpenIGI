@@ -347,6 +347,33 @@ internal sealed partial class GameHost : IDisposable
     // not, which is what keeps Project I.G.I. out of this entirely.
     private SceneAtmosphere? _atmosphere;
 
+    /// <summary>Gets the air the world wears when the retail fog is on, preferring the level's own.</summary>
+    /// <param name="fromGlobalLight">The fog this band of Project I.G.I.'s <c>GlobalLight</c> publishes.</param>
+    /// <returns>The fog to draw into.</returns>
+    /// <remarks>
+    /// <para>
+    /// <c>GlobalLight</c> is the FIRST game's task, and it is the only thing the frame used to ask. So
+    /// on the vanilla tier -- the one tier that fogs through <see cref="SceneFog"/> rather than through
+    /// the froxel volume -- I.G.I. 2's world was drawn with no fog at all: its own authored air was set
+    /// once when the mission loaded and then overwritten by an empty <c>GlobalLight</c> on the first
+    /// frame, and every frame after.
+    /// </para>
+    /// <para>
+    /// It also hid the ground's per-pass fog colour, which had nothing to tint. That is worth saying
+    /// because the two faults look identical from the outside -- far hills that are not hazed -- and
+    /// fixing either alone leaves the other in place.
+    /// </para>
+    /// <para>
+    /// Project I.G.I. cannot reach the new branch: <c>ITitlePresentationProvider.ReadAtmosphere</c>
+    /// defaults to null and only the sequel answers it, so <see cref="_atmosphere"/> is null for the
+    /// first game and this returns exactly what the frame asked for before.
+    /// </para>
+    /// </remarks>
+    private SceneFog RetailAir(SceneFog fromGlobalLight) =>
+        _atmosphere is { FogDensity: > 0f } authored
+            ? new SceneFog(authored.FogColour, authored.FogDensity)
+            : fromGlobalLight;
+
     private ITerrainPresenter? _terrain;
     private IForestPresenter? _forest;
     private IWaterPresenter? _water;
@@ -4517,7 +4544,7 @@ internal sealed partial class GameHost : IDisposable
                 // same authored haze through the froxel volume instead, and their models are lit by the
                 // G-buffer pass rather than by this one.
                 bool retailFog = RenderCVars.RetailFog.Value;
-                _device.SetFog(retailFog ? _globalLight.ObjectFog : SceneFog.None);
+                _device.SetFog(retailFog ? RetailAir(_globalLight.ObjectFog) : SceneFog.None);
                 _device.SetModelAmbient(
                     EffectiveLighting == LightingModel.Baked
                         ? _globalLight.ObjectAmbient
@@ -4585,7 +4612,7 @@ internal sealed partial class GameHost : IDisposable
                 // shipping level happens to author them alike, which is not a reason to draw them alike.
                 if (retailFog)
                 {
-                    _device.SetFog(_globalLight.TerrainFog);
+                    _device.SetFog(RetailAir(_globalLight.TerrainFog));
                 }
 
                 _terrain?.Draw(new TerrainFrame(
@@ -4603,7 +4630,7 @@ internal sealed partial class GameHost : IDisposable
 
 if (retailFog)
                 {
-                    _device.SetFog(_globalLight.ObjectFog);
+                    _device.SetFog(RetailAir(_globalLight.ObjectFog));
                 }
 
                 // The foliage after the ground it is planted in, so a tree's trunk depth-tests against
