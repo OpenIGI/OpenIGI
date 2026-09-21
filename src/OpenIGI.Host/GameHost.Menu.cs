@@ -51,8 +51,6 @@ internal sealed partial class GameHost
         _spins = preview.Spins;
         _sun = preview.Sun;
 
-        // Under the level's own sun, at the level's own hour -- see DayNightCycle.ResetForLevel.
-        _dayNight.ResetForLevel(preview.Sun, RenderCVars.TimeOfDay.Value);
         _playerTerrain = preview.Mission.Terrain is { IsUsable: true } standable ? standable : null;
 
         // A title whose ground is inside the level hands it over with the walk; one whose ground came
@@ -149,6 +147,25 @@ internal sealed partial class GameHost
         // keeps. BringMissionUp reads them only on its cold path; a level that comes up this way must
         // read them here or play without them.
         ApplyLevelConstants(preview.LevelRoot);
+
+        // And the day/night binding those constants decide, which is why it cannot happen earlier: what
+        // the cycle is reset WITH depends on what the level said about its own light, and that is read
+        // immediately above. See DayNightBinding.
+        //
+        // Reset with the RAW sun -- which is what happened here -- a backdrop of I.G.I. 2's is lit by the
+        // near-black colour its night missions author AND by the Dirlight's back colour, which nineteen
+        // of its twenty-four levels leave at black. The ground then has no light at all reaching it, and
+        // the first mission's backdrop was a black hillside under a sky that drew correctly.
+        _cycleSun = preview.Sun is { } previewSun
+            ? DayNightBinding.Bind(previewSun, _deferredLighting)
+            : null;
+        _dayNight.ResetForLevel(_cycleSun, RenderCVars.TimeOfDay.Value);
+
+        // After the reset, which clears it -- the same order the mission path keeps.
+        if (preview.Sun is { } nightSun && _deferredLighting is { Night: not null } authoredNight)
+        {
+            _dayNight.SetNightLighting(nightSun.Colour, authoredNight.Ambient);
+        }
 
         // A mission with no shipped bake previews on sun and sky alone. Tracing one is seconds of CPU for a
         // backdrop, and the trace belongs to the mission's real load, which caches it for good.

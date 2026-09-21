@@ -417,8 +417,15 @@ internal sealed partial class GameHost
         _water?.Dispose();
         _water = null;
         _shadowPass = null;
-        _menuCameras = MenuCameraLibrary.Empty;
         _showcaseCamera = null;
+
+        // NOT _menuCameras. It reads as title-scoped -- a backdrop is a level, and the rest of this
+        // method drops what a level owns -- but it is one JSON file covering both games, and every entry
+        // names the game it belongs to. Emptied here it was never reloaded: only the boot path loads it,
+        // so after the FIRST switch no title had its authored cameras, including the one switched back
+        // to. Both games then fell to derived places, and on the first game's large outdoor maps a
+        // derived pick is a different and worse shot than the authored one -- which is exactly the
+        // "backdrops in the wrong place after switching" this looked like.
     }
 
     /// <summary>The games the shell lists, each bound to its own installation.</summary>

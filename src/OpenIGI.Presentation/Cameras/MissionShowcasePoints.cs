@@ -245,9 +245,60 @@ public static class MissionShowcasePoints
         ];
     }
 
+    /// <summary>How many interquartile ranges either side of the median a structure may sit.</summary>
+    /// <remarks>
+    /// The usual outlier rule. Three is loose rather than tight, because the point is to reject things a
+    /// kilometre away, not to trim a hilltop.
+    /// </remarks>
+    private const double HeightBandSpreads = 3.0;
+
+    /// <summary>The narrowest the band may be, for a level whose placements sit on one plane.</summary>
+    /// <remarks>
+    /// A flat level has an interquartile range near nought, and three times nought would refuse every
+    /// building that stands up. Eighty metres is taller than anything either game places on the ground.
+    /// </remarks>
+    private const double NarrowestHeightBandMetres = 80.0;
+
+    /// <summary>The band of heights the level's own placements occupy, ignoring its outliers.</summary>
+    /// <remarks>
+    /// <para>
+    /// Percentiles rather than min and max, because the outliers are exactly what this is for. The band is
+    /// relative to the level, so a mission that is genuinely ten kilometres up is described correctly --
+    /// <c>location1/level3</c>'s placements sit around 9,939 m and its band goes with them.
+    /// </para>
+    /// <para>
+    /// <b>Why it is needed.</b> I.G.I. 2's first mission is a parachute drop, and it places the aircraft:
+    /// a 14,793-triangle <c>c-130bay</c> at 4,630 m, with drop props at 15,140 m, over a level whose own
+    /// placements run from about -17 to +39 m. Picked by triangle count and model radius alone -- which is
+    /// all this did -- the backdrop orbited the aeroplane, four and a half kilometres up, against an empty
+    /// sky. Project I.G.I. never showed it because nothing in it is placed a kilometre above the ground.
+    /// </para>
+    /// </remarks>
+    private static (double Low, double High) HeightBand(WorldScene scene)
+    {
+        double[] heights = [.. scene.Placements.Select(p => p.Position.Z).Order()];
+        if (heights.Length == 0)
+        {
+            return (double.MinValue, double.MaxValue);
+        }
+
+        // Median and interquartile range, not the outer percentiles. Several of the sequel's levels hold
+        // a SECOND cluster far from the first -- location1/level3's placements sit around 9,939 m with a
+        // fifth of them eight kilometres below -- and a band drawn from the 5th and 95th percentiles is
+        // then wide enough to contain the very things it was meant to reject. The middle half of the
+        // level cannot be dragged out by a tail, however long the tail is.
+        double median = heights[heights.Length / 2];
+        double quartile = heights[Math.Min(heights.Length - 1, heights.Length * 3 / 4)]
+            - heights[heights.Length / 4];
+        double reach = Math.Max(quartile * HeightBandSpreads, NarrowestHeightBandMetres);
+        return (median - reach, median + reach);
+    }
+
     /// <summary>Every placement in a level that is a building, measured and scored.</summary>
     private static List<Structure> FindBuildings(WorldScene scene, IIgiLogger? logger)
     {
+        (double low, double high) = HeightBand(scene);
+        int aloft = 0;
         // Measured once per distinct model: a level places the same hangar a dozen times and walking every
         // vertex of each copy is the same answer paid for repeatedly.
         var measured = new Dictionary<string, double>(StringComparer.Ordinal);
@@ -273,6 +324,14 @@ public static class MissionShowcasePoints
                 continue;
             }
 
+            // Not where the level is. See HeightBand: an aircraft carrying the player to the drop zone
+            // passes every geometric test a hangar does, and orbiting it shows the sky.
+            if (placement.Position.Z < low || placement.Position.Z > high)
+            {
+                aloft++;
+                continue;
+            }
+
             var structure = new Structure(
                 placement.Position,
                 radius,
@@ -286,6 +345,13 @@ public static class MissionShowcasePoints
             {
                 declared.Add(structure);
             }
+        }
+
+        if (aloft > 0)
+        {
+            logger?.Information(
+                LogCategory,
+                $"{aloft} candidate(s) sat outside the level's own heights ({low:0} to {high:0} m) and were skipped.");
         }
 
         // The level's own word for it, whenever the level gives one. This is what keeps helicopters, spline

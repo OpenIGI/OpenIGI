@@ -1606,6 +1606,10 @@ internal sealed partial class GameHost : IDisposable
             if (SwitchTitleIfDue())
             {
                 missionWarmer = new MissionWarmer(_gamePath, _missions, _logger);
+
+                // Closed rather than dropped: it owns a worker that may be part way through building the
+                // outgoing game's backdrop, and the replacement below would otherwise race it.
+                previewLoader?.Dispose();
                 previewLoader = new MissionPreviewLoader(
                     _gamePath, _missions, _magic, _giCache, _menuCameras, _previewContext, _logger);
 
