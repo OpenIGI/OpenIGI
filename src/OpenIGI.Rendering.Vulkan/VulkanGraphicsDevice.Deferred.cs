@@ -211,6 +211,10 @@ public sealed partial class VulkanGraphicsDevice
         }
 
         EnsureFrame();
+
+        // Asserted again by every frame whose title draws its own sky, so a title swap cannot leave the
+        // last one's answer behind.
+        _frameHasPaintedSky = false;
         _captureWidth = Math.Max(1, description.Width);
         _captureHeight = Math.Max(1, description.Height);
         _presentWidth = Math.Max(1, description.PresentWidth);
@@ -1793,6 +1797,33 @@ public sealed partial class VulkanGraphicsDevice
     private bool _firstPersonGeometry;
 
     /// <inheritdoc/>
+    public void SetPaintedSky(bool painted)
+    {
+        ThrowIfDisposed();
+        _paintedSky = painted;
+        _frameHasPaintedSky |= painted;
+    }
+
+    // Whether the draws being recorded are the sky itself. A bracket, and it has to be one: what it
+    // turns on is the division by the exposure, and that belongs to the dome's own draws. Left set for
+    // the rest of the frame it divided every LAMP in the level by the exposure as well, which under a
+    // night adaptation is most of a lamp's brightness gone.
+    private bool _paintedSky;
+
+    // And whether the frame HAS one, which is a different question with a different lifetime. The
+    // lighting pass is recorded after every draw in the frame, so a bracket would always have closed by
+    // the time it asks; this is what it reads. Reset when the capture opens.
+    private bool _frameHasPaintedSky;
+
+    /// <summary>The exposure a display-referred draw has to be divided by to survive the resolve.</summary>
+    /// <remarks>
+    /// The player's setting less the night, times whatever the eye has adapted to. Floored so a frame
+    /// that has adapted to near-black cannot divide by nothing.
+    /// </remarks>
+    private float ResolveExposure() =>
+        MathF.Max(RenderCVars.EffectiveExposure * _lastAdaptedExposure, 1e-3f);
+
+    /// <inheritdoc/>
     public void SetIrradianceVolumeSettings(in IrradianceVolumeSettings settings)
     {
         ThrowIfDisposed();
@@ -2644,7 +2675,7 @@ public sealed partial class VulkanGraphicsDevice
         vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _deferred.Lighting.PipelineLayout, 0, 1, &set, 0, null);
         InvalidateBoundState();
 
-        float* light = stackalloc float[12];
+        float* light = stackalloc float[16];
         light[0] = _lighting.SunDirection.X;
         light[1] = _lighting.SunDirection.Y;
         light[2] = _lighting.SunDirection.Z;
@@ -2657,7 +2688,17 @@ public sealed partial class VulkanGraphicsDevice
         light[9] = _lighting.AmbientColour.Y;
         light[10] = _lighting.AmbientColour.Z;
         light[11] = (int)_debugView;
-        vk.CmdPushConstants(cmd, _deferred.Lighting.PipelineLayout, ShaderStageFlags.FragmentBit, 0, sizeof(float) * 12, light);
+
+        // Whether the lighting pass should keep what the game drew where there is no depth, rather than
+        // substituting the atmosphere for it. The frame's fact, not the bracket's -- the sky was drawn
+        // and finished long before this pass is recorded.
+        light[12] = _frameHasPaintedSky ? 1f : 0f;
+        light[13] = 0f;
+
+        // Whether the hybrid model may add a sun to the bake, or whether the bake already has one.
+        light[14] = _lighting.CompleteBake ? 1f : 0f;
+        light[15] = 0f;
+        vk.CmdPushConstants(cmd, _deferred.Lighting.PipelineLayout, ShaderStageFlags.FragmentBit, 0, sizeof(float) * 16, light);
 
         // The light covers the whole G-buffer regardless of the geometry viewport.
         ApplyViewportAndScissor(cmd, new Viewport(0, 0, (int)_sceneTarget.Extent.Width, (int)_sceneTarget.Extent.Height));

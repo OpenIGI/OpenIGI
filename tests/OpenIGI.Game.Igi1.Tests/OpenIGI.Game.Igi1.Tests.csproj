@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- Both titles, because the tests that matter most here are the ones that compare them: what the
+         two layouts agree on is what the shared engine is allowed to assume. -->
+    <ProjectReference Include="..\..\src\OpenIGI.Game.Igi1\OpenIGI.Game.Igi1.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Game.Igi2\OpenIGI.Game.Igi2.csproj" />
+    <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The interface font, because the HUD renderers that moved here load it on Load() and a test
+         that cannot load it is testing nothing. The shipped file rather than a copy, for the reason
+         the desktop tests give: a copy is free to drift away from what the game draws with. -->
+    <None Include="..\..\apps\OpenIGI.Desktop\Assets\fonts\Saira-Regular.ttf"
+          Link="Assets\fonts\Saira-Regular.ttf"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

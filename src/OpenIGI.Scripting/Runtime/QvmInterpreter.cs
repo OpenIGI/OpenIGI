@@ -27,6 +27,7 @@ namespace OpenIGI.Scripting.Runtime;
 public sealed class QvmInterpreter
 {
     private readonly QvmProgram _program;
+    private readonly QvmOpcodeEncoding _encoding;
     private readonly NativeRegistry _natives;
     private readonly QvmSymbol?[] _symbolCache;
     private readonly int _capacity;
@@ -49,6 +50,7 @@ public sealed class QvmInterpreter
         ArgumentNullException.ThrowIfNull(natives);
 
         _program = program;
+        _encoding = QvmOpcodeEncoding.ForVersion(program.Version);
         _natives = natives;
         _symbolCache = new QvmSymbol?[program.SymbolNames.Count];
         _capacity = program.MaxLocals;
@@ -211,7 +213,14 @@ public sealed class QvmInterpreter
         }
 
         _rollbackDepth = _depth;
-        QvmOpcode opcode = (QvmOpcode)code[_programCounter];
+
+        // Translated through the program's own encoding: version 7 gives the same instructions
+        // different numbers, and reading the byte as an opcode directly would execute the wrong one.
+        if (!_encoding.TryDecode(code[_programCounter], out QvmOpcode opcode))
+        {
+            SetError(QvmError.IllegalInstruction);
+            return;
+        }
 
         // The original reads its operands unchecked and would run past a truncated code section.
         if (QvmOpcodeInfo.TryGet(opcode, out QvmOpcodeInfo info)

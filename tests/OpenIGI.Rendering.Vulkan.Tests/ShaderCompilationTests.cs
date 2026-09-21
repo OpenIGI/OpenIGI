@@ -63,6 +63,7 @@ public sealed class ShaderCompilationTests
     [InlineData("glasslayer.frag", "frag")]
     [InlineData("glassreflect.comp", "comp")]
     [InlineData("glassreflect-rayquery.comp", "comp")]
+    [InlineData("gbuffer.frag", "frag")]
     public void TheShadersThatReadTheShelterMapCompile(string name, string stage)
     {
         string compiler = Glslc.Path;
@@ -81,6 +82,7 @@ public sealed class ShaderCompilationTests
             "glassreflect.comp" => GlassReflectionShaderSource.Reflect(rayQuery: false),
             "glassreflect-rayquery.comp" => GlassReflectionShaderSource.Reflect(rayQuery: true),
             "reflect-rayquery.comp" => ReflectionShaderSource.Reflect(rayQuery: true),
+            "gbuffer.frag" => DeferredShaderSource.GBufferFragment,
             _ => ReflectionShaderSource.Reflect(rayQuery: false),
         };
 

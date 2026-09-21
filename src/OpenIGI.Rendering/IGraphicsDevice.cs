@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Rendering;
@@ -26,6 +26,18 @@ namespace OpenIGI.Rendering;
 /// </remarks>
 public interface IGraphicsDevice : IDisposable
 {
+    /// <summary>The cut-out threshold a device starts at, and returns to.</summary>
+    /// <remarks>
+    /// 128, which is the half this port has always tested at to within a texel value — the shader's
+    /// literal was <c>0.5</c> and <c>128 / 255</c> is <c>0.502</c>. Chosen so that making the threshold
+    /// settable changes no picture until somebody asks it to. It is <em>not</em> either of I.G.I. 2's
+    /// numbers; see <see cref="SetAlphaReference"/>.
+    /// </remarks>
+    const byte DefaultAlphaReference = 128;
+
+    /// <summary>The number of faces a cube map has.</summary>
+    const int CubeFaceCount = 6;
+
     /// <summary>Gets what this device supports. Mirrors <c>GetGFXCaps</c>.</summary>
     GraphicsCapabilities Capabilities { get; }
 
@@ -301,6 +313,100 @@ public interface IGraphicsDevice : IDisposable
     /// <remarks>So that a renderer which must draw untinted — the sky — can put back what it found.</remarks>
     Vector3f ModelAmbient { get; }
 
+    /// <summary>Sets the colour the following draws fog towards, until it is set again.</summary>
+    /// <param name="target">The colour: the scene's fog, half of it, or white.</param>
+    /// <remarks>
+    /// For I.G.I. 2's ground, whose three multiplied passes each fog to a different colour so that the
+    /// product lands on the scene's fog at distance — see <see cref="FogTarget"/> for the state blocks.
+    /// Device state, like <see cref="SetLightmapModulates"/>: it spans a run of draws and must be put
+    /// back to <see cref="FogTarget.Scene"/> after them. A title that never calls this fogs everything
+    /// to the scene's colour, which is what the forward path always did. It reaches a draw through
+    /// <see cref="SceneFog.ColourFor(BlendMode, FogTarget)"/>, alongside the colour itself.
+    /// </remarks>
+    void SetFogTarget(FogTarget target)
+    {
+        _ = target;
+    }
+
+    /// <summary>Sets the fixed-function sun a title's unlightmapped objects are lit by, for every draw until it is set again.</summary>
+    /// <param name="ambient">The flat light every such vertex receives, linear.</param>
+    /// <param name="colour">The directional light's diffuse colour, linear.</param>
+    /// <remarks>
+    /// <para>
+    /// The colours are a LEVEL'S CONSTANTS, like the fog: I.G.I. 2 reads them off its <c>Dirlight</c> and
+    /// <c>GlobalLight</c> when the mission loads (<c>DirlightQTask_DrawCallback</c>, <c>igi2ed 0x657680</c>;
+    /// <c>GlobalLightQTask_DrawCallback</c>, <c>0x6534E0</c>) and the backend is free to bake them in.
+    /// The direction is not, because it is applied in each object's own space: see
+    /// <see cref="SetVertexSun"/>, which is what switches the lighting on for a run of draws at all.
+    /// </para>
+    /// <para>
+    /// A title that has no such light never calls this and both stay black, which lights nothing.
+    /// </para>
+    /// </remarks>
+    void SetSceneSun(Vector3f ambient, Vector3f colour)
+    {
+        _ = ambient;
+        _ = colour;
+    }
+
+    /// <summary>Lights the following draws' vertices with the scene sun, from this direction; zero switches it off.</summary>
+    /// <param name="towardsSun">
+    /// The unit vector towards the sun in the MODEL space of the draws that follow, or zero for draws that
+    /// take no vertex lighting.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// What Direct3D's vertex pipeline computed for an I.G.I. 2 object with no baked lightmap
+    /// (<c>Direct3DRender_SetGenericStateRigid</c>, <c>igi2ed 0x56CA90</c>: <c>D3DRS_LIGHTING = 1</c> over a
+    /// white material): each vertex's colour becomes <c>saturate(ambient + colour · max(N · L, 0))</c>
+    /// and the texture is modulated by it. In model space so that the vertex stage needs nothing but the
+    /// normal it already has; the caller knows the placement's orientation and the backend need not.
+    /// </para>
+    /// <para>Device state, like <see cref="SetLightmapScale"/>: it spans a run of draws and must be cleared after them.</para>
+    /// </remarks>
+    void SetVertexSun(Vector3f towardsSun)
+    {
+        _ = towardsSun;
+    }
+
+    /// <summary>Makes the following draws multiply their lightmap texture into the base colour.</summary>
+    /// <param name="modulate">Whether the lightmap slot is a colour to modulate rather than a bake.</param>
+    /// <remarks>
+    /// <para>
+    /// Two of I.G.I. 2's surfaces put a colour in that slot rather than a bake to keep apart, and both
+    /// want it multiplied into what stage 0 laid down — which is what the original's stage 1 does and
+    /// what the forward path here does already. The FOREST is the other one: its second texture is a
+    /// single texel holding the tree's own baked colour, because the original's foliage stage 0 is
+    /// <c>MODULATE2X(TEXTURE, DIFFUSE)</c> with fixed-function lighting off
+    /// (<c>ForestRender_SetTextureState_AlphaTestFoliage</c>, <c>igi2ed 0x57C4B0</c>, and
+    /// <c>ForestRender_SetGenericState_AlphaTestFoliage</c>, <c>0x57C770</c>, writing
+    /// <c>D3DRS_LIGHTING = 0</c>) and this port has nowhere else to put a per-draw diffuse: the forward
+    /// push block is full.
+    /// </para>
+    /// <para>
+    /// For I.G.I. 2's ground, whose second texture is a DETAIL map rather than a lightmap.
+    /// <c>TerrainRender_SetMaterialTextures</c> (<c>igi2ed 0x667330</c>) binds the material's diffuse to
+    /// stage 0 at <c>1 / (TextureScale * 4096)</c> and its detail texture to stage 1 at
+    /// <c>1 / (DetailTextureScale * 4096)</c> — the two scales it writes into vertex-shader constants
+    /// 11 and 12 — and <c>TerrainRender_SetTextureState</c> (<c>0x66B810</c>) gives stage 1
+    /// <c>TEXCOORDINDEX = 1</c> and <c>COLOROP = MODULATE(TEXTURE, CURRENT)</c>. The ground's colour is
+    /// therefore the diffuse times the detail, at two different tiling rates, and it is where the rock
+    /// and grass grain in the original's hillsides comes from: the diffuse alone repeats every few tens
+    /// of metres and reads as a smooth wash.
+    /// </para>
+    /// <para>
+    /// The forward path needs nothing said to it — it already multiplies the lightmap into the colour,
+    /// which for a bound detail map is exactly the stage-1 modulate. The deferred path routes the
+    /// lightmap to its own G-buffer attachment instead, which is right for an object's bake and wrong
+    /// for this, so this is how it is told which of the two it has.
+    /// </para>
+    /// <para>Device state, like <see cref="SetLightmapScale"/>: it spans a run of draws.</para>
+    /// </remarks>
+    void SetLightmapModulates(bool modulate)
+    {
+        _ = modulate;
+    }
+
     /// <summary>Gets the part of the frame draws currently belong to.</summary>
     /// <remarks><see cref="ScenePass.None"/> outside a scene capture, which is the original's own path.</remarks>
     ScenePass CurrentPass { get; }
@@ -362,6 +468,29 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetFirstPersonGeometry(bool firstPerson);
 
+    /// <summary>Says that the title draws a sky of its own, which the frame should keep.</summary>
+    /// <param name="painted">Whether the sky about to be drawn is the game's own painted one.</param>
+    /// <remarks>
+    /// <para>
+    /// A deferred frame has to decide what to put where nothing was drawn, and a remaster's answer is
+    /// its own atmosphere — which is the right answer for a game whose sky is a flat painted gradient
+    /// and whose missions are daylight. It is the wrong answer for a game that authors a sky per
+    /// mission: an atmosphere knows night only as a sun below the horizon, and I.G.I. 2's night
+    /// missions leave the sun up and paint it black, so its night skies came back as daylight blue.
+    /// </para>
+    /// <para>
+    /// Setting this says two things at once: keep what the dome drew, and treat it as a picture rather
+    /// than a radiance — divide it by the exposure the resolve will multiply back, the same
+    /// compensation <see cref="SetFirstPersonGeometry"/> already earns for the view model. Defaulted to
+    /// nothing, so a backend that never exposes anything ignores it and a title that has not asked
+    /// keeps the picture it had.
+    /// </para>
+    /// </remarks>
+    void SetPaintedSky(bool painted)
+    {
+        _ = painted;
+    }
+
     /// <summary>Sets the seed for the following draws' hashed alpha test, zero for the hard cut-out.</summary>
     /// <param name="seed">
     /// Zero draws cut-outs with a hard per-pixel test. A value above zero turns on the hashed test, whose
@@ -370,6 +499,36 @@ public interface IGraphicsDevice : IDisposable
     /// </param>
     /// <remarks>Device state, like <see cref="SetLightmapScale"/>: it spans a run of draws.</remarks>
     void SetAlphaHash(float seed);
+
+    /// <summary>Sets how much texture alpha a cut-out draw needs to survive, for the following draws.</summary>
+    /// <param name="reference">
+    /// The threshold, out of 255. A fragment whose texture alpha is <b>below</b> it is discarded;
+    /// <see cref="DefaultAlphaReference"/> is the port's long-standing half and zero turns the test off.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// A byte rather than a fraction because that is the original's own type:
+    /// <c>D3DRS_ALPHAREF</c> takes an integer out of 255, and I.G.I. 2 sets it to exactly two values —
+    /// <b>64</b> for cut-outs generally (<c>Direct3DRender_SetBlendStateAlphaTest</c>,
+    /// <c>igi2ed 0x56C960</c>) and <b>32</b> for foliage, which lowers it so the thin edges of a leaf
+    /// sprite survive (<c>ForestRender_SetStates_Foliage</c>, <c>0x57BDF0</c>). The comparison there is
+    /// <c>D3DCMP_GREATEREQUAL</c>, so the test is "alpha at least the reference" and this discards below
+    /// it, which is the same rule.
+    /// </para>
+    /// <para>
+    /// It matters more than a threshold usually does. The port had it hard coded at a half, which is
+    /// neither of the original's numbers: on I.G.I. 1's foliage, whose texture alpha is strictly nought
+    /// or 255, any threshold in between gives the same picture and the constant was harmless. I.G.I. 2's
+    /// is not — a leaf sprite's alpha ramps, and testing at a half erodes it to a fraction of its
+    /// authored shape.
+    /// </para>
+    /// <para>
+    /// Device state, like <see cref="SetAlphaHash"/>: it spans a run of draws and must be set back
+    /// after them. A backend may treat it as part of the pipeline, so callers should change it in runs
+    /// rather than per draw.
+    /// </para>
+    /// </remarks>
+    void SetAlphaReference(byte reference);
 
     /// <summary>Attaches a derived surface-detail map to a diffuse texture.</summary>
     /// <param name="diffuse">The diffuse texture the map belongs to.</param>
@@ -742,6 +901,58 @@ public interface IGraphicsDevice : IDisposable
     /// and a unit holding both is a unit whose meaning depends on which sampler reads it.
     /// </remarks>
     void SetVolumeTexture(int unit, TextureHandle texture);
+
+    /// <summary>Creates an empty cube map.</summary>
+    /// <param name="edge">The edge length of one face, in texels.</param>
+    /// <param name="name">A name for the texture, used only in diagnostics.</param>
+    /// <returns>A handle to the cube, its faces undefined until written.</returns>
+    /// <exception cref="GraphicsDeviceException">The edge is not positive, or the device refused it.</exception>
+    /// <remarks>
+    /// <para>
+    /// Distinct from <see cref="CreateTexture"/> for the reason <see cref="CreateVolumeTexture"/> is:
+    /// the two bind different targets, and a unit holding both is a unit whose meaning depends on which
+    /// sampler reads it.
+    /// </para>
+    /// <para>
+    /// Square faces and no mip chain, which is what the game's own bakes are — I.G.I. 2 writes one
+    /// <c>A8R8G8B8</c> single-mip cube at face zero's width and loads the six files into it in order
+    /// (<c>Envmap_LoadFromMemory</c>, <c>igi2ed 0x581670</c>). Filtered linearly and clamped at every
+    /// edge, so the seams between faces blend rather than repeat.
+    /// </para>
+    /// </remarks>
+    TextureHandle CreateCubeTexture(int edge, string name);
+
+    /// <summary>Replaces one face of a cube map.</summary>
+    /// <param name="cube">The cube to write.</param>
+    /// <param name="face">Which face, <c>0</c> to <c>5</c>.</param>
+    /// <param name="pixels">The face's texels, row by row, <c>edge × edge</c> of them.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="face"/> is not a face.</exception>
+    /// <exception cref="GraphicsDeviceException">The handle is not a cube of this device, or the span is the wrong size.</exception>
+    /// <remarks>
+    /// The face order is the one every cube map API agrees on and the one the game's files are numbered
+    /// in: <c>+X, −X, +Y, −Y, +Z, −Z</c>, in the <em>sampler's</em> axes. Those are not the engine's —
+    /// I.G.I. 2 bakes its faces in engine axes and the water shader swizzles <c>.xzy</c> on the way to
+    /// the lookup, which exchanges Y and Z and lines the two up. A caller holding engine-axis faces
+    /// therefore has a mapping to do, and it belongs on the caller's side of this seam.
+    /// </remarks>
+    void UpdateCubeFace(TextureHandle cube, int face, ReadOnlySpan<Bgra32> pixels);
+
+    /// <summary>Hands over the cube map reflective draws sample, or clears it.</summary>
+    /// <param name="cube">The cube, or <see cref="TextureHandle.None"/> for none.</param>
+    /// <remarks>
+    /// <para>
+    /// Device state rather than a texture unit, and that is a fact about this seam rather than about
+    /// cube maps: a 3D draw here takes its diffuse and its lightmap as <see cref="DrawMesh"/> arguments,
+    /// and the unit array <see cref="SetTexture"/> writes is read by the compute path alone. A
+    /// reflection belongs with <see cref="SetShelterMap"/> and <see cref="SetReflections"/> — something
+    /// the frame is told once and a run of draws then uses.
+    /// </para>
+    /// <para>
+    /// A device with no cube reflects nothing; so does a draw made while none is set. That is the
+    /// state every non-reflective draw is in, which is nearly all of them.
+    /// </para>
+    /// </remarks>
+    void SetEnvironmentCube(TextureHandle cube);
 
     /// <summary>Compiles a compute program.</summary>
     /// <param name="source">The GLSL compute shader.</param>

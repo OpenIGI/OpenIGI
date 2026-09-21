@@ -1,6 +1,7 @@
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
+using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
@@ -27,7 +28,7 @@ namespace OpenIGI.Game.World;
 /// own "not unique" abort.
 /// </para>
 /// </remarks>
-public sealed class MissionRegistry
+public sealed class MissionRegistry : IMissionCatalogue<MissionDescriptor>
 {
     private const string LogCategory = "Mission";
 
@@ -139,6 +140,10 @@ public sealed class MissionRegistry
         }
     }
 
+    /// <inheritdoc/>
+    /// <remarks>The chain from the first mission, which is this game's campaign exactly.</remarks>
+    public IEnumerable<MissionDescriptor> InProgressionOrder() => Chain(FirstMissionId);
+
     /// <summary>Empties the table.</summary>
     public void Clear()
     {
@@ -168,68 +173,11 @@ public sealed class MissionRegistry
 
         Clear();
 
-        List<string> scripts = [];
-        Walk(fileSystem, MissionRoot, scripts, depth: 0);
+        int scripts = ScriptTableLoader.WalkAndRun(
+            fileSystem, resources, natives, MissionRoot, MissionScriptName, _logger);
 
-        foreach (string script in scripts)
-        {
-            string name = ToResourceName(script);
-            if (!resources.TryLoad(name, out ReadOnlyMemory<byte> bytes))
-            {
-                _logger.Warning(LogCategory, $"Mission script '{name}' vanished between the scan and the load.");
-                continue;
-            }
-
-            QvmProgram program;
-            try
-            {
-                program = QvmProgram.Read(bytes);
-            }
-            catch (QvmFormatException ex)
-            {
-                throw new EngineFatalException($"Mission_Open(): Couldn't load script: {name}", ex);
-            }
-
-            QvmInterpreter interpreter = new(program, natives);
-            QvmError error = interpreter.Run();
-            if (error != QvmError.None)
-            {
-                throw new EngineFatalException($"Mission_Open(): {name} faulted with {error}: {interpreter.ErrorMessage}");
-            }
-        }
-
-        _logger.Information(LogCategory, $"Registered {Count} mission(s) from {scripts.Count} script(s).");
+        _logger.Information(LogCategory, $"Registered {Count} mission(s) from {scripts} script(s).");
         return Count;
-    }
-
-    /// <summary>
-    /// Walks a directory tree collecting every <c>mission.qvm</c>, the way the original's
-    /// <c>File_WalkTree</c> (<c>0x4B1420</c>) drives <c>Mission_Open</c>, which recurses whenever an
-    /// entry turns out to be a directory.
-    /// </summary>
-    private static void Walk(VirtualFileSystem fileSystem, string directory, List<string> scripts, int depth)
-    {
-        // Retail nests two levels — missions/<location>/<level> — and a symlinked or cyclic tree would
-        // otherwise walk forever, which is not a failure mode worth inheriting.
-        const int maxDepth = 8;
-        if (depth > maxDepth)
-        {
-            return;
-        }
-
-        scripts.AddRange(fileSystem.EnumerateFiles(directory, MissionScriptName));
-
-        foreach (string child in fileSystem.EnumerateDirectories(directory))
-        {
-            Walk(fileSystem, child, scripts, depth + 1);
-        }
-    }
-
-    private static string ToResourceName(string path)
-    {
-        string normalized = path.Replace('\\', '/');
-        int index = normalized.IndexOf("missions/", StringComparison.OrdinalIgnoreCase);
-        return index >= 0 ? $"LOCAL:{normalized[index..]}" : normalized;
     }
 
     private QvmValue Define(QvmCallContext call)

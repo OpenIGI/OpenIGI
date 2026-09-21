@@ -1,5 +1,6 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Formats;
 using OpenIGI.Formats.World;
 
 namespace OpenIGI.Game.World;
@@ -138,13 +139,15 @@ public sealed class ShelterHeightField
     /// terrain is what keeps it small — a level is kilometres across and its buildings are a few
     /// hundred metres of that.
     /// </remarks>
+    /// <param name="collision">How this title lays a collision mesh out, or null for the first game's.</param>
     public static ShelterHeightField Build(
         IEnumerable<WorldPlacement> placements,
-        double cellMetres = DefaultCellMetres)
+        double cellMetres = DefaultCellMetres,
+        CollisionLayout? collision = null)
     {
         ArgumentNullException.ThrowIfNull(placements);
 
-        List<(WorldPlacement Placement, MefCollisionMesh Mesh)> solids = CollectSolids(placements);
+        List<(WorldPlacement Placement, MefCollisionMesh Mesh)> solids = CollectSolids(placements, collision);
         if (solids.Count == 0)
         {
             return Empty;
@@ -223,7 +226,7 @@ public sealed class ShelterHeightField
     /// <exception cref="ArgumentException"><paramref name="height"/> is not <c>width * depth</c> long.</exception>
     /// <exception cref="ArgumentOutOfRangeException">A dimension is negative, or the cell size is not positive.</exception>
     /// <remarks>
-    /// <see cref="Build(IEnumerable{WorldPlacement}, double)"/> is how a level gets one of these. This
+    /// <see cref="Build(IEnumerable{WorldPlacement}, double, CollisionLayout?)"/> is how a level gets one of these. This
     /// is for the callers that already hold the answer: a test posing a shed with a door in it, and a
     /// tool that has read a raster back from disk. It exists because the alternative for both is to
     /// assemble a placement, a pack and a model whose container parses into a collision mesh, which
@@ -414,7 +417,8 @@ public sealed class ShelterHeightField
     }
 
     private static List<(WorldPlacement Placement, MefCollisionMesh Mesh)> CollectSolids(
-        IEnumerable<WorldPlacement> placements)
+        IEnumerable<WorldPlacement> placements,
+        CollisionLayout? collision)
     {
         Dictionary<MefModel, MefCollisionMesh?> cache = [];
         List<(WorldPlacement Placement, MefCollisionMesh Mesh)> solids = [];
@@ -428,7 +432,7 @@ public sealed class ShelterHeightField
 
             if (!cache.TryGetValue(placement.Model, out MefCollisionMesh? mesh))
             {
-                mesh = MefCollisionMesh.TryRead(placement.Model.Container, meshIndex: 0, out MefCollisionMesh? read)
+                mesh = MefCollisionMesh.TryRead(placement.Model.Container, meshIndex: 0, out MefCollisionMesh? read, collision)
                     ? read
                     : null;
                 cache[placement.Model] = mesh;

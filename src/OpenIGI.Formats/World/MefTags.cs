@@ -1,4 +1,4 @@
-using OpenIGI.Core;
+﻿using OpenIGI.Core;
 
 namespace OpenIGI.Formats.World;
 
@@ -12,6 +12,29 @@ public static class MefTags
 {
     /// <summary>Chunk <c>HSEM</c> (<c>MESH</c>): the mesh header.</summary>
     public static FourCc Mesh { get; } = FourCc.FromString("HSEM");
+
+    /// <summary>Chunk <c>SEMS</c> (<c>SMES</c>): the header of a shadow-volume mesh.</summary>
+    /// <remarks>
+    /// <para>
+    /// A shadow volume is a model in its own right rather than a broken one: it carries
+    /// <c>SMES</c>/<c>SVTX</c>/<c>SFAC</c>/<c>EDGE</c> and no <see cref="Mesh"/> at all, because it is
+    /// silhouette geometry to be extruded rather than a surface to be shaded.
+    /// </para>
+    /// <para>
+    /// <b>The original loads it through a different function entirely.</b>
+    /// <c>MTP_ShadowVolumeLoad</c> (<c>igi2ed 0x41FA00</c>) opens <c>LOCAL:models/&lt;name&gt;.mef</c>
+    /// and asks for exactly these four chunks — the header at 28 bytes a row (its count is the chunk
+    /// size over 28), faces at 28, vertices at 12 and edges at 8 — while never touching the mesh
+    /// reader. So a shadow volume sitting in a models archive is not something the model reader should
+    /// be asked about at all.
+    /// </para>
+    /// <para>
+    /// Sixty-eight of them sit in the sequel's common pack — <c>shadow_1</c>, <c>truckshade</c>,
+    /// <c>Ftire_shade</c> and their like — and reading each as a render model reported every one as
+    /// malformed, once per file, every load.
+    /// </para>
+    /// </remarks>
+    public static FourCc ShadowMesh { get; } = FourCc.FromString("SEMS");
 
     /// <summary>Chunk <c>XTVM</c> (<c>MVTX</c>): legacy mesh vertices, empty in most retail models.</summary>
     public static FourCc LegacyVertices { get; } = FourCc.FromString("XTVM");
@@ -39,6 +62,14 @@ public static class MefTags
 
     /// <summary>Chunk <c>DNER</c> (<c>REND</c>): draw records and 16-bit indices.</summary>
     public static FourCc DrawRecords { get; } = FourCc.FromString("DNER");
+
+    /// <summary>Chunk <c>ECAF</c> (<c>FACE</c>): the triangle-list indices, as <c>u16</c> triples.</summary>
+    /// <remarks>
+    /// I.G.I. 2 only. I.G.I. 1 packs each draw record's indices immediately after its header inside
+    /// <see cref="DrawRecords"/>; the sequel keeps one flat array here and has each face group name a
+    /// start and a count into it.
+    /// </remarks>
+    public static FourCc FaceIndices { get; } = FourCc.FromString("ECAF");
 
     /// <summary>Chunk <c>PMTL</c> (<c>LTMP</c>): one size entry per baked object-lightmap page.</summary>
     public static FourCc LightmapPages { get; } = FourCc.FromString("PMTL");

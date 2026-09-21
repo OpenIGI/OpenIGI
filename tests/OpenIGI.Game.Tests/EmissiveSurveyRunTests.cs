@@ -1,3 +1,4 @@
+﻿using OpenIGI.Formats;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
@@ -21,7 +22,7 @@ public sealed class EmissiveSurveyRunTests
         WorldScene scene = RetailLevelOneGround.Scene();
 
         IReadOnlyList<EmissiveTextureSurvey.Finding> findings =
-            EmissiveTextureSurvey.Survey(scene, RetailLevelOneGround.Resources());
+            EmissiveTextureSurvey.Survey(scene, RetailLevelOneGround.Resources(), AssetFormatProfile.Igi1);
 
         Assert.NotEmpty(findings);
 

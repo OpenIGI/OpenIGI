@@ -71,12 +71,43 @@ public sealed class LampManifest
     /// adding one.
     /// </param>
     /// <param name="Note">What the model is, for whoever reads the file next.</param>
+    /// <param name="Title">Which game the entry is about; unmarked means Project I.G.I.</param>
     public readonly record struct Entry(
         string Model,
         IReadOnlyList<string> Textures,
         float Radiance,
         bool IsLamp,
-        string Note);
+        string Note,
+        string Title = DefaultTitle);
+
+    /// <summary>The game an entry belongs to when it does not say.</summary>
+    /// <remarks>
+    /// <para>
+    /// Every entry written before there was a second game is Project I.G.I.'s, so that is what an
+    /// unmarked one means. It is not a formality: the two games name models out of the same numbering
+    /// and DO collide. I.G.I. 2 places models called <c>207_01_1</c> and <c>208_01_1</c>, both of which
+    /// are hand-named lamps here — of the first game's, not of its own — so an unfiltered list would
+    /// have told the sequel that two of its objects glow, and bound them to textures they do not carry.
+    /// </para>
+    /// </remarks>
+    public const string DefaultTitle = "igi1";
+
+    /// <summary>Gets the entries that belong to one game.</summary>
+    /// <param name="title">The game's id, as <c>GameTitle.Id</c> gives it.</param>
+    /// <returns>The entries marked for that game, or marked for none.</returns>
+    public IReadOnlyList<Entry> For(string title)
+    {
+        List<Entry> mine = [];
+        foreach (Entry entry in _entries)
+        {
+            if (string.Equals(entry.Title, title, StringComparison.OrdinalIgnoreCase))
+            {
+                mine.Add(entry);
+            }
+        }
+
+        return mine;
+    }
 
     /// <summary>Reads a manifest.</summary>
     /// <param name="path">The file to read.</param>
@@ -158,6 +189,9 @@ public sealed class LampManifest
                     ? radiance.GetSingle()
                     : LampDetector.LampRadiance,
             !element.TryGetProperty("lamp", out JsonElement lamp) || lamp.ValueKind != JsonValueKind.False,
-            element.TryGetProperty("note", out JsonElement note) ? note.GetString() ?? string.Empty : string.Empty);
+            element.TryGetProperty("note", out JsonElement note) ? note.GetString() ?? string.Empty : string.Empty,
+            element.TryGetProperty("title", out JsonElement title) && title.GetString() is { Length: > 0 } which
+                ? which
+                : DefaultTitle);
     }
 }

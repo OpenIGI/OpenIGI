@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- Title-agnostic rendering: the passes and effects that draw the same whichever game is running,
+         plus the ITitlePresentation seam a title's own renderers plug into. Referenced by both title
+         projects, so it must hold no content belonging to either — see docs/architecture.md rule 3.
+         Like the abstraction projects it never references a backend. -->
+    <ProjectReference Include="..\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\OpenIGI.Engine\OpenIGI.Engine.csproj" />
+    <ProjectReference Include="..\OpenIGI.Formats\OpenIGI.Formats.csproj" />
+    <ProjectReference Include="..\OpenIGI.Game\OpenIGI.Game.csproj" />
+    <ProjectReference Include="..\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\OpenIGI.Input\OpenIGI.Input.csproj" />
+    <ProjectReference Include="..\OpenIGI.UI\OpenIGI.UI.csproj" />
+  </ItemGroup>
+
+</Project>

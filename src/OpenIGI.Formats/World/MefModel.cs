@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Collections.ObjectModel;
 using OpenIGI.Core;
 using OpenIGI.Core.Numerics;
@@ -26,9 +27,16 @@ public sealed class MefModel
     /// <summary>The mesh header size in bytes.</summary>
     public const int MeshHeaderSize = 156;
 
-    /// <summary>The only mesh version the original accepts.</summary>
+    /// <summary>The mesh version retail Project I.G.I. ships.</summary>
+    /// <remarks>
+    /// I.G.I. 2 ships <c>0.16</c> in the same field, so which versions are acceptable is a property of
+    /// the title being run rather than of this reader — see <see cref="AssetFormatProfile"/>. This
+    /// remains the default so that reading a model without saying which game it came from behaves as it
+    /// always has.
+    /// </remarks>
     public const float SupportedVersion = 0.1f;
 
+    private MefPortalSet? _portals;
     private readonly MefVertex[] _vertices;
     private readonly MefSkinInfluence[] _skinInfluences;
 
@@ -134,6 +142,14 @@ public sealed class MefModel
     public bool IsSector =>
         Container.TryFindChunk(MefTags.Portals, out IlffChunk portals) && portals.Payload.Length > 0;
 
+    /// <summary>Gets the model's portals, decoded on first use.</summary>
+    /// <exception cref="PackFormatException">The portal chunks are malformed.</exception>
+    /// <remarks>
+    /// Lazy because most models have none — a minority of the sequel's placed meshes are sectors, and 41
+    /// of Project I.G.I.'s 595 — so decoding eagerly would charge every model for a chunk it never uses.
+    /// </remarks>
+    public MefPortalSet Portals => _portals ??= MefPortalSet.Read(Container);
+
     /// <summary>Parses a model.</summary>
     /// <param name="data">The <c>.mef</c> bytes, starting at the ILFF header.</param>
     /// <returns>The parsed model.</returns>
@@ -141,14 +157,32 @@ public sealed class MefModel
     /// <exception cref="IlffFormatException">The container itself is malformed.</exception>
     public static MefModel Read(ReadOnlyMemory<byte> data) => FromContainer(IlffContainer.Read(data));
 
+    /// <summary>Parses a model, accepting the mesh versions one title ships.</summary>
+    /// <param name="data">The file bytes.</param>
+    /// <param name="profile">The title's format profile.</param>
+    /// <returns>The parsed model.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="profile"/> is <see langword="null"/>.</exception>
+    /// <exception cref="PackFormatException">The model is malformed, or is not a version the title ships.</exception>
+    public static MefModel Read(ReadOnlyMemory<byte> data, AssetFormatProfile profile) =>
+        FromContainer(IlffContainer.Read(data), profile);
+
     /// <summary>Parses a model from an already-parsed container.</summary>
     /// <param name="container">The container, whose form type must be <c>OCEM</c>.</param>
     /// <returns>The parsed model.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="container"/> is <see langword="null"/>.</exception>
     /// <exception cref="PackFormatException">The model is malformed or uses an unsupported mesh format.</exception>
-    public static MefModel FromContainer(IlffContainer container)
+    public static MefModel FromContainer(IlffContainer container) => FromContainer(container, AssetFormatProfile.Igi1);
+
+    /// <summary>Parses a model from an already-parsed container, accepting one title's mesh versions.</summary>
+    /// <param name="container">The container, whose form type must be <c>OCEM</c>.</param>
+    /// <param name="profile">The title's format profile.</param>
+    /// <returns>The parsed model.</returns>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    /// <exception cref="PackFormatException">The model is malformed, or is not a version the title ships.</exception>
+    public static MefModel FromContainer(IlffContainer container, AssetFormatProfile profile)
     {
         ArgumentNullException.ThrowIfNull(container);
+        ArgumentNullException.ThrowIfNull(profile);
 
         if (container.FormType != IlffTags.Ocem)
         {
@@ -162,10 +196,11 @@ public sealed class MefModel
         }
 
         float version = BinaryPrimitives.ReadSingleLittleEndian(mesh);
-        if (version != SupportedVersion)
+        if (!profile.AcceptsMesh(version))
         {
             throw new PackFormatException(
-                $"Mesh version is {version:0.00}, this code supports {SupportedVersion:0.00}.");
+                $"Mesh version is {version:0.00}, which this title does not ship "
+                + $"(it ships {string.Join(", ", profile.MeshVersions.Select(static v => v.ToString("0.00", CultureInfo.InvariantCulture)))}).");
         }
 
         uint rawFormat = BinaryPrimitives.ReadUInt32LittleEndian(mesh[32..]);
@@ -180,20 +215,14 @@ public sealed class MefModel
         float nativeMarkerBound = BinaryPrimitives.ReadSingleLittleEndian(mesh[0x78..]);
 
         ReadOnlySpan<byte> render = RequireChunk(container, MefTags.RenderHeader).Span;
-        (int vertexCount, int subMeshCount, int lightmapCount) = ReadRenderHeader(render, format);
-
-        if (vertexCount != headerVertexCount)
-        {
-            throw new PackFormatException(
-                $"The mesh header declares {headerVertexCount} vertices but the render header declares {vertexCount}.");
-        }
+        (int vertexCount, int subMeshCount, int lightmapCount) = ReadRenderHeader(render, format, profile);
 
         ReadOnlySpan<byte> vertexBytes = RequireChunk(container, MefTags.Vertices).Span;
-        MefVertex[] vertices = ReadVertices(vertexBytes, format, vertexCount);
+        MefVertex[] vertices = ReadVertices(vertexBytes, format, vertexCount, profile);
 
         // A skinned model splits its vertex array in two: the base vertices, then the extra weighted
         // influences that accumulate into them. The render header carries both counts, and they sum to
-        // the array length in all 537 retail skinned models.
+        // the array length in all 537 retail I.G.I. 1 skinned models and all 101 sampled from I.G.I. 2.
         int baseVertexCount = vertexCount;
         int extraInfluenceCount = 0;
         MefSkinInfluence[] influences = [];
@@ -211,14 +240,37 @@ public sealed class MefModel
 
             influences = ReadSkinInfluences(vertexBytes, vertexCount);
         }
+
+        // The mesh header repeats a vertex count, and the two games mean different things by it:
+        // I.G.I. 1 writes the total, I.G.I. 2 writes the base. They are equal for everything but a
+        // skinned model, which is the only case where the extras are non-zero. Checked rather than
+        // ignored, because it is a genuine cross-check on the render header having been read correctly
+        // -- reading the wrong dword there produces a plausible number, and this is what catches it.
+        int expectedHeaderCount = profile.MeshHeaderCountsBaseVertices == true ? baseVertexCount : vertexCount;
+        if (profile.MeshHeaderCountsBaseVertices is not null && headerVertexCount != expectedHeaderCount)
+        {
+            throw new PackFormatException(
+                $"The mesh header declares {headerVertexCount} vertices but the render header declares "
+                    + $"{expectedHeaderCount}.");
+        }
+
+        if (profile.MeshHeaderCountsBaseVertices is null
+            && headerVertexCount != vertexCount && headerVertexCount != baseVertexCount)
+        {
+            throw new PackFormatException(
+                $"The mesh header declares {headerVertexCount} vertices, which is neither the render "
+                    + $"header's {vertexCount} total nor its {baseVertexCount} base.");
+        }
         ReadOnlyCollection<MefLightmapPage> pages = ReadLightmapPages(container, lightmapCount);
-        IReadOnlyList<MefDrawRecord> records = ReadDrawRecords(
-            RequireChunk(container, MefTags.DrawRecords),
-            format,
-            subMeshCount,
-            vertexCount,
-            triangleCount,
-            pages.Count);
+        IReadOnlyList<MefDrawRecord> records = profile.DrawRecordStorage == MeshDrawRecordStorage.FaceGroupTable
+            ? ReadFaceGroups(container, format, subMeshCount, vertexCount, triangleCount, pages.Count)
+            : ReadDrawRecords(
+                RequireChunk(container, MefTags.DrawRecords),
+                format,
+                subMeshCount,
+                vertexCount,
+                triangleCount,
+                pages.Count);
 
         return new MefModel(
             container,
@@ -227,7 +279,7 @@ public sealed class MefModel
             vertices,
             records,
             pages,
-            ReadAttachments(container),
+            ReadAttachments(container, profile),
             baseVertexCount,
             extraInfluenceCount,
             influences,
@@ -293,6 +345,12 @@ public sealed class MefModel
     /// <summary>The size in bytes of one magic-vertex record: three floats and a four-byte pad.</summary>
     private const int MagicVertexStride = 16;
 
+    /// <summary>The size of one <c>RigidDirect3D_FaceGroup_t</c> — I.G.I. 2's unskinned and skinned groups.</summary>
+    private const int RigidFaceGroupStride = 32;
+
+    /// <summary>The size of one <c>LightmapDirect3D_FaceGroup_t</c> — I.G.I. 2's lightmapped groups.</summary>
+    private const int LightmapFaceGroupStride = 28;
+
     private static ReadOnlyMemory<byte> RequireChunk(IlffContainer container, FourCc tag) =>
         container.TryFindChunk(tag, out IlffChunk chunk)
             ? chunk.Payload
@@ -300,17 +358,20 @@ public sealed class MefModel
 
     private static (int VertexCount, int SubMeshCount, int LightmapCount) ReadRenderHeader(
         ReadOnlySpan<byte> render,
-        MefMeshFormat format)
+        MefMeshFormat format,
+        AssetFormatProfile profile)
     {
-        // Field positions shift with the format; the trailing 24 bytes are the original's runtime binding
-        // block and are zero on disk. Sizes are 48 bytes for Diffuse and 56 for the other two. Only the
-        // lightmapped layout has a page count, and it sits ahead of the counts the other two share.
-        (int subMeshOffset, int vertexOffset, int expectedSize) = format switch
+        // Field positions shift with the format, and with the title: the trailing bytes are the
+        // original's runtime binding block, zero on disk, and I.G.I. 2's is shorter. Its skinned layout
+        // also puts the vertex count four bytes earlier. Only the lightmapped layout has a page count,
+        // and it sits ahead of the counts the other two share -- in both games.
+        if (!profile.TryGetRenderHeader((uint)format, out MeshRenderHeaderLayout layout))
         {
-            MefMeshFormat.Diffuse => (8, 12, 48),
-            MefMeshFormat.Skinned => (8, 20, 56),
-            _ => (12, 16, 56),
-        };
+            throw new PackFormatException($"This title ships no mesh of format {(int)format}.");
+        }
+
+        (int subMeshOffset, int vertexOffset, int expectedSize) =
+            (layout.SubMeshOffset, layout.VertexOffset, layout.Size);
 
         if (render.Length < expectedSize)
         {
@@ -353,26 +414,27 @@ public sealed class MefModel
         return new ReadOnlyCollection<MefLightmapPage>(pages);
     }
 
-    private static ReadOnlyCollection<MefAttachment> ReadAttachments(IlffContainer container)
+    private static ReadOnlyCollection<MefAttachment> ReadAttachments(IlffContainer container, AssetFormatProfile profile)
     {
         if (!container.TryFindChunk(MefTags.Attachments, out IlffChunk chunk) || chunk.Payload.Length == 0)
         {
             return ReadOnlyCollection<MefAttachment>.Empty;
         }
 
+        int stride = profile.AttachmentStride;
         ReadOnlySpan<byte> span = chunk.Payload.Span;
-        if (span.Length % MefAttachment.Stride != 0)
+        if (span.Length % stride != 0)
         {
             throw new PackFormatException(
                 $"The '{MefTags.Attachments}' chunk is {span.Length} bytes, not a whole number of "
-                + $"{MefAttachment.Stride}-byte records.");
+                + $"{stride}-byte records.");
         }
 
-        MefAttachment[] attachments = new MefAttachment[span.Length / MefAttachment.Stride];
+        MefAttachment[] attachments = new MefAttachment[span.Length / stride];
         Span<float> rotation = stackalloc float[Matrix3f.ComponentCount];
         for (int i = 0; i < attachments.Length; i++)
         {
-            ReadOnlySpan<byte> record = span.Slice(i * MefAttachment.Stride, MefAttachment.Stride);
+            ReadOnlySpan<byte> record = span.Slice(i * stride, stride);
             for (int j = 0; j < rotation.Length; j++)
             {
                 rotation[j] = BinaryPrimitives.ReadSingleLittleEndian(record[(28 + (j * 4))..]);
@@ -385,7 +447,7 @@ public sealed class MefModel
                     BinaryPrimitives.ReadSingleLittleEndian(record[20..]),
                     BinaryPrimitives.ReadSingleLittleEndian(record[24..])),
                 Matrix3f.FromRowMajor(rotation),
-                BinaryPrimitives.ReadInt32LittleEndian(record[64..]));
+                BinaryPrimitives.ReadInt32LittleEndian(record[profile.AttachmentBoneOffset..]));
         }
 
         return new ReadOnlyCollection<MefAttachment>(attachments);
@@ -397,39 +459,59 @@ public sealed class MefModel
         return System.Text.Encoding.ASCII.GetString(end < 0 ? field : field[..end]);
     }
 
-    private static MefVertex[] ReadVertices(ReadOnlySpan<byte> data, MefMeshFormat format, int count)
+    private static MefVertex[] ReadVertices(
+        ReadOnlySpan<byte> data,
+        MefMeshFormat format,
+        int count,
+        AssetFormatProfile profile)
     {
         if (count == 0)
         {
             return [];
         }
 
-        int stride = MefVertex.StrideOf(format);
-        long needed = (long)stride * count;
+        if (!profile.TryGetVertexLayout((uint)format, out MeshVertexLayout layout))
+        {
+            throw new PackFormatException($"This title ships no mesh of format {(int)format}.");
+        }
+
+        long needed = (long)layout.Stride * count;
         if (needed != data.Length)
         {
             throw new PackFormatException(
-                $"The '{MefTags.Vertices}' chunk is {data.Length} bytes but {count} vertices at a {stride}-byte stride need {needed}.");
+                $"The '{MefTags.Vertices}' chunk is {data.Length} bytes but {count} vertices at a "
+                    + $"{layout.Stride}-byte stride need {needed}.");
         }
 
-        bool hasLightmapUv = format != MefMeshFormat.Diffuse;
         MefVertex[] vertices = new MefVertex[count];
         for (int i = 0; i < count; i++)
         {
-            ReadOnlySpan<byte> v = data.Slice(i * stride, stride);
+            ReadOnlySpan<byte> v = data.Slice(i * layout.Stride, layout.Stride);
+
+            // I.G.I. 2's lightmapped vertex carries no normal at all -- the lighting is baked and
+            // nothing shades from it -- so the field reads as zero rather than as whatever happens to
+            // sit at the offset I.G.I. 1 keeps it at.
+            Vector3f normal = layout.NormalOffset < 0
+                ? default
+                : new Vector3f(
+                    BinaryPrimitives.ReadSingleLittleEndian(v[layout.NormalOffset..]),
+                    BinaryPrimitives.ReadSingleLittleEndian(v[(layout.NormalOffset + 4)..]),
+                    BinaryPrimitives.ReadSingleLittleEndian(v[(layout.NormalOffset + 8)..]));
+
             vertices[i] = new MefVertex(
                 new Vector3f(
                     BinaryPrimitives.ReadSingleLittleEndian(v),
                     BinaryPrimitives.ReadSingleLittleEndian(v[4..]),
                     BinaryPrimitives.ReadSingleLittleEndian(v[8..])),
-                new Vector3f(
-                    BinaryPrimitives.ReadSingleLittleEndian(v[12..]),
-                    BinaryPrimitives.ReadSingleLittleEndian(v[16..]),
-                    BinaryPrimitives.ReadSingleLittleEndian(v[20..])),
-                BinaryPrimitives.ReadSingleLittleEndian(v[24..]),
-                BinaryPrimitives.ReadSingleLittleEndian(v[28..]),
-                hasLightmapUv ? BinaryPrimitives.ReadSingleLittleEndian(v[32..]) : 0f,
-                hasLightmapUv ? BinaryPrimitives.ReadSingleLittleEndian(v[36..]) : 0f);
+                normal,
+                BinaryPrimitives.ReadSingleLittleEndian(v[layout.DiffuseUvOffset..]),
+                BinaryPrimitives.ReadSingleLittleEndian(v[(layout.DiffuseUvOffset + 4)..]),
+                layout.LightmapUvOffset < 0
+                    ? 0f
+                    : BinaryPrimitives.ReadSingleLittleEndian(v[layout.LightmapUvOffset..]),
+                layout.LightmapUvOffset < 0
+                    ? 0f
+                    : BinaryPrimitives.ReadSingleLittleEndian(v[(layout.LightmapUvOffset + 4)..]));
         }
 
         return vertices;
@@ -450,6 +532,120 @@ public sealed class MefModel
         }
 
         return influences;
+    }
+
+    /// <summary>Reads I.G.I. 2's face-group table and the separate index chunk it points into.</summary>
+    /// <remarks>
+    /// <para>
+    /// The sequel keeps a flat array of fixed-size groups -- <c>RigidDirect3D_FaceGroup_t</c> at 32
+    /// bytes for the unskinned and skinned formats, <c>LightmapDirect3D_FaceGroup_t</c> at 28 for the
+    /// lightmapped one -- and one index array in <c>ECAF</c> that every group names a run of. I.G.I. 1
+    /// instead packs each record's indices after its own header, which is why its reader varies the
+    /// record length and this one does not.
+    /// </para>
+    /// <para>
+    /// <b>Indices are absolute here, not relative to the group's start vertex.</b> Confirmed twice: 5,486
+    /// of 7,535 groups sampled carry indices past their own vertex count, and the renderer binds the
+    /// index buffer once per mesh before the group loop (<c>Direct3DRender_DrawRigidMesh</c>), so the
+    /// base vertex it passes is that mesh's offset within a shared buffer rather than anything per
+    /// group.
+    /// </para>
+    /// </remarks>
+    private static ReadOnlyCollection<MefDrawRecord> ReadFaceGroups(
+        IlffContainer container,
+        MefMeshFormat format,
+        int groupCount,
+        int vertexCount,
+        int triangleCount,
+        int lightmapPageCount)
+    {
+        if (groupCount == 0)
+        {
+            return ReadOnlyCollection<MefDrawRecord>.Empty;
+        }
+
+        bool lightmapped = format == MefMeshFormat.Lightmapped;
+        int stride = lightmapped ? LightmapFaceGroupStride : RigidFaceGroupStride;
+
+        ReadOnlySpan<byte> groups = RequireChunk(container, MefTags.DrawRecords).Span;
+        ReadOnlySpan<byte> indexBytes = RequireChunk(container, MefTags.FaceIndices).Span;
+
+        long expected = (long)groupCount * stride;
+        if (groups.Length != expected)
+        {
+            throw new PackFormatException(
+                $"The '{MefTags.DrawRecords}' chunk is {groups.Length} bytes but {groupCount} face groups "
+                    + $"at a {stride}-byte stride need {expected}.");
+        }
+
+        int indexCount = indexBytes.Length / 2;
+        if (indexBytes.Length % 2 != 0 || indexCount != triangleCount * 3)
+        {
+            throw new PackFormatException(
+                $"The '{MefTags.FaceIndices}' chunk holds {indexBytes.Length} bytes but {triangleCount} "
+                    + "triangles need " + (triangleCount * 6) + ".");
+        }
+
+        MefDrawRecord[] records = new MefDrawRecord[groupCount];
+        int triangles = 0;
+
+        for (int i = 0; i < groupCount; i++)
+        {
+            ReadOnlySpan<byte> group = groups.Slice(i * stride, stride);
+
+            // The first four bytes are material properties -- shininess, transparency and, depending on
+            // the format, illumination or shininess strength. None of them is geometry.
+            Vector3f centre = new(
+                BinaryPrimitives.ReadSingleLittleEndian(group[4..]),
+                BinaryPrimitives.ReadSingleLittleEndian(group[8..]),
+                BinaryPrimitives.ReadSingleLittleEndian(group[12..]));
+
+            int startIndex = BinaryPrimitives.ReadUInt16LittleEndian(group[16..]);
+            int faceCount = BinaryPrimitives.ReadUInt16LittleEndian(group[18..]);
+            int startVertex = BinaryPrimitives.ReadUInt16LittleEndian(group[20..]);
+            int vertexSpan = BinaryPrimitives.ReadUInt16LittleEndian(group[22..]);
+            int materialSlot = BinaryPrimitives.ReadUInt16LittleEndian(group[24..]);
+            int lightmapPage = lightmapped ? BinaryPrimitives.ReadUInt16LittleEndian(group[26..]) : 0;
+
+            if (lightmapPage >= lightmapPageCount && lightmapPage != 0)
+            {
+                throw new PackFormatException(
+                    $"Face group {i} samples lightmap page {lightmapPage} but the model has {lightmapPageCount}.");
+            }
+
+            long end = (long)startIndex + (faceCount * 3);
+            if (end > indexCount)
+            {
+                throw new PackFormatException(
+                    $"Face group {i} names indices {startIndex}..{end} but the '{MefTags.FaceIndices}' "
+                        + $"chunk holds {indexCount}.");
+            }
+
+            ushort[] indices = new ushort[faceCount * 3];
+            for (int j = 0; j < indices.Length; j++)
+            {
+                ushort index = BinaryPrimitives.ReadUInt16LittleEndian(indexBytes[((startIndex + j) * 2)..]);
+                if (index >= vertexCount)
+                {
+                    throw new PackFormatException(
+                        $"Face group {i} index {j} is {index}, past the model's {vertexCount} vertices.");
+                }
+
+                indices[j] = index;
+            }
+
+            records[i] = new MefDrawRecord(
+                centre, materialSlot, lightmapPage, startVertex, vertexSpan, indicesAreRelative: false, indices);
+            triangles += faceCount;
+        }
+
+        if (triangles != triangleCount)
+        {
+            throw new PackFormatException(
+                $"The face groups cover {triangles} triangles but the mesh header declares {triangleCount}.");
+        }
+
+        return new ReadOnlyCollection<MefDrawRecord>(records);
     }
 
     private static ReadOnlyCollection<MefDrawRecord> ReadDrawRecords(

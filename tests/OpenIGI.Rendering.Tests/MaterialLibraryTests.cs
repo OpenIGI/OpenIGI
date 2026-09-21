@@ -145,4 +145,58 @@ public sealed class MaterialLibraryTests : IDisposable
         Assert.False(new ReflectionSettings(Quality: 32, Intensity: 0f).Enabled);
         Assert.False(new ReflectionSettings(Quality: 32, MaxRoughness: 0f).Enabled);
     }
+
+    /// <summary>The resolve cache survives being asked from many threads at once.</summary>
+    /// <remarks>
+    /// <para>
+    /// It did not. <c>For</c> memoised into a plain <see cref="Dictionary{TKey, TValue}"/> and wrote to it
+    /// on every miss, while the world renderer asks for a material per sub-mesh and a mission worker
+    /// builds the next level's scene from its own thread. An unsynchronised write against a concurrent
+    /// read can resize the buckets under the reader, which returns a wrong entry or does not return.
+    /// </para>
+    /// <para>
+    /// The symptom was <c>WorldRendererRotorCullingTests</c> failing about one run in ten and passing
+    /// alone, which is what a data race looks like from the outside. This drives the same shape
+    /// deliberately: many threads, many distinct names so most calls MISS and write, and the same names
+    /// asked repeatedly so the answers can be checked against a single-threaded pass.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TheResolveCacheIsSafeToAskFromManyThreads()
+    {
+        MaterialLibrary library = Write(
+            """
+            {
+              "suffixes": { "_glass": { "roughness": 0.05, "metallic": 0.0 } },
+              "textures": { "named01": { "roughness": 0.4, "metallic": 1.0 } }
+            }
+            """);
+
+        string[] names = [.. Enumerable.Range(0, 400).Select(i => (i % 3) switch
+        {
+            0 => $"tex{i}_glass",
+            1 => "named01",
+            _ => $"plain{i}",
+        })];
+
+        // What one thread says, which is the answer every thread has to agree with.
+        SurfaceMaterial[] expected = [.. names.Select(library.For)];
+
+        SurfaceMaterial[][] answers = new SurfaceMaterial[16][];
+        Parallel.For(0, answers.Length, worker =>
+        {
+            SurfaceMaterial[] mine = new SurfaceMaterial[names.Length];
+            for (int pass = 0; pass < 8; pass++)
+            {
+                for (int i = 0; i < names.Length; i++)
+                {
+                    mine[i] = library.For(names[i]);
+                }
+            }
+
+            answers[worker] = mine;
+        });
+
+        Assert.All(answers, mine => Assert.Equal(expected, mine));
+    }
 }

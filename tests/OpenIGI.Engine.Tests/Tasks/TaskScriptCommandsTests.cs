@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
@@ -162,6 +162,49 @@ public sealed class TaskScriptCommandsTests
         Assert.Equal(-0.4f, bias);
     }
 
+    /// <summary>A script may declare fewer parameters than the class carries, and the rest read as zero.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>Level_DeclareTaskParameters</c> (<c>igi2 0x543F10</c>) builds a per-script list of
+    /// name/type pairs for the type and never compares it against the type's own list at all — a script
+    /// states the shape it was compiled against, and a build older or newer than the engine's is
+    /// ordinary rather than broken. I.G.I. 2 ships both: <c>location1/level1</c> declares ten parameters
+    /// for <c>HumanPlayer</c> where every other level declares eleven.
+    /// </para>
+    /// <para>
+    /// A shortfall cannot shift a field, because the reader takes arguments in order and simply runs out.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void ADeclarationShorterThanTheClassBindsWhatItNames()
+    {
+        Fixture fixture = new();
+        fixture.Types.Register<HeightMapTask>("HeightMap");
+
+        fixture.Run(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("HeightMap"),
+                QvmExpression.Text("Position"), QvmExpression.Text("ObjectPos"),
+                QvmExpression.Text("Level"), QvmExpression.Text("Int32")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(7),
+                QvmExpression.Text("HeightMap"),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Real(1f), QvmExpression.Real(2f), QvmExpression.Real(3f),
+                QvmExpression.Int(4)));
+
+        var task = (HeightMapTask)Assert.Single(fixture.Tree.Root.Children);
+
+        // What the script named is bound.
+        Assert.Equal(new Core.Numerics.Vector3d(1, 2, 3), task.Position);
+        Assert.Equal(4, task.Level);
+
+        // What it did not name reads as zero, which is where the argument list ended.
+        Assert.Equal(0, task.Size);
+    }
+
     [Fact]
     public void AIGraphGraphdataConsumesThreeValuesAndKeepsTuningAndChildrenAligned()
     {
@@ -242,8 +285,14 @@ public sealed class TaskScriptCommandsTests
         Assert.Equal([168f, 200f, 403f], graph.Curve);
     }
 
+    /// <summary>A parameter that eats a different number of arguments is still fatal.</summary>
+    /// <remarks>
+    /// The one disagreement that corrupts a parse rather than truncating it: <c>Task_New</c> reads
+    /// positionally out of one flat list, so a parameter of a different arity shifts every field after
+    /// it. Length is negotiable; arity inside the shared prefix is not.
+    /// </remarks>
     [Fact]
-    public void ADeclarationThatDisagreesWithTheClassIsFatal()
+    public void ADeclarationThatChangesAParametersArityIsFatal()
     {
         Fixture fixture = new();
         fixture.Types.Register<HeightMapTask>("HeightMap");
@@ -252,8 +301,8 @@ public sealed class TaskScriptCommandsTests
             () => fixture.Run(QvmExpression.Call(
                 "Task_DeclareParameters",
                 QvmExpression.Text("HeightMap"),
-                QvmExpression.Text("Position"), QvmExpression.Text("ObjectPos"),
-                QvmExpression.Text("Level"), QvmExpression.Text("Real32"))));
+                QvmExpression.Text("Position"), QvmExpression.Text("Real32"),
+                QvmExpression.Text("Level"), QvmExpression.Text("Int32"))));
 
         Assert.Contains("HeightMap", error.Message, StringComparison.Ordinal);
     }

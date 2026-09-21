@@ -1,6 +1,7 @@
 using OpenIGI.Desktop;
 using OpenIGI.Game.Player;
 using Xunit;
+using OpenIGI.Presentation.Igi1;
 
 namespace OpenIGI.Desktop.Tests;
 

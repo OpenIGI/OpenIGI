@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Igi1;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;

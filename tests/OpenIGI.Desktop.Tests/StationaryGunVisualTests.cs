@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Desktop;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Presentation.Igi1;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;

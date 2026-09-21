@@ -1,4 +1,4 @@
-using OpenIGI.Rendering;
+﻿using OpenIGI.Rendering;
 
 namespace OpenIGI.Frontend;
 
@@ -43,6 +43,17 @@ public interface IShellHost
 
     /// <summary>Closes the game.</summary>
     void Quit();
+
+    /// <summary>Asks the app to run a different game.</summary>
+    /// <param name="titleId">The title's id, as <c>GameTitle.Id</c> gives it.</param>
+    /// <returns><see langword="false"/> when nothing will happen — it is already running, or not installed.</returns>
+    /// <remarks>
+    /// The shell says which game the player picked and nothing more. Whether it can be run, when the
+    /// swap actually happens and what has to be torn down first are all the app's, and the swap does not
+    /// take effect on this call: the app takes it up at a frame boundary, because the shell asking for
+    /// it is itself being drawn out of the things a switch replaces.
+    /// </remarks>
+    bool SwitchTitle(string titleId);
 
     /// <summary>Asks the app to show a mission's level behind the menu, or none.</summary>
     /// <param name="missionId">The mission to preview, or <see langword="null"/> to show the default showcase.</param>

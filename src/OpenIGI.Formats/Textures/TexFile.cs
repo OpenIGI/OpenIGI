@@ -88,6 +88,14 @@ public static class TexFile
             case Version11:
                 payloadOffset = TextureDescriptor.TexVersion11HeaderSize;
                 return TextureDescriptor.ReadTexVersion11(data);
+            case PackPicture.Version:
+                // Accepted by IsTexture and decoded by Load, so it must not be called corrupt here. It has
+                // no retail header to describe: a pack picture is a CONTAINER of frames, and its payload
+                // does not begin at a fixed offset the way version 2 and 11 do. Named rather than left to
+                // the default so the two entry points agree about what this file is.
+                throw new TextureFormatException(
+                    $"Texture version {version} is a pack picture, which has no retail header to read; "
+                        + "decode it with Load or PackPicture.Read.");
             default:
                 throw new TextureFormatException(
                     $"Texture version {version} is not one the original loads; it accepts only {Version2} and {Version11}.");

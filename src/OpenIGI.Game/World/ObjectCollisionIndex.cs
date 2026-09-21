@@ -1,5 +1,6 @@
 ﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Formats;
 using OpenIGI.Formats.World;
 
 namespace OpenIGI.Game.World;
@@ -510,7 +511,14 @@ public sealed class ObjectCollisionIndex
     /// Placements whose model has no <c>HSMC</c> group are skipped rather than treated as solid. Most
     /// scenery is like that — a model is solid only if its author gave it a collision mesh.
     /// </remarks>
-    public static ObjectCollisionIndex Build(IEnumerable<WorldPlacement> placements)
+    /// <param name="collision">
+    /// How this title lays a collision mesh out, or null for the first game's. A wrong layout does not
+    /// always fail: the row strides differ AND the material row moved a field, so a reader using the
+    /// wrong one can return a plausible material for every face.
+    /// </param>
+    public static ObjectCollisionIndex Build(
+        IEnumerable<WorldPlacement> placements,
+        CollisionLayout? collision = null)
     {
         ArgumentNullException.ThrowIfNull(placements);
 
@@ -526,10 +534,10 @@ public sealed class ObjectCollisionIndex
             if (!cache.TryGetValue(placement.Model, out var meshes))
             {
                 meshes = (
-                    MefCollisionMesh.TryRead(placement.Model.Container, meshIndex: 0, out MefCollisionMesh? readDefaultMesh)
+                    MefCollisionMesh.TryRead(placement.Model.Container, meshIndex: 0, out MefCollisionMesh? readDefaultMesh, collision)
                         ? readDefaultMesh
                         : null,
-                    MefCollisionMesh.TryRead(placement.Model.Container, meshIndex: 1, out MefCollisionMesh? readPlayerMesh)
+                    MefCollisionMesh.TryRead(placement.Model.Container, meshIndex: 1, out MefCollisionMesh? readPlayerMesh, collision)
                         ? readPlayerMesh
                         : null);
                 cache[placement.Model] = meshes;

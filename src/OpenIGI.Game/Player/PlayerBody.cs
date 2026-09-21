@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Player;
@@ -275,7 +275,7 @@ public sealed class PlayerBody
     /// <param name="terrain">The level terrain, or <see langword="null"/> for an object-only interior.</param>
     /// <param name="animationDelta">Animation 169's world-space root delta for this tick.</param>
     /// <returns><see langword="true"/> when the slide generated the ground-collision signal.</returns>
-    public bool TickLadderSlide(TerrainData? terrain, Vector3d animationDelta)
+    public bool TickLadderSlide(IGroundHeightField? terrain, Vector3d animationDelta)
     {
         Velocity = HumanMotion.IntegrateLadderSlide(Velocity);
         Vector3d next = new(
@@ -306,7 +306,7 @@ public sealed class PlayerBody
     /// Whether to resolve the highest surface below the authored endpoint. Top animation 170 uses this
     /// to commit onto the roof instead of allowing numerical drift to fall through it.
     /// </param>
-    public void EndLadderTraversal(TerrainData? terrain, bool placeOnGround)
+    public void EndLadderTraversal(IGroundHeightField? terrain, bool placeOnGround)
     {
         Velocity = default;
         InheritedVelocity = default;
@@ -329,7 +329,7 @@ public sealed class PlayerBody
     /// The animation's delta translation for this tick, in the body's own frame: <b>X is sideways and
     /// Y is forward</b>, matching the view's right and forward axes.
     /// </param>
-    public void Tick(in PlayerCommand command, TerrainData? terrain, Vector3f rootDelta)
+    public void Tick(in PlayerCommand command, IGroundHeightField? terrain, Vector3f rootDelta)
     {
         ProcessPendingLanding();
 
@@ -519,7 +519,7 @@ public sealed class PlayerBody
     /// a cycle rather than blending through the state the original would pass through.
     /// </para>
     /// </remarks>
-    public void TickAnimated(in PlayerCommand command, TerrainData? terrain, HumanLocomotionAnimator animator)
+    public void TickAnimated(in PlayerCommand command, IGroundHeightField? terrain, HumanLocomotionAnimator animator)
     {
         ArgumentNullException.ThrowIfNull(animator);
 
@@ -631,7 +631,7 @@ public sealed class PlayerBody
     /// bug this restores.
     /// </para>
     /// </remarks>
-    private void Settle(ref Vector3d position, TerrainData? terrain, Vector3d movementStart)
+    private void Settle(ref Vector3d position, IGroundHeightField? terrain, Vector3d movementStart)
     {
         double from = position.Z + HumanGroundQuery.ProbeOrigin(IsCrouched);
 
@@ -646,18 +646,18 @@ public sealed class PlayerBody
         // by the feet. This is what prevents a high fall tunnelling under the map.
         if (terrain is not null && !IsGrounded && position.Z < movementStart.Z)
         {
-            WorldTraceRequest fall = new(movementStart, position, WorldTraceMask.Terrain);
-            if (TerrainRayTrace.TryTrace(terrain, fall, out WorldTraceHit crossed) && crossed.Normal.Z > 0f)
+            if (terrain.TryTraceDescent(movementStart, position, out TerrainGround crossed)
+                && crossed.NormalZ > 0.0)
             {
                 found = true;
-                height = crossed.Position.Z;
-                normal = crossed.Normal;
+                height = crossed.Height;
+                normal = new Vector3f((float)crossed.NormalX, (float)crossed.NormalY, (float)crossed.NormalZ);
             }
         }
 
         if (terrain is not null
             && !found
-            && TerrainHeightQuery.TryGetGround(terrain, position.X, position.Y, from, out TerrainGround ground))
+            && terrain.TryGetGround(position.X, position.Y, from, out TerrainGround ground))
         {
             found = true;
             height = ground.Height;
@@ -775,16 +775,16 @@ public sealed class PlayerBody
     public const double InteractionSnapSearchUnits = 4096000.0;
 
     /// <summary>Snaps an authored interaction root to the highest terrain or placed-model surface below it.</summary>
-    public bool SnapInteractionToGround(TerrainData? terrain) =>
+    public bool SnapInteractionToGround(IGroundHeightField? terrain) =>
         PlaceOnGround(terrain, InteractionSnapSearchUnits);
 
     /// <summary>Drops the player onto the ground beneath it, for placing one at the start of a level.</summary>
     /// <param name="terrain">The level's terrain, or <see langword="null"/> for an object-only interior.</param>
     /// <returns><see langword="false"/> when there is nothing under the player to stand on.</returns>
-    public bool PlaceOnGround(TerrainData? terrain)
+    public bool PlaceOnGround(IGroundHeightField? terrain)
         => PlaceOnGround(terrain, PlacementSearchUnits);
 
-    private bool PlaceOnGround(TerrainData? terrain, double searchUnits)
+    private bool PlaceOnGround(IGroundHeightField? terrain, double searchUnits)
     {
         _pendingWalkOffVelocity = null;
 
@@ -798,7 +798,7 @@ public sealed class PlayerBody
         double probe = from;
         while (terrain is not null && probe > floor)
         {
-            if (TerrainHeightQuery.TryGetGround(terrain, Position.X, Position.Y, probe, out TerrainGround ground))
+            if (terrain.TryGetGround(Position.X, Position.Y, probe, out TerrainGround ground))
             {
                 height = ground.Height;
                 found = true;

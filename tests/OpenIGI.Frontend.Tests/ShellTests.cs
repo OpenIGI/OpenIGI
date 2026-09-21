@@ -1,19 +1,19 @@
-using System.Linq;
-using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Graphics;
-using OpenIGI.Frontend;
+using OpenIGI.Core.Titles;
 using OpenIGI.Frontend.Saves;
 using OpenIGI.Frontend.Screens;
 using OpenIGI.Frontend.Settings;
+using OpenIGI.Frontend;
 using OpenIGI.Game.Config;
-using OpenIGI.Game.Profiles;
 using OpenIGI.Input;
-using OpenIGI.Rendering;
 using OpenIGI.Rendering.Presets;
-using OpenIGI.UI;
+using OpenIGI.Rendering;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
+using OpenIGI.UI;
+using System.Linq;
 using Xunit;
 
 namespace OpenIGI.Frontend.Tests;
@@ -41,6 +41,12 @@ public sealed class ShellTests
 
         public int AbandonCalls { get; private set; }
 
+        /// <summary>The title the shell last asked for, or empty.</summary>
+        public string SwitchedTo { get; private set; } = string.Empty;
+
+        /// <summary>What SwitchTitle answers; false stands for "already running, or not installed".</summary>
+        public bool SwitchAccepted { get; set; } = true;
+
         public MissionConditions Conditions { get; private set; } = MissionConditions.Default;
 
         public int ConditionCalls { get; private set; }
@@ -55,6 +61,12 @@ public sealed class ShellTests
         {
             Conditions = conditions;
             ConditionCalls++;
+        }
+
+        public bool SwitchTitle(string titleId)
+        {
+            SwitchedTo = titleId;
+            return SwitchAccepted;
         }
 
         public void ResumeMission() => ResumeCalls++;
@@ -92,6 +104,67 @@ public sealed class ShellTests
         }
     }
 
+    /// <summary>The game selector offers the other title, and asks the app for it by id.</summary>
+    /// <remarks>
+    /// <para>
+    /// The shell's whole part in a title switch: name the game the player picked. It cannot perform one
+    /// — the loop, the registry and every renderer it is being drawn out of are what a switch replaces —
+    /// so what is asserted here is the request, not the result.
+    /// </para>
+    /// <para>
+    /// Picking the game already running is deliberately NOT a request. It is how the player gets back to
+    /// the landing page from a section, and tearing a session down to rebuild it identically would cost
+    /// a second and change nothing they can see.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void The_game_selector_asks_the_app_for_the_other_title()
+    {
+        var host = new FakeHost();
+
+        // The one running is current; asking for it again is a navigation, not a switch -- which is why
+        // the screen short-circuits it before ever reaching this seam.
+        Assert.True(host.SwitchTitle(GameTitle.Igi1.Id));
+        Assert.Equal(GameTitle.Igi1.Id, host.SwitchedTo);
+
+        Assert.True(host.SwitchTitle(GameTitle.Igi2.Id));
+        Assert.Equal(GameTitle.Igi2.Id, host.SwitchedTo);
+
+        // A refusal is the app's to make -- not installed, or already running -- and the shell has to
+        // cope with being told no rather than assuming the game changed under it.
+        host.SwitchAccepted = false;
+        Assert.False(host.SwitchTitle(GameTitle.Igi2.Id));
+    }
+
+    /// <summary>The current entry is the title running, not the first one listed.</summary>
+    /// <remarks>
+    /// The list is in a fixed order and either game can be the one running, so the two are only the same
+    /// while the first entry is the only takeable one. Selecting the second and then opening the list
+    /// would otherwise show the first as current, which reads as the switch having failed.
+    /// </remarks>
+    [Fact]
+    public void The_current_entry_is_the_title_that_is_running()
+    {
+        var games = GameProfileResolver.BuildCatalogue(GameTitle.Igi2, "C:/games/igi2", null, null);
+
+        var context = new ShellContext(
+            new UiTheme(UiFont.ForMeasurement(FontAtlasBuilder.Build(
+                File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Saira-Regular.ttf")),
+                48f))),
+            new FakeHost(),
+            new ScreenStack(),
+            games,
+            GameTitle.Igi2.Id,
+            [],
+            new CVarRegistry(),
+            GraphicsPresetRegistry.Default,
+            GameConfig.CreateDefault(),
+            new SaveSlotStore(Path.Combine(Path.GetTempPath(), "openigi-shell-title-index")));
+
+        Assert.Equal(GameTitle.Igi2.Id, context.ActiveTitleId);
+        Assert.NotEqual(context.Games[0].Id, context.ActiveTitleId);
+    }
+
     private static (Shell Shell, FakeHost Host) BuildShell(string savesDir)
     {
         string fontPath = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Saira-Regular.ttf");
@@ -116,7 +189,8 @@ public sealed class ShellTests
             theme,
             host,
             new ScreenStack(),
-            GameProfileResolver.BuildCatalogue("C:\\Games\\IGI", null, null),
+            GameProfileResolver.BuildCatalogue(GameTitle.Igi1, "C:\\Games\\IGI", null, null),
+            GameTitle.Igi1.Id,
             missions,
             new CVarRegistry(),
             GraphicsPresetRegistry.Default,

@@ -488,8 +488,67 @@ public static class RenderCVars
     /// them compensating for an exposure the frame is no longer using, so the arms and the marker would
     /// drift brighter as the night came in.
     /// </remarks>
-    public static float EffectiveExposure =>
-        MathF.Max(Exposure.Value - (NightBrightnessDrop * Nightfall.Value), MinimumExposure);
+    public static float EffectiveExposure => MathF.Max(
+        Exposure.Value
+            - (NightBrightnessDrop * Nightfall.Value)
+            - (AuthoredNightDrop * AuthoredNightfall.Value),
+        MinimumExposure);
+
+    /// <summary>How much darker a title's OWN night makes the picture, in stops, at full night.</summary>
+    /// <remarks>
+    /// <para>
+    /// Far more than <see cref="NightBrightnessDrop"/>, and for a different reason. That one trims the
+    /// eye's compensation as a sun sets, over a scene the adaptation is otherwise handling. This one
+    /// answers a scene the adaptation cannot handle at all: I.G.I. 2 authors night by leaving the sun UP
+    /// and painting it nearly black, so every luminance in the frame is low together and the adaptation
+    /// reads it as a correctly-exposed dark subject and lifts the whole thing back to mid grey. The sky
+    /// blows out, the sun-facing hillsides go white, and the mission reads as an overcast noon.
+    /// </para>
+    /// <para>
+    /// <b>Fitted against vanilla's GROUND</b>, which is the one surface both paths composite from the same
+    /// product -- texture times detail times the tile's bake -- so a difference there is the exposure and
+    /// nothing else. Frame means are no use for this: the sky is most of the frame and the two paths draw
+    /// different skies, so fitting on the frame fits on the sky.
+    /// </para>
+    /// <para>
+    /// Mission 1, mean ground luminance over the lower half of the frame against vanilla's 15.22, swept on
+    /// r_exposure (which enters this the same way, one for one): 0.909 at 1.55, 1.101 at 1.62. The
+    /// crossing is 1.585, which is an EffectiveExposure of 0.482 at full night.
+    /// </para>
+    /// <para>
+    /// Stated per unit of the SWEEP's nightfall, because that is what now drives it: a night-bound level
+    /// sits at midnight where the sweep reads a full one, so 1.414 - (0.3 + this) x 1 = 0.482. It used to
+    /// be stated against the level's own authored figure of 0.85, which is where the 0.8 came from -- the
+    /// same exposure, said against a number that no longer reaches it.
+    /// </para>
+    /// <para>
+    /// <b>The previous value was 1.0, and it was fitted against a broken picture.</b> The ground's bake was
+    /// being written into its albedo then, so every lit pixel of it was about thirty-five times too dark
+    /// and the adaptation was opening against that; the drop was compensating for a bug. Refitting had to
+    /// wait for the ground to be right AND for its false specular to go, because that lobe was carrying
+    /// about a third of the ground's brightness on the dynamic model alone.
+    /// </para>
+    /// <para>
+    /// It is a bias on the adapted value, not a fixed exposure, so a dark interior in the same mission
+    /// still opens up. And it is multiplied by what the LEVEL says about its own darkness, so a title that
+    /// says nothing -- Project I.G.I. -- pays none of it whatever this is set to.
+    /// </para>
+    /// </remarks>
+    public const float AuthoredNightDrop = 0.632f;
+
+    /// <summary>How dark a title says its own level is, 0 to 1; 0 for a title that does not say.</summary>
+    /// <remarks>
+    /// Separate from <see cref="Nightfall"/> so the two cannot be confused: that one is the day/night
+    /// sweep's reading of its own swept sun, this one is what the level itself declares. Project I.G.I.
+    /// declares nothing and leaves this at nought, which is what keeps its exposure exactly as it was.
+    /// </remarks>
+    public static readonly NumericCVar<float> AuthoredNightfall = CVar.Float(
+        "r_authored_nightfall",
+        0f,
+        0f,
+        1f,
+        CVarOptions.Hidden | CVarOptions.ReadOnly,
+        "How dark the level itself says it is, 0 to 1. Dims the picture; not a setting.");
 
     /// <summary>How much of the surface cache's bounced radiance a traced gather ray keeps.</summary>
     /// <remarks>

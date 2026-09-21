@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Globalization;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
@@ -38,6 +38,32 @@ public sealed class WorldScene
     /// the level-1 water tower measures 95005 units tall, which is 23 metres.
     /// </remarks>
     public const double UnitsPerMetre = 4096.0;
+
+    /// <summary>Converts a position or an offset from engine units into metres.</summary>
+    /// <param name="units">The value in engine units.</param>
+    /// <returns>The same value in metres.</returns>
+    /// <remarks>
+    /// Beside the constant that defines it, because every title's scene walk needs it and the arithmetic
+    /// is the kind that goes wrong by being retyped: a walk that forgets it renders a level four thousand
+    /// times too large, which looks like an empty world rather than like a scale error.
+    /// <para>
+    /// Both games agree on the divisor. <c>Game_Open</c> registers <c>WORLD_METER</c> as a double
+    /// (<c>IGI.exe 0x539558</c>, <c>igi2.exe 0x640B80</c>) and both hold 4096.
+    /// </para>
+    /// </remarks>
+    public static Vector3d ToMetres(Vector3d units) =>
+        new(units.X / UnitsPerMetre, units.Y / UnitsPerMetre, units.Z / UnitsPerMetre);
+
+    /// <summary>Converts a position or an offset from metres into engine units.</summary>
+    /// <param name="metres">The value in metres.</param>
+    /// <returns>The same value in engine units.</returns>
+    /// <remarks>
+    /// The inverse of <see cref="ToMetres"/>, and it exists because both games' terrain needs it: the
+    /// level-of-detail thresholds are authored in engine units, so the eye is converted into that space
+    /// rather than the height field out of it.
+    /// </remarks>
+    public static Vector3d ToUnits(Vector3d metres) =>
+        new(metres.X * UnitsPerMetre, metres.Y * UnitsPerMetre, metres.Z * UnitsPerMetre);
 
     /// <summary>The task parameter naming an object's model.</summary>
     public const string ModelParameter = "Model";
@@ -284,6 +310,31 @@ public sealed class WorldScene
         UnresolvedCount = unresolved;
         UnplacedCount = unplaced;
         AttachedCount = attached;
+    }
+
+    /// <summary>Builds a scene from placements a title has already resolved.</summary>
+    /// <param name="mission">The mission the placements belong to, which is what locates the lightmap archive.</param>
+    /// <param name="placements">Everything to draw, in the order the level placed it.</param>
+    /// <returns>The scene.</returns>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Build"/> walks a task tree and knows a great deal about which types Project I.G.I.
+    /// places and what their parameters are called — down to naming the security-camera models. That
+    /// walk is not shared, and neither is it needed: a title that has already worked out what it places
+    /// has nothing left to discover, and only needs somewhere to put the answer.
+    /// </para>
+    /// <para>
+    /// So this is the seam that lets one renderer draw both games. The scene, the placement and the
+    /// renderer are shared; how a level is read into placements is the title's own business.
+    /// </para>
+    /// </remarks>
+    public static WorldScene FromPlacements(LoadedMission mission, IReadOnlyList<WorldPlacement> placements)
+    {
+        ArgumentNullException.ThrowIfNull(mission);
+        ArgumentNullException.ThrowIfNull(placements);
+
+        return new WorldScene(mission, placements, [], unresolved: 0, unplaced: 0, attached: 0);
     }
 
     /// <summary>Gets the mission the scene was built from.</summary>
@@ -1384,7 +1435,7 @@ public sealed class WorldScene
         {
             if (task.TryGetValue(name, out object? value) && value is Vector3d p)
             {
-                position = new Vector3d(p.X / UnitsPerMetre, p.Y / UnitsPerMetre, p.Z / UnitsPerMetre);
+                position = ToMetres(p);
                 return true;
             }
         }

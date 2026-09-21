@@ -1,3 +1,4 @@
+using OpenIGI.Host.Menu;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;

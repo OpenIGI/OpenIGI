@@ -1,4 +1,5 @@
 using OpenIGI.Engine.Configuration;
+using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using Xunit;
 
@@ -15,7 +16,7 @@ public sealed class FileSystemConfigTests : IDisposable
     [Fact]
     public void DefaultsMatchTheAliasesTheOriginalBindsAtStartUp()
     {
-        FileSystemConfig config = FileSystemConfig.CreateDefault();
+        FileSystemConfig config = FileSystemConfig.CreateDefault(new StubLayout());
 
         Assert.Equal(
             [
@@ -54,7 +55,7 @@ public sealed class FileSystemConfigTests : IDisposable
         var vfs = new VirtualFileSystem();
         vfs.RegisterDevice(new LocalFileDevice(_root));
 
-        FileSystemConfig.CreateDefault().ApplyTo(vfs);
+        FileSystemConfig.CreateDefault(new StubLayout()).ApplyTo(vfs);
 
         Assert.Equal(["LOCAL:computer/font1.fnt"], vfs.ResolveCandidates("COMPUTER:font1.fnt"));
         Assert.Equal(["LOCAL:screens/game/status/a.spr"], vfs.ResolveCandidates("STATUSSCREEN:a.spr"));
@@ -78,9 +79,9 @@ public sealed class FileSystemConfigTests : IDisposable
     {
         string path = Path.Combine(_root, FileSystemConfig.DefaultFileName);
 
-        FileSystemConfig config = FileSystemConfig.LoadOrDefault(path);
+        FileSystemConfig config = FileSystemConfig.LoadOrDefault(path, new StubLayout());
 
-        Assert.Equal(FileSystemConfig.CreateDefault().Aliases, config.Aliases);
+        Assert.Equal(FileSystemConfig.CreateDefault(new StubLayout()).Aliases, config.Aliases);
     }
 
     [Fact]
@@ -89,7 +90,7 @@ public sealed class FileSystemConfigTests : IDisposable
         string path = Path.Combine(_root, FileSystemConfig.DefaultFileName);
         File.WriteAllText(path, "COMPUTER: = LOCAL:mods/hd-computer/\n");
 
-        FileSystemConfig config = FileSystemConfig.LoadOrDefault(path);
+        FileSystemConfig config = FileSystemConfig.LoadOrDefault(path, new StubLayout());
 
         KeyValuePair<string, string> alias = Assert.Single(config.Aliases);
         Assert.Equal("LOCAL:mods/hd-computer/", alias.Value);
@@ -101,4 +102,42 @@ public sealed class FileSystemConfigTests : IDisposable
     [InlineData("MENUSYS: =")]
     public void RejectsMalformedLines(string text) =>
         Assert.Throws<FileSystemConfigException>(() => FileSystemConfig.Parse(text));
+
+    /// <summary>
+    /// A title whose aliases happen to be I.G.I. 1's, written here rather than referenced.
+    /// </summary>
+    /// <remarks>
+    /// These tests are about the configuration mechanism, not about either game, and
+    /// <c>OpenIGI.Engine</c> must not know a title in order to be tested. The four bindings are the ones
+    /// the original binds at start-up; the point of the test is that they arrive intact, whoever supplies
+    /// them.
+    /// </remarks>
+    private sealed class StubLayout : ITitleDataLayout
+    {
+        public IReadOnlyList<KeyValuePair<string, string>> StartupAliases { get; } =
+        [
+            new(VirtualFileSystem.MenuSystemAlias, "LOCAL:menusystem/"),
+            new(VirtualFileSystem.ComputerAlias, "LOCAL:computer/"),
+            new(VirtualFileSystem.IntroScreenAlias, "LOCAL:screens/intro/"),
+            new(VirtualFileSystem.StatusScreenAlias, "LOCAL:screens/game/status/"),
+        ];
+
+        public string MissionRoot => "LOCAL:missions";
+
+        public string MissionScriptName => "mission.qvm";
+
+        public string LevelScriptName => "objects.qvm";
+
+        public int FirstMissionId => 1;
+
+        public string CommonSearchDirectory => "LOCAL:common/";
+
+        public IReadOnlyList<string> SharedArchives { get; } = [];
+
+        public IReadOnlyList<string> StringArchives => [];
+
+        public IReadOnlyList<string> SoundDirectories { get; } = [];
+
+        public IReadOnlyList<string> StructuralTaskTypes { get; } = [];
+    }
 }

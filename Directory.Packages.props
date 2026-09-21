@@ -40,6 +40,15 @@
     <PackageVersion Include="StbTrueTypeSharp" Version="1.26.12" />
   </ItemGroup>
 
+  <ItemGroup Label="Sound">
+    <!-- I.G.I. 2 ships its menu theme as a 320 kbps MPEG-1 Layer III stream inside
+         menusystem/sound/sounds.res, where the first game ships IMA ADPCM; retail decodes it through
+         Miles (mss32.dll). NLayer is a pure-managed MIT decoder with no reflection and no native
+         dependency, so it behaves the same on every platform the port targets and stays AOT-safe:
+         the same reasoning that picked StbTrueTypeSharp above. -->
+    <PackageVersion Include="NLayer" Version="3.0.0" />
+  </ItemGroup>
+
   <ItemGroup Label="Testing">
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />

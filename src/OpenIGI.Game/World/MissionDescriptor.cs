@@ -1,4 +1,4 @@
-namespace OpenIGI.Game.World;
+﻿namespace OpenIGI.Game.World;
 
 /// <summary>
 /// One mission's descriptor: the eleven values a level's <c>mission.qvm</c> passes to
@@ -45,6 +45,37 @@ public sealed record MissionDescriptor(
     string LevelPackName,
     string BriefingSprite)
 {
+    /// <summary>Gets the packs this mission opens, in order, or null for the two the first game opens.</summary>
+    /// <remarks>
+    /// <para>
+    /// I.G.I. 2 opens four and the order is behaviour, so its catalogue names them here. A descriptor
+    /// that names none falls back to <see cref="PacksToOpen"/>'s pair, which is exactly what Project
+    /// I.G.I. has always opened.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<PackReference>? Packs { get; init; }
+
+    /// <summary>Gets the four-character mode this mission belongs to, or empty when the title has none.</summary>
+    /// <remarks>
+    /// <para>
+    /// I.G.I. 2's <c>DefineMission</c> takes it as <b>four separate single-character arguments</b>, which
+    /// <c>Mission_DefineMissionCB</c> (<c>igi2 0x40E2D0</c>) packs big-endian into one word it calls
+    /// <c>aazGameModeID</c>. The shipped campaign spells <c>SNGL</c> and the shipped multiplayer maps
+    /// <c>MULT</c>.
+    /// </para>
+    /// <para>
+    /// It is where <see cref="NextMissionId"/> sits in the first game's argument list, and it replaces
+    /// it: I.G.I. 2 names no next mission at all, so a campaign order has to come from somewhere else.
+    /// </para>
+    /// </remarks>
+    public string GameMode { get; init; } = string.Empty;
+
+    /// <summary>Gets the packs to open, in order, falling back to the pair the first game names.</summary>
+    public IReadOnlyList<PackReference> PacksToOpen =>
+        Packs is { Count: > 0 } named
+            ? named
+            : [new PackReference($"LOCAL:{CommonPackDirectory}/", CommonPackName), new PackReference($"LOCAL:{LevelPackDirectory}/", LevelPackName)];
+
     /// <summary>The value of <see cref="NextMissionId"/> that means "no mission follows this one".</summary>
     public const int NextMissionUndefined = -1;
 

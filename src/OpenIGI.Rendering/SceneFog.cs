@@ -35,7 +35,8 @@ namespace OpenIGI.Rendering;
 /// <b>The fog colour follows the blend, not the level</b> (<c>sub_5144E0</c>): an opaque draw fogs to the
 /// level's colour, an additive one (<c>ONE, ONE</c>) to black (<c>0x5145BB</c>), and a modulating one
 /// (<c>ZERO, SRCCOLOR</c>) to white (<c>0x514529</c>) — each blend's own identity, so that a surface
-/// drawn as several passes fogs once rather than once per pass. <see cref="ColourFor"/> is that rule.
+/// drawn as several passes fogs once rather than once per pass. <see cref="ColourFor(BlendMode)"/>
+/// is that rule, and <see cref="ColourFor(BlendMode, FogTarget)"/> is what a pass says instead of it.
 /// </para>
 /// <para>
 /// The sky dome is not fogged at all: <c>sub_52D060</c> sets <c>FOGENABLE</c> to zero along with its
@@ -100,6 +101,31 @@ public readonly record struct SceneFog(Vector3f Colour, float DensityPerMetre)
     /// this, blend by blend, and it is why the terrain's several passes come out fogged like one.
     /// </remarks>
     public Vector3f ColourFor(BlendMode blend) => blend == BlendMode.Additive ? default : Colour;
+
+    /// <summary>What 127 out of 255 is, which is the half <c>TerrainRender_SetBlendMode</c> writes.</summary>
+    /// <remarks>
+    /// Half as the original spells it, rather than as arithmetic would: <c>D3DRS_FOGCOLOR</c> is packed
+    /// bytes, so the half of a channel it can write is 127/255 and not 0.5. Four thousandths, and it is
+    /// only here because a constant that says where a number came from is worth more than the number.
+    /// </remarks>
+    public const float HalfTarget = 127f / 255f;
+
+    /// <summary>Gets the colour a draw fogs towards when its pass names one.</summary>
+    /// <param name="blend">The blend the draw is submitted with.</param>
+    /// <param name="target">The colour the pass asks for, or <see cref="FogTarget.Scene"/> for none.</param>
+    /// <returns>The colour to fog towards.</returns>
+    /// <remarks>
+    /// A pass that names a target overrides the blend rule rather than combining with it, because that
+    /// is how the two reach the hardware: <c>sub_5144E0</c> sets <c>D3DRS_FOGCOLOR</c> from the blend,
+    /// and <c>TerrainRender_SetBlendMode</c> (<c>igi2ed 0x666B90</c>) sets the same register itself for
+    /// the ground's three passes. The last write wins, and for the ground the terrain's is the last.
+    /// </remarks>
+    public Vector3f ColourFor(BlendMode blend, FogTarget target) => target switch
+    {
+        FogTarget.HalfScene => Colour * HalfTarget,
+        FogTarget.White => Vector3f.One,
+        _ => ColourFor(blend),
+    };
 
     /// <summary>Gets how much of a surface survives at a view depth.</summary>
     /// <param name="viewDepthMetres">The depth along the view axis, in metres.</param>

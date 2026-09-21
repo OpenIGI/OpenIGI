@@ -1,4 +1,6 @@
-using OpenIGI.Game.Config;
+﻿using OpenIGI.Game.Config;
+
+using OpenIGI.Engine.Titles;
 
 namespace OpenIGI.Game.World;
 
@@ -6,7 +8,7 @@ namespace OpenIGI.Game.World;
 public static class MissionProgression
 {
     /// <summary>Advances the profile to <paramref name="nextMissionId"/> only when it lies ahead of its frontier.</summary>
-    public static bool UnlockNext(PlayerProfile profile, MissionRegistry missions, int nextMissionId)
+    public static bool UnlockNext(PlayerProfile profile, IMissionCatalogue<MissionDescriptor> missions, int nextMissionId)
     {
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(missions);
@@ -15,7 +17,7 @@ public static class MissionProgression
             return false;
         }
 
-        foreach (MissionDescriptor mission in missions.Chain())
+        foreach (MissionDescriptor mission in missions.InProgressionOrder())
         {
             if (mission.Id == nextMissionId)
             {
@@ -33,12 +35,12 @@ public static class MissionProgression
     }
 
     /// <summary>Gets a mission's campaign status when ActiveMission means the furthest unlocked mission.</summary>
-    public static MissionCampaignStatus Status(MissionRegistry missions, int activeMissionId, int missionId)
+    public static MissionCampaignStatus Status(IMissionCatalogue<MissionDescriptor> missions, int activeMissionId, int missionId)
     {
         int frontier = -1;
         int wanted = -1;
         int index = 0;
-        foreach (MissionDescriptor mission in missions.Chain())
+        foreach (MissionDescriptor mission in missions.InProgressionOrder())
         {
             if (mission.Id == activeMissionId)
             {

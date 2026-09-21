@@ -1,4 +1,4 @@
-using OpenIGI.Formats.Animation;
+﻿using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.World;
 
 namespace OpenIGI.Game.World;
@@ -16,6 +16,11 @@ namespace OpenIGI.Game.World;
 /// The steps of the original's sequence this load did not perform, as human-readable descriptions. Empty
 /// once M6 and M7 close.
 /// </param>
+/// <param name="Packs">
+/// Every model pack the mission has open, in the order the game opens them, or empty for the two the
+/// first game opens. <b>Order is behaviour</b>: a name that appears in more than one pack resolves to
+/// the first that holds it, so the list is the precedence.
+/// </param>
 /// <param name="Terrain">
 /// The level's terrain, or <see langword="null"/> when the loader was given no
 /// <see cref="TerrainLoader"/> or the level ships none. Check
@@ -26,8 +31,27 @@ public sealed record LoadedMission(
     LoadedPack CommonPack,
     LoadedPack LevelPack,
     IReadOnlyList<string> PendingSteps,
-    TerrainData? Terrain = null)
+    TerrainData? Terrain = null,
+    IReadOnlyList<LoadedPack>? Packs = null)
 {
+    /// <summary>Gets every pack the mission has open, in the order the game opens them.</summary>
+    /// <remarks>
+    /// <para>
+    /// Project I.G.I. opens two — a per-location common pack and the level's — and a mission that names
+    /// no list falls back to exactly those, in that order, which is what it has always used.
+    /// </para>
+    /// <para>
+    /// I.G.I. 2 opens <b>four</b>, and that is read rather than assumed: <c>Game_CreateHandler</c>
+    /// (<c>igi2ed 0x4469A0</c>) calls <c>MTP_Load</c> five times, for <c>common</c>, <c>new</c>, the
+    /// location's, the level's and finally <c>editor</c> — the last under a "Loading editor..." caption
+    /// and from <c>LOCAL:editor/</c>, so it is the editor's own and no part of the game. The first four
+    /// are the game's, in that order, and <c>MTP_VirModel_GetPtr</c> returns the first match walking from
+    /// the head, so the common pack shadows the level's rather than the other way about.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<LoadedPack> PacksInLoadOrder =>
+        Packs is { Count: > 0 } named ? named : [CommonPack, LevelPack];
+
     /// <summary>Gets a value indicating whether every step of the original's sequence ran.</summary>
     public bool IsComplete => PendingSteps.Count == 0;
 
@@ -49,6 +73,16 @@ public sealed record LoadedMission(
     /// </remarks>
     public bool TryGetModel(string name, out MefModel? model) =>
         LevelPack.TryGetModel(name, out model) || CommonPack.TryGetModel(name, out model);
+
+    /// <summary>Resolves the diffuse texture a model's material slot samples, across both packs.</summary>
+    /// <param name="model">The model's name, as level data spells it.</param>
+    /// <param name="materialSlot">The draw record's material slot.</param>
+    /// <param name="textureName">Receives the texture's bare name.</param>
+    /// <returns><see langword="false"/> when neither pack answers.</returns>
+    /// <remarks>The level pack first, the same precedence <see cref="TryGetModel(string, out MefModel?)"/> uses.</remarks>
+    public bool TryGetTextureName(string model, int materialSlot, out string textureName) =>
+        LevelPack.TryGetTextureName(model, materialSlot, out textureName)
+        || CommonPack.TryGetTextureName(model, materialSlot, out textureName);
 
     /// <summary>Resolves an animation set by the skeleton id its own <c>BOSH</c> chunk declares.</summary>
     /// <param name="skeletonId">The skeleton id — a soldier's <c>Bone Heirachy</c> parameter.</param>

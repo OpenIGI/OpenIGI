@@ -1,3 +1,4 @@
+﻿using OpenIGI.Formats;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
@@ -281,7 +282,7 @@ public sealed class RetailObjectLightmapTests
                 sets[set] = entries = [];
             }
 
-            entries[index] = ObjectLightmap.Read(entry.Data);
+            entries[index] = ObjectLightmap.Read(entry.Data, AssetFormatProfile.Igi1);
         }
 
         return sets;

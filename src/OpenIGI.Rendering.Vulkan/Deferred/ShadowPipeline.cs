@@ -25,6 +25,8 @@ internal sealed unsafe class ShadowPipeline : IDisposable
     // rather than the wrapper. Passing it is what lets the driver return a previous run's
     // compiled pipeline instead of building this one again.
     private readonly PipelineCache _pipelineCache;
+    private readonly Dictionary<byte, Pipeline> _pipelines = [];
+    private RenderPass _renderPass;
     private readonly VulkanShaderModule _vertex;
     private readonly VulkanShaderModule _fragment;
     private bool _disposed;
@@ -55,12 +57,35 @@ internal sealed unsafe class ShadowPipeline : IDisposable
         _fragment = new VulkanShaderModule(
             vk, _device, compiler.Compile(DeferredShaderSource.ShadowFragment, ShaderStage.Fragment, "shadow.frag"), ShaderStage.Fragment);
 
+        _renderPass = renderPass;
         PipelineLayout = CreateLayout(textureSetLayout);
-        Pipeline = CreatePipeline(renderPass);
+        Pipeline = CreatePipeline(renderPass, IGraphicsDevice.DefaultAlphaReference);
+        _pipelines[IGraphicsDevice.DefaultAlphaReference] = Pipeline;
     }
 
-    /// <summary>Gets the pipeline.</summary>
+    /// <summary>Gets the pipeline that cuts out at the default threshold.</summary>
     public Pipeline Pipeline { get; }
+
+    /// <summary>Gets, building if needed, the pipeline that cuts out at one threshold.</summary>
+    /// <param name="alphaReference">The threshold out of 255.</param>
+    /// <returns>The matching pipeline.</returns>
+    /// <remarks>
+    /// <b>Must be asked for the same number the G-buffer was.</b> The shadow fragment shader says so
+    /// itself: a pass that cuts on less than the G-buffer keeps casters the frame never draws, and one
+    /// that cuts on more drops shadows from things you can see. Either way the two disagree and the
+    /// ground goes patchy along the edge.
+    /// </remarks>
+    public Pipeline ForAlphaReference(byte alphaReference)
+    {
+        if (_pipelines.TryGetValue(alphaReference, out Pipeline existing))
+        {
+            return existing;
+        }
+
+        Pipeline pipeline = CreatePipeline(_renderPass, alphaReference);
+        _pipelines[alphaReference] = pipeline;
+        return pipeline;
+    }
 
     /// <summary>Gets the pipeline layout, which carries the model-view-projection push constant.</summary>
     public PipelineLayout PipelineLayout { get; }
@@ -74,7 +99,14 @@ internal sealed unsafe class ShadowPipeline : IDisposable
         }
 
         _disposed = true;
-        _vk.DestroyPipeline(_device, Pipeline, null);
+        // Every variant, and the default is one of them -- it is put in the dictionary when it is built,
+        // so destroying Pipeline separately here would be a double free.
+        foreach (Pipeline pipeline in _pipelines.Values)
+        {
+            _vk.DestroyPipeline(_device, pipeline, null);
+        }
+
+        _pipelines.Clear();
         _vk.DestroyPipelineLayout(_device, PipelineLayout, null);
         _fragment.Dispose();
         _vertex.Dispose();
@@ -103,11 +135,18 @@ internal sealed unsafe class ShadowPipeline : IDisposable
         return layout;
     }
 
-    private Pipeline CreatePipeline(RenderPass renderPass)
+    private Pipeline CreatePipeline(RenderPass renderPass, byte alphaReference)
     {
         nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
         try
         {
+            float specializationValue;
+            SpecializationMapEntry specializationEntry;
+            SpecializationInfo specialization = Pipelines.AlphaReferenceSpecialization.Describe(
+                &specializationValue,
+                &specializationEntry,
+                alphaReference);
+
             PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
             stages[0] = new PipelineShaderStageCreateInfo
             {
@@ -122,6 +161,7 @@ internal sealed unsafe class ShadowPipeline : IDisposable
                 Stage = ShaderStageFlags.FragmentBit,
                 Module = _fragment.Handle,
                 PName = (byte*)entryPoint,
+                PSpecializationInfo = &specialization,
             };
 
             // The same vertex buffer the world draws from: the position, and the texture coordinate the

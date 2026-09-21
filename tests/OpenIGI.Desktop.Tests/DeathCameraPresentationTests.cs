@@ -1,5 +1,7 @@
+using OpenIGI.Presentation.Cameras;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Desktop;
+using OpenIGI.Presentation.Igi1;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;

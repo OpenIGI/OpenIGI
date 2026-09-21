@@ -1,12 +1,12 @@
-using System.Buffers.Binary;
-using OpenIGI.Core.Numerics;
 using OpenIGI.Audio;
-using OpenIGI.Desktop.Audio;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Sound;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Host.Audio;
 using OpenIGI.TestSupport;
+using System.Buffers.Binary;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;

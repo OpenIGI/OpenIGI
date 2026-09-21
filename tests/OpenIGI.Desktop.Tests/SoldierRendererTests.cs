@@ -10,6 +10,7 @@ using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Presentation.Igi1;
 using OpenIGI.TestSupport;
 using Xunit;
 

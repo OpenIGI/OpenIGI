@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
@@ -72,13 +72,16 @@ public sealed class TerrainLoader
 
         if (!_resources.TryLoad(basePath + ".ctr", out ReadOnlyMemory<byte> ctrBytes))
         {
-            _logger.Warning(LogCategory, $"'{basePath}.ctr' is absent; the level has no terrain.");
+            // "No chunked terrain HERE", not "no terrain". This reader is Project I.G.I.'s octree, and a
+            // title whose ground is a different format entirely -- I.G.I. 2's flat grid of .thm tiles
+            // inside heightmaps.res -- ships nothing at this path and has terrain all the same.
+            _logger.Warning(LogCategory, $"'{basePath}.ctr' is absent; no chunked terrain is loaded from this path.");
             return null;
         }
 
         if (!_resources.TryLoad(basePath + ".cmd", out ReadOnlyMemory<byte> cmdBytes))
         {
-            _logger.Warning(LogCategory, $"'{basePath}.cmd' is absent; the level has no terrain.");
+            _logger.Warning(LogCategory, $"'{basePath}.cmd' is absent; no chunked terrain is loaded from this path.");
             return null;
         }
 

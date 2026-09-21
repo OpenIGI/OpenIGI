@@ -1,9 +1,9 @@
-﻿using OpenIGI.Game.Profiles;
+﻿using OpenIGI.Core.Titles;
 using OpenIGI.Input;
-using OpenIGI.UI;
 using OpenIGI.UI.Focus;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
+using OpenIGI.UI;
 
 namespace OpenIGI.Frontend.Screens;
 
@@ -216,32 +216,55 @@ public abstract class ShellScreen : Screen
     private DropdownButton BuildTitle(UiTheme theme)
     {
         string[] games = new string[Context.Games.Count];
+        int current = 0;
         for (int i = 0; i < games.Length; i++)
         {
             games[i] = Context.Games[i].DisplayName;
+            if (Context.Games[i].Id == Context.ActiveTitleId)
+            {
+                current = i;
+            }
         }
 
-        var title = new DropdownButton(theme, "PROJECT I.G.I.", games)
+        var title = new DropdownButton(theme, games.Length > 0 ? games[current] : string.Empty, games)
         {
             Font = theme.Heading,
             TextSize = theme.HeadingTextSize * 0.62f,
             Padding = new Thickness(14f, 8f),
             Margin = new Thickness(0f, 20f, 40f, 20f),
             Accent = ButtonAccent.Underline,
-            CurrentIndex = 0,
 
-            // I.G.I. 2 is listed but cannot be taken: the shell has no support for it yet, and a title the
-            // player can see is coming is worth more than a list with one entry. Saying so in the list is
-            // also what stops the click reading as broken.
+            // The one running, not the first listed. They were the same while only one game could be
+            // taken; picking the second and then opening the list would otherwise show the first as
+            // current, which reads as the switch having failed.
+            CurrentIndex = current,
+
+            // A title is takeable when this build supports it AND the player has it installed. An entry
+            // greyed out for the second reason is worth showing rather than hiding: a list with one
+            // entry says nothing about the game you own and have not pointed the port at.
             ItemEnabled = index => index >= 0 && index < Context.Games.Count && Context.Games[index].IsPlayable,
         };
 
         title.ItemSelected += index =>
         {
+            if (index < 0 || index >= Context.Games.Count)
+            {
+                return;
+            }
+
             // Picking the game already running is a way back to the landing page rather than a reload.
-            if (index == 0)
+            if (Context.Games[index].Id == Context.ActiveTitleId)
             {
                 GoTo(ShellTab.Home);
+                return;
+            }
+
+            // The app takes the swap up at a frame boundary and rebuilds this shell around the new
+            // game, so there is nothing to do here afterwards -- this screen does not survive it. False
+            // means it will not happen at all, and the selector goes back to what is actually running.
+            if (!Context.Host.SwitchTitle(Context.Games[index].Id))
+            {
+                title.CurrentIndex = current;
             }
         };
 

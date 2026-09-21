@@ -1,3 +1,4 @@
+﻿using OpenIGI.Formats;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
@@ -354,7 +355,7 @@ public sealed class RetailWorldSceneTests
             }
 
             bound++;
-            ObjectLightmap lightmap = ObjectLightmap.Read(entry.Data);
+            ObjectLightmap lightmap = ObjectLightmap.Read(entry.Data, AssetFormatProfile.Igi1);
             IReadOnlyList<MefLightmapPage> pages = placement.Model.LightmapPages;
             if (pages.Count != lightmap.Images.Count
                 || (pages.Count > 0

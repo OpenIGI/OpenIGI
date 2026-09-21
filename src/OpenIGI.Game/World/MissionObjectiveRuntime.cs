@@ -135,12 +135,26 @@ public sealed class MissionObjectiveRuntime
             }
         }
 
+        // Only the six objective rows are published here, and nothing else runs. The rows are drawn from
+        // the moment the level is up -- the mission-entry shot and the withheld frames both come before
+        // the first simulation tick -- so they have to exist before one; every other part of a tick has
+        // to WAIT for one.
+        //
+        // Priming the rest was a live bug. A tick evaluates each StatusMessage's Send expression and
+        // latches the one-shots that answer true, and at construction there is no world for those
+        // expressions to read: the host builds this runtime while it is loading the level and does not
+        // stand the player up until much later, so every AreaActivate reads zero occupants. Retail has no
+        // such moment. AreaActivate counts the player by resolving the level's task 0 and testing its
+        // root position against the volume (HumanPlayer_AreaActivateCB, igi2 0x49E290), and that task
+        // owns its object from the moment the level tree is built -- an update can never see the volume
+        // the player is standing in as empty.
+        //
+        // What it cost: location1/level1 sends LEFT_AREA on '!AreaActivate_178.nActive', around the
+        // area the player spawns in, once. Primed with no player it sent on the spot, and its LevelFlow
+        // fails the level on 'StatusMessage_2906.isFinishedDisplay' -- so the mission ended about six
+        // seconds in, as soon as a message nobody could have earned finished being displayed.
         Objectives = [];
-        Tick();
-
-        // The constructor's Tick primes objective/message state before the first simulation update. Retail
-        // LevelFlow's +104 counter is still zero at that point and advances only from its Update handler.
-        _levelFlowTick = 0;
+        PublishObjectives();
     }
 
     /// <summary>Gets the currently selected six-row definition, with empty rows omitted.</summary>
@@ -445,44 +459,7 @@ public sealed class MissionObjectiveRuntime
     /// <summary>Evaluates objectives, messages, cutscenes, and level flow after live level state has advanced.</summary>
     public void TickAfterLevelState()
     {
-        Definition? active = null;
-        foreach (Definition definition in _definitions)
-        {
-            if (_expressions.EvaluateCondition(
-                    definition.ValidExpression, emptyValue: true, definition.Task))
-            {
-                active = definition;
-            }
-        }
-
-        List<MissionObjective> current = [];
-        if (active is not null)
-        {
-            foreach (Slot slot in active.Slots)
-            {
-                if (string.IsNullOrEmpty(slot.TextResource))
-                {
-                    continue;
-                }
-
-                bool complete = _expressions.EvaluateCondition(
-                    slot.CompleteExpression, emptyValue: false, active.Task);
-                bool failed = _expressions.EvaluateCondition(
-                    slot.FailedExpression, emptyValue: false, active.Task);
-                MissionObjectiveState state = failed ? MissionObjectiveState.Failed
-                    : complete ? MissionObjectiveState.Complete
-                    : MissionObjectiveState.Incomplete;
-                Vector3d? position = slot.LinkTaskId >= 0 && _levelRoot.Tree.FromId(slot.LinkTaskId) is not null
-                    ? FindPosition(_levelRoot.Tree.FromId(slot.LinkTaskId)!)
-                    : null;
-                current.Add(new MissionObjective(slot.TextResource, slot.LinkTaskId, position, state)
-                {
-                    Text = _resolveText(slot.TextResource),
-                });
-            }
-        }
-
-        Objectives = current;
+        PublishObjectives();
 
         // StatusMessage::Run (0x4855F0) throttles sends by 210 simulation ticks. A one-shot refuses
         // further sends after isSendt becomes true; repeating messages may send again after the delay.
@@ -545,6 +522,54 @@ public sealed class MissionObjectiveRuntime
         IsComplete = completeLevel && !failedLevel;
         _tick++;
         _levelFlowTick++;
+    }
+
+    /// <summary>Chooses the valid objective definition and publishes its rows.</summary>
+    /// <remarks>
+    /// Read-only against the level: it evaluates the authored <c>Objectives Valid</c>, <c>Complete</c>
+    /// and <c>Failed</c> expressions to decide what to draw and latches nothing. That is what makes it
+    /// safe to run at construction, before the host has a player to report.
+    /// </remarks>
+    private void PublishObjectives()
+    {
+        Definition? active = null;
+        foreach (Definition definition in _definitions)
+        {
+            if (_expressions.EvaluateCondition(
+                    definition.ValidExpression, emptyValue: true, definition.Task))
+            {
+                active = definition;
+            }
+        }
+
+        List<MissionObjective> current = [];
+        if (active is not null)
+        {
+            foreach (Slot slot in active.Slots)
+            {
+                if (string.IsNullOrEmpty(slot.TextResource))
+                {
+                    continue;
+                }
+
+                bool complete = _expressions.EvaluateCondition(
+                    slot.CompleteExpression, emptyValue: false, active.Task);
+                bool failed = _expressions.EvaluateCondition(
+                    slot.FailedExpression, emptyValue: false, active.Task);
+                MissionObjectiveState state = failed ? MissionObjectiveState.Failed
+                    : complete ? MissionObjectiveState.Complete
+                    : MissionObjectiveState.Incomplete;
+                Vector3d? position = slot.LinkTaskId >= 0 && _levelRoot.Tree.FromId(slot.LinkTaskId) is not null
+                    ? FindPosition(_levelRoot.Tree.FromId(slot.LinkTaskId)!)
+                    : null;
+                current.Add(new MissionObjective(slot.TextResource, slot.LinkTaskId, position, state)
+                {
+                    Text = _resolveText(slot.TextResource),
+                });
+            }
+        }
+
+        Objectives = current;
     }
 
     private static Definition ReadDefinition(DeclaredTask task)

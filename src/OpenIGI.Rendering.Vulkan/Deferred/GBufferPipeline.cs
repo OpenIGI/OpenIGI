@@ -27,7 +27,13 @@ internal sealed unsafe class GBufferPipeline : IDisposable
     private readonly RenderPass _renderPass;
     private readonly VulkanShaderModule _vertex;
     private readonly VulkanShaderModule _fragment;
-    private readonly Dictionary<(DepthState Depth, CullMode Cull, bool Additive), Pipeline> _pipelines = [];
+    /// <summary>Where the G-buffer's base colour is attached, in the order the subpass declares.</summary>
+    private const int GBaseColourAttachment = 0;
+
+    /// <summary>Where the G-buffer's baked light is attached, in the same order.</summary>
+    private const int GBakedAttachment = 3;
+
+    private readonly Dictionary<(DepthState Depth, CullMode Cull, BlendMode Blend, byte AlphaReference), Pipeline> _pipelines = [];
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="GBufferPipeline"/> class.</summary>
@@ -81,16 +87,25 @@ internal sealed unsafe class GBufferPipeline : IDisposable
     /// <c>TerrainChunkMesh</c>): the base colour alone blends, its alpha and the other attachments are
     /// left as the base pass wrote them.
     /// </param>
-    public Pipeline ForState(DepthState depth, CullMode cull, BlendMode blend = BlendMode.Opaque)
+    /// <param name="alphaReference">
+    /// How much texture alpha a cut-out fragment needs to survive, out of 255. Baked into the variant
+    /// because there is no push room for it; see <see cref="Pipelines.AlphaReferenceSpecialization"/>.
+    /// <b>The shadow pass has to be asked for the same number</b>, or a surface shadows itself along the
+    /// edge where the two tests disagree.
+    /// </param>
+    public Pipeline ForState(
+        DepthState depth,
+        CullMode cull,
+        BlendMode blend = BlendMode.Opaque,
+        byte alphaReference = IGraphicsDevice.DefaultAlphaReference)
     {
-        bool additive = blend == BlendMode.Additive;
-        if (_pipelines.TryGetValue((depth, cull, additive), out Pipeline existing))
+        if (_pipelines.TryGetValue((depth, cull, blend, alphaReference), out Pipeline existing))
         {
             return existing;
         }
 
-        Pipeline pipeline = CreatePipeline(depth, cull, additive);
-        _pipelines[(depth, cull, additive)] = pipeline;
+        Pipeline pipeline = CreatePipeline(depth, cull, blend, alphaReference);
+        _pipelines[(depth, cull, blend, alphaReference)] = pipeline;
         return pipeline;
     }
 
@@ -145,14 +160,22 @@ internal sealed unsafe class GBufferPipeline : IDisposable
         return layout;
     }
 
-    private Pipeline CreatePipeline(DepthState depth, CullMode cull, bool additive)
+    private Pipeline CreatePipeline(DepthState depth, CullMode cull, BlendMode blend, byte alphaReference)
     {
         nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
         try
         {
+            float specializationValue;
+            SpecializationMapEntry specializationEntry;
+            SpecializationInfo specialization = Pipelines.AlphaReferenceSpecialization.Describe(
+                &specializationValue,
+                &specializationEntry,
+                alphaReference);
+
             PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
             stages[0] = Stage(ShaderStageFlags.VertexBit, _vertex.Handle, entryPoint);
             stages[1] = Stage(ShaderStageFlags.FragmentBit, _fragment.Handle, entryPoint);
+            stages[1].PSpecializationInfo = &specialization;
 
             // Two streams of the same shape: the pose the mesh holds now, and the pose it held before.
             // A static mesh reports one buffer as both, so the delta the vertex stage forms is zero.
@@ -247,23 +270,38 @@ internal sealed unsafe class GBufferPipeline : IDisposable
                 blends[i] = new PipelineColorBlendAttachmentState { ColorWriteMask = writeAll, BlendEnable = false };
             }
 
-            if (additive)
+            // Additive and Modulate2X are the ground's two ways of combining with what a pass before
+            // them wrote, and on a deferred path they do NOT land in the same place.
+            //
+            // Additive is one more material adding its share of the ground's colour, so it belongs on
+            // the base colour with the base pass it is finishing. Modulate2X is the tile's BAKE, and a
+            // bake is not a colour: the base colour attachment holds an albedo, and a bake multiplied
+            // into an albedo is lit a second time by whatever lights the frame. So it goes to the baked
+            // attachment, which the base pass left at the neutral one and which the lighting reads as
+            // irradiance -- and the doubling MODULATE2X means falls out of the blend for free, because
+            // src * dst + dst * src over a neutral destination is twice the bake.
+            //
+            // Either way one attachment's rgb and nothing else: not its alpha, and none of the three the
+            // opaque pass under it wrote for the same surface.
+            if (blend is BlendMode.Additive or BlendMode.Modulate2X)
             {
-                blends[0] = new PipelineColorBlendAttachmentState
+                bool modulate = blend == BlendMode.Modulate2X;
+                for (int i = 0; i < 4; i++)
+                {
+                    blends[i] = new PipelineColorBlendAttachmentState { ColorWriteMask = 0, BlendEnable = false };
+                }
+
+                blends[modulate ? GBakedAttachment : GBaseColourAttachment] = new PipelineColorBlendAttachmentState
                 {
                     ColorWriteMask = writeColour,
                     BlendEnable = true,
                     ColorBlendOp = BlendOp.Add,
-                    SrcColorBlendFactor = BlendFactor.One,
-                    DstColorBlendFactor = BlendFactor.One,
+                    SrcColorBlendFactor = modulate ? BlendFactor.DstColor : BlendFactor.One,
+                    DstColorBlendFactor = modulate ? BlendFactor.SrcColor : BlendFactor.One,
                     AlphaBlendOp = BlendOp.Add,
                     SrcAlphaBlendFactor = BlendFactor.Zero,
                     DstAlphaBlendFactor = BlendFactor.One,
                 };
-                for (int i = 1; i < 4; i++)
-                {
-                    blends[i] = new PipelineColorBlendAttachmentState { ColorWriteMask = 0, BlendEnable = false };
-                }
             }
 
             PipelineColorBlendStateCreateInfo colorBlend = new()

@@ -1,31 +1,36 @@
-﻿using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Audio.OpenAL;
+using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Titles;
 using OpenIGI.Desktop;
-using OpenIGI.Desktop.Infrastructure;
+using OpenIGI.Engine.Configuration;
+using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Game.Profiles;
-using OpenIGI.Platform;
+using OpenIGI.Host.Configuration;
+using OpenIGI.Host.Infrastructure;
+using OpenIGI.Host;
 using OpenIGI.Platform.Desktop;
-using OpenIGI.Rendering;
+using OpenIGI.Platform;
 using OpenIGI.Rendering.Vulkan;
+using OpenIGI.Rendering;
 
-DesktopOptions options;
+HostOptions options;
 try
 {
     // -vulkan is still swallowed rather than rejected. It names the only backend there is, so it does
     // nothing, but a shortcut or a script that has carried it since there were two should keep working.
-    options = DesktopOptions.Parse(
+    options = HostOptions.Parse(
         args.Where(a => !a.Equals("-vulkan", StringComparison.OrdinalIgnoreCase)).ToArray());
 }
 catch (ArgumentException ex)
 {
     Console.Error.WriteLine(ex.Message);
     Console.Error.WriteLine();
-    Console.Error.WriteLine(DesktopOptions.Usage);
+    Console.Error.WriteLine(HostOptions.Usage);
     return 2;
 }
 
-OpenIGI.Desktop.Infrastructure.PersistentLogger persistentLogger;
+OpenIGI.Host.Infrastructure.PersistentLogger persistentLogger;
 try
 {
     persistentLogger = new(RuntimePaths.GetLogPath());
@@ -68,16 +73,48 @@ string[] searched = new[] { SettingsPaths.ExecutableDirectory, AppContext.BaseDi
     .Distinct(StringComparer.OrdinalIgnoreCase)
     .ToArray();
 
-// -game, then IGI_GAME_PATH, then whatever is lying around the executable.
-string? gamePath = options.GamePath ?? GameProfileResolver.DiscoverDataRoot(searched);
+// The title this build runs, chosen here because the composition root is the only place that may name
+// one. Everything below takes the runtime and never asks which game it is.
+//
+// -title wins, then OPENIGI_TITLE, then a probe of what is actually installed. An id nobody recognises
+// stops rather than falling back: a run asked for one game and quietly given another is worse than one
+// that refuses.
+IGameTitleRuntime? titleRuntime;
+string? probed = null;
+
+if (options.Title is { } requestedTitle)
+{
+    if (!DesktopTitleCatalog.TryResolve(requestedTitle, out titleRuntime))
+    {
+        Console.Error.WriteLine($"'{requestedTitle}' is not a game this build runs.");
+        Console.Error.WriteLine($"  -title {DesktopTitleCatalog.KnownTitleIds}");
+        return 2;
+    }
+}
+else
+{
+    titleRuntime = DesktopTitleCatalog.Probe(searched, out probed) ?? DesktopTitleCatalog.Default;
+}
+
+GameTitle title = titleRuntime.Title;
+
+// -game, then the title's OWN path variable, then whatever the probe found or is lying around the
+// executable. Per title, because a machine may have both installed and one variable cannot say where
+// two of them are.
+string? gamePath = options.GamePath
+    ?? Environment.GetEnvironmentVariable(DesktopTitleCatalog.GamePathVariableFor(title))
+    ?? probed
+    ?? GameProfileResolver.DiscoverDataRoot(searched, title);
 
 if (string.IsNullOrWhiteSpace(gamePath))
 {
-    Console.Error.WriteLine("No Project I.G.I. installation found.");
+    Console.Error.WriteLine($"No {title.DisplayName} installation found.");
     Console.Error.WriteLine();
-    Console.Error.WriteLine("Put OpenIGI in the folder that holds IGI.exe, or point it at one:");
+    Console.Error.WriteLine($"Put OpenIGI in the folder that holds {title.SignatureFile}, or point it at one:");
     Console.Error.WriteLine("  -game <dir>");
-    Console.Error.WriteLine($"  {DesktopOptions.GamePathVariable}=<dir>");
+    Console.Error.WriteLine($"  {DesktopTitleCatalog.GamePathVariableFor(title)}=<dir>");
+    Console.Error.WriteLine();
+    Console.Error.WriteLine($"To run a different game: -title {DesktopTitleCatalog.KnownTitleIds}");
     Console.Error.WriteLine();
     Console.Error.WriteLine("Looked in:");
 
@@ -92,19 +129,27 @@ if (string.IsNullOrWhiteSpace(gamePath))
 // Reported apart from the search, because a path somebody typed being wrong is a different mistake
 // from there being nothing to find, and telling them the file that is missing is what makes a
 // mistyped path or a half-copied installation obvious rather than mysterious.
-GameProfile profile = new(GameTitle.Igi1, gamePath);
+GameProfile profile = new(title, gamePath);
 
 if (!profile.IsInstalled)
 {
     Console.Error.WriteLine(
         Directory.Exists(gamePath)
-            ? $"'{gamePath}' is not a Project I.G.I. installation -- no {GameTitle.Igi1.SignatureFile} in it."
+            ? $"'{gamePath}' is not a {title.DisplayName} installation -- no {title.SignatureFile} in it."
             : $"'{gamePath}' does not exist.");
     return 2;
 }
 
 VirtualFileSystem fileSystem = new(logger);
 fileSystem.RegisterDevice(new LocalFileDevice(gamePath));
+
+// The title's own alias bindings, overridable by a filesys.cfg beside the data. The original stores
+// that file name in a global nothing reads and hard-codes its aliases in the modules that own them;
+// this is the OpenIGI extension the config type was written for, and binding it here is what makes a
+// data-file mod able to redirect an alias without touching the base install.
+FileSystemConfig
+    .LoadOrDefault(Path.Combine(gamePath, FileSystemConfig.DefaultFileName), titleRuntime.Layout)
+    .ApplyTo(fileSystem);
 
 DesktopPlatformHost platform = new();
 WindowSettings settings = new(
@@ -164,7 +209,12 @@ using (window)
         options.ScreenshotPath is not null,
         logger);
 
-    using DesktopGame game = new(platform, window, device, fileSystem, options, gamePath, logger);
+    // The composition root is the only place that names a concrete backend: the graphics device
+    // above, and the audio factory here. GameHost itself sees only the abstractions.
+    using GameHost game = new(
+        platform, window, device, OpenAlAudioDeviceFactory.Instance,
+        DesktopTitleCatalog.Catalog, titleRuntime.Title,
+        fileSystem, options, gamePath, logger);
     return game.Run();
 }
 }

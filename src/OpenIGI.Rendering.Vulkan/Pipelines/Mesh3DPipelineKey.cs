@@ -1,4 +1,4 @@
-using OpenIGI.Rendering;
+﻿using OpenIGI.Rendering;
 
 namespace OpenIGI.Rendering.Vulkan.Pipelines;
 
@@ -11,4 +11,18 @@ namespace OpenIGI.Rendering.Vulkan.Pipelines;
 /// <param name="Depth">How the draw interacts with the depth buffer.</param>
 /// <param name="Cull">Which triangle facings the draw discards.</param>
 /// <param name="Blend">How fragments combine with the target.</param>
-internal readonly record struct Mesh3DPipelineKey(DepthState Depth, CullMode Cull, BlendMode Blend);
+/// <param name="AlphaReference">
+/// How much texture alpha a cut-out fragment needs to survive, out of 255. Part of the key because it is
+/// a specialization constant rather than a push value — see <see cref="AlphaReferenceSpecialization"/>
+/// for why it has to be, and why a byte keeps the variant space finite.
+/// </param>
+/// <param name="Reflective">
+/// Whether the variant samples the bound environment cube. Also a specialization constant, so that the
+/// lookup is compiled out of every pipeline the rest of the world draws through.
+/// </param>
+internal readonly record struct Mesh3DPipelineKey(
+    DepthState Depth,
+    CullMode Cull,
+    BlendMode Blend,
+    byte AlphaReference,
+    bool Reflective);

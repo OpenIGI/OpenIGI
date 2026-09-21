@@ -1,4 +1,5 @@
-﻿using OpenIGI.Rendering;
+﻿using OpenIGI.Core.Numerics;
+using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Shaders;
 using Silk.NET.Core.Native;
@@ -69,23 +70,94 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
             ShaderStage.Fragment);
 
         DescriptorSetLayout = CreateDescriptorSetLayout();
-        PipelineLayout = CreatePipelineLayout(DescriptorSetLayout);
+        CubeSetLayout = CreateCubeSetLayout();
+        PipelineLayout = CreatePipelineLayout(DescriptorSetLayout, CubeSetLayout);
     }
 
     /// <summary>Gets the layout binding the diffuse and lightmap textures the fragment shader samples.</summary>
+    private Vector3f _fogColour;
+    private float _fogDensity;
+    private Vector3f _sunAmbient;
+    private Vector3f _sunColour;
+
     public DescriptorSetLayout DescriptorSetLayout { get; }
+
+    /// <summary>Gets the layout binding the environment cube a reflective draw samples.</summary>
+    /// <remarks>
+    /// A second set rather than a fourth binding on <see cref="DescriptorSetLayout"/>, because that one
+    /// is shared with the shadow and geometry paths: a set is built per texture pairing and reused by
+    /// whichever pipeline draws it, so widening it would make every world draw in the frame carry a
+    /// binding only water reads. This set is bound on its own and left alone by the rest.
+    /// </remarks>
+    public DescriptorSetLayout CubeSetLayout { get; }
 
     /// <summary>Gets the pipeline layout shared by every variant.</summary>
     public PipelineLayout PipelineLayout { get; }
+
+    /// <summary>Sets the scene's fog, rebuilding the variants when it changes.</summary>
+    /// <param name="colour">The colour a surface tends to with distance.</param>
+    /// <param name="density">The extinction per metre; zero is no fog.</param>
+    /// <remarks>
+    /// A level's fog is a constant, so it is baked into the variants rather than pushed — there is no
+    /// push room, and nothing about it varies within a mission. Changing it therefore throws the cache
+    /// away, which is why this is only ever called when a mission loads.
+    /// </remarks>
+    public void SetFog(Vector3f colour, float density)
+    {
+        if (colour == _fogColour && density.Equals(_fogDensity))
+        {
+            return;
+        }
+
+        _fogColour = colour;
+        _fogDensity = density;
+        DiscardVariants();
+    }
+
+    /// <summary>Sets the fixed-function sun's colours, rebuilding the variants when they change.</summary>
+    /// <param name="ambient">The flat light an unlightmapped vertex receives.</param>
+    /// <param name="colour">The sun's diffuse colour.</param>
+    /// <remarks>
+    /// Baked for the same reason the fog is: constants of the level, and no push room. The direction
+    /// is per draw and travels in the push block; see <c>IGraphicsDevice.SetVertexSun</c>.
+    /// </remarks>
+    public void SetSun(Vector3f ambient, Vector3f colour)
+    {
+        if (ambient == _sunAmbient && colour == _sunColour)
+        {
+            return;
+        }
+
+        _sunAmbient = ambient;
+        _sunColour = colour;
+        DiscardVariants();
+    }
+
+    private void DiscardVariants()
+    {
+        foreach (Pipeline pipeline in _pipelines.Values)
+        {
+            _vk.DestroyPipeline(_device, pipeline, null);
+        }
+
+        _pipelines.Clear();
+    }
 
     /// <summary>Gets, building if needed, the pipeline for one render state.</summary>
     /// <param name="depth">The depth behaviour.</param>
     /// <param name="cull">The face-culling rule.</param>
     /// <param name="blend">The blend mode.</param>
+    /// <param name="alphaReference">The cut-out threshold out of 255, baked into the variant.</param>
+    /// <param name="reflective">Whether the variant samples the bound environment cube.</param>
     /// <returns>The matching pipeline.</returns>
-    public Pipeline ForState(DepthState depth, CullMode cull, BlendMode blend)
+    public Pipeline ForState(
+        DepthState depth,
+        CullMode cull,
+        BlendMode blend,
+        byte alphaReference = IGraphicsDevice.DefaultAlphaReference,
+        bool reflective = false)
     {
-        Mesh3DPipelineKey key = new(depth, cull, blend);
+        Mesh3DPipelineKey key = new(depth, cull, blend, alphaReference, reflective);
         if (_pipelines.TryGetValue(key, out Pipeline existing))
         {
             return existing;
@@ -112,6 +184,7 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
 
         _vk.DestroyPipelineLayout(_device, PipelineLayout, null);
         _vk.DestroyDescriptorSetLayout(_device, DescriptorSetLayout, null);
+        _vk.DestroyDescriptorSetLayout(_device, CubeSetLayout, null);
         _fragment.Dispose();
         _vertex.Dispose();
     }
@@ -146,7 +219,29 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
         return layout;
     }
 
-    private PipelineLayout CreatePipelineLayout(DescriptorSetLayout setLayout)
+    private DescriptorSetLayout CreateCubeSetLayout()
+    {
+        DescriptorSetLayoutBinding binding = new()
+        {
+            Binding = 0,
+            DescriptorType = DescriptorType.CombinedImageSampler,
+            DescriptorCount = 1,
+            StageFlags = ShaderStageFlags.FragmentBit,
+        };
+
+        DescriptorSetLayoutCreateInfo createInfo = new()
+        {
+            SType = StructureType.DescriptorSetLayoutCreateInfo,
+            BindingCount = 1,
+            PBindings = &binding,
+        };
+
+        DescriptorSetLayout layout;
+        VkCheck.Ok(_vk.CreateDescriptorSetLayout(_device, &createInfo, null, &layout), "vkCreateDescriptorSetLayout (cube)");
+        return layout;
+    }
+
+    private PipelineLayout CreatePipelineLayout(DescriptorSetLayout setLayout, DescriptorSetLayout cubeLayout)
     {
         PushConstantRange push = new()
         {
@@ -155,11 +250,15 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
             Size = sizeof(float) * 32,
         };
 
+        DescriptorSetLayout* layouts = stackalloc DescriptorSetLayout[2];
+        layouts[0] = setLayout;
+        layouts[1] = cubeLayout;
+
         PipelineLayoutCreateInfo createInfo = new()
         {
             SType = StructureType.PipelineLayoutCreateInfo,
-            SetLayoutCount = 1,
-            PSetLayouts = &setLayout,
+            SetLayoutCount = 2,
+            PSetLayouts = layouts,
             PushConstantRangeCount = 1,
             PPushConstantRanges = &push,
         };
@@ -174,6 +273,21 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
         nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
         try
         {
+            // The cut-out threshold and the reflection switch are baked in here rather than pushed:
+            // there is no push room left for either. The storage lives in this frame, which outlasts the
+            // pipeline creation below.
+            uint* specializationData = stackalloc uint[AlphaReferenceSpecialization.MeshConstantCount];
+            SpecializationMapEntry* specializationEntries = stackalloc SpecializationMapEntry[AlphaReferenceSpecialization.MeshConstantCount];
+            SpecializationInfo specialization = AlphaReferenceSpecialization.DescribeMesh(
+                specializationData,
+                specializationEntries,
+                key.AlphaReference,
+                key.Reflective,
+                _fogColour,
+                _fogDensity,
+                _sunAmbient,
+                _sunColour);
+
             PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
             stages[0] = new PipelineShaderStageCreateInfo
             {
@@ -181,6 +295,11 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
                 Stage = ShaderStageFlags.VertexBit,
                 Module = _vertex.Handle,
                 PName = (byte*)entryPoint,
+
+                // The vertex stage declares the reflection constant as well -- it is what builds the
+                // direction -- and a constant supplied to one stage and not the other is two shaders
+                // that disagree about whether the varying between them means anything.
+                PSpecializationInfo = &specialization,
             };
             stages[1] = new PipelineShaderStageCreateInfo
             {
@@ -188,6 +307,7 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
                 Stage = ShaderStageFlags.FragmentBit,
                 Module = _fragment.Handle,
                 PName = (byte*)entryPoint,
+                PSpecializationInfo = &specialization,
             };
 
             // Two streams: the pose the mesh holds now, and the pose it held before. The first-person rig
@@ -345,6 +465,14 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
             case BlendMode.Additive:
                 state.SrcColorBlendFactor = BlendFactor.SrcAlpha;
                 state.DstColorBlendFactor = BlendFactor.One;
+                state.DstAlphaBlendFactor = BlendFactor.One;
+                break;
+            case BlendMode.Modulate2X:
+                // src*dst + dst*src. The alpha is left alone: this pass multiplies a colour in and has
+                // no coverage of its own.
+                state.SrcColorBlendFactor = BlendFactor.DstColor;
+                state.DstColorBlendFactor = BlendFactor.SrcColor;
+                state.SrcAlphaBlendFactor = BlendFactor.Zero;
                 state.DstAlphaBlendFactor = BlendFactor.One;
                 break;
             default:

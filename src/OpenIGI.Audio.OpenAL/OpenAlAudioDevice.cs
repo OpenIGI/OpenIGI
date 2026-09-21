@@ -754,6 +754,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
         }
 
         int written = 0;
+        bool rewound = false;
         while (written < wanted)
         {
             int read = stream.Read(_streamScratch.AsSpan(written, wanted - written));
@@ -763,12 +764,18 @@ public sealed class OpenAlAudioDevice : IAudioDevice
                 continue;
             }
 
-            if (!voice.Parameters.Looping || !stream.CanRestart)
+            if (!voice.Parameters.Looping || !stream.CanRestart || rewound)
             {
+                // Once per fill, and that bound is the point rather than an optimisation. A source that
+                // reports nothing with samples still to come -- because the tail of this buffer is
+                // smaller than the block it decodes, say -- would otherwise be rewound, asked again,
+                // report nothing again, and be rewound again, for ever. A loop point is worth crossing
+                // once in a buffer; twice means the source is not going to fill it.
                 voice.StreamDrained = true;
                 break;
             }
 
+            rewound = true;
             stream.Restart();
         }
 

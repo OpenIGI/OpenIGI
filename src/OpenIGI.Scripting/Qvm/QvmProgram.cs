@@ -23,8 +23,21 @@ namespace OpenIGI.Scripting.Qvm;
 /// </remarks>
 public sealed class QvmProgram
 {
-    /// <summary>The size in bytes of a QVM header.</summary>
-    public const int HeaderSize = 60;
+    /// <summary>The size in bytes of a version 5 QVM header — retail Project I.G.I.</summary>
+    public const int HeaderSize = Version5HeaderSize;
+
+    /// <summary>The size in bytes of a version 5 QVM header.</summary>
+    public const int Version5HeaderSize = 60;
+
+    /// <summary>The size in bytes of a version 7 QVM header — I.G.I. 2.</summary>
+    /// <remarks>
+    /// Version 5's fields in the same order, plus a trailing file-info offset at <c>0x3C</c>. Nothing
+    /// before that moved, which is why one reader serves both.
+    /// </remarks>
+    public const int Version7HeaderSize = 64;
+
+    /// <summary>The lowest version whose header carries a file-info offset.</summary>
+    public const int FirstVersionWithFileInfo = 7;
 
     /// <summary>The instruction-set identifier the VM accepts; any other value is rejected.</summary>
     public const int RequiredInstructionSetId = 8;
@@ -35,11 +48,24 @@ public sealed class QvmProgram
     /// <summary>The bytecode version retail Project I.G.I. ships.</summary>
     public const int IgiVersion = 5;
 
+    /// <summary>The bytecode version I.G.I. 2 ships.</summary>
+    /// <remarks>
+    /// Checked across every script in a retail 1.1 installation: 1,784 files, all version 7 and all on
+    /// the same instruction set as I.G.I. 1.
+    /// </remarks>
+    public const int Igi2Version = 7;
+
     /// <summary>The evaluation stack size in bytes used when the header requests none.</summary>
     public const int DefaultStackSizeBytes = 2048;
 
     /// <summary>The number of local/temporary slots used when the header requests none.</summary>
     public const int DefaultMaxLocals = 256;
+
+    /// <summary>Gets the header size a bytecode version uses.</summary>
+    /// <param name="version">The version word from the header.</param>
+    /// <returns>The header size in bytes.</returns>
+    public static int HeaderSizeFor(int version) =>
+        version >= FirstVersionWithFileInfo ? Version7HeaderSize : Version5HeaderSize;
 
     private static readonly FourCc LoopMagic = FourCc.FromString("LOOP");
 
@@ -52,9 +78,11 @@ public sealed class QvmProgram
         ReadOnlyMemory<byte> code,
         int stackSizeBytes,
         int maxLocals,
+        int fileInfoOffset,
         ReadOnlyCollection<string?> symbolNames,
         ReadOnlyCollection<string?> strings)
     {
+        FileInfoOffset = fileInfoOffset;
         InstructionSetId = instructionSetId;
         Version = version;
         Code = code;
@@ -69,6 +97,13 @@ public sealed class QvmProgram
 
     /// <summary>Gets the bytecode version from the header.</summary>
     public int Version { get; }
+
+    /// <summary>Gets the offset of the trailing file-info block, or zero when the version has none.</summary>
+    /// <remarks>
+    /// Version 7 only. What the block holds is unread -- the interpreter does not need it -- but its
+    /// offset is where the code section ends, so the loader has to know about it either way.
+    /// </remarks>
+    public int FileInfoOffset { get; }
 
     /// <summary>Gets the code section: the bytes the interpreter executes, offset zero being the entry point.</summary>
     public ReadOnlyMemory<byte> Code { get; }
@@ -133,6 +168,13 @@ public sealed class QvmProgram
             throw new QvmFormatException($"QVM version {version} is older than the minimum supported version {MinimumVersion}.");
         }
 
+        int headerSize = HeaderSizeFor(version);
+        if (span.Length < headerSize)
+        {
+            throw new QvmFormatException(
+                $"A version {version} QVM header is {headerSize} bytes, got {span.Length}.");
+        }
+
         int symbolTableOffset = ReadHeaderField(span, 0x0C, "symbol name table offset");
         int symbolPoolOffset = ReadHeaderField(span, 0x10, "symbol name pool offset");
         int symbolTableSize = ReadHeaderField(span, 0x14, "symbol name table size");
@@ -146,11 +188,29 @@ public sealed class QvmProgram
         int stackSize = ReadHeaderField(span, 0x34, "stack size");
         int maxLocals = ReadHeaderField(span, 0x38, "max locals");
 
-        // The three chained identities that hold for every retail script: the sections butt up
-        // against each other in header order and the last of them ends at the end of the file.
+        // Version 7 appends a file-info block and points at it from the header. Version 5 has neither,
+        // and reading 0x3C on a v5 file would read the first four bytes of the symbol table.
+        int fileInfoOffset = version >= FirstVersionWithFileInfo
+            ? ReadHeaderField(span, 0x3C, "file info offset")
+            : 0;
+
+        // The chained identities that hold for every retail script: the sections butt up against each
+        // other in header order. The first two are structural and hold for both versions.
         RequireSum(symbolPoolOffset, symbolPoolSize, stringTableOffset, "symbol name pool", "string table offset");
         RequireSum(stringPoolOffset, stringPoolSize, codeOffset, "string pool", "code offset");
-        RequireSum(codeOffset, codeSize, span.Length, "code section", "file size");
+
+        // The third is "the code runs up to whatever comes next", which for version 5 is the end of the
+        // file and for version 7 is the file-info block. Asserting the file size outright -- as this did
+        // when version 5 was the only version -- rejects every I.G.I. 2 script, because the block sits
+        // after the code. Checked against a retail 1.1 installation: codeOffset + codeSize is the
+        // file-info offset exactly, in all 1,784 of them.
+        int codeEnd = fileInfoOffset != 0 ? fileInfoOffset : span.Length;
+        RequireSum(codeOffset, codeSize, codeEnd, "code section", "end of the code section");
+
+        if (fileInfoOffset != 0)
+        {
+            RequireSection(span.Length, fileInfoOffset, span.Length - fileInfoOffset, "file info block");
+        }
 
         RequireSection(span.Length, symbolTableOffset, symbolTableSize, "symbol name table");
         RequireSection(span.Length, symbolPoolOffset, symbolPoolSize, "symbol name pool");
@@ -164,6 +224,7 @@ public sealed class QvmProgram
             data.Slice(codeOffset, codeSize),
             stackSize == 0 ? DefaultStackSizeBytes : stackSize,
             maxLocals == 0 ? DefaultMaxLocals : maxLocals,
+            fileInfoOffset,
             ReadStringTable(span, symbolTableOffset, symbolTableSize, symbolPoolOffset, symbolPoolSize),
             ReadStringTable(span, stringTableOffset, stringTableSize, stringPoolOffset, stringPoolSize));
     }

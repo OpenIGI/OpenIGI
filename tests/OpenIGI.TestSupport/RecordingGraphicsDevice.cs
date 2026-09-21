@@ -88,14 +88,46 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public void SetMaterialOverride(in SurfaceMaterial material) => Materials.Add(material);
 
+    /// <summary>Gets the lightmap scale the draws that follow carry.</summary>
+    public float LightmapScale { get; private set; } = 1f;
+
+    /// <summary>Gets the model-space direction towards the fixed-function sun the draws that follow carry, or zero.</summary>
+    public Vector3f VertexSun { get; private set; }
+
+    /// <summary>The fixed-function sun's colours, each time they were set.</summary>
+    public List<(Vector3f Ambient, Vector3f Colour)> SceneSuns { get; } = [];
+
     /// <inheritdoc/>
-    public void SetLightmapScale(float scale)
-    {
-    }
+    public void SetLightmapScale(float scale) => LightmapScale = scale;
+
+    /// <inheritdoc/>
+    public void SetSceneSun(Vector3f ambient, Vector3f colour) => SceneSuns.Add((ambient, colour));
+
+    /// <inheritdoc/>
+    public void SetVertexSun(Vector3f towardsSun) => VertexSun = towardsSun;
+
+    /// <summary>Gets the colour the draws that follow fog towards.</summary>
+    public FogTarget FogTarget { get; private set; }
+
+    /// <inheritdoc/>
+    public void SetFogTarget(FogTarget target) => FogTarget = target;
 
     /// <inheritdoc/>
     public void SetAlphaHash(float seed)
     {
+    }
+
+    /// <summary>Gets the cut-out threshold the draws being recorded were made at.</summary>
+    public byte AlphaReference { get; private set; } = IGraphicsDevice.DefaultAlphaReference;
+
+    /// <summary>Every cut-out threshold set, in order, so a run of draws can be checked as a run.</summary>
+    public List<byte> AlphaReferences { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetAlphaReference(byte reference)
+    {
+        AlphaReference = reference;
+        AlphaReferences.Add(reference);
     }
 
     /// <summary>Gets a value indicating whether the draws being recorded were marked first-person.</summary>
@@ -140,7 +172,9 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 
     // Volumes share the texture handle space with 2D textures, so their counter starts well clear of
     // anything CreateTexture hands out -- a test that confuses the two would otherwise pass.
+    private readonly Dictionary<uint, int> _cubeEdges = [];
     private uint _nextVolumeId = 10_000;
+    private uint _nextCubeId = 20_000;
 
     /// <summary>The card atlases opened, as their dimensions.</summary>
     public List<(int Width, int Height)> CardCaptures { get; } = [];
@@ -281,6 +315,64 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public void SetVolumeTexture(int unit, TextureHandle texture)
     {
+    }
+
+    /// <summary>Every cube map created, by name and edge length, in order.</summary>
+    public List<(string Name, int Edge)> CubeTextures { get; } = [];
+
+    /// <summary>Each cube face written, with the texels it was written from.</summary>
+    /// <remarks>
+    /// The pixels are copied rather than referenced. A caller that uploads six faces out of one reused
+    /// buffer -- which is the obvious way to walk an archive -- would otherwise leave six entries all
+    /// showing the last face, and a test asserting the faces differ would pass on a device that had
+    /// written the same face six times.
+    /// </remarks>
+    public List<(TextureHandle Cube, int Face, Bgra32[] Pixels)> CubeFaceUploads { get; } = [];
+
+    /// <summary>The cube reflective draws would sample, or the null handle.</summary>
+    public TextureHandle EnvironmentCube { get; private set; }
+
+    /// <summary>Every cube handed over or cleared, in order.</summary>
+    public List<TextureHandle> EnvironmentCubes { get; } = [];
+
+    /// <inheritdoc/>
+    public TextureHandle CreateCubeTexture(int edge, string name)
+    {
+        if (edge <= 0)
+        {
+            throw new GraphicsDeviceException($"A cube's edge is {edge}, which is not a length.");
+        }
+
+        CubeTextures.Add((name, edge));
+        _cubeEdges[_nextCubeId] = edge;
+        return new TextureHandle(_nextCubeId++);
+    }
+
+    /// <inheritdoc/>
+    public void UpdateCubeFace(TextureHandle cube, int face, ReadOnlySpan<Bgra32> pixels)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(face);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(face, IGraphicsDevice.CubeFaceCount);
+
+        if (!_cubeEdges.TryGetValue(cube.Id, out int edge))
+        {
+            throw new GraphicsDeviceException($"{cube} is not a cube of this device.");
+        }
+
+        if (pixels.Length != edge * edge)
+        {
+            throw new GraphicsDeviceException(
+                $"A face of a {edge}-texel cube holds {edge * edge} texels, not {pixels.Length}.");
+        }
+
+        CubeFaceUploads.Add((cube, face, pixels.ToArray()));
+    }
+
+    /// <inheritdoc/>
+    public void SetEnvironmentCube(TextureHandle cube)
+    {
+        EnvironmentCube = cube;
+        EnvironmentCubes.Add(cube);
     }
 
     /// <inheritdoc/>
@@ -664,8 +756,20 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     {
     }
 
-    public TextureHandle CreateTexture(in TextureDescription description, ReadOnlySpan<Bgra32> pixels) =>
-        new(_nextTexture++);
+    /// <summary>Every 2D texture created, in order, with the description it was created under.</summary>
+    /// <remarks>
+    /// The description rather than only the pixels, because the address mode and the mip count are
+    /// decisions a caller makes and gets silently wrong: <c>TextureDescription</c>'s two-argument
+    /// constructor is 2D drawing's -- one level, clamped -- and taking it for a tiling world texture
+    /// smears its edge texel across everything it is drawn on.
+    /// </remarks>
+    public List<TextureDescription> Textures { get; } = [];
+
+    public TextureHandle CreateTexture(in TextureDescription description, ReadOnlySpan<Bgra32> pixels)
+    {
+        Textures.Add(description);
+        return new(_nextTexture++);
+    }
 
     public void UpdateTexture(TextureHandle texture, int mipLevel, ReadOnlySpan<Bgra32> pixels)
     {
@@ -841,7 +945,21 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         TextureHandle diffuse,
         TextureHandle lightmap,
         BlendMode blend) =>
-        MeshDraws.Add(new MeshDrawCall(mesh, indexOffset, indexCount, modelView, diffuse, lightmap, blend, DepthState, CullMode, Fog, ModelAmbient));
+        MeshDraws.Add(new MeshDrawCall(
+            mesh,
+            indexOffset,
+            indexCount,
+            modelView,
+            diffuse,
+            lightmap,
+            blend,
+            DepthState,
+            CullMode,
+            Fog,
+            ModelAmbient,
+            LightmapScale,
+            VertexSun,
+            FogTarget));
 
     public void DrawMeshRanges(
         MeshHandle mesh,
@@ -903,7 +1021,10 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         DepthState DepthState,
         CullMode CullMode,
         SceneFog Fog = default,
-        Vector3f ModelAmbient = default)
+        Vector3f ModelAmbient = default,
+        float LightmapScale = 1f,
+        Vector3f VertexSun = default,
+        FogTarget FogTarget = FogTarget.Scene)
     {
         public int TriangleCount => IndexCount / 3;
     }

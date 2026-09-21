@@ -1,13 +1,14 @@
-using OpenIGI.Formats.Animation;
+using OpenIGI.Desktop;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
-using OpenIGI.Desktop;
+using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
+using OpenIGI.Presentation.Igi1;
 using OpenIGI.TestSupport;
 using Xunit;
 

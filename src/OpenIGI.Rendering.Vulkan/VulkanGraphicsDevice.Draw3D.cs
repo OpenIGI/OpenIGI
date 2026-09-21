@@ -37,6 +37,11 @@ public sealed partial class VulkanGraphicsDevice
     // texture alone, which is what every path but the baked one wants.
     private Vector3f _modelAmbient = Vector3f.One;
 
+    // The sequel's ground: its lightmap slot holds a detail colour to multiply into the base rather
+    // than a bake to keep apart. Mode 3 in the first normal row's fourth component, which the G-buffer
+    // shader reads beside the two the level-of-detail fade uses. See IGraphicsDevice.SetGroundDetail.
+    private bool _groundDetail;
+
     // How much of the previous-pose vertex stream is in the position drawn now, and how much was in the
     // one drawn last frame. Zero for everything that does not animate -- and for those two streams are
     // one buffer, so any blend of a value with itself is that value and the picture is unchanged.
@@ -575,7 +580,8 @@ public sealed partial class VulkanGraphicsDevice
         Vk vk = _instance.Vk;
         CommandBuffer cmd = _frameCommandBuffer;
 
-        BindGraphicsPipeline(_deferred.ShadowPipeline.Pipeline);
+        // The same threshold the G-buffer will be asked for, which is what keeps the two tests agreeing.
+        BindGraphicsPipeline(_deferred.ShadowPipeline.ForAlphaReference(_alphaReference));
         BindMeshBuffers(mesh);
 
         // The colour texture, for its alpha alone: a cut-out must cast the shadow of the shape that is
@@ -627,7 +633,7 @@ public sealed partial class VulkanGraphicsDevice
         Vk vk = _instance.Vk;
         CommandBuffer cmd = _frameCommandBuffer;
 
-        BindGraphicsPipeline(_deferred.Geometry.ForState(_depthState, _cullMode, blend));
+        BindGraphicsPipeline(_deferred.Geometry.ForState(_depthState, _cullMode, blend, _alphaReference));
         BindMeshBuffers(mesh);
         BindMeshTextures(_deferred.Geometry.PipelineLayout, diffuse, lightmap);
         BindSurfaceSet();
@@ -668,7 +674,11 @@ public sealed partial class VulkanGraphicsDevice
         }
         else
         {
-            data[16] = normalMatrix.M11; data[17] = normalMatrix.M21; data[18] = normalMatrix.M31; data[19] = 0f;
+            data[16] = normalMatrix.M11; data[17] = normalMatrix.M21; data[18] = normalMatrix.M31;
+            // Three says the lightmap slot is the ground's DETAIL map; four says this draw is the
+            // ground's BAKE and belongs in the baked attachment rather than in the colour. Nothing
+            // but I.G.I. 2's ground asks for either -- Modulate2X has no other producer in the port.
+            data[19] = blend == BlendMode.Modulate2X ? 4f : (_groundDetail ? 3f : 0f);
             data[20] = normalMatrix.M12; data[21] = normalMatrix.M22; data[22] = normalMatrix.M32;
             data[24] = normalMatrix.M13; data[25] = normalMatrix.M23; data[26] = normalMatrix.M33; data[27] = _alphaHashSeed;
         }
@@ -687,7 +697,14 @@ public sealed partial class VulkanGraphicsDevice
         // and the frame was all that survived.
         data[28] = _material.Glass ? SurfaceMaterial.Default.Roughness : _material.Roughness;
         data[29] = _material.Metallic;
-        data[30] = _material.Emissive;
+
+        // A painted sky is written as emission -- it is not lit, it IS light -- but what it carries is
+        // the colour the artist wanted on the screen rather than a radiance. Divided here by what the
+        // resolve will multiply back, so it comes out of the tone map at the colour it was painted. The
+        // lighting pass reads the strength back out of the G-buffer and applies it.
+        data[30] = _paintedSky && _material.Emissive > 0f
+            ? _material.Emissive / ResolveExposure()
+            : _material.Emissive;
         data[31] = _lightmapScale;
         vk.CmdPushConstants(
             cmd,
@@ -787,9 +804,13 @@ public sealed partial class VulkanGraphicsDevice
         Vk vk = _instance.Vk;
         CommandBuffer cmd = _frameCommandBuffer;
 
-        BindGraphicsPipeline(pipeline.ForState(_depthState, _cullMode, blend));
+        // A draw reflects when the frame has handed over a cube, which is what SetEnvironmentCube means.
+        bool reflective = TryGetEnvironmentCube(out Textures.VulkanCubeTexture? cube);
+
+        BindGraphicsPipeline(pipeline.ForState(_depthState, _cullMode, blend, _alphaReference, reflective));
         BindMeshBuffers(mesh);
         BindMeshTextures(pipeline.PipelineLayout, diffuse, lightmap);
+        BindEnvironmentCube(pipeline, cube);
 
         // The forward and direct pipelines take the combined model-view-projection plus the lit
         // view-model block; their shader applies the OpenGL-to-Vulkan clip correction.
@@ -808,7 +829,11 @@ public sealed partial class VulkanGraphicsDevice
         // (the retail look), so it is divided by the exposure the resolve will apply — written raw, the
         // eye adaptation of a dim interior multiplied the arms into pure white.
         float exposure = MathF.Max(RenderCVars.EffectiveExposure * _lastAdaptedExposure, 1e-3f);
-        data[17] = litViewModel ? 1f / exposure : 1f;
+
+        // A world draw has no exposure to carry and puts the lightmap scale there instead -- the same
+        // scale the G-buffer path pushes in its material row, which this block has no room for
+        // otherwise. One unless a title's bakes are MODULATE2X or an HDR bake was encoded with headroom.
+        data[17] = litViewModel ? 1f / exposure : _lightmapScale;
 
         // How much of the previous pose is in the position drawn. This block is the guaranteed 128 bytes
         // to the last float, and the slot it takes used to carry "light this draw with the rig's key",
@@ -824,7 +849,11 @@ public sealed partial class VulkanGraphicsDevice
         // stays one — this only tells it how much light there is where it is standing.
         Vector3f lamps = litViewModel ? LampLightAtEye() : default;
         float lampFill = (lamps.X * 0.212639f) + (lamps.Y * 0.715169f) + (lamps.Z * 0.072192f);
-        data[19] = _lighting.AmbientColour.Length + lampFill;
+
+        // The rig's ambient level; for a world draw, the first component of the model-space direction
+        // towards the fixed-function sun, which the vertex stage reads with the two rows' spare w's
+        // below and which is zero unless SetVertexSun switched the lighting on for this run of draws.
+        data[19] = litViewModel ? _lighting.AmbientColour.Length + lampFill : _vertexSun.X;
 
         if (_detailFade.Mode > 0f && !litViewModel)
         {
@@ -852,7 +881,9 @@ public sealed partial class VulkanGraphicsDevice
             // level's own sun tint plus whatever the lamps are contributing, so a weapon picks up the mood
             // of the mission it is in and the colour of the light it is standing under. The key is read
             // by the lit rig alone, so every other draw leaves the first w at zero: that is the terrain
-            // flag the vertex stage reads, and a sun tint there would morph the world.
+            // flag the vertex stage reads, and a sun tint there would morph the world. The other two
+            // w's are a world draw's remaining components of the direction towards the fixed-function
+            // sun, zero when it is not lit that way.
             data[20] = modelView.M11; data[21] = modelView.M12; data[22] = modelView.M13;
             data[23] = litViewModel ? _lighting.SunColour.X + lamps.X : 0f;
 
@@ -895,14 +926,27 @@ public sealed partial class VulkanGraphicsDevice
     /// <param name="data">The block being filled.</param>
     /// <param name="blend">The draw's blend, which decides what colour it fogs towards.</param>
     /// <remarks>
+    /// <para>
     /// The colour follows the blend the way <c>sub_5144E0</c> sets <c>FOGCOLOR</c> per blend mode: an
     /// additive pass fogs to black so that a surface drawn as several passes is fogged once and not once
     /// per pass. The density is per metre of view depth, and zero means the vertex stage leaves the
     /// draw alone.
+    /// </para>
+    /// <para>
+    /// <b>And the fog TARGET arrives here rather than in the pipeline.</b> It was built as a
+    /// specialization constant -- id 12, a dimension of the pipeline key, three variants of every
+    /// pipeline in the world -- at a time when the fog colour was a constant too. The colour has since
+    /// become push data, which is the row this writes, and the target was left behind: the game set it,
+    /// the device stored it, the key carried it, and no shader ever declared <c>constant_id = 12</c> to
+    /// read it. So I.G.I. 2's ground fogged all three of its passes to the scene's colour, and the
+    /// lightmap pass -- which should fade to white, the identity of what it multiplies -- darkened the
+    /// far hills instead of letting them go to haze. It costs nothing here: the row is written per draw
+    /// already.
+    /// </para>
     /// </remarks>
     private unsafe void WriteFog(float* data, BlendMode blend)
     {
-        Vector3f colour = _fog.ColourFor(blend);
+        Vector3f colour = _fog.ColourFor(blend, _fogTarget);
         data[28] = colour.X;
         data[29] = colour.Y;
         data[30] = colour.Z;

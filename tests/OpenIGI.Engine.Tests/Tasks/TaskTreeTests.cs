@@ -1,4 +1,4 @@
-using OpenIGI.Engine.Tasks;
+﻿using OpenIGI.Engine.Tasks;
 using Xunit;
 
 namespace OpenIGI.Engine.Tests.Tasks;
@@ -175,5 +175,28 @@ public sealed class TaskTreeTests
         TaskTypeRegistry types = new();
         TaskType type = types.Register<RootTask>("Container");
         return (new TaskTree(types), type);
+    }
+
+    /// <summary>A task nobody registered still has a name, and still refuses a type.</summary>
+    /// <remarks>
+    /// <para>
+    /// Not every task is a level's. The player's third-person body is a <c>HumanSoldier</c> the renderer
+    /// builds by hand so it can pose a mesh, and it is never in a tree, never given a script type and
+    /// never binds a variable.
+    /// </para>
+    /// <para>
+    /// Asking such a task for its <see cref="GameTask.Type"/> is still a mistake and still throws. Asking
+    /// for its <see cref="GameTask.Name"/> is not: a name is what a diagnostic prints, and this one used
+    /// to throw from inside a warning about a missing model -- turning "this level does not ship that
+    /// mesh" into an unhandled exception on the frame the mission came up.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void ATaskWithNoTypeStillHasAName()
+    {
+        SwitchTask loose = new();
+
+        Assert.Throws<InvalidOperationException>(() => loose.Type);
+        Assert.Equal("SwitchTask_-1", loose.Name);
     }
 }

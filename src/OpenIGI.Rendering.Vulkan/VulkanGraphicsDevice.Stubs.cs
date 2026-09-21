@@ -40,6 +40,44 @@ public sealed partial class VulkanGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void SetLightmapModulates(bool modulate)
+    {
+        ThrowIfDisposed();
+        _groundDetail = modulate;
+    }
+
+    /// <inheritdoc/>
+    public void SetSceneSun(Vector3f ambient, Vector3f colour)
+    {
+        ThrowIfDisposed();
+
+        // Both forward pipelines, for the reason SetSceneFog gives: an object lit on one and not the
+        // other would change with the preset.
+        _mesh3D.SetSun(ambient, colour);
+        _deferred?.Forward.SetSun(ambient, colour);
+    }
+
+    /// <inheritdoc/>
+    public void SetVertexSun(Vector3f towardsSun)
+    {
+        ThrowIfDisposed();
+        _vertexSun = towardsSun;
+    }
+
+    /// <inheritdoc/>
+    public void SetFogTarget(FogTarget target)
+    {
+        ThrowIfDisposed();
+        _fogTarget = target;
+    }
+
+    // The colour the draws in flight fog towards; push data, written by WriteFog.
+    private FogTarget _fogTarget;
+
+    // The model-space direction towards the fixed-function sun for the draws in flight, or zero.
+    private Vector3f _vertexSun;
+
+    /// <inheritdoc/>
     public void ClearDetailFade()
     {
         ThrowIfDisposed();
@@ -74,6 +112,20 @@ public sealed partial class VulkanGraphicsDevice
     }
 
     private float _alphaHashSeed;
+
+    /// <inheritdoc/>
+    public void SetAlphaReference(byte reference)
+    {
+        ThrowIfDisposed();
+        _alphaReference = reference;
+    }
+
+    // Part of the pipeline rather than of a draw, because there is no push-constant room left in either
+    // mesh block -- both are exactly the 128 bytes Vulkan guarantees, and every float is spoken for. It
+    // becomes a specialization constant instead, which is why the seam takes a byte: the variant space
+    // is the 256 values D3DRS_ALPHAREF itself has, and a level uses two or three of them.
+    private byte _alphaReference = IGraphicsDevice.DefaultAlphaReference;
+
 
     /// <inheritdoc/>
     /// <remarks>

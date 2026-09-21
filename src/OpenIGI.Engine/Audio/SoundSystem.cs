@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using OpenIGI.Audio;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
@@ -408,7 +409,8 @@ public sealed class SoundSystem : IDisposable
 
     private AudioVoiceHandle PlayStreamed(SoundEntry entry, in VoiceParameters parameters)
     {
-        if (!_fileSystem.TryOpenRead(entry.Origin, out Stream? stream) || stream is null)
+        Stream? stream = OpenStreamed(entry);
+        if (stream is null)
         {
             _logger.Warning(LogCategory, $"Streamed sound '{entry.Name}' is no longer at '{entry.Origin}'.");
             return AudioVoiceHandle.None;
@@ -416,13 +418,37 @@ public sealed class SoundSystem : IDisposable
 
         try
         {
-            return _device.PlayStream(IlsfSampleSource.Open(stream), parameters);
+            ISampleSource source = entry.Codec == SoundCodec.Mpeg
+                ? MpegSampleSource.Open(stream)
+                : IlsfSampleSource.Open(stream);
+
+            return _device.PlayStream(source, parameters);
         }
-        catch (IlsfFormatException error)
+        catch (Exception error) when (error is IlsfFormatException or MpegAudioFormatException)
         {
             stream.Dispose();
             _logger.Warning(LogCategory, $"Streamed sound '{entry.Name}' would not open: {error.Message}");
             return AudioVoiceHandle.None;
         }
+    }
+
+    /// <summary>Opens the bytes a streamed sound decodes from, wherever they are.</summary>
+    /// <remarks>
+    /// Two cases, and which one applies is what <see cref="SoundEntry.Data"/> says. A sound the bank
+    /// left on disk is reopened by path, as the original does. A sound the bank had to keep -- an MPEG
+    /// track inside an archive, which has no file of its own -- is read from the bytes it kept, over
+    /// the archive's own array rather than a copy of it, so playing a three-minute track does not
+    /// duplicate eight megabytes every time it starts.
+    /// </remarks>
+    private Stream? OpenStreamed(SoundEntry entry)
+    {
+        if (entry.Data.IsEmpty)
+        {
+            return _fileSystem.TryOpenRead(entry.Origin, out Stream? file) ? file : null;
+        }
+
+        return MemoryMarshal.TryGetArray(entry.Data, out ArraySegment<byte> segment) && segment.Array is not null
+            ? new MemoryStream(segment.Array, segment.Offset, segment.Count, writable: false)
+            : new MemoryStream(entry.Data.ToArray(), writable: false);
     }
 }
