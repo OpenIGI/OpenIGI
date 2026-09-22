@@ -68,7 +68,8 @@ public static class ReflectionReader
                             ReadIndex(binding),
                             ReadBindingKind(module, name, type),
                             ReadDimensions(type),
-                            ReadStorageFormat(module, name, parameter)));
+                            ReadStorageFormat(module, name, parameter),
+                            StorageAccess: ReadStorageAccess(type)));
                         globals ??= ReadGlobals(name, binding, type);
                         break;
 
@@ -236,6 +237,29 @@ public static class ReflectionReader
             ?? throw new ShaderBuildException(
                 $"{module}: '{name}' declares the storage format '{text}', which the build does not know. "
                 + "Add it to ShaderStorageFormat, or the backends will bind nothing to it.");
+    }
+
+    /// <summary>How a storage binding may be reached, as the module's own type says.</summary>
+    /// <param name="type">The parameter's type, as Slang reports it.</param>
+    /// <returns>The access, or none where the binding is not a storage one.</returns>
+    /// <remarks>
+    /// Slang reports "write" for a write-only texture and "readWrite" for one that is both. Anything
+    /// else is not a storage binding at all, and says so rather than guessing at read-write — a layout
+    /// that overstates the access binds nothing.
+    /// </remarks>
+    private static ShaderStorageAccess ReadStorageAccess(JsonElement type)
+    {
+        if (!type.TryGetProperty("access", out JsonElement access))
+        {
+            return ShaderStorageAccess.None;
+        }
+
+        return access.GetString() switch
+        {
+            "write" => ShaderStorageAccess.WriteOnly,
+            "readWrite" => ShaderStorageAccess.ReadWrite,
+            _ => ShaderStorageAccess.None,
+        };
     }
 
     /// <summary>One storage format's name, in either the Slang spelling or the WGSL one.</summary>

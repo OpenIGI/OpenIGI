@@ -83,6 +83,26 @@ public sealed class ComputeProgramTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void A_storage_binding_carries_the_access_the_module_declared()
+    {
+        // Not an assumption of read-write: a layout that overstates the access binds nothing, and the
+        // failure names neither the module nor the texture. The module says which by the type it uses.
+        using RecordingRhiDevice device = new();
+        using ComputeProgram program = new(device, ShaderModuleId.UpscaleDilateVelocity);
+
+        Dictionary<int, RhiBindGroupLayoutEntry> entries = device.Resources
+            .OfType<RecordedBindGroupLayout>()
+            .SelectMany(layout => layout.Entries)
+            .Where(entry => entry.Type == RhiBindingType.StorageTexture)
+            .ToDictionary(entry => entry.Binding);
+
+        // Two of this module's three storage textures are written and never read; one is both.
+        Assert.Equal(RhiStorageAccess.WriteOnly, entries[program.Slot("uDilatedVelocity").Binding].StorageAccess);
+        Assert.Equal(RhiStorageAccess.WriteOnly, entries[program.Slot("uClosestDepth").Binding].StorageAccess);
+        Assert.Equal(RhiStorageAccess.ReadWrite, entries[program.Slot("uOccluder").Binding].StorageAccess);
+    }
+
+    [Fact]
     public void A_binding_the_module_does_not_have_is_refused_by_name()
     {
         using RecordingRhiDevice device = new();

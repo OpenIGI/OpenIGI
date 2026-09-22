@@ -182,13 +182,13 @@ public sealed class ComputeProgram : IDisposable
                 RhiBindingType.Sampler,
                 RhiShaderStages.Compute),
 
-            // Read-write, because that is what a storage texture in this library is: the modules that
-            // only read one declare it as a sampled texture instead.
+            // The access the module declared, not an assumption: a layout that says read-write about a
+            // write-only binding binds nothing, and the failure names neither the module nor the texture.
             ShaderBindingKind.StorageTexture => new RhiBindGroupLayoutEntry(
                 binding.Binding,
                 RhiBindingType.StorageTexture,
                 RhiShaderStages.Compute,
-                RhiStorageAccess.ReadWrite,
+                Access(binding),
                 StorageFormat(binding),
                 Dimension(binding)),
 
@@ -211,6 +211,13 @@ public sealed class ComputeProgram : IDisposable
                 $"A compute pass cannot bind '{binding.Name}', which is a {binding.Kind}."),
         };
     }
+
+    /// <summary>How a storage binding may be reached, as the module declared it.</summary>
+    private static RhiStorageAccess Access(ShaderBinding binding) => binding.StorageAccess switch
+    {
+        ShaderStorageAccess.ReadWrite => RhiStorageAccess.ReadWrite,
+        _ => RhiStorageAccess.WriteOnly,
+    };
 
     /// <summary>How a texture binding is addressed, from how many dimensions it declared.</summary>
     private static RhiTextureViewDimension Dimension(ShaderBinding binding) => binding.Dimensions switch

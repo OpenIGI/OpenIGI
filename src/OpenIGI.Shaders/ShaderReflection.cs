@@ -118,6 +118,11 @@ public enum ShaderStorageFormat
 /// of reading it would be a second place for that rule to live.
 /// <see cref="ShaderStorageFormat.None"/> where the variant has no WGSL form.
 /// </param>
+/// <param name="StorageAccess">
+/// How a storage binding may be reached, as the module's own type says: a bind group layout states it
+/// and is validated against what was declared, so a write-only binding described as read-write binds
+/// nothing. <see cref="ShaderStorageAccess.None"/> for everything that is not a storage binding.
+/// </param>
 public sealed record ShaderBinding(
     string Name,
     int Group,
@@ -125,7 +130,26 @@ public sealed record ShaderBinding(
     ShaderBindingKind Kind,
     int Dimensions = 0,
     ShaderStorageFormat StorageFormat = ShaderStorageFormat.None,
-    ShaderStorageFormat WgslStorageFormat = ShaderStorageFormat.None);
+    ShaderStorageFormat WgslStorageFormat = ShaderStorageFormat.None,
+    ShaderStorageAccess StorageAccess = ShaderStorageAccess.None);
+
+/// <summary>How a storage binding may be reached.</summary>
+/// <remarks>
+/// Recorded because a bind group layout states it and is validated against what the module declared: a
+/// write-only binding described as read-write binds nothing, and the failure names neither. The modules
+/// say which by the type they use — <c>WTexture2D</c> writes, <c>RWTexture2D</c> does both.
+/// </remarks>
+public enum ShaderStorageAccess
+{
+    /// <summary>Not a storage binding.</summary>
+    None,
+
+    /// <summary>Written and not read.</summary>
+    WriteOnly,
+
+    /// <summary>Read and written.</summary>
+    ReadWrite,
+}
 
 /// <summary>One field of a uniform block, for a host that sets its parameters by name.</summary>
 /// <param name="Name">The name the Slang source declares.</param>
