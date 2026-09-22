@@ -53,6 +53,24 @@ public sealed record ShaderModuleEntry(
         Variants is { Count: > 0 }
             ? Variants
             : [new ShaderVariantEntry(ShaderVariant.DefaultName, new Dictionary<string, string>(StringComparer.Ordinal), [])];
+
+    /// <summary>Finds one variant of the module by name.</summary>
+    /// <param name="variant">The variant; an unnamed one is the default, as the catalogue reads it.</param>
+    /// <returns>The variant, or <see langword="null"/> when the module has none by that name.</returns>
+    public ShaderVariantEntry? Variant(ShaderVariant variant)
+    {
+        string name = string.IsNullOrEmpty(variant.Name) ? ShaderVariant.DefaultName : variant.Name;
+
+        foreach (ShaderVariantEntry candidate in Variants)
+        {
+            if (string.Equals(candidate.Name, name, StringComparison.Ordinal))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
 }
 
 /// <summary>

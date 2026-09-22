@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using OpenIGI.Rendering.Rhi;
+using OpenIGI.Shaders;
 
 namespace OpenIGI.TestSupport.Rhi;
 
@@ -51,6 +52,10 @@ public sealed class RecordingRhiDevice : IRhiDevice
 
     /// <inheritdoc/>
     public RhiFeatures Features { get; }
+
+    /// <inheritdoc/>
+    /// <remarks>SPIR-V unless a test says otherwise, which is the target every module carries.</remarks>
+    public ShaderTarget ShaderTarget { get; init; } = ShaderTarget.Spirv;
 
     /// <inheritdoc/>
     public RhiLimits Limits { get; }

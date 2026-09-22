@@ -1,3 +1,5 @@
+using OpenIGI.Shaders;
+
 namespace OpenIGI.Rendering.Rhi;
 
 /// <summary>
@@ -23,6 +25,13 @@ public interface IRhiDevice : IDisposable
 
     /// <summary>Gets the optional things this device can do.</summary>
     RhiFeatures Features { get; }
+
+    /// <summary>Gets the code this device's shader modules are made from.</summary>
+    /// <remarks>
+    /// A few of the library's modules are carried for one target only, where the other language cannot
+    /// express them. A pass built from such a module asks the catalogue with this before building.
+    /// </remarks>
+    ShaderTarget ShaderTarget { get; }
 
     /// <summary>Gets the sizes it will not exceed.</summary>
     RhiLimits Limits { get; }

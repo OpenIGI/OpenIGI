@@ -103,6 +103,9 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     public RhiFeatures Features => _context.Report.Features;
 
     /// <inheritdoc/>
+    public ShaderTarget ShaderTarget => ShaderTarget.Wgsl;
+
+    /// <inheritdoc/>
     public RhiLimits Limits => _context.Report.Limits;
 
     /// <inheritdoc/>
@@ -259,15 +262,7 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
 
         string name = descriptor.Label.Length > 0 ? descriptor.Label : descriptor.Module.ToString();
 
-        ShaderVariantEntry? entry = null;
-        foreach (ShaderVariantEntry candidate in ShaderCatalog.Manifest.Module(descriptor.Module).Variants)
-        {
-            if (string.Equals(candidate.Name, variant.Name, StringComparison.Ordinal))
-            {
-                entry = candidate;
-                break;
-            }
-        }
+        ShaderVariantEntry? entry = ShaderCatalog.Manifest.Module(descriptor.Module).Variant(variant);
 
         if (entry is null)
         {

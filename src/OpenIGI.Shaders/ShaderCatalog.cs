@@ -34,6 +34,17 @@ public static class ShaderCatalog
     /// <summary>Gets the manifest listing every module the library carries.</summary>
     public static ShaderManifest Manifest => ManifestSource.Value;
 
+    /// <summary>Gets whether a variant of a module has a form for a target.</summary>
+    /// <param name="id">The module.</param>
+    /// <param name="variant">The variant.</param>
+    /// <param name="target">The code a backend consumes.</param>
+    /// <returns>
+    /// <see langword="true"/> when the library carries it. A pass whose modules are not all carried for a
+    /// backend asks this and stands down, rather than being refused halfway through building itself.
+    /// </returns>
+    public static bool Compiles(ShaderModuleId id, ShaderVariant variant, ShaderTarget target) =>
+        Manifest.Module(id).Variant(variant)?.Compiles(target) ?? false;
+
     /// <summary>Gets one variant's SPIR-V, holding every entry point the module declares.</summary>
     /// <param name="id">The module wanted.</param>
     /// <param name="variant">The variant wanted.</param>

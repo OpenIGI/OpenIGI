@@ -71,6 +71,9 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
     public RhiFeatures Features { get; }
 
     /// <inheritdoc/>
+    public ShaderTarget ShaderTarget => ShaderTarget.Spirv;
+
+    /// <inheritdoc/>
     public RhiLimits Limits { get; }
 
     /// <inheritdoc/>
