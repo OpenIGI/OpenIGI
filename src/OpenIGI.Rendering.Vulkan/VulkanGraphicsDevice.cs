@@ -539,7 +539,6 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
             _allocator,
             _commands,
             _submission,
-            _shaderCompiler,
             _bindless,
             _rayTracing);
         return test.Run(_logger);

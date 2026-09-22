@@ -36,6 +36,9 @@ public enum ShaderBindingKind
 
     /// <summary>A subpass input attachment, which WebGPU has no equivalent of at all.</summary>
     InputAttachment,
+
+    /// <summary>An unbounded array of acceleration structures, reached by index from a bindless heap.</summary>
+    AccelerationStructureArray,
 }
 
 /// <summary>One resource a module binds, as both targets agree it is bound.</summary>

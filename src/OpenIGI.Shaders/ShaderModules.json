@@ -293,6 +293,16 @@
           "targets": [ "Spirv" ]
         }
       ]
+    },
+    {
+      "id": "RayQuerySelfTest",
+      "source": "RayTracing/SelfTest.slang",
+      "variants": [
+        {
+          "name": "default",
+          "targets": [ "Spirv" ]
+        }
+      ]
     }
   ]
 }

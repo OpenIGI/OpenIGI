@@ -7,6 +7,7 @@ using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Queues;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
@@ -57,7 +58,6 @@ internal sealed unsafe class VulkanRayQuerySelfTest
     private readonly VulkanAllocator _allocator;
     private readonly VulkanCommands _commands;
     private readonly VulkanSubmissionQueue _submission;
-    private readonly ShaderCompiler _compiler;
     private readonly VulkanBindlessDescriptors _bindless;
     private readonly VulkanRayTracingApi _api;
 
@@ -67,7 +67,6 @@ internal sealed unsafe class VulkanRayQuerySelfTest
     /// <param name="allocator">The allocator to build the test's resources from.</param>
     /// <param name="commands">Where the test's command buffer comes from.</param>
     /// <param name="submission">Where the recorded work is handed over to be submitted.</param>
-    /// <param name="compiler">The GLSL compiler.</param>
     /// <param name="bindless">The descriptor heaps the scene is reached through.</param>
     /// <param name="api">The ray-tracing entry points.</param>
     public VulkanRayQuerySelfTest(
@@ -76,7 +75,6 @@ internal sealed unsafe class VulkanRayQuerySelfTest
         VulkanAllocator allocator,
         VulkanCommands commands,
         VulkanSubmissionQueue submission,
-        ShaderCompiler compiler,
         VulkanBindlessDescriptors bindless,
         VulkanRayTracingApi api)
     {
@@ -85,7 +83,6 @@ internal sealed unsafe class VulkanRayQuerySelfTest
         _allocator = allocator;
         _commands = commands;
         _submission = submission;
-        _compiler = compiler;
         _bindless = bindless;
         _api = api;
     }
@@ -96,75 +93,6 @@ internal sealed unsafe class VulkanRayQuerySelfTest
     /// shader binding table, no separate dispatch. It is the path every indirect-lighting pass will take,
     /// which is why it is the one proved here.
     /// </remarks>
-    private static string Source => """
-        #version 460
-        #extension GL_EXT_ray_query : require
-        #extension GL_EXT_buffer_reference : require
-        #extension GL_EXT_buffer_reference2 : require
-        #extension GL_EXT_scalar_block_layout : require
-        #extension GL_EXT_nonuniform_qualifier : require
-
-        // The scene lives in the bindless resource heap and is reached by index, exactly as the lighting
-        // passes will reach it — so a structure rebuilt each frame needs no descriptor rebinding.
-        layout(set = 1, binding = 0) uniform accelerationStructureEXT uScene[];
-
-        // The results come back through a raw device address rather than a descriptor, which is the same
-        // mechanism a hit shader uses to read the geometry it struck.
-        layout(buffer_reference, std430, buffer_reference_align = 4) buffer Results
-        {
-            uint values[];
-        };
-
-        layout(push_constant, scalar) uniform Push
-        {
-            Results results;
-            uint sceneIndex;
-            uint rayCount;
-        } pc;
-
-        layout(local_size_x = 64) in;
-
-        void main()
-        {
-            uint index = gl_GlobalInvocationID.x;
-            if (index >= pc.rayCount)
-            {
-                return;
-            }
-
-            // A sweep that runs off both edges of the quad, so the answer contains hits and misses and a
-            // traversal that returned a constant would fail.
-            float t = float(index) / float(pc.rayCount - 1u);
-            vec3 origin = vec3(-0.5 + 2.0 * t, 0.5, -1.0);
-            vec3 direction = vec3(0.0, 0.0, 1.0);
-
-            rayQueryEXT query;
-            rayQueryInitializeEXT(
-                query,
-                uScene[nonuniformEXT(pc.sceneIndex)],
-                gl_RayFlagsOpaqueEXT,
-                0xFF,
-                origin,
-                0.0,
-                direction,
-                100.0);
-
-            while (rayQueryProceedEXT(query))
-            {
-            }
-
-            uint result = 0u;
-            if (rayQueryGetIntersectionTypeEXT(query, true) != gl_RayQueryCommittedIntersectionNoneEXT)
-            {
-                // Zero means a miss, so the distance is reported in thousandths and a genuine hit at the
-                // origin could never be confused with one.
-                result = uint(rayQueryGetIntersectionTEXT(query, true) * 1000.0 + 0.5);
-            }
-
-            pc.results.values[index] = result;
-        }
-        """;
-
     /// <summary>Runs the test and reports what happened.</summary>
     /// <param name="logger">Where to report the outcome.</param>
     /// <returns><see langword="true"/> when every ray landed where it should have.</returns>
@@ -234,8 +162,10 @@ internal sealed unsafe class VulkanRayQuerySelfTest
         using VulkanShaderModule module = new(
             _vk,
             _device.Device,
-            _compiler.Compile(Source, ShaderStage.Compute, "rayquery.selftest.comp"),
-            ShaderStage.Compute);
+            ShaderCatalog.GetSpirv(ShaderModuleId.RayQuerySelfTest).Span,
+            Vulkan.Shaders.ShaderStage.Compute,
+            ShaderCatalog.GetReflection(ShaderModuleId.RayQuerySelfTest)
+                .EntryPointFor(OpenIGI.Shaders.ShaderStage.Compute).Name);
 
         Pipeline pipeline = CreatePipeline(module);
         try
@@ -383,7 +313,7 @@ internal sealed unsafe class VulkanRayQuerySelfTest
 
     private Pipeline CreatePipeline(VulkanShaderModule module)
     {
-        nint entryPoint = SilkMarshal.StringToPtr("main");
+        nint entryPoint = SilkMarshal.StringToPtr(module.EntryPoint);
         try
         {
             ComputePipelineCreateInfo createInfo = new()

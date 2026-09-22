@@ -182,6 +182,30 @@ public static class ReflectionReader
         throw new ShaderBuildException($"{module}: '{name}' has no descriptor slot to bind.");
     }
 
+    /// <summary>What an unbounded resource array holds.</summary>
+    /// <param name="module">The module, for the diagnostic.</param>
+    /// <param name="name">The parameter's name, for the diagnostic.</param>
+    /// <param name="type">The reflected array type.</param>
+    /// <returns>The kind the array is of.</returns>
+    /// <exception cref="ShaderBuildException">The array holds something the library has no kind for.</exception>
+    private static ShaderBindingKind ReadArrayKind(ShaderModuleId module, string name, JsonElement type)
+    {
+        if (!type.TryGetProperty("elementType", out JsonElement element))
+        {
+            throw new ShaderBuildException($"{module}: the array '{name}' names no element type.");
+        }
+
+        ShaderBindingKind kind = ReadBindingKind(module, name, element);
+        if (kind == ShaderBindingKind.AccelerationStructure)
+        {
+            return ShaderBindingKind.AccelerationStructureArray;
+        }
+
+        throw new ShaderBuildException(
+            $"{module}: '{name}' is an unbounded array of {kind}, which the library has no binding "
+            + "kind for. Only the acceleration structures are bound through a bindless heap.");
+    }
+
     private static int ReadIndex(JsonElement binding) =>
         binding.TryGetProperty("index", out JsonElement index) ? index.GetInt32() : 0;
 
@@ -202,6 +226,12 @@ public static class ReflectionReader
 
             case "resource":
                 break;
+
+            case "array":
+                // A bindless heap: an unbounded array of one resource kind, indexed in the shader.
+                // Only the acceleration structures are bound that way, and the backend that binds them
+                // needs to know which binding the heap occupies rather than how long it is.
+                return ReadArrayKind(module, name, type);
 
             default:
                 throw new ShaderBuildException($"{module}: '{name}' has the unhandled type kind '{kind}'.");

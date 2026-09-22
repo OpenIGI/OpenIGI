@@ -153,4 +153,7 @@ public enum ShaderModuleId
 
     /// <summary>Deferred: the lit scene brought to the display, with everything the lens does.</summary>
     Resolve,
+
+    /// <summary>A sweep of rays across a known quad, to prove an adapter's ray query traverses.</summary>
+    RayQuerySelfTest,
 }
