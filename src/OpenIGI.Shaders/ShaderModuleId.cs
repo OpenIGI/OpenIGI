@@ -171,4 +171,10 @@ public enum ShaderModuleId
 
     /// <summary>Surface cache: the world-space radiance cache, one slab of probes a frame.</summary>
     CardsRadianceCache,
+
+    /// <summary>Surface cache: one screen probe every few pixels, gathered over its hemisphere.</summary>
+    CardsScreenGather,
+
+    /// <summary>Surface cache: the screen gather pooled across its workgroup and accumulated.</summary>
+    CardsScreenGatherTemporal,
 }

@@ -379,6 +379,48 @@
           ]
         }
       ]
+    },
+    {
+      "id": "CardsScreenGather",
+      "source": "Cards/ScreenGather.slang",
+      "variants": [
+        {
+          "name": "rayquery",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "1"
+          },
+          "targets": [
+            "Spirv"
+          ]
+        },
+        {
+          "name": "software",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "0"
+          }
+        }
+      ]
+    },
+    {
+      "id": "CardsScreenGatherTemporal",
+      "source": "Cards/ScreenGatherTemporal.slang",
+      "variants": [
+        {
+          "name": "rayquery",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "1"
+          },
+          "targets": [
+            "Spirv"
+          ]
+        },
+        {
+          "name": "software",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "0"
+          }
+        }
+      ]
     }
   ]
 }
