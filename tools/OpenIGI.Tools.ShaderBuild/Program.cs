@@ -52,6 +52,11 @@ try
 
     if (!checkOnly)
     {
+        if (builder.Pin is { } moved)
+        {
+            Console.WriteLine($"slangVersion moved to {moved}; commit ShaderModules.json with the output.");
+        }
+
         Console.WriteLine($"{results.Count} artefact(s), {stale} written.");
         return 0;
     }

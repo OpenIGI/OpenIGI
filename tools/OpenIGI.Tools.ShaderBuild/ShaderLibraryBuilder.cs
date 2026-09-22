@@ -52,6 +52,7 @@ public sealed class ShaderLibraryBuilder
     public IReadOnlyList<ArtifactResult> Build(bool checkOnly)
     {
         ShaderManifest manifest = ReadManifest();
+        RequireThePinnedCompiler(manifest, checkOnly);
         List<ArtifactResult> results = [];
 
         string scratch = Path.Combine(Path.GetTempPath(), "openigi-shaderbuild-" + Guid.NewGuid().ToString("N"));
@@ -83,7 +84,37 @@ public sealed class ShaderLibraryBuilder
             Directory.Delete(scratch, recursive: true);
         }
 
+        // Only once every module has compiled: a pin recorded beside output that was never written
+        // would name a compiler the committed artefacts did not come from.
+        if (Pin is { } moved)
+        {
+            WritePin(manifest.SlangVersion, moved);
+        }
+
         return results;
+    }
+
+    /// <summary>Moves the manifest's pin to the compiler this run used.</summary>
+    /// <param name="previous">The version the manifest pinned.</param>
+    /// <param name="current">The version that produced the output just written.</param>
+    /// <exception cref="ShaderBuildException">The manifest does not carry the pin where it is expected.</exception>
+    /// <remarks>
+    /// One line, rewritten in place rather than the document re-serialised: the manifest is hand-kept and
+    /// re-serialising it would reformat every module entry to say one string.
+    /// </remarks>
+    private void WritePin(string previous, string current)
+    {
+        string path = Path.Combine(_projectDirectory, ShaderManifest.FileName);
+        string text = File.ReadAllText(path);
+        string from = $"\"slangVersion\": \"{previous}\"";
+        if (!text.Contains(from, StringComparison.Ordinal))
+        {
+            throw new ShaderBuildException(
+                $"{ShaderManifest.FileName} does not carry slangVersion {previous} as written text, so the "
+                + "pin cannot be moved in place.");
+        }
+
+        File.WriteAllText(path, text.Replace(from, $"\"slangVersion\": \"{current}\"", StringComparison.Ordinal));
     }
 
     private IEnumerable<ArtifactResult> BuildVariant(
@@ -224,6 +255,41 @@ public sealed class ShaderLibraryBuilder
 
         return new ArtifactResult(fileName, ArtifactState.Changed);
     }
+
+    /// <summary>Holds a check to the compiler the committed output was produced with.</summary>
+    /// <param name="manifest">The manifest, which pins that compiler.</param>
+    /// <param name="checkOnly">Whether this run only reports differences.</param>
+    /// <exception cref="ShaderBuildException">A check ran against a different compiler.</exception>
+    /// <remarks>
+    /// Two RELEASES of slangc do not agree byte for byte about SPIR-V they both consider correct, so a
+    /// check against the wrong one reports every artefact stale and says nothing about the sources. Two
+    /// builds of one release do agree -- see <see cref="ShaderManifest.ReleaseOf"/> -- so the release is
+    /// what is held to. A regenerate is where the pin legitimately moves, so there it is written down
+    /// rather than enforced: the new version lands in the manifest beside the output it produced.
+    /// </remarks>
+    private void RequireThePinnedCompiler(ShaderManifest manifest, bool checkOnly)
+    {
+        string version = _compiler.Version();
+        if (manifest.Accepts(version))
+        {
+            return;
+        }
+
+        if (checkOnly)
+        {
+            throw new ShaderBuildException(
+                $"The committed output was produced with slangc {manifest.SlangVersion}, and this is "
+                + $"{version}. Two releases do not agree byte for byte about SPIR-V they both accept, so "
+                + "a check against a different one reports every artefact stale. Install the pinned "
+                + "release, or regenerate (without --check) to move the pin.");
+        }
+
+        Pin = version;
+    }
+
+    /// <summary>Gets the compiler version a regenerate found, when it differs from the pinned one.</summary>
+    /// <remarks>Null while the pin still holds, which is every run that did not move it.</remarks>
+    public string? Pin { get; private set; }
 
     private ShaderManifest ReadManifest()
     {

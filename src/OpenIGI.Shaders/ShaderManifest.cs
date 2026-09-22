@@ -75,6 +75,29 @@ public sealed record ShaderManifest(string SlangVersion, IReadOnlyList<ShaderMod
     [JsonIgnore]
     public static string ResourceName => $"OpenIGI.Shaders.{FileName}";
 
+    /// <summary>The release a <c>slangc -v</c> string names, without the build that produced it.</summary>
+    /// <param name="version">A version string as <c>slangc -v</c> reports it.</param>
+    /// <returns>The release, which is everything before the first hyphen.</returns>
+    /// <remarks>
+    /// A release is distributed more than once: the Vulkan SDK ships its own build of it, which reports
+    /// the tag plus the commits past it (<c>2026.13.1-1-g84792eb15</c>), while the tagged download
+    /// reports the tag alone. Measured against the whole library, the two produce byte-identical output,
+    /// so the build is information and the release is the thing that has to match.
+    /// </remarks>
+    public static string ReleaseOf(string version)
+    {
+        ArgumentNullException.ThrowIfNull(version);
+
+        int hyphen = version.IndexOf('-', StringComparison.Ordinal);
+        return hyphen < 0 ? version.Trim() : version[..hyphen].Trim();
+    }
+
+    /// <summary>Whether a compiler produces the output this library committed.</summary>
+    /// <param name="version">The compiler's version, as <c>slangc -v</c> reports it.</param>
+    /// <returns><see langword="true"/> when it is a build of the pinned release.</returns>
+    public bool Accepts(string version) =>
+        string.Equals(ReleaseOf(version), ReleaseOf(SlangVersion), StringComparison.Ordinal);
+
     /// <summary>Finds a module's entry.</summary>
     /// <param name="id">The module wanted.</param>
     /// <returns>That module's entry.</returns>
