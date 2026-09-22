@@ -2,7 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Compute;
 using OpenIGI.Rendering.Vulkan.Memory;
-using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Deferred;
@@ -69,22 +69,18 @@ internal sealed class LampShadowPass : IDisposable
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the pass lives on.</param>
     /// <param name="allocator">The allocator backing its parameter buffers.</param>
-    /// <param name="compiler">The shader compiler.</param>
     /// <param name="framesInFlight">How many frames the descriptor sets are cycled over.</param>
     public LampShadowPass(
         Vk vk,
         VulkanDevice device,
         VulkanAllocator allocator,
-        ShaderCompiler compiler,
         int framesInFlight)
     {
         _pass = new VulkanComputePass(
             vk,
             device,
             allocator,
-            compiler,
-            "lampshadow.comp",
-            LampShadowShaderSource.Compute,
+            ShaderModuleId.LampShadow,
             Bindings,
             ParamSize,
             framesInFlight);

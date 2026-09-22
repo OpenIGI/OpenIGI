@@ -152,6 +152,19 @@
     {
       "id": "LampDenoiseSpatial",
       "source": "Lamp/DenoiseSpatial.slang"
+    },
+    {
+      "id": "LampShadow",
+      "source": "Lamp/Shadow.slang",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {
+            "OPENIGI_MAX_LAMPS": "160"
+          },
+          "targets": [ "Spirv" ]
+        }
+      ]
     }
   ]
 }
