@@ -59,17 +59,11 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     /// screenshot run, a flight — says so here, because the copy has to be recorded INSIDE the frame and
     /// a caller asking afterwards is a frame too late.
     /// </param>
-    /// <param name="deferredFrame">
-    /// Whether this device offers the deferred frame. It is built and agrees with the Vulkan renderer on
-    /// a frame made by hand; a real mission's geometry does not reach its G-buffer yet, so it is offered
-    /// to somebody working on it rather than to a player, who gets the direct path, which draws.
-    /// </param>
     public GraphicsDevice(
         IRhiDevice device,
         in DisplayMode mode,
         double timestampPeriodNanoseconds = 1.0,
-        bool captureFrames = false,
-        bool deferredFrame = false)
+        bool captureFrames = false)
     {
         ArgumentNullException.ThrowIfNull(device);
 
@@ -84,12 +78,10 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
             SupportsNonPowerOfTwoTextures: true,
             $"{device.AdapterName} (RHI)")
         {
-            // The G-buffer, the shading over it and the resolve are here and agree with the Vulkan
-            // renderer on a frame built by hand — but a real mission's geometry does not reach the
-            // G-buffer yet, and a device that claimed otherwise would hand the game a frame it cannot
-            // finish. Opt in with OPENIGI_RHI_DEFERRED=1 to work on it; everything else gets the direct
-            // path, which draws.
-            SupportsSceneCapture = deferredFrame,
+            // The G-buffer, the shading over it, the atmosphere and the resolve: a real mission's frame,
+            // agreeing with the Vulkan renderer's under the same lighting model. What it does not draw
+            // yet is named in UnimplementedSettings rather than drawn wrongly.
+            SupportsSceneCapture = true,
             SupportsFloatRenderTargets = true,
 
             // The compute seam is the deferred stack's, and none of it has moved onto this path. Saying

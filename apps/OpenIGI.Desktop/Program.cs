@@ -204,9 +204,9 @@ using (window)
         "0",
         StringComparison.Ordinal);
     // OPENIGI_RENDERER=rhi draws through OpenIGI.Rendering.Pipeline instead: the same renderer over the
-    // backend-neutral interface, which is what the browser will run. It is the DIRECT path only for now
-    // -- it reports SupportsSceneCapture false, so the deferred stack stands down -- and it is opt-in
-    // until it draws everything the device below it does.
+    // backend-neutral interface, which is what the browser will run. It draws the deferred frame, with
+    // the passes it has not taken over yet named in its UnimplementedSettings, and it is opt-in until it
+    // draws everything the device below it does.
     bool useRhi = string.Equals(
         Environment.GetEnvironmentVariable("OPENIGI_RENDERER"),
         "rhi",
@@ -227,14 +227,7 @@ using (window)
             rhi.Device,
             displayMode,
             rhi.TimestampPeriodNanoseconds,
-            options.ScreenshotPath is not null,
-
-            // The deferred frame over the RHI is opt-in while a real mission's geometry does not reach
-            // its G-buffer: without this the renderer draws the direct path, which does.
-            string.Equals(
-                Environment.GetEnvironmentVariable("OPENIGI_RHI_DEFERRED"),
-                "1",
-                StringComparison.Ordinal))
+            options.ScreenshotPath is not null)
         : new VulkanGraphicsDevice(
             new VulkanSurfaceProvider(window.VkSurface!),
             displayMode,
@@ -245,7 +238,7 @@ using (window)
 
     if (rhi is not null)
     {
-        logger.Information("Renderer", $"Drawing through the RHI on {rhi.Device.AdapterName}; direct path only.");
+        logger.Information("Renderer", $"Drawing through the RHI on {rhi.Device.AdapterName}.");
     }
 
     // The composition root is the only place that names a concrete backend: the graphics device

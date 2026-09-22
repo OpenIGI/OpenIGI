@@ -20,16 +20,14 @@ public sealed class GraphicsDeviceTests
     private static readonly Bgra32 White = new(255, 255, 255, 255);
 
     [Fact]
-    public void It_names_what_it_does_not_do_and_offers_the_deferred_frame_only_on_request()
+    public void It_offers_the_deferred_frame_and_names_what_it_does_not_do()
     {
-        // The question everything above asks before drawing the remaster's frame. The deferred frame is
-        // built and agrees with the Vulkan renderer on a frame made by hand, and a real mission's
-        // geometry does not reach its G-buffer yet — so it is offered to somebody working on it and not
-        // to a player, who gets the direct path, which draws.
+        // The question everything above asks before drawing the remaster's frame. The passes that have
+        // not moved onto this path are named rather than drawn wrongly.
         using RecordingRhiDevice rhi = new();
         using GraphicsDevice device = Open(rhi);
 
-        Assert.False(device.Capabilities.SupportsSceneCapture);
+        Assert.True(device.Capabilities.SupportsSceneCapture);
         Assert.False(device.Capabilities.SupportsCompute);
 
         Assert.NotEmpty(device.Capabilities.UnimplementedSettings);
@@ -46,7 +44,16 @@ public sealed class GraphicsDeviceTests
 
         Assert.False(device.BeginSceneCapture(default));
         Assert.False(device.BeginSceneCapture(new SceneTargetDescription(64, 64)));
-        Assert.False(device.BeginSceneCapture(new SceneTargetDescription(64, 64, Deferred: true)));
+    }
+
+    [Fact]
+    public void A_deferred_capture_is_accepted()
+    {
+        using RecordingRhiDevice rhi = new();
+        using GraphicsDevice device = Open(rhi);
+
+        Assert.True(device.BeginSceneCapture(new SceneTargetDescription(64, 64, Deferred: true)));
+        device.EndSceneCapture();
     }
 
     [Fact]
@@ -260,7 +267,7 @@ public sealed class GraphicsDeviceTests
         // and the geometry pass drew every page without either: each additive pass at full weight, so the
         // ground came out as the SUM of its materials.
         using RecordingRhiDevice rhi = new();
-        using GraphicsDevice device = new(rhi, new DisplayMode(640, 480, 32, 60), deferredFrame: true);
+        using GraphicsDevice device = Open(rhi);
 
         Assert.True(device.BeginSceneCapture(new SceneTargetDescription(64, 64, Deferred: true)));
         device.BeginPass(ScenePass.Geometry);
