@@ -21,6 +21,7 @@ public sealed class VulkanRhi : IDisposable
     private readonly VulkanAllocator _allocator;
     private readonly VulkanCommands _commands;
     private readonly VulkanRhiDevice _rhi;
+    private readonly VulkanSwapchain? _swapchain;
     private bool _disposed;
 
     private VulkanRhi(
@@ -28,13 +29,15 @@ public sealed class VulkanRhi : IDisposable
         VulkanDevice device,
         VulkanAllocator allocator,
         VulkanCommands commands,
-        VulkanRhiDevice rhi)
+        VulkanRhiDevice rhi,
+        VulkanSwapchain? swapchain = null)
     {
         _instance = instance;
         _device = device;
         _allocator = allocator;
         _commands = commands;
         _rhi = rhi;
+        _swapchain = swapchain;
     }
 
     /// <summary>Gets the device everything draws through.</summary>
@@ -94,6 +97,53 @@ public sealed class VulkanRhi : IDisposable
         }
     }
 
+    /// <summary>Opens a device that presents to a window's surface.</summary>
+    /// <param name="surface">Where the window's surface comes from.</param>
+    /// <param name="width">The surface's width in pixels.</param>
+    /// <param name="height">Its height.</param>
+    /// <param name="vsync">Whether to wait for the display.</param>
+    /// <param name="logger">Where the backend reports what it found.</param>
+    /// <param name="enableValidation">Whether to load the validation layers.</param>
+    /// <returns>The device.</returns>
+    public static VulkanRhi CreateForSurface(
+        IVulkanSurfaceProvider surface,
+        int width,
+        int height,
+        bool vsync,
+        IIgiLogger? logger = null,
+        bool enableValidation = false)
+    {
+        ArgumentNullException.ThrowIfNull(surface);
+        ArgumentOutOfRangeException.ThrowIfLessThan(width, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(height, 1);
+
+        IIgiLogger log = logger ?? NullLogger.Instance;
+        VulkanInstance instance = new(surface, enableValidation, log);
+
+        try
+        {
+            PhysicalDeviceSelection selection = new PhysicalDeviceSelector(instance, log).Select();
+
+            VulkanDevice device = new(instance, selection, log);
+            VulkanAllocator allocator = new(device);
+            VulkanCommands commands = new(instance.Vk, device);
+            VulkanSwapchain swapchain = new(instance, device, width, height, vsync);
+            VulkanRhiDevice rhi = new(instance.Vk, device, allocator, commands, log);
+
+            rhi.AttachSwapchain(swapchain);
+
+            return new VulkanRhi(instance, device, allocator, commands, rhi, swapchain)
+            {
+                TimestampPeriodNanoseconds = selection.Properties.Limits.TimestampPeriod,
+            };
+        }
+        catch
+        {
+            instance.Dispose();
+            throw;
+        }
+    }
+
     /// <summary>Gets the texture a frame drawn offscreen landed in.</summary>
     /// <param name="index">The frame's index, as it was handed out.</param>
     /// <returns>The texture.</returns>
@@ -112,6 +162,7 @@ public sealed class VulkanRhi : IDisposable
         // The opposite order to construction, which is the only order that works: the pool and the
         // allocator name the device, and the device names the instance.
         _rhi.Dispose();
+        _swapchain?.Dispose();
         _commands.Dispose();
         _allocator.Dispose();
         _device.Dispose();

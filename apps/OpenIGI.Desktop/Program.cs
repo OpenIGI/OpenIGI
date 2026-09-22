@@ -11,7 +11,9 @@ using OpenIGI.Host.Infrastructure;
 using OpenIGI.Host;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.Platform;
+using OpenIGI.Rendering.Pipeline;
 using OpenIGI.Rendering.Vulkan;
+using OpenIGI.Rendering.Vulkan.Rhi;
 using OpenIGI.Rendering;
 
 HostOptions options;
@@ -201,13 +203,39 @@ using (window)
         Environment.GetEnvironmentVariable("OPENIGI_VK_DEFERRED"),
         "0",
         StringComparison.Ordinal);
-    using IGraphicsDevice device = new VulkanGraphicsDevice(
-        new VulkanSurfaceProvider(window.VkSurface!),
-        displayMode,
-        vulkanValidation,
-        vulkanDeferred,
-        options.ScreenshotPath is not null,
-        logger);
+    // OPENIGI_RENDERER=rhi draws through OpenIGI.Rendering.Pipeline instead: the same renderer over the
+    // backend-neutral interface, which is what the browser will run. It is the DIRECT path only for now
+    // -- it reports SupportsSceneCapture false, so the deferred stack stands down -- and it is opt-in
+    // until it draws everything the device below it does.
+    bool useRhi = string.Equals(
+        Environment.GetEnvironmentVariable("OPENIGI_RENDERER"),
+        "rhi",
+        StringComparison.OrdinalIgnoreCase);
+
+    using VulkanRhi? rhi = useRhi
+        ? VulkanRhi.CreateForSurface(
+            new VulkanSurfaceProvider(window.VkSurface!),
+            width,
+            height,
+            vsync: true,
+            logger,
+            vulkanValidation)
+        : null;
+
+    using IGraphicsDevice device = rhi is not null
+        ? new GraphicsDevice(rhi.Device, displayMode, rhi.TimestampPeriodNanoseconds)
+        : new VulkanGraphicsDevice(
+            new VulkanSurfaceProvider(window.VkSurface!),
+            displayMode,
+            vulkanValidation,
+            vulkanDeferred,
+            options.ScreenshotPath is not null,
+            logger);
+
+    if (rhi is not null)
+    {
+        logger.Information("Renderer", $"Drawing through the RHI on {rhi.Device.AdapterName}; direct path only.");
+    }
 
     // The composition root is the only place that names a concrete backend: the graphics device
     // above, and the audio factory here. GameHost itself sees only the abstractions.
