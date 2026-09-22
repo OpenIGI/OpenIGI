@@ -85,9 +85,13 @@ public sealed class ComputeProgramOnVulkanTests(ITestOutputHelper output)
     }
 
     /// <summary>Runs the module over one field of rejection values and reads the answer back.</summary>
+    /// <remarks>
+    /// Nothing here states a binding index or a workgroup count: every resource is asked for by the name
+    /// the shader gave it, and the dispatch is sized from what the module declared.
+    /// </remarks>
     private static byte[] Dilate(IRhiDevice device, byte[] rejection)
     {
-        using ComputeProgram program = new(device, ShaderModuleId.UpscaleRejectionDilate);
+        using ComputePass dilate = new(device, ShaderModuleId.UpscaleRejectionDilate, "upscale.dilate");
 
         using IRhiTexture source = device.CreateTexture(new RhiTextureDescriptor(
             Width,
@@ -116,16 +120,6 @@ public sealed class ComputeProgramOnVulkanTests(ITestOutputHelper output)
 
         device.WriteBuffer<float>(parameters, 0, [Width, Height, 1f / Width, 1f / Height]);
 
-        // Nothing here states a binding index: every one is asked for by the name the shader gave it.
-        using IRhiBindGroup group = device.CreateBindGroup(new RhiBindGroupDescriptor(
-            program.GroupLayouts[0],
-            [
-                RhiBindGroupEntry.Of(program.Slot("uRejection").Binding, source.View),
-                RhiBindGroupEntry.Of(program.Slot("uBlend").Binding, blend.View),
-                RhiBindGroupEntry.Of(program.Slot("p").Binding, parameters),
-            ],
-            "upscale.dilate"));
-
         int bytesPerRow = RhiBufferTextureCopy.AlignRow(Width);
 
         using IRhiBuffer readback = device.CreateBuffer(new RhiBufferDescriptor(
@@ -137,11 +131,11 @@ public sealed class ComputeProgramOnVulkanTests(ITestOutputHelper output)
         {
             using (IRhiComputePassEncoder pass = encoder.BeginComputePass(new RhiComputePassDescriptor(Label: "dilate")))
             {
-                (int x, int y, int z) = program.GroupsFor(Width, Height);
+                dilate.Bind("uRejection", source.View);
+                dilate.Bind("uBlend", blend.View);
+                dilate.Bind("p", parameters);
 
-                pass.SetPipeline(program.Pipeline);
-                pass.SetBindGroup(0, group);
-                pass.Dispatch(x, y, z);
+                dilate.Dispatch(pass, Width, Height);
             }
 
             encoder.CopyTextureToBuffer(
