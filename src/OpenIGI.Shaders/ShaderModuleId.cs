@@ -96,4 +96,7 @@ public enum ShaderModuleId
 
     /// <summary>temporal upscaler: how much of the reprojected history this frame's shading contradicts.</summary>
     UpscaleRejectShading,
+
+    /// <summary>temporal upscaler: this frame accumulated into the super-sampled history.</summary>
+    UpscaleUpdateHistory,
 }

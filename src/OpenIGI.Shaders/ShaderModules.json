@@ -140,6 +140,10 @@
           "targets": [ "Spirv" ]
         }
       ]
+    },
+    {
+      "id": "UpscaleUpdateHistory",
+      "source": "TemporalUpscale/UpdateHistory.slang"
     }
   ]
 }
