@@ -130,14 +130,18 @@
           "defines": {
             "OPENIGI_UPSCALE_GROUP": "16"
           },
-          "targets": [ "Spirv" ]
+          "targets": [
+            "Spirv"
+          ]
         },
         {
           "name": "group8",
           "defines": {
             "OPENIGI_UPSCALE_GROUP": "8"
           },
-          "targets": [ "Spirv" ]
+          "targets": [
+            "Spirv"
+          ]
         }
       ]
     },
@@ -162,7 +166,9 @@
           "defines": {
             "OPENIGI_MAX_LAMPS": "160"
           },
-          "targets": [ "Spirv" ]
+          "targets": [
+            "Spirv"
+          ]
         }
       ]
     },
@@ -188,7 +194,9 @@
       "variants": [
         {
           "name": "default",
-          "targets": [ "Spirv" ]
+          "targets": [
+            "Spirv"
+          ]
         }
       ]
     },
@@ -198,7 +206,9 @@
       "variants": [
         {
           "name": "default",
-          "targets": [ "Spirv" ]
+          "targets": [
+            "Spirv"
+          ]
         }
       ]
     },
@@ -227,7 +237,9 @@
           "defines": {
             "OPENIGI_RAY_QUERY": "1"
           },
-          "targets": [ "Spirv" ]
+          "targets": [
+            "Spirv"
+          ]
         },
         {
           "name": "software",
@@ -243,12 +255,18 @@
       "variants": [
         {
           "name": "rayquery",
-          "defines": { "OPENIGI_RAY_QUERY": "1" },
-          "targets": [ "Spirv" ]
+          "defines": {
+            "OPENIGI_RAY_QUERY": "1"
+          },
+          "targets": [
+            "Spirv"
+          ]
         },
         {
           "name": "software",
-          "defines": { "OPENIGI_RAY_QUERY": "0" }
+          "defines": {
+            "OPENIGI_RAY_QUERY": "0"
+          }
         }
       ]
     },
@@ -258,7 +276,9 @@
       "variants": [
         {
           "name": "default",
-          "targets": [ "Spirv" ]
+          "targets": [
+            "Spirv"
+          ]
         }
       ]
     },
@@ -272,7 +292,9 @@
             "OPENIGI_RAY_QUERY": "1",
             "OPENIGI_MAX_LAMPS": "160"
           },
-          "targets": [ "Spirv" ]
+          "targets": [
+            "Spirv"
+          ]
         },
         {
           "name": "software",
@@ -280,7 +302,9 @@
             "OPENIGI_RAY_QUERY": "0",
             "OPENIGI_MAX_LAMPS": "160"
           },
-          "targets": [ "Spirv" ]
+          "targets": [
+            "Spirv"
+          ]
         }
       ]
     },
@@ -290,7 +314,9 @@
       "variants": [
         {
           "name": "default",
-          "targets": [ "Spirv" ]
+          "targets": [
+            "Spirv"
+          ]
         }
       ]
     },
@@ -300,7 +326,9 @@
       "variants": [
         {
           "name": "default",
-          "targets": [ "Spirv" ]
+          "targets": [
+            "Spirv"
+          ]
         }
       ]
     },
@@ -310,39 +338,23 @@
       "variants": [
         {
           "name": "default",
-          "targets": [ "Spirv" ]
+          "targets": [
+            "Spirv"
+          ]
         }
       ]
     },
     {
       "id": "FieldClipmapBuild",
-      "source": "Field/ClipmapBuild.slang",
-      "variants": [
-        {
-          "name": "default",
-          "targets": [ "Spirv" ]
-        }
-      ]
+      "source": "Field/ClipmapBuild.slang"
     },
     {
       "id": "CardsScreenFilter",
-      "source": "Cards/ScreenFilter.slang",
-      "variants": [
-        {
-          "name": "default",
-          "targets": [ "Spirv" ]
-        }
-      ]
+      "source": "Cards/ScreenFilter.slang"
     },
     {
       "id": "CardsScreenResolve",
-      "source": "Cards/ScreenResolve.slang",
-      "variants": [
-        {
-          "name": "default",
-          "targets": [ "Spirv" ]
-        }
-      ]
+      "source": "Cards/ScreenResolve.slang"
     }
   ]
 }

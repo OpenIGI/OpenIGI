@@ -14,4 +14,11 @@ internal enum ComputeResourceKind
 
     /// <summary>The world's acceleration structure, for a pass that traces rays against it.</summary>
     Scene,
+
+    /// <summary>A sampler declared apart from the texture it reads, which is the shape WGSL has.</summary>
+    /// <remarks>
+    /// It carries no state of its own: it resolves to the sampler of whatever texture is bound at the
+    /// same slot, so a module that declares the pair is bound by one call exactly as a combined one is.
+    /// </remarks>
+    Sampler,
 }

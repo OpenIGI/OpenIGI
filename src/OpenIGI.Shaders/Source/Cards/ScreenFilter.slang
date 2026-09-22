@@ -9,13 +9,16 @@
 OPENIGI_COMPUTE_IMAGE(0) [[vk::image_format("rgba16f")]] WTexture2D<float4> uFiltered;
 
 // accumulated irradiance (rgb), frame count (a).
-OPENIGI_COMPUTE_TEXTURE(0) Sampler2D<float4> uAccum;
+OPENIGI_COMPUTE_TEXTURE(0) Texture2D<float4> uAccum;
+OPENIGI_COMPUTE_SAMPLER(0) SamplerState uAccumSampler;
 
 // probe world position (rgb), valid (a).
-OPENIGI_COMPUTE_TEXTURE(1) Sampler2D<float4> uPosition;
+OPENIGI_COMPUTE_TEXTURE(1) Texture2D<float4> uPosition;
+OPENIGI_COMPUTE_SAMPLER(1) SamplerState uPositionSampler;
 
 // the G-buffer normal, read at each probe's own pixel.
-OPENIGI_COMPUTE_TEXTURE(2) Sampler2D<float4> uSceneNormal;
+OPENIGI_COMPUTE_TEXTURE(2) Texture2D<float4> uSceneNormal;
+OPENIGI_COMPUTE_SAMPLER(2) SamplerState uSceneNormalSampler;
 
 struct Globals
 {
@@ -43,7 +46,7 @@ float FacingWeight(float cosine)
 float3 ProbeNormal(int2 probe)
 {
     float2 uv = (float2(probe) + 0.5) / float2(float(g.uWidth), float(g.uHeight));
-    float3 n = (uSceneNormal.Sample(uv).xyz * 2.0) - 1.0;
+    float3 n = (uSceneNormal.Sample(uSceneNormalSampler, uv).xyz * 2.0) - 1.0;
     float len = length(n);
     return len > 0.001 ? (n / len) : float3(0.0, 0.0, 0.0);
 }

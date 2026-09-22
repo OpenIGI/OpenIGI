@@ -567,6 +567,19 @@ public sealed partial class VulkanGraphicsDevice
                     };
                     break;
 
+                case ComputeResourceKind.Sampler:
+
+                    // The sampler of whatever texture stands at the same slot. Resolving it the same way
+                    // the image does is what makes the pair one binding call: a module that declares them
+                    // apart and one that declares them combined are bound identically.
+                    images[index] = new DescriptorImageInfo
+                    {
+                        Sampler = ResolveSampled(program, resource).Sampler,
+                    };
+                    writes[index] = ImageWrite(
+                        instance.Set, resource.Binding, DescriptorType.Sampler, &images[index]);
+                    break;
+
                 default:
                     images[index] = ResolveSampled(program, resource);
                     writes[index] = ImageWrite(instance.Set, resource.Binding, DescriptorType.CombinedImageSampler, &images[index]);

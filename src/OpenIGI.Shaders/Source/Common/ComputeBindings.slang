@@ -30,4 +30,10 @@
 // The gathered parameters, at 49: one block holding every value the host sets by name.
 #define OPENIGI_COMPUTE_GLOBALS [[vk::binding(49, 0)]]
 
+// A sampler declared apart from its texture, at 64 to 79, sharing that texture's slot. Binding the
+// texture binds both, so a module that declares the pair costs the caller nothing extra -- and the pair
+// is the only shape WGSL has, so a module that wants a browser form declares one rather than a combined
+// type.
+#define OPENIGI_COMPUTE_SAMPLER(slot) [[vk::binding((slot) + 64, 0)]]
+
 #endif

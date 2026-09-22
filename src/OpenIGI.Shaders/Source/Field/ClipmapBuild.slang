@@ -10,7 +10,8 @@ OPENIGI_COMPUTE_IMAGE(0) [[vk::image_format("r8")]] WTexture3D<float4> uClipmaps
 
 // The per-mesh fields, packed into one volume. Bound by the texture unit the parameter of the same name
 // holds, which is how the seam's default-block samplers arrive.
-OPENIGI_COMPUTE_TEXTURE(0) Sampler3D<float4> uAtlas;
+OPENIGI_COMPUTE_TEXTURE(0) Texture3D<float4> uAtlas;
+OPENIGI_COMPUTE_SAMPLER(0) SamplerState uAtlasSampler;
 
 OPENIGI_COMPUTE_BUFFER(0) StructuredBuffer<float4> uInstances;
 OPENIGI_COMPUTE_BUFFER(1) StructuredBuffer<int> uCellOffsets;
@@ -66,7 +67,7 @@ float SampleInstance(int instance, float3 world)
     uAtlas.GetDimensions(width, height, depth);
     float3 uvw = (slotCorner.xyz + clamped) / float3(float(width), float(height), float(depth));
 
-    float encoded = uAtlas.Sample(uvw).r;
+    float encoded = uAtlas.Sample(uAtlasSampler, uvw).r;
     float distance = ((encoded * 2.0) - 1.0) * slotCorner.w;
     float beyond = length((clamped - voxel) * voxelSize.xyz);
     return beyond > 0.0 ? beyond : distance;

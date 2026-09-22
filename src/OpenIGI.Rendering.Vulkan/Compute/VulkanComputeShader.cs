@@ -179,18 +179,27 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
                 ShaderBindingKind.AccelerationStructure => ComputeResourceKind.Scene,
                 ShaderBindingKind.Texture or ShaderBindingKind.CombinedImageSampler =>
                     ComputeResourceKind.SampledImage,
+                ShaderBindingKind.Sampler => ComputeResourceKind.Sampler,
                 _ => throw new GraphicsDeviceException(
                     $"Compute module '{module}' binds '{binding.Name}' as {binding.Kind}, which the "
                     + "compute seam has no descriptor for."),
             };
 
+            // A sampler carries the name of the texture it stands beside, which is what makes it resolve
+            // to that texture's own sampler -- and, where the texture is a default-block one, to whatever
+            // unit its name was set to. The convention is the declaration: a sampler named uFoo belongs to
+            // the texture named uFoo.
+            string name = kind == ComputeResourceKind.Sampler
+                ? TextureOf(binding.Name)
+                : binding.Name;
+
             resources.Add(new ComputeShaderAnalysis.Resource(
                 (uint)binding.Binding,
                 (uint)ComputeBindingSpace.SlotOf(binding.Binding),
                 kind,
-                binding.Name,
+                name,
                 binding.Dimensions == 3,
-                byUnit.Contains(binding.Name)));
+                byUnit.Contains(name)));
         }
 
         return new ComputeShaderAnalysis.Analysis(
@@ -200,6 +209,14 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
             reflection.Globals is null ? -1 : reflection.Globals.Binding,
             reflection.Globals?.Size ?? 0);
     }
+    /// <summary>The texture a sampler was declared beside.</summary>
+    /// <param name="sampler">The sampler's name, which ends in Sampler by convention.</param>
+    /// <returns>The texture's name.</returns>
+    private static string TextureOf(string sampler) =>
+        sampler.EndsWith("Sampler", StringComparison.Ordinal)
+            ? sampler[..^"Sampler".Length]
+            : sampler;
+
     /// <summary>Gets the program's name.</summary>
     public string Name { get; }
 
@@ -381,6 +398,7 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
         used += AddSize(sizes, used, DescriptorType.StorageBuffer, CountKind(ComputeResourceKind.StorageBuffer) * (int)setsPerPool);
         used += AddSize(sizes, used, DescriptorType.StorageImage, CountKind(ComputeResourceKind.StorageImage) * (int)setsPerPool);
         used += AddSize(sizes, used, DescriptorType.CombinedImageSampler, CountKind(ComputeResourceKind.SampledImage) * (int)setsPerPool);
+        used += AddSize(sizes, used, DescriptorType.Sampler, CountKind(ComputeResourceKind.Sampler) * (int)setsPerPool);
         used += AddSize(sizes, used, DescriptorType.AccelerationStructureKhr, CountKind(ComputeResourceKind.Scene) * (int)setsPerPool);
         if (used == 0)
         {
@@ -501,6 +519,7 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
         ComputeResourceKind.StorageBuffer => DescriptorType.StorageBuffer,
         ComputeResourceKind.StorageImage => DescriptorType.StorageImage,
         ComputeResourceKind.Scene => DescriptorType.AccelerationStructureKhr,
+        ComputeResourceKind.Sampler => DescriptorType.Sampler,
         _ => DescriptorType.CombinedImageSampler,
     };
 

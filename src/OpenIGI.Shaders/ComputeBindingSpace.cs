@@ -32,6 +32,14 @@ public static class ComputeBindingSpace
     /// <summary>The binding the gathered parameter block occupies.</summary>
     public const int GlobalsBinding = 49;
 
+    /// <summary>The first binding a sampler declared apart from its texture may occupy.</summary>
+    /// <remarks>
+    /// A module may declare a texture and its sampler apart, which is the only shape WGSL has, and the
+    /// two share a slot: binding the texture binds both. A module that instead declares one combined type
+    /// is Vulkan-only and uses no binding here at all.
+    /// </remarks>
+    public const int SamplerBase = 64;
+
     /// <summary>The slot a binding stands for within its own kind.</summary>
     /// <param name="binding">The binding the module declared.</param>
     /// <returns>Its slot, counting from nought within its kind's block.</returns>
