@@ -103,7 +103,7 @@ public sealed class Mesh3DShaderTests
             Source,
             StringComparison.Ordinal);
         Assert.Contains(
-            "float3 base = diffuse.rgb * lightmap * lightmapGain * input.color.rgb * input.fade * modelTint;",
+            "float3 base = SampledDisplay(diffuse.rgb) * lightmap * lightmapGain * input.color.rgb * input.fade * modelTint;",
             Source,
             StringComparison.Ordinal);
     }

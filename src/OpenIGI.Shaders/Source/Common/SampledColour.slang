@@ -24,4 +24,11 @@ float3 SampledLinear(float3 sampled)
     return cSamplerDecodes != 0 ? sampled : DecodeSrgb(sampled);
 }
 
+/// A colour texture's sample at the display encoding, whichever kind of image it came from -- for the
+/// stages that composite the way the original did, in the encoding the texel was authored in.
+float3 SampledDisplay(float3 sampled)
+{
+    return cSamplerDecodes != 0 ? EncodeSrgb(sampled) : sampled;
+}
+
 #endif

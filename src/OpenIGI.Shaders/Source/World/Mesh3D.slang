@@ -16,6 +16,7 @@
 
 #include "../Common/PushConstants.slang"
 #include "../Common/ClipSpace.slang"
+#include "../Common/SampledColour.slang"
 
 // The combined model-view-projection, column-major and in the engine's OpenGL convention,
 // and the lit-view-model block. Exactly the guaranteed 128 bytes.
@@ -226,7 +227,10 @@ float4 fragmentMain(Varyings input) : SV_Target
         discard;
     }
 
-    float3 lightmap = uLightmap.Sample(uLightmapSampler, input.lightmapUv).rgb;
+    // The original composites at the encoding its texels were authored in, and so does this where the
+    // target stores what it is given: a sample an sRGB image has decoded is put back first. See
+    // SampledColour.slang, and Mesh3DConstants.Describe for the target where it is not.
+    float3 lightmap = SampledDisplay(uLightmap.Sample(uLightmapSampler, input.lightmapUv).rgb);
 
     // The level's flat light on models, and the two draws it is not for: terrain, which is lit
     // by its materials, and anything blended, which the original draws with Direct3D lighting
@@ -238,14 +242,14 @@ float4 fragmentMain(Varyings input) : SV_Target
     // The rig reads that same slot as its exposure, which is why this is gated on the marker.
     float lightmapGain = abs(marker) > 0.5 ? push.markerExposure.y : 1.0;
 
-    float3 base = diffuse.rgb * lightmap * lightmapGain * input.color.rgb * input.fade * modelTint;
+    float3 base = SampledDisplay(diffuse.rgb) * lightmap * lightmapGain * input.color.rgb * input.fade * modelTint;
 
     // The baked reflection, added over the surface's own colour. Additive because that is what
     // the original's cube stage does. The .xzy swizzle puts the engine's Z-up faces where a cube
     // sampler expects them.
     if (cReflective != 0)
     {
-        base += uEnvironment.Sample(uEnvironmentSampler, normalize(input.reflection).xzy).rgb;
+        base += SampledDisplay(uEnvironment.Sample(uEnvironmentSampler, normalize(input.reflection).xzy).rgb);
     }
 
     // The unlit rig's marker is a shading instruction, not an alpha: what it leaves behind is

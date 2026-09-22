@@ -74,6 +74,14 @@ public static class Mesh3DConstants
     /// </remarks>
     public const int SamplerDecodes = 66;
 
+    /// <summary>Whether the target applies the sRGB transfer itself as it stores.</summary>
+    /// <remarks>
+    /// Declared by the stages that finish at the display encoding; see <c>Common/TargetEncoding.slang</c>.
+    /// Such a stage hands an encoding target its colour decoded, so that it is encoded once. It defaults
+    /// to the legacy renderer's UNORM targets.
+    /// </remarks>
+    public const int TargetEncodes = 65;
+
     /// <summary>The constants every pipeline built for the RHI carries, whatever else it carries.</summary>
     /// <remarks>
     /// One entry, and it is the difference between a frame and the same frame upside down. The RHI
@@ -99,16 +107,35 @@ public static class Mesh3DConstants
     /// <param name="fogDensity">The scene's fog extinction per metre.</param>
     /// <param name="sunAmbient">The flat light an unlightmapped vertex receives.</param>
     /// <param name="sunColour">The scene sun's diffuse colour.</param>
+    /// <param name="targetEncodes">Whether the target it draws into applies the sRGB transfer as it stores.</param>
     /// <returns>The constants, by identifier.</returns>
+    /// <remarks>
+    /// <para>
+    /// Which space the shader composites in follows the TARGET, because that is where the passes are
+    /// blended. The original composites at the display encoding and blends there, and a target that
+    /// stores what it is given — the lit image a capture's forward pass draws into — does the same: so
+    /// the shader puts back the encoding the sRGB image's sampler took off, and adds the ground's weighted
+    /// passes exactly as the original did.
+    /// </para>
+    /// <para>
+    /// A target that encodes as it stores blends AFTER decoding, in linear space. Compositing at the
+    /// display encoding there raises every pass's weight to the curve's power on the way in, and the
+    /// ground's passes, which partition to one, sum to less: measured, mission 1's direct path drifted
+    /// from a mean difference of 5 to one of 10 against the legacy renderer. So over such a target the
+    /// sampler's decode and the target's encode are left to bracket a linear composite.
+    /// </para>
+    /// </remarks>
     public static IReadOnlyDictionary<int, RhiConstant> Describe(
         byte alphaReference,
         bool reflective,
         Vector3f fogColour,
         float fogDensity,
         Vector3f sunAmbient,
-        Vector3f sunColour) => new Dictionary<int, RhiConstant>
+        Vector3f sunColour,
+        bool targetEncodes) => new Dictionary<int, RhiConstant>
         {
             [ClipYDown] = RhiConstant.Of(0),
+            [SamplerDecodes] = RhiConstant.Of(targetEncodes ? 0 : 1),
             [AlphaReference] = RhiConstant.Of(alphaReference / 255f),
             [Reflective] = RhiConstant.Of(reflective ? 1 : 0),
             [FogColourRed] = RhiConstant.Of(fogColour.X),

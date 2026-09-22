@@ -1,3 +1,4 @@
+using OpenIGI.Rendering.Pipeline.Mesh3D;
 using OpenIGI.Rendering.Pipeline.Passes;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Shaders;
@@ -22,9 +23,6 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// </remarks>
 public sealed class DeferredResolve : IDisposable
 {
-    /// <summary>The resolve's switch saying its target applies the sRGB transfer as it stores.</summary>
-    private const int TargetEncodesConstant = 65;
-
     private readonly IRhiBindGroupLayout _layout;
     private readonly FullscreenPipeline _pipeline;
     private readonly ShaderBindings _bindings;
@@ -54,7 +52,7 @@ public sealed class DeferredResolve : IDisposable
             targetFormat,
             fragmentConstants: new Dictionary<int, RhiConstant>
             {
-                [TargetEncodesConstant] = RhiConstant.Of(targetFormat.IsSrgb() ? 1 : 0),
+                [Mesh3DConstants.TargetEncodes] = RhiConstant.Of(targetFormat.IsSrgb() ? 1 : 0),
             });
         _bindings = new ShaderBindings(device, Reflection, [_layout], RhiShaderStages.Fragment, "resolve");
         _standIns = new StandInTextures(device, "resolve.standin");

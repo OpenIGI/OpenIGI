@@ -324,7 +324,8 @@ public sealed class Mesh3DPipelineCache : IDisposable
                 _fogColour,
                 _fogDensity,
                 _sunAmbient,
-                _sunColour));
+                _sunColour,
+                _targetFormat.IsSrgb()));
 
         return _device.CreateRenderPipeline(new RhiRenderPipelineDescriptor(
             Layout,
