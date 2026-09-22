@@ -439,6 +439,7 @@ public sealed partial class GraphicsDevice
         CloseScenePass();
 
         RecordSky();
+        RecordOcclusion(scene);
 
         Span<float> gi = stackalloc float[DeferredLightingParameters.GiFloats];
         Span<float> lamps = stackalloc float[DeferredLampBlock.Floats];
@@ -520,6 +521,7 @@ public sealed partial class GraphicsDevice
         _unprojection,
         LightScale: _lighting.Scale,
         CameraPosition: _cameraPosition,
+        OcclusionEnabled: _occlusionRan,
         ViewToWorld: _viewToWorld,
         ViewHeightKm: SkyConditions.ViewHeightFor(altitudeMetres: 2f));
 

@@ -1,9 +1,10 @@
 // Screen-space ambient occlusion, gathered over a cosine hemisphere and eased onto the previous
 // frame's answer.
 
+#include "../Common/DepthFilter.slang"
 #include "../Common/ViewDepth.slang"
 
-[[vk::binding(0, 0)]] Texture2D<float4> uDepth;
+[[vk::binding(0, 0)]] DepthTexture2D uDepth;
 [[vk::binding(1, 0)]] SamplerState uDepthSampler;
 
 [[vk::binding(2, 0)]] [[vk::image_format("r8")]] WTexture2D<float4> uOcclusion;
@@ -45,7 +46,7 @@ struct Params
 
 float3 ViewPosition(float2 uv)
 {
-    return ViewPositionAt(uv, uDepth.SampleLevel(uDepthSampler, uv, 0.0).r, p.unproject);
+    return ViewPositionAt(uv, DepthBilinear(uDepth, uDepthSampler, uv), p.unproject);
 }
 
 // Where a view-space point lands on screen -- the inverse of the reconstruction above.
@@ -75,7 +76,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
     // bilinearly mixed across a silhouette -- a mixed depth reconstructs a point hanging in the air
     // between two surfaces, and the occlusion of a point that exists nowhere.
     float2 uv = ((float2(px) * 2.0) + 0.5) * p.fullResolution.zw;
-    float depth = uDepth.SampleLevel(uDepthSampler, uv, 0.0).r;
+    float depth = DepthBilinear(uDepth, uDepthSampler, uv);
 
     // The sky (reverse-Z far is zero) is not a surface and is never occluded.
     if (depth <= 0.0)
@@ -170,7 +171,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
                 // previous frame actually saw a surface at that pixel, and measure how far off this
                 // surface's plane it lies. A grazing wall fails a depth-ratio test the moment the camera
                 // moves -- the same trap every temporal pass here has hit.
-                float prevDepth = uPreviousDepth.SampleLevel(uPreviousDepthSampler, prevUv, 0.0).r;
+                float prevDepth = DepthBilinear(uPreviousDepth, uPreviousDepthSampler, prevUv);
                 if (prevDepth > 0.0)
                 {
                     float3 prevSurface = ViewPositionAt(prevUv, prevDepth, p.unproject);

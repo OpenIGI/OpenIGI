@@ -31,7 +31,6 @@ public sealed partial class GraphicsDevice
     private static readonly string[] UnimplementedSettingNames =
     [
         "r_shadows",
-        "r_ssao",
         "r_reflections",
         "r_rt_reflections",
         "r_rt_shadows",
@@ -210,9 +209,7 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
-    public void SetAmbientOcclusion(in AmbientOcclusionSettings settings)
-    {
-    }
+    public void SetAmbientOcclusion(in AmbientOcclusionSettings settings) => _occlusionSettings = settings;
 
     /// <inheritdoc/>
     public void SubmitShadowCaster(MeshHandle mesh, in Matrix4f modelView, int indexCount)

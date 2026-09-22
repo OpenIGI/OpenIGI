@@ -205,6 +205,30 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
             "The sky beside the quad is no redder with the bloom than without it.");
     }
 
+    [Fact]
+    public void Both_backends_occlude_alike()
+    {
+        // The gather over the depth the triangle wrote, shown as the code values it produced: it has to
+        // bind on both backends, agree, and have written something -- a view of a cleared occlusion
+        // image is uniform, and two backends agree about a uniform image perfectly.
+        byte[]? vulkan = TryOnVulkan(out string? vulkanReason, DebugView.Ao);
+        byte[]? webgpu = TryOnWebGpu(out string? webgpuReason, DebugView.Ao);
+
+        Assert.True(vulkan is not null && webgpu is not null, vulkanReason ?? webgpuReason);
+
+        int worst = 0;
+
+        for (int i = 0; i < vulkan!.Length; i++)
+        {
+            worst = Math.Max(worst, Math.Abs(vulkan[i] - webgpu![i]));
+        }
+
+        output.WriteLine($"worst difference {worst}, centre {Describe(vulkan)}");
+
+        Assert.True(worst <= 1, $"The two backends disagree about the occlusion by {worst}.");
+        Assert.True(vulkan[Centre + 1] > 128, $"The triangle's occlusion is {Describe(vulkan)}: nothing was gathered.");
+    }
+
     /// <summary>A column the triangle's base covers near the bottom of the frame and its apex does not reach near the top.</summary>
     private const int BaseColumn = 14;
 
@@ -212,6 +236,11 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
     private static void DrawFrame(GraphicsDevice device, DebugView view, bool textured, bool temporal, float? bloom)
     {
         device.SetDebugView(view);
+
+        // The occlusion, where the frame is asked to show it: the gather over the depth the geometry wrote.
+        device.SetAmbientOcclusion(view is DebugView.Ao
+            ? new AmbientOcclusionSettings(Quality: 1)
+            : AmbientOcclusionSettings.Off);
 
         Assert.True(
             device.BeginSceneCapture(new SceneTargetDescription(Size, Size, Deferred: true)),

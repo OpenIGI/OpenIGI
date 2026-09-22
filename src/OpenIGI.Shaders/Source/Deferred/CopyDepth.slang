@@ -6,7 +6,8 @@
 // than a texture-to-texture transfer because a depth image cannot be copied into a colour one, and the
 // storage it lands in has to be a colour format for the passes that read it as a plain float.
 
-[[vk::binding(0, 0)]] Texture2D<float4> uDepth;
+// Declared as a depth texture, which is how WGSL has to see a depth attachment bound for reading.
+[[vk::binding(0, 0)]] DepthTexture2D uDepth;
 
 [[vk::binding(1, 0)]] [[vk::image_format("r32f")]] WTexture2D<float4> uPreviousDepth;
 
@@ -23,5 +24,5 @@ void computeMain(uint3 id : SV_DispatchThreadID)
         return;
     }
 
-    uPreviousDepth.Store(int2(id.xy), float4(uDepth.Load(int3(id.xy, 0)).r, 0.0, 0.0, 0.0));
+    uPreviousDepth.Store(int2(id.xy), float4(uDepth.Load(int3(id.xy, 0)), 0.0, 0.0, 0.0));
 }

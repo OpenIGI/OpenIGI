@@ -45,22 +45,55 @@ public sealed partial class GraphicsDevice
     private float _previousJitterY;
     private bool _hasPreviousFrame;
     private bool _temporalResolved;
+    private bool _occlusionRan;
+    private AmbientOcclusionSettings _occlusionSettings = AmbientOcclusionSettings.Off;
 
     /// <summary>Builds the temporal passes, once, with the rest of the deferred frame.</summary>
     /// <remarks>
-    /// Only where the backend can run the whole chain; elsewhere <c>r_taa</c> is named among the settings
-    /// this device does not act on, and the resolve reads the lit image as it did before.
+    /// The screen-space passes and the depth copy on every backend, because the occlusion reads them
+    /// both; the resolve's chain only where the backend can run all of it. Elsewhere <c>r_taa</c> is named
+    /// among the settings this device does not act on, and the resolve reads the lit image.
     /// </remarks>
     private void EnsureTemporal()
     {
-        if (!TemporalResolve.RunsOn(_device))
+        _screenPasses ??= new ScreenSpacePasses(_device, FramesInFlight);
+        _copyDepth ??= new ComputePass(_device, ShaderModuleId.CopyDepth, "copy-depth");
+
+        if (TemporalResolve.RunsOn(_device))
+        {
+            _temporal ??= new TemporalResolve(_device, FramesInFlight);
+        }
+    }
+
+    /// <summary>Records the ambient occlusion over the finished depth, before the shading reads it.</summary>
+    /// <remarks>
+    /// Measured against the previous frame's depth and occlusion for its history, which is why it runs
+    /// before the frame state moves on. The shading is told whether it ran, and reads nothing it did not.
+    /// </remarks>
+    private void RecordOcclusion(SceneTargetSet scene)
+    {
+        _occlusionRan = false;
+
+        if (!_occlusionSettings.Enabled || _screenPasses is not { } screen)
         {
             return;
         }
 
-        _screenPasses ??= new ScreenSpacePasses(_device, FramesInFlight);
-        _temporal ??= new TemporalResolve(_device, FramesInFlight);
-        _copyDepth ??= new ComputePass(_device, ShaderModuleId.CopyDepth, "copy-depth");
+        using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
+            _profiler.Time(RenderStage.AmbientOcclusionSearch),
+            "occlusion")))
+        {
+            screen.RecordOcclusion(
+                pass,
+                scene,
+                TemporalState(scene),
+                _occlusionSettings,
+                (long)_frameCounter,
+                FrameSlot,
+                _hasPreviousFrame);
+        }
+
+        _occlusionRan = true;
     }
 
     /// <summary>This frame and the one before it, as the temporal passes measure them.</summary>
@@ -98,10 +131,7 @@ public sealed partial class GraphicsDevice
     {
         _temporalResolved = false;
 
-        if (_scene is not { } scene
-            || _screenPasses is not { } screen
-            || _temporal is not { } temporal
-            || _copyDepth is not { } copy)
+        if (_scene is not { } scene || _screenPasses is not { } screen || _copyDepth is not { } copy)
         {
             return;
         }
@@ -120,7 +150,7 @@ public sealed partial class GraphicsDevice
             _profiler.Time(RenderStage.TemporalResolve),
             "temporal")))
         {
-            if (settings.Enabled)
+            if (settings.Enabled && _temporal is { } temporal)
             {
                 screen.RecordVelocity(pass, scene, state, FrameSlot);
                 temporal.Record(pass, scene, state, settings, FrameSlot);
