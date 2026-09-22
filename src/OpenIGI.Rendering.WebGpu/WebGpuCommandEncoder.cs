@@ -116,7 +116,7 @@ public sealed unsafe class WebGpuCommandEncoder : IRhiCommandEncoder
 
             WGPURenderPassEncoder pass = Wgpu.wgpuCommandEncoderBeginRenderPass(_handle, &native);
             return pass.IsValid
-                ? new WebGpuRenderPassEncoder(pass, _device.PushRing, WebGpuPushBlocks.Group)
+                ? new WebGpuRenderPassEncoder(pass, _device.PushRing, WebGpuPushBlocks.Group, _device)
                 : throw new InvalidOperationException($"The render pass '{descriptor.Label}' could not begin.");
         }
     }
@@ -147,7 +147,7 @@ public sealed unsafe class WebGpuCommandEncoder : IRhiCommandEncoder
 
         WGPUComputePassEncoder pass = Wgpu.wgpuCommandEncoderBeginComputePass(_handle, &native);
         return pass.IsValid
-            ? new WebGpuComputePassEncoder(pass, _device.PushRing, WebGpuPushBlocks.Group)
+            ? new WebGpuComputePassEncoder(pass, _device.PushRing, WebGpuPushBlocks.Group, _device)
             : throw new InvalidOperationException($"The compute pass '{descriptor.Label}' could not begin.");
     }
 
@@ -325,6 +325,7 @@ public sealed unsafe class WebGpuCommandEncoder : IRhiCommandEncoder
 /// <summary>Records WebGPU dispatches.</summary>
 public sealed unsafe class WebGpuComputePassEncoder : IRhiComputePassEncoder
 {
+    private readonly WebGpuRhiDevice _device;
     private readonly WebGpuPushRing _pushes;
     private readonly int _pushGroup;
     private WGPUComputePassEncoder _handle;
@@ -335,11 +336,17 @@ public sealed unsafe class WebGpuComputePassEncoder : IRhiComputePassEncoder
     /// <param name="handle">The WebGPU handle.</param>
     /// <param name="pushes">The ring push data is written into.</param>
     /// <param name="pushGroup">The bind group the push block is bound as.</param>
-    public WebGpuComputePassEncoder(WGPUComputePassEncoder handle, WebGpuPushRing pushes, int pushGroup)
+    /// <param name="device">The device whose push group this binds.</param>
+    public WebGpuComputePassEncoder(
+        WGPUComputePassEncoder handle,
+        WebGpuPushRing pushes,
+        int pushGroup,
+        WebGpuRhiDevice device)
     {
         _handle = handle;
         _pushes = pushes;
         _pushGroup = pushGroup;
+        _device = device;
     }
 
     /// <summary>Gets the group the push block is bound as.</summary>
@@ -391,7 +398,12 @@ public sealed unsafe class WebGpuComputePassEncoder : IRhiComputePassEncoder
                 + "and a binding is written whole. Set the whole block.");
         }
 
+        // The write AND the binding, for the reason the raster side gives: nothing above this knows the
+        // ring, the group index or where the write landed.
         LastPushOffset = _pushes.Write(data);
+
+        uint landed = LastPushOffset;
+        SetBindGroup(_pushGroup, _device.PushGroup, new ReadOnlySpan<uint>(in landed));
     }
 
     /// <inheritdoc/>

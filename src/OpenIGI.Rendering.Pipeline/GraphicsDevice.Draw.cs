@@ -225,7 +225,8 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             _pipelines.ForState(_depthState, _cullMode, blend, _alphaReference),
             Call(mesh, indexOffset, indexCount, diffuse, lightmap, blend),
             System.Runtime.InteropServices.MemoryMarshal.AsBytes(push),
-            _frameCounter);
+            _frameCounter,
+            _cubeGroup);
     }
 
     /// <inheritdoc/>
@@ -253,7 +254,8 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             Call(mesh, 0, 0, diffuse, lightmap, blend),
             ranges,
             System.Runtime.InteropServices.MemoryMarshal.AsBytes(push),
-            _frameCounter);
+            _frameCounter,
+            _cubeGroup);
     }
 
     private (int Width, int Height) _projection2D;

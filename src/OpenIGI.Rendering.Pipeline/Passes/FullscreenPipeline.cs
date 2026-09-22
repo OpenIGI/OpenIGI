@@ -24,13 +24,19 @@ public sealed class FullscreenPipeline : IDisposable
     /// <param name="targetFormat">The format of the attachment it draws into.</param>
     /// <param name="blend">How it is blended over that attachment, or null to replace it.</param>
     /// <param name="variant">Which compiled form of the module to load.</param>
+    /// <param name="depthFormat">
+    /// The depth attachment of the pass it draws into, or <see cref="RhiTextureFormat.Undefined"/> for
+    /// a pass with none. Declared although nothing here tests depth, because a pipeline whose targets
+    /// do not match its pass is refused.
+    /// </param>
     public FullscreenPipeline(
         IRhiDevice device,
         ShaderModuleId module,
         IRhiBindGroupLayout bindGroupLayout,
         RhiTextureFormat targetFormat,
         RhiBlendState? blend = null,
-        ShaderVariant variant = default)
+        ShaderVariant variant = default,
+        RhiTextureFormat depthFormat = RhiTextureFormat.Undefined)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(bindGroupLayout);
@@ -53,7 +59,9 @@ public sealed class FullscreenPipeline : IDisposable
             new RhiShaderStage(Module, reflection.EntryPointFor(ShaderStage.Fragment).Name),
             [],
             [new RhiColorTargetState(targetFormat, blend)],
-            DepthStencil: null,
+            depthFormat is RhiTextureFormat.Undefined
+                ? null
+                : new RhiDepthStencilState(depthFormat, DepthWrite: false, RhiCompare.Always),
             new RhiPrimitiveState(RhiPrimitiveTopology.TriangleList, RhiCullMode.None),
             SampleCount: 1,
             module.ToString()));

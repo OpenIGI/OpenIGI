@@ -48,6 +48,7 @@ public sealed class GBufferPipelineCache : IDisposable
     private readonly IReadOnlyList<RhiTextureFormat> _targetFormats;
     private readonly RhiTextureFormat _depthFormat;
     private readonly IRhiShaderModule _module;
+    private readonly ShaderReflection _reflection;
     private readonly string _vertexEntryPoint;
     private readonly string _fragmentEntryPoint;
     private readonly Dictionary<GBufferPipelineKey, IRhiRenderPipeline> _pipelines = [];
@@ -83,9 +84,9 @@ public sealed class GBufferPipelineCache : IDisposable
         _targetFormats = targetFormats;
         _depthFormat = depthFormat;
 
-        ShaderReflection reflection = ShaderCatalog.GetReflection(ShaderModuleId.GBuffer);
-        _vertexEntryPoint = reflection.EntryPointFor(ShaderStage.Vertex).Name;
-        _fragmentEntryPoint = reflection.EntryPointFor(ShaderStage.Fragment).Name;
+        _reflection = ShaderCatalog.GetReflection(ShaderModuleId.GBuffer);
+        _vertexEntryPoint = _reflection.EntryPointFor(ShaderStage.Vertex).Name;
+        _fragmentEntryPoint = _reflection.EntryPointFor(ShaderStage.Fragment).Name;
 
         _module = device.CreateShaderModule(new RhiShaderModuleDescriptor(ShaderModuleId.GBuffer, Label: "GBuffer"));
 
@@ -243,19 +244,25 @@ public sealed class GBufferPipelineCache : IDisposable
         _module.Dispose();
     }
 
+    /// <summary>The target's own constants, kept to what this module declares.</summary>
+    private IReadOnlyDictionary<int, RhiConstant> TargetConstants() =>
+        ShaderConstants.Declared(_reflection, Mesh3DConstants.TargetConstants);
+
     private IRhiRenderPipeline Create(GBufferPipelineKey key)
     {
         // Only the fragment stage tests the cut-out, so only it is specialised -- unlike the forward
         // shader, whose vertex stage reads the reflection constant too.
-        IReadOnlyDictionary<int, RhiConstant> constants = new Dictionary<int, RhiConstant>
-        {
-            [Mesh3DConstants.ClipYDown] = RhiConstant.Of(0),
-            [Mesh3DConstants.AlphaReference] = RhiConstant.Of(key.AlphaReference / 255f),
-        };
+        IReadOnlyDictionary<int, RhiConstant> constants = ShaderConstants.Declared(
+            _reflection,
+            new Dictionary<int, RhiConstant>
+            {
+                [Mesh3DConstants.ClipYDown] = RhiConstant.Of(0),
+                [Mesh3DConstants.AlphaReference] = RhiConstant.Of(key.AlphaReference / 255f),
+            });
 
         return _device.CreateRenderPipeline(new RhiRenderPipelineDescriptor(
             Layout,
-            new RhiShaderStage(_module, _vertexEntryPoint, Mesh3DConstants.TargetConstants),
+            new RhiShaderStage(_module, _vertexEntryPoint, TargetConstants()),
             new RhiShaderStage(_module, _fragmentEntryPoint, constants),
             VertexLayouts(),
             TargetsFor(key.Blend, _targetFormats),

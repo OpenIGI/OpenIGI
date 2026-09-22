@@ -38,6 +38,9 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     private readonly IRhiBindGroupLayout _materialLayout;
     private readonly IRhiBindGroupLayout _cubeLayout;
     private readonly StageProfiler _profiler;
+    private readonly IRhiTexture _cube;
+    private readonly IRhiBindGroup _cubeGroup;
+    private IRhiSampler _cubeSampler = null!;
 
     private IRhiCommandEncoder? _encoder;
     private IRhiRenderPassEncoder? _pass;
@@ -88,9 +91,11 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
             DepthFormat);
 
         _textures = new TextureTable(device);
-        _sprites = new Sprite2DPass(device, _textures, PresentFormat, FramesInFlight);
+        _sprites = new Sprite2DPass(device, _textures, PresentFormat, FramesInFlight, DepthFormat);
         _meshes = new Mesh3DPass(_textures, _materials);
         _profiler = new StageProfiler(device, FramesInFlight, timestampPeriodNanoseconds);
+
+        (_cube, _cubeGroup) = CreateCube(device);
     }
 
     /// <summary>Gets the format the frame is presented in.</summary>
@@ -219,6 +224,9 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         _encoder?.Dispose();
 
         _profiler.Dispose();
+        _cubeGroup.Dispose();
+        _cube.Dispose();
+        _cubeSampler.Dispose();
         _sprites.Dispose();
         _pipelines.Dispose();
         _materials.Dispose();
@@ -228,6 +236,56 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         _textures.Dispose();
         DisposeMeshes();
         DisposeQueries();
+    }
+
+    /// <summary>The environment cube every world draw binds, whether or not it samples one.</summary>
+    /// <remarks>
+    /// <para>
+    /// One white texel on each of six faces. The forward shader declares the cube unconditionally and
+    /// only reads it where a draw is reflective, so something has to be bound at that group for every
+    /// draw — Vulkan tolerates a set the shader never reads, and WebGPU refuses to record a draw whose
+    /// layout has an unbound group at all.
+    /// </para>
+    /// <para>
+    /// White rather than black because it is the identity of the multiply it would take part in: a draw
+    /// that reflects nothing and one that reflects this are the same picture.
+    /// </para>
+    /// </remarks>
+    private (IRhiTexture Cube, IRhiBindGroup Group) CreateCube(IRhiDevice device)
+    {
+        const int Faces = 6;
+
+        IRhiTexture cube = device.CreateTexture(new RhiTextureDescriptor(
+            1,
+            1,
+            RhiTextureFormat.Bgra8UnormSrgb,
+            RhiTextureUsage.Sampled | RhiTextureUsage.CopyDestination,
+            DepthOrArrayLayers: Faces,
+            Dimension: RhiTextureViewDimension.Cube,
+            Label: "environment"));
+
+        for (int face = 0; face < Faces; face++)
+        {
+            device.WriteTexture<byte>(
+                new RhiTextureRegion(cube, 0, new RhiOrigin3D(0, 0, face)),
+                [255, 255, 255, 255],
+                4,
+                new RhiExtent3D(1, 1));
+        }
+
+        _cubeSampler = device.CreateSampler(new RhiSamplerDescriptor(Label: "environment"));
+
+        IRhiTextureView view = cube.CreateView(new RhiTextureViewDescriptor(
+            ArrayLayerCount: Faces,
+            Dimension: RhiTextureViewDimension.Cube,
+            Label: "environment"));
+
+        IRhiBindGroup group = device.CreateBindGroup(new RhiBindGroupDescriptor(
+            _cubeLayout,
+            [RhiBindGroupEntry.Of(0, view), RhiBindGroupEntry.Of(1, _cubeSampler)],
+            "environment"));
+
+        return (cube, group);
     }
 
     /// <summary>Which set of per-frame resources the frame being built may write.</summary>

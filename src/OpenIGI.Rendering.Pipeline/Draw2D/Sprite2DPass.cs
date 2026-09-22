@@ -38,6 +38,7 @@ public sealed class Sprite2DPass : IDisposable
     private readonly IRhiDevice _device;
     private readonly ITextureBindingSource _textures;
     private readonly RhiTextureFormat _targetFormat;
+    private readonly RhiTextureFormat _depthFormat;
     private readonly SpritePipelineSet _sprites;
     private readonly SpriteGeometryRing _geometry;
     private readonly TextureBindGroupCache _groups;
@@ -53,11 +54,16 @@ public sealed class Sprite2DPass : IDisposable
     /// <param name="textures">Where a handle is turned into something bindable.</param>
     /// <param name="targetFormat">The format of the attachment the 2D path draws into.</param>
     /// <param name="framesInFlight">How many geometry rings to keep.</param>
+    /// <param name="depthFormat">
+    /// The depth attachment of the pass it draws into, or undefined for a pass with none. Nothing here
+    /// tests depth; a pipeline simply has to declare what its pass carries.
+    /// </param>
     public Sprite2DPass(
         IRhiDevice device,
         ITextureBindingSource textures,
         RhiTextureFormat targetFormat,
-        int framesInFlight)
+        int framesInFlight,
+        RhiTextureFormat depthFormat = RhiTextureFormat.Undefined)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(textures);
@@ -65,6 +71,7 @@ public sealed class Sprite2DPass : IDisposable
         _device = device;
         _textures = textures;
         _targetFormat = targetFormat;
+        _depthFormat = depthFormat;
 
         TextureLayout = TextureBindGroupCache.CreateLayout(device, "sprite2d");
         _groups = new TextureBindGroupCache(device, TextureLayout);
@@ -75,7 +82,8 @@ public sealed class Sprite2DPass : IDisposable
             ShaderModuleId.Sprite2D,
             TextureLayout,
             targetFormat,
-            [BlendMode.Opaque, BlendMode.AlphaBlend, BlendMode.Additive]);
+            [BlendMode.Opaque, BlendMode.AlphaBlend, BlendMode.Additive],
+            depthFormat);
     }
 
     /// <summary>Gets the layout every 2D texture group is built against.</summary>
@@ -172,7 +180,8 @@ public sealed class Sprite2DPass : IDisposable
             ShaderModuleId.SdfText,
             TextureLayout,
             _targetFormat,
-            [BlendMode.Opaque, BlendMode.AlphaBlend, BlendMode.Additive]);
+            [BlendMode.Opaque, BlendMode.AlphaBlend, BlendMode.Additive],
+            _depthFormat);
 
         pass.SetPipeline(_text.ForBlend(blend));
         BindTexture(pass, atlas);
@@ -204,7 +213,8 @@ public sealed class Sprite2DPass : IDisposable
             ShaderModuleId.Loading,
             TextureLayout,
             _targetFormat,
-            RhiBlendState.AlphaBlend);
+            RhiBlendState.AlphaBlend,
+            depthFormat: _depthFormat);
 
         RhiTextureBinding binding = _textures.Resolve(settings.HasPicture ? texture : TextureHandle.None);
         IRhiBindGroup group = _groups.Get(binding.Id, binding.View, binding.Sampler);

@@ -33,6 +33,7 @@ public sealed unsafe class WebGpuRenderPipeline : WebGpuResource<WGPURenderPipel
 /// </remarks>
 public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
 {
+    private readonly WebGpuRhiDevice _device;
     private readonly WebGpuPushRing _pushes;
     private readonly int _pushGroup;
     private WGPURenderPassEncoder _handle;
@@ -43,11 +44,17 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     /// <param name="handle">The WebGPU handle.</param>
     /// <param name="pushes">The ring push data is written into.</param>
     /// <param name="pushGroup">The bind group the push block is bound as.</param>
-    public WebGpuRenderPassEncoder(WGPURenderPassEncoder handle, WebGpuPushRing pushes, int pushGroup)
+    /// <param name="device">The device whose push group this binds.</param>
+    public WebGpuRenderPassEncoder(
+        WGPURenderPassEncoder handle,
+        WebGpuPushRing pushes,
+        int pushGroup,
+        WebGpuRhiDevice device)
     {
         _handle = handle;
         _pushes = pushes;
         _pushGroup = pushGroup;
+        _device = device;
     }
 
     /// <summary>Gets the group the push block is bound as.</summary>
@@ -97,9 +104,11 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
                 + "and a binding is written whole. Set the whole block.");
         }
 
-        // Only the write; the binding is the caller's, because the group it goes in belongs to a pipeline
-        // layout this encoder cannot see. WebGpuFrame does both together.
+        // The write AND the binding, because nothing above this knows any of the three things the
+        // binding takes: the ring, the group index, and where the write landed in it. A pass that only
+        // wrote would record a draw whose layout has an unbound group, which is refused outright.
         LastPushOffset = _pushes.Write(data);
+        SetPushGroup(_device.PushGroup, LastPushOffset);
     }
 
     /// <summary>Gets where the last push landed in the ring.</summary>

@@ -38,6 +38,7 @@ public sealed class ShadowPipelineCache : IDisposable
     private readonly IRhiDevice _device;
     private readonly RhiTextureFormat _depthFormat;
     private readonly IRhiShaderModule _module;
+    private readonly ShaderReflection _reflection;
     private readonly string _vertexEntryPoint;
     private readonly string _fragmentEntryPoint;
     private readonly Dictionary<byte, IRhiRenderPipeline> _pipelines = [];
@@ -58,9 +59,9 @@ public sealed class ShadowPipelineCache : IDisposable
         _device = device;
         _depthFormat = depthFormat;
 
-        ShaderReflection reflection = ShaderCatalog.GetReflection(ShaderModuleId.Shadow);
-        _vertexEntryPoint = reflection.EntryPointFor(ShaderStage.Vertex).Name;
-        _fragmentEntryPoint = reflection.EntryPointFor(ShaderStage.Fragment).Name;
+        _reflection = ShaderCatalog.GetReflection(ShaderModuleId.Shadow);
+        _vertexEntryPoint = _reflection.EntryPointFor(ShaderStage.Vertex).Name;
+        _fragmentEntryPoint = _reflection.EntryPointFor(ShaderStage.Fragment).Name;
 
         _module = device.CreateShaderModule(new RhiShaderModuleDescriptor(ShaderModuleId.Shadow, Label: "Shadow"));
 
@@ -147,15 +148,17 @@ public sealed class ShadowPipelineCache : IDisposable
     private IRhiRenderPipeline Create(byte alphaReference) =>
         _device.CreateRenderPipeline(new RhiRenderPipelineDescriptor(
             Layout,
-            new RhiShaderStage(_module, _vertexEntryPoint, Mesh3DConstants.TargetConstants),
+            new RhiShaderStage(_module, _vertexEntryPoint, ShaderConstants.Declared(_reflection, Mesh3DConstants.TargetConstants)),
             new RhiShaderStage(
                 _module,
                 _fragmentEntryPoint,
-                new Dictionary<int, RhiConstant>
-                {
-                    [Mesh3DConstants.ClipYDown] = RhiConstant.Of(0),
-                    [Mesh3DConstants.AlphaReference] = RhiConstant.Of(alphaReference / 255f),
-                }),
+                ShaderConstants.Declared(
+                    _reflection,
+                    new Dictionary<int, RhiConstant>
+                    {
+                        [Mesh3DConstants.ClipYDown] = RhiConstant.Of(0),
+                        [Mesh3DConstants.AlphaReference] = RhiConstant.Of(alphaReference / 255f),
+                    })),
             VertexLayouts(),
             ColorTargets: [],
             new RhiDepthStencilState(

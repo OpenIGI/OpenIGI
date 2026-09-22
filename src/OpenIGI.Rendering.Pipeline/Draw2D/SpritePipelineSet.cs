@@ -36,12 +36,18 @@ public sealed class SpritePipelineSet : IDisposable
     /// <param name="textureLayout">The layout binding the texture the fragment stage samples.</param>
     /// <param name="targetFormat">The format of the attachment the pipelines draw into.</param>
     /// <param name="blends">The blend modes to build, in the order they will be indexed.</param>
+    /// <param name="depthFormat">
+    /// The depth attachment of the pass they draw into, or <see cref="RhiTextureFormat.Undefined"/> for
+    /// a pass with none. The 2D path ignores depth, but a pipeline still has to declare the attachment
+    /// the pass carries: one that says nothing is refused outright by a backend that checks.
+    /// </param>
     public SpritePipelineSet(
         IRhiDevice device,
         ShaderModuleId module,
         IRhiBindGroupLayout textureLayout,
         RhiTextureFormat targetFormat,
-        IReadOnlyList<BlendMode> blends)
+        IReadOnlyList<BlendMode> blends,
+        RhiTextureFormat depthFormat = RhiTextureFormat.Undefined)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(textureLayout);
@@ -72,7 +78,11 @@ public sealed class SpritePipelineSet : IDisposable
                 fragment,
                 [SpriteVertexLayout.Layout()],
                 [new RhiColorTargetState(targetFormat, BlendFor(blends[i]))],
-                DepthStencil: null,
+
+                // Present but neither testing nor writing: the 2D path draws over whatever is there.
+                depthFormat is RhiTextureFormat.Undefined
+                    ? null
+                    : new RhiDepthStencilState(depthFormat, DepthWrite: false, RhiCompare.Always),
                 new RhiPrimitiveState(RhiPrimitiveTopology.TriangleList, RhiCullMode.None),
                 SampleCount: 1,
                 $"{module}-{blends[i]}"));

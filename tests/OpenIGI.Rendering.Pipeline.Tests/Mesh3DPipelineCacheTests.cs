@@ -75,9 +75,29 @@ public sealed class Mesh3DPipelineCacheTests
         IRhiRenderPipeline after = cache.ForState(DepthState.TestAndWrite, CullMode.None, BlendMode.Opaque);
 
         Assert.NotSame(before, after);
-        Assert.Equal(
-            RhiConstant.Of(0.002f),
-            ((RecordedRenderPipeline)after).Descriptor.Fragment!.Constants![Mesh3DConstants.FogDensity]);
+    }
+
+    [Fact]
+    public void A_constant_the_module_no_longer_declares_is_not_supplied()
+    {
+        // The fog colour and density became push data and their constant identifiers stayed behind. An
+        // identifier a module does not declare is ignored in silence by one backend and refused outright
+        // by the other, so what is sent is kept to what the module says it takes.
+        using RecordingRhiDevice device = new();
+        using Mesh3DPipelineCache cache = Open(device);
+
+        cache.SetFog(new Vector3f(0.4f, 0.4f, 0.5f), 0.002f);
+        cache.ForState(DepthState.TestAndWrite, CullMode.None, BlendMode.Opaque);
+
+        IReadOnlyDictionary<int, RhiConstant> constants =
+            Assert.Single(device.Resources.OfType<RecordedRenderPipeline>()).Descriptor.Fragment!.Constants!;
+
+        Assert.DoesNotContain(Mesh3DConstants.FogDensity, constants.Keys);
+        Assert.DoesNotContain(Mesh3DConstants.FogColourRed, constants.Keys);
+
+        // What it does declare still arrives.
+        Assert.Contains(Mesh3DConstants.AlphaReference, constants.Keys);
+        Assert.Contains(Mesh3DConstants.SunColourRed, constants.Keys);
     }
 
     [Fact]

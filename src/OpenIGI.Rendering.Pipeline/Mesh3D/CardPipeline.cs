@@ -62,7 +62,7 @@ public sealed class CardPipeline : IDisposable
             new RhiShaderStage(
                 Module,
                 reflection.EntryPointFor(ShaderStage.Vertex).Name,
-                Mesh3DConstants.TargetConstants),
+                ShaderConstants.Declared(reflection, Mesh3DConstants.TargetConstants)),
             new RhiShaderStage(Module, reflection.EntryPointFor(ShaderStage.Fragment).Name),
             VertexLayouts(),
             [.. targetFormats.Select(format => new RhiColorTargetState(format))],

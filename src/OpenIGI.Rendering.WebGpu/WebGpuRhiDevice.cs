@@ -123,6 +123,20 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     /// </remarks>
     public WebGpuPushRing PushRing => _pushes ??= new WebGpuPushRing(this);
 
+    /// <summary>Gets the group push data is read through, built once and bound by every pass.</summary>
+    /// <remarks>
+    /// One dynamic uniform binding over the ring. It is the device's rather than a pass's because every
+    /// pass shares the one ring, and it is bound by the pass rather than by the caller because the
+    /// caller knows none of the three things it takes — the ring, the group index and the offset the
+    /// write landed at.
+    /// </remarks>
+    public IRhiBindGroup PushGroup => _pushGroup ??= CreateBindGroup(new RhiBindGroupDescriptor(
+        PushGroupLayout(),
+        [RhiBindGroupEntry.Of(WebGpuPushBlocks.Binding, PushRing.Buffer, 0, (ulong)PushRing.SliceBytes)],
+        "push"));
+
+    private IRhiBindGroup? _pushGroup;
+
     /// <summary>Gets every texture whose format had to be widened, as sentences.</summary>
     /// <remarks>
     /// Read at start-up and logged. A texture silently costing four times what it was asked for is the
@@ -609,6 +623,16 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
         ThrowIfDisposed();
         frame = default;
 
+        if (_offscreen.Count > 0)
+        {
+            frame = new RhiFrame(
+                _offscreen[_frameIndex % _offscreen.Count].View,
+                _frameIndex,
+                _frameIndex % FramesInFlight);
+
+            return true;
+        }
+
         WebGpuSurface surface = _surface
             ?? throw new InvalidOperationException("This device has no surface, so it presents no frames.");
 
@@ -638,6 +662,14 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     {
         ThrowIfDisposed();
 
+        if (_offscreen.Count > 0)
+        {
+            // Nothing is presented and nothing waits on a display; the work is already submitted.
+            _frameIndex++;
+            _pushes?.Reset();
+            return true;
+        }
+
         WebGpuSurface surface = _surface
             ?? throw new InvalidOperationException("This device has no surface, so it presents no frames.");
 
@@ -659,6 +691,12 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     {
         ThrowIfDisposed();
 
+        if (_offscreen.Count > 0)
+        {
+            AttachOffscreen(width, height, _offscreen[0].Format);
+            return;
+        }
+
         WebGpuSurface surface = _surface
             ?? throw new InvalidOperationException("This device has no surface to configure.");
 
@@ -675,6 +713,51 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
 
     /// <summary>Gets the surface this presents to, or null for a headless device.</summary>
     public WebGpuSurface? Surface => _surface;
+
+    /// <summary>Gives this device somewhere to draw when there is no surface to present to.</summary>
+    /// <param name="width">The frame's width in pixels.</param>
+    /// <param name="height">Its height.</param>
+    /// <param name="format">What the frame is drawn in.</param>
+    /// <remarks>
+    /// A rotation of ordinary textures in place of a surface's. Everything above sees the same frame,
+    /// and what changes is that nothing is presented — which is what a headless capture wants, and what
+    /// lets the whole renderer be run and read back on a machine with no window.
+    /// </remarks>
+    public void AttachOffscreen(int width, int height, RhiTextureFormat format)
+    {
+        ThrowIfDisposed();
+        ArgumentOutOfRangeException.ThrowIfLessThan(width, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(height, 1);
+
+        ReleaseOffscreen();
+
+        for (int i = 0; i < FramesInFlight; i++)
+        {
+            _offscreen.Add((WebGpuTexture)CreateTexture(new RhiTextureDescriptor(
+                width,
+                height,
+                format,
+                RhiTextureUsage.RenderTarget | RhiTextureUsage.CopySource | RhiTextureUsage.Sampled,
+                Label: $"offscreen-{i}")));
+        }
+    }
+
+    /// <summary>Gets the texture a frame drawn offscreen landed in.</summary>
+    /// <param name="index">The frame's index, as it was handed out.</param>
+    /// <returns>The texture.</returns>
+    public IRhiTexture OffscreenTarget(int index) => _offscreen[index % _offscreen.Count];
+
+    private readonly List<WebGpuTexture> _offscreen = [];
+
+    private void ReleaseOffscreen()
+    {
+        foreach (WebGpuTexture texture in _offscreen)
+        {
+            texture.Dispose();
+        }
+
+        _offscreen.Clear();
+    }
 
     /// <summary>How many frames may be recorded before one completes.</summary>
     /// <remarks>
@@ -702,6 +785,8 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
 
         _disposed = true;
         _frameTexture?.Dispose();
+        ReleaseOffscreen();
+        _pushGroup?.Dispose();
         _pushes?.Dispose();
         _surface?.Dispose();
 

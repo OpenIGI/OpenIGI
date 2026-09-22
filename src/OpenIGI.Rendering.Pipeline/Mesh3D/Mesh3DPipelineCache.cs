@@ -35,6 +35,7 @@ public sealed class Mesh3DPipelineCache : IDisposable
     private readonly RhiTextureFormat _targetFormat;
     private readonly RhiTextureFormat _depthFormat;
     private readonly IRhiShaderModule _module;
+    private readonly ShaderReflection _reflection;
     private readonly string _vertexEntryPoint;
     private readonly string _fragmentEntryPoint;
     private readonly Dictionary<Mesh3DPipelineKey, IRhiRenderPipeline> _pipelines = [];
@@ -70,9 +71,9 @@ public sealed class Mesh3DPipelineCache : IDisposable
         _targetFormat = targetFormat;
         _depthFormat = depthFormat;
 
-        ShaderReflection reflection = ShaderCatalog.GetReflection(ShaderModuleId.Mesh3D);
-        _vertexEntryPoint = reflection.EntryPointFor(ShaderStage.Vertex).Name;
-        _fragmentEntryPoint = reflection.EntryPointFor(ShaderStage.Fragment).Name;
+        _reflection = ShaderCatalog.GetReflection(ShaderModuleId.Mesh3D);
+        _vertexEntryPoint = _reflection.EntryPointFor(ShaderStage.Vertex).Name;
+        _fragmentEntryPoint = _reflection.EntryPointFor(ShaderStage.Fragment).Name;
 
         _module = device.CreateShaderModule(new RhiShaderModuleDescriptor(ShaderModuleId.Mesh3D, Label: "Mesh3D"));
 
@@ -313,13 +314,17 @@ public sealed class Mesh3DPipelineCache : IDisposable
         // The vertex stage declares the reflection constant as well -- it is what builds the direction --
         // and a constant supplied to one stage and not the other is two shaders that disagree about
         // whether the varying between them means anything.
-        IReadOnlyDictionary<int, RhiConstant> constants = Mesh3DConstants.Describe(
-            key.AlphaReference,
-            key.Reflective,
-            _fogColour,
-            _fogDensity,
-            _sunAmbient,
-            _sunColour);
+        // Kept to what the module declares: the fog colour became push data and its constants stayed
+        // behind, which Vulkan ignores in silence and WebGPU refuses outright.
+        IReadOnlyDictionary<int, RhiConstant> constants = ShaderConstants.Declared(
+            _reflection,
+            Mesh3DConstants.Describe(
+                key.AlphaReference,
+                key.Reflective,
+                _fogColour,
+                _fogDensity,
+                _sunAmbient,
+                _sunColour));
 
         return _device.CreateRenderPipeline(new RhiRenderPipelineDescriptor(
             Layout,
