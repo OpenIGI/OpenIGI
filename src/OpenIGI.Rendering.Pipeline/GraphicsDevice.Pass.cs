@@ -99,7 +99,10 @@ public sealed partial class GraphicsDevice
             return existing;
         }
 
-        _depth?.Dispose();
+        if (_depth is { } outgrown)
+        {
+            _retired.Retire(outgrown);
+        }
 
         _depth = _device.CreateTexture(new RhiTextureDescriptor(
             Math.Max(1, CurrentMode.Width),

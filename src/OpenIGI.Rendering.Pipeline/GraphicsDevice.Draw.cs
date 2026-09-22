@@ -145,7 +145,7 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
 
         if (_meshTable.Remove(mesh.Id, out RhiMesh? resource))
         {
-            resource.Dispose();
+            _retired.Retire(resource);
         }
     }
 

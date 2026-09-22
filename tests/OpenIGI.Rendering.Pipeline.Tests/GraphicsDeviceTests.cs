@@ -19,15 +19,16 @@ public sealed class GraphicsDeviceTests
     private static readonly Bgra32 White = new(255, 255, 255, 255);
 
     [Fact]
-    public void It_offers_the_deferred_frame_and_names_what_it_still_does_not_do()
+    public void It_names_what_it_does_not_do_and_offers_the_deferred_frame_only_on_request()
     {
-        // The question everything above asks before drawing the remaster's frame. The G-buffer, the
-        // shading and the resolve are here; the passes that are not are NAMED rather than drawn wrongly,
-        // which is what makes a half-finished device usable rather than misleading.
+        // The question everything above asks before drawing the remaster's frame. The deferred frame is
+        // built and agrees with the Vulkan renderer on a frame made by hand, and a real mission's
+        // geometry does not reach its G-buffer yet — so it is offered to somebody working on it and not
+        // to a player, who gets the direct path, which draws.
         using RecordingRhiDevice rhi = new();
         using GraphicsDevice device = Open(rhi);
 
-        Assert.True(device.Capabilities.SupportsSceneCapture);
+        Assert.False(device.Capabilities.SupportsSceneCapture);
         Assert.False(device.Capabilities.SupportsCompute);
 
         Assert.NotEmpty(device.Capabilities.UnimplementedSettings);
@@ -44,9 +45,7 @@ public sealed class GraphicsDeviceTests
 
         Assert.False(device.BeginSceneCapture(default));
         Assert.False(device.BeginSceneCapture(new SceneTargetDescription(64, 64)));
-        Assert.True(device.BeginSceneCapture(new SceneTargetDescription(64, 64, Deferred: true)));
-
-        device.EndSceneCapture();
+        Assert.False(device.BeginSceneCapture(new SceneTargetDescription(64, 64, Deferred: true)));
     }
 
     [Fact]
@@ -169,6 +168,16 @@ public sealed class GraphicsDeviceTests
 
         device.DestroyTexture(texture);
 
+        // Not yet: the frame that named it may still be in flight, and destroying a resource a recorded
+        // command buffer holds invalidates that buffer and silently voids everything recorded after it.
+        Assert.False(group.IsDisposed);
+
+        for (int frame = 0; frame < GraphicsDevice.FramesInFlight; frame++)
+        {
+            Sprite(device);
+            device.SwapBuffers();
+        }
+
         Assert.True(group.IsDisposed);
     }
 
@@ -203,8 +212,19 @@ public sealed class GraphicsDeviceTests
         World(device);
         device.SwapBuffers();
 
-        Assert.True(depth.IsDisposed);
         Assert.Equal(1280, rhi.Resources.OfType<RecordedTexture>().Last(t => t.Label == "present.depth").Width);
+
+        // The outgrown one is held back until the frames that drew into it have finished, for the same
+        // reason a destroyed texture is.
+        Assert.False(depth.IsDisposed);
+
+        for (int frame = 0; frame < GraphicsDevice.FramesInFlight; frame++)
+        {
+            World(device);
+            device.SwapBuffers();
+        }
+
+        Assert.True(depth.IsDisposed);
     }
 
     [Fact]

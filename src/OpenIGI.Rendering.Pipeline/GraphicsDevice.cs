@@ -38,6 +38,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     private readonly IRhiBindGroupLayout _materialLayout;
     private readonly IRhiBindGroupLayout _cubeLayout;
     private readonly StageProfiler _profiler;
+    private readonly RetiredResources _retired = new(FramesInFlight);
     private readonly IRhiTexture _cube;
     private readonly IRhiBindGroup _cubeGroup;
     private IRhiSampler _cubeSampler = null!;
@@ -53,13 +54,29 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     /// <param name="device">The backend to draw through.</param>
     /// <param name="mode">The mode the surface was configured for.</param>
     /// <param name="timestampPeriodNanoseconds">Nanoseconds per timestamp tick, from the device.</param>
-    public GraphicsDevice(IRhiDevice device, in DisplayMode mode, double timestampPeriodNanoseconds = 1.0)
+    /// <param name="captureFrames">
+    /// Whether every frame is copied back as it is submitted. A session that intends to capture — a
+    /// screenshot run, a flight — says so here, because the copy has to be recorded INSIDE the frame and
+    /// a caller asking afterwards is a frame too late.
+    /// </param>
+    /// <param name="deferredFrame">
+    /// Whether this device offers the deferred frame. It is built and agrees with the Vulkan renderer on
+    /// a frame made by hand; a real mission's geometry does not reach its G-buffer yet, so it is offered
+    /// to somebody working on it rather than to a player, who gets the direct path, which draws.
+    /// </param>
+    public GraphicsDevice(
+        IRhiDevice device,
+        in DisplayMode mode,
+        double timestampPeriodNanoseconds = 1.0,
+        bool captureFrames = false,
+        bool deferredFrame = false)
     {
         ArgumentNullException.ThrowIfNull(device);
 
         _device = device;
         CurrentMode = mode;
         PresentFormat = device.SurfaceFormat;
+        _captureAlways = captureFrames;
 
         Capabilities = new GraphicsCapabilities(
             TextureUnits: 8,
@@ -67,9 +84,12 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
             SupportsNonPowerOfTwoTextures: true,
             $"{device.AdapterName} (RHI)")
         {
-            // The G-buffer, the shading over it and the resolve are here; the passes that are not are
-            // named through UnimplementedSettings rather than drawn wrongly.
-            SupportsSceneCapture = true,
+            // The G-buffer, the shading over it and the resolve are here and agree with the Vulkan
+            // renderer on a frame built by hand — but a real mission's geometry does not reach the
+            // G-buffer yet, and a device that claimed otherwise would hand the game a frame it cannot
+            // finish. Opt in with OPENIGI_RHI_DEFERRED=1 to work on it; everything else gets the direct
+            // path, which draws.
+            SupportsSceneCapture = deferredFrame,
             SupportsFloatRenderTargets = true,
 
             // The compute seam is the deferred stack's, and none of it has moved onto this path. Saying
@@ -82,7 +102,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
         _materialLayout = Mesh3DPipelineCache.CreateMaterialLayout(device);
         _cubeLayout = Mesh3DPipelineCache.CreateCubeLayout(device);
-        _materials = new MaterialBindGroupCache(device, _materialLayout);
+        _materials = new MaterialBindGroupCache(device, _materialLayout, _retired);
 
         _pipelines = new Mesh3DPipelineCache(
             device,
@@ -91,8 +111,8 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
             PresentFormat,
             DepthFormat);
 
-        _textures = new TextureTable(device);
-        _sprites = new Sprite2DPass(device, _textures, PresentFormat, FramesInFlight, DepthFormat);
+        _textures = new TextureTable(device, _retired);
+        _sprites = new Sprite2DPass(device, _textures, PresentFormat, FramesInFlight, DepthFormat, _retired);
         _meshes = new Mesh3DPass(_textures, _materials);
         _profiler = new StageProfiler(device, FramesInFlight, timestampPeriodNanoseconds);
 
@@ -160,8 +180,12 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
         CurrentMode = mode;
         _device.ConfigureSurface(mode.Width, mode.Height, VSyncEnabled);
-        _depth?.Dispose();
-        _depth = null;
+
+        if (_depth is { } depth)
+        {
+            _retired.Retire(depth);
+            _depth = null;
+        }
     }
 
     /// <inheritdoc/>
@@ -212,6 +236,11 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         }
 
         _sprites.EndFrame();
+
+        // Before the profiler's own resolve and before the submit: the frame's image is the swapchain's,
+        // and once it is presented the presentation engine owns it again.
+        RecordCapture();
+
         _profiler.ResolveFrame(Encoder());
 
         _device.Submit([Encoder().Finish("frame")]);
@@ -237,6 +266,10 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
         _disposed = true;
         _device.WaitIdle();
+
+        // Waited for, so nothing is in flight and everything held back may go.
+        _retired.Dispose();
+        DisposeCapture();
 
         _pass?.EndPass();
         _encoder?.Dispose();
@@ -343,6 +376,19 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         }
 
         _inFrame = true;
+
+        // A frame's depth buffer starts empty. The interface has a ClearDepth, and the game does not
+        // call it: the original's backends cleared depth with the frame's own pass, unconditionally, so
+        // nothing above ever had to ask. Loading it instead leaves the last frame's depth in place --
+        // and with reverse-Z that rejects everything not nearer than what was already there, which is a
+        // world that goes black a frame after it appears.
+        _clearDepthPending = true;
+
+        // The slot about to be written is the one the frame this many frames ago used, so that frame has
+        // finished and whatever it named may now be freed.
+        _retired.Frame = _frameCounter;
+        _retired.ReleaseBefore(_frameCounter);
+
         _sprites.BeginFrame(FrameSlot, CurrentMode.Width, CurrentMode.Height);
         _profiler.BeginFrame(FrameSlot);
     }

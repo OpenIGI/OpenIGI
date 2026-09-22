@@ -223,7 +223,18 @@ using (window)
         : null;
 
     using IGraphicsDevice device = rhi is not null
-        ? new GraphicsDevice(rhi.Device, displayMode, rhi.TimestampPeriodNanoseconds)
+        ? new GraphicsDevice(
+            rhi.Device,
+            displayMode,
+            rhi.TimestampPeriodNanoseconds,
+            options.ScreenshotPath is not null,
+
+            // The deferred frame over the RHI is opt-in while a real mission's geometry does not reach
+            // its G-buffer: without this the renderer draws the direct path, which does.
+            string.Equals(
+                Environment.GetEnvironmentVariable("OPENIGI_RHI_DEFERRED"),
+                "1",
+                StringComparison.Ordinal))
         : new VulkanGraphicsDevice(
             new VulkanSurfaceProvider(window.VkSurface!),
             displayMode,

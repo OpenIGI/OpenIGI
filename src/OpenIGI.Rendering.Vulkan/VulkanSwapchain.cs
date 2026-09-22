@@ -33,6 +33,8 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
     private readonly KhrSwapchain _khrSwapchain;
     private readonly SurfaceKHR _surface;
 
+    private readonly bool _encodesOutput;
+
     private SwapchainKHR _handle;
     private Image[] _images = [];
     private ImageView[] _imageViews = [];
@@ -44,11 +46,24 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
     /// <param name="width">The desired width in pixels.</param>
     /// <param name="height">The desired height in pixels.</param>
     /// <param name="vsync">Whether presentation should wait for the vertical blank.</param>
+    /// <param name="encodesOutput">
+    /// Whether the renderer above encodes its own output. The legacy path does, so its images are
+    /// unsigned-normalised and what a shader writes is stored as it stands; the shared renderer writes
+    /// LINEAR colour and wants the hardware to encode it, so its images are sRGB. Getting this backwards
+    /// does not fail — it draws the whole frame with one gamma too many or too few.
+    /// </param>
     /// <exception cref="GraphicsDeviceException">The swapchain could not be created.</exception>
-    public VulkanSwapchain(VulkanInstance instance, VulkanDevice device, int width, int height, bool vsync)
+    public VulkanSwapchain(
+        VulkanInstance instance,
+        VulkanDevice device,
+        int width,
+        int height,
+        bool vsync,
+        bool encodesOutput = true)
     {
         ArgumentNullException.ThrowIfNull(instance);
         ArgumentNullException.ThrowIfNull(device);
+        _encodesOutput = encodesOutput;
         _vk = instance.Vk;
         _device = device;
         _khrSurface = instance.KhrSurface;
@@ -242,9 +257,13 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
                 "vkGetPhysicalDeviceSurfaceFormatsKHR");
         }
 
+        // What the renderer above wants stored. A path that encodes its own output wants the bytes it
+        // wrote kept; one that writes linear colour wants the hardware to encode them.
+        Format wanted = _encodesOutput ? Format.B8G8R8A8Unorm : Format.B8G8R8A8Srgb;
+
         foreach (SurfaceFormatKHR candidate in formats)
         {
-            if (candidate.Format == Format.B8G8R8A8Unorm
+            if (candidate.Format == wanted
                 && candidate.ColorSpace == ColorSpaceKHR.SpaceSrgbNonlinearKhr)
             {
                 return candidate;

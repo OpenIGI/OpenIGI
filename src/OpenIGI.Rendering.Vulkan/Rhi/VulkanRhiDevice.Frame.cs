@@ -301,7 +301,11 @@ internal sealed unsafe partial class VulkanRhiDevice
             (int)swapchain.Extent.Width,
             (int)swapchain.Extent.Height,
             VulkanRhiTranslation.TextureFormat(swapchain.Format),
-            RhiTextureUsage.RenderTarget,
+
+            // What the swapchain's images are actually created with. The copy source is what a
+            // screenshot reads the presented frame back through, and a descriptor that understated it
+            // would have the renderer refuse a copy the image supports.
+            RhiTextureUsage.RenderTarget | RhiTextureUsage.CopySource | RhiTextureUsage.CopyDestination,
             Label: "swapchain");
 
         return new VulkanRhiTexture(

@@ -23,6 +23,7 @@ namespace OpenIGI.Rendering.Pipeline.Textures;
 public sealed class TextureTable : ITextureBindingSource, IDisposable
 {
     private readonly IRhiDevice _device;
+    private readonly RetiredResources? _retired;
     private readonly Dictionary<uint, Entry> _textures = [];
     private readonly Dictionary<RhiSamplerDescriptor, IRhiSampler> _samplers = [];
     private uint _next = 1;
@@ -30,11 +31,17 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
 
     /// <summary>Initialises a new instance of the <see cref="TextureTable"/> class.</summary>
     /// <param name="device">The device the textures live on.</param>
-    public TextureTable(IRhiDevice device)
+    /// <param name="retired">
+    /// Where a destroyed texture goes. A texture destroyed where it is released invalidates the command
+    /// buffer of any frame still naming it, which voids every command recorded afterwards; null frees at
+    /// once, which is only right where nothing is in flight.
+    /// </param>
+    public TextureTable(IRhiDevice device, RetiredResources? retired = null)
     {
         ArgumentNullException.ThrowIfNull(device);
 
         _device = device;
+        _retired = retired;
         White = Create(new TextureDescription(1, 1), [new Bgra32(255, 255, 255, 255)], "white");
     }
 
@@ -51,9 +58,14 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
     /// </remarks>
     public int MaxAnisotropy { get; set; } = 1;
 
-    /// <summary>Creates a texture and uploads its first mip level.</summary>
-    /// <param name="description">Its size and how it is filtered.</param>
-    /// <param name="pixels">The texels of mip zero.</param>
+    /// <summary>Creates a texture and uploads every level the caller handed over.</summary>
+    /// <param name="description">Its size, how many levels it has, and how it is filtered.</param>
+    /// <param name="pixels">
+    /// The whole chain, tightly packed, largest level first — which is how the engine lays a texture out
+    /// and what every backend here is given. Uploading only the first level leaves the rest of the chain
+    /// undefined, and nothing says so: the texture looks right up close and reads as BLACK the moment it
+    /// is minified enough to pick a lower level, which is most of a level most of the time.
+    /// </param>
     /// <param name="label">A name for captures and diagnostics.</param>
     /// <returns>Its handle.</returns>
     public TextureHandle Create(in TextureDescription description, ReadOnlySpan<Bgra32> pixels, string label = "")
@@ -72,10 +84,7 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
 
         _textures[id] = new Entry(texture, SamplerFor(description));
 
-        if (!pixels.IsEmpty)
-        {
-            Upload(texture, 0, pixels, description);
-        }
+        UploadChain(texture, description, pixels);
 
         return new TextureHandle(id);
     }
@@ -105,7 +114,15 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
             return false;
         }
 
-        entry.Texture.Dispose();
+        if (_retired is { } queue)
+        {
+            queue.Retire(entry.Texture);
+        }
+        else
+        {
+            entry.Texture.Dispose();
+        }
+
         return true;
     }
 
@@ -168,6 +185,35 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
 
         _textures.Clear();
         _samplers.Clear();
+    }
+
+    /// <summary>Uploads as many levels of a packed chain as the caller actually provided.</summary>
+    /// <param name="texture">The texture being filled.</param>
+    /// <param name="description">Its size and level count.</param>
+    /// <param name="pixels">The packed chain, largest level first.</param>
+    /// <remarks>
+    /// Stops where the span runs out rather than reading past it: a caller that hands over one level of
+    /// a texture declared with several is uploading what it has, and the levels it did not give are
+    /// filled by a later <see cref="Update"/> or left as they are.
+    /// </remarks>
+    private void UploadChain(IRhiTexture texture, in TextureDescription description, ReadOnlySpan<Bgra32> pixels)
+    {
+        int levels = Math.Max(1, description.MipLevels);
+        int at = 0;
+
+        for (int level = 0; level < levels; level++)
+        {
+            (int width, int height) = MipSize(texture, level);
+            int texels = width * height;
+
+            if (at + texels > pixels.Length)
+            {
+                return;
+            }
+
+            Upload(texture, level, pixels.Slice(at, texels), new TextureDescription(width, height));
+            at += texels;
+        }
     }
 
     private static (int Width, int Height) MipSize(IRhiTexture texture, int level) => (

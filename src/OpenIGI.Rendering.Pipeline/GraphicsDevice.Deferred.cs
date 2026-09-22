@@ -71,7 +71,9 @@ public sealed partial class GraphicsDevice
             throw new GraphicsDeviceException("A scene capture is already in progress.");
         }
 
-        if (!description.Deferred || CapturingCards)
+        // Declined where it was not advertised, so the two answers cannot disagree: something that asks
+        // without reading the capability gets the same no.
+        if (!Capabilities.SupportsSceneCapture || !description.Deferred || CapturingCards)
         {
             return false;
         }

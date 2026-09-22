@@ -142,7 +142,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         {
             using VulkanRhi vulkan = VulkanRhi.CreateOffscreen(Size, Size, GraphicsDevice.DefaultPresentFormat);
 
-            using (GraphicsDevice device = new(vulkan.Device, new DisplayMode(Size, Size, 32, 60)))
+            using (GraphicsDevice device = new(vulkan.Device, new DisplayMode(Size, Size, 32, 60), deferredFrame: true))
             {
                 DrawFrame(device);
             }
@@ -165,7 +165,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
             using WebGpuRhiDevice rhi = WebGpuRhiDevice.Create();
             rhi.AttachOffscreen(Size, Size, GraphicsDevice.DefaultPresentFormat);
 
-            using (GraphicsDevice device = new(rhi, new DisplayMode(Size, Size, 32, 60)))
+            using (GraphicsDevice device = new(rhi, new DisplayMode(Size, Size, 32, 60), deferredFrame: true))
             {
                 DrawFrame(device);
             }

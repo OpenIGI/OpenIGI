@@ -54,6 +54,10 @@ public sealed class Sprite2DPass : IDisposable
     /// <param name="textures">Where a handle is turned into something bindable.</param>
     /// <param name="targetFormat">The format of the attachment the 2D path draws into.</param>
     /// <param name="framesInFlight">How many geometry rings to keep.</param>
+    /// <param name="retired">
+    /// Where a group whose texture has gone goes, for a caller whose frames are in flight. See
+    /// <see cref="RetiredResources"/>.
+    /// </param>
     /// <param name="depthFormat">
     /// The depth attachment of the pass it draws into, or undefined for a pass with none. Nothing here
     /// tests depth; a pipeline simply has to declare what its pass carries.
@@ -63,7 +67,8 @@ public sealed class Sprite2DPass : IDisposable
         ITextureBindingSource textures,
         RhiTextureFormat targetFormat,
         int framesInFlight,
-        RhiTextureFormat depthFormat = RhiTextureFormat.Undefined)
+        RhiTextureFormat depthFormat = RhiTextureFormat.Undefined,
+        RetiredResources? retired = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(textures);
@@ -74,7 +79,7 @@ public sealed class Sprite2DPass : IDisposable
         _depthFormat = depthFormat;
 
         TextureLayout = TextureBindGroupCache.CreateLayout(device, "sprite2d");
-        _groups = new TextureBindGroupCache(device, TextureLayout);
+        _groups = new TextureBindGroupCache(device, TextureLayout, retired);
         _geometry = new SpriteGeometryRing(device, framesInFlight);
 
         _sprites = new SpritePipelineSet(

@@ -61,9 +61,6 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
-    public void CaptureFrame(int width, int height, Span<Bgra32> destination) => destination.Clear();
-
-    /// <inheritdoc/>
     public void CopyFrameToTexture(TextureHandle texture, int width, int height)
     {
         // The held picture the menu dissolves from. It belongs with the scene capture, which this path

@@ -24,7 +24,16 @@ namespace OpenIGI.Rendering.Pipeline.Mesh3D;
 /// </remarks>
 /// <param name="device">The device the groups are made on.</param>
 /// <param name="layout">The shape they are built against.</param>
-public sealed class MaterialBindGroupCache(IRhiDevice device, IRhiBindGroupLayout layout) : IDisposable
+/// <param name="retired">
+/// Where a resource goes when it is released. Nothing here may be destroyed where it is released: a
+/// frame already recorded may still name it, and destroying it invalidates that command buffer and
+/// silently voids every command recorded into it afterwards. Null frees at once, which is only right
+/// where nothing is in flight.
+/// </param>
+public sealed class MaterialBindGroupCache(
+    IRhiDevice device,
+    IRhiBindGroupLayout layout,
+    RetiredResources? retired = null) : IDisposable
 {
     private readonly IRhiDevice _device = device ?? throw new ArgumentNullException(nameof(device));
     private readonly IRhiBindGroupLayout _layout = layout ?? throw new ArgumentNullException(nameof(layout));
@@ -93,7 +102,15 @@ public sealed class MaterialBindGroupCache(IRhiDevice device, IRhiBindGroupLayou
 
         foreach (MaterialKey key in naming)
         {
-            _groups[key].Dispose();
+            if (retired is { } queue)
+            {
+                queue.Retire(_groups[key]);
+            }
+            else
+            {
+                _groups[key].Dispose();
+            }
+
             _groups.Remove(key);
         }
 

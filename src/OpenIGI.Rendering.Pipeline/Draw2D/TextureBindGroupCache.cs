@@ -26,7 +26,16 @@ namespace OpenIGI.Rendering.Pipeline.Draw2D;
 /// </remarks>
 /// <param name="device">The device the groups are made on.</param>
 /// <param name="layout">The shape they are built against.</param>
-public sealed class TextureBindGroupCache(IRhiDevice device, IRhiBindGroupLayout layout) : IDisposable
+/// <param name="retired">
+/// Where a resource goes when it is released. Nothing here may be destroyed where it is released: a
+/// frame already recorded may still name it, and destroying it invalidates that command buffer and
+/// silently voids every command recorded into it afterwards. Null frees at once, which is only right
+/// where nothing is in flight.
+/// </param>
+public sealed class TextureBindGroupCache(
+    IRhiDevice device,
+    IRhiBindGroupLayout layout,
+    RetiredResources? retired = null) : IDisposable
 {
     private readonly IRhiDevice _device = device ?? throw new ArgumentNullException(nameof(device));
     private readonly IRhiBindGroupLayout _layout = layout ?? throw new ArgumentNullException(nameof(layout));
@@ -67,8 +76,20 @@ public sealed class TextureBindGroupCache(IRhiDevice device, IRhiBindGroupLayout
     {
         if (_groups.Remove(textureId, out IRhiBindGroup? group))
         {
-            group.Dispose();
+            Release(group);
         }
+    }
+
+    /// <summary>Lets go of a group, holding it back where frames may still name it.</summary>
+    private void Release(IRhiBindGroup group)
+    {
+        if (retired is { } queue)
+        {
+            queue.Retire(group);
+            return;
+        }
+
+        group.Dispose();
     }
 
     /// <summary>The layout every group here is built against.</summary>
