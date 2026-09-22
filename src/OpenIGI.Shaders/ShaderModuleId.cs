@@ -162,4 +162,10 @@ public enum ShaderModuleId
 
     /// <summary>Distance field: the per-mesh fields resampled into one clipmap level.</summary>
     FieldClipmapBuild,
+
+    /// <summary>Surface cache: the accumulated screen probes smoothed across their neighbours.</summary>
+    CardsScreenFilter,
+
+    /// <summary>Surface cache: the sparse screen probes upsampled and accumulated over time.</summary>
+    CardsScreenResolve,
 }

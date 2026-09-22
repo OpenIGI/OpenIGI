@@ -323,6 +323,26 @@
           "targets": [ "Spirv" ]
         }
       ]
+    },
+    {
+      "id": "CardsScreenFilter",
+      "source": "Cards/ScreenFilter.slang",
+      "variants": [
+        {
+          "name": "default",
+          "targets": [ "Spirv" ]
+        }
+      ]
+    },
+    {
+      "id": "CardsScreenResolve",
+      "source": "Cards/ScreenResolve.slang",
+      "variants": [
+        {
+          "name": "default",
+          "targets": [ "Spirv" ]
+        }
+      ]
     }
   ]
 }
