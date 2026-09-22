@@ -86,6 +86,10 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
             device.BeginSceneCapture(new SceneTargetDescription(Size, Size, Deferred: true)),
             "The capture was declined.");
 
+        // What the game does as a capture opens: it clears the frame for the target it knows about. The
+        // resolve covers the whole frame, so that clear must not outlive it.
+        device.Clear(new Bgra32(255, 0, 255, 255));
+
         // What a frame tells the device before it draws: where the eye is, and how a depth becomes a
         // position. Both arrive with passes this path does not run, which is why they are set here
         // rather than assumed.
@@ -131,6 +135,20 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
             WhitePoint: 1.6f,
             Contrast: 1f,
             Saturation: 1f));
+
+        // And what it does after: the letterbox and the HUD go on top. A clear still pending from the
+        // capture would be honoured by this pass and take the whole picture with it.
+        device.Set2DProjection(Size, Size);
+        device.DrawTriangles2D(
+            [
+                new Vertex2D(Size - 2, 0, 0f, 0f, Bgra32.White),
+                new Vertex2D(Size, 0, 0f, 0f, Bgra32.White),
+                new Vertex2D(Size, 2, 0f, 0f, Bgra32.White),
+            ],
+            [0, 1, 2],
+            TextureHandle.None,
+            BlendMode.Opaque);
+
         device.SwapBuffers();
     }
 
