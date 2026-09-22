@@ -26,6 +26,27 @@ public readonly record struct SkyConditions(
     public static float ViewHeightFor(float altitudeMetres) =>
         6360.0f + Math.Max(0.0005f, altitudeMetres * 0.001f);
 
+    /// <summary>The conditions a frame's own lighting describes, as the atmosphere wants them.</summary>
+    /// <param name="lighting">The frame's lighting, whose sun is in view space.</param>
+    /// <param name="viewToWorld">The camera's rotation from view space into world space.</param>
+    /// <param name="altitudeMetres">How far the camera is above the ground.</param>
+    /// <returns>The sun turned into the world, its illuminance, the eye's height and the sky's weight.</returns>
+    /// <remarks>
+    /// The atmosphere's source sun is deliberately its own: scaling how surfaces answer the direct light
+    /// must not also scale the visible sky and the harmonics projected from it. A caller that does not
+    /// name one gets the direct sun, which is how the two used to be shared.
+    /// </remarks>
+    public static SkyConditions ForScene(in SceneLighting lighting, in Matrix3f viewToWorld, float altitudeMetres)
+    {
+        Vector3f source = lighting.AtmosphereSunColour ?? lighting.SunColour;
+
+        return new SkyConditions(
+            lighting.WorldSunDirection(viewToWorld),
+            new Vector3f(source.X * lighting.Scale, source.Y * lighting.Scale, source.Z * lighting.Scale),
+            ViewHeightFor(altitudeMetres),
+            Math.Max(0f, lighting.SkyLightIntensity));
+    }
+
     /// <summary>Whether a sky built for these conditions would look the same built for another.</summary>
     /// <param name="other">The conditions to compare against.</param>
     /// <returns><see langword="true"/> when the difference could not be seen.</returns>

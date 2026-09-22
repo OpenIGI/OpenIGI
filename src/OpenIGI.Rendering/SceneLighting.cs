@@ -77,4 +77,27 @@ public readonly record struct SceneLighting(
         new Vector3f(0f, 0f, 1f),
         new Vector3f(0f, 0f, 0f),
         new Vector3f(0f, 0f, 0f));
+
+    /// <summary>Gets the direction towards the sun in world space, for whatever works in the world's.</summary>
+    /// <param name="viewToWorld">The camera's rotation from view space into world space.</param>
+    /// <returns>The unit direction towards the sun, or straight up when there is no direction to turn.</returns>
+    /// <remarks>
+    /// <see cref="SunDirection"/> is in view space because the G-buffer's normals are. The atmosphere
+    /// and the traced passes are worlds of their own, so they want it turned back, once, rather than
+    /// inside everything that reads it.
+    /// </remarks>
+    public Vector3f WorldSunDirection(in Matrix3f viewToWorld)
+    {
+        Vector3f view = SunDirection;
+        Vector3f world = new(
+            (viewToWorld.M11 * view.X) + (viewToWorld.M12 * view.Y) + (viewToWorld.M13 * view.Z),
+            (viewToWorld.M21 * view.X) + (viewToWorld.M22 * view.Y) + (viewToWorld.M23 * view.Z),
+            (viewToWorld.M31 * view.X) + (viewToWorld.M32 * view.Y) + (viewToWorld.M33 * view.Z));
+
+        float length = MathF.Sqrt((world.X * world.X) + (world.Y * world.Y) + (world.Z * world.Z));
+
+        return length > 1e-5f
+            ? new Vector3f(world.X / length, world.Y / length, world.Z / length)
+            : new Vector3f(0f, 0f, 1f);
+    }
 }

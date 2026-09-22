@@ -3,6 +3,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
+using OpenIGI.Rendering.Sky;
 using OpenIGI.Rendering.Vulkan.Deferred;
 using OpenIGI.Rendering.Vulkan.Textures;
 using Silk.NET.Vulkan;
@@ -532,24 +533,15 @@ public sealed partial class VulkanGraphicsDevice
     /// </remarks>
     private void RecordSkyUpdate()
     {
-        Vector3f worldSun = WorldSunDirection();
-
-        // The atmosphere's own source sun. This is deliberately independent of the direct-light sun:
-        // scaling a surface response must not also scale the visible sky and the SH projected from it.
-        // Older callers omit it and retain the previous shared-source behaviour.
-        Vector3f source = _lighting.AtmosphereSunColour ?? _lighting.SunColour;
-        Vector3f illuminance = new(
-            source.X * _lighting.Scale,
-            source.Y * _lighting.Scale,
-            source.Z * _lighting.Scale);
+        SkyConditions sky = SkyConditions.ForScene(_lighting, _viewToWorld, altitudeMetres: 2f);
 
         _deferred.Sky.Record(
             _frameCommandBuffer,
             _frameLoop.CurrentFrame,
-            worldSun,
-            illuminance,
-            Sky.SkyAtmosphere.ViewHeightKm(2f),
-            Math.Max(0f, _lighting.SkyLightIntensity));
+            sky.SunDirection,
+            sky.SunIlluminance,
+            sky.ViewHeightKm,
+            sky.SkyLightIntensity);
     }
 
     /// <summary>
@@ -2640,20 +2632,7 @@ public sealed partial class VulkanGraphicsDevice
 
 
     /// <summary>The world direction towards the sun, from the view-space one the renderer seam hands over.</summary>
-    private Vector3f WorldSunDirection()
-    {
-        Vector3f viewSun = _lighting.SunDirection;
-        Matrix3f m = _viewToWorld;
-        Vector3f world = new(
-            (m.M11 * viewSun.X) + (m.M12 * viewSun.Y) + (m.M13 * viewSun.Z),
-            (m.M21 * viewSun.X) + (m.M22 * viewSun.Y) + (m.M23 * viewSun.Z),
-            (m.M31 * viewSun.X) + (m.M32 * viewSun.Y) + (m.M33 * viewSun.Z));
-
-        float length = MathF.Sqrt((world.X * world.X) + (world.Y * world.Y) + (world.Z * world.Z));
-        return length > 1e-5f
-            ? new Vector3f(world.X / length, world.Y / length, world.Z / length)
-            : new Vector3f(0f, 0f, 1f);
-    }
+    private Vector3f WorldSunDirection() => _lighting.WorldSunDirection(_viewToWorld);
 
     private unsafe void RecordLighting()
     {
