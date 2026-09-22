@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenIGI.Rendering.Vulkan\OpenIGI.Rendering.Vulkan.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Rendering.Pipeline\OpenIGI.Rendering.Pipeline.csproj" />
   </ItemGroup>
 
   <ItemGroup>

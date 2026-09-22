@@ -17,6 +17,7 @@
     <Project Path="src/OpenIGI.Presentation/OpenIGI.Presentation.csproj" />
     <Project Path="src/OpenIGI.Host/OpenIGI.Host.csproj" />
     <Project Path="src/OpenIGI.Rendering.Rhi/OpenIGI.Rendering.Rhi.csproj" />
+    <Project Path="src/OpenIGI.Rendering.Pipeline/OpenIGI.Rendering.Pipeline.csproj" />
     <Project Path="src/OpenIGI.Rendering.WebGpu.Native/OpenIGI.Rendering.WebGpu.Native.csproj" />
     <Project Path="src/OpenIGI.Rendering.WebGpu/OpenIGI.Rendering.WebGpu.csproj" />
     <Project Path="src/OpenIGI.Rendering.Vulkan/OpenIGI.Rendering.Vulkan.csproj" />
@@ -39,6 +40,7 @@
     <Project Path="tests/OpenIGI.Game.Igi2.Tests/OpenIGI.Game.Igi2.Tests.csproj" />
     <Project Path="tests/OpenIGI.Input.Tests/OpenIGI.Input.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.Tests/OpenIGI.Rendering.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Rendering.Pipeline.Tests/OpenIGI.Rendering.Pipeline.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.Rhi.Tests/OpenIGI.Rendering.Rhi.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.WebGpu.Native.Tests/OpenIGI.Rendering.WebGpu.Native.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.WebGpu.Tests/OpenIGI.Rendering.WebGpu.Tests.csproj" />

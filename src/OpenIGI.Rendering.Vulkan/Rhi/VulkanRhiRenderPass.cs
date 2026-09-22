@@ -255,6 +255,11 @@ internal sealed unsafe class VulkanRhiRenderPassEncoder : IRhiRenderPassEncoder
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The pass is ended before it is marked disposed, not after. The other order looks harmless and is
+    /// not: ending checks that the encoder is still usable, so a pass left to a `using` block would
+    /// refuse to end itself and take the frame with it.
+    /// </remarks>
     public void Dispose()
     {
         if (_disposed)
@@ -262,12 +267,12 @@ internal sealed unsafe class VulkanRhiRenderPassEncoder : IRhiRenderPassEncoder
             return;
         }
 
-        _disposed = true;
-
         if (!_ended)
         {
             EndPass();
         }
+
+        _disposed = true;
     }
 
     private VulkanRhiPipelineLayout Layout() => _layout

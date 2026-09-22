@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The renderer's own tests, driven against the recording device rather than a GPU.
+
+       Deliberately no reference to either backend: a test here that needed one would mean the pipeline
+       had grown a dependency on a graphics API, and the build breaking is the point. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OpenIGI.Rendering.Pipeline\OpenIGI.Rendering.Pipeline.csproj" />
+    <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+</Project>
