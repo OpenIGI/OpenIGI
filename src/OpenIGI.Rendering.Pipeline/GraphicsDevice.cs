@@ -184,6 +184,14 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     public void SetViewport(in Viewport viewport)
     {
         ThrowIfDisposed();
+
+        // While a capture is open the viewport is the scene's, in render coordinates, and the window's
+        // own — which the resolve and the interface draw with — is left alone.
+        if (TakeSceneViewport(viewport))
+        {
+            return;
+        }
+
         _viewport = viewport;
 
         if (_pass is { } pass)
@@ -209,6 +217,15 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     public void ClearDepth()
     {
         ThrowIfDisposed();
+
+        // Inside a capture the depth is what every later pass reads, so the layer that asked for a clear
+        // is given the nearest sliver of the range instead.
+        if (Capturing)
+        {
+            SetForegroundLayer(true);
+            return;
+        }
+
         _clearDepthPending = true;
         ClosePass();
     }

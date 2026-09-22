@@ -296,6 +296,75 @@ public sealed class GraphicsDeviceTests
         Assert.Equal(GBufferPushBlock.GroundDetailMode, detail[19]);
     }
 
+    [Fact]
+    public void The_forward_pass_draws_over_the_lit_image_after_the_light()
+    {
+        // The view model, the muzzle flash and every translucent draw: after the shading, over the lit
+        // image it produced, against the depth the geometry wrote. They were dropped outright, which is a
+        // game with no weapon in hand.
+        using RecordingRhiDevice rhi = new();
+        using GraphicsDevice device = Open(rhi);
+
+        Assert.True(device.BeginSceneCapture(new SceneTargetDescription(64, 64, Deferred: true)));
+
+        device.BeginPass(ScenePass.Geometry);
+        World(device);
+        device.EndPass();
+
+        device.BeginPass(ScenePass.Forward);
+        World(device);
+
+        // A pane, whose pipeline has not moved onto this path: drawn as ordinary translucency it would be a
+        // window that looks finished and is not, so it is not drawn at all.
+        device.SetMaterialOverride(new SurfaceMaterial(Glass: true));
+        World(device);
+        device.SetMaterialOverride(SurfaceMaterial.Default);
+
+        device.EndPass();
+        device.EndSceneCapture();
+        device.SwapBuffers();
+
+        List<string> passes = [.. rhi.CommandsOf<RecordedRhiCommand.BeginRenderPass>().Select(pass => pass.Label)];
+        Assert.True(passes.IndexOf("shading") < passes.IndexOf("forward"), string.Join(", ", passes));
+
+        RecordedRhiCommand.BeginRenderPass forward = rhi.CommandsOf<RecordedRhiCommand.BeginRenderPass>()
+            .Single(pass => pass.Label == "forward");
+
+        // Loaded, not cleared: the translucency goes over the shaded scene.
+        Assert.Equal(["Lit"], forward.ColorAttachments);
+        Assert.Equal([false], forward.Clears);
+        Assert.Equal("Depth", forward.DepthAttachment);
+
+        Assert.Equal(1, DrawsIn(rhi, "forward"));
+    }
+
+    /// <summary>How many draws were recorded inside the named render pass.</summary>
+    private static int DrawsIn(RecordingRhiDevice rhi, string label)
+    {
+        int draws = 0;
+        bool inside = false;
+
+        foreach (RecordedRhiCommand command in rhi.Commands)
+        {
+            switch (command)
+            {
+                case RecordedRhiCommand.BeginRenderPass begun:
+                    inside = begun.Label == label;
+                    break;
+
+                case RecordedRhiCommand.EndPass:
+                    inside = false;
+                    break;
+
+                case RecordedRhiCommand.Draw when inside:
+                    draws++;
+                    break;
+            }
+        }
+
+        return draws;
+    }
+
     /// <summary>The blocks the frame's geometry draws pushed, in order, as floats.</summary>
     private static float[][] GeometryPushes(RecordingRhiDevice rhi) =>
     [

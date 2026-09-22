@@ -375,7 +375,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     /// the world pass wrote, which is what clearing the depth used to buy, while the parts of the rig
     /// still occlude each other normally within it.
     /// </remarks>
-    internal const float ForegroundDepthFloor = 0.9f;
+    internal const float ForegroundDepthFloor = Viewport.ForegroundDepthFloor;
 
     /// <inheritdoc/>
     /// <remarks>

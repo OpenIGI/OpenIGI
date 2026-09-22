@@ -30,6 +30,8 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     private float _alphaHashSeed;
     private float _poseBlend;
     private byte _alphaReference = Mesh3DConstants.DefaultAlphaReference;
+    private Vector3f _sceneSunAmbient;
+    private Vector3f _sceneSunColour;
     private bool _firstPerson;
 
     /// <inheritdoc/>
@@ -163,6 +165,7 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     {
         _fog = fog;
         _pipelines.SetFog(fog.Colour, fog.DensityPerMetre);
+        _forwardPipelines?.SetFog(fog.Colour, fog.DensityPerMetre);
     }
 
     /// <inheritdoc/>
@@ -172,7 +175,13 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     public void SetModelAmbient(Vector3f ambient) => _modelAmbient = ambient;
 
     /// <inheritdoc/>
-    public void SetSceneSun(Vector3f ambient, Vector3f colour) => _pipelines.SetSun(ambient, colour);
+    public void SetSceneSun(Vector3f ambient, Vector3f colour)
+    {
+        _sceneSunAmbient = ambient;
+        _sceneSunColour = colour;
+        _pipelines.SetSun(ambient, colour);
+        _forwardPipelines?.SetSun(ambient, colour);
+    }
 
     /// <inheritdoc/>
     public void SetVertexSun(Vector3f towardsSun) => _vertexSun = towardsSun;
@@ -191,7 +200,18 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     public void SetAlphaReference(byte reference) => _alphaReference = reference;
 
     /// <inheritdoc/>
-    public void SetFirstPersonGeometry(bool firstPerson) => _firstPerson = firstPerson;
+    public void SetFirstPersonGeometry(bool firstPerson)
+    {
+        // Leaving the layer puts the scene's draws back on the full depth range; entering it moves them
+        // into the sliver, as the Vulkan original does. Only the scene's passes have a sliver: the direct
+        // path clears its depth instead, which is what the interface describes.
+        if (_firstPerson != firstPerson && Capturing)
+        {
+            SetForegroundLayer(firstPerson);
+        }
+
+        _firstPerson = firstPerson;
+    }
 
     /// <inheritdoc/>
     public void SetPoseInterpolation(float currentBlend, float previousBlend)
@@ -233,19 +253,23 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
 
         if (Capturing)
         {
-            // Only the geometry pass draws while a capture is open. The translucency and glazing passes
-            // have not moved onto this path, and sending their draws to the frame instead would put the
-            // view model and the muzzle flash on the back buffer for the resolve to paint over.
+            // While a capture is open a draw belongs to the scene's pass, never to the frame: sent there
+            // instead, the view model and the muzzle flash would land on the back buffer for the resolve
+            // to paint over. The glazing's front layer has not moved onto this path, so its draws go.
             if (CurrentPass is ScenePass.Geometry)
             {
                 DrawGeometry(call, modelView, blend);
+            }
+            else if (CurrentPass is ScenePass.Forward)
+            {
+                DrawForward(call, [], modelView, blend, lightmap.IsValid);
             }
 
             return;
         }
 
         Span<float> push = stackalloc float[ForwardPushBlock.Floats];
-        WriteForward(push, modelView, blend, lightmap.IsValid);
+        WriteForward(push, modelView, blend, lightmap.IsValid, exposure: 1f);
 
         _meshes.Draw(
             Pass(),
@@ -286,12 +310,16 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             {
                 DrawGeometryRanges(mesh, ranges, modelView, diffuse, lightmap, blend);
             }
+            else if (CurrentPass is ScenePass.Forward)
+            {
+                DrawForward(Call(mesh, 0, 0, diffuse, lightmap, blend), ranges, modelView, blend, lightmap.IsValid);
+            }
 
             return;
         }
 
         Span<float> push = stackalloc float[ForwardPushBlock.Floats];
-        WriteForward(push, modelView, blend, lightmap.IsValid);
+        WriteForward(push, modelView, blend, lightmap.IsValid, exposure: 1f);
 
         _meshes.DrawRanges(
             Pass(),
@@ -324,7 +352,15 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             _alphaReference);
 
     /// <summary>Fills the block a forward draw carries, from the scene as it stands.</summary>
-    private void WriteForward(Span<float> push, in Matrix4f modelView, BlendMode blend, bool hasLightmap)
+    /// <param name="push">Room for the block.</param>
+    /// <param name="modelView">The draw's transform into view space.</param>
+    /// <param name="blend">How it is blended.</param>
+    /// <param name="hasLightmap">Whether it carries a lightmap.</param>
+    /// <param name="exposure">
+    /// What the frame will be exposed by, which the lit rig divides itself by so that it leaves the tone
+    /// map as it was lit. One on the direct path, which is never tone mapped.
+    /// </param>
+    private void WriteForward(Span<float> push, in Matrix4f modelView, BlendMode blend, bool hasLightmap, float exposure)
     {
         ForwardDrawState state = new(
             _projection,
@@ -337,10 +373,9 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             _lightmapScale,
             _poseBlend,
 
-            // The direct path never tone-maps, so there is no adapted exposure to divide the rig by.
-            Exposure: 1f,
+            exposure,
 
-            // Nor are there dynamic lamps on it: the lit rig is a remaster path.
+            // No dynamic lamps reach this device yet, so the lit rig is lit by the key light alone.
             LampLight: Vector3f.Zero,
             _firstPerson);
 

@@ -84,6 +84,13 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
             vulkan[corner] > vulkan[corner + 2] + 8,
             $"The sky is {Describe(vulkan, 2, 2)}, which is not an atmosphere's blue.");
 
+        // The forward pass drew over the light, in the corner it was put in.
+        int forward = (((Size / 8) * Size) + (Size - (Size / 8))) * 4;
+        output.WriteLine($"vulkan forward {Describe(vulkan, Size - (Size / 8), Size / 8)}");
+        Assert.True(
+            vulkan[forward + 2] > vulkan[forward + 1] + 32 && vulkan[forward + 2] > vulkan[forward] + 32,
+            $"The forward quad's corner is {Describe(vulkan, Size - (Size / 8), Size / 8)}, not the red that was drawn.");
+
         // And the right way up. The triangle's apex points up the screen, so its base covers the lower
         // left of the frame and the same place mirrored into the upper half is sky. A frame turned over
         // by any of its three passes agrees with itself perfectly on both backends -- each pass reads
@@ -197,6 +204,22 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
 
         device.BeginPass(ScenePass.Geometry);
         device.DrawMesh(mesh, 0, 3, Matrix4f.Identity, texture, TextureHandle.None, BlendMode.Opaque);
+        device.EndPass();
+
+        // And over the light, what a G-buffer cannot hold: a red quad in the top-right corner, drawn in
+        // the forward pass against the depth the triangle wrote.
+        Bgra32 red = new(0, 0, 200, 255);
+        MeshHandle quad = device.CreateMesh(
+            [
+                new Vertex3D(new Vector3f(0.5f, 0.5f, 0.5f), Vector3f.UnitZ, 0f, 0f, colour: red),
+                new Vertex3D(new Vector3f(0.95f, 0.5f, 0.5f), Vector3f.UnitZ, 1f, 0f, colour: red),
+                new Vertex3D(new Vector3f(0.95f, 0.95f, 0.5f), Vector3f.UnitZ, 1f, 1f, colour: red),
+                new Vertex3D(new Vector3f(0.5f, 0.95f, 0.5f), Vector3f.UnitZ, 0f, 1f, colour: red),
+            ],
+            [0, 1, 2, 0, 2, 3]);
+
+        device.BeginPass(ScenePass.Forward);
+        device.DrawMesh(quad, 0, 6, Matrix4f.Identity, TextureHandle.None, TextureHandle.None, BlendMode.Opaque);
         device.EndPass();
 
         device.EndSceneCapture();

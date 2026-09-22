@@ -24,11 +24,15 @@ namespace OpenIGI.Rendering.Pipeline;
 /// once for each and this path takes the sampled form. What they produce is identical.
 /// </para>
 /// <para>
+/// After the shading, the forward pass: what cannot be in a G-buffer because a G-buffer holds one surface
+/// per pixel — the translucency, the muzzle flash, and the first-person arms and weapon — drawn over the
+/// lit image against the scene's own depth, as the Vulkan original draws them in its second subpass.
+/// </para>
+/// <para>
 /// What is not here yet is named honestly rather than drawn wrongly. There are no cascades, no ambient
-/// occlusion, no temporal resolve, no bloom and no translucency pass, and every one of those is either
-/// a console variable this device reports as unimplemented or a pass whose draws are dropped. The
-/// alternative — drawing translucency as opaque geometry, say — would be a frame that looks finished
-/// and is not.
+/// occlusion, no temporal resolve, no bloom and no glazing, and every one of those is either a console
+/// variable this device reports as unimplemented or a pass whose draws are dropped. The alternative —
+/// drawing a window pane as ordinary translucency, say — would be a frame that looks finished and is not.
 /// </para>
 /// </remarks>
 public sealed partial class GraphicsDevice
@@ -44,15 +48,19 @@ public sealed partial class GraphicsDevice
 
     private SceneTargetSet? _scene;
     private GBufferPipelineCache? _geometryPipelines;
+    private Mesh3DPipelineCache? _forwardPipelines;
     private DeferredLighting? _shading;
     private DeferredResolve? _sceneResolve;
     private SkyAtmosphere? _sky;
     private IRhiBindGroupLayout? _surfaceLayout;
     private IRhiBuffer? _surfaceUniform;
     private IRhiBindGroup? _surfaceGroup;
-    private IRhiRenderPassEncoder? _geometryPass;
+    private IRhiRenderPassEncoder? _scenePass;
 
     private bool _capturing;
+    private bool _shaded;
+    private bool _foreground;
+    private Viewport _sceneViewport;
     private DebugView _debugView;
     private bool _groundDetail;
     private bool _paintedSky;
@@ -93,7 +101,12 @@ public sealed partial class GraphicsDevice
         EnsureDeferred(Math.Max(1, description.Width), Math.Max(1, description.Height));
         WriteSurfaceBlock();
 
+        // The scene's passes draw at the render size whatever the window's viewport says, and a viewport
+        // set during the capture — the map inset — is already in render coordinates.
+        _sceneViewport = new Viewport(0, 0, _scene!.Width, _scene.Height);
+        _foreground = false;
         _frameHasPaintedSky = false;
+        _shaded = false;
         _capturing = true;
         return true;
     }
@@ -138,13 +151,30 @@ public sealed partial class GraphicsDevice
         // A pass ends when the next one begins, whether or not the caller said so: the game moves from
         // geometry to glazing to translucency by declaring the next one, and a second render pass begun
         // while the first is still open is undefined rather than nested.
-        CloseGeometryPass();
+        CloseScenePass();
 
-        if (!_capturing || pass != ScenePass.Geometry || _scene is not { } scene)
+        if (!_capturing || _scene is not { } scene)
         {
             return;
         }
 
+        switch (pass)
+        {
+            case ScenePass.Geometry:
+                BeginGeometryPass(scene);
+                break;
+
+            case ScenePass.Forward:
+                // Everything forward draws over the LIT image, so the light has to be there first.
+                RecordShading();
+                BeginForwardPass(scene);
+                break;
+        }
+    }
+
+    /// <summary>Opens the pass that writes the G-buffer.</summary>
+    private void BeginGeometryPass(SceneTargetSet scene)
+    {
         // The whole G-buffer cleared at once: coverage, normal, material and baked light all read as
         // nothing where no surface reached, and the shading tests the depth rather than any of them.
         ClosePass();
@@ -160,7 +190,7 @@ public sealed partial class GraphicsDevice
                 RhiClearColor.Transparent);
         }
 
-        _geometryPass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
+        _scenePass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             attachments,
             new RhiDepthAttachment(
                 scene.View(SceneTargetId.Depth),
@@ -173,8 +203,98 @@ public sealed partial class GraphicsDevice
             _profiler.Time(RenderStage.Geometry),
             Label: "geometry"));
 
-        _geometryPass.SetViewport(0, 0, scene.Width, scene.Height, 0f, 1f);
-        _geometryPass.SetScissor(0, 0, scene.Width, scene.Height);
+        ApplySceneViewport(_scenePass);
+    }
+
+    /// <summary>Opens the pass that draws over the lit image, against the depth the geometry wrote.</summary>
+    /// <remarks>
+    /// Both loaded rather than cleared: the colour is the shaded scene the translucency goes over, and
+    /// the depth is what hides a muzzle flash behind a wall. Stored, because every pass after reads both.
+    /// </remarks>
+    private void BeginForwardPass(SceneTargetSet scene)
+    {
+        ClosePass();
+
+        _scenePass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
+            [new RhiColorAttachment(scene.View(SceneTargetId.Lit), RhiLoadOp.Load, RhiStoreOp.Store, RhiClearColor.Transparent)],
+            new RhiDepthAttachment(scene.View(SceneTargetId.Depth), RhiLoadOp.Load, RhiStoreOp.Store, DepthClearValue: 0f),
+            _profiler.Time(RenderStage.Forward),
+            Label: "forward"));
+
+        ApplySceneViewport(_scenePass);
+    }
+
+    /// <summary>Points a scene pass at the scene's viewport, or at the first-person layer's sliver of it.</summary>
+    /// <param name="pass">The pass to set.</param>
+    /// <remarks>
+    /// The sliver spans the whole render, as the Vulkan original's does: the rig is drawn over the whole
+    /// view whatever sub-viewport the world was drawn in.
+    /// </remarks>
+    private void ApplySceneViewport(IRhiRenderPassEncoder pass)
+    {
+        if (_scene is not { } scene)
+        {
+            return;
+        }
+
+        if (_foreground)
+        {
+            pass.SetViewport(0, 0, scene.Width, scene.Height, Viewport.ForegroundDepthFloor, 1f);
+            pass.SetScissor(0, 0, scene.Width, scene.Height);
+            return;
+        }
+
+        Viewport view = _sceneViewport;
+        int width = view.Width > 0 ? view.Width : scene.Width;
+        int height = view.Height > 0 ? view.Height : scene.Height;
+
+        pass.SetViewport(
+            view.X,
+            view.Y,
+            width,
+            height,
+            view.MinDepth,
+            view.MaxDepth is 0f && view.MinDepth is 0f ? 1f : view.MaxDepth);
+
+        pass.SetScissor(Math.Max(0, view.X), Math.Max(0, view.Y), width, height);
+    }
+
+    /// <summary>Takes a viewport set while a capture is open, which is the scene's rather than the window's.</summary>
+    /// <param name="viewport">The viewport, in render coordinates.</param>
+    /// <returns><see langword="true"/> when a capture took it.</returns>
+    private bool TakeSceneViewport(in Viewport viewport)
+    {
+        if (!_capturing)
+        {
+            return false;
+        }
+
+        _sceneViewport = viewport;
+
+        if (_scenePass is { } pass)
+        {
+            ApplySceneViewport(pass);
+        }
+
+        return true;
+    }
+
+    /// <summary>Moves the scene's draws into or out of the first-person layer's sliver of the depth range.</summary>
+    /// <param name="foreground">Whether what follows is the first-person layer.</param>
+    /// <remarks>
+    /// Instead of the depth clear the interface describes. Inside a capture the depth is not only this
+    /// pass's test: it is what every pass after reads, and clearing it would leave them a scene holding
+    /// nothing but the held weapon. The sliver gives the rig a depth range no wall can reach into, which
+    /// is what the clear was for. See <see cref="Viewport.ForegroundDepthFloor"/>.
+    /// </remarks>
+    private void SetForegroundLayer(bool foreground)
+    {
+        _foreground = foreground;
+
+        if (_scenePass is { } pass)
+        {
+            ApplySceneViewport(pass);
+        }
     }
 
     /// <inheritdoc/>
@@ -194,13 +314,14 @@ public sealed partial class GraphicsDevice
     {
         ThrowIfDisposed();
         CurrentPass = ScenePass.None;
-        CloseGeometryPass();
+        CloseScenePass();
     }
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Where the G-buffer becomes light. The shading is recorded here rather than by the resolve so that
-    /// the capture is finished when it says it is, whatever the caller does between the two.
+    /// Where the G-buffer becomes light, if nothing forward asked for it earlier. Recorded here rather
+    /// than by the resolve so that the capture is finished when it says it is, whatever the caller does
+    /// between the two.
     /// </remarks>
     public void EndSceneCapture()
     {
@@ -211,7 +332,7 @@ public sealed partial class GraphicsDevice
             return;
         }
 
-        CloseGeometryPass();
+        CloseScenePass();
         RecordShading();
 
         _capturing = false;
@@ -267,17 +388,20 @@ public sealed partial class GraphicsDevice
     }
 
     /// <summary>Records the shading: the whole G-buffer read back as textures, over one triangle.</summary>
+    /// <remarks>Once a capture, whichever of the forward pass and the capture's end asks first.</remarks>
     private void RecordShading()
     {
-        if (_scene is not { } scene || _shading is not { } shading)
+        if (_shaded || _scene is not { } scene || _shading is not { } shading)
         {
             return;
         }
 
+        _shaded = true;
+
         // Nothing else may be open: a render pass begun inside another is not nesting, it is undefined,
         // and the encoder that ends the outer one afterwards ends something that is no longer there.
         ClosePass();
-        CloseGeometryPass();
+        CloseScenePass();
 
         RecordSky();
 
@@ -382,7 +506,7 @@ public sealed partial class GraphicsDevice
         TextureHandle lightmap,
         BlendMode blend)
     {
-        if (_geometryPass is not { } pass || _geometryPipelines is not { } pipelines)
+        if (_scenePass is not { } pass || _geometryPipelines is not { } pipelines)
         {
             return;
         }
@@ -421,7 +545,7 @@ public sealed partial class GraphicsDevice
     /// <returns><see langword="true"/> when it was drawn.</returns>
     private bool DrawGeometry(in MeshDrawCall call, in Matrix4f modelView, BlendMode blend)
     {
-        if (_geometryPass is not { } pass || _geometryPipelines is not { } pipelines)
+        if (_scenePass is not { } pass || _geometryPipelines is not { } pipelines)
         {
             return false;
         }
@@ -438,16 +562,55 @@ public sealed partial class GraphicsDevice
             _surfaceGroup);
     }
 
-    private void CloseGeometryPass()
+    /// <summary>Records one mesh over the lit image, in the capture's forward pass.</summary>
+    /// <param name="call">What to draw.</param>
+    /// <param name="ranges">Which parts of it, or empty for the call's own range.</param>
+    /// <param name="modelView">Its transform into view space.</param>
+    /// <param name="blend">How it is blended.</param>
+    /// <param name="hasLightmap">Whether it carries a lightmap.</param>
+    /// <remarks>
+    /// The same forward shader and the same block as the direct path, built for the lit image instead of
+    /// the frame. Glazing is not drawn: it has a pipeline of its own that has not moved onto this path,
+    /// and a pane drawn as ordinary translucency is a window that looks finished and is not.
+    /// </remarks>
+    private void DrawForward(
+        in MeshDrawCall call,
+        ReadOnlySpan<MeshDrawRange> ranges,
+        in Matrix4f modelView,
+        BlendMode blend,
+        bool hasLightmap)
     {
-        if (_geometryPass is not { } pass)
+        if (_material.Glass || _scenePass is not { } pass || _forwardPipelines is not { } pipelines)
+        {
+            return;
+        }
+
+        Span<float> push = stackalloc float[ForwardPushBlock.Floats];
+        WriteForward(push, modelView, blend, hasLightmap, _sceneExposure);
+
+        IRhiRenderPipeline pipeline = pipelines.ForState(_depthState, _cullMode, blend, _alphaReference);
+
+        if (ranges.IsEmpty)
+        {
+            _meshes.Draw(pass, pipeline, call, MemoryMarshal.AsBytes(push), _frameCounter, _cubeGroup);
+        }
+        else
+        {
+            _meshes.DrawRanges(pass, pipeline, call, ranges, MemoryMarshal.AsBytes(push), _frameCounter, _cubeGroup);
+        }
+    }
+
+    /// <summary>Closes whichever of the scene's passes is open.</summary>
+    private void CloseScenePass()
+    {
+        if (_scenePass is not { } pass)
         {
             return;
         }
 
         pass.EndPass();
         pass.Dispose();
-        _geometryPass = null;
+        _scenePass = null;
     }
 
     /// <summary>Builds everything the deferred frame needs, at the size it is asked for.</summary>
@@ -494,6 +657,18 @@ public sealed partial class GraphicsDevice
 
         _shading = new DeferredLighting(_device, FramesInFlight, SceneTargetSet.FormatOf(SceneTargetId.Lit));
 
+        // The forward shader over the lit image: the one the frame draws with, built for the lit format
+        // and the scene's depth, and handed the level's fog and sun as that one was.
+        _forwardPipelines = new Mesh3DPipelineCache(
+            _device,
+            _materialLayout,
+            _cubeLayout,
+            SceneTargetSet.FormatOf(SceneTargetId.Lit),
+            SceneTargetSet.FormatOf(SceneTargetId.Depth));
+
+        _forwardPipelines.SetFog(_fog.Colour, _fog.DensityPerMetre);
+        _forwardPipelines.SetSun(_sceneSunAmbient, _sceneSunColour);
+
         // The atmosphere's tables never change place, so the shading is pointed at them once. Until they
         // were, it read the stand-ins: a sky of flat white and an ambient of nothing.
         _sky = new SkyAtmosphere(_device, FramesInFlight);
@@ -537,8 +712,8 @@ public sealed partial class GraphicsDevice
 
     private void DisposeDeferred()
     {
-        _geometryPass?.Dispose();
-        _geometryPass = null;
+        _scenePass?.Dispose();
+        _scenePass = null;
 
         _sceneResolve?.Dispose();
         _sceneResolve = null;
@@ -548,6 +723,8 @@ public sealed partial class GraphicsDevice
         _shading = null;
         _geometryPipelines?.Dispose();
         _geometryPipelines = null;
+        _forwardPipelines?.Dispose();
+        _forwardPipelines = null;
 
         _surfaceGroup?.Dispose();
         _surfaceGroup = null;
