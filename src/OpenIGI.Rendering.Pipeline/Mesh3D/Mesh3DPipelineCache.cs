@@ -1,0 +1,333 @@
+using OpenIGI.Core.Numerics;
+using OpenIGI.Rendering.Rhi;
+using OpenIGI.Shaders;
+
+namespace OpenIGI.Rendering.Pipeline.Mesh3D;
+
+/// <summary>
+/// The world pipeline: one graphics pipeline per distinct render state of the 3D forward draw, built on
+/// demand and kept, over a layout that binds a material and an environment cube.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Depth behaviour, face culling and blending are baked into a pipeline, so each combination the world
+/// draws with is its own object. Rather than enumerate the whole product up front — most combinations
+/// never occur — one is built the first time its state is asked for. In practice the world uses a
+/// handful.
+/// </para>
+/// <para>
+/// Two vertex streams: the pose the mesh holds now and the pose it held before. The first-person rig is
+/// skinned like a body and drawn through here, so it blends between the two as bodies do.
+/// </para>
+/// </remarks>
+public sealed class Mesh3DPipelineCache : IDisposable
+{
+    /// <summary>How many bytes of push data the forward mesh shader reads.</summary>
+    /// <remarks>
+    /// Exactly the 128 the hardware guarantees, and every float is spoken for: the model-view fills
+    /// sixteen, the normal matrix nine, and the rest carry the marker, the exposure, the pose blend, the
+    /// key colour, the material and the lightmap scale. Nothing more fits, which is why the cut-out
+    /// threshold, the fog and the sun are constants instead.
+    /// </remarks>
+    public const int PushDataBytes = sizeof(float) * 32;
+
+    private readonly IRhiDevice _device;
+    private readonly RhiTextureFormat _targetFormat;
+    private readonly RhiTextureFormat _depthFormat;
+    private readonly IRhiShaderModule _module;
+    private readonly string _vertexEntryPoint;
+    private readonly string _fragmentEntryPoint;
+    private readonly Dictionary<Mesh3DPipelineKey, IRhiRenderPipeline> _pipelines = [];
+    private Vector3f _fogColour;
+    private float _fogDensity;
+    private Vector3f _sunAmbient;
+    private Vector3f _sunColour;
+    private bool _disposed;
+
+    /// <summary>Initialises a new instance of the <see cref="Mesh3DPipelineCache"/> class.</summary>
+    /// <param name="device">The device the pipelines live on.</param>
+    /// <param name="targetFormat">The format of the colour attachment they draw into.</param>
+    /// <param name="depthFormat">The format of the depth attachment.</param>
+    public Mesh3DPipelineCache(
+        IRhiDevice device,
+        RhiTextureFormat targetFormat,
+        RhiTextureFormat depthFormat)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+
+        _device = device;
+        _targetFormat = targetFormat;
+        _depthFormat = depthFormat;
+
+        ShaderReflection reflection = ShaderCatalog.GetReflection(ShaderModuleId.Mesh3D);
+        _vertexEntryPoint = reflection.EntryPointFor(ShaderStage.Vertex).Name;
+        _fragmentEntryPoint = reflection.EntryPointFor(ShaderStage.Fragment).Name;
+
+        _module = device.CreateShaderModule(new RhiShaderModuleDescriptor(ShaderModuleId.Mesh3D, Label: "Mesh3D"));
+
+        MaterialLayout = CreateMaterialLayout(device);
+        CubeLayout = CreateCubeLayout(device);
+
+        Layout = device.CreatePipelineLayout(new RhiPipelineLayoutDescriptor(
+            [MaterialLayout, CubeLayout],
+            PushDataBytes,
+            RhiShaderStages.Vertex | RhiShaderStages.Fragment,
+            "Mesh3D"));
+    }
+
+    /// <summary>Gets the layout binding the diffuse, lightmap and detail textures.</summary>
+    public IRhiBindGroupLayout MaterialLayout { get; }
+
+    /// <summary>Gets the layout binding the environment cube a reflective draw samples.</summary>
+    /// <remarks>
+    /// A second group rather than more slots on the material's, because that one is shared with the
+    /// shadow and geometry paths: a group is built per texture pairing and reused by whichever pipeline
+    /// draws it, so widening it would make every world draw in the frame carry a binding only water
+    /// reads.
+    /// </remarks>
+    public IRhiBindGroupLayout CubeLayout { get; }
+
+    /// <summary>Gets the pipeline layout every variant shares.</summary>
+    public IRhiPipelineLayout Layout { get; }
+
+    /// <summary>Gets how many variants have been built.</summary>
+    public int Count => _pipelines.Count;
+
+    /// <summary>Sets the scene's fog, throwing the variants away when it changes.</summary>
+    /// <param name="colour">The colour a surface tends to with distance.</param>
+    /// <param name="density">The extinction per metre; zero is no fog.</param>
+    /// <remarks>
+    /// A level's fog is a constant, so it is baked into the variants rather than pushed — there is no
+    /// push room, and nothing about it varies within a mission. Changing it therefore discards the
+    /// cache, which is why this is only ever called when a mission loads.
+    /// </remarks>
+    public void SetFog(Vector3f colour, float density)
+    {
+        if (colour == _fogColour && density.Equals(_fogDensity))
+        {
+            return;
+        }
+
+        _fogColour = colour;
+        _fogDensity = density;
+        DiscardVariants();
+    }
+
+    /// <summary>Sets the fixed-function sun's colours, throwing the variants away when they change.</summary>
+    /// <param name="ambient">The flat light an unlightmapped vertex receives.</param>
+    /// <param name="colour">The sun's diffuse colour.</param>
+    public void SetSun(Vector3f ambient, Vector3f colour)
+    {
+        if (ambient == _sunAmbient && colour == _sunColour)
+        {
+            return;
+        }
+
+        _sunAmbient = ambient;
+        _sunColour = colour;
+        DiscardVariants();
+    }
+
+    /// <summary>Gets the pipeline for one render state, building it on first use.</summary>
+    /// <param name="depth">How the draw interacts with the depth buffer.</param>
+    /// <param name="cull">Which triangle facings the draw discards.</param>
+    /// <param name="blend">How fragments combine with the target.</param>
+    /// <param name="alphaReference">The cut-out threshold out of 255, baked into the variant.</param>
+    /// <param name="reflective">Whether the variant samples the bound environment cube.</param>
+    /// <returns>The matching pipeline.</returns>
+    public IRhiRenderPipeline ForState(
+        DepthState depth,
+        CullMode cull,
+        BlendMode blend,
+        byte alphaReference = Mesh3DConstants.DefaultAlphaReference,
+        bool reflective = false)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        Mesh3DPipelineKey key = new(depth, cull, blend, alphaReference, reflective);
+
+        if (_pipelines.TryGetValue(key, out IRhiRenderPipeline? existing))
+        {
+            return existing;
+        }
+
+        IRhiRenderPipeline pipeline = Create(key);
+        _pipelines[key] = pipeline;
+        return pipeline;
+    }
+
+    /// <summary>The two vertex streams the forward mesh shader reads.</summary>
+    /// <returns>The current pose at slot zero, the previous pose at slot one.</returns>
+    /// <remarks>
+    /// The previous stream carries only a position and a normal: everything else about a vertex — its
+    /// texture coordinates, its colour — is the same in both poses, so reading it twice would be two
+    /// fetches for one value.
+    /// </remarks>
+    public static IReadOnlyList<RhiVertexBufferLayout> VertexLayouts() =>
+    [
+        new RhiVertexBufferLayout(
+            Vertex3D.Size,
+            RhiVertexStepMode.Vertex,
+            [
+                new RhiVertexElement(0, RhiVertexFormat.Float32x3, 0),
+                new RhiVertexElement(1, RhiVertexFormat.Float32x3, 12),
+                new RhiVertexElement(2, RhiVertexFormat.Float32x2, 24),
+                new RhiVertexElement(3, RhiVertexFormat.Float32x2, 32),
+                new RhiVertexElement(4, RhiVertexFormat.Unorm8x4, Vertex3D.ColourOffset),
+            ]),
+        new RhiVertexBufferLayout(
+            Vertex3D.Size,
+            RhiVertexStepMode.Vertex,
+            [
+                new RhiVertexElement(5, RhiVertexFormat.Float32x3, 0),
+                new RhiVertexElement(6, RhiVertexFormat.Float32x3, 12),
+            ]),
+    ];
+
+    /// <summary>The layout binding a draw's material: three textures, each with its own sampler.</summary>
+    /// <param name="device">The device to create it on.</param>
+    /// <returns>The layout.</returns>
+    /// <remarks>
+    /// The diffuse at zero, the baked lightmap at two and the derived surface detail at four, each with
+    /// its sampler in the slot after it. The detail pair is declared although the forward shader never
+    /// samples it: only the geometry pass reads the detail, and reserving its slots keeps one shape for
+    /// a group that several pipelines share.
+    /// </remarks>
+    public static IRhiBindGroupLayout CreateMaterialLayout(IRhiDevice device)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+
+        List<RhiBindGroupLayoutEntry> entries = [];
+
+        for (int i = 0; i < 6; i++)
+        {
+            entries.Add(new RhiBindGroupLayoutEntry(
+                i,
+                i % 2 == 0 ? RhiBindingType.SampledTexture : RhiBindingType.Sampler,
+                RhiShaderStages.Fragment));
+        }
+
+        return device.CreateBindGroupLayout(new RhiBindGroupLayoutDescriptor(entries, "mesh3d-material"));
+    }
+
+    /// <summary>The layout binding the environment cube.</summary>
+    /// <param name="device">The device to create it on.</param>
+    /// <returns>The layout.</returns>
+    public static IRhiBindGroupLayout CreateCubeLayout(IRhiDevice device)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+
+        return device.CreateBindGroupLayout(new RhiBindGroupLayoutDescriptor(
+            [
+                new RhiBindGroupLayoutEntry(
+                    0,
+                    RhiBindingType.SampledTexture,
+                    RhiShaderStages.Fragment,
+                    ViewDimension: RhiTextureViewDimension.Cube),
+                new RhiBindGroupLayoutEntry(1, RhiBindingType.Sampler, RhiShaderStages.Fragment),
+            ],
+            "mesh3d-cube"));
+    }
+
+    /// <summary>How a depth state is stated to the RHI.</summary>
+    /// <param name="state">The state.</param>
+    /// <param name="format">The depth format that will be attached.</param>
+    /// <returns>The depth state, or null for a pipeline that neither tests nor writes depth.</returns>
+    /// <remarks>
+    /// Reverse-Z: nearer geometry has the greater depth value, so the test keeps the greater one.
+    /// </remarks>
+    public static RhiDepthStencilState? DepthStateFor(DepthState state, RhiTextureFormat format) =>
+        state is DepthState.Disabled
+            ? new RhiDepthStencilState(format, DepthWrite: false, RhiCompare.Always)
+            : new RhiDepthStencilState(
+                format,
+                state is DepthState.TestAndWrite,
+                RhiCompare.GreaterEqual);
+
+    /// <summary>How a blend mode is stated to the RHI, or null for one that writes outright.</summary>
+    /// <param name="blend">The blend mode.</param>
+    /// <returns>The blend state.</returns>
+    public static RhiBlendState? BlendFor(BlendMode blend) => blend switch
+    {
+        BlendMode.Opaque => null,
+        BlendMode.AlphaBlend => new RhiBlendState(
+            RhiBlendComponent.AlphaBlend,
+            new RhiBlendComponent(RhiBlendFactor.One, RhiBlendFactor.OneMinusSourceAlpha, RhiBlendOperation.Add)),
+        BlendMode.Additive => new RhiBlendState(
+            new RhiBlendComponent(RhiBlendFactor.SourceAlpha, RhiBlendFactor.One, RhiBlendOperation.Add),
+            new RhiBlendComponent(RhiBlendFactor.One, RhiBlendFactor.One, RhiBlendOperation.Add)),
+
+        // src*dst + dst*src. The alpha is left alone: this pass multiplies a colour in and has no
+        // coverage of its own.
+        BlendMode.Modulate2X => new RhiBlendState(
+            new RhiBlendComponent(RhiBlendFactor.Destination, RhiBlendFactor.Source, RhiBlendOperation.Add),
+            new RhiBlendComponent(RhiBlendFactor.Zero, RhiBlendFactor.One, RhiBlendOperation.Add)),
+        _ => throw new ArgumentOutOfRangeException(nameof(blend), blend, "There is no world pipeline for that blend mode."),
+    };
+
+    /// <summary>Which facing a cull mode discards.</summary>
+    /// <param name="mode">The mode.</param>
+    /// <returns>The RHI's cull mode.</returns>
+    /// <remarks>
+    /// The front face is counter-clockwise, as OpenGL's is, so the rule maps exactly as GL's does: cull
+    /// front for Clockwise, back for CounterClockwise.
+    /// </remarks>
+    public static RhiCullMode CullFor(CullMode mode) => mode switch
+    {
+        CullMode.Clockwise => RhiCullMode.Front,
+        CullMode.CounterClockwise => RhiCullMode.Back,
+        _ => RhiCullMode.None,
+    };
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
+        DiscardVariants();
+        Layout.Dispose();
+        CubeLayout.Dispose();
+        MaterialLayout.Dispose();
+        _module.Dispose();
+    }
+
+    private IRhiRenderPipeline Create(Mesh3DPipelineKey key)
+    {
+        // The vertex stage declares the reflection constant as well -- it is what builds the direction --
+        // and a constant supplied to one stage and not the other is two shaders that disagree about
+        // whether the varying between them means anything.
+        IReadOnlyDictionary<int, uint> constants = Mesh3DConstants.Describe(
+            key.AlphaReference,
+            key.Reflective,
+            _fogColour,
+            _fogDensity,
+            _sunAmbient,
+            _sunColour);
+
+        return _device.CreateRenderPipeline(new RhiRenderPipelineDescriptor(
+            Layout,
+            new RhiShaderStage(_module, _vertexEntryPoint, constants),
+            new RhiShaderStage(_module, _fragmentEntryPoint, constants),
+            VertexLayouts(),
+            [new RhiColorTargetState(_targetFormat, BlendFor(key.Blend))],
+            DepthStateFor(key.Depth, _depthFormat),
+            new RhiPrimitiveState(RhiPrimitiveTopology.TriangleList, CullFor(key.Cull)),
+            SampleCount: 1,
+            $"Mesh3D-{key.Depth}-{key.Cull}-{key.Blend}-{key.AlphaReference}{(key.Reflective ? "-reflective" : string.Empty)}"));
+    }
+
+    private void DiscardVariants()
+    {
+        foreach (IRhiRenderPipeline pipeline in _pipelines.Values)
+        {
+            pipeline.Dispose();
+        }
+
+        _pipelines.Clear();
+    }
+}
