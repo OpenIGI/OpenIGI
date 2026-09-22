@@ -21,4 +21,7 @@ public enum ShaderModuleId
 {
     /// <summary>The screen-space shader every 2D draw funnels through.</summary>
     Sprite2D,
+
+    /// <summary>Distance-field text: crisp glyph edges at any size, with an outline and a glow.</summary>
+    SdfText,
 }

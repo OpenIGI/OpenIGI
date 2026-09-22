@@ -4,6 +4,10 @@
     {
       "id": "Sprite2D",
       "source": "Ui/Sprite2D.slang"
+    },
+    {
+      "id": "SdfText",
+      "source": "Ui/SdfText.slang"
     }
   ]
 }
