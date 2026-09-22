@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The raw wgpu-native binding: the C API as C#, and nothing else. Everything in Generated/ is
+       written by tools/OpenIGI.Tools.WebGpuBind from the headers in native/ and committed, so a
+       contributor builds without the generator and a diff shows what a header change actually did.
+
+       Unsafe throughout, on purpose. Descriptors are filled in place and their addresses passed;
+       nothing is marshalled, and a binding that copied every descriptor would be a per-call cost on
+       the hottest path there is. -->
+
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="native\**" />
+  </ItemGroup>
+
+</Project>

@@ -7,16 +7,18 @@ on:
     branches: [ master, develop ]
 
 jobs:
-  # The shader library is compiled ahead of time and its output committed, so that a contributor without
-  # slangc can still build and run the game. This is what stops that output going stale: a source edited
-  # without its compiled form following is a game that draws last week's shader.
+  # Two things in this repository are generated and committed: the compiled shaders, and the WebGPU
+  # bindings. Both are committed so that a contributor without slangc -- or without any interest in the
+  # web backend -- can still build and run the game. This is what stops either going stale: a source
+  # edited without its generated form following is a game that draws last week's shader, or a binding
+  # that no longer matches the header it is called through.
   #
   # Windows, and the tagged Windows download, because that is the pairing that was actually measured
   # against the committed output: it and the Vulkan SDK's own build of the same release produce
   # byte-identical SPIR-V for every artefact. Another platform's build of it very likely does too and has
   # not been checked, so it is not what the gate runs on.
-  shaders:
-    name: shader-library
+  generated:
+    name: generated-artefacts
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,8 +41,13 @@ jobs:
           Expand-Archive -Path slang.zip -DestinationPath "$env:RUNNER_TEMP/slang" -Force
           "OPENIGI_SLANGC=$env:RUNNER_TEMP/slang/bin/slangc.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Check the committed output
+      - name: Check the committed shaders
         run: dotnet run --project tools/OpenIGI.Tools.ShaderBuild --configuration Release -- --check
+
+      # The WebGPU bindings are generated from the headers committed beside them, so this needs no
+      # native toolchain at all -- only the same dotnet the step above already set up.
+      - name: Check the committed WebGPU bindings
+        run: dotnet run --project tools/OpenIGI.Tools.WebGpuBind --configuration Release -- --check
 
   build:
     name: build-and-test (${{ matrix.os }})
