@@ -2,6 +2,8 @@
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
+using ShaderStage = OpenIGI.Rendering.Vulkan.Shaders.ShaderStage;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
@@ -106,6 +108,12 @@ internal sealed unsafe class VulkanComputePass : IDisposable
     // compiled pipeline instead of building this one again.
     private readonly PipelineCache _pipelineCache;
     private readonly VulkanShaderModule _module;
+    private readonly string _entryPoint;
+
+    // Whether a sampled image binds as an image and a sampler apart. True for a pass whose shader came
+    // from the library, which must declare the two separately; false for one still compiled from GLSL,
+    // whose sampled images are combined objects. Both forms exist until every compute pass has moved.
+    private readonly bool _splitSamplers;
     private readonly DescriptorSetLayout _setLayout;
     private readonly PipelineLayout _pipelineLayout;
     private readonly Pipeline _pipeline;
@@ -160,6 +168,8 @@ internal sealed unsafe class VulkanComputePass : IDisposable
             _device,
             compiler.Compile(source, ShaderStage.Compute, name),
             ShaderStage.Compute);
+        _entryPoint = "main";
+        _splitSamplers = false;
 
         _sampler = CreateSampler();
         _setLayout = CreateSetLayout();
@@ -184,6 +194,96 @@ internal sealed unsafe class VulkanComputePass : IDisposable
             }
         }
     }
+
+    /// <summary>Initialises a pass from one of the shader library's compute modules.</summary>
+    /// <param name="vk">The core Vulkan API.</param>
+    /// <param name="device">The device the pass lives on.</param>
+    /// <param name="allocator">The allocator its parameter buffers come from.</param>
+    /// <param name="module">The compute module.</param>
+    /// <param name="bindings">
+    /// What each binding holds, in the order the shader declares them. A sampled image takes TWO
+    /// descriptor slots -- the image, then its sampler -- because a module in the library declares the
+    /// two apart; the pass works that out, so this list is the same one the GLSL form took.
+    /// </param>
+    /// <param name="parameterBytes">How large the parameter block is. Zero for a pass that takes none.</param>
+    /// <param name="framesInFlight">How many frames may be recorded before one completes.</param>
+    /// <exception cref="GraphicsDeviceException">The pass could not be created.</exception>
+    public VulkanComputePass(
+        Vk vk,
+        VulkanDevice device,
+        VulkanAllocator allocator,
+        ShaderModuleId module,
+        ReadOnlySpan<ComputeBindingKind> bindings,
+        int parameterBytes,
+        int framesInFlight)
+    {
+        ArgumentNullException.ThrowIfNull(vk);
+        ArgumentNullException.ThrowIfNull(device);
+        ArgumentNullException.ThrowIfNull(allocator);
+
+        _vk = vk;
+        _device = device.Device;
+        _pipelineCache = device.PipelineCache;
+        _bindings = bindings.ToArray();
+        _paramSize = parameterBytes;
+        _frames = Math.Max(1, framesInFlight);
+
+        _splitSamplers = true;
+
+        ShaderReflection reflection = ShaderCatalog.GetReflection(module);
+        _entryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Compute).Name;
+        _module = new VulkanShaderModule(
+            vk,
+            _device,
+            ShaderCatalog.GetSpirv(module).Span,
+            ShaderStage.Compute,
+            _entryPoint);
+
+        _sampler = CreateSampler();
+        _setLayout = CreateSetLayout();
+        _pipelineLayout = CreatePipelineLayout();
+        _pipeline = CreatePipeline(module.ToString());
+        _pool = CreatePool();
+
+        _sets = new DescriptorSet[_frames];
+        _params = new VulkanBuffer[_frames];
+        for (int i = 0; i < _frames; i++)
+        {
+            _sets[i] = AllocateSet();
+            if (_paramSize > 0)
+            {
+                _params[i] = new VulkanBuffer(
+                    vk,
+                    device,
+                    allocator,
+                    (ulong)_paramSize,
+                    BufferUsageFlags.UniformBufferBit,
+                    MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+            }
+        }
+    }
+
+    /// <summary>Whether a logical binding is read through a sampler.</summary>
+    private static bool IsSampled(ComputeBindingKind kind) =>
+        kind is ComputeBindingKind.SampledImage or ComputeBindingKind.SampledStorageImage;
+
+    /// <summary>Whether a logical binding takes a second slot for its sampler.</summary>
+    private bool TakesSamplerSlot(ComputeBindingKind kind) => _splitSamplers && IsSampled(kind);
+
+    /// <summary>The descriptor slot a logical binding starts at, sampled ones taking two each.</summary>
+    private uint SlotOf(int logicalIndex)
+    {
+        uint slot = 0;
+        for (int i = 0; i < logicalIndex; i++)
+        {
+            slot += TakesSamplerSlot(_bindings[i]) ? 2u : 1u;
+        }
+
+        return slot;
+    }
+
+    /// <summary>How many descriptor slots the bindings occupy, before the parameter block.</summary>
+    private uint SlotCount => SlotOf(_bindings.Length);
 
     /// <summary>Gets the sampler the pass reads its sampled images through.</summary>
     /// <remarks>Linear and clamped, which is what every lookup table this backend samples wants.</remarks>
@@ -257,16 +357,22 @@ internal sealed unsafe class VulkanComputePass : IDisposable
         _ => DescriptorType.StorageImage,
     };
 
+    /// <summary>The descriptor an image binding takes, given how this pass binds its samplers.</summary>
+    private DescriptorType ImageTypeOf(ComputeBindingKind kind) =>
+        TakesSamplerSlot(kind) ? DescriptorType.SampledImage : TypeOf(kind);
+
     private void WriteSet(int frame, ReadOnlySpan<ComputeResource> resources)
     {
-        int count = _bindings.Length + (_paramSize > 0 ? 1 : 0);
+        int count = (int)SlotCount + (_paramSize > 0 ? 1 : 0);
         DescriptorImageInfo* images = stackalloc DescriptorImageInfo[Math.Max(1, _bindings.Length)];
+        DescriptorImageInfo* samplers = stackalloc DescriptorImageInfo[Math.Max(1, _bindings.Length)];
         WriteDescriptorSet* writes = stackalloc WriteDescriptorSet[Math.Max(1, count)];
         AccelerationStructureKHR* structures = stackalloc AccelerationStructureKHR[Math.Max(1, _bindings.Length)];
         WriteDescriptorSetAccelerationStructureKHR* sceneInfos =
             stackalloc WriteDescriptorSetAccelerationStructureKHR[Math.Max(1, _bindings.Length)];
         DescriptorBufferInfo* buffers = stackalloc DescriptorBufferInfo[Math.Max(1, _bindings.Length)];
 
+        int emitted = 0;
         for (int i = 0; i < _bindings.Length; i++)
         {
             ComputeBindingKind kind = _bindings[i];
@@ -282,11 +388,11 @@ internal sealed unsafe class VulkanComputePass : IDisposable
                     // to find out.
                     Range = resources[i].Bytes > 0 ? resources[i].Bytes : Vk.WholeSize,
                 };
-                writes[i] = new WriteDescriptorSet
+                writes[emitted++] = new WriteDescriptorSet
                 {
                     SType = StructureType.WriteDescriptorSet,
                     DstSet = _sets[frame],
-                    DstBinding = (uint)i,
+                    DstBinding = SlotOf(i),
                     DescriptorType = DescriptorType.StorageBuffer,
                     DescriptorCount = 1,
                     PBufferInfo = &buffers[i],
@@ -303,24 +409,23 @@ internal sealed unsafe class VulkanComputePass : IDisposable
                     AccelerationStructureCount = 1,
                     PAccelerationStructures = &structures[i],
                 };
-                writes[i] = new WriteDescriptorSet
+                writes[emitted++] = new WriteDescriptorSet
                 {
                     SType = StructureType.WriteDescriptorSet,
                     PNext = &sceneInfos[i],
                     DstSet = _sets[frame],
-                    DstBinding = (uint)i,
+                    DstBinding = SlotOf(i),
                     DescriptorType = DescriptorType.AccelerationStructureKhr,
                     DescriptorCount = 1,
                 };
                 continue;
             }
 
-            bool sampled = kind is ComputeBindingKind.SampledImage or ComputeBindingKind.SampledStorageImage;
+            bool sampled = IsSampled(kind);
             images[i] = new DescriptorImageInfo
             {
-                // The resource's own sampler where it brought one, and the pass's otherwise. See
-                // ComputeResource.Sampler for why a world texture cannot share the pass's.
-                Sampler = sampled
+                // A combined binding carries the sampler here; a split one binds it in the slot after.
+                Sampler = sampled && !_splitSamplers
                     ? (resources[i].Sampler.Handle != 0 ? resources[i].Sampler : _sampler)
                     : default,
                 ImageView = resources[i].View,
@@ -329,15 +434,34 @@ internal sealed unsafe class VulkanComputePass : IDisposable
                     : ImageLayout.General,
             };
 
-            writes[i] = new WriteDescriptorSet
+            writes[emitted++] = new WriteDescriptorSet
             {
                 SType = StructureType.WriteDescriptorSet,
                 DstSet = _sets[frame],
-                DstBinding = (uint)i,
-                DescriptorType = TypeOf(_bindings[i]),
+                DstBinding = SlotOf(i),
+                DescriptorType = ImageTypeOf(_bindings[i]),
                 DescriptorCount = 1,
                 PImageInfo = &images[i],
             };
+
+            if (TakesSamplerSlot(kind))
+            {
+                // The resource's own sampler where it brought one, and the pass's otherwise. See
+                // ComputeResource.Sampler for why a world texture cannot share the pass's.
+                samplers[i] = new DescriptorImageInfo
+                {
+                    Sampler = resources[i].Sampler.Handle != 0 ? resources[i].Sampler : _sampler,
+                };
+                writes[emitted++] = new WriteDescriptorSet
+                {
+                    SType = StructureType.WriteDescriptorSet,
+                    DstSet = _sets[frame],
+                    DstBinding = SlotOf(i) + 1,
+                    DescriptorType = DescriptorType.Sampler,
+                    DescriptorCount = 1,
+                    PImageInfo = &samplers[i],
+                };
+            }
         }
 
         DescriptorBufferInfo paramInfo = default;
@@ -349,11 +473,11 @@ internal sealed unsafe class VulkanComputePass : IDisposable
                 Offset = 0,
                 Range = (ulong)_paramSize,
             };
-            writes[_bindings.Length] = new WriteDescriptorSet
+            writes[emitted] = new WriteDescriptorSet
             {
                 SType = StructureType.WriteDescriptorSet,
                 DstSet = _sets[frame],
-                DstBinding = (uint)_bindings.Length,
+                DstBinding = SlotCount,
                 DescriptorType = DescriptorType.UniformBuffer,
                 DescriptorCount = 1,
                 PBufferInfo = &paramInfo,
@@ -365,25 +489,39 @@ internal sealed unsafe class VulkanComputePass : IDisposable
 
     private DescriptorSetLayout CreateSetLayout()
     {
-        int count = _bindings.Length + (_paramSize > 0 ? 1 : 0);
+        int count = (int)SlotCount + (_paramSize > 0 ? 1 : 0);
         DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[Math.Max(1, count)];
 
+        int emitted = 0;
         for (int i = 0; i < _bindings.Length; i++)
         {
-            bindings[i] = new DescriptorSetLayoutBinding
+            bindings[emitted++] = new DescriptorSetLayoutBinding
             {
-                Binding = (uint)i,
-                DescriptorType = TypeOf(_bindings[i]),
+                Binding = SlotOf(i),
+                DescriptorType = ImageTypeOf(_bindings[i]),
                 DescriptorCount = 1,
                 StageFlags = ShaderStageFlags.ComputeBit,
             };
+
+            // A sampled image is a texture and a sampler in the shader library, so it takes the slot
+            // after its own as well.
+            if (TakesSamplerSlot(_bindings[i]))
+            {
+                bindings[emitted++] = new DescriptorSetLayoutBinding
+                {
+                    Binding = SlotOf(i) + 1,
+                    DescriptorType = DescriptorType.Sampler,
+                    DescriptorCount = 1,
+                    StageFlags = ShaderStageFlags.ComputeBit,
+                };
+            }
         }
 
         if (_paramSize > 0)
         {
-            bindings[_bindings.Length] = new DescriptorSetLayoutBinding
+            bindings[emitted] = new DescriptorSetLayoutBinding
             {
-                Binding = (uint)_bindings.Length,
+                Binding = SlotCount,
                 DescriptorType = DescriptorType.UniformBuffer,
                 DescriptorCount = 1,
                 StageFlags = ShaderStageFlags.ComputeBit,
@@ -423,7 +561,7 @@ internal sealed unsafe class VulkanComputePass : IDisposable
 
     private Pipeline CreatePipeline(string name)
     {
-        nint entryPoint = SilkMarshal.StringToPtr("main");
+        nint entryPoint = SilkMarshal.StringToPtr(_entryPoint);
         try
         {
             ComputePipelineCreateInfo createInfo = new()
@@ -453,7 +591,7 @@ internal sealed unsafe class VulkanComputePass : IDisposable
 
     private DescriptorPool CreatePool()
     {
-        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[5];
+        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[6];
         uint sampled = 0;
         uint storage = 0;
         uint scenes = 0;
@@ -483,9 +621,19 @@ internal sealed unsafe class VulkanComputePass : IDisposable
         {
             sizes[count++] = new DescriptorPoolSize
             {
-                Type = DescriptorType.CombinedImageSampler,
+                Type = _splitSamplers ? DescriptorType.SampledImage : DescriptorType.CombinedImageSampler,
                 DescriptorCount = sampled * (uint)_frames,
             };
+
+            if (_splitSamplers)
+            {
+                // Split, the image and its sampler are two descriptors rather than one.
+                sizes[count++] = new DescriptorPoolSize
+                {
+                    Type = DescriptorType.Sampler,
+                    DescriptorCount = sampled * (uint)_frames,
+                };
+            }
         }
 
         if (storage > 0)

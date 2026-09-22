@@ -1,6 +1,7 @@
 using OpenIGI.Rendering.Vulkan.Compute;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Deferred;
@@ -17,7 +18,7 @@ namespace OpenIGI.Rendering.Vulkan.Deferred;
 /// the second overwrite what the first has not yet read.
 /// </para>
 /// <para>
-/// See <see cref="BloomShaderSource"/> for why the sum has six terms and no threshold.
+/// See the Bloom modules in OpenIGI.Shaders for why the sum has six terms and no threshold.
 /// </para>
 /// </remarks>
 internal sealed unsafe class BloomPass : IDisposable
@@ -55,14 +56,12 @@ internal sealed unsafe class BloomPass : IDisposable
     /// <param name="device">The device the pass lives on.</param>
     /// <param name="allocator">The allocator backing the pyramid.</param>
     /// <param name="commands">The pool the initial transitions come from.</param>
-    /// <param name="compiler">The shader compiler.</param>
     /// <param name="framesInFlight">How many frames may be recorded before one completes.</param>
     public BloomPass(
         Vk vk,
         VulkanDevice device,
         VulkanAllocator allocator,
         VulkanCommands commands,
-        ShaderCompiler compiler,
         int framesInFlight)
     {
         _vk = vk;
@@ -71,17 +70,17 @@ internal sealed unsafe class BloomPass : IDisposable
         _commands = commands;
 
         _downsample = new VulkanComputePass(
-            vk, device, allocator, compiler, "bloom.downsample.comp", BloomShaderSource.Downsample,
+            vk, device, allocator, ShaderModuleId.BloomDownsample,
             [ComputeBindingKind.SampledStorageImage, ComputeBindingKind.StorageImage],
             32, framesInFlight * Levels);
 
         _blur = new VulkanComputePass(
-            vk, device, allocator, compiler, "bloom.blur.comp", BloomShaderSource.Blur,
+            vk, device, allocator, ShaderModuleId.BloomBlur,
             [ComputeBindingKind.SampledStorageImage, ComputeBindingKind.StorageImage],
             32, framesInFlight * Levels * 2);
 
         _combine = new VulkanComputePass(
-            vk, device, allocator, compiler, "bloom.combine.comp", BloomShaderSource.Combine,
+            vk, device, allocator, ShaderModuleId.BloomCombine,
             [
                 ComputeBindingKind.SampledStorageImage, ComputeBindingKind.SampledStorageImage,
                 ComputeBindingKind.SampledStorageImage, ComputeBindingKind.SampledStorageImage,
@@ -147,7 +146,7 @@ internal sealed unsafe class BloomPass : IDisposable
     /// <param name="litView">The lit scene the pyramid is built from.</param>
     /// <param name="threshold">
     /// The luminance a pixel must pass before it spills, or zero to spill everything. Zero is what the
-    /// reference asks for and what ultra carries; see <see cref="Shaders.BloomShaderSource"/>.
+    /// reference asks for and what ultra carries; see the BloomDownsample module.
     /// </param>
     /// <param name="intensity">The reference's bloom intensity.</param>
     public void Record(CommandBuffer cmd, int frame, ImageView litView, float intensity, float threshold)

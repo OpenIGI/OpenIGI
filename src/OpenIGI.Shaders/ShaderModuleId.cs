@@ -51,4 +51,13 @@ public enum ShaderModuleId
 
     /// <summary>The selection outline: a shell pushed out along the silhouette in screen space.</summary>
     Outline,
+
+    /// <summary>Bloom: halve the resolution with the four-tap box that also does the first blur.</summary>
+    BloomDownsample,
+
+    /// <summary>Bloom: one axis of the separable gaussian.</summary>
+    BloomBlur,
+
+    /// <summary>Bloom: sum the pyramid with the reference's per-stage tints.</summary>
+    BloomCombine,
 }

@@ -44,6 +44,18 @@
     {
       "id": "Outline",
       "source": "World/Outline.slang"
+    },
+    {
+      "id": "BloomDownsample",
+      "source": "Post/BloomDownsample.slang"
+    },
+    {
+      "id": "BloomBlur",
+      "source": "Post/BloomBlur.slang"
+    },
+    {
+      "id": "BloomCombine",
+      "source": "Post/BloomCombine.slang"
     }
   ]
 }

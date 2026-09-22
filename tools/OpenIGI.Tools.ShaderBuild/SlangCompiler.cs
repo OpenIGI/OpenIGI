@@ -87,6 +87,13 @@ public sealed class SlangCompiler
             sourcePath,
             "-target", target == SlangTarget.Spirv ? "spirv" : "wgsl",
             "-matrix-layout-column-major",
+
+            // Keep the entry point's own name in the SPIR-V. Slang otherwise renames a module's ONLY
+            // entry point to "main", so a module with one stage disagrees with the reflection that
+            // names it -- and a pipeline asking for the name the reflection gave fails to create, with
+            // nothing to say why. A module with two entry points keeps both names and would have hidden
+            // this until the first single-stage module was migrated.
+            "-fvk-use-entrypoint-name",
             "-o", codePath,
         ];
 
