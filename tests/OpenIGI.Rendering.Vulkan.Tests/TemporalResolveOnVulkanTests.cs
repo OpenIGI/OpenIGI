@@ -41,6 +41,7 @@ public sealed class TemporalResolveOnVulkanTests(ITestOutputHelper output)
             VulkanRhiDevice device = vulkan!.Rhi;
 
             using SceneTargetSet targets = new(device, Size, Size);
+            using ScreenSpacePasses screen = new(device, framesInFlight: 2);
             using TemporalResolve resolve = new(device, framesInFlight: 2);
 
             // Two frames, because the second is the first that has a history to read: a chain that only
@@ -52,6 +53,19 @@ public sealed class TemporalResolveOnVulkanTests(ITestOutputHelper output)
                     using (IRhiComputePassEncoder pass = encoder.BeginComputePass(
                         new RhiComputePassDescriptor(Label: "upscale")))
                     {
+                        // The whole of what a deferred frame runs between the geometry and the lighting,
+                        // in the order it runs it.
+                        screen.RecordVelocity(pass, targets, State(), frame);
+
+                        screen.RecordOcclusion(
+                            pass,
+                            targets,
+                            State(),
+                            new AmbientOcclusionSettings(),
+                            frame,
+                            frame,
+                            hasHistory: frame > 0);
+
                         resolve.Record(pass, targets, State(), TemporalResolveSettings.Default, frame);
                     }
 
@@ -62,7 +76,7 @@ public sealed class TemporalResolveOnVulkanTests(ITestOutputHelper output)
             }
 
             device.WaitIdle();
-            output.WriteLine($"ran the chain twice over {SceneTargetSet.Layout.Count} target(s)");
+            output.WriteLine($"ran the screen-space and temporal chain twice over {SceneTargetSet.Layout.Count} target(s)");
         }
     }
 
