@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Rendering;
+using OpenIGI.Rendering.Diagnostics;
 using OpenIGI.Rendering.Vulkan.Interop;
 using Silk.NET.Vulkan;
 
@@ -33,9 +34,6 @@ namespace OpenIGI.Rendering.Vulkan;
 /// </remarks>
 internal sealed unsafe class VulkanStageProfiler : IDisposable
 {
-    private const int RollingSamples = BenchmarkSchedule.MeasuredFrames;
-    private const int WarmUpFrames = BenchmarkSchedule.WarmUpFrames;
-
     // Timestamps per slot per frame. Two per stage range, and a frame times well under thirty ranges
     // (roughly twenty stages, a few of them more than once), so this is comfortable headroom.
     private const int SlotCapacity = 128;
@@ -52,26 +50,13 @@ internal sealed unsafe class VulkanStageProfiler : IDisposable
     private readonly int _slots;
     private readonly QueryPool _pool;
 
-    private readonly Queue<double>[] _samples = CreateSampleQueues();
-    private readonly double[] _sampleTotals = new double[StageCount];
-    private readonly double[] _peak = new double[StageCount];
-    private readonly bool[] _seen = new bool[StageCount];
-    private readonly bool[] _active = new bool[StageCount];
+    // The rolling statistics, which are not a graphics question and are shared with the renderer being
+    // built over the RHI: one copy of the window, the percentile, the peak and the warm-up rather than
+    // one per backend.
+    private readonly StageTimingLedger _ledger = new();
 
-    private readonly Queue<double> _totalSamples = new(RollingSamples);
-    private double _totalSampleSum;
-    private double _totalPeak;
-
-    // The whole frame, measured rather than added up. See MeasuredTiming for why the difference between
-    // this and the sum of the stages is the number that matters.
-    private readonly Queue<double> _measuredSamples = new(RollingSamples);
-    private double _measuredSampleSum;
-    private double _measuredPeak;
     private double _frameMeasured;
     private readonly bool[] _slotFramed;
-
-    // A frame's per-stage sums, reused as each slot's results are read back.
-    private readonly double[] _frameStage = new double[StageCount];
 
     // Per-slot recording state. Each slot's ranges name query indices inside that slot's block, and are
     // read back the next time the slot is used.
@@ -82,12 +67,9 @@ internal sealed unsafe class VulkanStageProfiler : IDisposable
     private readonly uint[] _slotOpenStart;
 
     private readonly ulong[] _readback = new ulong[SlotCapacity];
-    private readonly List<RenderStageTiming> _report = [];
 
     private bool _enabled;
-    private bool _reportStale = true;
     private bool _disposed;
-    private long _readFrames;
 
     /// <summary>Creates a profiler on a device that supports timestamps.</summary>
     /// <param name="vk">The core Vulkan API.</param>
@@ -125,19 +107,6 @@ internal sealed unsafe class VulkanStageProfiler : IDisposable
         QueryPool pool;
         VkCheck.Ok(_vk.CreateQueryPool(_device, &createInfo, null, &pool), "vkCreateQueryPool");
         _pool = pool;
-    }
-
-    private static int StageCount => Enum.GetValues<RenderStage>().Length;
-
-    private static Queue<double>[] CreateSampleQueues()
-    {
-        Queue<double>[] result = new Queue<double>[StageCount];
-        for (int i = 0; i < result.Length; i++)
-        {
-            result[i] = new Queue<double>(RollingSamples);
-        }
-
-        return result;
     }
 
     /// <summary>Gets or sets whether stages are timed.</summary>
@@ -266,70 +235,20 @@ internal sealed unsafe class VulkanStageProfiler : IDisposable
     }
 
     /// <summary>Gets the stages measured so far, in frame order.</summary>
-    public IReadOnlyList<RenderStageTiming> Timings()
-    {
-        if (!_reportStale)
-        {
-            return _report;
-        }
-
-        _report.Clear();
-        for (int i = 0; i < _seen.Length; i++)
-        {
-            Queue<double> samples = _samples[i];
-            double average = samples.Count > 0 ? _sampleTotals[i] / samples.Count : 0.0;
-            double p95 = samples.Count > 0
-                ? PerformanceStatistics.Percentile(samples.ToArray(), 0.95)
-                : 0.0;
-            _report.Add(new RenderStageTiming(
-                (RenderStage)i,
-                average,
-                p95,
-                _peak[i],
-                _active[i],
-                samples.Count));
-        }
-
-        _reportStale = false;
-        return _report;
-    }
+    public IReadOnlyList<RenderStageTiming> Timings() => _ledger.Timings();
 
     /// <summary>Gets the whole GPU frame as measured end to end, not as a sum of what was bracketed.</summary>
     /// <remarks>
-    /// The one figure that can see work nobody timed. Everything else this class reports is built out of
-    /// the stage ranges, so a pass recorded outside every range contributes to none of them and the
-    /// totals stay quietly wrong -- which is exactly how a millisecond of lamp-shadow tracing read as
-    /// free for a whole session. Subtract <see cref="TotalTiming"/> from this and the remainder is work
-    /// the GPU did that no stage claims.
+    /// The one figure that can see work nobody timed. Everything else reported here is built out of the
+    /// stage ranges, so a pass recorded outside every range contributes to none of them and the totals
+    /// stay quietly wrong -- which is exactly how a millisecond of lamp-shadow tracing read as free for
+    /// a whole session. Subtract <see cref="TotalTiming"/> from this and the remainder is work the GPU
+    /// did that no stage claims.
     /// </remarks>
-    public GpuFrameTiming MeasuredTiming()
-    {
-        if (_measuredSamples.Count == 0)
-        {
-            return default;
-        }
-
-        return new(
-            _measuredSampleSum / _measuredSamples.Count,
-            PerformanceStatistics.Percentile(_measuredSamples.ToArray(), 0.95),
-            _measuredPeak,
-            _measuredSamples.Count);
-    }
+    public GpuFrameTiming MeasuredTiming() => _ledger.MeasuredTiming();
 
     /// <summary>Gets the distribution of the per-frame sum, rather than a sum of stage percentiles.</summary>
-    public GpuFrameTiming TotalTiming()
-    {
-        if (_totalSamples.Count == 0)
-        {
-            return default;
-        }
-
-        return new(
-            _totalSampleSum / _totalSamples.Count,
-            PerformanceStatistics.Percentile(_totalSamples.ToArray(), 0.95),
-            _totalPeak,
-            _totalSamples.Count);
-    }
+    public GpuFrameTiming TotalTiming() => _ledger.TotalTiming();
 
     /// <inheritdoc/>
     public void Dispose()
@@ -373,8 +292,6 @@ internal sealed unsafe class VulkanStageProfiler : IDisposable
             }
         }
 
-        Array.Clear(_frameStage);
-
         // The frame's own bracket, before the stages. A slot that never closed its bracket -- the very
         // first frame on a slot, or timing switched on mid-frame -- reports nothing rather than a
         // difference against an unwritten query.
@@ -396,102 +313,19 @@ internal sealed unsafe class VulkanStageProfiler : IDisposable
 
             // Unsigned so a tick counter that wrapped between the two reads still subtracts correctly.
             ulong ticks = _readback[endLocal] - _readback[startLocal];
-            _frameStage[(int)range.Stage] += ticks * _periodMilliseconds;
+            _ledger.Observe(range.Stage, ticks * _periodMilliseconds);
             anyRan = true;
         }
 
-        Fold(anyRan);
-    }
-
-    // Folds the frame accumulated in _frameStage into the rolling samples, discarding the warm-up.
-    private void Fold(bool anyRan)
-    {
-        _readFrames++;
-        bool warm = _readFrames > WarmUpFrames;
-
-        Array.Clear(_active);
-        double gpuTotal = 0.0;
-        bool anyStageRan = false;
-
-        for (int i = 0; i < _frameStage.Length; i++)
-        {
-            if (_frameStage[i] <= 0.0)
-            {
-                continue;
-            }
-
-            double milliseconds = _frameStage[i];
-            gpuTotal += milliseconds;
-            anyStageRan = true;
-
-            if (!warm)
-            {
-                continue;
-            }
-
-            Queue<double> samples = _samples[i];
-            if (samples.Count == RollingSamples)
-            {
-                _sampleTotals[i] -= samples.Dequeue();
-            }
-
-            samples.Enqueue(milliseconds);
-            _sampleTotals[i] += milliseconds;
-            _peak[i] = Math.Max(_peak[i], milliseconds);
-            _seen[i] = true;
-            _active[i] = true;
-            _reportStale = true;
-        }
-
-        if (warm && anyStageRan)
-        {
-            if (_totalSamples.Count == RollingSamples)
-            {
-                _totalSampleSum -= _totalSamples.Dequeue();
-            }
-
-            _totalSamples.Enqueue(gpuTotal);
-            _totalSampleSum += gpuTotal;
-            _totalPeak = Math.Max(_totalPeak, gpuTotal);
-
-            if (_frameMeasured > 0.0)
-            {
-                if (_measuredSamples.Count == RollingSamples)
-                {
-                    _measuredSampleSum -= _measuredSamples.Dequeue();
-                }
-
-                _measuredSamples.Enqueue(_frameMeasured);
-                _measuredSampleSum += _frameMeasured;
-                _measuredPeak = Math.Max(_measuredPeak, _frameMeasured);
-            }
-        }
-
         _ = anyRan;
+        _ledger.CompleteFrame(_frameMeasured);
     }
 
     // Forgets the history, so peaks reported after switching timing back on belong to the run watched.
     private void Reset()
     {
-        foreach (Queue<double> samples in _samples)
-        {
-            samples.Clear();
-        }
-
-        Array.Clear(_sampleTotals);
-        Array.Clear(_peak);
-        Array.Clear(_seen);
-        Array.Clear(_active);
-        Array.Clear(_frameStage);
-
-        _totalSamples.Clear();
-        _totalSampleSum = 0.0;
-        _totalPeak = 0.0;
-        _measuredSamples.Clear();
-        _measuredSampleSum = 0.0;
-        _measuredPeak = 0.0;
+        _ledger.Reset();
         _frameMeasured = 0.0;
-        _readFrames = 0;
 
         for (int i = 0; i < _slots; i++)
         {
@@ -499,9 +333,6 @@ internal sealed unsafe class VulkanStageProfiler : IDisposable
             _slotNext[i] = 0;
             _slotOpen[i] = false;
         }
-
-        _report.Clear();
-        _reportStale = true;
     }
 
     private readonly record struct Range(RenderStage Stage, uint Start, uint End);
