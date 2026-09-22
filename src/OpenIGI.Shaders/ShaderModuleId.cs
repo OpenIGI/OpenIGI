@@ -147,4 +147,10 @@ public enum ShaderModuleId
 
     /// <summary>Reflections: the reflection added back into the lit scene, in place.</summary>
     ReflectComposite,
+
+    /// <summary>Deferred: the lighting subpass, which shades the G-buffer into the scene's colour.</summary>
+    Shading,
+
+    /// <summary>Deferred: the lit scene brought to the display, with everything the lens does.</summary>
+    Resolve,
 }

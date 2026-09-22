@@ -26,6 +26,16 @@ public enum ShaderBindingKind
 
     /// <summary>An acceleration structure, bound only on a backend that ray traces.</summary>
     AccelerationStructure,
+
+    /// <summary>A texture and its sampler in one descriptor, which WGSL has no form for.</summary>
+    /// <remarks>
+    /// Only a module compiled for SPIR-V alone may declare one. Everything that has a WGSL form
+    /// declares its textures and samplers apart, because that is the only shape both targets share.
+    /// </remarks>
+    CombinedImageSampler,
+
+    /// <summary>A subpass input attachment, which WebGPU has no equivalent of at all.</summary>
+    InputAttachment,
 }
 
 /// <summary>One resource a module binds, as both targets agree it is bound.</summary>

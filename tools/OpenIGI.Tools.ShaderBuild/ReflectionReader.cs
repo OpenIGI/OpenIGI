@@ -39,7 +39,13 @@ public static class ReflectionReader
             {
                 string name = parameter.GetProperty("name").GetString()
                     ?? throw new ShaderBuildException($"{module}: a reflected parameter has no name.");
-                JsonElement binding = parameter.GetProperty("binding");
+                // A subpass input carries TWO placements -- its descriptor slot and its attachment
+                // index -- so Slang reports a "bindings" array where everything else reports one
+                // "binding". The slot is the one a descriptor set is built from; the attachment index
+                // belongs to the render pass and the host already knows it.
+                JsonElement binding = parameter.TryGetProperty("binding", out JsonElement single)
+                    ? single
+                    : DescriptorSlotOf(module, name, parameter);
                 string kind = binding.GetProperty("kind").GetString() ?? string.Empty;
 
                 switch (kind)
@@ -153,6 +159,29 @@ public static class ReflectionReader
     /// </summary>
     private const int PushConstantGroup = 3;
 
+    /// <summary>The descriptor slot out of a parameter that carries several placements.</summary>
+    /// <param name="module">The module being read, for the diagnostic.</param>
+    /// <param name="name">The parameter's name, for the diagnostic.</param>
+    /// <param name="parameter">The reflected parameter.</param>
+    /// <returns>The <c>descriptorTableSlot</c> placement.</returns>
+    /// <exception cref="ShaderBuildException">The parameter has no descriptor slot.</exception>
+    private static JsonElement DescriptorSlotOf(ShaderModuleId module, string name, JsonElement parameter)
+    {
+        if (parameter.TryGetProperty("bindings", out JsonElement placements))
+        {
+            foreach (JsonElement placement in placements.EnumerateArray())
+            {
+                if (placement.TryGetProperty("kind", out JsonElement kind)
+                    && kind.GetString() == "descriptorTableSlot")
+                {
+                    return placement;
+                }
+            }
+        }
+
+        throw new ShaderBuildException($"{module}: '{name}' has no descriptor slot to bind.");
+    }
+
     private static int ReadIndex(JsonElement binding) =>
         binding.TryGetProperty("index", out JsonElement index) ? index.GetInt32() : 0;
 
@@ -194,9 +223,24 @@ public static class ReflectionReader
             return ShaderBindingKind.AccelerationStructure;
         }
 
+        if (shape == "subpassInput")
+        {
+            return ShaderBindingKind.InputAttachment;
+        }
+
         if (shape.StartsWith("texture", StringComparison.Ordinal))
         {
-            return readWrite ? ShaderBindingKind.StorageTexture : ShaderBindingKind.Texture;
+            if (readWrite)
+            {
+                return ShaderBindingKind.StorageTexture;
+            }
+
+            // Slang says so outright when a declaration is one of the GLSL-style combined types, which
+            // is the only way to tell: the shape and the result type are the same either way.
+            bool combined = type.TryGetProperty("combined", out JsonElement value)
+                && value.ValueKind == JsonValueKind.True;
+
+            return combined ? ShaderBindingKind.CombinedImageSampler : ShaderBindingKind.Texture;
         }
 
         throw new ShaderBuildException($"{module}: '{name}' has the unhandled resource shape '{shape}'.");

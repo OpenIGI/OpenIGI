@@ -3,6 +3,7 @@ using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Pipelines;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Deferred;
@@ -177,27 +178,23 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _surfaceSets = AllocateSurfaceSets(framesInFlight);
 
         Geometry = new GBufferPipeline(vk, device, _renderPass.Geometry, textureSetLayout, _surfaceLayout);
+        // The push range comes from the module's own reflection rather than a constant written here.
+        // It was written here, at forty-eight bytes, while the draw pushes sixty-four: the fourth vector
+        // -- whether the title draws its own sky, and whether its bakes are whole -- lay outside the
+        // declared range and was read back out of undefined memory.
         Lighting = new FullscreenPipeline(
             vk,
             device,
-            compiler,
-            DeferredShaderSource.LightingFragment(_rayQuery),
-            "deferred-lighting.frag",
+            ShaderModuleId.Shading,
+            new ShaderVariant(_rayQuery ? "rayquery" : "software"),
             _lightingLayout,
-            sizeof(float) * 12,
             _renderPass.Shading,
             DeferredRenderPass.LightingSubpass);
         Resolve = new FullscreenPipeline(
             vk,
             device,
-            compiler,
-            DeferredShaderSource.ResolveFragment,
-            "resolve.frag",
+            ShaderModuleId.Resolve,
             _resolveLayout,
-
-            // Five vectors: the exposure and curve, the vignette, the film and the grade's table, the
-            // lens, and the grade's own knobs.
-            sizeof(float) * 20,
             presentRenderPass,
             0);
         Forward = new Mesh3DPipeline(vk, device, _renderPass.Shading, DeferredRenderPass.ForwardSubpass);

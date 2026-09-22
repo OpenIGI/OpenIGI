@@ -261,6 +261,38 @@
           "targets": [ "Spirv" ]
         }
       ]
+    },
+    {
+      "id": "Shading",
+      "source": "Deferred/Shading.slang",
+      "variants": [
+        {
+          "name": "rayquery",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "1",
+            "OPENIGI_MAX_LAMPS": "160"
+          },
+          "targets": [ "Spirv" ]
+        },
+        {
+          "name": "software",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "0",
+            "OPENIGI_MAX_LAMPS": "160"
+          },
+          "targets": [ "Spirv" ]
+        }
+      ]
+    },
+    {
+      "id": "Resolve",
+      "source": "Deferred/Resolve.slang",
+      "variants": [
+        {
+          "name": "default",
+          "targets": [ "Spirv" ]
+        }
+      ]
     }
   ]
 }

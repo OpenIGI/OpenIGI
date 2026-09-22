@@ -113,11 +113,52 @@ public sealed class ShaderLibraryBuilder
         // A variant that traces rays has no WGSL form, because WGSL has no ray tracing.
         if (variant.Compiles(ShaderTarget.Wgsl))
         {
+            RejectVulkanOnlyBindings(module.Id, variant.Name, reflection);
+
             SlangOutput wgsl = _compiler.Compile(sourcePath, SlangTarget.Wgsl, variant.Defines, withReflection: false, scratch);
             yield return Write($"{module.Id}.{variant.Name}.wgsl", NormaliseNewlines(wgsl.Code), checkOnly);
         }
 
         yield return Write($"{module.Id}.{variant.Name}.reflection.json", NormaliseNewlines(reflectionBytes), checkOnly);
+    }
+
+    /// <summary>Refuses a WGSL target for a module that declares something WGSL has no form for.</summary>
+    /// <param name="module">The module.</param>
+    /// <param name="variant">The variant's name.</param>
+    /// <param name="reflection">What the module binds.</param>
+    /// <exception cref="ShaderBuildException">The module cannot have a WGSL form.</exception>
+    /// <remarks>
+    /// Both of these are ordinary in Vulkan and absent from WebGPU: a combined image sampler is one
+    /// descriptor where WGSL has a texture and a sampler apart, and a subpass input has no counterpart
+    /// at all because WebGPU has no subpasses. A module that uses either is a Vulkan-only module and
+    /// says so in the manifest; this is what makes that a build failure rather than something to
+    /// remember.
+    /// </remarks>
+    private static void RejectVulkanOnlyBindings(
+        ShaderModuleId module,
+        string variant,
+        ShaderReflection reflection)
+    {
+        foreach (ShaderBinding binding in reflection.Bindings)
+        {
+            string? reason = binding.Kind switch
+            {
+                ShaderBindingKind.CombinedImageSampler =>
+                    "a combined image sampler, which WGSL has no form for -- declare the texture and "
+                    + "its sampler apart",
+                ShaderBindingKind.InputAttachment =>
+                    "a subpass input, which WebGPU has no equivalent of -- read the attachment as a "
+                    + "texture in a second pass",
+                _ => null,
+            };
+
+            if (reason is not null)
+            {
+                throw new ShaderBuildException(
+                    $"{module}: variant '{variant}' is compiled for WGSL but '{binding.Name}' is "
+                    + $"{reason}. Give the variant a SPIR-V only target.");
+            }
+        }
     }
 
     /// <summary>

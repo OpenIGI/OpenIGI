@@ -49,4 +49,31 @@ float3 DecodeSrgb(float3 c)
     return lerp(high, low, step(c, float3(0.04045, 0.04045, 0.04045)));
 }
 
+// The reading side, for the shading pass that unpacks what the geometry pass wrote.
+float3 DecodeGBufferNormal(float4 packed)
+{
+    return normalize((packed.xyz * 2.0) - 1.0);
+}
+
+int DecodeShadingModel(float4 material)
+{
+    return int((material.a * 255.0) + 0.5) & 0xF;
+}
+
+// One over the packing above: the byte carries 128 plus sixteen times the strength, and anything at or
+// below the bias is a surface that was never marked emissive and so glows at exactly one.
+float DecodeEmissiveStrength(float4 material)
+{
+    float packed = (material.g * 255.0) - 128.0;
+    return packed > 0.5 ? (packed / 16.0) : 1.0;
+}
+
+float3 EncodeSrgb(float3 c)
+{
+    float3 low = c * 12.92;
+    float3 high = (1.055 * pow(max(c, float3(0.0, 0.0, 0.0)), float3(1.0 / 2.4, 1.0 / 2.4, 1.0 / 2.4)))
+        - 0.055;
+    return lerp(high, low, step(c, float3(0.0031308, 0.0031308, 0.0031308)));
+}
+
 #endif

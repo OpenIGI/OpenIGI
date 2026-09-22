@@ -28,56 +28,9 @@ internal sealed unsafe class FullscreenPipeline : IDisposable
     // compiled pipeline instead of building this one again.
     private readonly PipelineCache _pipelineCache;
     private readonly VulkanShaderModule _vertex;
-    private readonly VulkanShaderModule? _fragment;
-    private readonly string _vertexEntryPoint = "main";
-    private readonly string _fragmentEntryPoint = "main";
+    private readonly string _vertexEntryPoint;
+    private readonly string _fragmentEntryPoint;
     private bool _disposed;
-
-    /// <summary>Initialises a new instance of the <see cref="FullscreenPipeline"/> class.</summary>
-    /// <param name="vk">The core Vulkan API.</param>
-    /// <param name="device">The device the pipeline lives on.</param>
-    /// <param name="compiler">The shader compiler.</param>
-    /// <param name="fragmentSource">The fragment shader source.</param>
-    /// <param name="name">A name for the shaders, used in diagnostics.</param>
-    /// <param name="descriptorSetLayout">The single descriptor set the shader reads.</param>
-    /// <param name="pushConstantSize">The push constant size in bytes, or zero for none.</param>
-    /// <param name="renderPass">The render pass the pipeline is compatible with.</param>
-    /// <param name="subpass">The subpass index within that render pass.</param>
-    /// <exception cref="GraphicsDeviceException">The pipeline could not be created.</exception>
-    /// <param name="alphaBlend">Whether the pass blends over the target by its alpha rather than replacing it.</param>
-    public FullscreenPipeline(
-        Vk vk,
-        VulkanDevice device,
-        ShaderCompiler compiler,
-        string fragmentSource,
-        string name,
-        DescriptorSetLayout descriptorSetLayout,
-        uint pushConstantSize,
-        RenderPass renderPass,
-        uint subpass,
-        bool alphaBlend = false)
-    {
-        ArgumentNullException.ThrowIfNull(vk);
-        ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(compiler);
-        _vk = vk;
-        _device = device.Device;
-        _pipelineCache = device.PipelineCache;
-
-        _vertex = new VulkanShaderModule(
-            vk,
-            _device,
-            compiler.Compile(DeferredShaderSource.FullscreenVertex, ShaderStage.Vertex, "fullscreen.vert"),
-            ShaderStage.Vertex);
-        _fragment = new VulkanShaderModule(
-            vk,
-            _device,
-            compiler.Compile(fragmentSource, ShaderStage.Fragment, name),
-            ShaderStage.Fragment);
-
-        PipelineLayout = CreatePipelineLayout(descriptorSetLayout, pushConstantSize);
-        Pipeline = CreatePipeline(renderPass, subpass, alphaBlend);
-    }
 
     /// <summary>Initialises a pipeline from one of the shader library's modules.</summary>
     /// <param name="vk">The core Vulkan API.</param>
@@ -100,6 +53,32 @@ internal sealed unsafe class FullscreenPipeline : IDisposable
         RenderPass renderPass,
         uint subpass,
         bool alphaBlend = false)
+        : this(vk, device, module, ShaderVariant.Default, descriptorSetLayout, renderPass, subpass, alphaBlend)
+    {
+    }
+
+    /// <summary>Initialises a pipeline from one variant of a shader library module.</summary>
+    /// <param name="vk">The core Vulkan API.</param>
+    /// <param name="device">The device the pipeline lives on.</param>
+    /// <param name="module">The shader module, which carries both stages.</param>
+    /// <param name="variant">
+    /// Which compiled form to load. The lighting is built once with traced lamp shadows and once
+    /// without, because the ray query needs its own resource bound and that is not a runtime question.
+    /// </param>
+    /// <param name="descriptorSetLayout">The single descriptor set the shader reads.</param>
+    /// <param name="renderPass">The render pass the pipeline is compatible with.</param>
+    /// <param name="subpass">The subpass index within that render pass.</param>
+    /// <param name="alphaBlend">Whether the pass blends over the target by its alpha rather than replacing it.</param>
+    /// <exception cref="GraphicsDeviceException">The pipeline could not be created.</exception>
+    public FullscreenPipeline(
+        Vk vk,
+        VulkanDevice device,
+        ShaderModuleId module,
+        ShaderVariant variant,
+        DescriptorSetLayout descriptorSetLayout,
+        RenderPass renderPass,
+        uint subpass,
+        bool alphaBlend = false)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
@@ -107,17 +86,16 @@ internal sealed unsafe class FullscreenPipeline : IDisposable
         _device = device.Device;
         _pipelineCache = device.PipelineCache;
 
-        ShaderReflection reflection = ShaderCatalog.GetReflection(module);
+        ShaderReflection reflection = ShaderCatalog.GetReflection(module, variant);
         _vertexEntryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Vertex).Name;
         _fragmentEntryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Fragment).Name;
 
         _vertex = new VulkanShaderModule(
             vk,
             _device,
-            ShaderCatalog.GetSpirv(module).Span,
+            ShaderCatalog.GetSpirv(module, variant).Span,
             ShaderStage.Vertex,
             _vertexEntryPoint);
-        _fragment = null;
 
         PipelineLayout = CreatePipelineLayout(descriptorSetLayout, (uint)(reflection.PushBlock?.Size ?? 0));
         Pipeline = CreatePipeline(renderPass, subpass, alphaBlend);
@@ -140,7 +118,6 @@ internal sealed unsafe class FullscreenPipeline : IDisposable
         _disposed = true;
         _vk.DestroyPipeline(_device, Pipeline, null);
         _vk.DestroyPipelineLayout(_device, PipelineLayout, null);
-        _fragment?.Dispose();
         _vertex.Dispose();
     }
 
@@ -185,7 +162,7 @@ internal sealed unsafe class FullscreenPipeline : IDisposable
             {
                 SType = StructureType.PipelineShaderStageCreateInfo,
                 Stage = ShaderStageFlags.FragmentBit,
-                Module = (_fragment ?? _vertex).Handle,
+                Module = _vertex.Handle,
                 PName = (byte*)fragmentEntryPoint,
             };
 
