@@ -173,6 +173,24 @@
     {
       "id": "ObjectVelocity",
       "source": "Deferred/ObjectVelocity.slang"
+    },
+    {
+      "id": "Ssao",
+      "source": "Deferred/Ssao.slang"
+    },
+    {
+      "id": "ShadowDenoise",
+      "source": "Deferred/ShadowDenoise.slang"
+    },
+    {
+      "id": "ExposureHistogram",
+      "source": "Deferred/ExposureHistogram.slang",
+      "variants": [
+        {
+          "name": "default",
+          "targets": [ "Spirv" ]
+        }
+      ]
     }
   ]
 }

@@ -112,7 +112,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _probes = new ProbeVolumes(vk, device, allocator, commands);
         _shadowMap = new ShadowMap(vk, device, allocator, commands);
         _shadowPipeline = new ShadowPipeline(vk, device, _shadowMap.RenderPass, textureSetLayout);
-        _ssao = new SsaoPass(vk, device, allocator, compiler, framesInFlight);
+        _ssao = new SsaoPass(vk, device, allocator, framesInFlight);
         _fog = new VolumetricFogPass(vk, device, allocator, commands, framesInFlight);
         // The reflections, with their traced half wherever the adapter can trace. Compiled in rather
         // than switched on: the extension has to be declared for the shader to parse at all, so whether
@@ -131,14 +131,14 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _rejectionDilate = new Tsr.RejectionDilatePass(vk, device, allocator, framesInFlight);
         _resolveHistory = new Tsr.ResolveHistoryPass(vk, device, allocator, framesInFlight);
         _sky = new Sky.SkyAtmosphere(vk, device, allocator, commands, compiler, framesInFlight);
-        _autoExposure = new AutoExposurePass(vk, device, allocator, commands, compiler, framesInFlight);
+        _autoExposure = new AutoExposurePass(vk, device, allocator, commands, framesInFlight);
 
         // The sun's shadow, traced between the two render passes. Only where the adapter can trace at all.
         _sunShadow = _rayQuery
             ? new RayTracedShadowPass(vk, device, allocator, compiler, framesInFlight)
             : null;
         _sunShadowDenoise = _rayQuery
-            ? new ShadowDenoisePass(vk, device, allocator, compiler, framesInFlight)
+            ? new ShadowDenoisePass(vk, device, allocator, framesInFlight)
             : null;
         _sunShadowAccumulate = _rayQuery
             ? new ShadowAccumulatePass(vk, device, allocator, framesInFlight)

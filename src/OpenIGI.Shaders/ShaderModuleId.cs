@@ -114,4 +114,13 @@ public enum ShaderModuleId
 
     /// <summary>The screen motion of meshes that move on their own, rasterised over the camera's.</summary>
     ObjectVelocity,
+
+    /// <summary>Screen-space ambient occlusion, gathered over a hemisphere and accumulated.</summary>
+    Ssao,
+
+    /// <summary>The traced sun shadow, spread over the penumbra its occluder distance implies.</summary>
+    ShadowDenoise,
+
+    /// <summary>The frame's luminance counted into sixty-four logarithmic buckets.</summary>
+    ExposureHistogram,
 }
