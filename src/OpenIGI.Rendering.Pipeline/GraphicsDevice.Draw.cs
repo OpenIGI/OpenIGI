@@ -245,6 +245,13 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
 
         MeshDrawCall call = Call(mesh, indexOffset, indexCount, diffuse, lightmap, blend);
 
+        // A cascade being drawn takes every draw: the world seen from the light, depth alone.
+        if (DrawingShadow)
+        {
+            DrawShadow(call, [], modelView, blend);
+            return;
+        }
+
         if (CapturingCards)
         {
             DrawCard(call, _projection * modelView);
@@ -293,6 +300,12 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
 
         if (ranges.IsEmpty)
         {
+            return;
+        }
+
+        if (DrawingShadow)
+        {
+            DrawShadow(Call(mesh, 0, 0, diffuse, lightmap, blend), ranges, modelView, blend);
             return;
         }
 

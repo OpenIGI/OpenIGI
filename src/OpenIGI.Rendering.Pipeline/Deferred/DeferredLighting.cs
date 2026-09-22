@@ -166,6 +166,20 @@ public sealed class DeferredLighting : IDisposable
         _bindings.Bind("uSkyIrradiance", irradiance, sampler);
     }
 
+    /// <summary>Points the shading at the sun's cascades instead of at a stand-in.</summary>
+    /// <param name="cascades">The shadow map, every cascade a layer of one depth array.</param>
+    /// <remarks>
+    /// Once, when the map is made; it is remade only when its resolution changes. The comparison
+    /// sampler it is read through is bound with the frame, because it is the shading's own.
+    /// </remarks>
+    public void BindShadowMap(IRhiTextureView cascades)
+    {
+        ArgumentNullException.ThrowIfNull(cascades);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        _bindings.Bind("uShadowMap", cascades);
+    }
+
     /// <summary>Records the draw into a pass already begun on the lit target.</summary>
     /// <param name="pass">The pass to record into.</param>
     /// <param name="push">The per-draw block the shading reads.</param>

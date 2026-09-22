@@ -30,7 +30,6 @@ public sealed partial class GraphicsDevice
     /// </remarks>
     private static readonly string[] UnimplementedSettingNames =
     [
-        "r_shadows",
         "r_reflections",
         "r_rt_reflections",
         "r_rt_shadows",
@@ -77,15 +76,6 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     public TextureHandle SceneColour => TextureHandle.None;
-
-    /// <inheritdoc/>
-    public bool BeginShadowCascade(int cascade) => false;
-
-    /// <inheritdoc/>
-    public void EndShadowCascade()
-    {
-        // No cascade was begun.
-    }
 
     /// <inheritdoc/>
     public void ReleaseWorld()

@@ -32,7 +32,7 @@ public sealed class GraphicsDeviceTests
         Assert.False(device.Capabilities.SupportsCompute);
 
         Assert.NotEmpty(device.Capabilities.UnimplementedSettings);
-        Assert.Contains("r_shadows", device.Capabilities.UnimplementedSettings);
+        Assert.Contains("r_volumetric_fog", device.Capabilities.UnimplementedSettings);
     }
 
     [Theory]
@@ -351,6 +351,55 @@ public sealed class GraphicsDeviceTests
         Assert.Equal("Depth", forward.DepthAttachment);
 
         Assert.Equal(1, DrawsIn(rhi, "forward"));
+    }
+
+    [Fact]
+    public void A_cascade_draws_what_is_solid_into_its_own_layer()
+    {
+        // One layer of a depth array per cascade, cleared, and only what is solid casts: a blended draw
+        // through the cut-out test casts the shadow of a chequerboard.
+        using RecordingRhiDevice rhi = new();
+        using GraphicsDevice device = Open(rhi);
+
+        Assert.DoesNotContain("r_shadows", device.Capabilities.UnimplementedSettings);
+
+        device.SetShadows(
+            new ShadowSettings(CascadeCount: 2, Resolution: 256),
+            [Cascade(10f), Cascade(40f)],
+            new DepthUnprojection(1f, 1f, 0.1f, 1000f),
+            Matrix3f.Identity);
+
+        Assert.True(device.BeginShadowCascade(1));
+        World(device);
+        WorldBlended(device);
+        device.EndShadowCascade();
+
+        Assert.False(device.BeginShadowCascade(2), "A cascade past the count was begun.");
+
+        device.SwapBuffers();
+
+        RecordedRhiCommand.BeginRenderPass cascade = rhi.CommandsOf<RecordedRhiCommand.BeginRenderPass>()
+            .Single(pass => pass.Label == "cascade1");
+
+        Assert.Empty(cascade.ColorAttachments);
+        Assert.Equal("shadow-map.1", cascade.DepthAttachment);
+        Assert.Equal(1, DrawsIn(rhi, "cascade1"));
+    }
+
+    private static ShadowCascade Cascade(float split) =>
+        new(Matrix3f.Identity, Matrix4f.Identity, Vector3f.Zero, split, split, 0.1f);
+
+    private static void WorldBlended(GraphicsDevice device)
+    {
+        MeshHandle mesh = device.CreateMesh(
+            [
+                new Vertex3D(new Vector3f(0f, 0f, 0f), Vector3f.UnitY, 0f, 0f),
+                new Vertex3D(new Vector3f(1f, 0f, 0f), Vector3f.UnitY, 1f, 0f),
+                new Vertex3D(new Vector3f(1f, 1f, 0f), Vector3f.UnitY, 1f, 1f),
+            ],
+            [0, 1, 2]);
+
+        device.DrawMesh(mesh, 0, 3, Matrix4f.Identity, TextureHandle.None, TextureHandle.None, BlendMode.AlphaBlend);
     }
 
     /// <summary>How many draws were recorded inside the named render pass.</summary>

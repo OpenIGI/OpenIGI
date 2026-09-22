@@ -229,11 +229,34 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         Assert.True(vulkan[Centre + 1] > 128, $"The triangle's occlusion is {Describe(vulkan)}: nothing was gathered.");
     }
 
+    [Fact]
+    public void Both_backends_shadow_alike()
+    {
+        // A cascade drawn and compared against, shown as the sun's visibility: a depth array rendered
+        // one layer at a time, bound as a depth texture and read through a comparison sampler, which is
+        // three things WebGPU checks that Vulkan does not.
+        byte[]? vulkan = TryOnVulkan(out string? vulkanReason, DebugView.SunShadow, shadows: true);
+        byte[]? webgpu = TryOnWebGpu(out string? webgpuReason, DebugView.SunShadow, shadows: true);
+
+        Assert.True(vulkan is not null && webgpu is not null, vulkanReason ?? webgpuReason);
+
+        int worst = 0;
+
+        for (int i = 0; i < vulkan!.Length; i++)
+        {
+            worst = Math.Max(worst, Math.Abs(vulkan[i] - webgpu![i]));
+        }
+
+        output.WriteLine($"worst difference {worst}, centre {Describe(vulkan)}, corner {Describe(vulkan, 2, 2)}");
+
+        Assert.True(worst <= 1, $"The two backends disagree about the shadow by {worst}.");
+    }
+
     /// <summary>A column the triangle's base covers near the bottom of the frame and its apex does not reach near the top.</summary>
     private const int BaseColumn = 14;
 
     /// <summary>The frame everything here compares, written once and run twice.</summary>
-    private static void DrawFrame(GraphicsDevice device, DebugView view, bool textured, bool temporal, float? bloom)
+    private static void DrawFrame(GraphicsDevice device, DebugView view, bool textured, bool temporal, float? bloom, bool shadows)
     {
         device.SetDebugView(view);
 
@@ -253,9 +276,11 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         // What a frame tells the device before it draws: where the eye is, and how a depth becomes a
         // position. Both arrive with passes this path does not run, which is why they are set here
         // rather than assumed.
+        // One cascade where the frame is to be shadowed: the light looking straight down the view, its
+        // projection the identity, so what the triangle writes into the map is what the shading finds.
         device.SetShadows(
-            ShadowSettings.Off,
-            [],
+            shadows ? new ShadowSettings(CascadeCount: 1, Resolution: Size) : ShadowSettings.Off,
+            shadows ? [new ShadowCascade(Matrix3f.Identity, Matrix4f.Identity, Vector3f.Zero, 1000f, 1000f, 0.1f)] : [],
             new DepthUnprojection(1f, 1f, 0.1f, 1000f),
             Matrix3f.Identity);
 
@@ -269,6 +294,8 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         // is; the sun is there for the atmosphere, which marches a black sky for a black one.
         device.SetLighting(SceneLighting.Baked with
         {
+            // The hybrid model where the frame is shadowed, since the baked one never looks at a map.
+            Model = shadows ? LightingModel.Hybrid : LightingModel.Baked,
             SunDirection = new Vector3f(0.3f, 0.9f, 0.31f).Normalized(),
             SunColour = new Vector3f(10f, 10f, 10f),
         });
@@ -293,6 +320,12 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
                 new Vertex3D(new Vector3f(0f, 0.7f, 0.5f), Vector3f.UnitZ, 0.5f, 1f, colour: vertexColour),
             ],
             [0, 1, 2]);
+
+        if (shadows && device.BeginShadowCascade(0))
+        {
+            device.DrawMesh(mesh, 0, 3, Matrix4f.Identity, texture, TextureHandle.None, BlendMode.Opaque);
+            device.EndShadowCascade();
+        }
 
         device.BeginPass(ScenePass.Geometry);
         device.DrawMesh(mesh, 0, 3, Matrix4f.Identity, texture, TextureHandle.None, BlendMode.Opaque);
@@ -354,7 +387,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         device.SwapBuffers();
     }
 
-    private static byte[]? TryOnVulkan(out string? reason, DebugView view = DebugView.None, bool textured = false, bool temporal = false, float? bloom = null)
+    private static byte[]? TryOnVulkan(out string? reason, DebugView view = DebugView.None, bool textured = false, bool temporal = false, float? bloom = null, bool shadows = false)
     {
         reason = null;
 
@@ -364,7 +397,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
 
             using (GraphicsDevice device = new(vulkan.Device, new DisplayMode(Size, Size, 32, 60)))
             {
-                DrawFrame(device, view, textured, temporal, bloom);
+                DrawFrame(device, view, textured, temporal, bloom, shadows);
             }
 
             return Read(vulkan.Device, vulkan.OffscreenTarget(0));
@@ -376,7 +409,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         }
     }
 
-    private static byte[]? TryOnWebGpu(out string? reason, DebugView view = DebugView.None, bool textured = false, bool temporal = false, float? bloom = null)
+    private static byte[]? TryOnWebGpu(out string? reason, DebugView view = DebugView.None, bool textured = false, bool temporal = false, float? bloom = null, bool shadows = false)
     {
         reason = null;
 
@@ -387,7 +420,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
 
             using (GraphicsDevice device = new(rhi, new DisplayMode(Size, Size, 32, 60)))
             {
-                DrawFrame(device, view, textured, temporal, bloom);
+                DrawFrame(device, view, textured, temporal, bloom, shadows);
             }
 
             return Read(rhi, rhi.OffscreenTarget(0));

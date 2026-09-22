@@ -101,23 +101,6 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The cascades themselves are not drawn here — there is no shadow map on this path, and
-    /// <c>r_shadows</c> says so. What is kept is the two things that arrive with them and that the
-    /// shading cannot work without: how a depth becomes a view position, and how a view direction
-    /// becomes a world one.
-    /// </remarks>
-    public void SetShadows(
-        in ShadowSettings settings,
-        ReadOnlySpan<ShadowCascade> cascades,
-        in DepthUnprojection unprojection,
-        Matrix3f viewToWorld)
-    {
-        _unprojection = unprojection;
-        _viewToWorld = viewToWorld;
-    }
-
-    /// <inheritdoc/>
-    /// <remarks>
     /// Kept for the temporal resolve, which measures this frame against the last, and for the shading,
     /// which needs the camera to turn a view-space position into a world one. The position is kept in
     /// double precision as well, because the camera's motion is the difference of two large numbers.

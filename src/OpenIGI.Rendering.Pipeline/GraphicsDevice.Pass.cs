@@ -33,6 +33,7 @@ public sealed partial class GraphicsDevice
     private IRhiRenderPassEncoder Pass()
     {
         CloseScenePass();
+        CloseShadowPass();
 
         if (_pass is { } open)
         {

@@ -337,6 +337,9 @@ public sealed partial class GraphicsDevice
         RecordShading();
         RecordTemporal();
 
+        // The next frame draws its own cascades, or has none.
+        _shadowsDrawn = false;
+
         _capturing = false;
     }
 
@@ -445,7 +448,7 @@ public sealed partial class GraphicsDevice
         Span<float> lamps = stackalloc float[DeferredLampBlock.Floats];
         Span<float> light = stackalloc float[DeferredLightingParameters.LightFloats];
 
-        DeferredLightingParameters.WriteGi(gi, LightingState(), [], []);
+        DeferredLightingParameters.WriteGi(gi, WithShadows(LightingState()), CascadeSplits, CascadeMatrices);
         DeferredLampBlock.Write(lamps, new DeferredLampState(_frameCounter), []);
 
         DeferredLightingParameters.WriteLight(
@@ -711,6 +714,13 @@ public sealed partial class GraphicsDevice
         EnsureTemporal();
         _bloom = new BloomPass(_device, FramesInFlight, _retired);
 
+        // A map made before the first capture -- the game states its cascades first -- is handed over
+        // now that there is a shading to hand it to.
+        if (_shadowArray is { } cascades)
+        {
+            _shading.BindShadowMap(cascades);
+        }
+
         _sky = new SkyAtmosphere(_device, FramesInFlight);
         _shading.BindSky(_sky.SkyViewTable, _sky.TransmittanceTable, _sky.IrradianceTable, _sky.Sampler);
         _sceneResolve = new DeferredResolve(_device, PresentFormat);
@@ -753,6 +763,7 @@ public sealed partial class GraphicsDevice
     private void DisposeDeferred()
     {
         DisposeTemporal();
+        DisposeShadows();
 
         _scenePass?.Dispose();
         _scenePass = null;
