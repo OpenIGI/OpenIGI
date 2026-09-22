@@ -147,7 +147,7 @@ public sealed partial class TypeMap
     /// <summary>Whether a mapped type is a pointer, which decides whether a struct needs unsafe.</summary>
     /// <param name="csharpType">A type this produced.</param>
     /// <returns><see langword="true"/> when it is a pointer.</returns>
-    public static bool IsPointer(string csharpType) =>
+    public static bool IsPointer(string? csharpType) =>
         csharpType is not null && csharpType.EndsWith('*');
 
     [GeneratedRegex(@"\s+")]

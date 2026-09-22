@@ -1,0 +1,289 @@
+using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
+using OpenIGI.Rendering.Pipeline.Diagnostics;
+using OpenIGI.Rendering.Pipeline.Draw2D;
+using OpenIGI.Rendering.Pipeline.Mesh3D;
+using OpenIGI.Rendering.Pipeline.Meshes;
+using OpenIGI.Rendering.Pipeline.Textures;
+using OpenIGI.Rendering.Rhi;
+
+namespace OpenIGI.Rendering.Pipeline;
+
+/// <summary>
+/// The renderer the game talks to, over the RHI and no graphics API.
+/// </summary>
+/// <remarks>
+/// <para>
+/// This is the original's direct path: the world drawn forward into the back buffer, the HUD and menus
+/// over it, and nothing kept afterwards. It reports <see cref="GraphicsCapabilities.SupportsSceneCapture"/>
+/// false, which is what tells everything above to run that path and not the remaster's — so the
+/// settings the deferred stack owns are recorded and named rather than silently ignored.
+/// </para>
+/// <para>
+/// <b>Why vanilla first.</b> It is a whole renderer rather than a slice of one: every pass it needs has
+/// moved, so it can be run and compared against what the Vulkan device draws today. The deferred stack
+/// is the larger half and follows behind it, pass by pass, against that comparison.
+/// </para>
+/// </remarks>
+public sealed partial class GraphicsDevice : IGraphicsDevice
+{
+    /// <summary>How many frames may be in flight, which sizes every per-frame resource.</summary>
+    public const int FramesInFlight = 2;
+
+    private readonly IRhiDevice _device;
+    private readonly Sprite2DPass _sprites;
+    private readonly Mesh3DPass _meshes;
+    private readonly Mesh3DPipelineCache _pipelines;
+    private readonly MaterialBindGroupCache _materials;
+    private readonly IRhiBindGroupLayout _materialLayout;
+    private readonly IRhiBindGroupLayout _cubeLayout;
+    private readonly StageProfiler _profiler;
+
+    private IRhiCommandEncoder? _encoder;
+    private IRhiRenderPassEncoder? _pass;
+    private RhiFrame _frame;
+    private bool _inFrame;
+    private ulong _frameCounter;
+    private bool _disposed;
+
+    /// <summary>Initialises a new instance of the <see cref="GraphicsDevice"/> class.</summary>
+    /// <param name="device">The backend to draw through.</param>
+    /// <param name="mode">The mode the surface was configured for.</param>
+    /// <param name="timestampPeriodNanoseconds">Nanoseconds per timestamp tick, from the device.</param>
+    public GraphicsDevice(IRhiDevice device, in DisplayMode mode, double timestampPeriodNanoseconds = 1.0)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+
+        _device = device;
+        CurrentMode = mode;
+
+        Capabilities = new GraphicsCapabilities(
+            TextureUnits: 8,
+            MaxTextureSize: device.Limits.MaxTextureDimension2D,
+            SupportsNonPowerOfTwoTextures: true,
+            $"{device.AdapterName} (RHI)")
+        {
+            // The deferred stack has not moved onto this path yet, and a device that claimed otherwise
+            // would have everything above it draw a frame nothing here can finish.
+            SupportsSceneCapture = false,
+            SupportsFloatRenderTargets = true,
+
+            // The compute seam is the deferred stack's, and none of it has moved onto this path. Saying
+            // yes here would have the game reach for a shader handle this device refuses to hand out.
+            SupportsCompute = false,
+            SupportsRayQuery = false,
+            MaxSampleCount = device.Limits.MaxSampleCount,
+            UnimplementedSettings = UnimplementedSettingNames,
+        };
+
+        _materialLayout = Mesh3DPipelineCache.CreateMaterialLayout(device);
+        _cubeLayout = Mesh3DPipelineCache.CreateCubeLayout(device);
+        _materials = new MaterialBindGroupCache(device, _materialLayout);
+
+        _pipelines = new Mesh3DPipelineCache(
+            device,
+            _materialLayout,
+            _cubeLayout,
+            PresentFormat,
+            DepthFormat);
+
+        _textures = new TextureTable(device);
+        _sprites = new Sprite2DPass(device, _textures, PresentFormat, FramesInFlight);
+        _meshes = new Mesh3DPass(_textures, _materials);
+        _profiler = new StageProfiler(device, FramesInFlight, timestampPeriodNanoseconds);
+    }
+
+    /// <summary>Gets the format the frame is presented in.</summary>
+    /// <remarks>
+    /// The surface's own, and stated here because every pipeline drawing into it has to be built for it.
+    /// </remarks>
+    public static RhiTextureFormat PresentFormat => RhiTextureFormat.Bgra8UnormSrgb;
+
+    /// <summary>Gets the format of the depth buffer the direct path draws against.</summary>
+    public static RhiTextureFormat DepthFormat => RhiTextureFormat.Depth32Float;
+
+    /// <inheritdoc/>
+    public GraphicsCapabilities Capabilities { get; }
+
+    /// <inheritdoc/>
+    public DisplayMode CurrentMode { get; private set; }
+
+    /// <inheritdoc/>
+    public bool VSyncEnabled
+    {
+        get;
+        set
+        {
+            if (field == value)
+            {
+                return;
+            }
+
+            field = value;
+            _device.ConfigureSurface(CurrentMode.Width, CurrentMode.Height, value);
+        }
+    } = true;
+
+    /// <inheritdoc/>
+    public ScenePass CurrentPass { get; private set; } = ScenePass.None;
+
+    /// <summary>Gets the backend this draws through, for a host that has to reach it.</summary>
+    public IRhiDevice Backend => _device;
+
+    /// <inheritdoc/>
+    public void SetMode(in DisplayMode mode)
+    {
+        ThrowIfDisposed();
+
+        CurrentMode = mode;
+        _device.ConfigureSurface(mode.Width, mode.Height, VSyncEnabled);
+        _depth?.Dispose();
+        _depth = null;
+    }
+
+    /// <inheritdoc/>
+    public void SetViewport(in Viewport viewport)
+    {
+        ThrowIfDisposed();
+        _viewport = viewport;
+
+        if (_pass is { } pass)
+        {
+            ApplyViewport(pass);
+        }
+    }
+
+    /// <inheritdoc/>
+    public void Clear(Bgra32 color)
+    {
+        ThrowIfDisposed();
+
+        // Recorded as the pass's own clear rather than as a command, because that is the only shape the
+        // interface has: a pass states what happens to its attachments when it begins.
+        _clearColour = new RhiClearColor(color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f);
+        _clearPending = true;
+
+        ClosePass();
+    }
+
+    /// <inheritdoc/>
+    public void ClearDepth()
+    {
+        ThrowIfDisposed();
+        _clearDepthPending = true;
+        ClosePass();
+    }
+
+    /// <inheritdoc/>
+    public void SwapBuffers()
+    {
+        ThrowIfDisposed();
+
+        ClosePass();
+
+        if (!_inFrame)
+        {
+            // Nothing drew, so there is no frame to present. Opening one here to close it immediately
+            // would be a blank flash rather than the held picture the caller expects.
+            return;
+        }
+
+        _sprites.EndFrame();
+        _profiler.ResolveFrame(Encoder());
+
+        _device.Submit([Encoder().Finish("frame")]);
+
+        _encoder?.Dispose();
+        _encoder = null;
+
+        _device.EndFrame(_frame);
+        _inFrame = false;
+        _frameCounter++;
+
+        _profiler.ReadCompletedFrame(FrameSlot);
+        ReleaseStaged();
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _device.WaitIdle();
+
+        _pass?.EndPass();
+        _encoder?.Dispose();
+
+        _profiler.Dispose();
+        _sprites.Dispose();
+        _pipelines.Dispose();
+        _materials.Dispose();
+        _cubeLayout.Dispose();
+        _materialLayout.Dispose();
+        _depth?.Dispose();
+        _textures.Dispose();
+        DisposeMeshes();
+        DisposeQueries();
+    }
+
+    /// <summary>Which set of per-frame resources the frame being built may write.</summary>
+    private int FrameSlot => (int)(_frameCounter % FramesInFlight);
+
+    /// <summary>The encoder this frame records into, opening the frame if it has not begun.</summary>
+    private IRhiCommandEncoder Encoder()
+    {
+        if (_encoder is { } open)
+        {
+            return open;
+        }
+
+        if (!_inFrame)
+        {
+            BeginFrame();
+        }
+
+        _encoder = _device.CreateCommandEncoder("frame");
+        return _encoder;
+    }
+
+    private void BeginFrame()
+    {
+        if (!_device.BeginFrame(out _frame))
+        {
+            // The surface has been outgrown. Reconfiguring and trying once is what the frame loop would
+            // do anyway, and a second refusal is a frame not drawn rather than an exception.
+            _device.ConfigureSurface(CurrentMode.Width, CurrentMode.Height, VSyncEnabled);
+
+            if (!_device.BeginFrame(out _frame))
+            {
+                throw new GraphicsDeviceException("The surface could not be reconfigured for this frame.");
+            }
+        }
+
+        _inFrame = true;
+        _sprites.BeginFrame(FrameSlot, CurrentMode.Width, CurrentMode.Height);
+        _profiler.BeginFrame(FrameSlot);
+    }
+
+    /// <summary>Releases the textures a blit staged for the frame that has just gone out.</summary>
+    /// <remarks>
+    /// A blit is one-off pixels with no handle of its own, so the texture it needs exists for one frame.
+    /// Released after the submit rather than at the draw, because until then the frame still reads it.
+    /// </remarks>
+    private void ReleaseStaged()
+    {
+        foreach (TextureHandle staged in _staged)
+        {
+            _textures.Destroy(staged);
+            _sprites.ForgetTexture(staged.Id);
+        }
+
+        _staged.Clear();
+    }
+
+    private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
+}

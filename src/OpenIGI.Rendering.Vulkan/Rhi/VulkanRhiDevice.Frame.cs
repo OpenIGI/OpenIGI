@@ -21,6 +21,7 @@ internal sealed unsafe partial class VulkanRhiDevice
 {
     private readonly List<CommandBuffer> _pending = [];
     private VulkanSwapchain? _swapchain;
+    private VulkanRhiTexture[] _offscreen = [];
     private Semaphore[] _acquired = [];
     private Semaphore[] _presentable = [];
     private Fence[] _inFlight = [];
@@ -44,11 +45,59 @@ internal sealed unsafe partial class VulkanRhiDevice
         CreateFrameSync();
     }
 
+    /// <summary>Gives this device somewhere to draw when there is no window to present to.</summary>
+    /// <param name="width">The frame's width in pixels.</param>
+    /// <param name="height">Its height.</param>
+    /// <param name="format">What the frame is drawn in.</param>
+    /// <remarks>
+    /// <para>
+    /// A rotation of ordinary textures in place of a swapchain's images. Everything above sees the same
+    /// frame — begin, draw, end — and what changes is only that nothing is presented and nothing waits
+    /// on a display.
+    /// </para>
+    /// <para>
+    /// This is what a headless capture draws into, and what lets the whole renderer be run and read back
+    /// without a window. It is not a test fixture: the game takes frames this way for its own
+    /// screenshots.
+    /// </para>
+    /// </remarks>
+    public void AttachOffscreen(int width, int height, RhiTextureFormat format)
+    {
+        ThrowIfDisposed();
+        ArgumentOutOfRangeException.ThrowIfLessThan(width, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(height, 1);
+
+        ReleaseOffscreen();
+        CreateFrameSync();
+
+        _offscreen = new VulkanRhiTexture[_inFlight.Length];
+
+        for (int i = 0; i < _offscreen.Length; i++)
+        {
+            _offscreen[i] = (VulkanRhiTexture)CreateTexture(new RhiTextureDescriptor(
+                width,
+                height,
+                format,
+                RhiTextureUsage.RenderTarget | RhiTextureUsage.CopySource | RhiTextureUsage.Sampled,
+                Label: $"offscreen-{i}"));
+        }
+    }
+
+    /// <summary>Gets the texture a frame drawn offscreen landed in.</summary>
+    /// <param name="index">The frame's index, as it was handed out.</param>
+    /// <returns>The texture.</returns>
+    public IRhiTexture OffscreenTarget(int index) => _offscreen[index % _offscreen.Length];
+
     /// <inheritdoc/>
     public bool BeginFrame(out RhiFrame frame)
     {
         ThrowIfDisposed();
         frame = default;
+
+        if (_offscreen.Length > 0)
+        {
+            return BeginOffscreenFrame(out frame);
+        }
 
         VulkanSwapchain swapchain = _swapchain
             ?? throw new GraphicsDeviceException("This device has no swapchain, so it presents no frames.");
@@ -97,6 +146,11 @@ internal sealed unsafe partial class VulkanRhiDevice
     public bool EndFrame(in RhiFrame frame)
     {
         ThrowIfDisposed();
+
+        if (_offscreen.Length > 0)
+        {
+            return EndOffscreenFrame();
+        }
 
         VulkanSwapchain swapchain = _swapchain
             ?? throw new GraphicsDeviceException("This device has no swapchain, so it presents no frames.");
@@ -169,6 +223,15 @@ internal sealed unsafe partial class VulkanRhiDevice
     public void ConfigureSurface(int width, int height, bool vsync)
     {
         ThrowIfDisposed();
+
+        if (_offscreen.Length > 0)
+        {
+            RhiTextureFormat format = _offscreen[0].Format;
+
+            _vk.DeviceWaitIdle(_device.Device);
+            AttachOffscreen(width, height, format);
+            return;
+        }
 
         VulkanSwapchain swapchain = _swapchain
             ?? throw new GraphicsDeviceException("This device has no swapchain to configure.");
@@ -282,6 +345,75 @@ internal sealed unsafe partial class VulkanRhiDevice
         }
     }
 
+    /// <summary>Hands out the next offscreen frame, once the one that used its slot has finished.</summary>
+    private bool BeginOffscreenFrame(out RhiFrame frame)
+    {
+        if (_inFrame)
+        {
+            throw new GraphicsDeviceException("A frame is already begun; end it before beginning another.");
+        }
+
+        Fence fence = _inFlight[_frameSlot];
+        VkCheck.Ok(_vk.WaitForFences(_device.Device, 1, &fence, true, ulong.MaxValue), "vkWaitForFences");
+        VkCheck.Ok(_vk.ResetFences(_device.Device, 1, &fence), "vkResetFences");
+
+        _device.GraphicsQueue.Poll();
+
+        _inFrame = true;
+        frame = new RhiFrame(_offscreen[_frameSlot].View, _frameSlot, _frameSlot);
+        return true;
+    }
+
+    /// <summary>Submits what an offscreen frame recorded. Nothing is presented and nothing is waited on.</summary>
+    private bool EndOffscreenFrame()
+    {
+        if (!_inFrame)
+        {
+            throw new GraphicsDeviceException("No frame is begun, so there is none to end.");
+        }
+
+        CommandBuffer[] buffers = [.. _pending];
+        _pending.Clear();
+
+        if (buffers.Length > 0)
+        {
+            fixed (CommandBuffer* first = buffers)
+            {
+                SubmitInfo submit = new()
+                {
+                    SType = StructureType.SubmitInfo,
+                    CommandBufferCount = (uint)buffers.Length,
+                    PCommandBuffers = first,
+                };
+
+                VkCheck.Ok(
+                    _vk.QueueSubmit(_device.Graphics, 1, &submit, _inFlight[_frameSlot]),
+                    "vkQueueSubmit");
+            }
+        }
+        else
+        {
+            // Nothing was recorded, so the fence this slot waits on next time has nothing to signal it.
+            VkCheck.Ok(
+                _vk.QueueSubmit(_device.Graphics, 0, null, _inFlight[_frameSlot]),
+                "vkQueueSubmit");
+        }
+
+        _inFrame = false;
+        _frameSlot = (_frameSlot + 1) % _inFlight.Length;
+        return true;
+    }
+
+    private void ReleaseOffscreen()
+    {
+        foreach (VulkanRhiTexture texture in _offscreen)
+        {
+            texture.Dispose();
+        }
+
+        _offscreen = [];
+    }
+
     private void DestroyFrameSync()
     {
         for (int i = 0; i < _inFlight.Length; i++)
@@ -291,6 +423,8 @@ internal sealed unsafe partial class VulkanRhiDevice
             _vk.DestroySemaphore(_device.Device, _presentable[i], null);
             _vk.DestroyFence(_device.Device, _inFlight[i], null);
         }
+
+        ReleaseOffscreen();
 
         _acquired = [];
         _presentable = [];

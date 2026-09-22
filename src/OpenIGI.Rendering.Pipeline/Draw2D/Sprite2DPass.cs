@@ -90,9 +90,21 @@ public sealed class Sprite2DPass : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         _frame = frameInFlight;
+        _geometry.Reset(frameInFlight);
+        SetProjection(width, height);
+    }
+
+    /// <summary>Fixes what the projection divides by, without starting a frame.</summary>
+    /// <param name="width">The width in pixels the 2D coordinates are given in.</param>
+    /// <param name="height">The height.</param>
+    /// <remarks>
+    /// The game changes it mid-frame — the HUD is authored against the mode and a menu against its own
+    /// canvas — so it is not only a frame's property.
+    /// </remarks>
+    public void SetProjection(float width, float height)
+    {
         _projectionWidth = width;
         _projectionHeight = height;
-        _geometry.Reset(frameInFlight);
     }
 
     /// <summary>Uploads what the frame appended. Must run before the frame's commands are submitted.</summary>
