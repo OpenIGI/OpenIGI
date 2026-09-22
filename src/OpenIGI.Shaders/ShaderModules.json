@@ -201,6 +201,22 @@
           "targets": [ "Spirv" ]
         }
       ]
+    },
+    {
+      "id": "SkyTransmittance",
+      "source": "Sky/Transmittance.slang"
+    },
+    {
+      "id": "SkyMultiScatter",
+      "source": "Sky/MultiScatter.slang"
+    },
+    {
+      "id": "SkyView",
+      "source": "Sky/SkyView.slang"
+    },
+    {
+      "id": "SkyIrradiance",
+      "source": "Sky/Irradiance.slang"
     }
   ]
 }

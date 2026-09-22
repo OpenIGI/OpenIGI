@@ -1,7 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Vulkan.Compute;
 using OpenIGI.Rendering.Vulkan.Memory;
-using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Sky;
@@ -74,14 +74,12 @@ internal sealed class SkyAtmosphere : IDisposable
     /// <param name="device">The device the tables live on.</param>
     /// <param name="allocator">The allocator backing the tables.</param>
     /// <param name="commands">The pool the initial layout transitions come from.</param>
-    /// <param name="compiler">The shader compiler.</param>
     /// <param name="framesInFlight">How many frames may be recorded before one completes.</param>
     public SkyAtmosphere(
         Vk vk,
         VulkanDevice device,
         VulkanAllocator allocator,
         VulkanCommands commands,
-        ShaderCompiler compiler,
         int framesInFlight)
     {
         ArgumentNullException.ThrowIfNull(vk);
@@ -106,16 +104,16 @@ internal sealed class SkyAtmosphere : IDisposable
             IrradianceWidth, 1, 1, usage | ImageUsageFlags.TransferSrcBit);
 
         _transmittancePass = new VulkanComputePass(
-            vk, device, allocator, compiler, "sky.transmittance.comp", SkyAtmospherePasses.Transmittance,
+            vk, device, allocator, ShaderModuleId.SkyTransmittance,
             [ComputeBindingKind.StorageImage], ParamSize, framesInFlight);
 
         _multiScatterPass = new VulkanComputePass(
-            vk, device, allocator, compiler, "sky.multiscatter.comp", SkyAtmospherePasses.MultiScatter,
+            vk, device, allocator, ShaderModuleId.SkyMultiScatter,
             [ComputeBindingKind.SampledStorageImage, ComputeBindingKind.StorageImage],
             ParamSize, framesInFlight);
 
         _skyViewPass = new VulkanComputePass(
-            vk, device, allocator, compiler, "sky.skyview.comp", SkyAtmospherePasses.SkyView,
+            vk, device, allocator, ShaderModuleId.SkyView,
             [
                 ComputeBindingKind.SampledStorageImage,
                 ComputeBindingKind.SampledStorageImage,
@@ -124,7 +122,7 @@ internal sealed class SkyAtmosphere : IDisposable
             ParamSize, framesInFlight);
 
         _irradiancePass = new VulkanComputePass(
-            vk, device, allocator, compiler, "sky.irradiance.comp", SkyAtmospherePasses.SkyIrradiance,
+            vk, device, allocator, ShaderModuleId.SkyIrradiance,
             [ComputeBindingKind.SampledStorageImage, ComputeBindingKind.StorageImage],
             ParamSize, framesInFlight);
 

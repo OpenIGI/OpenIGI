@@ -126,4 +126,16 @@ public enum ShaderModuleId
 
     /// <summary>The sun's traced visibility and the distance to whatever stopped the ray.</summary>
     SunShadow,
+
+    /// <summary>Atmosphere: how much light survives between an altitude and space.</summary>
+    SkyTransmittance,
+
+    /// <summary>Atmosphere: the light that arrives having bounced more than once.</summary>
+    SkyMultiScatter,
+
+    /// <summary>Atmosphere: the sky's luminance in every direction from the camera.</summary>
+    SkyView,
+
+    /// <summary>Atmosphere: the sky projected onto nine spherical-harmonic coefficients.</summary>
+    SkyIrradiance,
 }

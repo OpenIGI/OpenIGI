@@ -130,7 +130,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _rejectShading = new Tsr.RejectShadingPass(vk, device, allocator, framesInFlight);
         _rejectionDilate = new Tsr.RejectionDilatePass(vk, device, allocator, framesInFlight);
         _resolveHistory = new Tsr.ResolveHistoryPass(vk, device, allocator, framesInFlight);
-        _sky = new Sky.SkyAtmosphere(vk, device, allocator, commands, compiler, framesInFlight);
+        _sky = new Sky.SkyAtmosphere(vk, device, allocator, commands, framesInFlight);
         _autoExposure = new AutoExposurePass(vk, device, allocator, commands, framesInFlight);
 
         // The sun's shadow, traced between the two render passes. Only where the adapter can trace at all.
