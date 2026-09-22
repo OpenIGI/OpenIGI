@@ -1,6 +1,8 @@
 ﻿using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
+using ShaderStage = OpenIGI.Rendering.Vulkan.Shaders.ShaderStage;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
@@ -27,35 +29,38 @@ internal sealed unsafe class ShadowPipeline : IDisposable
     private readonly PipelineCache _pipelineCache;
     private readonly Dictionary<byte, Pipeline> _pipelines = [];
     private RenderPass _renderPass;
-    private readonly VulkanShaderModule _vertex;
-    private readonly VulkanShaderModule _fragment;
+    private readonly VulkanShaderModule _shader;
+    private readonly string _vertexEntryPoint;
+    private readonly string _fragmentEntryPoint;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="ShadowPipeline"/> class.</summary>
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the pipeline lives on.</param>
-    /// <param name="compiler">The shader compiler.</param>
     /// <param name="renderPass">The shadow render pass.</param>
     /// <param name="textureSetLayout">The shared texture set, for the cut-out test's alpha.</param>
     /// <exception cref="GraphicsDeviceException">The pipeline could not be created.</exception>
     public ShadowPipeline(
         Vk vk,
         VulkanDevice device,
-        ShaderCompiler compiler,
         RenderPass renderPass,
         DescriptorSetLayout textureSetLayout)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(compiler);
         _vk = vk;
         _device = device.Device;
         _pipelineCache = device.PipelineCache;
 
-        _vertex = new VulkanShaderModule(
-            vk, _device, compiler.Compile(DeferredShaderSource.ShadowVertex, ShaderStage.Vertex, "shadow.vert"), ShaderStage.Vertex);
-        _fragment = new VulkanShaderModule(
-            vk, _device, compiler.Compile(DeferredShaderSource.ShadowFragment, ShaderStage.Fragment, "shadow.frag"), ShaderStage.Fragment);
+        ShaderReflection reflection = ShaderCatalog.GetReflection(ShaderModuleId.Shadow);
+        _vertexEntryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Vertex).Name;
+        _fragmentEntryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Fragment).Name;
+        _shader = new VulkanShaderModule(
+            vk,
+            _device,
+            ShaderCatalog.GetSpirv(ShaderModuleId.Shadow).Span,
+            ShaderStage.Vertex,
+            _vertexEntryPoint);
 
         _renderPass = renderPass;
         PipelineLayout = CreateLayout(textureSetLayout);
@@ -108,8 +113,7 @@ internal sealed unsafe class ShadowPipeline : IDisposable
 
         _pipelines.Clear();
         _vk.DestroyPipelineLayout(_device, PipelineLayout, null);
-        _fragment.Dispose();
-        _vertex.Dispose();
+        _shader.Dispose();
     }
 
     private PipelineLayout CreateLayout(DescriptorSetLayout textureSetLayout)
@@ -137,7 +141,8 @@ internal sealed unsafe class ShadowPipeline : IDisposable
 
     private Pipeline CreatePipeline(RenderPass renderPass, byte alphaReference)
     {
-        nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
+        nint vertexEntryPoint = SilkMarshal.StringToPtr(_vertexEntryPoint, NativeStringEncoding.UTF8);
+        nint fragmentEntryPoint = SilkMarshal.StringToPtr(_fragmentEntryPoint, NativeStringEncoding.UTF8);
         try
         {
             float specializationValue;
@@ -152,15 +157,15 @@ internal sealed unsafe class ShadowPipeline : IDisposable
             {
                 SType = StructureType.PipelineShaderStageCreateInfo,
                 Stage = ShaderStageFlags.VertexBit,
-                Module = _vertex.Handle,
-                PName = (byte*)entryPoint,
+                Module = _shader.Handle,
+                PName = (byte*)vertexEntryPoint,
             };
             stages[1] = new PipelineShaderStageCreateInfo
             {
                 SType = StructureType.PipelineShaderStageCreateInfo,
                 Stage = ShaderStageFlags.FragmentBit,
-                Module = _fragment.Handle,
-                PName = (byte*)entryPoint,
+                Module = _shader.Handle,
+                PName = (byte*)fragmentEntryPoint,
                 PSpecializationInfo = &specialization,
             };
 
@@ -320,7 +325,8 @@ internal sealed unsafe class ShadowPipeline : IDisposable
         }
         finally
         {
-            SilkMarshal.Free(entryPoint);
+            SilkMarshal.Free(vertexEntryPoint);
+            SilkMarshal.Free(fragmentEntryPoint);
         }
     }
 }

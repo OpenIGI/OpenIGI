@@ -586,7 +586,7 @@ public sealed partial class VulkanGraphicsDevice
 
         // The colour texture, for its alpha alone: a cut-out must cast the shadow of the shape that is
         // there, not of the quad it was cut from.
-        BindMeshTextures(_deferred.ShadowPipeline.PipelineLayout, diffuse, TextureHandle.None);
+        BindMeshTextures(_deferred.ShadowPipeline.PipelineLayout, diffuse, TextureHandle.None, split: true);
 
         // The cascade's model-view-projection: the frame's projection is the cascade's orthographic one and
         // the model-view is the light-camera view, both set by the shadow pass before it draws.

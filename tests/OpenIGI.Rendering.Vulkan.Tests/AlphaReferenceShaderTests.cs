@@ -30,7 +30,6 @@ public sealed class AlphaReferenceShaderTests
     /// </remarks>
     [Theory]
     [InlineData("gbuffer.frag")]
-    [InlineData("shadow.frag")]
     public void Every_cut_out_shader_declares_the_same_constant(string name)
     {
         string source = SourceOf(name);
@@ -88,7 +87,6 @@ public sealed class AlphaReferenceShaderTests
     /// </remarks>
     [RequiresGlslcTheory]
     [InlineData("gbuffer.frag")]
-    [InlineData("shadow.frag")]
     public void Every_cut_out_shader_compiles(string name)
     {
         string source = SourceOf(name);
@@ -107,7 +105,6 @@ public sealed class AlphaReferenceShaderTests
     private static string SourceOf(string name) => name switch
     {
         "gbuffer.frag" => DeferredShaderSource.GBufferFragment,
-        "shadow.frag" => DeferredShaderSource.ShadowFragment,
         _ => throw new ArgumentOutOfRangeException(nameof(name), name, "Not a cut-out shader."),
     };
 

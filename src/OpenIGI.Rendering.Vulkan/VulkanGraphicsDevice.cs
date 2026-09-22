@@ -228,6 +228,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
             _commands,
             _shaderCompiler,
             _mesh3D.CombinedTextureSetLayout,
+            _mesh3D.DescriptorSetLayout,
             _presentTarget.RenderPass,
             VulkanFrameLoop.MaxFramesInFlight);
 

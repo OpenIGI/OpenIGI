@@ -16,6 +16,10 @@
     {
       "id": "Mesh3D",
       "source": "World/Mesh3D.slang"
+    },
+    {
+      "id": "Shadow",
+      "source": "World/Shadow.slang"
     }
   ]
 }

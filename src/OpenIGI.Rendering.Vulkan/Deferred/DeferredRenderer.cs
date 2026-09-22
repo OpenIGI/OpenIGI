@@ -87,6 +87,10 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <param name="commands">The command pool the probe uploads come from.</param>
     /// <param name="compiler">The shader compiler.</param>
     /// <param name="textureSetLayout">The sampler layout shared with the mesh path, for geometry.</param>
+    /// <param name="splitTextureSetLayout">
+    /// The same set with each image and its sampler bound apart, which the passes already taking their
+    /// shaders from the library read. Both shapes exist only while the migration is under way.
+    /// </param>
     /// <param name="presentRenderPass">The back-buffer render pass the resolve draws into.</param>
     /// <param name="framesInFlight">How many scene targets to keep — one per frame in flight.</param>
     /// <exception cref="GraphicsDeviceException">A resource could not be created.</exception>
@@ -97,6 +101,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         VulkanCommands commands,
         ShaderCompiler compiler,
         DescriptorSetLayout textureSetLayout,
+        DescriptorSetLayout splitTextureSetLayout,
         RenderPass presentRenderPass,
         int framesInFlight)
     {
@@ -111,7 +116,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
 
         _probes = new ProbeVolumes(vk, device, allocator, commands);
         _shadowMap = new ShadowMap(vk, device, allocator, commands);
-        _shadowPipeline = new ShadowPipeline(vk, device, compiler, _shadowMap.RenderPass, textureSetLayout);
+        _shadowPipeline = new ShadowPipeline(vk, device, _shadowMap.RenderPass, splitTextureSetLayout);
         _ssao = new SsaoPass(vk, device, allocator, compiler, framesInFlight);
         _fog = new VolumetricFogPass(vk, device, allocator, commands, compiler, framesInFlight);
         // The reflections, with their traced half wherever the adapter can trace. Compiled in rather

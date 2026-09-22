@@ -30,4 +30,7 @@ public enum ShaderModuleId
 
     /// <summary>The world pipeline's forward shader: the original's direct-path look.</summary>
     Mesh3D,
+
+    /// <summary>The sun shadow pass: depth only, cutting the holes the G-buffer cuts.</summary>
+    Shadow,
 }
