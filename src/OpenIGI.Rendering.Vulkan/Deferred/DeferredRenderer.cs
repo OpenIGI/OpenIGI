@@ -128,8 +128,8 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _spatialAntiAliasing = new Tsr.SpatialAntiAliasingPass(vk, device, allocator, compiler, framesInFlight);
         _thinGeometry = new Tsr.ThinGeometryPass(vk, device, allocator, compiler, framesInFlight);
         _rejectShading = new Tsr.RejectShadingPass(vk, device, allocator, compiler, framesInFlight);
-        _rejectionDilate = new Tsr.RejectionDilatePass(vk, device, allocator, compiler, framesInFlight);
-        _resolveHistory = new Tsr.ResolveHistoryPass(vk, device, allocator, compiler, framesInFlight);
+        _rejectionDilate = new Tsr.RejectionDilatePass(vk, device, allocator, framesInFlight);
+        _resolveHistory = new Tsr.ResolveHistoryPass(vk, device, allocator, framesInFlight);
         _sky = new Sky.SkyAtmosphere(vk, device, allocator, commands, compiler, framesInFlight);
         _autoExposure = new AutoExposurePass(vk, device, allocator, commands, compiler, framesInFlight);
 

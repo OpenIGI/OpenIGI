@@ -60,4 +60,10 @@ public enum ShaderModuleId
 
     /// <summary>Bloom: sum the pyramid with the reference's per-stage tints.</summary>
     BloomCombine,
+
+    /// <summary>Temporal resolve: spread the shading rejection to a rejecting pixel's neighbours.</summary>
+    UpscaleRejectionDilate,
+
+    /// <summary>Temporal resolve: Mitchell-Netravali downsample of the history into the frame.</summary>
+    UpscaleResolveHistory,
 }
