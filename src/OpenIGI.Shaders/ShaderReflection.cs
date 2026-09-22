@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 
 namespace OpenIGI.Shaders;
 
@@ -41,6 +41,54 @@ public enum ShaderBindingKind
     AccelerationStructureArray,
 }
 
+/// <summary>What one texel of a storage texture holds, as a module declares it.</summary>
+/// <remarks>
+/// The formats this library's modules actually declare, and the ones a compiler widens them to. An
+/// unknown format is a build failure rather than a value silently dropped: a storage binding's format
+/// is what a WebGPU bind group layout is validated against, so a wrong one binds nothing.
+/// </remarks>
+public enum ShaderStorageFormat
+{
+    /// <summary>Not a storage texture.</summary>
+    None,
+
+    /// <summary>One unsigned byte, normalised.</summary>
+    R8Unorm,
+
+    /// <summary>Two unsigned bytes, normalised.</summary>
+    Rg8Unorm,
+
+    /// <summary>Four unsigned bytes, normalised.</summary>
+    Rgba8Unorm,
+
+    /// <summary>One 16-bit float.</summary>
+    R16Float,
+
+    /// <summary>Two 16-bit floats.</summary>
+    Rg16Float,
+
+    /// <summary>Four 16-bit floats.</summary>
+    Rgba16Float,
+
+    /// <summary>One 32-bit float.</summary>
+    R32Float,
+
+    /// <summary>One 32-bit unsigned integer.</summary>
+    R32Uint,
+
+    /// <summary>Two 32-bit floats.</summary>
+    Rg32Float,
+
+    /// <summary>Four 32-bit floats.</summary>
+    Rgba32Float,
+
+    /// <summary>Ten bits each of red, green and blue with two of alpha.</summary>
+    Rgb10A2Unorm,
+
+    /// <summary>Eleven bits each of red and green and ten of blue, unsigned float.</summary>
+    Rg11B10Ufloat,
+}
+
 /// <summary>One resource a module binds, as both targets agree it is bound.</summary>
 /// <param name="Name">The name the Slang source declares.</param>
 /// <param name="Group">The descriptor set on Vulkan, the bind group on WebGPU.</param>
@@ -58,12 +106,26 @@ public enum ShaderBindingKind
 /// placeholder where a level provides nothing has to bind one of the right shape, and a two-dimensional
 /// view written into a three-dimensional slot is a device loss rather than a wrong picture.
 /// </param>
+/// <param name="StorageFormat">
+/// What one texel of a storage texture holds, as the source declared it and as the SPIR-V carries it.
+/// <see cref="ShaderStorageFormat.None"/> for everything that is not a storage texture.
+/// </param>
+/// <param name="WgslStorageFormat">
+/// What the same binding came out as for the WGSL target, which is not always what was declared: WGSL
+/// allows a storage binding on a short list of formats and the compiler widens anything narrower. It is
+/// recorded because a WebGPU bind group layout is validated against the format the module DECLARES, so
+/// the host has to allocate that one -- and a host that reproduced the compiler's widening rule instead
+/// of reading it would be a second place for that rule to live.
+/// <see cref="ShaderStorageFormat.None"/> where the variant has no WGSL form.
+/// </param>
 public sealed record ShaderBinding(
     string Name,
     int Group,
     int Binding,
     ShaderBindingKind Kind,
-    int Dimensions = 0);
+    int Dimensions = 0,
+    ShaderStorageFormat StorageFormat = ShaderStorageFormat.None,
+    ShaderStorageFormat WgslStorageFormat = ShaderStorageFormat.None);
 
 /// <summary>One field of a uniform block, for a host that sets its parameters by name.</summary>
 /// <param name="Name">The name the Slang source declares.</param>

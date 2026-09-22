@@ -95,7 +95,7 @@ public sealed class WebGpuDispatchTests(ITestOutputHelper output)
 
         // The module declares rgba32float because that is what the shader compiler emitted for a WGSL
         // target; a texture allocated as the r8 that was asked for would not bind to it.
-        Assert.Equal(WebGpuFormatPolicy.WidenedStorageFormat, blend.Format);
+        Assert.Equal(WebGpuStorageFormats.ForStorage(RhiTextureFormat.R8Unorm), blend.Format);
         Assert.Equal(RhiTextureFormat.R8Unorm, ((WebGpuTexture)blend).RequestedFormat);
         Assert.NotEmpty(device.WidenedFormats);
 
@@ -105,7 +105,7 @@ public sealed class WebGpuDispatchTests(ITestOutputHelper output)
     /// <summary>Runs the module over one field of rejection values and reads the answer back.</summary>
     private static float[] Dilate(WebGpuRhiDevice device, float[] rejection)
     {
-        RhiTextureFormat storage = WebGpuFormatPolicy.WidenedStorageFormat;
+        RhiTextureFormat storage = WebGpuStorageFormats.ForStorage(RhiTextureFormat.R8Unorm);
 
         using IRhiShaderModule module = device.CreateShaderModule(
             new RhiShaderModuleDescriptor(ShaderModuleId.UpscaleRejectionDilate, Label: "upscale.dilate"));

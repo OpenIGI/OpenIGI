@@ -67,7 +67,8 @@ public static class ReflectionReader
                             ReadSpace(binding),
                             ReadIndex(binding),
                             ReadBindingKind(module, name, type),
-                            ReadDimensions(type)));
+                            ReadDimensions(type),
+                            ReadStorageFormat(module, name, parameter)));
                         globals ??= ReadGlobals(name, binding, type);
                         break;
 
@@ -211,6 +212,55 @@ public static class ReflectionReader
             $"{module}: '{name}' is an unbounded array of {kind}, which the library has no binding "
             + "kind for. Only the acceleration structures are bound through a bindless heap.");
     }
+
+    /// <summary>What one texel of a storage texture holds, as the source declared it.</summary>
+    /// <param name="module">The module, for the diagnostic.</param>
+    /// <param name="name">The parameter's name, for the diagnostic.</param>
+    /// <param name="parameter">The reflected parameter.</param>
+    /// <returns>The format, or <see cref="ShaderStorageFormat.None"/> for anything that is not one.</returns>
+    /// <exception cref="ShaderBuildException">The format is one this does not know.</exception>
+    /// <remarks>
+    /// Slang reports it as the name the <c>[[vk::image_format]]</c> attribute used. Refused rather than
+    /// defaulted when unrecognised: a storage format is what a WebGPU bind group layout is validated
+    /// against, and a wrong one binds nothing while reporting neither the module nor the texture.
+    /// </remarks>
+    private static ShaderStorageFormat ReadStorageFormat(ShaderModuleId module, string name, JsonElement parameter)
+    {
+        if (!parameter.TryGetProperty("format", out JsonElement format))
+        {
+            return ShaderStorageFormat.None;
+        }
+
+        string text = format.GetString() ?? string.Empty;
+        return ParseStorageFormat(text)
+            ?? throw new ShaderBuildException(
+                $"{module}: '{name}' declares the storage format '{text}', which the build does not know. "
+                + "Add it to ShaderStorageFormat, or the backends will bind nothing to it.");
+    }
+
+    /// <summary>One storage format's name, in either the Slang spelling or the WGSL one.</summary>
+    /// <param name="text">The name.</param>
+    /// <returns>The format, or null when it is not one this knows.</returns>
+    /// <remarks>
+    /// Both spellings, because the same value is read out of two places: Slang's reflection writes
+    /// <c>rg16f</c> and the emitted WGSL writes <c>rg16float</c>.
+    /// </remarks>
+    public static ShaderStorageFormat? ParseStorageFormat(string text) => text switch
+    {
+        "r8" or "r8unorm" => ShaderStorageFormat.R8Unorm,
+        "rg8" or "rg8unorm" => ShaderStorageFormat.Rg8Unorm,
+        "rgba8" or "rgba8unorm" => ShaderStorageFormat.Rgba8Unorm,
+        "r16f" or "r16float" => ShaderStorageFormat.R16Float,
+        "rg16f" or "rg16float" => ShaderStorageFormat.Rg16Float,
+        "rgba16f" or "rgba16float" => ShaderStorageFormat.Rgba16Float,
+        "r32f" or "r32float" => ShaderStorageFormat.R32Float,
+        "r32ui" or "r32uint" => ShaderStorageFormat.R32Uint,
+        "rg32f" or "rg32float" => ShaderStorageFormat.Rg32Float,
+        "rgba32f" or "rgba32float" => ShaderStorageFormat.Rgba32Float,
+        "rgb10_a2" or "rgb10a2unorm" => ShaderStorageFormat.Rgb10A2Unorm,
+        "r11f_g11f_b10f" or "rg11b10float" or "rg11b10ufloat" => ShaderStorageFormat.Rg11B10Ufloat,
+        _ => null,
+    };
 
     /// <summary>How many dimensions a texture resource has, or nought for anything else.</summary>
     /// <param name="type">The reflected type.</param>

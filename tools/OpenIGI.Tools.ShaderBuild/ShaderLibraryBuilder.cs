@@ -136,8 +136,6 @@ public sealed class ShaderLibraryBuilder
         }
 
         ShaderReflection reflection = ReflectionReader.Read(module.Id, variant.Name, spirv.ReflectionJson);
-        byte[] reflectionBytes = Encoding.UTF8.GetBytes(
-            JsonSerializer.Serialize(reflection, ShaderJsonContext.Default.ShaderReflection));
 
         yield return Write($"{module.Id}.{variant.Name}.spv", spirv.Code, checkOnly);
 
@@ -147,8 +145,22 @@ public sealed class ShaderLibraryBuilder
             RejectVulkanOnlyBindings(module.Id, variant.Name, reflection);
 
             SlangOutput wgsl = _compiler.Compile(sourcePath, SlangTarget.Wgsl, variant.Defines, withReflection: false, scratch);
-            yield return Write($"{module.Id}.{variant.Name}.wgsl", NormaliseNewlines(wgsl.Code), checkOnly);
+            byte[] code = NormaliseNewlines(wgsl.Code);
+
+            // What the WGSL declares is read back off the text it emitted, because the compiler widens a
+            // storage format WGSL has no room for and nothing else records which one it chose. A WebGPU
+            // bind group layout is validated against the declared format, so a host that guessed would
+            // bind nothing and be told neither the module nor the texture.
+            reflection = WgslStorageFormats.Merge(
+                reflection,
+                WgslStorageFormats.Read(Encoding.UTF8.GetString(code), module.Id),
+                module.Id);
+
+            yield return Write($"{module.Id}.{variant.Name}.wgsl", code, checkOnly);
         }
+
+        byte[] reflectionBytes = Encoding.UTF8.GetBytes(
+            JsonSerializer.Serialize(reflection, ShaderJsonContext.Default.ShaderReflection));
 
         yield return Write($"{module.Id}.{variant.Name}.reflection.json", NormaliseNewlines(reflectionBytes), checkOnly);
     }
