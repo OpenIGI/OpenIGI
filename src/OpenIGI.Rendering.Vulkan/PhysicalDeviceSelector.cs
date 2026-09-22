@@ -393,6 +393,15 @@ internal sealed unsafe class PhysicalDeviceSelector
 
     private bool PresentSupported(PhysicalDevice device, uint queueFamily)
     {
+        // A device with no surface presents nothing, and asking the driver whether a queue can present
+        // to a surface that does not exist is undefined: it does not answer false, it takes the process
+        // down. A headless device -- a test, a compute-only tool -- says every queue presents, which
+        // leaves the choice to the other criteria and makes the present queue the graphics one.
+        if (_surface.Handle == 0)
+        {
+            return true;
+        }
+
         Bool32 supported = false;
         VkCheck.Ok(
             _khrSurface.GetPhysicalDeviceSurfaceSupport(device, queueFamily, _surface, &supported),

@@ -94,6 +94,32 @@ public static class RhiTextureFormatExtensions
     public static bool HasStencil(this RhiTextureFormat format) =>
         format is RhiTextureFormat.Depth24PlusStencil8;
 
+    /// <summary>How many bytes one texel of a format occupies.</summary>
+    /// <param name="format">The format asked about.</param>
+    /// <returns>The size in bytes, or zero for a format with no fixed size.</returns>
+    /// <remarks>
+    /// Needed by both backends and for the same reason: a copy between a buffer and a texture states its
+    /// row pitch, and one of them wants that pitch in TEXELS. Deriving the texel size by dividing a
+    /// padded row by its width gives the padding back instead, which reads as a copy that works for the
+    /// first row and returns nothing for the rest.
+    /// </remarks>
+    public static int BytesPerTexel(this RhiTextureFormat format) => format switch
+    {
+        RhiTextureFormat.R8Unorm => 1,
+        RhiTextureFormat.Rg8Unorm => 2,
+        RhiTextureFormat.R16Float => 2,
+        RhiTextureFormat.Rg16Float => 4,
+        RhiTextureFormat.Rgba8Unorm or RhiTextureFormat.Rgba8UnormSrgb => 4,
+        RhiTextureFormat.Bgra8Unorm or RhiTextureFormat.Bgra8UnormSrgb => 4,
+        RhiTextureFormat.R32Float or RhiTextureFormat.R32Uint => 4,
+        RhiTextureFormat.Rgb10A2Unorm or RhiTextureFormat.Rg11B10Ufloat => 4,
+        RhiTextureFormat.Rgba16Float or RhiTextureFormat.Rg32Float => 8,
+        RhiTextureFormat.Rgba32Float => 16,
+        RhiTextureFormat.Depth16Unorm => 2,
+        RhiTextureFormat.Depth32Float or RhiTextureFormat.Depth24PlusStencil8 => 4,
+        _ => 0,
+    };
+
     /// <summary>Whether reads and writes convert between sRGB and linear.</summary>
     /// <param name="format">The format asked about.</param>
     /// <returns><see langword="true"/> when the hardware converts.</returns>

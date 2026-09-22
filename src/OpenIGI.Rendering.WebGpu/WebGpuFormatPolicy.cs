@@ -54,28 +54,8 @@ public static class WebGpuFormatPolicy
             compiled,
             Widened: true,
             $"{format} is not a WGSL storage format, and every module that binds one was compiled as "
-            + $"{compiled}. The texture is allocated to match, at {BytesPerTexel(compiled)} bytes a texel "
-            + $"instead of {BytesPerTexel(format)}."
+            + $"{compiled}. The texture is allocated to match, at {compiled.BytesPerTexel()} bytes a texel "
+            + $"instead of {format.BytesPerTexel()}."
             + (tier1 ? " The adapter would have taken the narrow one; the compiled module would not." : string.Empty));
     }
-
-    /// <summary>How many bytes one texel of a format occupies, for saying what a widening costs.</summary>
-    /// <param name="format">The format.</param>
-    /// <returns>The size in bytes, or zero for one with no fixed size.</returns>
-    public static int BytesPerTexel(RhiTextureFormat format) => format switch
-    {
-        RhiTextureFormat.R8Unorm => 1,
-        RhiTextureFormat.Rg8Unorm => 2,
-        RhiTextureFormat.R16Float => 2,
-        RhiTextureFormat.Rg16Float => 4,
-        RhiTextureFormat.Rgba8Unorm or RhiTextureFormat.Rgba8UnormSrgb => 4,
-        RhiTextureFormat.Bgra8Unorm or RhiTextureFormat.Bgra8UnormSrgb => 4,
-        RhiTextureFormat.R32Float or RhiTextureFormat.R32Uint => 4,
-        RhiTextureFormat.Rgb10A2Unorm or RhiTextureFormat.Rg11B10Ufloat => 4,
-        RhiTextureFormat.Rgba16Float or RhiTextureFormat.Rg32Float => 8,
-        RhiTextureFormat.Rgba32Float => 16,
-        RhiTextureFormat.Depth16Unorm => 2,
-        RhiTextureFormat.Depth32Float or RhiTextureFormat.Depth24PlusStencil8 => 4,
-        _ => 0,
-    };
 }

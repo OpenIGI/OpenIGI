@@ -181,7 +181,7 @@ public sealed class WebGpuDispatchTests(ITestOutputHelper output)
         // Padded to the alignment a copy out of a texture requires. Sixteen bytes a texel over eight
         // texels is 128, which is under the 256 WebGPU insists on, so every row is padded and the read
         // below un-pads it.
-        int bytesPerRow = RhiBufferTextureCopy.AlignRow(Width * WebGpuFormatPolicy.BytesPerTexel(storage));
+        int bytesPerRow = RhiBufferTextureCopy.AlignRow(Width * storage.BytesPerTexel());
 
         using IRhiBuffer readback = device.CreateBuffer(new RhiBufferDescriptor(
             (ulong)(bytesPerRow * Height),

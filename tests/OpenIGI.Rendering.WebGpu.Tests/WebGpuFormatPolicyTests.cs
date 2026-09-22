@@ -45,7 +45,7 @@ public sealed partial class WebGpuFormatPolicyTests(ITestOutputHelper output)
         Assert.All(
             WebGpuStorageFormats.Widenings,
             pair => Assert.True(
-                WebGpuFormatPolicy.BytesPerTexel(pair.Value) >= WebGpuFormatPolicy.BytesPerTexel(pair.Key),
+                pair.Value.BytesPerTexel() >= pair.Key.BytesPerTexel(),
                 $"{pair.Key} was compiled as {pair.Value}, which is narrower."));
     }
 
