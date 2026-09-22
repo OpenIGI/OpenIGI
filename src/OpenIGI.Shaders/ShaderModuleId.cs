@@ -66,4 +66,7 @@ public enum ShaderModuleId
 
     /// <summary>Temporal resolve: Mitchell-Netravali downsample of the history into the frame.</summary>
     UpscaleResolveHistory,
+
+    /// <summary>Averages the traced shadow mask over a bounded window of frames.</summary>
+    ShadowAccumulate,
 }

@@ -64,6 +64,10 @@
     {
       "id": "UpscaleResolveHistory",
       "source": "TemporalUpscale/ResolveHistory.slang"
+    },
+    {
+      "id": "ShadowAccumulate",
+      "source": "TemporalUpscale/ShadowAccumulate.slang"
     }
   ]
 }

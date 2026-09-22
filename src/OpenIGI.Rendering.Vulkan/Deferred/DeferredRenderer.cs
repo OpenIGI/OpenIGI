@@ -141,7 +141,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             ? new ShadowDenoisePass(vk, device, allocator, compiler, framesInFlight)
             : null;
         _sunShadowAccumulate = _rayQuery
-            ? new ShadowAccumulatePass(vk, device, allocator, compiler, framesInFlight)
+            ? new ShadowAccumulatePass(vk, device, allocator, framesInFlight)
             : null;
         _lampShadow = _rayQuery
             ? new LampShadowPass(vk, device, allocator, compiler, framesInFlight)

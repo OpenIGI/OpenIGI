@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Vulkan.Compute;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Deferred;
@@ -10,7 +11,7 @@ namespace OpenIGI.Rendering.Vulkan.Deferred;
 /// Averages the traced sun shadow over time — the temporal half of the reference's shadow denoiser.
 /// </summary>
 /// <remarks>
-/// See <see cref="ShadowAccumulateShaderSource"/> for why the mask has to be averaged here rather than
+/// See the ShadowAccumulate module for why the mask has to be averaged here rather than
 /// left to the temporal filter downstream. It runs immediately after the spatial reconstruction and
 /// before anything turns the mask into light.
 /// </remarks>
@@ -42,21 +43,17 @@ internal sealed class ShadowAccumulatePass : IDisposable
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the pass lives on.</param>
     /// <param name="allocator">The allocator backing the parameter buffers.</param>
-    /// <param name="compiler">The shader compiler.</param>
     /// <param name="framesInFlight">How many frames may be recorded before one completes.</param>
     public ShadowAccumulatePass(
         Vk vk,
         VulkanDevice device,
         VulkanAllocator allocator,
-        ShaderCompiler compiler,
         int framesInFlight)
         => _pass = new VulkanComputePass(
             vk,
             device,
             allocator,
-            compiler,
-            "shadow.accumulate.comp",
-            ShadowAccumulateShaderSource.Source,
+            ShaderModuleId.ShadowAccumulate,
             Bindings,
             ParamSize,
             framesInFlight);
