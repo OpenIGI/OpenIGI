@@ -168,4 +168,7 @@ public enum ShaderModuleId
 
     /// <summary>Surface cache: the sparse screen probes upsampled and accumulated over time.</summary>
     CardsScreenResolve,
+
+    /// <summary>Surface cache: the world-space radiance cache, one slab of probes a frame.</summary>
+    CardsRadianceCache,
 }

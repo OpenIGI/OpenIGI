@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using OpenIGI.Shaders;
 
@@ -246,9 +247,20 @@ public static class ReflectionReader
             return null;
         }
 
-        if (!type.TryGetProperty("elementType", out JsonElement element)
-            || !element.TryGetProperty("name", out JsonElement structName)
-            || structName.GetString() != "Globals")
+        if (!type.TryGetProperty("elementType", out JsonElement element))
+        {
+            return null;
+        }
+
+        // Either spelling counts. A struct handed to ConstantBuffer<> reports the struct's name and the
+        // parameter's is whatever the variable was called; a cbuffer block reports the block's name as
+        // the parameter and leaves the element type anonymous. The modules use the second, because its
+        // members are in scope unqualified and the shared includes name them directly.
+        bool named = name == "Globals"
+            || (element.TryGetProperty("name", out JsonElement structName)
+                && structName.GetString() == "Globals");
+
+        if (!named)
         {
             return null;
         }
@@ -262,9 +274,37 @@ public static class ReflectionReader
                 JsonElement placement = field.GetProperty("binding");
                 int offset = placement.TryGetProperty("offset", out JsonElement at) ? at.GetInt32() : 0;
                 int length = placement.TryGetProperty("size", out JsonElement bytes) ? bytes.GetInt32() : 0;
-                fields.Add(new ShaderUniformField(
-                    field.GetProperty("name").GetString() ?? string.Empty, offset, length));
+                string fieldName = field.GetProperty("name").GetString() ?? string.Empty;
                 size = Math.Max(size, offset + length);
+
+                // An ARRAY is listed per element, under the indexed name the host sets it by. The seam
+                // sets one parameter per call and has no way to hand over a whole array, so every host
+                // that fills one writes "uThing[0]", "uThing[1]" and so on; a single entry for the
+                // whole field would match none of them and the array would stay at whatever the buffer
+                // held.
+                JsonElement fieldType = field.GetProperty("type");
+                bool isArray = fieldType.TryGetProperty("kind", out JsonElement fieldKind)
+                    && fieldKind.GetString() == "array";
+                int stride = placement.TryGetProperty("elementStride", out JsonElement step)
+                    ? step.GetInt32()
+                    : 0;
+
+                if (isArray && stride > 0)
+                {
+                    for (int index = 0; index * stride < length; index++)
+                    {
+                        fields.Add(new ShaderUniformField(
+                            string.Create(
+                                CultureInfo.InvariantCulture,
+                                $"{fieldName}[{index}]"),
+                            offset + (index * stride),
+                            stride));
+                    }
+
+                    continue;
+                }
+
+                fields.Add(new ShaderUniformField(fieldName, offset, length));
             }
         }
 

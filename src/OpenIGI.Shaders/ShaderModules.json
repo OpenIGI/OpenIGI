@@ -355,6 +355,30 @@
     {
       "id": "CardsScreenResolve",
       "source": "Cards/ScreenResolve.slang"
+    },
+    {
+      "id": "CardsRadianceCache",
+      "source": "Cards/RadianceCache.slang",
+      "variants": [
+        {
+          "name": "rayquery",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "1"
+          },
+          "targets": [
+            "Spirv"
+          ]
+        },
+        {
+          "name": "software",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "0"
+          },
+          "targets": [
+            "Spirv"
+          ]
+        }
+      ]
     }
   ]
 }
