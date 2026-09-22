@@ -68,6 +68,18 @@
     {
       "id": "ShadowAccumulate",
       "source": "TemporalUpscale/ShadowAccumulate.slang"
+    },
+    {
+      "id": "UpscaleSpatialAntiAliasing",
+      "source": "TemporalUpscale/SpatialAntiAliasing.slang"
+    },
+    {
+      "id": "UpscaleThinGeometry",
+      "source": "TemporalUpscale/ThinGeometry.slang"
+    },
+    {
+      "id": "UpscaleDecimateHistory",
+      "source": "TemporalUpscale/DecimateHistory.slang"
     }
   ]
 }

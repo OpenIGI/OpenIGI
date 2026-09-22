@@ -123,10 +123,10 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _bloom = new BloomPass(vk, device, allocator, commands, framesInFlight);
         _motionBlur = new MotionBlurPass(vk, device, allocator, compiler, framesInFlight);
         _dilateVelocity = new Tsr.DilateVelocityPass(vk, device, allocator, compiler, framesInFlight);
-        _decimateHistory = new Tsr.DecimateHistoryPass(vk, device, allocator, compiler, framesInFlight);
+        _decimateHistory = new Tsr.DecimateHistoryPass(vk, device, allocator, framesInFlight);
         _updateHistory = new Tsr.UpdateHistoryPass(vk, device, allocator, compiler, framesInFlight);
-        _spatialAntiAliasing = new Tsr.SpatialAntiAliasingPass(vk, device, allocator, compiler, framesInFlight);
-        _thinGeometry = new Tsr.ThinGeometryPass(vk, device, allocator, compiler, framesInFlight);
+        _spatialAntiAliasing = new Tsr.SpatialAntiAliasingPass(vk, device, allocator, framesInFlight);
+        _thinGeometry = new Tsr.ThinGeometryPass(vk, device, allocator, framesInFlight);
         _rejectShading = new Tsr.RejectShadingPass(vk, device, allocator, compiler, framesInFlight);
         _rejectionDilate = new Tsr.RejectionDilatePass(vk, device, allocator, framesInFlight);
         _resolveHistory = new Tsr.ResolveHistoryPass(vk, device, allocator, framesInFlight);

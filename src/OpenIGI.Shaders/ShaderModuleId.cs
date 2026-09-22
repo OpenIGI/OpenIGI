@@ -69,4 +69,13 @@ public enum ShaderModuleId
 
     /// <summary>Averages the traced shadow mask over a bounded window of frames.</summary>
     ShadowAccumulate,
+
+    /// <summary>Temporal resolve: the sub-pixel offset that puts a pixel on the right side of an edge.</summary>
+    UpscaleSpatialAntiAliasing,
+
+    /// <summary>Temporal resolve: find geometry too fine to resolve, and relax the parallax verdict over it.</summary>
+    UpscaleThinGeometry,
+
+    /// <summary>Temporal resolve: how much history survives at each pixel -- the parallax verdict.</summary>
+    UpscaleDecimateHistory,
 }
