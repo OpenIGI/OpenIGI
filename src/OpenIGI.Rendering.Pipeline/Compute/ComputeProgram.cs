@@ -126,6 +126,15 @@ public sealed class ComputeProgram : IDisposable
             nameof(name));
     }
 
+    /// <summary>Whether the module binds anything of a name.</summary>
+    /// <param name="name">The name the Slang source would declare.</param>
+    /// <returns><see langword="true"/> when it does.</returns>
+    /// <remarks>
+    /// Asked rather than caught, for the places where a name is optional: a texture's sampler exists
+    /// only where the module samples rather than fetches.
+    /// </remarks>
+    public bool Declares(string name) => _byName.ContainsKey(name);
+
     /// <summary>How many workgroups cover a region.</summary>
     /// <param name="width">How many invocations are wanted along x.</param>
     /// <param name="height">Along y.</param>

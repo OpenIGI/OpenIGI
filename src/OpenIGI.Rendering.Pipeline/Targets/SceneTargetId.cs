@@ -71,6 +71,43 @@ public enum SceneTargetId
     /// count only ever needs eight bits.
     /// </remarks>
     ResolveHistoryMetadata,
+
+    /// <summary>How far the reprojection missed, which is what says the history cannot be trusted.</summary>
+    HistoryRejection,
+
+    /// <summary>How far this frame's shading disagrees with the history's.</summary>
+    ShadingRejection,
+
+    /// <summary>
+    /// The minimum of the median of the above, computed once rather than four times over.
+    /// </summary>
+    /// <remarks>
+    /// The history update runs at twice this resolution in each axis, so a neighbourhood it needed would
+    /// be gathered four times for every one of these texels.
+    /// </remarks>
+    RejectionBlend,
+
+    /// <summary>The shading the rejection is judged against, kept from frame to frame.</summary>
+    Guide,
+
+    /// <summary>
+    /// The relaxed history rejection and the raw line strength, in one image of two channels.
+    /// </summary>
+    /// <remarks>
+    /// One image because the two are produced together and consumed one pass apart: the update reads the
+    /// relaxed rejection, and the shading rejection reads the line strength to widen its box.
+    /// </remarks>
+    ThinRelaxedRejection,
+
+    /// <summary>Where the spatial filter found an edge, as an offset.</summary>
+    SpatialAntiAliasing,
+
+    /// <summary>The depth of the frame before this one, which every reprojection needs.</summary>
+    /// <remarks>
+    /// Its own target rather than the depth attachment, which the geometry pass overwrites before
+    /// anything could read it back.
+    /// </remarks>
+    PreviousDepth,
 }
 
 /// <summary>How a target's size follows the frame's.</summary>
@@ -84,4 +121,21 @@ public enum SceneTargetScale
 
     /// <summary>Twice the frame in each axis.</summary>
     Double,
+}
+
+/// <summary>Whether a target is one image or a pair swapped each frame.</summary>
+public enum SceneTargetHistory
+{
+    /// <summary>One image, written and read within a frame.</summary>
+    None,
+
+    /// <summary>
+    /// A pair: the frame writes one and reads the other, and they change places next frame.
+    /// </summary>
+    /// <remarks>
+    /// What a temporal filter is: this frame's answer is built from the last one's. One image cannot do
+    /// it — a pass reading and writing the same texels sees its own output for half of them, and which
+    /// half depends on the order the hardware happened to run the workgroups in.
+    /// </remarks>
+    PingPong,
 }

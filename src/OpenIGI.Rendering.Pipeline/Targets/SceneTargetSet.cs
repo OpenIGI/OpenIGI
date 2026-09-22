@@ -7,11 +7,13 @@ namespace OpenIGI.Rendering.Pipeline.Targets;
 /// <param name="Format">What one texel holds.</param>
 /// <param name="Scale">How its size follows the frame's.</param>
 /// <param name="Usage">What it may be used for.</param>
+/// <param name="History">Whether it is one image or a pair swapped each frame.</param>
 public readonly record struct SceneTargetSpec(
     SceneTargetId Id,
     RhiTextureFormat Format,
     SceneTargetScale Scale,
-    RhiTextureUsage Usage);
+    RhiTextureUsage Usage,
+    SceneTargetHistory History = SceneTargetHistory.None);
 
 /// <summary>
 /// The images a frame is built out of, allocated together and thrown away together.
@@ -47,7 +49,8 @@ public sealed class SceneTargetSet : IDisposable
         new(SceneTargetId.Baked, RhiTextureFormat.Rg11B10Ufloat, SceneTargetScale.Full, Attachment),
         new(SceneTargetId.Depth, RhiTextureFormat.Depth32Float, SceneTargetScale.Full, DepthAttachment),
         new(SceneTargetId.Lit, RhiTextureFormat.Rgba16Float, SceneTargetScale.Full, Attachment | RhiTextureUsage.Storage),
-        new(SceneTargetId.Occlusion, RhiTextureFormat.R8Unorm, SceneTargetScale.Half, Compute),
+        // Its own previous frame, because the occlusion is filtered over time like everything else here.
+        new(SceneTargetId.Occlusion, RhiTextureFormat.R8Unorm, SceneTargetScale.Half, Compute, SceneTargetHistory.PingPong),
 
         // A colour attachment as well as storage: the object-velocity pass rasterises each animated
         // mesh's own motion over the computed field.
@@ -56,8 +59,16 @@ public sealed class SceneTargetSet : IDisposable
         new(SceneTargetId.ClosestDepth, RhiTextureFormat.R32Float, SceneTargetScale.Full, Compute),
         new(SceneTargetId.ClosestOccluder, RhiTextureFormat.R32Uint, SceneTargetScale.Full, Compute),
         new(SceneTargetId.ResolveOutput, RhiTextureFormat.Rgba16Float, SceneTargetScale.Full, Compute),
-        new(SceneTargetId.ResolveHistoryColour, RhiTextureFormat.Rgba16Float, SceneTargetScale.Double, Compute),
-        new(SceneTargetId.ResolveHistoryMetadata, RhiTextureFormat.R8Unorm, SceneTargetScale.Double, Compute),
+        new(SceneTargetId.ResolveHistoryColour, RhiTextureFormat.Rgba16Float, SceneTargetScale.Double, Compute, SceneTargetHistory.PingPong),
+        new(SceneTargetId.ResolveHistoryMetadata, RhiTextureFormat.R8Unorm, SceneTargetScale.Double, Compute, SceneTargetHistory.PingPong),
+
+        new(SceneTargetId.HistoryRejection, RhiTextureFormat.R8Unorm, SceneTargetScale.Full, Compute),
+        new(SceneTargetId.ShadingRejection, RhiTextureFormat.R8Unorm, SceneTargetScale.Full, Compute),
+        new(SceneTargetId.RejectionBlend, RhiTextureFormat.R8Unorm, SceneTargetScale.Full, Compute),
+        new(SceneTargetId.Guide, RhiTextureFormat.Rgba16Float, SceneTargetScale.Full, Compute, SceneTargetHistory.PingPong),
+        new(SceneTargetId.ThinRelaxedRejection, RhiTextureFormat.Rg8Unorm, SceneTargetScale.Full, Compute),
+        new(SceneTargetId.SpatialAntiAliasing, RhiTextureFormat.Rg16Float, SceneTargetScale.Full, Compute),
+        new(SceneTargetId.PreviousDepth, RhiTextureFormat.R32Float, SceneTargetScale.Full, Compute, SceneTargetHistory.PingPong),
     ];
 
     private const RhiTextureUsage Attachment =
@@ -70,7 +81,7 @@ public sealed class SceneTargetSet : IDisposable
         RhiTextureUsage.Storage | RhiTextureUsage.Sampled | RhiTextureUsage.CopyDestination;
 
     private readonly IRhiDevice _device;
-    private readonly Dictionary<SceneTargetId, IRhiTexture> _targets = [];
+    private readonly Dictionary<SceneTargetId, IRhiTexture[]> _targets = [];
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="SceneTargetSet"/> class.</summary>
@@ -91,15 +102,44 @@ public sealed class SceneTargetSet : IDisposable
     /// <summary>Gets its height.</summary>
     public int Height { get; private set; }
 
-    /// <summary>Gets one target.</summary>
+    /// <summary>Gets one target, or the one a history pair is writing this frame.</summary>
     /// <param name="id">Which one.</param>
     /// <returns>The texture.</returns>
-    public IRhiTexture this[SceneTargetId id] => _targets[id];
+    public IRhiTexture this[SceneTargetId id] => Current(id);
+
+    /// <summary>Gets how many frames have been advanced, which is what decides a pair's parity.</summary>
+    public long Frame { get; private set; }
+
+    /// <summary>Gets the target a frame writes.</summary>
+    /// <param name="id">Which one.</param>
+    /// <returns>The texture.</returns>
+    public IRhiTexture Current(SceneTargetId id) => _targets[id][Parity(id)];
+
+    /// <summary>Gets the target the frame before this one wrote.</summary>
+    /// <param name="id">Which one.</param>
+    /// <returns>The texture, which is the same one for a target with no history.</returns>
+    public IRhiTexture Previous(SceneTargetId id)
+    {
+        IRhiTexture[] pair = _targets[id];
+        return pair[pair.Length == 1 ? 0 : 1 - Parity(id)];
+    }
 
     /// <summary>Gets the whole view of one target, which is what a pass attaches or binds.</summary>
     /// <param name="id">Which one.</param>
     /// <returns>The view.</returns>
-    public IRhiTextureView View(SceneTargetId id) => _targets[id].View;
+    public IRhiTextureView View(SceneTargetId id) => Current(id).View;
+
+    /// <summary>Gets the view of what the frame before this one wrote.</summary>
+    /// <param name="id">Which one.</param>
+    /// <returns>The view.</returns>
+    public IRhiTextureView PreviousView(SceneTargetId id) => Previous(id).View;
+
+    /// <summary>Moves every history pair on, so this frame's output becomes the next frame's history.</summary>
+    /// <remarks>
+    /// Once when a frame ends, not per target: they all have to turn over together, or a pass reading
+    /// two of them sees one frame's output beside another frame's.
+    /// </remarks>
+    public void AdvanceFrame() => Frame++;
 
     /// <summary>The size one target has, for a frame of a given size.</summary>
     /// <param name="scale">How the target's size follows the frame's.</param>
@@ -138,6 +178,9 @@ public sealed class SceneTargetSet : IDisposable
         Allocate(width, height);
     }
 
+    /// <summary>Which half of a pair this frame writes; always the only one for a target with no pair.</summary>
+    private int Parity(SceneTargetId id) => _targets[id].Length == 1 ? 0 : (int)(Frame & 1);
+
     /// <inheritdoc/>
     public void Dispose()
     {
@@ -161,21 +204,32 @@ public sealed class SceneTargetSet : IDisposable
         foreach (SceneTargetSpec spec in Layout)
         {
             (int targetWidth, int targetHeight) = SizeOf(spec.Scale, width, height);
+            int count = spec.History is SceneTargetHistory.PingPong ? 2 : 1;
 
-            _targets[spec.Id] = _device.CreateTexture(new RhiTextureDescriptor(
-                targetWidth,
-                targetHeight,
-                spec.Format,
-                spec.Usage,
-                Label: spec.Id.ToString()));
+            IRhiTexture[] pair = new IRhiTexture[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                pair[i] = _device.CreateTexture(new RhiTextureDescriptor(
+                    targetWidth,
+                    targetHeight,
+                    spec.Format,
+                    spec.Usage,
+                    Label: count == 1 ? spec.Id.ToString() : $"{spec.Id}-{i}"));
+            }
+
+            _targets[spec.Id] = pair;
         }
     }
 
     private void Release()
     {
-        foreach (IRhiTexture target in _targets.Values)
+        foreach (IRhiTexture[] pair in _targets.Values)
         {
-            target.Dispose();
+            foreach (IRhiTexture target in pair)
+            {
+                target.Dispose();
+            }
         }
 
         _targets.Clear();

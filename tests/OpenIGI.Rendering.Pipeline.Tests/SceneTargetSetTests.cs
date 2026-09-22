@@ -24,7 +24,75 @@ public sealed class SceneTargetSetTests
             Assert.Equal(spec.Usage, target.Usage);
         }
 
-        Assert.Equal(SceneTargetSet.Layout.Count, device.Resources.OfType<RecordedTexture>().Count());
+        // A history pair is two textures for one target, so the count is what the layout asks for rather
+        // than how many entries it has.
+        int expected = SceneTargetSet.Layout.Sum(
+            spec => spec.History is SceneTargetHistory.PingPong ? 2 : 1);
+
+        Assert.Equal(expected, device.Resources.OfType<RecordedTexture>().Count());
+    }
+
+    [Fact]
+    public void A_history_pair_changes_places_each_frame()
+    {
+        // What a temporal filter is: this frame's answer is built from the last one's. One image cannot
+        // do it, because a pass reading and writing the same texels sees its own output for half of them.
+        using RecordingRhiDevice device = new();
+        using SceneTargetSet targets = new(device, 64, 64);
+
+        IRhiTexture written = targets.Current(SceneTargetId.ResolveHistoryColour);
+        IRhiTexture read = targets.Previous(SceneTargetId.ResolveHistoryColour);
+
+        Assert.NotSame(written, read);
+
+        targets.AdvanceFrame();
+
+        // What this frame wrote is what the next one reads.
+        Assert.Same(written, targets.Previous(SceneTargetId.ResolveHistoryColour));
+        Assert.Same(read, targets.Current(SceneTargetId.ResolveHistoryColour));
+    }
+
+    [Fact]
+    public void Every_pair_turns_over_together()
+    {
+        // A pass reading two of them would otherwise see one frame's output beside another frame's.
+        using RecordingRhiDevice device = new();
+        using SceneTargetSet targets = new(device, 64, 64);
+
+        List<IRhiTexture> before =
+        [
+            .. SceneTargetSet.Layout
+                .Where(spec => spec.History is SceneTargetHistory.PingPong)
+                .Select(spec => targets.Current(spec.Id)),
+        ];
+
+        targets.AdvanceFrame();
+
+        List<IRhiTexture> after =
+        [
+            .. SceneTargetSet.Layout
+                .Where(spec => spec.History is SceneTargetHistory.PingPong)
+                .Select(spec => targets.Previous(spec.Id)),
+        ];
+
+        Assert.Equal(before, after);
+    }
+
+    [Fact]
+    public void A_target_with_no_pair_reads_back_what_it_wrote()
+    {
+        using RecordingRhiDevice device = new();
+        using SceneTargetSet targets = new(device, 64, 64);
+
+        Assert.Same(
+            targets.Current(SceneTargetId.BaseColour),
+            targets.Previous(SceneTargetId.BaseColour));
+
+        targets.AdvanceFrame();
+
+        Assert.Same(
+            targets.Current(SceneTargetId.BaseColour),
+            targets.Previous(SceneTargetId.BaseColour));
     }
 
     [Theory]

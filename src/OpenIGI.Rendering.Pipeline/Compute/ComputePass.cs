@@ -72,6 +72,60 @@ public sealed class ComputePass : IDisposable
         Set(name, binding => RhiBindGroupEntry.Of(binding, view));
     }
 
+    /// <summary>Binds a texture and the sampler the module reads it through.</summary>
+    /// <param name="name">The name the Slang source declares the texture under.</param>
+    /// <param name="view">The view.</param>
+    /// <param name="sampler">How it is filtered.</param>
+    /// <remarks>
+    /// The library pairs a texture with a sampler of the same name and the suffix <c>Sampler</c>, because
+    /// a combined sampler takes two binding slots on the WGSL target and collides with whatever is
+    /// declared next. Binding them together here is that convention stated once: a module that fetches
+    /// rather than samples declares no sampler, and this leaves it alone rather than refusing.
+    /// </remarks>
+    public void Bind(string name, IRhiTextureView view, IRhiSampler sampler)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        ArgumentNullException.ThrowIfNull(sampler);
+
+        Bind(name, view);
+
+        if (Program.Declares(name + SamplerSuffix))
+        {
+            Bind(name + SamplerSuffix, sampler);
+        }
+    }
+
+    /// <summary>What the library suffixes a texture's name with to name its sampler.</summary>
+    public const string SamplerSuffix = "Sampler";
+
+    /// <summary>Binds a sampler to every slot the module declares that nothing has bound.</summary>
+    /// <param name="sampler">The sampler.</param>
+    /// <returns>How many slots it filled.</returns>
+    /// <remarks>
+    /// For a pass whose textures are all read the same way, which is most of them here. It fills only
+    /// what is still empty, so a slot bound deliberately beforehand keeps what it was given.
+    /// </remarks>
+    public int BindRemainingSamplers(IRhiSampler sampler)
+    {
+        ArgumentNullException.ThrowIfNull(sampler);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        int filled = 0;
+
+        foreach (ShaderBinding binding in Program.Reflection.Bindings)
+        {
+            if (binding.Kind is not ShaderBindingKind.Sampler || IsBound(binding))
+            {
+                continue;
+            }
+
+            Bind(binding.Name, sampler);
+            filled++;
+        }
+
+        return filled;
+    }
+
     /// <summary>Binds a buffer, or a range of one.</summary>
     /// <param name="name">The name the Slang source declares.</param>
     /// <param name="buffer">The buffer.</param>
@@ -142,6 +196,10 @@ public sealed class ComputePass : IDisposable
 
         Program.Dispose();
     }
+
+    private bool IsBound(ShaderBinding binding) =>
+        _bound.TryGetValue(binding.Group, out Dictionary<int, RhiBindGroupEntry>? entries)
+        && entries.ContainsKey(binding.Binding);
 
     private void Set(string name, Func<int, RhiBindGroupEntry> entry)
     {
