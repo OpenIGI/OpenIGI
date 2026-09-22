@@ -121,7 +121,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _velocity = new VelocityPass(vk, device, allocator, compiler, framesInFlight);
         _objectVelocity = new ObjectVelocityPass(vk, device, compiler, DeferredRenderPass.DepthFormat);
         _bloom = new BloomPass(vk, device, allocator, commands, framesInFlight);
-        _motionBlur = new MotionBlurPass(vk, device, allocator, compiler, framesInFlight);
+        _motionBlur = new MotionBlurPass(vk, device, allocator, framesInFlight);
         _dilateVelocity = new Tsr.DilateVelocityPass(vk, device, allocator, compiler, framesInFlight);
         _decimateHistory = new Tsr.DecimateHistoryPass(vk, device, allocator, framesInFlight);
         _updateHistory = new Tsr.UpdateHistoryPass(vk, device, allocator, compiler, framesInFlight);

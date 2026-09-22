@@ -78,4 +78,13 @@ public enum ShaderModuleId
 
     /// <summary>Temporal resolve: how much history survives at each pixel -- the parallax verdict.</summary>
     UpscaleDecimateHistory,
+
+    /// <summary>Motion blur: one velocity per pixel, and each tile reduced to its fastest and slowest.</summary>
+    MotionBlurFlatten,
+
+    /// <summary>Motion blur: spread each tile's fastest velocity over the tiles its swept shape covers.</summary>
+    MotionBlurDilate,
+
+    /// <summary>Motion blur: gather along the tile's velocity, weighted by depth and reach.</summary>
+    MotionBlurApply,
 }

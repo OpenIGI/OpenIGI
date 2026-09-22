@@ -80,6 +80,18 @@
     {
       "id": "UpscaleDecimateHistory",
       "source": "TemporalUpscale/DecimateHistory.slang"
+    },
+    {
+      "id": "MotionBlurFlatten",
+      "source": "Post/MotionBlurFlatten.slang"
+    },
+    {
+      "id": "MotionBlurDilate",
+      "source": "Post/MotionBlurDilate.slang"
+    },
+    {
+      "id": "MotionBlurApply",
+      "source": "Post/MotionBlurApply.slang"
     }
   ]
 }
