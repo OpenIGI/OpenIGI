@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <!-- Vulkan is a pointer-first API: every create-info is populated through fixed pointers and the
@@ -9,6 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\OpenIGI.Core\OpenIGI.Core.csproj" />
     <ProjectReference Include="..\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\OpenIGI.Rendering.Rhi\OpenIGI.Rendering.Rhi.csproj" />
     <ProjectReference Include="..\OpenIGI.Shaders\OpenIGI.Shaders.csproj" />
   </ItemGroup>
 

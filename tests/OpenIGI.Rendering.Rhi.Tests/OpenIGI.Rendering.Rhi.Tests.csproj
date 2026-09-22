@@ -1,7 +1,15 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <!-- Both backends, because one test here asks whether they agree: a value one implements and the
+       other refuses is a portability hole no single-backend suite can find. -->
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenIGI.Rendering.Rhi\OpenIGI.Rendering.Rhi.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Rendering.Vulkan\OpenIGI.Rendering.Vulkan.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Rendering.WebGpu\OpenIGI.Rendering.WebGpu.csproj" />
   </ItemGroup>
 
   <ItemGroup>
