@@ -29,7 +29,7 @@ namespace OpenIGI.Rendering.Vulkan.Pipelines;
 /// <para>
 /// <b>There is no acceleration structure here and no surface cache.</b> It carried both once, and they
 /// have moved to the compute pass that runs after the render pass closes — see
-/// <see cref="GlassReflectionShaderSource"/> for why a reflection computed inside the render pass can
+/// <c>Source/Glazing/Reflect.slang</c> for why a reflection computed inside the render pass can
 /// never show anything that moves.
 /// </para>
 /// </remarks>

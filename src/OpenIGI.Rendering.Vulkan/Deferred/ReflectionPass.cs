@@ -3,6 +3,7 @@ using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Compute;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Deferred;
@@ -16,7 +17,7 @@ namespace OpenIGI.Rendering.Vulkan.Deferred;
 /// buffer to find what the camera drew along it, writing the result to its own image; the second adds
 /// that image back into the lit scene. They are split because the reflection is READ from the lit scene
 /// and WRITTEN back into it, and one pixel's reflection is another's source — so a single pass reading
-/// and writing the same image would race. See <see cref="ReflectionShaderSource"/> for the march.
+/// and writing the same image would race. The march itself is <c>Source/Reflection/Reflect.slang</c>.
 /// </remarks>
 internal sealed class ReflectionPass : IDisposable
 {
@@ -126,28 +127,35 @@ internal sealed class ReflectionPass : IDisposable
         Vk vk,
         VulkanDevice device,
         VulkanAllocator allocator,
-        ShaderCompiler compiler,
         int framesInFlight,
         bool rayQuery)
     {
         if (rayQuery)
         {
             _traced = new VulkanComputePass(
-                vk, device, allocator, compiler,
-                "reflect.comp", ReflectionShaderSource.Reflect(true),
+                vk,
+                device,
+                allocator,
+                ShaderModuleId.Reflect,
+                new ShaderVariant("rayquery"),
                 [.. ReflectBindings, .. TracedBindings],
                 ReflectParamSize, framesInFlight);
         }
 
         _marched = new VulkanComputePass(
-            vk, device, allocator, compiler,
-            "reflect.march.comp", ReflectionShaderSource.Reflect(false),
+            vk,
+            device,
+            allocator,
+            ShaderModuleId.Reflect,
+            new ShaderVariant("software"),
             [.. ReflectBindings, .. SoftwareBindings],
             ReflectParamSize, framesInFlight);
 
         _composite = new VulkanComputePass(
-            vk, device, allocator, compiler,
-            "reflectcomposite.comp", ReflectionShaderSource.Composite,
+            vk,
+            device,
+            allocator,
+            ShaderModuleId.ReflectComposite,
             CompositeBindings, CompositeParamSize, framesInFlight);
     }
 

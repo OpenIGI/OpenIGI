@@ -217,6 +217,50 @@
     {
       "id": "SkyIrradiance",
       "source": "Sky/Irradiance.slang"
+    },
+    {
+      "id": "GlazingReflect",
+      "source": "Glazing/Reflect.slang",
+      "variants": [
+        {
+          "name": "rayquery",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "1"
+          },
+          "targets": [ "Spirv" ]
+        },
+        {
+          "name": "software",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "0"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Reflect",
+      "source": "Reflection/Reflect.slang",
+      "variants": [
+        {
+          "name": "rayquery",
+          "defines": { "OPENIGI_RAY_QUERY": "1" },
+          "targets": [ "Spirv" ]
+        },
+        {
+          "name": "software",
+          "defines": { "OPENIGI_RAY_QUERY": "0" }
+        }
+      ]
+    },
+    {
+      "id": "ReflectComposite",
+      "source": "Reflection/Composite.slang",
+      "variants": [
+        {
+          "name": "default",
+          "targets": [ "Spirv" ]
+        }
+      ]
     }
   ]
 }

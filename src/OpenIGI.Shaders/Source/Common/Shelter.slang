@@ -85,4 +85,58 @@ bool ShelterCovers(ShelterMap m, float surfaceZ, float worldZ)
     return surfaceZ > worldZ + m.headroom && surfaceZ < worldZ + m.reach;
 }
 
+// Whether a climbing ray will run into a ceiling the distance field cannot hold.
+//
+// The clipmaps are quarter-metre voxels at best and coarser further out; a ceiling is a thin sheet a few
+// metres up, so a march goes straight through it and runs out of field on the far side. Answering that
+// with the sky paints daylight -- or, at night, a deep blue -- across the ceiling of every interior. The
+// roof raster is what the shading and the water already use to decide what is indoors, and it answers
+// this too.
+//
+// The position is ABSOLUTE world, because the map is: a caller working camera-relative adds the camera
+// back on first.
+bool LosesCeiling(ShelterMap m, Texture2D<float4> map, float2 worldXY, float worldZ, float3 rayW)
+{
+    int2 at = ShelterTexel(m, worldXY);
+    if (!ShelterHolds(m, at))
+    {
+        return false;
+    }
+
+    // Out of doors to begin with: nothing overhead to lose.
+    //
+    // ShelterCovers is not the test, and the difference matters. It caps how far above a surface a roof
+    // may be and still shelter it, because that is the right question for RAIN -- a roof thirty metres up
+    // does not keep the floor dry in a storm. It is the wrong question here: a reflected ray climbing
+    // inside a hall meets that roof whatever its height. Capped, this fired on a sixth of the rays it
+    // should have.
+    float roof = ShelterSurface(m, map.Load(int3(at, 0)));
+    if (roof <= worldZ + m.headroom)
+    {
+        return false;
+    }
+
+    // Indoors, but the ray is not climbing. It leaves through a wall, a doorway or the glazing it started
+    // from, and out there the sky is a real answer -- which is not a quibble: at the viewpoint this was
+    // measured from, the near-horizontal rays off the lower panes are a third of the whole pane and the
+    // traced reference resolves every one of them to sky. A blanket "this pane is indoors, no sky" rule
+    // turns all of it grey.
+    if (rayW.z <= 0.05)
+    {
+        return false;
+    }
+
+    // Where it would meet that ceiling, and whether there is still a roof overhead by the time it gets
+    // there. One fetch, and exact for a flat roof: a climbing ray inside a hall either reaches the
+    // ceiling or crosses out over the footprint before it can.
+    float travel = (roof - worldZ) / rayW.z;
+    int2 above = ShelterTexel(m, worldXY + (rayW.xy * travel));
+    if (!ShelterHolds(m, above))
+    {
+        return false;
+    }
+
+    return ShelterSurface(m, map.Load(int3(above, 0))) > worldZ + m.headroom;
+}
+
 #endif

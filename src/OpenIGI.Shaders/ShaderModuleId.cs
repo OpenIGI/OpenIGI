@@ -138,4 +138,13 @@ public enum ShaderModuleId
 
     /// <summary>Atmosphere: the sky projected onto nine spherical-harmonic coefficients.</summary>
     SkyIrradiance,
+
+    /// <summary>Glazing: what every window pane reflects, traced or marched.</summary>
+    GlazingReflect,
+
+    /// <summary>Reflections: what each surface reflects, traced or marched.</summary>
+    Reflect,
+
+    /// <summary>Reflections: the reflection added back into the lit scene, in place.</summary>
+    ReflectComposite,
 }

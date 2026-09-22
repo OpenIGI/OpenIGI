@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Vulkan.Compute;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Deferred;
@@ -117,40 +118,50 @@ internal sealed class GlassReflectionPass : IDisposable
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the passes live on.</param>
     /// <param name="allocator">The allocator the parameter buffers come from.</param>
-    /// <param name="compiler">The shader compiler.</param>
     /// <param name="framesInFlight">How many frames may be recording at once.</param>
     /// <param name="rayQuery">Whether the adapter can trace, which decides the shader and the layout.</param>
     public GlassReflectionPass(
         Vk vk,
         VulkanDevice device,
         VulkanAllocator allocator,
-        ShaderCompiler compiler,
         int framesInFlight,
         bool rayQuery)
     {
         if (rayQuery)
         {
             _traced = new VulkanComputePass(
-                vk, device, allocator, compiler,
-                "glassreflect.comp", GlassReflectionShaderSource.Reflect(true),
+                vk,
+                device,
+                allocator,
+                ShaderModuleId.GlazingReflect,
+                new ShaderVariant("rayquery"),
                 [.. ReflectBindings, .. TracedBindings],
-                ReflectParamSize, framesInFlight);
+                ReflectParamSize,
+                framesInFlight);
         }
 
         _marched = new VulkanComputePass(
-            vk, device, allocator, compiler,
-            "glassreflect.march.comp", GlassReflectionShaderSource.Reflect(false),
+            vk,
+            device,
+            allocator,
+            ShaderModuleId.GlazingReflect,
+            new ShaderVariant("software"),
             [.. ReflectBindings, .. SoftwareBindings],
-            ReflectParamSize, framesInFlight);
+            ReflectParamSize,
+            framesInFlight);
 
         // The screen-space reflection pass's own composite, verbatim: add an image to the lit scene, and
         // nothing else. Its OWN instance rather than that pass's, because a descriptor set is read when
         // the dispatch executes and not when it is recorded — two dispatches sharing one set in a frame
         // would both see whichever resources were written last.
         _composite = new VulkanComputePass(
-            vk, device, allocator, compiler,
-            "glasscomposite.comp", ReflectionShaderSource.Composite,
-            CompositeBindings, CompositeParamSize, framesInFlight);
+            vk,
+            device,
+            allocator,
+            ShaderModuleId.ReflectComposite,
+            CompositeBindings,
+            CompositeParamSize,
+            framesInFlight);
     }
 
     /// <summary>Gets whether this pass was built with a traced half at all.</summary>
