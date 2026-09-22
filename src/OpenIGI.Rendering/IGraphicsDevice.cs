@@ -1,6 +1,8 @@
 ﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 
+using OpenIGI.Shaders;
+
 namespace OpenIGI.Rendering;
 
 /// <summary>
@@ -972,6 +974,19 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     /// <exception cref="GraphicsDeviceException">Compute is unsupported, or the program did not compile.</exception>
     ComputeShaderHandle CreateComputeShader(string source, string name);
+
+    /// <summary>Creates a compute program from one of the shader library's modules.</summary>
+    /// <param name="shaderModule">The compute module.</param>
+    /// <param name="variant">Which compiled form to load.</param>
+    /// <param name="name">A name for the program, used in diagnostics.</param>
+    /// <returns>A handle to the program.</returns>
+    /// <remarks>
+    /// The same seam as the source form in every other way -- the parameters are still set by name and
+    /// the resources still bound by slot -- but the module was compiled by the build rather than at load,
+    /// so a mistake in it is a failed build instead of a level that does not start.
+    /// </remarks>
+    /// <exception cref="GraphicsDeviceException">Compute is unsupported, or the pipeline failed.</exception>
+    ComputeShaderHandle CreateComputeShader(ShaderModuleId shaderModule, ShaderVariant variant, string name);
 
     /// <summary>Releases a compute program.</summary>
     /// <param name="shader">The program to release. The null handle is ignored.</param>

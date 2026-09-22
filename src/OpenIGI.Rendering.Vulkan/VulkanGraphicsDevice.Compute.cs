@@ -8,6 +8,8 @@ using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Textures;
 using Silk.NET.Vulkan;
 
+using OpenIGI.Shaders;
+
 namespace OpenIGI.Rendering.Vulkan;
 
 /// <summary>
@@ -51,6 +53,23 @@ public sealed partial class VulkanGraphicsDevice
         ArgumentException.ThrowIfNullOrWhiteSpace(source);
 
         VulkanComputeShader shader = new(_instance.Vk, _device, _allocator, _shaderCompiler, source, name);
+        return Register(shader);
+    }
+
+    /// <inheritdoc/>
+    public ComputeShaderHandle CreateComputeShader(ShaderModuleId shaderModule, ShaderVariant variant, string name)
+    {
+        ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        return Register(new VulkanComputeShader(_instance.Vk, _device, _allocator, shaderModule, variant, name));
+    }
+
+    /// <summary>Files a program and hands back its handle.</summary>
+    /// <param name="shader">The program.</param>
+    /// <returns>Its handle.</returns>
+    private ComputeShaderHandle Register(VulkanComputeShader shader)
+    {
         uint id = _nextComputeId++;
         _computeShaders[id] = shader;
         return new ComputeShaderHandle(id);

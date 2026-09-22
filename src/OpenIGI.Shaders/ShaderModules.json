@@ -303,6 +303,16 @@
           "targets": [ "Spirv" ]
         }
       ]
+    },
+    {
+      "id": "FieldClipmapRead",
+      "source": "Field/ClipmapRead.slang",
+      "variants": [
+        {
+          "name": "default",
+          "targets": [ "Spirv" ]
+        }
+      ]
     }
   ]
 }

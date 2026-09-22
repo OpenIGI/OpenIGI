@@ -156,4 +156,7 @@ public enum ShaderModuleId
 
     /// <summary>A sweep of rays across a known quad, to prove an adapter's ray query traverses.</summary>
     RayQuerySelfTest,
+
+    /// <summary>Distance field: one clipmap level read back for the validation.</summary>
+    FieldClipmapRead,
 }

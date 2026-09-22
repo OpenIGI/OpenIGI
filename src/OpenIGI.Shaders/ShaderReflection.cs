@@ -53,11 +53,43 @@ public enum ShaderBindingKind
 /// would be wrong rather than merely absent. Stage visibility stays with the code that builds the
 /// layout, which knows what it binds.
 /// </remarks>
+/// <param name="Dimensions">
+/// How many dimensions a texture has, or nought for a resource that is not one. A backend that binds a
+/// placeholder where a level provides nothing has to bind one of the right shape, and a two-dimensional
+/// view written into a three-dimensional slot is a device loss rather than a wrong picture.
+/// </param>
 public sealed record ShaderBinding(
     string Name,
     int Group,
     int Binding,
-    ShaderBindingKind Kind);
+    ShaderBindingKind Kind,
+    int Dimensions = 0);
+
+/// <summary>One field of a uniform block, for a host that sets its parameters by name.</summary>
+/// <param name="Name">The name the Slang source declares.</param>
+/// <param name="Offset">Where the field starts in the block, in bytes.</param>
+/// <param name="Size">How many bytes the field occupies.</param>
+public sealed record ShaderUniformField(string Name, int Offset, int Size);
+
+/// <summary>A uniform block whose fields a host sets one at a time, by name.</summary>
+/// <param name="Name">The block's name.</param>
+/// <param name="Group">The descriptor set it is bound in.</param>
+/// <param name="Binding">The binding index within that set.</param>
+/// <param name="Size">The block's size in bytes.</param>
+/// <param name="Fields">Its fields, in declaration order.</param>
+/// <remarks>
+/// Reported only for a block the module names <c>Globals</c>, which is the convention a module follows
+/// when it wants to be driven the way the engine's own compute seam drives one: a call per parameter,
+/// by name, rather than a struct the host fills. Every other constant buffer is an ordinary binding and
+/// carries no field table, because nothing would read it and it would only be a second thing to keep in
+/// step.
+/// </remarks>
+public sealed record ShaderUniformBlock(
+    string Name,
+    int Group,
+    int Binding,
+    int Size,
+    IReadOnlyList<ShaderUniformField> Fields);
 
 /// <summary>
 /// The block of constants pushed per draw: a Vulkan push constant, and on WebGPU a uniform buffer
@@ -93,6 +125,10 @@ public sealed record ShaderEntryPoint(string Name, ShaderStage Stage, IReadOnlyL
 /// <param name="Bindings">The resources it binds, ordered by group then binding.</param>
 /// <param name="PushBlock">The pushed constant block, or <see langword="null"/> if it has none.</param>
 /// <param name="SpecializationConstants">The constants a pipeline may fix at creation.</param>
+/// <param name="Globals">
+/// The field table of a block the module named <c>Globals</c>, for a host that sets its parameters one
+/// at a time by name, or <see langword="null"/> where the module declares no such block.
+/// </param>
 /// <remarks>
 /// Written by <c>OpenIGI.Tools.ShaderBuild</c> from Slang's own reflection and committed beside the
 /// compiled output, so nothing at runtime parses SPIR-V or WGSL to find out how to bind a shader.
@@ -103,7 +139,8 @@ public sealed record ShaderReflection(
     IReadOnlyList<ShaderEntryPoint> EntryPoints,
     IReadOnlyList<ShaderBinding> Bindings,
     ShaderPushBlock? PushBlock,
-    IReadOnlyList<ShaderSpecializationConstant> SpecializationConstants)
+    IReadOnlyList<ShaderSpecializationConstant> SpecializationConstants,
+    ShaderUniformBlock? Globals = null)
 {
     /// <summary>Finds the entry point for a stage.</summary>
     /// <param name="stage">The stage wanted.</param>

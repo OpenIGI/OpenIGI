@@ -32,6 +32,7 @@ public static class ReflectionReader
         List<ShaderBinding> bindings = [];
         List<ShaderSpecializationConstant> constants = [];
         ShaderPushBlock? pushBlock = null;
+        ShaderUniformBlock? globals = null;
 
         if (root.TryGetProperty("parameters", out JsonElement parameters))
         {
@@ -59,11 +60,14 @@ public static class ReflectionReader
                         break;
 
                     case "descriptorTableSlot":
+                        JsonElement type = parameter.GetProperty("type");
                         bindings.Add(new ShaderBinding(
                             name,
                             ReadSpace(binding),
                             ReadIndex(binding),
-                            ReadBindingKind(module, name, parameter.GetProperty("type"))));
+                            ReadBindingKind(module, name, type),
+                            ReadDimensions(type)));
+                        globals ??= ReadGlobals(name, binding, type);
                         break;
 
                     case "uniform":
@@ -85,7 +89,8 @@ public static class ReflectionReader
             : left.Binding.CompareTo(right.Binding));
         constants.Sort(static (left, right) => left.Id.CompareTo(right.Id));
 
-        return new ShaderReflection(module, variant, entryPoints, bindings, pushBlock, constants);
+        return new ShaderReflection(
+            module, variant, entryPoints, bindings, pushBlock, constants, globals);
     }
 
     private static List<ShaderEntryPoint> ReadEntryPoints(JsonElement root)
@@ -204,6 +209,68 @@ public static class ReflectionReader
         throw new ShaderBuildException(
             $"{module}: '{name}' is an unbounded array of {kind}, which the library has no binding "
             + "kind for. Only the acceleration structures are bound through a bindless heap.");
+    }
+
+    /// <summary>How many dimensions a texture resource has, or nought for anything else.</summary>
+    /// <param name="type">The reflected type.</param>
+    /// <returns>1, 2 or 3 for a texture; 0 otherwise.</returns>
+    private static int ReadDimensions(JsonElement type)
+    {
+        string shape = type.TryGetProperty("baseShape", out JsonElement value)
+            ? value.GetString() ?? string.Empty
+            : string.Empty;
+
+        return shape switch
+        {
+            "texture1D" => 1,
+            "texture2D" => 2,
+            "texture3D" => 3,
+            _ => 0,
+        };
+    }
+
+    /// <summary>The field table of a block the module named <c>Globals</c>, or nothing.</summary>
+    /// <param name="name">The parameter's name.</param>
+    /// <param name="binding">Its descriptor slot.</param>
+    /// <param name="type">Its reflected type.</param>
+    /// <returns>The block, or <see langword="null"/> where this is not one.</returns>
+    /// <remarks>
+    /// Only that one name, because the table exists for hosts that set their parameters one at a time by
+    /// name and every other constant buffer is filled as a struct. Emitting a field table for all of them
+    /// would be a second description of a layout nothing reads.
+    /// </remarks>
+    private static ShaderUniformBlock? ReadGlobals(string name, JsonElement binding, JsonElement type)
+    {
+        if (!type.TryGetProperty("kind", out JsonElement kind) || kind.GetString() != "constantBuffer")
+        {
+            return null;
+        }
+
+        if (!type.TryGetProperty("elementType", out JsonElement element)
+            || !element.TryGetProperty("name", out JsonElement structName)
+            || structName.GetString() != "Globals")
+        {
+            return null;
+        }
+
+        List<ShaderUniformField> fields = [];
+        int size = 0;
+        if (element.TryGetProperty("fields", out JsonElement declared))
+        {
+            foreach (JsonElement field in declared.EnumerateArray())
+            {
+                JsonElement placement = field.GetProperty("binding");
+                int offset = placement.TryGetProperty("offset", out JsonElement at) ? at.GetInt32() : 0;
+                int length = placement.TryGetProperty("size", out JsonElement bytes) ? bytes.GetInt32() : 0;
+                fields.Add(new ShaderUniformField(
+                    field.GetProperty("name").GetString() ?? string.Empty, offset, length));
+                size = Math.Max(size, offset + length);
+            }
+        }
+
+        // Rounded to a vector, which is what the layout rules already did to every field but the last.
+        size = (size + 15) & ~15;
+        return new ShaderUniformBlock(name, ReadSpace(binding), ReadIndex(binding), size, fields);
     }
 
     private static int ReadIndex(JsonElement binding) =>

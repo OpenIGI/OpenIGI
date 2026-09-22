@@ -3,6 +3,8 @@ using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
+using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Compute;
@@ -87,11 +89,117 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
         _globalsSize = analysis.UniformBlockSize;
         _globalsShadow = _globalsSize > 0 ? new byte[_globalsSize] : [];
 
-        byte[] spirv = compiler.Compile(analysis.Source, ShaderStage.Compute, name);
+        byte[] spirv = compiler.Compile(analysis.Source, Vulkan.Shaders.ShaderStage.Compute, name);
         _setLayout = CreateSetLayout(analysis);
         (_pipeline, _pipelineLayout) = CreatePipeline(spirv);
     }
 
+    /// <summary>Initialises a program from one of the shader library's compute modules.</summary>
+    /// <param name="vk">The core Vulkan API.</param>
+    /// <param name="device">The device the program lives on.</param>
+    /// <param name="allocator">The allocator backing the globals buffers.</param>
+    /// <param name="module">The compute module.</param>
+    /// <param name="variant">Which compiled form to load.</param>
+    /// <param name="name">The program's name, for diagnostics.</param>
+    /// <exception cref="GraphicsDeviceException">The pipeline could not be built.</exception>
+    /// <remarks>
+    /// The module describes itself: what it binds and where, and the fields of the parameter block the
+    /// seam sets by name. Everything below this point is the same code the GL-dialect path runs, because
+    /// what it needs is a description and not a source -- so the two paths differ only in where the
+    /// description comes from, and a module cannot be bound differently for having been compiled ahead of
+    /// time.
+    /// </remarks>
+    public VulkanComputeShader(
+        Vk vk,
+        VulkanDevice device,
+        VulkanAllocator allocator,
+        ShaderModuleId module,
+        ShaderVariant variant,
+        string name)
+    {
+        _vk = vk;
+        _device = device;
+        _allocator = allocator;
+        Name = name;
+
+        ShaderReflection reflection = ShaderCatalog.GetReflection(module, variant);
+        ComputeShaderAnalysis.Analysis analysis = Describe(module, reflection);
+
+        Resources = analysis.Resources;
+        UniformBinding = analysis.UniformBlockBinding;
+        _uniforms = new Dictionary<string, ComputeShaderAnalysis.Uniform>(analysis.Uniforms, StringComparer.Ordinal);
+        foreach (ComputeShaderAnalysis.Resource resource in analysis.Resources)
+        {
+            if (resource.ByUnit)
+            {
+                _samplerNames.Add(resource.Name);
+            }
+        }
+
+        _globalsSize = analysis.UniformBlockSize;
+        _globalsShadow = _globalsSize > 0 ? new byte[_globalsSize] : [];
+
+        _setLayout = CreateSetLayout(analysis);
+        (_pipeline, _pipelineLayout) = CreatePipeline(
+            ShaderCatalog.GetSpirv(module, variant).Span.ToArray(),
+            reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Compute).Name);
+    }
+
+    /// <summary>Turns a module's reflection into the description the rest of this class works from.</summary>
+    /// <param name="module">The module, for the diagnostic.</param>
+    /// <param name="reflection">What the module binds.</param>
+    /// <returns>The same description the GL-dialect path derives by reading a source.</returns>
+    /// <exception cref="GraphicsDeviceException">The module binds something the seam cannot express.</exception>
+    private static ComputeShaderAnalysis.Analysis Describe(ShaderModuleId module, ShaderReflection reflection)
+    {
+        List<ComputeShaderAnalysis.Resource> resources = [];
+        Dictionary<string, ComputeShaderAnalysis.Uniform> uniforms = new(StringComparer.Ordinal);
+
+        // A sampled image the parameter block also names is a texture UNIT rather than a fixed slot: the
+        // seam sets an int of that name and the dispatch resolves the image from it. Nothing has to
+        // record which are which -- sharing the name IS the declaration.
+        HashSet<string> byUnit = new(StringComparer.Ordinal);
+        foreach (ShaderUniformField field in reflection.Globals?.Fields ?? [])
+        {
+            uniforms[field.Name] = new ComputeShaderAnalysis.Uniform(field.Name, field.Offset, field.Size);
+            byUnit.Add(field.Name);
+        }
+
+        foreach (ShaderBinding binding in reflection.Bindings)
+        {
+            if (binding.Binding == ComputeBindingSpace.GlobalsBinding)
+            {
+                continue;
+            }
+
+            ComputeResourceKind kind = binding.Kind switch
+            {
+                ShaderBindingKind.StorageTexture => ComputeResourceKind.StorageImage,
+                ShaderBindingKind.StorageBuffer => ComputeResourceKind.StorageBuffer,
+                ShaderBindingKind.AccelerationStructure => ComputeResourceKind.Scene,
+                ShaderBindingKind.Texture or ShaderBindingKind.CombinedImageSampler =>
+                    ComputeResourceKind.SampledImage,
+                _ => throw new GraphicsDeviceException(
+                    $"Compute module '{module}' binds '{binding.Name}' as {binding.Kind}, which the "
+                    + "compute seam has no descriptor for."),
+            };
+
+            resources.Add(new ComputeShaderAnalysis.Resource(
+                (uint)binding.Binding,
+                (uint)ComputeBindingSpace.SlotOf(binding.Binding),
+                kind,
+                binding.Name,
+                binding.Dimensions == 3,
+                byUnit.Contains(binding.Name)));
+        }
+
+        return new ComputeShaderAnalysis.Analysis(
+            string.Empty,
+            resources,
+            uniforms,
+            reflection.Globals is null ? -1 : reflection.Globals.Binding,
+            reflection.Globals?.Size ?? 0);
+    }
     /// <summary>Gets the program's name.</summary>
     public string Name { get; }
 
@@ -319,7 +427,7 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
         return 1;
     }
 
-    private (Pipeline, PipelineLayout) CreatePipeline(byte[] spirv)
+    private (Pipeline, PipelineLayout) CreatePipeline(byte[] spirv, string entryPoint = "main")
     {
         ShaderModule module = CreateModule(spirv);
         try
@@ -335,31 +443,35 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
             PipelineLayout pipelineLayout;
             VkCheck.Ok(_vk.CreatePipelineLayout(_device.Device, &layoutInfo, null, &pipelineLayout), "vkCreatePipelineLayout");
 
-            byte* entry = stackalloc byte[5];
-            entry[0] = (byte)'m';
-            entry[1] = (byte)'a';
-            entry[2] = (byte)'i';
-            entry[3] = (byte)'n';
-            entry[4] = 0;
-
-            ComputePipelineCreateInfo createInfo = new()
+            // The entry point is whatever the module named it. Slang keeps the source's name where the
+            // build asks it to, and a pipeline created against the wrong one fails with ErrorUnknown.
+            nint entry = SilkMarshal.StringToPtr(entryPoint, NativeStringEncoding.UTF8);
+            try
             {
-                SType = StructureType.ComputePipelineCreateInfo,
-                Stage = new PipelineShaderStageCreateInfo
+                ComputePipelineCreateInfo createInfo = new()
                 {
-                    SType = StructureType.PipelineShaderStageCreateInfo,
-                    Stage = ShaderStageFlags.ComputeBit,
-                    Module = module,
-                    PName = entry,
-                },
-                Layout = pipelineLayout,
-            };
+                    SType = StructureType.ComputePipelineCreateInfo,
+                    Stage = new PipelineShaderStageCreateInfo
+                    {
+                        SType = StructureType.PipelineShaderStageCreateInfo,
+                        Stage = ShaderStageFlags.ComputeBit,
+                        Module = module,
+                        PName = (byte*)entry,
+                    },
+                    Layout = pipelineLayout,
+                };
 
-            Pipeline pipeline;
-            VkCheck.Ok(
-                _vk.CreateComputePipelines(_device.Device, _device.PipelineCache, 1, &createInfo, null, &pipeline),
-                "vkCreateComputePipelines");
-            return (pipeline, pipelineLayout);
+                Pipeline pipeline;
+                VkCheck.Ok(
+                    _vk.CreateComputePipelines(
+                        _device.Device, _device.PipelineCache, 1, &createInfo, null, &pipeline),
+                    "vkCreateComputePipelines");
+                return (pipeline, pipelineLayout);
+            }
+            finally
+            {
+                SilkMarshal.Free(entry);
+            }
         }
         finally
         {

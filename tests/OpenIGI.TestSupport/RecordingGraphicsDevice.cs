@@ -2,6 +2,8 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 
+using OpenIGI.Shaders;
+
 namespace OpenIGI.TestSupport;
 
 /// <summary>
@@ -377,6 +379,16 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 
     /// <inheritdoc/>
     public ComputeShaderHandle CreateComputeShader(string source, string name)
+    {
+        ComputeShaders.Add(name);
+        return new ComputeShaderHandle(_nextComputeId++);
+    }
+
+    /// <inheritdoc/>
+    public ComputeShaderHandle CreateComputeShader(
+        ShaderModuleId shaderModule,
+        ShaderVariant variant,
+        string name)
     {
         ComputeShaders.Add(name);
         return new ComputeShaderHandle(_nextComputeId++);
