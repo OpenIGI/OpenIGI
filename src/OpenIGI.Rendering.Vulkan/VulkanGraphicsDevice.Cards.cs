@@ -176,7 +176,7 @@ public sealed partial class VulkanGraphicsDevice
         vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, _cardPipeline.Pipeline);
         InvalidateBoundState();
         BindMeshBuffers(mesh);
-        BindMeshTextures(_cardPipeline.PipelineLayout, diffuse, lightmap);
+        BindMeshTextures(_cardPipeline.PipelineLayout, diffuse, lightmap, split: true);
 
         Matrix4f mvp = _projection * modelView;
         float* data = stackalloc float[32];
@@ -223,7 +223,7 @@ public sealed partial class VulkanGraphicsDevice
             targets[0], targets[1], targets[2], targets[3]);
 
         _cardPipeline = new CardPipeline(
-            _instance.Vk, _device, _shaderCompiler, _cardAtlas.RenderPass, _mesh3D.CombinedTextureSetLayout);
+            _instance.Vk, _device, _cardAtlas.RenderPass, _mesh3D.DescriptorSetLayout);
 
         // Registered with the compute side, so the lighting passes can bind them by handle. That also
         // makes the device their owner: it frees everything it has registered.

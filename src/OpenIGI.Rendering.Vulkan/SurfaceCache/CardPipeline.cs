@@ -1,6 +1,8 @@
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
+using ShaderStage = OpenIGI.Rendering.Vulkan.Shaders.ShaderStage;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
@@ -21,35 +23,38 @@ internal sealed unsafe class CardPipeline : IDisposable
     // rather than the wrapper. Passing it is what lets the driver return a previous run's
     // compiled pipeline instead of building this one again.
     private readonly PipelineCache _pipelineCache;
-    private readonly VulkanShaderModule _vertex;
-    private readonly VulkanShaderModule _fragment;
+    private readonly VulkanShaderModule _shader;
+    private readonly string _vertexEntryPoint;
+    private readonly string _fragmentEntryPoint;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="CardPipeline"/> class.</summary>
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the pipeline lives on.</param>
-    /// <param name="compiler">The shader compiler.</param>
     /// <param name="renderPass">The card atlas's render pass.</param>
     /// <param name="textureSetLayout">The layout of the two-sampler texture set a mesh draw binds.</param>
     public CardPipeline(
         Vk vk,
         VulkanDevice device,
-        ShaderCompiler compiler,
         RenderPass renderPass,
         DescriptorSetLayout textureSetLayout)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(compiler);
 
         _vk = vk;
         _device = device.Device;
         _pipelineCache = device.PipelineCache;
 
-        _vertex = new VulkanShaderModule(
-            vk, _device, compiler.Compile(CardShaderSource.Vertex, ShaderStage.Vertex, "card.vert"), ShaderStage.Vertex);
-        _fragment = new VulkanShaderModule(
-            vk, _device, compiler.Compile(CardShaderSource.Fragment, ShaderStage.Fragment, "card.frag"), ShaderStage.Fragment);
+        ShaderReflection reflection = ShaderCatalog.GetReflection(ShaderModuleId.Card);
+        _vertexEntryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Vertex).Name;
+        _fragmentEntryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Fragment).Name;
+        _shader = new VulkanShaderModule(
+            vk,
+            _device,
+            ShaderCatalog.GetSpirv(ShaderModuleId.Card).Span,
+            ShaderStage.Vertex,
+            _vertexEntryPoint);
 
         PipelineLayout = CreatePipelineLayout(textureSetLayout);
         Pipeline = CreatePipeline(renderPass);
@@ -72,8 +77,7 @@ internal sealed unsafe class CardPipeline : IDisposable
         _disposed = true;
         _vk.DestroyPipeline(_device, Pipeline, null);
         _vk.DestroyPipelineLayout(_device, PipelineLayout, null);
-        _vertex.Dispose();
-        _fragment.Dispose();
+        _shader.Dispose();
     }
 
     private PipelineLayout CreatePipelineLayout(DescriptorSetLayout textureSetLayout)
@@ -101,12 +105,13 @@ internal sealed unsafe class CardPipeline : IDisposable
 
     private Pipeline CreatePipeline(RenderPass renderPass)
     {
-        nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
+        nint vertexEntryPoint = SilkMarshal.StringToPtr(_vertexEntryPoint, NativeStringEncoding.UTF8);
+        nint fragmentEntryPoint = SilkMarshal.StringToPtr(_fragmentEntryPoint, NativeStringEncoding.UTF8);
         try
         {
             PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
-            stages[0] = Stage(ShaderStageFlags.VertexBit, _vertex.Handle, entryPoint);
-            stages[1] = Stage(ShaderStageFlags.FragmentBit, _fragment.Handle, entryPoint);
+            stages[0] = Stage(ShaderStageFlags.VertexBit, _shader.Handle, vertexEntryPoint);
+            stages[1] = Stage(ShaderStageFlags.FragmentBit, _shader.Handle, fragmentEntryPoint);
 
             VertexInputBindingDescription vertexBinding = new()
             {
@@ -218,7 +223,8 @@ internal sealed unsafe class CardPipeline : IDisposable
         }
         finally
         {
-            SilkMarshal.Free(entryPoint);
+            SilkMarshal.Free(vertexEntryPoint);
+            SilkMarshal.Free(fragmentEntryPoint);
         }
     }
 

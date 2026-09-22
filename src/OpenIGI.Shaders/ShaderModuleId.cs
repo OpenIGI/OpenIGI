@@ -33,4 +33,7 @@ public enum ShaderModuleId
 
     /// <summary>The sun shadow pass: depth only, cutting the holes the G-buffer cuts.</summary>
     Shadow,
+
+    /// <summary>Captures a patch of a model into a page of the card atlas, as material rather than picture.</summary>
+    Card,
 }

@@ -20,6 +20,10 @@
     {
       "id": "Shadow",
       "source": "World/Shadow.slang"
+    },
+    {
+      "id": "Card",
+      "source": "World/Card.slang"
     }
   ]
 }
