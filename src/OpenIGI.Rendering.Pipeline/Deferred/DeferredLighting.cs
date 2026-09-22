@@ -139,6 +139,33 @@ public sealed class DeferredLighting : IDisposable
         _bindings.BindRemainingSamplers(_sampler);
     }
 
+    /// <summary>Points the shading at the atmosphere's tables instead of at stand-ins.</summary>
+    /// <param name="skyView">The sky's colour by direction, which the background is read from.</param>
+    /// <param name="transmittance">How much sunlight survives to a point.</param>
+    /// <param name="irradiance">The sky's light as harmonics, which every surface reads its ambient from.</param>
+    /// <param name="sampler">The sampler the three are read through.</param>
+    /// <remarks>
+    /// Once, when the atmosphere is stood up; the tables are a fixed size and never change place. What
+    /// this replaces is three of the stand-ins, and the sweep that fills the rest leaves a slot alone
+    /// once something has been bound to it — which is how each pass takes its own slot as it is built.
+    /// </remarks>
+    public void BindSky(
+        IRhiTextureView skyView,
+        IRhiTextureView transmittance,
+        IRhiTextureView irradiance,
+        IRhiSampler sampler)
+    {
+        ArgumentNullException.ThrowIfNull(skyView);
+        ArgumentNullException.ThrowIfNull(transmittance);
+        ArgumentNullException.ThrowIfNull(irradiance);
+        ArgumentNullException.ThrowIfNull(sampler);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        _bindings.Bind("uSkyView", skyView, sampler);
+        _bindings.Bind("uTransmittanceLut", transmittance, sampler);
+        _bindings.Bind("uSkyIrradiance", irradiance, sampler);
+    }
+
     /// <summary>Records the draw into a pass already begun on the lit target.</summary>
     /// <param name="pass">The pass to record into.</param>
     /// <param name="push">The per-draw block the shading reads.</param>

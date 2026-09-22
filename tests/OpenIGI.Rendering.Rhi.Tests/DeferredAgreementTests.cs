@@ -1,7 +1,10 @@
 using System.Runtime.InteropServices;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Pipeline.Deferred;
 using OpenIGI.Rendering.Pipeline.Targets;
+using OpenIGI.Rendering.Pipeline.Sky;
 using OpenIGI.Rendering.Rhi;
+using OpenIGI.Rendering.Sky;
 using OpenIGI.Rendering.Vulkan.Rhi;
 using OpenIGI.Rendering.WebGpu;
 using Xunit;
@@ -96,6 +99,26 @@ public sealed class DeferredAgreementTests(ITestOutputHelper output)
     {
         using SceneTargetSet targets = new(device, Size, Size);
         using DeferredLighting lighting = new(device, framesInFlight: 1, RhiTextureFormat.Rgba16Float);
+        using SkyAtmosphere sky = new(device, framesInFlight: 1);
+
+        // The atmosphere first, and bound into the shading, so three of its slots hold a marched sky
+        // rather than a stand-in. It is the only one of the shading's inputs that exists over the RHI
+        // yet, and having it here is what keeps this test honest as the others arrive.
+        using (IRhiCommandEncoder encoder = device.CreateCommandEncoder("sky"))
+        {
+            using (IRhiComputePassEncoder pass = encoder.BeginComputePass(new RhiComputePassDescriptor(Label: "sky")))
+            {
+                sky.Record(pass, frameInFlight: 0, new SkyConditions(
+                    new Vector3f(0.3f, 0.9f, 0.31f),
+                    new Vector3f(10f, 10f, 10f),
+                    SkyConditions.ViewHeightFor(altitudeMetres: 2f),
+                    SkyLightIntensity: 1f));
+            }
+
+            device.Submit([encoder.Finish()]);
+        }
+
+        lighting.BindSky(sky.SkyViewTable, sky.TransmittanceTable, sky.IrradianceTable, sky.Sampler);
 
         // A G-buffer of chosen bytes. Cleared rather than drawn, so nothing about a rasteriser can make
         // the two runs start from different texels.
