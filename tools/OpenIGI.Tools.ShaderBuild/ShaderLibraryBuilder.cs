@@ -98,7 +98,6 @@ public sealed class ShaderLibraryBuilder
         // separately buys -- so one table describes both, and a second would only be a second thing
         // to keep in step.
         SlangOutput spirv = _compiler.Compile(sourcePath, SlangTarget.Spirv, variant.Defines, withReflection: true, scratch);
-        SlangOutput wgsl = _compiler.Compile(sourcePath, SlangTarget.Wgsl, variant.Defines, withReflection: false, scratch);
 
         if (spirv.ReflectionJson is null)
         {
@@ -110,7 +109,14 @@ public sealed class ShaderLibraryBuilder
             JsonSerializer.Serialize(reflection, ShaderJsonContext.Default.ShaderReflection));
 
         yield return Write($"{module.Id}.{variant.Name}.spv", spirv.Code, checkOnly);
-        yield return Write($"{module.Id}.{variant.Name}.wgsl", NormaliseNewlines(wgsl.Code), checkOnly);
+
+        // A variant that traces rays has no WGSL form, because WGSL has no ray tracing.
+        if (variant.Compiles(ShaderTarget.Wgsl))
+        {
+            SlangOutput wgsl = _compiler.Compile(sourcePath, SlangTarget.Wgsl, variant.Defines, withReflection: false, scratch);
+            yield return Write($"{module.Id}.{variant.Name}.wgsl", NormaliseNewlines(wgsl.Code), checkOnly);
+        }
+
         yield return Write($"{module.Id}.{variant.Name}.reflection.json", NormaliseNewlines(reflectionBytes), checkOnly);
     }
 

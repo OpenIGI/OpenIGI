@@ -84,7 +84,7 @@ public sealed partial class ShaderCatalogTests
             $"Slang sources not listed in {ShaderManifest.FileName}:\n  " + string.Join("\n  ", unlisted));
     }
 
-    /// <summary>Every declared variant has all three of its compiled artefacts embedded.</summary>
+    /// <summary>Every declared variant has its compiled artefacts embedded.</summary>
     [Theory]
     [MemberData(nameof(Variants))]
     public void Every_variant_has_its_compiled_artifacts(ShaderModuleId module, string variant)
@@ -92,8 +92,26 @@ public sealed partial class ShaderCatalogTests
         ShaderVariant selected = new(variant);
 
         Assert.False(ShaderCatalog.GetSpirv(module, selected).IsEmpty);
-        Assert.False(string.IsNullOrWhiteSpace(ShaderCatalog.GetWgsl(module, selected)));
         Assert.NotNull(ShaderCatalog.GetReflection(module, selected));
+
+        if (CompilesWgsl(module, variant))
+        {
+            Assert.False(string.IsNullOrWhiteSpace(ShaderCatalog.GetWgsl(module, selected)));
+        }
+    }
+
+    /// <summary>Whether a variant is compiled for WGSL, which one that traces rays is not.</summary>
+    private static bool CompilesWgsl(ShaderModuleId module, string variant)
+    {
+        foreach (ShaderVariantEntry entry in ShaderCatalog.Manifest.Module(module).Variants)
+        {
+            if (entry.Name == variant)
+            {
+                return entry.Compiles(ShaderTarget.Wgsl);
+            }
+        }
+
+        return true;
     }
 
     /// <summary>The SPIR-V is SPIR-V: the magic number and a whole number of words.</summary>
@@ -112,6 +130,12 @@ public sealed partial class ShaderCatalogTests
     [MemberData(nameof(Variants))]
     public void Entry_points_exist_in_both_targets(ShaderModuleId module, string variant)
     {
+        if (!CompilesWgsl(module, variant))
+        {
+            // A ray-tracing variant has no WGSL form to agree with.
+            return;
+        }
+
         ShaderVariant selected = new(variant);
         ShaderReflection reflection = ShaderCatalog.GetReflection(module, selected);
         string wgsl = ShaderCatalog.GetWgsl(module, selected);
@@ -132,6 +156,12 @@ public sealed partial class ShaderCatalogTests
     [MemberData(nameof(Variants))]
     public void Bindings_agree_across_both_targets(ShaderModuleId module, string variant)
     {
+        if (!CompilesWgsl(module, variant))
+        {
+            // A ray-tracing variant has no WGSL form to agree with.
+            return;
+        }
+
         ShaderVariant selected = new(variant);
         ShaderReflection reflection = ShaderCatalog.GetReflection(module, selected);
         string wgsl = ShaderCatalog.GetWgsl(module, selected);

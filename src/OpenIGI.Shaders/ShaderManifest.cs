@@ -2,14 +2,41 @@ using System.Text.Json.Serialization;
 
 namespace OpenIGI.Shaders;
 
+/// <summary>Which compiled form a variant is produced in.</summary>
+public enum ShaderTarget
+{
+    /// <summary>SPIR-V, for Vulkan.</summary>
+    Spirv,
+
+    /// <summary>WGSL, for WebGPU.</summary>
+    Wgsl,
+}
+
 /// <summary>One variant of a module, as the manifest declares it.</summary>
 /// <param name="Name">The variant's name; part of its generated file names.</param>
 /// <param name="Defines">Preprocessor defines handed to <c>slangc</c> for this variant.</param>
-public sealed record ShaderVariantEntry(string Name, IReadOnlyDictionary<string, string> Defines)
+/// <param name="Targets">
+/// The forms to compile, or empty for both. A variant that traces rays lists SPIR-V alone: WGSL has
+/// no ray tracing, so there is nothing for that target to be compiled to, and the backend that reads
+/// it stands the feature down the way MoltenVK does.
+/// </param>
+public sealed record ShaderVariantEntry(
+    string Name,
+    IReadOnlyDictionary<string, string> Defines,
+    IReadOnlyList<ShaderTarget> Targets)
 {
     /// <summary>Gets the defines, treating an absent map as an empty one.</summary>
     public IReadOnlyDictionary<string, string> Defines { get; init; } =
         Defines ?? new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>Gets the targets to compile, substituting both when none are declared.</summary>
+    public IReadOnlyList<ShaderTarget> Targets { get; init; } =
+        Targets is { Count: > 0 } ? Targets : [ShaderTarget.Spirv, ShaderTarget.Wgsl];
+
+    /// <summary>Whether this variant is compiled for a target.</summary>
+    /// <param name="target">The target asked about.</param>
+    /// <returns><see langword="true"/> when the variant is compiled for it.</returns>
+    public bool Compiles(ShaderTarget target) => Targets.Contains(target);
 }
 
 /// <summary>One module, as the manifest declares it.</summary>
@@ -25,7 +52,7 @@ public sealed record ShaderModuleEntry(
     public IReadOnlyList<ShaderVariantEntry> Variants { get; init; } =
         Variants is { Count: > 0 }
             ? Variants
-            : [new ShaderVariantEntry(ShaderVariant.DefaultName, new Dictionary<string, string>(StringComparer.Ordinal))];
+            : [new ShaderVariantEntry(ShaderVariant.DefaultName, new Dictionary<string, string>(StringComparer.Ordinal), [])];
 }
 
 /// <summary>
