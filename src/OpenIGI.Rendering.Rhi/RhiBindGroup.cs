@@ -19,6 +19,12 @@ namespace OpenIGI.Rendering.Rhi;
 /// One group can then serve every frame in flight, which is how the per-frame uniform ring works.
 /// </param>
 /// <param name="MultisampledTexture">Whether a sampled texture slot takes a multisampled texture.</param>
+/// <param name="SampleType">
+/// What a shader reads out of a <see cref="RhiBindingType.SampledTexture"/>. Stated because a backend
+/// that validates the layout rejects a depth texture bound to a slot that says float, and the layout is
+/// built before anything is bound to it — so it cannot be inferred from what arrives. Ignored for every
+/// other type.
+/// </param>
 public readonly record struct RhiBindGroupLayoutEntry(
     int Binding,
     RhiBindingType Type,
@@ -27,7 +33,29 @@ public readonly record struct RhiBindGroupLayoutEntry(
     RhiTextureFormat StorageFormat = RhiTextureFormat.Undefined,
     RhiTextureViewDimension ViewDimension = RhiTextureViewDimension.Texture2D,
     bool HasDynamicOffset = false,
-    bool MultisampledTexture = false);
+    bool MultisampledTexture = false,
+    RhiTextureSampleType SampleType = RhiTextureSampleType.Float);
+
+/// <summary>What a shader reads out of a sampled texture.</summary>
+/// <remarks>
+/// A bind group layout states it and is validated against it. Vulkan does not distinguish these at all
+/// — every one of them is a sampled image in a descriptor set — so a wrong one is invisible there and
+/// fatal in a browser.
+/// </remarks>
+public enum RhiTextureSampleType
+{
+    /// <summary>Floating point, the ordinary case.</summary>
+    Float,
+
+    /// <summary>A depth texture, which is what a comparison lookup reads.</summary>
+    Depth,
+
+    /// <summary>Unsigned integer.</summary>
+    Uint,
+
+    /// <summary>Signed integer.</summary>
+    Sint,
+}
 
 /// <summary>The shape of a bind group.</summary>
 /// <param name="Entries">Its slots, which need not be in binding order.</param>

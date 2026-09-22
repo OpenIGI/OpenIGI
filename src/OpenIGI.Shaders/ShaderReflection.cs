@@ -89,6 +89,28 @@ public enum ShaderStorageFormat
     Rg11B10Ufloat,
 }
 
+/// <summary>What a shader reads out of a sampled texture.</summary>
+/// <remarks>
+/// A WebGPU bind group layout states it and is validated against it: a depth texture bound to a slot
+/// that says float binds nothing. A Vulkan descriptor set does not distinguish them, so this is another
+/// difference only the browser can find. Read out of the emitted WGSL, which spells each one in the
+/// type itself.
+/// </remarks>
+public enum ShaderSampleType
+{
+    /// <summary>Floating point, the ordinary case.</summary>
+    Float,
+
+    /// <summary>A depth texture, which is what a comparison lookup reads.</summary>
+    Depth,
+
+    /// <summary>Unsigned integer.</summary>
+    Uint,
+
+    /// <summary>Signed integer.</summary>
+    Sint,
+}
+
 /// <summary>One resource a module binds, as both targets agree it is bound.</summary>
 /// <param name="Name">The name the Slang source declares.</param>
 /// <param name="Group">The descriptor set on Vulkan, the bind group on WebGPU.</param>
@@ -135,6 +157,11 @@ public enum ShaderStorageFormat
 /// identically, and SPIR-V does not distinguish them either. <see langword="false"/> for a variant with
 /// no WGSL form, which is a variant no WebGPU layout can be built from anyway.
 /// </param>
+/// <param name="SampleType">
+/// What a shader reads out of a sampled texture, which a bind group layout also states. Read from the
+/// emitted WGSL for the same reason the comparison flag is, and <see cref="ShaderSampleType.Float"/>
+/// for everything that is not a sampled texture.
+/// </param>
 public sealed record ShaderBinding(
     string Name,
     int Group,
@@ -147,7 +174,9 @@ public sealed record ShaderBinding(
     // Written only where they are true. The committed tables are meant to be read in review, and two
     // more false flags on each of a thousand ordinary bindings would bury what they are there to say.
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Arrayed = false,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Comparison = false);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Comparison = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    ShaderSampleType SampleType = ShaderSampleType.Float);
 
 /// <summary>How a storage binding may be reached.</summary>
 /// <remarks>

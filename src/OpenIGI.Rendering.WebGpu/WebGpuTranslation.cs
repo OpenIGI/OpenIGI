@@ -417,18 +417,38 @@ public static class WebGpuTranslation
         _ => throw new ArgumentOutOfRangeException(nameof(access), access, "Not a storage access."),
     };
 
-    /// <summary>How a sampled texture binding reads its texture, given the format it will hold.</summary>
-    /// <param name="format">The format the binding will be filled with.</param>
+    /// <summary>How a sampled texture binding reads its texture.</summary>
+    /// <param name="declared">What the shader says it reads out of the texture.</param>
+    /// <param name="format">The format the binding will be filled with, where one is stated.</param>
     /// <param name="features">What the device offers.</param>
     /// <returns>The sample type to declare.</returns>
     /// <remarks>
-    /// Not a translation but a decision, and one WebGPU forces: a binding declares whether the texture it
-    /// reads can be filtered, and binding a texture whose format cannot be filtered to one that says it
-    /// can is a validation failure. A depth format reads as depth; a 32-bit float reads as filterable
-    /// only where the adapter offers <c>float32-filterable</c>.
+    /// Part translation, part decision, and WebGPU forces both: a binding declares what it reads and
+    /// whether that can be filtered, and binding a texture that disagrees with either is a validation
+    /// failure. What it reads is the shader's own word — Vulkan makes no such distinction, so nothing
+    /// else in this renderer would ever have carried it. Whether it can be FILTERED depends on the
+    /// adapter: a 32-bit float is filterable only where <c>float32-filterable</c> is offered.
     /// </remarks>
-    public static WGPUTextureSampleType SampleType(RhiTextureFormat format, RhiFeatures features)
+    public static WGPUTextureSampleType SampleType(
+        RhiTextureSampleType declared,
+        RhiTextureFormat format,
+        RhiFeatures features)
     {
+        switch (declared)
+        {
+            case RhiTextureSampleType.Depth:
+                return WGPUTextureSampleType.Depth;
+
+            case RhiTextureSampleType.Uint:
+                return WGPUTextureSampleType.Uint;
+
+            case RhiTextureSampleType.Sint:
+                return WGPUTextureSampleType.Sint;
+
+            default:
+                break;
+        }
+
         if (format.IsDepth())
         {
             return WGPUTextureSampleType.Depth;

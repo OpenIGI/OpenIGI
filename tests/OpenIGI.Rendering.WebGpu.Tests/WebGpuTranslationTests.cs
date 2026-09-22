@@ -218,6 +218,22 @@ public sealed class WebGpuTranslationTests
     {
         RhiFeatures features = RhiFeatures.None with { Float32Filterable = float32Filterable };
 
-        Assert.Equal(expected, WebGpuTranslation.SampleType(format, features));
+        Assert.Equal(expected, WebGpuTranslation.SampleType(RhiTextureSampleType.Float, format, features));
+    }
+
+    [Theory]
+    [InlineData(RhiTextureSampleType.Depth, WGPUTextureSampleType.Depth)]
+    [InlineData(RhiTextureSampleType.Uint, WGPUTextureSampleType.Uint)]
+    [InlineData(RhiTextureSampleType.Sint, WGPUTextureSampleType.Sint)]
+    public void What_a_binding_reads_is_the_shaders_word_rather_than_a_formats(
+        RhiTextureSampleType declared,
+        WGPUTextureSampleType expected)
+    {
+        // The layout is built before anything is bound to it, so the format a slot will be filled with
+        // is not available -- and the shadow map, which is the case that matters, is declared with no
+        // format at all. Vulkan makes none of these distinctions, so the shader is the only source.
+        Assert.Equal(
+            expected,
+            WebGpuTranslation.SampleType(declared, RhiTextureFormat.Undefined, RhiFeatures.None));
     }
 }

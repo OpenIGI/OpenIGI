@@ -174,96 +174,14 @@ public sealed class ComputeProgram : IDisposable
     /// <param name="binding">What the module declares.</param>
     /// <returns>The entry.</returns>
     /// <exception cref="NotSupportedException">The binding is of a kind no compute pass uses.</exception>
-    public static RhiBindGroupLayoutEntry EntryFor(ShaderBinding binding)
-    {
-        ArgumentNullException.ThrowIfNull(binding);
-
-        return binding.Kind switch
-        {
-            ShaderBindingKind.Texture => new RhiBindGroupLayoutEntry(
-                binding.Binding,
-                RhiBindingType.SampledTexture,
-                RhiShaderStages.Compute,
-                ViewDimension: Dimension(binding)),
-
-            ShaderBindingKind.Sampler => new RhiBindGroupLayoutEntry(
-                binding.Binding,
-                RhiBindingType.Sampler,
-                RhiShaderStages.Compute),
-
-            // The access the module declared, not an assumption: a layout that says read-write about a
-            // write-only binding binds nothing, and the failure names neither the module nor the texture.
-            ShaderBindingKind.StorageTexture => new RhiBindGroupLayoutEntry(
-                binding.Binding,
-                RhiBindingType.StorageTexture,
-                RhiShaderStages.Compute,
-                Access(binding),
-                StorageFormat(binding),
-                Dimension(binding)),
-
-            ShaderBindingKind.UniformBuffer => new RhiBindGroupLayoutEntry(
-                binding.Binding,
-                RhiBindingType.UniformBuffer,
-                RhiShaderStages.Compute),
-
-            ShaderBindingKind.StorageBuffer => new RhiBindGroupLayoutEntry(
-                binding.Binding,
-                RhiBindingType.StorageBuffer,
-                RhiShaderStages.Compute),
-
-            ShaderBindingKind.AccelerationStructure => new RhiBindGroupLayoutEntry(
-                binding.Binding,
-                RhiBindingType.AccelerationStructure,
-                RhiShaderStages.Compute),
-
-            _ => throw new NotSupportedException(
-                $"A compute pass cannot bind '{binding.Name}', which is a {binding.Kind}."),
-        };
-    }
-
-    /// <summary>How a storage binding may be reached, as the module declared it.</summary>
-    private static RhiStorageAccess Access(ShaderBinding binding) => binding.StorageAccess switch
-    {
-        ShaderStorageAccess.ReadWrite => RhiStorageAccess.ReadWrite,
-        _ => RhiStorageAccess.WriteOnly,
-    };
-
-    /// <summary>How a texture binding is addressed, from how many dimensions it declared.</summary>
-    private static RhiTextureViewDimension Dimension(ShaderBinding binding) => binding.Dimensions switch
-    {
-        3 => RhiTextureViewDimension.Texture3D,
-        _ => RhiTextureViewDimension.Texture2D,
-    };
-
-    /// <summary>
-    /// The format a storage binding is declared with, as the module <em>authored</em> it.
-    /// </summary>
     /// <remarks>
-    /// The authored one rather than what a target emitted, because a backend that widens knows its own
-    /// widening and reads it back from the same library. Stating the widened one here would make this
-    /// the second place that rule lives.
+    /// The same derivation the raster passes use, told that a compute pass is the only stage reading it.
+    /// Kept here because a caller building a group for one of these passes asks the program, not the
+    /// rule.
     /// </remarks>
-    private static RhiTextureFormat StorageFormat(ShaderBinding binding) => binding.StorageFormat switch
-    {
-        ShaderStorageFormat.R8Unorm => RhiTextureFormat.R8Unorm,
-        ShaderStorageFormat.Rg8Unorm => RhiTextureFormat.Rg8Unorm,
-        ShaderStorageFormat.Rg16Float => RhiTextureFormat.Rg16Float,
-        ShaderStorageFormat.Rgba16Float => RhiTextureFormat.Rgba16Float,
-        ShaderStorageFormat.R32Float => RhiTextureFormat.R32Float,
-        ShaderStorageFormat.R32Uint => RhiTextureFormat.R32Uint,
-        ShaderStorageFormat.Rgba32Float => RhiTextureFormat.Rgba32Float,
-        _ => throw new NotSupportedException(
-            $"The storage binding '{binding.Name}' declares the format {binding.StorageFormat}, which has "
-            + "no counterpart here. A storage format is what a bind group layout is validated against, so "
-            + "a guess would bind nothing."),
-    };
+    public static RhiBindGroupLayoutEntry EntryFor(ShaderBinding binding) =>
+        ShaderBindingLayout.EntryFor(binding, RhiShaderStages.Compute);
 
-    /// <summary>Whether a binding is the push block rather than a resource of the module's own.</summary>
-    /// <remarks>
-    /// Matched against where the reflection says the block is, not against its name: the block is a real
-    /// binding on one target and push constants on the other, and a name that happened to contain the
-    /// word would drop a texture from the layout — which binds nothing and reports nothing.
-    /// </remarks>
     private bool IsPushBlock(ShaderBinding binding) =>
         Reflection.PushBlock is { } push
         && binding.Group == push.Group

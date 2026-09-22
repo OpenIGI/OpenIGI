@@ -828,7 +828,7 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
                 break;
 
             case RhiBindingType.SampledTexture:
-                native.texture.sampleType = WebGpuTranslation.SampleType(entry.StorageFormat, Features);
+                native.texture.sampleType = WebGpuTranslation.SampleType(entry.SampleType, entry.StorageFormat, Features);
                 native.texture.viewDimension = WebGpuTranslation.ViewDimension(entry.ViewDimension);
                 native.texture.multisampled = entry.MultisampledTexture ? 1u : 0u;
                 break;
