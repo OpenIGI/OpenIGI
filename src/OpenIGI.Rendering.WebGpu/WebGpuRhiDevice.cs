@@ -24,18 +24,25 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     private readonly WebGpuContext _context;
     private readonly bool _ownsContext;
     private readonly List<string> _widened = [];
+    private readonly WebGpuSurface? _surface;
+    private readonly WebGpuSurfaceSupport _support;
     private WebGpuPushRing? _pushes;
+    private WebGpuTexture? _frameTexture;
+    private int _frameIndex;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="WebGpuRhiDevice"/> class.</summary>
     /// <param name="context">The instance, adapter, device and queue to work through.</param>
     /// <param name="ownsContext">Whether disposing this disposes the context too.</param>
-    public WebGpuRhiDevice(WebGpuContext context, bool ownsContext = true)
+    /// <param name="surface">The surface to present to, or null for a headless device.</param>
+    public WebGpuRhiDevice(WebGpuContext context, bool ownsContext = true, WebGpuSurface? surface = null)
     {
         ArgumentNullException.ThrowIfNull(context);
 
         _context = context;
         _ownsContext = ownsContext;
+        _surface = surface;
+        _support = surface?.Describe(context.Adapter) ?? default;
     }
 
     /// <summary>Creates a device over a context of its own.</summary>
@@ -44,6 +51,50 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     /// <returns>The device.</returns>
     public static WebGpuRhiDevice Create(WGPUSurface surface = default, bool lowPower = false) =>
         new(WebGpuContext.Create(surface, lowPower));
+
+    /// <summary>Creates a device that presents to a window.</summary>
+    /// <param name="handles">The window's native handles.</param>
+    /// <param name="width">The width to configure the surface at.</param>
+    /// <param name="height">The height to configure it at.</param>
+    /// <param name="vsync">Whether to wait for the display.</param>
+    /// <param name="lowPower">Whether to prefer the integrated adapter.</param>
+    /// <returns>The device, with its surface configured.</returns>
+    /// <remarks>
+    /// The surface is made before the adapter is asked for, because the adapter has to be one that can
+    /// present to it -- on a machine with two, asking the other way round can pick the one the window is
+    /// not on.
+    /// </remarks>
+    public static WebGpuRhiDevice CreateForWindow(
+        in WebGpuWindowHandles handles,
+        int width,
+        int height,
+        bool vsync = true,
+        bool lowPower = false)
+    {
+        WgpuLibrary.Register();
+
+        WGPUInstance instance = Wgpu.wgpuCreateInstance(null);
+        if (!instance.IsValid)
+        {
+            throw new InvalidOperationException("wgpu-native would not create an instance.");
+        }
+
+        WebGpuSurface surface = WebGpuSurface.Create(instance, handles, "openigi");
+
+        try
+        {
+            WebGpuContext context = WebGpuContext.CreateOn(instance, surface.Handle, lowPower);
+            WebGpuRhiDevice device = new(context, ownsContext: true, surface);
+            device.ConfigureSurface(width, height, vsync);
+            return device;
+        }
+        catch
+        {
+            surface.Dispose();
+            Wgpu.wgpuInstanceRelease(instance);
+            throw;
+        }
+    }
 
     /// <inheritdoc/>
     public string AdapterName => _context.Report.Name;
@@ -508,19 +559,89 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     }
 
     /// <inheritdoc/>
-    /// <remarks>Not built; this device is headless until a surface is attached to it.</remarks>
-    public bool BeginFrame(out RhiFrame frame) =>
-        throw new NotSupportedException("This WebGPU device has no surface, so it presents no frames.");
+    /// <remarks>
+    /// The acquired texture is owned by this frame and released when it ends: a surface hands one out
+    /// anew each time, and holding one past its present keeps the whole rotation alive.
+    /// </remarks>
+    public bool BeginFrame(out RhiFrame frame)
+    {
+        ThrowIfDisposed();
+        frame = default;
+
+        WebGpuSurface surface = _surface
+            ?? throw new InvalidOperationException("This device has no surface, so it presents no frames.");
+
+        WGPUSurfaceGetCurrentTextureStatus status = surface.Acquire(out WebGpuTexture? texture);
+
+        if (texture is null)
+        {
+            // Outdated is what a resize looks like from here, and the answer to it is to reconfigure and
+            // ask again rather than to report a failure.
+            NeedsReconfigure = status is WGPUSurfaceGetCurrentTextureStatus.Outdated
+                or WGPUSurfaceGetCurrentTextureStatus.Lost;
+
+            return false;
+        }
+
+        // Suboptimal presents correctly and says this configuration has been outgrown, so the frame is
+        // drawn and the surface reconfigured after it.
+        NeedsReconfigure = status == WGPUSurfaceGetCurrentTextureStatus.SuccessSuboptimal;
+
+        _frameTexture = texture;
+        frame = new RhiFrame(texture.View, _frameIndex, _frameIndex % FramesInFlight);
+        return true;
+    }
 
     /// <inheritdoc/>
-    /// <remarks>Not built; this device is headless until a surface is attached to it.</remarks>
-    public bool EndFrame(in RhiFrame frame) =>
-        throw new NotSupportedException("This WebGPU device has no surface, so it presents no frames.");
+    public bool EndFrame(in RhiFrame frame)
+    {
+        ThrowIfDisposed();
+
+        WebGpuSurface surface = _surface
+            ?? throw new InvalidOperationException("This device has no surface, so it presents no frames.");
+
+        bool presented = surface.Present();
+
+        _frameTexture?.Dispose();
+        _frameTexture = null;
+        _frameIndex++;
+
+        // The ring is spent for the frame just recorded and free for the next, which is only true
+        // because a frame is presented before the next one is begun.
+        _pushes?.Reset();
+
+        return presented && !NeedsReconfigure;
+    }
 
     /// <inheritdoc/>
-    /// <remarks>Not built; this device is headless until a surface is attached to it.</remarks>
-    public void ConfigureSurface(int width, int height, bool vsync) =>
-        throw new NotSupportedException("This WebGPU device has no surface to configure.");
+    public void ConfigureSurface(int width, int height, bool vsync)
+    {
+        ThrowIfDisposed();
+
+        WebGpuSurface surface = _surface
+            ?? throw new InvalidOperationException("This device has no surface to configure.");
+
+        surface.Configure(_context.Device, _support, width, height, vsync);
+        NeedsReconfigure = false;
+    }
+
+    /// <summary>Gets whether the surface has to be reconfigured before the next frame.</summary>
+    /// <remarks>
+    /// Set when the surface says its textures are outdated, which is what a resize looks like from here.
+    /// The host answers it by configuring again at the new size.
+    /// </remarks>
+    public bool NeedsReconfigure { get; private set; }
+
+    /// <summary>Gets the surface this presents to, or null for a headless device.</summary>
+    public WebGpuSurface? Surface => _surface;
+
+    /// <summary>How many frames may be recorded before one completes.</summary>
+    /// <remarks>
+    /// Two, which is what the per-frame resources are sized for. WebGPU does not expose the surface's
+    /// own image count and does not need to: what this number decides is how many sets of host-written
+    /// resources exist, not how many images the surface rotates through.
+    /// </remarks>
+    public const int FramesInFlight = 2;
 
     /// <inheritdoc/>
     public void WaitIdle()
@@ -539,7 +660,9 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
         }
 
         _disposed = true;
+        _frameTexture?.Dispose();
         _pushes?.Dispose();
+        _surface?.Dispose();
 
         if (_ownsContext)
         {

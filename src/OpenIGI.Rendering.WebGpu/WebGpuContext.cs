@@ -92,6 +92,34 @@ public sealed unsafe class WebGpuContext : IDisposable
                 + "which usually means no usable graphics backend at all.");
         }
 
+        return CreateOn(instance, surface, lowPower, label);
+    }
+
+    /// <summary>Acquires an adapter and a device on an instance somebody else made.</summary>
+    /// <param name="instance">The instance, which this takes ownership of.</param>
+    /// <param name="surface">The surface the adapter must be able to present to, or the null handle.</param>
+    /// <param name="lowPower">Whether to prefer the integrated adapter.</param>
+    /// <param name="label">A name for the device.</param>
+    /// <returns>The context.</returns>
+    /// <exception cref="InvalidOperationException">Something along the way refused.</exception>
+    /// <remarks>
+    /// Separate because a surface has to exist before the adapter is chosen: the adapter must be one
+    /// that can present to it, and on a machine with two, choosing first can pick the one the window is
+    /// not on. So the caller makes the instance, makes the surface, and then asks for the rest.
+    /// </remarks>
+    public static WebGpuContext CreateOn(
+        WGPUInstance instance,
+        WGPUSurface surface = default,
+        bool lowPower = false,
+        string label = "openigi")
+    {
+        WgpuLibrary.Register();
+
+        if (!instance.IsValid)
+        {
+            throw new ArgumentException("The instance is the null handle.", nameof(instance));
+        }
+
         WGPUAdapter adapter = default;
         WGPUDevice device = default;
 
