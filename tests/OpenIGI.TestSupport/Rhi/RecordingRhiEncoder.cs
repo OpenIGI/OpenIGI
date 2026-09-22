@@ -288,10 +288,18 @@ public sealed class RecordingRhiRenderPass(RecordingRhiEncoder encoder, RhiRende
         float width,
         float height,
         float minDepth = 0f,
-        float maxDepth = 1f) => ThrowIfEnded();
+        float maxDepth = 1f)
+    {
+        ThrowIfEnded();
+        Encoder.Add(new RecordedRhiCommand.SetViewport(x, y, width, height, minDepth, maxDepth));
+    }
 
     /// <inheritdoc/>
-    public void SetScissor(int x, int y, int width, int height) => ThrowIfEnded();
+    public void SetScissor(int x, int y, int width, int height)
+    {
+        ThrowIfEnded();
+        Encoder.Add(new RecordedRhiCommand.SetScissor(x, y, width, height));
+    }
 
     /// <inheritdoc/>
     public void SetBlendConstant(in RhiClearColor color) => ThrowIfEnded();

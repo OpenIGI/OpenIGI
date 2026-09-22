@@ -60,6 +60,28 @@ public abstract record RecordedRhiCommand
     /// <param name="Indexed">Whether it went through the index buffer.</param>
     public sealed record Draw(int VertexCount, int InstanceCount, bool Indexed) : RecordedRhiCommand;
 
+    /// <summary>The viewport was set.</summary>
+    /// <param name="X">Its left edge.</param>
+    /// <param name="Y">Its top edge.</param>
+    /// <param name="Width">Its width.</param>
+    /// <param name="Height">Its height.</param>
+    /// <param name="MinDepth">The near end of its depth range.</param>
+    /// <param name="MaxDepth">The far end.</param>
+    public sealed record SetViewport(
+        float X,
+        float Y,
+        float Width,
+        float Height,
+        float MinDepth,
+        float MaxDepth) : RecordedRhiCommand;
+
+    /// <summary>The scissor was set.</summary>
+    /// <param name="X">Its left edge.</param>
+    /// <param name="Y">Its top edge.</param>
+    /// <param name="Width">Its width.</param>
+    /// <param name="Height">Its height.</param>
+    public sealed record SetScissor(int X, int Y, int Width, int Height) : RecordedRhiCommand;
+
     /// <summary>A dispatch was recorded.</summary>
     /// <param name="X">Workgroups along x.</param>
     /// <param name="Y">Workgroups along y.</param>
