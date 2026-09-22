@@ -13,51 +13,69 @@ public readonly record struct WebGpuFormatChoice(RhiTextureFormat Format, bool W
 /// </summary>
 /// <remarks>
 /// <para>
-/// WebGPU allows a storage binding on a short list of formats. The narrow ones this renderer stores
-/// masks and motion in — a single byte, a pair of halves — are not on it unless the adapter offers
-/// <c>texture-formats-tier1</c>, which many do not. The choice is then to refuse the texture or to
-/// allocate a wider format that holds the same values, and refusing means the distance field, the
-/// rejection mask and the dilated velocity simply do not exist on that machine.
+/// WGSL allows a storage binding on a short list of formats, and the narrow ones this renderer stores
+/// masks and motion in — a single byte, a pair of halves — are not on it. The shader compiler already
+/// decides what to do about that: compiling a module whose storage image is declared <c>r8</c> for the
+/// WGSL target emits <c>texture_storage_2d&lt;rgba32float&gt;</c> and says so as a warning.
 /// </para>
 /// <para>
-/// So it widens, and reports it. The values are unchanged — a byte's worth of mask in four bytes reads
-/// back the same — and what is paid is memory and bandwidth, which is a thing to know rather than a
-/// thing to hide. Nothing above this has to care: the texture has the format it was given back, and the
-/// shader declares a format the library compiled it with.
+/// <b>So this is not a choice, it is a matching.</b> WebGPU validates a bind group layout against the
+/// format the module declares, so the host has to allocate exactly what the compiler emitted. Widening
+/// to anything else — even something narrower and more sensible, like <c>rgba8unorm</c> for a mask — is
+/// a layout that will not bind, and the failure names neither the module nor the texture. What that
+/// costs is real and worth knowing: a one-byte mask becomes sixteen bytes a texel.
+/// </para>
+/// <para>
+/// The durable answer is for the shader library's reflection to carry the storage format it compiled
+/// for each target, so this reads it rather than reproducing the compiler's rule. Until then
+/// <c>WebGpuFormatPolicyTests</c> holds the rule to what the committed WGSL actually says, so a
+/// compiler that starts choosing differently fails there rather than on somebody's machine.
 /// </para>
 /// </remarks>
 public static class WebGpuFormatPolicy
 {
+    /// <summary>What the shader compiler widens a narrow storage format to, for the WGSL target.</summary>
+    /// <remarks>
+    /// Measured from the committed output of slangc, not chosen here. Every module in the library whose
+    /// storage image is declared narrower than WGSL allows comes out as this one format.
+    /// </remarks>
+    public const RhiTextureFormat WidenedStorageFormat = RhiTextureFormat.Rgba32Float;
+
     /// <summary>What a texture wanting a storage binding is allocated as.</summary>
     /// <param name="format">The format asked for.</param>
     /// <param name="usage">What the texture is for.</param>
     /// <param name="tier1">Whether the adapter offers the extended storage formats.</param>
     /// <returns>The format to allocate, and whether that widened it.</returns>
+    /// <remarks>
+    /// The adapter's own support is not the whole question and cannot be: even where an adapter offers
+    /// <c>texture-formats-tier1</c>, the module was compiled without knowing that and declares the wide
+    /// format regardless. The flag is kept because a library that compiles per-adapter would use it, and
+    /// because it is what the report says.
+    /// </remarks>
     public static WebGpuFormatChoice ForStorage(RhiTextureFormat format, RhiTextureUsage usage, bool tier1)
     {
-        if (!usage.HasFlag(RhiTextureUsage.Storage) || tier1 || IsCoreStorageFormat(format))
+        if (!usage.HasFlag(RhiTextureUsage.Storage) || IsWgslStorageFormat(format))
         {
             return new WebGpuFormatChoice(format, Widened: false, string.Empty);
         }
 
-        RhiTextureFormat wider = Widen(format);
-        return wider == format
-            ? new WebGpuFormatChoice(format, Widened: false, string.Empty)
-            : new WebGpuFormatChoice(
-                wider,
-                Widened: true,
-                $"{format} cannot carry a storage binding without texture-formats-tier1, so {wider} is "
-                + "allocated instead; the values are the same and the memory is not.");
+        return new WebGpuFormatChoice(
+            WidenedStorageFormat,
+            Widened: true,
+            $"{format} is not a WGSL storage format, and the module that writes it was compiled as "
+            + $"{WidenedStorageFormat}. The texture is allocated to match, at "
+            + $"{BytesPerTexel(WidenedStorageFormat)} bytes a texel instead of {BytesPerTexel(format)}."
+            + (tier1 ? " The adapter would have taken the narrow one; the compiled module would not." : string.Empty));
     }
 
-    /// <summary>Whether a format may carry a storage binding on every WebGPU adapter.</summary>
+    /// <summary>Whether WGSL allows a storage binding of this format at all.</summary>
     /// <param name="format">The format asked about.</param>
-    /// <returns><see langword="true"/> when it is on the core list.</returns>
+    /// <returns><see langword="true"/> when a module may declare it.</returns>
     /// <remarks>
-    /// The list WebGPU requires of every implementation. Anything else needs a feature, and a feature an
-    /// adapter may not have.
+    /// The list WGSL requires of every implementation, which is what the shader compiler targets. An
+    /// adapter may accept more; a module compiled without that knowledge will not use it.
     /// </remarks>
-    public static bool IsCoreStorageFormat(RhiTextureFormat format) => format
+    public static bool IsWgslStorageFormat(RhiTextureFormat format) => format
         is RhiTextureFormat.Rgba8Unorm
         or RhiTextureFormat.Rgba16Float
         or RhiTextureFormat.R32Float
@@ -65,19 +83,23 @@ public static class WebGpuFormatPolicy
         or RhiTextureFormat.Rg32Float
         or RhiTextureFormat.Rgba32Float;
 
-    /// <summary>The narrowest core storage format that holds a format's values.</summary>
-    /// <param name="format">The format asked for.</param>
-    /// <returns>The format to allocate, or the same one when nothing wider would help.</returns>
-    private static RhiTextureFormat Widen(RhiTextureFormat format) => format switch
+    /// <summary>How many bytes one texel of a format occupies, for saying what a widening costs.</summary>
+    /// <param name="format">The format.</param>
+    /// <returns>The size in bytes, or zero for one with no fixed size.</returns>
+    public static int BytesPerTexel(RhiTextureFormat format) => format switch
     {
-        // A single byte and a pair of them are masks and coverage: four bytes holds them exactly.
-        RhiTextureFormat.R8Unorm or RhiTextureFormat.Rg8Unorm => RhiTextureFormat.Rgba8Unorm,
-
-        // Halves are motion and light. Four halves holds them exactly, and at half the cost of floats.
-        RhiTextureFormat.R16Float or RhiTextureFormat.Rg16Float => RhiTextureFormat.Rgba16Float,
-
-        // Packed formats have no wider partner that is also core, so they stay and fail honestly at
-        // creation rather than silently becoming something with different precision.
-        _ => format,
+        RhiTextureFormat.R8Unorm => 1,
+        RhiTextureFormat.Rg8Unorm => 2,
+        RhiTextureFormat.R16Float => 2,
+        RhiTextureFormat.Rg16Float => 4,
+        RhiTextureFormat.Rgba8Unorm or RhiTextureFormat.Rgba8UnormSrgb => 4,
+        RhiTextureFormat.Bgra8Unorm or RhiTextureFormat.Bgra8UnormSrgb => 4,
+        RhiTextureFormat.R32Float or RhiTextureFormat.R32Uint => 4,
+        RhiTextureFormat.Rgb10A2Unorm or RhiTextureFormat.Rg11B10Ufloat => 4,
+        RhiTextureFormat.Rgba16Float or RhiTextureFormat.Rg32Float => 8,
+        RhiTextureFormat.Rgba32Float => 16,
+        RhiTextureFormat.Depth16Unorm => 2,
+        RhiTextureFormat.Depth32Float or RhiTextureFormat.Depth24PlusStencil8 => 4,
+        _ => 0,
     };
 }

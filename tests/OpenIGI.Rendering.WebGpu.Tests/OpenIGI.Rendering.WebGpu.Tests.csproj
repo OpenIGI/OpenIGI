@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenIGI.Rendering.WebGpu\OpenIGI.Rendering.WebGpu.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Shaders\OpenIGI.Shaders.csproj" />
   </ItemGroup>
 
   <ItemGroup>
