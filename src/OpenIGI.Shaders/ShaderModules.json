@@ -1,0 +1,9 @@
+{
+  "slangVersion": "2026.13.1-1-g84792eb15",
+  "modules": [
+    {
+      "id": "Sprite2D",
+      "source": "Ui/Sprite2D.slang"
+    }
+  ]
+}

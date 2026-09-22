@@ -19,6 +19,7 @@
     <Project Path="src/OpenIGI.Rendering.Vulkan/OpenIGI.Rendering.Vulkan.csproj" />
     <Project Path="src/OpenIGI.Rendering/OpenIGI.Rendering.csproj" />
     <Project Path="src/OpenIGI.Scripting/OpenIGI.Scripting.csproj" />
+    <Project Path="src/OpenIGI.Shaders/OpenIGI.Shaders.csproj" />
     <Project Path="src/OpenIGI.UI/OpenIGI.UI.csproj" />
     <Project Path="src/OpenIGI.Frontend/OpenIGI.Frontend.csproj" />
   </Folder>
@@ -37,6 +38,7 @@
     <Project Path="tests/OpenIGI.Rendering.Tests/OpenIGI.Rendering.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.Vulkan.Tests/OpenIGI.Rendering.Vulkan.Tests.csproj" />
     <Project Path="tests/OpenIGI.Scripting.Tests/OpenIGI.Scripting.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Shaders.Tests/OpenIGI.Shaders.Tests.csproj" />
     <Project Path="tests/OpenIGI.UI.Tests/OpenIGI.UI.Tests.csproj" />
     <Project Path="tests/OpenIGI.Frontend.Tests/OpenIGI.Frontend.Tests.csproj" />
     <Project Path="tests/OpenIGI.Desktop.Tests/OpenIGI.Desktop.Tests.csproj" />
@@ -46,5 +48,6 @@
     <Project Path="tools/OpenIGI.Tools.QvmDisasm/OpenIGI.Tools.QvmDisasm.csproj" />
     <Project Path="tools/OpenIGI.Tools.TaskCensus/OpenIGI.Tools.TaskCensus.csproj" />
     <Project Path="tools/OpenIGI.Tools.ResExtract/OpenIGI.Tools.ResExtract.csproj" />
+    <Project Path="tools/OpenIGI.Tools.ShaderBuild/OpenIGI.Tools.ShaderBuild.csproj" />
   </Folder>
 </Solution>
