@@ -77,7 +77,27 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         Assert.True(
             Math.Abs(vulkan[corner + 1] - vulkan[Centre + 1]) > 8,
             "The corner and the middle shaded the same, so nothing was drawn into the G-buffer.");
+
+        // And the right way up. The triangle's apex points up the screen, so its base covers the lower
+        // left of the frame and the same place mirrored into the upper half is sky. A frame turned over
+        // by any of its three passes agrees with itself perfectly on both backends -- each pass reads
+        // what the last wrote the same wrong way up -- so only a question about WHERE can catch it.
+        int below = ((((Size * 4) / 5) * Size) + BaseColumn) * 4;
+        int above = ((((Size / 5) * Size) + BaseColumn) * 4);
+
+        output.WriteLine($"vulkan below {Describe(vulkan, BaseColumn, (Size * 4) / 5)}");
+        output.WriteLine($"vulkan above {Describe(vulkan, BaseColumn, Size / 5)}");
+
+        Assert.True(
+            Math.Abs(vulkan[below + 1] - vulkan[Centre + 1]) <= 8,
+            "The lower left of the frame is not the triangle's base, so the frame is upside down.");
+        Assert.True(
+            Math.Abs(vulkan[above + 1] - vulkan[corner + 1]) <= 8,
+            "The upper left of the frame is not sky, so the frame is upside down.");
     }
+
+    /// <summary>A column the triangle's base covers near the bottom of the frame and its apex does not reach near the top.</summary>
+    private const int BaseColumn = 14;
 
     /// <summary>The frame everything here compares, written once and run twice.</summary>
     private static void DrawFrame(GraphicsDevice device)

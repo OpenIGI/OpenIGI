@@ -1,3 +1,4 @@
+using OpenIGI.Rendering.Pipeline.Mesh3D;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Shaders;
 
@@ -58,7 +59,13 @@ public sealed class FullscreenPipeline : IDisposable
 
         Pipeline = device.CreateRenderPipeline(new RhiRenderPipelineDescriptor(
             Layout,
-            new RhiShaderStage(Module, reflection.EntryPointFor(ShaderStage.Vertex).Name),
+
+            // The triangle is placed by the same switch as every mesh: a target reached through the RHI
+            // runs its clip space upwards, and a pass that flipped as well would sample upside down.
+            new RhiShaderStage(
+                Module,
+                reflection.EntryPointFor(ShaderStage.Vertex).Name,
+                ShaderConstants.Declared(reflection, Mesh3DConstants.TargetConstants)),
             new RhiShaderStage(Module, reflection.EntryPointFor(ShaderStage.Fragment).Name),
             [],
             [new RhiColorTargetState(targetFormat, blend)],
