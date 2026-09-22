@@ -39,9 +39,139 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
     public string Label { get; }
 
     /// <inheritdoc/>
-    public IRhiRenderPassEncoder BeginRenderPass(RhiRenderPassDescriptor descriptor) =>
-        throw new NotSupportedException(
-            "The Vulkan RHI records compute and copies; render passes arrive with the render pipeline.");
+    public IRhiRenderPassEncoder BeginRenderPass(RhiRenderPassDescriptor descriptor)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ThrowIfFinished();
+        _device.RequireDynamicRendering();
+
+        Barrier();
+
+        List<VulkanRhiTexture> attached = [];
+        RenderingAttachmentInfo[] colours =
+            new RenderingAttachmentInfo[Math.Max(descriptor.ColorAttachments.Count, 1)];
+
+        int width = int.MaxValue;
+        int height = int.MaxValue;
+
+        for (int i = 0; i < descriptor.ColorAttachments.Count; i++)
+        {
+            RhiColorAttachment attachment = descriptor.ColorAttachments[i];
+            VulkanRhiTextureView view = (VulkanRhiTextureView)attachment.View;
+
+            // Into the attachment layout before the pass begins: a transition inside one is not allowed,
+            // and General is not a layout a colour attachment may be written in.
+            _device.Transition(_command, view.Owner, ImageLayout.ColorAttachmentOptimal);
+            attached.Add(view.Owner);
+
+            width = Math.Min(width, view.Owner.Width);
+            height = Math.Min(height, view.Owner.Height);
+
+            colours[i] = new RenderingAttachmentInfo
+            {
+                SType = StructureType.RenderingAttachmentInfo,
+                ImageView = view.Handle,
+                ImageLayout = ImageLayout.ColorAttachmentOptimal,
+                LoadOp = VulkanRhiTranslation.LoadOp(attachment.Load),
+                StoreOp = VulkanRhiTranslation.StoreOp(attachment.Store),
+                ClearValue = new ClearValue
+                {
+                    Color = new ClearColorValue(
+                        attachment.ClearValue.R,
+                        attachment.ClearValue.G,
+                        attachment.ClearValue.B,
+                        attachment.ClearValue.A),
+                },
+            };
+
+            if (attachment.ResolveTarget is VulkanRhiTextureView resolve)
+            {
+                _device.Transition(_command, resolve.Owner, ImageLayout.ColorAttachmentOptimal);
+                attached.Add(resolve.Owner);
+
+                colours[i].ResolveImageView = resolve.Handle;
+                colours[i].ResolveImageLayout = ImageLayout.ColorAttachmentOptimal;
+                colours[i].ResolveMode = ResolveModeFlags.AverageBit;
+            }
+        }
+
+        RenderingAttachmentInfo depth = default;
+        bool hasDepth = descriptor.DepthAttachment is not null;
+
+        if (descriptor.DepthAttachment is { } depthAttachment)
+        {
+            VulkanRhiTextureView view = (VulkanRhiTextureView)depthAttachment.View;
+            ImageLayout layout = depthAttachment.DepthReadOnly
+                ? ImageLayout.DepthStencilReadOnlyOptimal
+                : ImageLayout.DepthStencilAttachmentOptimal;
+
+            _device.Transition(_command, view.Owner, layout);
+            attached.Add(view.Owner);
+
+            width = Math.Min(width, view.Owner.Width);
+            height = Math.Min(height, view.Owner.Height);
+
+            depth = new RenderingAttachmentInfo
+            {
+                SType = StructureType.RenderingAttachmentInfo,
+                ImageView = view.Handle,
+                ImageLayout = layout,
+                LoadOp = VulkanRhiTranslation.LoadOp(depthAttachment.DepthLoad),
+                StoreOp = VulkanRhiTranslation.StoreOp(depthAttachment.DepthStore),
+                ClearValue = new ClearValue
+                {
+                    DepthStencil = new ClearDepthStencilValue(depthAttachment.DepthClearValue, 0),
+                },
+            };
+        }
+
+        if (width == int.MaxValue || height == int.MaxValue)
+        {
+            throw new GraphicsDeviceException(
+                $"The render pass '{descriptor.Label}' has no attachments, so it has no area to draw in.");
+        }
+
+        // The timestamps a pass would write have no dynamic-rendering equivalent: Vulkan writes them
+        // with commands around the pass rather than as part of it. Written here so the meaning is the
+        // same -- the time the pass began and the time it ended.
+        if (descriptor.Timestamps is { } writes && writes.BeginIndex >= 0)
+        {
+            _vk.CmdWriteTimestamp(
+                _command,
+                PipelineStageFlags.TopOfPipeBit,
+                ((VulkanRhiQuerySet)writes.QuerySet).Handle,
+                (uint)writes.BeginIndex);
+        }
+
+        fixed (RenderingAttachmentInfo* firstColour = colours)
+        {
+            RenderingInfo info = new()
+            {
+                SType = StructureType.RenderingInfo,
+                RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D((uint)width, (uint)height)),
+                LayerCount = 1,
+                ColorAttachmentCount = (uint)descriptor.ColorAttachments.Count,
+                PColorAttachments = descriptor.ColorAttachments.Count > 0 ? firstColour : null,
+                PDepthAttachment = hasDepth ? &depth : null,
+            };
+
+            _vk.CmdBeginRendering(_command, &info);
+        }
+
+        // Vulkan resets a query pool rather than overwriting it, and a query read before it was reset is
+        // whatever the last frame left there.
+        if (descriptor.OcclusionQuerySet is VulkanRhiQuerySet occlusion)
+        {
+            _vk.CmdResetQueryPool(_command, occlusion.Handle, 0, (uint)occlusion.Count);
+        }
+
+        return new VulkanRhiRenderPassEncoder(
+            _device,
+            _vk,
+            _command,
+            attached,
+            descriptor.OcclusionQuerySet as VulkanRhiQuerySet);
+    }
 
     /// <inheritdoc/>
     public IRhiComputePassEncoder BeginComputePass(in RhiComputePassDescriptor descriptor = default)

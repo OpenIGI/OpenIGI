@@ -172,12 +172,6 @@ internal sealed unsafe partial class VulkanRhiDevice
     }
 
     /// <inheritdoc/>
-    /// <remarks>Not built. The frame belongs to the swapchain this device does not yet own.</remarks>
-    public IRhiRenderPipeline CreateRenderPipeline(RhiRenderPipelineDescriptor descriptor) =>
-        throw new NotSupportedException(
-            "The Vulkan RHI builds compute pipelines; render pipelines arrive with the render pass.");
-
-    /// <inheritdoc/>
     /// <remarks>Not built; this device does not own the swapchain yet.</remarks>
     public bool BeginFrame(out RhiFrame frame) =>
         throw new NotSupportedException("This Vulkan RHI device does not present frames yet.");
