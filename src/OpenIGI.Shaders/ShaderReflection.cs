@@ -123,6 +123,18 @@ public enum ShaderStorageFormat
 /// and is validated against what was declared, so a write-only binding described as read-write binds
 /// nothing. <see cref="ShaderStorageAccess.None"/> for everything that is not a storage binding.
 /// </param>
+/// <param name="Arrayed">
+/// Whether a texture is an array of slices rather than one image. A bind group layout states the view
+/// dimension and is validated against it, so an array bound as a plain texture binds nothing — and the
+/// two are the same in a descriptor set, so nothing on the Vulkan side would ever have caught it.
+/// </param>
+/// <param name="Comparison">
+/// Whether a sampler compares rather than filters: the shadow sampler, which answers whether a depth
+/// is nearer than the texel instead of returning it. Read out of the emitted WGSL, which is the only
+/// place it is written down — Slang's reflection reports a comparison sampler and an ordinary one
+/// identically, and SPIR-V does not distinguish them either. <see langword="false"/> for a variant with
+/// no WGSL form, which is a variant no WebGPU layout can be built from anyway.
+/// </param>
 public sealed record ShaderBinding(
     string Name,
     int Group,
@@ -131,7 +143,11 @@ public sealed record ShaderBinding(
     int Dimensions = 0,
     ShaderStorageFormat StorageFormat = ShaderStorageFormat.None,
     ShaderStorageFormat WgslStorageFormat = ShaderStorageFormat.None,
-    ShaderStorageAccess StorageAccess = ShaderStorageAccess.None);
+    ShaderStorageAccess StorageAccess = ShaderStorageAccess.None,
+    // Written only where they are true. The committed tables are meant to be read in review, and two
+    // more false flags on each of a thousand ordinary bindings would bury what they are there to say.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Arrayed = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Comparison = false);
 
 /// <summary>How a storage binding may be reached.</summary>
 /// <remarks>

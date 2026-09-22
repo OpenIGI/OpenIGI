@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using OpenIGI.Shaders;
 
@@ -69,7 +69,8 @@ public static class ReflectionReader
                             ReadBindingKind(module, name, type),
                             ReadDimensions(type),
                             ReadStorageFormat(module, name, parameter),
-                            StorageAccess: ReadStorageAccess(type)));
+                            StorageAccess: ReadStorageAccess(type),
+                            Arrayed: ReadArrayed(type)));
                         globals ??= ReadGlobals(name, binding, type);
                         break;
 
@@ -303,6 +304,18 @@ public static class ReflectionReader
             _ => 0,
         };
     }
+
+    /// <summary>Whether a texture resource is an array of slices rather than one image.</summary>
+    /// <param name="type">The reflected type.</param>
+    /// <returns><see langword="true"/> for an arrayed texture.</returns>
+    /// <remarks>
+    /// Slang says so plainly, and it has to be carried: a bind group layout states the view dimension
+    /// and binds nothing when it is wrong, while a descriptor set says nothing about it at all — so
+    /// this is a difference only the browser would ever have found.
+    /// </remarks>
+    private static bool ReadArrayed(JsonElement type) =>
+        type.TryGetProperty("array", out JsonElement array)
+        && array.ValueKind == JsonValueKind.True;
 
     /// <summary>The field table of a block the module named <c>Globals</c>, or nothing.</summary>
     /// <param name="name">The parameter's name.</param>

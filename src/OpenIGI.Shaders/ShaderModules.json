@@ -335,10 +335,7 @@
             "OPENIGI_RAY_QUERY": "0",
             "OPENIGI_MAX_LAMPS": "160",
             "OPENIGI_SAMPLED_GBUFFER": "1"
-          },
-          "targets": [
-            "Spirv"
-          ]
+          }
         }
       ]
     },
@@ -347,10 +344,7 @@
       "source": "Deferred/Resolve.slang",
       "variants": [
         {
-          "name": "default",
-          "targets": [
-            "Spirv"
-          ]
+          "name": "default"
         }
       ]
     },

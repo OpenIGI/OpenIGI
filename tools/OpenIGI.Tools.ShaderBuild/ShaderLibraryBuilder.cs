@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using OpenIGI.Shaders;
 
@@ -151,9 +151,19 @@ public sealed class ShaderLibraryBuilder
             // storage format WGSL has no room for and nothing else records which one it chose. A WebGPU
             // bind group layout is validated against the declared format, so a host that guessed would
             // bind nothing and be told neither the module nor the texture.
+            string text = Encoding.UTF8.GetString(code);
+
             reflection = WgslStorageFormats.Merge(
                 reflection,
-                WgslStorageFormats.Read(Encoding.UTF8.GetString(code), module.Id),
+                WgslStorageFormats.Read(text, module.Id),
+                module.Id);
+
+            // And whether each texture is an array of slices and each sampler compares rather than
+            // filters, which a bind group layout also states and is also validated against. A descriptor
+            // set distinguishes neither, so the Vulkan side would never have reported either.
+            reflection = WgslBindingShapes.Merge(
+                reflection,
+                WgslBindingShapes.Read(text),
                 module.Id);
 
             yield return Write($"{module.Id}.{variant.Name}.wgsl", code, checkOnly);
