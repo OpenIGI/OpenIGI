@@ -47,18 +47,25 @@ public sealed class Mesh3DPass(ITextureBindingSource textures, MaterialBindGroup
     /// The frame being built, which is stamped on the mesh's live pose slots so that a later pose write
     /// does not land on vertices this frame is still fetching.
     /// </param>
+    /// <param name="frameGroup">
+    /// The pass's own group, bound at index one, for a pipeline that takes one — the geometry path's
+    /// per-frame surface block. Bound here rather than by the caller because a group may only be bound
+    /// once a pipeline is, and that ordering is easy to get wrong and silent when it is right by
+    /// accident.
+    /// </param>
     /// <returns><see langword="false"/> when the range was dropped.</returns>
     public bool Draw(
         IRhiRenderPassEncoder pass,
         IRhiRenderPipeline pipeline,
         in MeshDrawCall call,
         ReadOnlySpan<byte> push,
-        ulong frameCounter)
+        ulong frameCounter,
+        IRhiBindGroup? frameGroup = null)
     {
         ArgumentNullException.ThrowIfNull(pass);
         ArgumentNullException.ThrowIfNull(pipeline);
 
-        if (!Bind(pass, pipeline, call, push, frameCounter))
+        if (!Bind(pass, pipeline, call, push, frameCounter, frameGroup: frameGroup))
         {
             return false;
         }
@@ -74,6 +81,7 @@ public sealed class Mesh3DPass(ITextureBindingSource textures, MaterialBindGroup
     /// <param name="ranges">The ranges to draw.</param>
     /// <param name="push">The block the draws carry.</param>
     /// <param name="frameCounter">The frame being built.</param>
+    /// <param name="frameGroup">The pass's own group, bound at index one, for a pipeline that takes one.</param>
     /// <returns>How many ranges were drawn.</returns>
     /// <remarks>
     /// The terrain's shape: one mesh, one material, many runs. State is shared, so it is bound once and
@@ -85,7 +93,8 @@ public sealed class Mesh3DPass(ITextureBindingSource textures, MaterialBindGroup
         in MeshDrawCall call,
         ReadOnlySpan<MeshDrawRange> ranges,
         ReadOnlySpan<byte> push,
-        ulong frameCounter)
+        ulong frameCounter,
+        IRhiBindGroup? frameGroup = null)
     {
         ArgumentNullException.ThrowIfNull(pass);
         ArgumentNullException.ThrowIfNull(pipeline);
@@ -97,7 +106,7 @@ public sealed class Mesh3DPass(ITextureBindingSource textures, MaterialBindGroup
 
         MeshDrawCall whole = call with { IndexOffset = 0, IndexCount = 0 };
 
-        if (!Bind(pass, pipeline, whole, push, frameCounter, checkRange: false))
+        if (!Bind(pass, pipeline, whole, push, frameCounter, checkRange: false, frameGroup: frameGroup))
         {
             return 0;
         }
@@ -148,7 +157,8 @@ public sealed class Mesh3DPass(ITextureBindingSource textures, MaterialBindGroup
         in MeshDrawCall call,
         ReadOnlySpan<byte> push,
         ulong frameCounter,
-        bool checkRange = true)
+        bool checkRange = true,
+        IRhiBindGroup? frameGroup = null)
     {
         if (checkRange && !InBounds(call.Mesh, call.IndexOffset, call.IndexCount))
         {
@@ -166,6 +176,11 @@ public sealed class Mesh3DPass(ITextureBindingSource textures, MaterialBindGroup
             _textures.Resolve(call.Diffuse),
             _textures.Resolve(call.Lightmap),
             _textures.Resolve(call.Detail)));
+
+        if (frameGroup is not null)
+        {
+            pass.SetBindGroup(1, frameGroup);
+        }
 
         if (!push.IsEmpty)
         {
