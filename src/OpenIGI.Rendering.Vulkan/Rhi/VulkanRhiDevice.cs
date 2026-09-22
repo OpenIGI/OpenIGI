@@ -468,6 +468,8 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
         _disposed = true;
         _vk.DeviceWaitIdle(_device.Device);
 
+        DestroyFrameSync();
+
         foreach (DescriptorPool pool in _pools)
         {
             _vk.DestroyDescriptorPool(_device.Device, pool, null);

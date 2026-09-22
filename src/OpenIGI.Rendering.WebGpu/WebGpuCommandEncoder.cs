@@ -147,7 +147,7 @@ public sealed unsafe class WebGpuCommandEncoder : IRhiCommandEncoder
 
         WGPUComputePassEncoder pass = Wgpu.wgpuCommandEncoderBeginComputePass(_handle, &native);
         return pass.IsValid
-            ? new WebGpuComputePassEncoder(pass)
+            ? new WebGpuComputePassEncoder(pass, _device.PushRing, WebGpuPushBlocks.Group)
             : throw new InvalidOperationException($"The compute pass '{descriptor.Label}' could not begin.");
     }
 
@@ -325,13 +325,28 @@ public sealed unsafe class WebGpuCommandEncoder : IRhiCommandEncoder
 /// <summary>Records WebGPU dispatches.</summary>
 public sealed unsafe class WebGpuComputePassEncoder : IRhiComputePassEncoder
 {
+    private readonly WebGpuPushRing _pushes;
+    private readonly int _pushGroup;
     private WGPUComputePassEncoder _handle;
     private bool _ended;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="WebGpuComputePassEncoder"/> class.</summary>
     /// <param name="handle">The WebGPU handle.</param>
-    public WebGpuComputePassEncoder(WGPUComputePassEncoder handle) => _handle = handle;
+    /// <param name="pushes">The ring push data is written into.</param>
+    /// <param name="pushGroup">The bind group the push block is bound as.</param>
+    public WebGpuComputePassEncoder(WGPUComputePassEncoder handle, WebGpuPushRing pushes, int pushGroup)
+    {
+        _handle = handle;
+        _pushes = pushes;
+        _pushGroup = pushGroup;
+    }
+
+    /// <summary>Gets the group the push block is bound as.</summary>
+    public int PushGroup => _pushGroup;
+
+    /// <summary>Gets where the last push landed in the ring.</summary>
+    public uint LastPushOffset { get; private set; }
 
     /// <inheritdoc/>
     public void SetPipeline(IRhiComputePipeline pipeline)
@@ -360,10 +375,24 @@ public sealed unsafe class WebGpuComputePassEncoder : IRhiComputePassEncoder
     }
 
     /// <inheritdoc/>
-    public void SetPushData(ReadOnlySpan<byte> data, int offset = 0) =>
-        throw new NotSupportedException(
-            "Push data arrives with the uniform ring this backend emulates it through. Nothing drives a "
-            + "pass that needs it yet.");
+    /// <remarks>
+    /// The same ring the raster side uses, for the same reason: WebGPU has no push constants, so a push
+    /// is a slice of a uniform buffer bound by dynamic offset. Only the write happens here; the binding
+    /// is the caller's, because the group it goes in belongs to a pipeline layout this cannot see.
+    /// </remarks>
+    public void SetPushData(ReadOnlySpan<byte> data, int offset = 0)
+    {
+        ThrowIfEnded();
+
+        if (offset != 0)
+        {
+            throw new NotSupportedException(
+                "A partial push is not something this backend can do: the block is a uniform binding here, "
+                + "and a binding is written whole. Set the whole block.");
+        }
+
+        LastPushOffset = _pushes.Write(data);
+    }
 
     /// <inheritdoc/>
     public void Dispatch(int x, int y = 1, int z = 1)

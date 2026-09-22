@@ -71,6 +71,7 @@ internal sealed unsafe class VulkanRhiTexture : IRhiTexture
     private readonly Device _device;
     private readonly VulkanAllocator _allocator;
     private readonly DeviceMemory _memory;
+    private readonly bool _owned;
     private readonly Dictionary<RhiTextureViewDescriptor, VulkanRhiTextureView> _views = [];
     private VulkanRhiTextureView? _whole;
     private bool _disposed;
@@ -80,16 +81,22 @@ internal sealed unsafe class VulkanRhiTexture : IRhiTexture
     /// <param name="device">The device it lives on.</param>
     /// <param name="allocator">The allocator its memory came from.</param>
     /// <param name="image">The image.</param>
-    /// <param name="memory">The memory bound to it.</param>
+    /// <param name="memory">The memory bound to it, or the null handle for an image it does not own.</param>
     /// <param name="descriptor">What it was created as.</param>
+    /// <param name="owned">
+    /// Whether this destroys the image. False for a swapchain's, which belongs to the swapchain and
+    /// outlives every texture that wraps one -- destroying it here would take the rotation with it.
+    /// </param>
     public VulkanRhiTexture(
         Vk vk,
         Device device,
         VulkanAllocator allocator,
         Image image,
         DeviceMemory memory,
-        in RhiTextureDescriptor descriptor)
+        in RhiTextureDescriptor descriptor,
+        bool owned = true)
     {
+        _owned = owned;
         _vk = vk;
         _device = device;
         _allocator = allocator;
@@ -214,8 +221,12 @@ internal sealed unsafe class VulkanRhiTexture : IRhiTexture
         _views.Clear();
         _whole = null;
 
-        _vk.DestroyImage(_device, Image, null);
-        _allocator.Free(_memory);
+        // The views are always this one's to destroy; the image only when it was made here.
+        if (_owned)
+        {
+            _vk.DestroyImage(_device, Image, null);
+            _allocator.Free(_memory);
+        }
     }
 }
 

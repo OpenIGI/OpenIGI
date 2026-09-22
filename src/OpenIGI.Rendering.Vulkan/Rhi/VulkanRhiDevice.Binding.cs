@@ -141,17 +141,7 @@ internal sealed unsafe partial class VulkanRhiDevice
             handles[i] = ((VulkanRhiCommandBuffer)commands[i]).Handle;
         }
 
-        fixed (CommandBuffer* first = handles)
-        {
-            SubmitInfo submit = new()
-            {
-                SType = StructureType.SubmitInfo,
-                CommandBufferCount = (uint)handles.Length,
-                PCommandBuffers = first,
-            };
-
-            VkCheck.Ok(_vk.QueueSubmit(_device.Graphics, 1, &submit, default), "vkQueueSubmit");
-        }
+        SubmitOrHold(handles);
     }
 
     /// <inheritdoc/>
@@ -170,21 +160,6 @@ internal sealed unsafe partial class VulkanRhiDevice
 
         return new VulkanRhiReadback(this, source, offset, size);
     }
-
-    /// <inheritdoc/>
-    /// <remarks>Not built; this device does not own the swapchain yet.</remarks>
-    public bool BeginFrame(out RhiFrame frame) =>
-        throw new NotSupportedException("This Vulkan RHI device does not present frames yet.");
-
-    /// <inheritdoc/>
-    /// <remarks>Not built; this device does not own the swapchain yet.</remarks>
-    public bool EndFrame(in RhiFrame frame) =>
-        throw new NotSupportedException("This Vulkan RHI device does not present frames yet.");
-
-    /// <inheritdoc/>
-    /// <remarks>Not built; this device does not own the swapchain yet.</remarks>
-    public void ConfigureSurface(int width, int height, bool vsync) =>
-        throw new NotSupportedException("This Vulkan RHI device does not own a surface yet.");
 
     /// <summary>Waits until everything submitted has finished, then reads a host-visible buffer.</summary>
     /// <param name="buffer">The buffer to read.</param>
