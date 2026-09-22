@@ -76,7 +76,7 @@ internal sealed unsafe class VulkanOcclusionQueries : IDisposable
         _vk = vk;
         _device = device.Device;
         _slots = framesInFlight;
-        _pipeline = new VisibilityPipeline(vk, device, compiler, geometryPass);
+        _pipeline = new VisibilityPipeline(vk, device, geometryPass);
 
         _slotIssued = new List<(uint, int)>[framesInFlight];
         _slotNext = new int[framesInFlight];

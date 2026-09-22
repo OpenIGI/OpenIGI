@@ -1,5 +1,7 @@
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
+using ShaderStage = OpenIGI.Rendering.Vulkan.Shaders.ShaderStage;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
@@ -30,35 +32,33 @@ internal sealed unsafe class VisibilityPipeline : IDisposable
     // rather than the wrapper. Passing it is what lets the driver return a previous run's
     // compiled pipeline instead of building this one again.
     private readonly PipelineCache _pipelineCache;
-    private readonly VulkanShaderModule _vertex;
-    private readonly VulkanShaderModule _fragment;
+    private readonly VulkanShaderModule _shader;
+    private readonly string _vertexEntryPoint;
+    private readonly string _fragmentEntryPoint;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="VisibilityPipeline"/> class.</summary>
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the pipeline lives on.</param>
-    /// <param name="compiler">The shader compiler.</param>
     /// <param name="geometryPass">The deferred geometry render pass the box is drawn into.</param>
     /// <exception cref="GraphicsDeviceException">The layout, shaders or pipeline could not be created.</exception>
-    public VisibilityPipeline(Vk vk, VulkanDevice device, ShaderCompiler compiler, RenderPass geometryPass)
+    public VisibilityPipeline(Vk vk, VulkanDevice device, RenderPass geometryPass)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(compiler);
         _vk = vk;
         _device = device.Device;
         _pipelineCache = device.PipelineCache;
 
-        _vertex = new VulkanShaderModule(
+        ShaderReflection reflection = ShaderCatalog.GetReflection(ShaderModuleId.Occlusion);
+        _vertexEntryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Vertex).Name;
+        _fragmentEntryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Fragment).Name;
+        _shader = new VulkanShaderModule(
             vk,
             _device,
-            compiler.Compile(OcclusionShaderSource.Vertex, ShaderStage.Vertex, "occlusion.vert"),
-            ShaderStage.Vertex);
-        _fragment = new VulkanShaderModule(
-            vk,
-            _device,
-            compiler.Compile(OcclusionShaderSource.Fragment, ShaderStage.Fragment, "occlusion.frag"),
-            ShaderStage.Fragment);
+            ShaderCatalog.GetSpirv(ShaderModuleId.Occlusion).Span,
+            ShaderStage.Vertex,
+            _vertexEntryPoint);
 
         PipelineLayout = CreatePipelineLayout();
         Pipeline = CreatePipeline(geometryPass);
@@ -81,8 +81,7 @@ internal sealed unsafe class VisibilityPipeline : IDisposable
         _disposed = true;
         _vk.DestroyPipeline(_device, Pipeline, null);
         _vk.DestroyPipelineLayout(_device, PipelineLayout, null);
-        _fragment.Dispose();
-        _vertex.Dispose();
+        _shader.Dispose();
     }
 
     private PipelineLayout CreatePipelineLayout()
@@ -110,12 +109,13 @@ internal sealed unsafe class VisibilityPipeline : IDisposable
 
     private Pipeline CreatePipeline(RenderPass geometryPass)
     {
-        nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
+        nint vertexEntryPoint = SilkMarshal.StringToPtr(_vertexEntryPoint, NativeStringEncoding.UTF8);
+        nint fragmentEntryPoint = SilkMarshal.StringToPtr(_fragmentEntryPoint, NativeStringEncoding.UTF8);
         try
         {
             PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
-            stages[0] = Stage(ShaderStageFlags.VertexBit, _vertex.Handle, entryPoint);
-            stages[1] = Stage(ShaderStageFlags.FragmentBit, _fragment.Handle, entryPoint);
+            stages[0] = Stage(ShaderStageFlags.VertexBit, _shader.Handle, vertexEntryPoint);
+            stages[1] = Stage(ShaderStageFlags.FragmentBit, _shader.Handle, fragmentEntryPoint);
 
             // No vertex or index buffer: the box's corners are baked into the vertex shader and chosen by
             // gl_VertexIndex, so the state is empty.
@@ -210,7 +210,8 @@ internal sealed unsafe class VisibilityPipeline : IDisposable
         }
         finally
         {
-            SilkMarshal.Free(entryPoint);
+            SilkMarshal.Free(vertexEntryPoint);
+            SilkMarshal.Free(fragmentEntryPoint);
         }
     }
 

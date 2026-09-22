@@ -1,6 +1,8 @@
 ﻿using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
+using ShaderStage = OpenIGI.Rendering.Vulkan.Shaders.ShaderStage;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
@@ -49,29 +51,33 @@ internal sealed unsafe class OutlinePipeline : IDisposable
     // rather than the wrapper. Passing it is what lets the driver return a previous run's
     // compiled pipeline instead of building this one again.
     private readonly PipelineCache _pipelineCache;
-    private readonly VulkanShaderModule _vertex;
-    private readonly VulkanShaderModule _fragment;
+    private readonly VulkanShaderModule _shader;
+    private readonly string _vertexEntryPoint;
+    private readonly string _fragmentEntryPoint;
     private readonly Dictionary<(ulong Pass, uint Subpass, OutlinePass Job), Pipeline> _pipelines = [];
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="OutlinePipeline"/> class.</summary>
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the pipelines live on.</param>
-    /// <param name="compiler">The shader compiler.</param>
     /// <exception cref="GraphicsDeviceException">The layout or shaders could not be created.</exception>
-    public OutlinePipeline(Vk vk, VulkanDevice device, ShaderCompiler compiler)
+    public OutlinePipeline(Vk vk, VulkanDevice device)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(compiler);
         _vk = vk;
         _device = device.Device;
         _pipelineCache = device.PipelineCache;
 
-        _vertex = new VulkanShaderModule(
-            vk, _device, compiler.Compile(OutlineShaderSource.Vertex, ShaderStage.Vertex, "outline.vert"), ShaderStage.Vertex);
-        _fragment = new VulkanShaderModule(
-            vk, _device, compiler.Compile(OutlineShaderSource.Fragment, ShaderStage.Fragment, "outline.frag"), ShaderStage.Fragment);
+        ShaderReflection reflection = ShaderCatalog.GetReflection(ShaderModuleId.Outline);
+        _vertexEntryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Vertex).Name;
+        _fragmentEntryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Fragment).Name;
+        _shader = new VulkanShaderModule(
+            vk,
+            _device,
+            ShaderCatalog.GetSpirv(ShaderModuleId.Outline).Span,
+            ShaderStage.Vertex,
+            _vertexEntryPoint);
 
         PipelineLayout = CreateLayout();
     }
@@ -112,8 +118,7 @@ internal sealed unsafe class OutlinePipeline : IDisposable
         }
 
         _vk.DestroyPipelineLayout(_device, PipelineLayout, null);
-        _fragment.Dispose();
-        _vertex.Dispose();
+        _shader.Dispose();
     }
 
     private PipelineLayout CreateLayout()
@@ -140,12 +145,13 @@ internal sealed unsafe class OutlinePipeline : IDisposable
 
     private Pipeline Create(RenderPass renderPass, uint subpass, OutlinePass job)
     {
-        nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
+        nint vertexEntryPoint = SilkMarshal.StringToPtr(_vertexEntryPoint, NativeStringEncoding.UTF8);
+        nint fragmentEntryPoint = SilkMarshal.StringToPtr(_fragmentEntryPoint, NativeStringEncoding.UTF8);
         try
         {
             PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
-            stages[0] = Stage(ShaderStageFlags.VertexBit, _vertex.Handle, entryPoint);
-            stages[1] = Stage(ShaderStageFlags.FragmentBit, _fragment.Handle, entryPoint);
+            stages[0] = Stage(ShaderStageFlags.VertexBit, _shader.Handle, vertexEntryPoint);
+            stages[1] = Stage(ShaderStageFlags.FragmentBit, _shader.Handle, fragmentEntryPoint);
 
             // The same two streams every mesh pipeline takes, so a posed body outlines in the pose it was
             // drawn in rather than in the one the simulation last finished.
@@ -293,7 +299,8 @@ internal sealed unsafe class OutlinePipeline : IDisposable
         }
         finally
         {
-            SilkMarshal.Free(entryPoint);
+            SilkMarshal.Free(vertexEntryPoint);
+            SilkMarshal.Free(fragmentEntryPoint);
         }
     }
 

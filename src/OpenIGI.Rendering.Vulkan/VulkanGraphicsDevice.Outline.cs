@@ -13,7 +13,7 @@ namespace OpenIGI.Rendering.Vulkan;
 /// The classic inverted hull, three passes deep. A mask lays the model's own silhouette into depth and
 /// writes no colour; a stack of shells then draws the same model pushed outwards in screen space, each
 /// one wider and fainter than the last, testing against that mask so the glow stops at the model rather
-/// than washing across it. See <see cref="Shaders.OutlineShaderSource"/> for the push itself.
+/// than washing across it. See the Outline module in OpenIGI.Shaders for the push itself.
 /// </para>
 /// <para>
 /// Every piece of state it needs is baked into its own pipelines rather than set on the frame's, so

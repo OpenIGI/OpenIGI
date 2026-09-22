@@ -45,4 +45,10 @@ public enum ShaderModuleId
 
     /// <summary>The glazing front-layer draw: which pane is nearest, and which way it faces.</summary>
     GlassLayer,
+
+    /// <summary>The depth-only box an asynchronous visibility query draws.</summary>
+    Occlusion,
+
+    /// <summary>The selection outline: a shell pushed out along the silhouette in screen space.</summary>
+    Outline,
 }

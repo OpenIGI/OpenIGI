@@ -36,6 +36,14 @@
     {
       "id": "GlassLayer",
       "source": "World/GlassLayer.slang"
+    },
+    {
+      "id": "Occlusion",
+      "source": "World/Occlusion.slang"
+    },
+    {
+      "id": "Outline",
+      "source": "World/Outline.slang"
     }
   ]
 }

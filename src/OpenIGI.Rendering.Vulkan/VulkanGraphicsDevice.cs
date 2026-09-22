@@ -213,7 +213,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _meshTextureDescriptors = new MeshTextureDescriptorCache(
             _instance.Vk, _device.Device, _mesh3D.DescriptorSetLayout);
         _colourLut = new Textures.ColourLutTexture(_instance.Vk, _device, _allocator, _commands);
-        _outline = new OutlinePipeline(_instance.Vk, _device, _shaderCompiler);
+        _outline = new OutlinePipeline(_instance.Vk, _device);
         _deferred = new Deferred.DeferredRenderer(
             _instance.Vk,
             _device,
