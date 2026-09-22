@@ -42,11 +42,6 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     private readonly Mesh3DPipeline _mesh3D;
     private readonly OutlinePipeline _outline;
     private readonly MeshTextureDescriptorCache _meshTextureDescriptors;
-
-    // The forward mesh pipeline binds the shader library's split image-and-sampler set; the
-    // geometry, shadow, card and glass pipelines still bind the combined one. Two caches until
-    // they move, each writing the shape its layout describes.
-    private readonly MeshTextureDescriptorCache _meshTextureDescriptorsSplit;
     private readonly Deferred.DeferredRenderer _deferred;
     private readonly VulkanOcclusionQueries _occlusion;
 
@@ -216,9 +211,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _textureDescriptors = new TextureDescriptorCache(_instance.Vk, _device.Device, _sprite2D.DescriptorSetLayout);
         _mesh3D = new Mesh3DPipeline(_instance.Vk, _device, _presentTarget.RenderPass);
         _meshTextureDescriptors = new MeshTextureDescriptorCache(
-            _instance.Vk, _device.Device, _mesh3D.CombinedTextureSetLayout, combined: true);
-        _meshTextureDescriptorsSplit = new MeshTextureDescriptorCache(
-            _instance.Vk, _device.Device, _mesh3D.DescriptorSetLayout, combined: false);
+            _instance.Vk, _device.Device, _mesh3D.DescriptorSetLayout);
         _colourLut = new Textures.ColourLutTexture(_instance.Vk, _device, _allocator, _commands);
         _outline = new OutlinePipeline(_instance.Vk, _device, _shaderCompiler);
         _deferred = new Deferred.DeferredRenderer(
@@ -227,7 +220,6 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
             _allocator,
             _commands,
             _shaderCompiler,
-            _mesh3D.CombinedTextureSetLayout,
             _mesh3D.DescriptorSetLayout,
             _presentTarget.RenderPass,
             VulkanFrameLoop.MaxFramesInFlight);
@@ -598,7 +590,6 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _occlusion.Dispose();
         _deferred.Dispose();
         _meshTextureDescriptors.Dispose();
-        _meshTextureDescriptorsSplit.Dispose();
         _colourLut.Dispose();
         _outline.Dispose();
         _mesh3D.Dispose();

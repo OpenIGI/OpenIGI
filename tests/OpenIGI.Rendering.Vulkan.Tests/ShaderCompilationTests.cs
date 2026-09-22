@@ -43,12 +43,9 @@ public sealed class ShaderCompilationTests
     // table's shared mapping into a push block and a uniform block of its own, so it has exactly the
     // failure this whole theory exists for: three separately-authored texts that have to agree about
     // every name, with nothing at build time reading any of them.
-    [InlineData("glass.vert", "vert")]
-    [InlineData("glass.frag", "frag")]
 
     // The front-layer half: the same vertex stage and the same sets, writing a colour attachment in a
     // pass that owns its depth rather than an image store from the translucency subpass.
-    [InlineData("glasslayer.frag", "frag")]
     [InlineData("glassreflect.comp", "comp")]
     [InlineData("glassreflect-rayquery.comp", "comp")]
     public void TheShadersThatReadTheShelterMapCompile(string name, string stage)
@@ -61,9 +58,6 @@ public sealed class ShaderCompilationTests
             "shading-rayquery.frag" => DeferredShaderSource.LightingFragment(rayQuery: true),
             "fog.scatter.comp" => VolumetricFogShaderSource.Scatter,
             "fog.integrate.comp" => VolumetricFogShaderSource.Integrate,
-            "glass.vert" => GlassShaderSource.Vertex,
-            "glass.frag" => GlassShaderSource.Fragment,
-            "glasslayer.frag" => GlassShaderSource.LayerFragment,
             "glassreflect.comp" => GlassReflectionShaderSource.Reflect(rayQuery: false),
             "glassreflect-rayquery.comp" => GlassReflectionShaderSource.Reflect(rayQuery: true),
             "reflect-rayquery.comp" => ReflectionShaderSource.Reflect(rayQuery: true),

@@ -28,6 +28,14 @@
     {
       "id": "GBuffer",
       "source": "World/GBuffer.slang"
+    },
+    {
+      "id": "Glass",
+      "source": "World/Glass.slang"
+    },
+    {
+      "id": "GlassLayer",
+      "source": "World/GlassLayer.slang"
     }
   ]
 }

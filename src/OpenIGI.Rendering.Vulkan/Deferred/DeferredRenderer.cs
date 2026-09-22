@@ -86,11 +86,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <param name="allocator">The allocator backing the scene targets.</param>
     /// <param name="commands">The command pool the probe uploads come from.</param>
     /// <param name="compiler">The shader compiler.</param>
-    /// <param name="textureSetLayout">The sampler layout shared with the mesh path, for geometry.</param>
-    /// <param name="splitTextureSetLayout">
-    /// The same set with each image and its sampler bound apart, which the passes already taking their
-    /// shaders from the library read. Both shapes exist only while the migration is under way.
-    /// </param>
+    /// <param name="textureSetLayout">The mesh texture set, shared with the forward and shadow paths.</param>
     /// <param name="presentRenderPass">The back-buffer render pass the resolve draws into.</param>
     /// <param name="framesInFlight">How many scene targets to keep — one per frame in flight.</param>
     /// <exception cref="GraphicsDeviceException">A resource could not be created.</exception>
@@ -101,7 +97,6 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         VulkanCommands commands,
         ShaderCompiler compiler,
         DescriptorSetLayout textureSetLayout,
-        DescriptorSetLayout splitTextureSetLayout,
         RenderPass presentRenderPass,
         int framesInFlight)
     {
@@ -116,7 +111,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
 
         _probes = new ProbeVolumes(vk, device, allocator, commands);
         _shadowMap = new ShadowMap(vk, device, allocator, commands);
-        _shadowPipeline = new ShadowPipeline(vk, device, _shadowMap.RenderPass, splitTextureSetLayout);
+        _shadowPipeline = new ShadowPipeline(vk, device, _shadowMap.RenderPass, textureSetLayout);
         _ssao = new SsaoPass(vk, device, allocator, compiler, framesInFlight);
         _fog = new VolumetricFogPass(vk, device, allocator, commands, compiler, framesInFlight);
         // The reflections, with their traced half wherever the adapter can trace. Compiled in rather
@@ -181,7 +176,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _surfaceLayout = CreateSurfaceLayout();
         _surfaceSets = AllocateSurfaceSets(framesInFlight);
 
-        Geometry = new GBufferPipeline(vk, device, _renderPass.Geometry, splitTextureSetLayout, _surfaceLayout);
+        Geometry = new GBufferPipeline(vk, device, _renderPass.Geometry, textureSetLayout, _surfaceLayout);
         Lighting = new FullscreenPipeline(
             vk,
             device,
@@ -207,10 +202,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             0);
         Forward = new Mesh3DPipeline(vk, device, _renderPass.Shading, DeferredRenderPass.ForwardSubpass);
 
-        // Glazing, on the same subpass and drawn from the same vertex buffers. Built with the COMBINED
-        // set-0 layout rather than the Forward pipeline's own: the forward mesh shader now comes from the
-        // shader library and binds a sampled image and a sampler apart, while this one is still GLSL and
-        // binds one combined object per texture. They share a layout again once glass moves too. It records each pane pixel into a layer; what a pane REFLECTS is
+        // Glazing, on the same subpass and drawn from the same vertex buffers, and built with the same
+        // set-0 layout, so a texture pairing cached for an opaque draw binds under either without being
+        // built twice. It records each pane pixel into a layer; what a pane REFLECTS is
         // finished by GlassReflection, after the render pass closes and the lit frame becomes readable.
         Glass = new GlassPipeline(
             vk,
@@ -221,7 +215,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             DeferredRenderPass.ForwardSubpass,
             _renderPass.FrontLayer,
             _sampler,
-            Forward.CombinedTextureSetLayout,
+            textureSetLayout,
             framesInFlight);
 
         GlassReflection = new GlassReflectionPass(vk, device, allocator, compiler, framesInFlight, _rayQuery);

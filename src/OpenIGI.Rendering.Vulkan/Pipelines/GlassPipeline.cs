@@ -1,6 +1,8 @@
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
+using ShaderStage = OpenIGI.Rendering.Vulkan.Shaders.ShaderStage;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
@@ -42,9 +44,10 @@ internal sealed unsafe class GlassPipeline : IDisposable
     private readonly RenderPass _renderPass;
     private readonly uint _subpass;
     private readonly int _frames;
-    private readonly VulkanShaderModule _vertex;
-    private readonly VulkanShaderModule _fragment;
-    private readonly VulkanShaderModule _layerFragment;
+    private readonly VulkanShaderModule _transmission;
+    private readonly VulkanShaderModule _layer;
+    private readonly string _vertexEntryPoint;
+    private readonly string _fragmentEntryPoint;
     private readonly DescriptorPool _pool;
     private readonly DescriptorSet[] _sets;
     private readonly VulkanBuffer[] _params;
@@ -95,15 +98,24 @@ internal sealed unsafe class GlassPipeline : IDisposable
         _depthSampler = depthSampler;
         _frames = framesInFlight;
 
-        _vertex = new VulkanShaderModule(
-            vk, _device, compiler.Compile(GlassShaderSource.Vertex, ShaderStage.Vertex, "glass.vert"), ShaderStage.Vertex);
-        _fragment = new VulkanShaderModule(
-            vk, _device, compiler.Compile(GlassShaderSource.Fragment, ShaderStage.Fragment, "glass.frag"), ShaderStage.Fragment);
-        _layerFragment = new VulkanShaderModule(
+        // Two modules rather than three: a module names one entry point per stage, and the two
+        // glazing draws are two fragment stages over one vertex stage. Each module carries that same
+        // shared vertex stage, which lives in Source/Common/GlassVertex.slang.
+        ShaderReflection transmission = ShaderCatalog.GetReflection(ShaderModuleId.Glass);
+        _vertexEntryPoint = transmission.EntryPointFor(OpenIGI.Shaders.ShaderStage.Vertex).Name;
+        _fragmentEntryPoint = transmission.EntryPointFor(OpenIGI.Shaders.ShaderStage.Fragment).Name;
+        _transmission = new VulkanShaderModule(
             vk,
             _device,
-            compiler.Compile(GlassShaderSource.LayerFragment, ShaderStage.Fragment, "glasslayer.frag"),
-            ShaderStage.Fragment);
+            ShaderCatalog.GetSpirv(ShaderModuleId.Glass).Span,
+            ShaderStage.Vertex,
+            _vertexEntryPoint);
+        _layer = new VulkanShaderModule(
+            vk,
+            _device,
+            ShaderCatalog.GetSpirv(ShaderModuleId.GlassLayer).Span,
+            ShaderStage.Vertex,
+            _vertexEntryPoint);
 
         GlassSetLayout = CreateGlassSetLayout();
         PipelineLayout = CreatePipelineLayout(textureSetLayout, GlassSetLayout);
@@ -174,7 +186,7 @@ internal sealed unsafe class GlassPipeline : IDisposable
             SType = StructureType.WriteDescriptorSet,
             DstSet = _sets[frame],
             DstBinding = 0,
-            DescriptorType = DescriptorType.CombinedImageSampler,
+            DescriptorType = DescriptorType.SampledImage,
             DescriptorCount = 1,
             PImageInfo = &image,
         };
@@ -238,9 +250,8 @@ internal sealed unsafe class GlassPipeline : IDisposable
         _vk.DestroyDescriptorPool(_device, _pool, null);
         _vk.DestroyPipelineLayout(_device, PipelineLayout, null);
         _vk.DestroyDescriptorSetLayout(_device, GlassSetLayout, null);
-        _layerFragment.Dispose();
-        _fragment.Dispose();
-        _vertex.Dispose();
+        _layer.Dispose();
+        _transmission.Dispose();
     }
 
     private DescriptorSetLayout CreateGlassSetLayout()
@@ -249,7 +260,7 @@ internal sealed unsafe class GlassPipeline : IDisposable
         bindings[0] = new DescriptorSetLayoutBinding
         {
             Binding = 0,
-            DescriptorType = DescriptorType.CombinedImageSampler,
+            DescriptorType = DescriptorType.SampledImage,
             DescriptorCount = 1,
             StageFlags = ShaderStageFlags.FragmentBit,
         };
@@ -280,7 +291,7 @@ internal sealed unsafe class GlassPipeline : IDisposable
         DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[2];
         sizes[0] = new DescriptorPoolSize
         {
-            Type = DescriptorType.CombinedImageSampler,
+            Type = DescriptorType.SampledImage,
             DescriptorCount = (uint)_frames,
         };
         sizes[1] = new DescriptorPoolSize
@@ -355,7 +366,8 @@ internal sealed unsafe class GlassPipeline : IDisposable
 
     private Pipeline CreatePipeline(CullMode cull, bool layer)
     {
-        nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
+        nint vertexEntryPoint = SilkMarshal.StringToPtr(_vertexEntryPoint, NativeStringEncoding.UTF8);
+        nint fragmentEntryPoint = SilkMarshal.StringToPtr(_fragmentEntryPoint, NativeStringEncoding.UTF8);
         try
         {
             PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
@@ -363,15 +375,15 @@ internal sealed unsafe class GlassPipeline : IDisposable
             {
                 SType = StructureType.PipelineShaderStageCreateInfo,
                 Stage = ShaderStageFlags.VertexBit,
-                Module = _vertex.Handle,
-                PName = (byte*)entryPoint,
+                Module = (layer ? _layer : _transmission).Handle,
+                PName = (byte*)vertexEntryPoint,
             };
             stages[1] = new PipelineShaderStageCreateInfo
             {
                 SType = StructureType.PipelineShaderStageCreateInfo,
                 Stage = ShaderStageFlags.FragmentBit,
-                Module = layer ? _layerFragment.Handle : _fragment.Handle,
-                PName = (byte*)entryPoint,
+                Module = (layer ? _layer : _transmission).Handle,
+                PName = (byte*)fragmentEntryPoint,
             };
 
             // The same two streams the world binds, because the glazing is drawn from the same vertex
@@ -525,7 +537,8 @@ internal sealed unsafe class GlassPipeline : IDisposable
         }
         finally
         {
-            SilkMarshal.Free(entryPoint);
+            SilkMarshal.Free(vertexEntryPoint);
+            SilkMarshal.Free(fragmentEntryPoint);
         }
     }
 }

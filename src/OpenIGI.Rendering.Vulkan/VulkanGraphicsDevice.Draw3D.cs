@@ -586,7 +586,7 @@ public sealed partial class VulkanGraphicsDevice
 
         // The colour texture, for its alpha alone: a cut-out must cast the shadow of the shape that is
         // there, not of the quad it was cut from.
-        BindMeshTextures(_deferred.ShadowPipeline.PipelineLayout, diffuse, TextureHandle.None, split: true);
+        BindMeshTextures(_deferred.ShadowPipeline.PipelineLayout, diffuse, TextureHandle.None);
 
         // The cascade's model-view-projection: the frame's projection is the cascade's orthographic one and
         // the model-view is the light-camera view, both set by the shadow pass before it draws.
@@ -635,7 +635,7 @@ public sealed partial class VulkanGraphicsDevice
 
         BindGraphicsPipeline(_deferred.Geometry.ForState(_depthState, _cullMode, blend, _alphaReference));
         BindMeshBuffers(mesh);
-        BindMeshTextures(_deferred.Geometry.PipelineLayout, diffuse, lightmap, split: true);
+        BindMeshTextures(_deferred.Geometry.PipelineLayout, diffuse, lightmap);
         BindSurfaceSet();
 
         // The 128-byte push: the model-view-projection for position, a rotation for the normal, and the
@@ -809,7 +809,7 @@ public sealed partial class VulkanGraphicsDevice
 
         BindGraphicsPipeline(pipeline.ForState(_depthState, _cullMode, blend, _alphaReference, reflective));
         BindMeshBuffers(mesh);
-        BindMeshTextures(pipeline.PipelineLayout, diffuse, lightmap, split: true);
+        BindMeshTextures(pipeline.PipelineLayout, diffuse, lightmap);
         BindEnvironmentCube(pipeline, cube);
 
         // The forward and direct pipelines take the combined model-view-projection plus the lit
@@ -1079,15 +1079,7 @@ public sealed partial class VulkanGraphicsDevice
     /// <param name="layout">The pipeline layout the set is bound under.</param>
     /// <param name="diffuse">The diffuse texture.</param>
     /// <param name="lightmap">The baked lightmap, or none.</param>
-    /// <param name="split">
-    /// Whether the pipeline about to be bound reads a sampled image and a sampler apart, which is
-    /// what a shader from the library does, rather than one combined object per texture.
-    /// </param>
-    private unsafe void BindMeshTextures(
-        PipelineLayout layout,
-        TextureHandle diffuse,
-        TextureHandle lightmap,
-        bool split = false)
+    private unsafe void BindMeshTextures(PipelineLayout layout, TextureHandle diffuse, TextureHandle lightmap)
     {
         uint diffuseId = TextureKey(diffuse);
         uint lightmapId = TextureKey(lightmap);
@@ -1100,8 +1092,7 @@ public sealed partial class VulkanGraphicsDevice
             ? mapped
             : TextureKey(_neutralDetailTexture);
 
-        MeshTextureDescriptorCache cache = split ? _meshTextureDescriptorsSplit : _meshTextureDescriptors;
-        DescriptorSet descriptorSet = cache.Get(
+        DescriptorSet descriptorSet = _meshTextureDescriptors.Get(
             diffuseId,
             _textures[diffuseId],
             lightmapId,

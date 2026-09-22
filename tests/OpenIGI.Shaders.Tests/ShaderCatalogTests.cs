@@ -146,25 +146,42 @@ public sealed partial class ShaderCatalogTests
             wgslSlots[(group, binding)] = match.Groups["name"].Value;
         }
 
-        List<string> wrong = [];
-
+        Dictionary<(int Group, int Binding), string> reflected = [];
         foreach (ShaderBinding binding in reflection.Bindings)
         {
-            if (!wgslSlots.TryGetValue((binding.Group, binding.Binding), out string? wgslName))
+            reflected[(binding.Group, binding.Binding)] = binding.Name;
+        }
+
+        if (reflection.PushBlock is { } pushBlock)
+        {
+            reflected[(pushBlock.Group, pushBlock.Binding)] = pushBlock.Name;
+        }
+
+        List<string> wrong = [];
+
+        // The WGSL side is the one iterated, because it may legitimately hold FEWER bindings: Slang
+        // drops a binding the shader never reads on that target and keeps it on SPIR-V, where the
+        // reflection lists every module-scope parameter whether or not an entry point touches it.
+        // Glazing relies on that -- both its modules declare the whole shared mesh set so every
+        // pipeline binding it agrees about the shape, and each samples only part of it. What must
+        // never happen is the two targets DISAGREEING about a slot they both have.
+        foreach (((int Group, int Binding) slot, string wgslName) in wgslSlots)
+        {
+            if (!reflected.TryGetValue(slot, out string? name))
             {
-                wrong.Add($"{binding.Name} at group {binding.Group} binding {binding.Binding} is absent from the WGSL");
+                wrong.Add($"the WGSL binds '{wgslName}' at group {slot.Group} binding {slot.Binding}, which the reflection does not list");
                 continue;
             }
 
-            if (!wgslName.StartsWith(binding.Name, StringComparison.Ordinal))
+            if (!wgslName.StartsWith(name, StringComparison.Ordinal))
             {
-                wrong.Add($"group {binding.Group} binding {binding.Binding} is '{binding.Name}' in SPIR-V but '{wgslName}' in WGSL");
+                wrong.Add($"group {slot.Group} binding {slot.Binding} is '{name}' in SPIR-V but '{wgslName}' in WGSL");
             }
         }
 
-        if (reflection.PushBlock is { } push
-            && (!wgslSlots.TryGetValue((push.Group, push.Binding), out string? pushName)
-                || !pushName.StartsWith(push.Name, StringComparison.Ordinal)))
+        // The push block is not optional: every module here has one and WGSL must bind it, because a
+        // push constant becomes an ordinary uniform buffer on that target.
+        if (reflection.PushBlock is { } push && !wgslSlots.ContainsKey((push.Group, push.Binding)))
         {
             wrong.Add($"the push block '{push.Name}' is not bound at group {push.Group} binding {push.Binding} in the WGSL");
         }

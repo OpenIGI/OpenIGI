@@ -176,7 +176,7 @@ public sealed partial class VulkanGraphicsDevice
         vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, _cardPipeline.Pipeline);
         InvalidateBoundState();
         BindMeshBuffers(mesh);
-        BindMeshTextures(_cardPipeline.PipelineLayout, diffuse, lightmap, split: true);
+        BindMeshTextures(_cardPipeline.PipelineLayout, diffuse, lightmap);
 
         Matrix4f mvp = _projection * modelView;
         float* data = stackalloc float[32];

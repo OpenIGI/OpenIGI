@@ -39,4 +39,10 @@ public enum ShaderModuleId
 
     /// <summary>The geometry pass: albedo, world normal, material and baked light, all linear.</summary>
     GBuffer,
+
+    /// <summary>The glazing transmission draw: what a pane lets through.</summary>
+    Glass,
+
+    /// <summary>The glazing front-layer draw: which pane is nearest, and which way it faces.</summary>
+    GlassLayer,
 }

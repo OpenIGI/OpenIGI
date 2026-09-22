@@ -70,7 +70,6 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
             _vertexEntryPoint);
 
         DescriptorSetLayout = CreateDescriptorSetLayout();
-        CombinedTextureSetLayout = CreateCombinedTextureSetLayout();
         CubeSetLayout = CreateCubeSetLayout();
         PipelineLayout = CreatePipelineLayout(DescriptorSetLayout, CubeSetLayout);
     }
@@ -82,20 +81,6 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
     private Vector3f _sunColour;
 
     public DescriptorSetLayout DescriptorSetLayout { get; }
-
-    /// <summary>
-    /// Gets the combined-image-sampler form of the mesh texture set, which the pipelines still
-    /// compiled from GLSL share.
-    /// </summary>
-    /// <remarks>
-    /// A shader from the library binds a sampled image and a sampler separately, because Slang's
-    /// combined sampler takes two binding slots on the WGSL target and collides with the next
-    /// declaration. The geometry, shadow, card and glass pipelines are still GLSL and still bind one
-    /// combined object per texture, so the two shapes exist side by side and the device keeps a
-    /// descriptor cache for each. This layout, its cache, and this remark all go when those
-    /// pipelines move to the library.
-    /// </remarks>
-    public DescriptorSetLayout CombinedTextureSetLayout { get; }
 
     /// <summary>Gets the layout binding the environment cube a reflective draw samples.</summary>
     /// <remarks>
@@ -200,7 +185,6 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
         _vk.DestroyPipelineLayout(_device, PipelineLayout, null);
         _vk.DestroyDescriptorSetLayout(_device, DescriptorSetLayout, null);
         _vk.DestroyDescriptorSetLayout(_device, CubeSetLayout, null);
-        _vk.DestroyDescriptorSetLayout(_device, CombinedTextureSetLayout, null);
         _shader.Dispose();
     }
 
@@ -230,36 +214,6 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
 
         DescriptorSetLayout layout;
         VkCheck.Ok(_vk.CreateDescriptorSetLayout(_device, &createInfo, null, &layout), "vkCreateDescriptorSetLayout");
-        return layout;
-    }
-
-    private DescriptorSetLayout CreateCombinedTextureSetLayout()
-    {
-        // 0 the diffuse, 1 the baked lightmap, 2 the derived surface detail, as one combined object
-        // each. What the geometry, shadow, card and glass pipelines still expect.
-        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[3];
-        for (uint i = 0; i < 3; i++)
-        {
-            bindings[i] = new DescriptorSetLayoutBinding
-            {
-                Binding = i,
-                DescriptorType = DescriptorType.CombinedImageSampler,
-                DescriptorCount = 1,
-                StageFlags = ShaderStageFlags.FragmentBit,
-            };
-        }
-
-        DescriptorSetLayoutCreateInfo createInfo = new()
-        {
-            SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = 3,
-            PBindings = bindings,
-        };
-
-        DescriptorSetLayout layout;
-        VkCheck.Ok(
-            _vk.CreateDescriptorSetLayout(_device, &createInfo, null, &layout),
-            "vkCreateDescriptorSetLayout (combined mesh textures)");
         return layout;
     }
 
