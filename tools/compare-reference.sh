@@ -34,7 +34,7 @@ while read -r _ stem; do
     continue
   fi
 
-  python - "$(win "$REF/$stem.png")" "$(win "$NEW/$stem.png")" <<'PY'
+  if ! python - "$(win "$REF/$stem.png")" "$(win "$NEW/$stem.png")" <<'PY'
 import sys
 from PIL import Image, ImageChops
 
@@ -58,7 +58,9 @@ total = a.size[0] * a.size[1]
 print(f"{name:<14} DIFFERS  {100 * changed / total:.2f}% of pixels, worst channel delta {worst}, bbox {box}")
 raise SystemExit(2)
 PY
-  [ $? -eq 0 ] || status=1
+  then
+    status=1
+  fi
 done < "$REF/manifest.txt"
 
 echo
