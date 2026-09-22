@@ -2675,30 +2675,35 @@ public sealed partial class VulkanGraphicsDevice
         vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _deferred.Lighting.PipelineLayout, 0, 1, &set, 0, null);
         InvalidateBoundState();
 
-        float* light = stackalloc float[16];
-        light[0] = _lighting.SunDirection.X;
-        light[1] = _lighting.SunDirection.Y;
-        light[2] = _lighting.SunDirection.Z;
-        light[3] = (int)_lighting.Model;
-        light[4] = _lighting.SunColour.X;
-        light[5] = _lighting.SunColour.Y;
-        light[6] = _lighting.SunColour.Z;
-        light[7] = _lighting.Scale;
-        light[8] = _lighting.AmbientColour.X;
-        light[9] = _lighting.AmbientColour.Y;
-        light[10] = _lighting.AmbientColour.Z;
-        light[11] = (int)_debugView;
+        Span<float> light = stackalloc float[DeferredLightingParameters.LightFloats];
 
-        // Whether the lighting pass should keep what the game drew where there is no depth, rather than
-        // substituting the atmosphere for it. The frame's fact, not the bracket's -- the sky was drawn
-        // and finished long before this pass is recorded.
-        light[12] = _frameHasPaintedSky ? 1f : 0f;
-        light[13] = 0f;
+        DeferredLightingParameters.WriteLight(
+            light,
+            _lighting.SunDirection,
+            (int)_lighting.Model,
+            _lighting.SunColour,
+            _lighting.Scale,
+            _lighting.AmbientColour,
+            (int)_debugView,
 
-        // Whether the hybrid model may add a sun to the bake, or whether the bake already has one.
-        light[14] = _lighting.CompleteBake ? 1f : 0f;
-        light[15] = 0f;
-        vk.CmdPushConstants(cmd, _deferred.Lighting.PipelineLayout, ShaderStageFlags.FragmentBit, 0, sizeof(float) * 16, light);
+            // Whether the lighting pass should keep what the game drew where there is no depth, rather
+            // than substituting the atmosphere for it. The frame's fact, not the bracket's -- the sky
+            // was drawn and finished long before this pass is recorded.
+            _frameHasPaintedSky,
+
+            // Whether the hybrid model may add a sun to the bake, or whether the bake already has one.
+            _lighting.CompleteBake);
+
+        fixed (float* pushed = light)
+        {
+            vk.CmdPushConstants(
+                cmd,
+                _deferred.Lighting.PipelineLayout,
+                ShaderStageFlags.FragmentBit,
+                0,
+                sizeof(float) * (uint)DeferredLightingParameters.LightFloats,
+                pushed);
+        }
 
         // The light covers the whole G-buffer regardless of the geometry viewport.
         ApplyViewportAndScissor(cmd, new Viewport(0, 0, (int)_sceneTarget.Extent.Width, (int)_sceneTarget.Extent.Height));
@@ -2764,115 +2769,52 @@ public sealed partial class VulkanGraphicsDevice
         float intensity = MathF.Max(_volumeSettings.Intensity, 0f);
         Matrix3f m = _viewToWorld;
 
-        float* u = stackalloc float[DeferredRenderer.GiUniformSize / sizeof(float)];
-
-        // uUnproject: xScale, yScale, near, far.
-        u[0] = _unprojection.XScale; u[1] = _unprojection.YScale; u[2] = _unprojection.Near; u[3] = _unprojection.Far;
-
-        // uProbeOrigin: xyz origin, w whether the field is on.
-        u[4] = probeOrigin.X; u[5] = probeOrigin.Y; u[6] = probeOrigin.Z; u[7] = enabled ? 1f : 0f;
-
-        // uProbeInvCount: xyz one-over-count, w spacing.
-        u[8] = inverseCount.X; u[9] = inverseCount.Y; u[10] = inverseCount.Z; u[11] = spacing;
-
-        // uProbeMisc: half-spacing normal offset, blend, light scale, and whether the sun's shadow comes
-        // from a ray rather than from the cascades. The world is accumulated from what has been drawn, so
-        // for the first frames of a level there is nothing to trace and the shadow map still answers.
-        u[12] = spacing * 0.5f; u[13] = Math.Clamp(_volumeSettings.Blend, 0f, 1f);
-        u[14] = MathF.Max(_lighting.Scale, 0f);
-        u[15] = _sunShadowTraced ? 1f : 0f;
-
-        // uProbeSky: the sky colour the grey visibility is tinted by, times its intensity.
-        u[16] = _volumeSettings.SkyColour.X * intensity;
-        u[17] = _volumeSettings.SkyColour.Y * intensity;
-        u[18] = _volumeSettings.SkyColour.Z * intensity;
-        u[19] = 0f;
-
-        // uCamera: the camera's world position, added to the rotated view position.
-        u[20] = _cameraPosition.X; u[21] = _cameraPosition.Y; u[22] = _cameraPosition.Z; u[23] = 0f;
-
-        // uGiParams: the screen-GI strength (0 disables it), whether the atlas is full-resolution, and
-        // whether ambient occlusion is on.
+        // Whether the screen atlas has anything in it. A strength with no texture behind it would have
+        // the shading weight a slot holding a stand-in.
         bool screenGi = _screenIndirectStrength > 0f && _screenIndirect.IsValid;
-        u[24] = screenGi ? _screenIndirectStrength : 0f;
-        u[25] = screenGi && _screenIndirectFullResolution ? 1f : 0f;
-        u[26] = _aoSettings.Enabled ? 1f : 0f;
 
-        // The camera's height from the planet's centre, so the lighting reads the atmosphere's tables with
-        // the same parameterisation the passes that built them used.
-        u[27] = Sky.SkyAtmosphere.ViewHeightKm(2f);
-
-        // uViewToWorld: the row-major view-to-world rotation, written column-major as a mat4.
-        u[28] = m.M11; u[29] = m.M21; u[30] = m.M31; u[31] = 0f;
-        u[32] = m.M12; u[33] = m.M22; u[34] = m.M32; u[35] = 0f;
-        u[36] = m.M13; u[37] = m.M23; u[38] = m.M33; u[39] = 0f;
-        u[40] = 0f; u[41] = 0f; u[42] = 0f; u[43] = 1f;
-
-        // uCascadeSplits: the view depth each cascade stops at.
-        bool shadows = _shadowCascadeCount > 0 && _deferred.ShadowMap.Ready;
-        for (int i = 0; i < 4; i++)
-        {
-            u[44 + i] = i < _shadowCascadeCount ? _cascadeSplits[i] : 0f;
-        }
-
-        // uShadowConfig: cascade count (0 disables), the depth and normal biases, and the texel size.
-        u[48] = shadows ? _shadowCascadeCount : 0f;
-        u[49] = _shadowSettings.DepthBias;
-        u[50] = _shadowSettings.NormalBias;
-        u[51] = _deferred.ShadowMap.Resolution > 0 ? 1f / _deferred.ShadowMap.Resolution : 0f;
-
-        // uCascadeMatrix[4]: each cascade's camera-relative-world to light-clip, column-major.
-        for (int i = 0; i < 4; i++)
-        {
-            Matrix4f cascade = i < _shadowCascadeCount ? _cascadeMatrices[i] : Matrix4f.Identity;
-            cascade.CopyColumnMajorTo(new Span<float>(u + 52 + (i * 16), 16));
-        }
-
-        // uWetness0: how wet, how much of the ground stands under water, how hard the rain strikes it,
-        // and the clock the ripples run on.
-        u[116] = MathF.Max(_wetness.Amount, 0f);
-        u[117] = Math.Clamp(_wetness.PuddleCoverage, 0f, 1f);
-        u[118] = Math.Clamp(_wetness.RippleStrength, 0f, 1f);
-        u[119] = _wetness.Seconds;
-
-        // uWetness1: the two lattice spacings, in metres, and how much the wind textures the water.
-        u[120] = MathF.Max(_wetness.PuddleSizeMetres, 0.05f);
-        u[121] = MathF.Max(_wetness.RippleSizeMetres, 0.02f);
-        u[122] = Math.Clamp(_wetness.WindRippleStrength, 0f, 1f);
-
-        // uShelterMap*: where the level's top-down roof raster sits in the world and how a texel of it
-        // decodes. In world metres and not camera-relative, unlike everything around it: the map does
-        // not move with the eye, and a level's coordinates still resolve to a millimetre in a float,
-        // which is hundreds of times finer than one of its texels.
+        // Whether the cascades have been drawn yet. Kept apart from the count, because the splits and
+        // the matrices describe how this frame divided the view either way.
+        bool shadowsReady = _shadowCascadeCount > 0 && _deferred.ShadowMap.Ready;
         bool roofs = HasShelterMap();
-        ShelterMapTransform shelter = roofs ? _shelterTransform : ShelterMapTransform.None;
-        u[123] = roofs ? 1f : 0f;
-
-        u[124] = shelter.OriginX;
-        u[125] = shelter.OriginY;
-        u[126] = shelter.CellMetres > 0f ? 1f / shelter.CellMetres : 0f;
-        u[127] = shelter.LowestZ;
-
-        u[128] = shelter.HeightScale;
-        u[129] = shelter.HeadroomMetres;
-        u[130] = shelter.ReachMetres;
-        u[131] = 0f;
-
-        u[132] = shelter.Width;
-        u[133] = shelter.Height;
-        u[134] = 0f;
-        u[135] = 0f;
-
-        // uFog: the slice distribution the shading looks a pixel up with. A scale of zero says there is
-        // no volume this frame, which is how the shader knows to leave the colour alone rather than
-        // sample whatever was bound in the volume's place.
         Deferred.FogSliceParams fogZ = _deferred.Fog.ZParams;
-        u[136] = _fogActive ? fogZ.B : 0f;
-        u[137] = _fogActive ? fogZ.O : 0f;
-        u[138] = _fogActive ? fogZ.Scale : 0f;
-        u[139] = _fogActive ? fogZ.InverseSlices : 0f;
 
-        gi.Write<float>(new ReadOnlySpan<float>(u, DeferredRenderer.GiUniformSize / sizeof(float)));
+        DeferredLightingState state = new(
+            _unprojection,
+            probeOrigin,
+            enabled,
+            inverseCount,
+            spacing,
+            _volumeSettings.Blend,
+            _lighting.Scale,
+            _sunShadowTraced,
+            _volumeSettings.SkyColour,
+            intensity,
+            _cameraPosition,
+            screenGi ? _screenIndirectStrength : 0f,
+            _screenIndirectFullResolution,
+            _aoSettings.Enabled,
+
+            // The camera's height from the planet's centre, so the lighting reads the atmosphere's
+            // tables with the same parameterisation the passes that built them used.
+            Sky.SkyAtmosphere.ViewHeightKm(2f),
+            m,
+            _shadowCascadeCount,
+            shadowsReady,
+            _shadowSettings.DepthBias,
+            _shadowSettings.NormalBias,
+            _deferred.ShadowMap.Resolution > 0 ? 1f / _deferred.ShadowMap.Resolution : 0f,
+            _wetness,
+            roofs,
+            roofs ? _shelterTransform : ShelterMapTransform.None,
+            _fogActive
+                ? new FogSliceDistribution(fogZ.B, fogZ.O, fogZ.Scale, fogZ.InverseSlices)
+                : FogSliceDistribution.None);
+
+        Span<float> block = stackalloc float[DeferredLightingParameters.GiFloats];
+        DeferredLightingParameters.WriteGi(block, state, _cascadeSplits, _cascadeMatrices);
+        gi.Write<float>(block);
+
 
         (ImageView giView, Sampler giSampler, ImageLayout giLayout) = ResolveScreenGi();
         Deferred.ShadowMap shadowMap = _deferred.ShadowMap;
@@ -2961,75 +2903,28 @@ public sealed partial class VulkanGraphicsDevice
     /// </remarks>
     private void PackLamps(Span<float> u)
     {
-        u.Clear();
+        DeferredLampState state = new(
+            _frameCounter,
 
-        u[0] = _localLightCount;
+            // On wherever lamp shadows are asked for AT ALL: this needs no ray query, so it is what
+            // keeps a lamp from lighting through a wall on an adapter that cannot trace, and what
+            // shadows the SECOND lamp on a pixel the traced reservoir's one ray could not reach.
+            RenderCVars.LocalLightShadows.Value != 0,
 
-        // Whether those lamps shadow. Off on an adapter that cannot trace, because the shader compiled
-        // for it has no trace in it at all and would ignore this anyway; off when the world has not been
-        // built yet, so a level's first frames light unshadowed rather than shadowed by nothing.
-        // Which frame this is, so the shadow samples move: successive frames test different points on
-        // each fixture and the temporal resolve averages them into a smooth penumbra. Wrapped short --
-        // the dither only needs the pattern to differ from the last frame's, not to never repeat.
-        u[2] = _frameCounter % 64UL;
+            // Needs an adapter that can trace AND the RT switch on, so it is OPTIONAL on hardware that
+            // could trace but has been asked not to; and off until the world is built, so a level's
+            // first frames trace against nothing rather than being shadowed by nothing.
+            RenderCVars.LocalLightShadows.Value != 0
+                && RenderCVars.HardwareRayTracing.Value
+                && RenderCVars.TracedLampShadows.Value
+                && _device.Capabilities.RayQuery
+                && _worldScene is { IsReady: true } traced
+                && traced.TopLevel is not null,
 
-        // Whether the shading marches the depth buffer to occlude each lamp. On wherever lamp shadows
-        // are asked for AT ALL -- unlike the traced reservoir above, this needs no ray query, so it is
-        // what keeps a lamp from lighting through a wall on an adapter that cannot trace, and what
-        // shadows the SECOND lamp on a pixel the reservoir's one ray could not reach. It rides on the
-        // count being non-zero for the same reason the trace does: no lamps, nothing to occlude.
-        u[3] = _localLightCount > 0 && RenderCVars.LocalLightShadows.Value != 0 ? 1f : 0f;
+            // See r_local_light_source for why a cap belongs here rather than on the fixture itself.
+            RenderCVars.LocalLightSource.Value);
 
-        // Whether the shading traces a ray per lamp against the world -- the off-screen half of the lamp
-        // shadow. Needs an adapter that can trace AND the RT switch to be on, so it is OPTIONAL on
-        // hardware that could trace but has been asked not to: r_rt off leaves the screen march above as
-        // the whole of the lamp shadow, exactly as on a card that cannot trace at all. Off, too, until the
-        // world is built, so a level's first frames trace against nothing rather than being shadowed by
-        // nothing.
-        u[1] = _localLightCount > 0
-            && RenderCVars.LocalLightShadows.Value != 0
-            && RenderCVars.HardwareRayTracing.Value
-            && RenderCVars.TracedLampShadows.Value
-            && _device.Capabilities.RayQuery
-            && _worldScene is { IsReady: true } traced
-            && traced.TopLevel is not null
-                ? 1f
-                : 0f;
-
-        // The largest source a shadow ray may sample, whatever the fixture measures. See
-        // r_local_light_source for why a cap belongs here rather than on the fixture itself.
-        u[4] = MathF.Max(RenderCVars.LocalLightSource.Value, 0.02f);
-
-        // Where each array starts, in floats: the two control vectors, then a vec4 per light per array.
-        int position = 8;
-        int colour = position + (DeferredLocalLight.Maximum * 4);
-        int direction = colour + (DeferredLocalLight.Maximum * 4);
-
-        for (int i = 0; i < _localLightCount; i++)
-        {
-            DeferredLocalLight light = _localLights[i];
-            int at = i * 4;
-
-            u[position + at] = light.ViewPosition.X;
-            u[position + at + 1] = light.ViewPosition.Y;
-            u[position + at + 2] = light.ViewPosition.Z;
-            u[position + at + 3] = light.Radius;
-
-            u[colour + at] = light.Colour.X;
-            u[colour + at + 1] = light.Colour.Y;
-            u[colour + at + 2] = light.Colour.Z;
-            u[colour + at + 3] = light.Intensity;
-
-            u[direction + at] = light.ViewDirection.X;
-            u[direction + at + 1] = light.ViewDirection.Y;
-            u[direction + at + 2] = light.ViewDirection.Z;
-
-            // How big the fixture is, which is what gives its shadow a penumbra. Rides beside the facing
-            // because both describe the SOURCE rather than its falloff, and the fourth component there
-            // was spare.
-            u[direction + at + 3] = light.SourceRadius;
-        }
-
+        DeferredLampBlock.Write(u, state, _localLights.AsSpan(0, _localLightCount));
     }
 
     /// <inheritdoc/>
