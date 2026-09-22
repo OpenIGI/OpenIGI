@@ -312,6 +312,9 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
         ThrowIfDisposed();
 
         using Utf8String entryPoint = new(descriptor.Compute.EntryPoint);
+        using VulkanSpecialization constants = new(descriptor.Compute.Constants);
+
+        SpecializationInfo specialization;
 
         ComputePipelineCreateInfo info = new()
         {
@@ -323,6 +326,7 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
                 Stage = ShaderStageFlags.ComputeBit,
                 Module = ((VulkanRhiShaderModule)descriptor.Compute.Module).Handle,
                 PName = entryPoint.Pointer,
+                PSpecializationInfo = constants.Describe(&specialization),
             },
         };
 

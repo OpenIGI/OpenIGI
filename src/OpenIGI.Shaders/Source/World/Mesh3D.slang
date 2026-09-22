@@ -15,6 +15,7 @@
 // clockwise front face.
 
 #include "../Common/PushConstants.slang"
+#include "../Common/ClipSpace.slang"
 
 // The combined model-view-projection, column-major and in the engine's OpenGL convention,
 // and the lit-view-model block. Exactly the guaranteed 128 bytes.
@@ -170,7 +171,7 @@ Varyings vertexMain(VertexInput input)
     output.fog = fogDensity > 0.0 ? clamp(exp(-fogDensity * max(clip.w, 0.0)), 0.0, 1.0) : 1.0;
 
     // OpenGL clip -> Vulkan clip: flip Y, and map Z onto reverse-Z [1, 0] (near = 1, far = 0).
-    clip.y = -clip.y;
+    clip.y = OpenIgiClipY(clip.y);
     clip.z = (clip.w - clip.z) * 0.5;
     output.position = clip;
 

@@ -59,7 +59,10 @@ public sealed class CardPipeline : IDisposable
 
         Pipeline = device.CreateRenderPipeline(new RhiRenderPipelineDescriptor(
             Layout,
-            new RhiShaderStage(Module, reflection.EntryPointFor(ShaderStage.Vertex).Name),
+            new RhiShaderStage(
+                Module,
+                reflection.EntryPointFor(ShaderStage.Vertex).Name,
+                Mesh3DConstants.TargetConstants),
             new RhiShaderStage(Module, reflection.EntryPointFor(ShaderStage.Fragment).Name),
             VertexLayouts(),
             [.. targetFormats.Select(format => new RhiColorTargetState(format))],

@@ -14,7 +14,7 @@ namespace OpenIGI.Rendering.Rhi;
 public sealed record RhiShaderStage(
     IRhiShaderModule Module,
     string EntryPoint,
-    IReadOnlyDictionary<int, uint>? Constants = null);
+    IReadOnlyDictionary<int, RhiConstant>? Constants = null);
 
 /// <summary>What a graphics pipeline is created as.</summary>
 /// <param name="Layout">What its bind groups and push data look like.</param>

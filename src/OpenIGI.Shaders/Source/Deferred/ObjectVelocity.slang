@@ -6,6 +6,7 @@
 // wall. This draws every animated mesh again with both frames' transforms and writes the difference.
 
 #include "../Common/PushConstants.slang"
+#include "../Common/ClipSpace.slang"
 
 struct ObjectVelocityPush
 {
@@ -56,7 +57,7 @@ Varyings vertexMain(
 
     // The same OpenGL-to-Vulkan correction the G-buffer vertex stage applies, in the same order, so the
     // rasterised depth is bit-comparable with what that pass stored.
-    clip.y = -clip.y;
+    clip.y = OpenIgiClipY(clip.y);
     clip.z = (clip.w - clip.z) * 0.5;
     output.position = clip;
     return output;

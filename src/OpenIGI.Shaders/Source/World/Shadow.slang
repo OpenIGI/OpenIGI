@@ -7,6 +7,7 @@
 // surface shadows itself along the edge where the two disagree.
 
 #include "../Common/PushConstants.slang"
+#include "../Common/ClipSpace.slang"
 
 struct ShadowPush
 {
@@ -75,7 +76,7 @@ Varyings vertexMain(VertexInput input)
     }
 
     float4 clip = mul(push.modelViewProjection, float4(localPosition, 1.0));
-    clip.y = -clip.y;
+    clip.y = OpenIgiClipY(clip.y);
     clip.z = (clip.z * 0.5) + 0.5;
     output.position = clip;
     output.diffuseUv = diffuseUv;

@@ -9,6 +9,7 @@
 #define OPENIGI_GLASS_VERTEX_INCLUDED
 
 #include "PushConstants.slang"
+#include "ClipSpace.slang"
 
 struct GlassPush
 {
@@ -92,7 +93,7 @@ GlassVaryings GlassTransform(GlassVertexInput input)
     // that subtraction backwards does not tilt the glazing slightly; it puts every pane at the wrong
     // end of the depth range, where the pipeline's greater-or-equal test rejects all of it. The
     // winding the Y flip reverses is compensated by the front face.
-    clip.y = -clip.y;
+    clip.y = OpenIgiClipY(clip.y);
     clip.z = (clip.w - clip.z) * 0.5;
     output.position = clip;
 

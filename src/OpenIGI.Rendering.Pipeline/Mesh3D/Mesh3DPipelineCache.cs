@@ -313,7 +313,7 @@ public sealed class Mesh3DPipelineCache : IDisposable
         // The vertex stage declares the reflection constant as well -- it is what builds the direction --
         // and a constant supplied to one stage and not the other is two shaders that disagree about
         // whether the varying between them means anything.
-        IReadOnlyDictionary<int, uint> constants = Mesh3DConstants.Describe(
+        IReadOnlyDictionary<int, RhiConstant> constants = Mesh3DConstants.Describe(
             key.AlphaReference,
             key.Reflective,
             _fogColour,

@@ -7,6 +7,7 @@
 
 #include "../Common/GBufferEncoding.slang"
 #include "../Common/PushConstants.slang"
+#include "../Common/ClipSpace.slang"
 
 struct GBufferPush
 {
@@ -147,7 +148,7 @@ Varyings vertexMain(VertexInput input)
     }
 
     float4 clip = mul(push.modelViewProjection, float4(localPosition, 1.0));
-    clip.y = -clip.y;
+    clip.y = OpenIgiClipY(clip.y);
     clip.z = (clip.w - clip.z) * 0.5;
     output.position = clip;
 

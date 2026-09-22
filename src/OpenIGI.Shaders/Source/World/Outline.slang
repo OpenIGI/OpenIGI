@@ -7,6 +7,7 @@
 // delta is zero and the blend cannot move a vertex.
 
 #include "../Common/PushConstants.slang"
+#include "../Common/ClipSpace.slang"
 
 struct OutlinePush
 {
@@ -43,7 +44,7 @@ float4 vertexMain(VertexInput input) : SV_Position
     // OpenGL clip to Vulkan clip, exactly as every other mesh stage here does it: flip Y, and map Z
     // onto reverse-Z where the near plane is one. It happens BEFORE the pin so the pinned depth is
     // stated in the convention the depth buffer actually holds.
-    clip.y = -clip.y;
+    clip.y = OpenIgiClipY(clip.y);
     clip.z = (clip.w - clip.z) * 0.5;
 
     // Only the normal's screen-facing part can widen a silhouette; its depth component moves the

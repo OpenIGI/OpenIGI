@@ -147,13 +147,14 @@ public sealed class ShadowPipelineCache : IDisposable
     private IRhiRenderPipeline Create(byte alphaReference) =>
         _device.CreateRenderPipeline(new RhiRenderPipelineDescriptor(
             Layout,
-            new RhiShaderStage(_module, _vertexEntryPoint),
+            new RhiShaderStage(_module, _vertexEntryPoint, Mesh3DConstants.TargetConstants),
             new RhiShaderStage(
                 _module,
                 _fragmentEntryPoint,
-                new Dictionary<int, uint>
+                new Dictionary<int, RhiConstant>
                 {
-                    [Mesh3DConstants.AlphaReference] = Mesh3DConstants.Bits(alphaReference / 255f),
+                    [Mesh3DConstants.ClipYDown] = RhiConstant.Of(0),
+                    [Mesh3DConstants.AlphaReference] = RhiConstant.Of(alphaReference / 255f),
                 }),
             VertexLayouts(),
             ColorTargets: [],

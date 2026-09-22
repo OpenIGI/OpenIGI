@@ -50,10 +50,10 @@ public sealed class Mesh3DPipelineCacheTests
         cache.ForState(DepthState.TestAndWrite, CullMode.None, BlendMode.Opaque, alphaReference: 200, reflective: true);
 
         RecordedRenderPipeline pipeline = Assert.Single(device.Resources.OfType<RecordedRenderPipeline>());
-        IReadOnlyDictionary<int, uint> constants = pipeline.Descriptor.Fragment!.Constants!;
+        IReadOnlyDictionary<int, RhiConstant> constants = pipeline.Descriptor.Fragment!.Constants!;
 
-        Assert.Equal(Mesh3DConstants.Bits(200f / 255f), constants[Mesh3DConstants.AlphaReference]);
-        Assert.Equal(1u, constants[Mesh3DConstants.Reflective]);
+        Assert.Equal(RhiConstant.Of(200f / 255f), constants[Mesh3DConstants.AlphaReference]);
+        Assert.Equal(RhiConstant.Of(1), constants[Mesh3DConstants.Reflective]);
 
         // Both stages, or the two disagree about whether the varying between them means anything.
         Assert.Equal(constants, pipeline.Descriptor.Vertex.Constants);
@@ -76,7 +76,7 @@ public sealed class Mesh3DPipelineCacheTests
 
         Assert.NotSame(before, after);
         Assert.Equal(
-            Mesh3DConstants.Bits(0.002f),
+            RhiConstant.Of(0.002f),
             ((RecordedRenderPipeline)after).Descriptor.Fragment!.Constants![Mesh3DConstants.FogDensity]);
     }
 

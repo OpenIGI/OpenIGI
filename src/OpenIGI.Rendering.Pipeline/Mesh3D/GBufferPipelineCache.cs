@@ -247,14 +247,15 @@ public sealed class GBufferPipelineCache : IDisposable
     {
         // Only the fragment stage tests the cut-out, so only it is specialised -- unlike the forward
         // shader, whose vertex stage reads the reflection constant too.
-        IReadOnlyDictionary<int, uint> constants = new Dictionary<int, uint>
+        IReadOnlyDictionary<int, RhiConstant> constants = new Dictionary<int, RhiConstant>
         {
-            [Mesh3DConstants.AlphaReference] = Mesh3DConstants.Bits(key.AlphaReference / 255f),
+            [Mesh3DConstants.ClipYDown] = RhiConstant.Of(0),
+            [Mesh3DConstants.AlphaReference] = RhiConstant.Of(key.AlphaReference / 255f),
         };
 
         return _device.CreateRenderPipeline(new RhiRenderPipelineDescriptor(
             Layout,
-            new RhiShaderStage(_module, _vertexEntryPoint),
+            new RhiShaderStage(_module, _vertexEntryPoint, Mesh3DConstants.TargetConstants),
             new RhiShaderStage(_module, _fragmentEntryPoint, constants),
             VertexLayouts(),
             TargetsFor(key.Blend, _targetFormats),

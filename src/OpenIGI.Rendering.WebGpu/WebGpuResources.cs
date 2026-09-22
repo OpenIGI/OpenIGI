@@ -1,4 +1,5 @@
 using OpenIGI.Rendering.Rhi;
+using OpenIGI.Shaders;
 using OpenIGI.Rendering.WebGpu.Native;
 
 namespace OpenIGI.Rendering.WebGpu;
@@ -232,9 +233,34 @@ public sealed unsafe class WebGpuShaderModule : WebGpuResource<WGPUShaderModule>
     /// <summary>Initialises a new instance of the <see cref="WebGpuShaderModule"/> class.</summary>
     /// <param name="handle">The WebGPU handle.</param>
     /// <param name="label">The name it was created with.</param>
-    public WebGpuShaderModule(WGPUShaderModule handle, string label)
-        : base(handle, label)
+    /// <param name="reflection">
+    /// What the module declares, which is where a specialisation constant's NAME comes from: WebGPU
+    /// keys an override by name where Vulkan keys it by number, and only the reflection knows both.
+    /// </param>
+    public WebGpuShaderModule(WGPUShaderModule handle, string label, ShaderReflection reflection)
+        : base(handle, label) => Reflection = reflection;
+
+    /// <summary>Gets what the module declares.</summary>
+    public ShaderReflection Reflection { get; }
+
+    /// <summary>Gets the name the module declares one specialisation constant under.</summary>
+    /// <param name="id">The identifier.</param>
+    /// <returns>The name.</returns>
+    /// <exception cref="InvalidOperationException">The module declares no constant with that identifier.</exception>
+    public string ConstantName(int id)
     {
+        foreach (ShaderSpecializationConstant constant in Reflection.SpecializationConstants)
+        {
+            if (constant.Id == id)
+            {
+                return constant.Name;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"The module '{Label}' declares no specialisation constant with identifier {id}. On this "
+            + "backend a constant is named rather than numbered, so one the module does not declare "
+            + "cannot be supplied at all.");
     }
 
     /// <inheritdoc/>
@@ -278,14 +304,24 @@ public sealed unsafe class WebGpuBindGroup : WebGpuResource<WGPUBindGroup>, IRhi
 /// <summary>A WebGPU pipeline layout, and how much push data it declared.</summary>
 public sealed unsafe class WebGpuPipelineLayout : WebGpuResource<WGPUPipelineLayout>, IRhiPipelineLayout
 {
+    private readonly IReadOnlyList<WebGpuBindGroupLayout> _owned;
+
     /// <summary>Initialises a new instance of the <see cref="WebGpuPipelineLayout"/> class.</summary>
     /// <param name="handle">The WebGPU handle.</param>
     /// <param name="descriptor">What it was created as.</param>
-    public WebGpuPipelineLayout(WGPUPipelineLayout handle, RhiPipelineLayoutDescriptor descriptor)
+    /// <param name="owned">
+    /// The group layouts this layout made for itself — the push block's, and any empty ones standing
+    /// in for groups the caller did not supply. Nothing else refers to them, so they go when it does.
+    /// </param>
+    public WebGpuPipelineLayout(
+        WGPUPipelineLayout handle,
+        RhiPipelineLayoutDescriptor descriptor,
+        IReadOnlyList<WebGpuBindGroupLayout>? owned = null)
         : base(handle, descriptor.Label)
     {
         PushDataBytes = descriptor.PushDataBytes;
         GroupCount = descriptor.BindGroupLayouts.Count;
+        _owned = owned ?? [];
     }
 
     /// <summary>Gets how many bytes of push data it takes.</summary>
@@ -295,7 +331,15 @@ public sealed unsafe class WebGpuPipelineLayout : WebGpuResource<WGPUPipelineLay
     public int GroupCount { get; }
 
     /// <inheritdoc/>
-    protected override void Release(WGPUPipelineLayout handle) => Wgpu.wgpuPipelineLayoutRelease(handle);
+    protected override void Release(WGPUPipelineLayout handle)
+    {
+        Wgpu.wgpuPipelineLayoutRelease(handle);
+
+        foreach (WebGpuBindGroupLayout layout in _owned)
+        {
+            layout.Dispose();
+        }
+    }
 }
 
 /// <summary>A WebGPU compute pipeline.</summary>

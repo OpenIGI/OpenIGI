@@ -47,7 +47,7 @@ public sealed class MeshPipelineGroupTests
         group.GBuffer.ForState(DepthState.TestAndWrite, CullMode.CounterClockwise, alphaReference: Reference);
         group.Shadows.ForAlphaReference(Reference);
 
-        uint expected = Mesh3DConstants.Bits(Reference / 255f);
+        RhiConstant expected = RhiConstant.Of(Reference / 255f);
 
         foreach (RecordedRenderPipeline pipeline in device.Resources
             .OfType<RecordedRenderPipeline>()

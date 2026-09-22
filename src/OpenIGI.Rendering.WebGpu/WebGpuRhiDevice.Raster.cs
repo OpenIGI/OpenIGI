@@ -24,6 +24,11 @@ public sealed unsafe partial class WebGpuRhiDevice
         using WebGpuString vertexEntry = new(descriptor.Vertex.EntryPoint);
         using WebGpuString fragmentEntry = new(descriptor.Fragment?.EntryPoint ?? string.Empty);
 
+        // Held until the pipeline exists: an override is keyed by a name, and the name has to still be
+        // there when the driver reads it.
+        using WebGpuConstants vertexConstants = new(descriptor.Vertex);
+        using WebGpuConstants fragmentConstants = new(descriptor.Fragment);
+
         // Flattened first, because every pointer below has to stay valid until the create call returns
         // and a nested fixed block would close too early.
         int attributeCount = 0;
@@ -101,6 +106,8 @@ public sealed unsafe partial class WebGpuRhiDevice
                 {
                     module = ((WebGpuShaderModule)stage.Module).Handle,
                     entryPoint = fragmentEntry.View,
+                    constantCount = fragmentConstants.Count,
+                    constants = fragmentConstants.Entries,
                     targetCount = (nuint)descriptor.ColorTargets.Count,
                     targets = descriptor.ColorTargets.Count > 0 ? firstTarget : null,
                 };
@@ -137,6 +144,8 @@ public sealed unsafe partial class WebGpuRhiDevice
                 {
                     module = ((WebGpuShaderModule)descriptor.Vertex.Module).Handle,
                     entryPoint = vertexEntry.View,
+                    constantCount = vertexConstants.Count,
+                    constants = vertexConstants.Entries,
                     bufferCount = (nuint)descriptor.VertexBuffers.Count,
                     buffers = descriptor.VertexBuffers.Count > 0 ? firstBuffer : null,
                 },

@@ -276,7 +276,7 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
 
         WGPUShaderModule handle = Wgpu.wgpuDeviceCreateShaderModule(_context.Device, &native);
         return handle.IsValid
-            ? new WebGpuShaderModule(handle, name)
+            ? new WebGpuShaderModule(handle, name, ShaderCatalog.GetReflection(descriptor.Module, variant))
             : throw new InvalidOperationException($"The module {descriptor.Module} did not compile.");
     }
 
@@ -370,11 +370,33 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
         }
 
         using WebGpuString label = new(descriptor.Label);
-        WGPUBindGroupLayout[] groups = new WGPUBindGroupLayout[descriptor.BindGroupLayouts.Count];
 
-        for (int i = 0; i < groups.Length; i++)
+        // A layout that declares push data has to declare the group the ring is bound at as well. The
+        // modules read it as an ordinary uniform binding -- there are no push constants here -- so a
+        // pipeline whose layout left it out is refused by the driver with a complaint about a global
+        // the shader wants and the layout does not have. Groups are positional, so the ones before it
+        // are filled with empty layouts where the caller supplied fewer.
+        int push = descriptor.PushDataBytes > 0 ? WebGpuPushBlocks.Group : -1;
+        int count = push >= 0 ? Math.Max(descriptor.BindGroupLayouts.Count, push + 1) : descriptor.BindGroupLayouts.Count;
+
+        WGPUBindGroupLayout[] groups = new WGPUBindGroupLayout[count];
+        List<WebGpuBindGroupLayout> filled = [];
+
+        for (int i = 0; i < count; i++)
         {
-            groups[i] = ((WebGpuBindGroupLayout)descriptor.BindGroupLayouts[i]).Handle;
+            if (i < descriptor.BindGroupLayouts.Count)
+            {
+                groups[i] = ((WebGpuBindGroupLayout)descriptor.BindGroupLayouts[i]).Handle;
+                continue;
+            }
+
+            WebGpuBindGroupLayout made = i == push
+                ? (WebGpuBindGroupLayout)PushGroupLayout()
+                : (WebGpuBindGroupLayout)CreateBindGroupLayout(
+                    new RhiBindGroupLayoutDescriptor([], $"{descriptor.Label}-empty{i}"));
+
+            filled.Add(made);
+            groups[i] = made.Handle;
         }
 
         fixed (WGPUBindGroupLayout* first = groups)
@@ -388,11 +410,27 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
 
             WGPUPipelineLayout handle = Wgpu.wgpuDeviceCreatePipelineLayout(_context.Device, &native);
             return handle.IsValid
-                ? new WebGpuPipelineLayout(handle, descriptor)
+                ? new WebGpuPipelineLayout(handle, descriptor, filled)
                 : throw new InvalidOperationException(
                     $"The pipeline layout '{descriptor.Label}' could not be created.");
         }
     }
+
+    /// <summary>The layout of the group push data is emulated through.</summary>
+    /// <returns>One uniform binding, addressed by a dynamic offset into the frame's ring.</returns>
+    /// <remarks>
+    /// Dynamic because one buffer serves every push of the frame: the ring is written at a running
+    /// offset and each draw binds the slice it wrote.
+    /// </remarks>
+    private IRhiBindGroupLayout PushGroupLayout() => CreateBindGroupLayout(new RhiBindGroupLayoutDescriptor(
+        [
+            new RhiBindGroupLayoutEntry(
+                WebGpuPushBlocks.Binding,
+                RhiBindingType.UniformBuffer,
+                RhiShaderStages.All,
+                HasDynamicOffset: true),
+        ],
+        "push"));
 
     /// <inheritdoc/>
     public IRhiComputePipeline CreateComputePipeline(RhiComputePipelineDescriptor descriptor)
@@ -402,6 +440,7 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
 
         using WebGpuString label = new(descriptor.Label);
         using WebGpuString entryPoint = new(descriptor.Compute.EntryPoint);
+        using WebGpuConstants constants = new(descriptor.Compute);
 
         WGPUComputePipelineDescriptor native = new()
         {
@@ -411,6 +450,8 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
             {
                 module = ((WebGpuShaderModule)descriptor.Compute.Module).Handle,
                 entryPoint = entryPoint.View,
+                constantCount = constants.Count,
+                constants = constants.Entries,
             },
         };
 

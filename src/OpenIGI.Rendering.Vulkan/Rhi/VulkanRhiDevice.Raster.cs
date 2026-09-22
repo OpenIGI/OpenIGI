@@ -30,6 +30,14 @@ internal sealed unsafe partial class VulkanRhiDevice
         using Utf8String vertexEntry = new(descriptor.Vertex.EntryPoint);
         using Utf8String fragmentEntry = new(descriptor.Fragment?.EntryPoint ?? "main");
 
+        // Held until the pipeline exists: a specialisation description is a pair of pointers, and what
+        // they point at has to outlive the creation call.
+        using VulkanSpecialization vertexConstants = new(descriptor.Vertex.Constants);
+        using VulkanSpecialization fragmentConstants = new(descriptor.Fragment?.Constants);
+
+        SpecializationInfo vertexSpecialization;
+        SpecializationInfo fragmentSpecialization;
+
         int attributeCount = 0;
         foreach (RhiVertexBufferLayout buffer in descriptor.VertexBuffers)
         {
@@ -99,6 +107,7 @@ internal sealed unsafe partial class VulkanRhiDevice
             Stage = ShaderStageFlags.VertexBit,
             Module = ((VulkanRhiShaderModule)descriptor.Vertex.Module).Handle,
             PName = vertexEntry.Pointer,
+            PSpecializationInfo = vertexConstants.Describe(&vertexSpecialization),
         };
 
         if (descriptor.Fragment is { } fragment)
@@ -109,6 +118,7 @@ internal sealed unsafe partial class VulkanRhiDevice
                 Stage = ShaderStageFlags.FragmentBit,
                 Module = ((VulkanRhiShaderModule)fragment.Module).Handle,
                 PName = fragmentEntry.Pointer,
+                PSpecializationInfo = fragmentConstants.Describe(&fragmentSpecialization),
             };
         }
 

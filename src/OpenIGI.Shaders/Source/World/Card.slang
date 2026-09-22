@@ -15,6 +15,7 @@
 // colour as if it were a surface, and light the empty gutter between two pages.
 
 #include "../Common/PushConstants.slang"
+#include "../Common/ClipSpace.slang"
 
 struct CardPush
 {
@@ -77,7 +78,7 @@ Varyings vertexMain(VertexInput input)
     // to the one the projection was built for, and depth here is the ordinary zero-to-one range
     // rather than the reversed one the scene uses -- a card's depth is a distance behind a window,
     // and it is read back as such.
-    clip.y = -clip.y;
+    clip.y = OpenIgiClipY(clip.y);
     clip.z = (clip.z + clip.w) * 0.5;
     output.position = clip;
 
