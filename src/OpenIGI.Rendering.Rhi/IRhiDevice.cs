@@ -1,0 +1,163 @@
+namespace OpenIGI.Rendering.Rhi;
+
+/// <summary>
+/// A graphics device, as everything above it needs one: resources, pipelines, a command encoder and a
+/// frame to present.
+/// </summary>
+/// <remarks>
+/// <para>
+/// WebGPU's model, because it is the narrower of the two and a narrower interface can be implemented
+/// over a wider one. The reverse cannot: a browser cannot be asked for a subpass, a barrier, a
+/// descriptor pool or a memory type, while Vulkan can be asked to do without all four.
+/// </para>
+/// <para>
+/// Nothing here knows what a frame of this game looks like. Which passes run in what order, what the
+/// G-buffer holds and when the surface cache is relit belong above, in the shared pipeline, so that both
+/// backends draw the same frame rather than two frames that resemble each other.
+/// </para>
+/// </remarks>
+public interface IRhiDevice : IDisposable
+{
+    /// <summary>Gets a description of the adapter, for logs and the options screen.</summary>
+    string AdapterName { get; }
+
+    /// <summary>Gets the optional things this device can do.</summary>
+    RhiFeatures Features { get; }
+
+    /// <summary>Gets the sizes it will not exceed.</summary>
+    RhiLimits Limits { get; }
+
+    /// <summary>Gets ray tracing, where this device offers it.</summary>
+    /// <remarks>
+    /// A capability interface rather than members on this one: only a device reporting
+    /// <see cref="RhiFeatures.RayQuery"/> has it, and a pass that wants it asks and stands down when the
+    /// answer is null — exactly as the traced passes already do on a Mac.
+    /// </remarks>
+    IRhiRayTracing? RayTracing { get; }
+
+    /// <summary>Creates a buffer.</summary>
+    /// <param name="descriptor">What it is created as.</param>
+    /// <returns>The buffer.</returns>
+    IRhiBuffer CreateBuffer(in RhiBufferDescriptor descriptor);
+
+    /// <summary>Creates a texture.</summary>
+    /// <param name="descriptor">What it is created as.</param>
+    /// <returns>The texture.</returns>
+    IRhiTexture CreateTexture(in RhiTextureDescriptor descriptor);
+
+    /// <summary>Creates a sampler.</summary>
+    /// <param name="descriptor">What it is created as.</param>
+    /// <returns>The sampler.</returns>
+    IRhiSampler CreateSampler(in RhiSamplerDescriptor descriptor);
+
+    /// <summary>Loads one module of the shader library in the form this backend runs.</summary>
+    /// <param name="descriptor">Which module and variant.</param>
+    /// <returns>The module.</returns>
+    IRhiShaderModule CreateShaderModule(in RhiShaderModuleDescriptor descriptor);
+
+    /// <summary>Creates a bind group layout.</summary>
+    /// <param name="descriptor">Its shape.</param>
+    /// <returns>The layout.</returns>
+    IRhiBindGroupLayout CreateBindGroupLayout(RhiBindGroupLayoutDescriptor descriptor);
+
+    /// <summary>Creates a bind group.</summary>
+    /// <param name="descriptor">Its layout and what fills each slot.</param>
+    /// <returns>The group.</returns>
+    IRhiBindGroup CreateBindGroup(RhiBindGroupDescriptor descriptor);
+
+    /// <summary>Creates a pipeline layout.</summary>
+    /// <param name="descriptor">Its bind group layouts and push data.</param>
+    /// <returns>The layout.</returns>
+    IRhiPipelineLayout CreatePipelineLayout(RhiPipelineLayoutDescriptor descriptor);
+
+    /// <summary>Creates a graphics pipeline.</summary>
+    /// <param name="descriptor">What it is created as.</param>
+    /// <returns>The pipeline.</returns>
+    IRhiRenderPipeline CreateRenderPipeline(RhiRenderPipelineDescriptor descriptor);
+
+    /// <summary>Creates a compute pipeline.</summary>
+    /// <param name="descriptor">What it is created as.</param>
+    /// <returns>The pipeline.</returns>
+    IRhiComputePipeline CreateComputePipeline(RhiComputePipelineDescriptor descriptor);
+
+    /// <summary>Creates a query set.</summary>
+    /// <param name="descriptor">What it counts and how many slots it has.</param>
+    /// <returns>The set.</returns>
+    IRhiQuerySet CreateQuerySet(in RhiQuerySetDescriptor descriptor);
+
+    /// <summary>Begins recording work.</summary>
+    /// <param name="label">A name for it.</param>
+    /// <returns>The encoder.</returns>
+    IRhiCommandEncoder CreateCommandEncoder(string label = "");
+
+    /// <summary>Submits recorded work.</summary>
+    /// <param name="commands">What to submit, in order.</param>
+    void Submit(ReadOnlySpan<IRhiCommandBuffer> commands);
+
+    /// <summary>Writes host data into a buffer.</summary>
+    /// <typeparam name="T">The element type.</typeparam>
+    /// <param name="buffer">The buffer.</param>
+    /// <param name="offset">Where the write starts.</param>
+    /// <param name="data">The data.</param>
+    /// <remarks>
+    /// The queue's own write, not a mapping: both backends have one, and it is the only upload path that
+    /// does not need the caller to know whether the memory is visible to the host.
+    /// </remarks>
+    void WriteBuffer<T>(IRhiBuffer buffer, ulong offset, ReadOnlySpan<T> data)
+        where T : unmanaged;
+
+    /// <summary>Writes host data into a texture.</summary>
+    /// <typeparam name="T">The element type.</typeparam>
+    /// <param name="destination">The region written.</param>
+    /// <param name="data">The texels.</param>
+    /// <param name="bytesPerRow">How many bytes one row of the data occupies.</param>
+    /// <param name="size">How much to write.</param>
+    void WriteTexture<T>(
+        in RhiTextureRegion destination,
+        ReadOnlySpan<T> data,
+        int bytesPerRow,
+        in RhiExtent3D size)
+        where T : unmanaged;
+
+    /// <summary>Asks for a buffer's contents to come back to the host.</summary>
+    /// <param name="buffer">The buffer, which must have been created with <see cref="RhiBufferUsage.MapRead"/>.</param>
+    /// <param name="offset">Where the read starts.</param>
+    /// <param name="sizeInBytes">How many bytes, or zero for the rest of it.</param>
+    /// <returns>The readback, which completes once the work that wrote the buffer has finished.</returns>
+    /// <remarks>
+    /// A future rather than a value, because a browser cannot block for one and a desktop should not. The
+    /// shared pipeline waits where the platform allows it and reports the last completed result where it
+    /// does not — see <c>GraphicsCapabilities.SynchronousReadback</c>.
+    /// </remarks>
+    IRhiReadback ReadBuffer(IRhiBuffer buffer, ulong offset = 0, ulong sizeInBytes = 0);
+
+    /// <summary>Begins the frame, acquiring the image that will be presented.</summary>
+    /// <param name="frame">The frame, when one was acquired.</param>
+    /// <returns><see langword="false"/> when the surface must be reconfigured first and nothing was acquired.</returns>
+    bool BeginFrame(out RhiFrame frame);
+
+    /// <summary>Ends the frame and presents it.</summary>
+    /// <param name="frame">The frame that was begun.</param>
+    /// <returns><see langword="false"/> when the surface must be reconfigured before the next frame.</returns>
+    bool EndFrame(in RhiFrame frame);
+
+    /// <summary>Reconfigures the surface for a new size.</summary>
+    /// <param name="width">The new width in pixels.</param>
+    /// <param name="height">The new height in pixels.</param>
+    /// <param name="vsync">Whether to wait for the display.</param>
+    void ConfigureSurface(int width, int height, bool vsync);
+
+    /// <summary>Waits until every submission has completed.</summary>
+    /// <remarks>
+    /// For shutdown and for a resize, where a resource about to be destroyed may still be in flight. Not
+    /// something a frame should ever do, and not something a browser offers at all: the web
+    /// implementation completes what it can and returns.
+    /// </remarks>
+    void WaitIdle();
+}
+
+/// <summary>The image a frame draws into, and where it stands in the rotation.</summary>
+/// <param name="Target">The view to attach as the frame's colour target.</param>
+/// <param name="Index">Which image of the swapchain it is.</param>
+/// <param name="FrameInFlight">Which set of per-frame resources this frame may write.</param>
+public readonly record struct RhiFrame(IRhiTextureView Target, int Index, int FrameInFlight);

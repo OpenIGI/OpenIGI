@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The render hardware interface: what a backend must offer, and nothing about how.
+
+       It is WebGPU's model rather than Vulkan's, because WebGPU is the narrower of the two and a
+       narrower interface can be implemented over a wider one. The reverse cannot: render passes with
+       explicit attachments, bind groups against a layout, and no resource transitions at all are
+       things Vulkan can be asked to do, while a browser cannot be asked for a subpass or a barrier.
+
+       Nothing here references a graphics API. The one Vulkan-shaped thing left is ray tracing, and it
+       is a capability interface a backend either offers or does not: see IRhiRayTracing. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\OpenIGI.Shaders\OpenIGI.Shaders.csproj" />
+  </ItemGroup>
+
+</Project>

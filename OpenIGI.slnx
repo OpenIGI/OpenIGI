@@ -16,6 +16,7 @@
     <Project Path="src/OpenIGI.Platform/OpenIGI.Platform.csproj" />
     <Project Path="src/OpenIGI.Presentation/OpenIGI.Presentation.csproj" />
     <Project Path="src/OpenIGI.Host/OpenIGI.Host.csproj" />
+    <Project Path="src/OpenIGI.Rendering.Rhi/OpenIGI.Rendering.Rhi.csproj" />
     <Project Path="src/OpenIGI.Rendering.Vulkan/OpenIGI.Rendering.Vulkan.csproj" />
     <Project Path="src/OpenIGI.Rendering/OpenIGI.Rendering.csproj" />
     <Project Path="src/OpenIGI.Scripting/OpenIGI.Scripting.csproj" />
@@ -36,6 +37,7 @@
     <Project Path="tests/OpenIGI.Game.Igi2.Tests/OpenIGI.Game.Igi2.Tests.csproj" />
     <Project Path="tests/OpenIGI.Input.Tests/OpenIGI.Input.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.Tests/OpenIGI.Rendering.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Rendering.Rhi.Tests/OpenIGI.Rendering.Rhi.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.Vulkan.Tests/OpenIGI.Rendering.Vulkan.Tests.csproj" />
     <Project Path="tests/OpenIGI.Scripting.Tests/OpenIGI.Scripting.Tests.csproj" />
     <Project Path="tests/OpenIGI.Shaders.Tests/OpenIGI.Shaders.Tests.csproj" />
