@@ -3,6 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Mesh3D;
 using OpenIGI.Rendering.Pipeline.Deferred;
 using OpenIGI.Rendering.Pipeline.Mesh3D;
+using OpenIGI.Rendering.Pipeline.Sky;
 using OpenIGI.Rendering.Pipeline.Targets;
 using OpenIGI.Rendering.Sky;
 using OpenIGI.Rendering.Rhi;
@@ -45,6 +46,7 @@ public sealed partial class GraphicsDevice
     private GBufferPipelineCache? _geometryPipelines;
     private DeferredLighting? _shading;
     private DeferredResolve? _sceneResolve;
+    private SkyAtmosphere? _sky;
     private IRhiBindGroupLayout? _surfaceLayout;
     private IRhiBuffer? _surfaceUniform;
     private IRhiBindGroup? _surfaceGroup;
@@ -219,6 +221,8 @@ public sealed partial class GraphicsDevice
         ClosePass();
         CloseGeometryPass();
 
+        RecordSky();
+
         Span<float> gi = stackalloc float[DeferredLightingParameters.GiFloats];
         Span<float> lamps = stackalloc float[DeferredLampBlock.Floats];
         Span<float> light = stackalloc float[DeferredLightingParameters.LightFloats];
@@ -246,6 +250,44 @@ public sealed partial class GraphicsDevice
         pass.SetScissor(0, 0, scene.Width, scene.Height);
         shading.Draw(pass, MemoryMarshal.AsBytes(light));
         pass.EndPass();
+    }
+
+    /// <summary>Marches the atmosphere for this frame's sun, and copies its light down for the game.</summary>
+    /// <remarks>
+    /// Here rather than as the capture opens, because the game states the frame's lighting after it has
+    /// opened one. The march itself is skipped while nothing it depends on has moved, which for a sun
+    /// fixed for the mission is every frame after the first; the copy is not, so every frame slot holds
+    /// the answer rather than one of them.
+    /// </remarks>
+    private void RecordSky()
+    {
+        if (_sky is not { } sky)
+        {
+            return;
+        }
+
+        IRhiCommandEncoder encoder = Encoder();
+
+        using (IRhiComputePassEncoder pass = encoder.BeginComputePass(new RhiComputePassDescriptor(
+            _profiler.Time(RenderStage.Setup),
+            "sky")))
+        {
+            sky.Record(pass, FrameSlot, SkyConditions.ForScene(_lighting, _viewToWorld, altitudeMetres: 2f));
+        }
+
+        sky.RecordReadback(encoder, FrameSlot);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Read from the harmonics the atmosphere copies down every frame. Nothing is waited for: a slot
+    /// whose copy has not arrived answers no, and the caller keeps what it had — which, for a sun fixed
+    /// for the mission, is the same answer.
+    /// </remarks>
+    public bool TryGetSkyIrradiance(Span<float> coefficients)
+    {
+        ThrowIfDisposed();
+        return _sky is { } sky && sky.TryReadIrradiance(FrameSlot, coefficients);
     }
 
     /// <summary>What the shading is told about this frame.</summary>
@@ -391,6 +433,11 @@ public sealed partial class GraphicsDevice
             SceneTargetSet.FormatOf(SceneTargetId.Depth));
 
         _shading = new DeferredLighting(_device, FramesInFlight, SceneTargetSet.FormatOf(SceneTargetId.Lit));
+
+        // The atmosphere's tables never change place, so the shading is pointed at them once. Until they
+        // were, it read the stand-ins: a sky of flat white and an ambient of nothing.
+        _sky = new SkyAtmosphere(_device, FramesInFlight);
+        _shading.BindSky(_sky.SkyViewTable, _sky.TransmittanceTable, _sky.IrradianceTable, _sky.Sampler);
         _sceneResolve = new DeferredResolve(_device, PresentFormat);
     }
 
@@ -407,6 +454,8 @@ public sealed partial class GraphicsDevice
 
         _sceneResolve?.Dispose();
         _sceneResolve = null;
+        _sky?.Dispose();
+        _sky = null;
         _shading?.Dispose();
         _shading = null;
         _geometryPipelines?.Dispose();

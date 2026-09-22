@@ -78,6 +78,12 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
             Math.Abs(vulkan[corner + 1] - vulkan[Centre + 1]) > 8,
             "The corner and the middle shaded the same, so nothing was drawn into the G-buffer.");
 
+        // And the corner is the marched sky rather than the flat white a stand-in table gives: blue
+        // before red, as a daytime sky is.
+        Assert.True(
+            vulkan[corner] > vulkan[corner + 2] + 8,
+            $"The sky is {Describe(vulkan, 2, 2)}, which is not an atmosphere's blue.");
+
         // And the right way up. The triangle's apex points up the screen, so its base covers the lower
         // left of the frame and the same place mirrored into the upper half is sky. A frame turned over
         // by any of its three passes agrees with itself perfectly on both backends -- each pass reads
@@ -92,8 +98,8 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
             Math.Abs(vulkan[below + 1] - vulkan[Centre + 1]) <= 8,
             "The lower left of the frame is not the triangle's base, so the frame is upside down.");
         Assert.True(
-            Math.Abs(vulkan[above + 1] - vulkan[corner + 1]) <= 8,
-            "The upper left of the frame is not sky, so the frame is upside down.");
+            Math.Abs(vulkan[above + 1] - vulkan[Centre + 1]) > 8,
+            "The upper left of the frame is the triangle, so the frame is upside down.");
     }
 
     /// <summary>A column the triangle's base covers near the bottom of the frame and its apex does not reach near the top.</summary>
@@ -125,7 +131,13 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
             Vector3d.Zero,
             Matrix3f.Identity);
 
-        device.SetLighting(SceneLighting.Baked);
+        // The original's surfaces, under a daytime sun. The bakes light the triangle whatever the sun
+        // is; the sun is there for the atmosphere, which marches a black sky for a black one.
+        device.SetLighting(SceneLighting.Baked with
+        {
+            SunDirection = new Vector3f(0.3f, 0.9f, 0.31f).Normalized(),
+            SunColour = new Vector3f(10f, 10f, 10f),
+        });
         device.SetProjection(Matrix4f.Identity);
         device.SetDepthState(DepthState.TestAndWrite);
         device.SetCullMode(CullMode.None);

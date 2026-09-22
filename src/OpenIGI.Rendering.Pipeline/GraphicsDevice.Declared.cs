@@ -86,9 +86,6 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
-    public bool TryGetSkyIrradiance(Span<float> coefficients) => false;
-
-    /// <inheritdoc/>
     public void ReleaseWorld()
     {
         // Every mesh and texture is released by its own handle; nothing here holds the world besides.
