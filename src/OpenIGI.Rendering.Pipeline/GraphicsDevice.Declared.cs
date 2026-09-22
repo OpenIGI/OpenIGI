@@ -36,7 +36,6 @@ public sealed partial class GraphicsDevice
         "r_rt_reflections",
         "r_rt_shadows",
         "r_volumetric_fog",
-        "r_bloom",
         "r_motion_blur",
         "r_exposure",
         "r_screen_gi",

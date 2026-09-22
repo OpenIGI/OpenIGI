@@ -71,16 +71,24 @@ public sealed class DeferredResolve : IDisposable
 
     /// <summary>Points the resolve at the picture this frame ended up with.</summary>
     /// <param name="scene">The lit colour to resolve, which is whichever picture the frame produced.</param>
+    /// <param name="bloom">The summed bloom, where one ran this frame.</param>
     /// <remarks>
-    /// The bloom and the grade take stand-ins until something produces them, which is what a frame with
-    /// neither switched on would bind anyway.
+    /// The grade takes a stand-in until something produces it, and so does the bloom until the first
+    /// frame that builds one, which is what a frame with neither switched on would bind anyway.
     /// </remarks>
-    public void BindFrame(IRhiTextureView scene)
+    public void BindFrame(IRhiTextureView scene, IRhiTextureView? bloom = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         _bindings.Bind("uScene", scene, _sampler);
+
+        // Only where a bloom ran this frame; elsewhere whatever the slot holds is not read, because the
+        // block says no bloom ran.
+        if (bloom is not null)
+        {
+            _bindings.Bind("uBloom", bloom, _sampler);
+        }
         _bindings.BindRemainingTextures(_standIns.For);
         _bindings.BindRemainingSamplers(_sampler);
     }

@@ -170,11 +170,46 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         Assert.True(differing < plain.Length / 20, $"{differing} channels moved: the resolve is not starting from the frame.");
     }
 
+    [Fact]
+    public void Both_backends_spill_the_same_bloom()
+    {
+        // Nineteen compute passes -- six halvings, a separable blur at each, and the sum -- bound on both
+        // backends, and what they add has to be the same light. The red quad in the corner is the brightest
+        // thing in the frame, so the sky beside it has to come out redder with the scatter than without.
+        byte[]? vulkan = TryOnVulkan(out string? vulkanReason, bloom: 0.5f);
+        byte[]? webgpu = TryOnWebGpu(out string? webgpuReason, bloom: 0.5f);
+        byte[]? plain = TryOnVulkan(out string? plainReason, bloom: 0f);
+
+        Assert.True(
+            vulkan is not null && webgpu is not null && plain is not null,
+            vulkanReason ?? webgpuReason ?? plainReason);
+
+        int worst = 0;
+
+        for (int i = 0; i < vulkan!.Length; i++)
+        {
+            worst = Math.Max(worst, Math.Abs(vulkan[i] - webgpu![i]));
+        }
+
+        // Just left of the quad, above the triangle's apex: sky, four pixels from the red.
+        int x = (Size * 11) / 16;
+        int y = Size / 8;
+        int beside = ((y * Size) + x) * 4;
+
+        output.WriteLine($"worst difference {worst}");
+        output.WriteLine($"beside, bloom {Describe(vulkan, x, y)}, without {Describe(plain!, x, y)}");
+
+        Assert.True(worst <= 1, $"The two backends disagree about the bloom by {worst}.");
+        Assert.True(
+            vulkan[beside + 2] - vulkan[beside] > plain![beside + 2] - plain[beside],
+            "The sky beside the quad is no redder with the bloom than without it.");
+    }
+
     /// <summary>A column the triangle's base covers near the bottom of the frame and its apex does not reach near the top.</summary>
     private const int BaseColumn = 14;
 
     /// <summary>The frame everything here compares, written once and run twice.</summary>
-    private static void DrawFrame(GraphicsDevice device, DebugView view, bool textured, bool temporal)
+    private static void DrawFrame(GraphicsDevice device, DebugView view, bool textured, bool temporal, float? bloom)
     {
         device.SetDebugView(view);
 
@@ -261,7 +296,18 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
             Exposure: 1f,
             WhitePoint: 1.6f,
             Contrast: 1f,
-            Saturation: 1f));
+            Saturation: 1f,
+
+            // The lens scatter is added only under a filmic curve, so a frame that says anything about
+            // it -- nought included -- is resolved under one.
+            BloomIntensity: bloom ?? 0f)
+            with
+        {
+            ToneMap = bloom is null ? ToneMapOperator.Neutral : ToneMapOperator.Aces,
+
+            // Everything spills, as ultra carries it: nothing in a frame this dim passes a threshold of one.
+            BloomThreshold = 0f,
+        });
 
         // And what it does after: the letterbox and the HUD go on top. A clear still pending from the
         // capture would be honoured by this pass and take the whole picture with it.
@@ -279,7 +325,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         device.SwapBuffers();
     }
 
-    private static byte[]? TryOnVulkan(out string? reason, DebugView view = DebugView.None, bool textured = false, bool temporal = false)
+    private static byte[]? TryOnVulkan(out string? reason, DebugView view = DebugView.None, bool textured = false, bool temporal = false, float? bloom = null)
     {
         reason = null;
 
@@ -289,7 +335,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
 
             using (GraphicsDevice device = new(vulkan.Device, new DisplayMode(Size, Size, 32, 60)))
             {
-                DrawFrame(device, view, textured, temporal);
+                DrawFrame(device, view, textured, temporal, bloom);
             }
 
             return Read(vulkan.Device, vulkan.OffscreenTarget(0));
@@ -301,7 +347,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         }
     }
 
-    private static byte[]? TryOnWebGpu(out string? reason, DebugView view = DebugView.None, bool textured = false, bool temporal = false)
+    private static byte[]? TryOnWebGpu(out string? reason, DebugView view = DebugView.None, bool textured = false, bool temporal = false, float? bloom = null)
     {
         reason = null;
 
@@ -312,7 +358,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
 
             using (GraphicsDevice device = new(rhi, new DisplayMode(Size, Size, 32, 60)))
             {
-                DrawFrame(device, view, textured, temporal);
+                DrawFrame(device, view, textured, temporal, bloom);
             }
 
             return Read(rhi, rhi.OffscreenTarget(0));

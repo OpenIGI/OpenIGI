@@ -52,6 +52,7 @@ public sealed partial class GraphicsDevice
     private DeferredLighting? _shading;
     private DeferredResolve? _sceneResolve;
     private SkyAtmosphere? _sky;
+    private BloomPass? _bloom;
     private IRhiBindGroupLayout? _surfaceLayout;
     private IRhiBuffer? _surfaceUniform;
     private IRhiBindGroup? _surfaceGroup;
@@ -353,6 +354,8 @@ public sealed partial class GraphicsDevice
 
         _grainFrame = (_grainFrame + 1) % ResolvePushBlock.GrainCycle;
 
+        IRhiTextureView? bloom = RecordBloom(scene, post);
+
         Span<float> push = stackalloc float[ResolvePushBlock.Floats];
 
         ResolvePushBlock.Write(push, post, new ResolveFrameState(
@@ -360,14 +363,15 @@ public sealed partial class GraphicsDevice
             GrainPhase: _grainFrame * ResolvePushBlock.GrainStep,
             PresentWidth: CurrentMode.Width,
             PresentHeight: CurrentMode.Height,
-            MaskView: _debugView.IsMask()));
+            MaskView: _debugView.IsMask(),
+            BloomRan: bloom is not null));
 
         // What a painted sky is divided by as it is drawn, so that it leaves the tone map at the colour
         // it was painted. Last frame's, as it is on the Vulkan device: the sky is drawn before the frame
         // says what it will be exposed by. There is no metering here, so it is the setting itself.
         _sceneExposure = MathF.Max(post.Exposure, 1e-3f);
 
-        resolve.BindFrame(ResolvedScene(scene));
+        resolve.BindFrame(ResolvedScene(scene), bloom);
 
         using (IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             [new RhiColorAttachment(_frame.Target, RhiLoadOp.Clear, RhiStoreOp.Store, _clearColour)],
@@ -386,6 +390,36 @@ public sealed partial class GraphicsDevice
         _clearPending = false;
 
         scene.AdvanceFrame();
+    }
+
+    /// <summary>Builds the lens scatter from the picture the resolve is about to read, where one is asked for.</summary>
+    /// <returns>The summed bloom, or null where none ran.</returns>
+    /// <remarks>
+    /// Before the tone map and after the temporal resolve, as on the Vulkan device, and not for a mask
+    /// view: that is a code value rather than radiance, and it gets neither this nor the vignette.
+    /// </remarks>
+    private IRhiTextureView? RecordBloom(SceneTargetSet scene, in PostProcessSettings post)
+    {
+        if (!post.WantsBloom || _debugView.IsMask() || _bloom is not { } bloom)
+        {
+            return null;
+        }
+
+        using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
+            _profiler.Time(RenderStage.Bloom),
+            "bloom")))
+        {
+            bloom.Record(
+                pass,
+                ResolvedScene(scene),
+                scene.Width,
+                scene.Height,
+                post.BloomIntensity,
+                post.BloomThreshold,
+                FrameSlot);
+        }
+
+        return bloom.Result;
     }
 
     /// <summary>Records the shading: the whole G-buffer read back as textures, over one triangle.</summary>
@@ -673,6 +707,7 @@ public sealed partial class GraphicsDevice
         // The atmosphere's tables never change place, so the shading is pointed at them once. Until they
         // were, it read the stand-ins: a sky of flat white and an ambient of nothing.
         EnsureTemporal();
+        _bloom = new BloomPass(_device, FramesInFlight, _retired);
 
         _sky = new SkyAtmosphere(_device, FramesInFlight);
         _shading.BindSky(_sky.SkyViewTable, _sky.TransmittanceTable, _sky.IrradianceTable, _sky.Sampler);
@@ -724,6 +759,8 @@ public sealed partial class GraphicsDevice
         _sceneResolve = null;
         _sky?.Dispose();
         _sky = null;
+        _bloom?.Dispose();
+        _bloom = null;
         _shading?.Dispose();
         _shading = null;
         _geometryPipelines?.Dispose();
