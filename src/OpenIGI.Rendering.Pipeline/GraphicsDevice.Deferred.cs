@@ -53,6 +53,7 @@ public sealed partial class GraphicsDevice
     private IRhiRenderPassEncoder? _geometryPass;
 
     private bool _capturing;
+    private DebugView _debugView;
     private int _grainFrame;
     private Matrix3f _viewToWorld = Matrix3f.Identity;
     private Vector3f _cameraPosition;
@@ -138,6 +139,18 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The shading draws every view it knows from the G-buffer it is reading, and the resolve shows the
+    /// code values of those that are masks rather than tone mapping them. A view whose pass has not moved
+    /// onto this path shows what the shading draws for it, which for most of them is black.
+    /// </remarks>
+    public void SetDebugView(DebugView view)
+    {
+        ThrowIfDisposed();
+        _debugView = view;
+    }
+
+    /// <inheritdoc/>
     public void EndPass()
     {
         ThrowIfDisposed();
@@ -185,7 +198,8 @@ public sealed partial class GraphicsDevice
             Aspect: scene.Height / (float)Math.Max(1, scene.Width),
             GrainPhase: _grainFrame * ResolvePushBlock.GrainStep,
             PresentWidth: CurrentMode.Width,
-            PresentHeight: CurrentMode.Height));
+            PresentHeight: CurrentMode.Height,
+            MaskView: _debugView.IsMask()));
 
         resolve.BindFrame(scene.View(SceneTargetId.Lit));
 
@@ -237,6 +251,7 @@ public sealed partial class GraphicsDevice
             _lighting.SunColour,
             _lighting.Scale,
             _lighting.AmbientColour,
+            (int)_debugView,
             bakesWhole: _lighting.CompleteBake);
 
         shading.BindFrame(scene, FrameSlot, gi, lamps);

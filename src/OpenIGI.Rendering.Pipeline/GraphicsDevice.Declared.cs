@@ -207,11 +207,6 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
-    public void SetDebugView(DebugView view)
-    {
-    }
-
-    /// <inheritdoc/>
     public void SetIrradianceVolume(IrradianceVolume? volume)
     {
     }

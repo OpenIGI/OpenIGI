@@ -1635,7 +1635,7 @@ public sealed partial class VulkanGraphicsDevice
 
         // A mask view is a channel being read rather than a picture being looked at, so it keeps neither
         // the curve, the lens, the film nor the grade.
-        bool maskViewPending = _debugView is not DebugView.None and not DebugView.Lighting and not DebugView.LampLight;
+        bool maskViewPending = _debugView.IsMask();
 
         // The stable accumulated colour when the temporal pass ran this frame; the raw lit colour when
         // nothing accumulated and the lit image is already the final word.
