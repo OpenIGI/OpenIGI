@@ -36,4 +36,7 @@ public enum ShaderModuleId
 
     /// <summary>Captures a patch of a model into a page of the card atlas, as material rather than picture.</summary>
     Card,
+
+    /// <summary>The geometry pass: albedo, world normal, material and baked light, all linear.</summary>
+    GBuffer,
 }

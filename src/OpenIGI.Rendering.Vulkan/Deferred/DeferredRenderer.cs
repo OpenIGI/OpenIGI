@@ -181,7 +181,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _surfaceLayout = CreateSurfaceLayout();
         _surfaceSets = AllocateSurfaceSets(framesInFlight);
 
-        Geometry = new GBufferPipeline(vk, device, compiler, _renderPass.Geometry, textureSetLayout, _surfaceLayout);
+        Geometry = new GBufferPipeline(vk, device, _renderPass.Geometry, splitTextureSetLayout, _surfaceLayout);
         Lighting = new FullscreenPipeline(
             vk,
             device,

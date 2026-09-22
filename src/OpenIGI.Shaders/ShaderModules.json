@@ -24,6 +24,10 @@
     {
       "id": "Card",
       "source": "World/Card.slang"
+    },
+    {
+      "id": "GBuffer",
+      "source": "World/GBuffer.slang"
     }
   ]
 }

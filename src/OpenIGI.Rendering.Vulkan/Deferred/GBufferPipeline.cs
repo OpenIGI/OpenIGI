@@ -1,6 +1,8 @@
 ﻿using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
+using ShaderStage = OpenIGI.Rendering.Vulkan.Shaders.ShaderStage;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
@@ -25,8 +27,9 @@ internal sealed unsafe class GBufferPipeline : IDisposable
     // compiled pipeline instead of building this one again.
     private readonly PipelineCache _pipelineCache;
     private readonly RenderPass _renderPass;
-    private readonly VulkanShaderModule _vertex;
-    private readonly VulkanShaderModule _fragment;
+    private readonly VulkanShaderModule _shader;
+    private readonly string _vertexEntryPoint;
+    private readonly string _fragmentEntryPoint;
     /// <summary>Where the G-buffer's base colour is attached, in the order the subpass declares.</summary>
     private const int GBaseColourAttachment = 0;
 
@@ -39,7 +42,6 @@ internal sealed unsafe class GBufferPipeline : IDisposable
     /// <summary>Initialises a new instance of the <see cref="GBufferPipeline"/> class.</summary>
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the pipelines live on.</param>
-    /// <param name="compiler">The shader compiler.</param>
     /// <param name="renderPass">The deferred render pass.</param>
     /// <param name="textureSetLayout">The sampler descriptor layout shared with the forward mesh path.</param>
     /// <param name="surfaceSetLayout">The per-frame surface block's layout, bound as set one.</param>
@@ -47,29 +49,26 @@ internal sealed unsafe class GBufferPipeline : IDisposable
     public GBufferPipeline(
         Vk vk,
         VulkanDevice device,
-        ShaderCompiler compiler,
         RenderPass renderPass,
         DescriptorSetLayout textureSetLayout,
         DescriptorSetLayout surfaceSetLayout)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(compiler);
         _vk = vk;
         _device = device.Device;
         _pipelineCache = device.PipelineCache;
         _renderPass = renderPass;
 
-        _vertex = new VulkanShaderModule(
+        ShaderReflection reflection = ShaderCatalog.GetReflection(ShaderModuleId.GBuffer);
+        _vertexEntryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Vertex).Name;
+        _fragmentEntryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Fragment).Name;
+        _shader = new VulkanShaderModule(
             vk,
             _device,
-            compiler.Compile(DeferredShaderSource.GBufferVertex, ShaderStage.Vertex, "gbuffer.vert"),
-            ShaderStage.Vertex);
-        _fragment = new VulkanShaderModule(
-            vk,
-            _device,
-            compiler.Compile(DeferredShaderSource.GBufferFragment, ShaderStage.Fragment, "gbuffer.frag"),
-            ShaderStage.Fragment);
+            ShaderCatalog.GetSpirv(ShaderModuleId.GBuffer).Span,
+            ShaderStage.Vertex,
+            _vertexEntryPoint);
 
         PipelineLayout = CreatePipelineLayout(textureSetLayout, surfaceSetLayout);
     }
@@ -124,8 +123,7 @@ internal sealed unsafe class GBufferPipeline : IDisposable
         }
 
         _vk.DestroyPipelineLayout(_device, PipelineLayout, null);
-        _fragment.Dispose();
-        _vertex.Dispose();
+        _shader.Dispose();
     }
 
     private PipelineLayout CreatePipelineLayout(
@@ -162,7 +160,8 @@ internal sealed unsafe class GBufferPipeline : IDisposable
 
     private Pipeline CreatePipeline(DepthState depth, CullMode cull, BlendMode blend, byte alphaReference)
     {
-        nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
+        nint vertexEntryPoint = SilkMarshal.StringToPtr(_vertexEntryPoint, NativeStringEncoding.UTF8);
+        nint fragmentEntryPoint = SilkMarshal.StringToPtr(_fragmentEntryPoint, NativeStringEncoding.UTF8);
         try
         {
             float specializationValue;
@@ -173,8 +172,8 @@ internal sealed unsafe class GBufferPipeline : IDisposable
                 alphaReference);
 
             PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
-            stages[0] = Stage(ShaderStageFlags.VertexBit, _vertex.Handle, entryPoint);
-            stages[1] = Stage(ShaderStageFlags.FragmentBit, _fragment.Handle, entryPoint);
+            stages[0] = Stage(ShaderStageFlags.VertexBit, _shader.Handle, vertexEntryPoint);
+            stages[1] = Stage(ShaderStageFlags.FragmentBit, _shader.Handle, fragmentEntryPoint);
             stages[1].PSpecializationInfo = &specialization;
 
             // Two streams of the same shape: the pose the mesh holds now, and the pose it held before.
@@ -345,7 +344,8 @@ internal sealed unsafe class GBufferPipeline : IDisposable
         }
         finally
         {
-            SilkMarshal.Free(entryPoint);
+            SilkMarshal.Free(vertexEntryPoint);
+            SilkMarshal.Free(fragmentEntryPoint);
         }
     }
 

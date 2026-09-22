@@ -16,7 +16,8 @@ namespace OpenIGI.Shaders.Tests;
 public sealed class CutOutThresholdTests
 {
     /// <summary>The modules that draw world geometry and therefore share the threshold.</summary>
-    public static TheoryData<ShaderModuleId> CutOutModules => [ShaderModuleId.Mesh3D, ShaderModuleId.Shadow];
+    public static TheoryData<ShaderModuleId> CutOutModules =>
+        [ShaderModuleId.Mesh3D, ShaderModuleId.Shadow, ShaderModuleId.GBuffer];
 
     /// <summary>Each cut-out module declares the threshold at identifier zero.</summary>
     /// <param name="module">The module.</param>
@@ -35,7 +36,7 @@ public sealed class CutOutThresholdTests
     [Fact]
     public void Every_cut_out_module_defaults_to_the_same_half()
     {
-        foreach (ShaderModuleId module in (ShaderModuleId[])[ShaderModuleId.Mesh3D, ShaderModuleId.Shadow])
+        foreach (ShaderModuleId module in (ShaderModuleId[])[ShaderModuleId.Mesh3D, ShaderModuleId.Shadow, ShaderModuleId.GBuffer])
         {
             string source = ShaderRepository.ReadSource(SourceOf(module));
             Assert.Contains("const float cAlphaReference = 0.5019608;", source, StringComparison.Ordinal);

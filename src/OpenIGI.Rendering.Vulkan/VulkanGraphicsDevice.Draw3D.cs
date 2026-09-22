@@ -635,7 +635,7 @@ public sealed partial class VulkanGraphicsDevice
 
         BindGraphicsPipeline(_deferred.Geometry.ForState(_depthState, _cullMode, blend, _alphaReference));
         BindMeshBuffers(mesh);
-        BindMeshTextures(_deferred.Geometry.PipelineLayout, diffuse, lightmap);
+        BindMeshTextures(_deferred.Geometry.PipelineLayout, diffuse, lightmap, split: true);
         BindSurfaceSet();
 
         // The 128-byte push: the model-view-projection for position, a rotation for the normal, and the
