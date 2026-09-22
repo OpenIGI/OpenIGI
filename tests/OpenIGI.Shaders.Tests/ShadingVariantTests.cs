@@ -1,4 +1,4 @@
-using Xunit;
+﻿using Xunit;
 
 namespace OpenIGI.Shaders.Tests;
 
@@ -87,16 +87,60 @@ public sealed class ShadingVariantTests
         Assert.Contains(defaulted.Bindings, binding => binding.Kind is ShaderBindingKind.InputAttachment);
     }
 
-    [Fact]
-    public void The_sampled_variant_cannot_reach_the_browser_until_its_samplers_are_split()
+    [Theory]
+    [InlineData("rayquery")]
+    [InlineData("software")]
+    [InlineData("rayquery.sampled")]
+    [InlineData("software.sampled")]
+    public void The_shading_declares_its_textures_and_samplers_apart(string variant)
     {
-        // Stated rather than assumed: the shading declares a dozen combined image samplers, which WGSL
-        // has no form for and the RHI therefore has no binding type for. Splitting them is what the
-        // deferred group's own migration has to do, and until it does this variant is Vulkan's alone.
-        ShaderReflection sampled = ShaderCatalog.GetReflection(
+        // WGSL has no combined image sampler, and a module that declares one cannot be compiled for the
+        // browser at all -- so the deferred group declares each texture and the sampler it is read with
+        // in two slots of its own, which is the only shape both targets share. Checked on the subpass
+        // variants too: they are one source, and a combined sampler reintroduced for Vulkan's
+        // convenience would take the sampled variants with it.
+        ShaderReflection reflection = ShaderCatalog.GetReflection(
             ShaderModuleId.Shading,
-            new ShaderVariant("software.sampled"));
+            new ShaderVariant(variant));
 
-        Assert.Contains(sampled.Bindings, binding => binding.Kind is ShaderBindingKind.CombinedImageSampler);
+        Assert.DoesNotContain(
+            reflection.Bindings,
+            binding => binding.Kind is ShaderBindingKind.CombinedImageSampler);
+    }
+
+    [Theory]
+    [InlineData("rayquery")]
+    [InlineData("software")]
+    [InlineData("rayquery.sampled")]
+    [InlineData("software.sampled")]
+    public void Each_of_the_shadings_samplers_sits_in_the_slot_after_its_texture(string variant)
+    {
+        // The convention the whole library follows and every host binds by: texture n, sampler n + 1.
+        // A sampler that drifted away from its texture would still bind -- and would be handed to the
+        // wrong one.
+        ShaderReflection reflection = ShaderCatalog.GetReflection(
+            ShaderModuleId.Shading,
+            new ShaderVariant(variant));
+
+        foreach (ShaderBinding sampler in reflection.Bindings.Where(b => b.Kind is ShaderBindingKind.Sampler))
+        {
+            Assert.EndsWith("Sampler", sampler.Name, StringComparison.Ordinal);
+
+            ShaderBinding texture = Assert.Single(
+                reflection.Bindings,
+                b => b.Group == sampler.Group && b.Binding == sampler.Binding - 1);
+
+            Assert.Equal(sampler.Name[..^"Sampler".Length], texture.Name);
+        }
+    }
+
+    [Fact]
+    public void The_resolve_declares_its_textures_and_samplers_apart()
+    {
+        ShaderReflection reflection = ShaderCatalog.GetReflection(ShaderModuleId.Resolve, ShaderVariant.Default);
+
+        Assert.DoesNotContain(
+            reflection.Bindings,
+            binding => binding.Kind is ShaderBindingKind.CombinedImageSampler);
     }
 }

@@ -113,28 +113,5 @@ float3 SampleSkyBackground(
     return SampleSkyViewUv(skyView, skyViewSampler, uv);
 }
 
-// And the same three for a host that binds the table as one combined descriptor, which is every pass
-// that cannot have a WGSL form anyway.
-float3 SampleSkyViewUv(Sampler2D<float4> skyView, float2 uv)
-{
-    uint width;
-    uint height;
-    skyView.GetDimensions(width, height);
-    return skyView.SampleLevel(SkyViewInset(uv, float2(float(width), float(height))), 0.0).rgb;
-}
-
-float3 SampleSkyView(Sampler2D<float4> skyView, float3 worldDir, float viewHeight)
-{
-    return SampleSkyViewUv(skyView, SkyViewUv(worldDir, viewHeight));
-}
-
-float3 SampleSkyBackground(Sampler2D<float4> skyView, float3 worldDir, float viewHeight)
-{
-    uint width;
-    uint height;
-    skyView.GetDimensions(width, height);
-    float2 uv = SkyViewHeldAboveHorizon(SkyViewUv(worldDir, viewHeight), float(height));
-    return SampleSkyViewUv(skyView, uv);
-}
 
 #endif

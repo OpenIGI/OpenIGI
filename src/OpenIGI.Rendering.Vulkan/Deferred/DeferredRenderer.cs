@@ -64,6 +64,14 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <summary>The size in bytes of the lighting pass's GI uniform block.</summary>
     public const int GiUniformSize = 576;
 
+    /// <summary>How many resolve sets each scene target carries.</summary>
+    /// <remarks>
+    /// One per picture the resolve might be handed: the raw lit colour, the temporally resolved colour,
+    /// and the motion-blurred one. Which a frame draws with depends on which passes ran, and all three
+    /// are written ahead of the frame rather than one being rewritten inside it.
+    /// </remarks>
+    private const uint ResolveSetsPerTarget = 3;
+
     /// <summary>The size in bytes of the geometry pass's per-frame surface block.</summary>
     /// <remarks>
     /// One vector: how strongly the derived detail maps are trusted, and how far an up-facing surface's
@@ -183,7 +191,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             vk,
             device,
             ShaderModuleId.Shading,
-            new ShaderVariant(_rayQuery ? "rayquery" : "software"),
+            ShadingVariant,
             _lightingLayout,
             _renderPass.Shading,
             DeferredRenderPass.LightingSubpass);
@@ -213,13 +221,18 @@ internal sealed unsafe class DeferredRenderer : IDisposable
 
         GlassReflection = new GlassReflectionPass(vk, device, allocator, framesInFlight, _rayQuery);
 
+        // Each target writes its descriptors by the names the two shaders declare rather than by numbers
+        // kept in step with them, so the tables are built once here and shared.
+        ShaderBindingTable lightingBindings = new(ShadingReflection);
+        ShaderBindingTable resolveBindings = new(ResolveReflection);
+
         _targets = new SceneTarget[framesInFlight];
         for (int i = 0; i < framesInFlight; i++)
         {
             _targets[i] = new SceneTarget(
                 vk, device, allocator, commands,
                 _renderPass.Geometry, _renderPass.Shading, _renderPass.FrontLayer,
-                _lightingLayout, _resolveLayout, _pool, _sampler);
+                _lightingLayout, _resolveLayout, lightingBindings, resolveBindings, _pool, _sampler);
 
             // The object-velocity framebuffers are keyed on the velocity and depth view handles, so they
             // are dropped the moment any target destroys its views -- on every rebuild, for every reason,
@@ -463,171 +476,33 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _renderPass.Dispose();
     }
 
-    private DescriptorSetLayout CreateLightingLayout()
-    {
-        // 0-3 the G-buffer input attachments, 4 the depth input attachment, 5-8 the four probe volumes as
-        // sampled 3D textures, 9 the GI parameter uniform block, 10 the screen-GI near-field atlas, 11 the
-        // cascaded shadow map, 12 the ambient-occlusion image, 13-15 the atmosphere's tables: the sky's
-        // luminance by direction, the sun's transmittance, and the sky's light as harmonics, 16 the
-        // traced sun-shadow mask.
-        // 21 the integrated fog volume the shading pass looks up, 22 the level's top-down roof map.
-        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[23];
-        for (uint i = 0; i < 5; i++)
-        {
-            bindings[i] = new DescriptorSetLayoutBinding
-            {
-                Binding = i,
-                DescriptorType = DescriptorType.InputAttachment,
-                DescriptorCount = 1,
-                StageFlags = ShaderStageFlags.FragmentBit,
-            };
-        }
+    /// <summary>Which compiled form of the shading this adapter runs.</summary>
+    /// <remarks>
+    /// The traced form binds the lamp visibility and the world it traces against; the software form
+    /// binds neither, because the extension has to be declared for the shader to parse at all. One
+    /// property so the pipeline and its layout can never be built from different variants.
+    /// </remarks>
+    private ShaderVariant ShadingVariant => new(_rayQuery ? "rayquery" : "software");
 
-        for (uint i = 5; i < 9; i++)
-        {
-            bindings[i] = new DescriptorSetLayoutBinding
-            {
-                Binding = i,
-                DescriptorType = DescriptorType.CombinedImageSampler,
-                DescriptorCount = 1,
-                StageFlags = ShaderStageFlags.FragmentBit,
-            };
-        }
+    private ShaderReflection ShadingReflection =>
+        ShaderCatalog.GetReflection(ShaderModuleId.Shading, ShadingVariant);
 
-        bindings[9] = new DescriptorSetLayoutBinding
-        {
-            Binding = 9,
-            DescriptorType = DescriptorType.UniformBuffer,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.FragmentBit,
-        };
+    private static ShaderReflection ResolveReflection =>
+        ShaderCatalog.GetReflection(ShaderModuleId.Resolve, ShaderVariant.Default);
 
-        bindings[10] = new DescriptorSetLayoutBinding
-        {
-            Binding = 10,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.FragmentBit,
-        };
-
-        bindings[11] = new DescriptorSetLayoutBinding
-        {
-            Binding = 11,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.FragmentBit,
-        };
-
-        bindings[12] = new DescriptorSetLayoutBinding
-        {
-            Binding = 12,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.FragmentBit,
-        };
-
-        for (uint i = 13; i < 16; i++)
-        {
-            bindings[i] = new DescriptorSetLayoutBinding
-            {
-                Binding = i,
-                DescriptorType = DescriptorType.CombinedImageSampler,
-                DescriptorCount = 1,
-                StageFlags = ShaderStageFlags.FragmentBit,
-            };
-        }
-
-        bindings[16] = new DescriptorSetLayoutBinding
-        {
-            Binding = 16,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.FragmentBit,
-        };
-
-        // The level's lamps: the lights it implies and never declares.
-        bindings[17] = new DescriptorSetLayoutBinding
-        {
-            Binding = 17,
-            DescriptorType = DescriptorType.UniformBuffer,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.FragmentBit,
-        };
-
-        // And how much of each pixel's lamp reaches it, traced once per pixel by its own pass rather
-        // than once per lamp inside the shading. Only where the adapter can trace: without ray query
-        // there is no pass to write it and the shading has no term to read.
-        uint next = 18;
-        if (_rayQuery)
-        {
-            bindings[next++] = new DescriptorSetLayoutBinding
-            {
-                Binding = 18,
-                DescriptorType = DescriptorType.CombinedImageSampler,
-                DescriptorCount = 1,
-                StageFlags = ShaderStageFlags.FragmentBit,
-            };
-        }
-
-        // 19 the scene depth as a sampled texture, for the lamps' screen-space occlusion march. Always
-        // present -- the march is what shadows lamps where there is no ray query -- so it sits after the
-        // trace-only binding rather than being numbered around it, and the count follows whichever were
-        // added.
-        bindings[next++] = new DescriptorSetLayoutBinding
-        {
-            Binding = 19,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.FragmentBit,
-        };
-
-        // 20 the world the lamps trace against, for the off-screen half of their shadow. Only where the
-        // adapter can trace; the ray is still fired only when the RT switch is on, which is a runtime
-        // choice the shader makes, so the binding exists whenever the trace COULD run.
-        if (_rayQuery)
-        {
-            bindings[next++] = new DescriptorSetLayoutBinding
-            {
-                Binding = 20,
-                DescriptorType = DescriptorType.AccelerationStructureKhr,
-                DescriptorCount = 1,
-                StageFlags = ShaderStageFlags.FragmentBit,
-            };
-        }
-
-        // 21 the integrated fog volume, which the shading pass looks its own pixel up in. Always present:
-        // a frame with no fog binds the volume anyway and is told to ignore it, because a binding that
-        // comes and goes would need two pipelines for the one shader.
-        bindings[next++] = new DescriptorSetLayoutBinding
-        {
-            Binding = 21,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.FragmentBit,
-        };
-
-        // 22 the level's roofs seen from above, which decides what the rain reaches. Always present for
-        // the same reason as the fog volume: a level with none binds a placeholder and the shading is
-        // told to ignore it, rather than the shader needing two pipelines for the two cases.
-        bindings[next++] = new DescriptorSetLayoutBinding
-        {
-            Binding = 22,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.FragmentBit,
-        };
-
-        DescriptorSetLayoutCreateInfo createInfo = new()
-        {
-            SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = next,
-            PBindings = bindings,
-        };
-
-        DescriptorSetLayout layout;
-        VkCheck.Ok(_vk.CreateDescriptorSetLayout(_device, &createInfo, null, &layout), "vkCreateDescriptorSetLayout (lighting)");
-        return layout;
-    }
+    /// <summary>Declares the set the shading reads, exactly as the shading declares it.</summary>
+    /// <remarks>
+    /// Derived rather than written: the G-buffer's five input attachments, the probe volumes and the
+    /// atmosphere's tables and everything else are the shader's own list, and a layout kept in step by
+    /// hand drifts from it the first time a binding is added or a combined sampler is split in two.
+    /// Vulkan says nothing when it does -- it draws the wrong picture.
+    /// </remarks>
+    private DescriptorSetLayout CreateLightingLayout() => ReflectedSetLayout.Create(
+        _vk,
+        _device,
+        ShadingReflection,
+        ShaderStageFlags.FragmentBit,
+        "lighting");
 
     private DescriptorSetLayout CreateSurfaceLayout()
     {
@@ -705,79 +580,58 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         return sets;
     }
 
-    private DescriptorSetLayout CreateResolveLayout()
-    {
-        // Binding 0 is the resolved scene, binding 1 the bloom the reference composites into it, and
-        // binding 2 the authored grade as a cube. All three are always declared: a frame with no grade
-        // binds a stand-in and the push block tells the shader to leave the colour alone, because a
-        // binding that came and went would need a second pipeline for the one shader.
-        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[3];
-        for (uint i = 0; i < 3; i++)
-        {
-            bindings[i] = new DescriptorSetLayoutBinding
-            {
-                Binding = i,
-                DescriptorType = DescriptorType.CombinedImageSampler,
-                DescriptorCount = 1,
-                StageFlags = ShaderStageFlags.FragmentBit,
-            };
-        }
-
-        DescriptorSetLayoutCreateInfo createInfo = new()
-        {
-            SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = 3,
-            PBindings = bindings,
-        };
-
-        DescriptorSetLayout layout;
-        VkCheck.Ok(_vk.CreateDescriptorSetLayout(_device, &createInfo, null, &layout), "vkCreateDescriptorSetLayout (resolve)");
-        return layout;
-    }
+    /// <summary>Declares the set the resolve reads: the scene, the bloom and the authored grade.</summary>
+    /// <remarks>
+    /// All three are always declared, even for a frame that has no bloom or no grade: such a frame binds
+    /// a stand-in and the push block tells the shader to leave the colour alone, because a binding that
+    /// came and went would need a second pipeline for the one shader.
+    /// </remarks>
+    private DescriptorSetLayout CreateResolveLayout() => ReflectedSetLayout.Create(
+        _vk,
+        _device,
+        ResolveReflection,
+        ShaderStageFlags.FragmentBit,
+        "resolve");
 
     private DescriptorPool CreatePool(int framesInFlight)
     {
-        // Each frame's target uses four input attachments plus one sampler; a resize frees and
-        // reallocates, so the pool allows freeing and is sized with headroom.
-        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[6];
-        sizes[0] = new DescriptorPoolSize { Type = DescriptorType.InputAttachment, DescriptorCount = (uint)(framesInFlight * 5 * 2) };
-        // Thirteen combined samplers per lighting set -- four probe volumes, the screen-GI atlas, the
-        // cascades, the occlusion, three atmosphere tables, the traced sun mask, the scene depth and the
-        // fog volume -- with headroom, and two sets per frame.
-        sizes[1] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 16 * 2) };
-        // Two uniform buffers per lighting set -- the GI block and the lamps -- plus the geometry pass's
-        // own surface block, one per frame in flight.
-        sizes[2] = new DescriptorPoolSize { Type = DescriptorType.UniformBuffer, DescriptorCount = (uint)(framesInFlight * 6) };
-
-        // The three resolve sets -- the raw lit, the temporally-resolved and the motion-blurred -- each
-        // carry the scene, the bloom and the grade.
-        sizes[3] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 12) };
-
-        // The lamp visibility each lighting set reads, where the adapter can trace one.
-        sizes[4] = new DescriptorPoolSize
+        // What one frame in flight needs: its target's lighting set, that target's three resolve sets --
+        // the raw lit, the temporally resolved and the motion blurred -- and the geometry pass's own
+        // surface block. Counted off the shaders themselves, so a binding added to either is paid for
+        // without a number here being remembered; doubled because a resize allocates the replacements
+        // before it frees what they replace.
+        Dictionary<DescriptorType, uint> perFrame = ReflectedSetLayout.Counts(ShadingReflection);
+        foreach ((DescriptorType type, uint count) in ReflectedSetLayout.Counts(ResolveReflection))
         {
-            Type = DescriptorType.CombinedImageSampler,
-            DescriptorCount = (uint)(framesInFlight * 2),
-        };
+            perFrame[type] = perFrame.GetValueOrDefault(type) + (count * ResolveSetsPerTarget);
+        }
 
-        // The world each lighting set traces its lamp shadow rays against, where the adapter can trace.
-        sizes[5] = new DescriptorPoolSize
-        {
-            Type = DescriptorType.AccelerationStructureKhr,
-            DescriptorCount = (uint)(framesInFlight * 2),
-        };
+        perFrame[DescriptorType.UniformBuffer] = perFrame.GetValueOrDefault(DescriptorType.UniformBuffer) + 1;
 
-        DescriptorPoolCreateInfo createInfo = new()
-        {
-            SType = StructureType.DescriptorPoolCreateInfo,
-            Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit,
-            MaxSets = (uint)(framesInFlight * 4 * 2),
-            PoolSizeCount = _rayQuery ? 6u : 4u,
-            PPoolSizes = sizes,
-        };
+        DescriptorPoolSize[] sizes =
+        [
+            .. perFrame.Select(entry => new DescriptorPoolSize
+            {
+                Type = entry.Key,
+                DescriptorCount = entry.Value * (uint)framesInFlight * 2,
+            }),
+        ];
 
         DescriptorPool pool;
-        VkCheck.Ok(_vk.CreateDescriptorPool(_device, &createInfo, null, &pool), "vkCreateDescriptorPool (deferred)");
+        fixed (DescriptorPoolSize* first = sizes)
+        {
+            DescriptorPoolCreateInfo createInfo = new()
+            {
+                SType = StructureType.DescriptorPoolCreateInfo,
+                Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit,
+                MaxSets = (uint)(framesInFlight * (ResolveSetsPerTarget + 2) * 2),
+                PoolSizeCount = (uint)sizes.Length,
+                PPoolSizes = first,
+            };
+
+            VkCheck.Ok(_vk.CreateDescriptorPool(_device, &createInfo, null, &pool), "vkCreateDescriptorPool (deferred)");
+        }
+
         return pool;
     }
 
