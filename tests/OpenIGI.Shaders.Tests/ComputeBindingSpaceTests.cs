@@ -80,7 +80,7 @@ public sealed partial class ComputeBindingSpaceTests
     {
         foreach (ShaderModuleEntry module in ShaderCatalog.Manifest.Modules)
         {
-            if (!module.Source.StartsWith("Field/", StringComparison.Ordinal))
+            if (!SeamDriven(module.Source))
             {
                 continue;
             }
@@ -90,6 +90,16 @@ public sealed partial class ComputeBindingSpaceTests
             Assert.DoesNotMatch(LiteralBinding(), source);
         }
     }
+
+    /// <summary>Whether a module is dispatched through the compute seam rather than drawn.</summary>
+    /// <remarks>
+    /// By folder, because that is what the seam's reach actually follows: the level's distance field and
+    /// the surface cache are the two things dispatched by name-and-value rather than bound by a pipeline
+    /// the renderer holds.
+    /// </remarks>
+    private static bool SeamDriven(string source) =>
+        source.StartsWith("Field/", StringComparison.Ordinal)
+        || source.StartsWith("Cards/", StringComparison.Ordinal);
 
     [GeneratedRegex(@"\[\[vk::binding\(\d")]
     private static partial Regex LiteralBinding();

@@ -177,4 +177,7 @@ public enum ShaderModuleId
 
     /// <summary>Surface cache: the screen gather pooled across its workgroup and accumulated.</summary>
     CardsScreenGatherTemporal,
+
+    /// <summary>Surface cache: what a captured card receives, bounces, and finally sends onward.</summary>
+    CardsLighting,
 }

@@ -402,6 +402,30 @@
       ]
     },
     {
+      "id": "CardsLighting",
+      "source": "Cards/Lighting.slang",
+      "variants": [
+        {
+          "name": "rayquery",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "1"
+          },
+          "targets": [
+            "Spirv"
+          ]
+        },
+        {
+          "name": "software",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "0"
+          },
+          "targets": [
+            "Spirv"
+          ]
+        }
+      ]
+    },
+    {
       "id": "CardsScreenGatherTemporal",
       "source": "Cards/ScreenGatherTemporal.slang",
       "variants": [
