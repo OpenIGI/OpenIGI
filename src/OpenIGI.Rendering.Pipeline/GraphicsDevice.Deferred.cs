@@ -334,6 +334,7 @@ public sealed partial class GraphicsDevice
 
         CloseScenePass();
         RecordShading();
+        RecordTemporal();
 
         _capturing = false;
     }
@@ -366,7 +367,7 @@ public sealed partial class GraphicsDevice
         // says what it will be exposed by. There is no metering here, so it is the setting itself.
         _sceneExposure = MathF.Max(post.Exposure, 1e-3f);
 
-        resolve.BindFrame(scene.View(SceneTargetId.Lit));
+        resolve.BindFrame(ResolvedScene(scene));
 
         using (IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             [new RhiColorAttachment(_frame.Target, RhiLoadOp.Clear, RhiStoreOp.Store, _clearColour)],
@@ -671,6 +672,8 @@ public sealed partial class GraphicsDevice
 
         // The atmosphere's tables never change place, so the shading is pointed at them once. Until they
         // were, it read the stand-ins: a sky of flat white and an ambient of nothing.
+        EnsureTemporal();
+
         _sky = new SkyAtmosphere(_device, FramesInFlight);
         _shading.BindSky(_sky.SkyViewTable, _sky.TransmittanceTable, _sky.IrradianceTable, _sky.Sampler);
         _sceneResolve = new DeferredResolve(_device, PresentFormat);
@@ -712,6 +715,8 @@ public sealed partial class GraphicsDevice
 
     private void DisposeDeferred()
     {
+        DisposeTemporal();
+
         _scenePass?.Dispose();
         _scenePass = null;
 

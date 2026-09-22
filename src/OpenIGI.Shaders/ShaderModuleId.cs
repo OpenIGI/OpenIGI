@@ -183,4 +183,10 @@ public enum ShaderModuleId
 
     /// <summary>Surface cache: what a captured card receives, bounces, and finally sends onward.</summary>
     CardsLighting,
+
+    /// <summary>Deferred: this frame's depth copied into a colour target, for the next frame to read.</summary>
+    CopyDepth,
+
+    /// <summary>Temporal resolve: the closest-occluder scatter emptied before the dilation builds it.</summary>
+    UpscaleClearOccluder,
 }

@@ -26,6 +26,7 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// </remarks>
 public sealed class TemporalResolve : IDisposable
 {
+    private readonly ComputePass _clearOccluder;
     private readonly ComputePass _dilateVelocity;
     private readonly ComputePass _decimateHistory;
     private readonly ComputePass _thinGeometry;
@@ -53,6 +54,7 @@ public sealed class TemporalResolve : IDisposable
     {
         ArgumentNullException.ThrowIfNull(device);
 
+        _clearOccluder = new ComputePass(device, ShaderModuleId.UpscaleClearOccluder, "upscale.clear-occluder");
         _dilateVelocity = new ComputePass(device, ShaderModuleId.UpscaleDilateVelocity, "upscale.dilate-velocity");
         _decimateHistory = new ComputePass(device, ShaderModuleId.UpscaleDecimateHistory, "upscale.decimate");
         _thinGeometry = new ComputePass(device, ShaderModuleId.UpscaleThinGeometry, "upscale.thin");
@@ -74,6 +76,32 @@ public sealed class TemporalResolve : IDisposable
         // same way: bilinear, clamped, because a reprojection lands between texels and a coordinate off
         // the edge has no neighbour to wrap to.
         _sampler = device.CreateSampler(new RhiSamplerDescriptor(Label: "upscale"));
+    }
+
+    /// <summary>Gets whether a device can run the whole chain.</summary>
+    /// <param name="device">The device.</param>
+    /// <returns><see langword="true"/> when every module the chain is built from has the device's form.</returns>
+    /// <remarks>
+    /// Two of them do not have a WGSL one: the velocity dilation scatters its occluders with an atomic on
+    /// a storage texture, which WGSL cannot express, and the shading rejection shares its tile the same
+    /// way. So on WebGPU the chain stands down whole rather than half of it running.
+    /// </remarks>
+    public static bool RunsOn(IRhiDevice device)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+
+        return ((ReadOnlySpan<(ShaderModuleId Module, ShaderVariant Variant)>)
+            [
+                (ShaderModuleId.UpscaleClearOccluder, default),
+                (ShaderModuleId.UpscaleDilateVelocity, default),
+                (ShaderModuleId.UpscaleDecimateHistory, default),
+                (ShaderModuleId.UpscaleThinGeometry, default),
+                (ShaderModuleId.UpscaleRejectShading, RejectShadingVariant),
+                (ShaderModuleId.UpscaleRejectionDilate, default),
+                (ShaderModuleId.UpscaleSpatialAntiAliasing, default),
+                (ShaderModuleId.UpscaleUpdateHistory, default),
+                (ShaderModuleId.UpscaleResolveHistory, default),
+            ]).ToArray().All(entry => ShaderCatalog.Compiles(entry.Module, entry.Variant, device.ShaderTarget));
     }
 
     /// <summary>The variant of the shading rejection this build uses.</summary>
@@ -109,6 +137,7 @@ public sealed class TemporalResolve : IDisposable
         int width = targets.Width;
         int height = targets.Height;
 
+        ClearOccluder(pass, targets);
         DilateVelocity(pass, targets, state, frameInFlight, width, height);
         DecimateHistory(pass, targets, state, frameInFlight, width, height);
         ThinGeometry(pass, targets, state, settings, frameInFlight, width, height);
@@ -131,7 +160,7 @@ public sealed class TemporalResolve : IDisposable
 
         foreach (IDisposable owned in (ReadOnlySpan<IDisposable>)
         [
-            _dilateVelocity, _decimateHistory, _thinGeometry, _rejectShading,
+            _clearOccluder, _dilateVelocity, _decimateHistory, _thinGeometry, _rejectShading,
             _rejectionDilate, _spatialAntiAliasing, _updateHistory, _resolveHistory,
             _reprojection, _thin, _shading, _dilate, _spatial, _update, _resolve,
             _sampler,
@@ -143,6 +172,15 @@ public sealed class TemporalResolve : IDisposable
 
     private static ComputeParameters Block(IRhiDevice device, int floats, int framesInFlight, string label) =>
         new(device, floats * sizeof(float), framesInFlight, label);
+
+    /// <summary>Empties the closest-occluder scatter, which the dilation builds with an atomic minimum.</summary>
+    private void ClearOccluder(IRhiComputePassEncoder pass, SceneTargetSet targets)
+    {
+        IRhiTexture occluder = targets.Current(SceneTargetId.ClosestOccluder);
+
+        _clearOccluder.Bind("uOccluder", occluder.View);
+        _clearOccluder.Dispatch(pass, occluder.Width, occluder.Height);
+    }
 
     private void DilateVelocity(
         IRhiComputePassEncoder pass,

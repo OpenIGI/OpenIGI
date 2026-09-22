@@ -68,4 +68,46 @@ public readonly record struct TemporalResolveSettings(
     /// nothing. It is the second guard on the same mistake, and the cheaper of the two to keep.
     /// </remarks>
     public int EffectiveHistoryScale => Math.Max(1, HistoryScale);
+
+    /// <summary>How many history samples the guide's blend assumes the output ever holds.</summary>
+    private const float MaxOutputHistorySamples = 16f;
+
+    /// <summary>The settings a frame asks for, from what the game handed over and the console's own.</summary>
+    /// <param name="taa">What the game asked of the temporal filter this frame.</param>
+    /// <param name="renderWidth">The width the scene is rendered at.</param>
+    /// <param name="presentWidth">The width it is presented at.</param>
+    /// <param name="view">What the frame shows instead of the scene, if anything.</param>
+    /// <returns>The resolve's settings.</returns>
+    /// <remarks>
+    /// The same choices the Vulkan device makes inline: the history ceiling and the thin-geometry
+    /// relaxation from their console variables, and the guide's blend from how many rendered pixels feed
+    /// each presented one — a frame rendered at a quarter of the pixels leans on its guide sixteen times
+    /// less, because each of its samples stands for more of the output.
+    /// </remarks>
+    public static TemporalResolveSettings ForFrame(
+        in TemporalAaSettings taa,
+        int renderWidth,
+        int presentWidth,
+        DebugView view)
+    {
+        float inputToOutput = renderWidth / (float)Math.Max(1, presentWidth);
+        float guideBlend = 1f / (1f + (MaxOutputHistorySamples / MathF.Max(inputToOutput * inputToOutput, 1e-6f)));
+
+        return Default with
+        {
+            Enabled = taa.Accumulates,
+            MaxSamples = RenderCVars.TemporalHistorySamples.Value,
+            Sharpen = taa.MotionSharpening,
+            ShadingBlend = guideBlend,
+            ThinRelaxation = RenderCVars.ThinGeometry.Value,
+            DebugView = view switch
+            {
+                OpenIGI.Rendering.DebugView.Motion => 1f,
+                OpenIGI.Rendering.DebugView.UpscaleParallax => 2f,
+                OpenIGI.Rendering.DebugView.UpscaleShading => 3f,
+                OpenIGI.Rendering.DebugView.UpscaleHistory => 4f,
+                _ => 0f,
+            },
+        };
+    }
 }

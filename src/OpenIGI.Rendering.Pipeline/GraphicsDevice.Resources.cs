@@ -118,8 +118,9 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The resolve itself has not moved onto this path and <c>r_taa</c> says so. The camera position
-    /// arrives with it, and the shading needs that to turn a view-space position into a world one.
+    /// Kept for the temporal resolve, which measures this frame against the last, and for the shading,
+    /// which needs the camera to turn a view-space position into a world one. The position is kept in
+    /// double precision as well, because the camera's motion is the difference of two large numbers.
     /// </remarks>
     public void SetTemporalAntiAliasing(
         in TemporalAaSettings settings,
@@ -127,6 +128,8 @@ public sealed partial class GraphicsDevice
         Vector3d cameraPosition,
         Matrix3f viewToWorld)
     {
+        _taa = settings;
+        _cameraPositionPrecise = cameraPosition;
         _cameraPosition = new Vector3f(
             (float)cameraPosition.X,
             (float)cameraPosition.Y,

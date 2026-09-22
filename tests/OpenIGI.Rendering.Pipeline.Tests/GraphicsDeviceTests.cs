@@ -2,6 +2,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Mesh3D;
 using OpenIGI.Rendering.Rhi;
+using OpenIGI.Shaders;
 using OpenIGI.TestSupport.Rhi;
 using Xunit;
 
@@ -32,6 +33,20 @@ public sealed class GraphicsDeviceTests
 
         Assert.NotEmpty(device.Capabilities.UnimplementedSettings);
         Assert.Contains("r_shadows", device.Capabilities.UnimplementedSettings);
+    }
+
+    [Theory]
+    [InlineData(ShaderTarget.Spirv, false)]
+    [InlineData(ShaderTarget.Wgsl, true)]
+    public void It_claims_the_temporal_resolve_only_where_its_backend_can_run_it(ShaderTarget target, bool named)
+    {
+        // Two of the chain's modules have no WGSL form. Over WebGPU the chain stands down whole, and the
+        // setting says so rather than a pass being refused halfway through building itself.
+        using RecordingRhiDevice rhi = new() { ShaderTarget = target };
+        using GraphicsDevice device = Open(rhi);
+
+        Assert.Equal(named, device.Capabilities.UnimplementedSettings.Contains("r_taa"));
+        Assert.True(device.BeginSceneCapture(new SceneTargetDescription(64, 64, Deferred: true)));
     }
 
     [Fact]

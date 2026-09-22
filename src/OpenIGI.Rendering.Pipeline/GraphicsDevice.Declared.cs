@@ -23,7 +23,7 @@ namespace OpenIGI.Rendering.Pipeline;
 /// </remarks>
 public sealed partial class GraphicsDevice
 {
-    /// <summary>The settings this device records and does not act on.</summary>
+    /// <summary>The settings this device records and does not act on, whatever it draws through.</summary>
     /// <remarks>
     /// Console-variable names, so a reader can match them against what the settings file holds. Every
     /// one of them belongs to the deferred stack, which has not moved onto this path yet.
@@ -36,7 +36,6 @@ public sealed partial class GraphicsDevice
         "r_rt_reflections",
         "r_rt_shadows",
         "r_volumetric_fog",
-        "r_taa",
         "r_bloom",
         "r_motion_blur",
         "r_exposure",
@@ -45,8 +44,13 @@ public sealed partial class GraphicsDevice
         "r_wetness",
         "r_storm",
         "r_material_detail",
-        "r_debug_view",
     ];
+
+    /// <summary>The settings this device does not act on over the backend it was given.</summary>
+    /// <param name="temporal">Whether the backend can run the temporal resolve.</param>
+    /// <returns>The names.</returns>
+    private static string[] UnimplementedOn(bool temporal) =>
+        temporal ? UnimplementedSettingNames : [.. UnimplementedSettingNames, "r_taa"];
 
     /// <inheritdoc/>
     public bool SunShadowTraced => false;

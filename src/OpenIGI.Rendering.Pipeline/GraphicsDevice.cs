@@ -1,5 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Rendering.Pipeline.Deferred;
 using OpenIGI.Rendering.Pipeline.Diagnostics;
 using OpenIGI.Rendering.Pipeline.Draw2D;
 using OpenIGI.Rendering.Pipeline.Mesh3D;
@@ -89,7 +90,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
             SupportsCompute = false,
             SupportsRayQuery = false,
             MaxSampleCount = device.Limits.MaxSampleCount,
-            UnimplementedSettings = UnimplementedSettingNames,
+            UnimplementedSettings = UnimplementedOn(TemporalResolve.RunsOn(device)),
         };
 
         _materialLayout = Mesh3DPipelineCache.CreateMaterialLayout(device);

@@ -33,8 +33,28 @@ public sealed class TemporalResolveTests(ITestOutputHelper output)
 
         output.WriteLine($"{dispatches.Count} dispatch(es)");
 
-        Assert.Equal(8, dispatches.Count);
-        Assert.Equal(8, device.CommandsOf<RecordedRhiCommand.SetPipeline>().Count);
+        Assert.Equal(9, dispatches.Count);
+        Assert.Equal(9, device.CommandsOf<RecordedRhiCommand.SetPipeline>().Count);
+    }
+
+    [Fact]
+    public void The_occluder_scatter_is_emptied_before_the_dilation_builds_it()
+    {
+        // The dilation builds it with an atomic minimum. Left as the last frame had it, every frame's
+        // minimum took in every frame before, the decimation found an occluder in front of every history
+        // texel, and the resolve passed the raw frame straight through -- measured against the Vulkan
+        // renderer, its parallax view came out fully inverted.
+        using RecordingRhiDevice device = new();
+        using SceneTargetSet targets = new(device, 64, 64);
+        using TemporalResolve resolve = new(device, framesInFlight: 2);
+
+        Record(device, resolve, targets);
+
+        List<string> pipelines = [.. device.CommandsOf<RecordedRhiCommand.SetPipeline>().Select(set => set.Label)];
+        output.WriteLine(string.Join(", ", pipelines));
+
+        Assert.Contains("ClearOccluder", pipelines[0], StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("DilateVelocity", pipelines[1], StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -52,8 +72,9 @@ public sealed class TemporalResolveTests(ITestOutputHelper output)
             device.CommandsOf<RecordedRhiCommand.Dispatch>();
 
         // Eight-wide workgroups: the frame is eight groups across, the history sixteen.
-        Assert.Equal(new RecordedRhiCommand.Dispatch(16, 16, 1), dispatches[6]);
-        Assert.Equal(new RecordedRhiCommand.Dispatch(8, 8, 1), dispatches[7]);
+        // Counted from the end, which is where the update and the resolve always are.
+        Assert.Equal(new RecordedRhiCommand.Dispatch(16, 16, 1), dispatches[^2]);
+        Assert.Equal(new RecordedRhiCommand.Dispatch(8, 8, 1), dispatches[^1]);
     }
 
     [Fact]

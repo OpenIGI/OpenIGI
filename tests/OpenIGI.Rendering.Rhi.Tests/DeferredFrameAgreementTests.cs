@@ -142,11 +142,39 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         }
     }
 
+    [Fact]
+    public void The_temporal_resolve_runs_in_the_frame_and_starts_from_it()
+    {
+        // Vulkan alone: two of the chain's modules have no WGSL form, so WebGPU stands the chain down and
+        // names r_taa instead. On its first frame the resolve has no history to weigh, so what it hands
+        // the tone map is the frame itself -- to within the spatial filter's reach at an edge.
+        byte[]? plain = TryOnVulkan(out string? reason);
+        byte[]? resolved = TryOnVulkan(out string? temporalReason, temporal: true);
+
+        Assert.True(plain is not null && resolved is not null, reason ?? temporalReason);
+
+        int differing = 0;
+        int worst = 0;
+
+        for (int i = 0; i < plain!.Length; i++)
+        {
+            int difference = Math.Abs(plain[i] - resolved![i]);
+            worst = Math.Max(worst, difference);
+            differing += difference > 8 ? 1 : 0;
+        }
+
+        output.WriteLine($"{differing} channel(s) differ by more than 8, worst by {worst}");
+        output.WriteLine($"resolved centre {Describe(resolved!)}");
+
+        Assert.True(resolved![Centre + 1] > resolved[Centre + 2], "The resolved frame lost the green that was drawn.");
+        Assert.True(differing < plain.Length / 20, $"{differing} channels moved: the resolve is not starting from the frame.");
+    }
+
     /// <summary>A column the triangle's base covers near the bottom of the frame and its apex does not reach near the top.</summary>
     private const int BaseColumn = 14;
 
     /// <summary>The frame everything here compares, written once and run twice.</summary>
-    private static void DrawFrame(GraphicsDevice device, DebugView view, bool textured)
+    private static void DrawFrame(GraphicsDevice device, DebugView view, bool textured, bool temporal)
     {
         device.SetDebugView(view);
 
@@ -168,7 +196,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
             Matrix3f.Identity);
 
         device.SetTemporalAntiAliasing(
-            default,
+            temporal ? new TemporalAaSettings(Enabled: true) : default,
             Matrix4f.Identity,
             Vector3d.Zero,
             Matrix3f.Identity);
@@ -251,7 +279,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         device.SwapBuffers();
     }
 
-    private static byte[]? TryOnVulkan(out string? reason, DebugView view = DebugView.None, bool textured = false)
+    private static byte[]? TryOnVulkan(out string? reason, DebugView view = DebugView.None, bool textured = false, bool temporal = false)
     {
         reason = null;
 
@@ -261,7 +289,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
 
             using (GraphicsDevice device = new(vulkan.Device, new DisplayMode(Size, Size, 32, 60)))
             {
-                DrawFrame(device, view, textured);
+                DrawFrame(device, view, textured, temporal);
             }
 
             return Read(vulkan.Device, vulkan.OffscreenTarget(0));
@@ -273,7 +301,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         }
     }
 
-    private static byte[]? TryOnWebGpu(out string? reason, DebugView view = DebugView.None, bool textured = false)
+    private static byte[]? TryOnWebGpu(out string? reason, DebugView view = DebugView.None, bool textured = false, bool temporal = false)
     {
         reason = null;
 
@@ -284,7 +312,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
 
             using (GraphicsDevice device = new(rhi, new DisplayMode(Size, Size, 32, 60)))
             {
-                DrawFrame(device, view, textured);
+                DrawFrame(device, view, textured, temporal);
             }
 
             return Read(rhi, rhi.OffscreenTarget(0));
