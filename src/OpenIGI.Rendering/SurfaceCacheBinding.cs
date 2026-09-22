@@ -16,9 +16,9 @@ namespace OpenIGI.Rendering;
 /// </para>
 /// <para>
 /// <b>Why a backend pass wants it at all.</b> A reflected ray that leaves the screen has no answer in the
-/// frame, and the only record of what stands off-screen is the cache. See
-/// <see cref="SurfaceCacheShaders.Lookup"/> for the lookup itself, which is shared source precisely so
-/// that the gather and the reflection land on the same card.
+/// frame, and the only record of what stands off-screen is the cache. The lookup itself lives in the
+/// shader library, as <c>Common/SurfaceCache.slang</c>, and is shared source precisely so that the
+/// gather and the reflection land on the same card.
 /// </para>
 /// </remarks>
 /// <param name="Pages">The page records: one run of vectors per card, as the lookup reads them.</param>
