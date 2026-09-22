@@ -102,12 +102,42 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
             "The upper left of the frame is the triangle, so the frame is upside down.");
     }
 
+    [Fact]
+    public void The_albedo_view_shows_the_colour_that_was_drawn()
+    {
+        byte[]? vulkan = TryOnVulkan(out string? vulkanReason, DebugView.Albedo);
+        byte[]? webgpu = TryOnWebGpu(out string? webgpuReason, DebugView.Albedo);
+
+        if (vulkan is null || webgpu is null)
+        {
+            Assert.Fail(
+                "Both backends are needed to compare them, and one was missing: "
+                + (vulkan is null ? vulkanReason : webgpuReason));
+
+            return;
+        }
+
+        output.WriteLine($"vulkan centre {Describe(vulkan)}");
+        output.WriteLine($"webgpu centre {Describe(webgpu)}");
+
+        // A mask view is the code value as it was stored, with no curve, grade or film on it: the vertex
+        // colour over a white texture, to within the encode and decode it went through on the way.
+        foreach (byte[] frame in (byte[][])[vulkan, webgpu])
+        {
+            Assert.InRange(frame[Centre], 0, 1);
+            Assert.InRange(frame[Centre + 1], 219, 221);
+            Assert.InRange(frame[Centre + 2], 39, 41);
+        }
+    }
+
     /// <summary>A column the triangle's base covers near the bottom of the frame and its apex does not reach near the top.</summary>
     private const int BaseColumn = 14;
 
     /// <summary>The frame everything here compares, written once and run twice.</summary>
-    private static void DrawFrame(GraphicsDevice device)
+    private static void DrawFrame(GraphicsDevice device, DebugView view)
     {
+        device.SetDebugView(view);
+
         Assert.True(
             device.BeginSceneCapture(new SceneTargetDescription(Size, Size, Deferred: true)),
             "The capture was declined.");
@@ -184,7 +214,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         device.SwapBuffers();
     }
 
-    private static byte[]? TryOnVulkan(out string? reason)
+    private static byte[]? TryOnVulkan(out string? reason, DebugView view = DebugView.None)
     {
         reason = null;
 
@@ -194,7 +224,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
 
             using (GraphicsDevice device = new(vulkan.Device, new DisplayMode(Size, Size, 32, 60), deferredFrame: true))
             {
-                DrawFrame(device);
+                DrawFrame(device, view);
             }
 
             return Read(vulkan.Device, vulkan.OffscreenTarget(0));
@@ -206,7 +236,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         }
     }
 
-    private static byte[]? TryOnWebGpu(out string? reason)
+    private static byte[]? TryOnWebGpu(out string? reason, DebugView view = DebugView.None)
     {
         reason = null;
 
@@ -217,7 +247,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
 
             using (GraphicsDevice device = new(rhi, new DisplayMode(Size, Size, 32, 60), deferredFrame: true))
             {
-                DrawFrame(device);
+                DrawFrame(device, view);
             }
 
             return Read(rhi, rhi.OffscreenTarget(0));

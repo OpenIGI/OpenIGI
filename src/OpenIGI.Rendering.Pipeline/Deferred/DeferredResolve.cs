@@ -22,6 +22,9 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// </remarks>
 public sealed class DeferredResolve : IDisposable
 {
+    /// <summary>The resolve's switch saying its target applies the sRGB transfer as it stores.</summary>
+    private const int TargetEncodesConstant = 65;
+
     private readonly IRhiBindGroupLayout _layout;
     private readonly FullscreenPipeline _pipeline;
     private readonly ShaderBindings _bindings;
@@ -42,7 +45,17 @@ public sealed class DeferredResolve : IDisposable
             ShaderBindingLayout.EntriesFor(Reflection, RhiShaderStages.Fragment),
             "resolve"));
 
-        _pipeline = new FullscreenPipeline(device, ShaderModuleId.Resolve, _layout, targetFormat);
+        // The resolve arrives at the display encoding. A target that encodes as it stores is told so, or
+        // the picture is encoded twice and comes out washed out.
+        _pipeline = new FullscreenPipeline(
+            device,
+            ShaderModuleId.Resolve,
+            _layout,
+            targetFormat,
+            fragmentConstants: new Dictionary<int, RhiConstant>
+            {
+                [TargetEncodesConstant] = RhiConstant.Of(targetFormat.IsSrgb() ? 1 : 0),
+            });
         _bindings = new ShaderBindings(device, Reflection, [_layout], RhiShaderStages.Fragment, "resolve");
         _standIns = new StandInTextures(device, "resolve.standin");
 

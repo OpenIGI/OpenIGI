@@ -30,6 +30,10 @@ public sealed class FullscreenPipeline : IDisposable
     /// a pass with none. Declared although nothing here tests depth, because a pipeline whose targets
     /// do not match its pass is refused.
     /// </param>
+    /// <param name="fragmentConstants">
+    /// The fragment stage's specialisation constants by identifier, or null for its defaults. Only those
+    /// the stage declares are passed on.
+    /// </param>
     public FullscreenPipeline(
         IRhiDevice device,
         ShaderModuleId module,
@@ -37,7 +41,8 @@ public sealed class FullscreenPipeline : IDisposable
         RhiTextureFormat targetFormat,
         RhiBlendState? blend = null,
         ShaderVariant variant = default,
-        RhiTextureFormat depthFormat = RhiTextureFormat.Undefined)
+        RhiTextureFormat depthFormat = RhiTextureFormat.Undefined,
+        IReadOnlyDictionary<int, RhiConstant>? fragmentConstants = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(bindGroupLayout);
@@ -66,7 +71,10 @@ public sealed class FullscreenPipeline : IDisposable
                 Module,
                 reflection.EntryPointFor(ShaderStage.Vertex).Name,
                 ShaderConstants.Declared(reflection, Mesh3DConstants.TargetConstants)),
-            new RhiShaderStage(Module, reflection.EntryPointFor(ShaderStage.Fragment).Name),
+            new RhiShaderStage(
+                Module,
+                reflection.EntryPointFor(ShaderStage.Fragment).Name,
+                ShaderConstants.Declared(reflection, fragmentConstants ?? NoConstants)),
             [],
             [new RhiColorTargetState(targetFormat, blend)],
             depthFormat is RhiTextureFormat.Undefined
@@ -76,6 +84,9 @@ public sealed class FullscreenPipeline : IDisposable
             SampleCount: 1,
             module.ToString()));
     }
+
+    /// <summary>What a fragment stage is given when the caller names nothing: its own defaults.</summary>
+    private static readonly IReadOnlyDictionary<int, RhiConstant> NoConstants = new Dictionary<int, RhiConstant>();
 
     /// <summary>Gets the compiled module both stages come from.</summary>
     public IRhiShaderModule Module { get; }
