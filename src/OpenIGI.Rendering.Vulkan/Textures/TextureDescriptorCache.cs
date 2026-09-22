@@ -19,6 +19,14 @@ namespace OpenIGI.Rendering.Vulkan.Textures;
 /// The pool is created able to free individual sets, so a destroyed texture gives its set back rather
 /// than holding a slot until the pool is reset.
 /// </para>
+/// <para>
+/// A set binds the image at zero and its sampler at one, separately, rather than one combined image
+/// sampler. That is not a preference: the shader library's modules must declare a texture and a
+/// sampler apart, because Slang's combined sampler expands into two binding slots on the WGSL target
+/// and collides with whatever is declared next, so the SPIR-V those modules compile to expects the
+/// pair. Every 2D draw in the frame reads sets from here, which is why the sprite, the
+/// distance-field text and the loading backdrop had to move together.
+/// </para>
 /// </remarks>
 internal sealed unsafe class TextureDescriptorCache : IDisposable
 {
@@ -43,9 +51,15 @@ internal sealed unsafe class TextureDescriptorCache : IDisposable
         _device = device;
         _layout = layout;
 
-        DescriptorPoolSize poolSize = new()
+        DescriptorPoolSize* poolSizes = stackalloc DescriptorPoolSize[2];
+        poolSizes[0] = new DescriptorPoolSize
         {
-            Type = DescriptorType.CombinedImageSampler,
+            Type = DescriptorType.SampledImage,
+            DescriptorCount = MaxSets,
+        };
+        poolSizes[1] = new DescriptorPoolSize
+        {
+            Type = DescriptorType.Sampler,
             DescriptorCount = MaxSets,
         };
 
@@ -54,8 +68,8 @@ internal sealed unsafe class TextureDescriptorCache : IDisposable
             SType = StructureType.DescriptorPoolCreateInfo,
             Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit,
             MaxSets = MaxSets,
-            PoolSizeCount = 1,
-            PPoolSizes = &poolSize,
+            PoolSizeCount = 2,
+            PPoolSizes = poolSizes,
         };
 
         DescriptorPool pool;
@@ -66,7 +80,7 @@ internal sealed unsafe class TextureDescriptorCache : IDisposable
     /// <summary>Gets the descriptor set binding a texture, allocating and writing it on first use.</summary>
     /// <param name="textureId">The texture's handle identifier.</param>
     /// <param name="texture">The texture to bind.</param>
-    /// <returns>The descriptor set that binds <paramref name="texture"/> at binding zero.</returns>
+    /// <returns>The set binding <paramref name="texture"/>'s image at zero and its sampler at one.</returns>
     /// <exception cref="GraphicsDeviceException">A set could not be allocated.</exception>
     public DescriptorSet Get(uint textureId, VulkanTexture texture)
     {
@@ -90,23 +104,38 @@ internal sealed unsafe class TextureDescriptorCache : IDisposable
 
         DescriptorImageInfo imageInfo = new()
         {
-            Sampler = texture.Sampler,
             ImageView = texture.View,
             ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
         };
 
-        WriteDescriptorSet write = new()
+        DescriptorImageInfo samplerInfo = new()
+        {
+            Sampler = texture.Sampler,
+        };
+
+        WriteDescriptorSet* writes = stackalloc WriteDescriptorSet[2];
+        writes[0] = new WriteDescriptorSet
         {
             SType = StructureType.WriteDescriptorSet,
             DstSet = set,
             DstBinding = 0,
             DstArrayElement = 0,
-            DescriptorType = DescriptorType.CombinedImageSampler,
+            DescriptorType = DescriptorType.SampledImage,
             DescriptorCount = 1,
             PImageInfo = &imageInfo,
         };
+        writes[1] = new WriteDescriptorSet
+        {
+            SType = StructureType.WriteDescriptorSet,
+            DstSet = set,
+            DstBinding = 1,
+            DstArrayElement = 0,
+            DescriptorType = DescriptorType.Sampler,
+            DescriptorCount = 1,
+            PImageInfo = &samplerInfo,
+        };
 
-        _vk.UpdateDescriptorSets(_device, 1, &write, 0, null);
+        _vk.UpdateDescriptorSets(_device, 2, writes, 0, null);
         _sets[textureId] = set;
         return set;
     }

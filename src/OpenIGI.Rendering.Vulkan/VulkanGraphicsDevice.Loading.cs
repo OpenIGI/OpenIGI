@@ -1,6 +1,7 @@
 using OpenIGI.Rendering.Vulkan.Deferred;
 using OpenIGI.Rendering.Vulkan.Shaders;
 using OpenIGI.Rendering.Vulkan.Textures;
+using OpenIGI.Shaders;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan;
@@ -27,11 +28,8 @@ public sealed partial class VulkanGraphicsDevice
         _loadingBackdrop ??= new FullscreenPipeline(
             _instance.Vk,
             _device,
-            _shaderCompiler,
-            LoadingShaderSource.Fragment,
-            "loading-backdrop.frag",
+            ShaderModuleId.Loading,
             _sprite2D.DescriptorSetLayout,
-            sizeof(float) * LoadingPushFloats,
             _presentTarget.RenderPass,
             0,
             alphaBlend: true);

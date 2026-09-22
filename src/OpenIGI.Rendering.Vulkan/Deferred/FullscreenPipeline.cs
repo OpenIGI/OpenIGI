@@ -1,8 +1,10 @@
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
+using ShaderStage = OpenIGI.Rendering.Vulkan.Shaders.ShaderStage;
 
 namespace OpenIGI.Rendering.Vulkan.Deferred;
 
@@ -26,7 +28,9 @@ internal sealed unsafe class FullscreenPipeline : IDisposable
     // compiled pipeline instead of building this one again.
     private readonly PipelineCache _pipelineCache;
     private readonly VulkanShaderModule _vertex;
-    private readonly VulkanShaderModule _fragment;
+    private readonly VulkanShaderModule? _fragment;
+    private readonly string _vertexEntryPoint = "main";
+    private readonly string _fragmentEntryPoint = "main";
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="FullscreenPipeline"/> class.</summary>
@@ -75,6 +79,50 @@ internal sealed unsafe class FullscreenPipeline : IDisposable
         Pipeline = CreatePipeline(renderPass, subpass, alphaBlend);
     }
 
+    /// <summary>Initialises a pipeline from one of the shader library's modules.</summary>
+    /// <param name="vk">The core Vulkan API.</param>
+    /// <param name="device">The device the pipeline lives on.</param>
+    /// <param name="module">The shader module, which carries both stages.</param>
+    /// <param name="descriptorSetLayout">The single descriptor set the shader reads.</param>
+    /// <param name="renderPass">The render pass the pipeline is compatible with.</param>
+    /// <param name="subpass">The subpass index within that render pass.</param>
+    /// <param name="alphaBlend">Whether the pass blends over the target by its alpha rather than replacing it.</param>
+    /// <exception cref="GraphicsDeviceException">The pipeline could not be created.</exception>
+    /// <remarks>
+    /// One module carries the full-screen triangle and the shading, so a single shader module serves
+    /// both stages and the push block's size comes from the module's own reflection.
+    /// </remarks>
+    public FullscreenPipeline(
+        Vk vk,
+        VulkanDevice device,
+        ShaderModuleId module,
+        DescriptorSetLayout descriptorSetLayout,
+        RenderPass renderPass,
+        uint subpass,
+        bool alphaBlend = false)
+    {
+        ArgumentNullException.ThrowIfNull(vk);
+        ArgumentNullException.ThrowIfNull(device);
+        _vk = vk;
+        _device = device.Device;
+        _pipelineCache = device.PipelineCache;
+
+        ShaderReflection reflection = ShaderCatalog.GetReflection(module);
+        _vertexEntryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Vertex).Name;
+        _fragmentEntryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Fragment).Name;
+
+        _vertex = new VulkanShaderModule(
+            vk,
+            _device,
+            ShaderCatalog.GetSpirv(module).Span,
+            ShaderStage.Vertex,
+            _vertexEntryPoint);
+        _fragment = null;
+
+        PipelineLayout = CreatePipelineLayout(descriptorSetLayout, (uint)(reflection.PushBlock?.Size ?? 0));
+        Pipeline = CreatePipeline(renderPass, subpass, alphaBlend);
+    }
+
     /// <summary>Gets the pipeline.</summary>
     public Pipeline Pipeline { get; }
 
@@ -92,7 +140,7 @@ internal sealed unsafe class FullscreenPipeline : IDisposable
         _disposed = true;
         _vk.DestroyPipeline(_device, Pipeline, null);
         _vk.DestroyPipelineLayout(_device, PipelineLayout, null);
-        _fragment.Dispose();
+        _fragment?.Dispose();
         _vertex.Dispose();
     }
 
@@ -121,7 +169,8 @@ internal sealed unsafe class FullscreenPipeline : IDisposable
 
     private Pipeline CreatePipeline(RenderPass renderPass, uint subpass, bool alphaBlend)
     {
-        nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
+        nint vertexEntryPoint = SilkMarshal.StringToPtr(_vertexEntryPoint, NativeStringEncoding.UTF8);
+        nint fragmentEntryPoint = SilkMarshal.StringToPtr(_fragmentEntryPoint, NativeStringEncoding.UTF8);
         try
         {
             PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
@@ -130,14 +179,14 @@ internal sealed unsafe class FullscreenPipeline : IDisposable
                 SType = StructureType.PipelineShaderStageCreateInfo,
                 Stage = ShaderStageFlags.VertexBit,
                 Module = _vertex.Handle,
-                PName = (byte*)entryPoint,
+                PName = (byte*)vertexEntryPoint,
             };
             stages[1] = new PipelineShaderStageCreateInfo
             {
                 SType = StructureType.PipelineShaderStageCreateInfo,
                 Stage = ShaderStageFlags.FragmentBit,
-                Module = _fragment.Handle,
-                PName = (byte*)entryPoint,
+                Module = (_fragment ?? _vertex).Handle,
+                PName = (byte*)fragmentEntryPoint,
             };
 
             PipelineVertexInputStateCreateInfo vertexInput = new()
@@ -242,7 +291,8 @@ internal sealed unsafe class FullscreenPipeline : IDisposable
         }
         finally
         {
-            SilkMarshal.Free(entryPoint);
+            SilkMarshal.Free(vertexEntryPoint);
+            SilkMarshal.Free(fragmentEntryPoint);
         }
     }
 }

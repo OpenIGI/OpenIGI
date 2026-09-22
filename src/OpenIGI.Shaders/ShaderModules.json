@@ -8,6 +8,10 @@
     {
       "id": "SdfText",
       "source": "Ui/SdfText.slang"
+    },
+    {
+      "id": "Loading",
+      "source": "Ui/Loading.slang"
     }
   ]
 }

@@ -1,8 +1,10 @@
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
+using ShaderStage = OpenIGI.Rendering.Vulkan.Shaders.ShaderStage;
 
 namespace OpenIGI.Rendering.Vulkan.Pipelines;
 
@@ -34,61 +36,66 @@ internal sealed unsafe class Sprite2DPipeline : IDisposable
     // rather than the wrapper. Passing it is what lets the driver return a previous run's
     // compiled pipeline instead of building this one again.
     private readonly PipelineCache _pipelineCache;
-    private readonly VulkanShaderModule _vertex;
-    private readonly VulkanShaderModule _fragment;
+    private readonly VulkanShaderModule _shader;
+    private readonly string _vertexEntryPoint;
+    private readonly string _fragmentEntryPoint;
     private readonly Pipeline[] _pipelines;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="Sprite2DPipeline"/> class.</summary>
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the pipelines live on.</param>
-    /// <param name="compiler">The shader compiler that turns the GLSL into SPIR-V.</param>
     /// <param name="renderPass">The render pass the pipelines are compatible with.</param>
     /// <exception cref="GraphicsDeviceException">A pipeline or its layout could not be created.</exception>
-    public Sprite2DPipeline(Vk vk, VulkanDevice device, ShaderCompiler compiler, RenderPass renderPass)
-        : this(vk, device, compiler, renderPass, Sprite2DShaderSource.Fragment, "sprite2d.frag", 0, 0)
+    public Sprite2DPipeline(Vk vk, VulkanDevice device, RenderPass renderPass)
+        : this(vk, device, renderPass, ShaderModuleId.Sprite2D, 0)
     {
     }
 
-    /// <summary>Initialises a variant with its own fragment stage, such as distance-field text.</summary>
+    /// <summary>Initialises a pipeline for one of the shader library's 2D modules.</summary>
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the pipeline lives on.</param>
-    /// <param name="compiler">The shader compiler.</param>
     /// <param name="renderPass">The pass the pipeline draws into.</param>
-    /// <param name="fragmentSource">The fragment shader's GLSL.</param>
-    /// <param name="fragmentName">The fragment shader's name, for the compiler's diagnostics.</param>
-    /// <param name="fragmentPushOffset">Where the fragment stage's push block starts, past the vertex stage's.</param>
-    /// <param name="fragmentPushBytes">How many bytes the fragment stage pushes, or zero for none.</param>
+    /// <param name="module">The shader module, which carries both stages.</param>
+    /// <param name="fragmentPushOffset">
+    /// Where the fragment stage's slice of the push block starts, past the vertex stage's, or zero
+    /// when the fragment stage reads nothing from it.
+    /// </param>
+    /// <exception cref="GraphicsDeviceException">A pipeline or its layout could not be created.</exception>
+    /// <remarks>
+    /// The two stages share one push block and each reads a disjoint part of it: the vertex stage
+    /// takes the projection size at offset zero, the fragment stage everything from
+    /// <paramref name="fragmentPushOffset"/> on. The block's total size comes from the module's own
+    /// reflection rather than being written down a second time here.
+    /// </remarks>
     public Sprite2DPipeline(
         Vk vk,
         VulkanDevice device,
-        ShaderCompiler compiler,
         RenderPass renderPass,
-        string fragmentSource,
-        string fragmentName,
-        uint fragmentPushOffset,
-        uint fragmentPushBytes)
+        ShaderModuleId module,
+        uint fragmentPushOffset)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(compiler);
-        ArgumentNullException.ThrowIfNull(fragmentSource);
         _vk = vk;
         _device = device.Device;
         _pipelineCache = device.PipelineCache;
         _fragmentPushOffset = fragmentPushOffset;
-        _fragmentPushBytes = fragmentPushBytes;
 
-        _vertex = new VulkanShaderModule(
+        ShaderReflection reflection = ShaderCatalog.GetReflection(module);
+        uint pushSize = (uint)(reflection.PushBlock?.Size ?? 0);
+        _fragmentPushBytes = fragmentPushOffset > 0 ? pushSize - fragmentPushOffset : 0;
+        _vertexEntryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Vertex).Name;
+        _fragmentEntryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Fragment).Name;
+
+        // One module, both stages: the Slang source declares them together and each pipeline stage
+        // names the entry point it wants.
+        _shader = new VulkanShaderModule(
             vk,
             _device,
-            compiler.Compile(Sprite2DShaderSource.Vertex, ShaderStage.Vertex, "sprite2d.vert"),
-            ShaderStage.Vertex);
-        _fragment = new VulkanShaderModule(
-            vk,
-            _device,
-            compiler.Compile(fragmentSource, ShaderStage.Fragment, fragmentName),
-            ShaderStage.Fragment);
+            ShaderCatalog.GetSpirv(module).Span,
+            ShaderStage.Vertex,
+            _vertexEntryPoint);
 
         DescriptorSetLayout = CreateDescriptorSetLayout();
         PipelineLayout = CreatePipelineLayout(DescriptorSetLayout);
@@ -128,16 +135,26 @@ internal sealed unsafe class Sprite2DPipeline : IDisposable
 
         _vk.DestroyPipelineLayout(_device, PipelineLayout, null);
         _vk.DestroyDescriptorSetLayout(_device, DescriptorSetLayout, null);
-        _fragment.Dispose();
-        _vertex.Dispose();
+        _shader.Dispose();
     }
 
     private DescriptorSetLayout CreateDescriptorSetLayout()
     {
-        DescriptorSetLayoutBinding binding = new()
+        // The image and its sampler are bound apart, because the shader library's modules declare
+        // them apart -- a combined sampler takes two binding slots on the WGSL target and collides
+        // with the next declaration, so neither target can use one.
+        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[2];
+        bindings[0] = new DescriptorSetLayoutBinding
         {
             Binding = 0,
-            DescriptorType = DescriptorType.CombinedImageSampler,
+            DescriptorType = DescriptorType.SampledImage,
+            DescriptorCount = 1,
+            StageFlags = ShaderStageFlags.FragmentBit,
+        };
+        bindings[1] = new DescriptorSetLayoutBinding
+        {
+            Binding = 1,
+            DescriptorType = DescriptorType.Sampler,
             DescriptorCount = 1,
             StageFlags = ShaderStageFlags.FragmentBit,
         };
@@ -145,8 +162,8 @@ internal sealed unsafe class Sprite2DPipeline : IDisposable
         DescriptorSetLayoutCreateInfo createInfo = new()
         {
             SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = 1,
-            PBindings = &binding,
+            BindingCount = 2,
+            PBindings = bindings,
         };
 
         DescriptorSetLayout layout;
@@ -188,7 +205,8 @@ internal sealed unsafe class Sprite2DPipeline : IDisposable
 
     private Pipeline CreatePipeline(RenderPass renderPass, BlendMode blend)
     {
-        nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
+        nint vertexEntryPoint = SilkMarshal.StringToPtr(_vertexEntryPoint, NativeStringEncoding.UTF8);
+        nint fragmentEntryPoint = SilkMarshal.StringToPtr(_fragmentEntryPoint, NativeStringEncoding.UTF8);
         try
         {
             PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
@@ -196,15 +214,15 @@ internal sealed unsafe class Sprite2DPipeline : IDisposable
             {
                 SType = StructureType.PipelineShaderStageCreateInfo,
                 Stage = ShaderStageFlags.VertexBit,
-                Module = _vertex.Handle,
-                PName = (byte*)entryPoint,
+                Module = _shader.Handle,
+                PName = (byte*)vertexEntryPoint,
             };
             stages[1] = new PipelineShaderStageCreateInfo
             {
                 SType = StructureType.PipelineShaderStageCreateInfo,
                 Stage = ShaderStageFlags.FragmentBit,
-                Module = _fragment.Handle,
-                PName = (byte*)entryPoint,
+                Module = _shader.Handle,
+                PName = (byte*)fragmentEntryPoint,
             };
 
             VertexInputBindingDescription vertexBinding = new()
@@ -326,7 +344,8 @@ internal sealed unsafe class Sprite2DPipeline : IDisposable
         }
         finally
         {
-            SilkMarshal.Free(entryPoint);
+            SilkMarshal.Free(vertexEntryPoint);
+            SilkMarshal.Free(fragmentEntryPoint);
         }
     }
 

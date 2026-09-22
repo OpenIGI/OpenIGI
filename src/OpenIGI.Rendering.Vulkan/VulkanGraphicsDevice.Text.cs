@@ -2,6 +2,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering.Vulkan.Pipelines;
 using OpenIGI.Rendering.Vulkan.Shaders;
 using OpenIGI.Rendering.Vulkan.Textures;
+using OpenIGI.Shaders;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan;
@@ -46,12 +47,9 @@ public sealed partial class VulkanGraphicsDevice : ISdfTextDevice
         _sdfText2D ??= new Sprite2DPipeline(
             _instance.Vk,
             _device,
-            _shaderCompiler,
             _presentTarget.RenderPass,
-            SdfTextShaderSource.Fragment,
-            "sdf-text.frag",
-            SdfPushOffset,
-            SdfPushBytes);
+            ShaderModuleId.SdfText,
+            SdfPushOffset);
 
         int frame = _frameLoop.CurrentFrame;
         _sprite2DGeometry.Append(frame, vertices, indices, out int vertexOffset, out uint firstIndex);

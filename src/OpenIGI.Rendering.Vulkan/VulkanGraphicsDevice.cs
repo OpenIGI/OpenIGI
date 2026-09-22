@@ -206,7 +206,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         }
 
         _shaderCompiler = new ShaderCompiler();
-        _sprite2D = new Sprite2DPipeline(_instance.Vk, _device, _shaderCompiler, _presentTarget.RenderPass);
+        _sprite2D = new Sprite2DPipeline(_instance.Vk, _device, _presentTarget.RenderPass);
         _sprite2DGeometry = new Sprite2DGeometry(_instance.Vk, _device, _allocator, VulkanFrameLoop.MaxFramesInFlight);
         _textureDescriptors = new TextureDescriptorCache(_instance.Vk, _device.Device, _sprite2D.DescriptorSetLayout);
         _mesh3D = new Mesh3DPipeline(_instance.Vk, _device, _shaderCompiler, _presentTarget.RenderPass);

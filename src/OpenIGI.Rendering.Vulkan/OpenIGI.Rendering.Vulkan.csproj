@@ -9,6 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\OpenIGI.Core\OpenIGI.Core.csproj" />
     <ProjectReference Include="..\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\OpenIGI.Shaders\OpenIGI.Shaders.csproj" />
   </ItemGroup>
 
   <ItemGroup>

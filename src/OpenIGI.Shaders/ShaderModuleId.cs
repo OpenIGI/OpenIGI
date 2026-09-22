@@ -24,4 +24,7 @@ public enum ShaderModuleId
 
     /// <summary>Distance-field text: crisp glyph edges at any size, with an outline and a glow.</summary>
     SdfText,
+
+    /// <summary>The loading backdrop: a held frame of the level, defocused and graded.</summary>
+    Loading,
 }
