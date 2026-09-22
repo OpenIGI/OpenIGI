@@ -151,6 +151,15 @@ public static class VulkanRhiTranslation
             mapped |= BufferUsageFlags.IndirectBufferBit;
         }
 
+        if (usage.HasFlag(RhiBufferUsage.RayTracingInput))
+        {
+            // A build reads geometry through the buffer's device address rather than through a binding,
+            // so the address has to be askable for; the storage use is what the build's own shaders need.
+            mapped |= BufferUsageFlags.AccelerationStructureBuildInputReadOnlyBitKhr
+                | BufferUsageFlags.ShaderDeviceAddressBit
+                | BufferUsageFlags.StorageBufferBit;
+        }
+
         return mapped;
     }
 

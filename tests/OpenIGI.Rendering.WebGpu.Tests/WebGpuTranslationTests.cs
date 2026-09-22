@@ -100,13 +100,26 @@ public sealed class WebGpuTranslationTests
         // it was created and an error from the driver naming neither.
         foreach (RhiBufferUsage usage in Enum.GetValues<RhiBufferUsage>())
         {
-            if (usage == RhiBufferUsage.None)
+            // RayTracingInput is the one use with nothing on this side to map to, and it is deliberate:
+            // a mesh states it without knowing whether it will ever be traced, and a backend that
+            // builds no acceleration structures has nothing to place differently. Dropping it is the
+            // right answer, so it is named here rather than caught by the rule below.
+            if (usage is RhiBufferUsage.None or RhiBufferUsage.RayTracingInput)
             {
                 continue;
             }
 
             Assert.NotEqual(WGPUBufferUsage.None, WebGpuTranslation.BufferUsage(usage));
         }
+
+        Assert.Equal(
+            WGPUBufferUsage.None,
+            WebGpuTranslation.BufferUsage(RhiBufferUsage.RayTracingInput));
+
+        // And it does not stop the uses alongside it reaching the buffer.
+        Assert.True(WebGpuTranslation
+            .BufferUsage(RhiBufferUsage.Vertex | RhiBufferUsage.RayTracingInput)
+            .HasFlag(WGPUBufferUsage.Vertex));
 
         // And together, so the mapping accumulates rather than replacing.
         WGPUBufferUsage all = WebGpuTranslation.BufferUsage(

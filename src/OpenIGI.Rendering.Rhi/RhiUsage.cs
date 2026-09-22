@@ -47,6 +47,16 @@ public enum RhiBufferUsage
     /// results are written by the device at a fixed stride and a buffer not created for it is refused.
     /// </remarks>
     QueryResolve = 1 << 9,
+
+    /// <summary>May be read by an acceleration-structure build as geometry.</summary>
+    /// <remarks>
+    /// The one use here that only one backend can honour, and it is stated in the shared vocabulary
+    /// anyway: a mesh does not know whether it will be traced, a buffer cannot gain a use later, and a
+    /// device that cannot trace can simply ignore the request. Vulkan turns it into the build-input,
+    /// device-address and storage flags where the adapter offers acceleration structures; WebGPU drops
+    /// it, having nothing to build.
+    /// </remarks>
+    RayTracingInput = 1 << 10,
 }
 
 /// <summary>

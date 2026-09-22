@@ -92,12 +92,19 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
             ? MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit
             : MemoryPropertyFlags.DeviceLocalBit;
 
+        // Asking for a build-input buffer on an adapter with no acceleration structures is not merely
+        // useless, it is invalid -- the flag names an extension that is not enabled. Dropped here rather
+        // than refused, because the caller is a mesh that does not know whether it will ever be traced.
+        RhiBufferUsage usage = _device.Capabilities.AccelerationStructure
+            ? descriptor.Usage
+            : descriptor.Usage & ~RhiBufferUsage.RayTracingInput;
+
         VulkanBuffer buffer = new(
             _vk,
             _device,
             _allocator,
             descriptor.SizeInBytes,
-            VulkanRhiTranslation.BufferUsage(descriptor.Usage),
+            VulkanRhiTranslation.BufferUsage(usage),
             memory,
             persistentlyMapped: VulkanRhiTranslation.NeedsHostVisibleMemory(descriptor.Usage));
 
