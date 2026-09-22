@@ -41,7 +41,10 @@ public sealed class FullscreenPipeline : IDisposable
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(bindGroupLayout);
 
-        ShaderReflection reflection = ShaderCatalog.GetReflection(module);
+        // The variant's own reflection, not the module's default: a variant may declare a different set
+        // of bindings and a different push block, and a pipeline built from the wrong one is a layout
+        // that disagrees with the shader it was made for.
+        ShaderReflection reflection = ShaderCatalog.GetReflection(module, variant);
         PushDataBytes = reflection.PushBlock?.Size ?? 0;
 
         Module = device.CreateShaderModule(

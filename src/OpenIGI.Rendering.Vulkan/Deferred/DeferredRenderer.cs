@@ -62,7 +62,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private bool _disposed;
 
     /// <summary>The size in bytes of the lighting pass's GI uniform block.</summary>
-    public const int GiUniformSize = 576;
+    public const int GiUniformSize = DeferredLightingBlocks.GiBytes;
 
     /// <summary>How many resolve sets each scene target carries.</summary>
     /// <remarks>
@@ -87,7 +87,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// what the shader's arrays are declared at — well inside the sixteen kilobytes every Vulkan
     /// implementation guarantees a uniform buffer, so no device has to be asked.
     /// </remarks>
-    public const int LampUniformSize = 32 + (DeferredLocalLight.Maximum * 48);
+    public const int LampUniformSize = DeferredLightingBlocks.LampBytes;
 
     /// <summary>Initialises a new instance of the <see cref="DeferredRenderer"/> class.</summary>
     /// <param name="vk">The core Vulkan API.</param>
