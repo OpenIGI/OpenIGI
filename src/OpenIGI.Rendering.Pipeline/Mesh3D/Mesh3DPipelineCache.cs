@@ -46,14 +46,25 @@ public sealed class Mesh3DPipelineCache : IDisposable
 
     /// <summary>Initialises a new instance of the <see cref="Mesh3DPipelineCache"/> class.</summary>
     /// <param name="device">The device the pipelines live on.</param>
+    /// <param name="materialLayout">
+    /// The material group, which is <b>shared</b> with the geometry, shadow and card paths and
+    /// therefore handed in rather than made here. A group is built per texture triple and used by
+    /// whichever pipeline draws it, so a second layout of the same shape would mean a second group per
+    /// triple in every frame — and one of a different shape would mean the two could silently disagree.
+    /// </param>
+    /// <param name="cubeLayout">The environment cube's group, which only this path binds.</param>
     /// <param name="targetFormat">The format of the colour attachment they draw into.</param>
     /// <param name="depthFormat">The format of the depth attachment.</param>
     public Mesh3DPipelineCache(
         IRhiDevice device,
+        IRhiBindGroupLayout materialLayout,
+        IRhiBindGroupLayout cubeLayout,
         RhiTextureFormat targetFormat,
         RhiTextureFormat depthFormat)
     {
         ArgumentNullException.ThrowIfNull(device);
+        ArgumentNullException.ThrowIfNull(materialLayout);
+        ArgumentNullException.ThrowIfNull(cubeLayout);
 
         _device = device;
         _targetFormat = targetFormat;
@@ -65,17 +76,18 @@ public sealed class Mesh3DPipelineCache : IDisposable
 
         _module = device.CreateShaderModule(new RhiShaderModuleDescriptor(ShaderModuleId.Mesh3D, Label: "Mesh3D"));
 
-        MaterialLayout = CreateMaterialLayout(device);
-        CubeLayout = CreateCubeLayout(device);
+        MaterialLayout = materialLayout;
+        CubeLayout = cubeLayout;
 
         Layout = device.CreatePipelineLayout(new RhiPipelineLayoutDescriptor(
-            [MaterialLayout, CubeLayout],
+            [materialLayout, cubeLayout],
             PushDataBytes,
             RhiShaderStages.Vertex | RhiShaderStages.Fragment,
             "Mesh3D"));
     }
 
     /// <summary>Gets the layout binding the diffuse, lightmap and detail textures.</summary>
+    /// <remarks>Owned by the caller that handed it in, and shared with the other mesh paths.</remarks>
     public IRhiBindGroupLayout MaterialLayout { get; }
 
     /// <summary>Gets the layout binding the environment cube a reflective draw samples.</summary>
@@ -289,10 +301,10 @@ public sealed class Mesh3DPipelineCache : IDisposable
 
         _disposed = true;
 
+        // The two group layouts are the caller's; every mesh path shares them and none of them owns
+        // them, which is the point of their being handed in.
         DiscardVariants();
         Layout.Dispose();
-        CubeLayout.Dispose();
-        MaterialLayout.Dispose();
         _module.Dispose();
     }
 

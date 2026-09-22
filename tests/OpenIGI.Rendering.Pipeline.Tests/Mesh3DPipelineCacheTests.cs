@@ -157,6 +157,15 @@ public sealed class Mesh3DPipelineCacheTests
         Assert.Equal(0, materials.Count);
     }
 
-    private static Mesh3DPipelineCache Open(IRhiDevice device) =>
-        new(device, RhiTextureFormat.Rgba16Float, RhiTextureFormat.Depth32Float);
+    /// <summary>The forward cache with the layouts a frame would hand it.</summary>
+    /// <remarks>
+    /// The layouts leak for the length of a test, deliberately: what is under test is the variants, and
+    /// a frame owns those layouts rather than any one cache.
+    /// </remarks>
+    private static Mesh3DPipelineCache Open(IRhiDevice device) => new(
+        device,
+        Mesh3DPipelineCache.CreateMaterialLayout(device),
+        Mesh3DPipelineCache.CreateCubeLayout(device),
+        RhiTextureFormat.Rgba16Float,
+        RhiTextureFormat.Depth32Float);
 }
