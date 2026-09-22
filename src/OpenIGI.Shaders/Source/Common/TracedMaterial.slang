@@ -27,13 +27,7 @@
 #ifndef OPENIGI_TRACED_MATERIAL_INCLUDED
 #define OPENIGI_TRACED_MATERIAL_INCLUDED
 
-// Vertex3D is 48 bytes: the position is float 0, and the diffuse UV is float 6.
-static const uint kHitVertexFloats = 12u;
-static const uint kHitUvFloat = 6u;
-
-// Eight words: the vertex address, the index address, the first index, the mask layer and the albedo
-// layer.
-static const uint kHitRecordWords = 8u;
+#include "HitRecords.slang"
 
 // The last hit's albedo before anything was done to it, for DebugView.GlassAlbedo. A reflected body that
 // comes out flat and colourless has two possible causes that look identical in the finished picture -- an
@@ -52,28 +46,6 @@ static bool gHitDynamic = false;
 // looked the way it faces -- so this is what the caller hands the cards. Written before the albedo layer
 // is consulted, because a surface with no texture of its own still has cards.
 static float3 gHitNormalW = float3(0.0, 0.0, 0.0);
-
-// The two buffers a record names, read by ADDRESS rather than as bound buffers, which is what lets a hit
-// reach a mesh the pass never bound. Pointed at plain word and float arrays for the reason the shadow
-// pass declares them so: the alignment that demands is four bytes, which every one of these buffers
-// already satisfies, and no layout rule has to agree with a C# struct.
-ConstBufferPointer<uint> HitWordsAt(uint low, uint high)
-{
-    return ConstBufferPointer<uint>.fromUInt((uint64_t(high) << 32) | uint64_t(low));
-}
-
-ConstBufferPointer<float> HitFloatsAt(uint low, uint high)
-{
-    return ConstBufferPointer<float>.fromUInt((uint64_t(high) << 32) | uint64_t(low));
-}
-
-// One 16-bit index, out of a buffer read as 32-bit words so that no 16-bit storage feature is needed. The
-// buffer's own base is word aligned; only the element is not.
-uint HitIndexAt(ConstBufferPointer<uint> indices, uint at)
-{
-    uint word = indices[at >> 1u];
-    return ((at & 1u) == 0u) ? (word & 0xffffu) : (word >> 16u);
-}
 
 // What a COMMITTED hit looks like, shaded from its own material. False where the hit has no record or no
 // albedo layer, which leaves the caller to fall back exactly as it did before.
@@ -100,14 +72,17 @@ bool ShadeHit<let F : int>(inout RayQuery<F> query, float3 rayW, out float3 radi
     ConstBufferPointer<uint> records = HitWordsAt(kRecords.x, kRecords.y);
     uint at = record * kHitRecordWords;
 
-    gHitDynamic = records[at + 7u] != 0u;
+    gHitDynamic = records[at + kHitDynamicWord] != 0u;
 
-    ConstBufferPointer<float> vertices = HitFloatsAt(records[at + 0u], records[at + 1u]);
-    ConstBufferPointer<uint> indices = HitWordsAt(records[at + 2u], records[at + 3u]);
+    ConstBufferPointer<float> vertices = HitFloatsAt(
+        records[at + kHitVertexAddressWord], records[at + kHitVertexAddressWord + 1u]);
+    ConstBufferPointer<uint> indices = HitWordsAt(
+        records[at + kHitIndexAddressWord], records[at + kHitIndexAddressWord + 1u]);
 
     // The primitive index counts from the geometry's own first index, which is what the build was given
     // as its primitive offset -- so the first index is added back here.
-    uint first = records[at + 4u] + (uint(query.CommittedPrimitiveIndex()) * 3u);
+    uint first = records[at + kHitFirstIndexWord]
+        + (uint(query.CommittedPrimitiveIndex()) * 3u);
 
     uint i0 = HitIndexAt(indices, first + 0u);
     uint i1 = HitIndexAt(indices, first + 1u);
@@ -140,7 +115,7 @@ bool ShadeHit<let F : int>(inout RayQuery<F> query, float3 rayW, out float3 radi
 
     gHitNormalW = normalW;
 
-    int layer = int(records[at + 6u]);
+    int layer = int(records[at + kHitAlbedoLayerWord]);
     if (layer < 0)
     {
         // MAGENTA, for DebugView.GlassAlbedo only -- nothing else ever reads this, because the false

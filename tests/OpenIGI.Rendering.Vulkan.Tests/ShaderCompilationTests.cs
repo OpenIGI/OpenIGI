@@ -448,20 +448,6 @@ public sealed class ShaderCompilationTests
         Assert.DoesNotContain("vec3(fract(uv)", TracedResolveShaders.Material, StringComparison.Ordinal);
     }
 
-    /// <summary>The mask and the albedo read different words of the same record.</summary>
-    /// <remarks>
-    /// One record serves both the shadow pass's cut-out test and the reflection's hit shading, and the
-    /// two reach into it by a hand-written word offset each. Landing on the same word does not fail: a
-    /// cut-out surface would test its alpha against a texture layer number, so a fence would be solid or
-    /// absent depending on which layer its colour happened to get.
-    /// </remarks>
-    [Fact]
-    public void TheMaskAndTheAlbedoReadDifferentWordsOfTheRecord()
-    {
-        Assert.Contains("records.v[at + 5u]", RayTracedShadowPass.Source, StringComparison.Ordinal);
-        Assert.Contains("records.v[at + 6u]", TracedResolveShaders.Material, StringComparison.Ordinal);
-    }
-
     /// <summary>The glazing pass declares the hit shading before the trace that calls it.</summary>
     /// <remarks>
     /// The trace shades its hit on the way out, because the ray query is local to it — so <c>ShadeHit</c>

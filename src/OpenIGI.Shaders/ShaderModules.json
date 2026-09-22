@@ -191,6 +191,16 @@
           "targets": [ "Spirv" ]
         }
       ]
+    },
+    {
+      "id": "SunShadow",
+      "source": "Deferred/SunShadow.slang",
+      "variants": [
+        {
+          "name": "default",
+          "targets": [ "Spirv" ]
+        }
+      ]
     }
   ]
 }

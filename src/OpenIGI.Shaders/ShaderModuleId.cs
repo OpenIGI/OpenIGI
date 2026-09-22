@@ -123,4 +123,7 @@ public enum ShaderModuleId
 
     /// <summary>The frame's luminance counted into sixty-four logarithmic buckets.</summary>
     ExposureHistogram,
+
+    /// <summary>The sun's traced visibility and the distance to whatever stopped the ray.</summary>
+    SunShadow,
 }

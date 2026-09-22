@@ -135,7 +135,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
 
         // The sun's shadow, traced between the two render passes. Only where the adapter can trace at all.
         _sunShadow = _rayQuery
-            ? new RayTracedShadowPass(vk, device, allocator, compiler, framesInFlight)
+            ? new RayTracedShadowPass(vk, device, allocator, framesInFlight)
             : null;
         _sunShadowDenoise = _rayQuery
             ? new ShadowDenoisePass(vk, device, allocator, framesInFlight)
