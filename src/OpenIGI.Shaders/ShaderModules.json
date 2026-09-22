@@ -317,6 +317,28 @@
           "targets": [
             "Spirv"
           ]
+        },
+        {
+          "name": "rayquery.sampled",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "1",
+            "OPENIGI_MAX_LAMPS": "160",
+            "OPENIGI_SAMPLED_GBUFFER": "1"
+          },
+          "targets": [
+            "Spirv"
+          ]
+        },
+        {
+          "name": "software.sampled",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "0",
+            "OPENIGI_MAX_LAMPS": "160",
+            "OPENIGI_SAMPLED_GBUFFER": "1"
+          },
+          "targets": [
+            "Spirv"
+          ]
         }
       ]
     },
