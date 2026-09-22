@@ -16,4 +16,8 @@
     <None Include="native\**" />
   </ItemGroup>
 
+  <!-- Carries the fetched binary into this project's output and into anything referencing it, so
+       WgpuLibrary finds one beside the application exactly as it does in a published build. -->
+  <Import Project="WgpuNative.props" />
+
 </Project>
