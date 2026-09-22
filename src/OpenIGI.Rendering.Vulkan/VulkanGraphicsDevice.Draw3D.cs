@@ -639,81 +639,32 @@ public sealed partial class VulkanGraphicsDevice
         BindMeshTextures(_deferred.Geometry.PipelineLayout, diffuse, lightmap);
         BindSurfaceSet();
 
-        // The 128-byte push: the model-view-projection for position, a rotation for the normal, and the
-        // material with the lightmap scale.
-        Matrix4f mvp = _projection * modelView;
+        GBufferDrawState state = new(
+            _projection,
+            _viewToWorld,
+            _material,
+            _lightmapScale,
+            _poseBlend,
+            _alphaHashSeed,
+            new DetailFade(_detailFade.Scale, _detailFade.Offset, _detailFade.Slope, _detailFade.Mode),
+            GBufferPushBlock.TerrainCameraOffset(modelView, _viewToWorld),
+            _groundDetail,
+            _paintedSky,
+            ResolveExposure());
 
-        // The G-buffer stores world-space normals, so the rotation pushed here is object-to-world: the
-        // model-view's own rotation followed by the view-to-world one. Composing the two on the processor
-        // costs nothing per vertex and saves the shader a second matrix and a second multiply.
-        Matrix3f modelViewRotation = new(
-            modelView.M11, modelView.M12, modelView.M13,
-            modelView.M21, modelView.M22, modelView.M23,
-            modelView.M31, modelView.M32, modelView.M33);
-        Matrix3f normalMatrix = _viewToWorld * modelViewRotation;
+        Span<float> data = stackalloc float[GBufferPushBlock.Floats];
+        GBufferPushBlock.Write(data, state, modelView, blend);
 
-        float* data = stackalloc float[32];
-        mvp.CopyColumnMajorTo(new Span<float>(data, 16));
-
-        // Terrain slides each vertex along the offset in its normal channel as the ground changes level of
-        // detail, and the distance that slide is measured against is the vertex's own, so it has to happen
-        // per vertex. That needs three numbers for the ramp and three for where the page sits relative to
-        // the camera, and the push block is full.
-        //
-        // It has room all the same, because a terrain page is drawn with no rotation of its own: its
-        // normal matrix is the view rotation undone by its own inverse, which is the identity, and nine
-        // floats of identity carry nothing. So a terrain draw puts the ramp and the offset there instead,
-        // and the fourth component of the first row — zero for everything else — is what says it has. The
-        // identity is checked rather than assumed; a page that ever came in rotated keeps its matrix and
-        // simply does not morph.
-        if (_detailFade.Mode > 0f && IsIdentity(normalMatrix) && TerrainCameraOffset(modelView, _viewToWorld, out Vector3f offset))
+        fixed (float* pushed = data)
         {
-            data[16] = _detailFade.Scale; data[17] = _detailFade.Offset; data[18] = _detailFade.Slope;
-            data[19] = _detailFade.Mode;
-            data[20] = offset.X; data[21] = offset.Y; data[22] = offset.Z;
-            data[24] = 0f; data[25] = 0f; data[26] = 0f; data[27] = _alphaHashSeed;
+            vk.CmdPushConstants(
+                cmd,
+                _deferred.Geometry.PipelineLayout,
+                ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
+                0,
+                128,
+                pushed);
         }
-        else
-        {
-            data[16] = normalMatrix.M11; data[17] = normalMatrix.M21; data[18] = normalMatrix.M31;
-            // Three says the lightmap slot is the ground's DETAIL map; four says this draw is the
-            // ground's BAKE and belongs in the baked attachment rather than in the colour. Nothing
-            // but I.G.I. 2's ground asks for either -- Modulate2X has no other producer in the port.
-            data[19] = blend == BlendMode.Modulate2X ? 4f : (_groundDetail ? 3f : 0f);
-            data[20] = normalMatrix.M12; data[21] = normalMatrix.M22; data[22] = normalMatrix.M32;
-            data[24] = normalMatrix.M13; data[25] = normalMatrix.M23; data[26] = normalMatrix.M33; data[27] = _alphaHashSeed;
-        }
-
-        // How much of the previous pose is in the position drawn. The second normal row's fourth
-        // component is spare whichever branch wrote it — a terrain page puts its offset in the first
-        // three and a rotated mesh a matrix column, and neither has a use for the fourth.
-        data[23] = _poseBlend;
-
-        // The pane's roughness is NOT the frame's, and this is where the two part company. A glass
-        // texture holds both, and everything of it that reaches the G-buffer is by definition the opaque
-        // remainder -- the mullions, the surround, the putty -- because the pane's own texels fail the
-        // alpha cut a few lines into the fragment stage and are drawn by the glazing pass instead. A
-        // window's authored 0.08 describes the glass; applied to what is left here it makes painted
-        // metal read as polished chrome, which is exactly what it did while the pane was being discarded
-        // and the frame was all that survived.
-        data[28] = _material.Glass ? SurfaceMaterial.Default.Roughness : _material.Roughness;
-        data[29] = _material.Metallic;
-
-        // A painted sky is written as emission -- it is not lit, it IS light -- but what it carries is
-        // the colour the artist wanted on the screen rather than a radiance. Divided here by what the
-        // resolve will multiply back, so it comes out of the tone map at the colour it was painted. The
-        // lighting pass reads the strength back out of the G-buffer and applies it.
-        data[30] = _paintedSky && _material.Emissive > 0f
-            ? _material.Emissive / ResolveExposure()
-            : _material.Emissive;
-        data[31] = _lightmapScale;
-        vk.CmdPushConstants(
-            cmd,
-            _deferred.Geometry.PipelineLayout,
-            ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
-            0,
-            128,
-            data);
     }
 
     /// <summary>Binds the glazing pipeline for one pane draw.</summary>

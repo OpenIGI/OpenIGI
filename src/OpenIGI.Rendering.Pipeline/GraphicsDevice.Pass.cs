@@ -25,8 +25,15 @@ public sealed partial class GraphicsDevice
     private bool _clearDepthPending;
 
     /// <summary>The pass everything draws into, opened if it is not already.</summary>
+    /// <remarks>
+    /// The geometry pass is closed first if one is open. A render pass begun inside another is not
+    /// nesting but undefined, and the two cannot both be right anyway: what draws into the frame is not
+    /// what draws into the G-buffer.
+    /// </remarks>
     private IRhiRenderPassEncoder Pass()
     {
+        CloseGeometryPass();
+
         if (_pass is { } open)
         {
             return open;

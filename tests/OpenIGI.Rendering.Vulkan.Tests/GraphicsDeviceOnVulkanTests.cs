@@ -34,7 +34,7 @@ public sealed class GraphicsDeviceOnVulkanTests(ITestOutputHelper output)
         using (vulkan)
         {
             VulkanRhiDevice rhi = vulkan!.Rhi;
-            rhi.AttachOffscreen(Size, Size, GraphicsDevice.PresentFormat);
+            rhi.AttachOffscreen(Size, Size, GraphicsDevice.DefaultPresentFormat);
 
             using GraphicsDevice device = new(rhi, new DisplayMode(Size, Size, 32, 60));
 
@@ -74,7 +74,7 @@ public sealed class GraphicsDeviceOnVulkanTests(ITestOutputHelper output)
         using (vulkan)
         {
             VulkanRhiDevice rhi = vulkan!.Rhi;
-            rhi.AttachOffscreen(Size, Size, GraphicsDevice.PresentFormat);
+            rhi.AttachOffscreen(Size, Size, GraphicsDevice.DefaultPresentFormat);
 
             using GraphicsDevice device = new(rhi, new DisplayMode(Size, Size, 32, 60));
 

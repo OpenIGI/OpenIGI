@@ -78,7 +78,7 @@ public sealed class CardCaptureAgreementTests(ITestOutputHelper output)
 
         try
         {
-            using VulkanRhi vulkan = VulkanRhi.CreateOffscreen(Size, Size, GraphicsDevice.PresentFormat);
+            using VulkanRhi vulkan = VulkanRhi.CreateOffscreen(Size, Size, GraphicsDevice.DefaultPresentFormat);
             return Capture(vulkan.Device);
         }
         catch (Exception error)
@@ -95,7 +95,7 @@ public sealed class CardCaptureAgreementTests(ITestOutputHelper output)
         try
         {
             using WebGpuRhiDevice device = WebGpuRhiDevice.Create();
-            device.AttachOffscreen(Size, Size, GraphicsDevice.PresentFormat);
+            device.AttachOffscreen(Size, Size, GraphicsDevice.DefaultPresentFormat);
             return Capture(device);
         }
         catch (Exception error)

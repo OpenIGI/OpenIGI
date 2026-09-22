@@ -27,6 +27,15 @@ public interface IRhiDevice : IDisposable
     /// <summary>Gets the sizes it will not exceed.</summary>
     RhiLimits Limits { get; }
 
+    /// <summary>Gets the format the frames it hands out are in.</summary>
+    /// <remarks>
+    /// Asked rather than assumed. A surface's format is the window system's to choose — a desktop
+    /// swapchain may hand out an unsigned-normalised image where a browser canvas hands out an sRGB one
+    /// — and every pipeline drawing into a frame is built for its format before any frame exists. A
+    /// pipeline built for the wrong one is refused on one backend and silently mis-encoded on the other.
+    /// </remarks>
+    RhiTextureFormat SurfaceFormat { get; }
+
     /// <summary>Gets ray tracing, where this device offers it.</summary>
     /// <remarks>
     /// A capability interface rather than members on this one: only a device reporting

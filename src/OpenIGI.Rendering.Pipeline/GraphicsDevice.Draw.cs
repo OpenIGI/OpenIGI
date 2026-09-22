@@ -27,6 +27,7 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     private Vector3f _vertexSun;
     private DetailFade _detailFade = DetailFade.None;
     private float _lightmapScale = 1f;
+    private float _alphaHashSeed;
     private float _poseBlend;
     private byte _alphaReference = Mesh3DConstants.DefaultAlphaReference;
     private bool _firstPerson;
@@ -76,6 +77,11 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     {
         ThrowIfDisposed();
         Apply2DProjection();
+
+        if (Capturing)
+        {
+            return;
+        }
 
         _sprites.DrawTriangles(Pass(), vertices, indices, texture, blend);
     }
@@ -225,6 +231,19 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             return;
         }
 
+        if (Capturing)
+        {
+            // Only the geometry pass draws while a capture is open. The translucency and glazing passes
+            // have not moved onto this path, and sending their draws to the frame instead would put the
+            // view model and the muzzle flash on the back buffer for the resolve to paint over.
+            if (CurrentPass is ScenePass.Geometry)
+            {
+                DrawGeometry(call, modelView, blend);
+            }
+
+            return;
+        }
+
         Span<float> push = stackalloc float[ForwardPushBlock.Floats];
         WriteForward(push, modelView, blend, lightmap.IsValid);
 
@@ -258,6 +277,16 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             // A capture draws the whole model into its page: the ranges are a frame's material batching,
             // and a page holds one material by construction.
             DrawCard(Call(mesh, 0, 0, diffuse, lightmap, blend), _projection * modelView);
+            return;
+        }
+
+        if (Capturing)
+        {
+            if (CurrentPass is ScenePass.Geometry)
+            {
+                DrawGeometryRanges(mesh, ranges, modelView, diffuse, lightmap, blend);
+            }
+
             return;
         }
 

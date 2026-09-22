@@ -96,6 +96,27 @@ public sealed class SceneTargetSet : IDisposable
         Allocate(width, height);
     }
 
+    /// <summary>What one texel of a target holds, whatever size the frame happens to be.</summary>
+    /// <param name="id">Which target.</param>
+    /// <returns>Its format.</returns>
+    /// <exception cref="ArgumentException">Nothing in the table is that target.</exception>
+    /// <remarks>
+    /// Asked of the table rather than of an allocated set, because a pipeline drawing into a target has
+    /// to be built for its format and is built before any frame exists.
+    /// </remarks>
+    public static RhiTextureFormat FormatOf(SceneTargetId id)
+    {
+        foreach (SceneTargetSpec spec in Layout)
+        {
+            if (spec.Id == id)
+            {
+                return spec.Format;
+            }
+        }
+
+        throw new ArgumentException($"No scene target is {id}.", nameof(id));
+    }
+
     /// <summary>Gets the frame's width in pixels.</summary>
     public int Width { get; private set; }
 

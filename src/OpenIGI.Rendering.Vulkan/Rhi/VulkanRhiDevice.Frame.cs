@@ -45,6 +45,18 @@ internal sealed unsafe partial class VulkanRhiDevice
         CreateFrameSync();
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The swapchain's own, which is what the window system chose rather than what the renderer would
+    /// have liked: this backend's surface prefers an unsigned-normalised image, because the legacy path
+    /// encodes its own output. A pipeline built for anything else draws into it invalidly.
+    /// </remarks>
+    public RhiTextureFormat SurfaceFormat => _offscreen.Length > 0
+        ? _offscreen[0].Format
+        : _swapchain is { } swapchain
+            ? VulkanRhiTranslation.TextureFormat(swapchain.Format)
+            : RhiTextureFormat.Bgra8Unorm;
+
     /// <summary>Gives this device somewhere to draw when there is no window to present to.</summary>
     /// <param name="width">The frame's width in pixels.</param>
     /// <param name="height">Its height.</param>

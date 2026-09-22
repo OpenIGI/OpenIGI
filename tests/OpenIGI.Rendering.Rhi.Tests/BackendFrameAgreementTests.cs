@@ -121,7 +121,7 @@ public sealed class BackendFrameAgreementTests(ITestOutputHelper output)
     {
         try
         {
-            using VulkanRhi vulkan = VulkanRhi.CreateOffscreen(Size, Size, GraphicsDevice.PresentFormat);
+            using VulkanRhi vulkan = VulkanRhi.CreateOffscreen(Size, Size, GraphicsDevice.DefaultPresentFormat);
 
             using (GraphicsDevice device = new(vulkan.Device, new DisplayMode(Size, Size, 32, 60)))
             {
@@ -143,7 +143,7 @@ public sealed class BackendFrameAgreementTests(ITestOutputHelper output)
         try
         {
             using WebGpuRhiDevice rhi = WebGpuRhiDevice.Create();
-            rhi.AttachOffscreen(Size, Size, GraphicsDevice.PresentFormat);
+            rhi.AttachOffscreen(Size, Size, GraphicsDevice.DefaultPresentFormat);
 
             using (GraphicsDevice device = new(rhi, new DisplayMode(Size, Size, 32, 60)))
             {

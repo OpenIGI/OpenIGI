@@ -29,7 +29,8 @@ public sealed partial class GraphicsDevice
     private CardPipeline? _cardPipeline;
     private IRhiCommandEncoder? _cardEncoder;
     private IRhiRenderPassEncoder? _cardPass;
-    private SurfaceMaterial _cardMaterial;
+    /// <summary>What the surfaces being drawn are made of, until the next override.</summary>
+    private SurfaceMaterial _material = SurfaceMaterial.Default;
 
     /// <summary>Gets whether a card capture is open, which routes every mesh draw into it.</summary>
     private bool CapturingCards => _cardPass is not null;
@@ -151,7 +152,7 @@ public sealed partial class GraphicsDevice
     private bool DrawCard(in MeshDrawCall call, in Matrix4f modelViewProjection)
     {
         Span<float> push = stackalloc float[CardPushBlock.Floats];
-        CardPushBlock.Write(push, modelViewProjection, _cardMaterial);
+        CardPushBlock.Write(push, modelViewProjection, _material);
 
         // No frame group: a card pipeline reads the material and nothing else, and binding a group its
         // layout does not declare is refused.

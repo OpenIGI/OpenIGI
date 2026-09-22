@@ -59,6 +59,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
         _device = device;
         CurrentMode = mode;
+        PresentFormat = device.SurfaceFormat;
 
         Capabilities = new GraphicsCapabilities(
             TextureUnits: 8,
@@ -66,9 +67,9 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
             SupportsNonPowerOfTwoTextures: true,
             $"{device.AdapterName} (RHI)")
         {
-            // The deferred stack has not moved onto this path yet, and a device that claimed otherwise
-            // would have everything above it draw a frame nothing here can finish.
-            SupportsSceneCapture = false,
+            // The G-buffer, the shading over it and the resolve are here; the passes that are not are
+            // named through UnimplementedSettings rather than drawn wrongly.
+            SupportsSceneCapture = true,
             SupportsFloatRenderTargets = true,
 
             // The compute seam is the deferred stack's, and none of it has moved onto this path. Saying
@@ -100,9 +101,26 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
     /// <summary>Gets the format the frame is presented in.</summary>
     /// <remarks>
-    /// The surface's own, and stated here because every pipeline drawing into it has to be built for it.
+    /// <para>
+    /// The device's own, asked once when this is built: every pipeline drawing into a frame has to be
+    /// built for the frame's format, and the window system chooses it. A desktop swapchain here hands
+    /// out an unsigned-normalised image because the legacy path encodes its own output; an offscreen
+    /// target is whatever it was attached as; a browser canvas may be sRGB.
+    /// </para>
+    /// <para>
+    /// It was a constant, and a constant is what a pipeline built for sRGB and pointed at an
+    /// unsigned-normalised swapchain is: refused by the validation layer, and a frame with its gamma
+    /// applied twice by anything that let it through.
+    /// </para>
     /// </remarks>
-    public static RhiTextureFormat PresentFormat => RhiTextureFormat.Bgra8UnormSrgb;
+    public RhiTextureFormat PresentFormat { get; }
+
+    /// <summary>The format an offscreen frame is taken in when nothing else says.</summary>
+    /// <remarks>
+    /// Only for a caller attaching its own offscreen target — a headless capture, a test — which has no
+    /// window to ask. A device presenting to one reads <see cref="PresentFormat"/> instead.
+    /// </remarks>
+    public static RhiTextureFormat DefaultPresentFormat => RhiTextureFormat.Bgra8UnormSrgb;
 
     /// <summary>Gets the format of the depth buffer the direct path draws against.</summary>
     public static RhiTextureFormat DepthFormat => RhiTextureFormat.Depth32Float;
@@ -224,6 +242,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         _encoder?.Dispose();
 
         DisposeCardAtlas();
+        DisposeDeferred();
         _profiler.Dispose();
         _cubeGroup.Dispose();
         _cube.Dispose();

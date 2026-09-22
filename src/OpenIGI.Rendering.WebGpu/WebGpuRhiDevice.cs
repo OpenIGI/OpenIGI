@@ -107,6 +107,16 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
 
     /// <inheritdoc/>
     /// <remarks>
+    /// What the canvas or the offscreen target was configured as. A browser hands out an sRGB image
+    /// where this backend's desktop counterpart hands out an unsigned-normalised one, which is exactly
+    /// why the shared renderer asks rather than assuming.
+    /// </remarks>
+    public RhiTextureFormat SurfaceFormat => _offscreen.Count > 0
+        ? _offscreen[0].Format
+        : _surface?.Format ?? RhiTextureFormat.Bgra8Unorm;
+
+    /// <inheritdoc/>
+    /// <remarks>
     /// Null for now. wgpu-native does offer ray query as an extension of its own, so this is a gap to
     /// fill rather than a thing the backend cannot do — see the adapter report, which already says
     /// whether the feature is there.

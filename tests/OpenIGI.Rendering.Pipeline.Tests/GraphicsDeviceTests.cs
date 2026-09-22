@@ -19,19 +19,34 @@ public sealed class GraphicsDeviceTests
     private static readonly Bgra32 White = new(255, 255, 255, 255);
 
     [Fact]
-    public void It_reports_the_direct_path_and_names_what_it_does_not_do()
+    public void It_offers_the_deferred_frame_and_names_what_it_still_does_not_do()
     {
-        // The question everything above asks before drawing the remaster's frame. Answering it truthfully
-        // is what makes a device that draws only the direct path usable rather than broken.
+        // The question everything above asks before drawing the remaster's frame. The G-buffer, the
+        // shading and the resolve are here; the passes that are not are NAMED rather than drawn wrongly,
+        // which is what makes a half-finished device usable rather than misleading.
         using RecordingRhiDevice rhi = new();
         using GraphicsDevice device = Open(rhi);
 
-        Assert.False(device.Capabilities.SupportsSceneCapture);
+        Assert.True(device.Capabilities.SupportsSceneCapture);
         Assert.False(device.Capabilities.SupportsCompute);
-        Assert.False(device.BeginSceneCapture(default));
 
         Assert.NotEmpty(device.Capabilities.UnimplementedSettings);
         Assert.Contains("r_shadows", device.Capabilities.UnimplementedSettings);
+    }
+
+    [Fact]
+    public void A_capture_that_is_not_deferred_is_declined()
+    {
+        // Which is how the game falls back to the direct path rather than being handed a frame this
+        // cannot finish: there is no forward HDR path here, only the deferred one.
+        using RecordingRhiDevice rhi = new();
+        using GraphicsDevice device = Open(rhi);
+
+        Assert.False(device.BeginSceneCapture(default));
+        Assert.False(device.BeginSceneCapture(new SceneTargetDescription(64, 64)));
+        Assert.True(device.BeginSceneCapture(new SceneTargetDescription(64, 64, Deferred: true)));
+
+        device.EndSceneCapture();
     }
 
     [Fact]

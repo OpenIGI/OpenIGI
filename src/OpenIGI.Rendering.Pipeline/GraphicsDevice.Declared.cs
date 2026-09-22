@@ -77,32 +77,6 @@ public sealed partial class GraphicsDevice
     public TextureHandle SceneColour => TextureHandle.None;
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// False, always. It is the question everything above asks before drawing the remaster's frame, and
-    /// answering it truthfully is what makes a device that draws only the direct path usable rather than
-    /// broken.
-    /// </remarks>
-    public bool BeginSceneCapture(in SceneTargetDescription description) => false;
-
-    /// <inheritdoc/>
-    public void EndSceneCapture()
-    {
-        // Nothing was begun, so there is nothing to end.
-    }
-
-    /// <inheritdoc/>
-    public void ResolveScene(in PostProcessSettings post)
-    {
-        // The direct path draws straight into the back buffer; there is nothing to resolve.
-    }
-
-    /// <inheritdoc/>
-    public void BeginPass(ScenePass pass) => CurrentPass = pass;
-
-    /// <inheritdoc/>
-    public void EndPass() => CurrentPass = ScenePass.None;
-
-    /// <inheritdoc/>
     public bool BeginShadowCascade(int cascade) => false;
 
     /// <inheritdoc/>
@@ -156,7 +130,7 @@ public sealed partial class GraphicsDevice
     /// Kept for the card capture, which writes it into every page it draws. The shading paths that
     /// would otherwise read it have not moved onto this device yet.
     /// </remarks>
-    public void SetMaterialOverride(in SurfaceMaterial material) => _cardMaterial = material;
+    public void SetMaterialOverride(in SurfaceMaterial material) => _material = material;
 
     /// <inheritdoc/>
     public void SetPaintedSky(bool painted)
@@ -164,9 +138,11 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
-    public void SetAlphaHash(float seed)
-    {
-    }
+    /// <remarks>
+    /// Kept for the geometry pass, which dithers a cut-out's alpha against it so that a surface fading
+    /// out of the world does so in a pattern the temporal resolve can average rather than in a hard step.
+    /// </remarks>
+    public void SetAlphaHash(float seed) => _alphaHashSeed = seed;
 
     /// <inheritdoc/>
     public void SetTextureDetail(TextureHandle diffuse, TextureHandle detail)

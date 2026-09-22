@@ -103,21 +103,39 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The cascades themselves are not drawn here — there is no shadow map on this path, and
+    /// <c>r_shadows</c> says so. What is kept is the two things that arrive with them and that the
+    /// shading cannot work without: how a depth becomes a view position, and how a view direction
+    /// becomes a world one.
+    /// </remarks>
     public void SetShadows(
         in ShadowSettings settings,
         ReadOnlySpan<ShadowCascade> cascades,
         in DepthUnprojection unprojection,
         Matrix3f viewToWorld)
     {
+        _unprojection = unprojection;
+        _viewToWorld = viewToWorld;
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The resolve itself has not moved onto this path and <c>r_taa</c> says so. The camera position
+    /// arrives with it, and the shading needs that to turn a view-space position into a world one.
+    /// </remarks>
     public void SetTemporalAntiAliasing(
         in TemporalAaSettings settings,
         in Matrix4f projection,
         Vector3d cameraPosition,
         Matrix3f viewToWorld)
     {
+        _cameraPosition = new Vector3f(
+            (float)cameraPosition.X,
+            (float)cameraPosition.Y,
+            (float)cameraPosition.Z);
+
+        _viewToWorld = viewToWorld;
     }
 
     /// <inheritdoc/>

@@ -57,6 +57,13 @@ public sealed class RecordingRhiDevice : IRhiDevice
 
     /// <inheritdoc/>
     /// <remarks>
+    /// The format a real swapchain most often hands out, so a renderer built against this records the
+    /// pipelines it would record on a desktop.
+    /// </remarks>
+    public RhiTextureFormat SurfaceFormat { get; init; } = RhiTextureFormat.Bgra8Unorm;
+
+    /// <inheritdoc/>
+    /// <remarks>
     /// Null whatever <see cref="RhiFeatures.RayQuery"/> says: recording a trace would mean recording an
     /// acceleration structure, and a pass that stands down without one is exactly what wants testing.
     /// </remarks>
