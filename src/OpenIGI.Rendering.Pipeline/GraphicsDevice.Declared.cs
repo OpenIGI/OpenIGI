@@ -112,24 +112,6 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
-    public bool BeginCardCapture(int width, int height) => false;
-
-    /// <inheritdoc/>
-    public void SetCardPage(int x, int y, int width, int height)
-    {
-        // No capture is open.
-    }
-
-    /// <inheritdoc/>
-    public void EndCardCapture()
-    {
-        // No capture is open.
-    }
-
-    /// <inheritdoc/>
-    public void ReadCardAtlas(int attachment, Span<Bgra32> destination) => destination.Clear();
-
-    /// <inheritdoc/>
     public bool TryGetSkyIrradiance(Span<float> coefficients) => false;
 
     /// <inheritdoc/>
@@ -170,9 +152,11 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
-    public void SetMaterialOverride(in SurfaceMaterial material)
-    {
-    }
+    /// <remarks>
+    /// Kept for the card capture, which writes it into every page it draws. The shading paths that
+    /// would otherwise read it have not moved onto this device yet.
+    /// </remarks>
+    public void SetMaterialOverride(in SurfaceMaterial material) => _cardMaterial = material;
 
     /// <inheritdoc/>
     public void SetPaintedSky(bool painted)

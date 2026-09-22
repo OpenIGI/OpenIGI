@@ -223,6 +223,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         _pass?.EndPass();
         _encoder?.Dispose();
 
+        DisposeCardAtlas();
         _profiler.Dispose();
         _cubeGroup.Dispose();
         _cube.Dispose();

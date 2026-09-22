@@ -217,13 +217,21 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             return;
         }
 
+        MeshDrawCall call = Call(mesh, indexOffset, indexCount, diffuse, lightmap, blend);
+
+        if (CapturingCards)
+        {
+            DrawCard(call, _projection * modelView);
+            return;
+        }
+
         Span<float> push = stackalloc float[ForwardPushBlock.Floats];
         WriteForward(push, modelView, blend, lightmap.IsValid);
 
         _meshes.Draw(
             Pass(),
             _pipelines.ForState(_depthState, _cullMode, blend, _alphaReference),
-            Call(mesh, indexOffset, indexCount, diffuse, lightmap, blend),
+            call,
             System.Runtime.InteropServices.MemoryMarshal.AsBytes(push),
             _frameCounter,
             _cubeGroup);
@@ -242,6 +250,14 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
 
         if (ranges.IsEmpty)
         {
+            return;
+        }
+
+        if (CapturingCards)
+        {
+            // A capture draws the whole model into its page: the ranges are a frame's material batching,
+            // and a page holds one material by construction.
+            DrawCard(Call(mesh, 0, 0, diffuse, lightmap, blend), _projection * modelView);
             return;
         }
 
