@@ -120,6 +120,26 @@
           }
         }
       ]
+    },
+    {
+      "id": "UpscaleRejectShading",
+      "source": "TemporalUpscale/RejectShading.slang",
+      "variants": [
+        {
+          "name": "group16",
+          "defines": {
+            "OPENIGI_UPSCALE_GROUP": "16"
+          },
+          "targets": [ "Spirv" ]
+        },
+        {
+          "name": "group8",
+          "defines": {
+            "OPENIGI_UPSCALE_GROUP": "8"
+          },
+          "targets": [ "Spirv" ]
+        }
+      ]
     }
   ]
 }

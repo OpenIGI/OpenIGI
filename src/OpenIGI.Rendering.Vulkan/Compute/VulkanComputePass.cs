@@ -216,6 +216,32 @@ internal sealed unsafe class VulkanComputePass : IDisposable
         ReadOnlySpan<ComputeBindingKind> bindings,
         int parameterBytes,
         int framesInFlight)
+        : this(vk, device, allocator, module, ShaderVariant.Default, bindings, parameterBytes, framesInFlight)
+    {
+    }
+
+    /// <summary>Initialises a pass from one variant of a compute module.</summary>
+    /// <param name="vk">The core Vulkan API.</param>
+    /// <param name="device">The device the pass lives on.</param>
+    /// <param name="allocator">The allocator its parameter buffers come from.</param>
+    /// <param name="module">The compute module.</param>
+    /// <param name="variant">
+    /// Which compiled form to load. A module whose group size sizes its shared memory is built once per
+    /// size, and the caller picks between them from what the adapter reports it allows.
+    /// </param>
+    /// <param name="bindings">What each binding holds, in the order the shader declares them.</param>
+    /// <param name="parameterBytes">How large the parameter block is. Zero for a pass that takes none.</param>
+    /// <param name="framesInFlight">How many frames may be recorded before one completes.</param>
+    /// <exception cref="GraphicsDeviceException">The pass could not be created.</exception>
+    public VulkanComputePass(
+        Vk vk,
+        VulkanDevice device,
+        VulkanAllocator allocator,
+        ShaderModuleId module,
+        ShaderVariant variant,
+        ReadOnlySpan<ComputeBindingKind> bindings,
+        int parameterBytes,
+        int framesInFlight)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
@@ -230,12 +256,12 @@ internal sealed unsafe class VulkanComputePass : IDisposable
 
         _splitSamplers = true;
 
-        ShaderReflection reflection = ShaderCatalog.GetReflection(module);
+        ShaderReflection reflection = ShaderCatalog.GetReflection(module, variant);
         _entryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Compute).Name;
         _module = new VulkanShaderModule(
             vk,
             _device,
-            ShaderCatalog.GetSpirv(module).Span,
+            ShaderCatalog.GetSpirv(module, variant).Span,
             ShaderStage.Compute,
             _entryPoint);
 

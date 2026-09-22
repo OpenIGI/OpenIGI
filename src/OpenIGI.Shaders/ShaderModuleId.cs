@@ -93,4 +93,7 @@ public enum ShaderModuleId
 
     /// <summary>Volumetric fog: each column accumulated front to back into what a pixel sees.</summary>
     FogIntegrate,
+
+    /// <summary>temporal upscaler: how much of the reprojected history this frame's shading contradicts.</summary>
+    UpscaleRejectShading,
 }
