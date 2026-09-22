@@ -45,7 +45,15 @@ try
         string path = Path.Combine(generated, file.FileName);
         byte[] wanted = Encoding.UTF8.GetBytes(file.Text);
         bool exists = File.Exists(path);
-        bool same = exists && File.ReadAllBytes(path).AsSpan().SequenceEqual(wanted);
+
+        // Compared with line endings normalised, because the working tree's are not the repository's:
+        // this repository stores LF and a Windows checkout can hold CRLF, so a byte comparison would
+        // call every file stale on one machine and current on the next. What is written keeps the
+        // platform's own endings; git normalises them back on the way in.
+        bool same = exists && string.Equals(
+            Normalise(File.ReadAllText(path)),
+            Normalise(file.Text),
+            StringComparison.Ordinal);
 
         if (!same)
         {
@@ -83,6 +91,8 @@ catch (WebGpuBindException error)
     Console.Error.WriteLine(error.Message);
     return 2;
 }
+
+static string Normalise(string text) => text.Replace("\r\n", "\n", StringComparison.Ordinal);
 
 static string Locate()
 {
