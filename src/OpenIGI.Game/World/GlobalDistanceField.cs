@@ -1,6 +1,7 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
+using OpenIGI.Shaders;
 using InstanceView = OpenIGI.Game.World.SceneDistanceField.InstanceView;
 
 namespace OpenIGI.Game.World;
@@ -171,7 +172,8 @@ public sealed class GlobalDistanceField : IDisposable
                 VolumeFormat.R8,
                 "sdf.clipmaps");
 
-            ComputeShaderHandle build = device.CreateComputeShader(BuildSource, "sdf.clipmap.build");
+            ComputeShaderHandle build = device.CreateComputeShader(
+                ShaderModuleId.FieldClipmapBuild, ShaderVariant.Default, "sdf.clipmap.build");
 
             int instanceCount = Math.Max(scene.InstanceCount, 1);
             StorageBufferHandle instances = device.CreateStorageBuffer(
@@ -239,7 +241,8 @@ public sealed class GlobalDistanceField : IDisposable
 
         try
         {
-            shader = device.CreateComputeShader(BuildSource, "sdf.clipmap.build");
+            shader = device.CreateComputeShader(
+                ShaderModuleId.FieldClipmapBuild, ShaderVariant.Default, "sdf.clipmap.build");
             log.Information(LogCategory, "The clipmap build shader compiles.");
             return true;
         }
@@ -564,141 +567,4 @@ public sealed class GlobalDistanceField : IDisposable
         return Math.Clamp(index, 0, cells - 1);
     }
 
-    /// <summary>The compute shader that fills one clipmap level.</summary>
-    /// <remarks>
-    /// One invocation per voxel. It finds its own cell, walks the objects that reach into it, transforms
-    /// its world position into each object's own space, samples that object's slot of the atlas, and
-    /// keeps the smallest — which is the union of distance fields, and the reason a union is free.
-    /// </remarks>
-    private const string BuildSource =
-        """
-        #version 430 core
-
-        layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
-
-        // Every level of the clipmap, stacked along z.
-        layout(r8, binding = 0) uniform writeonly image3D uClipmaps;
-
-        // Every model's field, packed side by side. Sampled rather than fetched, so the hardware's
-        // trilinear filter does the interpolation between voxels for nothing.
-        uniform sampler3D uAtlas;
-
-        // Seven vec4s per instance. Padded to vec4 throughout: std430 gives a vec3 a four-float
-        // alignment but a three-float stride on the CPU, so a struct mixing the two reads correctly for
-        // its first element and slides for every one after it.
-        layout(std430, binding = 0) readonly buffer Instances
-        {
-            vec4 uInstances[];
-        };
-
-        layout(std430, binding = 1) readonly buffer CellOffsets
-        {
-            int uCellOffsets[];
-        };
-
-        layout(std430, binding = 2) readonly buffer CellIndices
-        {
-            int uCellIndices[];
-        };
-
-        uniform int uResolution;
-        uniform int uLevel;
-        uniform int uCellsPerAxis;
-        uniform float uVoxelSize;
-        uniform float uCellSize;
-        uniform float uRange;
-
-        // This level's minimum corner, relative to the level origin every float here is measured from.
-        uniform vec3 uOrigin;
-
-        const int kFloatsPerInstance = 7;
-
-        float SampleInstance(int instance, vec3 world)
-        {
-            int at = instance * kFloatsPerInstance;
-
-            vec4 row0 = uInstances[at + 0];
-            vec4 row1 = uInstances[at + 1];
-            vec4 row2 = uInstances[at + 2];
-            vec4 slotCorner = uInstances[at + 3];
-            vec4 slotSize = uInstances[at + 4];
-            vec4 fieldOrigin = uInstances[at + 5];
-            vec4 voxelSize = uInstances[at + 6];
-
-            // A field baked with a range of zero encodes nothing: every voxel decodes to zero, which
-            // would read as a surface everywhere inside its slot and shadow whatever stands there. Two
-            // such degenerate fields exist in the data. Treat one as absent -- it contributes no distance
-            // to the union rather than a false one.
-            if (slotCorner.w <= 0.0)
-            {
-                return 1e6;
-            }
-
-            // Into the model's own space. The rows carry the world-to-local rotation and the fourth
-            // components carry where the object stands.
-            vec3 offset = world - vec3(row0.w, row1.w, row2.w);
-            vec3 local = vec3(dot(row0.xyz, offset), dot(row1.xyz, offset), dot(row2.xyz, offset));
-
-            // Where that lands in the object's own field, in voxels.
-            vec3 voxel = (local - fieldOrigin.xyz) / voxelSize.xyz;
-
-            // Clamped half a texel INSIDE the slot, which is load-bearing. The slots are packed
-            // adjacent, so a linear fetch at a slot's edge blends in whatever model was packed beside
-            // it -- and the two have no geometric relationship whatever. Without this inset every
-            // object in the level wears a thin halo of some unrelated object's surface.
-            vec3 clamped = clamp(voxel, vec3(0.5), slotSize.xyz - vec3(0.5));
-
-            vec3 uvw = (slotCorner.xyz + clamped) / vec3(textureSize(uAtlas, 0));
-            float encoded = texture(uAtlas, uvw).r;
-            float distance = ((encoded * 2.0) - 1.0) * slotCorner.w;
-
-            // How far the sample had to be dragged back inside the slot, in local metres.
-            float beyond = length((clamped - voxel) * voxelSize.xyz);
-
-            // Outside its own slot an object's field holds no information, so the honest conservative
-            // distance is the distance to the slot itself and nothing more. A slot is baked a margin
-            // larger than the object's box, so its outer texels read near the field's full range -- and
-            // the previous form added that range on top of the distance to the slot, handing back
-            // clearance that is not there and letting a sphere trace step through the surface the slot
-            // contains. The exact field this resamples composites the same way, taking the distance to an
-            // object's bounds for any point outside them and only sampling the field within. Inside the
-            // slot the outside distance is zero and the field value stands, sign and all.
-            return beyond > 0.0 ? beyond : distance;
-        }
-
-        void main()
-        {
-            ivec3 at = ivec3(gl_GlobalInvocationID);
-
-            if (any(greaterThanEqual(at, ivec3(uResolution))))
-            {
-                return;
-            }
-
-            // The voxel's centre, relative to the level origin.
-            vec3 world = uOrigin + ((vec3(at) + 0.5) * uVoxelSize);
-
-            ivec3 cell = clamp(
-                ivec3(floor((world - uOrigin) / uCellSize)),
-                ivec3(0),
-                ivec3(uCellsPerAxis - 1));
-
-            int cellIndex = ((cell.z * uCellsPerAxis) + cell.y) * uCellsPerAxis + cell.x;
-            int first = uCellOffsets[cellIndex];
-            int last = uCellOffsets[cellIndex + 1];
-
-            float nearest = uRange;
-
-            for (int i = first; i < last; i++)
-            {
-                nearest = min(nearest, SampleInstance(uCellIndices[i], world));
-            }
-
-            // Encoded exactly as the mesh fields are, centred so the sign survives. A trace decodes it
-            // the same way, which is what lets one trace function read either.
-            float encoded = (clamp(nearest / uRange, -1.0, 1.0) * 0.5) + 0.5;
-
-            imageStore(uClipmaps, ivec3(at.xy, (uLevel * uResolution) + at.z), vec4(encoded, 0.0, 0.0, 0.0));
-        }
-        """;
 }

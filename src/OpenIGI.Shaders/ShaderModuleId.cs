@@ -159,4 +159,7 @@ public enum ShaderModuleId
 
     /// <summary>Distance field: one clipmap level read back for the validation.</summary>
     FieldClipmapRead,
+
+    /// <summary>Distance field: the per-mesh fields resampled into one clipmap level.</summary>
+    FieldClipmapBuild,
 }

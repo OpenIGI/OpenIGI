@@ -313,6 +313,16 @@
           "targets": [ "Spirv" ]
         }
       ]
+    },
+    {
+      "id": "FieldClipmapBuild",
+      "source": "Field/ClipmapBuild.slang",
+      "variants": [
+        {
+          "name": "default",
+          "targets": [ "Spirv" ]
+        }
+      ]
     }
   ]
 }
