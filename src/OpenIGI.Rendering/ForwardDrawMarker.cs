@@ -1,4 +1,4 @@
-namespace OpenIGI.Rendering.Vulkan;
+namespace OpenIGI.Rendering;
 
 /// <summary>
 /// The one number a forward draw carries that says what it <em>is</em>: the world, the first-person rig,
@@ -23,7 +23,7 @@ namespace OpenIGI.Rendering.Vulkan;
 /// what the extra value buys is the shading branch.
 /// </para>
 /// </remarks>
-internal static class ForwardDrawMarker
+public static class ForwardDrawMarker
 {
     /// <summary>Anything not opaque: the draw keeps its own alpha, because the blend reads it.</summary>
     public const float Translucent = -1f;

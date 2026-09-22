@@ -1,5 +1,6 @@
 ﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
+using OpenIGI.Rendering.Mesh3D;
 using OpenIGI.Rendering.Vulkan.Meshes;
 using OpenIGI.Rendering.Vulkan.Textures;
 using Silk.NET.Vulkan;
@@ -812,106 +813,37 @@ public sealed partial class VulkanGraphicsDevice
         BindMeshTextures(pipeline.PipelineLayout, diffuse, lightmap);
         BindEnvironmentCube(pipeline, cube);
 
-        // The forward and direct pipelines take the combined model-view-projection plus the lit
-        // view-model block; their shader applies the OpenGL-to-Vulkan clip correction.
-        Matrix4f mvp = _projection * modelView;
-        float* data = stackalloc float[32];
-        mvp.CopyColumnMajorTo(new Span<float>(data, 16));
+        // The block itself is written by OpenIGI.Rendering, from a state rather than from this device:
+        // every float of it is spoken for, several slots mean different things depending on what the
+        // draw is, and a slot written with the wrong one shades plausibly and incorrectly. Stated as a
+        // function it can simply be checked, and there is one copy of it rather than one per backend.
+        //
+        // The marker is worked out first only so that the lamps are not gathered for a draw that will
+        // not read them, which is every draw but the lit rig's.
+        bool litViewModel = ForwardDrawMarker.IsStudioRig(
+            ForwardDrawMarker.For(blend, _firstPersonGeometry, _lighting.Model));
 
-        // What this draw is: the world, the rig, or something translucent — and, for the rig, whether
-        // there is a dynamic light to key it with. The studio key is a remaster light and the baked model
-        // has none, which is what used to draw the vanilla rig as a black silhouette. See
-        // ForwardDrawMarker.
-        data[16] = ForwardDrawMarker.For(blend, _firstPersonGeometry, _lighting.Model);
-        bool litViewModel = ForwardDrawMarker.IsStudioRig(data[16]);
+        ForwardDrawState drawState = new(
+            _projection,
+            _lighting,
+            _fog,
+            _fogTarget,
+            new DetailFade(_detailFade.Scale, _detailFade.Offset, _detailFade.Slope, _detailFade.Mode),
+            _modelAmbient,
+            _vertexSun,
+            _lightmapScale,
+            _poseBlend,
+            RenderCVars.EffectiveExposure * _lastAdaptedExposure,
+            litViewModel ? LampLightAtEye() : default,
+            _firstPersonGeometry);
 
-        // The lit view-model path, for the studio-lit rig only: its lighting is designed in display terms
-        // (the retail look), so it is divided by the exposure the resolve will apply — written raw, the
-        // eye adaptation of a dim interior multiplied the arms into pure white.
-        float exposure = MathF.Max(RenderCVars.EffectiveExposure * _lastAdaptedExposure, 1e-3f);
-
-        // A world draw has no exposure to carry and puts the lightmap scale there instead -- the same
-        // scale the G-buffer path pushes in its material row, which this block has no room for
-        // otherwise. One unless a title's bakes are MODULATE2X or an HDR bake was encoded with headroom.
-        data[17] = litViewModel ? 1f / exposure : _lightmapScale;
-
-        // How much of the previous pose is in the position drawn. This block is the guaranteed 128 bytes
-        // to the last float, and the slot it takes used to carry "light this draw with the rig's key",
-        // which was the marker above written twice: a lit draw is exactly a first-person opaque one, and
-        // that is precisely the marker's own zero. The fragment stage reads the condition off the marker
-        // now, which frees this for the one number the vertex stage was missing.
-        data[18] = _poseBlend;
-
-        // The lamps standing around the player, added to the rig's key and fill. Without this the arms
-        // are lit by the SUN and nothing else: at noon that is right and at night it is a black key over
-        // a nearly black ambient, so the weapon stayed a silhouette while the player walked under a lit
-        // fitting with the wall behind them brightly lit by it. The rig is a studio rig by design and
-        // stays one — this only tells it how much light there is where it is standing.
-        Vector3f lamps = litViewModel ? LampLightAtEye() : default;
-        float lampFill = (lamps.X * 0.212639f) + (lamps.Y * 0.715169f) + (lamps.Z * 0.072192f);
-
-        // The rig's ambient level; for a world draw, the first component of the model-space direction
-        // towards the fixed-function sun, which the vertex stage reads with the two rows' spare w's
-        // below and which is zero unless SetVertexSun switched the lighting on for this run of draws.
-        data[19] = litViewModel ? _lighting.AmbientColour.Length + lampFill : _vertexSun.X;
-
-        if (_detailFade.Mode > 0f && !litViewModel)
-        {
-            // Terrain slides each vertex between levels of detail, and the slide is measured along the
-            // world axes from the eye, so the vertex stage needs the ramp and where the chunk's origin
-            // sits relative to the camera. The rows below carry the rotation for the lit rig's normal
-            // and the key colour, and a terrain chunk is never the rig, so they carry these instead;
-            // the first row's w -- zero for every other draw below -- is what says so.
-            //
-            // A chunk is drawn unrotated, so the model-view's rotation is the view's own and its
-            // transpose undoes it: the offset is that transpose applied to the model-view's translation,
-            // which is exactly what the OpenGL shader computed per vertex as the view position times
-            // the model-view's 3x3.
-            data[20] = _detailFade.Scale; data[21] = _detailFade.Offset; data[22] = _detailFade.Slope;
-            data[23] = _detailFade.Mode;
-            data[24] = (modelView.M11 * modelView.M14) + (modelView.M21 * modelView.M24) + (modelView.M31 * modelView.M34);
-            data[25] = (modelView.M12 * modelView.M14) + (modelView.M22 * modelView.M24) + (modelView.M32 * modelView.M34);
-            data[26] = (modelView.M13 * modelView.M14) + (modelView.M23 * modelView.M24) + (modelView.M33 * modelView.M34);
-            data[27] = 0f;
-            WriteFog(data, blend);
-        }
-        else
-        {
-            // The model-to-view rotation, row by row, each w carrying one channel of the key colour — the
-            // level's own sun tint plus whatever the lamps are contributing, so a weapon picks up the mood
-            // of the mission it is in and the colour of the light it is standing under. The key is read
-            // by the lit rig alone, so every other draw leaves the first w at zero: that is the terrain
-            // flag the vertex stage reads, and a sun tint there would morph the world. The other two
-            // w's are a world draw's remaining components of the direction towards the fixed-function
-            // sun, zero when it is not lit that way.
-            data[20] = modelView.M11; data[21] = modelView.M12; data[22] = modelView.M13;
-            data[23] = litViewModel ? _lighting.SunColour.X + lamps.X : 0f;
-
-            if (litViewModel)
-            {
-                data[24] = modelView.M21; data[25] = modelView.M22; data[26] = modelView.M23;
-                data[27] = _lighting.SunColour.Y + lamps.Y;
-                data[28] = modelView.M31; data[29] = modelView.M32; data[30] = modelView.M33;
-                data[31] = _lighting.SunColour.Z + lamps.Z;
-            }
-            else
-            {
-                // The second normal row carries the level's flat model light instead. A sub-mesh with a
-                // lightmap does not take it -- the original draws that one with Direct3D lighting off and
-                // the lightmap in the second stage, and this one with lighting on and the ambient as its
-                // only term (sub_49F1C0). White is the identity either way, so the shader multiplies
-                // unconditionally and nothing branches.
-                Vector3f tint = lightmap.IsValid ? Vector3f.One : _modelAmbient;
-                data[24] = tint.X; data[25] = tint.Y; data[26] = tint.Z;
-                data[27] = 0f;
-                // The third normal row and the key's blue are read by the lit rig and by nothing else —
-                // every other draw returns out of the fragment stage before it touches either — so this
-                // is where the frame's fog rides in. The rig itself is never fogged, which is the
-                // original's arrangement too: it is drawn on the shallow first-person layer, a hand's
-                // length from the eye, where the exponential has not begun.
-                WriteFog(data, blend);
-            }
-        }
+        float* data = stackalloc float[ForwardPushBlock.Floats];
+        ForwardPushBlock.Write(
+            new Span<float>(data, ForwardPushBlock.Floats),
+            drawState,
+            modelView,
+            blend,
+            lightmap.IsValid);
 
         vk.CmdPushConstants(
             cmd,
@@ -920,37 +852,6 @@ public sealed partial class VulkanGraphicsDevice
             0,
             sizeof(float) * 32,
             data);
-    }
-
-    /// <summary>Writes the frame's fog into the last row of the forward push block.</summary>
-    /// <param name="data">The block being filled.</param>
-    /// <param name="blend">The draw's blend, which decides what colour it fogs towards.</param>
-    /// <remarks>
-    /// <para>
-    /// The colour follows the blend the way <c>sub_5144E0</c> sets <c>FOGCOLOR</c> per blend mode: an
-    /// additive pass fogs to black so that a surface drawn as several passes is fogged once and not once
-    /// per pass. The density is per metre of view depth, and zero means the vertex stage leaves the
-    /// draw alone.
-    /// </para>
-    /// <para>
-    /// <b>And the fog TARGET arrives here rather than in the pipeline.</b> It was built as a
-    /// specialization constant -- id 12, a dimension of the pipeline key, three variants of every
-    /// pipeline in the world -- at a time when the fog colour was a constant too. The colour has since
-    /// become push data, which is the row this writes, and the target was left behind: the game set it,
-    /// the device stored it, the key carried it, and no shader ever declared <c>constant_id = 12</c> to
-    /// read it. So I.G.I. 2's ground fogged all three of its passes to the scene's colour, and the
-    /// lightmap pass -- which should fade to white, the identity of what it multiplies -- darkened the
-    /// far hills instead of letting them go to haze. It costs nothing here: the row is written per draw
-    /// already.
-    /// </para>
-    /// </remarks>
-    private unsafe void WriteFog(float* data, BlendMode blend)
-    {
-        Vector3f colour = _fog.ColourFor(blend, _fogTarget);
-        data[28] = colour.X;
-        data[29] = colour.Y;
-        data[30] = colour.Z;
-        data[31] = _fog.DensityPerMetre;
     }
 
     /// <summary>How much light the level's lamps put on the first-person rig, in the same units as the sun.</summary>

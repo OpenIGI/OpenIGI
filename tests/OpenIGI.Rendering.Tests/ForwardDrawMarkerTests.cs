@@ -1,7 +1,6 @@
-using OpenIGI.Rendering;
 using Xunit;
 
-namespace OpenIGI.Rendering.Vulkan.Tests;
+namespace OpenIGI.Rendering.Tests;
 
 /// <summary>
 /// Which draws are shaded by the remaster's studio key, and which are not — the number the forward push
