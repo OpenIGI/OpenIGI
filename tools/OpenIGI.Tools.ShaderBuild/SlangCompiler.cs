@@ -36,6 +36,12 @@ public sealed class SlangCompiler
 {
     private readonly string _executable;
 
+    /// <summary>Gets the warnings every compile so far has reported, in the order they arrived.</summary>
+    public List<string> Warnings { get; } = [];
+
+    /// <summary>The line separator slangc writes its diagnostics with.</summary>
+    private const char Newline = (char)10;
+
     /// <summary>Initialises a new instance of the <see cref="SlangCompiler"/> class.</summary>
     /// <param name="executable">The full path to <c>slangc</c>.</param>
     public SlangCompiler(string executable)
@@ -132,6 +138,19 @@ public sealed class SlangCompiler
             throw new ShaderBuildException(
                 $"{Path.GetFileName(sourcePath)} has overlapping bindings, which is invalid on the WGSL "
                 + $"target. Declare textures and samplers separately.{Environment.NewLine}{diagnostics}");
+        }
+
+        // Slang's warnings are worth reading rather than discarding. The one that matters most here is
+        // E31105: a storage image format the WGSL backend does not support is silently WIDENED to one
+        // it does, so the same module binds r8 on Vulkan and rgba32float in a browser. The reflection
+        // is taken from the SPIR-V compile and records the narrow format, so a WebGPU backend building
+        // layouts from it would disagree with its own shader.
+        foreach (string line in diagnostics.Split(Newline, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (line.Contains("warning", StringComparison.OrdinalIgnoreCase))
+            {
+                Warnings.Add($"{Path.GetFileName(sourcePath)} [{target}] {line.Trim()}");
+            }
         }
 
         byte[] code = File.ReadAllBytes(codePath);

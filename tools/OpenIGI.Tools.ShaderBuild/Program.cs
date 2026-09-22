@@ -39,6 +39,17 @@ try
     int stale = results.Count(result => result.State != ArtifactState.Unchanged);
     Console.WriteLine();
 
+    foreach (string warning in compiler.Warnings)
+    {
+        Console.WriteLine($"  {warning}");
+    }
+
+    if (compiler.Warnings.Count > 0)
+    {
+        Console.WriteLine();
+    }
+
+
     if (!checkOnly)
     {
         Console.WriteLine($"{results.Count} artefact(s), {stale} written.");
