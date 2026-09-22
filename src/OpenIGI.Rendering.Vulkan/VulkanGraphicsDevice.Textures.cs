@@ -103,6 +103,7 @@ public sealed partial class VulkanGraphicsDevice
         {
             _textureDescriptors.Forget(id);
             _meshTextureDescriptors.Forget(id);
+            _meshTextureDescriptorsSplit.Forget(id);
 
             // The pairing a diffuse held, and any pairing that named this map. Identifiers are never
             // reused, so a stale entry would mispair nothing -- but a session that loads mission after

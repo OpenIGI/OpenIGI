@@ -223,7 +223,7 @@ public sealed partial class VulkanGraphicsDevice
             targets[0], targets[1], targets[2], targets[3]);
 
         _cardPipeline = new CardPipeline(
-            _instance.Vk, _device, _shaderCompiler, _cardAtlas.RenderPass, _mesh3D.DescriptorSetLayout);
+            _instance.Vk, _device, _shaderCompiler, _cardAtlas.RenderPass, _mesh3D.CombinedTextureSetLayout);
 
         // Registered with the compute side, so the lighting passes can bind them by handle. That also
         // makes the device their owner: it frees everything it has registered.

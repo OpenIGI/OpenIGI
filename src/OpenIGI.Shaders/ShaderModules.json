@@ -12,6 +12,10 @@
     {
       "id": "Loading",
       "source": "Ui/Loading.slang"
+    },
+    {
+      "id": "Mesh3D",
+      "source": "World/Mesh3D.slang"
     }
   ]
 }

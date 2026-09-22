@@ -29,7 +29,6 @@ public sealed class AlphaReferenceShaderTests
     /// machine without the Vulkan SDK still checks.
     /// </remarks>
     [Theory]
-    [InlineData("mesh3d.frag")]
     [InlineData("gbuffer.frag")]
     [InlineData("shadow.frag")]
     public void Every_cut_out_shader_declares_the_same_constant(string name)
@@ -88,7 +87,6 @@ public sealed class AlphaReferenceShaderTests
     /// specialized.
     /// </remarks>
     [RequiresGlslcTheory]
-    [InlineData("mesh3d.frag")]
     [InlineData("gbuffer.frag")]
     [InlineData("shadow.frag")]
     public void Every_cut_out_shader_compiles(string name)
@@ -108,7 +106,6 @@ public sealed class AlphaReferenceShaderTests
 
     private static string SourceOf(string name) => name switch
     {
-        "mesh3d.frag" => Mesh3DShaderSource.Fragment,
         "gbuffer.frag" => DeferredShaderSource.GBufferFragment,
         "shadow.frag" => DeferredShaderSource.ShadowFragment,
         _ => throw new ArgumentOutOfRangeException(nameof(name), name, "Not a cut-out shader."),

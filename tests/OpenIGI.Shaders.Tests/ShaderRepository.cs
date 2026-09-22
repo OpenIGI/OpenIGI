@@ -11,6 +11,18 @@ internal static class ShaderRepository
     /// <summary>Gets the <c>src/OpenIGI.Shaders</c> directory.</summary>
     public static string ProjectDirectory { get; } = Path.Combine(Root(), "src", "OpenIGI.Shaders");
 
+    /// <summary>Reads one Slang source, for the invariants stated as text rather than as reflection.</summary>
+    /// <param name="relativePath">The source's path under <c>Source/</c>, with forward slashes.</param>
+    /// <returns>The source text.</returns>
+    public static string ReadSource(string relativePath)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(relativePath);
+        return File.ReadAllText(Path.Combine(
+            ProjectDirectory,
+            "Source",
+            relativePath.Replace('/', Path.DirectorySeparatorChar)));
+    }
+
     private static string Root()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);

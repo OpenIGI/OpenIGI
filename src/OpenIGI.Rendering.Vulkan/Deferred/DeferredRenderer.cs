@@ -200,11 +200,12 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             sizeof(float) * 20,
             presentRenderPass,
             0);
-        Forward = new Mesh3DPipeline(vk, device, compiler, _renderPass.Shading, DeferredRenderPass.ForwardSubpass);
+        Forward = new Mesh3DPipeline(vk, device, _renderPass.Shading, DeferredRenderPass.ForwardSubpass);
 
-        // Glazing, on the same subpass and drawn from the same vertex buffers. Built with the Forward
-        // pipeline's own set-0 layout, so a texture pairing cached for an opaque draw binds under either
-        // without being built twice. It records each pane pixel into a layer; what a pane REFLECTS is
+        // Glazing, on the same subpass and drawn from the same vertex buffers. Built with the COMBINED
+        // set-0 layout rather than the Forward pipeline's own: the forward mesh shader now comes from the
+        // shader library and binds a sampled image and a sampler apart, while this one is still GLSL and
+        // binds one combined object per texture. They share a layout again once glass moves too. It records each pane pixel into a layer; what a pane REFLECTS is
         // finished by GlassReflection, after the render pass closes and the lit frame becomes readable.
         Glass = new GlassPipeline(
             vk,
@@ -215,7 +216,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             DeferredRenderPass.ForwardSubpass,
             _renderPass.FrontLayer,
             _sampler,
-            Forward.DescriptorSetLayout,
+            Forward.CombinedTextureSetLayout,
             framesInFlight);
 
         GlassReflection = new GlassReflectionPass(vk, device, allocator, compiler, framesInFlight, _rayQuery);

@@ -27,4 +27,7 @@ public enum ShaderModuleId
 
     /// <summary>The loading backdrop: a held frame of the level, defocused and graded.</summary>
     Loading,
+
+    /// <summary>The world pipeline's forward shader: the original's direct-path look.</summary>
+    Mesh3D,
 }

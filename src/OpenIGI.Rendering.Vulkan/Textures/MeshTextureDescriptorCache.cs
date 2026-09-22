@@ -30,6 +30,7 @@ internal sealed unsafe class MeshTextureDescriptorCache : IDisposable
     private readonly Vk _vk;
     private readonly Device _device;
     private readonly DescriptorSetLayout _layout;
+    private readonly bool _combined;
     private readonly List<DescriptorPool> _pools = [];
     private readonly Dictionary<(uint Diffuse, uint Lightmap, uint Detail), Entry> _sets = [];
     private bool _disposed;
@@ -37,14 +38,26 @@ internal sealed unsafe class MeshTextureDescriptorCache : IDisposable
     /// <summary>Initialises a new instance of the <see cref="MeshTextureDescriptorCache"/> class.</summary>
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the pool lives on.</param>
-    /// <param name="layout">The three-sampler descriptor set layout the sets are allocated to.</param>
+    /// <param name="layout">The descriptor set layout the sets are allocated to.</param>
+    /// <param name="combined">
+    /// Whether to write one combined image sampler per texture rather than a sampled image and a
+    /// sampler apart.
+    /// </param>
     /// <exception cref="GraphicsDeviceException">The descriptor pool could not be created.</exception>
-    public MeshTextureDescriptorCache(Vk vk, Device device, DescriptorSetLayout layout)
+    /// <remarks>
+    /// Both shapes exist while the migration to the shader library is under way. A module in that
+    /// library must declare its texture and its sampler separately -- Slang's combined sampler takes
+    /// two binding slots on the WGSL target and collides with the next declaration -- so the forward
+    /// mesh pipeline binds the split shape, and the geometry, shadow, card and glass pipelines, still
+    /// compiled from GLSL, bind the combined one. The flag and the combined branch go when they move.
+    /// </remarks>
+    public MeshTextureDescriptorCache(Vk vk, Device device, DescriptorSetLayout layout, bool combined)
     {
         ArgumentNullException.ThrowIfNull(vk);
         _vk = vk;
         _device = device;
         _layout = layout;
+        _combined = combined;
 
         AddPool();
     }
@@ -82,57 +95,75 @@ internal sealed unsafe class MeshTextureDescriptorCache : IDisposable
 
         (DescriptorPool owner, DescriptorSet set) = Allocate();
 
-        DescriptorImageInfo* images = stackalloc DescriptorImageInfo[3];
-        images[0] = new DescriptorImageInfo
-        {
-            Sampler = diffuse.Sampler,
-            ImageView = diffuse.View,
-            ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
-        };
-        images[1] = new DescriptorImageInfo
-        {
-            Sampler = lightmap.Sampler,
-            ImageView = lightmap.View,
-            ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
-        };
-        images[2] = new DescriptorImageInfo
-        {
-            Sampler = detail.Sampler,
-            ImageView = detail.View,
-            ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
-        };
+        VulkanTexture[] textures = [diffuse, lightmap, detail];
 
-        WriteDescriptorSet* writes = stackalloc WriteDescriptorSet[3];
-        writes[0] = new WriteDescriptorSet
+        if (_combined)
         {
-            SType = StructureType.WriteDescriptorSet,
-            DstSet = set,
-            DstBinding = 0,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            PImageInfo = &images[0],
-        };
-        writes[1] = new WriteDescriptorSet
-        {
-            SType = StructureType.WriteDescriptorSet,
-            DstSet = set,
-            DstBinding = 1,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            PImageInfo = &images[1],
-        };
+            DescriptorImageInfo* images = stackalloc DescriptorImageInfo[3];
+            WriteDescriptorSet* combinedWrites = stackalloc WriteDescriptorSet[3];
+            for (uint slot = 0; slot < 3; slot++)
+            {
+                images[slot] = new DescriptorImageInfo
+                {
+                    Sampler = textures[slot].Sampler,
+                    ImageView = textures[slot].View,
+                    ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
+                };
+                combinedWrites[slot] = new WriteDescriptorSet
+                {
+                    SType = StructureType.WriteDescriptorSet,
+                    DstSet = set,
+                    DstBinding = slot,
+                    DescriptorType = DescriptorType.CombinedImageSampler,
+                    DescriptorCount = 1,
+                    PImageInfo = &images[slot],
+                };
+            }
 
-        writes[2] = new WriteDescriptorSet
+            _vk.UpdateDescriptorSets(_device, 3, combinedWrites, 0, null);
+        }
+        else
         {
-            SType = StructureType.WriteDescriptorSet,
-            DstSet = set,
-            DstBinding = 2,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            PImageInfo = &images[2],
-        };
+            // The image at the even slot and its sampler at the odd one after it.
+            DescriptorImageInfo* images = stackalloc DescriptorImageInfo[6];
+            WriteDescriptorSet* writes = stackalloc WriteDescriptorSet[6];
+            for (uint slot = 0; slot < 3; slot++)
+            {
+                uint image = slot * 2;
+                uint sampler = image + 1;
 
-        _vk.UpdateDescriptorSets(_device, 3, writes, 0, null);
+                images[image] = new DescriptorImageInfo
+                {
+                    ImageView = textures[slot].View,
+                    ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
+                };
+                images[sampler] = new DescriptorImageInfo
+                {
+                    Sampler = textures[slot].Sampler,
+                };
+
+                writes[image] = new WriteDescriptorSet
+                {
+                    SType = StructureType.WriteDescriptorSet,
+                    DstSet = set,
+                    DstBinding = image,
+                    DescriptorType = DescriptorType.SampledImage,
+                    DescriptorCount = 1,
+                    PImageInfo = &images[image],
+                };
+                writes[sampler] = new WriteDescriptorSet
+                {
+                    SType = StructureType.WriteDescriptorSet,
+                    DstSet = set,
+                    DstBinding = sampler,
+                    DescriptorType = DescriptorType.Sampler,
+                    DescriptorCount = 1,
+                    PImageInfo = &images[sampler],
+                };
+            }
+
+            _vk.UpdateDescriptorSets(_device, 6, writes, 0, null);
+        }
         _sets[key] = new Entry(owner, set);
         return set;
     }
@@ -219,9 +250,15 @@ internal sealed unsafe class MeshTextureDescriptorCache : IDisposable
 
     private void AddPool()
     {
-        DescriptorPoolSize poolSize = new()
+        DescriptorPoolSize* poolSizes = stackalloc DescriptorPoolSize[2];
+        poolSizes[0] = new DescriptorPoolSize
         {
-            Type = DescriptorType.CombinedImageSampler,
+            Type = _combined ? DescriptorType.CombinedImageSampler : DescriptorType.SampledImage,
+            DescriptorCount = SetsPerPool * 3,
+        };
+        poolSizes[1] = new DescriptorPoolSize
+        {
+            Type = DescriptorType.Sampler,
             DescriptorCount = SetsPerPool * 3,
         };
 
@@ -230,8 +267,8 @@ internal sealed unsafe class MeshTextureDescriptorCache : IDisposable
             SType = StructureType.DescriptorPoolCreateInfo,
             Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit,
             MaxSets = SetsPerPool,
-            PoolSizeCount = 1,
-            PPoolSizes = &poolSize,
+            PoolSizeCount = _combined ? 1u : 2u,
+            PPoolSizes = poolSizes,
         };
 
         DescriptorPool pool;

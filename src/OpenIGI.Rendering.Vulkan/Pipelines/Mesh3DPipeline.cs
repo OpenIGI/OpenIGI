@@ -2,6 +2,8 @@
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
+using ShaderStage = OpenIGI.Rendering.Vulkan.Shaders.ShaderStage;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
@@ -35,41 +37,40 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
     private readonly PipelineCache _pipelineCache;
     private readonly RenderPass _renderPass;
     private readonly uint _subpass;
-    private readonly VulkanShaderModule _vertex;
-    private readonly VulkanShaderModule _fragment;
+    private readonly VulkanShaderModule _shader;
+    private readonly string _vertexEntryPoint;
+    private readonly string _fragmentEntryPoint;
     private readonly Dictionary<Mesh3DPipelineKey, Pipeline> _pipelines = [];
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="Mesh3DPipeline"/> class.</summary>
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the pipelines live on.</param>
-    /// <param name="compiler">The shader compiler that turns the GLSL into SPIR-V.</param>
     /// <param name="renderPass">The render pass the pipelines are compatible with.</param>
     /// <param name="subpass">The subpass index within that render pass.</param>
     /// <exception cref="GraphicsDeviceException">The layout or shaders could not be created.</exception>
-    public Mesh3DPipeline(Vk vk, VulkanDevice device, ShaderCompiler compiler, RenderPass renderPass, uint subpass = 0)
+    public Mesh3DPipeline(Vk vk, VulkanDevice device, RenderPass renderPass, uint subpass = 0)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(compiler);
         _vk = vk;
         _device = device.Device;
         _pipelineCache = device.PipelineCache;
         _renderPass = renderPass;
         _subpass = subpass;
 
-        _vertex = new VulkanShaderModule(
+        ShaderReflection reflection = ShaderCatalog.GetReflection(ShaderModuleId.Mesh3D);
+        _vertexEntryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Vertex).Name;
+        _fragmentEntryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Fragment).Name;
+        _shader = new VulkanShaderModule(
             vk,
             _device,
-            compiler.Compile(Mesh3DShaderSource.Vertex, ShaderStage.Vertex, "mesh3d.vert"),
-            ShaderStage.Vertex);
-        _fragment = new VulkanShaderModule(
-            vk,
-            _device,
-            compiler.Compile(Mesh3DShaderSource.Fragment, ShaderStage.Fragment, "mesh3d.frag"),
-            ShaderStage.Fragment);
+            ShaderCatalog.GetSpirv(ShaderModuleId.Mesh3D).Span,
+            ShaderStage.Vertex,
+            _vertexEntryPoint);
 
         DescriptorSetLayout = CreateDescriptorSetLayout();
+        CombinedTextureSetLayout = CreateCombinedTextureSetLayout();
         CubeSetLayout = CreateCubeSetLayout();
         PipelineLayout = CreatePipelineLayout(DescriptorSetLayout, CubeSetLayout);
     }
@@ -81,6 +82,20 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
     private Vector3f _sunColour;
 
     public DescriptorSetLayout DescriptorSetLayout { get; }
+
+    /// <summary>
+    /// Gets the combined-image-sampler form of the mesh texture set, which the pipelines still
+    /// compiled from GLSL share.
+    /// </summary>
+    /// <remarks>
+    /// A shader from the library binds a sampled image and a sampler separately, because Slang's
+    /// combined sampler takes two binding slots on the WGSL target and collides with the next
+    /// declaration. The geometry, shadow, card and glass pipelines are still GLSL and still bind one
+    /// combined object per texture, so the two shapes exist side by side and the device keeps a
+    /// descriptor cache for each. This layout, its cache, and this remark all go when those
+    /// pipelines move to the library.
+    /// </remarks>
+    public DescriptorSetLayout CombinedTextureSetLayout { get; }
 
     /// <summary>Gets the layout binding the environment cube a reflective draw samples.</summary>
     /// <remarks>
@@ -185,16 +200,43 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
         _vk.DestroyPipelineLayout(_device, PipelineLayout, null);
         _vk.DestroyDescriptorSetLayout(_device, DescriptorSetLayout, null);
         _vk.DestroyDescriptorSetLayout(_device, CubeSetLayout, null);
-        _fragment.Dispose();
-        _vertex.Dispose();
+        _vk.DestroyDescriptorSetLayout(_device, CombinedTextureSetLayout, null);
+        _shader.Dispose();
     }
 
     private DescriptorSetLayout CreateDescriptorSetLayout()
     {
-        // 0 the diffuse, 1 the baked lightmap, 2 the derived surface detail. The third is declared here,
-        // in the layout the forward and shadow paths share, rather than in one of the geometry pass's
-        // own: a set is built per texture pairing and reused by whichever pipeline draws it, so all
-        // three have to agree about its shape even though only the G-buffer reads the detail.
+        // The diffuse at 0, the baked lightmap at 2 and the derived surface detail at 4, each with its
+        // sampler in the slot after it. The detail pair is declared although this shader never samples
+        // it: only the geometry pass reads the detail, and reserving its slots keeps the set one shape.
+        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[6];
+        for (uint i = 0; i < 6; i++)
+        {
+            bindings[i] = new DescriptorSetLayoutBinding
+            {
+                Binding = i,
+                DescriptorType = (i % 2) == 0 ? DescriptorType.SampledImage : DescriptorType.Sampler,
+                DescriptorCount = 1,
+                StageFlags = ShaderStageFlags.FragmentBit,
+            };
+        }
+
+        DescriptorSetLayoutCreateInfo createInfo = new()
+        {
+            SType = StructureType.DescriptorSetLayoutCreateInfo,
+            BindingCount = 6,
+            PBindings = bindings,
+        };
+
+        DescriptorSetLayout layout;
+        VkCheck.Ok(_vk.CreateDescriptorSetLayout(_device, &createInfo, null, &layout), "vkCreateDescriptorSetLayout");
+        return layout;
+    }
+
+    private DescriptorSetLayout CreateCombinedTextureSetLayout()
+    {
+        // 0 the diffuse, 1 the baked lightmap, 2 the derived surface detail, as one combined object
+        // each. What the geometry, shadow, card and glass pipelines still expect.
         DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[3];
         for (uint i = 0; i < 3; i++)
         {
@@ -215,16 +257,26 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
         };
 
         DescriptorSetLayout layout;
-        VkCheck.Ok(_vk.CreateDescriptorSetLayout(_device, &createInfo, null, &layout), "vkCreateDescriptorSetLayout");
+        VkCheck.Ok(
+            _vk.CreateDescriptorSetLayout(_device, &createInfo, null, &layout),
+            "vkCreateDescriptorSetLayout (combined mesh textures)");
         return layout;
     }
 
     private DescriptorSetLayout CreateCubeSetLayout()
     {
-        DescriptorSetLayoutBinding binding = new()
+        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[2];
+        bindings[0] = new DescriptorSetLayoutBinding
         {
             Binding = 0,
-            DescriptorType = DescriptorType.CombinedImageSampler,
+            DescriptorType = DescriptorType.SampledImage,
+            DescriptorCount = 1,
+            StageFlags = ShaderStageFlags.FragmentBit,
+        };
+        bindings[1] = new DescriptorSetLayoutBinding
+        {
+            Binding = 1,
+            DescriptorType = DescriptorType.Sampler,
             DescriptorCount = 1,
             StageFlags = ShaderStageFlags.FragmentBit,
         };
@@ -232,8 +284,8 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
         DescriptorSetLayoutCreateInfo createInfo = new()
         {
             SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = 1,
-            PBindings = &binding,
+            BindingCount = 2,
+            PBindings = bindings,
         };
 
         DescriptorSetLayout layout;
@@ -270,7 +322,8 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
 
     private Pipeline CreatePipeline(Mesh3DPipelineKey key)
     {
-        nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
+        nint vertexEntryPoint = SilkMarshal.StringToPtr(_vertexEntryPoint, NativeStringEncoding.UTF8);
+        nint fragmentEntryPoint = SilkMarshal.StringToPtr(_fragmentEntryPoint, NativeStringEncoding.UTF8);
         try
         {
             // The cut-out threshold and the reflection switch are baked in here rather than pushed:
@@ -293,8 +346,8 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
             {
                 SType = StructureType.PipelineShaderStageCreateInfo,
                 Stage = ShaderStageFlags.VertexBit,
-                Module = _vertex.Handle,
-                PName = (byte*)entryPoint,
+                Module = _shader.Handle,
+                PName = (byte*)vertexEntryPoint,
 
                 // The vertex stage declares the reflection constant as well -- it is what builds the
                 // direction -- and a constant supplied to one stage and not the other is two shaders
@@ -305,8 +358,8 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
             {
                 SType = StructureType.PipelineShaderStageCreateInfo,
                 Stage = ShaderStageFlags.FragmentBit,
-                Module = _fragment.Handle,
-                PName = (byte*)entryPoint,
+                Module = _shader.Handle,
+                PName = (byte*)fragmentEntryPoint,
                 PSpecializationInfo = &specialization,
             };
 
@@ -415,7 +468,8 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
         }
         finally
         {
-            SilkMarshal.Free(entryPoint);
+            SilkMarshal.Free(vertexEntryPoint);
+            SilkMarshal.Free(fragmentEntryPoint);
         }
     }
 

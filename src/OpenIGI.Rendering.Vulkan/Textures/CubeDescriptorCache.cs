@@ -60,24 +60,39 @@ internal sealed unsafe class CubeDescriptorCache : IDisposable
         }
 
         DescriptorSet set = Allocate();
+        // The image and its sampler bind apart, because the mesh shader declares them apart.
         DescriptorImageInfo image = new()
         {
-            Sampler = cube.Sampler,
             ImageView = cube.View,
             ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
         };
 
-        WriteDescriptorSet write = new()
+        DescriptorImageInfo sampler = new()
+        {
+            Sampler = cube.Sampler,
+        };
+
+        WriteDescriptorSet* writes = stackalloc WriteDescriptorSet[2];
+        writes[0] = new WriteDescriptorSet
         {
             SType = StructureType.WriteDescriptorSet,
             DstSet = set,
             DstBinding = 0,
             DescriptorCount = 1,
-            DescriptorType = DescriptorType.CombinedImageSampler,
+            DescriptorType = DescriptorType.SampledImage,
             PImageInfo = &image,
         };
+        writes[1] = new WriteDescriptorSet
+        {
+            SType = StructureType.WriteDescriptorSet,
+            DstSet = set,
+            DstBinding = 1,
+            DescriptorCount = 1,
+            DescriptorType = DescriptorType.Sampler,
+            PImageInfo = &sampler,
+        };
 
-        _vk.UpdateDescriptorSets(_device, 1, &write, 0, null);
+        _vk.UpdateDescriptorSets(_device, 2, writes, 0, null);
         _sets[id] = set;
         return set;
     }
@@ -135,17 +150,23 @@ internal sealed unsafe class CubeDescriptorCache : IDisposable
 
     private DescriptorPool CreatePool()
     {
-        DescriptorPoolSize size = new()
+        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[2];
+        sizes[0] = new DescriptorPoolSize
         {
-            Type = DescriptorType.CombinedImageSampler,
+            Type = DescriptorType.SampledImage,
+            DescriptorCount = SetsPerPool,
+        };
+        sizes[1] = new DescriptorPoolSize
+        {
+            Type = DescriptorType.Sampler,
             DescriptorCount = SetsPerPool,
         };
 
         DescriptorPoolCreateInfo createInfo = new()
         {
             SType = StructureType.DescriptorPoolCreateInfo,
-            PoolSizeCount = 1,
-            PPoolSizes = &size,
+            PoolSizeCount = 2,
+            PPoolSizes = sizes,
             MaxSets = SetsPerPool,
         };
 
