@@ -427,6 +427,7 @@ internal sealed unsafe class VulkanRhiComputePassEncoder : IRhiComputePassEncode
     private readonly Vk _vk;
     private readonly CommandBuffer _command;
     private VulkanRhiPipelineLayout? _layout;
+    private bool _dispatched;
     private bool _ended;
     private bool _disposed;
 
@@ -505,6 +506,7 @@ internal sealed unsafe class VulkanRhiComputePassEncoder : IRhiComputePassEncode
     public void Dispatch(int x, int y = 1, int z = 1)
     {
         ThrowIfEnded();
+        Chain();
         _vk.CmdDispatch(_command, (uint)x, (uint)y, (uint)z);
     }
 
@@ -514,6 +516,7 @@ internal sealed unsafe class VulkanRhiComputePassEncoder : IRhiComputePassEncode
         ArgumentNullException.ThrowIfNull(arguments);
         ThrowIfEnded();
 
+        Chain();
         _vk.CmdDispatchIndirect(_command, ((VulkanRhiBuffer)arguments).Buffer.Handle, offset);
     }
 
@@ -536,6 +539,42 @@ internal sealed unsafe class VulkanRhiComputePassEncoder : IRhiComputePassEncode
 
     /// <inheritdoc/>
     public void Dispose() => _disposed = true;
+
+    /// <summary>Makes the dispatch before this one visible to this one.</summary>
+    /// <remarks>
+    /// WebGPU treats every dispatch in a pass as its own usage scope and synchronises between them;
+    /// Vulkan synchronises nothing it is not told to. Without this, a chain of dependent passes recorded
+    /// into one compute pass -- which is how the atmosphere and the temporal resolve are written -- reads
+    /// tables the dispatch before is still writing, and produces an answer that is merely plausible and
+    /// differs from run to run. The first dispatch needs none: the pass boundary already barriered.
+    /// </remarks>
+    private void Chain()
+    {
+        if (!_dispatched)
+        {
+            _dispatched = true;
+            return;
+        }
+
+        MemoryBarrier barrier = new()
+        {
+            SType = StructureType.MemoryBarrier,
+            SrcAccessMask = AccessFlags.ShaderWriteBit,
+            DstAccessMask = AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit,
+        };
+
+        _vk.CmdPipelineBarrier(
+            _command,
+            PipelineStageFlags.ComputeShaderBit,
+            PipelineStageFlags.ComputeShaderBit,
+            0,
+            1,
+            &barrier,
+            0,
+            null,
+            0,
+            null);
+    }
 
     private VulkanRhiPipelineLayout Layout() => _layout
         ?? throw new GraphicsDeviceException("No pipeline is bound, so there is no layout to bind against.");
