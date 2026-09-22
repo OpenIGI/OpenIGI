@@ -31,8 +31,6 @@ public sealed class ShaderCompilationTests
     // block of defines -- so a name that drifts on either side is a shader that does not compile, and
     // nothing but this would say so before a level is loaded on an adapter that traces.
     [InlineData("reflect-rayquery.comp", "comp")]
-    [InlineData("fog.scatter.comp", "comp")]
-    [InlineData("fog.integrate.comp", "comp")]
 
     // The forward mesh pair is the whole of the vanilla picture -- terrain, world, sky and rig all go
     // through it -- and it carries the level-of-detail morph, the retail distance fog and the rig's key
@@ -56,8 +54,6 @@ public sealed class ShaderCompilationTests
         {
             "shading.frag" => DeferredShaderSource.LightingFragment(rayQuery: false),
             "shading-rayquery.frag" => DeferredShaderSource.LightingFragment(rayQuery: true),
-            "fog.scatter.comp" => VolumetricFogShaderSource.Scatter,
-            "fog.integrate.comp" => VolumetricFogShaderSource.Integrate,
             "glassreflect.comp" => GlassReflectionShaderSource.Reflect(rayQuery: false),
             "glassreflect-rayquery.comp" => GlassReflectionShaderSource.Reflect(rayQuery: true),
             "reflect-rayquery.comp" => ReflectionShaderSource.Reflect(rayQuery: true),

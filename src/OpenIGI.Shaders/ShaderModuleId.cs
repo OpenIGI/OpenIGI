@@ -87,4 +87,10 @@ public enum ShaderModuleId
 
     /// <summary>Motion blur: gather along the tile's velocity, weighted by depth and reach.</summary>
     MotionBlurApply,
+
+    /// <summary>Volumetric fog: what the medium is at each froxel, and the light it sends at the eye.</summary>
+    FogScatter,
+
+    /// <summary>Volumetric fog: each column accumulated front to back into what a pixel sees.</summary>
+    FogIntegrate,
 }

@@ -113,7 +113,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _shadowMap = new ShadowMap(vk, device, allocator, commands);
         _shadowPipeline = new ShadowPipeline(vk, device, _shadowMap.RenderPass, textureSetLayout);
         _ssao = new SsaoPass(vk, device, allocator, compiler, framesInFlight);
-        _fog = new VolumetricFogPass(vk, device, allocator, commands, compiler, framesInFlight);
+        _fog = new VolumetricFogPass(vk, device, allocator, commands, framesInFlight);
         // The reflections, with their traced half wherever the adapter can trace. Compiled in rather
         // than switched on: the extension has to be declared for the shader to parse at all, so whether
         // there IS a trace is settled here and whether a frame USES it is settled per frame.

@@ -2,6 +2,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenIGI.Shaders\OpenIGI.Shaders.csproj" />
+
+    <!-- The fog block's array lengths are C# constants the host fills it by; FogArraySizeTests pins
+         the manifest's defines to them. -->
+    <ProjectReference Include="..\..\src\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
   </ItemGroup>
 
   <ItemGroup>

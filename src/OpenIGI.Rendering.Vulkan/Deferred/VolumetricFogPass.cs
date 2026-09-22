@@ -3,6 +3,7 @@ using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Compute;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Deferred;
@@ -48,7 +49,7 @@ internal readonly record struct VolumetricFogFrame(
 /// The grid is a frustum in disguise — screen tiles across and down, depth slices deep, so a cell is a
 /// truncated pyramid of air rather than a cube. That is what makes a lookup from the shading pass a
 /// single texture fetch: the pixel's own screen position and depth ARE the coordinate. See
-/// <see cref="VolumetricFogShaderSource"/> for the two dispatches and what each is ported from.
+/// the FogScatter and FogIntegrate modules for the two dispatches and what each is ported from.
 /// </para>
 /// <para>
 /// <b>Sizing.</b> Sixteen pixels to a froxel across, against the reference's eight. The reference culls
@@ -167,14 +168,12 @@ internal sealed class VolumetricFogPass : IDisposable
     /// <param name="device">The device the volumes live on.</param>
     /// <param name="allocator">The allocator backing them.</param>
     /// <param name="commands">The pool their first layout transition comes from.</param>
-    /// <param name="compiler">The shader compiler.</param>
     /// <param name="framesInFlight">How many frames may be recorded before one completes.</param>
     public VolumetricFogPass(
         Vk vk,
         VulkanDevice device,
         VulkanAllocator allocator,
         VulkanCommands commands,
-        ShaderCompiler compiler,
         int framesInFlight)
     {
         _vk = vk;
@@ -183,13 +182,11 @@ internal sealed class VolumetricFogPass : IDisposable
         _commands = commands;
 
         _scatter = new VulkanComputePass(
-            vk, device, allocator, compiler,
-            "fog.scatter.comp", VolumetricFogShaderSource.Scatter,
+            vk, device, allocator, ShaderModuleId.FogScatter,
             ScatterBindings, ParamSize, framesInFlight);
 
         _integrate = new VulkanComputePass(
-            vk, device, allocator, compiler,
-            "fog.integrate.comp", VolumetricFogShaderSource.Integrate,
+            vk, device, allocator, ShaderModuleId.FogIntegrate,
             IntegrateBindings, ParamSize, framesInFlight);
     }
 

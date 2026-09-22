@@ -4057,7 +4057,7 @@ internal sealed partial class GameHost : IDisposable
                         : 0.006f;
 
                 // Fog is an outdoor medium, and where it is outdoors is decided a froxel at a time inside
-                // the march itself -- see the shelter lookup in VolumetricFogShaderSource. It used to be
+                // the march itself -- see the shelter lookup in the FogScatter shader module. It used to be
                 // decided once for the whole frame, standing the march down while the camera was inside a
                 // building, because the haze sitting between the eye and a window washed out the yard
                 // beyond it: fog marched straight through the wall. Switching the march off answers that

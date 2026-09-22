@@ -92,6 +92,34 @@
     {
       "id": "MotionBlurApply",
       "source": "Post/MotionBlurApply.slang"
+    },
+    {
+      "id": "FogScatter",
+      "source": "Fog/FogScatter.slang",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {
+            "OPENIGI_MAX_FOG_VOLUMES": "8",
+            "OPENIGI_MAX_LAMPS": "160",
+            "OPENIGI_FOG_PARAMS_BINDING": "9"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FogIntegrate",
+      "source": "Fog/FogIntegrate.slang",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {
+            "OPENIGI_MAX_FOG_VOLUMES": "8",
+            "OPENIGI_MAX_LAMPS": "160",
+            "OPENIGI_FOG_PARAMS_BINDING": "3"
+          }
+        }
+      ]
     }
   ]
 }
