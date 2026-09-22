@@ -82,6 +82,18 @@
       "source": "TemporalUpscale/DecimateHistory.slang"
     },
     {
+      "id": "UpscaleDilateVelocity",
+      "source": "TemporalUpscale/DilateVelocity.slang",
+      "variants": [
+        {
+          "name": "default",
+          "targets": [
+            "Spirv"
+          ]
+        }
+      ]
+    },
+    {
       "id": "MotionBlurFlatten",
       "source": "Post/MotionBlurFlatten.slang"
     },

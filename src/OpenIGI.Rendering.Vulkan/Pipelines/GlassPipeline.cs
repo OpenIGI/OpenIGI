@@ -63,7 +63,6 @@ internal sealed unsafe class GlassPipeline : IDisposable
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the pipeline lives on.</param>
     /// <param name="allocator">The allocator the parameter buffers come from.</param>
-    /// <param name="compiler">The shader compiler that turns the GLSL into SPIR-V.</param>
     /// <param name="renderPass">The render pass the pipeline is compatible with.</param>
     /// <param name="subpass">The translucency subpass index within it.</param>
     /// <param name="frontLayerPass">The pass that records which pane is nearest at each pixel.</param>
@@ -75,7 +74,6 @@ internal sealed unsafe class GlassPipeline : IDisposable
         Vk vk,
         VulkanDevice device,
         VulkanAllocator allocator,
-        ShaderCompiler compiler,
         RenderPass renderPass,
         uint subpass,
         RenderPass frontLayerPass,
@@ -86,7 +84,6 @@ internal sealed unsafe class GlassPipeline : IDisposable
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(allocator);
-        ArgumentNullException.ThrowIfNull(compiler);
         ArgumentOutOfRangeException.ThrowIfLessThan(framesInFlight, 1);
 
         _vk = vk;

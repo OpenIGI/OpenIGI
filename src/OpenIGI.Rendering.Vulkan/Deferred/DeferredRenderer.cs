@@ -86,7 +86,6 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <param name="device">The device everything lives on.</param>
     /// <param name="allocator">The allocator backing the scene targets.</param>
     /// <param name="commands">The command pool the probe uploads come from.</param>
-    /// <param name="compiler">The shader compiler.</param>
     /// <param name="textureSetLayout">The mesh texture set, shared with the forward and shadow paths.</param>
     /// <param name="presentRenderPass">The back-buffer render pass the resolve draws into.</param>
     /// <param name="framesInFlight">How many scene targets to keep — one per frame in flight.</param>
@@ -96,7 +95,6 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         VulkanDevice device,
         VulkanAllocator allocator,
         VulkanCommands commands,
-        ShaderCompiler compiler,
         DescriptorSetLayout textureSetLayout,
         RenderPass presentRenderPass,
         int framesInFlight)
@@ -105,7 +103,6 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(allocator);
         ArgumentNullException.ThrowIfNull(commands);
-        ArgumentNullException.ThrowIfNull(compiler);
         _rayQuery = device.Capabilities.RayQuery;
         _vk = vk;
         _device = device.Device;
@@ -123,7 +120,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _objectVelocity = new ObjectVelocityPass(vk, device, DeferredRenderPass.DepthFormat);
         _bloom = new BloomPass(vk, device, allocator, commands, framesInFlight);
         _motionBlur = new MotionBlurPass(vk, device, allocator, framesInFlight);
-        _dilateVelocity = new Tsr.DilateVelocityPass(vk, device, allocator, compiler, framesInFlight);
+        _dilateVelocity = new Tsr.DilateVelocityPass(vk, device, allocator, framesInFlight);
         _decimateHistory = new Tsr.DecimateHistoryPass(vk, device, allocator, framesInFlight);
         _updateHistory = new Tsr.UpdateHistoryPass(vk, device, allocator, framesInFlight);
         _spatialAntiAliasing = new Tsr.SpatialAntiAliasingPass(vk, device, allocator, framesInFlight);
@@ -207,7 +204,6 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             vk,
             device,
             allocator,
-            compiler,
             _renderPass.Shading,
             DeferredRenderPass.ForwardSubpass,
             _renderPass.FrontLayer,

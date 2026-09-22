@@ -956,34 +956,23 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetEnvironmentCube(TextureHandle cube);
 
-    /// <summary>Compiles a compute program.</summary>
-    /// <param name="source">The GLSL compute shader.</param>
-    /// <param name="name">A name for the program, used only in diagnostics.</param>
-    /// <returns>A handle to the program.</returns>
-    /// <remarks>
-    /// <para>
-    /// The first member of this seam that not every backend can honour. Compute needs GL 4.3, which
-    /// desktop has and macOS — frozen at 4.1 — does not, so a caller must check
-    /// <see cref="GraphicsCapabilities.SupportsCompute"/> and have a path that does not need it.
-    /// </para>
-    /// <para>
-    /// Programs are compiled up front rather than lazily, because a compile failure is a fault in the
-    /// build rather than a condition to recover from, and finding it at load is worth more than finding
-    /// it on the frame that first needed the pass.
-    /// </para>
-    /// </remarks>
-    /// <exception cref="GraphicsDeviceException">Compute is unsupported, or the program did not compile.</exception>
-    ComputeShaderHandle CreateComputeShader(string source, string name);
-
     /// <summary>Creates a compute program from one of the shader library's modules.</summary>
     /// <param name="shaderModule">The compute module.</param>
     /// <param name="variant">Which compiled form to load.</param>
     /// <param name="name">A name for the program, used in diagnostics.</param>
     /// <returns>A handle to the program.</returns>
     /// <remarks>
-    /// The same seam as the source form in every other way -- the parameters are still set by name and
-    /// the resources still bound by slot -- but the module was compiled by the build rather than at load,
-    /// so a mistake in it is a failed build instead of a level that does not start.
+    /// <para>
+    /// A member of this seam that not every backend can honour. Compute needs GL 4.3, which desktop has
+    /// and macOS -- frozen at 4.1 -- does not, so a caller must check
+    /// <see cref="GraphicsCapabilities.SupportsCompute"/> and have a path that does not need it.
+    /// </para>
+    /// <para>
+    /// The module was compiled by the build rather than at load, so a mistake in it is a failed build
+    /// instead of a level that does not start. Programs are still created up front rather than lazily:
+    /// a pipeline that cannot be built is a fault to find at load, not on the frame that first needed
+    /// the pass.
+    /// </para>
     /// </remarks>
     /// <exception cref="GraphicsDeviceException">Compute is unsupported, or the pipeline failed.</exception>
     ComputeShaderHandle CreateComputeShader(ShaderModuleId shaderModule, ShaderVariant variant, string name);

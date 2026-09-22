@@ -47,16 +47,6 @@ public sealed partial class VulkanGraphicsDevice
     private VulkanStorageImage? _dummyVolume;
 
     /// <inheritdoc/>
-    public ComputeShaderHandle CreateComputeShader(string source, string name)
-    {
-        ThrowIfDisposed();
-        ArgumentException.ThrowIfNullOrWhiteSpace(source);
-
-        VulkanComputeShader shader = new(_instance.Vk, _device, _allocator, _shaderCompiler, source, name);
-        return Register(shader);
-    }
-
-    /// <inheritdoc/>
     public ComputeShaderHandle CreateComputeShader(ShaderModuleId shaderModule, ShaderVariant variant, string name)
     {
         ThrowIfDisposed();
@@ -515,7 +505,7 @@ public sealed partial class VulkanGraphicsDevice
             index++;
         }
 
-        foreach (ComputeShaderAnalysis.Resource resource in program.Resources)
+        foreach (ComputeProgramDescription.Resource resource in program.Resources)
         {
             int slot = (int)resource.Slot;
             switch (resource.Kind)
@@ -636,7 +626,7 @@ public sealed partial class VulkanGraphicsDevice
             null);
     }
 
-    private DescriptorImageInfo ResolveSampled(VulkanComputeShader program, ComputeShaderAnalysis.Resource resource)
+    private DescriptorImageInfo ResolveSampled(VulkanComputeShader program, ComputeProgramDescription.Resource resource)
     {
         // A default-block sampler reads from the unit its name was set to; an explicit one from its own
         // binding number, which the API also binds textures by.

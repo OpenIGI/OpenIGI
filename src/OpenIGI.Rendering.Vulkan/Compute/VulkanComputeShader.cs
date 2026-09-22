@@ -15,7 +15,7 @@ namespace OpenIGI.Rendering.Vulkan.Compute;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The source is rewritten by <see cref="ComputeShaderAnalysis"/> so a Vulkan target accepts it, compiled
+/// The source is rewritten by <see cref="ComputeProgramDescription"/> so a Vulkan target accepts it, compiled
 /// to SPIR-V, and reflected into a descriptor-set layout built from the storage buffers, images and
 /// samplers it declares plus the one uniform block its scalar parameters were gathered into. The pipeline
 /// is created once and lives for the program's life.
@@ -39,7 +39,7 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
     private readonly PipelineLayout _pipelineLayout;
     private readonly DescriptorSetLayout _setLayout;
     private readonly List<DescriptorPool> _pools = [];
-    private readonly Dictionary<string, ComputeShaderAnalysis.Uniform> _uniforms;
+    private readonly Dictionary<string, ComputeProgramDescription.Uniform> _uniforms;
     private readonly HashSet<string> _samplerNames = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _samplerUnits = new(StringComparer.Ordinal);
     private readonly byte[] _globalsShadow;
@@ -53,46 +53,6 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
 
     /// <summary>One dispatch's descriptor set and the globals buffer it points at.</summary>
     internal sealed record Instance(DescriptorSet Set, VulkanBuffer? Globals);
-
-    /// <summary>Initialises a new instance of the <see cref="VulkanComputeShader"/> class.</summary>
-    /// <param name="vk">The core Vulkan API.</param>
-    /// <param name="device">The device the program lives on.</param>
-    /// <param name="allocator">The allocator backing the globals buffers.</param>
-    /// <param name="compiler">The GLSL-to-SPIR-V compiler.</param>
-    /// <param name="source">The GL-dialect compute source.</param>
-    /// <param name="name">The program's name, for diagnostics.</param>
-    /// <exception cref="GraphicsDeviceException">The source did not compile or the pipeline could not be built.</exception>
-    public VulkanComputeShader(
-        Vk vk,
-        VulkanDevice device,
-        VulkanAllocator allocator,
-        ShaderCompiler compiler,
-        string source,
-        string name)
-    {
-        _vk = vk;
-        _device = device;
-        _allocator = allocator;
-        Name = name;
-
-        ComputeShaderAnalysis.Analysis analysis = ComputeShaderAnalysis.Analyse(source, name);
-        Resources = analysis.Resources;
-        UniformBinding = analysis.UniformBlockBinding;
-        _uniforms = new Dictionary<string, ComputeShaderAnalysis.Uniform>(analysis.Uniforms, StringComparer.Ordinal);
-        foreach (ComputeShaderAnalysis.Resource resource in analysis.Resources)
-        {
-            if (resource.ByUnit)
-            {
-                _samplerNames.Add(resource.Name);
-            }
-        }
-        _globalsSize = analysis.UniformBlockSize;
-        _globalsShadow = _globalsSize > 0 ? new byte[_globalsSize] : [];
-
-        byte[] spirv = compiler.Compile(analysis.Source, Vulkan.Shaders.ShaderStage.Compute, name);
-        _setLayout = CreateSetLayout(analysis);
-        (_pipeline, _pipelineLayout) = CreatePipeline(spirv);
-    }
 
     /// <summary>Initialises a program from one of the shader library's compute modules.</summary>
     /// <param name="vk">The core Vulkan API.</param>
@@ -123,12 +83,12 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
         Name = name;
 
         ShaderReflection reflection = ShaderCatalog.GetReflection(module, variant);
-        ComputeShaderAnalysis.Analysis analysis = Describe(module, reflection);
+        ComputeProgramDescription.Description analysis = Describe(module, reflection);
 
         Resources = analysis.Resources;
         UniformBinding = analysis.UniformBlockBinding;
-        _uniforms = new Dictionary<string, ComputeShaderAnalysis.Uniform>(analysis.Uniforms, StringComparer.Ordinal);
-        foreach (ComputeShaderAnalysis.Resource resource in analysis.Resources)
+        _uniforms = new Dictionary<string, ComputeProgramDescription.Uniform>(analysis.Uniforms, StringComparer.Ordinal);
+        foreach (ComputeProgramDescription.Resource resource in analysis.Resources)
         {
             if (resource.ByUnit)
             {
@@ -150,10 +110,10 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
     /// <param name="reflection">What the module binds.</param>
     /// <returns>The same description the GL-dialect path derives by reading a source.</returns>
     /// <exception cref="GraphicsDeviceException">The module binds something the seam cannot express.</exception>
-    private static ComputeShaderAnalysis.Analysis Describe(ShaderModuleId module, ShaderReflection reflection)
+    private static ComputeProgramDescription.Description Describe(ShaderModuleId module, ShaderReflection reflection)
     {
-        List<ComputeShaderAnalysis.Resource> resources = [];
-        Dictionary<string, ComputeShaderAnalysis.Uniform> uniforms = new(StringComparer.Ordinal);
+        List<ComputeProgramDescription.Resource> resources = [];
+        Dictionary<string, ComputeProgramDescription.Uniform> uniforms = new(StringComparer.Ordinal);
 
         // A sampled image the parameter block also names is a texture UNIT rather than a fixed slot: the
         // seam sets an int of that name and the dispatch resolves the image from it. Nothing has to
@@ -161,7 +121,7 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
         HashSet<string> byUnit = new(StringComparer.Ordinal);
         foreach (ShaderUniformField field in reflection.Globals?.Fields ?? [])
         {
-            uniforms[field.Name] = new ComputeShaderAnalysis.Uniform(field.Name, field.Offset, field.Size);
+            uniforms[field.Name] = new ComputeProgramDescription.Uniform(field.Name, field.Offset, field.Size);
             byUnit.Add(field.Name);
         }
 
@@ -193,7 +153,7 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
                 ? TextureOf(binding.Name)
                 : binding.Name;
 
-            resources.Add(new ComputeShaderAnalysis.Resource(
+            resources.Add(new ComputeProgramDescription.Resource(
                 (uint)binding.Binding,
                 (uint)ComputeBindingSpace.SlotOf(binding.Binding),
                 kind,
@@ -202,13 +162,13 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
                 byUnit.Contains(name)));
         }
 
-        return new ComputeShaderAnalysis.Analysis(
-            string.Empty,
+        return new ComputeProgramDescription.Description(
             resources,
             uniforms,
             reflection.Globals is null ? -1 : reflection.Globals.Binding,
             reflection.Globals?.Size ?? 0);
     }
+
     /// <summary>The texture a sampler was declared beside.</summary>
     /// <param name="sampler">The sampler's name, which ends in Sampler by convention.</param>
     /// <returns>The texture's name.</returns>
@@ -221,7 +181,7 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
     public string Name { get; }
 
     /// <summary>Gets the resources the program binds, by binding number.</summary>
-    public IReadOnlyList<ComputeShaderAnalysis.Resource> Resources { get; }
+    public IReadOnlyList<ComputeProgramDescription.Resource> Resources { get; }
 
     /// <summary>Gets the pipeline to bind before dispatching.</summary>
     public Pipeline Pipeline => _pipeline;
@@ -240,7 +200,7 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
     /// <param name="bytes">Its value, in the shader's own byte layout.</param>
     public void SetUniform(string uniform, ReadOnlySpan<byte> bytes)
     {
-        if (!_uniforms.TryGetValue(uniform, out ComputeShaderAnalysis.Uniform slot))
+        if (!_uniforms.TryGetValue(uniform, out ComputeProgramDescription.Uniform slot))
         {
             return;
         }
@@ -317,7 +277,7 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
         return new Instance(set, globals);
     }
 
-    private DescriptorSetLayout CreateSetLayout(ComputeShaderAnalysis.Analysis analysis)
+    private DescriptorSetLayout CreateSetLayout(ComputeProgramDescription.Description analysis)
     {
         int count = analysis.Resources.Count + (analysis.UniformBlockBinding >= 0 ? 1 : 0);
         DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[Math.Max(1, count)];
@@ -334,7 +294,7 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
             };
         }
 
-        foreach (ComputeShaderAnalysis.Resource resource in analysis.Resources)
+        foreach (ComputeProgramDescription.Resource resource in analysis.Resources)
         {
             bindings[index++] = new DescriptorSetLayoutBinding
             {
@@ -423,7 +383,7 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
     private int CountKind(ComputeResourceKind kind)
     {
         int count = 0;
-        foreach (ComputeShaderAnalysis.Resource resource in Resources)
+        foreach (ComputeProgramDescription.Resource resource in Resources)
         {
             if (resource.Kind == kind)
             {

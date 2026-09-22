@@ -35,7 +35,6 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     private readonly VulkanDevice _device;
     private readonly VulkanAllocator _allocator;
     private readonly VulkanCommands _commands;
-    private readonly ShaderCompiler _shaderCompiler;
     private readonly Sprite2DPipeline _sprite2D;
     private readonly Sprite2DGeometry _sprite2DGeometry;
     private readonly TextureDescriptorCache _textureDescriptors;
@@ -205,7 +204,6 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
                 _instance.Vk, _device, deviceProperties.Limits.TimestampPeriod, VulkanFrameLoop.MaxFramesInFlight);
         }
 
-        _shaderCompiler = new ShaderCompiler();
         _sprite2D = new Sprite2DPipeline(_instance.Vk, _device, _presentTarget.RenderPass);
         _sprite2DGeometry = new Sprite2DGeometry(_instance.Vk, _device, _allocator, VulkanFrameLoop.MaxFramesInFlight);
         _textureDescriptors = new TextureDescriptorCache(_instance.Vk, _device.Device, _sprite2D.DescriptorSetLayout);
@@ -219,7 +217,6 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
             _device,
             _allocator,
             _commands,
-            _shaderCompiler,
             _mesh3D.DescriptorSetLayout,
             _presentTarget.RenderPass,
             VulkanFrameLoop.MaxFramesInFlight);
@@ -227,7 +224,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         // The box a query draws tests against the geometry pass's depth, so it shares that pass; it is
         // built here, once the deferred renderer's render passes exist.
         _occlusion = new VulkanOcclusionQueries(
-            _instance.Vk, _device, _shaderCompiler, _deferred.GeometryPass, VulkanFrameLoop.MaxFramesInFlight);
+            _instance.Vk, _device, _deferred.GeometryPass, VulkanFrameLoop.MaxFramesInFlight);
 
         RayTracingAvailable = selection.SupportsRayTracing;
 
@@ -597,7 +594,6 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _loadingBackdrop?.Dispose();
         _sdfText2D?.Dispose();
         _sprite2D.Dispose();
-        _shaderCompiler.Dispose();
         _stageProfiler?.Dispose();
         _frameLoop.Dispose();
         _presentTarget.Dispose();

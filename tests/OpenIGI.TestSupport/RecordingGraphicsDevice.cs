@@ -378,13 +378,6 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
-    public ComputeShaderHandle CreateComputeShader(string source, string name)
-    {
-        ComputeShaders.Add(name);
-        return new ComputeShaderHandle(_nextComputeId++);
-    }
-
-    /// <inheritdoc/>
     public ComputeShaderHandle CreateComputeShader(
         ShaderModuleId shaderModule,
         ShaderVariant variant,

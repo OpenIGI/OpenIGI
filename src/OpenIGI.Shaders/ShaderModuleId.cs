@@ -1,4 +1,4 @@
-namespace OpenIGI.Shaders;
+﻿namespace OpenIGI.Shaders;
 
 /// <summary>
 /// The shader modules the library carries. One value per <c>.slang</c> source under
@@ -78,6 +78,9 @@ public enum ShaderModuleId
 
     /// <summary>Temporal resolve: how much history survives at each pixel -- the parallax verdict.</summary>
     UpscaleDecimateHistory,
+
+    /// <summary>Temporal resolve: each pixel's motion taken from the closest surface around it.</summary>
+    UpscaleDilateVelocity,
 
     /// <summary>Motion blur: one velocity per pixel, and each tile reduced to its fastest and slowest.</summary>
     MotionBlurFlatten,

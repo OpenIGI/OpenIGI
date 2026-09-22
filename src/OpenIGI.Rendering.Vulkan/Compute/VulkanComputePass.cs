@@ -110,10 +110,6 @@ internal sealed unsafe class VulkanComputePass : IDisposable
     private readonly VulkanShaderModule _module;
     private readonly string _entryPoint;
 
-    // Whether a sampled image binds as an image and a sampler apart. True for a pass whose shader came
-    // from the library, which must declare the two separately; false for one still compiled from GLSL,
-    // whose sampled images are combined objects. Both forms exist until every compute pass has moved.
-    private readonly bool _splitSamplers;
     private readonly DescriptorSetLayout _setLayout;
     private readonly PipelineLayout _pipelineLayout;
     private readonly Pipeline _pipeline;
@@ -125,75 +121,6 @@ internal sealed unsafe class VulkanComputePass : IDisposable
     private readonly int _paramSize;
     private readonly int _frames;
     private bool _disposed;
-
-    /// <summary>Initialises a new instance of the <see cref="VulkanComputePass"/> class.</summary>
-    /// <param name="vk">The core Vulkan API.</param>
-    /// <param name="device">The device the pass lives on.</param>
-    /// <param name="allocator">The allocator backing the parameter buffers.</param>
-    /// <param name="compiler">The shader compiler.</param>
-    /// <param name="name">A name for the shader, used in compiler diagnostics.</param>
-    /// <param name="source">The GLSL compute source.</param>
-    /// <param name="bindings">
-    /// What each binding holds, in binding order starting at zero. The parameter block is bound after
-    /// them, so a pass with three image bindings finds its parameters at binding three.
-    /// </param>
-    /// <param name="parameterBytes">How large the parameter block is. Zero for a pass that takes none.</param>
-    /// <param name="framesInFlight">How many frames may be recorded before one completes.</param>
-    /// <exception cref="GraphicsDeviceException">The pass could not be created.</exception>
-    public VulkanComputePass(
-        Vk vk,
-        VulkanDevice device,
-        VulkanAllocator allocator,
-        ShaderCompiler compiler,
-        string name,
-        string source,
-        ReadOnlySpan<ComputeBindingKind> bindings,
-        int parameterBytes,
-        int framesInFlight)
-    {
-        ArgumentNullException.ThrowIfNull(vk);
-        ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(allocator);
-        ArgumentNullException.ThrowIfNull(compiler);
-
-        _vk = vk;
-        _device = device.Device;
-        _pipelineCache = device.PipelineCache;
-        _bindings = bindings.ToArray();
-        _paramSize = parameterBytes;
-        _frames = Math.Max(1, framesInFlight);
-
-        _module = new VulkanShaderModule(
-            vk,
-            _device,
-            compiler.Compile(source, ShaderStage.Compute, name),
-            ShaderStage.Compute);
-        _entryPoint = "main";
-        _splitSamplers = false;
-
-        _sampler = CreateSampler();
-        _setLayout = CreateSetLayout();
-        _pipelineLayout = CreatePipelineLayout();
-        _pipeline = CreatePipeline(name);
-        _pool = CreatePool();
-
-        _sets = new DescriptorSet[_frames];
-        _params = new VulkanBuffer[_frames];
-        for (int i = 0; i < _frames; i++)
-        {
-            _sets[i] = AllocateSet();
-            if (_paramSize > 0)
-            {
-                _params[i] = new VulkanBuffer(
-                    vk,
-                    device,
-                    allocator,
-                    (ulong)_paramSize,
-                    BufferUsageFlags.UniformBufferBit,
-                    MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
-            }
-        }
-    }
 
     /// <summary>Initialises a pass from one of the shader library's compute modules.</summary>
     /// <param name="vk">The core Vulkan API.</param>
@@ -254,8 +181,6 @@ internal sealed unsafe class VulkanComputePass : IDisposable
         _paramSize = parameterBytes;
         _frames = Math.Max(1, framesInFlight);
 
-        _splitSamplers = true;
-
         ShaderReflection reflection = ShaderCatalog.GetReflection(module, variant);
         _entryPoint = reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Compute).Name;
         _module = new VulkanShaderModule(
@@ -294,7 +219,11 @@ internal sealed unsafe class VulkanComputePass : IDisposable
         kind is ComputeBindingKind.SampledImage or ComputeBindingKind.SampledStorageImage;
 
     /// <summary>Whether a logical binding takes a second slot for its sampler.</summary>
-    private bool TakesSamplerSlot(ComputeBindingKind kind) => _splitSamplers && IsSampled(kind);
+    /// <remarks>
+    /// Every sampled image does: a module declares its texture and its sampler apart, which is the only
+    /// shape WGSL has and the one the library therefore compiles for both targets.
+    /// </remarks>
+    private static bool TakesSamplerSlot(ComputeBindingKind kind) => IsSampled(kind);
 
     /// <summary>The descriptor slot a logical binding starts at, sampled ones taking two each.</summary>
     private uint SlotOf(int logicalIndex)
@@ -383,8 +312,8 @@ internal sealed unsafe class VulkanComputePass : IDisposable
         _ => DescriptorType.StorageImage,
     };
 
-    /// <summary>The descriptor an image binding takes, given how this pass binds its samplers.</summary>
-    private DescriptorType ImageTypeOf(ComputeBindingKind kind) =>
+    /// <summary>The descriptor an image binding takes.</summary>
+    private static DescriptorType ImageTypeOf(ComputeBindingKind kind) =>
         TakesSamplerSlot(kind) ? DescriptorType.SampledImage : TypeOf(kind);
 
     private void WriteSet(int frame, ReadOnlySpan<ComputeResource> resources)
@@ -447,13 +376,10 @@ internal sealed unsafe class VulkanComputePass : IDisposable
                 continue;
             }
 
-            bool sampled = IsSampled(kind);
             images[i] = new DescriptorImageInfo
             {
-                // A combined binding carries the sampler here; a split one binds it in the slot after.
-                Sampler = sampled && !_splitSamplers
-                    ? (resources[i].Sampler.Handle != 0 ? resources[i].Sampler : _sampler)
-                    : default,
+                // The sampler binds in the slot after the image, never here.
+                Sampler = default,
                 ImageView = resources[i].View,
                 ImageLayout = kind == ComputeBindingKind.SampledImage
                     ? ImageLayout.ShaderReadOnlyOptimal
@@ -647,19 +573,16 @@ internal sealed unsafe class VulkanComputePass : IDisposable
         {
             sizes[count++] = new DescriptorPoolSize
             {
-                Type = _splitSamplers ? DescriptorType.SampledImage : DescriptorType.CombinedImageSampler,
+                Type = DescriptorType.SampledImage,
                 DescriptorCount = sampled * (uint)_frames,
             };
 
-            if (_splitSamplers)
+            // The image and its sampler are two descriptors, never one.
+            sizes[count++] = new DescriptorPoolSize
             {
-                // Split, the image and its sampler are two descriptors rather than one.
-                sizes[count++] = new DescriptorPoolSize
-                {
-                    Type = DescriptorType.Sampler,
-                    DescriptorCount = sampled * (uint)_frames,
-                };
-            }
+                Type = DescriptorType.Sampler,
+                DescriptorCount = sampled * (uint)_frames,
+            };
         }
 
         if (storage > 0)

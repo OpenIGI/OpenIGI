@@ -59,20 +59,17 @@ internal sealed unsafe class VulkanOcclusionQueries : IDisposable
     /// <summary>Initialises a new instance of the <see cref="VulkanOcclusionQueries"/> class.</summary>
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the pool and pipeline live on.</param>
-    /// <param name="compiler">The shader compiler for the box pipeline.</param>
     /// <param name="geometryPass">The deferred geometry pass the boxes are drawn into.</param>
     /// <param name="framesInFlight">How many slots the frame loop cycles through.</param>
     /// <exception cref="GraphicsDeviceException">The pool or pipeline could not be created.</exception>
     public VulkanOcclusionQueries(
         Vk vk,
         VulkanDevice device,
-        ShaderCompiler compiler,
         RenderPass geometryPass,
         int framesInFlight)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(compiler);
         _vk = vk;
         _device = device.Device;
         _slots = framesInFlight;
