@@ -118,8 +118,8 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         // than switched on: the extension has to be declared for the shader to parse at all, so whether
         // there IS a trace is settled here and whether a frame USES it is settled per frame.
         _reflection = new ReflectionPass(vk, device, allocator, compiler, framesInFlight, _rayQuery);
-        _velocity = new VelocityPass(vk, device, allocator, compiler, framesInFlight);
-        _objectVelocity = new ObjectVelocityPass(vk, device, compiler, DeferredRenderPass.DepthFormat);
+        _velocity = new VelocityPass(vk, device, allocator, framesInFlight);
+        _objectVelocity = new ObjectVelocityPass(vk, device, DeferredRenderPass.DepthFormat);
         _bloom = new BloomPass(vk, device, allocator, commands, framesInFlight);
         _motionBlur = new MotionBlurPass(vk, device, allocator, framesInFlight);
         _dilateVelocity = new Tsr.DilateVelocityPass(vk, device, allocator, compiler, framesInFlight);

@@ -165,6 +165,14 @@
           "targets": [ "Spirv" ]
         }
       ]
+    },
+    {
+      "id": "Velocity",
+      "source": "Deferred/Velocity.slang"
+    },
+    {
+      "id": "ObjectVelocity",
+      "source": "Deferred/ObjectVelocity.slang"
     }
   ]
 }

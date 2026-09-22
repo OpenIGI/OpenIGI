@@ -108,4 +108,10 @@ public enum ShaderModuleId
 
     /// <summary>Lamp shadows: one traced ray per pixel, at the lamp a reservoir kept.</summary>
     LampShadow,
+
+    /// <summary>The screen motion each pixel's depth reprojects to.</summary>
+    Velocity,
+
+    /// <summary>The screen motion of meshes that move on their own, rasterised over the camera's.</summary>
+    ObjectVelocity,
 }

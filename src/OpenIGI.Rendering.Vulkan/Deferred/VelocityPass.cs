@@ -2,7 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Compute;
 using OpenIGI.Rendering.Vulkan.Memory;
-using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Deferred;
@@ -54,147 +54,22 @@ internal sealed class VelocityPass : IDisposable
     private readonly VulkanComputePass _pass;
     private bool _disposed;
 
-    private const string Source =
-        """
-        #version 450
-
-        layout(local_size_x = 8, local_size_y = 8) in;
-
-        layout(set = 0, binding = 0) uniform sampler2D uDepth;
-        layout(set = 0, binding = 1, rg16f) uniform writeonly image2D uVelocity;
-        layout(set = 0, binding = 2) uniform Params
-        {
-            mat4 uViewToWorld;       // this frame's view rotation, camera-relative
-            mat4 uPrevWorldToView;   // the previous frame's inverse view rotation
-            vec4 uUnproject;         // xScale, yScale, near, far
-            vec4 uResolution;        // width, height, 1/width, 1/height
-            vec4 uCameraDelta;       // this frame's camera minus the previous frame's, w unused
-            vec4 uPrevProjection;    // xScale, yScale, near, far of the previous unjittered projection
-            vec4 uJitter;            // current raster jitter in input pixels, xy; zw unused
-        } p;
-
-        // The view-space position a depth sample came from. Reverse-Z, so the stored depth is mapped back
-        // to the normalised z the closed-form inverse expects; the vertical is negated because the
-        // G-buffer was rasterised through the vertex stage's Y flip.
-        vec3 ViewPositionAt(vec2 uv, float depth)
-        {
-            float ndcZ = 1.0 - 2.0 * depth;
-            float near = p.uUnproject.z;
-            float far = p.uUnproject.w;
-            float viewZ = (2.0 * near * far) / ((far + near) - ndcZ * (far - near));
-            vec2 ndc = uv * 2.0 - 1.0;
-            return vec3(ndc.x * viewZ / p.uUnproject.x, -ndc.y * viewZ / p.uUnproject.y, viewZ);
-        }
-
-        void main()
-        {
-            ivec2 px = ivec2(gl_GlobalInvocationID.xy);
-            ivec2 size = ivec2(p.uResolution.xy);
-            if (px.x >= size.x || px.y >= size.y)
-            {
-                return;
-            }
-
-            vec2 rasterUv = (vec2(px) + 0.5) * p.uResolution.zw;
-            float depth = texture(uDepth, rasterUv).r;
-
-            // Reverse-Z clears to zero, so a pixel the geometry never covered reads exactly zero. That is
-            // the sky, and the sky is not motionless: it sits at infinity, so it turns with the camera
-            // exactly as the ground does and only the camera's TRANSLATION leaves it where it was. It
-            // used to be reported as still, and then every pixel the sky had just been revealed at --
-            // behind a strut, a wire, a soldier against the horizon -- read its history from the same
-            // place rather than from where that sky came from, and kept a copy of whatever thin thing
-            // had stood there: a ghost one frame behind, on every pan. Reprojecting the pixel's view
-            // direction alone, with no parallax, is the sky's true motion.
-            if (depth <= 0.0)
-            {
-                vec2 currentUv = rasterUv - (p.uJitter.xy * p.uResolution.zw);
-                vec2 ndc = currentUv * 2.0 - 1.0;
-                vec3 direction = vec3(ndc.x / p.uUnproject.x, -ndc.y / p.uUnproject.y, 1.0);
-                vec3 worldDirection = (p.uViewToWorld * vec4(direction, 0.0)).xyz;
-                vec3 prevDirection = (p.uPrevWorldToView * vec4(worldDirection, 0.0)).xyz;
-                if (prevDirection.z <= 1e-4)
-                {
-                    imageStore(uVelocity, px, vec4(0.0));
-                    return;
-                }
-
-                vec2 prevSkyNdc = vec2(
-                    prevDirection.x * p.uPrevProjection.x / prevDirection.z,
-                    -prevDirection.y * p.uPrevProjection.y / prevDirection.z);
-                imageStore(uVelocity, px, vec4(currentUv - (prevSkyNdc * 0.5 + 0.5), 0.0, 0.0));
-                return;
-            }
-
-            // The first-person rig lives in the foreground depth sliver (reverse-Z 0.9..1, nearer than
-            // any world surface can be) and is locked to the camera: it does not move on screen when the
-            // camera turns. This pass derives motion from depth reprojection, which knows nothing of that
-            // rigging -- it read the rig's near depth as world geometry a hand's length away and handed it
-            // an enormous velocity every time the view rotated. The motion blur then smeared that velocity
-            // across the whole weapon, and the temporal pass chased the same false motion into a ghosting
-            // weapon. Its true screen motion is very nearly zero, which is both what stills the blur and
-            // what lets the temporal pass hold the weapon steady.
-            if (depth >= 0.9)
-            {
-                imageStore(uVelocity, px, vec4(0.0));
-                return;
-            }
-
-            // The depth belongs to the ray displaced by this frame's projection jitter. Reconstruct that
-            // surface through its UNJITTERED screen position, just as the reference's no-AA clip transform
-            // does. Using rasterUv here happens to cancel for a held camera and for much of a rotation,
-            // but it reconstructs the wrong world point under translation; the parallax error then grows
-            // with walking speed and makes every history lookup land between the right samples.
-            vec2 currentUv = rasterUv - (p.uJitter.xy * p.uResolution.zw);
-            vec3 viewPos = ViewPositionAt(currentUv, depth);
-
-            // Camera-relative throughout: the world position is never formed, only the offset from this
-            // frame's camera, and then the offset from the previous one.
-            vec3 relativeToCamera = (p.uViewToWorld * vec4(viewPos, 0.0)).xyz;
-            vec3 relativeToPrevCamera = relativeToCamera + p.uCameraDelta.xyz;
-            vec3 prevView = (p.uPrevWorldToView * vec4(relativeToPrevCamera, 0.0)).xyz;
-
-            // Behind the previous camera, so it had no screen position at all — nothing to reproject onto.
-            if (prevView.z <= p.uPrevProjection.z)
-            {
-                imageStore(uVelocity, px, vec4(0.0));
-                return;
-            }
-
-            // The projection applied by hand rather than as a matrix, from the same four numbers the
-            // reconstruction above used, so the two are exact inverses of one another.
-            vec2 prevNdc = vec2(
-                prevView.x * p.uPrevProjection.x / prevView.z,
-                -prevView.y * p.uPrevProjection.y / prevView.z);
-            vec2 prevUv = prevNdc * 0.5 + 0.5;
-
-            // Motion is always unjittered-current minus unjittered-previous. Consumers that read a raw
-            // frame texture add that frame's jitter themselves; the super-sampled history is already in
-            // unjittered output space and uses this vector directly.
-            imageStore(uVelocity, px, vec4(currentUv - prevUv, 0.0, 0.0));
-        }
-        """;
-
     /// <summary>Initialises a new instance of the <see cref="VelocityPass"/> class.</summary>
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the pass lives on.</param>
     /// <param name="allocator">The allocator backing the parameter buffers.</param>
-    /// <param name="compiler">The shader compiler.</param>
     /// <param name="framesInFlight">How many frames may be recorded before one completes.</param>
     public VelocityPass(
         Vk vk,
         VulkanDevice device,
         VulkanAllocator allocator,
-        ShaderCompiler compiler,
         int framesInFlight)
     {
         _pass = new VulkanComputePass(
             vk,
             device,
             allocator,
-            compiler,
-            "velocity.comp",
-            Source,
+            ShaderModuleId.Velocity,
             Bindings,
             ParamSize,
             framesInFlight);

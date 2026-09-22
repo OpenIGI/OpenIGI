@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Meshes;
 using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
@@ -80,110 +81,32 @@ internal sealed unsafe class ObjectVelocityPass : IDisposable
     private readonly Dictionary<(ulong Velocity, ulong Depth), Framebuffer> _framebuffers = [];
     private bool _disposed;
 
-    private const string VertexSource =
-        """
-        #version 450
-
-        layout(location = 0) in vec3 aPosition;
-        layout(location = 1) in vec3 aPreviousPosition;
-
-        // The previous transform arrives as three rows rather than a matrix. Nothing downstream reads
-        // the previous depth -- the vector is formed from x, y and w alone -- so its z row would be
-        // twelve wasted bytes in a block that is full at 128, and the pose blends go there instead.
-        layout(push_constant) uniform Push
-        {
-            mat4 uCurrent;      // this frame's model-view-projection, exactly as the G-buffer drew it
-            vec4 uPreviousX;    // the previous frame's, same mesh occurrence: its x row,
-            vec4 uPreviousY;    // its y row,
-            vec4 uPreviousW;    // and its w row.
-            vec4 uPose;         // x: this frame's pose blend, y: the one that names last frame's
-        } push;
-
-        layout(location = 0) out vec4 vCurrentClip;
-        layout(location = 1) out vec4 vPreviousClip;
-
-        void main()
-        {
-            // Both frames' vertices are mixes of the same two poses, so one delta and two blends give
-            // both. A mesh that does not animate has a zero delta and lands on aPosition either way,
-            // which is what keeps its motion purely the transform's.
-            vec3 poseDelta = aPreviousPosition - aPosition;
-            vec4 here = vec4(aPosition + push.uPose.x * poseDelta, 1.0);
-            vec4 was = vec4(aPosition + push.uPose.y * poseDelta, 1.0);
-
-            vec4 clip = push.uCurrent * here;
-            vCurrentClip = clip;
-            vPreviousClip = vec4(
-                dot(push.uPreviousX, was),
-                dot(push.uPreviousY, was),
-                0.0,
-                dot(push.uPreviousW, was));
-
-            // The same OpenGL-to-Vulkan correction the G-buffer vertex stage applies, in the same order,
-            // so the rasterised depth is bit-comparable with what that pass stored.
-            clip.y = -clip.y;
-            clip.z = (clip.w - clip.z) * 0.5;
-            gl_Position = clip;
-        }
-        """;
-
-    private const string FragmentSource =
-        """
-        #version 450
-
-        layout(push_constant) uniform Push
-        {
-            mat4 uCurrent;
-            vec4 uPreviousX;
-            vec4 uPreviousY;
-            vec4 uPreviousW;
-            vec4 uPose;
-        } push;
-
-        layout(location = 0) in vec4 vCurrentClip;
-        layout(location = 1) in vec4 vPreviousClip;
-
-        layout(location = 0) out vec2 outVelocity;
-
-        // Engine clip space to the image-space uv the velocity consumers use: the engine's Y is up and
-        // the image's is down, hence the negation — the same convention the compute pass writes.
-        vec2 ImageUv(vec4 clip)
-        {
-            vec2 ndc = clip.xy / clip.w;
-            return vec2((ndc.x * 0.5) + 0.5, (-ndc.y * 0.5) + 0.5);
-        }
-
-        void main()
-        {
-            // Behind the previous camera: it had no screen position to have moved from.
-            if (vPreviousClip.w < 1e-3)
-            {
-                outVelocity = vec2(0.0);
-                return;
-            }
-
-            outVelocity = ImageUv(vCurrentClip) - ImageUv(vPreviousClip);
-        }
-        """;
-
     /// <summary>Initialises a new instance of the <see cref="ObjectVelocityPass"/> class.</summary>
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the pass lives on.</param>
-    /// <param name="compiler">The shader compiler.</param>
     /// <param name="depthFormat">The scene depth attachment's format.</param>
-    public ObjectVelocityPass(Vk vk, VulkanDevice device, ShaderCompiler compiler, Format depthFormat)
+    public ObjectVelocityPass(Vk vk, VulkanDevice device, Format depthFormat)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(compiler);
         _vk = vk;
         _device = device.Device;
         _pipelineCache = device.PipelineCache;
 
+        ShaderReflection reflection = ShaderCatalog.GetReflection(ShaderModuleId.ObjectVelocity);
+        ReadOnlySpan<byte> spirv = ShaderCatalog.GetSpirv(ShaderModuleId.ObjectVelocity).Span;
         _vertex = new VulkanShaderModule(
-            vk, _device, compiler.Compile(VertexSource, ShaderStage.Vertex, "objectvelocity.vert"), ShaderStage.Vertex);
+            vk,
+            _device,
+            spirv,
+            Vulkan.Shaders.ShaderStage.Vertex,
+            reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Vertex).Name);
         _fragment = new VulkanShaderModule(
-            vk, _device, compiler.Compile(FragmentSource, ShaderStage.Fragment, "objectvelocity.frag"), ShaderStage.Fragment);
+            vk,
+            _device,
+            spirv,
+            Vulkan.Shaders.ShaderStage.Fragment,
+            reflection.EntryPointFor(OpenIGI.Shaders.ShaderStage.Fragment).Name);
 
         _renderPass = CreateRenderPass(depthFormat);
         _layout = CreatePipelineLayout();
@@ -446,7 +369,8 @@ internal sealed unsafe class ObjectVelocityPass : IDisposable
 
     private Pipeline CreatePipeline()
     {
-        nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
+        nint vertexEntry = SilkMarshal.StringToPtr(_vertex.EntryPoint, NativeStringEncoding.UTF8);
+        nint fragmentEntry = SilkMarshal.StringToPtr(_fragment.EntryPoint, NativeStringEncoding.UTF8);
         try
         {
             PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
@@ -455,14 +379,14 @@ internal sealed unsafe class ObjectVelocityPass : IDisposable
                 SType = StructureType.PipelineShaderStageCreateInfo,
                 Stage = ShaderStageFlags.VertexBit,
                 Module = _vertex.Handle,
-                PName = (byte*)entryPoint,
+                PName = (byte*)vertexEntry,
             };
             stages[1] = new PipelineShaderStageCreateInfo
             {
                 SType = StructureType.PipelineShaderStageCreateInfo,
                 Stage = ShaderStageFlags.FragmentBit,
                 Module = _fragment.Handle,
-                PName = (byte*)entryPoint,
+                PName = (byte*)fragmentEntry,
             };
 
             // Current and previous positions come from whole-pose streams; the rest of each Vertex3D
@@ -593,7 +517,8 @@ internal sealed unsafe class ObjectVelocityPass : IDisposable
         }
         finally
         {
-            SilkMarshal.Free(entryPoint);
+            SilkMarshal.Free(vertexEntry);
+            SilkMarshal.Free(fragmentEntry);
         }
     }
 }
