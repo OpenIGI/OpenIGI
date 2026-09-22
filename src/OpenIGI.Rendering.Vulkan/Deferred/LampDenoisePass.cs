@@ -1,7 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Vulkan.Compute;
 using OpenIGI.Rendering.Vulkan.Memory;
-using OpenIGI.Rendering.Vulkan.Shaders;
+using OpenIGI.Shaders;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Deferred;
@@ -63,22 +63,18 @@ internal sealed class LampDenoisePass : IDisposable
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the passes live on.</param>
     /// <param name="allocator">The allocator backing their parameter buffers.</param>
-    /// <param name="compiler">The shader compiler.</param>
     /// <param name="framesInFlight">How many frames the descriptor sets are cycled over.</param>
     public LampDenoisePass(
         Vk vk,
         VulkanDevice device,
         VulkanAllocator allocator,
-        ShaderCompiler compiler,
         int framesInFlight)
     {
         _temporal = new VulkanComputePass(
             vk,
             device,
             allocator,
-            compiler,
-            "lamptemporal.comp",
-            LampDenoiseShaderSource.Temporal,
+            ShaderModuleId.LampDenoiseTemporal,
             TemporalBindings,
             TemporalParamSize,
             framesInFlight);
@@ -87,9 +83,7 @@ internal sealed class LampDenoisePass : IDisposable
             vk,
             device,
             allocator,
-            compiler,
-            "lampspatial.comp",
-            LampDenoiseShaderSource.Spatial,
+            ShaderModuleId.LampDenoiseSpatial,
             SpatialBindings,
             SpatialParamSize,
             framesInFlight);

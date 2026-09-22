@@ -99,4 +99,10 @@ public enum ShaderModuleId
 
     /// <summary>temporal upscaler: this frame accumulated into the super-sampled history.</summary>
     UpscaleUpdateHistory,
+
+    /// <summary>Lamp shadows: the traced visibility reprojected and accumulated over time.</summary>
+    LampDenoiseTemporal,
+
+    /// <summary>Lamp shadows: a variance-guided filter over the accumulated visibility.</summary>
+    LampDenoiseSpatial,
 }

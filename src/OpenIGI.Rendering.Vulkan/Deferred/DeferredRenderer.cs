@@ -147,7 +147,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             ? new LampShadowPass(vk, device, allocator, compiler, framesInFlight)
             : null;
         _lampDenoise = _rayQuery
-            ? new LampDenoisePass(vk, device, allocator, compiler, framesInFlight)
+            ? new LampDenoisePass(vk, device, allocator, framesInFlight)
             : null;
         _giUniforms = new VulkanBuffer[framesInFlight];
         _lampUniforms = new VulkanBuffer[framesInFlight];

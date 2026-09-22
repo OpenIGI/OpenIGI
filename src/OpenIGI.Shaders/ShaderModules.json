@@ -144,6 +144,14 @@
     {
       "id": "UpscaleUpdateHistory",
       "source": "TemporalUpscale/UpdateHistory.slang"
+    },
+    {
+      "id": "LampDenoiseTemporal",
+      "source": "Lamp/DenoiseTemporal.slang"
+    },
+    {
+      "id": "LampDenoiseSpatial",
+      "source": "Lamp/DenoiseSpatial.slang"
     }
   ]
 }
