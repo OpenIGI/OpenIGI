@@ -54,6 +54,12 @@ public sealed partial class GraphicsDevice
 
     private bool _capturing;
     private DebugView _debugView;
+    private bool _groundDetail;
+    private bool _paintedSky;
+    private bool _frameHasPaintedSky;
+    private float _floorGloss = 1f;
+    private float _writtenFloorGloss = float.NaN;
+    private float _sceneExposure = 1f;
     private int _grainFrame;
     private Matrix3f _viewToWorld = Matrix3f.Identity;
     private Vector3f _cameraPosition;
@@ -85,9 +91,42 @@ public sealed partial class GraphicsDevice
         ClosePass();
 
         EnsureDeferred(Math.Max(1, description.Width), Math.Max(1, description.Height));
+        WriteSurfaceBlock();
 
+        _frameHasPaintedSky = false;
         _capturing = true;
         return true;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// A bracket around the dome's own draws: what it turns on is the division by the exposure, which
+    /// belongs to them and to nothing drawn after. The frame remembers that a sky was painted at all, so
+    /// the shading keeps it rather than putting the atmosphere where there is no depth.
+    /// </remarks>
+    public void SetPaintedSky(bool painted)
+    {
+        ThrowIfDisposed();
+        _paintedSky = painted;
+        _frameHasPaintedSky |= painted;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The ground's lightmap slot then carries its detail map, which the geometry pass multiplies into
+    /// the colour rather than writing as baked light.
+    /// </remarks>
+    public void SetLightmapModulates(bool modulate)
+    {
+        ThrowIfDisposed();
+        _groundDetail = modulate;
+    }
+
+    /// <inheritdoc/>
+    public void SetFloorGloss(float gloss)
+    {
+        ThrowIfDisposed();
+        _floorGloss = Math.Clamp(gloss, 0f, 1f);
     }
 
     /// <inheritdoc/>
@@ -201,6 +240,11 @@ public sealed partial class GraphicsDevice
             PresentHeight: CurrentMode.Height,
             MaskView: _debugView.IsMask()));
 
+        // What a painted sky is divided by as it is drawn, so that it leaves the tone map at the colour
+        // it was painted. Last frame's, as it is on the Vulkan device: the sky is drawn before the frame
+        // says what it will be exposed by. There is no metering here, so it is the setting itself.
+        _sceneExposure = MathF.Max(post.Exposure, 1e-3f);
+
         resolve.BindFrame(scene.View(SceneTargetId.Lit));
 
         using (IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
@@ -252,7 +296,8 @@ public sealed partial class GraphicsDevice
             _lighting.Scale,
             _lighting.AmbientColour,
             (int)_debugView,
-            bakesWhole: _lighting.CompleteBake);
+            _frameHasPaintedSky,
+            _lighting.CompleteBake);
 
         shading.BindFrame(scene, FrameSlot, gi, lamps);
 
@@ -363,11 +408,11 @@ public sealed partial class GraphicsDevice
         _lightmapScale,
         _poseBlend,
         _alphaHashSeed,
-        DetailFade.None,
+        _detailFade,
         GBufferPushBlock.TerrainCameraOffset(modelView, _viewToWorld),
-        GroundDetail: false,
-        PaintedSky: false,
-        Exposure: 1f);
+        _groundDetail,
+        _paintedSky,
+        _sceneExposure);
 
     /// <summary>Records one mesh into the G-buffer.</summary>
     /// <param name="call">What to draw.</param>
@@ -426,14 +471,14 @@ public sealed partial class GraphicsDevice
             "surface"));
 
         // One vector, per FRAME rather than per draw: how strongly the derived detail maps are trusted,
-        // and how far an up-facing surface's roughness is smoothed towards a floor's. Written once here
-        // because neither has moved onto this path, and a buffer a shader reads must hold something.
+        // and how far an up-facing surface's roughness is smoothed towards a floor's.
         _surfaceUniform = _device.CreateBuffer(new RhiBufferDescriptor(
             SurfaceBlockBytes,
             RhiBufferUsage.Uniform | RhiBufferUsage.CopyDestination,
             "surface"));
 
-        _device.WriteBuffer<float>(_surfaceUniform, 0, stackalloc float[SurfaceBlockFloats]);
+        _writtenFloorGloss = float.NaN;
+        WriteSurfaceBlock();
 
         _surfaceGroup = _device.CreateBindGroup(new RhiBindGroupDescriptor(
             _surfaceLayout,
@@ -454,6 +499,34 @@ public sealed partial class GraphicsDevice
         _sky = new SkyAtmosphere(_device, FramesInFlight);
         _shading.BindSky(_sky.SkyViewTable, _sky.TransmittanceTable, _sky.IrradianceTable, _sky.Sampler);
         _sceneResolve = new DeferredResolve(_device, PresentFormat);
+    }
+
+    /// <summary>Writes the geometry pass's surface block, when what it says has changed.</summary>
+    /// <remarks>
+    /// <para>
+    /// Not a block of zeros. The floor gloss is a MULTIPLY on an up-facing surface's roughness, and one
+    /// is its identity: nought makes every floor a mirror. The detail strength is nought on purpose —
+    /// the detail maps it trusts are not bound on this path, and a strength over a stand-in would bend
+    /// every normal in the world by the stand-in's colour.
+    /// </para>
+    /// <para>
+    /// Written only when it changes, because the buffer is one for every frame in flight and the gloss
+    /// is a setting that moves when a player moves it.
+    /// </para>
+    /// </remarks>
+    private void WriteSurfaceBlock()
+    {
+        if (_surfaceUniform is not { } uniform || _floorGloss.Equals(_writtenFloorGloss))
+        {
+            return;
+        }
+
+        Span<float> block = stackalloc float[SurfaceBlockFloats];
+        block[0] = 0f;
+        block[1] = _floorGloss;
+
+        _device.WriteBuffer<float>(uniform, 0, block);
+        _writtenFloorGloss = _floorGloss;
     }
 
     /// <summary>How many floats the geometry pass's per-frame surface block holds.</summary>

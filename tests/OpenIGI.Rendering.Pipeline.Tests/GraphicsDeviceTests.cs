@@ -1,5 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Rendering.Mesh3D;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.TestSupport.Rhi;
 using Xunit;
@@ -250,6 +251,53 @@ public sealed class GraphicsDeviceTests
 
         Assert.True(device.OcclusionVisible(device.CreateOcclusionQuery()));
     }
+
+    [Fact]
+    public void The_ground_draws_into_the_G_buffer_with_its_slide_and_its_detail()
+    {
+        // The terrain's passes are weighted by a level-of-detail slide the vertex stage computes, and its
+        // detail pass multiplies its map in rather than writing it as light. Both arrive as device state,
+        // and the geometry pass drew every page without either: each additive pass at full weight, so the
+        // ground came out as the SUM of its materials.
+        using RecordingRhiDevice rhi = new();
+        using GraphicsDevice device = new(rhi, new DisplayMode(640, 480, 32, 60), deferredFrame: true);
+
+        Assert.True(device.BeginSceneCapture(new SceneTargetDescription(64, 64, Deferred: true)));
+        device.BeginPass(ScenePass.Geometry);
+
+        device.SetDetailFade(0.25f, 0.5f, 2f, fadeAlpha: true);
+        World(device);
+
+        device.ClearDetailFade();
+        device.SetLightmapModulates(true);
+        World(device);
+
+        device.EndPass();
+        device.EndSceneCapture();
+        device.SwapBuffers();
+
+        float[][] pushed = GeometryPushes(rhi);
+        Assert.Equal(2, pushed.Length);
+
+        float[] slide = pushed[0];
+        float[] detail = pushed[1];
+
+        // The slide's scale, offset, slope and mode, in the slots the vertex stage reads them from.
+        Assert.Equal([0.25f, 0.5f, 2f, 2f], slide[16..20]);
+
+        // Three: the lightmap slot is the ground's detail map.
+        Assert.Equal(GBufferPushBlock.GroundDetailMode, detail[19]);
+    }
+
+    /// <summary>The blocks the frame's geometry draws pushed, in order, as floats.</summary>
+    private static float[][] GeometryPushes(RecordingRhiDevice rhi) =>
+    [
+        .. rhi.CommandsOf<RecordedRhiCommand.SetPushData>()
+            .Where(command => command.Bytes.Count == GBufferPushBlock.Floats * sizeof(float))
+            .Select(command => System.Runtime.InteropServices.MemoryMarshal
+                .Cast<byte, float>(command.Bytes.ToArray())
+                .ToArray()),
+    ];
 
     private static GraphicsDevice Open(RecordingRhiDevice rhi) =>
         new(rhi, new DisplayMode(640, 480, 32, 60));

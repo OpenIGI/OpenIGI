@@ -130,11 +130,6 @@ public sealed partial class GraphicsDevice
     public void SetMaterialOverride(in SurfaceMaterial material) => _material = material;
 
     /// <inheritdoc/>
-    public void SetPaintedSky(bool painted)
-    {
-    }
-
-    /// <inheritdoc/>
     /// <remarks>
     /// Kept for the geometry pass, which dithers a cut-out's alpha against it so that a surface fading
     /// out of the world does so in a pattern the temporal resolve can average rather than in a hard step.
@@ -148,16 +143,6 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     public void SetMaterialDetail(float strength)
-    {
-    }
-
-    /// <inheritdoc/>
-    public void SetFloorGloss(float gloss)
-    {
-    }
-
-    /// <inheritdoc/>
-    public void SetLightmapModulates(bool modulate)
     {
     }
 
