@@ -31,7 +31,7 @@ public sealed class GroundBakeGBufferTests
     {
         Assert.Contains("if (push.normal0.w > 3.5)", Source, StringComparison.Ordinal);
         Assert.Contains(
-            "output.baked = float4(DecodeSrgb(diffuse.rgb) * DecodeSrgb(input.color.rgb), 1.0);",
+            "output.baked = float4(SampledLinear(diffuse.rgb) * DecodeSrgb(input.color.rgb), 1.0);",
             Source,
             StringComparison.Ordinal);
     }
@@ -65,7 +65,7 @@ public sealed class GroundBakeGBufferTests
     public void The_detail_map_still_multiplies_the_colour()
     {
         Assert.Contains(
-            "albedo *= DecodeSrgb(uLightmap.Sample(uLightmapSampler, input.lightmapUv).rgb);",
+            "albedo *= SampledLinear(uLightmap.Sample(uLightmapSampler, input.lightmapUv).rgb);",
             Source,
             StringComparison.Ordinal);
     }

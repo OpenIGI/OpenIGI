@@ -66,6 +66,14 @@ public static class Mesh3DConstants
     /// </remarks>
     public const int ClipYDown = 64;
 
+    /// <summary>Whether the sampler has already decoded a colour texture to linear.</summary>
+    /// <remarks>
+    /// Declared by the stages that light in linear space; see <c>Common/SampledColour.slang</c>. Every
+    /// texture on the RHI path is stored in an sRGB image, so its sampler decodes, and a stage that
+    /// decoded again would square the curve. It defaults to the legacy renderer's UNORM images.
+    /// </remarks>
+    public const int SamplerDecodes = 66;
+
     /// <summary>The constants every pipeline built for the RHI carries, whatever else it carries.</summary>
     /// <remarks>
     /// One entry, and it is the difference between a frame and the same frame upside down. The RHI

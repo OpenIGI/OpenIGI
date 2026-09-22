@@ -6,6 +6,7 @@
 // attachment but the albedo (see GBufferPipeline).
 
 #include "../Common/GBufferEncoding.slang"
+#include "../Common/SampledColour.slang"
 #include "../Common/PushConstants.slang"
 #include "../Common/ClipSpace.slang"
 
@@ -277,8 +278,8 @@ GBufferTargets fragmentMain(Varyings input)
     // lighting downstream is linear.
     // The fade is one for everything but terrain, where it is this pass's share of the ground at this
     // pixel: the passes are added, so the share scales the albedo and never the alpha.
-    float3 albedo = DecodeSrgb(diffuse.rgb) * DecodeSrgb(input.color.rgb) * input.fade;
-    float3 baked = DecodeSrgb(uLightmap.Sample(uLightmapSampler, input.lightmapUv).rgb) * push.material.w;
+    float3 albedo = SampledLinear(diffuse.rgb) * DecodeSrgb(input.color.rgb) * input.fade;
+    float3 baked = SampledLinear(uLightmap.Sample(uLightmapSampler, input.lightmapUv).rgb) * push.material.w;
 
     // The sequel's ground draws its bake as a THIRD pass, MODULATE2X over the two under it
     // (TerrainRender_SetBlendMode, igi2ed 0x666B90). On the original's forward path that lands in the
@@ -299,7 +300,7 @@ GBufferTargets fragmentMain(Varyings input)
         output.baseColour = float4(0.0, 0.0, 0.0, 0.0);
         output.normal = float4(0.0, 0.0, 0.0, 0.0);
         output.material = float4(0.0, 0.0, 0.0, 0.0);
-        output.baked = float4(DecodeSrgb(diffuse.rgb) * DecodeSrgb(input.color.rgb), 1.0);
+        output.baked = float4(SampledLinear(diffuse.rgb) * DecodeSrgb(input.color.rgb), 1.0);
         return output;
     }
 
@@ -312,7 +313,7 @@ GBufferTargets fragmentMain(Varyings input)
     // unbound lightmap did.
     if (push.normal0.w > 2.5)
     {
-        albedo *= DecodeSrgb(uLightmap.Sample(uLightmapSampler, input.lightmapUv).rgb);
+        albedo *= SampledLinear(uLightmap.Sample(uLightmapSampler, input.lightmapUv).rgb);
         baked = float3(push.material.w, push.material.w, push.material.w);
     }
 

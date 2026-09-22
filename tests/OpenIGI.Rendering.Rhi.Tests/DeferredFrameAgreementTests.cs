@@ -102,11 +102,16 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
             "The upper left of the frame is the triangle, so the frame is upside down.");
     }
 
-    [Fact]
-    public void The_albedo_view_shows_the_colour_that_was_drawn()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void The_albedo_view_shows_the_colour_that_was_drawn(bool textured)
     {
-        byte[]? vulkan = TryOnVulkan(out string? vulkanReason, DebugView.Albedo);
-        byte[]? webgpu = TryOnWebGpu(out string? webgpuReason, DebugView.Albedo);
+        // Once from the vertex colour and once from a texture, because the two reach linear space by
+        // different roads: the vertex colour is decoded by the shader, and a texture on this path is an
+        // sRGB image the SAMPLER decodes -- which a shader written for UNORM images decoded again.
+        byte[]? vulkan = TryOnVulkan(out string? vulkanReason, DebugView.Albedo, textured);
+        byte[]? webgpu = TryOnWebGpu(out string? webgpuReason, DebugView.Albedo, textured);
 
         if (vulkan is null || webgpu is null)
         {
@@ -120,8 +125,8 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         output.WriteLine($"vulkan centre {Describe(vulkan)}");
         output.WriteLine($"webgpu centre {Describe(webgpu)}");
 
-        // A mask view is the code value as it was stored, with no curve, grade or film on it: the vertex
-        // colour over a white texture, to within the encode and decode it went through on the way.
+        // A mask view is the code value as it was stored, with no curve, grade or film on it: the colour
+        // that was drawn, to within the encode and decode it went through on the way.
         foreach (byte[] frame in (byte[][])[vulkan, webgpu])
         {
             Assert.InRange(frame[Centre], 0, 1);
@@ -134,7 +139,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
     private const int BaseColumn = 14;
 
     /// <summary>The frame everything here compares, written once and run twice.</summary>
-    private static void DrawFrame(GraphicsDevice device, DebugView view)
+    private static void DrawFrame(GraphicsDevice device, DebugView view, bool textured)
     {
         device.SetDebugView(view);
 
@@ -173,16 +178,25 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         device.SetCullMode(CullMode.None);
         device.SetModelAmbient(Vector3f.One);
 
+        // The same green either way: carried by the vertices over no texture, or by a texture under
+        // white vertices.
+        Bgra32 green = new(0, 220, 40, 255);
+        Bgra32 vertexColour = textured ? Bgra32.White : green;
+
+        TextureHandle texture = textured
+            ? device.CreateTexture(new TextureDescription(1, 1), [green])
+            : TextureHandle.None;
+
         MeshHandle mesh = device.CreateMesh(
             [
-                new Vertex3D(new Vector3f(-0.7f, -0.7f, 0.5f), Vector3f.UnitZ, 0f, 0f, colour: new Bgra32(0, 220, 40, 255)),
-                new Vertex3D(new Vector3f(0.7f, -0.7f, 0.5f), Vector3f.UnitZ, 1f, 0f, colour: new Bgra32(0, 220, 40, 255)),
-                new Vertex3D(new Vector3f(0f, 0.7f, 0.5f), Vector3f.UnitZ, 0.5f, 1f, colour: new Bgra32(0, 220, 40, 255)),
+                new Vertex3D(new Vector3f(-0.7f, -0.7f, 0.5f), Vector3f.UnitZ, 0f, 0f, colour: vertexColour),
+                new Vertex3D(new Vector3f(0.7f, -0.7f, 0.5f), Vector3f.UnitZ, 1f, 0f, colour: vertexColour),
+                new Vertex3D(new Vector3f(0f, 0.7f, 0.5f), Vector3f.UnitZ, 0.5f, 1f, colour: vertexColour),
             ],
             [0, 1, 2]);
 
         device.BeginPass(ScenePass.Geometry);
-        device.DrawMesh(mesh, 0, 3, Matrix4f.Identity, TextureHandle.None, TextureHandle.None, BlendMode.Opaque);
+        device.DrawMesh(mesh, 0, 3, Matrix4f.Identity, texture, TextureHandle.None, BlendMode.Opaque);
         device.EndPass();
 
         device.EndSceneCapture();
@@ -214,7 +228,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         device.SwapBuffers();
     }
 
-    private static byte[]? TryOnVulkan(out string? reason, DebugView view = DebugView.None)
+    private static byte[]? TryOnVulkan(out string? reason, DebugView view = DebugView.None, bool textured = false)
     {
         reason = null;
 
@@ -224,7 +238,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
 
             using (GraphicsDevice device = new(vulkan.Device, new DisplayMode(Size, Size, 32, 60), deferredFrame: true))
             {
-                DrawFrame(device, view);
+                DrawFrame(device, view, textured);
             }
 
             return Read(vulkan.Device, vulkan.OffscreenTarget(0));
@@ -236,7 +250,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         }
     }
 
-    private static byte[]? TryOnWebGpu(out string? reason, DebugView view = DebugView.None)
+    private static byte[]? TryOnWebGpu(out string? reason, DebugView view = DebugView.None, bool textured = false)
     {
         reason = null;
 
@@ -247,7 +261,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
 
             using (GraphicsDevice device = new(rhi, new DisplayMode(Size, Size, 32, 60), deferredFrame: true))
             {
-                DrawFrame(device, view);
+                DrawFrame(device, view, textured);
             }
 
             return Read(rhi, rhi.OffscreenTarget(0));

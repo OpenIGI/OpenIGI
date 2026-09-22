@@ -258,6 +258,9 @@ public sealed class GBufferPipelineCache : IDisposable
             {
                 [Mesh3DConstants.ClipYDown] = RhiConstant.Of(0),
                 [Mesh3DConstants.AlphaReference] = RhiConstant.Of(key.AlphaReference / 255f),
+
+                // Every texture here is an sRGB image, so it arrives linear already.
+                [Mesh3DConstants.SamplerDecodes] = RhiConstant.Of(1),
             });
 
         return _device.CreateRenderPipeline(new RhiRenderPipelineDescriptor(
