@@ -33,10 +33,93 @@ public sealed unsafe class WebGpuCommandEncoder : IRhiCommandEncoder
     public string Label { get; }
 
     /// <inheritdoc/>
-    public IRhiRenderPassEncoder BeginRenderPass(RhiRenderPassDescriptor descriptor) =>
-        throw new NotSupportedException(
-            "The WebGPU backend records compute and copies; render passes arrive with the surface. "
-            + "Nothing drives a frame through it yet.");
+    public IRhiRenderPassEncoder BeginRenderPass(RhiRenderPassDescriptor descriptor)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ThrowIfFinished();
+
+        using WebGpuString label = new(descriptor.Label);
+        WGPURenderPassColorAttachment[] colours =
+            new WGPURenderPassColorAttachment[Math.Max(descriptor.ColorAttachments.Count, 1)];
+
+        for (int i = 0; i < descriptor.ColorAttachments.Count; i++)
+        {
+            RhiColorAttachment attachment = descriptor.ColorAttachments[i];
+            colours[i] = new WGPURenderPassColorAttachment
+            {
+                view = ((WebGpuTextureView)attachment.View).Handle,
+                resolveTarget = attachment.ResolveTarget is WebGpuTextureView resolve ? resolve.Handle : default,
+                loadOp = WebGpuTranslation.LoadOp(attachment.Load),
+                storeOp = WebGpuTranslation.StoreOp(attachment.Store),
+                clearValue = new WGPUColor
+                {
+                    r = attachment.ClearValue.R,
+                    g = attachment.ClearValue.G,
+                    b = attachment.ClearValue.B,
+                    a = attachment.ClearValue.A,
+                },
+
+                // WebGPU wants the slice of a volume attachment stated, and the sentinel for "this is
+                // not one" is the largest unsigned value rather than zero -- zero is slice zero.
+                depthSlice = uint.MaxValue,
+            };
+        }
+
+        WGPURenderPassDepthStencilAttachment depth = default;
+        WGPUPassTimestampWrites timestamps = default;
+
+        fixed (WGPURenderPassColorAttachment* firstColour = colours)
+        {
+            WGPURenderPassDescriptor native = new()
+            {
+                label = label.View,
+                colorAttachmentCount = (nuint)descriptor.ColorAttachments.Count,
+                colorAttachments = descriptor.ColorAttachments.Count > 0 ? firstColour : null,
+                occlusionQuerySet = descriptor.OcclusionQuerySet is WebGpuQuerySet queries
+                    ? queries.Handle
+                    : default,
+            };
+
+            if (descriptor.DepthAttachment is { } attachment)
+            {
+                depth = new WGPURenderPassDepthStencilAttachment
+                {
+                    view = ((WebGpuTextureView)attachment.View).Handle,
+                    depthLoadOp = WebGpuTranslation.LoadOp(attachment.DepthLoad),
+                    depthStoreOp = WebGpuTranslation.StoreOp(attachment.DepthStore),
+                    depthClearValue = attachment.DepthClearValue,
+                    depthReadOnly = attachment.DepthReadOnly ? 1u : 0u,
+                };
+
+                // A depth-only format has no stencil aspect, and stating an operation for one it does
+                // not have is a validation failure rather than something ignored.
+                if (attachment.View.Format.HasStencil())
+                {
+                    depth.stencilLoadOp = WGPULoadOp.Clear;
+                    depth.stencilStoreOp = WGPUStoreOp.Discard;
+                }
+
+                native.depthStencilAttachment = &depth;
+            }
+
+            if (descriptor.Timestamps is { } writes)
+            {
+                timestamps = new WGPUPassTimestampWrites
+                {
+                    querySet = ((WebGpuQuerySet)writes.QuerySet).Handle,
+                    beginningOfPassWriteIndex = writes.BeginIndex < 0 ? uint.MaxValue : (uint)writes.BeginIndex,
+                    endOfPassWriteIndex = writes.EndIndex < 0 ? uint.MaxValue : (uint)writes.EndIndex,
+                };
+
+                native.timestampWrites = &timestamps;
+            }
+
+            WGPURenderPassEncoder pass = Wgpu.wgpuCommandEncoderBeginRenderPass(_handle, &native);
+            return pass.IsValid
+                ? new WebGpuRenderPassEncoder(pass, _device.PushRing, WebGpuPushBlocks.Group)
+                : throw new InvalidOperationException($"The render pass '{descriptor.Label}' could not begin.");
+        }
+    }
 
     /// <inheritdoc/>
     public IRhiComputePassEncoder BeginComputePass(in RhiComputePassDescriptor descriptor = default)

@@ -153,6 +153,11 @@ public static class WebGpuTranslation
             mapped |= WGPUBufferUsage.MapWrite;
         }
 
+        if (usage.HasFlag(RhiBufferUsage.QueryResolve))
+        {
+            mapped |= WGPUBufferUsage.QueryResolve;
+        }
+
         return mapped;
     }
 

@@ -40,6 +40,13 @@ public enum RhiBufferUsage
 
     /// <summary>May be mapped for writing.</summary>
     MapWrite = 1 << 8,
+
+    /// <summary>May receive a query set's resolved results.</summary>
+    /// <remarks>
+    /// Its own use rather than an ordinary copy destination, because both backends want to know: the
+    /// results are written by the device at a fixed stride and a buffer not created for it is refused.
+    /// </remarks>
+    QueryResolve = 1 << 9,
 }
 
 /// <summary>

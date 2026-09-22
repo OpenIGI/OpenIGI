@@ -24,6 +24,7 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     private readonly WebGpuContext _context;
     private readonly bool _ownsContext;
     private readonly List<string> _widened = [];
+    private WebGpuPushRing? _pushes;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="WebGpuRhiDevice"/> class.</summary>
@@ -63,6 +64,13 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
 
     /// <summary>Gets the context this works through.</summary>
     public WebGpuContext Context => _context;
+
+    /// <summary>Gets the ring push data is written into, made on first use.</summary>
+    /// <remarks>
+    /// WebGPU has no push constants, so a push is a slice of a uniform buffer bound by dynamic offset.
+    /// See <see cref="WebGpuPushRing"/> for what that costs and when it has to be reset.
+    /// </remarks>
+    public WebGpuPushRing PushRing => _pushes ??= new WebGpuPushRing(this);
 
     /// <summary>Gets every texture whose format had to be widened, as sentences.</summary>
     /// <remarks>
@@ -500,15 +508,6 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Not built. The raster half of this backend arrives with the surface; what exists today is
-    /// compute, copies and readback, which is what the shared pipeline's first passes need.
-    /// </remarks>
-    public IRhiRenderPipeline CreateRenderPipeline(RhiRenderPipelineDescriptor descriptor) =>
-        throw new NotSupportedException(
-            "The WebGPU backend builds compute pipelines; render pipelines arrive with the surface.");
-
-    /// <inheritdoc/>
     /// <remarks>Not built; this device is headless until a surface is attached to it.</remarks>
     public bool BeginFrame(out RhiFrame frame) =>
         throw new NotSupportedException("This WebGPU device has no surface, so it presents no frames.");
@@ -540,6 +539,7 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
         }
 
         _disposed = true;
+        _pushes?.Dispose();
 
         if (_ownsContext)
         {
