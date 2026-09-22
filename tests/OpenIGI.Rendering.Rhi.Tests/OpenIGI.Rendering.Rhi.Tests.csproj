@@ -10,6 +10,7 @@
     <ProjectReference Include="..\..\src\OpenIGI.Rendering.Rhi\OpenIGI.Rendering.Rhi.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Rendering.Vulkan\OpenIGI.Rendering.Vulkan.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Rendering.WebGpu\OpenIGI.Rendering.WebGpu.csproj" />
+    <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
   </ItemGroup>
 
   <ItemGroup>
