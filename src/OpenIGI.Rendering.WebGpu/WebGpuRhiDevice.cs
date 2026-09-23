@@ -29,6 +29,14 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     private readonly WebGpuSurfaceSupport _support;
     private WebGpuPushRing? _pushes;
     private WebGpuTexture? _frameTexture;
+
+    // Where a frame is drawn when the surface's own texture will not last until it is presented: see
+    // WebGpuSurface.TexturesLastOneTask. Copied into the surface's texture as the frame is presented.
+    // The one the frame being recorded was handed is kept apart, because a resize replaces the texture
+    // while that frame may still be drawing into the old one; the old one goes once it has been copied.
+    private WebGpuTexture? _drawnFrame;
+    private WebGpuTexture? _frameDrawnInto;
+    private readonly List<WebGpuTexture> _replacedFrames = [];
     private int _frameIndex;
     private bool _disposed;
 
@@ -671,6 +679,23 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
         WebGpuSurface surface = _surface
             ?? throw new InvalidOperationException("This device has no surface, so it presents no frames.");
 
+        // The engine presents a frame at the start of the next one, so a frame is recorded across two
+        // tasks -- and a canvas's texture does not outlive the first. Drawn here, it is copied into the
+        // canvas's texture of the task that presents it (EndFrame).
+        if (surface.TexturesLastOneTask)
+        {
+            _drawnFrame ??= (WebGpuTexture)CreateTexture(new RhiTextureDescriptor(
+                surface.Width,
+                surface.Height,
+                surface.Format,
+                RhiTextureUsage.RenderTarget | RhiTextureUsage.CopySource | RhiTextureUsage.Sampled,
+                Label: "frame"));
+
+            _frameDrawnInto = _drawnFrame;
+            frame = new RhiFrame(_drawnFrame.View, _frameIndex, _frameIndex % FramesInFlight);
+            return true;
+        }
+
         WGPUSurfaceGetCurrentTextureStatus status = surface.Acquire(out WebGpuTexture? texture);
 
         if (texture is null)
@@ -708,6 +733,20 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
         WebGpuSurface surface = _surface
             ?? throw new InvalidOperationException("This device has no surface, so it presents no frames.");
 
+        if (surface.TexturesLastOneTask)
+        {
+            CopyIntoSurface(surface);
+            _frameDrawnInto = null;
+
+            // Copied, and the copy submitted: nothing will be recorded into these again.
+            foreach (WebGpuTexture replaced in _replacedFrames)
+            {
+                replaced.Dispose();
+            }
+
+            _replacedFrames.Clear();
+        }
+
         bool presented = surface.Present();
 
         _frameTexture?.Dispose();
@@ -737,6 +776,41 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
 
         surface.Configure(_context.Device, _support, width, height, vsync);
         NeedsReconfigure = false;
+
+        // Made again at the new size by the next frame. The old one may be what the frame being recorded
+        // draws into, so it goes once that frame has been copied out of it.
+        if (_drawnFrame is { } replaced)
+        {
+            _replacedFrames.Add(replaced);
+            _drawnFrame = null;
+        }
+    }
+
+    /// <summary>Copies the frame drawn for a surface whose textures last one task into its texture now.</summary>
+    private void CopyIntoSurface(WebGpuSurface surface)
+    {
+        if (_frameDrawnInto is not { } drawn)
+        {
+            return;
+        }
+
+        WGPUSurfaceGetCurrentTextureStatus status = surface.Acquire(out WebGpuTexture? shown);
+        if (shown is null)
+        {
+            NeedsReconfigure = status is WGPUSurfaceGetCurrentTextureStatus.Outdated
+                or WGPUSurfaceGetCurrentTextureStatus.Lost;
+            return;
+        }
+
+        using (shown)
+        {
+            using IRhiCommandEncoder encoder = CreateCommandEncoder("present");
+            encoder.CopyTextureToTexture(
+                new RhiTextureRegion(drawn),
+                new RhiTextureRegion(shown),
+                new RhiExtent3D(Math.Min(drawn.Width, shown.Width), Math.Min(drawn.Height, shown.Height)));
+            Submit([encoder.Finish("present")]);
+        }
     }
 
     /// <summary>Gets whether the surface has to be reconfigured before the next frame.</summary>
@@ -820,6 +894,12 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
 
         _disposed = true;
         _frameTexture?.Dispose();
+        _drawnFrame?.Dispose();
+        foreach (WebGpuTexture replaced in _replacedFrames)
+        {
+            replaced.Dispose();
+        }
+
         ReleaseOffscreen();
         _pushes?.Dispose();
         _surface?.Dispose();

@@ -62,10 +62,23 @@ public sealed unsafe class WebGpuSurface : IDisposable
     private bool _disposed;
     private RhiTextureUsage _usage = RhiTextureUsage.RenderTarget;
 
-    private WebGpuSurface(WGPUSurface handle) => _handle = handle;
+    private WebGpuSurface(WGPUSurface handle, bool texturesLastOneTask)
+    {
+        _handle = handle;
+        TexturesLastOneTask = texturesLastOneTask;
+    }
 
     /// <summary>Gets the WebGPU handle.</summary>
     public WGPUSurface Handle => _handle;
+
+    /// <summary>Gets whether a texture this hands out is gone once the task that asked for it ends.</summary>
+    /// <remarks>
+    /// A browser's canvas: its texture is the picture the page shows when the task returns, and is
+    /// destroyed then whether or not anything was drawn in it. A frame recorded across two tasks cannot
+    /// be drawn in one, so it is drawn elsewhere and copied in by the task that presents it; configured
+    /// for that, such a surface's textures can be copied into.
+    /// </remarks>
+    public bool TexturesLastOneTask { get; }
 
     /// <summary>Gets the format the surface was configured with.</summary>
     public RhiTextureFormat Format { get; private set; } = RhiTextureFormat.Undefined;
@@ -148,7 +161,7 @@ public sealed unsafe class WebGpuSurface : IDisposable
         WGPUSurface handle = Wgpu.wgpuInstanceCreateSurface(instance, &descriptor);
 
         return handle.IsValid
-            ? new WebGpuSurface(handle)
+            ? new WebGpuSurface(handle, texturesLastOneTask: handles.System == WebGpuWindowSystem.Canvas)
             : throw new InvalidOperationException(
                 $"No WebGPU surface could be made from a {handles.System} window.");
     }
@@ -224,14 +237,22 @@ public sealed unsafe class WebGpuSurface : IDisposable
         // WebGPU promises, so this asks only for what the adapter says it offers.
         bool readable = (support.Usages & WGPUTextureUsage.CopySrc) != 0;
         _usage = readable ? RhiTextureUsage.RenderTarget | RhiTextureUsage.CopySource : RhiTextureUsage.RenderTarget;
+        WGPUTextureUsage usage = readable
+            ? WGPUTextureUsage.RenderAttachment | WGPUTextureUsage.CopySrc
+            : WGPUTextureUsage.RenderAttachment;
+
+        // A frame that cannot be drawn in the surface's own texture is copied into it.
+        if (TexturesLastOneTask)
+        {
+            _usage |= RhiTextureUsage.CopyDestination;
+            usage |= WGPUTextureUsage.CopyDst;
+        }
 
         WGPUSurfaceConfiguration configuration = new()
         {
             device = device,
             format = WebGpuTranslation.Format(format),
-            usage = readable
-                ? WGPUTextureUsage.RenderAttachment | WGPUTextureUsage.CopySrc
-                : WGPUTextureUsage.RenderAttachment,
+            usage = usage,
             width = (uint)width,
             height = (uint)height,
             alphaMode = support.AlphaMode,
