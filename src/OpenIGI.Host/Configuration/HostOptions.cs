@@ -126,6 +126,7 @@ public readonly record struct HostOptions(
         bool vanillaMenu = false;
         string? shellTab = null;
         int entryCamMission = 0;
+        MissionTimeOfDay entryTime = MissionTimeOfDay.Default;
         int computerCamFrame = 0;
         int missionCycleFrames = 0;
         int titleCycleFrames = 0;
@@ -434,6 +435,17 @@ public readonly record struct HostOptions(
                     throw new ArgumentException($"-entrycam expects a mission id, got '{value}'.", nameof(args));
                 }
             }
+            else if (arg.Equals("entrytime", StringComparison.OrdinalIgnoreCase))
+            {
+                // The campaign's Time choice for -entrycam, picked through the same path the dropdown
+                // takes, so a capture reaches a night mission the way a player does: the backdrop re-lit
+                // first, then Play.
+                string value = Next(args, ref i, "entrytime");
+                if (!Enum.TryParse(value, ignoreCase: true, out entryTime) || !Enum.IsDefined(entryTime))
+                {
+                    throw new ArgumentException($"-entrytime expects default, day or night, got '{value}'.", nameof(args));
+                }
+            }
             else if (arg.Equals("computercam", StringComparison.OrdinalIgnoreCase))
             {
                 // Press C by hand once the mission is up, for the same reason -entrycam presses Play:
@@ -573,6 +585,7 @@ public readonly record struct HostOptions(
             VanillaMenu = vanillaMenu,
             ShellTab = shellTab,
             EntryCamMission = entryCamMission,
+            EntryTime = entryTime,
             ComputerCamFrame = computerCamFrame,
             MissionCycleFrames = missionCycleFrames,
             TitleCycleFrames = titleCycleFrames,
@@ -595,6 +608,13 @@ public readonly record struct HostOptions(
     /// somebody clicking at a moment nobody can repeat, and a capture of it has to start on a known frame.
     /// </remarks>
     public int EntryCamMission { get; init; }
+
+    /// <summary>Gets the time of day <c>-entrycam</c> chooses on the campaign before pressing Play.</summary>
+    /// <remarks>
+    /// Chosen through the dropdown's own path, a second before Play, so the backdrop is re-lit under the
+    /// menu first as it is for a player. Set by <c>-entrytime</c>.
+    /// </remarks>
+    public MissionTimeOfDay EntryTime { get; init; }
 
     /// <summary>
     /// Gets the frame the map computer opens itself on, or <c>0</c> for never. Set by <c>-computercam</c>.
@@ -845,6 +865,8 @@ public readonly record struct HostOptions(
           -entrycam <n>    Boot the shell on mission <n>, wait for its backdrop, then press Play by
                            itself, so the menu-to-mission entry can be measured and captured from a
                            known frame rather than from whenever somebody clicked.
+          -entrytime <t>   The campaign's Time choice for -entrycam: default, day or night, chosen
+                           a second before Play the way the dropdown chooses it.
           -missioncycle N  Abandon the mission to the campaign and play it again every N frames, so the
                            cost of leaving a level -- and whether it releases what it built -- can be
                            measured over many cycles instead of clicked through by hand.

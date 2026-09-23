@@ -62,6 +62,10 @@ internal sealed partial class GameHost : IDisposable
     // level that somehow never finishes tracing must not become a game that never starts.
     private const int LightingWaitMilliseconds = 30_000;
 
+    // How long -entrytime lets the backdrop show the chosen hour before -entrycam presses Play: about a
+    // second of the menu, as a player choosing it would leave.
+    private const int EntryTimeSettleFrames = 60;
+
     // --- Environment, supplied by the composition root ---
     private readonly IPlatformHost _platform;
     private readonly IWorkScheduler _work;
@@ -1293,6 +1297,7 @@ internal sealed partial class GameHost : IDisposable
 
         // -entrycam: Play has not been pressed yet. Set only when the flag asked for it.
         bool entryCamPending = false;
+        long entryTimeChosenAt = -1;
         ShellHost? shellHostForEntryCam = null;
 
         // When the mission-entry shot last read the clock.
@@ -2391,11 +2396,25 @@ internal sealed partial class GameHost : IDisposable
                 && entryBackdrop.MissionId == _options.EntryCamMission
                 && _arming is { IsArmed: true })
             {
-                entryCamPending = false;
-                _logger.Information("Menu", $"-entrycam is pressing Play on mission {entryBackdrop.MissionId}.");
-                shellHostForEntryCam?.StartMission(
-                    entryBackdrop.MissionId,
-                    _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal);
+                // -entrytime: the time chosen first, as the dropdown chooses it, and Play a second later
+                // over the backdrop that choice re-lit.
+                if (_options.EntryTime != MissionTimeOfDay.Default && entryTimeChosenAt < 0)
+                {
+                    entryTimeChosenAt = _loop.Clock.FrameCount;
+                    shellHostForEntryCam?.SetMissionConditions(_conditions with { TimeOfDay = _options.EntryTime });
+                }
+
+                bool settled = entryTimeChosenAt < 0
+                    || _loop.Clock.FrameCount - entryTimeChosenAt >= EntryTimeSettleFrames;
+
+                if (settled)
+                {
+                    entryCamPending = false;
+                    _logger.Information("Menu", $"-entrycam is pressing Play on mission {entryBackdrop.MissionId}.");
+                    shellHostForEntryCam?.StartMission(
+                        entryBackdrop.MissionId,
+                        _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal);
+                }
             }
 
             // -backdropcycle walks the campaign's rows on a fixed cadence, taking the same path a player
