@@ -673,7 +673,10 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
             throw new GraphicsDeviceException($"Cannot begin the {pass} pass outside a scene capture.");
         }
 
-        if (CurrentPass != ScenePass.None)
+        // The front layer closes the geometry pass itself, as both real devices do.
+        bool closesGeometry = pass == ScenePass.GlassLayer && CurrentPass == ScenePass.Geometry;
+
+        if (CurrentPass != ScenePass.None && !closesGeometry)
         {
             throw new GraphicsDeviceException($"The {CurrentPass} pass is still open.");
         }

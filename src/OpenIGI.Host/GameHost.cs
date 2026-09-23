@@ -154,6 +154,12 @@ internal sealed partial class GameHost : IDisposable
     // frame the variable CHANGES and not on every frame it is false.
     private bool _overridesApplied = true;
 
+    // The run, one frame per step; see Frames. Null before Start and after Stop.
+    private IEnumerator<bool>? _frames;
+    private bool _stepping;
+    private bool _stopRequested;
+    private int _exitCode;
+
     // --- The player's own life, damage and death ---
     private int _playerDifficulty;
     private float _playerMaximumHealth;
@@ -615,7 +621,86 @@ internal sealed partial class GameHost : IDisposable
 
     /// <summary>Builds the world, runs the frame loop until the game is asked to quit, then shuts down.</summary>
     /// <returns>The process exit code.</returns>
+    /// <remarks>
+    /// <see cref="Start"/>, then <see cref="Step"/> until it says the game has finished, then
+    /// <see cref="Stop"/>: the same three calls a host that cannot block drives one at a time, from its
+    /// own frame callback.
+    /// </remarks>
     public int Run()
+    {
+        Start();
+
+        while (Step())
+        {
+        }
+
+        Stop();
+        return _exitCode;
+    }
+
+    /// <summary>Builds the world and everything the first frame needs, and returns before drawing it.</summary>
+    /// <exception cref="InvalidOperationException">The host has already been started.</exception>
+    public void Start()
+    {
+        if (_frames is not null)
+        {
+            throw new InvalidOperationException("The host has already been started.");
+        }
+
+        _frames = Frames().GetEnumerator();
+        _stepping = _frames.MoveNext();
+    }
+
+    /// <summary>Runs one frame: events, simulation, the picture.</summary>
+    /// <returns>
+    /// <see langword="true"/> while the game goes on; <see langword="false"/> once it has been asked to
+    /// quit, by which point it has also shut itself down.
+    /// </returns>
+    /// <remarks>
+    /// Never blocks waiting for the next frame's time. The desktop's own pacing still sleeps inside a
+    /// frame where it decides the display has not caught up; a host whose frames are paced for it steps
+    /// once per callback.
+    /// </remarks>
+    public bool Step()
+    {
+        if (_frames is null || !_stepping)
+        {
+            return false;
+        }
+
+        _stepping = _frames.MoveNext();
+        return _stepping;
+    }
+
+    /// <summary>Ends the game if it is still running -- saving what it saves on the way out -- and lets it go.</summary>
+    public void Stop()
+    {
+        if (_frames is null)
+        {
+            return;
+        }
+
+        // Asked to stop part way: the loop sees the request at its next test and runs the same shutdown
+        // it runs when the player quits, so settings are saved however the host came to an end.
+        _stopRequested = true;
+
+        while (_stepping)
+        {
+            _stepping = _frames.MoveNext();
+        }
+
+        _frames.Dispose();
+        _frames = null;
+    }
+
+    /// <summary>The whole of the game's run, one frame per step.</summary>
+    /// <returns>An element at the top of every frame, before it runs.</returns>
+    /// <remarks>
+    /// An iterator so that the frame loop's own state -- its pacers, its timestamps, the shell and the
+    /// preview loader, forty-odd locals the loop reads -- lives exactly where it always did, in the order
+    /// it always did, and a step is one pass of the loop. The compiler keeps them between steps.
+    /// </remarks>
+    private IEnumerable<bool> Frames()
     {
         // The UI is authored against the original's 640x480 back buffer and is centred, NEVER SCALED, so
         // the projection is the back buffer's own size and MenuLayout.ToScreen does the centring. Passing
@@ -1608,8 +1693,18 @@ internal sealed partial class GameHost : IDisposable
         // not read the mouse and must never grab the cursor out from under whatever they are actually doing.
         bool captureMode = _options.Lockstep;
 
-        while (running && _loop.IsRunning && !_window.IsClosing)
+        while (running && !_stopRequested && _loop.IsRunning && !_window.IsClosing)
         {
+            // The top of every frame is where a step returns to its host: everything since the last step
+            // is one frame, and nothing of the next has started. A host that asked to stop while it was
+            // away is answered here, before the frame it would otherwise draw.
+            yield return true;
+
+            if (_stopRequested)
+            {
+                break;
+            }
+
             // The whole point of promoting the backdrop instead of loading it is that no frame is ever
             // blocked, and that is a claim about milliseconds rather than a matter of opinion. Every pass
             // is timed, and the worst one seen since Play was pressed is reported when the entry finishes.
@@ -6501,7 +6596,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
             "Desktop",
             $"Shutting down after {_loop.Clock.TickCount} ticks and {_loop.Clock.FrameCount} frames.");
 
-        return 0;
+        _exitCode = 0;
     }
 
     /// <summary>

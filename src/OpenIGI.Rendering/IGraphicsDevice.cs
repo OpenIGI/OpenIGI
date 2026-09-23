@@ -1360,11 +1360,21 @@ public interface IGraphicsDevice : IDisposable
     /// <summary>Declares which part of the frame the following draws belong to.</summary>
     /// <param name="pass">The part of the frame.</param>
     /// <remarks>
+    /// <para>
     /// The renderers themselves never call this; the shell does, around the groups of draws it already
     /// makes. That is what lets the backend shade an opaque surface into a G-buffer and a translucent
     /// one directly, without any renderer in the game learning that there are two ways to be drawn.
+    /// </para>
+    /// <para>
+    /// The glazing's front layer is the one pass that may begin while another is open: it begins with the
+    /// geometry pass still open and closes it, without the shading that ending the geometry pass would
+    /// run -- the front layer has to be drawn between the two.
+    /// </para>
     /// </remarks>
-    /// <exception cref="GraphicsDeviceException">No capture is in progress, or a pass is already open.</exception>
+    /// <exception cref="GraphicsDeviceException">
+    /// No capture is in progress, or a pass is already open other than the geometry pass the front layer
+    /// closes.
+    /// </exception>
     void BeginPass(ScenePass pass);
 
     /// <summary>Ends the current pass.</summary>
