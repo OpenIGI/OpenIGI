@@ -293,6 +293,7 @@ internal static unsafe class VulkanCapabilityProbe
             RayTraversalPrimitiveCulling = rtPipeline is not null && rtPipeline->RayTraversalPrimitiveCulling,
             RayTracingPositionFetch = positionFetchUsable,
             Storage16Bit = v11->StorageBuffer16BitAccess && v11->UniformAndStorageBuffer16BitAccess,
+            ShaderDrawParameters = v11->ShaderDrawParameters,
             ShaderFloat16 = v12->ShaderFloat16,
             ShaderInt64Atomics = v12->ShaderBufferInt64Atomics,
             SamplerAnisotropy = features.Features.SamplerAnisotropy,
@@ -493,13 +494,14 @@ internal static unsafe class VulkanCapabilityProbe
             chain.Add(portability);
         }
 
-        if (capabilities.Storage16Bit)
+        if (capabilities.Storage16Bit || capabilities.ShaderDrawParameters)
         {
             chain.Add(new PhysicalDeviceVulkan11Features
             {
                 SType = StructureType.PhysicalDeviceVulkan11Features,
-                StorageBuffer16BitAccess = true,
-                UniformAndStorageBuffer16BitAccess = true,
+                StorageBuffer16BitAccess = capabilities.Storage16Bit,
+                UniformAndStorageBuffer16BitAccess = capabilities.Storage16Bit,
+                ShaderDrawParameters = capabilities.ShaderDrawParameters,
             });
         }
 
