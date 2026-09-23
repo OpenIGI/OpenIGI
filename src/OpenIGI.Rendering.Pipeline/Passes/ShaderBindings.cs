@@ -14,8 +14,12 @@ namespace OpenIGI.Rendering.Pipeline.Passes;
 /// and shades something plausible.
 /// </para>
 /// <para>
-/// A group is rebuilt only when what it holds changes. A pass that binds the same textures every time
-/// it runs — which is most of them, until the window is resized — builds one group and keeps it.
+/// A group is rebuilt only when what it holds changes, and one it has built before is taken back rather
+/// than built again. That second half is not an economy: most passes bind a parameter buffer that
+/// alternates with the frame slot, so what they hold changes EVERY frame and flips back the next. Built
+/// afresh each time, that was a new group per pass per frame, and a Vulkan descriptor set is never
+/// handed back while any frame could still be reading it -- so the pools grew for as long as the game
+/// ran. Kept, a pass builds its two groups once.
 /// </para>
 /// <para>
 /// Shared by the compute passes and the raster ones, because the difference between them is the
@@ -35,6 +39,7 @@ public sealed class ShaderBindings : IDisposable
     private readonly Dictionary<int, Dictionary<int, RhiBindGroupEntry>> _bound = [];
     private readonly IRhiBindGroup?[] _groups;
     private readonly bool[] _stale;
+    private readonly List<(RhiBindGroupEntry[] Entries, IRhiBindGroup Group)>[] _recent;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="ShaderBindings"/> class.</summary>
@@ -70,7 +75,22 @@ public sealed class ShaderBindings : IDisposable
 
         _groups = new IRhiBindGroup?[layouts.Count];
         _stale = new bool[layouts.Count];
+        _recent = new List<(RhiBindGroupEntry[], IRhiBindGroup)>[layouts.Count];
+
+        for (int i = 0; i < _recent.Length; i++)
+        {
+            _recent[i] = [];
+        }
     }
+
+    /// <summary>How many groups of one index are kept for reuse.</summary>
+    /// <remarks>
+    /// Two frame slots, with room for a pass whose other contents also alternate. The least recently
+    /// used goes first; it is released rather than retired, which is safe on both backends because
+    /// neither frees a group a submitted command still names -- WebGPU counts its references, and this
+    /// Vulkan implementation never hands a descriptor set back at all.
+    /// </remarks>
+    private const int RecentCapacity = 8;
 
     /// <summary>Gets the name these were created with.</summary>
     public string Label { get; }
@@ -257,12 +277,36 @@ public sealed class ShaderBindings : IDisposable
             filled.Add(value);
         }
 
-        _groups[group]?.Dispose();
+        List<(RhiBindGroupEntry[] Entries, IRhiBindGroup Group)> recent = _recent[group];
+
+        for (int i = 0; i < recent.Count; i++)
+        {
+            if (recent[i].Entries.AsSpan().SequenceEqual(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(filled)))
+            {
+                (RhiBindGroupEntry[] Entries, IRhiBindGroup Group) hit = recent[i];
+
+                // Most recently used last, so the one evicted is the one longest unused.
+                recent.RemoveAt(i);
+                recent.Add(hit);
+
+                _groups[group] = hit.Group;
+                _stale[group] = false;
+                return hit.Group;
+            }
+        }
 
         IRhiBindGroup built = _device.CreateBindGroup(new RhiBindGroupDescriptor(
             _layouts[group],
             filled,
             $"{Label}-{group}"));
+
+        recent.Add(([.. filled], built));
+
+        if (recent.Count > RecentCapacity)
+        {
+            recent[0].Group.Dispose();
+            recent.RemoveAt(0);
+        }
 
         _groups[group] = built;
         _stale[group] = false;
@@ -281,9 +325,14 @@ public sealed class ShaderBindings : IDisposable
 
         _disposed = true;
 
-        foreach (IRhiBindGroup? group in _groups)
+        foreach (List<(RhiBindGroupEntry[] Entries, IRhiBindGroup Group)> recent in _recent)
         {
-            group?.Dispose();
+            foreach ((RhiBindGroupEntry[] _, IRhiBindGroup group) in recent)
+            {
+                group.Dispose();
+            }
+
+            recent.Clear();
         }
     }
 

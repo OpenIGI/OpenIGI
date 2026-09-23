@@ -59,9 +59,11 @@ public sealed class ComputePassTests
     }
 
     [Fact]
-    public void Binding_something_different_rebuilds_the_group_and_releases_the_old_one()
+    public void Binding_something_different_builds_another_group_and_binding_back_takes_the_first()
     {
-        // What happens on a resize: the targets are remade and every group naming one has to follow.
+        // What a frame slot does every frame: a parameter buffer that alternates, and back. Built afresh
+        // each time, that was a new group per pass per frame, and a Vulkan descriptor set is never handed
+        // back while a frame could still read it -- the pools grew for as long as the game ran.
         using RecordingRhiDevice device = new();
         using Fixture fixture = new(device);
 
@@ -72,7 +74,37 @@ public sealed class ComputePassTests
         fixture.Pass.Bind("uRejection", fixture.Other.View);
         fixture.Record(pass => fixture.Pass.Dispatch(pass, 16, 16));
 
+        fixture.BindAll();
+        fixture.Record(pass => fixture.Pass.Dispatch(pass, 16, 16));
+
         Assert.Equal(2, fixture.Pass.GroupsBuilt);
+        Assert.False(first.IsDisposed);
+    }
+
+    [Fact]
+    public void A_group_long_unused_is_released()
+    {
+        // What a resize leaves behind: groups naming targets that are gone, which are let go once enough
+        // others have been built since, rather than kept for as long as the pass lives.
+        using RecordingRhiDevice device = new();
+        using Fixture fixture = new(device);
+
+        fixture.Record(pass => fixture.Pass.Dispatch(pass, 16, 16));
+        RecordedBindGroup first = Assert.Single(device.Resources.OfType<RecordedBindGroup>());
+
+        for (int i = 0; i < 8; i++)
+        {
+            IRhiTexture replacement = device.CreateTexture(new RhiTextureDescriptor(
+                16,
+                16,
+                RhiTextureFormat.R8Unorm,
+                RhiTextureUsage.Sampled,
+                Label: $"replacement{i}"));
+
+            fixture.Pass.Bind("uRejection", replacement.View);
+            fixture.Record(pass => fixture.Pass.Dispatch(pass, 16, 16));
+        }
+
         Assert.True(first.IsDisposed);
     }
 
