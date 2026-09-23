@@ -89,7 +89,10 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
             // yes where the stack could not finish building would have the game reach for a shader this
             // device refuses to make. See GiRunsOn.
             SupportsCompute = GiRunsOn(device),
-            SupportsRayQuery = false,
+
+            // Where the backend traces, the GI stack builds its ray-query forms and the compute seam binds
+            // them the traced world, as the Vulkan renderer does.
+            SupportsRayQuery = GiRunsOn(device) && device.RayTracing is not null,
             MaxSampleCount = device.Limits.MaxSampleCount,
             MaxComputeGroupsX = device.Limits.MaxComputeWorkgroupsPerDimension,
             UnimplementedSettings = UnimplementedOn(TemporalResolve.RunsOn(device), GiRunsOn(device), device.RayTracing is not null, AutoExposure.RunsOn(device)),

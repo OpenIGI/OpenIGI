@@ -470,9 +470,12 @@ public sealed partial class GraphicsDevice
                     break;
 
                 case ShaderBindingKind.AccelerationStructure:
-                    throw new GraphicsDeviceException(
-                        $"'{kernel.Label}' traces rays, which this device does not offer; its software variant "
-                        + "is the one to create here.");
+                    kernel.Pass.Bind(
+                        binding.Name,
+                        TracedWorld?.TraceableScene ?? throw new GraphicsDeviceException(
+                            $"'{kernel.Label}' traces rays, which this device does not offer; its software "
+                            + "variant is the one to create here."));
+                    break;
             }
         }
     }

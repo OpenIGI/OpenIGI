@@ -28,6 +28,8 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
     private readonly VulkanRhiDevice _owner;
     private readonly VulkanWorldScene _scene;
     private readonly VulkanOpacityMasks _masks;
+    private readonly VulkanPlaceholderScene _placeholder;
+    private readonly VulkanRhiAccelerationStructure _placeholderView;
     private readonly VulkanRhiTexture _maskTexture;
     private readonly HashSet<uint> _cutout = [];
 
@@ -57,6 +59,13 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
     {
         _owner = owner;
         _scene = new VulkanWorldScene(vk, api, device, allocator);
+
+        // Built at once, as the Vulkan renderer's is: the tracing shaders bind a structure from their first
+        // dispatch, before the world has seen a draw.
+        _placeholder = new VulkanPlaceholderScene(vk, api, device, allocator, commands, owner);
+        _placeholderView = new VulkanRhiAccelerationStructure(
+            _placeholder.TopLevel ?? throw new InvalidOperationException("The placeholder scene built no structure."),
+            "placeholder");
 
         // Resting in general, as every texture the RHI binds does.
         _masks = new VulkanOpacityMasks(vk, device, allocator, commands, ImageLayout.General);
@@ -102,6 +111,10 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
 
     /// <inheritdoc/>
     public bool IsWorldReady => _scene.IsReady;
+
+    /// <inheritdoc/>
+    public IRhiAccelerationStructure TraceableScene =>
+        _scene.IsReady && WorldScene is { } world ? world : _placeholderView;
 
     /// <inheritdoc/>
     public int PlacementCount => _scene.PlacementCount;
@@ -189,6 +202,7 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
         _disposed = true;
         _maskTexture.Dispose();
         _masks.Dispose();
+        _placeholder.Dispose();
         _scene.Dispose();
     }
 

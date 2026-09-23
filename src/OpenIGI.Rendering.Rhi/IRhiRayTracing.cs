@@ -81,6 +81,14 @@ public interface IRhiRayTracing
     /// <summary>Gets whether the world's structure holds anything worth tracing against.</summary>
     bool IsWorldReady { get; }
 
+    /// <summary>Gets the structure a tracing shader binds: the world's once ready, else an empty stand-in.</summary>
+    /// <remarks>
+    /// A shader that names a structure needs one in its descriptor from its first dispatch, and the world is
+    /// not built until the level has been drawn once. Until then this is a scene every ray misses -- the
+    /// answer an empty world would give anyway -- so the indirect light can trace from the first frame.
+    /// </remarks>
+    IRhiAccelerationStructure TraceableScene { get; }
+
     /// <summary>Gets how many placements the world holds.</summary>
     int PlacementCount { get; }
 
