@@ -79,6 +79,37 @@ public sealed class GameHostStepTests : IDisposable
         Assert.False(host.Step());
     }
 
+    /// <summary>The menu's backdrop is a mission too, and is not built until the gate has its files.</summary>
+    [RequiresGameDataFact]
+    public void The_menu_backdrop_waits_until_the_gate_has_its_mission()
+    {
+        const int Refusals = 5;
+
+        using RecordingGraphicsDevice device = new();
+        RefusingLoadGate gate = new(Refusals);
+        GameHost host = Host(device, new HeadlessGameWindow(), gate, "-lockstep", "-frames", "100000");
+
+        host.Start();
+        while (gate.Asked.Count < Refusals)
+        {
+            Assert.True(host.Step());
+            Assert.True(device.SwapCount < 1_000, "The menu never asked the gate for its backdrop.");
+        }
+
+        // Refused every time so far: the menu asked for its showcase, and no level has been drawn.
+        Assert.All(gate.Asked, id => Assert.Equal(1, id));
+        Assert.Empty(device.MeshDraws);
+
+        // Once the gate says yes, the backdrop comes up.
+        for (int i = 0; i < 1_000 && device.MeshDraws.Count == 0; i++)
+        {
+            Assert.True(host.Step());
+        }
+
+        host.Stop();
+        Assert.NotEmpty(device.MeshDraws);
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {
@@ -91,7 +122,10 @@ public sealed class GameHostStepTests : IDisposable
         }
     }
 
-    private GameHost Host(RecordingGraphicsDevice device, HeadlessGameWindow window, params string[] args)
+    private GameHost Host(RecordingGraphicsDevice device, HeadlessGameWindow window, params string[] args) =>
+        Host(device, window, AlwaysReadyLoadGate.Instance, args);
+
+    private GameHost Host(RecordingGraphicsDevice device, HeadlessGameWindow window, ILoadGate gate, params string[] args)
     {
         string root = GameData.RequireRoot();
         IGameTitleRuntime runtime = TitleCatalog.Default;
@@ -111,13 +145,27 @@ public sealed class GameHostStepTests : IDisposable
             device,
             new RecordingAudioFactory(),
             InlineWorkScheduler.Instance,
-            AlwaysReadyLoadGate.Instance,
+            gate,
             TitleCatalog.Catalog,
             runtime.Title,
             fileSystem,
             options,
             root,
             logger);
+    }
+
+    /// <summary>A gate that says no a number of times, then yes, and remembers what it was asked about.</summary>
+    private sealed class RefusingLoadGate(int refusals) : ILoadGate
+    {
+        public List<int> Asked { get; } = [];
+
+        public bool IsReady(Game.World.MissionDescriptor mission, out string? waitingFor)
+        {
+            Asked.Add(mission.Id);
+            bool ready = Asked.Count > refusals;
+            waitingFor = ready ? null : "the test";
+            return ready;
+        }
     }
 
     private sealed class RecordingAudioFactory : IAudioDeviceFactory

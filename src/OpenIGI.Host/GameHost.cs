@@ -1590,7 +1590,7 @@ internal sealed partial class GameHost : IDisposable
 
                 if (previewLoader is { } opening)
                 {
-                    opening.Request(firstShowcase);
+                    RequestBackdrop(opening, firstShowcase);
                 }
                 else
                 {
@@ -2342,7 +2342,7 @@ internal sealed partial class GameHost : IDisposable
                 // over is built through exactly the path a player's selection would have built it through.
                 int firstShowcase = _options.EntryCamMission > 0 ? _options.EntryCamMission : ShowcaseMissionId;
                 currentShowcaseMissionId = firstShowcase;
-                previewLoader?.Request(firstShowcase);
+                RequestBackdrop(previewLoader, firstShowcase);
             }
 
             // The backdrop is made playable here, on the frames where nothing is happening but a menu.
@@ -2386,7 +2386,7 @@ internal sealed partial class GameHost : IDisposable
                             _logger.Information("Menu", $"-backdropcycle: selecting mission {next}.");
                             pendingPreviewMissionId = null;
                             currentShowcaseMissionId = next;
-                            previewLoader.Request(next);
+                            RequestBackdrop(previewLoader, next);
                         }
                     }
                 }
@@ -2401,7 +2401,13 @@ internal sealed partial class GameHost : IDisposable
                 && _loop.TimeSource.Milliseconds - previewRequestedAtMs > PreviewSettleMs)
             {
                 pendingPreviewMissionId = null;
-                previewLoader?.Request(previewMissionId);
+                RequestBackdrop(previewLoader, previewMissionId);
+            }
+
+            // A backdrop whose mission's files were still arriving, asked for again until they are there.
+            if (menuMode && !pauseMenu && _backdropAwaitingFiles is { } awaitingFiles)
+            {
+                RequestBackdrop(previewLoader, awaitingFiles);
             }
 
             // The handover. Everything a backdrop is made of was built off the render thread; what is left

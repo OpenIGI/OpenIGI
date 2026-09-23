@@ -40,6 +40,9 @@ internal sealed partial class GameHost
     /// <summary>The mission that load brings up, for the load gate to be asked about.</summary>
     private int _pendingLoadMission;
 
+    // The backdrop asked for while its mission's files were still arriving; see RequestBackdrop.
+    private int? _backdropAwaitingFiles;
+
     /// <summary>What the load gate last said it was waiting for, so it is reported once rather than every frame.</summary>
     private string? _loadGateWaitingFor;
 
@@ -251,6 +254,46 @@ internal sealed partial class GameHost
         }
     }
 
+    /// <summary>Whether a mission's files can all be read now, as the load gate says.</summary>
+    /// <param name="missionId">The mission.</param>
+    /// <param name="waitingFor">What is still missing, when they cannot.</param>
+    /// <returns>
+    /// <see langword="true"/> when they can. A mission the catalogue does not know has no files to wait for;
+    /// whatever then tries to load it reports it.
+    /// </returns>
+    private bool MissionFilesReady(int missionId, out string? waitingFor)
+    {
+        waitingFor = null;
+        return _missions.Missions.FirstOrDefault(m => m.Id == missionId) is not { } mission
+            || _loadGate.IsReady(mission, out waitingFor);
+    }
+
+    /// <summary>Asks for a menu backdrop, once its mission's files are there.</summary>
+    /// <param name="loader">The backdrop builder, if the menu has one.</param>
+    /// <param name="missionId">The mission to show.</param>
+    /// <remarks>
+    /// A backdrop is a mission loaded behind the menu, and reads the same files a played one does. Until
+    /// the gate says they are there -- a browser reads a level's large files when it is first wanted --
+    /// the request waits in <see cref="_backdropAwaitingFiles"/> and the menu asks again each frame; the
+    /// newest request replaces one still waiting.
+    /// </remarks>
+    private void RequestBackdrop(MissionPreviewLoader? loader, int missionId)
+    {
+        if (loader is null)
+        {
+            return;
+        }
+
+        if (!MissionFilesReady(missionId, out _))
+        {
+            _backdropAwaitingFiles = missionId;
+            return;
+        }
+
+        _backdropAwaitingFiles = null;
+        loader.Request(missionId);
+    }
+
     /// <summary>Runs the deferred load once the departure has played. Call between frames.</summary>
     private void RunPendingLoadIfDue()
     {
@@ -260,10 +303,8 @@ internal sealed partial class GameHost
         }
 
         // Not until the mission's files can be read. The sequence holds its picture meanwhile, and the
-        // load runs on the frame the gate says yes -- on the desktop, always the first. A mission the
-        // catalogue does not know has no files to wait for, and the load reports it.
-        if (_missions.Missions.FirstOrDefault(m => m.Id == _pendingLoadMission) is { } mission
-            && !_loadGate.IsReady(mission, out string? waitingFor))
+        // load runs on the frame the gate says yes -- on the desktop, always the first.
+        if (!MissionFilesReady(_pendingLoadMission, out string? waitingFor))
         {
             if (!string.Equals(waitingFor, _loadGateWaitingFor, StringComparison.Ordinal))
             {
