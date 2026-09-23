@@ -1130,23 +1130,6 @@ public sealed partial class VulkanGraphicsDevice
     }
 
     /// <summary>Recovers a draw's absolute world transform from its model-view, for the traced world.</summary>
-    private Matrix4f WorldTransform(in Matrix4f modelView)
-    {
-        Matrix3f modelViewRotation = new(
-            modelView.M11, modelView.M12, modelView.M13,
-            modelView.M21, modelView.M22, modelView.M23,
-            modelView.M31, modelView.M32, modelView.M33);
-        Matrix3f normalMatrix = _viewToWorld * modelViewRotation;
-
-        Matrix3f m = _viewToWorld;
-        float tx = (m.M11 * modelView.M14) + (m.M12 * modelView.M24) + (m.M13 * modelView.M34);
-        float ty = (m.M21 * modelView.M14) + (m.M22 * modelView.M24) + (m.M23 * modelView.M34);
-        float tz = (m.M31 * modelView.M14) + (m.M32 * modelView.M24) + (m.M33 * modelView.M34);
-
-        return new Matrix4f(
-            normalMatrix.M11, normalMatrix.M12, normalMatrix.M13, tx + _cameraPosition.X,
-            normalMatrix.M21, normalMatrix.M22, normalMatrix.M23, ty + _cameraPosition.Y,
-            normalMatrix.M31, normalMatrix.M32, normalMatrix.M33, tz + _cameraPosition.Z,
-            0f, 0f, 0f, 1f);
-    }
+    private Matrix4f WorldTransform(in Matrix4f modelView) =>
+        TracedWorldTransform.From(modelView, _viewToWorld, _cameraPosition);
 }
