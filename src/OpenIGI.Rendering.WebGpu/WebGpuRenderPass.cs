@@ -107,8 +107,9 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
         // The write AND the binding, because nothing above this knows any of the three things the
         // binding takes: the ring, the group index, and where the write landed in it. A pass that only
         // wrote would record a draw whose layout has an unbound group, which is refused outright.
-        LastPushOffset = _pushes.Write(data);
-        SetPushGroup(_device.PushGroup, LastPushOffset);
+        WebGpuPushSlice landed = _pushes.Write(data);
+        LastPushOffset = landed.Offset;
+        SetPushGroup(landed.Group, landed.Offset);
     }
 
     /// <summary>Gets where the last push landed in the ring.</summary>

@@ -61,15 +61,36 @@ public sealed class WebGpuDrawTests(ITestOutputHelper output)
         WebGpuPushRing ring = device.PushRing;
 
         byte[] block = new byte[64];
-        uint first = ring.Write(block);
-        uint second = ring.Write(block);
+        uint first = ring.Write(block).Offset;
+        uint second = ring.Write(block).Offset;
 
         Assert.NotEqual(first, second);
         Assert.Equal((uint)ring.SliceBytes, second - first);
         Assert.Equal(0u, first % 256u);
 
         ring.Reset();
-        Assert.Equal(first, ring.Write(block));
+        Assert.Equal(first, ring.Write(block).Offset);
+    }
+
+    [WebGpuFact]
+    public void The_push_ring_grows_a_chunk_for_a_frame_that_outruns_it_and_keeps_it()
+    {
+        // Capturing the surface cache pushes thousands of times before a frame ends; the ring grows to
+        // it rather than refusing, and the next frame starts over in the first chunk.
+        using WebGpuRhiDevice device = WebGpuRhiDevice.Create();
+        using WebGpuPushRing ring = new(device, slices: 2);
+
+        byte[] block = new byte[64];
+        WebGpuPushSlice[] landed = [ring.Write(block), ring.Write(block), ring.Write(block)];
+
+        Assert.Equal(2, ring.Chunks);
+        Assert.Same(landed[0].Group, landed[1].Group);
+        Assert.NotSame(landed[1].Group, landed[2].Group);
+        Assert.Equal(0u, landed[2].Offset);
+
+        ring.Reset();
+        Assert.Same(landed[0].Group, ring.Write(block).Group);
+        Assert.Equal(2, ring.Chunks);
     }
 
     [WebGpuFact]
@@ -163,7 +184,7 @@ public sealed class WebGpuDrawTests(ITestOutputHelper output)
             using IRhiBuffer readback = device.CreateBuffer(new RhiBufferDescriptor(
                 8, RhiBufferUsage.CopyDestination | RhiBufferUsage.MapRead, "occlusion.readback"));
 
-            uint pushOffset = device.PushRing.Write(PushBlock(offsetX));
+            uint pushOffset = device.PushRing.Write(PushBlock(offsetX)).Offset;
 
             using (IRhiCommandEncoder encoder = device.CreateCommandEncoder("occlusion"))
             {

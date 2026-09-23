@@ -136,19 +136,18 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     /// </remarks>
     public WebGpuPushRing PushRing => _pushes ??= new WebGpuPushRing(this);
 
-    /// <summary>Gets the group push data is read through, built once and bound by every pass.</summary>
+    /// <summary>Makes the group push data is read through over one chunk of the ring.</summary>
+    /// <param name="buffer">The chunk's buffer.</param>
+    /// <param name="sliceBytes">How much of it one push occupies.</param>
+    /// <returns>One dynamic uniform binding over the chunk.</returns>
     /// <remarks>
-    /// One dynamic uniform binding over the ring. It is the device's rather than a pass's because every
-    /// pass shares the one ring, and it is bound by the pass rather than by the caller because the
-    /// caller knows none of the three things it takes — the ring, the group index and the offset the
-    /// write landed at.
+    /// Bound by the pass rather than by the caller, because the caller knows none of the three things it
+    /// takes — the ring, the group index and where the write landed.
     /// </remarks>
-    public IRhiBindGroup PushGroup => _pushGroup ??= CreateBindGroup(new RhiBindGroupDescriptor(
+    internal IRhiBindGroup CreatePushGroup(IRhiBuffer buffer, int sliceBytes) => CreateBindGroup(new RhiBindGroupDescriptor(
         PushGroupLayout(),
-        [RhiBindGroupEntry.Of(WebGpuPushBlocks.Binding, PushRing.Buffer, 0, (ulong)PushRing.SliceBytes)],
+        [RhiBindGroupEntry.Of(WebGpuPushBlocks.Binding, buffer, 0, (ulong)sliceBytes)],
         "push"));
-
-    private IRhiBindGroup? _pushGroup;
 
     /// <summary>Gets every texture whose format had to be widened, as sentences.</summary>
     /// <remarks>
@@ -791,7 +790,6 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
         _disposed = true;
         _frameTexture?.Dispose();
         ReleaseOffscreen();
-        _pushGroup?.Dispose();
         _pushes?.Dispose();
         _surface?.Dispose();
 

@@ -400,10 +400,11 @@ public sealed unsafe class WebGpuComputePassEncoder : IRhiComputePassEncoder
 
         // The write AND the binding, for the reason the raster side gives: nothing above this knows the
         // ring, the group index or where the write landed.
-        LastPushOffset = _pushes.Write(data);
+        WebGpuPushSlice landed = _pushes.Write(data);
+        LastPushOffset = landed.Offset;
 
-        uint landed = LastPushOffset;
-        SetBindGroup(_pushGroup, _device.PushGroup, new ReadOnlySpan<uint>(in landed));
+        uint at = landed.Offset;
+        SetBindGroup(_pushGroup, landed.Group, new ReadOnlySpan<uint>(in at));
     }
 
     /// <inheritdoc/>

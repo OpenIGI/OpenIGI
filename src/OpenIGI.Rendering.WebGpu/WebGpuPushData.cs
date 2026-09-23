@@ -79,12 +79,17 @@ public static class WebGpuPushBlocks
     }
 }
 
+/// <summary>Where one push landed: the group to bind and the dynamic offset to bind it at.</summary>
+/// <param name="Group">The bind group over the chunk of the ring the push was written to.</param>
+/// <param name="Offset">Where in that chunk it landed.</param>
+public readonly record struct WebGpuPushSlice(IRhiBindGroup Group, uint Offset);
+
 /// <summary>
 /// A ring of uniform memory that push data is written into and bound from.
 /// </summary>
 /// <remarks>
 /// <para>
-/// One buffer, written a slice at a time and bound by dynamic offset, because that is the only shape
+/// Uniform buffers written a slice at a time and bound by dynamic offset, because that is the only shape
 /// WebGPU offers for what a push constant does. A slice is aligned to what the device requires of a
 /// dynamic uniform offset, which is 256 bytes on every adapter this has met, so a block of 112 bytes
 /// still costs 256 — the price of not having push constants.
@@ -92,53 +97,59 @@ public static class WebGpuPushBlocks
 /// <para>
 /// The ring is written through the queue rather than through the encoder, which is what makes it
 /// correct: a queue write is ordered against the submissions around it, so everything written while a
-/// frame is being recorded lands before that frame runs. It is also why the ring has to be large enough
-/// for a whole frame's worth of pushes — nothing is reused until the frame that read it has finished.
+/// frame is being recorded lands before that frame runs. It is also why the ring has to hold a whole
+/// frame's worth of pushes — nothing is reused until the frame that read it has finished.
+/// </para>
+/// <para>
+/// So it grows rather than refusing: a frame that needs more than it holds gets another chunk, its own
+/// buffer behind its own bind group, and keeps it. A frame's worth is not a number anything can know in
+/// advance — capturing the surface cache draws the level into every card in one go, thousands of pushes
+/// where an ordinary frame makes hundreds — and a Vulkan push constant has no such ceiling to hit.
 /// </para>
 /// </remarks>
 public sealed class WebGpuPushRing : IDisposable
 {
     private readonly WebGpuRhiDevice _device;
-    private readonly IRhiBuffer _buffer;
+    private readonly List<Chunk> _chunks = [];
     private readonly byte[] _staging;
     private readonly int _slice;
     private int _next;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="WebGpuPushRing"/> class.</summary>
-    /// <param name="device">The device the buffer lives on.</param>
-    /// <param name="slices">How many pushes one frame may make before the ring wraps.</param>
+    /// <param name="device">The device the buffers live on.</param>
+    /// <param name="slices">How many pushes one chunk holds.</param>
     /// <param name="alignment">What the device requires of a dynamic uniform offset.</param>
     public WebGpuPushRing(WebGpuRhiDevice device, int slices = 4096, int alignment = 256)
     {
         ArgumentNullException.ThrowIfNull(device);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(slices);
 
         _device = device;
         _slice = Math.Max(alignment, Align(Math.Max(WebGpuPushBlocks.LargestBlock, 1), alignment));
         _staging = new byte[_slice];
 
-        _buffer = device.CreateBuffer(new RhiBufferDescriptor(
-            (ulong)(_slice * slices),
-            RhiBufferUsage.Uniform | RhiBufferUsage.CopyDestination,
-            "push.ring"));
-
         Slices = slices;
+        _chunks.Add(MakeChunk(0));
     }
 
-    /// <summary>Gets the buffer the push data lives in.</summary>
-    public IRhiBuffer Buffer => _buffer;
+    /// <summary>Gets the buffer of the ring's first chunk, where a frame's first pushes land.</summary>
+    public IRhiBuffer Buffer => _chunks[0].Buffer;
 
     /// <summary>Gets how many bytes one slice occupies.</summary>
     public int SliceBytes => _slice;
 
-    /// <summary>Gets how many slices the ring holds.</summary>
+    /// <summary>Gets how many slices one chunk holds.</summary>
     public int Slices { get; }
+
+    /// <summary>Gets how many chunks the ring has grown to.</summary>
+    public int Chunks => _chunks.Count;
 
     /// <summary>Writes one push block and says where it landed.</summary>
     /// <param name="data">The bytes, which must fit in one slice.</param>
-    /// <returns>The dynamic offset to bind it at.</returns>
-    /// <exception cref="InvalidOperationException">The block is larger than a slice, or the ring is full.</exception>
-    public uint Write(ReadOnlySpan<byte> data)
+    /// <returns>The group and dynamic offset to bind it at.</returns>
+    /// <exception cref="InvalidOperationException">The block is larger than a slice.</exception>
+    public WebGpuPushSlice Write(ReadOnlySpan<byte> data)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -148,24 +159,25 @@ public sealed class WebGpuPushRing : IDisposable
                 $"A push of {data.Length} bytes does not fit the ring's {_slice}-byte slice.");
         }
 
-        if (_next >= Slices)
+        int slice = _next++;
+        int index = slice / Slices;
+
+        if (index == _chunks.Count)
         {
-            throw new InvalidOperationException(
-                $"The push ring's {Slices} slices are spent for this frame. Reset it once the frame that "
-                + "used them has finished, or build it with more.");
+            _chunks.Add(MakeChunk(index));
         }
 
-        int slice = _next++;
-        uint offset = (uint)(slice * _slice);
+        Chunk chunk = _chunks[index];
+        uint offset = (uint)((slice % Slices) * _slice);
 
         // Written a whole slice at a time, zero-filled past the data: a uniform binding is sized to the
         // block, and leaving the tail at whatever the last frame put there would hand a shader values
         // nobody wrote.
         Array.Clear(_staging);
         data.CopyTo(_staging);
-        _device.WriteBuffer<byte>(_buffer, offset, _staging);
+        _device.WriteBuffer<byte>(chunk.Buffer, offset, _staging);
 
-        return offset;
+        return new WebGpuPushSlice(chunk.Group, offset);
     }
 
     /// <summary>Starts the ring over, once the frame that read it has finished.</summary>
@@ -184,8 +196,27 @@ public sealed class WebGpuPushRing : IDisposable
         }
 
         _disposed = true;
-        _buffer.Dispose();
+
+        foreach (Chunk chunk in _chunks)
+        {
+            chunk.Group.Dispose();
+            chunk.Buffer.Dispose();
+        }
+
+        _chunks.Clear();
     }
+
+    private Chunk MakeChunk(int index)
+    {
+        IRhiBuffer buffer = _device.CreateBuffer(new RhiBufferDescriptor(
+            (ulong)(_slice * Slices),
+            RhiBufferUsage.Uniform | RhiBufferUsage.CopyDestination,
+            index == 0 ? "push.ring" : $"push.ring.{index}"));
+
+        return new Chunk(buffer, _device.CreatePushGroup(buffer, _slice));
+    }
+
+    private readonly record struct Chunk(IRhiBuffer Buffer, IRhiBindGroup Group);
 
     private static int Align(int value, int alignment) => ((value + alignment - 1) / alignment) * alignment;
 }
