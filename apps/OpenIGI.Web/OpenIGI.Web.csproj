@@ -55,6 +55,13 @@
     </ItemGroup>
   </Target>
 
+  <ItemGroup>
+    <!-- Interpreted rather than compiled ahead of time: the Mono AOT compiler crashes on the generated
+         WebGPU bindings (an sgen assertion in mono-aot-cross, 10.0.12), and they are P/Invoke stubs with
+         nothing to gain from compiling. -->
+    <_AOT_InternalForceInterpretAssemblies Include="OpenIGI.Rendering.WebGpu.Native.dll" />
+  </ItemGroup>
+
   <Import Project="..\..\src\OpenIGI.Rendering.WebGpu.Browser\WgpuBrowser.props" />
   <Import Project="..\..\src\OpenIGI.Platform.Web\WebPlatform.props" />
 
