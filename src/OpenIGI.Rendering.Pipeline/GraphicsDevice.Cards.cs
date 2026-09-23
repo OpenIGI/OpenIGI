@@ -179,7 +179,18 @@ public sealed partial class GraphicsDevice
             return;
         }
 
-        DisposeCardAtlas();
+        // Retired, not freed: a level recaptures its cards mid-mission when a preset changes their
+        // density, and the frames in flight -- and the one being recorded, whose GI binds the atlas --
+        // still read the old one. Freed here, they read freed memory and the device was lost.
+        if (_cardPipeline is { } pipeline)
+        {
+            _retired.Retire(pipeline);
+        }
+
+        if (_cardAtlas is { } atlas)
+        {
+            _retired.Retire(atlas);
+        }
 
         _cardAtlas = new CardAtlas(_device, width, height);
         _cardPipeline = new CardPipeline(_device, _materialLayout, CardAtlas.Formats, CardAtlas.DepthFormat);

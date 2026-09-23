@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.TestSupport.Rhi;
@@ -27,6 +27,34 @@ public sealed class CardCaptureTests
         graphics.EndCardCapture();
 
         // And the frame it was taken inside still goes out.
+        graphics.SwapBuffers();
+    }
+
+    [Fact]
+    public void A_recapture_at_another_size_keeps_the_old_atlas_until_its_frames_are_done()
+    {
+        // A preset change mid-mission recaptures the cards at a new density, inside an open frame whose
+        // global illumination -- and the frames still in flight -- read the atlas being replaced. Freed on
+        // the spot, the GPU read freed memory and the device was lost.
+        using RecordingRhiDevice device = new();
+        using GraphicsDevice graphics = Device(device);
+
+        Assert.True(graphics.BeginCardCapture(64, 64));
+        graphics.EndCardCapture();
+        RecordedTexture old = device.Resources.OfType<RecordedTexture>().First(t => t.Label == "cards.depthbuffer");
+
+        DrawFrame(graphics);
+        Assert.True(graphics.BeginCardCapture(128, 128));
+        graphics.EndCardCapture();
+        graphics.SwapBuffers();
+
+        // Held through the frame it was replaced in and the one after, which may still be in flight.
+        DrawFrame(graphics);
+        Assert.False(old.IsDisposed);
+        graphics.SwapBuffers();
+
+        DrawFrame(graphics);
+        Assert.True(old.IsDisposed);
         graphics.SwapBuffers();
     }
 
@@ -146,6 +174,12 @@ public sealed class CardCaptureTests
             Assert.Single(device.CommandsOf<RecordedRhiCommand.SetPipeline>());
 
         Assert.StartsWith("Card", pipeline.Label, StringComparison.Ordinal);
+    }
+
+    private static void DrawFrame(GraphicsDevice graphics)
+    {
+        graphics.Clear(new Bgra32(0, 0, 0, 255));
+        graphics.DrawTriangles2D(Quad(), [0, 1, 2], TextureHandle.None, BlendMode.Opaque);
     }
 
     private static GraphicsDevice Device(RecordingRhiDevice device) =>
