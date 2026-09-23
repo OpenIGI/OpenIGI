@@ -18,11 +18,19 @@ namespace OpenIGI.Platform.Web;
 /// the one thing a player pressing Escape then expects is the pause menu -- so a lock lost while the game
 /// still wants it is handed on as that key, pressed for one frame.
 /// </para>
+/// <para>
+/// <b>Every press lasts a frame.</b> The page queues events for as long as a frame takes, and a quick click
+/// or tap can go down and up inside one: applied in order it would never be seen down at all. A release
+/// that arrives in the frame its press did is held until the next.
+/// </para>
 /// </remarks>
 public sealed class WebGameWindow : IGameWindow
 {
     private readonly IBrowserPage _page;
     private readonly List<KeyCode> _releaseNextFrame = [];
+    private readonly List<MouseButton> _releaseButtonNextFrame = [];
+    private readonly HashSet<KeyCode> _pressedThisFrame = [];
+    private readonly HashSet<MouseButton> _buttonsPressedThisFrame = [];
     private string _title;
     private string _clipboard = string.Empty;
     private (int Width, int Height) _size;
@@ -180,7 +188,15 @@ public sealed class WebGameWindow : IGameWindow
             Input.Keyboard.SetKey(key, down: false);
         }
 
+        foreach (MouseButton button in _releaseButtonNextFrame)
+        {
+            Input.Mouse.SetButton(button, down: false);
+        }
+
         _releaseNextFrame.Clear();
+        _releaseButtonNextFrame.Clear();
+        _pressedThisFrame.Clear();
+        _buttonsPressedThisFrame.Clear();
 
         foreach (string line in _page.TakeEvents())
         {
@@ -217,9 +233,23 @@ public sealed class WebGameWindow : IGameWindow
         {
             case WebInputEventKind.Key:
                 KeyCode key = WebKeyMap.Translate(input.Code);
-                if (key != KeyCode.None)
+                if (key == KeyCode.None)
                 {
-                    Input.Keyboard.SetKey(key, input.Down);
+                    break;
+                }
+
+                if (input.Down)
+                {
+                    _pressedThisFrame.Add(key);
+                    Input.Keyboard.SetKey(key, down: true);
+                }
+                else if (_pressedThisFrame.Contains(key))
+                {
+                    _releaseNextFrame.Add(key);
+                }
+                else
+                {
+                    Input.Keyboard.SetKey(key, down: false);
                 }
 
                 break;
@@ -238,9 +268,23 @@ public sealed class WebGameWindow : IGameWindow
                 break;
 
             case WebInputEventKind.Button:
-                if (Button((int)input.X) is { } button)
+                if (Button((int)input.X) is not { } button)
                 {
-                    Input.Mouse.SetButton(button, input.Down);
+                    break;
+                }
+
+                if (input.Down)
+                {
+                    _buttonsPressedThisFrame.Add(button);
+                    Input.Mouse.SetButton(button, down: true);
+                }
+                else if (_buttonsPressedThisFrame.Contains(button))
+                {
+                    _releaseButtonNextFrame.Add(button);
+                }
+                else
+                {
+                    Input.Mouse.SetButton(button, down: false);
                 }
 
                 break;

@@ -44,6 +44,25 @@ public sealed class WebGameWindowTests
         Assert.Equal(1f, window.Input.Mouse.WheelDelta);
     }
 
+    /// <summary>A click or a tap quicker than a frame is still seen down for one.</summary>
+    [Fact]
+    public void A_press_and_release_inside_one_frame_is_down_for_that_frame()
+    {
+        using WebGameWindow window = Open();
+
+        _page.Queue("button 0 1", "button 0 0", "key Space 1", "key Space 0");
+        window.PumpEvents();
+
+        Assert.True(window.Input.Mouse.WasPressed(MouseButton.Left));
+        Assert.True(window.Input.Keyboard.WasPressed(KeyCode.Space));
+
+        window.PumpEvents();
+
+        Assert.False(window.Input.Mouse.IsDown(MouseButton.Left));
+        Assert.True(window.Input.Mouse.WasReleased(MouseButton.Left));
+        Assert.False(window.Input.Keyboard.IsDown(KeyCode.Space));
+    }
+
     /// <summary>A key held when the page lost the keyboard never reports its release.</summary>
     [Fact]
     public void Losing_focus_lets_go_of_every_key()
