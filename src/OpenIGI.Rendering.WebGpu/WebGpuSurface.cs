@@ -5,9 +5,9 @@ namespace OpenIGI.Rendering.WebGpu;
 
 /// <summary>Which window system a native handle belongs to.</summary>
 /// <remarks>
-/// The four desktop platforms wgpu-native can make a surface from. A browser has none of these — its
-/// surface comes from a canvas the page owns — so the web host makes one its own way and nothing here
-/// grows a fifth case for it.
+/// The four desktop platforms wgpu-native can make a surface from, and the browser's canvas. A canvas
+/// has no handle to pass: the page owns it, and the browser build's webgpu.h makes the surface from it
+/// whatever the descriptor says.
 /// </remarks>
 public enum WebGpuWindowSystem
 {
@@ -22,6 +22,9 @@ public enum WebGpuWindowSystem
 
     /// <summary>A Metal layer, which is what a Cocoa window's view is backed by.</summary>
     Metal,
+
+    /// <summary>The page's canvas, in a browser. The handles are ignored.</summary>
+    Canvas,
 }
 
 /// <summary>A window's native handles, as its own platform names them.</summary>
@@ -130,6 +133,10 @@ public sealed unsafe class WebGpuSurface : IDisposable
                     layer = (void*)handles.Window,
                 };
                 chain = (WGPUChainedStruct*)&metal;
+                break;
+
+            case WebGpuWindowSystem.Canvas:
+                chain = null;
                 break;
 
             default:

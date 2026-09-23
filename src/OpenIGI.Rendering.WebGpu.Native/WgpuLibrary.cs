@@ -33,9 +33,18 @@ public static class WgpuLibrary
     /// Called before the first entry point rather than by a static constructor on the bindings: the
     /// bindings are generated, and a hand-written hook inside generated code is a hook that vanishes on
     /// the next regeneration.
+    /// <para>
+    /// A browser build has nothing to find: its webgpu.h is linked into the runtime itself, and the
+    /// bindings resolve to it without asking.
+    /// </para>
     /// </remarks>
     public static void Register()
     {
+        if (OperatingSystem.IsBrowser())
+        {
+            return;
+        }
+
         lock (Gate)
         {
             if (_registered)
