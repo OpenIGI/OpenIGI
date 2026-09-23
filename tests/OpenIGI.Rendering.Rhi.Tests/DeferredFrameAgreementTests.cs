@@ -252,11 +252,45 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         Assert.True(worst <= 1, $"The two backends disagree about the shadow by {worst}.");
     }
 
+    [Fact]
+    public void Both_backends_see_through_a_pane_alike()
+    {
+        // The glazing's transmission: its own pipeline and its own group, laid premultiplied over the
+        // lit triangle. The two backends have to agree, and where the pane is the triangle has to have
+        // taken its blue.
+        byte[]? vulkan = TryOnVulkan(out string? vulkanReason, glass: true);
+        byte[]? webgpu = TryOnWebGpu(out string? webgpuReason, glass: true);
+        byte[]? plain = TryOnVulkan(out string? plainReason);
+
+        Assert.True(
+            vulkan is not null && webgpu is not null && plain is not null,
+            vulkanReason ?? webgpuReason ?? plainReason);
+
+        int worst = 0;
+
+        for (int i = 0; i < vulkan!.Length; i++)
+        {
+            worst = Math.Max(worst, Math.Abs(vulkan[i] - webgpu![i]));
+        }
+
+        // Inside the pane, on the triangle.
+        int x = Size / 2;
+        int y = (Size * 11) / 16;
+        int behind = ((y * Size) + x) * 4;
+
+        output.WriteLine($"worst difference {worst}; through the pane {Describe(vulkan, x, y)}, without {Describe(plain!, x, y)}");
+
+        Assert.True(worst <= 1, $"The two backends disagree about the pane by {worst}.");
+        Assert.True(
+            vulkan[behind] - vulkan[behind + 1] > plain![behind] - plain[behind + 1],
+            "The triangle behind the pane took none of its blue.");
+    }
+
     /// <summary>A column the triangle's base covers near the bottom of the frame and its apex does not reach near the top.</summary>
     private const int BaseColumn = 14;
 
     /// <summary>The frame everything here compares, written once and run twice.</summary>
-    private static void DrawFrame(GraphicsDevice device, DebugView view, bool textured, bool temporal, float? bloom, bool shadows)
+    private static void DrawFrame(GraphicsDevice device, DebugView view, bool textured, bool temporal, float? bloom, bool shadows, bool glass)
     {
         device.SetDebugView(view);
 
@@ -345,6 +379,30 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
 
         device.BeginPass(ScenePass.Forward);
         device.DrawMesh(quad, 0, 6, Matrix4f.Identity, TextureHandle.None, TextureHandle.None, BlendMode.Opaque);
+
+        if (glass)
+        {
+            // A pane over the triangle's lower half: a blue texel a quarter opaque, which the glazing
+            // keeps -- the geometry pass takes a pane's opaque texels and this takes the rest. At minus a
+            // fifth, because the glazing's vertex stage remaps depth as half of w minus z to suit a real
+            // projection: under this frame's identity that puts the pane at 0.6, in front of the triangle.
+            TextureHandle pane = device.CreateTexture(new TextureDescription(1, 1), [new Bgra32(220, 60, 20, 64)]);
+            MeshHandle window = device.CreateMesh(
+                [
+                    new Vertex3D(new Vector3f(-0.5f, -0.6f, -0.2f), Vector3f.UnitZ, 0f, 0f),
+                    new Vertex3D(new Vector3f(0.5f, -0.6f, -0.2f), Vector3f.UnitZ, 1f, 0f),
+                    new Vertex3D(new Vector3f(0.5f, -0.1f, -0.2f), Vector3f.UnitZ, 1f, 1f),
+                    new Vertex3D(new Vector3f(-0.5f, -0.1f, -0.2f), Vector3f.UnitZ, 0f, 1f),
+                ],
+                [0, 1, 2, 0, 2, 3]);
+
+            device.SetMaterialOverride(new SurfaceMaterial(Glass: true));
+            device.SetDepthState(DepthState.TestOnly);
+            device.DrawMesh(window, 0, 6, Matrix4f.Identity, pane, TextureHandle.None, BlendMode.AlphaBlend);
+            device.SetDepthState(DepthState.TestAndWrite);
+            device.SetMaterialOverride(SurfaceMaterial.Default);
+        }
+
         device.EndPass();
 
         device.EndSceneCapture();
@@ -387,7 +445,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         device.SwapBuffers();
     }
 
-    private static byte[]? TryOnVulkan(out string? reason, DebugView view = DebugView.None, bool textured = false, bool temporal = false, float? bloom = null, bool shadows = false)
+    private static byte[]? TryOnVulkan(out string? reason, DebugView view = DebugView.None, bool textured = false, bool temporal = false, float? bloom = null, bool shadows = false, bool glass = false)
     {
         reason = null;
 
@@ -397,7 +455,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
 
             using (GraphicsDevice device = new(vulkan.Device, new DisplayMode(Size, Size, 32, 60)))
             {
-                DrawFrame(device, view, textured, temporal, bloom, shadows);
+                DrawFrame(device, view, textured, temporal, bloom, shadows, glass);
             }
 
             return Read(vulkan.Device, vulkan.OffscreenTarget(0));
@@ -409,7 +467,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         }
     }
 
-    private static byte[]? TryOnWebGpu(out string? reason, DebugView view = DebugView.None, bool textured = false, bool temporal = false, float? bloom = null, bool shadows = false)
+    private static byte[]? TryOnWebGpu(out string? reason, DebugView view = DebugView.None, bool textured = false, bool temporal = false, float? bloom = null, bool shadows = false, bool glass = false)
     {
         reason = null;
 
@@ -420,7 +478,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
 
             using (GraphicsDevice device = new(rhi, new DisplayMode(Size, Size, 32, 60)))
             {
-                DrawFrame(device, view, textured, temporal, bloom, shadows);
+                DrawFrame(device, view, textured, temporal, bloom, shadows, glass);
             }
 
             return Read(rhi, rhi.OffscreenTarget(0));

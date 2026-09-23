@@ -329,8 +329,8 @@ public sealed class GraphicsDeviceTests
         device.BeginPass(ScenePass.Forward);
         World(device);
 
-        // A pane, whose pipeline has not moved onto this path: drawn as ordinary translucency it would be a
-        // window that looks finished and is not, so it is not drawn at all.
+        // A pane, which goes to the glazing's own pipeline: drawn as ordinary translucency it would be a
+        // window that looks finished and is not.
         device.SetMaterialOverride(new SurfaceMaterial(Glass: true));
         World(device);
         device.SetMaterialOverride(SurfaceMaterial.Default);
@@ -350,7 +350,10 @@ public sealed class GraphicsDeviceTests
         Assert.Equal([false], forward.Clears);
         Assert.Equal("Depth", forward.DepthAttachment);
 
-        Assert.Equal(1, DrawsIn(rhi, "forward"));
+        Assert.Equal(2, DrawsIn(rhi, "forward"));
+        Assert.Contains(
+            rhi.CommandsOf<RecordedRhiCommand.SetPipeline>(),
+            set => set.Label.StartsWith("Glass-", StringComparison.Ordinal));
     }
 
     [Fact]

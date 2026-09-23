@@ -5,17 +5,13 @@
 // world pipeline does not already bind.
 
 #include "../Common/GlassVertex.slang"
+#include "../Common/SampledColour.slang"
 
 /// The vertex stage: the shared glazing transform.
 [shader("vertex")]
 GlassVaryings vertexMain(GlassVertexInput input)
 {
     return GlassTransform(input);
-}
-
-float3 DecodeSrgb(float3 c)
-{
-    return lerp(c / 12.92, pow((c + 0.055) / 1.055, float3(2.4, 2.4, 2.4)), step(0.04045, c));
 }
 
 /// The fragment stage: the transmission the room behind is seen through.
@@ -47,8 +43,8 @@ float4 fragmentMain(GlassVaryings input) : SV_Target
     // What the pane itself contributes: its own colour, lit by whatever the level baked onto it.
     // Glass is nearly all transmission, so this is a tint on the room behind rather than a surface
     // colour, and the blend below is what applies it.
-    float3 tint = DecodeSrgb(diffuse.rgb) * DecodeSrgb(input.color.rgb)
-        * DecodeSrgb(uLightmap.Sample(uLightmapSampler, input.lightmapUv).rgb);
+    float3 tint = SampledLinear(diffuse.rgb) * DecodeSrgb(input.color.rgb)
+        * SampledLinear(uLightmap.Sample(uLightmapSampler, input.lightmapUv).rgb);
 
     // The frame's fog, over the pane's own distance. Glazing is ordinary world geometry as far as the
     // atmosphere is concerned -- a window across a courtyard has as much air in front of it as the

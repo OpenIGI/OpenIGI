@@ -168,6 +168,7 @@ public sealed partial class GraphicsDevice
             case ScenePass.Forward:
                 // Everything forward draws over the LIT image, so the light has to be there first.
                 RecordShading();
+                PrepareGlazing();
                 BeginForwardPass(scene);
                 break;
         }
@@ -610,8 +611,8 @@ public sealed partial class GraphicsDevice
     /// <param name="hasLightmap">Whether it carries a lightmap.</param>
     /// <remarks>
     /// The same forward shader and the same block as the direct path, built for the lit image instead of
-    /// the frame. Glazing is not drawn: it has a pipeline of its own that has not moved onto this path,
-    /// and a pane drawn as ordinary translucency is a window that looks finished and is not.
+    /// the frame. A pane goes to the glazing's own pipeline instead: drawn as ordinary translucency it
+    /// would be a window that looks finished and is not.
     /// </remarks>
     private void DrawForward(
         in MeshDrawCall call,
@@ -620,8 +621,14 @@ public sealed partial class GraphicsDevice
         BlendMode blend,
         bool hasLightmap)
     {
-        if (_material.Glass || _scenePass is not { } pass || _forwardPipelines is not { } pipelines)
+        if (_scenePass is not { } pass || _forwardPipelines is not { } pipelines)
         {
+            return;
+        }
+
+        if (_material.Glass)
+        {
+            DrawGlass(pass, call, ranges, modelView);
             return;
         }
 
@@ -712,6 +719,7 @@ public sealed partial class GraphicsDevice
         // The atmosphere's tables never change place, so the shading is pointed at them once. Until they
         // were, it read the stand-ins: a sky of flat white and an ambient of nothing.
         EnsureTemporal();
+        EnsureGlazing();
         _bloom = new BloomPass(_device, FramesInFlight, _retired);
 
         // A map made before the first capture -- the game states its cascades first -- is handed over
@@ -764,6 +772,7 @@ public sealed partial class GraphicsDevice
     {
         DisposeTemporal();
         DisposeShadows();
+        DisposeGlazing();
 
         _scenePass?.Dispose();
         _scenePass = null;
