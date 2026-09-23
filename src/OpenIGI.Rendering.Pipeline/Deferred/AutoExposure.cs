@@ -11,14 +11,15 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// <remarks>
 /// <para>
 /// The Vulkan renderer's metering on the RHI: the same ExposureHistogram module and parameter block, and the
-/// same host half (<see cref="ExposureAdaptation"/>). The histogram is zeroed from a buffer of zeroes, built,
-/// and copied into the frame slot's own readback buffer; the slot's previous histogram is read as the slot
-/// comes round again, when the frame that wrote it has finished -- two frames of lag, as the Vulkan
-/// renderer has, far below what an eye easing over a second can show.
+/// same host half (<see cref="ExposureAdaptation"/>). The histogram is cleared, built, and copied into the
+/// frame slot's own readback buffer; the slot's previous histogram is read as the slot comes round again,
+/// when the frame that wrote it has finished -- two frames of lag, as the Vulkan renderer has, far below
+/// what an eye easing over a second can show.
 /// </para>
 /// <para>
-/// SPIR-V only: the count is an image atomic, and WGSL has none on textures. A device without the form
-/// stands this down (<see cref="RunsOn"/>) and the resolve keeps the setting's own exposure.
+/// The module's buffer form, counting into a storage buffer where the legacy renderer counts into an image:
+/// WGSL has atomics on storage buffers and none on textures, so this runs on WebGPU too. A device without
+/// the form stands this down (<see cref="RunsOn"/>) and the resolve keeps the setting's own exposure.
 /// </para>
 /// </remarks>
 public sealed class AutoExposure : IDisposable
@@ -29,8 +30,7 @@ public sealed class AutoExposure : IDisposable
     private readonly ComputePass _histogram;
     private readonly ComputeParameters _parameters;
     private readonly IRhiSampler _sampler;
-    private readonly IRhiTexture _bins;
-    private readonly IRhiBuffer _zeroes;
+    private readonly IRhiBuffer _bins;
     private readonly IRhiBuffer[] _readback;
     private readonly IRhiReadback?[] _pending;
     private readonly bool[] _written;
@@ -47,23 +47,17 @@ public sealed class AutoExposure : IDisposable
         ArgumentOutOfRangeException.ThrowIfLessThan(framesInFlight, 1);
 
         _device = device;
-        _histogram = new ComputePass(device, ShaderModuleId.ExposureHistogram, "exposure.histogram");
+        _histogram = new ComputePass(device, ShaderModuleId.ExposureHistogram, "exposure.histogram", Variant);
         _parameters = new ComputeParameters(
             device, ExposureAdaptation.ParameterFloats * sizeof(float), framesInFlight, "exposure");
         _sampler = device.CreateSampler(new RhiSamplerDescriptor(Label: "exposure"));
 
-        _bins = device.CreateTexture(new RhiTextureDescriptor(
-            ExposureAdaptation.Bins,
-            1,
-            RhiTextureFormat.R32Uint,
-            RhiTextureUsage.Storage | RhiTextureUsage.CopyDestination | RhiTextureUsage.CopySource,
-            Label: "exposure.bins"));
-
-        // A zeroed row to copy over the bins, because a storage image has no clear of its own on WebGPU's
-        // terms and this keeps the pass to what both backends offer. A buffer starts zeroed on both.
-        _zeroes = device.CreateBuffer(new RhiBufferDescriptor(
-            HistogramBytes, RhiBufferUsage.CopySource | RhiBufferUsage.CopyDestination, "exposure.zeroes"));
-        device.WriteBuffer<byte>(_zeroes, 0, new byte[HistogramBytes]);
+        // The counters, a storage buffer rather than the legacy renderer's image: its atomics are the only
+        // kind WGSL has.
+        _bins = device.CreateBuffer(new RhiBufferDescriptor(
+            HistogramBytes,
+            RhiBufferUsage.Storage | RhiBufferUsage.CopySource | RhiBufferUsage.CopyDestination,
+            "exposure.bins"));
 
         // One per slot, so a readback waits only on the frame that wrote it.
         _readback = new IRhiBuffer[framesInFlight];
@@ -80,13 +74,16 @@ public sealed class AutoExposure : IDisposable
     /// <summary>Gets the exposure scale the metering last settled on; one before any histogram arrives.</summary>
     public float Adapted => _adapted;
 
+    /// <summary>The histogram module's form that counts into a buffer, which every target compiles.</summary>
+    public static ShaderVariant Variant => new("buffer");
+
     /// <summary>Gets whether a device can meter at all.</summary>
     /// <param name="device">The device.</param>
     /// <returns><see langword="true"/> where the histogram module has the device's form.</returns>
     public static bool RunsOn(IRhiDevice device)
     {
         ArgumentNullException.ThrowIfNull(device);
-        return ShaderCatalog.Compiles(ShaderModuleId.ExposureHistogram, ShaderVariant.Default, device.ShaderTarget);
+        return ShaderCatalog.Compiles(ShaderModuleId.ExposureHistogram, Variant, device.ShaderTarget);
     }
 
     /// <summary>Folds the histogram this frame slot last carried into the exposure, if it has arrived.</summary>
@@ -146,8 +143,7 @@ public sealed class AutoExposure : IDisposable
         _pending[slot]?.Dispose();
         _pending[slot] = null;
 
-        RhiExtent3D row = new(ExposureAdaptation.Bins, 1);
-        encoder.CopyBufferToTexture(new RhiBufferTextureCopy(_zeroes, 0, HistogramBytes), new RhiTextureRegion(_bins), row);
+        encoder.ClearBuffer(_bins, 0, HistogramBytes);
 
         Span<float> parameters = stackalloc float[ExposureAdaptation.ParameterFloats];
         ExposureAdaptation.WriteHistogramParameters(parameters, width, height);
@@ -155,12 +151,12 @@ public sealed class AutoExposure : IDisposable
         using (IRhiComputePassEncoder pass = encoder.BeginComputePass(new RhiComputePassDescriptor(timestamps, "exposure")))
         {
             _histogram.Bind("uScene", lit, _sampler);
-            _histogram.Bind("uHistogram", _bins.View);
+            _histogram.Bind("uBins", _bins);
             _histogram.Bind("p", _parameters.Write<float>(frameInFlight, parameters));
             _histogram.Dispatch(pass, width, height);
         }
 
-        encoder.CopyTextureToBuffer(new RhiTextureRegion(_bins), new RhiBufferTextureCopy(_readback[slot], 0, HistogramBytes), row);
+        encoder.CopyBufferToBuffer(_bins, 0, _readback[slot], 0, HistogramBytes);
         _written[slot] = true;
     }
 
@@ -184,7 +180,6 @@ public sealed class AutoExposure : IDisposable
             buffer.Dispose();
         }
 
-        _zeroes.Dispose();
         _bins.Dispose();
         _sampler.Dispose();
         _parameters.Dispose();
