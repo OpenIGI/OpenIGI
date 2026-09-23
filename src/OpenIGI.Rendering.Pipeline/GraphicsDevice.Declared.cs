@@ -33,7 +33,6 @@ public sealed partial class GraphicsDevice
         "r_reflections",
         "r_rt_reflections",
         "r_motion_blur",
-        "r_wetness",
         "r_storm",
         "r_material_detail",
     ];
@@ -114,11 +113,6 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     public void SetMaterialDetail(float strength)
-    {
-    }
-
-    /// <inheritdoc/>
-    public void SetWetness(in WetnessSettings wetness)
     {
     }
 

@@ -209,6 +209,10 @@ public sealed class DeferredLighting : IDisposable
     /// </remarks>
     public void BindFog(IRhiTextureView? volume) => BindOrStandIn("uFogVolume", volume);
 
+    /// <summary>Points the shading at the level's roofs, which keep water off the ground beneath them.</summary>
+    /// <param name="roofs">The roof map, or null where the level has none, whose block then says so.</param>
+    public void BindShelterMap(IRhiTextureView? roofs) => BindOrStandIn("uShelterMap", roofs);
+
     /// <summary>Points the traced form at this frame's lamp visibility and the world, where it has them.</summary>
     /// <param name="visibility">The filtered lamp visibility, or null for a frame that did not trace it.</param>
     /// <param name="world">The structure the per-lamp rays trace against.</param>

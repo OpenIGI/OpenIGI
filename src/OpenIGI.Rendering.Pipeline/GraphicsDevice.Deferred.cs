@@ -477,7 +477,7 @@ public sealed partial class GraphicsDevice
 
         DeferredLightingParameters.WriteGi(
             gi,
-            WithFog(WithGlobalIllumination(WithTracedSun(WithShadows(LightingState())))),
+            WithFog(WithWetness(WithGlobalIllumination(WithTracedSun(WithShadows(LightingState()))))),
             CascadeSplits,
             CascadeMatrices);
         DeferredLampBlock.Write(lamps, LampState(), LocalLights);
@@ -498,6 +498,7 @@ public sealed partial class GraphicsDevice
         BindFog();
         BindSunShadow();
         BindLampShadow();
+        BindShelterMap();
 
         using IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             [new RhiColorAttachment(scene.View(SceneTargetId.Lit), RhiLoadOp.Clear, RhiStoreOp.Store, RhiClearColor.Transparent)],
