@@ -13,7 +13,9 @@ using OpenIGI.Platform.Desktop;
 using OpenIGI.Platform;
 using OpenIGI.Rendering.Pipeline;
 using OpenIGI.Rendering.Vulkan;
+using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.Vulkan.Rhi;
+using OpenIGI.Rendering.WebGpu;
 using OpenIGI.Rendering;
 
 HostOptions options;
@@ -206,11 +208,11 @@ using (window)
     // OPENIGI_RENDERER=rhi draws through OpenIGI.Rendering.Pipeline instead: the same renderer over the
     // backend-neutral interface, which is what the browser will run. It draws the deferred frame, with
     // the passes it has not taken over yet named in its UnimplementedSettings, and it is opt-in until it
-    // draws everything the device below it does.
-    bool useRhi = string.Equals(
-        Environment.GetEnvironmentVariable("OPENIGI_RENDERER"),
-        "rhi",
-        StringComparison.OrdinalIgnoreCase);
+    // draws everything the device below it does. OPENIGI_RENDERER=webgpu runs that renderer over WebGPU
+    // (wgpu-native), the browser's API, for A/B against Vulkan on the same machine.
+    string? renderer = Environment.GetEnvironmentVariable("OPENIGI_RENDERER");
+    bool useRhi = string.Equals(renderer, "rhi", StringComparison.OrdinalIgnoreCase);
+    bool useWebGpu = string.Equals(renderer, "webgpu", StringComparison.OrdinalIgnoreCase);
 
     using VulkanRhi? rhi = useRhi
         ? VulkanRhi.CreateForSurface(
@@ -222,11 +224,18 @@ using (window)
             vulkanValidation)
         : null;
 
-    using IGraphicsDevice device = rhi is not null
+    using WebGpuRhiDevice? webGpu = useWebGpu
+        ? WebGpuWindow.Create(window, width, height, vsync: true)
+        : null;
+
+    IRhiDevice? rhiDevice = rhi is not null ? rhi.Device : webGpu;
+
+    // WebGPU reports its timestamps in nanoseconds already.
+    using IGraphicsDevice device = rhiDevice is not null
         ? new GraphicsDevice(
-            rhi.Device,
+            rhiDevice,
             displayMode,
-            rhi.TimestampPeriodNanoseconds,
+            rhi?.TimestampPeriodNanoseconds ?? 1.0,
             options.ScreenshotPath is not null)
         : new VulkanGraphicsDevice(
             new VulkanSurfaceProvider(window.VkSurface!),
@@ -236,9 +245,11 @@ using (window)
             options.ScreenshotPath is not null,
             logger);
 
-    if (rhi is not null)
+    if (rhiDevice is not null)
     {
-        logger.Information("Renderer", $"Drawing through the RHI on {rhi.Device.AdapterName}.");
+        logger.Information(
+            "Renderer",
+            $"Drawing through the RHI over {(webGpu is not null ? "WebGPU" : "Vulkan")} on {rhiDevice.AdapterName}.");
     }
 
     // The composition root is the only place that names a concrete backend: the graphics device
