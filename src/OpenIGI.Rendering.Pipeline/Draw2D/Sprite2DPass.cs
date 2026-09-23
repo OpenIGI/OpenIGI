@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using OpenIGI.Rendering.Pipeline.Mesh3D;
 using OpenIGI.Rendering.Pipeline.Passes;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Shaders;
@@ -219,7 +220,8 @@ public sealed class Sprite2DPass : IDisposable
             TextureLayout,
             _targetFormat,
             RhiBlendState.AlphaBlend,
-            depthFormat: _depthFormat);
+            depthFormat: _depthFormat,
+            fragmentConstants: Mesh3DConstants.DisplayComposite(_targetFormat));
 
         RhiTextureBinding binding = _textures.Resolve(settings.HasPicture ? texture : TextureHandle.None);
         IRhiBindGroup group = _groups.Get(binding.Id, binding.View, binding.Sampler);

@@ -2,7 +2,9 @@
 // colour. The vertex stage is the shared one; see Common/Sprite2DVertex.slang.
 
 #include "../Common/PushConstants.slang"
+#include "../Common/SampledColour.slang"
 #include "../Common/Sprite2DVertex.slang"
+#include "../Common/TargetEncoding.slang"
 
 struct SpritePush
 {
@@ -24,8 +26,14 @@ Sprite2DVaryings vertexMain(Sprite2DVertexInput input)
 }
 
 /// The fragment stage: the texture sample modulated by the vertex colour.
+/// <remarks>
+/// At the display encoding throughout, as the original composited its interface: the vertex colours are
+/// authored there, and a texel an sRGB image's sampler decoded is put back first. See SampledColour.slang
+/// and TargetEncoding.slang.
+/// </remarks>
 [shader("fragment")]
 float4 fragmentMain(Sprite2DVaryings input) : SV_Target
 {
-    return uTexture.Sample(uTextureSampler, input.texCoord) * input.color;
+    float4 texel = uTexture.Sample(uTextureSampler, input.texCoord);
+    return ToTarget(float4(SampledDisplay(texel.rgb), texel.a) * input.color);
 }

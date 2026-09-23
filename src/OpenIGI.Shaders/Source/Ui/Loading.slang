@@ -11,6 +11,8 @@
 
 #include "../Common/Fullscreen.slang"
 #include "../Common/PushConstants.slang"
+#include "../Common/SampledColour.slang"
+#include "../Common/TargetEncoding.slang"
 
 // Sixteen floats; see LoadingBackdropSettings.
 struct LoadingPush
@@ -110,7 +112,7 @@ float4 fragmentMain(FullscreenVaryings input) : SV_Target
         for (int i = 0; i < 16; i++)
         {
             float2 tap = centred + (mul(kDisc[i], rotate) * scale);
-            sum += uTexture.Sample(uTextureSampler, clamp(tap, float2(0.002, 0.002), float2(0.998, 0.998))).rgb;
+            sum += SampledDisplay(uTexture.Sample(uTextureSampler, clamp(tap, float2(0.002, 0.002), float2(0.998, 0.998))).rgb);
         }
 
         colour = sum / 16.0;
@@ -156,5 +158,6 @@ float4 fragmentMain(FullscreenVaryings input) : SV_Target
         * smoothstep(bars - 0.003, bars + 0.003, 1.0 - uv.y);
     colour *= inside;
 
-    return float4(max(colour, float3(0.0, 0.0, 0.0)), p.opacity);
+    // Graded at the display encoding, as the held frame was authored; see TargetEncoding.slang.
+    return ToTarget(float4(max(colour, float3(0.0, 0.0, 0.0)), p.opacity));
 }

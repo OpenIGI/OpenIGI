@@ -1,3 +1,4 @@
+using OpenIGI.Rendering.Pipeline.Mesh3D;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Shaders;
 
@@ -65,7 +66,10 @@ public sealed class SpritePipelineSet : IDisposable
             module.ToString()));
 
         RhiShaderStage vertex = new(Module, reflection.EntryPointFor(ShaderStage.Vertex).Name);
-        RhiShaderStage fragment = new(Module, reflection.EntryPointFor(ShaderStage.Fragment).Name);
+        RhiShaderStage fragment = new(
+            Module,
+            reflection.EntryPointFor(ShaderStage.Fragment).Name,
+            ShaderConstants.Declared(reflection, Mesh3DConstants.DisplayComposite(targetFormat)));
 
         _pipelines = new IRhiRenderPipeline[blends.Count];
         Blends = blends;

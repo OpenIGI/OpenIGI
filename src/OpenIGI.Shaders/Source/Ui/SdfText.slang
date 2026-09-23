@@ -9,6 +9,7 @@
 
 #include "../Common/PushConstants.slang"
 #include "../Common/Sprite2DVertex.slang"
+#include "../Common/TargetEncoding.slang"
 
 // One block for both stages. The vertex stage reads projectionSize at offset 0; the fragment stage
 // reads from offset 16 onwards, which is where the first float4 lands of its own accord because a
@@ -100,5 +101,7 @@ float4 fragmentMain(Sprite2DVaryings input) : SV_Target
     result = lerp(result, float4(fillColour, 1.0), fill);
     result.a *= input.color.a;
 
-    return result;
+    // The colours are the display encoding's, as the interface's are; the distance is alpha, which no
+    // sRGB image decodes.
+    return ToTarget(result);
 }

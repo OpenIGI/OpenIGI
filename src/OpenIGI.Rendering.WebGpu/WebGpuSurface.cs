@@ -356,9 +356,11 @@ public readonly record struct WebGpuSurfaceSupport(
     /// <summary>Gets the format to present in, or null when the adapter offers none this knows.</summary>
     /// <remarks>
     /// <para>
-    /// The adapter's first choice, which is the one its own composition path is cheapest for. Not an
-    /// sRGB preference either way: what the renderer writes is decided by the view it attaches, and
-    /// picking the adapter's own order keeps the present free of a conversion nobody asked for.
+    /// The adapter's first choice among the formats that store what they are given, and its first choice
+    /// outright only where it offers none. The interface composites as the original did, at the display
+    /// encoding, and blends there: a target that encodes as it stores blends in linear space instead,
+    /// and a dark panel laid over the scene comes out grey. Every other stage draws correctly into
+    /// either kind, so this costs nothing where an adapter prefers sRGB.
     /// </para>
     /// <para>
     /// The null check is not defensive padding. A headless device holds the DEFAULT of this structure,
@@ -367,7 +369,9 @@ public readonly record struct WebGpuSurfaceSupport(
     /// surface" is an ordinary state, not a fault, and it has to read as one.
     /// </para>
     /// </remarks>
-    public RhiTextureFormat? PreferredFormat => Formats is { Count: > 0 } ? Formats[0] : null;
+    public RhiTextureFormat? PreferredFormat => Formats is not { Count: > 0 } formats
+        ? null
+        : formats.FirstOrDefault(format => !format.IsSrgb(), formats[0]);
 
     /// <summary>The way of waiting for the display that matches what was asked for.</summary>
     /// <param name="vsync">Whether to wait.</param>

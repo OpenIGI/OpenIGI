@@ -127,9 +127,11 @@ public sealed class VulkanRhi : IDisposable
             VulkanDevice device = new(instance, selection, log);
             VulkanAllocator allocator = new(device);
             VulkanCommands commands = new(instance.Vk, device);
-            // The shared renderer writes linear colour and leaves the encode to the surface, so its
-            // swapchain is sRGB where the legacy path's is unsigned-normalised.
-            VulkanSwapchain swapchain = new(instance, device, width, height, vsync, encodesOutput: false);
+            // Unsigned-normalised, as the legacy path's is. The shared renderer's resolve writes for
+            // either kind, but its interface composites at the display encoding and blends there, as
+            // the original did; over an sRGB swapchain it blended in linear space instead, and every
+            // dark panel of the menu came out grey.
+            VulkanSwapchain swapchain = new(instance, device, width, height, vsync, encodesOutput: true);
             VulkanRhiDevice rhi = new(instance.Vk, device, allocator, commands, log, instance);
 
             rhi.AttachSwapchain(swapchain);

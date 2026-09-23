@@ -92,6 +92,21 @@ public static class Mesh3DConstants
     public static IReadOnlyDictionary<int, RhiConstant> TargetConstants { get; } =
         new Dictionary<int, RhiConstant> { [ClipYDown] = RhiConstant.Of(0) };
 
+    /// <summary>The constants a stage that composites at the display encoding is built with.</summary>
+    /// <param name="target">The format of the attachment it draws into.</param>
+    /// <returns>That the sampler has decoded, and whether the target encodes.</returns>
+    /// <remarks>
+    /// The interface's shaders, which composite as the original did: their colours are authored at the
+    /// display encoding and blended there. Every RHI texture's sampler decodes, so a texel is put back;
+    /// and a target that encodes as it stores is handed its colour decoded, so it is encoded once.
+    /// </remarks>
+    public static IReadOnlyDictionary<int, RhiConstant> DisplayComposite(RhiTextureFormat target) =>
+        new Dictionary<int, RhiConstant>
+        {
+            [SamplerDecodes] = RhiConstant.Of(1),
+            [TargetEncodes] = RhiConstant.Of(target.IsSrgb() ? 1 : 0),
+        };
+
     /// <summary>The threshold a shader falls back to when nothing is supplied.</summary>
     /// <remarks>
     /// <c>128 / 255</c>, which is the <c>0.5</c> the shaders used to test against to within a texel

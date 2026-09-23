@@ -79,6 +79,30 @@ public sealed class WebGpuSurfaceSupportTests
     }
 
     [Fact]
+    public void A_format_that_stores_what_it_is_given_is_preferred_to_an_encoding_one()
+    {
+        // The interface blends at the display encoding, as the original did; an sRGB target blends in
+        // linear space and turns a dark panel over the scene grey.
+        WebGpuSurfaceSupport support = new(
+            [RhiTextureFormat.Bgra8UnormSrgb, RhiTextureFormat.Bgra8Unorm],
+            [WGPUPresentMode.Fifo],
+            WGPUCompositeAlphaMode.Opaque);
+
+        Assert.Equal(RhiTextureFormat.Bgra8Unorm, support.PreferredFormat);
+    }
+
+    [Fact]
+    public void An_adapter_offering_only_encoding_formats_is_still_presented_to()
+    {
+        WebGpuSurfaceSupport support = new(
+            [RhiTextureFormat.Bgra8UnormSrgb],
+            [WGPUPresentMode.Fifo],
+            WGPUCompositeAlphaMode.Opaque);
+
+        Assert.Equal(RhiTextureFormat.Bgra8UnormSrgb, support.PreferredFormat);
+    }
+
+    [Fact]
     public void An_adapter_offering_nothing_this_renderer_knows_has_no_preferred_format()
     {
         // Not a crash and not a guess: the formats the surface reported were all ones this has no name
