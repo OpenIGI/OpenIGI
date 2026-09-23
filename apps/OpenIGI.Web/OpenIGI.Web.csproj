@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+
+  <!-- The game in a browser: the same host as the desktop's, over the canvas, WebGPU and the files the
+       person picked. Built with `dotnet publish`; the page is wwwroot/index.html in the publish output. -->
+  <PropertyGroup>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <OutputType>Exe</OutputType>
+    <!-- The JavaScript interop's generated marshalling is unsafe code. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <WasmMainJSPath>wwwroot/main.js</WasmMainJSPath>
+    <!-- Links the browser's webgpu.h into the runtime (WgpuBrowser.props). -->
+    <WasmBuildNative>true</WasmBuildNative>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- A level's buffers and textures are hundreds of megabytes; start with room for them and allow the
+         whole 32-bit address space. -->
+    <EmccInitialHeapSize>536870912</EmccInitialHeapSize>
+    <EmccMaximumHeapSize>4294967296</EmccMaximumHeapSize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenIGI.Composition\OpenIGI.Composition.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Audio\OpenIGI.Audio.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Engine\OpenIGI.Engine.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Host\OpenIGI.Host.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Platform\OpenIGI.Platform.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Platform.Web\OpenIGI.Platform.Web.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Rendering.Pipeline\OpenIGI.Rendering.Pipeline.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Rendering.WebGpu\OpenIGI.Rendering.WebGpu.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The host's assets (apps/OpenIGI.Composition/Assets), served beside the page with a list of them in
+         host-assets.json. The page writes them where the host looks, /Assets in the runtime's file system,
+         since the application's directory there is the root. -->
+    <HostAsset Include="..\OpenIGI.Composition\Assets\**\*"
+               Exclude="..\OpenIGI.Composition\Assets\**\*.md;..\OpenIGI.Composition\Assets\**\.gitignore" />
+    <Content Include="@(HostAsset)"
+             Link="wwwroot\Assets\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="ListHostAssets" BeforeTargets="AssignTargetPaths">
+    <PropertyGroup>
+      <_HostAssetList>$(IntermediateOutputPath)host-assets.json</_HostAssetList>
+    </PropertyGroup>
+    <ItemGroup>
+      <_HostAssetLine Include="@(HostAsset->'&quot;Assets/%(RecursiveDir)%(Filename)%(Extension)&quot;'->Replace('\', '/'))" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(_HostAssetList)" Lines="[;@(_HostAssetLine, ',%0A');]" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Content Include="$(_HostAssetList)" Link="wwwroot\host-assets.json" CopyToOutputDirectory="PreserveNewest" />
+      <FileWrites Include="$(_HostAssetList)" />
+    </ItemGroup>
+  </Target>
+
+  <Import Project="..\..\src\OpenIGI.Rendering.WebGpu.Browser\WgpuBrowser.props" />
+  <Import Project="..\..\src\OpenIGI.Platform.Web\WebPlatform.props" />
+
+</Project>
