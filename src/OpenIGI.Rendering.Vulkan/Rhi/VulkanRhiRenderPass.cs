@@ -19,6 +19,15 @@ internal sealed unsafe class VulkanRhiRenderPassEncoder : IRhiRenderPassEncoder
     private readonly List<VulkanRhiTexture> _attachments;
     private readonly VulkanRhiQuerySet? _occlusion;
     private readonly RhiTimestampWrites? _timestamps;
+
+    // What is bound now, so a draw that asks for the same again costs nothing. A frame's draws mostly
+    // share a pipeline and their buffers, and each bind is a call through the loader into the driver:
+    // with every draw re-binding everything, recording the shadow cascades alone took a quarter of the
+    // frame. Only what persists in a command buffer is remembered; push data changes with every draw.
+    private Pipeline _boundPipeline;
+    private readonly DescriptorSet[] _boundSets = new DescriptorSet[8];
+    private readonly (Silk.NET.Vulkan.Buffer Buffer, ulong Offset)[] _boundVertices = new (Silk.NET.Vulkan.Buffer, ulong)[8];
+    private (Silk.NET.Vulkan.Buffer Buffer, ulong Offset, IndexType Type) _boundIndices;
     private VulkanRhiPipelineLayout? _layout;
     private bool _ended;
     private bool _disposed;
@@ -53,8 +62,23 @@ internal sealed unsafe class VulkanRhiRenderPassEncoder : IRhiRenderPassEncoder
         ThrowIfEnded();
 
         VulkanRhiRenderPipeline graphics = (VulkanRhiRenderPipeline)pipeline;
-        _layout = (VulkanRhiPipelineLayout)graphics.Layout;
+        VulkanRhiPipelineLayout layout = (VulkanRhiPipelineLayout)graphics.Layout;
 
+        // A pipeline of another layout may disturb the sets already bound, so they are forgotten and bound
+        // again by whatever asks next.
+        if (!ReferenceEquals(layout, _layout))
+        {
+            Array.Clear(_boundSets);
+        }
+
+        _layout = layout;
+
+        if (graphics.Handle.Handle == _boundPipeline.Handle)
+        {
+            return;
+        }
+
+        _boundPipeline = graphics.Handle;
         _vk.CmdBindPipeline(_command, PipelineBindPoint.Graphics, graphics.Handle);
     }
 
@@ -68,6 +92,18 @@ internal sealed unsafe class VulkanRhiRenderPassEncoder : IRhiRenderPassEncoder
         // allowed, so whatever a draw reads has to be in the right layout before the pass began. Every
         // texture rests in General, which is a layout a shader can read, so it already is.
         DescriptorSet set = ((VulkanRhiBindGroup)group).Set;
+
+        bool remembered = dynamicOffsets.IsEmpty && (uint)index < (uint)_boundSets.Length;
+        if (remembered && _boundSets[index].Handle == set.Handle)
+        {
+            return;
+        }
+
+        if ((uint)index < (uint)_boundSets.Length)
+        {
+            // Dynamic offsets change what the same set reads, so a set bound with them is never matched.
+            _boundSets[index] = remembered ? set : default;
+        }
 
         fixed (uint* offsets = dynamicOffsets)
         {
@@ -110,6 +146,16 @@ internal sealed unsafe class VulkanRhiRenderPassEncoder : IRhiRenderPassEncoder
         Silk.NET.Vulkan.Buffer handle = ((VulkanRhiBuffer)buffer).Buffer.Handle;
         ulong at = offset;
 
+        if ((uint)slot < (uint)_boundVertices.Length)
+        {
+            if (_boundVertices[slot].Buffer.Handle == handle.Handle && _boundVertices[slot].Offset == at)
+            {
+                return;
+            }
+
+            _boundVertices[slot] = (handle, at);
+        }
+
         _vk.CmdBindVertexBuffers(_command, (uint)slot, 1, &handle, &at);
     }
 
@@ -119,11 +165,16 @@ internal sealed unsafe class VulkanRhiRenderPassEncoder : IRhiRenderPassEncoder
         ArgumentNullException.ThrowIfNull(buffer);
         ThrowIfEnded();
 
-        _vk.CmdBindIndexBuffer(
-            _command,
-            ((VulkanRhiBuffer)buffer).Buffer.Handle,
-            offset,
-            VulkanRhiTranslation.IndexFormat(format));
+        Silk.NET.Vulkan.Buffer handle = ((VulkanRhiBuffer)buffer).Buffer.Handle;
+        IndexType type = VulkanRhiTranslation.IndexFormat(format);
+
+        if (_boundIndices.Buffer.Handle == handle.Handle && _boundIndices.Offset == offset && _boundIndices.Type == type)
+        {
+            return;
+        }
+
+        _boundIndices = (handle, offset, type);
+        _vk.CmdBindIndexBuffer(_command, handle, offset, type);
     }
 
     /// <inheritdoc/>
