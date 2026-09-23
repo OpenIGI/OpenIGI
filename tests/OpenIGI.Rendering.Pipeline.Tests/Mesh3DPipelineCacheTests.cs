@@ -60,6 +60,34 @@ public sealed class Mesh3DPipelineCacheTests
     }
 
     [Fact]
+    public void A_variant_thrown_away_mid_frame_outlives_the_frames_that_may_have_bound_it()
+    {
+        // The menu loads its backdrop's mission, and with it the fog, while it goes on drawing: freed at
+        // once, a pipeline the frame being recorded had bound invalidated that frame's commands, and
+        // submitting them lost the device.
+        using RecordingRhiDevice device = new();
+        using RetiredResources retired = new(framesInFlight: 2) { Frame = 10 };
+        using Mesh3DPipelineCache cache = new(
+            device,
+            Mesh3DPipelineCache.CreateMaterialLayout(device),
+            Mesh3DPipelineCache.CreateCubeLayout(device),
+            RhiTextureFormat.Rgba16Float,
+            RhiTextureFormat.Depth32Float,
+            retired);
+
+        IRhiRenderPipeline bound = cache.ForState(DepthState.TestAndWrite, CullMode.None, BlendMode.Opaque);
+
+        cache.SetFog(new Vector3f(0.4f, 0.4f, 0.5f), 0.002f);
+
+        Assert.Equal(0, cache.Count);
+        Assert.False(((RecordedRenderPipeline)bound).IsDisposed);
+
+        retired.ReleaseBefore(12);
+
+        Assert.True(((RecordedRenderPipeline)bound).IsDisposed);
+    }
+
+    [Fact]
     public void Changing_the_fog_throws_the_variants_away()
     {
         using RecordingRhiDevice device = new();

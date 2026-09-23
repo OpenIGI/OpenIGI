@@ -111,7 +111,8 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
             _materialLayout,
             _cubeLayout,
             PresentFormat,
-            DepthFormat);
+            DepthFormat,
+            _retired);
 
         _textures = new TextureTable(device, _retired);
         _sprites = new Sprite2DPass(device, _textures, PresentFormat, FramesInFlight, DepthFormat, _retired);

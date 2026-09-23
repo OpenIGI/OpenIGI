@@ -39,6 +39,7 @@ public sealed class Mesh3DPipelineCache : IDisposable
     private readonly string _vertexEntryPoint;
     private readonly string _fragmentEntryPoint;
     private readonly Dictionary<Mesh3DPipelineKey, IRhiRenderPipeline> _pipelines = [];
+    private readonly RetiredResources? _retired;
     private Vector3f _fogColour;
     private float _fogDensity;
     private Vector3f _sunAmbient;
@@ -56,12 +57,17 @@ public sealed class Mesh3DPipelineCache : IDisposable
     /// <param name="cubeLayout">The environment cube's group, which only this path binds.</param>
     /// <param name="targetFormat">The format of the colour attachment they draw into.</param>
     /// <param name="depthFormat">The format of the depth attachment.</param>
+    /// <param name="retired">
+    /// Where discarded variants wait for the frames that bound them, or null to free them at once -- which
+    /// only a caller with no frame in flight can afford.
+    /// </param>
     public Mesh3DPipelineCache(
         IRhiDevice device,
         IRhiBindGroupLayout materialLayout,
         IRhiBindGroupLayout cubeLayout,
         RhiTextureFormat targetFormat,
-        RhiTextureFormat depthFormat)
+        RhiTextureFormat depthFormat,
+        RetiredResources? retired = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(materialLayout);
@@ -70,6 +76,7 @@ public sealed class Mesh3DPipelineCache : IDisposable
         _device = device;
         _targetFormat = targetFormat;
         _depthFormat = depthFormat;
+        _retired = retired;
 
         _reflection = ShaderCatalog.GetReflection(ShaderModuleId.Mesh3D);
         _vertexEntryPoint = _reflection.EntryPointFor(ShaderStage.Vertex).Name;
@@ -112,7 +119,9 @@ public sealed class Mesh3DPipelineCache : IDisposable
     /// <remarks>
     /// A level's fog is a constant, so it is baked into the variants rather than pushed — there is no
     /// push room, and nothing about it varies within a mission. Changing it therefore discards the
-    /// cache, which is why this is only ever called when a mission loads.
+    /// cache. That happens when a mission loads, which is not between frames: the menu loads its
+    /// backdrop's mission while it goes on drawing, so a discarded variant may be bound in the frame
+    /// being recorded and is retired rather than freed.
     /// </remarks>
     public void SetFog(Vector3f colour, float density)
     {
@@ -304,7 +313,12 @@ public sealed class Mesh3DPipelineCache : IDisposable
 
         // The two group layouts are the caller's; every mesh path shares them and none of them owns
         // them, which is the point of their being handed in.
-        DiscardVariants();
+        foreach (IRhiRenderPipeline pipeline in _pipelines.Values)
+        {
+            pipeline.Dispose();
+        }
+
+        _pipelines.Clear();
         Layout.Dispose();
         _module.Dispose();
     }
@@ -339,11 +353,21 @@ public sealed class Mesh3DPipelineCache : IDisposable
             $"Mesh3D-{key.Depth}-{key.Cull}-{key.Blend}-{key.AlphaReference}{(key.Reflective ? "-reflective" : string.Empty)}"));
     }
 
+    // Freed only once no frame can still be drawing with them: a pipeline destroyed while a command
+    // buffer that bound it is recording invalidates that buffer, and submitting it loses the device --
+    // which is what switching the menu to the vanilla preset did.
     private void DiscardVariants()
     {
         foreach (IRhiRenderPipeline pipeline in _pipelines.Values)
         {
-            pipeline.Dispose();
+            if (_retired is { } retired)
+            {
+                retired.Retire(pipeline);
+            }
+            else
+            {
+                pipeline.Dispose();
+            }
         }
 
         _pipelines.Clear();
