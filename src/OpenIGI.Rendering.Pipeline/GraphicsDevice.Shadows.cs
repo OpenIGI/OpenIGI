@@ -113,7 +113,7 @@ public sealed partial class GraphicsDevice
         CloseShadowPass();
 
         // A cascade is thousands of draws, finished while the next one records.
-        SealEncoder();
+        SealEncoder("frame.cascade");
     }
 
     /// <summary>Gets whether a cascade is being drawn, which routes every draw into it.</summary>

@@ -167,6 +167,9 @@ public sealed partial class GraphicsDevice
         // while the first is still open is undefined rather than nested.
         CloseScenePass();
 
+        // What the pass just closed recorded -- the geometry, above all -- finished while the next records.
+        SealEncoder("frame.scene");
+
         if (!_capturing || _scene is not { } scene)
         {
             return;
@@ -186,6 +189,7 @@ public sealed partial class GraphicsDevice
                 // Everything forward draws over the LIT image, so the light has to be there first.
                 RecordShading();
                 PrepareGlazing();
+                SealEncoder("frame.shading");
                 BeginForwardPass(scene);
                 break;
         }
@@ -352,16 +356,16 @@ public sealed partial class GraphicsDevice
         }
 
         CloseScenePass();
-
-        // The geometry, the frame's other great run of draws, finished while the shading records.
-        SealEncoder();
+        SealEncoder("frame.scene");
         RecordShading();
+        SealEncoder("frame.shading");
 
         // Over the finished, lit frame and before the temporal resolve steadies it: the surfaces' own
         // reflections first, so a pane then reflects a road with its reflections in.
         RecordSceneReflection();
         RecordGlazingReflection();
         RecordTemporal();
+        SealEncoder("frame.temporal");
 
         // Read by the shading, the fog and the rig's forward draws, all done now.
         _localLightCount = 0;
@@ -429,6 +433,9 @@ public sealed partial class GraphicsDevice
         _clearPending = false;
 
         scene.AdvanceFrame();
+
+        // The lens chain, finished while the interface records.
+        SealEncoder("frame.lens");
     }
 
     /// <summary>Builds the lens scatter from the picture the resolve is about to read, where one is asked for.</summary>

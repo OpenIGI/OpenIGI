@@ -262,7 +262,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
         _profiler.ResolveFrame(Encoder());
 
-        SealEncoder();
+        SealEncoder("frame");
         _device.Submit(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_sealed));
         _sealed.Clear();
         _skySubmittedSlot = _skyRecordedSlot;
@@ -408,11 +408,17 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     /// <summary>Finishes what the frame has recorded so far, to be submitted with the rest at the swap.</summary>
     /// <remarks>
     /// <para>
-    /// Called after the passes that record the most: each shadow cascade and the geometry. Finishing an
-    /// encoder is where WebGPU validates and translates everything recorded into it -- five of mission 1's
-    /// thirteen milliseconds a frame, one encoder for the whole frame, all of it at the swap and none of
-    /// it overlapping anything. Sealed in pieces, each piece is finished while the next is recorded, on a
-    /// backend that finishes off the recording thread.
+    /// Called after each stretch of the frame: every shadow cascade, the geometry, the shading, the
+    /// temporal resolve and the lens chain. Finishing an encoder is where WebGPU validates and translates
+    /// everything recorded into it -- five of mission 1's thirteen milliseconds a frame, one encoder for
+    /// the whole frame, all of it at the swap and none of it overlapping anything. Sealed in pieces, each
+    /// piece is finished while the next is recorded, on a backend that finishes off the recording thread;
+    /// what is left to finish at the swap is only what came after the last seal. The compute stretches
+    /// matter as much as the draws: a dispatch binds a dozen images, and those cost WebGPU far more to
+    /// validate than a draw does.
+    /// </para>
+    /// <para>
+    /// A pass still open is left alone and the seal skipped: an encoder cannot be finished around one.
     /// </para>
     /// <para>
     /// Nothing changes about what runs or in what order: the pieces are submitted together, in the order
@@ -420,14 +426,15 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     /// a few more command buffers a frame are nothing.
     /// </para>
     /// </remarks>
-    private void SealEncoder()
+    /// <param name="label">What the piece holds, for captures and for any error finishing it.</param>
+    private void SealEncoder(string label)
     {
-        if (_encoder is not { } open)
+        if (_encoder is not { } open || _pass is not null || _scenePass is not null || _shadowPass is not null)
         {
             return;
         }
 
-        _sealed.Add(open.Finish("frame"));
+        _sealed.Add(open.Finish(label));
         open.Dispose();
         _encoder = null;
     }
