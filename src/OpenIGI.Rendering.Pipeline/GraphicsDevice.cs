@@ -85,12 +85,13 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
             SupportsSceneCapture = true,
             SupportsFloatRenderTargets = true,
 
-            // The compute seam is the deferred stack's, and none of it has moved onto this path. Saying
-            // yes here would have the game reach for a shader handle this device refuses to hand out.
-            SupportsCompute = false,
+            // The compute seam, where every module of the game's GI stack has this backend's form: saying
+            // yes where the stack could not finish building would have the game reach for a shader this
+            // device refuses to make. That is WebGPU today; see GiRunsOn.
+            SupportsCompute = GiRunsOn(device),
             SupportsRayQuery = false,
             MaxSampleCount = device.Limits.MaxSampleCount,
-            UnimplementedSettings = UnimplementedOn(TemporalResolve.RunsOn(device)),
+            UnimplementedSettings = UnimplementedOn(TemporalResolve.RunsOn(device), GiRunsOn(device)),
         };
 
         _materialLayout = Mesh3DPipelineCache.CreateMaterialLayout(device);

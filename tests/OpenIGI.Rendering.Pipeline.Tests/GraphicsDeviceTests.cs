@@ -29,10 +29,28 @@ public sealed class GraphicsDeviceTests
         using GraphicsDevice device = Open(rhi);
 
         Assert.True(device.Capabilities.SupportsSceneCapture);
-        Assert.False(device.Capabilities.SupportsCompute);
+
+        // The recording device takes SPIR-V, which every module of the GI stack has.
+        Assert.True(device.Capabilities.SupportsCompute);
+        Assert.False(device.Capabilities.SupportsRayQuery);
 
         Assert.NotEmpty(device.Capabilities.UnimplementedSettings);
         Assert.Contains("r_volumetric_fog", device.Capabilities.UnimplementedSettings);
+    }
+
+    [Theory]
+    [InlineData(ShaderTarget.Spirv, true)]
+    [InlineData(ShaderTarget.Wgsl, false)]
+    public void It_offers_compute_only_where_the_whole_GI_stack_can_run(ShaderTarget target, bool offered)
+    {
+        // Two of the surface cache's modules are SPIR-V alone even in software. A device that said yes
+        // over WebGPU would have the game build half a stack and fail at the first of them.
+        using RecordingRhiDevice rhi = new() { ShaderTarget = target };
+        using GraphicsDevice device = Open(rhi);
+
+        Assert.Equal(offered, device.Capabilities.SupportsCompute);
+        Assert.Equal(!offered, device.Capabilities.UnimplementedSettings.Contains("r_surface_cache"));
+        Assert.Equal(!offered, device.Capabilities.UnimplementedSettings.Contains("r_screen_gi"));
     }
 
     [Theory]

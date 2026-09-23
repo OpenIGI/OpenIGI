@@ -449,7 +449,11 @@ public sealed partial class GraphicsDevice
         Span<float> lamps = stackalloc float[DeferredLampBlock.Floats];
         Span<float> light = stackalloc float[DeferredLightingParameters.LightFloats];
 
-        DeferredLightingParameters.WriteGi(gi, WithShadows(LightingState()), CascadeSplits, CascadeMatrices);
+        DeferredLightingParameters.WriteGi(
+            gi,
+            WithGlobalIllumination(WithShadows(LightingState())),
+            CascadeSplits,
+            CascadeMatrices);
         DeferredLampBlock.Write(lamps, new DeferredLampState(_frameCounter), []);
 
         DeferredLightingParameters.WriteLight(
@@ -464,6 +468,7 @@ public sealed partial class GraphicsDevice
             _lighting.CompleteBake);
 
         shading.BindFrame(scene, FrameSlot, gi, lamps);
+        BindGlobalIllumination();
 
         using IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             [new RhiColorAttachment(scene.View(SceneTargetId.Lit), RhiLoadOp.Clear, RhiStoreOp.Store, RhiClearColor.Transparent)],

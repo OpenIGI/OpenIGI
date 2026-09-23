@@ -166,6 +166,40 @@ public sealed class DeferredLighting : IDisposable
         _bindings.Bind("uSkyIrradiance", irradiance, sampler);
     }
 
+    /// <summary>Points the shading at what the GI stack produced this frame, or at stand-ins where it did not.</summary>
+    /// <param name="screen">The screen gather's resolved light, or null for none.</param>
+    /// <param name="red">The radiance cache's red harmonics, or null for no cache.</param>
+    /// <param name="green">Its green.</param>
+    /// <param name="blue">Its blue.</param>
+    /// <param name="distance">Its visibility.</param>
+    /// <remarks>
+    /// Every frame, because what the game hands over can come and go: a slot left bound to last frame's
+    /// volume after the game cleared it would light the frame from a cache nothing is keeping current.
+    /// The block says whether each is worth reading; this makes sure what it is told not to read is a
+    /// stand-in rather than something stale.
+    /// </remarks>
+    public void BindIndirect(
+        IRhiTextureView? screen,
+        IRhiTextureView? red,
+        IRhiTextureView? green,
+        IRhiTextureView? blue,
+        IRhiTextureView? distance)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        BindOrStandIn("uScreenGi", screen);
+        BindOrStandIn("uProbeRed", red);
+        BindOrStandIn("uProbeGreen", green);
+        BindOrStandIn("uProbeBlue", blue);
+        BindOrStandIn("uProbeDistance", distance);
+    }
+
+    private void BindOrStandIn(string name, IRhiTextureView? view)
+    {
+        ShaderBinding binding = Reflection.Bindings.First(slot => string.Equals(slot.Name, name, StringComparison.Ordinal));
+        _bindings.Bind(name, view ?? _standIns.For(binding), _sampler);
+    }
+
     /// <summary>Points the shading at the sun's cascades instead of at a stand-in.</summary>
     /// <param name="cascades">The shadow map, every cascade a layer of one depth array.</param>
     /// <remarks>

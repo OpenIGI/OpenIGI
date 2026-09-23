@@ -144,6 +144,18 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
     public IRhiTexture? Find(TextureHandle handle) =>
         _textures.TryGetValue(handle.Id, out Entry entry) ? entry.Texture : null;
 
+    /// <summary>Takes a handle from the table's own sequence that names none of its textures.</summary>
+    /// <returns>The handle, which no texture of the table will ever be given.</returns>
+    /// <remarks>
+    /// For an image the device resolves itself — a scene target, a card page — which is remade under the
+    /// handle the game keeps. Taking it from the same sequence is what keeps it from colliding with one.
+    /// </remarks>
+    public TextureHandle Reserve()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return new TextureHandle(_next++);
+    }
+
     /// <summary>Takes a texture the table did not create under its own handle.</summary>
     /// <param name="texture">The texture, which the table then owns.</param>
     /// <param name="description">How it is to be filtered.</param>

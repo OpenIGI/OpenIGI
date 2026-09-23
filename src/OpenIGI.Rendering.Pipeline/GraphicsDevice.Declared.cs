@@ -36,8 +36,6 @@ public sealed partial class GraphicsDevice
         "r_volumetric_fog",
         "r_motion_blur",
         "r_exposure",
-        "r_screen_gi",
-        "r_surface_cache",
         "r_wetness",
         "r_storm",
         "r_material_detail",
@@ -45,9 +43,14 @@ public sealed partial class GraphicsDevice
 
     /// <summary>The settings this device does not act on over the backend it was given.</summary>
     /// <param name="temporal">Whether the backend can run the temporal resolve.</param>
+    /// <param name="gi">Whether it can run the game's GI stack.</param>
     /// <returns>The names.</returns>
-    private static string[] UnimplementedOn(bool temporal) =>
-        temporal ? UnimplementedSettingNames : [.. UnimplementedSettingNames, "r_taa"];
+    private static string[] UnimplementedOn(bool temporal, bool gi) =>
+    [
+        .. UnimplementedSettingNames,
+        .. temporal ? Array.Empty<string>() : ["r_taa"],
+        .. gi ? Array.Empty<string>() : ["r_screen_gi", "r_surface_cache"],
+    ];
 
     /// <inheritdoc/>
     public bool SunShadowTraced => false;
@@ -56,26 +59,6 @@ public sealed partial class GraphicsDevice
     /// <remarks>One, because the direct path never tone-maps: what it draws is what is shown.</remarks>
     public float SceneExposure => 1f;
 
-    /// <inheritdoc/>
-    public TextureHandle CardAlbedo => TextureHandle.None;
-
-    /// <inheritdoc/>
-    public TextureHandle CardNormal => TextureHandle.None;
-
-    /// <inheritdoc/>
-    public TextureHandle CardMaterial => TextureHandle.None;
-
-    /// <inheritdoc/>
-    public TextureHandle CardDepth => TextureHandle.None;
-
-    /// <inheritdoc/>
-    public TextureHandle SceneDepth => TextureHandle.None;
-
-    /// <inheritdoc/>
-    public TextureHandle SceneNormal => TextureHandle.None;
-
-    /// <inheritdoc/>
-    public TextureHandle SceneColour => TextureHandle.None;
 
     /// <inheritdoc/>
     public void ReleaseWorld()
@@ -169,11 +152,6 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
-    public void SetScreenIndirect(TextureHandle indirect, float strength, bool fullResolution = false)
-    {
-    }
-
-    /// <inheritdoc/>
     public void SetLocalLights(ReadOnlySpan<DeferredLocalLight> lights)
     {
     }
@@ -185,16 +163,6 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     public void SetIrradianceVolume(IrradianceVolume? volume)
-    {
-    }
-
-    /// <inheritdoc/>
-    public void ClearRealtimeProbeVolume()
-    {
-    }
-
-    /// <inheritdoc/>
-    public void SetIrradianceVolumeSettings(in IrradianceVolumeSettings settings)
     {
     }
 

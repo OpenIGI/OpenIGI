@@ -449,9 +449,13 @@ public sealed partial class GraphicsDevice
                 : new RhiTextureBinding(0, StandInVolume().View, ComputeSampler());
         }
 
-        return _boundTextures.TryGetValue(unit, out TextureHandle texture)
-            ? _textures.Resolve(texture)
-            : _textures.Resolve(TextureHandle.None);
+        if (!_boundTextures.TryGetValue(unit, out TextureHandle texture))
+        {
+            return _textures.Resolve(TextureHandle.None);
+        }
+
+        // One of the frame's own images, handed to the game as a handle it keeps across resizes.
+        return TryResolveAlias(texture, out RhiTextureBinding alias) ? alias : _textures.Resolve(texture);
     }
 
     /// <summary>The sampler a slot reads through: its texture's own, wherever that texture was found.</summary>

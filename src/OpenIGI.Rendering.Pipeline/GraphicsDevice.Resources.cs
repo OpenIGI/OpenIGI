@@ -122,20 +122,6 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
-    public void SetRealtimeProbeVolume(
-        TextureHandle red,
-        TextureHandle green,
-        TextureHandle blue,
-        TextureHandle distance,
-        Vector3f origin,
-        float spacing,
-        int countX,
-        int countY,
-        int countZ)
-    {
-    }
-
-    /// <inheritdoc/>
     public TextureHandle CreateCubeTexture(int edge, string name) => throw Unsupported(nameof(CreateCubeTexture));
 
     /// <inheritdoc/>
