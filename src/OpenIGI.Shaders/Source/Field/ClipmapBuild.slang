@@ -67,7 +67,7 @@ float SampleInstance(int instance, float3 world)
     uAtlas.GetDimensions(width, height, depth);
     float3 uvw = (slotCorner.xyz + clamped) / float3(float(width), float(height), float(depth));
 
-    float encoded = uAtlas.Sample(uAtlasSampler, uvw).r;
+    float encoded = ComputeSample(uAtlas, uAtlasSampler, uvw).r;
     float distance = ((encoded * 2.0) - 1.0) * slotCorner.w;
     float beyond = length((clamped - voxel) * voxelSize.xyz);
     return beyond > 0.0 ? beyond : distance;

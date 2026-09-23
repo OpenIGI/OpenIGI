@@ -46,7 +46,7 @@ float FacingWeight(float cosine)
 float3 ProbeNormal(int2 probe)
 {
     float2 uv = (float2(probe) + 0.5) / float2(float(g.uWidth), float(g.uHeight));
-    float3 n = (uSceneNormal.Sample(uSceneNormalSampler, uv).xyz * 2.0) - 1.0;
+    float3 n = (ComputeSample(uSceneNormal, uSceneNormalSampler, uv).xyz * 2.0) - 1.0;
     float len = length(n);
     return len > 0.001 ? (n / len) : float3(0.0, 0.0, 0.0);
 }
