@@ -16,4 +16,11 @@
     <ProjectReference Include="..\OpenIGI.Rendering.Rhi\OpenIGI.Rendering.Rhi.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Which textures are in-place histories is decided from a module's reflection alone, and a wrong
+         answer binds a stand-in where the game bound a real texture, silently, on every backend. That
+         rule is implementation detail and stays internal; the test project is allowed to see it. -->
+    <InternalsVisibleTo Include="OpenIGI.Rendering.Pipeline.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -29,6 +29,9 @@ internal sealed class ImageHistories : IDisposable
     /// <summary>What a history texture's name ends in, after the image it is the history of.</summary>
     public const string Suffix = "History";
 
+    /// <summary>How far past its image's slot a history's texture slot is (<c>OPENIGI_HISTORY_SLOT</c>).</summary>
+    public const int SlotOffset = 12;
+
     private readonly IRhiDevice _device;
     private readonly RetiredResources _retired;
     private readonly Dictionary<IRhiTexture, IRhiTexture> _copies = [];
@@ -69,10 +72,18 @@ internal sealed class ImageHistories : IDisposable
             return null;
         }
 
+        // The slot as well as the name, because the name alone is a coincidence waiting to happen: the
+        // screen gather writes an image called uPosition and reads last frame's positions as a texture
+        // called uPositionHistory -- a real history the game binds, not a copy this takes. Matched by
+        // name, it was handed a stand-in on SPIR-V, every reprojection compared against nothing, and the
+        // screen GI never accumulated past a single frame's noise. The macro places a copy at its image's
+        // slot plus the offset; a texture anywhere else is the module's own.
+        int textureSlot = ComputeBindingSpace.SlotOf(texture.Binding);
         string image = texture.Name[..^Suffix.Length];
         return reflection.Bindings.FirstOrDefault(binding =>
             binding.Kind == ShaderBindingKind.StorageTexture
-            && string.Equals(binding.Name, image, StringComparison.Ordinal));
+            && string.Equals(binding.Name, image, StringComparison.Ordinal)
+            && ComputeBindingSpace.SlotOf(binding.Binding) + SlotOffset == textureSlot);
     }
 
     /// <summary>Records the copy of an image into its history, making the history first if it has none.</summary>
