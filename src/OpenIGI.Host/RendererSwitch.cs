@@ -8,9 +8,10 @@ namespace OpenIGI.Host;
 /// <param name="MissionId">The mission being played, or nought for the menu.</param>
 /// <param name="Conditions">The time of day and weather the campaign screen chose for it.</param>
 /// <param name="TimeHours">
-/// The hour the sun was actually at, 0 to 24, or negative where no level was lit. Carried apart from the
-/// campaign's choice because the hour is set in more places than that -- the settings menu, the console,
-/// a day that has been running -- and the switch has to come back to the same sky whichever it was.
+/// The hour to light the level at, as <c>r_time_of_day</c> takes it: 0 to 24, or negative for the level's
+/// own authored sun. Carried apart from the campaign's choice because the hour is set in more places than
+/// that -- the settings menu, the console, a day that has been running -- and the switch has to come back
+/// to the same sky whichever it was.
 /// </param>
 /// <param name="Pose">Where the player stood or the free camera hung, or null for the mission's own start.</param>
 /// <param name="Frame">The last picture the switched-from renderer presented, or null where none was read.</param>

@@ -74,7 +74,7 @@ internal sealed partial class GameHost
                 _switchPending = new RendererSwitch(
                     _activeMission?.Id ?? 0,
                     _conditions,
-                    _activeMission is null ? -1f : _dayNight.TimeHours,
+                    SwitchedHour(),
                     CurrentPose());
                 _switchCaptureFramesLeft = SwitchCaptureFrames;
                 context.Print("Switching renderer; the game will be back in a moment.");
@@ -114,6 +114,19 @@ internal sealed partial class GameHost
         // The ordinary way out, so settings are saved on it as on any other.
         _stopRequested = true;
     }
+
+    /// <summary>The hour a switch carries, as <c>r_time_of_day</c> takes it.</summary>
+    /// <remarks>
+    /// The sun's own hour only while a day is running, which is the one case where it has moved from what
+    /// the level was loaded for. Otherwise the variable as it stands -- which is the hour chosen, or the
+    /// negative that means the level's authored sun, and that has to stay negative: pinned to the number
+    /// it happened to equal, the level was lit by the day model at that hour rather than by its authored
+    /// sun, and every session after the first switch looked different from the first.
+    /// </remarks>
+    private float SwitchedHour() =>
+        _activeMission is null ? -1f
+        : RenderCVars.DayNightCycle.Value ? _dayNight.TimeHours
+        : RenderCVars.TimeOfDay.Value;
 
     /// <summary>Where the view is now, or null where there is no mission to be anywhere in.</summary>
     private RendererSwitchPose? CurrentPose()
