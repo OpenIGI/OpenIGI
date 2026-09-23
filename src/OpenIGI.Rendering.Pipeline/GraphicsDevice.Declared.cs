@@ -42,6 +42,10 @@ public sealed partial class GraphicsDevice
 
         // Superseded: the motion gather takes its sample count from the blur length.
         "r_camera_taps",
+
+        // The baked probe field. Off at every preset, and wherever there is a lighting pass to read it
+        // the radiance cache stands in for it, so this path does not carry it.
+        "r_gi",
     ];
 
     /// <summary>The settings this device does not act on over the backend it was given.</summary>
@@ -129,6 +133,7 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
+    /// <remarks>Not carried; see <c>r_gi</c> among the settings this device names as unimplemented.</remarks>
     public void SetIrradianceVolume(IrradianceVolume? volume)
     {
     }

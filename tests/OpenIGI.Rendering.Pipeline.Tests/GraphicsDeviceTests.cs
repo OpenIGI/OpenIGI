@@ -46,6 +46,7 @@ public sealed class GraphicsDeviceTests
         Assert.Contains("r_dof", device.Capabilities.UnimplementedSettings);
         Assert.Contains("r_generate_mipmaps", device.Capabilities.UnimplementedSettings);
         Assert.Contains("r_camera_taps", device.Capabilities.UnimplementedSettings);
+        Assert.Contains("r_gi", device.Capabilities.UnimplementedSettings);
     }
 
     [Fact]
