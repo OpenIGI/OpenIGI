@@ -57,6 +57,7 @@ public sealed unsafe class WebGpuSurface : IDisposable
     private WGPUDevice _device;
     private bool _configured;
     private bool _disposed;
+    private RhiTextureUsage _usage = RhiTextureUsage.RenderTarget;
 
     private WebGpuSurface(WGPUSurface handle) => _handle = handle;
 
@@ -178,8 +179,10 @@ public sealed unsafe class WebGpuSurface : IDisposable
             ? capabilities.alphaModes[0]
             : WGPUCompositeAlphaMode.Auto;
 
+        WGPUTextureUsage usages = capabilities.usages;
+
         Wgpu.wgpuSurfaceCapabilitiesFreeMembers(capabilities);
-        return new WebGpuSurfaceSupport(formats, modes, alpha);
+        return new WebGpuSurfaceSupport(formats, modes, alpha, usages);
     }
 
     /// <summary>Configures the surface for a size and a way of waiting for the display.</summary>
@@ -209,11 +212,19 @@ public sealed unsafe class WebGpuSurface : IDisposable
             ?? throw new InvalidOperationException(
                 "The adapter offers no surface format this renderer knows how to present.");
 
+        // Readable as well where the surface allows it, so a frame can be captured straight off what was
+        // presented -- which is how a screenshot is taken. An image drawn to and never read back is all
+        // WebGPU promises, so this asks only for what the adapter says it offers.
+        bool readable = (support.Usages & WGPUTextureUsage.CopySrc) != 0;
+        _usage = readable ? RhiTextureUsage.RenderTarget | RhiTextureUsage.CopySource : RhiTextureUsage.RenderTarget;
+
         WGPUSurfaceConfiguration configuration = new()
         {
             device = device,
             format = WebGpuTranslation.Format(format),
-            usage = WGPUTextureUsage.RenderAttachment,
+            usage = readable
+                ? WGPUTextureUsage.RenderAttachment | WGPUTextureUsage.CopySrc
+                : WGPUTextureUsage.RenderAttachment,
             width = (uint)width,
             height = (uint)height,
             alphaMode = support.AlphaMode,
@@ -262,7 +273,7 @@ public sealed unsafe class WebGpuSurface : IDisposable
                 Width,
                 Height,
                 Format,
-                RhiTextureUsage.RenderTarget,
+                _usage,
                 Label: "surface"),
             Format);
 
@@ -307,10 +318,12 @@ public sealed unsafe class WebGpuSurface : IDisposable
 /// <param name="Formats">The formats it will present, in the adapter's own order of preference.</param>
 /// <param name="PresentModes">The ways of waiting for the display it offers.</param>
 /// <param name="AlphaMode">How the surface is composited with what is behind it.</param>
+/// <param name="Usages">What its textures may be used for, beyond being drawn into.</param>
 public readonly record struct WebGpuSurfaceSupport(
     IReadOnlyList<RhiTextureFormat> Formats,
     IReadOnlyList<WGPUPresentMode> PresentModes,
-    WGPUCompositeAlphaMode AlphaMode)
+    WGPUCompositeAlphaMode AlphaMode,
+    WGPUTextureUsage Usages = WGPUTextureUsage.RenderAttachment)
 {
     /// <summary>Gets the format to present in, or null when the adapter offers none this knows.</summary>
     /// <remarks>
