@@ -36,6 +36,12 @@ public sealed unsafe class WebGpuReadback : IRhiReadback
         public string Message { get; set; } = string.Empty;
 
         public bool Completed { get; set; }
+
+        /// <summary>Gets or sets whether the readback was disposed before its callback came.</summary>
+        public bool Abandoned { get; set; }
+
+        /// <summary>Gets or sets the handle the callback finds this through, freed by whoever is last.</summary>
+        public GCHandle Handle { get; set; }
     }
 
     /// <summary>Initialises a new instance of the <see cref="WebGpuReadback"/> class.</summary>
@@ -61,6 +67,7 @@ public sealed unsafe class WebGpuReadback : IRhiReadback
         SizeInBytes = sizeInBytes;
         _state = new State();
         _handle = GCHandle.Alloc(_state);
+        _state.Handle = _handle;
 
         WGPUBufferMapCallbackInfo info = new()
         {
@@ -148,10 +155,24 @@ public sealed unsafe class WebGpuReadback : IRhiReadback
 
         _disposed = true;
 
-        if (_mapped)
+        // Unmapped by what the MAP did, not by whether this object looked at it. The callback can fire
+        // while ANOTHER readback pumps the instance's events, which completes this map with nothing here
+        // having seen it -- and a buffer left mapped that way is refused by the next submission that
+        // copies into it, which on the desktop is a panic that aborts the process. A map still pending is
+        // unmapped too, which cancels it.
+        bool pending = !_state.Completed;
+        if (_mapped || pending || _state.Status == WGPUMapAsyncStatus.Success)
         {
             Wgpu.wgpuBufferUnmap(_buffer);
             _mapped = false;
+        }
+
+        // A cancelled map still calls back, so the handle it will look this up through is left for the
+        // callback to free rather than freed underneath it.
+        if (pending && !_state.Completed)
+        {
+            _state.Abandoned = true;
+            return;
         }
 
         if (_handle.IsAllocated)
@@ -176,5 +197,12 @@ public sealed unsafe class WebGpuReadback : IRhiReadback
         state.Status = status;
         state.Message = WebGpuString.Read(message);
         state.Completed = true;
+
+        // Disposed while the map was pending: nothing will read this, and the handle is the callback's
+        // to free.
+        if (state.Abandoned && state.Handle.IsAllocated)
+        {
+            state.Handle.Free();
+        }
     }
 }
