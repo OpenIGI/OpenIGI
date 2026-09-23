@@ -126,7 +126,7 @@ void computeMain(uint3 id : SV_DispatchThreadID, uint3 localId : SV_GroupThreadI
         (probe * uProbeStep) + (uProbeStep / 2), int2(uScreenWidth, uScreenHeight) - 1);
     float2 uv = (float2(pixel) + 0.5) / float2(float(uScreenWidth), float(uScreenHeight));
 
-    float depth = inGrid ? uSceneDepth.SampleLevel(uSceneDepthSampler, uv, 0.0).r : 0.0;
+    float depth = inGrid ? DepthBilinear(uSceneDepth, uSceneDepthSampler, uv) : 0.0;
 
     float3 world = float3(0.0, 0.0, 0.0);
     float3 viewPosition = float3(0.0, 0.0, 0.0);

@@ -4,21 +4,21 @@
 // One slab of Z per frame, so the whole grid is refreshed over several frames rather than all at once,
 // and each probe eases onto its new estimate rather than replacing it.
 //
-// Compiled for SPIR-V alone, both forms. The easing reads each probe volume and writes it back in the
-// same dispatch, and WGSL does not allow read_write access to an rgba16float storage texture at all -- a
-// browser form has to ping-pong between two grids, which is a change to what the host allocates rather
-// than to this shader. The traced form also traces, which WGSL has no form for either.
+// The easing reads each probe volume and writes it back in the same dispatch, which WGSL allows only
+// through a copy of what it held -- see ImageHistory. The traced form is SPIR-V alone, because WGSL has
+// no ray tracing.
 
 #include "../Common/ComputeBindings.slang"
+#include "../Common/ImageHistory.slang"
 
 OPENIGI_COMPUTE_BUFFER(0) StructuredBuffer<float4> uPages;
 OPENIGI_COMPUTE_BUFFER(3) RWStructuredBuffer<int2> uCells;
 OPENIGI_COMPUTE_BUFFER(4) RWStructuredBuffer<int> uCellPages;
 
-OPENIGI_COMPUTE_IMAGE(0) [[vk::image_format("rgba16f")]] RWTexture3D<float4> uCacheRed;
-OPENIGI_COMPUTE_IMAGE(1) [[vk::image_format("rgba16f")]] RWTexture3D<float4> uCacheGreen;
-OPENIGI_COMPUTE_IMAGE(2) [[vk::image_format("rgba16f")]] RWTexture3D<float4> uCacheBlue;
-OPENIGI_COMPUTE_IMAGE(3) [[vk::image_format("rgba16f")]] RWTexture3D<float4> uCacheDistance;
+OPENIGI_HISTORY_IMAGE_3D(0, uCacheRed);
+OPENIGI_HISTORY_IMAGE_3D(1, uCacheGreen);
+OPENIGI_HISTORY_IMAGE_3D(2, uCacheBlue);
+OPENIGI_HISTORY_IMAGE_3D(3, uCacheDistance);
 
 // Each at the unit the host already binds it to. A GL default-block sampler had no slot of its own and
 // took one from an int of the same name; a module declares the slot outright, so that int is gone and
@@ -243,14 +243,14 @@ void computeMain(uint3 id : SV_DispatchThreadID)
 
     if (uAlpha < 1.0)
     {
-        red = lerp(uCacheRed[probe], red, uAlpha);
-        green = lerp(uCacheGreen[probe], green, uAlpha);
-        blue = lerp(uCacheBlue[probe], blue, uAlpha);
-        moments = lerp(uCacheDistance[probe], moments, uAlpha);
+        red = lerp(OPENIGI_HISTORY_LOAD_3D(uCacheRed, probe), red, uAlpha);
+        green = lerp(OPENIGI_HISTORY_LOAD_3D(uCacheGreen, probe), green, uAlpha);
+        blue = lerp(OPENIGI_HISTORY_LOAD_3D(uCacheBlue, probe), blue, uAlpha);
+        moments = lerp(OPENIGI_HISTORY_LOAD_3D(uCacheDistance, probe), moments, uAlpha);
     }
 
-    uCacheRed[probe] = red;
-    uCacheGreen[probe] = green;
-    uCacheBlue[probe] = blue;
-    uCacheDistance[probe] = moments;
+    OPENIGI_HISTORY_STORE(uCacheRed, probe, red);
+    OPENIGI_HISTORY_STORE(uCacheGreen, probe, green);
+    OPENIGI_HISTORY_STORE(uCacheBlue, probe, blue);
+    OPENIGI_HISTORY_STORE(uCacheDistance, probe, moments);
 }

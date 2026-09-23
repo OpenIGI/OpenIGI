@@ -38,6 +38,20 @@ float DepthBilinear(DepthTexture2D depth, SamplerState linear, float2 uv)
     }
 }
 
+/// A depth read in a compute stage the way ComputeSample reads a colour: the sampler's own implicit-level
+/// read on SPIR-V, which is what the legacy renderer has always done there, and the four loads where the
+/// target can neither filter depth nor sample at an implicit level outside a fragment stage.
+float DepthComputeSample(DepthTexture2D depth, SamplerState linear, float2 uv)
+{
+    __target_switch
+    {
+    case spirv:
+        return depth.Sample(linear, uv);
+    default:
+        return DepthBilinearLoaded(depth, uv);
+    }
+}
+
 /// The four loads and their weights, for a float image.
 float DepthBilinearLoaded(Texture2D<float4> depth, float2 uv)
 {

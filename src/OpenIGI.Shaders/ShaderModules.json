@@ -401,10 +401,7 @@
           "name": "software",
           "defines": {
             "OPENIGI_RAY_QUERY": "0"
-          },
-          "targets": [
-            "Spirv"
-          ]
+          }
         }
       ]
     },
@@ -446,10 +443,7 @@
           "name": "software",
           "defines": {
             "OPENIGI_RAY_QUERY": "0"
-          },
-          "targets": [
-            "Spirv"
-          ]
+          }
         }
       ]
     },

@@ -145,6 +145,12 @@ public enum ShaderSampleType
 /// and is validated against what was declared, so a write-only binding described as read-write binds
 /// nothing. <see cref="ShaderStorageAccess.None"/> for everything that is not a storage binding.
 /// </param>
+/// <param name="WgslStorageAccess">
+/// How the WGSL form reaches the same binding, where that differs from <paramref name="StorageAccess"/>:
+/// an image a module reads back is read-write in the SPIR-V and written only in the WGSL, which reads
+/// what it held from a copy instead. <see cref="ShaderStorageAccess.None"/> where the two agree, or the
+/// variant has no WGSL form.
+/// </param>
 /// <param name="Arrayed">
 /// Whether a texture is an array of slices rather than one image. A bind group layout states the view
 /// dimension and is validated against it, so an array bound as a plain texture binds nothing — and the
@@ -171,6 +177,9 @@ public sealed record ShaderBinding(
     ShaderStorageFormat StorageFormat = ShaderStorageFormat.None,
     ShaderStorageFormat WgslStorageFormat = ShaderStorageFormat.None,
     ShaderStorageAccess StorageAccess = ShaderStorageAccess.None,
+    // Written only where the WGSL disagrees, for the same reason as the flags below.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    ShaderStorageAccess WgslStorageAccess = ShaderStorageAccess.None,
     // Written only where they are true. The committed tables are meant to be read in review, and two
     // more false flags on each of a thousand ordinary bindings would bury what they are there to say.
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Arrayed = false,
@@ -194,6 +203,9 @@ public enum ShaderStorageAccess
 
     /// <summary>Read and written.</summary>
     ReadWrite,
+
+    /// <summary>Read and not written: a storage buffer declared without RW.</summary>
+    ReadOnly,
 }
 
 /// <summary>One field of a uniform block, for a host that sets its parameters by name.</summary>

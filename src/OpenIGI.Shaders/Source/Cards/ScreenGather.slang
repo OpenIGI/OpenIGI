@@ -68,7 +68,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
         (probe * uProbeStep) + (uProbeStep / 2), int2(uScreenWidth, uScreenHeight) - 1);
     float2 uv = (float2(pixel) + 0.5) / float2(float(uScreenWidth), float(uScreenHeight));
 
-    float depth = uSceneDepth.SampleLevel(uSceneDepthSampler, uv, 0.0).r;
+    float depth = DepthBilinear(uSceneDepth, uSceneDepthSampler, uv);
     if (IsSkyDepth(depth))
     {
         uIndirect.Store(probe, float4(0.0, 0.0, 0.0, 0.0));

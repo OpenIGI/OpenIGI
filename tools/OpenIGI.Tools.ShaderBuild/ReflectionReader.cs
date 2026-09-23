@@ -244,21 +244,21 @@ public static class ReflectionReader
     /// <param name="type">The parameter's type, as Slang reports it.</param>
     /// <returns>The access, or none where the binding is not a storage one.</returns>
     /// <remarks>
-    /// Slang reports "write" for a write-only texture and "readWrite" for one that is both. Anything
-    /// else is not a storage binding at all, and says so rather than guessing at read-write — a layout
-    /// that overstates the access binds nothing.
+    /// Slang reports "write" for a write-only texture and "readWrite" for one that is both. A storage
+    /// buffer declared without RW carries no access at all and is read-only, which a WebGPU layout has a
+    /// type of its own for; anything else is not a storage binding, and says so rather than guessing at
+    /// read-write — a layout that overstates the access binds nothing.
     /// </remarks>
     private static ShaderStorageAccess ReadStorageAccess(JsonElement type)
     {
-        if (!type.TryGetProperty("access", out JsonElement access))
-        {
-            return ShaderStorageAccess.None;
-        }
+        string? access = type.TryGetProperty("access", out JsonElement value) ? value.GetString() : null;
+        string? shape = type.TryGetProperty("baseShape", out JsonElement baseShape) ? baseShape.GetString() : null;
 
-        return access.GetString() switch
+        return access switch
         {
             "write" => ShaderStorageAccess.WriteOnly,
             "readWrite" => ShaderStorageAccess.ReadWrite,
+            null when shape is "structuredBuffer" or "byteAddressBuffer" => ShaderStorageAccess.ReadOnly,
             _ => ShaderStorageAccess.None,
         };
     }

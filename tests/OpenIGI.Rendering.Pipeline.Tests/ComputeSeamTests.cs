@@ -83,12 +83,12 @@ public sealed class ComputeSeamTests
     [Fact]
     public void A_module_with_no_form_for_the_backend_is_refused_when_it_is_created()
     {
-        // The surface cache's lighting has a SPIR-V form alone, even in software; WebGPU cannot run it.
+        // The traced surface-cache lighting has a SPIR-V form alone; WebGPU cannot run it.
         using RecordingRhiDevice rhi = new() { ShaderTarget = ShaderTarget.Wgsl };
         using GraphicsDevice device = Open(rhi);
 
         Assert.Throws<GraphicsDeviceException>(() =>
-            device.CreateComputeShader(ShaderModuleId.CardsLighting, new ShaderVariant("software"), "cards.lighting"));
+            device.CreateComputeShader(ShaderModuleId.CardsLighting, new ShaderVariant("rayquery"), "cards.lighting"));
     }
 
     private static GraphicsDevice Open(RecordingRhiDevice rhi) => new(rhi, new DisplayMode(64, 64, 32, 60));

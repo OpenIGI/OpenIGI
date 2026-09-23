@@ -68,9 +68,13 @@ public static class ShaderBindingLayout
                 RhiBindingType.UniformBuffer,
                 stages),
 
+            // Read-only is a slot type of its own in WebGPU, and a buffer the module only reads cannot be
+            // bound through a read-write slot. Vulkan does not distinguish them.
             ShaderBindingKind.StorageBuffer => new RhiBindGroupLayoutEntry(
                 binding.Binding,
-                RhiBindingType.StorageBuffer,
+                binding.StorageAccess == ShaderStorageAccess.ReadOnly
+                    ? RhiBindingType.ReadOnlyStorageBuffer
+                    : RhiBindingType.StorageBuffer,
                 stages),
 
             ShaderBindingKind.AccelerationStructure => new RhiBindGroupLayoutEntry(
@@ -137,7 +141,12 @@ public static class ShaderBindingLayout
     };
 
     /// <summary>How a storage binding may be reached, as the module declared it.</summary>
-    private static RhiStorageAccess Access(ShaderBinding binding) => binding.StorageAccess switch
+    /// <remarks>
+    /// The WGSL form's where it differs: an image read back is write-only there. One layout serves both
+    /// backends because a Vulkan descriptor set does not state access at all, so only WebGPU reads it.
+    /// </remarks>
+    private static RhiStorageAccess Access(ShaderBinding binding) =>
+        (binding.WgslStorageAccess == ShaderStorageAccess.None ? binding.StorageAccess : binding.WgslStorageAccess) switch
     {
         ShaderStorageAccess.ReadWrite => RhiStorageAccess.ReadWrite,
         _ => RhiStorageAccess.WriteOnly,

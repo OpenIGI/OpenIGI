@@ -39,18 +39,19 @@ public sealed class GraphicsDeviceTests
     }
 
     [Theory]
-    [InlineData(ShaderTarget.Spirv, true)]
-    [InlineData(ShaderTarget.Wgsl, false)]
-    public void It_offers_compute_only_where_the_whole_GI_stack_can_run(ShaderTarget target, bool offered)
+    [InlineData(ShaderTarget.Spirv)]
+    [InlineData(ShaderTarget.Wgsl)]
+    public void It_offers_compute_where_the_whole_GI_stack_can_run(ShaderTarget target)
     {
-        // Two of the surface cache's modules are SPIR-V alone even in software. A device that said yes
-        // over WebGPU would have the game build half a stack and fail at the first of them.
+        // Every module of the stack has both forms in software; the device says so on both backends, and
+        // the check behind it is what would say no the day one of them lost its WGSL form.
         using RecordingRhiDevice rhi = new() { ShaderTarget = target };
         using GraphicsDevice device = Open(rhi);
 
-        Assert.Equal(offered, device.Capabilities.SupportsCompute);
-        Assert.Equal(!offered, device.Capabilities.UnimplementedSettings.Contains("r_surface_cache"));
-        Assert.Equal(!offered, device.Capabilities.UnimplementedSettings.Contains("r_screen_gi"));
+        Assert.True(GraphicsDevice.GiRunsOn(rhi));
+        Assert.True(device.Capabilities.SupportsCompute);
+        Assert.DoesNotContain("r_surface_cache", device.Capabilities.UnimplementedSettings);
+        Assert.DoesNotContain("r_screen_gi", device.Capabilities.UnimplementedSettings);
     }
 
     [Theory]

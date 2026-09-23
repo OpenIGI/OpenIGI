@@ -110,10 +110,13 @@ public sealed class SlangCompiler
         }
 
         // WGSL has no push constants; the shared include turns the block into a bound uniform
-        // buffer when this is defined. See Source/Common/PushConstants.slang.
+        // buffer when this is defined. See Source/Common/PushConstants.slang. The target's own name is
+        // for a declaration that has to differ between the two, where a __target_switch cannot reach --
+        // see Source/Common/ImageHistory.slang.
         if (target == SlangTarget.Wgsl)
         {
             arguments.Add("-DOPENIGI_NO_PUSH_CONSTANTS=1");
+            arguments.Add("-DOPENIGI_TARGET_WGSL=1");
         }
 
         foreach ((string key, string value) in defines)
