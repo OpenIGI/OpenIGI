@@ -180,6 +180,15 @@ public sealed class ShaderBindings : IDisposable
         Set(name, binding => RhiBindGroupEntry.Of(binding, buffer, offset, size));
     }
 
+    /// <summary>Binds an acceleration structure, for a module that traces rays.</summary>
+    /// <param name="name">The name the Slang source declares.</param>
+    /// <param name="structure">The structure.</param>
+    public void Bind(string name, IRhiAccelerationStructure structure)
+    {
+        ArgumentNullException.ThrowIfNull(structure);
+        Set(name, binding => RhiBindGroupEntry.Of(binding, structure));
+    }
+
     /// <summary>Binds a sampler to every slot the module declares that nothing has bound.</summary>
     /// <param name="sampler">The sampler.</param>
     /// <returns>How many slots it filled.</returns>

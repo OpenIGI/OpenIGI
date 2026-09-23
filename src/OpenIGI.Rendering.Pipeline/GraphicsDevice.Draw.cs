@@ -44,7 +44,10 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     public TextureHandle CreateTexture(in TextureDescription description, ReadOnlySpan<Bgra32> pixels)
     {
         ThrowIfDisposed();
-        return _textures.Create(description, pixels);
+
+        TextureHandle texture = _textures.Create(description, pixels);
+        ObserveTexture(texture, description, pixels);
+        return texture;
     }
 
     /// <inheritdoc/>
@@ -148,6 +151,7 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
 
         if (_meshTable.Remove(mesh.Id, out RhiMesh? resource))
         {
+            TracedWorld?.Forget(mesh.Id);
             _retired.Retire(resource);
         }
     }
@@ -266,6 +270,7 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             // to paint over.
             if (CurrentPass is ScenePass.Geometry)
             {
+                ObserveForTracing(mesh, modelView, diffuse, indexOffset, indexCount);
                 DrawGeometry(call, modelView, blend);
             }
             else if (CurrentPass is ScenePass.GlassLayer)
@@ -274,6 +279,13 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             }
             else if (CurrentPass is ScenePass.Forward)
             {
+                // The first-person rig's opaque, depth-writing draws belong in the traced world too, where
+                // only a reflection finds them.
+                if (_firstPerson && blend == BlendMode.Opaque && _depthState == DepthState.TestAndWrite)
+                {
+                    ObserveForTracing(mesh, modelView, diffuse, indexOffset, indexCount, firstPerson: true);
+                }
+
                 DrawForward(call, [], modelView, blend, lightmap.IsValid);
             }
 
@@ -326,6 +338,11 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
         {
             if (CurrentPass is ScenePass.Geometry)
             {
+                foreach (MeshDrawRange range in ranges)
+                {
+                    ObserveForTracing(mesh, modelView, diffuse, range.IndexOffset, range.IndexCount);
+                }
+
                 DrawGeometryRanges(mesh, ranges, modelView, diffuse, lightmap, blend);
             }
             else if (CurrentPass is ScenePass.GlassLayer)

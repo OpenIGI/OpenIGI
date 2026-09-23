@@ -30,7 +30,14 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
     private readonly VulkanOpacityMasks _masks;
     private readonly VulkanRhiTexture _maskTexture;
     private readonly HashSet<uint> _cutout = [];
-    private VulkanRhiAccelerationStructure? _wrapped;
+
+    // One adapter per mesh, refreshed on every sighting: observed once per draw, a fresh one each time
+    // would be thousands of allocations a frame.
+    private readonly Dictionary<uint, TracedMesh> _meshes = [];
+
+    // One view per structure the top level rotates through, so a bind group naming one is found again
+    // the next time that structure comes round rather than built afresh every frame.
+    private readonly Dictionary<VulkanAccelerationStructure, VulkanRhiAccelerationStructure> _wrapped = [];
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="VulkanRhiRayTracing"/> class.</summary>
@@ -83,12 +90,13 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
                 return null;
             }
 
-            if (_wrapped is null || !ReferenceEquals(_wrapped.Structure, top))
+            if (!_wrapped.TryGetValue(top, out VulkanRhiAccelerationStructure? wrapped))
             {
-                _wrapped = new VulkanRhiAccelerationStructure(top, "world");
+                wrapped = new VulkanRhiAccelerationStructure(top, "world");
+                _wrapped[top] = wrapped;
             }
 
-            return _wrapped;
+            return wrapped;
         }
     }
 
@@ -135,7 +143,7 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
 
         _scene.Observe(
             meshId,
-            new TracedMesh(mesh),
+            Adapt(meshId, mesh),
             worldTransform,
             new RayTracedSurface(surface.IndexOffset, surface.IndexCount, !cutout, maskLayer, -1, mesh.Animated),
             (byte)mask);
@@ -145,14 +153,22 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
     public void ObserveCaster(uint meshId, in RhiTracedMesh mesh, in Matrix4f worldTransform, int indexCount)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _scene.ObserveCaster(meshId, new TracedMesh(mesh), worldTransform, indexCount);
+        _scene.ObserveCaster(meshId, Adapt(meshId, mesh), worldTransform, indexCount);
     }
 
     /// <inheritdoc/>
-    public void Forget(uint meshId) => _scene.Forget(meshId);
+    public void Forget(uint meshId)
+    {
+        _meshes.Remove(meshId);
+        _scene.Forget(meshId);
+    }
 
     /// <inheritdoc/>
-    public void Reset() => _scene.Reset();
+    public void Reset()
+    {
+        _meshes.Clear();
+        _scene.Reset();
+    }
 
     /// <inheritdoc/>
     public void RecordSceneUpdate(IRhiCommandEncoder encoder)
@@ -176,23 +192,39 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
         _scene.Dispose();
     }
 
-    /// <summary>An RHI mesh as the traced world reads it.</summary>
-    private sealed class TracedMesh(RhiTracedMesh mesh) : IRayTracedMesh
+    private TracedMesh Adapt(uint meshId, in RhiTracedMesh mesh)
     {
-        public ulong VertexBufferAddress => ((VulkanRhiBuffer)mesh.Vertices).Buffer.DeviceAddress;
+        if (!_meshes.TryGetValue(meshId, out TracedMesh? adapter))
+        {
+            adapter = new TracedMesh();
+            _meshes[meshId] = adapter;
+        }
 
-        public ulong IndexBufferAddress => ((VulkanRhiBuffer)mesh.Indices).Buffer.DeviceAddress;
+        // This sighting's, because a skinned mesh draws from a different buffer of its pose ring each
+        // frame and the world re-points its structure at whichever one this is.
+        adapter.Mesh = mesh;
+        return adapter;
+    }
 
-        public int VertexCapacity => mesh.VertexCapacity;
+    /// <summary>An RHI mesh as the traced world reads it, as of its latest sighting.</summary>
+    private sealed class TracedMesh : IRayTracedMesh
+    {
+        public RhiTracedMesh Mesh { get; set; }
 
-        public int IndexCapacity => mesh.IndexCapacity;
+        public ulong VertexBufferAddress => ((VulkanRhiBuffer)Mesh.Vertices).Buffer.DeviceAddress;
 
-        public int DrawableIndexCount => mesh.DrawableIndexCount;
+        public ulong IndexBufferAddress => ((VulkanRhiBuffer)Mesh.Indices).Buffer.DeviceAddress;
 
-        public bool Animated => mesh.Animated;
+        public int VertexCapacity => Mesh.VertexCapacity;
 
-        public bool Storage => mesh.Storage;
+        public int IndexCapacity => Mesh.IndexCapacity;
 
-        public int ContentVersion => mesh.ContentVersion;
+        public int DrawableIndexCount => Mesh.DrawableIndexCount;
+
+        public bool Animated => Mesh.Animated;
+
+        public bool Storage => Mesh.Storage;
+
+        public int ContentVersion => Mesh.ContentVersion;
     }
 }

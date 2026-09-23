@@ -107,6 +107,9 @@ public sealed partial class GraphicsDevice
         EnsureDeferred(Math.Max(1, description.Width), Math.Max(1, description.Height));
         WriteSurfaceBlock();
 
+        // Outside any pass, because a structure cannot be built inside one.
+        RecordWorldUpdate();
+
         // The scene's passes draw at the render size whatever the window's viewport says, and a viewport
         // set during the capture — the map inset — is already in render coordinates.
         _sceneViewport = new Viewport(0, 0, _scene!.Width, _scene.Height);
@@ -457,6 +460,7 @@ public sealed partial class GraphicsDevice
 
         RecordSky();
         RecordOcclusion(scene);
+        RecordSunShadow(scene);
         RecordFog(scene);
 
         Span<float> gi = stackalloc float[DeferredLightingParameters.GiFloats];
@@ -465,7 +469,7 @@ public sealed partial class GraphicsDevice
 
         DeferredLightingParameters.WriteGi(
             gi,
-            WithFog(WithGlobalIllumination(WithShadows(LightingState()))),
+            WithFog(WithGlobalIllumination(WithTracedSun(WithShadows(LightingState())))),
             CascadeSplits,
             CascadeMatrices);
         DeferredLampBlock.Write(lamps, new DeferredLampState(_frameCounter), []);
@@ -484,6 +488,7 @@ public sealed partial class GraphicsDevice
         shading.BindFrame(scene, FrameSlot, gi, lamps);
         BindGlobalIllumination();
         BindFog();
+        BindSunShadow();
 
         using IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             [new RhiColorAttachment(scene.View(SceneTargetId.Lit), RhiLoadOp.Clear, RhiStoreOp.Store, RhiClearColor.Transparent)],
@@ -805,6 +810,7 @@ public sealed partial class GraphicsDevice
         DisposeGlazing();
         DisposeGlazingReflection();
         DisposeFog();
+        DisposeSunShadow();
 
         _scenePass?.Dispose();
         _scenePass = null;

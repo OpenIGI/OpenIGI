@@ -92,7 +92,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
             SupportsRayQuery = false,
             MaxSampleCount = device.Limits.MaxSampleCount,
             MaxComputeGroupsX = device.Limits.MaxComputeWorkgroupsPerDimension,
-            UnimplementedSettings = UnimplementedOn(TemporalResolve.RunsOn(device), GiRunsOn(device)),
+            UnimplementedSettings = UnimplementedOn(TemporalResolve.RunsOn(device), GiRunsOn(device), device.RayTracing is not null),
         };
 
         _materialLayout = Mesh3DPipelineCache.CreateMaterialLayout(device);

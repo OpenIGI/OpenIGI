@@ -202,6 +202,14 @@ public sealed class DeferredLighting : IDisposable
     /// </remarks>
     public void BindFog(IRhiTextureView? volume) => BindOrStandIn("uFogVolume", volume);
 
+    /// <summary>Points the shading at this frame's traced sun shadow, or at nothing.</summary>
+    /// <param name="mask">How much sun reaches each pixel, or null for a frame whose sun uses the cascades.</param>
+    /// <remarks>
+    /// With none, a stand-in fills the slot and the lighting block says the sun is not traced, so the
+    /// shading reads the cascades instead.
+    /// </remarks>
+    public void BindSunShadow(IRhiTextureView? mask) => BindOrStandIn("uSunShadow", mask);
+
     private void BindOrStandIn(string name, IRhiTextureView? view)
     {
         ShaderBinding binding = Reflection.Bindings.First(slot => string.Equals(slot.Name, name, StringComparison.Ordinal));

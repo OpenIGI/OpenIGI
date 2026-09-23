@@ -32,7 +32,6 @@ public sealed partial class GraphicsDevice
     [
         "r_reflections",
         "r_rt_reflections",
-        "r_rt_shadows",
         "r_motion_blur",
         "r_exposure",
         "r_wetness",
@@ -43,27 +42,19 @@ public sealed partial class GraphicsDevice
     /// <summary>The settings this device does not act on over the backend it was given.</summary>
     /// <param name="temporal">Whether the backend can run the temporal resolve.</param>
     /// <param name="gi">Whether it can run the game's GI stack.</param>
+    /// <param name="traced">Whether it traces rays, which is what the traced sun shadow needs.</param>
     /// <returns>The names.</returns>
-    private static string[] UnimplementedOn(bool temporal, bool gi) =>
+    private static string[] UnimplementedOn(bool temporal, bool gi, bool traced) =>
     [
         .. UnimplementedSettingNames,
         .. temporal ? Array.Empty<string>() : ["r_taa"],
         .. gi ? Array.Empty<string>() : ["r_screen_gi", "r_surface_cache"],
+        .. traced ? Array.Empty<string>() : ["r_rt_shadows"],
     ];
-
-    /// <inheritdoc/>
-    public bool SunShadowTraced => false;
 
     /// <inheritdoc/>
     /// <remarks>One, because the direct path never tone-maps: what it draws is what is shown.</remarks>
     public float SceneExposure => 1f;
-
-
-    /// <inheritdoc/>
-    public void ReleaseWorld()
-    {
-        // Every mesh and texture is released by its own handle; nothing here holds the world besides.
-    }
 
     /// <inheritdoc/>
     public void SetTextureQuality(int maxAnisotropy) => _textures.MaxAnisotropy = maxAnisotropy;
@@ -152,9 +143,4 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     public void SetAmbientOcclusion(in AmbientOcclusionSettings settings) => _occlusionSettings = settings;
-
-    /// <inheritdoc/>
-    public void SubmitShadowCaster(MeshHandle mesh, in Matrix4f modelView, int indexCount)
-    {
-    }
 }
