@@ -2756,7 +2756,6 @@ public sealed partial class VulkanGraphicsDevice
         // the matrices describe how this frame divided the view either way.
         bool shadowsReady = _shadowCascadeCount > 0 && _deferred.ShadowMap.Ready;
         bool roofs = HasShelterMap();
-        Deferred.FogSliceParams fogZ = _deferred.Fog.ZParams;
 
         DeferredLightingState state = new(
             _unprojection,
@@ -2786,9 +2785,7 @@ public sealed partial class VulkanGraphicsDevice
             _wetness,
             roofs,
             roofs ? _shelterTransform : ShelterMapTransform.None,
-            _fogActive
-                ? new FogSliceDistribution(fogZ.B, fogZ.O, fogZ.Scale, fogZ.InverseSlices)
-                : FogSliceDistribution.None);
+            _fogActive ? _deferred.Fog.ZParams : FogSliceDistribution.None);
 
         Span<float> block = stackalloc float[DeferredLightingParameters.GiFloats];
         DeferredLightingParameters.WriteGi(block, state, _cascadeSplits, _cascadeMatrices);

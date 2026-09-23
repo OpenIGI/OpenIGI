@@ -8,39 +8,6 @@ using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Deferred;
 
-/// <summary>How the fog volume's depth slices are spread through the range it covers.</summary>
-/// <remarks>
-/// The reference's parameterisation, which both the shaders that build the volume and the shading pass
-/// that samples it must agree on: <c>slice = log2(z·B + O)·Scale</c>. A <see cref="Scale"/> of zero is
-/// how a frame with no fog says so.
-/// </remarks>
-/// <param name="B">The linear term.</param>
-/// <param name="O">The offset that puts slice zero at the near plane.</param>
-/// <param name="Scale">How hard the slices bunch towards the camera.</param>
-/// <param name="InverseSlices">One over the slice count, which normalises a slice to a lookup.</param>
-internal readonly record struct FogSliceParams(float B, float O, float Scale, float InverseSlices);
-
-/// <summary>Everything one frame's fog needs to know, gathered at the point it is dispatched.</summary>
-/// <param name="Settings">The medium itself.</param>
-/// <param name="Volumes">The level's local volumes, already rebased against the camera.</param>
-/// <param name="Lamps">The frame's local lights, in view space.</param>
-/// <param name="LampCount">How many of <paramref name="Lamps"/> are live.</param>
-/// <param name="SunDirection">The view-space direction towards the sun.</param>
-/// <param name="SunColour">The sun's colour, already scaled by the frame's light scale.</param>
-/// <param name="Ambient">The flat ambient, for a frame whose sky has no harmonics.</param>
-/// <param name="SkyValid">Whether the sky's harmonics are worth reading.</param>
-/// <param name="BaseHeight">The medium's base height as an offset from the camera, in metres.</param>
-internal readonly record struct VolumetricFogFrame(
-    VolumetricFogSettings Settings,
-    ReadOnlyMemory<LocalFogVolume> Volumes,
-    DeferredLocalLight[] Lamps,
-    int LampCount,
-    Vector3f SunDirection,
-    Vector3f SunColour,
-    Vector3f Ambient,
-    bool SkyValid,
-    float BaseHeight);
-
 /// <summary>
 /// The volumetric fog: a froxel volume lit once and integrated into what each pixel sees through it.
 /// </summary>
@@ -67,55 +34,7 @@ internal readonly record struct VolumetricFogFrame(
 /// </remarks>
 internal sealed class VolumetricFogPass : IDisposable
 {
-    /// <summary>How many screen pixels one froxel spans, across and down.</summary>
-    public const int TilePixels = 16;
-
-    /// <summary>The fewest and most depth slices the quality dial can ask for.</summary>
-    private const int MinSlices = 16;
-    private const int MaxSlices = 128;
-
-    /// <summary>
-    /// How the slices are spread through the depth range: the reference's
-    /// <c>r.VolumetricFog.DepthDistributionScale</c>, and its default.
-    /// </summary>
-    private const float DepthDistributionScale = 32f;
-
-    /// <summary>
-    /// The near offset the reference folds into the distribution, in metres. Without it the first slices
-    /// are packed into the few centimetres in front of the near plane, where there is nothing to resolve.
-    /// </summary>
-    private const float NearOffsetMetres = 0.095f;
-
-    /// <summary>How much of the previous frame's answer a froxel keeps — the reference's history weight.</summary>
-    private const float HistoryWeight = 0.9f;
-
-    /// <summary>
-    /// How far the camera may travel in one frame before the accumulated volume is thrown away, in metres.
-    /// </summary>
-    /// <remarks>
-    /// A walk or a sprint moves a fraction of this, and the reprojection handles that: the history lands
-    /// where the air was and the blend is correct. A jump this large is not movement, it is a teleport —
-    /// a level change, a spawn, a camera cut — and reprojecting through it drags the fog of one place
-    /// over another for the ten or so frames the blend takes to forget it.
-    /// </remarks>
-    private const float TeleportMetres = 8f;
-
-    /// <summary>A depth bias on the shadow lookup, in the map's own normalised depth.</summary>
-    /// <remarks>
-    /// Small, and constant across cascades. A surface needs a bias scaled to its own slope because it
-    /// shadows itself; a point of air does not, and the only thing this has to clear is the depth
-    /// quantisation of the map itself.
-    /// </remarks>
-    private const float ShadowBias = 0.0008f;
-
-    // The parameter block both shaders declare. Two rotations and four cascades of matrix, seventeen
-    // vectors of scalars, then the volumes and the lamps.
-    private const int MatrixFloats = 16 * (2 + 4);
-    private const int VectorFloats = 17 * 4;
-    private const int VolumeFloats = LocalFogVolume.MaxPerLevel * 4 * 2;
-    private const int LampFloats = DeferredLocalLight.Maximum * 4 * 2;
-    private const int ParamFloats = MatrixFloats + VectorFloats + VolumeFloats + LampFloats;
-    private const int ParamSize = ParamFloats * sizeof(float);
+    private const int ParamSize = VolumetricFogParameters.Floats * sizeof(float);
 
     private static readonly ComputeBindingKind[] ScatterBindings =
     [
@@ -141,10 +60,6 @@ internal sealed class VolumetricFogPass : IDisposable
         ComputeBindingKind.SampledStorageImage,   // this frame's scattering, read back
         ComputeBindingKind.StorageVolume,         // the integrated result the shading pass samples
     ];
-
-    // The offsets each frame samples its froxels at, a Halton (2, 3, 5) sequence. Low discrepancy in all
-    // three axes at once, so eight frames of it cover a cell evenly rather than clustering along one.
-    private static readonly Vector3f[] JitterOffsets = BuildJitterOffsets(8);
 
     private readonly Vk _vk;
     private readonly VulkanDevice _device;
@@ -197,7 +112,7 @@ internal sealed class VolumetricFogPass : IDisposable
     /// <remarks>
     /// The same numbers the shaders use, so the lookup lands on the slice the integration wrote.
     /// </remarks>
-    public FogSliceParams ZParams { get; private set; }
+    public FogSliceDistribution ZParams { get; private set; }
 
     /// <summary>Forgets the accumulated history, for a camera that has moved somewhere unrelated.</summary>
     public void Invalidate() => _hasHistory = false;
@@ -220,9 +135,7 @@ internal sealed class VolumetricFogPass : IDisposable
     /// </remarks>
     public bool Ensure(int width, int height, int slices, Action<IDisposable>? retire = null)
     {
-        int gridX = Math.Max(1, (width + TilePixels - 1) / TilePixels);
-        int gridY = Math.Max(1, (height + TilePixels - 1) / TilePixels);
-        int gridZ = Math.Clamp(slices, MinSlices, MaxSlices);
+        (int gridX, int gridY, int gridZ) = VolumetricFogParameters.Grid(width, height, slices);
 
         if (_integrated is not null && gridX == _gridX && gridY == _gridY && gridZ == _gridZ)
         {
@@ -289,7 +202,7 @@ internal sealed class VolumetricFogPass : IDisposable
         }
 
         // A camera that jumped did not travel; nothing it accumulated describes where it is now.
-        if (cameraDelta.LengthSquared > TeleportMetres * TeleportMetres)
+        if (cameraDelta.LengthSquared > VolumetricFogParameters.TeleportMetres * VolumetricFogParameters.TeleportMetres)
         {
             _hasHistory = false;
         }
@@ -298,11 +211,18 @@ internal sealed class VolumetricFogPass : IDisposable
         VulkanStorageImage history = _scattering[_current ^ 1]!;
         VulkanStorageImage integrated = _integrated;
 
-        Span<float> data = stackalloc float[ParamFloats];
-        WriteParameters(
-            data, fog, viewToWorld, previousViewToWorld, cameraDelta,
-            unprojection, previousUnprojection, cascadeMatrices, cascadeSplits, cascadeCount,
-            shelter, cameraWorld);
+        Span<float> data = stackalloc float[VolumetricFogParameters.Floats];
+        ZParams = VolumetricFogParameters.Write(
+            data,
+            fog,
+            new VolumetricFogCamera(viewToWorld, previousViewToWorld, cameraDelta, unprojection, previousUnprojection, cameraWorld),
+            (_gridX, _gridY, _gridZ),
+            cascadeMatrices,
+            cascadeSplits,
+            cascadeCount,
+            shelter,
+            (long)_frameIndex,
+            _hasHistory);
 
         ReadOnlySpan<ComputeResource> scatterResources =
         [
@@ -411,243 +331,6 @@ internal sealed class VolumetricFogPass : IDisposable
             null,
             1,
             &barrier);
-    }
-
-    /// <summary>Fills the parameter block both dispatches read.</summary>
-    private void WriteParameters(
-        Span<float> data,
-        in VolumetricFogFrame fog,
-        in Matrix3f viewToWorld,
-        in Matrix3f previousViewToWorld,
-        in Vector3f cameraDelta,
-        in DepthUnprojection unprojection,
-        in DepthUnprojection previousUnprojection,
-        Matrix4f[] cascadeMatrices,
-        float[] cascadeSplits,
-        int cascadeCount,
-        in ShelterMapTransform shelter,
-        in Vector3f cameraWorld)
-    {
-        data.Clear();
-
-        VolumetricFogSettings settings = fog.Settings;
-        float distance = MathF.Max(settings.Distance, 1f);
-        FogSliceParams z = ComputeZParams(unprojection.Near, distance, _gridZ);
-        ZParams = z;
-
-        WriteRotation(data, 0, viewToWorld);
-        WriteRotation(data, 16, previousViewToWorld.Transposed());
-
-        for (int i = 0; i < 4; i++)
-        {
-            Matrix4f cascade = i < cascadeCount ? cascadeMatrices[i] : Matrix4f.Identity;
-            cascade.CopyColumnMajorTo(data.Slice(32 + (i * 16), 16));
-        }
-
-        int at = 96;
-        for (int i = 0; i < 4; i++)
-        {
-            data[at + i] = i < cascadeCount ? cascadeSplits[i] : 0f;
-        }
-
-        at = 100;
-        data[at + 0] = _gridX;
-        data[at + 1] = _gridY;
-        data[at + 2] = _gridZ;
-        data[at + 3] = HistoryWeight;
-
-        at = 104;
-        data[at + 0] = unprojection.XScale;
-        data[at + 1] = unprojection.YScale;
-        data[at + 2] = unprojection.Near;
-        data[at + 3] = unprojection.Far;
-
-        at = 108;
-        data[at + 0] = previousUnprojection.XScale;
-        data[at + 1] = previousUnprojection.YScale;
-        data[at + 2] = previousUnprojection.Near;
-        data[at + 3] = previousUnprojection.Far;
-
-        at = 112;
-        data[at + 0] = z.B;
-        data[at + 1] = z.O;
-        data[at + 2] = z.Scale;
-        data[at + 3] = z.InverseSlices;
-
-        at = 116;
-        data[at + 0] = MathF.Max(settings.Density, 0f);
-        data[at + 1] = 1f / MathF.Max(settings.HeightFalloff, 0.01f);
-        data[at + 2] = fog.BaseHeight;
-        data[at + 3] = Math.Clamp(settings.Anisotropy, -0.95f, 0.95f);
-
-        at = 120;
-        data[at + 0] = Math.Clamp(settings.UniformFraction, 0f, 1f);
-        data[at + 1] = Math.Clamp(settings.MultipleScattering, 0f, 1f);
-        data[at + 2] = MathF.Max(settings.SunIntensity, 0f);
-        data[at + 3] = MathF.Max(settings.AmbientIntensity, 0f);
-
-        Vector3f albedo = settings.ScatteringAlbedo;
-        at = 124;
-        data[at + 0] = albedo.X;
-        data[at + 1] = albedo.Y;
-        data[at + 2] = albedo.Z;
-        data[at + 3] = cascadeCount;
-
-        at = 128;
-        data[at + 0] = fog.SunDirection.X;
-        data[at + 1] = fog.SunDirection.Y;
-        data[at + 2] = fog.SunDirection.Z;
-        data[at + 3] = 0f;
-
-        at = 132;
-        data[at + 0] = fog.SunColour.X;
-        data[at + 1] = fog.SunColour.Y;
-        data[at + 2] = fog.SunColour.Z;
-        data[at + 3] = ShadowBias;
-
-        at = 136;
-        data[at + 0] = fog.Ambient.X;
-        data[at + 1] = fog.Ambient.Y;
-        data[at + 2] = fog.Ambient.Z;
-        data[at + 3] = fog.SkyValid ? 1f : 0f;
-
-        at = 140;
-        data[at + 0] = cameraDelta.X;
-        data[at + 1] = cameraDelta.Y;
-        data[at + 2] = cameraDelta.Z;
-        data[at + 3] = Math.Clamp(fog.LampCount, 0, DeferredLocalLight.Maximum);
-
-        Vector3f jitter = JitterOffsets[(int)(_frameIndex % (ulong)JitterOffsets.Length)];
-        at = 144;
-        data[at + 0] = jitter.X;
-        data[at + 1] = jitter.Y;
-        data[at + 2] = jitter.Z;
-        data[at + 3] = _hasHistory ? 1f : 0f;
-
-        // Where the camera stands in the world, and the roof map's own transform. In world metres and
-        // not camera-relative, unlike everything around it: the map is a fixed thing in the level, and
-        // a froxel has to put the camera back on to address it.
-        at = 148;
-        data[at + 0] = cameraWorld.X;
-        data[at + 1] = cameraWorld.Y;
-        data[at + 2] = cameraWorld.Z;
-        data[at + 3] = 0f;
-
-        at = 152;
-        data[at + 0] = shelter.OriginX;
-        data[at + 1] = shelter.OriginY;
-        data[at + 2] = shelter.CellMetres > 0f ? 1f / shelter.CellMetres : 0f;
-        data[at + 3] = shelter.LowestZ;
-
-        at = 156;
-        data[at + 0] = shelter.HeightScale;
-        data[at + 1] = shelter.HeadroomMetres;
-        data[at + 2] = shelter.ReachMetres;
-        data[at + 3] = shelter.IsPresent ? 1f : 0f;
-
-        at = 160;
-        data[at + 0] = shelter.Width;
-        data[at + 1] = shelter.Height;
-
-        int centres = 164;
-        int extents = centres + (LocalFogVolume.MaxPerLevel * 4);
-        ReadOnlySpan<LocalFogVolume> volumes = fog.Volumes.Span;
-        for (int i = 0; i < LocalFogVolume.MaxPerLevel && i < volumes.Length; i++)
-        {
-            LocalFogVolume volume = volumes[i];
-            if (!volume.IsMeaningful)
-            {
-                continue;
-            }
-
-            data[centres + (i * 4) + 0] = volume.Centre.X;
-            data[centres + (i * 4) + 1] = volume.Centre.Y;
-            data[centres + (i * 4) + 2] = volume.Centre.Z;
-            data[centres + (i * 4) + 3] = volume.Shape == FogVolumeShape.Sphere ? 1f : 0f;
-
-            data[extents + (i * 4) + 0] = volume.Extent.X;
-            data[extents + (i * 4) + 1] = volume.Extent.Y;
-            data[extents + (i * 4) + 2] = volume.Extent.Z;
-            data[extents + (i * 4) + 3] = volume.DensityScale;
-        }
-
-        int positions = extents + (LocalFogVolume.MaxPerLevel * 4);
-        int colours = positions + (DeferredLocalLight.Maximum * 4);
-        int lamps = Math.Clamp(fog.LampCount, 0, DeferredLocalLight.Maximum);
-        for (int i = 0; i < lamps; i++)
-        {
-            DeferredLocalLight lamp = fog.Lamps[i];
-            data[positions + (i * 4) + 0] = lamp.ViewPosition.X;
-            data[positions + (i * 4) + 1] = lamp.ViewPosition.Y;
-            data[positions + (i * 4) + 2] = lamp.ViewPosition.Z;
-            data[positions + (i * 4) + 3] = lamp.Radius;
-
-            data[colours + (i * 4) + 0] = lamp.Colour.X;
-            data[colours + (i * 4) + 1] = lamp.Colour.Y;
-            data[colours + (i * 4) + 2] = lamp.Colour.Z;
-            data[colours + (i * 4) + 3] = lamp.Intensity;
-        }
-    }
-
-    /// <summary>
-    /// Solves the reference's slice distribution: <c>slice = log2(z·B + O)·S</c>, with B and O placing
-    /// slice zero at the near plane and the last slice at the fog's far distance.
-    /// </summary>
-    /// <param name="near">The near plane, in metres.</param>
-    /// <param name="far">How far the fog reaches, in metres.</param>
-    /// <param name="slices">How many slices the grid is deep.</param>
-    /// <returns>B, O and S, with one over the slice count in the fourth component.</returns>
-    private static FogSliceParams ComputeZParams(float near, float far, int slices)
-    {
-        double n = MathF.Max(near, 0.01f) + NearOffsetMetres;
-        double f = Math.Max(far, n + 1.0);
-        double s = DepthDistributionScale;
-
-        double o = (f - (n * Math.Pow(2.0, slices / s))) / (f - n);
-        double b = (1.0 - o) / n;
-
-        return new FogSliceParams((float)b, (float)o, (float)s, 1f / Math.Max(1, slices));
-    }
-
-    /// <summary>Builds the per-frame offsets the froxels are sampled at.</summary>
-    /// <param name="count">How many frames the sequence covers before it repeats.</param>
-    /// <returns>The offsets, each within the unit cell.</returns>
-    private static Vector3f[] BuildJitterOffsets(int count)
-    {
-        Vector3f[] offsets = new Vector3f[count];
-        for (int i = 0; i < count; i++)
-        {
-            offsets[i] = new Vector3f(Halton(i + 1, 2), Halton(i + 1, 3), Halton(i + 1, 5));
-        }
-
-        return offsets;
-    }
-
-    /// <summary>One term of a Halton sequence — a low-discrepancy point in [0, 1).</summary>
-    /// <param name="index">Which term, from one.</param>
-    /// <param name="radix">The base, which must differ per axis or the axes correlate.</param>
-    /// <returns>The term.</returns>
-    private static float Halton(int index, int radix)
-    {
-        float result = 0f;
-        float fraction = 1f / radix;
-        while (index > 0)
-        {
-            result += (index % radix) * fraction;
-            index /= radix;
-            fraction /= radix;
-        }
-
-        return result;
-    }
-
-    /// <summary>Writes a three-by-three rotation into the four-by-four a shader reads, column by column.</summary>
-    private static void WriteRotation(Span<float> data, int offset, in Matrix3f m)
-    {
-        data[offset + 0] = m.M11; data[offset + 1] = m.M21; data[offset + 2] = m.M31; data[offset + 3] = 0f;
-        data[offset + 4] = m.M12; data[offset + 5] = m.M22; data[offset + 6] = m.M32; data[offset + 7] = 0f;
-        data[offset + 8] = m.M13; data[offset + 9] = m.M23; data[offset + 10] = m.M33; data[offset + 11] = 0f;
-        data[offset + 12] = 0f; data[offset + 13] = 0f; data[offset + 14] = 0f; data[offset + 15] = 1f;
     }
 
     /// <summary>Frees the volumes, for a resize or a shutdown.</summary>
