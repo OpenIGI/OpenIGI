@@ -21,29 +21,10 @@ namespace OpenIGI.Rendering.Vulkan.Deferred;
 /// </remarks>
 internal sealed class ReflectionPass : IDisposable
 {
-    // mat4 + fifteen vec4s: the view-to-world rotation, the unprojection, the resolution, the march's
-    // knobs, the wetness/frame block, two blocks of puddle and ripple, three of the shelter map's own
-    // transform, and then five of the trace. The layout matches the shader's Params exactly.
-    private const int ReflectParamSize = (16 + (24 * 4)) * sizeof(float);
-
-    // Where the shelter map's transform starts, in floats: past the mat4 and the seven vec4s above it.
-    private const int ShelterOffset = 16 + (7 * 4);
-
-    // Where the traced half's own block starts: past the mat4 and the ten vec4s the screen march uses.
-    private const int TraceOffset = 16 + (10 * 4);
-
-    // And where the distance field's own block starts: past everything above it. Declared in both
-    // variants of the shader although only the marched one reads it, so there is one layout rather than
-    // two that can drift.
-    private const int FieldOffset = 16 + (15 * 4);
-
-    // Its levels, which the standard layout spaces four floats apart in both arrays -- the boxes because
-    // they are vec4s, and the ranges although they are scalars.
-    private const int FieldOriginOffset = FieldOffset + 4;
-    private const int FieldRangeOffset = FieldOriginOffset + (DistanceFieldBinding.MaxLevels * 4);
+    private const int ReflectParamSize = ReflectionParameters.Floats * sizeof(float);
 
     // One vec4 of resolution.
-    private const int CompositeParamSize = 4 * sizeof(float);
+    private const int CompositeParamSize = ReflectionParameters.CompositeFloats * sizeof(float);
 
     private static readonly ComputeBindingKind[] ReflectBindings =
     [
@@ -255,118 +236,42 @@ internal sealed class ReflectionPass : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        Span<float> data = stackalloc float[ReflectParamSize / sizeof(float)];
-        data.Clear();
-
-        Matrix3f m = viewToWorld;
-        data[0] = m.M11; data[1] = m.M21; data[2] = m.M31; data[3] = 0f;
-        data[4] = m.M12; data[5] = m.M22; data[6] = m.M32; data[7] = 0f;
-        data[8] = m.M13; data[9] = m.M23; data[10] = m.M33; data[11] = 0f;
-        data[12] = 0f; data[13] = 0f; data[14] = 0f; data[15] = 1f;
-
-        data[16] = unprojection.XScale;
-        data[17] = unprojection.YScale;
-        data[18] = unprojection.Near;
-        data[19] = unprojection.Far;
-
-        data[20] = width;
-        data[21] = height;
-        data[22] = width > 0 ? 1f / width : 0f;
-        data[23] = height > 0 ? 1f / height : 0f;
-
-        data[24] = MathF.Max(settings.Quality, 1);
-        data[25] = MathF.Max(settings.Intensity, 0f);
-        data[26] = Math.Clamp(settings.MaxRoughness, 0f, 1f);
-        data[27] = MathF.Max(settings.Thickness, 0.02f);
-
-        data[28] = MathF.Max(wetness.Amount, 0f);
-        data[29] = frameIndex;
-        data[30] = MathF.Max(reach, 1f);
-        data[31] = viewHeightKm;
-
-        // The wetness, packed exactly as the shading pass packs it into its own uniform. Both are read
-        // back into the same WetParams on the other side, which is what keeps the two descriptions of the
-        // water one description.
-        data[32] = Math.Clamp(wetness.PuddleCoverage, 0f, 1f);
-        data[33] = MathF.Max(wetness.PuddleSizeMetres, 0.05f);
-        data[34] = Math.Clamp(wetness.RippleStrength, 0f, 1f);
-        data[35] = wetness.Seconds;
-
-        data[36] = MathF.Max(wetness.RippleSizeMetres, 0.02f);
-        data[37] = Math.Clamp(wetness.WindRippleStrength, 0f, 1f);
-        data[38] = cameraX;
-        data[39] = cameraY;
-
-        // The shelter map's transform, in world metres. The camera's own Z rides along with it because
-        // this pass has the surface only as a camera-relative vector and the map is addressed in the
-        // world; the shading pass gets the same number from its uCamera.
-        data[40] = shelter.IsPresent ? 1f : 0f;
-        data[41] = cameraZ;
-
-        data[ShelterOffset] = shelter.OriginX;
-        data[ShelterOffset + 1] = shelter.OriginY;
-        data[ShelterOffset + 2] = shelter.CellMetres > 0f ? 1f / shelter.CellMetres : 0f;
-        data[ShelterOffset + 3] = shelter.LowestZ;
-
-        data[ShelterOffset + 4] = shelter.HeightScale;
-        data[ShelterOffset + 5] = shelter.HeadroomMetres;
-        data[ShelterOffset + 6] = shelter.ReachMetres;
-
-        data[ShelterOffset + 8] = shelter.Width;
-        data[ShelterOffset + 9] = shelter.Height;
-
-        // Whether this frame traces at all. False on a pass compiled without the traced half, and false
-        // whenever the world or the cards are missing -- which is one test rather than several, because
-        // a lookup with a grid and no atlas does not degrade into a coarser answer, it reads whatever the
-        // descriptor happens to hold. See TracedResources.Traces.
         // Which half actually runs. The traced one only where there IS one and the frame handed over a
         // world to fire at; everything else marches, including a frame on traced hardware whose settings
         // have tracing switched off.
         VulkanComputePass reflect = _traced is not null && traced.Traces ? _traced : _marched;
         bool traces = ReferenceEquals(reflect, _traced);
 
-        data[TraceOffset] = traces ? 1f : 0f;
-        data[TraceOffset + 1] = MathF.Max(tracedReach, 1f);
-        data[TraceOffset + 2] = MathF.Max(maxRayIntensity, 0f);
-        data[TraceOffset + 3] = MathF.Max(traced.BounceScale, 0f);
+        Span<float> data = stackalloc float[ReflectParamSize / sizeof(float)];
+        ReflectionParameters.Write(data, new ReflectionFrame(
+            width,
+            height,
+            viewToWorld,
+            unprojection,
+            settings,
+            wetness,
+            shelter,
+            new Vector3f(cameraX, cameraY, cameraZ),
+            viewHeightKm,
+            frameIndex,
+            reach,
+            traces,
+            tracedReach,
+            maxRayIntensity,
+            tracedMaxRoughness,
+            new ReflectionCacheLookup(
+                traced.CameraToCache,
+                traced.LookupCell,
+                traced.LookupMinimum,
+                traced.LookupBuckets,
+                traced.AtlasWidth,
+                traced.AtlasHeight,
+                traced.BounceScale),
+            rigLensX,
+            rigLensY,
 
-        data[TraceOffset + 4] = traced.CameraToCache.X;
-        data[TraceOffset + 5] = traced.CameraToCache.Y;
-        data[TraceOffset + 6] = traced.CameraToCache.Z;
-        data[TraceOffset + 7] = traced.LookupCell;
-
-        data[TraceOffset + 8] = traced.LookupMinimum.X;
-        data[TraceOffset + 9] = traced.LookupMinimum.Y;
-        data[TraceOffset + 10] = traced.LookupMinimum.Z;
-        data[TraceOffset + 11] = traced.LookupBuckets;
-
-        data[TraceOffset + 12] = traced.AtlasWidth;
-        data[TraceOffset + 13] = traced.AtlasHeight;
-
-        data[TraceOffset + 16] = Math.Clamp(tracedMaxRoughness, 0f, 1f);
-        data[TraceOffset + 17] = rigLensX;
-        data[TraceOffset + 18] = rigLensY;
-
-        // The distance field. Nought levels is what the marched resolve reads as "no field to walk", and
-        // it is also what a traced frame leaves here, which costs that frame nothing because it never
-        // compiles the march at all.
-        DistanceFieldBinding field = traced.Field;
-        data[FieldOffset] = field.Levels;
-        data[FieldOffset + 1] = field.Resolution;
-
-        for (int level = 0; level < DistanceFieldBinding.MaxLevels && level < field.Levels; level++)
-        {
-            DistanceFieldLevel described = field[level];
-
-            int origin = FieldOriginOffset + (level * 4);
-            data[origin + 0] = described.Origin.X;
-            data[origin + 1] = described.Origin.Y;
-            data[origin + 2] = described.Origin.Z;
-            data[origin + 3] = described.VoxelSize;
-
-            // A SCALAR array in the block, which the standard layout still spaces four floats apart.
-            data[FieldRangeOffset + (level * 4)] = described.Range;
-        }
+            // Nought levels on a traced frame, which never compiles the march at all.
+            traced.Field));
 
         ReadOnlySpan<ComputeResource> screen =
         [
