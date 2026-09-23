@@ -865,22 +865,22 @@ internal sealed partial class GameHost : IDisposable
         // Set before anything uploads a texture: the sampler a texture is created with is the one it
         // keeps, so a level loaded before this would keep the filtering it started with.
         _device.SetTextureQuality(RenderCVars.Anisotropy.Value);
-        RenderCVars.Anisotropy.Changed += (_, _) => _device.SetTextureQuality(RenderCVars.Anisotropy.Value);
+        WhenChanged(RenderCVars.Anisotropy, () => _device.SetTextureQuality(RenderCVars.Anisotropy.Value));
 
         _device.VSyncEnabled = RenderCVars.VSync.Value;
-        RenderCVars.VSync.Changed += (_, _) => _device.VSyncEnabled = RenderCVars.VSync.Value;
+        WhenChanged(RenderCVars.VSync, () => _device.VSyncEnabled = RenderCVars.VSync.Value);
 
-        RenderCVars.WeatherEnabled.Changed += (_, _) => ApplyWeatherSettings();
-        RenderCVars.WeatherStyle.Changed += (_, _) => ApplyWeatherSettings();
-        RenderCVars.WeatherSpeed.Changed += (_, _) => ApplyWeatherSettings();
-        RenderCVars.WeatherForce.Changed += (_, _) => ApplyWeatherSettings();
-        RenderCVars.Storm.Changed += (_, _) => ApplyWeatherSettings();
-        RenderCVars.StormIntensity.Changed += (_, _) => ApplyWeatherSettings();
+        WhenChanged(RenderCVars.WeatherEnabled, ApplyWeatherSettings);
+        WhenChanged(RenderCVars.WeatherStyle, ApplyWeatherSettings);
+        WhenChanged(RenderCVars.WeatherSpeed, ApplyWeatherSettings);
+        WhenChanged(RenderCVars.WeatherForce, ApplyWeatherSettings);
+        WhenChanged(RenderCVars.Storm, ApplyWeatherSettings);
+        WhenChanged(RenderCVars.StormIntensity, ApplyWeatherSettings);
 
         // Timing is pushed on change rather than read per frame, because switching it off is what discards
         // the history -- the peaks after switching it back on should belong to the run being watched.
         _device.SetStageTiming(RenderCVars.PerformanceLog.Value);
-        RenderCVars.PerformanceLog.Changed += (_, _) => _device.SetStageTiming(RenderCVars.PerformanceLog.Value);
+        WhenChanged(RenderCVars.PerformanceLog, () => _device.SetStageTiming(RenderCVars.PerformanceLog.Value));
 
         _menuHost = new MenuHost(
             _window.Input,
@@ -1179,8 +1179,8 @@ internal sealed partial class GameHost : IDisposable
         // Re-graded for whatever is actually on screen: the mission being played, else the menu's
         // backdrop, else whatever -mission asked for. Reading `_options.StartMission` unconditionally
         // meant changing the table from the console while browsing the campaign re-graded to mission 0.
-        RenderCVars.ColourLookupTable.Changed += (_, _) =>
-            ApplyColourLookup(_activeMission?.Id ?? _backdrop?.MissionId ?? _options.StartMission);
+        WhenChanged(RenderCVars.ColourLookupTable, () =>
+            ApplyColourLookup(_activeMission?.Id ?? _backdrop?.MissionId ?? _options.StartMission));
 
         // The level's own sun, read from its Dirlight task -- section 12.
         // Null until a level is loaded, and for a level that declares none.
@@ -7134,6 +7134,9 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
     /// </summary>
     public void Dispose()
     {
+        // First, so nothing below can be reached through a setting changed after this game has gone.
+        ReleaseSettingHandlers();
+
         _sky?.Dispose();
         _rain?.Dispose();
         _storm?.Dispose();
