@@ -21,7 +21,7 @@ namespace OpenIGI.Rendering.Vulkan.Rhi;
 /// because the backend already has them and a second set would be a second set of everything.
 /// </para>
 /// </remarks>
-internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
+internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice, RayTracing.ISubmissionClock
 {
     private readonly Vk _vk;
     private readonly VulkanDevice _device;
@@ -39,12 +39,17 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
     /// <param name="allocator">The allocator resources are made from.</param>
     /// <param name="commands">The command pool encoders are allocated from.</param>
     /// <param name="logger">Where a widened format or a stood-down feature is reported.</param>
+    /// <param name="instance">
+    /// The instance the device came from, which ray tracing needs for its entry points; without it the
+    /// device offers none.
+    /// </param>
     public VulkanRhiDevice(
         Vk vk,
         VulkanDevice device,
         VulkanAllocator allocator,
         VulkanCommands commands,
-        IIgiLogger logger)
+        IIgiLogger logger,
+        VulkanInstance? instance = null)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
@@ -61,7 +66,19 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
         Features = ReadFeatures(device);
         Limits = ReadLimits(device);
         AdapterName = device.Selection.Name;
+
+        CreateTimeline();
+
+        // The traced world, where the adapter traces and its lifetimes can follow the timeline.
+        if (instance is not null && HasTimeline && device.Capabilities.RayQuery && device.Capabilities.AccelerationStructure)
+        {
+            _rayTracingApi = new RayTracing.VulkanRayTracingApi(instance, device);
+            _rayTracing = new VulkanRhiRayTracing(vk, _rayTracingApi, device, allocator, commands, this);
+        }
     }
+
+    private readonly RayTracing.VulkanRayTracingApi? _rayTracingApi;
+    private readonly VulkanRhiRayTracing? _rayTracing;
 
     /// <inheritdoc/>
     public string AdapterName { get; }
@@ -77,10 +94,29 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Not offered yet. The backend traces rays through its own acceleration structures and the shared
-    /// pipeline does not reach them through this interface; wiring the two together is its own step.
+    /// The legacy device's traced world, fed through the interface -- see <see cref="VulkanRhiRayTracing"/>.
+    /// Null on an adapter that does not trace.
     /// </remarks>
-    public IRhiRayTracing? RayTracing => null;
+    public IRhiRayTracing? RayTracing => _rayTracing;
+
+    /// <inheritdoc/>
+    public ulong LastSubmittedValue => _signalled;
+
+    /// <inheritdoc/>
+    public ulong CompletedValue
+    {
+        get
+        {
+            if (!HasTimeline)
+            {
+                return _signalled;
+            }
+
+            ulong value = 0;
+            _vk.GetSemaphoreCounterValue(_device.Device, _timeline, &value);
+            return value;
+        }
+    }
 
     /// <summary>Gets the device everything lives on.</summary>
     public VulkanDevice Device => _device;
@@ -463,6 +499,8 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
         _disposed = true;
         _vk.DeviceWaitIdle(_device.Device);
 
+        _rayTracing?.Dispose();
+        _rayTracingApi?.Dispose();
         DestroySubmissionState();
         DestroyFrameSync();
 

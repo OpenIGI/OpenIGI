@@ -66,7 +66,7 @@ public sealed record RhiBindGroupLayoutDescriptor(
 
 /// <summary>What one slot of a bind group is filled with.</summary>
 /// <remarks>
-/// Exactly one of the three resources is set, matching the layout entry's type. The alternative — three
+/// Exactly one of the resources is set, matching the layout entry's type. The alternative — three
 /// descriptor types and an overload each — costs more to read than a rule stated once and checked.
 /// </remarks>
 /// <param name="Binding">The binding number, which must name a slot of the layout.</param>
@@ -75,13 +75,15 @@ public sealed record RhiBindGroupLayoutDescriptor(
 /// <param name="Size">How much of the buffer the binding covers, or zero for the rest of it.</param>
 /// <param name="TextureView">The view, for a texture slot.</param>
 /// <param name="Sampler">The sampler, for a sampler slot.</param>
+/// <param name="AccelerationStructure">The structure, for an acceleration-structure slot.</param>
 public readonly record struct RhiBindGroupEntry(
     int Binding,
     IRhiBuffer? Buffer = null,
     ulong Offset = 0,
     ulong Size = 0,
     IRhiTextureView? TextureView = null,
-    IRhiSampler? Sampler = null)
+    IRhiSampler? Sampler = null,
+    IRhiAccelerationStructure? AccelerationStructure = null)
 {
     /// <summary>Binds a buffer, or a range of one.</summary>
     /// <param name="binding">The binding number.</param>
@@ -105,6 +107,13 @@ public readonly record struct RhiBindGroupEntry(
     /// <returns>The entry.</returns>
     public static RhiBindGroupEntry Of(int binding, IRhiSampler sampler) =>
         new(binding, Sampler: sampler);
+
+    /// <summary>Binds an acceleration structure.</summary>
+    /// <param name="binding">The binding number.</param>
+    /// <param name="structure">The structure.</param>
+    /// <returns>The entry.</returns>
+    public static RhiBindGroupEntry Of(int binding, IRhiAccelerationStructure structure) =>
+        new(binding, AccelerationStructure: structure);
 }
 
 /// <summary>A set of resources bound together.</summary>

@@ -32,9 +32,14 @@ internal sealed unsafe partial class VulkanRhiDevice
         WriteDescriptorSet[] writes = new WriteDescriptorSet[descriptor.Entries.Count];
         DescriptorBufferInfo[] bufferInfos = new DescriptorBufferInfo[descriptor.Entries.Count];
         DescriptorImageInfo[] imageInfos = new DescriptorImageInfo[descriptor.Entries.Count];
+        AccelerationStructureKHR[] structures = new AccelerationStructureKHR[descriptor.Entries.Count];
+        WriteDescriptorSetAccelerationStructureKHR[] structureInfos =
+            new WriteDescriptorSetAccelerationStructureKHR[descriptor.Entries.Count];
 
         fixed (DescriptorBufferInfo* firstBuffer = bufferInfos)
         fixed (DescriptorImageInfo* firstImage = imageInfos)
+        fixed (AccelerationStructureKHR* firstStructure = structures)
+        fixed (WriteDescriptorSetAccelerationStructureKHR* firstStructureInfo = structureInfos)
         {
             for (int i = 0; i < writes.Length; i++)
             {
@@ -90,6 +95,20 @@ internal sealed unsafe partial class VulkanRhiDevice
                 {
                     imageInfos[i] = new DescriptorImageInfo { Sampler = sampler.Handle };
                     writes[i].PImageInfo = firstImage + i;
+                    continue;
+                }
+
+                if (entry.AccelerationStructure is VulkanRhiAccelerationStructure structure)
+                {
+                    structures[i] = structure.Handle;
+                    structureInfos[i] = new WriteDescriptorSetAccelerationStructureKHR
+                    {
+                        SType = StructureType.WriteDescriptorSetAccelerationStructureKhr,
+                        AccelerationStructureCount = 1,
+                        PAccelerationStructures = firstStructure + i,
+                    };
+
+                    writes[i].PNext = firstStructureInfo + i;
                     continue;
                 }
 
@@ -285,6 +304,11 @@ internal sealed unsafe partial class VulkanRhiDevice
             new DescriptorPoolSize(DescriptorType.SampledImage, PoolCapacity),
             new DescriptorPoolSize(DescriptorType.StorageImage, PoolCapacity),
             new DescriptorPoolSize(DescriptorType.Sampler, PoolCapacity),
+
+            // Only where there are structures to describe: the type names an extension.
+            new DescriptorPoolSize(
+                _device.Capabilities.AccelerationStructure ? DescriptorType.AccelerationStructureKhr : DescriptorType.Sampler,
+                PoolCapacity),
         ];
 
         fixed (DescriptorPoolSize* first = sizes)

@@ -1,3 +1,4 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Rendering.Rhi;
@@ -5,39 +6,40 @@ namespace OpenIGI.Rendering.Rhi;
 /// <summary>A structure a shader may trace rays against.</summary>
 public interface IRhiAccelerationStructure : IRhiResource;
 
-/// <summary>
-/// The triangles of one placement, as the structure builder reads them.
-/// </summary>
-/// <param name="VertexBuffer">The buffer holding the positions.</param>
-/// <param name="VertexOffset">Where the positions start.</param>
-/// <param name="VertexCount">How many there are.</param>
-/// <param name="VertexStride">How many bytes one vertex occupies.</param>
-/// <param name="IndexBuffer">The buffer holding the indices.</param>
-/// <param name="IndexOffset">Where they start.</param>
-/// <param name="IndexCount">How many there are.</param>
-/// <param name="IndexFormat">How wide one index is.</param>
-/// <param name="Opaque">
-/// Whether every triangle covers its whole area. A cut-out surface — a wire fence, a ladder, foliage —
-/// is not, and taking it at face value makes it a solid occluder of light that in fact passes through
-/// it.
+/// <summary>A mesh as the traced world reads it: its buffers, and whether they change.</summary>
+/// <param name="Vertices">The vertices this frame draws: 48-byte <c>Vertex3D</c>s, position first.</param>
+/// <param name="Indices">The 16-bit indices.</param>
+/// <param name="VertexCapacity">How many vertices the buffer holds.</param>
+/// <param name="IndexCapacity">How many indices the buffer holds.</param>
+/// <param name="DrawableIndexCount">How many indices are worth tracing.</param>
+/// <param name="Animated">Whether the vertices are rewritten each pose, so its structure is refitted.</param>
+/// <param name="Storage">Whether it is a storage mesh its owner rewrites.</param>
+/// <param name="ContentVersion">How many times the contents have changed.</param>
+public readonly record struct RhiTracedMesh(
+    IRhiBuffer Vertices,
+    IRhiBuffer Indices,
+    int VertexCapacity,
+    int IndexCapacity,
+    int DrawableIndexCount,
+    bool Animated,
+    bool Storage,
+    int ContentVersion);
+
+/// <summary>One drawn run of a mesh's indices, and what it is made of.</summary>
+/// <param name="IndexOffset">The first index of the run.</param>
+/// <param name="IndexCount">How many indices it covers; a multiple of three.</param>
+/// <param name="TextureId">
+/// Its diffuse texture, as <see cref="IRhiRayTracing.ObserveTexture"/> named it: whether the run is cut
+/// out, and by which mask, is a question about its texture.
 /// </param>
-public readonly record struct RhiRayTracingGeometry(
-    IRhiBuffer VertexBuffer,
-    ulong VertexOffset,
-    int VertexCount,
-    int VertexStride,
-    IRhiBuffer IndexBuffer,
-    ulong IndexOffset,
-    int IndexCount,
-    RhiIndexFormat IndexFormat,
-    bool Opaque);
+public readonly record struct RhiTracedSurface(int IndexOffset, int IndexCount, uint TextureId);
 
 /// <summary>Which rays an instance answers.</summary>
 /// <remarks>
 /// A ray carries a mask and an instance carries one; the instance is considered only where the two
 /// share a bit. What this renderer needs it for is the first-person rig: a hand-sized occluder wrapped
-/// permanently around the camera would darken whatever the player happened to be facing, so the gather's
-/// rays are traced against everything except it.
+/// permanently around the camera would darken whatever the player happened to be facing, so shadows are
+/// traced against everything except it.
 /// </remarks>
 [Flags]
 public enum RhiRayMask : byte
@@ -45,69 +47,83 @@ public enum RhiRayMask : byte
     /// <summary>Nothing traces against it.</summary>
     None = 0,
 
-    /// <summary>The world: everything a gather or a shadow should find.</summary>
-    World = 1 << 0,
+    /// <summary>The world: everything below the first-person bit.</summary>
+    World = 0x7F,
 
     /// <summary>The first-person rig, which only a ray asking for it finds.</summary>
-    ViewModel = 1 << 7,
+    ViewModel = 0x80,
 
     /// <summary>Everything.</summary>
     All = 0xFF,
 }
 
 /// <summary>
-/// Tracing rays against the world, where the device can.
+/// The world as rays see it, where the device can trace them.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A capability interface, offered only by a device reporting <see cref="RhiFeatures.RayQuery"/>. A pass
-/// that wants it asks for it and stands down when it is not there, which is what already happens on a
-/// Mac and what will happen in a browser.
+/// A capability offered only by a device reporting <see cref="RhiFeatures.RayQuery"/>; a pass that wants
+/// it asks for it and stands down when it is absent, as it is in a browser.
 /// </para>
 /// <para>
-/// The structure itself is the implementation's business, and deliberately so: scratch allocation,
-/// compaction, device addresses and the three-frame handshake that keeps a compacted structure alive
-/// until nothing reads the original are Vulkan's problems and have no meaning anywhere else. What is
-/// shared is the world as placements — this mesh, here, opaque or not — which is the level the renderer
-/// already thinks at.
+/// The world is built out of what the renderer draws. A ray has to be able to strike geometry that is not
+/// on screen -- the wall casting a shadow is very often behind the camera -- so placements accumulate: every
+/// geometry-pass draw is observed, a placement seen once stays, and within the first seconds of a level the
+/// set is the whole level. Movers are traced where they are this frame. How the structures are built,
+/// refitted, pooled and kept alive until no frame in flight reads them is the implementation's business.
 /// </para>
 /// </remarks>
 public interface IRhiRayTracing
 {
-    /// <summary>Gets the world's structure, to bind to an acceleration-structure slot.</summary>
-    /// <remarks>Null until enough of the world has been observed for one to exist.</remarks>
+    /// <summary>Gets the world's structure, to bind to an acceleration-structure slot; null before one is built.</summary>
     IRhiAccelerationStructure? WorldScene { get; }
 
-    /// <summary>Gets whether the world's structure is built and may be traced against.</summary>
-    /// <remarks>
-    /// A structure that exists is not yet a structure that answers: a build recorded this frame is not
-    /// complete until it has run. A pass that traces before this is true gets misses everywhere, which
-    /// reads as a room flooded with sky rather than as an error.
-    /// </remarks>
+    /// <summary>Gets whether the world's structure holds anything worth tracing against.</summary>
     bool IsWorldReady { get; }
 
     /// <summary>Gets how many placements the world holds.</summary>
     int PlacementCount { get; }
 
-    /// <summary>Tells the world where a mesh stands.</summary>
-    /// <param name="meshId">The mesh, which identifies its geometry for as long as it exists.</param>
-    /// <param name="geometry">Its triangles. Read once per mesh; later calls may pass the same values.</param>
-    /// <param name="transform">Where it stands in the world.</param>
-    /// <param name="mask">Which rays find it.</param>
-    void Observe(uint meshId, in RhiRayTracingGeometry geometry, in Matrix4f transform, RhiRayMask mask);
+    /// <summary>Gets the device address of the hit records a shader looks a hit's material up in.</summary>
+    ulong HitRecordAddress { get; }
 
-    /// <summary>Takes a mesh out of the world.</summary>
+    /// <summary>Gets the cut-out masks a hit's record names a layer of: a 2D array, one mask a layer.</summary>
+    IRhiTextureView CutoutMasks { get; }
+
+    /// <summary>Hands the world a texture's pixels, the one moment they are in hand.</summary>
+    /// <param name="textureId">The texture's identifier, as surfaces name it.</param>
+    /// <param name="pixels">Its top level.</param>
+    /// <param name="width">Its width.</param>
+    /// <param name="height">Its height.</param>
+    /// <remarks>
+    /// A cut-out texture -- a fence, foliage, a window's bars -- is reduced to a mask here, so a ray can
+    /// pass through its holes. Nowhere later has the pixels.
+    /// </remarks>
+    void ObserveTexture(uint textureId, ReadOnlySpan<Bgra32> pixels, int width, int height);
+
+    /// <summary>Records a run of a mesh drawn somewhere, adding it to the world if it is new.</summary>
+    /// <param name="meshId">The mesh's identifier.</param>
+    /// <param name="mesh">The mesh's buffers.</param>
+    /// <param name="worldTransform">Where it is drawn, in absolute world space.</param>
+    /// <param name="surface">Which run of its indices, and its texture.</param>
+    /// <param name="mask">Which rays find it.</param>
+    void Observe(uint meshId, in RhiTracedMesh mesh, in Matrix4f worldTransform, in RhiTracedSurface surface, RhiRayMask mask);
+
+    /// <summary>Places a caster for this frame only -- the terrain as drawn -- rebuilt whenever its contents change.</summary>
+    /// <param name="meshId">The mesh's identifier.</param>
+    /// <param name="mesh">The mesh's buffers.</param>
+    /// <param name="worldTransform">Where it is placed, in absolute world space.</param>
+    /// <param name="indexCount">How many indices, from the start, make up the caster.</param>
+    void ObserveCaster(uint meshId, in RhiTracedMesh mesh, in Matrix4f worldTransform, int indexCount);
+
+    /// <summary>Takes a mesh out of the world, for one that is destroyed.</summary>
     /// <param name="meshId">The mesh.</param>
     void Forget(uint meshId);
 
     /// <summary>Empties the world, for a level change.</summary>
     void Reset();
 
-    /// <summary>Records whatever building or updating the world needs this frame.</summary>
-    /// <param name="encoder">The encoder to record into.</param>
-    /// <remarks>
-    /// Recorded before anything traces, and cheap when nothing has moved: what this costs is decided by
-    /// what was observed since the last call, not by the size of the world.
-    /// </remarks>
+    /// <summary>Records whatever building or refitting the world needs this frame, before anything traces.</summary>
+    /// <param name="encoder">The encoder to record into, outside any pass.</param>
     void RecordSceneUpdate(IRhiCommandEncoder encoder);
 }

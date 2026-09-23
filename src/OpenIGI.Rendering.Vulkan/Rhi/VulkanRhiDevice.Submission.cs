@@ -309,7 +309,8 @@ internal sealed unsafe partial class VulkanRhiDevice
         }
     }
 
-    private void CreateSubmissionState(int frames)
+    /// <summary>Makes the timeline every submission advances, where the device has them.</summary>
+    private void CreateTimeline()
     {
         if (_timeline.Handle == 0 && _device.Capabilities.TimelineSemaphore)
         {
@@ -325,6 +326,10 @@ internal sealed unsafe partial class VulkanRhiDevice
             VkCheck.Ok(_vk.CreateSemaphore(_device.Device, &create, null, &timeline), "vkCreateSemaphore");
             _timeline = timeline;
         }
+    }
+
+    private void CreateSubmissionState(int frames)
+    {
 
         _slotCommands = new List<CommandBuffer>[frames];
         _slotStaging = new List<VulkanBuffer>[frames];

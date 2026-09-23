@@ -54,6 +54,10 @@ internal sealed unsafe class VulkanOpacityMasks : IDisposable
     private readonly VulkanCommands _commands;
     private readonly VulkanDevice _owner;
     private readonly DeviceMemory _memory;
+
+    // The layout the array rests in between uploads: shader-read for the legacy device, general for the
+    // RHI, which keeps every texture in general and transitions on binding.
+    private readonly ImageLayout _resting;
     private readonly Dictionary<uint, int> _layers = [];
     private int _next;
     private bool _disposed;
@@ -63,8 +67,15 @@ internal sealed unsafe class VulkanOpacityMasks : IDisposable
     /// <param name="device">The device the array lives on.</param>
     /// <param name="allocator">The allocator backing the image.</param>
     /// <param name="commands">The pool the one-off upload commands come from.</param>
-    public VulkanOpacityMasks(Vk vk, VulkanDevice device, VulkanAllocator allocator, VulkanCommands commands)
+    /// <param name="resting">The layout the array rests in between uploads.</param>
+    public VulkanOpacityMasks(
+        Vk vk,
+        VulkanDevice device,
+        VulkanAllocator allocator,
+        VulkanCommands commands,
+        ImageLayout resting = ImageLayout.ShaderReadOnlyOptimal)
     {
+        _resting = resting;
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(allocator);
@@ -238,7 +249,7 @@ internal sealed unsafe class VulkanOpacityMasks : IDisposable
                 cmd,
                 image,
                 ImageLayout.TransferDstOptimal,
-                ImageLayout.ShaderReadOnlyOptimal,
+                _resting,
                 PipelineStageFlags.TransferBit,
                 PipelineStageFlags.ComputeShaderBit,
                 AccessFlags.TransferWriteBit,
@@ -269,7 +280,7 @@ internal sealed unsafe class VulkanOpacityMasks : IDisposable
             Transition(
                 cmd,
                 image,
-                ImageLayout.ShaderReadOnlyOptimal,
+                _resting,
                 ImageLayout.TransferDstOptimal,
                 PipelineStageFlags.ComputeShaderBit,
                 PipelineStageFlags.TransferBit,
@@ -297,7 +308,7 @@ internal sealed unsafe class VulkanOpacityMasks : IDisposable
                 cmd,
                 image,
                 ImageLayout.TransferDstOptimal,
-                ImageLayout.ShaderReadOnlyOptimal,
+                _resting,
                 PipelineStageFlags.TransferBit,
                 PipelineStageFlags.ComputeShaderBit,
                 AccessFlags.TransferWriteBit,

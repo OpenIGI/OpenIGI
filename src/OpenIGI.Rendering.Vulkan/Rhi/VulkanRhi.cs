@@ -81,7 +81,7 @@ public sealed class VulkanRhi : IDisposable
             VulkanDevice device = new(instance, selection, log);
             VulkanAllocator allocator = new(device);
             VulkanCommands commands = new(instance.Vk, device);
-            VulkanRhiDevice rhi = new(instance.Vk, device, allocator, commands, log);
+            VulkanRhiDevice rhi = new(instance.Vk, device, allocator, commands, log, instance);
 
             rhi.AttachOffscreen(width, height, format);
 
@@ -130,7 +130,7 @@ public sealed class VulkanRhi : IDisposable
             // The shared renderer writes linear colour and leaves the encode to the surface, so its
             // swapchain is sRGB where the legacy path's is unsigned-normalised.
             VulkanSwapchain swapchain = new(instance, device, width, height, vsync, encodesOutput: false);
-            VulkanRhiDevice rhi = new(instance.Vk, device, allocator, commands, log);
+            VulkanRhiDevice rhi = new(instance.Vk, device, allocator, commands, log, instance);
 
             rhi.AttachSwapchain(swapchain);
 

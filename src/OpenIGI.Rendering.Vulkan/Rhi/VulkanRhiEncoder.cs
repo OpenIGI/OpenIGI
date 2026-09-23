@@ -39,6 +39,9 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
     /// <inheritdoc/>
     public string Label { get; }
 
+    /// <summary>Gets the command buffer being recorded, for backend passes that record Vulkan directly.</summary>
+    internal CommandBuffer Command => _command;
+
     /// <inheritdoc/>
     public IRhiRenderPassEncoder BeginRenderPass(RhiRenderPassDescriptor descriptor)
     {

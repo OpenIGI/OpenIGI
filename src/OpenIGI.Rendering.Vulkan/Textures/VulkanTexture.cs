@@ -482,6 +482,14 @@ internal sealed unsafe class VulkanTexture : IDisposable
     // is masked at all -- a wire fence is mostly hole, a railing mostly not, and neither is a solid pane.
     private const float CutoutTexelFraction = 0.01f;
 
+    /// <summary>Whether a texture's top level is cut out, by the same test <see cref="HasCutoutAlpha"/> makes.</summary>
+    /// <param name="pixels">The top level.</param>
+    /// <param name="width">Its width.</param>
+    /// <param name="height">Its height.</param>
+    /// <returns><see langword="true"/> when enough of it fails the alpha cut to be masked at all.</returns>
+    internal static bool IsCutout(ReadOnlySpan<Bgra32> pixels, int width, int height) =>
+        MeasureCutoutFraction(pixels, width, height) > CutoutTexelFraction;
+
     private static float MeasureCutoutFraction(ReadOnlySpan<Bgra32> pixels, int width, int height)
     {
         int count = width * height;
