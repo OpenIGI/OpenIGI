@@ -191,8 +191,15 @@ public sealed class SkyAtmosphere : IDisposable
     /// <param name="encoder">The encoder to record the copy into, outside any pass.</param>
     /// <param name="frameInFlight">Which frame's buffer to copy into.</param>
     /// <remarks>
+    /// <para>
     /// Recorded every frame whether or not the march ran, so each frame-in-flight slot holds that
     /// (unchanged) answer rather than one slot holding it and the others holding nothing.
+    /// </para>
+    /// <para>
+    /// Except into a slot the host is still mapping: WebGPU refuses a submission that copies into a
+    /// buffer with a map outstanding, and a browser's map finishes when it finishes. That slot keeps the
+    /// answer it has, which for a sky that changes once a mission is the same answer.
+    /// </para>
     /// </remarks>
     public void RecordReadback(IRhiCommandEncoder encoder, int frameInFlight)
     {
@@ -200,6 +207,11 @@ public sealed class SkyAtmosphere : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         int slot = frameInFlight % _readback.Length;
+
+        if (_pending[slot] is { IsComplete: false })
+        {
+            return;
+        }
 
         encoder.CopyTextureToBuffer(
             new RhiTextureRegion(_irradiance),
@@ -211,7 +223,10 @@ public sealed class SkyAtmosphere : IDisposable
     }
 
     /// <summary>Reads the harmonics a frame slot copied down, once they have arrived.</summary>
-    /// <param name="frameInFlight">The frame-in-flight slot whose work has completed.</param>
+    /// <param name="frameInFlight">
+    /// A frame-in-flight slot whose copy has been SUBMITTED. Mapping one whose copy is still only
+    /// recorded is refused by WebGPU at the submit.
+    /// </param>
     /// <param name="destination">Room for <see cref="IrradianceFloats"/> floats.</param>
     /// <returns><see langword="true"/> when that slot's harmonics were read.</returns>
     /// <remarks>

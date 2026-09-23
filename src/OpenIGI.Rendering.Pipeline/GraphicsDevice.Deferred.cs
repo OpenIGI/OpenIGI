@@ -52,6 +52,10 @@ public sealed partial class GraphicsDevice
     private DeferredLighting? _shading;
     private DeferredResolve? _sceneResolve;
     private SkyAtmosphere? _sky;
+
+    // Which frame slot last had the sky's harmonics copied down, and which of those copies has been sent.
+    private int _skyRecordedSlot = -1;
+    private int _skySubmittedSlot = -1;
     private BloomPass? _bloom;
     private IRhiBindGroupLayout? _surfaceLayout;
     private IRhiBuffer? _surfaceUniform;
@@ -505,18 +509,21 @@ public sealed partial class GraphicsDevice
         }
 
         sky.RecordReadback(encoder, FrameSlot);
+        _skyRecordedSlot = FrameSlot;
     }
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Read from the harmonics the atmosphere copies down every frame. Nothing is waited for: a slot
-    /// whose copy has not arrived answers no, and the caller keeps what it had — which, for a sun fixed
-    /// for the mission, is the same answer.
+    /// Read from the harmonics the atmosphere copies down every frame — from the last frame SUBMITTED,
+    /// because the game asks mid-frame, after this frame's copy is recorded and before it is sent, and a
+    /// buffer mapped in that gap is one WebGPU will not let the frame copy into. Nothing is waited for: a
+    /// slot whose copy has not arrived answers no, and the caller keeps what it had — which, for a sun
+    /// fixed for the mission, is the same answer.
     /// </remarks>
     public bool TryGetSkyIrradiance(Span<float> coefficients)
     {
         ThrowIfDisposed();
-        return _sky is { } sky && sky.TryReadIrradiance(FrameSlot, coefficients);
+        return _sky is { } sky && _skySubmittedSlot >= 0 && sky.TryReadIrradiance(_skySubmittedSlot, coefficients);
     }
 
     /// <summary>What the shading is told about this frame.</summary>
