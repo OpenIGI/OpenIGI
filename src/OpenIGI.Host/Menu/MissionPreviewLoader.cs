@@ -2,6 +2,7 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
@@ -65,6 +66,10 @@ namespace OpenIGI.Host.Menu;
 /// <param name="cameras">The authored orbit styles each mission's showcase points are based on.</param>
 /// <param name="context">What a built preview needs to be promotable into the played mission.</param>
 /// <param name="logger">The logger.</param>
+/// <param name="work">
+/// Where a backdrop is built: beside the menu where the platform can, and inline -- a stall on the frame
+/// that asks -- where it cannot.
+/// </param>
 public sealed class MissionPreviewLoader(
     string gamePath,
     IMissionCatalogue<MissionDescriptor> missions,
@@ -72,7 +77,8 @@ public sealed class MissionPreviewLoader(
     GiBakeCache probeFields,
     MenuCameraLibrary cameras,
     MissionPreviewContext context,
-    IIgiLogger logger) : IDisposable
+    IIgiLogger logger,
+    IWorkScheduler work) : IDisposable
 {
     private const string LogCategory = "Preview";
 
@@ -178,7 +184,7 @@ public sealed class MissionPreviewLoader(
         }
     }
 
-    private void Start(int missionId) => Task.Run(() =>
+    private void Start(int missionId) => _ = work.Run(() =>
     {
         MissionPreview? built = null;
         try
@@ -382,7 +388,7 @@ public sealed class MissionPreviewLoader(
         // reads the registry on this thread has finished with it: the cache takes the bytes it needs now
         // and touches the registry no further, so nothing races the render thread's own loads later.
         TextureDecodeCache decoded = TextureDecodeCache.StartFor(
-            resources, TextureDecodeCache.AlphaTestCutoff, context.DetailMaps);
+            resources, TextureDecodeCache.AlphaTestCutoff, work, context.DetailMaps);
 
         logger.Information(
             LogCategory,
@@ -432,22 +438,18 @@ public sealed class MissionPreviewLoader(
     /// what moving the work off it was meant to save.
     /// </para>
     /// </remarks>
-    private static Task<Bgra32[][]> DeriveGroundDetailAsync(TerrainData? terrain)
+    private Task<Bgra32[][]> DeriveGroundDetailAsync(TerrainData? terrain)
     {
         if (terrain is not { IsUsable: true } usable || usable.Tiles is not { } atlas || atlas.Tiles.Count == 0)
         {
             return Task.FromResult<Bgra32[][]>([]);
         }
 
-        return Task.Run(() =>
+        return work.Run(() =>
         {
             var derived = new Bgra32[atlas.Tiles.Count][];
-            var options = new ParallelOptions
-            {
-                MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1),
-            };
 
-            Parallel.For(0, derived.Length, options, i =>
+            work.ForRange(0, derived.Length, Math.Max(1, Environment.ProcessorCount - 1), i =>
             {
                 TextureImage tile = atlas.Tiles[i];
                 derived[i] = MaterialDetailPack.Derive(tile.GetLevel(0), tile.Width, tile.Height);

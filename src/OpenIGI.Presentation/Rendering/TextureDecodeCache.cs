@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Presentation.Igi1;
@@ -75,6 +76,10 @@ public sealed class TextureDecodeCache
     /// </summary>
     /// <param name="resources">The level's own registry, read on the calling thread and only there.</param>
     /// <param name="cutoff">The alpha-test cutoff the shaders compare against.</param>
+    /// <param name="work">
+    /// Where the textures are decoded ahead of the frames that ask for them. Where nothing runs beside the
+    /// caller, nothing is decoded ahead: each is decoded when it is taken.
+    /// </param>
     /// <param name="detail">
     /// The session's detail-map pack, told to read the same names' PNGs on the pool. Optional; without it
     /// the maps are read on the render thread as they always were.
@@ -89,9 +94,11 @@ public sealed class TextureDecodeCache
     public static TextureDecodeCache StartFor(
         ResourceRegistry resources,
         float cutoff,
+        IWorkScheduler work,
         MaterialDetailPack? detail = null)
     {
         ArgumentNullException.ThrowIfNull(resources);
+        ArgumentNullException.ThrowIfNull(work);
 
         TextureDecodeCache cache = new();
         List<Lazy<Decoded?>> pending = [];
@@ -125,12 +132,12 @@ public sealed class TextureDecodeCache
         // which live in a PNG beside the pack and were being inflated inside the upload.
         detail?.Prewarm(names);
 
-        if (pending.Count > 0)
+        // Fire and forget: the renderer's own Take is what makes the result observable, and it forces any
+        // value this has not got to yet. Nothing waits on the task itself -- and where nothing runs beside
+        // the caller there is nothing to get ahead of, so each texture is decoded when it is taken.
+        if (pending.Count > 0 && work.IsConcurrent)
         {
-            // Fire and forget: the renderer's own Take is what makes the result observable, and it forces
-            // any value this has not got to yet. Nothing waits on the task itself.
-            ParallelOptions options = new() { MaxDegreeOfParallelism = MaxDecodeThreads };
-            _ = Task.Run(() => Parallel.ForEach(pending, options, item => _ = item.Value));
+            _ = work.Run(() => work.ForEach(pending, MaxDecodeThreads, item => _ = item.Value));
         }
 
         return cache;

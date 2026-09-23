@@ -3,6 +3,7 @@ using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
@@ -68,6 +69,7 @@ internal sealed partial class GameHost : IDisposable
 
     // --- Environment, supplied by the composition root ---
     private readonly IPlatformHost _platform;
+    private readonly IWorkScheduler _work;
     private readonly IGameWindow _window;
     private readonly IAudioDeviceFactory _audioFactory;
     // The games this build can run. Held rather than resolved once, because the shell can change which
@@ -571,6 +573,7 @@ internal sealed partial class GameHost : IDisposable
     /// <param name="window">The game window whose input and frames drive the loop.</param>
     /// <param name="device">The graphics device every renderer draws through.</param>
     /// <param name="audioFactory">Opens the audio backend; re-called whenever the device settings change.</param>
+    /// <param name="work">Where work off the frame loop runs: beside it on the desktop, inline in a browser.</param>
     /// <param name="titles">The games this build can run, and where each of them is installed.</param>
     /// <param name="startOn">The one to open on.</param>
     /// <param name="fileSystem">The virtual file system the original installation is read through.</param>
@@ -589,6 +592,7 @@ internal sealed partial class GameHost : IDisposable
         IGameWindow window,
         IGraphicsDevice device,
         IAudioDeviceFactory audioFactory,
+        IWorkScheduler work,
         ITitleCatalog titles,
         GameTitle startOn,
         VirtualFileSystem fileSystem,
@@ -608,6 +612,7 @@ internal sealed partial class GameHost : IDisposable
         _window = window;
         _device = device;
         _audioFactory = audioFactory;
+        _work = work;
         _titles = titles;
         _titleRuntime = binding.Runtime;
         _presentation = binding.Presentation;
@@ -833,7 +838,7 @@ internal sealed partial class GameHost : IDisposable
         // that nothing on this thread depends on, and start-up is the one time the player is waiting for
         // this thread specifically. Everything that touches the audio device does so from the frame loop,
         // which is collected below, before the first line that reads it.
-        Task audioReady = Task.Run(OpenAudioDevice);
+        Task audioReady = _work.Run(OpenAudioDevice);
 
         // Set before anything uploads a texture: the sampler a texture is created with is the one it
         // keeps, so a level loaded before this would keep the filtering it started with.
@@ -1118,6 +1123,7 @@ internal sealed partial class GameHost : IDisposable
         // per-user data, and because the game's art with a filter over it is not ours to redistribute.
         _detailMaps = new(
             _device,
+            _work,
             _logger,
             Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "detail"));
 
@@ -1327,9 +1333,9 @@ internal sealed partial class GameHost : IDisposable
         {
             _menuCameras = MenuCameraLibrary.Load(
                 Path.Combine(AppContext.BaseDirectory, "Assets", "menu-cameras.json"), _logger);
-            missionWarmer = new MissionWarmer(_gamePath, _missions, _logger);
+            missionWarmer = new MissionWarmer(_gamePath, _missions, _logger, _work);
             previewLoader = new MissionPreviewLoader(
-                _gamePath, _missions, _magic, _giCache, _menuCameras, _previewContext, _logger);
+                _gamePath, _missions, _magic, _giCache, _menuCameras, _previewContext, _logger, _work);
 
             // Saira for body, Saira Condensed as a distance field for the headings the shell sets large.
             shellBodyFont = UiFontLibrary.Load(_device, UiFontLibrary.Body, 48f);
@@ -1728,13 +1734,13 @@ internal sealed partial class GameHost : IDisposable
             // its game list, its campaign and which entry is current are all the title's.
             if (SwitchTitleIfDue())
             {
-                missionWarmer = new MissionWarmer(_gamePath, _missions, _logger);
+                missionWarmer = new MissionWarmer(_gamePath, _missions, _logger, _work);
 
                 // Closed rather than dropped: it owns a worker that may be part way through building the
                 // outgoing game's backdrop, and the replacement below would otherwise race it.
                 previewLoader?.Dispose();
                 previewLoader = new MissionPreviewLoader(
-                    _gamePath, _missions, _magic, _giCache, _menuCameras, _previewContext, _logger);
+                    _gamePath, _missions, _magic, _giCache, _menuCameras, _previewContext, _logger, _work);
 
                 if (shellHost is not null && shellBodyFont is not null && shellHeadingFont is not null && saves is not null)
                 {

@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Game.World;
 
@@ -22,7 +23,11 @@ namespace OpenIGI.Host.Menu;
 /// and any I/O error is swallowed — a warm that fails just means the real load pays full price.
 /// </para>
 /// </remarks>
-public sealed class MissionWarmer(string gamePath, IMissionCatalogue<MissionDescriptor> missions, IIgiLogger logger) : IDisposable
+public sealed class MissionWarmer(
+    string gamePath,
+    IMissionCatalogue<MissionDescriptor> missions,
+    IIgiLogger logger,
+    IWorkScheduler work) : IDisposable
 {
     private readonly Lock _gate = new();
     private CancellationTokenSource? _cancellation;
@@ -32,6 +37,13 @@ public sealed class MissionWarmer(string gamePath, IMissionCatalogue<MissionDesc
     /// <param name="missionId">The mission to warm.</param>
     public void Warm(int missionId)
     {
+        // Only worth anything where it overlaps the menu. Inline, it would read a mission's every file
+        // inside the frame that asked, for a load that reads them again anyway.
+        if (!work.IsConcurrent)
+        {
+            return;
+        }
+
         if (!missions.TryGet(missionId, out MissionDescriptor? descriptor) || descriptor is null)
         {
             return;
@@ -53,7 +65,7 @@ public sealed class MissionWarmer(string gamePath, IMissionCatalogue<MissionDesc
 
         string directory = Path.Combine(gamePath, descriptor.MissionDirectory);
         CancellationToken token = cancellation.Token;
-        Task.Run(() => WarmDirectory(directory, token), token);
+        _ = work.Run(() => WarmDirectory(directory, token), token);
     }
 
     /// <inheritdoc/>

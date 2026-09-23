@@ -251,7 +251,7 @@ internal sealed partial class GameHost
             Path.Combine(AppContext.BaseDirectory, "Assets", "menu-cameras.json"), _logger);
 
         using var loader = new MissionPreviewLoader(
-            _gamePath, _missions, _magic, _giCache, cameras, _previewContext, _logger);
+            _gamePath, _missions, _magic, _giCache, cameras, _previewContext, _logger, _work);
         var entries = new List<ShowcasePointFile.Entry>();
 
         foreach (MissionDescriptor descriptor in _missions.InCampaignOrder())

@@ -1,6 +1,7 @@
 ﻿using OpenIGI.Audio.OpenAL;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Core.Titles;
 using OpenIGI.Desktop;
 using OpenIGI.Engine.Configuration;
@@ -255,7 +256,7 @@ using (window)
     // The composition root is the only place that names a concrete backend: the graphics device
     // above, and the audio factory here. GameHost itself sees only the abstractions.
     using GameHost game = new(
-        platform, window, device, OpenAlAudioDeviceFactory.Instance,
+        platform, window, device, OpenAlAudioDeviceFactory.Instance, ThreadPoolWorkScheduler.Instance,
         DesktopTitleCatalog.Catalog, titleRuntime.Title,
         fileSystem, options, gamePath, logger);
     return game.Run();

@@ -1,5 +1,6 @@
 using OpenIGI.Audio;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Engine.Configuration;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
@@ -107,6 +108,7 @@ public sealed class GameHostStepTests : IDisposable
             window,
             device,
             new RecordingAudioFactory(),
+            InlineWorkScheduler.Instance,
             DesktopTitleCatalog.Catalog,
             runtime.Title,
             fileSystem,
