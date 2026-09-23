@@ -16,6 +16,7 @@
 
 #include "../Common/PushConstants.slang"
 #include "../Common/ClipSpace.slang"
+#include "../Common/SampledColour.slang"
 
 struct CardPush
 {
@@ -109,7 +110,10 @@ CardTargets fragmentMain(Varyings input)
         discard;
     }
 
-    float3 albedo = SrgbToLinear(diffuse.rgb) * input.color.rgb;
+    // Linear, as the lighting reads it. Decoded here only where the sampler has not already: on the RHI's
+    // sRGB images a second decode squared the curve and the whole surface cache lit a world a quarter as
+    // bright as the one on screen. The legacy branch keeps its own curve, which is what it always drew.
+    float3 albedo = (cSamplerDecodes != 0 ? diffuse.rgb : SrgbToLinear(diffuse.rgb)) * input.color.rgb;
 
     CardTargets output;
     output.albedo = float4(albedo, 1.0);

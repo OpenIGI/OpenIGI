@@ -63,7 +63,15 @@ public sealed class CardPipeline : IDisposable
                 Module,
                 reflection.EntryPointFor(ShaderStage.Vertex).Name,
                 ShaderConstants.Declared(reflection, Mesh3DConstants.TargetConstants)),
-            new RhiShaderStage(Module, reflection.EntryPointFor(ShaderStage.Fragment).Name),
+            new RhiShaderStage(
+                Module,
+                reflection.EntryPointFor(ShaderStage.Fragment).Name,
+
+                // Every texture here is an sRGB image, so it arrives linear already and the capture must
+                // not decode it again.
+                ShaderConstants.Declared(
+                    reflection,
+                    new Dictionary<int, RhiConstant> { [Mesh3DConstants.SamplerDecodes] = RhiConstant.Of(1) })),
             VertexLayouts(),
             [.. targetFormats.Select(format => new RhiColorTargetState(format))],
 
