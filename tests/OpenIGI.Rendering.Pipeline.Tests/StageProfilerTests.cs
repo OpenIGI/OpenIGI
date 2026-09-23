@@ -149,6 +149,35 @@ public sealed class StageProfilerTests
     }
 
     [Fact]
+    public void A_map_slower_than_the_frame_is_kept_until_it_arrives()
+    {
+        using RecordingRhiDevice device = new(CanTime) { HoldsReadbacks = true };
+        using StageProfiler profiler = new(device, framesInFlight: 1) { Enabled = true };
+
+        profiler.BeginFrame(0);
+        profiler.Time(RenderStage.Shadows);
+        Resolve(device, profiler);
+        profiler.RequestReadback(0);
+
+        // Not back yet, as a browser's map never is inside the frame that asked for it.
+        Assert.False(profiler.ReadCompletedFrame(0));
+
+        // The slot comes round with that map still out: nothing is copied into a buffer being mapped,
+        // and the map is not thrown away.
+        profiler.BeginFrame(0);
+        profiler.Time(RenderStage.Lighting);
+        int copies = device.CommandsOf<RecordedRhiCommand.CopyBufferToBuffer>().Count;
+        Resolve(device, profiler);
+        Assert.Equal(copies, device.CommandsOf<RecordedRhiCommand.CopyBufferToBuffer>().Count);
+
+        device.ReleaseReadbacks();
+
+        // Read at last: the frame that waited is folded, rather than lost as every one of them was.
+        Assert.True(profiler.ReadCompletedFrame(0));
+        Assert.Equal(1, profiler.Ledger.CompletedFrames);
+    }
+
+    [Fact]
     public void Switching_timing_off_and_on_forgets_the_history()
     {
         using RecordingRhiDevice device = new(CanTime);
@@ -172,5 +201,12 @@ public sealed class StageProfilerTests
 
         Assert.Equal(RhiQueryType.Timestamp, queries.Type);
         Assert.Equal(StageProfiler.SlotCapacity * 3, queries.Count);
+    }
+
+    private static void Resolve(RecordingRhiDevice device, StageProfiler profiler)
+    {
+        using IRhiCommandEncoder encoder = device.CreateCommandEncoder("frame");
+        profiler.ResolveFrame(encoder);
+        device.Submit([encoder.Finish()]);
     }
 }

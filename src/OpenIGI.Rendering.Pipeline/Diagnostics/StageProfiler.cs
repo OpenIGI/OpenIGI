@@ -48,6 +48,12 @@ public sealed class StageProfiler : IDisposable
     private readonly int _slots;
     private readonly List<TimedPass>[] _slotPasses;
     private readonly int[] _slotNext;
+
+    // What each slot's readback buffer holds: the passes of the frame whose times were copied into it,
+    // kept apart from the slot's own list because the frame after starts that list again long before a
+    // map on a browser comes back.
+    private readonly List<TimedPass>[] _copiedPasses;
+    private readonly int[] _copiedCount;
     private readonly ulong[] _results;
     private int _slot;
     private bool _disposed;
@@ -73,6 +79,8 @@ public sealed class StageProfiler : IDisposable
         _periodMilliseconds = timestampPeriodNanoseconds / 1_000_000.0;
         _slotPasses = new List<TimedPass>[framesInFlight];
         _slotNext = new int[framesInFlight];
+        _copiedPasses = new List<TimedPass>[framesInFlight];
+        _copiedCount = new int[framesInFlight];
         _results = new ulong[SlotCapacity];
         _readback = [];
         _pending = new IRhiReadback?[framesInFlight];
@@ -80,6 +88,7 @@ public sealed class StageProfiler : IDisposable
         for (int i = 0; i < framesInFlight; i++)
         {
             _slotPasses[i] = [];
+            _copiedPasses[i] = [];
         }
 
         if (!device.Features.TimestampQuery)
@@ -192,16 +201,48 @@ public sealed class StageProfiler : IDisposable
             return;
         }
 
-        int first = _slot * SlotCapacity;
-        ulong offset = (ulong)(first * sizeof(ulong));
+        // A map still in flight is an earlier frame's times not yet read, and a buffer with a map
+        // outstanding cannot be copied into: this frame goes untimed and that one is kept. Throwing the
+        // map away instead, as this did, threw away every frame on WebGPU -- whose maps come back a frame
+        // later than the slot comes round -- and it reported no stage times at all.
+        if (_pending[_slot] is { IsComplete: false })
+        {
+            return;
+        }
 
-        // A readback still waiting on this slot's last copy is for a frame about to be overwritten, and a
-        // buffer still mapped cannot be copied into.
         _pending[_slot]?.Dispose();
         _pending[_slot] = null;
 
+        int first = _slot * SlotCapacity;
+        ulong offset = (ulong)(first * sizeof(ulong));
+
         encoder.ResolveQuerySet(_queries, first, count, _resolved, offset);
         encoder.CopyBufferToBuffer(_resolved, offset, _readback[_slot], 0, (ulong)(count * sizeof(ulong)));
+
+        _copiedPasses[_slot].Clear();
+        _copiedPasses[_slot].AddRange(_slotPasses[_slot]);
+        _copiedCount[_slot] = count;
+    }
+
+    /// <summary>Starts mapping the times a frame slot has just submitted.</summary>
+    /// <param name="frameInFlight">The slot the submission just sent copied into.</param>
+    /// <remarks>
+    /// As the frame is submitted, not when the slot comes round again: a map asked for then has only that
+    /// moment to complete in, and on WebGPU it never has.
+    /// </remarks>
+    public void RequestReadback(int frameInFlight)
+    {
+        if (_disposed || !Enabled || _readback.Length == 0)
+        {
+            return;
+        }
+
+        int slot = frameInFlight % _slots;
+
+        if (_copiedCount[slot] > 0)
+        {
+            _pending[slot] ??= _device.ReadBuffer(_readback[slot], 0, (ulong)(_copiedCount[slot] * sizeof(ulong)));
+        }
     }
 
     /// <summary>Reads a completed frame's timestamps and folds them into the statistics.</summary>
@@ -218,14 +259,13 @@ public sealed class StageProfiler : IDisposable
         }
 
         int slot = frameInFlight % _slots;
-        List<TimedPass> passes = _slotPasses[slot];
+        List<TimedPass> passes = _copiedPasses[slot];
+        int count = _copiedCount[slot];
 
-        if (passes.Count == 0)
+        if (passes.Count == 0 || count <= 0)
         {
             return false;
         }
-
-        int count = _slotNext[slot];
 
         // Asked for once and kept until it arrives: a browser cannot block for it, and neither should this.
         IRhiReadback data = _pending[slot] ??= _device.ReadBuffer(_readback[slot], 0, (ulong)(count * sizeof(ulong)));
@@ -253,8 +293,9 @@ public sealed class StageProfiler : IDisposable
 
         Ledger.CompleteFrame();
 
-        // Read once: the slot's next frame asks again.
+        // Read once: the slot's next copy asks again.
         passes.Clear();
+        _copiedCount[slot] = 0;
         data.Dispose();
         _pending[slot] = null;
         return true;

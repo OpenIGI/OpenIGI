@@ -209,18 +209,22 @@ public sealed class RecordedCommandBuffer(string label, IReadOnlyList<RecordedRh
     public IReadOnlyList<RecordedRhiCommand> Commands { get; } = commands;
 }
 
-/// <summary>A readback that is already complete, because nothing had to run.</summary>
+/// <summary>
+/// A readback that is complete at once, because nothing had to run -- or, where the device holds them
+/// back, once it lets them go, which is how a browser's map behaves.
+/// </summary>
 /// <param name="data">What comes back.</param>
-public sealed class RecordedReadback(byte[] data) : IRhiReadback
+/// <param name="arrived">Whether it has arrived; complete at once where none is given.</param>
+public sealed class RecordedReadback(byte[] data, Func<bool>? arrived = null) : IRhiReadback
 {
     /// <inheritdoc/>
-    public bool IsComplete => true;
+    public bool IsComplete => arrived?.Invoke() ?? true;
 
     /// <inheritdoc/>
     public ulong SizeInBytes => (ulong)data.Length;
 
     /// <inheritdoc/>
-    public bool Wait(TimeSpan timeout) => true;
+    public bool Wait(TimeSpan timeout) => IsComplete;
 
     /// <inheritdoc/>
     public ReadOnlySpan<byte> GetData() => data;

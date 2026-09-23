@@ -269,6 +269,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         }
 
         _autoExposure?.RequestReadback(FrameSlot);
+        _profiler.RequestReadback(FrameSlot);
 
         _encoder?.Dispose();
         _encoder = null;

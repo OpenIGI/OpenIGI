@@ -29,6 +29,8 @@ public sealed class RecordingRhiDevice : IRhiDevice
     private int _frameIndex;
     private int _frameSlot;
     private bool _inFrame;
+    private int _readbacksReleased;
+    private int _readbacksAsked;
 
     /// <summary>Initialises a new instance of the <see cref="RecordingRhiDevice"/> class.</summary>
     /// <param name="features">What it claims to be able to do.</param>
@@ -49,6 +51,16 @@ public sealed class RecordingRhiDevice : IRhiDevice
 
     /// <inheritdoc/>
     public string AdapterName => "Recording";
+
+    /// <summary>Gets or sets whether readbacks stay pending until <see cref="ReleaseReadbacks"/>.</summary>
+    /// <remarks>
+    /// A browser's map comes back on a later task, never inside the call that asked for it; this is how a
+    /// test stands in for that.
+    /// </remarks>
+    public bool HoldsReadbacks { get; set; }
+
+    /// <summary>Lets every readback asked for so far arrive.</summary>
+    public void ReleaseReadbacks() => _readbacksReleased = _readbacksAsked;
 
     /// <inheritdoc/>
     public RhiFeatures Features { get; }
@@ -246,7 +258,13 @@ public sealed class RecordingRhiDevice : IRhiDevice
             ? recorded.Contents.AsSpan((int)offset, (int)length).ToArray()
             : new byte[length];
 
-        return new RecordedReadback(data);
+        if (!HoldsReadbacks)
+        {
+            return new RecordedReadback(data);
+        }
+
+        int ticket = ++_readbacksAsked;
+        return new RecordedReadback(data, () => _readbacksReleased >= ticket);
     }
 
     /// <inheritdoc/>
