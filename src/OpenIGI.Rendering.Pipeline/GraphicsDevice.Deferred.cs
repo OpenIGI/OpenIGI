@@ -375,6 +375,7 @@ public sealed partial class GraphicsDevice
         _grainFrame = (_grainFrame + 1) % ResolvePushBlock.GrainCycle;
 
         IRhiTextureView? bloom = RecordBloom(scene, post);
+        float adapted = MeterExposure(scene, post);
 
         Span<float> push = stackalloc float[ResolvePushBlock.Floats];
 
@@ -384,12 +385,13 @@ public sealed partial class GraphicsDevice
             PresentWidth: CurrentMode.Width,
             PresentHeight: CurrentMode.Height,
             MaskView: _debugView.IsMask(),
-            BloomRan: bloom is not null));
+            BloomRan: bloom is not null,
+            AdaptedExposure: adapted));
 
         // What a painted sky is divided by as it is drawn, so that it leaves the tone map at the colour
         // it was painted. Last frame's, as it is on the Vulkan device: the sky is drawn before the frame
-        // says what it will be exposed by. There is no metering here, so it is the setting itself.
-        _sceneExposure = MathF.Max(post.Exposure, 1e-3f);
+        // says what it will be exposed by.
+        _sceneExposure = MathF.Max(post.Exposure * adapted, 1e-3f);
 
         resolve.BindFrame(ResolvedScene(scene), bloom);
 
@@ -810,6 +812,8 @@ public sealed partial class GraphicsDevice
         DisposeGlazing();
         DisposeGlazingReflection();
         DisposeFog();
+        _autoExposure?.Dispose();
+        _autoExposure = null;
         DisposeSunShadow();
 
         _scenePass?.Dispose();

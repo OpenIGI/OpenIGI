@@ -33,7 +33,6 @@ public sealed partial class GraphicsDevice
         "r_reflections",
         "r_rt_reflections",
         "r_motion_blur",
-        "r_exposure",
         "r_wetness",
         "r_storm",
         "r_material_detail",
@@ -43,18 +42,25 @@ public sealed partial class GraphicsDevice
     /// <param name="temporal">Whether the backend can run the temporal resolve.</param>
     /// <param name="gi">Whether it can run the game's GI stack.</param>
     /// <param name="traced">Whether it traces rays, which is what the traced sun shadow needs.</param>
+    /// <param name="metered">Whether it can meter the scene for the eye adaptation.</param>
     /// <returns>The names.</returns>
-    private static string[] UnimplementedOn(bool temporal, bool gi, bool traced) =>
+    private static string[] UnimplementedOn(bool temporal, bool gi, bool traced, bool metered) =>
     [
         .. UnimplementedSettingNames,
         .. temporal ? Array.Empty<string>() : ["r_taa"],
         .. gi ? Array.Empty<string>() : ["r_screen_gi", "r_surface_cache"],
         .. traced ? Array.Empty<string>() : ["r_rt_shadows"],
+        .. metered ? Array.Empty<string>() : ["r_autoexposure"],
     ];
 
     /// <inheritdoc/>
-    /// <remarks>One, because the direct path never tone-maps: what it draws is what is shown.</remarks>
-    public float SceneExposure => 1f;
+    /// <remarks>
+    /// The setting times what the eye has adapted to while a capture is open, as on the Vulkan device; one
+    /// outside it, because the direct path never tone-maps: what it draws is what is shown.
+    /// </remarks>
+    public float SceneExposure => _capturing
+        ? MathF.Max(RenderCVars.EffectiveExposure * (_autoExposure?.Adapted ?? 1f), 1e-3f)
+        : 1f;
 
     /// <inheritdoc/>
     public void SetTextureQuality(int maxAnisotropy) => _textures.MaxAnisotropy = maxAnisotropy;
