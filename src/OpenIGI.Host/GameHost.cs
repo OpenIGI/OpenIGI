@@ -1298,8 +1298,9 @@ internal sealed partial class GameHost : IDisposable
         // adopted -- see the collect further down.
         DistanceFieldBake.Result? bakedFieldForBackdrop = null;
 
-        // The menu is held to the display's rate rather than rendering as fast as it can. See FramePacer.
-        var menuPacer = new FramePacer();
+        // The menu is held to the display's rate rather than rendering as fast as it can, where the
+        // platform leaves the rate to the loop. See IFramePacer.
+        IFramePacer menuPacer = _platform.CreateFramePacer();
         bool lastPassRendered = false;
 
         // How long a mission has to stay selected before its level is built. Every selection re-arms the

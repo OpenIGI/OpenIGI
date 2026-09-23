@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace OpenIGI.Host.Infrastructure;
+namespace OpenIGI.Platform.Desktop;
 
 /// <summary>
 /// Holds a loop to a target frame rate by waiting out the remainder of each frame's interval, for the
@@ -19,14 +19,13 @@ namespace OpenIGI.Host.Infrastructure;
 /// Windows is granted in whole scheduler ticks and would overshoot by up to one.
 /// </para>
 /// </remarks>
-internal sealed class FramePacer
+public sealed class DesktopFramePacer : IFramePacer
 {
     private const double SpinMilliseconds = 1.5;
 
     private long _nextDeadline = -1;
 
-    /// <summary>Waits until the current frame's interval has elapsed, then schedules the next.</summary>
-    /// <param name="targetHertz">The rate to hold to; nothing happens at or below zero.</param>
+    /// <inheritdoc/>
     public void Pace(int targetHertz)
     {
         if (targetHertz <= 0)
@@ -67,6 +66,6 @@ internal sealed class FramePacer
         _nextDeadline += interval;
     }
 
-    /// <summary>Forgets the cadence, so the next <see cref="Pace"/> starts fresh rather than catching up.</summary>
+    /// <inheritdoc/>
     public void Reset() => _nextDeadline = -1;
 }

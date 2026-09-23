@@ -106,4 +106,8 @@ public sealed class HeadlessPlatformHost : IPlatformHost
     /// <inheritdoc/>
     public IGameWindow CreateWindow(in WindowSettings settings) =>
         new HeadlessGameWindow(Math.Max(settings.Width, 1), Math.Max(settings.Height, 1));
+
+    /// <inheritdoc/>
+    /// <remarks>A test steps as fast as it likes; nothing waits.</remarks>
+    public IFramePacer CreateFramePacer() => NoOpFramePacer.Instance;
 }
