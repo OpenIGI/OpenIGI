@@ -127,22 +127,7 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
-    public void SetShelterMap(TextureHandle map, in ShelterMapTransform transform)
-    {
-    }
-
-    /// <inheritdoc/>
     public void SetReflections(in ReflectionSettings settings)
-    {
-    }
-
-    /// <inheritdoc/>
-    public void SetSurfaceCache(in SurfaceCacheBinding binding)
-    {
-    }
-
-    /// <inheritdoc/>
-    public void SetDistanceField(in DistanceFieldBinding binding)
     {
     }
 

@@ -113,6 +113,7 @@ public sealed partial class GraphicsDevice
         _foreground = false;
         _frameHasPaintedSky = false;
         _shaded = false;
+        ResetGlazingFrame();
         _capturing = true;
         return true;
     }
@@ -168,6 +169,10 @@ public sealed partial class GraphicsDevice
         {
             case ScenePass.Geometry:
                 BeginGeometryPass(scene);
+                break;
+
+            case ScenePass.GlassLayer:
+                BeginGlassLayerPass(scene);
                 break;
 
             case ScenePass.Forward:
@@ -341,6 +346,9 @@ public sealed partial class GraphicsDevice
 
         CloseScenePass();
         RecordShading();
+
+        // Over the finished, lit frame and before the temporal resolve steadies it.
+        RecordGlazingReflection();
         RecordTemporal();
 
         // The next frame draws its own cascades, or has none.
@@ -644,6 +652,8 @@ public sealed partial class GraphicsDevice
             return;
         }
 
+        NoteViewModelLens();
+
         if (_material.Glass)
         {
             DrawGlass(pass, call, ranges, modelView);
@@ -791,6 +801,7 @@ public sealed partial class GraphicsDevice
         DisposeTemporal();
         DisposeShadows();
         DisposeGlazing();
+        DisposeGlazingReflection();
 
         _scenePass?.Dispose();
         _scenePass = null;

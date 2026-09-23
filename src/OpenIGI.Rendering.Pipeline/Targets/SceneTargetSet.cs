@@ -69,6 +69,12 @@ public sealed class SceneTargetSet : IDisposable
         new(SceneTargetId.ThinRelaxedRejection, RhiTextureFormat.Rg8Unorm, SceneTargetScale.Full, Compute),
         new(SceneTargetId.SpatialAntiAliasing, RhiTextureFormat.Rg16Float, SceneTargetScale.Full, Compute),
         new(SceneTargetId.PreviousDepth, RhiTextureFormat.R32Float, SceneTargetScale.Full, Compute, SceneTargetHistory.PingPong),
+
+        // The glazing: the panes' front layer, drawn with a depth buffer of its own, and the reflection
+        // the trace writes from it and the composite reads.
+        new(SceneTargetId.GlassLayer, RhiTextureFormat.Rgba16Float, SceneTargetScale.Full, Attachment),
+        new(SceneTargetId.GlassDepth, RhiTextureFormat.Depth32Float, SceneTargetScale.Full, DepthAttachment),
+        new(SceneTargetId.Reflection, RhiTextureFormat.Rgba16Float, SceneTargetScale.Full, Compute),
     ];
 
     private const RhiTextureUsage Attachment =

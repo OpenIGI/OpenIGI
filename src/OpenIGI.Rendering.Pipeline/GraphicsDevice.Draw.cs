@@ -263,10 +263,14 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
         {
             // While a capture is open a draw belongs to the scene's pass, never to the frame: sent there
             // instead, the view model and the muzzle flash would land on the back buffer for the resolve
-            // to paint over. The glazing's front layer has not moved onto this path, so its draws go.
+            // to paint over.
             if (CurrentPass is ScenePass.Geometry)
             {
                 DrawGeometry(call, modelView, blend);
+            }
+            else if (CurrentPass is ScenePass.GlassLayer)
+            {
+                DrawIntoGlassLayer(call, [], modelView);
             }
             else if (CurrentPass is ScenePass.Forward)
             {
@@ -323,6 +327,10 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             if (CurrentPass is ScenePass.Geometry)
             {
                 DrawGeometryRanges(mesh, ranges, modelView, diffuse, lightmap, blend);
+            }
+            else if (CurrentPass is ScenePass.GlassLayer)
+            {
+                DrawIntoGlassLayer(Call(mesh, 0, 0, diffuse, lightmap, blend), ranges, modelView);
             }
             else if (CurrentPass is ScenePass.Forward)
             {

@@ -108,6 +108,22 @@ public enum SceneTargetId
     /// anything could read it back.
     /// </remarks>
     PreviousDepth,
+
+    /// <summary>The glazing's front layer: the nearest pane's world normal, and its view depth in alpha.</summary>
+    /// <remarks>
+    /// Nought alpha is no pane, which is what the clear leaves; a pane is always at a positive distance.
+    /// </remarks>
+    GlassLayer,
+
+    /// <summary>The front layer's own depth, which is what picks one pane where two cover a pixel.</summary>
+    /// <remarks>
+    /// Its own rather than the scene's: the panes are tested against the scene's depth in the shader and
+    /// against each other here, and a pane must never write the scene's.
+    /// </remarks>
+    GlassDepth,
+
+    /// <summary>What each pane pixel reflects, before it is added to the lit scene.</summary>
+    Reflection,
 }
 
 /// <summary>How a target's size follows the frame's.</summary>

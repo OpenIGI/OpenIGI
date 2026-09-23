@@ -376,6 +376,88 @@ public sealed class GraphicsDeviceTests
     }
 
     [Fact]
+    public void Panes_draw_a_front_layer_whose_reflection_is_traced_and_added_after_the_translucency()
+    {
+        // The game's sequence: geometry, the panes into their own layer, then the forward pass. What a
+        // pane reflects is traced from that layer once the frame is lit and its translucency drawn, and
+        // added to the lit image before anything temporal reads it.
+        using RecordingRhiDevice rhi = new();
+        using GraphicsDevice device = Open(rhi);
+
+        Assert.True(device.BeginSceneCapture(new SceneTargetDescription(64, 64, Deferred: true)));
+
+        device.BeginPass(ScenePass.Geometry);
+        World(device);
+        device.EndPass();
+
+        device.BeginPass(ScenePass.GlassLayer);
+        World(device);
+        device.SetMaterialOverride(new SurfaceMaterial(Glass: true));
+        World(device);
+        device.SetMaterialOverride(SurfaceMaterial.Default);
+        device.EndPass();
+
+        device.BeginPass(ScenePass.Forward);
+        device.SetMaterialOverride(new SurfaceMaterial(Glass: true));
+        World(device);
+        device.SetMaterialOverride(SurfaceMaterial.Default);
+        device.EndPass();
+
+        device.EndSceneCapture();
+        device.SwapBuffers();
+
+        RecordedRhiCommand.BeginRenderPass layer = rhi.CommandsOf<RecordedRhiCommand.BeginRenderPass>()
+            .Single(pass => pass.Label == "glazing.layer");
+
+        // Its own colour and depth, both cleared; and only the pane was drawn into it.
+        Assert.Equal(["GlassLayer"], layer.ColorAttachments);
+        Assert.Equal([true], layer.Clears);
+        Assert.Equal("GlassDepth", layer.DepthAttachment);
+        Assert.Equal(1, DrawsIn(rhi, "glazing.layer"));
+
+        List<string> order = [.. rhi.Commands.Select(command => command switch
+        {
+            RecordedRhiCommand.BeginRenderPass pass => pass.Label,
+            RecordedRhiCommand.BeginComputePass pass => pass.Label,
+            _ => string.Empty,
+        }).Where(label => label.Length > 0)];
+
+        Assert.True(order.IndexOf("glazing.layer") < order.IndexOf("shading"), string.Join(", ", order));
+        Assert.True(order.IndexOf("forward") < order.IndexOf("glazing.reflect"), string.Join(", ", order));
+        Assert.True(order.IndexOf("glazing.reflect") < order.IndexOf("glazing.composite"), string.Join(", ", order));
+
+        RecordedRhiCommand.BeginRenderPass composite = rhi.CommandsOf<RecordedRhiCommand.BeginRenderPass>()
+            .Single(pass => pass.Label == "glazing.composite");
+
+        // Added over the lit image rather than clearing it.
+        Assert.Equal(["Lit"], composite.ColorAttachments);
+        Assert.Equal([false], composite.Clears);
+    }
+
+    [Fact]
+    public void A_frame_with_no_panes_traces_nothing()
+    {
+        using RecordingRhiDevice rhi = new();
+        using GraphicsDevice device = Open(rhi);
+
+        Assert.True(device.BeginSceneCapture(new SceneTargetDescription(64, 64, Deferred: true)));
+
+        device.BeginPass(ScenePass.Geometry);
+        World(device);
+        device.EndPass();
+
+        device.BeginPass(ScenePass.GlassLayer);
+        World(device);
+        device.EndPass();
+
+        device.EndSceneCapture();
+        device.SwapBuffers();
+
+        Assert.DoesNotContain(rhi.CommandsOf<RecordedRhiCommand.BeginComputePass>(), pass => pass.Label == "glazing.reflect");
+        Assert.DoesNotContain(rhi.CommandsOf<RecordedRhiCommand.BeginRenderPass>(), pass => pass.Label == "glazing.composite");
+    }
+
+    [Fact]
     public void A_cascade_draws_what_is_solid_into_its_own_layer()
     {
         // One layer of a depth array per cascade, cleared, and only what is solid casts: a blended draw
