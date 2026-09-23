@@ -620,7 +620,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
             TextureUnits: 16,
             MaxTextureSize: maxTexture,
             SupportsNonPowerOfTwoTextures: true,
-            Renderer: $"Vulkan — {selection.Name}")
+            Renderer: $"Legacy Vulkan — {selection.Name}")
         {
             // Both the deferred capture path and compute are offered only when opted into, while they are
             // finished and validated on the live per-frame path; otherwise the engine takes the same

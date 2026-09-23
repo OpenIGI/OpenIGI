@@ -6,6 +6,8 @@ using OpenIGI.Input;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
+using OpenIGI.UI;
+using OpenIGI.UI.Layout;
 
 namespace OpenIGI.Host;
 
@@ -252,4 +254,40 @@ internal sealed partial class GameHost
         ? FormattableString.Invariant(
             $"mission {request.MissionId} at hour {request.TimeHours:F2} {(pose.Flying ? "flying" : "standing")} at ({pose.Position.X:F2}, {pose.Position.Y:F2}, {pose.Position.Z:F2}) yaw {pose.Yaw:F3} pitch {pose.Pitch:F3}")
         : request.MissionId > 0 ? FormattableString.Invariant($"mission {request.MissionId} at hour {request.TimeHours:F2}") : "the menu";
+
+    /// <summary>Names the renderer drawing the frame, at the top of the screen.</summary>
+    /// <param name="batch">The 2D batch, not begun.</param>
+    /// <remarks>
+    /// Never in a screenshot or a benchmark, whatever <c>r_renderer_label</c> says, so it cannot reach a
+    /// reference capture. See <see cref="RenderCVars.RendererLabel"/>.
+    /// </remarks>
+    private void DrawRendererLabel(SpriteBatch batch)
+    {
+        if (!RenderCVars.RendererLabel.Value
+            || _options.ScreenshotPath is not null
+            || _options.IsBenchmark
+            || _shellBodyFont is not { } font)
+        {
+            return;
+        }
+
+        string text = $"Renderer: {_device.Capabilities.Renderer}  (F10 to switch)";
+        float scale = UiScale.Resolve(_options.UiScale, _window.Width, _window.Height);
+        float size = 13f * scale;
+        float padding = 6f * scale;
+        float width = font.MeasureWidth(text, size);
+        float left = (_window.Width - width) * 0.5f;
+        float top = 6f * scale;
+
+        _device.BeginStageTiming(RenderStage.UserInterface);
+        _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
+        batch.Begin();
+        var painter = new UiPainter(batch, new LayoutContext(_window.Width, _window.Height));
+        painter.FillRect(
+            new UiRect(left - padding, top - (padding * 0.5f), width + (padding * 2f), size + padding),
+            Bgra32.FromRgb(0, 0, 0).WithAlpha(150));
+        painter.DrawText(font, text, new UiVec2(left, top), size, Bgra32.FromRgb(255, 214, 120));
+        batch.End();
+        _device.EndStageTiming();
+    }
 }

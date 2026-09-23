@@ -7,6 +7,7 @@ using OpenIGI.Rendering.Pipeline.Mesh3D;
 using OpenIGI.Rendering.Pipeline.Meshes;
 using OpenIGI.Rendering.Pipeline.Textures;
 using OpenIGI.Rendering.Rhi;
+using OpenIGI.Shaders;
 
 namespace OpenIGI.Rendering.Pipeline;
 
@@ -81,7 +82,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
             TextureUnits: 8,
             MaxTextureSize: device.Limits.MaxTextureDimension2D,
             SupportsNonPowerOfTwoTextures: true,
-            $"{device.AdapterName} (RHI)")
+            $"RHI over {(device.ShaderTarget == ShaderTarget.Wgsl ? "WebGPU" : "Vulkan")} — {device.AdapterName}")
         {
             // The G-buffer, the shading over it, the atmosphere and the resolve: a real mission's frame,
             // agreeing with the Vulkan renderer's under the same lighting model. What it does not draw

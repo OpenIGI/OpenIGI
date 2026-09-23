@@ -115,11 +115,14 @@ public sealed class GraphicsPresetRegistryTests
         // r_day_night_cycle joins them for the same reason the weather does: it is a choice about what
         // the world is doing while you play it, not about how well the world is drawn. A preset naming it
         // would mean picking Ultra silently started the clock, or picking Vanilla silently stopped it.
+        //
+        // r_renderer_label names the renderer drawing the frame, for comparing the two F10 switches
+        // between; whether that name is up is the reader's choice and nothing about the picture's quality.
         string[] preferences =
         [
             "r_weather_enabled", "r_weather_kind", "r_weather_speed",
             "r_storm_intensity", "r_weather_force", "r_day_night_cycle", "r_day_length",
-            "r_vsync", "r_world_briefing",
+            "r_vsync", "r_world_briefing", "r_renderer_label",
         ];
 
         _ = RenderCVars.Lighting;
