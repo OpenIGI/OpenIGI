@@ -1,5 +1,6 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Rendering.Pipeline.Mesh3D;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Shaders;
 
@@ -79,7 +80,11 @@ public sealed class OcclusionQueries : IDisposable
 
         _pipeline = device.CreateRenderPipeline(new RhiRenderPipelineDescriptor(
             _layout,
-            new RhiShaderStage(_module, reflection.EntryPointFor(ShaderStage.Vertex).Name),
+            // Clip space the RHI's way, as the geometry pass draws it.
+            new RhiShaderStage(
+                _module,
+                reflection.EntryPointFor(ShaderStage.Vertex).Name,
+                ShaderConstants.Declared(reflection, Mesh3DConstants.TargetConstants)),
             new RhiShaderStage(_module, reflection.EntryPointFor(ShaderStage.Fragment).Name),
             [],
 
