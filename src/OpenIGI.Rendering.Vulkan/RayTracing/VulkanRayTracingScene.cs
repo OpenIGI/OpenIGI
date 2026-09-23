@@ -159,7 +159,7 @@ internal sealed class VulkanRayTracingScene : IDisposable
     /// Leaves the scene ready to trace against by the end of the command buffer: the closing barrier
     /// makes the build visible to the compute stage, which is where every ray query runs.
     /// </remarks>
-    public void RecordUpdate(CommandBuffer commandBuffer, VulkanQueue queue)
+    public void RecordUpdate(CommandBuffer commandBuffer, ISubmissionClock queue)
     {
         ArgumentNullException.ThrowIfNull(queue);
 

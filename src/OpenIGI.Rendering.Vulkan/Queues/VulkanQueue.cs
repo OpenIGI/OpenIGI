@@ -37,7 +37,7 @@ internal enum VulkanQueueKind
 /// that number.
 /// </para>
 /// </remarks>
-internal sealed unsafe class VulkanQueue : IDisposable
+internal sealed unsafe class VulkanQueue : IDisposable, RayTracing.ISubmissionClock
 {
     private readonly Vk _vk;
     private readonly VulkanDevice _device;

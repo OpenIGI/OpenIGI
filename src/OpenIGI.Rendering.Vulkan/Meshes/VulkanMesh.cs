@@ -23,7 +23,7 @@ namespace OpenIGI.Rendering.Vulkan.Meshes;
 /// refinement.
 /// </para>
 /// </remarks>
-internal sealed unsafe class VulkanMesh : IDisposable
+internal sealed unsafe class VulkanMesh : IDisposable, RayTracing.IRayTracedMesh
 {
     private readonly Vk _vk;
     private readonly VulkanDevice _device;

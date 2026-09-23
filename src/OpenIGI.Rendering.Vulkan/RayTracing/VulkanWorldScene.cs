@@ -222,7 +222,7 @@ internal sealed class VulkanWorldScene : IDisposable
     /// </remarks>
     public void Observe(
         uint meshId,
-        VulkanMesh mesh,
+        IRayTracedMesh mesh,
         in Matrix4f worldTransform,
         in RayTracedSurface surface,
         byte mask = VulkanRayTracingInstance.VisibleToAll)
@@ -411,7 +411,7 @@ internal sealed class VulkanWorldScene : IDisposable
     /// <param name="grew">Receives whether the range set gained an entry, so a built structure is stale.</param>
     /// <returns>Every range known for the mesh, in the order they become geometries in.</returns>
     private List<RayTracedSurface> SurfacesFor(
-        uint meshId, VulkanMesh mesh, in RayTracedSurface surface, out bool grew)
+        uint meshId, IRayTracedMesh mesh, in RayTracedSurface surface, out bool grew)
     {
         if (!_surfaces.TryGetValue(meshId, out List<RayTracedSurface>? surfaces))
         {
@@ -458,7 +458,7 @@ internal sealed class VulkanWorldScene : IDisposable
     /// This is how the terrain is traced. Its owner writes the chunks it drew this frame, at the
     /// positions the vertex stage drew them, into a mesh it hands over here; the placement goes into
     /// the moving tail, so it lasts exactly one frame like any other mover's, and the structure is
-    /// built again whenever the mesh's <see cref="VulkanMesh.ContentVersion"/> says the contents
+    /// built again whenever the mesh's <see cref="IRayTracedMesh.ContentVersion"/> says the contents
     /// changed — a few thousand triangles, so a rebuild is cheaper than the bookkeeping a refit would
     /// need. A caster that has not changed keeps its structure and costs a placement.
     /// </para>
@@ -467,7 +467,7 @@ internal sealed class VulkanWorldScene : IDisposable
     /// of zero, which a rebuild does not change, so nothing a frame in flight reads is overwritten.
     /// </para>
     /// </remarks>
-    public void ObserveCaster(uint meshId, VulkanMesh mesh, in Matrix4f worldTransform, int indexCount)
+    public void ObserveCaster(uint meshId, IRayTracedMesh mesh, in Matrix4f worldTransform, int indexCount)
     {
         ArgumentNullException.ThrowIfNull(mesh);
 
@@ -534,7 +534,7 @@ internal sealed class VulkanWorldScene : IDisposable
         _instancesChanged = true;
     }
 
-    public void Record(CommandBuffer commandBuffer, VulkanQueue queue)
+    public void Record(CommandBuffer commandBuffer, ISubmissionClock queue)
     {
         _frame++;
         _newThisFrame = 0;
@@ -759,7 +759,7 @@ internal sealed class VulkanWorldScene : IDisposable
     /// touching them again is a few bytes per rebuild against having to fence a host write behind the
     /// frames that might read it.
     /// </remarks>
-    private Geometry BuildGeometry(VulkanMesh mesh, List<RayTracedSurface> surfaces, bool allowUpdate = false)
+    private Geometry BuildGeometry(IRayTracedMesh mesh, List<RayTracedSurface> surfaces, bool allowUpdate = false)
     {
         VulkanTriangleGeometry[] triangles = new VulkanTriangleGeometry[surfaces.Count];
         for (int i = 0; i < surfaces.Count; i++)
@@ -783,7 +783,7 @@ internal sealed class VulkanWorldScene : IDisposable
     /// <param name="mesh">The mesh the ranges belong to.</param>
     /// <param name="surfaces">The ranges, in geometry order.</param>
     /// <returns>The index of the first record, which is what the instance carries as its custom index.</returns>
-    private int WriteRecords(VulkanMesh mesh, List<RayTracedSurface> surfaces)
+    private int WriteRecords(IRayTracedMesh mesh, List<RayTracedSurface> surfaces)
     {
         if (_recordCount + surfaces.Count > MaxRecords)
         {

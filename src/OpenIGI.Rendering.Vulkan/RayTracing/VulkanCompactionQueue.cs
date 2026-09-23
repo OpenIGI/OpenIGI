@@ -123,7 +123,7 @@ internal sealed unsafe class VulkanCompactionQueue : IDisposable
     /// </remarks>
     public void Record(
         CommandBuffer commandBuffer,
-        VulkanQueue queue,
+        ISubmissionClock queue,
         Action<VulkanAccelerationStructure> retire)
     {
         ArgumentNullException.ThrowIfNull(queue);
@@ -202,7 +202,7 @@ internal sealed unsafe class VulkanCompactionQueue : IDisposable
         _vk.DestroyQueryPool(_device.Device, _queryPool, null);
     }
 
-    private void RecordQueries(CommandBuffer commandBuffer, VulkanQueue queue)
+    private void RecordQueries(CommandBuffer commandBuffer, ISubmissionClock queue)
     {
         ulong completed = queue.CompletedValue;
 
