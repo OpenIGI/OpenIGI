@@ -194,6 +194,14 @@ public sealed class DeferredLighting : IDisposable
         BindOrStandIn("uProbeDistance", distance);
     }
 
+    /// <summary>Points the shading at this frame's fog volume, or at nothing.</summary>
+    /// <param name="volume">The integrated volume, or null for a frame with no fog.</param>
+    /// <remarks>
+    /// With none, a stand-in fills the slot and the lighting block's slice distribution says there is no
+    /// fog to read, so the shading never samples it.
+    /// </remarks>
+    public void BindFog(IRhiTextureView? volume) => BindOrStandIn("uFogVolume", volume);
+
     private void BindOrStandIn(string name, IRhiTextureView? view)
     {
         ShaderBinding binding = Reflection.Bindings.First(slot => string.Equals(slot.Name, name, StringComparison.Ordinal));

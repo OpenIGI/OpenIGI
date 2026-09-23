@@ -114,14 +114,6 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
-    public void SetVolumetricFog(
-        in VolumetricFogSettings fog,
-        Vector3f cameraPosition,
-        ReadOnlySpan<LocalFogVolume> volumes)
-    {
-    }
-
-    /// <inheritdoc/>
     public TextureHandle CreateCubeTexture(int edge, string name) => throw Unsupported(nameof(CreateCubeTexture));
 
     /// <inheritdoc/>

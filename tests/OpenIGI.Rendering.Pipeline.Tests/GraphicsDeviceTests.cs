@@ -35,7 +35,54 @@ public sealed class GraphicsDeviceTests
         Assert.False(device.Capabilities.SupportsRayQuery);
 
         Assert.NotEmpty(device.Capabilities.UnimplementedSettings);
-        Assert.Contains("r_volumetric_fog", device.Capabilities.UnimplementedSettings);
+        Assert.Contains("r_motion_blur", device.Capabilities.UnimplementedSettings);
+        Assert.DoesNotContain("r_fog_quality", device.Capabilities.UnimplementedSettings);
+    }
+
+    [Fact]
+    public void Fog_is_lit_and_integrated_before_the_shading_reads_it()
+    {
+        using RecordingRhiDevice rhi = new();
+        using GraphicsDevice device = Open(rhi);
+        device.SetVolumetricFog(new VolumetricFogSettings(Density: 0.014f), Vector3f.Zero, []);
+
+        Assert.True(device.BeginSceneCapture(new SceneTargetDescription(64, 64, Deferred: true)));
+        device.BeginPass(ScenePass.Geometry);
+        World(device);
+        device.EndPass();
+        device.EndSceneCapture();
+        device.SwapBuffers();
+
+        List<string> order = [.. rhi.Commands.Select(command => command switch
+        {
+            RecordedRhiCommand.BeginRenderPass pass => pass.Label,
+            RecordedRhiCommand.BeginComputePass pass => pass.Label,
+            RecordedRhiCommand.SetPipeline pipeline => pipeline.Label,
+            _ => string.Empty,
+        }).Where(label => label.Length > 0)];
+
+        // Scattered, then integrated, both before the shading samples the result.
+        int scatter = order.FindIndex(label => label.Contains("FogScatter", StringComparison.Ordinal));
+        int integrate = order.FindIndex(label => label.Contains("FogIntegrate", StringComparison.Ordinal));
+        Assert.True(scatter >= 0 && integrate > scatter, string.Join(", ", order));
+        Assert.True(integrate < order.IndexOf("shading"), string.Join(", ", order));
+    }
+
+    [Fact]
+    public void No_fog_means_no_fog_dispatch()
+    {
+        using RecordingRhiDevice rhi = new();
+        using GraphicsDevice device = Open(rhi);
+        device.SetVolumetricFog(VolumetricFogSettings.Off, Vector3f.Zero, []);
+
+        Assert.True(device.BeginSceneCapture(new SceneTargetDescription(64, 64, Deferred: true)));
+        device.BeginPass(ScenePass.Geometry);
+        World(device);
+        device.EndPass();
+        device.EndSceneCapture();
+        device.SwapBuffers();
+
+        Assert.DoesNotContain(rhi.CommandsOf<RecordedRhiCommand.BeginComputePass>(), pass => pass.Label == "fog");
     }
 
     [Theory]

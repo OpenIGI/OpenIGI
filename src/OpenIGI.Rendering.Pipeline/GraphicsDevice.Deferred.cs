@@ -457,6 +457,7 @@ public sealed partial class GraphicsDevice
 
         RecordSky();
         RecordOcclusion(scene);
+        RecordFog(scene);
 
         Span<float> gi = stackalloc float[DeferredLightingParameters.GiFloats];
         Span<float> lamps = stackalloc float[DeferredLampBlock.Floats];
@@ -464,7 +465,7 @@ public sealed partial class GraphicsDevice
 
         DeferredLightingParameters.WriteGi(
             gi,
-            WithGlobalIllumination(WithShadows(LightingState())),
+            WithFog(WithGlobalIllumination(WithShadows(LightingState()))),
             CascadeSplits,
             CascadeMatrices);
         DeferredLampBlock.Write(lamps, new DeferredLampState(_frameCounter), []);
@@ -482,6 +483,7 @@ public sealed partial class GraphicsDevice
 
         shading.BindFrame(scene, FrameSlot, gi, lamps);
         BindGlobalIllumination();
+        BindFog();
 
         using IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             [new RhiColorAttachment(scene.View(SceneTargetId.Lit), RhiLoadOp.Clear, RhiStoreOp.Store, RhiClearColor.Transparent)],
@@ -544,7 +546,7 @@ public sealed partial class GraphicsDevice
     /// <remarks>
     /// Most of it is switched off, because most of what it describes has not moved onto this path: there
     /// is no probe field, no screen atlas, no occlusion, no cascades, no wetness and no fog volume. Each
-    /// becomes a line here on the day its pass lands, and until then the shading reads the value that
+    /// becomes a line here on the day its pass lands (the fog's is WithFog), and until then the shading reads the value that
     /// says "not this frame" rather than a stand-in's contents.
     /// </remarks>
     private DeferredLightingState LightingState() => new(
@@ -802,6 +804,7 @@ public sealed partial class GraphicsDevice
         DisposeShadows();
         DisposeGlazing();
         DisposeGlazingReflection();
+        DisposeFog();
 
         _scenePass?.Dispose();
         _scenePass = null;
