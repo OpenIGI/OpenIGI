@@ -213,53 +213,95 @@ using (window)
     // draws everything the device below it does. OPENIGI_RENDERER=webgpu runs that renderer over WebGPU
     // (wgpu-native), the browser's API, for A/B against Vulkan on the same machine.
     string? renderer = Environment.GetEnvironmentVariable("OPENIGI_RENDERER");
-    bool useRhi = string.Equals(renderer, "rhi", StringComparison.OrdinalIgnoreCase);
-    bool useWebGpu = string.Equals(renderer, "webgpu", StringComparison.OrdinalIgnoreCase);
+    HostOptions runOptions = options;
 
-    using VulkanRhi? rhi = useRhi
-        ? VulkanRhi.CreateForSurface(
-            new VulkanSurfaceProvider(window.VkSurface!),
-            width,
-            height,
-            vsync: true,
-            logger,
-            vulkanValidation)
-        : null;
-
-    using WebGpuRhiDevice? webGpu = useWebGpu
-        ? WebGpuWindow.Create(window, width, height, vsync: true)
-        : null;
-
-    IRhiDevice? rhiDevice = rhi is not null ? rhi.Device : webGpu;
-
-    // WebGPU reports its timestamps in nanoseconds already.
-    using IGraphicsDevice device = rhiDevice is not null
-        ? new GraphicsDevice(
-            rhiDevice,
-            displayMode,
-            rhi?.TimestampPeriodNanoseconds ?? 1.0,
-            options.ScreenshotPath is not null)
-        : new VulkanGraphicsDevice(
-            new VulkanSurfaceProvider(window.VkSurface!),
-            displayMode,
-            vulkanValidation,
-            vulkanDeferred,
-            options.ScreenshotPath is not null,
-            logger);
-
-    if (rhiDevice is not null)
+    // F10 (r_switch_renderer) ends the game to change renderer rather than to quit. Everything the game
+    // holds on the GPU belongs to the renderer that made it, so the game is built again, on the other
+    // renderer and the same window, and put back where it was.
+    while (true)
     {
-        logger.Information(
-            "Renderer",
-            $"Drawing through the RHI over {(webGpu is not null ? "WebGPU" : "Vulkan")} on {rhiDevice.AdapterName}.");
+        int code = RunOnce(renderer, runOptions, out RendererSwitch? switched);
+        if (switched is null || window.IsClosing)
+        {
+            return code;
+        }
+
+        renderer = RendererSwitchOrder.Next(renderer);
+        runOptions = runOptions with
+        {
+            StartMission = switched.MissionId,
+            PlayCutscenes = false,
+            Resume = switched,
+
+            // What the first run was scripted to do has been done: a -runat that switched renderer would
+            // switch again, and -entrycam would press Play over a mission already being played.
+            DeferredCommands = [],
+            EntryCamMission = 0,
+
+            // And where it opened the camera: the resumed pose decides where the view is, and a flight
+            // left in place would fly its path again from the start.
+            CameraPosition = null,
+            CameraEnd = null,
+            CameraYawEnd = null,
+            CameraPitchEnd = null,
+            FlightFrames = null,
+            CameraShake = 0f,
+        };
+
+        logger.Information("Renderer", $"Switching to the {RendererSwitchOrder.Describe(renderer)} renderer.");
     }
 
-    // The composition root is the only place that names a concrete backend: the graphics device
-    // above, and the audio factory here. GameHost itself sees only the abstractions.
-    using GameHost game = new(
-        platform, window, device, OpenAlAudioDeviceFactory.Instance, ThreadPoolWorkScheduler.Instance, AlwaysReadyLoadGate.Instance,
-        TitleCatalog.Catalog, titleRuntime.Title,
-        fileSystem, options, gamePath, logger);
-    return game.Run();
+    int RunOnce(string? renderer, HostOptions runOptions, out RendererSwitch? switched)
+    {
+        bool useRhi = string.Equals(renderer, "rhi", StringComparison.OrdinalIgnoreCase);
+        bool useWebGpu = string.Equals(renderer, "webgpu", StringComparison.OrdinalIgnoreCase);
+
+        using VulkanRhi? rhi = useRhi
+            ? VulkanRhi.CreateForSurface(
+                new VulkanSurfaceProvider(window.VkSurface!),
+                width,
+                height,
+                vsync: true,
+                logger,
+                vulkanValidation)
+            : null;
+
+        using WebGpuRhiDevice? webGpu = useWebGpu
+            ? WebGpuWindow.Create(window, width, height, vsync: true)
+            : null;
+
+        IRhiDevice? rhiDevice = rhi is not null ? rhi.Device : webGpu;
+
+        // WebGPU reports its timestamps in nanoseconds already.
+        using IGraphicsDevice device = rhiDevice is not null
+            ? new GraphicsDevice(
+                rhiDevice,
+                displayMode,
+                rhi?.TimestampPeriodNanoseconds ?? 1.0,
+                runOptions.ScreenshotPath is not null)
+            : new VulkanGraphicsDevice(
+                new VulkanSurfaceProvider(window.VkSurface!),
+                displayMode,
+                vulkanValidation,
+                vulkanDeferred,
+                runOptions.ScreenshotPath is not null,
+                logger);
+
+        logger.Information(
+            "Renderer",
+            rhiDevice is not null
+                ? $"Drawing through the RHI over {(webGpu is not null ? "WebGPU" : "Vulkan")} on {rhiDevice.AdapterName}."
+                : "Drawing through the legacy Vulkan renderer.");
+
+        // The composition root is the only place that names a concrete backend: the graphics device
+        // above, and the audio factory here. GameHost itself sees only the abstractions.
+        using GameHost game = new(
+            platform, window, device, OpenAlAudioDeviceFactory.Instance, ThreadPoolWorkScheduler.Instance, AlwaysReadyLoadGate.Instance,
+            TitleCatalog.Catalog, titleRuntime.Title,
+            fileSystem, runOptions, gamePath, logger);
+        int code = game.Run();
+        switched = game.RendererSwitchRequest;
+        return code;
+    }
 }
 }

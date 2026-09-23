@@ -824,6 +824,7 @@ internal sealed partial class GameHost : IDisposable
         RegisterLampCommands(console.System);
         RegisterImpactCommands(console.System);
         RegisterCameraCommands(console.System);
+        RegisterRendererSwitchCommand(console.System);
         RegisterOverrideCommands(console.System);
 
         console.Start(_fileSystem, _options.StartupCommands, useSavedSettings: !_options.Lockstep);
@@ -1591,6 +1592,7 @@ internal sealed partial class GameHost : IDisposable
             if (_options.StartMission > 0)
             {
                 // Straight into the level, with the shell built and waiting behind Escape rather than shown.
+                ResumeConditions();
                 StartMission(_options.StartMission);
             }
             else

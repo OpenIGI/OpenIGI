@@ -790,6 +790,13 @@ public readonly record struct HostOptions(
     /// </summary>
     public bool BakeAll { get; init; }
 
+    /// <summary>Gets where to pick the game up, when this run follows a switch of renderer.</summary>
+    /// <remarks>
+    /// Not a command-line option: the composition root sets it for the run it starts after the last one
+    /// ended to change renderer. Its mission is <see cref="StartMission"/>; this adds the hour and the pose.
+    /// </remarks>
+    public RendererSwitch? Resume { get; init; }
+
     /// <summary>Gets the usage text.</summary>
     /// <returns>A short description of every option.</returns>
     public static string Usage =>

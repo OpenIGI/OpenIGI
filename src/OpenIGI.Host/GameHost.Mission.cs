@@ -2040,6 +2040,9 @@ internal sealed partial class GameHost
                 // Walking is what starting a mission means. The free camera is the debugging tool, so
                 // it is the thing you switch to rather than the thing you start in.
                 _playerMode = !_options.StartFlying;
+
+                // After a switch of renderer, back where the view was before it.
+                ResumePose();
                 _logger.Information(
                     "Player",
                     _playerMode
