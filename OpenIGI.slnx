@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/apps/">
+    <Project Path="apps/OpenIGI.Composition/OpenIGI.Composition.csproj" />
     <Project Path="apps/OpenIGI.Desktop/OpenIGI.Desktop.csproj" />
     <Project Path="src/OpenIGI.Audio.OpenAL/OpenIGI.Audio.OpenAL.csproj" />
     <Project Path="src/OpenIGI.Audio/OpenIGI.Audio.csproj" />

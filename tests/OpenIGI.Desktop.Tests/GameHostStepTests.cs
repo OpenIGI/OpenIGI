@@ -1,4 +1,5 @@
 using OpenIGI.Audio;
+using OpenIGI.Composition;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Threading;
 using OpenIGI.Engine.Configuration;
@@ -93,7 +94,7 @@ public sealed class GameHostStepTests : IDisposable
     private GameHost Host(RecordingGraphicsDevice device, HeadlessGameWindow window, params string[] args)
     {
         string root = GameData.RequireRoot();
-        IGameTitleRuntime runtime = DesktopTitleCatalog.Default;
+        IGameTitleRuntime runtime = TitleCatalog.Default;
         IIgiLogger logger = NullLogger.Instance;
 
         VirtualFileSystem fileSystem = new(logger);
@@ -111,7 +112,7 @@ public sealed class GameHostStepTests : IDisposable
             new RecordingAudioFactory(),
             InlineWorkScheduler.Instance,
             AlwaysReadyLoadGate.Instance,
-            DesktopTitleCatalog.Catalog,
+            TitleCatalog.Catalog,
             runtime.Title,
             fileSystem,
             options,

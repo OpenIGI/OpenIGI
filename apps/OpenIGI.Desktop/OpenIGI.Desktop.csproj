@@ -37,6 +37,7 @@
     <ProjectReference Include="..\..\src\OpenIGI.Input\OpenIGI.Input.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Platform\OpenIGI.Platform.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Platform.Desktop\OpenIGI.Platform.Desktop.csproj" />
+    <ProjectReference Include="..\OpenIGI.Composition\OpenIGI.Composition.csproj" />
   </ItemGroup>
 
   <ItemGroup>

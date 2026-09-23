@@ -12,9 +12,9 @@ using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Titles;
 using OpenIGI.Presentation;
 
-namespace OpenIGI.Desktop;
+namespace OpenIGI.Composition;
 
-/// <summary>The titles this build can run.</summary>
+/// <summary>The titles a build can run, shared by every host that runs them.</summary>
 /// <remarks>
 /// <para>
 /// <b>The only place that names more than one game.</b> Every layering rule about titles exists to keep
@@ -27,15 +27,31 @@ namespace OpenIGI.Desktop;
 /// graph.
 /// </para>
 /// </remarks>
-internal static class DesktopTitleCatalog
+public static class TitleCatalog
 {
     /// <summary>Gets the catalogue the host resolves titles through.</summary>
     /// <remarks>
     /// The same four lookups below, bundled per title, so the host can be handed a different
     /// game's set while it is running. Everything here is a shared instance and a path read from
     /// the environment, so resolving is free and can happen on the frame a player picks a game.
+    /// Made on first use: an initialiser would run before <see cref="All"/>'s, which is declared below it.
     /// </remarks>
-    public static ITitleCatalog Catalog { get; } = new HostCatalog();
+    public static ITitleCatalog Catalog => field ??= new HostCatalog(All, DiscoverDataRoot);
+
+    /// <summary>Gets a catalogue of one title, installed at a root the host already knows.</summary>
+    /// <param name="runtime">The title.</param>
+    /// <param name="dataRoot">Where its data is.</param>
+    /// <returns>The catalogue.</returns>
+    /// <remarks>
+    /// For a host with nothing to discover: a browser's installation is the folder the person picked,
+    /// put where the page decided, and there is no second game beside it to switch to.
+    /// </remarks>
+    public static ITitleCatalog Rooted(IGameTitleRuntime runtime, string dataRoot)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentException.ThrowIfNullOrEmpty(dataRoot);
+        return new HostCatalog([runtime], _ => dataRoot);
+    }
 
     /// <summary>Gets every title this build knows how to run.</summary>
     public static IReadOnlyList<IGameTitleRuntime> All { get; } =
@@ -242,18 +258,18 @@ internal static class DesktopTitleCatalog
     /// list, the path variable and the four lookups are all already here, and a separate implementation
     /// would be a second place naming both games.
     /// </remarks>
-    private sealed class HostCatalog : ITitleCatalog
+    private sealed class HostCatalog(
+        IReadOnlyList<IGameTitleRuntime> runtimes,
+        Func<GameTitle, string> dataRoot) : ITitleCatalog
     {
-        // Computed rather than stored: a static field initialiser here runs while DesktopTitleCatalog's
-        // own statics are still being initialised, and All was null when it did.
-        public IReadOnlyList<GameTitle> Titles => [.. All.Select(static r => r.Title)];
+        public IReadOnlyList<GameTitle> Titles => [.. runtimes.Select(static r => r.Title)];
 
         public bool TryResolve(GameTitle title, [NotNullWhen(true)] out TitleBinding? binding)
         {
             ArgumentNullException.ThrowIfNull(title);
             binding = null;
 
-            foreach (IGameTitleRuntime runtime in All)
+            foreach (IGameTitleRuntime runtime in runtimes)
             {
                 if (runtime.Title != title)
                 {
@@ -265,13 +281,7 @@ internal static class DesktopTitleCatalog
                     PresentationFor(title),
                     WorldBuilderFor(title),
                     log => MissionCatalogueFor(title, log),
-
-                    // The title's own variable, then a probe of the places a build is normally dropped
-                    // into. -game is the active title's alone and the composition root applies it, since
-                    // it cannot mean two installations at once.
-                    Environment.GetEnvironmentVariable(GamePathVariableFor(title))
-                        ?? GameProfileResolver.DiscoverDataRoot(SearchPaths, title)
-                        ?? string.Empty);
+                    dataRoot(title));
 
                 return true;
             }
@@ -279,6 +289,17 @@ internal static class DesktopTitleCatalog
             return false;
         }
     }
+
+    /// <summary>Where a title is installed, as a desktop finds it.</summary>
+    /// <remarks>
+    /// The title's own variable, then a probe of the places a build is normally dropped into. -game is
+    /// the active title's alone and the composition root applies it, since it cannot mean two
+    /// installations at once.
+    /// </remarks>
+    private static string DiscoverDataRoot(GameTitle title) =>
+        Environment.GetEnvironmentVariable(GamePathVariableFor(title))
+            ?? GameProfileResolver.DiscoverDataRoot(SearchPaths, title)
+            ?? string.Empty;
 
     /// <summary>Where a title is looked for when its own variable says nothing.</summary>
     /// <remarks>

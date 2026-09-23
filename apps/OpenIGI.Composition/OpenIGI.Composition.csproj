@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- What every host composes the same way: the titles a build runs, and the lookups that turn one
+       into the pieces the game host is handed. The desktop and the browser each name their own window,
+       graphics and sound, and share this. -->
+  <PropertyGroup>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Engine\OpenIGI.Engine.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Game\OpenIGI.Game.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Game.Igi1\OpenIGI.Game.Igi1.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Game.Igi2\OpenIGI.Game.Igi2.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Host\OpenIGI.Host.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Presentation\OpenIGI.Presentation.csproj" />
+  </ItemGroup>
+
+</Project>

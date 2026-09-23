@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Audio.OpenAL;
+using OpenIGI.Composition;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Threading;
@@ -89,16 +90,16 @@ string? probed = null;
 
 if (options.Title is { } requestedTitle)
 {
-    if (!DesktopTitleCatalog.TryResolve(requestedTitle, out titleRuntime))
+    if (!TitleCatalog.TryResolve(requestedTitle, out titleRuntime))
     {
         Console.Error.WriteLine($"'{requestedTitle}' is not a game this build runs.");
-        Console.Error.WriteLine($"  -title {DesktopTitleCatalog.KnownTitleIds}");
+        Console.Error.WriteLine($"  -title {TitleCatalog.KnownTitleIds}");
         return 2;
     }
 }
 else
 {
-    titleRuntime = DesktopTitleCatalog.Probe(searched, out probed) ?? DesktopTitleCatalog.Default;
+    titleRuntime = TitleCatalog.Probe(searched, out probed) ?? TitleCatalog.Default;
 }
 
 GameTitle title = titleRuntime.Title;
@@ -107,7 +108,7 @@ GameTitle title = titleRuntime.Title;
 // executable. Per title, because a machine may have both installed and one variable cannot say where
 // two of them are.
 string? gamePath = options.GamePath
-    ?? Environment.GetEnvironmentVariable(DesktopTitleCatalog.GamePathVariableFor(title))
+    ?? Environment.GetEnvironmentVariable(TitleCatalog.GamePathVariableFor(title))
     ?? probed
     ?? GameProfileResolver.DiscoverDataRoot(searched, title);
 
@@ -117,9 +118,9 @@ if (string.IsNullOrWhiteSpace(gamePath))
     Console.Error.WriteLine();
     Console.Error.WriteLine($"Put OpenIGI in the folder that holds {title.SignatureFile}, or point it at one:");
     Console.Error.WriteLine("  -game <dir>");
-    Console.Error.WriteLine($"  {DesktopTitleCatalog.GamePathVariableFor(title)}=<dir>");
+    Console.Error.WriteLine($"  {TitleCatalog.GamePathVariableFor(title)}=<dir>");
     Console.Error.WriteLine();
-    Console.Error.WriteLine($"To run a different game: -title {DesktopTitleCatalog.KnownTitleIds}");
+    Console.Error.WriteLine($"To run a different game: -title {TitleCatalog.KnownTitleIds}");
     Console.Error.WriteLine();
     Console.Error.WriteLine("Looked in:");
 
@@ -257,7 +258,7 @@ using (window)
     // above, and the audio factory here. GameHost itself sees only the abstractions.
     using GameHost game = new(
         platform, window, device, OpenAlAudioDeviceFactory.Instance, ThreadPoolWorkScheduler.Instance, AlwaysReadyLoadGate.Instance,
-        DesktopTitleCatalog.Catalog, titleRuntime.Title,
+        TitleCatalog.Catalog, titleRuntime.Title,
         fileSystem, options, gamePath, logger);
     return game.Run();
 }
