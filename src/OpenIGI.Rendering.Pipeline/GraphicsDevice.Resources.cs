@@ -1,5 +1,9 @@
-﻿using OpenIGI.Core.Graphics;
+﻿using System.Runtime.InteropServices;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Rendering.Pipeline.Mesh3D;
+using OpenIGI.Rendering.Pipeline.Meshes;
+using OpenIGI.Rendering.Pipeline.Targets;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Shaders;
 
@@ -154,6 +158,19 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// The Vulkan renderer's glow, drawn into whichever pass is open: the forward pass over the lit image
+    /// when a scene is being captured, the frame itself on the direct path. Anywhere else -- the geometry
+    /// pass, a card capture -- there is nothing to mark and the call does nothing, as it does there.
+    /// </para>
+    /// <para>
+    /// A mask lays the model's silhouette into depth just inside the near plane; then a stack of shells,
+    /// widest and faintest first, draws the model pushed outwards in screen space, each asked only for the
+    /// opacity the rings outside it have not already given, so the stack adds up to a falloff rather than
+    /// a band. The numbers are the Vulkan renderer's.
+    /// </para>
+    /// </remarks>
     public void DrawOutline(
         MeshHandle mesh,
         ReadOnlySpan<MeshDrawRange> ranges,
@@ -162,6 +179,143 @@ public sealed partial class GraphicsDevice
         float radius,
         bool throughWalls)
     {
+        ThrowIfDisposed();
+
+        RhiMesh resource = Resolve(mesh);
+
+        if (ranges.IsEmpty || radius <= 0f || colour.A == 0 || CapturingCards)
+        {
+            return;
+        }
+
+        foreach (MeshDrawRange range in ranges)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(range.IndexOffset);
+            ArgumentOutOfRangeException.ThrowIfNegative(range.IndexCount);
+
+            if (range.IndexOffset + range.IndexCount > resource.IndexCapacity)
+            {
+                throw new ArgumentException(
+                    $"Indices {range.IndexOffset}..{range.IndexOffset + range.IndexCount} lie outside the mesh.",
+                    nameof(ranges));
+            }
+        }
+
+        IRhiRenderPassEncoder pass;
+        RhiTextureFormat colourFormat;
+        RhiTextureFormat depthFormat;
+        float viewportWidth;
+        float viewportHeight;
+
+        if (_capturing)
+        {
+            if (CurrentPass is not ScenePass.Forward || _scenePass is not { } forward || _scene is not { } scene)
+            {
+                return;
+            }
+
+            pass = forward;
+            colourFormat = SceneTargetSet.FormatOf(SceneTargetId.Lit);
+            depthFormat = SceneTargetSet.FormatOf(SceneTargetId.Depth);
+
+            // Measured against the scene's own size, under a render scale, so a rim is the pixels it says.
+            viewportWidth = scene.Width;
+            viewportHeight = scene.Height;
+        }
+        else
+        {
+            pass = Pass();
+            colourFormat = PresentFormat;
+            depthFormat = DepthFormat;
+            viewportWidth = _viewport.Width > 0 ? _viewport.Width : CurrentMode.Width;
+            viewportHeight = _viewport.Height > 0 ? _viewport.Height : CurrentMode.Height;
+        }
+
+        viewportWidth = MathF.Max(1f, viewportWidth);
+        viewportHeight = MathF.Max(1f, viewportHeight);
+
+        // A fixed-pixel rim, capped against the subject's own scale -- a third of a metre at its distance --
+        // so a soldier sixty metres off is outlined rather than drowned in a lozenge of glow.
+        float viewDistance = MathF.Max(MathF.Abs(modelView.M34), 0.1f);
+        float metrePixels = MathF.Abs(_projection.M22) * viewportHeight * 0.5f / viewDistance;
+        float width = MathF.Min(radius, MathF.Max(metrePixels * 0.35f, 1f));
+
+        // Written into the scene-referred lit image, which the resolve then exposes: divided by that
+        // exposure so the marker lands at the colour it was asked for, as the lit rig does. One on the
+        // direct path, whose target already means what it says.
+        float exposure = SceneExposure;
+
+        Span<float> push = stackalloc float[OutlinePipelineCache.PushDataBytes / sizeof(float)];
+        (_projection * modelView).CopyColumnMajorTo(push[..16]);
+        push[24] = viewportWidth;
+        push[25] = viewportHeight;
+
+        OutlinePipelineCache pipelines = _outlines ??= new OutlinePipelineCache(_device);
+
+        pass.SetVertexBuffer(0, resource.VertexBuffer);
+        pass.SetVertexBuffer(1, resource.PreviousVertexBuffer);
+        pass.SetIndexBuffer(resource.IndexBuffer, RhiIndexFormat.Uint16);
+        resource.MarkPoseSlotsBound(_frameCounter);
+
+        // The mask: the model where it really is, pinned just inside the near plane.
+        pass.SetPipeline(pipelines.For(colourFormat, depthFormat, OutlinePass.Mask));
+        push[21] = _poseBlend;
+        push[22] = 1f;
+        push[23] = OutlineMaskDepth;
+        pass.SetPushData(MemoryMarshal.AsBytes(push));
+        DrawOutlineRanges(pass, ranges);
+
+        // Cull whichever facing the frame is KEEPING, so each shell adds one layer and not two.
+        OutlinePass shell = _cullMode == CullMode.Clockwise ? OutlinePass.ShellCullBack : OutlinePass.ShellCullFront;
+        pass.SetPipeline(pipelines.For(colourFormat, depthFormat, shell));
+
+        // Pinned, the shells clear any wall in the way; at their own depth the world occludes them.
+        push[22] = throughWalls ? 1f : 0f;
+        push[23] = OutlineGlowDepth;
+
+        float covered = 0f;
+
+        for (int ring = GlowShells; ring >= 1; ring--)
+        {
+            float fraction = ring / (float)GlowShells;
+            float wanted = MathF.Pow(1f - fraction + (1f / GlowShells), GlowFalloff);
+            float step = Math.Clamp((wanted - covered) / MathF.Max(1e-3f, 1f - covered), 0f, 1f);
+            covered = wanted;
+
+            push[16] = colour.R / 255f / exposure;
+            push[17] = colour.G / 255f / exposure;
+            push[18] = colour.B / 255f / exposure;
+            push[19] = step * (colour.A / 255f);
+            push[20] = width * fraction;
+
+            pass.SetPushData(MemoryMarshal.AsBytes(push));
+            DrawOutlineRanges(pass, ranges);
+        }
+    }
+
+    /// <summary>How many shells the glow is built from.</summary>
+    private const int GlowShells = 8;
+
+    /// <summary>How sharply the glow fades from the silhouette outwards; above one it hugs the model.</summary>
+    private const float GlowFalloff = 2.5f;
+
+    /// <summary>The depth the mask is pinned to: just inside the near plane, never on it.</summary>
+    private const float OutlineMaskDepth = 1f - 1e-5f;
+
+    /// <summary>The depth a see-through shell is pinned to: a hair behind the mask, so it loses to it.</summary>
+    private const float OutlineGlowDepth = 1f - 1e-4f;
+
+    private OutlinePipelineCache? _outlines;
+
+    private static void DrawOutlineRanges(IRhiRenderPassEncoder pass, ReadOnlySpan<MeshDrawRange> ranges)
+    {
+        foreach (MeshDrawRange range in ranges)
+        {
+            if (range.IndexCount > 0)
+            {
+                pass.DrawIndexed(range.IndexCount, 1, range.IndexOffset);
+            }
+        }
     }
 
     /// <inheritdoc/>

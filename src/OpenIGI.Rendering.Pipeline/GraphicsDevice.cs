@@ -333,6 +333,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         DisposeCompute();
         _profiler.Dispose();
         _occlusion.Dispose();
+        _outlines?.Dispose();
         _cubeGroup.Dispose();
         _cube.Dispose();
         _cubeSampler.Dispose();
