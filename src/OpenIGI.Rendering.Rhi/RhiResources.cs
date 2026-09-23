@@ -223,6 +223,10 @@ public enum RhiAddressMode
 /// <param name="LodMin">The lowest mip level it will read.</param>
 /// <param name="LodMax">The highest mip level it will read.</param>
 /// <param name="Label">A name for captures and diagnostics.</param>
+/// <param name="MipLodBias">
+/// How many levels the mip selection is pushed by; negative is sharper. Honoured where the adapter
+/// offers it -- WebGPU has no such sampler state and samples unbiased.
+/// </param>
 public readonly record struct RhiSamplerDescriptor(
     RhiFilter MinFilter = RhiFilter.Linear,
     RhiFilter MagFilter = RhiFilter.Linear,
@@ -234,4 +238,5 @@ public readonly record struct RhiSamplerDescriptor(
     RhiCompare? Compare = null,
     float LodMin = 0f,
     float LodMax = 1000f,
-    string Label = "");
+    string Label = "",
+    float MipLodBias = 0f);

@@ -263,7 +263,10 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
             Compare: null,
             LodMin: 0f,
             LodMax: 1000f,
-            $"{filter}-{address}");
+            $"{filter}-{address}",
+
+            // The Vulkan renderer's bias, on the same condition: only where there are levels to choose.
+            MipLodBias: description.MipLevels > 1 ? TextureLodBias.FromSettings() : 0f);
 
         if (_samplers.TryGetValue(wanted, out IRhiSampler? existing))
         {

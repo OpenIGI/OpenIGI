@@ -226,15 +226,7 @@ public sealed partial class VulkanGraphicsDevice
     /// into the preset, for the cut-outs to sample correctly at the new resolution.
     /// </para>
     /// </remarks>
-    private static float TextureMipLodBias()
-    {
-        // Clamped to 1 at the top so supersampling (scale > 1) never biases coarser -- it already samples
-        // below its own mip rate, which is the whole point of it.
-        float scale = Math.Clamp(RenderCVars.RenderScale.Value, 0.25f, 1f);
-        float resolution = MathF.Log2(scale);
-        float temporal = RenderCVars.TemporalFeedback.Value < 1f ? -0.3f : 0f;
-        return Math.Clamp(MathF.Max(resolution + temporal, -2f), -4f, 4f);
-    }
+    private static float TextureMipLodBias() => TextureLodBias.FromSettings();
 
     // ---- Deferred effects fed into the lighting (no-op until compute lands) ------------------------
 

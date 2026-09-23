@@ -217,6 +217,7 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice, RayTracing.IS
             AddressModeW = VulkanRhiTranslation.AddressMode(descriptor.AddressW),
             MinLod = descriptor.LodMin,
             MaxLod = descriptor.LodMax,
+            MipLodBias = _device.Capabilities.SamplerMipLodBias ? descriptor.MipLodBias : 0f,
             AnisotropyEnable = anisotropy > 1f,
             MaxAnisotropy = anisotropy,
             CompareEnable = descriptor.Compare is not null,
