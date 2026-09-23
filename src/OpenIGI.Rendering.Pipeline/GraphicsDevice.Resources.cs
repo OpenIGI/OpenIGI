@@ -6,23 +6,15 @@ using OpenIGI.Shaders;
 namespace OpenIGI.Rendering.Pipeline;
 
 /// <summary>
-/// The resource seams the direct path does not use: the compute seam, volumes, cubes and storage.
+/// The resource seams that are not the frame's own: blits, occlusion queries, outlines, and the members
+/// of the remaster's stack this device has not taken over — cubes, the fog volume, the probe field.
 /// </summary>
 /// <remarks>
-/// Every one of these belongs to the remaster's stack. The device reports
-/// <see cref="GraphicsCapabilities.SupportsCompute"/> false and
-/// <see cref="GraphicsCapabilities.SupportsSceneCapture"/> false, which is what the game asks before it
-/// reaches for any of them — so these exist to satisfy the interface, and each refuses rather than
-/// pretending, because a handle handed back from here would be one nothing could ever honour.
+/// What has not moved over refuses rather than pretending, because a handle handed back from here would
+/// be one nothing could ever honour.
 /// </remarks>
 public sealed partial class GraphicsDevice
 {
-    /// <inheritdoc/>
-    public void SetTexture(int unit, TextureHandle texture)
-    {
-        // Textures reach a draw through its own call on this path; there is no bound-unit state.
-    }
-
     /// <inheritdoc/>
     public void BlitPixels(int x, int y, int width, int height, ReadOnlySpan<Bgra32> pixels)
     {
@@ -144,105 +136,11 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
-    public TextureHandle CreateStorageTexture(int width, int height, VolumeFormat format, string name) =>
-        throw Unsupported(nameof(CreateStorageTexture));
-
-    /// <inheritdoc/>
-    public TextureHandle CreateVolumeTexture(int width, int height, int depth, VolumeFormat format, string name) =>
-        throw Unsupported(nameof(CreateVolumeTexture));
-
-    /// <inheritdoc/>
     public TextureHandle CreateCubeTexture(int edge, string name) => throw Unsupported(nameof(CreateCubeTexture));
 
     /// <inheritdoc/>
     public void UpdateCubeFace(TextureHandle cube, int face, ReadOnlySpan<Bgra32> pixels) =>
         throw Unsupported(nameof(UpdateCubeFace));
-
-    /// <inheritdoc/>
-    public void UpdateVolumeTexture<T>(TextureHandle texture, ReadOnlySpan<T> data)
-        where T : unmanaged => throw Unsupported(nameof(UpdateVolumeTexture));
-
-    /// <inheritdoc/>
-    public void ReadVolumeTexture<T>(TextureHandle texture, Span<T> destination)
-        where T : unmanaged => throw Unsupported(nameof(ReadVolumeTexture));
-
-    /// <inheritdoc/>
-    public void SetVolumeTexture(int unit, TextureHandle texture)
-    {
-    }
-
-    /// <inheritdoc/>
-    public void ReadStorageTexture(TextureHandle texture, Span<Bgra32> destination) => destination.Clear();
-
-    /// <inheritdoc/>
-    public ComputeShaderHandle CreateComputeShader(ShaderModuleId shaderModule, ShaderVariant variant, string name) =>
-        throw Unsupported(nameof(CreateComputeShader));
-
-    /// <inheritdoc/>
-    public void DestroyComputeShader(ComputeShaderHandle shader)
-    {
-    }
-
-    /// <inheritdoc/>
-    public StorageBufferHandle CreateStorageBuffer(int sizeInBytes, string name) =>
-        throw Unsupported(nameof(CreateStorageBuffer));
-
-    /// <inheritdoc/>
-    public void UpdateStorageBuffer<T>(StorageBufferHandle buffer, ReadOnlySpan<T> data)
-        where T : unmanaged => throw Unsupported(nameof(UpdateStorageBuffer));
-
-    /// <inheritdoc/>
-    public void ReadStorageBuffer<T>(StorageBufferHandle buffer, Span<T> destination)
-        where T : unmanaged => throw Unsupported(nameof(ReadStorageBuffer));
-
-    /// <inheritdoc/>
-    public void DestroyStorageBuffer(StorageBufferHandle buffer)
-    {
-    }
-
-    /// <inheritdoc/>
-    public void BindStorageBuffer(int slot, StorageBufferHandle buffer)
-    {
-    }
-
-    /// <inheritdoc/>
-    public void BindImage(int slot, TextureHandle texture, ImageAccess access, int level = 0)
-    {
-    }
-
-    /// <inheritdoc/>
-    public void Dispatch(ComputeShaderHandle shader, int groupsX, int groupsY = 1, int groupsZ = 1) =>
-        throw Unsupported(nameof(Dispatch));
-
-    /// <inheritdoc/>
-    public void DispatchIndirect(ComputeShaderHandle shader, StorageBufferHandle arguments, int offsetInBytes = 0) =>
-        throw Unsupported(nameof(DispatchIndirect));
-
-    /// <inheritdoc/>
-    public void MemoryBarrier(MemoryBarrierScope scope)
-    {
-        // The RHI has no barriers: what a resource is ready for is the implementation's business.
-    }
-
-    /// <inheritdoc/>
-    public void SetComputeUniform(ComputeShaderHandle shader, string name, float value)
-    {
-    }
-
-    /// <inheritdoc/>
-    public void SetComputeUniform(ComputeShaderHandle shader, string name, int value)
-    {
-    }
-
-    /// <inheritdoc/>
-    public void SetComputeUniform(ComputeShaderHandle shader, string name, in Vector3f value)
-    {
-    }
-
-    /// <inheritdoc/>
-    public void SetComputeUniform(ComputeShaderHandle shader, string name, float x, float y, float z, float w)
-    {
-    }
 
     private readonly List<TextureHandle> _staged = [];
 
@@ -253,6 +151,5 @@ public sealed partial class GraphicsDevice
     /// would be a frame missing a feature nobody could account for.
     /// </remarks>
     private static GraphicsDeviceException Unsupported(string member) => new(
-        $"{member} belongs to the remaster's stack, which this device does not offer. It reports "
-        + "SupportsSceneCapture and SupportsCompute false; ask before reaching for it.");
+        $"{member} belongs to a part of the remaster's stack this device has not taken over yet.");
 }

@@ -64,6 +64,7 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             // Every group that named it goes with it, or the next frame binds a view that is gone.
             _sprites.ForgetTexture(texture.Id);
             _materials.Forget(texture.Id);
+            ForgetStorageTexture(texture);
         }
     }
 

@@ -293,6 +293,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
         DisposeCardAtlas();
         DisposeDeferred();
+        DisposeCompute();
         _profiler.Dispose();
         _cubeGroup.Dispose();
         _cube.Dispose();
@@ -408,6 +409,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
         _sprites.BeginFrame(FrameSlot, CurrentMode.Width, CurrentMode.Height);
         _profiler.BeginFrame(FrameSlot);
+        ResetComputeFrame();
     }
 
     /// <summary>Releases the textures a blit staged for the frame that has just gone out.</summary>

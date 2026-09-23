@@ -111,6 +111,45 @@ public sealed class ComputePass : IDisposable
         int depth = 1,
         ReadOnlySpan<byte> push = default)
     {
+        (int x, int y, int z) = Program.GroupsFor(width, height, depth);
+        DispatchGroups(pass, x, y, z, push);
+    }
+
+    /// <summary>Records one dispatch of a stated number of workgroups, with what is bound now.</summary>
+    /// <param name="pass">The compute pass to record into.</param>
+    /// <param name="groupsX">Workgroups across.</param>
+    /// <param name="groupsY">Workgroups down.</param>
+    /// <param name="groupsZ">Workgroups deep.</param>
+    /// <param name="push">The push block, or empty for none.</param>
+    /// <remarks>
+    /// For a caller that already speaks in workgroups — the game's compute seam does — rather than in the
+    /// region they cover.
+    /// </remarks>
+    public void DispatchGroups(
+        IRhiComputePassEncoder pass,
+        int groupsX,
+        int groupsY = 1,
+        int groupsZ = 1,
+        ReadOnlySpan<byte> push = default)
+    {
+        Prepare(pass, push);
+        pass.Dispatch(groupsX, groupsY, groupsZ);
+    }
+
+    /// <summary>Records one dispatch whose workgroup counts a buffer holds.</summary>
+    /// <param name="pass">The compute pass to record into.</param>
+    /// <param name="arguments">The buffer the three counts are read from.</param>
+    /// <param name="offset">Where in it they start.</param>
+    public void DispatchIndirect(IRhiComputePassEncoder pass, IRhiBuffer arguments, ulong offset = 0)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        Prepare(pass, default);
+        pass.DispatchIndirect(arguments, offset);
+    }
+
+    /// <summary>Sets the pipeline, every group and the push block, ahead of a dispatch.</summary>
+    private void Prepare(IRhiComputePassEncoder pass, ReadOnlySpan<byte> push)
+    {
         ArgumentNullException.ThrowIfNull(pass);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -125,9 +164,6 @@ public sealed class ComputePass : IDisposable
         {
             pass.SetPushData(push);
         }
-
-        (int x, int y, int z) = Program.GroupsFor(width, height, depth);
-        pass.Dispatch(x, y, z);
     }
 
     /// <inheritdoc/>

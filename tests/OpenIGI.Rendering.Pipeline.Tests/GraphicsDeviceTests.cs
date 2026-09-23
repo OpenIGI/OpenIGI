@@ -253,15 +253,15 @@ public sealed class GraphicsDeviceTests
     [Fact]
     public void Reaching_for_the_remaster_stack_says_which_member_and_why()
     {
-        // Every one of these is guarded by a capability reported false, so reaching one means something
-        // asked without asking first.
+        // What has not moved onto this device refuses by name rather than handing back a handle nothing
+        // could ever honour.
         using RecordingRhiDevice rhi = new();
         using GraphicsDevice device = Open(rhi);
 
         GraphicsDeviceException refused =
-            Assert.Throws<GraphicsDeviceException>(() => device.CreateStorageBuffer(64, "b"));
+            Assert.Throws<GraphicsDeviceException>(() => device.CreateCubeTexture(64, "c"));
 
-        Assert.Contains(nameof(IGraphicsDevice.CreateStorageBuffer), refused.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(IGraphicsDevice.CreateCubeTexture), refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]
