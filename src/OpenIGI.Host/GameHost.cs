@@ -70,6 +70,7 @@ internal sealed partial class GameHost : IDisposable
     // --- Environment, supplied by the composition root ---
     private readonly IPlatformHost _platform;
     private readonly IWorkScheduler _work;
+    private readonly ILoadGate _loadGate;
     private readonly IGameWindow _window;
     private readonly IAudioDeviceFactory _audioFactory;
     // The games this build can run. Held rather than resolved once, because the shell can change which
@@ -574,6 +575,7 @@ internal sealed partial class GameHost : IDisposable
     /// <param name="device">The graphics device every renderer draws through.</param>
     /// <param name="audioFactory">Opens the audio backend; re-called whenever the device settings change.</param>
     /// <param name="work">Where work off the frame loop runs: beside it on the desktop, inline in a browser.</param>
+    /// <param name="loadGate">Whether a mission's files can be read yet; always, on the desktop.</param>
     /// <param name="titles">The games this build can run, and where each of them is installed.</param>
     /// <param name="startOn">The one to open on.</param>
     /// <param name="fileSystem">The virtual file system the original installation is read through.</param>
@@ -593,6 +595,7 @@ internal sealed partial class GameHost : IDisposable
         IGraphicsDevice device,
         IAudioDeviceFactory audioFactory,
         IWorkScheduler work,
+        ILoadGate loadGate,
         ITitleCatalog titles,
         GameTitle startOn,
         VirtualFileSystem fileSystem,
@@ -613,6 +616,7 @@ internal sealed partial class GameHost : IDisposable
         _device = device;
         _audioFactory = audioFactory;
         _work = work;
+        _loadGate = loadGate;
         _titles = titles;
         _titleRuntime = binding.Runtime;
         _presentation = binding.Presentation;
@@ -1408,7 +1412,7 @@ internal sealed partial class GameHost : IDisposable
 
                         if (CinematicLoadAvailable)
                         {
-                            BeginCinematicLoad(Promote);
+                            BeginCinematicLoad(id, Promote);
                         }
                         else
                         {
@@ -1429,7 +1433,7 @@ internal sealed partial class GameHost : IDisposable
 
                     if (CinematicLoadAvailable)
                     {
-                        BeginCinematicLoad(LoadCold);
+                        BeginCinematicLoad(id, LoadCold);
                     }
                     else
                     {
@@ -1489,7 +1493,7 @@ internal sealed partial class GameHost : IDisposable
 
                         if (CinematicLoadAvailable)
                         {
-                            BeginCinematicLoad(Restart);
+                            BeginCinematicLoad(mission.Id, Restart);
                         }
                         else
                         {

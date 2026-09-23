@@ -256,7 +256,7 @@ using (window)
     // The composition root is the only place that names a concrete backend: the graphics device
     // above, and the audio factory here. GameHost itself sees only the abstractions.
     using GameHost game = new(
-        platform, window, device, OpenAlAudioDeviceFactory.Instance, ThreadPoolWorkScheduler.Instance,
+        platform, window, device, OpenAlAudioDeviceFactory.Instance, ThreadPoolWorkScheduler.Instance, AlwaysReadyLoadGate.Instance,
         DesktopTitleCatalog.Catalog, titleRuntime.Title,
         fileSystem, options, gamePath, logger);
     return game.Run();

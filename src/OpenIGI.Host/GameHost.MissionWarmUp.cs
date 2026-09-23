@@ -37,6 +37,12 @@ internal sealed partial class GameHost
     /// <summary>The load the sequence will run once the departure has played out.</summary>
     private Action? _pendingLoad;
 
+    /// <summary>The mission that load brings up, for the load gate to be asked about.</summary>
+    private int _pendingLoadMission;
+
+    /// <summary>What the load gate last said it was waiting for, so it is reported once rather than every frame.</summary>
+    private string? _loadGateWaitingFor;
+
     /// <summary>The briefing, posted on the nearest surface at the start. See r_world_briefing.</summary>
     private WorldTitleRenderer? _briefingPost;
     private bool _briefingPosted;
@@ -134,6 +140,7 @@ internal sealed partial class GameHost
     /// <summary>
     /// Starts the going-in sequence and defers the load until its departure has played.
     /// </summary>
+    /// <param name="missionId">The mission the load brings up.</param>
     /// <param name="load">What brings the mission up: a promotion of the backdrop, or a cold start.</param>
     /// <remarks>
     /// The order is the whole design. The clean picture -- the level as the player sees it now, with no
@@ -142,10 +149,12 @@ internal sealed partial class GameHost
     /// block on the load. Loading first and presenting after was the old order, and it froze the menu,
     /// interface and all, for the length of the load.
     /// </remarks>
-    private void BeginCinematicLoad(Action load)
+    private void BeginCinematicLoad(int missionId, Action load)
     {
         ArgumentNullException.ThrowIfNull(load);
         _pendingLoad = load;
+        _pendingLoadMission = missionId;
+        _loadGateWaitingFor = null;
         _loadSequence.Begin(capturePicture: true);
     }
 
@@ -247,6 +256,19 @@ internal sealed partial class GameHost
     {
         if (!_loadSequence.WantsLoad || _pendingLoad is not { } load)
         {
+            return;
+        }
+
+        // Not until the mission's files can be read. The sequence holds its picture meanwhile, and the
+        // load runs on the frame the gate says yes -- on the desktop, always the first.
+        if (!_loadGate.IsReady(_pendingLoadMission, out string? waitingFor))
+        {
+            if (!string.Equals(waitingFor, _loadGateWaitingFor, StringComparison.Ordinal))
+            {
+                _loadGateWaitingFor = waitingFor;
+                _logger.Information("Mission", $"Mission {_pendingLoadMission} waits for {waitingFor ?? "its files"}.");
+            }
+
             return;
         }
 

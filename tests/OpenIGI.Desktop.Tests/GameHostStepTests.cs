@@ -6,6 +6,7 @@ using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Host;
 using OpenIGI.Host.Configuration;
+using OpenIGI.Host.Infrastructure;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -109,6 +110,7 @@ public sealed class GameHostStepTests : IDisposable
             device,
             new RecordingAudioFactory(),
             InlineWorkScheduler.Instance,
+            AlwaysReadyLoadGate.Instance,
             DesktopTitleCatalog.Catalog,
             runtime.Title,
             fileSystem,
