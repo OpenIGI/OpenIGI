@@ -79,6 +79,35 @@ public sealed class GameHostStepTests : IDisposable
         Assert.False(host.Step());
     }
 
+    /// <summary>A step is a frame with a picture in it: the ticks between pictures do not each take one.</summary>
+    /// <remarks>
+    /// A browser steps once per display refresh. A step that returned after a tick handed it back a
+    /// refresh with nothing drawn, which halved the rate at best and, once the clock fell behind, left it
+    /// catching up one tick a refresh.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void Each_step_of_a_running_mission_presents_a_frame()
+    {
+        using RecordingGraphicsDevice device = new();
+        GameHost host = Host(device, new HeadlessGameWindow(), "-mission", "1", "-skipcutscene", "-lockstep", "-frames", "100000");
+
+        host.Start();
+        for (int i = 0; i < 30; i++)
+        {
+            Assert.True(host.Step());
+        }
+
+        int before = device.SwapCount;
+        const int Steps = 60;
+        for (int i = 0; i < Steps; i++)
+        {
+            Assert.True(host.Step());
+        }
+
+        host.Stop();
+        Assert.True(device.SwapCount - before >= Steps - 1, $"{device.SwapCount - before} frame(s) in {Steps} step(s).");
+    }
+
     /// <summary>The menu's backdrop is a mission too, and is not built until the gate has its files.</summary>
     [RequiresGameDataFact]
     public void The_menu_backdrop_waits_until_the_gate_has_its_mission()

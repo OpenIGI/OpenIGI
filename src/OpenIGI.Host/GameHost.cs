@@ -415,6 +415,9 @@ internal sealed partial class GameHost : IDisposable
     // Which row -backdropcycle is on, so each is asked for once rather than on every frame past its mark.
     private long _backdropCycleRow = -1;
 
+    /// <summary>How many ticks a step may run in a row before it returns to its host without a picture.</summary>
+    private const int MaxTicksPerStep = 8;
+
     /// <summary>Milliseconds since the process was started, for the start-up timings.</summary>
     /// <remarks>
     /// From the OS's own record of when the process began rather than a stopwatch this class starts, so
@@ -1704,12 +1707,30 @@ internal sealed partial class GameHost : IDisposable
         // not read the mouse and must never grab the cursor out from under whatever they are actually doing.
         bool captureMode = _options.Lockstep;
 
+        // What the last pass of the loop did, and how many ticks in a row have run without a step
+        // returning to its host. See the top of the loop.
+        FrameOutcome lastOutcome = FrameOutcome.Idle;
+        int ticksSinceStep = 0;
+
         while (running && !_stopRequested && _loop.IsRunning && !_window.IsClosing)
         {
-            // The top of every frame is where a step returns to its host: everything since the last step
-            // is one frame, and nothing of the next has started. A host that asked to stop while it was
-            // away is answered here, before the frame it would otherwise draw.
-            yield return true;
+            // The top of a frame is where a step returns to its host: everything since the last step is
+            // one frame, and nothing of the next has started. A host that asked to stop while it was away
+            // is answered here, before the frame it would otherwise draw.
+            //
+            // A frame ends with a pass that drew, or one with nothing due -- not with a tick, which draws
+            // nothing. A browser steps once per display refresh, and handing it back a refresh with no
+            // picture in it made a clock that had fallen behind catch up at one tick a refresh; a
+            // headless browser then throttles a page that has stopped drawing to once a second, and it
+            // never caught up again. Bounded, so a long catch-up still returns now and then.
+            if (lastOutcome != FrameOutcome.Tick || ++ticksSinceStep >= MaxTicksPerStep)
+            {
+                ticksSinceStep = 0;
+                yield return true;
+            }
+
+            // Until this pass runs the loop: one that ends before it has drawn nothing and ticked nothing.
+            lastOutcome = FrameOutcome.Idle;
 
             if (_stopRequested)
             {
@@ -2734,6 +2755,7 @@ internal sealed partial class GameHost : IDisposable
 
             BeginStage();
             FrameOutcome outcome = _loop.RunFrame();
+            lastOutcome = outcome;
             EndStageIfSlow("the loop's own frame (present, ticks, task tree)");
 
             // The number that says how long the player waited for a picture, said once. Everything above
