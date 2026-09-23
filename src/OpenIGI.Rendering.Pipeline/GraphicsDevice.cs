@@ -257,6 +257,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
         _device.Submit([Encoder().Finish("frame")]);
         _skySubmittedSlot = _skyRecordedSlot;
+        _skyRecordedSlot = -1;
 
         _encoder?.Dispose();
         _encoder = null;
