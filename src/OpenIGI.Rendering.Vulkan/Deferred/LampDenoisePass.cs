@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Rendering.Temporal;
 using OpenIGI.Rendering.Vulkan.Compute;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Shaders;
@@ -34,10 +35,10 @@ namespace OpenIGI.Rendering.Vulkan.Deferred;
 internal sealed class LampDenoisePass : IDisposable
 {
     /// <summary>Two <c>mat4</c>s of camera and six <c>vec4</c>s of frame.</summary>
-    private const int TemporalParamSize = 224;
+    private const int TemporalParamSize = LampShadowParameters.TemporalFloats * sizeof(float);
 
     /// <summary>One <c>mat4</c> of camera and three <c>vec4</c>s of frame.</summary>
-    private const int SpatialParamSize = 112;
+    private const int SpatialParamSize = LampShadowParameters.SpatialFloats * sizeof(float);
 
     private static readonly ComputeBindingKind[] TemporalBindings =
     [
@@ -133,41 +134,22 @@ internal sealed class LampDenoisePass : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         Span<float> data = stackalloc float[TemporalParamSize / sizeof(float)];
-        data.Clear();
-
-        // A rotation's transpose is its inverse, so sending the previous view-to-world's transpose sends
-        // the previous world-to-view without inverting anything. The same pair the sun's accumulation and
-        // the velocity pass are handed, packed the same way, because all three have to agree exactly
-        // about where a pixel was.
-        WriteRotation(data, 0, viewToWorld);
-        WriteRotation(data, 16, previousViewToWorld.Transposed());
-
-        data[32] = unprojection.XScale;
-        data[33] = unprojection.YScale;
-        data[34] = unprojection.Near;
-        data[35] = unprojection.Far;
-
-        data[36] = previousUnprojection.XScale;
-        data[37] = previousUnprojection.YScale;
-        data[38] = previousUnprojection.Near;
-        data[39] = previousUnprojection.Far;
-
-        data[40] = width;
-        data[41] = height;
-        data[42] = width > 0 ? 1f / width : 0f;
-        data[43] = height > 0 ? 1f / height : 0f;
-
-        data[44] = cameraDelta.X;
-        data[45] = cameraDelta.Y;
-        data[46] = cameraDelta.Z;
-        data[47] = hasHistory ? 1f : 0f;
-
-        data[48] = jitterX;
-        data[49] = jitterY;
-        data[50] = previousJitterX;
-        data[51] = previousJitterY;
-
-        data[52] = accumulate ? 1f : 0f;
+        LampShadowParameters.WriteTemporal(
+            data,
+            new TemporalFrameState(
+                viewToWorld,
+                previousViewToWorld,
+                cameraDelta,
+                unprojection,
+                previousUnprojection,
+                jitterX,
+                jitterY,
+                previousJitterX,
+                previousJitterY,
+                width,
+                height),
+            hasHistory,
+            accumulate);
 
         ReadOnlySpan<ComputeResource> resources =
         [
@@ -214,24 +196,7 @@ internal sealed class LampDenoisePass : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         Span<float> data = stackalloc float[SpatialParamSize / sizeof(float)];
-        data.Clear();
-
-        WriteRotation(data, 0, viewToWorld);
-
-        data[16] = unprojection.XScale;
-        data[17] = unprojection.YScale;
-        data[18] = unprojection.Near;
-        data[19] = unprojection.Far;
-
-        data[20] = width;
-        data[21] = height;
-        data[22] = width > 0 ? 1f / width : 0f;
-        data[23] = height > 0 ? 1f / height : 0f;
-
-        data[24] = jitterX;
-        data[25] = jitterY;
-        data[26] = frameIndex;
-        data[27] = filter ? 1f : 0f;
+        LampShadowParameters.WriteSpatial(data, width, height, viewToWorld, unprojection, jitterX, jitterY, frameIndex, filter);
 
         ReadOnlySpan<ComputeResource> resources =
         [
@@ -255,13 +220,5 @@ internal sealed class LampDenoisePass : IDisposable
         _disposed = true;
         _temporal.Dispose();
         _spatial.Dispose();
-    }
-
-    private static void WriteRotation(Span<float> data, int offset, in Matrix3f m)
-    {
-        data[offset + 0] = m.M11; data[offset + 1] = m.M21; data[offset + 2] = m.M31; data[offset + 3] = 0f;
-        data[offset + 4] = m.M12; data[offset + 5] = m.M22; data[offset + 6] = m.M32; data[offset + 7] = 0f;
-        data[offset + 8] = m.M13; data[offset + 9] = m.M23; data[offset + 10] = m.M33; data[offset + 11] = 0f;
-        data[offset + 12] = 0f; data[offset + 13] = 0f; data[offset + 14] = 0f; data[offset + 15] = 1f;
     }
 }

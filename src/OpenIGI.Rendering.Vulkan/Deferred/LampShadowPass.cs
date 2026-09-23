@@ -50,9 +50,7 @@ internal sealed class LampShadowPass : IDisposable
     /// read at a fixed offset into this buffer, so a header even one <c>vec4</c> longer than the shader
     /// believes silently shifts every lamp and the pass reads a count of nought.
     /// </remarks>
-    private const int HeaderSize = 112;
-
-    private const int ParamSize = HeaderSize + DeferredRenderer.LampUniformSize;
+    private const int ParamSize = LampShadowParameters.TraceFloats * sizeof(float);
 
     private static readonly ComputeBindingKind[] Bindings =
     [
@@ -118,34 +116,7 @@ internal sealed class LampShadowPass : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         Span<float> data = stackalloc float[ParamSize / sizeof(float)];
-        data.Clear();
-
-        Matrix3f m = viewToWorld;
-
-        // The view-to-world rotation, column-major as a mat4, matching every other pass that sends one.
-        data[0] = m.M11; data[1] = m.M21; data[2] = m.M31; data[3] = 0f;
-        data[4] = m.M12; data[5] = m.M22; data[6] = m.M32; data[7] = 0f;
-        data[8] = m.M13; data[9] = m.M23; data[10] = m.M33; data[11] = 0f;
-        data[12] = 0f; data[13] = 0f; data[14] = 0f; data[15] = 1f;
-
-        data[16] = unprojection.XScale;
-        data[17] = unprojection.YScale;
-        data[18] = unprojection.Near;
-        data[19] = unprojection.Far;
-
-        data[20] = width;
-        data[21] = height;
-        data[22] = width > 0 ? 1f / width : 0f;
-        data[23] = height > 0 ? 1f / height : 0f;
-
-        data[24] = camera.X;
-        data[25] = camera.Y;
-        data[26] = camera.Z;
-        data[27] = frameIndex;
-
-        // The lamps, byte for byte as the shading pass has them, immediately after the header.
-        const int header = HeaderSize / sizeof(float);
-        lamps[..Math.Min(lamps.Length, data.Length - header)].CopyTo(data[header..]);
+        LampShadowParameters.WriteTrace(data, width, height, viewToWorld, camera, unprojection, frameIndex, lamps);
 
         ReadOnlySpan<ComputeResource> resources =
         [
