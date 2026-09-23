@@ -17,6 +17,21 @@
     <EmccMaximumHeapSize>4294967296</EmccMaximumHeapSize>
   </PropertyGroup>
 
+  <!-- The release build is the one a player runs, so it is the optimised one without flags to remember:
+       `dotnet publish -c Release` compiles the managed code ahead of time to WebAssembly (the interpreter
+       it replaces runs the frame several times slower), optimises the native link for speed rather than
+       size, and trims what nothing reaches. The publish also writes .br and .gz beside every file, which
+       a host serves with Content-Encoding. A Debug build stays interpreted, for build speed. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <RunAOTCompilation>true</RunAOTCompilation>
+    <WasmEnableSIMD>true</WasmEnableSIMD>
+    <EmccCompileOptimizationFlag>-O3</EmccCompileOptimizationFlag>
+    <EmccLinkOptimizationFlag>-O3</EmccLinkOptimizationFlag>
+    <PublishTrimmed>true</PublishTrimmed>
+    <DebuggerSupport>false</DebuggerSupport>
+    <EventSourceSupport>false</EventSourceSupport>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\OpenIGI.Composition\OpenIGI.Composition.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Audio\OpenIGI.Audio.csproj" />

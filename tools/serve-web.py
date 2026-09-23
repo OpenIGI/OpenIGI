@@ -7,6 +7,7 @@ http://127.0.0.1:<port>/?data=/data/ -- the route an automated run takes, since 
 a folder picker. /data/manifest.json lists the installation's files and sizes; it is made on request.
 
 <wwwroot> defaults to the publish output of apps/OpenIGI.Web (dotnet publish apps/OpenIGI.Web -c Release).
+Where the publish wrote a .br or .gz beside a file, that is what is sent, with its Content-Encoding.
 """
 import argparse
 import functools
@@ -53,7 +54,39 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.send_precompressed():
+            return
         super().do_GET()
+
+    def send_precompressed(self):
+        """Sends the publish's .br or .gz of a file where the browser takes it, as a real host would.
+
+        The runtime is some forty megabytes uncompressed and a fifth of that in Brotli, so serving the raw
+        files made every load in development slower than any deployment would be.
+        """
+        path = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path)
+        if path.startswith("/data/"):
+            return False
+
+        local = self.translate_path(self.path)
+        if not os.path.isfile(local):
+            return False
+
+        accepted = self.headers.get("Accept-Encoding", "")
+        for encoding, suffix in (("br", ".br"), ("gzip", ".gz")):
+            if encoding in accepted and os.path.isfile(local + suffix):
+                with open(local + suffix, "rb") as source:
+                    body = source.read()
+                self.send_response(200)
+                self.send_header("Content-Type", self.guess_type(local))
+                self.send_header("Content-Encoding", encoding)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Vary", "Accept-Encoding")
+                self.end_headers()
+                self.wfile.write(body)
+                return True
+
+        return False
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
