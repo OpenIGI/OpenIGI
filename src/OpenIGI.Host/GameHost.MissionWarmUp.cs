@@ -668,6 +668,7 @@ internal sealed partial class GameHost
         }
 
         _loadSequence.Update(elapsed, ready: _loadSequence.Loaded && !_warmUp.IsActive);
+        AdvanceResumeHold(revealed: _loadSequence.Loaded && !_warmUp.IsActive, loadActive: _loadSequence.IsActive);
 
         if (!_loadSequence.IsActive || !ShowsLoadingPanel)
         {
@@ -722,6 +723,12 @@ internal sealed partial class GameHost
     /// <param name="batch">The 2D batch, not begun.</param>
     private void PaintLoadingScreen(SpriteBatch batch)
     {
+        // After a switch of renderer the other renderer's picture stands in for the whole screen.
+        if (PaintResumeFrame())
+        {
+            return;
+        }
+
         float width = _window.Width;
         float height = _window.Height;
         float seconds = _loop.TimeSource.Milliseconds / 1000f;

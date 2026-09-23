@@ -2741,7 +2741,7 @@ internal sealed partial class GameHost : IDisposable
                 }
                 else
                 {
-                    _camera.Update(_window.Input, elapsed);
+                    _camera.Update(ViewInput, elapsed);
 
                     // The cursor is locked away while a mouse button is held, the way a scene editor's is,
                     // so the view keeps turning however far the mouse is dragged. It comes back on release.
@@ -2893,7 +2893,7 @@ internal sealed partial class GameHost : IDisposable
                     }
                     else
                     {
-                        _player.Tick(_window.Input, _ground);
+                        _player.Tick(ViewInput, _ground);
                         // PlayerCamera advances its interaction registry before it resolves this
                         // tick's activate target. Do not advance the same registry again below.
                         interactionsTickedByPlayer = true;
@@ -6526,6 +6526,8 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 cutsceneCaptureTick += 90;
                 cutsceneCaptureCount++;
             }
+
+            AdvanceRendererSwitch();
 
             if (_options.ExitAfterFrames > 0 && _loop.Clock.FrameCount >= _options.ExitAfterFrames)
             {
