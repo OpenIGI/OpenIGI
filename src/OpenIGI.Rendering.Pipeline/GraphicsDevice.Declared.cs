@@ -128,11 +128,6 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
-    public void SetColourLookup(ColourLookupTable? table)
-    {
-    }
-
-    /// <inheritdoc/>
     public void SetLocalLights(ReadOnlySpan<DeferredLocalLight> lights)
     {
     }

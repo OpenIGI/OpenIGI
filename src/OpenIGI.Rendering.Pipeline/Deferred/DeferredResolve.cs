@@ -93,6 +93,17 @@ public sealed class DeferredResolve : IDisposable
         _bindings.BindRemainingSamplers(_sampler);
     }
 
+    /// <summary>Points the resolve at the mission's grade cube, or at a stand-in where there is none.</summary>
+    /// <param name="cube">The cube, or null for an ungraded frame, whose block then says so.</param>
+    public void BindGrade(IRhiTextureView? cube)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        ShaderBinding slot = Reflection.Bindings.First(
+            binding => string.Equals(binding.Name, "uColourLut", StringComparison.Ordinal));
+        _bindings.Bind("uColourLut", cube ?? _standIns.For(slot), _sampler);
+    }
+
     /// <summary>Records the draw into a pass already begun on the frame.</summary>
     /// <param name="pass">The pass to record into.</param>
     /// <param name="push">The per-draw block the resolve reads.</param>

@@ -386,13 +386,15 @@ public sealed partial class GraphicsDevice
             PresentHeight: CurrentMode.Height,
             MaskView: _debugView.IsMask(),
             BloomRan: bloom is not null,
-            AdaptedExposure: adapted));
+            AdaptedExposure: adapted,
+            GradeSize: GradeSize(post)));
 
         // What a painted sky is divided by as it is drawn, so that it leaves the tone map at the colour
         // it was painted. Last frame's, as it is on the Vulkan device: the sky is drawn before the frame
         // says what it will be exposed by.
         _sceneExposure = MathF.Max(post.Exposure * adapted, 1e-3f);
 
+        resolve.BindGrade(GradeSize(post) > 0f ? _colourLut?.View : null);
         resolve.BindFrame(ResolvedScene(scene), bloom);
 
         using (IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
@@ -815,6 +817,7 @@ public sealed partial class GraphicsDevice
         _autoExposure?.Dispose();
         _autoExposure = null;
         DisposeSunShadow();
+        DisposeGrade();
 
         _scenePass?.Dispose();
         _scenePass = null;
