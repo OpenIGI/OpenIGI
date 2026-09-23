@@ -20,8 +20,9 @@
 [[vk::binding(0, 0)]] Texture2D<float4> uLit;
 [[vk::binding(1, 0)]] SamplerState uLitSampler;
 
-// where every opaque surface stands.
-[[vk::binding(2, 0)]] Texture2D<float4> uSceneDepth;
+// where every opaque surface stands. A depth texture, declared as one: WGSL refuses a depth image bound
+// as a float texture.
+[[vk::binding(2, 0)]] DepthTexture2D uSceneDepth;
 [[vk::binding(3, 0)]] SamplerState uSceneDepthSampler;
 
 // the panes: world normal, and view depth in alpha.

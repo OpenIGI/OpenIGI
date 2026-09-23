@@ -39,8 +39,9 @@ OPENIGI_PUSH_CONSTANT(GlassPush, push);
 [[vk::binding(5, 0)]] SamplerState uDetailSampler;
 
 // The scene's depth, read by texel and never sampled, so it needs no sampler of its own. The
-// transmission draw declares it unread because the set is shared with the front-layer pass.
-[[vk::binding(0, 1)]] Texture2D<float> uSceneDepth;
+// transmission draw declares it unread because the set is shared with the front-layer pass. A depth
+// texture, declared as one: WGSL refuses a depth image bound as a float texture.
+[[vk::binding(0, 1)]] DepthTexture2D uSceneDepth;
 
 struct GlassParams
 {

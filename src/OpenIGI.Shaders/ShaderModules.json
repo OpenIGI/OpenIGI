@@ -295,6 +295,10 @@
       ]
     },
     {
+      "id": "ReflectCompositeDraw",
+      "source": "Reflection/CompositeDraw.slang"
+    },
+    {
       "id": "Shading",
       "source": "Deferred/Shading.slang",
       "variants": [
