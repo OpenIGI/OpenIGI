@@ -167,9 +167,9 @@ public sealed class ComputeSeamTests
     [Fact]
     public void A_unit_holding_a_texture_of_the_wrong_kind_for_the_slot_reads_a_stand_in_of_the_right_one()
     {
-        // A colour texture left on the unit a depth slot reads: WebGPU refuses it, and no read of it could
-        // have meant anything. The slot gets a depth stand-in, which a colour one would be refused as too.
-        using RecordingRhiDevice rhi = new();
+        // A colour texture left on the unit a depth slot reads: WebGPU refuses it outright. The slot gets a
+        // depth stand-in, which a colour one would be refused as too.
+        using RecordingRhiDevice rhi = new() { ShaderTarget = ShaderTarget.Wgsl };
         using GraphicsDevice device = Open(rhi);
 
         ComputeShaderHandle resolve = device.CreateComputeShader(
@@ -186,6 +186,31 @@ public sealed class ComputeSeamTests
 
         RecordedBindGroup group = rhi.Resources.OfType<RecordedBindGroup>().Last();
         Assert.Contains(group.Entries, entry => entry.Binding == 33 && entry.TextureView?.Label == "compute.standin.depth");
+    }
+
+    [Fact]
+    public void On_vulkan_a_slot_reads_what_its_unit_holds_whatever_kind_the_slot_was_reflected_as()
+    {
+        // Only WGSL says which slots are depth, so a ray-query variant, which has no WGSL form, reports its
+        // scene depth as a colour slot. Swapped for a stand-in on that account, the traced screen gather
+        // read no depth at all: no sky, no surfaces, and a history smeared across the picture.
+        using RecordingRhiDevice rhi = new();
+        using GraphicsDevice device = Open(rhi);
+
+        ComputeShaderHandle resolve = device.CreateComputeShader(
+            ShaderModuleId.CardsScreenResolve,
+            ShaderVariant.Default,
+            "cards.screen.resolve");
+
+        device.BindImage(0, device.CreateStorageTexture(16, 16, VolumeFormat.Rgba16F, "accum"), ImageAccess.Write);
+        device.BindImage(1, device.CreateStorageTexture(16, 16, VolumeFormat.Rgba16F, "position"), ImageAccess.Write);
+        device.SetTexture(5, device.CreateStorageTexture(16, 16, VolumeFormat.Rgba16F, "colour"));
+        device.SetComputeUniform(resolve, "uSceneDepth", 5);
+
+        device.Dispatch(resolve, 1, 1);
+
+        RecordedBindGroup group = rhi.Resources.OfType<RecordedBindGroup>().Last();
+        Assert.Contains(group.Entries, entry => entry.Binding == 33 && entry.TextureView?.Label == "colour");
     }
 
     private static GraphicsDevice Open(RecordingRhiDevice rhi) => new(rhi, new DisplayMode(64, 64, 32, 60));

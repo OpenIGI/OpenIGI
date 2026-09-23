@@ -491,16 +491,25 @@ public sealed partial class GraphicsDevice
     /// <list type="bullet">
     /// <item>an image the same dispatch writes, which WebGPU will not also bind for sampling and which on
     /// Vulkan a sample would race;</item>
-    /// <item>a texture of the wrong kind for the slot — a depth image on a colour slot, or the reverse —
-    /// which no read could have made sense of on any backend.</item>
+    /// <item>on WebGPU, a texture of the wrong kind for the slot — a depth image on a colour slot, or the
+    /// reverse — which it refuses outright.</item>
     /// </list>
+    /// <para>
+    /// The kind is only checked where the device runs WGSL, because only there is it known and only there
+    /// does it matter. What a slot declares is read off the WGSL a module compiles to, so a variant with no
+    /// WGSL form -- the ray-query ones, which WebGPU cannot run -- reports every texture as a colour slot.
+    /// Vulkan reads a depth image through either kind correctly, and checking there swapped the scene's own
+    /// depth out of the traced screen gather for a stand-in: with tracing on, the RHI's screen GI found no
+    /// sky and no real surfaces, smeared its history, and shifted colour as the camera moved.
+    /// </para>
     /// </remarks>
     private IRhiTextureView SampledOrStandIn(ComputeKernel kernel, ShaderBinding binding, HashSet<IRhiTexture> written)
     {
         IRhiTextureView view = SampledAt(kernel, binding).View;
         bool depthSlot = binding.SampleType == ShaderSampleType.Depth;
+        bool wrongKind = _device.ShaderTarget == ShaderTarget.Wgsl && depthSlot != view.Format.IsDepth();
 
-        return written.Contains(view.Texture) || depthSlot != view.Format.IsDepth()
+        return written.Contains(view.Texture) || wrongKind
             ? StandInFor(binding)
             : view;
     }
