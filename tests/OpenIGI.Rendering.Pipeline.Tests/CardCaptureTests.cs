@@ -12,17 +12,36 @@ namespace OpenIGI.Rendering.Pipeline.Tests;
 public sealed class CardCaptureTests
 {
     [Fact]
-    public void A_capture_is_refused_inside_a_frame()
+    public void A_capture_is_taken_while_a_frame_is_being_drawn()
     {
-        // A capture inside a frame would have to share the frame's encoder and its pass. Levels load
-        // between frames, so this is refused rather than made to work.
+        // The menu loads a mission while it goes on drawing, so a frame is open whenever that level's
+        // cards are captured. Refused, as it once was, every mission entered from the menu had no surface
+        // cache: its light held at the baked daylight, and a night chosen there came up lit like noon.
         using RecordingRhiDevice device = new();
         using GraphicsDevice graphics = Device(device);
 
         graphics.Clear(new Bgra32(0, 0, 0, 255));
         graphics.DrawTriangles2D(Quad(), [0, 1, 2], TextureHandle.None, BlendMode.Opaque);
 
+        Assert.True(graphics.BeginCardCapture(64, 64));
+        graphics.EndCardCapture();
+
+        // And the frame it was taken inside still goes out.
+        graphics.SwapBuffers();
+    }
+
+    [Fact]
+    public void A_capture_is_refused_inside_a_scene_capture()
+    {
+        // The scene capture owns the per-draw state the cards would be drawn through.
+        using RecordingRhiDevice device = new();
+        using GraphicsDevice graphics = Device(device);
+
+        Assert.True(graphics.BeginSceneCapture(new SceneTargetDescription(64, 64, Deferred: true)));
+
         Assert.False(graphics.BeginCardCapture(64, 64));
+
+        graphics.EndSceneCapture();
     }
 
     [Fact]

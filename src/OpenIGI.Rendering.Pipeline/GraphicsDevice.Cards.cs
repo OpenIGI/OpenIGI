@@ -45,9 +45,14 @@ public sealed partial class GraphicsDevice
             throw new GraphicsDeviceException("A card capture is already open.");
         }
 
-        // A capture inside a frame would have to share the frame's encoder and its pass, which is
-        // neither needed nor safe. Levels load between frames.
-        if (_inFrame || width <= 0 || height <= 0)
+        // Refused only inside a scene capture, as the Vulkan renderer refuses it: the capture draws through
+        // the device's per-draw state, which a scene capture owns. An open FRAME is no obstacle -- the
+        // cards record into an encoder of their own and are submitted apart, and everything the load
+        // uploaded is queued ahead of that submission. It has to be allowed: the menu loads a mission
+        // while it goes on drawing, so on that route a frame is always open, and refusing here left every
+        // mission entered from the menu without a surface cache -- its global illumination held at the
+        // baked daylight, and a night chosen in the menu came up lit like noon.
+        if (Capturing || width <= 0 || height <= 0)
         {
             return false;
         }
