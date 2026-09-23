@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.WebGpu.Native;
 using OpenIGI.Shaders;
@@ -524,6 +525,11 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Texels come in the format the texture was asked for. Where it was allocated wider, because no WGSL
+    /// module can bind the narrow one for storage, they are widened on the way in (see
+    /// <see cref="WebGpuTexelWidening"/>), so the widening stays this backend's own business.
+    /// </remarks>
     public void WriteTexture<T>(
         in RhiTextureRegion destination,
         ReadOnlySpan<T> data,
@@ -533,6 +539,31 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     {
         ThrowIfDisposed();
 
+        if (destination.Texture is WebGpuTexture { } texture && texture.RequestedFormat != texture.Format)
+        {
+            byte[] widened = WebGpuTexelWidening.Widen(
+                MemoryMarshal.AsBytes(data),
+                texture.RequestedFormat,
+                texture.Format,
+                size,
+                bytesPerRow,
+                out int widenedBytesPerRow);
+
+            WriteTexels<byte>(destination, widened, widenedBytesPerRow, size);
+            return;
+        }
+
+        WriteTexels(destination, data, bytesPerRow, size);
+    }
+
+    /// <summary>Writes texels as they are, in the format the texture was allocated in.</summary>
+    private void WriteTexels<T>(
+        in RhiTextureRegion destination,
+        ReadOnlySpan<T> data,
+        int bytesPerRow,
+        in RhiExtent3D size)
+        where T : unmanaged
+    {
         WGPUTexelCopyTextureInfo target = new()
         {
             texture = ((WebGpuTexture)destination.Texture).Handle,
