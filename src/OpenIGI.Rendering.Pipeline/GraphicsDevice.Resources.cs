@@ -340,21 +340,5 @@ public sealed partial class GraphicsDevice
         _viewToWorld = viewToWorld;
     }
 
-    /// <inheritdoc/>
-    public TextureHandle CreateCubeTexture(int edge, string name) => throw Unsupported(nameof(CreateCubeTexture));
-
-    /// <inheritdoc/>
-    public void UpdateCubeFace(TextureHandle cube, int face, ReadOnlySpan<Bgra32> pixels) =>
-        throw Unsupported(nameof(UpdateCubeFace));
-
     private readonly List<TextureHandle> _staged = [];
-
-    /// <summary>Says which member a caller reached that this device does not offer.</summary>
-    /// <remarks>
-    /// Named rather than silent, because every one of these is guarded by a capability the device
-    /// reports false: reaching one means something asked without asking first, and a quiet no-op there
-    /// would be a frame missing a feature nobody could account for.
-    /// </remarks>
-    private static GraphicsDeviceException Unsupported(string member) => new(
-        $"{member} belongs to a part of the remaster's stack this device has not taken over yet.");
 }

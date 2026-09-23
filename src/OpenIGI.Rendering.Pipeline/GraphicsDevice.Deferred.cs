@@ -717,15 +717,17 @@ public sealed partial class GraphicsDevice
         Span<float> push = stackalloc float[ForwardPushBlock.Floats];
         WriteForward(push, modelView, blend, hasLightmap, _sceneExposure);
 
-        IRhiRenderPipeline pipeline = pipelines.ForState(_depthState, _cullMode, blend, _alphaReference);
+        // A draw reflects when the frame has named a cube, as on the Vulkan renderer.
+        (bool reflective, IRhiBindGroup environment) = EnvironmentFor();
+        IRhiRenderPipeline pipeline = pipelines.ForState(_depthState, _cullMode, blend, _alphaReference, reflective);
 
         if (ranges.IsEmpty)
         {
-            _meshes.Draw(pass, pipeline, call, MemoryMarshal.AsBytes(push), _frameCounter, _cubeGroup);
+            _meshes.Draw(pass, pipeline, call, MemoryMarshal.AsBytes(push), _frameCounter, environment);
         }
         else
         {
-            _meshes.DrawRanges(pass, pipeline, call, ranges, MemoryMarshal.AsBytes(push), _frameCounter, _cubeGroup);
+            _meshes.DrawRanges(pass, pipeline, call, ranges, MemoryMarshal.AsBytes(push), _frameCounter, environment);
         }
     }
 

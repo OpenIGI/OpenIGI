@@ -293,14 +293,15 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
 
         Span<float> push = stackalloc float[ForwardPushBlock.Floats];
         WriteForward(push, modelView, blend, lightmap.IsValid, exposure: 1f);
+        (bool reflective, IRhiBindGroup environment) = EnvironmentFor();
 
         _meshes.Draw(
             Pass(),
-            _pipelines.ForState(_depthState, _cullMode, blend, _alphaReference),
+            _pipelines.ForState(_depthState, _cullMode, blend, _alphaReference, reflective),
             call,
             System.Runtime.InteropServices.MemoryMarshal.AsBytes(push),
             _frameCounter,
-            _cubeGroup);
+            environment);
     }
 
     /// <inheritdoc/>
@@ -358,15 +359,16 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
 
         Span<float> push = stackalloc float[ForwardPushBlock.Floats];
         WriteForward(push, modelView, blend, lightmap.IsValid, exposure: 1f);
+        (bool reflective, IRhiBindGroup environment) = EnvironmentFor();
 
         _meshes.DrawRanges(
             Pass(),
-            _pipelines.ForState(_depthState, _cullMode, blend, _alphaReference),
+            _pipelines.ForState(_depthState, _cullMode, blend, _alphaReference, reflective),
             Call(mesh, 0, 0, diffuse, lightmap, blend),
             ranges,
             System.Runtime.InteropServices.MemoryMarshal.AsBytes(push),
             _frameCounter,
-            _cubeGroup);
+            environment);
     }
 
     private (int Width, int Height) _projection2D;

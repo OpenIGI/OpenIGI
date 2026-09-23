@@ -328,20 +328,6 @@ public sealed class GraphicsDeviceTests
     }
 
     [Fact]
-    public void Reaching_for_the_remaster_stack_says_which_member_and_why()
-    {
-        // What has not moved onto this device refuses by name rather than handing back a handle nothing
-        // could ever honour.
-        using RecordingRhiDevice rhi = new();
-        using GraphicsDevice device = Open(rhi);
-
-        GraphicsDeviceException refused =
-            Assert.Throws<GraphicsDeviceException>(() => device.CreateCubeTexture(64, "c"));
-
-        Assert.Contains(nameof(IGraphicsDevice.CreateCubeTexture), refused.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void An_occlusion_query_nothing_answers_reads_as_visible()
     {
         // A false would hide geometry that is there; a true costs a draw that would have happened.

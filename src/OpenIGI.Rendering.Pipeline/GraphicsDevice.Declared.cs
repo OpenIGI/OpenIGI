@@ -128,11 +128,6 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
-    public void SetEnvironmentCube(TextureHandle cube)
-    {
-    }
-
-    /// <inheritdoc/>
     /// <remarks>Not carried; see <c>r_gi</c> among the settings this device names as unimplemented.</remarks>
     public void SetIrradianceVolume(IrradianceVolume? volume)
     {
