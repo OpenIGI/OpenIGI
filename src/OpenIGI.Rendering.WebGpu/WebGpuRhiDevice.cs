@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using OpenIGI.Core.Threading;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.WebGpu.Native;
 using OpenIGI.Shaders;
@@ -27,6 +28,7 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     private readonly List<string> _widened = [];
     private readonly WebGpuSurface? _surface;
     private readonly WebGpuSurfaceSupport _support;
+    private readonly IWorkScheduler _finishing;
     private WebGpuPushRing? _pushes;
     private WebGpuTexture? _frameTexture;
 
@@ -44,7 +46,14 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     /// <param name="context">The instance, adapter, device and queue to work through.</param>
     /// <param name="ownsContext">Whether disposing this disposes the context too.</param>
     /// <param name="surface">The surface to present to, or null for a headless device.</param>
-    public WebGpuRhiDevice(WebGpuContext context, bool ownsContext = true, WebGpuSurface? surface = null)
+    /// <param name="finishing">
+    /// Where encoders are finished (<see cref="WebGpuCommandEncoder.Finish"/>); inline where none is given.
+    /// </param>
+    public WebGpuRhiDevice(
+        WebGpuContext context,
+        bool ownsContext = true,
+        WebGpuSurface? surface = null,
+        IWorkScheduler? finishing = null)
     {
         ArgumentNullException.ThrowIfNull(context);
 
@@ -52,7 +61,11 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
         _ownsContext = ownsContext;
         _surface = surface;
         _support = surface?.Describe(context.Adapter) ?? default;
+        _finishing = finishing ?? InlineWorkScheduler.Instance;
     }
+
+    /// <summary>Gets where this device's encoders are finished.</summary>
+    internal IWorkScheduler Finishing => _finishing;
 
     /// <summary>Creates a device over a context of its own.</summary>
     /// <param name="surface">The surface the adapter must present to, or the null handle for headless.</param>
@@ -67,6 +80,9 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     /// <param name="height">The height to configure it at.</param>
     /// <param name="vsync">Whether to wait for the display.</param>
     /// <param name="lowPower">Whether to prefer the integrated adapter.</param>
+    /// <param name="finishing">
+    /// Where encoders are finished (<see cref="WebGpuCommandEncoder.Finish"/>); inline where none is given.
+    /// </param>
     /// <returns>The device, with its surface configured.</returns>
     /// <remarks>
     /// The surface is made before the adapter is asked for, because the adapter has to be one that can
@@ -78,7 +94,8 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
         int width,
         int height,
         bool vsync = true,
-        bool lowPower = false)
+        bool lowPower = false,
+        IWorkScheduler? finishing = null)
     {
         WgpuLibrary.Register();
 
@@ -93,7 +110,7 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
         try
         {
             WebGpuContext context = WebGpuContext.CreateOn(instance, surface.Handle, lowPower);
-            WebGpuRhiDevice device = new(context, ownsContext: true, surface);
+            WebGpuRhiDevice device = new(context, ownsContext: true, surface, finishing);
             device.ConfigureSurface(width, height, vsync);
             return device;
         }
@@ -626,7 +643,11 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
         WGPUCommandBuffer[] handles = new WGPUCommandBuffer[commands.Length];
         for (int i = 0; i < commands.Length; i++)
         {
-            handles[i] = ((WebGpuCommandBuffer)commands[i]).Handle;
+            handles[i] = commands[i] switch
+            {
+                WebGpuFinishingCommandBuffer finishing => finishing.Finished().Handle,
+                IRhiCommandBuffer finished => ((WebGpuCommandBuffer)finished).Handle,
+            };
         }
 
         fixed (WGPUCommandBuffer* first = handles)

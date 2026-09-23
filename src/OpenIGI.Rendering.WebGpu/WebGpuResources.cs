@@ -399,3 +399,71 @@ public sealed unsafe class WebGpuCommandBuffer : WebGpuResource<WGPUCommandBuffe
     /// <inheritdoc/>
     protected override void Release(WGPUCommandBuffer handle) => Wgpu.wgpuCommandBufferRelease(handle);
 }
+
+/// <summary>A command buffer whose encoder is still being finished on another thread.</summary>
+/// <remarks>
+/// What <see cref="WebGpuCommandEncoder.Finish"/> hands out where there are threads. Submitting it waits
+/// for the finish; so does disposing of it unsubmitted, since the buffer the finish makes is this object's
+/// to release either way.
+/// </remarks>
+public sealed class WebGpuFinishingCommandBuffer : IRhiCommandBuffer
+{
+    private readonly Task<WGPUCommandBuffer> _finishing;
+    private WebGpuCommandBuffer? _finished;
+    private bool _disposed;
+
+    /// <summary>Initialises a new instance of the <see cref="WebGpuFinishingCommandBuffer"/> class.</summary>
+    /// <param name="finishing">The finish, which yields the command buffer.</param>
+    /// <param name="label">The name it was finished with.</param>
+    public WebGpuFinishingCommandBuffer(Task<WGPUCommandBuffer> finishing, string label)
+    {
+        ArgumentNullException.ThrowIfNull(finishing);
+        _finishing = finishing;
+        Label = label;
+    }
+
+    /// <inheritdoc/>
+    public string Label { get; }
+
+    /// <summary>Waits for the finish.</summary>
+    /// <returns>The finished command buffer, still owned by this object.</returns>
+    /// <exception cref="InvalidOperationException">The finish produced nothing.</exception>
+    public WebGpuCommandBuffer Finished()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (_finished is null)
+        {
+            WGPUCommandBuffer handle = _finishing.GetAwaiter().GetResult();
+            _finished = handle.IsValid
+                ? new WebGpuCommandBuffer(handle, Label)
+                : throw new InvalidOperationException($"The encoder '{Label}' produced no commands.");
+        }
+
+        return _finished;
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
+        if (_finished is not null)
+        {
+            _finished.Dispose();
+            return;
+        }
+
+        // Never submitted: whatever the finish made is still this object's to release.
+        WGPUCommandBuffer handle = _finishing.GetAwaiter().GetResult();
+        if (handle.IsValid)
+        {
+            Wgpu.wgpuCommandBufferRelease(handle);
+        }
+    }
+}

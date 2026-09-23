@@ -45,6 +45,10 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     private IRhiSampler _cubeSampler = null!;
 
     private IRhiCommandEncoder? _encoder;
+
+    // The frame's commands already sealed, in the order they were recorded, submitted together with the
+    // rest at the swap. See SealEncoder.
+    private readonly List<IRhiCommandBuffer> _sealed = [];
     private IRhiRenderPassEncoder? _pass;
     private RhiFrame _frame;
     private bool _inFrame;
@@ -258,7 +262,9 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
         _profiler.ResolveFrame(Encoder());
 
-        _device.Submit([Encoder().Finish("frame")]);
+        SealEncoder();
+        _device.Submit(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_sealed));
+        _sealed.Clear();
         _skySubmittedSlot = _skyRecordedSlot;
         _skyRecordedSlot = -1;
 
@@ -270,9 +276,6 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
         _autoExposure?.RequestReadback(FrameSlot);
         _profiler.RequestReadback(FrameSlot);
-
-        _encoder?.Dispose();
-        _encoder = null;
 
         _device.EndFrame(_frame);
         _inFrame = false;
@@ -300,6 +303,13 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         ClosePass();
         _encoder?.Dispose();
         _encoder = null;
+
+        foreach (IRhiCommandBuffer unsent in _sealed)
+        {
+            unsent.Dispose();
+        }
+
+        _sealed.Clear();
 
         _device.WaitIdle();
 
@@ -393,6 +403,33 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
         _encoder = _device.CreateCommandEncoder("frame");
         return _encoder;
+    }
+
+    /// <summary>Finishes what the frame has recorded so far, to be submitted with the rest at the swap.</summary>
+    /// <remarks>
+    /// <para>
+    /// Called after the passes that record the most: each shadow cascade and the geometry. Finishing an
+    /// encoder is where WebGPU validates and translates everything recorded into it -- five of mission 1's
+    /// thirteen milliseconds a frame, one encoder for the whole frame, all of it at the swap and none of
+    /// it overlapping anything. Sealed in pieces, each piece is finished while the next is recorded, on a
+    /// backend that finishes off the recording thread.
+    /// </para>
+    /// <para>
+    /// Nothing changes about what runs or in what order: the pieces are submitted together, in the order
+    /// they were recorded, exactly where the single encoder was. On Vulkan a finish is next to free, and
+    /// a few more command buffers a frame are nothing.
+    /// </para>
+    /// </remarks>
+    private void SealEncoder()
+    {
+        if (_encoder is not { } open)
+        {
+            return;
+        }
+
+        _sealed.Add(open.Finish("frame"));
+        open.Dispose();
+        _encoder = null;
     }
 
     private void BeginFrame()

@@ -249,18 +249,44 @@ public sealed unsafe class WebGpuCommandEncoder : IRhiCommandEncoder
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Where the device's scheduler runs work beside the caller, the finish itself goes to it and this
+    /// returns at once: finishing is where wgpu validates and translates everything recorded, milliseconds
+    /// for a frame's draws, and none of that needs the recording thread. The submission waits for it. A
+    /// browser has one thread and an inline scheduler, so there it is finished here, as it always was.
+    /// </remarks>
     public IRhiCommandBuffer Finish(string label = "")
     {
         ThrowIfFinished();
-        using WebGpuString name = new(label);
-
-        WGPUCommandBufferDescriptor native = new() { label = name.View };
-        WGPUCommandBuffer commands = Wgpu.wgpuCommandEncoderFinish(_handle, &native);
-
         _finished = true;
+
+        // The encoder goes with the finish, which releases it; this object's disposal then has nothing to do.
+        WGPUCommandEncoder handle = _handle;
+        _handle = default;
+
+        if (_device.Finishing.IsConcurrent)
+        {
+            return new WebGpuFinishingCommandBuffer(_device.Finishing.Run(() => FinishAndRelease(handle, label)), label);
+        }
+
+        WGPUCommandBuffer commands = FinishAndRelease(handle, label);
         return commands.IsValid
             ? new WebGpuCommandBuffer(commands, label)
             : throw new InvalidOperationException($"The encoder '{Label}' produced no commands.");
+    }
+
+    private static WGPUCommandBuffer FinishAndRelease(WGPUCommandEncoder handle, string label)
+    {
+        try
+        {
+            using WebGpuString name = new(label);
+            WGPUCommandBufferDescriptor native = new() { label = name.View };
+            return Wgpu.wgpuCommandEncoderFinish(handle, &native);
+        }
+        finally
+        {
+            Wgpu.wgpuCommandEncoderRelease(handle);
+        }
     }
 
     /// <inheritdoc/>

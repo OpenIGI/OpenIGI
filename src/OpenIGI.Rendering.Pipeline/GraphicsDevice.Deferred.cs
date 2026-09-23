@@ -352,6 +352,9 @@ public sealed partial class GraphicsDevice
         }
 
         CloseScenePass();
+
+        // The geometry, the frame's other great run of draws, finished while the shading records.
+        SealEncoder();
         RecordShading();
 
         // Over the finished, lit frame and before the temporal resolve steadies it: the surfaces' own

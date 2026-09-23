@@ -1,4 +1,5 @@
-﻿using OpenIGI.Platform;
+﻿using OpenIGI.Core.Threading;
+using OpenIGI.Platform;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.Rendering.WebGpu;
 
@@ -40,6 +41,7 @@ internal static class WebGpuWindow
             new WebGpuWindowHandles(system, handles.Display, handles.Window),
             width,
             height,
-            vsync);
+            vsync,
+            finishing: ThreadPoolWorkScheduler.Instance);
     }
 }
