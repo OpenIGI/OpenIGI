@@ -741,6 +741,16 @@ internal sealed partial class GameHost : IDisposable
                 return;
             }
 
+            // The back buffer follows the window. Without this only the viewport did: a browser canvas
+            // resized by the page -- or by F11 -- kept presenting a surface at its old size, and WebGPU
+            // refuses a viewport larger than the target it is drawn into, so every frame after the resize
+            // was thrown away and the picture froze.
+            DisplayMode mode = _device.CurrentMode;
+            if (mode.Width != width || mode.Height != height)
+            {
+                _device.SetMode(mode with { Width = width, Height = height });
+            }
+
             _device.SetViewport(new Viewport(0, 0, width, height));
             _device.Set2DProjection(width, height);
         }
