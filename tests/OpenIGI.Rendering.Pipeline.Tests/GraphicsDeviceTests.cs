@@ -105,16 +105,17 @@ public sealed class GraphicsDeviceTests
     }
 
     [Theory]
-    [InlineData(ShaderTarget.Spirv, false)]
-    [InlineData(ShaderTarget.Wgsl, true)]
-    public void It_claims_the_temporal_resolve_only_where_its_backend_can_run_it(ShaderTarget target, bool named)
+    [InlineData(ShaderTarget.Spirv)]
+    [InlineData(ShaderTarget.Wgsl)]
+    public void The_temporal_resolve_runs_on_every_target(ShaderTarget target)
     {
-        // Two of the chain's modules have no WGSL form. Over WebGPU the chain stands down whole, and the
-        // setting says so rather than a pass being refused halfway through building itself.
+        // Every module of the chain has a WGSL form, so WebGPU resolves the jitter the game adds as
+        // Vulkan does. Without it the jitter reaches the screen, and every pixel moves every frame.
         using RecordingRhiDevice rhi = new() { ShaderTarget = target };
         using GraphicsDevice device = Open(rhi);
 
-        Assert.Equal(named, device.Capabilities.UnimplementedSettings.Contains("r_taa"));
+        Assert.True(Deferred.TemporalResolve.RunsOn(rhi));
+        Assert.DoesNotContain("r_taa", device.Capabilities.UnimplementedSettings);
         Assert.True(device.BeginSceneCapture(new SceneTargetDescription(64, 64, Deferred: true)));
     }
 

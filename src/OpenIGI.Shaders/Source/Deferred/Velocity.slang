@@ -1,8 +1,9 @@
 // Screen motion, derived by reprojecting each pixel's depth through the previous frame's camera.
 
+#include "../Common/DepthSlot.slang"
 #include "../Common/ViewDepth.slang"
 
-[[vk::binding(0, 0)]] Texture2D<float4> uDepth;
+OPENIGI_DEPTH_SLOT(0) uDepth;
 [[vk::binding(1, 0)]] SamplerState uDepthSampler;
 
 [[vk::binding(2, 0)]] [[vk::image_format("rg16f")]] WTexture2D<float4> uVelocity;
@@ -45,7 +46,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
     }
 
     float2 rasterUv = (float2(px) + 0.5) * p.resolution.zw;
-    float depth = uDepth.SampleLevel(uDepthSampler, rasterUv, 0.0).r;
+    float depth = OPENIGI_DEPTH_SAMPLE(uDepth, uDepthSampler, rasterUv);
 
     // Reverse-Z clears to zero, so a pixel the geometry never covered reads exactly zero. That is the
     // sky, and the sky is not motionless: it sits at infinity, so it turns with the camera exactly as

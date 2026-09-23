@@ -83,15 +83,7 @@
     },
     {
       "id": "UpscaleDilateVelocity",
-      "source": "TemporalUpscale/DilateVelocity.slang",
-      "variants": [
-        {
-          "name": "default",
-          "targets": [
-            "Spirv"
-          ]
-        }
-      ]
+      "source": "TemporalUpscale/DilateVelocity.slang"
     },
     {
       "id": "MotionBlurFlatten",
@@ -150,10 +142,7 @@
           "name": "group8",
           "defines": {
             "OPENIGI_UPSCALE_GROUP": "8"
-          },
-          "targets": [
-            "Spirv"
-          ]
+          }
         }
       ]
     },
