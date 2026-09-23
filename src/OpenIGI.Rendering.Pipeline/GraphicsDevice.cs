@@ -275,14 +275,21 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         }
 
         _disposed = true;
+
+        // Whatever is still being recorded is closed and abandoned FIRST. An encoder names everything its
+        // commands use, and freeing any of that while it is still open invalidates it, so that ending its
+        // pass afterwards is an error in its own right -- which is what every run used to end with.
+        CloseShadowPass();
+        CloseScenePass();
+        ClosePass();
+        _encoder?.Dispose();
+        _encoder = null;
+
         _device.WaitIdle();
 
         // Waited for, so nothing is in flight and everything held back may go.
         _retired.Dispose();
         DisposeCapture();
-
-        _pass?.EndPass();
-        _encoder?.Dispose();
 
         DisposeCardAtlas();
         DisposeDeferred();
