@@ -120,7 +120,6 @@ internal sealed unsafe partial class VulkanRhiDevice
         };
 
         VkCheck.Ok(_vk.BeginCommandBuffer(command, &begin), "vkBeginCommandBuffer");
-        _recorded.Add(command);
 
         return new VulkanRhiCommandEncoder(this, _vk, command, label);
     }
@@ -168,7 +167,9 @@ internal sealed unsafe partial class VulkanRhiDevice
     /// <returns>The bytes.</returns>
     internal byte[] ReadBack(VulkanRhiBuffer buffer, ulong offset, ulong size)
     {
+        FlushUploads();
         _vk.DeviceWaitIdle(_device.Device);
+        ReleaseFinishedLoose();
 
         byte[] bytes = new byte[size];
         if (buffer.Buffer.HostVisible)

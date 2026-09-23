@@ -125,6 +125,7 @@ internal sealed unsafe partial class VulkanRhiDevice
         // The slot's previous frame has certainly finished, so whatever it was holding can go now.
         _device.GraphicsQueue.Poll();
         RetireFrameTexture(_frameSlot);
+        ReleaseSlot(_frameSlot);
 
         Result acquired = swapchain.AcquireNextImage(_acquired[_frameSlot], out _imageIndex);
         if (acquired is Result.ErrorOutOfDateKhr)
@@ -189,10 +190,19 @@ internal sealed unsafe partial class VulkanRhiDevice
         }
 
         VkCheck.Ok(_vk.EndCommandBuffer(transition), "vkEndCommandBuffer");
+
+        // Writes made since the last submission go ahead of the transition that ends the frame.
+        CommandBuffer upload = TakeUpload(_pendingStaging);
+        if (upload.Handle != 0)
+        {
+            _pending.Add(upload);
+        }
+
         _pending.Add(transition);
 
         CommandBuffer[] buffers = [.. _pending];
         _pending.Clear();
+        HoldForSlot(_frameSlot, buffers);
 
         Semaphore wait = _acquired[_frameSlot];
         Semaphore signal = _presentable[_frameSlot];
@@ -273,21 +283,18 @@ internal sealed unsafe partial class VulkanRhiDevice
     {
         if (_inFrame)
         {
+            // The writes made before this submission land before it, as the interface promises.
+            CommandBuffer upload = TakeUpload(_pendingStaging);
+            if (upload.Handle != 0)
+            {
+                _pending.Add(upload);
+            }
+
             _pending.AddRange(buffers);
             return;
         }
 
-        fixed (CommandBuffer* first = buffers)
-        {
-            SubmitInfo submit = new()
-            {
-                SType = StructureType.SubmitInfo,
-                CommandBufferCount = (uint)buffers.Length,
-                PCommandBuffers = first,
-            };
-
-            VkCheck.Ok(_vk.QueueSubmit(_device.Graphics, 1, &submit, default), "vkQueueSubmit");
-        }
+        SubmitLoose(buffers);
     }
 
     /// <summary>Wraps one swapchain image as a texture, without owning it.</summary>
@@ -335,6 +342,7 @@ internal sealed unsafe partial class VulkanRhiDevice
         _presentable = new Semaphore[Frames];
         _inFlight = new Fence[Frames];
         _frameTextures = new VulkanRhiTexture?[Frames];
+        CreateSubmissionState(Frames);
 
         SemaphoreCreateInfo semaphore = new() { SType = StructureType.SemaphoreCreateInfo };
 
@@ -374,6 +382,7 @@ internal sealed unsafe partial class VulkanRhiDevice
         VkCheck.Ok(_vk.ResetFences(_device.Device, 1, &fence), "vkResetFences");
 
         _device.GraphicsQueue.Poll();
+        ReleaseSlot(_frameSlot);
 
         _inFrame = true;
         frame = new RhiFrame(_offscreen[_frameSlot].View, _frameSlot, _frameSlot);
@@ -388,8 +397,15 @@ internal sealed unsafe partial class VulkanRhiDevice
             throw new GraphicsDeviceException("No frame is begun, so there is none to end.");
         }
 
+        CommandBuffer upload = TakeUpload(_pendingStaging);
+        if (upload.Handle != 0)
+        {
+            _pending.Add(upload);
+        }
+
         CommandBuffer[] buffers = [.. _pending];
         _pending.Clear();
+        HoldForSlot(_frameSlot, buffers);
 
         if (buffers.Length > 0)
         {

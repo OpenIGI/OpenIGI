@@ -29,7 +29,6 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
     private readonly VulkanCommands _commands;
     private readonly IIgiLogger _logger;
     private readonly List<DescriptorPool> _pools = [];
-    private readonly List<CommandBuffer> _recorded = [];
     private DescriptorPool _pool;
     private int _poolRemaining;
     private bool _disposed;
@@ -379,28 +378,8 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
             return;
         }
 
-        // Through a staging buffer, which is what a device-local buffer needs and what the queue's own
-        // write is on the other backend. Submitted and waited on here: an upload that races the frame
-        // that reads it is the kind of bug that only appears on somebody else's machine.
-        ulong bytes = (ulong)(data.Length * sizeof(T));
-        using VulkanBuffer staging = new(
-            _vk,
-            _device,
-            _allocator,
-            bytes,
-            BufferUsageFlags.TransferSrcBit,
-            MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
-
-        staging.Write(data);
-
-        Silk.NET.Vulkan.Buffer source = staging.Handle;
-        Silk.NET.Vulkan.Buffer destination = target.Buffer.Handle;
-
-        _commands.SingleTime(cmd =>
-        {
-            BufferCopy region = new() { SrcOffset = 0, DstOffset = offset, Size = bytes };
-            _vk.CmdCopyBuffer(cmd, source, destination, 1, &region);
-        });
+        // Queued ahead of the next submission rather than sent and waited on: see VulkanRhiDevice.Submission.
+        QueueUpload(target.Buffer.Handle, offset, System.Runtime.InteropServices.MemoryMarshal.AsBytes(data));
     }
 
     /// <inheritdoc/>
@@ -468,7 +447,9 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
     public void WaitIdle()
     {
         ThrowIfDisposed();
+        FlushUploads();
         _vk.DeviceWaitIdle(_device.Device);
+        ReleaseFinishedLoose();
     }
 
     /// <inheritdoc/>
@@ -482,6 +463,7 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice
         _disposed = true;
         _vk.DeviceWaitIdle(_device.Device);
 
+        DestroySubmissionState();
         DestroyFrameSync();
 
         foreach (DescriptorPool pool in _pools)
