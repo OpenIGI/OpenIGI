@@ -38,12 +38,16 @@ public sealed class Mesh3DPipelineCache : IDisposable
     private readonly ShaderReflection _reflection;
     private readonly string _vertexEntryPoint;
     private readonly string _fragmentEntryPoint;
-    private readonly Dictionary<Mesh3DPipelineKey, IRhiRenderPipeline> _pipelines = [];
+    // One set of variants per sun they were built for (and per fog, for a module that bakes it in), the
+    // oldest dropped past a handful.
+    private const int MaxEnvironments = 4;
+
+    private readonly Dictionary<Environment, Dictionary<Mesh3DPipelineKey, IRhiRenderPipeline>> _sets = [];
+    private readonly List<Environment> _order = [];
     private readonly RetiredResources? _retired;
-    private Vector3f _fogColour;
-    private float _fogDensity;
-    private Vector3f _sunAmbient;
-    private Vector3f _sunColour;
+    private readonly bool _bakesFog;
+    private Environment _environment;
+    private Dictionary<Mesh3DPipelineKey, IRhiRenderPipeline> _pipelines = [];
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="Mesh3DPipelineCache"/> class.</summary>
@@ -77,8 +81,15 @@ public sealed class Mesh3DPipelineCache : IDisposable
         _targetFormat = targetFormat;
         _depthFormat = depthFormat;
         _retired = retired;
+        _sets[_environment] = _pipelines;
+        _order.Add(_environment);
 
         _reflection = ShaderCatalog.GetReflection(ShaderModuleId.Mesh3D);
+
+        // The fog became push data; a module that still declared it as a constant would bake it in.
+        _bakesFog = ShaderConstants.Declared(
+            _reflection,
+            new Dictionary<int, RhiConstant> { [Mesh3DConstants.FogDensity] = RhiConstant.Of(0f) }).Count > 0;
         _vertexEntryPoint = _reflection.EntryPointFor(ShaderStage.Vertex).Name;
         _fragmentEntryPoint = _reflection.EntryPointFor(ShaderStage.Fragment).Name;
 
@@ -113,42 +124,27 @@ public sealed class Mesh3DPipelineCache : IDisposable
     /// <summary>Gets how many variants have been built.</summary>
     public int Count => _pipelines.Count;
 
-    /// <summary>Sets the scene's fog, throwing the variants away when it changes.</summary>
+    /// <summary>Sets the scene's fog, drawing with the variants built for it.</summary>
     /// <param name="colour">The colour a surface tends to with distance.</param>
     /// <param name="density">The extinction per metre; zero is no fog.</param>
     /// <remarks>
-    /// A level's fog is a constant, so it is baked into the variants rather than pushed — there is no
-    /// push room, and nothing about it varies within a mission. Changing it therefore discards the
-    /// cache. That happens when a mission loads, which is not between frames: the menu loads its
-    /// backdrop's mission while it goes on drawing, so a discarded variant may be bound in the frame
-    /// being recorded and is retired rather than freed.
+    /// The shader reads the fog as push data now, so a fog changes no variant: the retail path sets the
+    /// terrain's fog and the objects' alternately within a frame, and each of those used to throw every
+    /// variant away and build it again. Only a module that still bakes it in keys its variants on it.
     /// </remarks>
-    public void SetFog(Vector3f colour, float density)
-    {
-        if (colour == _fogColour && density.Equals(_fogDensity))
-        {
-            return;
-        }
+    public void SetFog(Vector3f colour, float density) =>
+        Select(_bakesFog ? _environment with { FogColour = colour, FogDensity = density } : _environment);
 
-        _fogColour = colour;
-        _fogDensity = density;
-        DiscardVariants();
-    }
-
-    /// <summary>Sets the fixed-function sun's colours, throwing the variants away when they change.</summary>
+    /// <summary>Sets the fixed-function sun's colours, drawing with the variants built for them.</summary>
     /// <param name="ambient">The flat light an unlightmapped vertex receives.</param>
     /// <param name="colour">The sun's diffuse colour.</param>
-    public void SetSun(Vector3f ambient, Vector3f colour)
-    {
-        if (ambient == _sunAmbient && colour == _sunColour)
-        {
-            return;
-        }
-
-        _sunAmbient = ambient;
-        _sunColour = colour;
-        DiscardVariants();
-    }
+    /// <remarks>
+    /// Baked in -- there is no push room -- so each sun has variants of its own. The sets already built
+    /// are kept, so returning to a sun costs nothing, and only past a handful is the oldest retired,
+    /// never freed, since the frame being recorded may have bound it.
+    /// </remarks>
+    public void SetSun(Vector3f ambient, Vector3f colour) =>
+        Select(_environment with { SunAmbient = ambient, SunColour = colour });
 
     /// <summary>Gets the pipeline for one render state, building it on first use.</summary>
     /// <param name="depth">How the draw interacts with the depth buffer.</param>
@@ -313,12 +309,16 @@ public sealed class Mesh3DPipelineCache : IDisposable
 
         // The two group layouts are the caller's; every mesh path shares them and none of them owns
         // them, which is the point of their being handed in.
-        foreach (IRhiRenderPipeline pipeline in _pipelines.Values)
+        foreach (Dictionary<Mesh3DPipelineKey, IRhiRenderPipeline> set in _sets.Values)
         {
-            pipeline.Dispose();
+            foreach (IRhiRenderPipeline pipeline in set.Values)
+            {
+                pipeline.Dispose();
+            }
         }
 
-        _pipelines.Clear();
+        _sets.Clear();
+        _order.Clear();
         Layout.Dispose();
         _module.Dispose();
     }
@@ -335,10 +335,10 @@ public sealed class Mesh3DPipelineCache : IDisposable
             Mesh3DConstants.Describe(
                 key.AlphaReference,
                 key.Reflective,
-                _fogColour,
-                _fogDensity,
-                _sunAmbient,
-                _sunColour,
+                _environment.FogColour,
+                _environment.FogDensity,
+                _environment.SunAmbient,
+                _environment.SunColour,
                 _targetFormat.IsSrgb()));
 
         return _device.CreateRenderPipeline(new RhiRenderPipelineDescriptor(
@@ -353,12 +353,43 @@ public sealed class Mesh3DPipelineCache : IDisposable
             $"Mesh3D-{key.Depth}-{key.Cull}-{key.Blend}-{key.AlphaReference}{(key.Reflective ? "-reflective" : string.Empty)}"));
     }
 
+    // Makes an environment the one variants are drawn with, keeping the sets already built.
+    private void Select(Environment environment)
+    {
+        if (environment == _environment)
+        {
+            return;
+        }
+
+        _environment = environment;
+
+        if (_sets.TryGetValue(environment, out Dictionary<Mesh3DPipelineKey, IRhiRenderPipeline>? existing))
+        {
+            _pipelines = existing;
+            _order.Remove(environment);
+            _order.Add(environment);
+            return;
+        }
+
+        _pipelines = [];
+        _sets[environment] = _pipelines;
+        _order.Add(environment);
+
+        if (_order.Count > MaxEnvironments)
+        {
+            Environment oldest = _order[0];
+            _order.RemoveAt(0);
+            Discard(_sets[oldest]);
+            _sets.Remove(oldest);
+        }
+    }
+
     // Freed only once no frame can still be drawing with them: a pipeline destroyed while a command
     // buffer that bound it is recording invalidates that buffer, and submitting it loses the device --
     // which is what switching the menu to the vanilla preset did.
-    private void DiscardVariants()
+    private void Discard(Dictionary<Mesh3DPipelineKey, IRhiRenderPipeline> set)
     {
-        foreach (IRhiRenderPipeline pipeline in _pipelines.Values)
+        foreach (IRhiRenderPipeline pipeline in set.Values)
         {
             if (_retired is { } retired)
             {
@@ -370,6 +401,13 @@ public sealed class Mesh3DPipelineCache : IDisposable
             }
         }
 
-        _pipelines.Clear();
+        set.Clear();
     }
+
+    /// <summary>The fog and the sun a set of variants was built with.</summary>
+    private readonly record struct Environment(
+        Vector3f FogColour,
+        float FogDensity,
+        Vector3f SunAmbient,
+        Vector3f SunColour);
 }

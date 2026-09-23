@@ -791,7 +791,8 @@ public sealed partial class GraphicsDevice
             _materialLayout,
             _cubeLayout,
             SceneTargetSet.FormatOf(SceneTargetId.Lit),
-            SceneTargetSet.FormatOf(SceneTargetId.Depth));
+            SceneTargetSet.FormatOf(SceneTargetId.Depth),
+            _retired);
 
         _forwardPipelines.SetFog(_fog.Colour, _fog.DensityPerMetre);
         _forwardPipelines.SetSun(_sceneSunAmbient, _sceneSunColour);

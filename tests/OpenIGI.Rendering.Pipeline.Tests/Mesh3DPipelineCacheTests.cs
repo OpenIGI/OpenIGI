@@ -60,9 +60,9 @@ public sealed class Mesh3DPipelineCacheTests
     }
 
     [Fact]
-    public void A_variant_thrown_away_mid_frame_outlives_the_frames_that_may_have_bound_it()
+    public void A_variant_set_dropped_mid_frame_outlives_the_frames_that_may_have_bound_it()
     {
-        // The menu loads its backdrop's mission, and with it the fog, while it goes on drawing: freed at
+        // The menu loads its backdrop's mission, and with it the sun, while it goes on drawing: freed at
         // once, a pipeline the frame being recorded had bound invalidated that frame's commands, and
         // submitting them lost the device.
         using RecordingRhiDevice device = new();
@@ -77,9 +77,12 @@ public sealed class Mesh3DPipelineCacheTests
 
         IRhiRenderPipeline bound = cache.ForState(DepthState.TestAndWrite, CullMode.None, BlendMode.Opaque);
 
-        cache.SetFog(new Vector3f(0.4f, 0.4f, 0.5f), 0.002f);
+        // Enough other suns that the first set is the one dropped.
+        for (int sun = 1; sun <= 8; sun++)
+        {
+            cache.SetSun(new Vector3f(sun * 0.1f, 0f, 0f), Vector3f.One);
+        }
 
-        Assert.Equal(0, cache.Count);
         Assert.False(((RecordedRenderPipeline)bound).IsDisposed);
 
         retired.ReleaseBefore(12);
@@ -88,21 +91,39 @@ public sealed class Mesh3DPipelineCacheTests
     }
 
     [Fact]
-    public void Changing_the_fog_throws_the_variants_away()
+    public void A_change_of_fog_keeps_the_variants_it_does_not_reach()
     {
+        // The fog is push data. The retail path sets the terrain's and the objects' alternately within a
+        // frame, and each of those rebuilt every variant while it was a reason to.
         using RecordingRhiDevice device = new();
         using Mesh3DPipelineCache cache = Open(device);
 
         IRhiRenderPipeline before = cache.ForState(DepthState.TestAndWrite, CullMode.None, BlendMode.Opaque);
 
         cache.SetFog(new Vector3f(0.4f, 0.4f, 0.5f), 0.002f);
+        cache.SetFog(new Vector3f(0.2f, 0.3f, 0.3f), 0.004f);
 
+        Assert.Same(before, cache.ForState(DepthState.TestAndWrite, CullMode.None, BlendMode.Opaque));
+        Assert.Single(device.Resources.OfType<RecordedRenderPipeline>());
+    }
+
+    [Fact]
+    public void A_new_sun_has_variants_of_its_own_and_going_back_reuses_the_first()
+    {
+        using RecordingRhiDevice device = new();
+        using Mesh3DPipelineCache cache = Open(device);
+
+        IRhiRenderPipeline day = cache.ForState(DepthState.TestAndWrite, CullMode.None, BlendMode.Opaque);
+
+        cache.SetSun(new Vector3f(0.1f, 0.1f, 0.2f), new Vector3f(0.2f, 0.2f, 0.3f));
         Assert.Equal(0, cache.Count);
-        Assert.True(((RecordedRenderPipeline)before).IsDisposed);
+        IRhiRenderPipeline night = cache.ForState(DepthState.TestAndWrite, CullMode.None, BlendMode.Opaque);
+        Assert.NotSame(day, night);
 
-        IRhiRenderPipeline after = cache.ForState(DepthState.TestAndWrite, CullMode.None, BlendMode.Opaque);
+        cache.SetSun(Vector3f.Zero, Vector3f.Zero);
 
-        Assert.NotSame(before, after);
+        Assert.Same(day, cache.ForState(DepthState.TestAndWrite, CullMode.None, BlendMode.Opaque));
+        Assert.False(((RecordedRenderPipeline)day).IsDisposed);
     }
 
     [Fact]
