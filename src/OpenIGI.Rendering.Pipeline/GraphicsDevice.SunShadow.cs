@@ -45,7 +45,13 @@ public sealed partial class GraphicsDevice
     /// Acted on as the next capture opens, with the device idle: a structure a submitted frame still
     /// traces against cannot be freed underneath it.
     /// </remarks>
-    public void ReleaseWorld() => _worldReleasePending = TracedWorld is not null;
+    public void ReleaseWorld()
+    {
+        _worldReleasePending = TracedWorld is not null;
+
+        // The next level's sky is not this one's; its harmonics are asked for afresh.
+        _skyIrradianceKnown = false;
+    }
 
     /// <inheritdoc/>
     /// <remarks>Only from the G-buffer pass: the transform is the world transform only for the frame's camera.</remarks>

@@ -57,6 +57,10 @@ public sealed partial class GraphicsDevice
     // copy was last sent.
     private int _skyRecordedSlot = -1;
     private int _skySubmittedSlot = -1;
+
+    // The last harmonics that arrived, answered again while a newer copy is still in flight.
+    private readonly float[] _skyIrradiance = new float[SkyAtmosphere.IrradianceFloats];
+    private bool _skyIrradianceKnown;
     private BloomPass? _bloom;
     private IRhiBindGroupLayout? _surfaceLayout;
     private IRhiBuffer? _surfaceUniform;
@@ -549,17 +553,32 @@ public sealed partial class GraphicsDevice
     /// because the game asks mid-frame, after this frame's copy is recorded and before it is sent, and a
     /// buffer mapped in that gap is one WebGPU will not let the frame copy into. Never the slot this frame
     /// is copying into, either: a frame that drew no sky leaves the last copy's slot standing, and a later
-    /// frame can come round to that same slot. Nothing is waited for: a slot whose copy has not arrived
-    /// answers no, and the caller keeps what it had — which, for a sun fixed for the mission, is the same
-    /// answer.
+    /// frame can come round to that same slot. Nothing is waited for: while a slot's copy has not arrived,
+    /// the last harmonics that did are answered again -- which, for a sky that moves with the sun rather
+    /// than with the frame, is the same answer. No only before any have arrived.
     /// </remarks>
     public bool TryGetSkyIrradiance(Span<float> coefficients)
     {
         ThrowIfDisposed();
-        return _sky is { } sky
+        if (_sky is { } sky
             && _skySubmittedSlot >= 0
             && _skySubmittedSlot != _skyRecordedSlot
-            && sky.TryReadIrradiance(_skySubmittedSlot, coefficients);
+            && sky.TryReadIrradiance(_skySubmittedSlot, _skyIrradiance))
+        {
+            _skyIrradianceKnown = true;
+        }
+
+        // Once any have arrived, always an answer: a sky moves with the sun, not from one frame to the
+        // next, and the game treats "no" as "no sky" for that frame's dispatches rather than keeping what
+        // it had. On WebGPU a map lands when it lands, so "no" came at irregular intervals, and the screen
+        // GI accumulated a shifting mix of sky-lit and flat-lit rays: every surface drifted in colour.
+        if (!_skyIrradianceKnown || coefficients.Length < _skyIrradiance.Length)
+        {
+            return false;
+        }
+
+        _skyIrradiance.CopyTo(coefficients);
+        return true;
     }
 
     /// <summary>What the shading is told about this frame.</summary>
