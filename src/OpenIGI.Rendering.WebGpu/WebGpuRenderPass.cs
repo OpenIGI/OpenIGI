@@ -53,6 +53,14 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     private readonly WGPUBuffer[] _vertexBuffers = new WGPUBuffer[MaxVertexBuffers];
     private readonly ulong[] _vertexOffsets = new ulong[MaxVertexBuffers];
     private WGPURenderPipeline _pipeline;
+
+    // The last push's bytes, and where they landed. Two draws in three on mission 1 push exactly what the
+    // draw before them pushed -- the parts of one object share its block -- and a push that repeats what
+    // is still bound needs neither a slice of the ring nor a rebind.
+    private readonly byte[] _lastPush = new byte[256];
+    private int _lastPushLength = -1;
+    private WebGpuPushSlice _lastSlice;
+
     private WGPUBuffer _indexBuffer;
     private WGPUIndexFormat _indexFormat;
     private ulong _indexOffset;
@@ -149,12 +157,28 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
                 + "and a binding is written whole. Set the whole block.");
         }
 
+        if (IsBound(data))
+        {
+            return;
+        }
+
         // The write AND the binding, because nothing above this knows any of the three things the
         // binding takes: the ring, the group index, and where the write landed in it. A pass that only
         // wrote would record a draw whose layout has an unbound group, which is refused outright.
         WebGpuPushSlice landed = _pushes.Write(data);
         LastPushOffset = landed.Offset;
         SetPushGroup(landed.Group, landed.Offset);
+
+        if (data.Length <= _lastPush.Length)
+        {
+            data.CopyTo(_lastPush);
+            _lastPushLength = data.Length;
+            _lastSlice = landed;
+        }
+        else
+        {
+            _lastPushLength = -1;
+        }
     }
 
     /// <summary>Gets where the last push landed in the ring.</summary>
@@ -334,6 +358,16 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
             _handle = default;
         }
     }
+
+    // Whether these bytes are the last push and its slice is what the push group still has bound; a
+    // caller binding some other group there in between must not be answered with a stale slice.
+    private bool IsBound(ReadOnlySpan<byte> data) =>
+        _lastPushLength == data.Length
+        && (uint)_pushGroup < MaxGroups
+        && _groups[_pushGroup] == ((WebGpuBindGroup)_lastSlice.Group).Handle
+        && _groupHasOffset[_pushGroup]
+        && _groupOffsets[_pushGroup] == _lastSlice.Offset
+        && data.SequenceEqual(_lastPush.AsSpan(0, _lastPushLength));
 
     private void ThrowIfEnded()
     {
