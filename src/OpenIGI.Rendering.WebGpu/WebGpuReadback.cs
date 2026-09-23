@@ -108,7 +108,11 @@ public sealed unsafe class WebGpuReadback : IRhiReadback
                 break;
             }
 
-            if (!forever && Environment.TickCount64 > deadline)
+            // At or past the deadline, not only past it: with no time to wait the deadline is now, and a
+            // strict test spun -- polling the device and yielding -- until the millisecond tick moved on,
+            // which on Windows' timer is up to fifteen of them. The sky's harmonics are asked for that way
+            // every frame, and a sixth of the WebGPU frame went on it.
+            if (!forever && Environment.TickCount64 >= deadline)
             {
                 return false;
             }
