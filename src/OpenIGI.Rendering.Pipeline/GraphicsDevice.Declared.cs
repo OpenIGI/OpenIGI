@@ -128,11 +128,6 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
-    public void SetLocalLights(ReadOnlySpan<DeferredLocalLight> lights)
-    {
-    }
-
-    /// <inheritdoc/>
     public void SetEnvironmentCube(TextureHandle cube)
     {
     }

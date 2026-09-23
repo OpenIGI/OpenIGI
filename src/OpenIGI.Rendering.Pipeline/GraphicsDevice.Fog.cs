@@ -51,8 +51,7 @@ public sealed partial class GraphicsDevice
     /// <summary>Lights and integrates this frame's fog, after the geometry and before the shading reads it.</summary>
     /// <remarks>
     /// Skipped under a debug view: those isolate one term of the lighting, and a term is not isolated if
-    /// the whole scene's fog is composited over it. The frame's lamps are not on this path yet, so the
-    /// medium is lit by the sun and the sky alone.
+    /// the whole scene's fog is composited over it. The medium is lit by the sun, the sky and the lamps.
     /// </remarks>
     private void RecordFog(SceneTargetSet scene)
     {
@@ -70,8 +69,8 @@ public sealed partial class GraphicsDevice
         VolumetricFogFrame frame = new(
             _fogSettings,
             _fogVolumes.AsMemory(0, _fogVolumeCount),
-            ReadOnlyMemory<DeferredLocalLight>.Empty,
-            LampCount: 0,
+            _localLights,
+            _localLightCount,
             _lighting.SunDirection,
             _lighting.SunColour * _lighting.Scale,
             _lighting.AmbientColour,

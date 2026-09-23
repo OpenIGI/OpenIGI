@@ -354,6 +354,9 @@ public sealed partial class GraphicsDevice
         RecordGlazingReflection();
         RecordTemporal();
 
+        // Read by the shading, the fog and the rig's forward draws, all done now.
+        _localLightCount = 0;
+
         // The next frame draws its own cascades, or has none.
         _shadowsDrawn = false;
 
@@ -476,7 +479,7 @@ public sealed partial class GraphicsDevice
             WithFog(WithGlobalIllumination(WithTracedSun(WithShadows(LightingState())))),
             CascadeSplits,
             CascadeMatrices);
-        DeferredLampBlock.Write(lamps, new DeferredLampState(_frameCounter), []);
+        DeferredLampBlock.Write(lamps, LampState(), LocalLights);
 
         DeferredLightingParameters.WriteLight(
             light,

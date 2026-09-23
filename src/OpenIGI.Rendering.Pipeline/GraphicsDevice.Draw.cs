@@ -414,8 +414,10 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
 
             exposure,
 
-            // No dynamic lamps reach this device yet, so the lit rig is lit by the key light alone.
-            LampLight: Vector3f.Zero,
+            // Only the lit rig reads it, so the lamps are summed only for its draws.
+            LampLight: ForwardDrawMarker.IsStudioRig(ForwardDrawMarker.For(blend, _firstPerson, _lighting.Model))
+                ? LampFill.AtEye(LocalLights)
+                : Vector3f.Zero,
             _firstPerson);
 
         ForwardPushBlock.Write(push, state, modelView, blend, hasLightmap);
