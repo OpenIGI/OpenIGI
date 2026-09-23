@@ -607,13 +607,15 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _instance.Dispose();
     }
 
-    private static GraphicsCapabilities BuildCapabilities(
+    private static unsafe GraphicsCapabilities BuildCapabilities(
         PhysicalDeviceSelection selection,
         bool deferred,
         bool compute,
         bool rayQuery)
     {
         int maxTexture = (int)selection.Properties.Limits.MaxImageDimension2D;
+        PhysicalDeviceLimits limits = selection.Properties.Limits;
+        uint maxGroupsX = limits.MaxComputeWorkGroupCount[0];
         return new GraphicsCapabilities(
             TextureUnits: 16,
             MaxTextureSize: maxTexture,
@@ -631,6 +633,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
             // scene stands in until the world's own is built, so the answer does not change mid-level.
             SupportsRayQuery = compute && rayQuery,
             MaxSampleCount = 1,
+            MaxComputeGroupsX = (int)Math.Min(maxGroupsX, int.MaxValue),
             UnimplementedSettings = UnimplementedOnVulkan,
         };
     }

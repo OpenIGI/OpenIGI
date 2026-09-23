@@ -87,10 +87,11 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
             // The compute seam, where every module of the game's GI stack has this backend's form: saying
             // yes where the stack could not finish building would have the game reach for a shader this
-            // device refuses to make. That is WebGPU today; see GiRunsOn.
+            // device refuses to make. See GiRunsOn.
             SupportsCompute = GiRunsOn(device),
             SupportsRayQuery = false,
             MaxSampleCount = device.Limits.MaxSampleCount,
+            MaxComputeGroupsX = device.Limits.MaxComputeWorkgroupsPerDimension,
             UnimplementedSettings = UnimplementedOn(TemporalResolve.RunsOn(device), GiRunsOn(device)),
         };
 
