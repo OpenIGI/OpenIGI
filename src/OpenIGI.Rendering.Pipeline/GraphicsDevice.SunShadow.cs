@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Pipeline.Deferred;
 using OpenIGI.Rendering.Pipeline.Meshes;
@@ -42,8 +42,7 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Acted on as the next capture opens, with the device idle: a structure a submitted frame still
-    /// traces against cannot be freed underneath it.
+    /// Acted on as the next frame begins, with the device idle; see <see cref="ReleaseWorldIfAsked"/>.
     /// </remarks>
     public void ReleaseWorld()
     {
@@ -136,15 +135,41 @@ public sealed partial class GraphicsDevice
             return;
         }
 
-        if (_worldReleasePending)
+        world.RecordSceneUpdate(Encoder());
+    }
+
+    /// <summary>Drops the traced world a level change asked to be released, before the frame records anything.</summary>
+    /// <remarks>
+    /// <para>
+    /// Here, at the top of a frame, and nowhere later. Resetting frees every structure at once, so it needs
+    /// the device idle -- and idle covers only what has been SUBMITTED. It was done as a capture opened,
+    /// which may be well into a frame: whatever that frame had already recorded, a scene build naming the
+    /// old level's structures among it, sat in pieces not yet submitted, ran after the reset had freed
+    /// them, and the device was lost on the read (an invalid read inside a top-level build, on the way
+    /// from the menu into a mission). At the top of the frame there is nothing recorded to be caught out.
+    /// </para>
+    /// <para>
+    /// A release asked for mid-frame waits for the next one, so the frame that asked goes out tracing a
+    /// world that is still whole.
+    /// </para>
+    /// </remarks>
+    private void ReleaseWorldIfAsked()
+    {
+        if (!_worldReleasePending)
         {
-            _worldReleasePending = false;
-            _device.WaitIdle();
-            world.Reset();
-            _tracedSun?.Invalidate();
+            return;
         }
 
-        world.RecordSceneUpdate(Encoder());
+        _worldReleasePending = false;
+
+        if (TracedWorld is not { } world)
+        {
+            return;
+        }
+
+        _device.WaitIdle();
+        world.Reset();
+        _tracedSun?.Invalidate();
     }
 
     /// <summary>Traces the sun's shadow against the world, for the shading to read this same frame.</summary>

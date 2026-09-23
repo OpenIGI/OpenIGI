@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Pipeline.Deferred;
 using OpenIGI.Rendering.Pipeline.Diagnostics;
@@ -456,6 +456,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         }
 
         _inFrame = true;
+        ReleaseWorldIfAsked();
 
         // A frame's depth buffer starts empty. The interface has a ClearDepth, and the game does not
         // call it: the original's backends cleared depth with the frame's own pass, unconditionally, so

@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Shaders;
 
@@ -81,10 +81,11 @@ public sealed class RecordingRhiDevice : IRhiDevice
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Null whatever <see cref="RhiFeatures.RayQuery"/> says: recording a trace would mean recording an
-    /// acceleration structure, and a pass that stands down without one is exactly what wants testing.
+    /// Null unless a test supplies one, whatever <see cref="RhiFeatures.RayQuery"/> says: recording a
+    /// trace would mean recording an acceleration structure, and a pass that stands down without one is
+    /// exactly what wants testing. A test that watches the world's lifetime hands in a stand-in.
     /// </remarks>
-    public IRhiRayTracing? RayTracing => null;
+    public IRhiRayTracing? RayTracing { get; init; }
 
     /// <summary>Gets everything the device was asked to do, in order.</summary>
     public IReadOnlyList<RecordedRhiCommand> Commands => _commands;
