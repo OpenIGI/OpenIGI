@@ -4233,6 +4233,12 @@ internal sealed partial class GameHost : IDisposable
                     && RenderCVars.OffscreenScene.Value
                     && RenderCVars.Deferred.Value;
 
+                // The mission actually on screen, as the colour grade reads it. This read -mission's id, so a
+                // mission entered from the campaign -- where that is nought -- was drawn in the generic
+                // default haze instead of its own tuned fog, and looked different from the same mission
+                // started any other way, a renderer switch included.
+                int fogMission = _activeMission?.Id ?? _backdrop?.MissionId ?? _options.StartMission;
+
                 VolumetricFogSettings medium = VolumetricFogSettings.Off;
                 if (wantsFog)
                 {
@@ -4240,7 +4246,7 @@ internal sealed partial class GameHost : IDisposable
                     // coordinates carry a kilometres-large absolute offset, so it has to be anchored to
                     // the scene's own ground before the march can compare a sample against it.
                     medium = fogPresets.Resolve(
-                        _options.StartMission,
+                        fogMission,
                         authoredDensity,
                         (float)(_scene.GroundHeight + (_sky is { HasSky: true } ? _sky.PlaneHeight : 0f)),
                         RenderCVars.FogQuality.Value);
@@ -4584,7 +4590,7 @@ internal sealed partial class GameHost : IDisposable
                 _device.SetVolumetricFog(
                     medium,
                     new Vector3f((float)eye.Position.X, (float)eye.Position.Y, (float)eye.Position.Z),
-                    wantsFog ? fogPresets.VolumesFor(_options.StartMission) : ReadOnlySpan<LocalFogVolume>.Empty);
+                    wantsFog ? fogPresets.VolumesFor(fogMission) : ReadOnlySpan<LocalFogVolume>.Empty);
 
                 // Filled BEFORE the scene capture opens: a cascade renders into its own framebuffer, and
                 // beginning a capture first would leave the shell holding two render targets at once.
