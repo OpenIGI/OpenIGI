@@ -366,9 +366,23 @@ public sealed partial class GraphicsDevice
     }
 
     /// <summary>Fills every slot the kernel's module declares from what the seam bound, then records the dispatch.</summary>
+    /// <remarks>
+    /// <para>
+    /// Recorded into the frame whenever there is one to record into -- including a frame that has not
+    /// opened yet, once the game is presenting. The surface cache's lighting and the distance field's
+    /// clipmaps are dispatched before a frame's first draw, and the menu does that every frame: taken
+    /// for load-time work, each of those dispatches was submitted on its own and waited on until the
+    /// device was idle, which stalled the CPU on the GPU twice a frame and left the two never working
+    /// at once -- half the menu's main thread, on both backends.
+    /// </para>
+    /// <para>
+    /// Before the first frame has been presented it is load time: submitted and waited on, so the slot
+    /// past the frames in flight is always free.
+    /// </para>
+    /// </remarks>
     private void RunCompute(ComputeKernel kernel, Action<IRhiComputePassEncoder> dispatch)
     {
-        bool inFrame = _inFrame;
+        bool inFrame = _inFrame || (_frameCounter > 0 && !CapturingCards);
 
         // Load time submits and waits, so the slot past the frames in flight is always free.
         int slot = inFrame ? FrameSlot : FramesInFlight;
@@ -376,7 +390,7 @@ public sealed partial class GraphicsDevice
         if (inFrame)
         {
             // A render pass cannot hold a dispatch; whichever one is open ends here and the next draw
-            // opens it again.
+            // opens it again. Encoder() below opens the frame itself if it has not begun.
             ClosePass();
             CloseScenePass();
             CloseShadowPass();

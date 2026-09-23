@@ -1,3 +1,4 @@
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Shaders;
@@ -13,6 +14,46 @@ namespace OpenIGI.Rendering.Pipeline.Tests;
 /// </summary>
 public sealed class ComputeSeamTests
 {
+    [Fact]
+    public void Before_the_first_frame_a_dispatch_is_load_time_and_waited_on()
+    {
+        using RecordingRhiDevice rhi = new();
+        using GraphicsDevice device = Open(rhi);
+        ComputeShaderHandle filter = Filter(device, out _, out _);
+
+        int idle = rhi.WaitIdleCount;
+        device.Dispatch(filter, 1, 1);
+
+        Assert.True(rhi.WaitIdleCount > idle);
+    }
+
+    [Fact]
+    public void Once_frames_are_presented_a_dispatch_before_the_first_draw_joins_the_frame()
+    {
+        // The surface cache's lighting and the clipmap build are dispatched before a frame's first draw,
+        // and the menu does it every frame. Taken for load time, each was submitted apart and waited on
+        // until the device was idle -- half the menu's main thread, on both backends.
+        using RecordingRhiDevice rhi = new();
+        using GraphicsDevice device = Open(rhi);
+        ComputeShaderHandle filter = Filter(device, out _, out _);
+
+        device.Clear(new Bgra32(0, 0, 0, 255));
+        device.DrawTriangles2D(
+            [new(0, 0, 0, 0, new Bgra32(255, 255, 255, 255)), new(1, 0, 1, 0, new Bgra32(255, 255, 255, 255)), new(1, 1, 1, 1, new Bgra32(255, 255, 255, 255))],
+            [0, 1, 2],
+            TextureHandle.None,
+            BlendMode.Opaque);
+        device.SwapBuffers();
+
+        int idle = rhi.WaitIdleCount;
+        int frames = rhi.CommandsOf<RecordedRhiCommand.BeginFrame>().Count;
+        device.Dispatch(filter, 1, 1);
+        device.SwapBuffers();
+
+        Assert.Equal(idle, rhi.WaitIdleCount);
+        Assert.Equal(frames + 1, rhi.CommandsOf<RecordedRhiCommand.BeginFrame>().Count);
+    }
+
     [Fact]
     public void A_dispatch_fills_every_slot_from_what_the_seam_bound()
     {
