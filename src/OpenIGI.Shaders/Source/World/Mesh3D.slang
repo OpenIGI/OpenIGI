@@ -258,8 +258,11 @@ float4 fragmentMain(Varyings input) : SV_Target
 
     // The key light below is for the first-person rig and nothing else, and the marker already
     // says which draw that is: a lit draw is exactly an opaque one that is only in front of the
-    // eye, which is the marker's zero.
-    if (abs(marker) > 0.5 && marker < 1.5)
+    // eye, which is the marker's zero. Every other marker returns here -- the world, anything
+    // translucent, and the UNLIT rig's two, which is the rig shaded as ordinary geometry. Two
+    // once fell through into the key below with no key to light it, and the vanilla rig was a
+    // black silhouette on both renderers.
+    if (abs(marker) > 0.5)
     {
         // What the hardware fog did for the original: the surface faded into the air's own
         // colour, which an additive pass is handed as black so that a ground drawn as several

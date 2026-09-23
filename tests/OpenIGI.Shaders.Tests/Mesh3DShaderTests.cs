@@ -1,4 +1,4 @@
-using OpenIGI.Shaders;
+﻿using OpenIGI.Shaders;
 using Xunit;
 
 namespace OpenIGI.Shaders.Tests;
@@ -129,8 +129,9 @@ public sealed class Mesh3DShaderTests
     /// <summary>The unlit first-person rig is not fogged; the world and translucent draws are.</summary>
     /// <remarks>
     /// Marker 2 is an unlit first-person draw. World (1) and translucent (-1) remain fogged; the
-    /// marker range here excludes only that rig, while the dynamic first-person marker (0) was
-    /// already excluded.
+    /// vertex stage's fog range excludes only that rig, while the dynamic first-person marker (0) was
+    /// already excluded -- so a density of nought reaches the fragment stage and its fogged return
+    /// leaves the rig as it is.
     /// </remarks>
     [Fact]
     public void The_unlit_first_person_marker_is_not_fogged()
@@ -139,7 +140,19 @@ public sealed class Mesh3DShaderTests
             "abs(push.markerExposure.x) > 0.5 && push.markerExposure.x < 1.5",
             Source,
             StringComparison.Ordinal);
-        Assert.Contains("abs(marker) > 0.5 && marker < 1.5", Source, StringComparison.Ordinal);
+    }
+
+    /// <summary>The unlit rig is shaded as ordinary geometry, not by the studio key.</summary>
+    /// <remarks>
+    /// Every marker but the lit rig's zero leaves the fragment stage through the ordinary return. Two
+    /// once fell through into the studio key with no key set, and the vanilla rig -- which is what a
+    /// fresh install starts on -- was a black silhouette on both renderers.
+    /// </remarks>
+    [Fact]
+    public void Only_the_lit_rig_reaches_the_studio_key()
+    {
+        Assert.Contains("if (abs(marker) > 0.5)", Source, StringComparison.Ordinal);
+        Assert.DoesNotContain("abs(marker) > 0.5 && marker < 1.5", Source, StringComparison.Ordinal);
     }
 
     /// <summary>
