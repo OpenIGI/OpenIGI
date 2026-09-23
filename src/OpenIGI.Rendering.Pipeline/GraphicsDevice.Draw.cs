@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Mesh3D;
 using OpenIGI.Rendering.Pipeline.Meshes;
@@ -13,10 +13,8 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
 {
     private readonly TextureTable _textures;
     private readonly Dictionary<uint, RhiMesh> _meshTable = [];
-    private readonly Dictionary<uint, IRhiBuffer> _occlusionResults = [];
 
     private uint _nextMesh = 1;
-    private uint _nextQuery = 1;
     private Matrix4f _projection = Matrix4f.Identity;
     private DepthState _depthState = DepthState.Disabled;
     private CullMode _cullMode = CullMode.None;
@@ -456,15 +454,5 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
         }
 
         _meshTable.Clear();
-    }
-
-    private void DisposeQueries()
-    {
-        foreach (IRhiBuffer buffer in _occlusionResults.Values)
-        {
-            buffer.Dispose();
-        }
-
-        _occlusionResults.Clear();
     }
 }

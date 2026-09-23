@@ -110,24 +110,47 @@ public sealed partial class GraphicsDevice
             : RhiTextureFormat.Bgra8UnormSrgb;
 
     /// <inheritdoc/>
-    public OcclusionQueryHandle CreateOcclusionQuery() => new(_nextQuery++);
+    public OcclusionQueryHandle CreateOcclusionQuery()
+    {
+        ThrowIfDisposed();
+        return _occlusion.Create();
+    }
 
     /// <inheritdoc/>
     /// <remarks>
-    /// True, always. A query nothing answers must read as visible: the caller draws what a query says
-    /// is visible, so a false would hide geometry that is there, while a true costs a draw that would
-    /// have happened anyway.
+    /// Visible until proven hidden: a query nothing has answered yet -- the direct path draws no
+    /// geometry pass to probe in -- keeps its object drawn, as on the Vulkan renderer.
     /// </remarks>
-    public bool OcclusionVisible(OcclusionQueryHandle query) => true;
+    public bool OcclusionVisible(OcclusionQueryHandle query)
+    {
+        ThrowIfDisposed();
+        return _occlusion.Visible(query);
+    }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// A box is drawn against the geometry pass's depth, so a query is only probed while that pass is
+    /// open. Anywhere else the object is left as it was rather than probed, as on the Vulkan renderer.
+    /// The box takes the projection the geometry is drawn with, which on this path already is the
+    /// target's clip space.
+    /// </remarks>
     public void IssueOcclusionQuery(OcclusionQueryHandle query, in Matrix4f modelView, in OcclusionBounds bounds)
     {
+        ThrowIfDisposed();
+
+        if (!_capturing || CurrentPass is not ScenePass.Geometry || _scenePass is not { } pass)
+        {
+            return;
+        }
+
+        _occlusion.Issue(pass, query, _projection * modelView, bounds);
     }
 
     /// <inheritdoc/>
     public void DestroyOcclusionQuery(OcclusionQueryHandle query)
     {
+        ThrowIfDisposed();
+        _occlusion.Destroy(query);
     }
 
     /// <inheritdoc/>

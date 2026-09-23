@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Mesh3D;
 using OpenIGI.Rendering.Pipeline.Deferred;
@@ -224,6 +224,9 @@ public sealed partial class GraphicsDevice
                 RhiStoreOp.Store,
                 DepthClearValue: 0f),
             _profiler.Time(RenderStage.Geometry),
+
+            // Where the world's visibility probes land; see IssueOcclusionQuery.
+            OcclusionQuerySet: _occlusion.CurrentSet,
             Label: "geometry"));
 
         ApplySceneViewport(_scenePass);

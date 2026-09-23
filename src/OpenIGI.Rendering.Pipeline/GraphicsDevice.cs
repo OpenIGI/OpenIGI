@@ -5,6 +5,7 @@ using OpenIGI.Rendering.Pipeline.Diagnostics;
 using OpenIGI.Rendering.Pipeline.Draw2D;
 using OpenIGI.Rendering.Pipeline.Mesh3D;
 using OpenIGI.Rendering.Pipeline.Meshes;
+using OpenIGI.Rendering.Pipeline.Targets;
 using OpenIGI.Rendering.Pipeline.Textures;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Shaders;
@@ -40,6 +41,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     private readonly IRhiBindGroupLayout _materialLayout;
     private readonly IRhiBindGroupLayout _cubeLayout;
     private readonly StageProfiler _profiler;
+    private readonly OcclusionQueries _occlusion;
     private readonly RetiredResources _retired = new(FramesInFlight);
     private readonly IRhiTexture _cube;
     private readonly IRhiBindGroup _cubeGroup;
@@ -119,6 +121,11 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         _sprites = new Sprite2DPass(device, _textures, PresentFormat, FramesInFlight, DepthFormat, _retired);
         _meshes = new Mesh3DPass(_textures, _materials);
         _profiler = new StageProfiler(device, FramesInFlight, timestampPeriodNanoseconds);
+        _occlusion = new OcclusionQueries(
+            device,
+            FramesInFlight,
+            [.. GBufferTargets.Select(id => SceneTargetSet.FormatOf(id))],
+            SceneTargetSet.FormatOf(SceneTargetId.Depth));
 
         (_cube, _cubeGroup) = CreateCube(device);
     }
@@ -263,6 +270,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         RecordCapture();
 
         _profiler.ResolveFrame(Encoder());
+        _occlusion.ResolveFrame(Encoder());
 
         SealEncoder("frame");
         _device.Submit(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_sealed));
@@ -278,6 +286,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
         _autoExposure?.RequestReadback(FrameSlot);
         _profiler.RequestReadback(FrameSlot);
+        _occlusion.RequestReadback();
 
         _device.EndFrame(_frame);
         _inFrame = false;
@@ -323,6 +332,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         DisposeDeferred();
         DisposeCompute();
         _profiler.Dispose();
+        _occlusion.Dispose();
         _cubeGroup.Dispose();
         _cube.Dispose();
         _cubeSampler.Dispose();
@@ -334,7 +344,6 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         _depth?.Dispose();
         _textures.Dispose();
         DisposeMeshes();
-        DisposeQueries();
     }
 
     /// <summary>The environment cube every world draw binds, whether or not it samples one.</summary>
@@ -472,6 +481,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
 
         _sprites.BeginFrame(FrameSlot, CurrentMode.Width, CurrentMode.Height);
         _profiler.BeginFrame(FrameSlot);
+        _occlusion.BeginFrame(FrameSlot);
         ResetComputeFrame();
     }
 
