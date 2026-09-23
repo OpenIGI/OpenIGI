@@ -350,7 +350,9 @@ public sealed partial class GraphicsDevice
         CloseScenePass();
         RecordShading();
 
-        // Over the finished, lit frame and before the temporal resolve steadies it.
+        // Over the finished, lit frame and before the temporal resolve steadies it: the surfaces' own
+        // reflections first, so a pane then reflects a road with its reflections in.
+        RecordSceneReflection();
         RecordGlazingReflection();
         RecordTemporal();
 
@@ -821,6 +823,7 @@ public sealed partial class GraphicsDevice
         DisposeGlazing();
         DisposeGlazingReflection();
         DisposeFog();
+        DisposeSceneReflection();
         _autoExposure?.Dispose();
         _autoExposure = null;
         DisposeSunShadow();

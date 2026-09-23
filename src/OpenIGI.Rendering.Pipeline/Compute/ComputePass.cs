@@ -88,6 +88,11 @@ public sealed class ComputePass : IDisposable
     /// <param name="sampler">The sampler.</param>
     public void Bind(string name, IRhiSampler sampler) => _bindings.Bind(name, sampler);
 
+    /// <summary>Whether the module binds anything of a name, for a slot only some of its forms declare.</summary>
+    /// <param name="name">The name the Slang source would declare.</param>
+    /// <returns><see langword="true"/> when it does.</returns>
+    public bool Declares(string name) => _bindings.Declares(name);
+
     /// <summary>Binds an acceleration structure, for a module that traces rays.</summary>
     /// <param name="name">The name the Slang source declares.</param>
     /// <param name="structure">The structure.</param>

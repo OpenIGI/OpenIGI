@@ -30,8 +30,6 @@ public sealed partial class GraphicsDevice
     /// </remarks>
     private static readonly string[] UnimplementedSettingNames =
     [
-        "r_reflections",
-        "r_rt_reflections",
         "r_motion_blur",
         "r_storm",
         "r_material_detail",
@@ -48,7 +46,7 @@ public sealed partial class GraphicsDevice
         .. UnimplementedSettingNames,
         .. temporal ? Array.Empty<string>() : ["r_taa"],
         .. gi ? Array.Empty<string>() : ["r_screen_gi", "r_surface_cache"],
-        .. traced ? Array.Empty<string>() : ["r_rt_shadows", "r_rt_lights"],
+        .. traced ? Array.Empty<string>() : ["r_rt_shadows", "r_rt_lights", "r_rt_reflections"],
         .. metered ? Array.Empty<string>() : ["r_autoexposure"],
     ];
 
@@ -113,11 +111,6 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     public void SetMaterialDetail(float strength)
-    {
-    }
-
-    /// <inheritdoc/>
-    public void SetReflections(in ReflectionSettings settings)
     {
     }
 

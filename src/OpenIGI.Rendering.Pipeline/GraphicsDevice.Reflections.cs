@@ -159,7 +159,7 @@ public sealed partial class GraphicsDevice
     }
 
     /// <summary>Binds what the march reads of the level, or stand-ins where the game has handed nothing over.</summary>
-    /// <returns><see langword="true"/> when there is a field to march and cards to resolve against.</returns>
+    /// <returns><see langword="true"/> when the cards are all there, and a field too for a form that marches one.</returns>
     private bool BindReflectionWorld(ComputePass reflect)
     {
         SurfaceCacheBinding cache = _surfaceCacheBinding;
@@ -176,7 +176,7 @@ public sealed partial class GraphicsDevice
         bool complete = cache.IsPresent
             && pages is not null && cells is not null && cellPages is not null
             && albedo is not null && depth is not null && lighting is not null
-            && clipmaps is not null;
+            && (clipmaps is not null || !reflect.Declares("uClipmaps"));
 
         IRhiBuffer standIn = _standInRecords!;
         StandInTextures standIns = _reflectStandIns!;
@@ -188,7 +188,11 @@ public sealed partial class GraphicsDevice
         reflect.Bind("uAlbedo", complete ? albedo! : standIns.For(Slot(reflection, "uAlbedo")), _reflectSampler!);
         reflect.Bind("uDepth", complete ? depth! : standIns.For(Slot(reflection, "uDepth")), _reflectSampler!);
         reflect.Bind("uFinal", complete ? lighting! : standIns.For(Slot(reflection, "uFinal")), _reflectSampler!);
-        reflect.Bind("uClipmaps", complete ? clipmaps! : standIns.For(Slot(reflection, "uClipmaps")), _reflectSampler!);
+        // Only the marching forms walk a field; a traced form declares none.
+        if (reflect.Declares("uClipmaps"))
+        {
+            reflect.Bind("uClipmaps", complete ? clipmaps! : standIns.For(Slot(reflection, "uClipmaps")), _reflectSampler!);
+        }
 
         // The roofs, which only the march reads: whether a ray that left the field found the sky or lost
         // a ceiling. Fetched rather than sampled.
