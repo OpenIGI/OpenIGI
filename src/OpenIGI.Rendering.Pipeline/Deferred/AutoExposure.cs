@@ -86,6 +86,25 @@ public sealed class AutoExposure : IDisposable
         return ShaderCatalog.Compiles(ShaderModuleId.ExposureHistogram, Variant, device.ShaderTarget);
     }
 
+    /// <summary>Starts mapping a slot whose histogram has just been submitted.</summary>
+    /// <param name="frameInFlight">The slot the submission just sent copied into.</param>
+    /// <remarks>
+    /// As the frame is submitted, not when the slot comes round again: a map asked for then has only that
+    /// moment to complete in, and on WebGPU it seldom has -- the eye then never moved past its first
+    /// histogram. Started a frame ahead, it has had the whole frame.
+    /// </remarks>
+    public void RequestReadback(int frameInFlight)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        int slot = frameInFlight % _readback.Length;
+
+        if (_written[slot])
+        {
+            _pending[slot] ??= _device.ReadBuffer(_readback[slot], 0, HistogramBytes);
+        }
+    }
+
     /// <summary>Folds the histogram this frame slot last carried into the exposure, if it has arrived.</summary>
     /// <param name="frameInFlight">The slot about to be written again, whose previous frame has finished.</param>
     /// <param name="deltaSeconds">How much time this frame advances the easing by.</param>
@@ -101,7 +120,8 @@ public sealed class AutoExposure : IDisposable
             return _adapted;
         }
 
-        // Asked for once and kept until it arrives: a browser cannot block for it, and neither should this.
+        // Kept until it arrives -- a browser cannot block for it, and neither should this -- and asked
+        // for here only if the submission did not already ask.
         IRhiReadback data = _pending[slot] ??= _device.ReadBuffer(_readback[slot], 0, HistogramBytes);
 
         if (!data.Wait(TimeSpan.Zero) && !data.IsComplete)
@@ -117,7 +137,7 @@ public sealed class AutoExposure : IDisposable
         return _adapted;
     }
 
-    /// <summary>Meters this frame's lit scene into the slot's readback.</summary>
+    /// <summary>Meters this frame's lit scene into the slot's readback, unless that slot's map is still in flight.</summary>
     /// <param name="encoder">The frame's encoder, outside any pass.</param>
     /// <param name="frameInFlight">The slot this frame writes.</param>
     /// <param name="lit">The lit scene colour.</param>
@@ -138,8 +158,15 @@ public sealed class AutoExposure : IDisposable
 
         int slot = frameInFlight % _readback.Length;
 
-        // A readback still waiting on this slot is for a frame about to be overwritten, and a buffer still
-        // mapped cannot be copied into.
+        // A map still in flight is a histogram not yet read, and WebGPU refuses a copy into a buffer with a
+        // map outstanding: this frame goes unmetered and the eye holds, which at a frame's cost is nothing.
+        // Throwing the map away instead, as this did, threw away every histogram whose map was slower than
+        // the frame -- on WebGPU, nearly all of them.
+        if (_pending[slot] is { IsComplete: false })
+        {
+            return;
+        }
+
         _pending[slot]?.Dispose();
         _pending[slot] = null;
 

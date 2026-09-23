@@ -262,6 +262,14 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         _skySubmittedSlot = _skyRecordedSlot;
         _skyRecordedSlot = -1;
 
+        // What was just sent down starts mapping now, a frame before it is asked for.
+        if (_skySubmittedSlot >= 0)
+        {
+            _sky?.RequestReadback(_skySubmittedSlot);
+        }
+
+        _autoExposure?.RequestReadback(FrameSlot);
+
         _encoder?.Dispose();
         _encoder = null;
 

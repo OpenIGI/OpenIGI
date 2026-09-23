@@ -222,6 +222,21 @@ public sealed class SkyAtmosphere : IDisposable
         _pending[slot] = null;
     }
 
+    /// <summary>Starts mapping a slot whose copy has just been submitted, so it can arrive before it is asked for.</summary>
+    /// <param name="frameInFlight">The slot the submission just sent copied into.</param>
+    /// <remarks>
+    /// Requested as the frame is submitted rather than when the game asks, mid-way through the next: a
+    /// map asked for then has only the ask itself to complete in, which either waits for it or answers
+    /// no. Started a frame ahead, it has a whole frame, and the ask only has to look.
+    /// </remarks>
+    public void RequestReadback(int frameInFlight)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        int slot = frameInFlight % _readback.Length;
+        _pending[slot] ??= _device.ReadBuffer(_readback[slot]);
+    }
+
     /// <summary>Reads the harmonics a frame slot copied down, once they have arrived.</summary>
     /// <param name="frameInFlight">
     /// A frame-in-flight slot whose copy has been SUBMITTED. Mapping one whose copy is still only
