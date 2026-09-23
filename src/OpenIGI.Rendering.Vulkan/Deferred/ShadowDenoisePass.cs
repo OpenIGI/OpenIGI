@@ -38,8 +38,7 @@ namespace OpenIGI.Rendering.Vulkan.Deferred;
 /// </remarks>
 internal sealed class ShadowDenoisePass : IDisposable
 {
-    // Three 4-vectors.
-    private const int ParamSize = 48;
+    private const int ParamSize = SunShadowParameters.DenoiseFloats * sizeof(float);
 
     private static readonly ComputeBindingKind[] Bindings =
     [
@@ -101,26 +100,7 @@ internal sealed class ShadowDenoisePass : IDisposable
     {
         Span<float> data = stackalloc float[ParamSize / sizeof(float)];
 
-        data[0] = width;
-        data[1] = height;
-        data[2] = 1f / Math.Max(1, width);
-        data[3] = 1f / Math.Max(1, height);
-
-        data[4] = unprojection.XScale;
-        data[5] = unprojection.YScale;
-        data[6] = unprojection.Near;
-        data[7] = unprojection.Far;
-
-        // The reference's penumbra formula for a directional light, with its trigonometry folded onto the
-        // host: sourceRadius / sqrt(1 - sourceRadius^2) is the tangent of the half-angle whose sine is
-        // sourceRadius, and that tangent times the distance to the occluder is the penumbra's radius.
-        data[8] = MathF.Tan(0.5f * float.DegreesToRadians(Math.Max(sunAngleDegrees, 0f)));
-
-        // One over the ceiling the temporal pass counts to, so the shader reads a stored frame count as a
-        // fraction of converged without needing to know what the ceiling is.
-        data[9] = 1f / MathF.Max(accumulationCeiling, 1f);
-        data[10] = 0f;
-        data[11] = 0f;
+        SunShadowParameters.WriteDenoise(data, width, height, unprojection, sunAngleDegrees, accumulationCeiling);
 
         ReadOnlySpan<ComputeResource> resources =
         [

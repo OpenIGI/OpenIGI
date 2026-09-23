@@ -40,12 +40,7 @@ namespace OpenIGI.Rendering.Vulkan.Deferred;
 /// </remarks>
 internal sealed class RayTracedShadowPass : IDisposable
 {
-    // How far a shadow ray looks. Past this the sun is taken as unobstructed, which for a level whose
-    // world is a few thousand units across means only the horizon is given the benefit of the doubt.
-    private const float RayLength = 4000f;
-
-    // One 4x4 rotation and six 4-vectors.
-    private const int ParamSize = 64 + (6 * 16);
+    private const int ParamSize = SunShadowParameters.TraceFloats * sizeof(float);
 
     private static readonly ComputeBindingKind[] Bindings =
     [
@@ -126,46 +121,17 @@ internal sealed class RayTracedShadowPass : IDisposable
     {
         Span<float> data = stackalloc float[ParamSize / sizeof(float)];
 
-        data[0] = viewToWorld.M11; data[1] = viewToWorld.M21; data[2] = viewToWorld.M31; data[3] = 0f;
-        data[4] = viewToWorld.M12; data[5] = viewToWorld.M22; data[6] = viewToWorld.M32; data[7] = 0f;
-        data[8] = viewToWorld.M13; data[9] = viewToWorld.M23; data[10] = viewToWorld.M33; data[11] = 0f;
-        data[12] = 0f; data[13] = 0f; data[14] = 0f; data[15] = 1f;
-
-        data[16] = unprojection.XScale;
-        data[17] = unprojection.YScale;
-        data[18] = unprojection.Near;
-        data[19] = unprojection.Far;
-
-        data[20] = width;
-        data[21] = height;
-        data[22] = 1f / Math.Max(1, width);
-        data[23] = 1f / Math.Max(1, height);
-
-        data[24] = sunDirection.X;
-        data[25] = sunDirection.Y;
-        data[26] = sunDirection.Z;
-        data[27] = RayLength;
-
-        data[28] = cameraPosition.X;
-        data[29] = cameraPosition.Y;
-        data[30] = cameraPosition.Z;
-
-        // The sine of the sun's half-angle, which is the form the cone sampler wants. Zero collapses the
-        // disc to a point and the trace back to the hard-edged one this replaced.
-        data[31] = MathF.Sin(0.5f * float.DegreesToRadians(Math.Max(sunAngleDegrees, 0f)));
-
-        data[32] = frameIndex;
-        data[33] = 0f;
-        data[34] = 0f;
-        data[35] = 0f;
-
-        // The record buffer's address, as the two words the shader reassembles it from. Written as raw
-        // bits through a float span because that is what the parameter block is: the block is declared
-        // uvec4 on the other side, so the bits are what matter and not the type they travelled in.
-        data[36] = BitConverter.UInt32BitsToSingle((uint)recordAddress);
-        data[37] = BitConverter.UInt32BitsToSingle((uint)(recordAddress >> 32));
-        data[38] = 0f;
-        data[39] = 0f;
+        SunShadowParameters.WriteTrace(
+            data,
+            width,
+            height,
+            viewToWorld,
+            cameraPosition,
+            sunDirection,
+            unprojection,
+            sunAngleDegrees,
+            frameIndex,
+            recordAddress);
 
         ReadOnlySpan<ComputeResource> resources =
         [

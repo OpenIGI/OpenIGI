@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Rendering.Temporal;
 using OpenIGI.Rendering.Vulkan.Compute;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Shaders;
@@ -17,16 +18,7 @@ namespace OpenIGI.Rendering.Vulkan.Deferred;
 /// </remarks>
 internal sealed class ShadowAccumulatePass : IDisposable
 {
-    /// <summary>How far apart two view depths may be before they are called different surfaces.</summary>
-    /// <remarks>
-    /// A fraction of the depth rather than a distance in metres, for the same reason every other
-    /// reprojection test here is relative: an absolute tolerance that tells two surfaces apart nearby
-    /// tells nothing apart in the distance, and the distance is where this pass earns its keep.
-    /// </remarks>
-    public const float DepthTolerance = 0.02f;
-
-    // Two 4x4 matrices and six 4-vectors.
-    private const int ParamSize = 224;
+    private const int ParamSize = SunShadowParameters.AccumulateFloats * sizeof(float);
 
     private static readonly ComputeBindingKind[] Bindings =
     [
@@ -101,43 +93,22 @@ internal sealed class ShadowAccumulatePass : IDisposable
     {
         Span<float> data = stackalloc float[ParamSize / sizeof(float)];
 
-        // The same pair the velocity pass is handed, packed by the same routine: a rotation's transpose
-        // is its inverse, so this is the previous frame's world-to-view. The two passes have to agree
-        // exactly about where a pixel was, or the mask and the colour would reproject to different places
-        // and the shadow would slide across the surface it belongs to.
-        Matrix3f previousWorldToView = previousViewToWorld.Transposed();
-        WriteRotation(data, 0, viewToWorld);
-        WriteRotation(data, 16, previousWorldToView);
-
-        data[32] = unprojection.XScale;
-        data[33] = unprojection.YScale;
-        data[34] = unprojection.Near;
-        data[35] = unprojection.Far;
-
-        data[36] = width;
-        data[37] = height;
-        data[38] = 1f / Math.Max(1, width);
-        data[39] = 1f / Math.Max(1, height);
-
-        data[40] = cameraDelta.X;
-        data[41] = cameraDelta.Y;
-        data[42] = cameraDelta.Z;
-        data[43] = 0f;
-
-        data[44] = previousUnprojection.XScale;
-        data[45] = previousUnprojection.YScale;
-        data[46] = previousUnprojection.Near;
-        data[47] = previousUnprojection.Far;
-
-        data[48] = Math.Max(1f, frames);
-        data[49] = hasHistory ? 1f : 0f;
-        data[50] = DepthTolerance;
-        data[51] = 0f;
-
-        data[52] = jitterX;
-        data[53] = jitterY;
-        data[54] = previousJitterX;
-        data[55] = previousJitterY;
+        SunShadowParameters.WriteAccumulate(
+            data,
+            new TemporalFrameState(
+                viewToWorld,
+                previousViewToWorld,
+                cameraDelta,
+                unprojection,
+                previousUnprojection,
+                jitterX,
+                jitterY,
+                previousJitterX,
+                previousJitterY,
+                width,
+                height),
+            frames,
+            hasHistory);
 
         ReadOnlySpan<ComputeResource> resources =
         [
@@ -160,13 +131,5 @@ internal sealed class ShadowAccumulatePass : IDisposable
 
         _disposed = true;
         _pass.Dispose();
-    }
-
-    private static void WriteRotation(Span<float> data, int offset, in Matrix3f m)
-    {
-        data[offset + 0] = m.M11; data[offset + 1] = m.M21; data[offset + 2] = m.M31; data[offset + 3] = 0f;
-        data[offset + 4] = m.M12; data[offset + 5] = m.M22; data[offset + 6] = m.M32; data[offset + 7] = 0f;
-        data[offset + 8] = m.M13; data[offset + 9] = m.M23; data[offset + 10] = m.M33; data[offset + 11] = 0f;
-        data[offset + 12] = 0f; data[offset + 13] = 0f; data[offset + 14] = 0f; data[offset + 15] = 1f;
     }
 }
