@@ -419,10 +419,15 @@ internal sealed partial class GameHost : IDisposable
     /// <remarks>
     /// From the OS's own record of when the process began rather than a stopwatch this class starts, so
     /// the runtime's own start-up -- assembly loading and the first JIT, which is a good share of the
-    /// wait -- is inside the number rather than before it.
+    /// wait -- is inside the number rather than before it. A browser keeps no such record, so there it
+    /// counts from the host's first use: the runtime's own start-up is the page's to report.
     /// </remarks>
     private static double SinceProcessStart() =>
-        (DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime).TotalMilliseconds;
+        OperatingSystem.IsBrowser()
+            ? HostUptime.Elapsed.TotalMilliseconds
+            : (DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime).TotalMilliseconds;
+
+    private static readonly System.Diagnostics.Stopwatch HostUptime = System.Diagnostics.Stopwatch.StartNew();
     private DirectionalLightSettings? _sun;
 
     // The interactive day/night cycle, and the sun it produces for this frame -- the authored sun swept to
