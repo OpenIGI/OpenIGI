@@ -1,0 +1,12 @@
+<Project>
+  <!--
+    The page's half of the browser window, for a browser-wasm application to import: platform.js is
+    served beside the page, which installs it on the canvas and registers its imports under
+    BrowserPage.ModuleName before the game starts.
+  -->
+  <ItemGroup>
+    <Content Include="$(MSBuildThisFileDirectory)platform.js"
+             Link="wwwroot/platform.js"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
