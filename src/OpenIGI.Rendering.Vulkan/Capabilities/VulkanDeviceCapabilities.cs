@@ -116,6 +116,10 @@ internal sealed class VulkanDeviceCapabilities
     /// </remarks>
     public bool ShaderDrawParameters { get; init; }
 
+    /// <summary>Gets a value indicating whether a compute stage may take derivatives across quads.</summary>
+    /// <remarks>See <see cref="VulkanExtensionNames.ComputeShaderDerivatives"/>.</remarks>
+    public bool ComputeDerivativeGroupQuads { get; init; }
+
     /// <summary>Gets a value indicating whether shaders may compute in half precision.</summary>
     public bool ShaderFloat16 { get; init; }
 

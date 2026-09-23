@@ -94,6 +94,15 @@ internal static unsafe class VulkanCapabilityProbe
             });
         }
 
+        PhysicalDeviceComputeShaderDerivativesFeaturesKHR* derivatives = null;
+        if (available.Contains(VulkanExtensionNames.ComputeShaderDerivatives))
+        {
+            derivatives = chain.Add(new PhysicalDeviceComputeShaderDerivativesFeaturesKHR
+            {
+                SType = StructureType.PhysicalDeviceComputeShaderDerivativesFeaturesKhr,
+            });
+        }
+
         PhysicalDeviceDescriptorBufferFeaturesEXT* descriptorBuffer = null;
         if (available.Contains(VulkanExtensionNames.DescriptorBuffer))
         {
@@ -294,6 +303,7 @@ internal static unsafe class VulkanCapabilityProbe
             RayTracingPositionFetch = positionFetchUsable,
             Storage16Bit = v11->StorageBuffer16BitAccess && v11->UniformAndStorageBuffer16BitAccess,
             ShaderDrawParameters = v11->ShaderDrawParameters,
+            ComputeDerivativeGroupQuads = derivatives is not null && derivatives->ComputeDerivativeGroupQuads,
             ShaderFloat16 = v12->ShaderFloat16,
             ShaderInt64Atomics = v12->ShaderBufferInt64Atomics,
             SamplerAnisotropy = features.Features.SamplerAnisotropy,
@@ -396,6 +406,15 @@ internal static unsafe class VulkanCapabilityProbe
             {
                 SType = StructureType.PhysicalDeviceDescriptorBufferFeaturesExt,
                 DescriptorBuffer = true,
+            });
+        }
+
+        if (capabilities.ComputeDerivativeGroupQuads && Enabled(VulkanExtensionNames.ComputeShaderDerivatives))
+        {
+            chain.Add(new PhysicalDeviceComputeShaderDerivativesFeaturesKHR
+            {
+                SType = StructureType.PhysicalDeviceComputeShaderDerivativesFeaturesKhr,
+                ComputeDerivativeGroupQuads = true,
             });
         }
 
@@ -569,6 +588,7 @@ internal static unsafe class VulkanCapabilityProbe
         Take(KhrMaintenance4.ExtensionName);
         Take(KhrMaintenance5.ExtensionName);
         Take(KhrMaintenance6.ExtensionName);
+        Take(VulkanExtensionNames.ComputeShaderDerivatives);
 
         if (localRead)
         {
