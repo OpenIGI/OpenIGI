@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Shaders;
@@ -53,11 +53,61 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// The held picture the menu dissolves from, copied inside the frame as the Vulkan renderer copies
+    /// it: whatever has drawn so far -- the outgoing level, resolved, before the interface goes over it --
+    /// is copied out, and the frame's pass reopens on top of it so nothing drawn is lost and the draws
+    /// that follow can sample the copy.
+    /// </para>
+    /// <para>
+    /// The texture takes the frame's channel order, in its sRGB form. A copy moves bytes and cannot
+    /// swizzle, and the bytes in the frame are already encoded -- by the shaders into an unsigned-normal
+    /// frame, by the hardware into an sRGB one -- so sampling them through an sRGB view decodes the same
+    /// light either way. A browser canvas is red-first where the desktop is blue-first, so the texture is
+    /// remade in the frame's order the first time the two differ.
+    /// </para>
+    /// <para>
+    /// Between frames there is nothing this device may copy: the last frame's image belongs to the
+    /// presentation engine once it has gone out. Nothing asks there -- the menu holds its picture
+    /// mid-frame -- so it is left as it was.
+    /// </para>
+    /// </remarks>
     public void CopyFrameToTexture(TextureHandle texture, int width, int height)
     {
-        // The held picture the menu dissolves from. It belongs with the scene capture, which this path
-        // does not offer.
+        ThrowIfDisposed();
+
+        if (_textures.Find(texture) is null)
+        {
+            throw new ArgumentException($"Unknown texture {texture}.", nameof(texture));
+        }
+
+        if (!_inFrame || width <= 0 || height <= 0)
+        {
+            return;
+        }
+
+        // Opened and closed, so a clear still pending lands before the copy reads the image.
+        Pass();
+        ClosePass();
+
+        IRhiTexture destination = _textures.Reformat(texture, FrameCopyFormat(PresentFormat))!;
+        int columns = Math.Min(width, Math.Min(destination.Width, CurrentMode.Width));
+        int rows = Math.Min(height, Math.Min(destination.Height, CurrentMode.Height));
+
+        Encoder().CopyTextureToTexture(
+            new RhiTextureRegion(_frame.Target.Texture),
+            new RhiTextureRegion(destination),
+            new RhiExtent3D(columns, rows));
     }
+
+    /// <summary>The format a texture holding a copy of the frame is made in.</summary>
+    /// <param name="frame">The frame's format.</param>
+    /// <returns>The frame's channel order, sRGB.</returns>
+    internal static RhiTextureFormat FrameCopyFormat(RhiTextureFormat frame) =>
+        frame is RhiTextureFormat.Rgba8Unorm or RhiTextureFormat.Rgba8UnormSrgb
+            ? RhiTextureFormat.Rgba8UnormSrgb
+            : RhiTextureFormat.Bgra8UnormSrgb;
 
     /// <inheritdoc/>
     public OcclusionQueryHandle CreateOcclusionQuery() => new(_nextQuery++);

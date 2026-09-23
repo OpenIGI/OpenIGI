@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering.Pipeline.Draw2D;
 using OpenIGI.Rendering.Rhi;
 
@@ -143,6 +143,52 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
     /// <returns>The texture.</returns>
     public IRhiTexture? Find(TextureHandle handle) =>
         _textures.TryGetValue(handle.Id, out Entry entry) ? entry.Texture : null;
+
+    /// <summary>Remakes a texture in another format under the same handle, if it is not in it already.</summary>
+    /// <param name="handle">The texture.</param>
+    /// <param name="format">The format it has to be in.</param>
+    /// <returns>The texture in that format, or null when the handle names nothing.</returns>
+    /// <remarks>
+    /// For a texture something is about to copy into, which has to match the source's channel order: a
+    /// copy moves bytes and cannot swizzle. The contents are not carried over -- the copy replaces them --
+    /// and the old texture is retired rather than freed, since frames in flight may still sample it.
+    /// </remarks>
+    public IRhiTexture? Reformat(TextureHandle handle, RhiTextureFormat format)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (!_textures.TryGetValue(handle.Id, out Entry entry))
+        {
+            return null;
+        }
+
+        if (entry.Texture.Format == format)
+        {
+            return entry.Texture;
+        }
+
+        IRhiTexture old = entry.Texture;
+        IRhiTexture remade = _device.CreateTexture(new RhiTextureDescriptor(
+            old.Width,
+            old.Height,
+            format,
+            old.Usage,
+            MipLevelCount: old.MipLevelCount,
+            Label: old.Label));
+
+        _textures[handle.Id] = entry with { Texture = remade };
+
+        if (_retired is { } queue)
+        {
+            queue.Retire(old);
+        }
+        else
+        {
+            old.Dispose();
+        }
+
+        return remade;
+    }
 
     /// <summary>Takes a handle from the table's own sequence that names none of its textures.</summary>
     /// <returns>The handle, which no texture of the table will ever be given.</returns>
