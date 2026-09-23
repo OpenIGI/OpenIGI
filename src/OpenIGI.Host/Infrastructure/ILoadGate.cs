@@ -1,3 +1,5 @@
+using OpenIGI.Game.World;
+
 namespace OpenIGI.Host.Infrastructure;
 
 /// <summary>Says whether a mission's files can be read yet, before a load that reads them all at once.</summary>
@@ -16,10 +18,10 @@ namespace OpenIGI.Host.Infrastructure;
 public interface ILoadGate
 {
     /// <summary>Whether a mission's files are all readable now.</summary>
-    /// <param name="missionId">The mission about to load.</param>
+    /// <param name="mission">The mission about to load; its directory is where its files are.</param>
     /// <param name="waitingFor">What is still missing, in words, when it is not ready; null when it is.</param>
     /// <returns><see langword="true"/> when the load may run.</returns>
-    bool IsReady(int missionId, out string? waitingFor);
+    bool IsReady(MissionDescriptor mission, out string? waitingFor);
 }
 
 /// <summary>The gate of a host whose files are always there: every mission is ready.</summary>
@@ -29,7 +31,7 @@ public sealed class AlwaysReadyLoadGate : ILoadGate
     public static AlwaysReadyLoadGate Instance { get; } = new();
 
     /// <inheritdoc/>
-    public bool IsReady(int missionId, out string? waitingFor)
+    public bool IsReady(MissionDescriptor mission, out string? waitingFor)
     {
         waitingFor = null;
         return true;

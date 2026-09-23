@@ -260,8 +260,10 @@ internal sealed partial class GameHost
         }
 
         // Not until the mission's files can be read. The sequence holds its picture meanwhile, and the
-        // load runs on the frame the gate says yes -- on the desktop, always the first.
-        if (!_loadGate.IsReady(_pendingLoadMission, out string? waitingFor))
+        // load runs on the frame the gate says yes -- on the desktop, always the first. A mission the
+        // catalogue does not know has no files to wait for, and the load reports it.
+        if (_missions.Missions.FirstOrDefault(m => m.Id == _pendingLoadMission) is { } mission
+            && !_loadGate.IsReady(mission, out string? waitingFor))
         {
             if (!string.Equals(waitingFor, _loadGateWaitingFor, StringComparison.Ordinal))
             {
