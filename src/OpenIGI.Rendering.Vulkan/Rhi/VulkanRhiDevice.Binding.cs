@@ -134,10 +134,20 @@ internal sealed unsafe partial class VulkanRhiDevice
             return;
         }
 
+        // Everything these write is done once the submission carrying them is: inside a frame the frame's
+        // own, outside one the loose submission this makes next.
+        ulong ticket = _signalled + 1;
+
         CommandBuffer[] handles = new CommandBuffer[commands.Length];
         for (int i = 0; i < commands.Length; i++)
         {
-            handles[i] = ((VulkanRhiCommandBuffer)commands[i]).Handle;
+            VulkanRhiCommandBuffer command = (VulkanRhiCommandBuffer)commands[i];
+            handles[i] = command.Handle;
+
+            foreach (VulkanRhiBuffer written in command.Written)
+            {
+                written.WriteTicket = ticket;
+            }
         }
 
         SubmitOrHold(handles);
@@ -157,7 +167,9 @@ internal sealed unsafe partial class VulkanRhiDevice
         VulkanRhiBuffer source = (VulkanRhiBuffer)buffer;
         ulong size = sizeInBytes > 0 ? sizeInBytes : buffer.SizeInBytes - offset;
 
-        return new VulkanRhiReadback(this, source, offset, size);
+        // Anything written and not yet sent goes now, so the ticket below covers it.
+        FlushUploads();
+        return new VulkanRhiReadback(this, source, offset, size, source.WriteTicket);
     }
 
     /// <summary>Waits until everything submitted has finished, then reads a host-visible buffer.</summary>
@@ -165,6 +177,14 @@ internal sealed unsafe partial class VulkanRhiDevice
     /// <param name="offset">Where the read starts.</param>
     /// <param name="size">How many bytes.</param>
     /// <returns>The bytes.</returns>
+    /// <summary>Reads a host-visible buffer whose writes are known to have finished, without waiting.</summary>
+    internal static byte[] ReadFinished(VulkanRhiBuffer buffer, ulong offset, ulong size)
+    {
+        byte[] bytes = new byte[size];
+        ReadHostVisible(buffer.Buffer, offset, bytes);
+        return bytes;
+    }
+
     internal byte[] ReadBack(VulkanRhiBuffer buffer, ulong offset, ulong size)
     {
         FlushUploads();

@@ -49,6 +49,51 @@ internal sealed unsafe partial class VulkanRhiDevice
     // Submissions made outside a frame, each with a fence of its own.
     private readonly List<LooseSubmission> _loose = [];
 
+    // A counter every submission advances as it finishes, so a readback can wait for exactly the
+    // submission that wrote what it reads rather than for the whole device. Null where the device has no
+    // timeline semaphores, and then a readback idles the device as it always did.
+    private Semaphore _timeline;
+    private ulong _signalled;
+
+    /// <summary>Gets whether submissions are counted, and a readback can wait for its own.</summary>
+    internal bool HasTimeline => _timeline.Handle != 0;
+
+    /// <summary>Waits for a submission to finish, for as long as it is given.</summary>
+    /// <param name="ticket">The count it reaches: a buffer's <see cref="VulkanRhiBuffer.WriteTicket"/>.</param>
+    /// <param name="timeout">How long to wait; zero only looks.</param>
+    /// <returns><see langword="true"/> once it has finished; false while it has not, or has not been sent.</returns>
+    internal bool WaitForTicket(ulong ticket, TimeSpan timeout)
+    {
+        if (ticket == 0)
+        {
+            return true;
+        }
+
+        if (ticket > _signalled || !HasTimeline)
+        {
+            return false;
+        }
+
+        Semaphore timeline = _timeline;
+        SemaphoreWaitInfo info = new()
+        {
+            SType = StructureType.SemaphoreWaitInfo,
+            SemaphoreCount = 1,
+            PSemaphores = &timeline,
+            PValues = &ticket,
+        };
+
+        ulong nanoseconds = timeout == Timeout.InfiniteTimeSpan
+            ? ulong.MaxValue
+            : (ulong)Math.Max(0, timeout.Ticks) * 100UL;
+
+        Result result = _vk.WaitSemaphores(_device.Device, &info, nanoseconds);
+        return result == Result.Success;
+    }
+
+    /// <summary>The value the next submission signals, advancing the count.</summary>
+    private ulong NextSignal() => ++_signalled;
+
     /// <summary>Queues a write to a buffer the host cannot map, ahead of the next submission.</summary>
     private void QueueUpload(Buffer destination, ulong offset, ReadOnlySpan<byte> bytes)
     {
@@ -193,13 +238,25 @@ internal sealed unsafe partial class VulkanRhiDevice
         VkCheck.Ok(_vk.CreateFence(_device.Device, &fenceInfo, null, &fence), "vkCreateFence");
 
         CommandBuffer[] handles = [.. all];
+        Semaphore timeline = _timeline;
+        ulong value = HasTimeline ? NextSignal() : 0;
+        TimelineSemaphoreSubmitInfo counted = new()
+        {
+            SType = StructureType.TimelineSemaphoreSubmitInfo,
+            SignalSemaphoreValueCount = 1,
+            PSignalSemaphoreValues = &value,
+        };
+
         fixed (CommandBuffer* first = handles)
         {
             SubmitInfo submit = new()
             {
                 SType = StructureType.SubmitInfo,
+                PNext = HasTimeline ? &counted : null,
                 CommandBufferCount = (uint)handles.Length,
                 PCommandBuffers = first,
+                SignalSemaphoreCount = HasTimeline ? 1u : 0u,
+                PSignalSemaphores = &timeline,
             };
 
             VkCheck.Ok(_vk.QueueSubmit(_device.Graphics, 1, &submit, fence), "vkQueueSubmit");
@@ -254,6 +311,21 @@ internal sealed unsafe partial class VulkanRhiDevice
 
     private void CreateSubmissionState(int frames)
     {
+        if (_timeline.Handle == 0 && _device.Capabilities.TimelineSemaphore)
+        {
+            SemaphoreTypeCreateInfo type = new()
+            {
+                SType = StructureType.SemaphoreTypeCreateInfo,
+                SemaphoreType = SemaphoreType.Timeline,
+                InitialValue = 0,
+            };
+
+            SemaphoreCreateInfo create = new() { SType = StructureType.SemaphoreCreateInfo, PNext = &type };
+            Semaphore timeline;
+            VkCheck.Ok(_vk.CreateSemaphore(_device.Device, &create, null, &timeline), "vkCreateSemaphore");
+            _timeline = timeline;
+        }
+
         _slotCommands = new List<CommandBuffer>[frames];
         _slotStaging = new List<VulkanBuffer>[frames];
         for (int i = 0; i < frames; i++)
@@ -287,6 +359,12 @@ internal sealed unsafe partial class VulkanRhiDevice
 
         _pendingStaging.Clear();
         _freeStaging.Clear();
+
+        if (_timeline.Handle != 0)
+        {
+            _vk.DestroySemaphore(_device.Device, _timeline, null);
+            _timeline = default;
+        }
     }
 
     private sealed record LooseSubmission(Fence Fence, List<CommandBuffer> Commands, List<VulkanBuffer> Staging);

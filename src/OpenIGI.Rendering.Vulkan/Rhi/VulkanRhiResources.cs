@@ -24,6 +24,13 @@ internal sealed class VulkanRhiBuffer : IRhiBuffer
     /// <summary>Gets the allocation behind it.</summary>
     public VulkanBuffer Buffer { get; }
 
+    /// <summary>Gets or sets the submission count after which the GPU's last write to this buffer is done.</summary>
+    /// <remarks>
+    /// Stamped when a command buffer that copies into it is submitted. A readback waits for this and not
+    /// for the newest submission, which may be a frame still being recorded.
+    /// </remarks>
+    internal ulong WriteTicket { get; set; }
+
     /// <inheritdoc/>
     public string Label { get; }
 
@@ -593,11 +600,16 @@ internal sealed class VulkanRhiCommandBuffer : IRhiCommandBuffer
     /// <summary>Initialises a new instance of the <see cref="VulkanRhiCommandBuffer"/> class.</summary>
     /// <param name="handle">The command buffer.</param>
     /// <param name="label">The name it was recorded under.</param>
-    public VulkanRhiCommandBuffer(CommandBuffer handle, string label)
+    /// <param name="written">The buffers its commands write, to be stamped as it is submitted.</param>
+    public VulkanRhiCommandBuffer(CommandBuffer handle, string label, IReadOnlyList<VulkanRhiBuffer>? written = null)
     {
         Handle = handle;
         Label = label;
+        Written = written ?? [];
     }
+
+    /// <summary>Gets the buffers its commands write.</summary>
+    internal IReadOnlyList<VulkanRhiBuffer> Written { get; }
 
     /// <summary>Gets the command buffer.</summary>
     public CommandBuffer Handle { get; }

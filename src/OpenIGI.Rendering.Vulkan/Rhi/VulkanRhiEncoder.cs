@@ -19,6 +19,7 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
     private readonly VulkanRhiDevice _device;
     private readonly Vk _vk;
     private readonly CommandBuffer _command;
+    private readonly List<VulkanRhiBuffer> _written = [];
     private bool _finished;
     private bool _disposed;
 
@@ -192,6 +193,7 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
         ArgumentNullException.ThrowIfNull(destination);
         ThrowIfFinished();
         Barrier();
+        _written.Add((VulkanRhiBuffer)destination);
 
         BufferCopy region = new()
         {
@@ -240,6 +242,7 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
     {
         ThrowIfFinished();
         Barrier();
+        _written.Add((VulkanRhiBuffer)destination.Buffer);
 
         VulkanRhiTexture texture = (VulkanRhiTexture)source.Texture;
         _device.Transition(_command, texture, ImageLayout.TransferSrcOptimal);
@@ -316,6 +319,7 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
         ArgumentNullException.ThrowIfNull(destination);
         ThrowIfFinished();
         Barrier();
+        _written.Add((VulkanRhiBuffer)destination);
 
         // Eight bytes a result, and NOT waited for. The barrier above has every write recorded before
         // this finished, so each query written is available; one that never was -- a pass that asked
@@ -340,7 +344,7 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
         VkCheck.Ok(_vk.EndCommandBuffer(_command), "vkEndCommandBuffer");
         _finished = true;
 
-        return new VulkanRhiCommandBuffer(_command, label.Length > 0 ? label : Label);
+        return new VulkanRhiCommandBuffer(_command, label.Length > 0 ? label : Label, [.. _written]);
     }
 
     /// <inheritdoc/>
@@ -624,6 +628,7 @@ internal sealed class VulkanRhiReadback : IRhiReadback
     private readonly VulkanRhiDevice _device;
     private readonly VulkanRhiBuffer _buffer;
     private readonly ulong _offset;
+    private readonly ulong _ticket;
     private byte[]? _data;
     private bool _disposed;
 
@@ -632,16 +637,23 @@ internal sealed class VulkanRhiReadback : IRhiReadback
     /// <param name="buffer">The buffer to read.</param>
     /// <param name="offset">Where the read starts.</param>
     /// <param name="sizeInBytes">How many bytes.</param>
-    public VulkanRhiReadback(VulkanRhiDevice device, VulkanRhiBuffer buffer, ulong offset, ulong sizeInBytes)
+    /// <param name="ticket">The submission count that has to be reached before the bytes are there.</param>
+    public VulkanRhiReadback(VulkanRhiDevice device, VulkanRhiBuffer buffer, ulong offset, ulong sizeInBytes, ulong ticket)
     {
         _device = device;
         _buffer = buffer;
         _offset = offset;
+        _ticket = ticket;
         SizeInBytes = sizeInBytes;
     }
 
     /// <inheritdoc/>
-    public bool IsComplete => _data is not null;
+    /// <remarks>
+    /// Looks without waiting: the submission that wrote the bytes has finished, or it has not. Before
+    /// submissions were counted this could only be answered by idling the whole device, which the sky's
+    /// harmonics did once a frame.
+    /// </remarks>
+    public bool IsComplete => _data is not null || Wait(TimeSpan.Zero);
 
     /// <inheritdoc/>
     public ulong SizeInBytes { get; }
@@ -651,7 +663,23 @@ internal sealed class VulkanRhiReadback : IRhiReadback
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        _data ??= _device.ReadBack(_buffer, _offset, SizeInBytes);
+        if (_data is not null)
+        {
+            return true;
+        }
+
+        if (_device.HasTimeline && _buffer.Buffer.HostVisible)
+        {
+            if (!_device.WaitForTicket(_ticket, timeout))
+            {
+                return false;
+            }
+
+            _data = VulkanRhiDevice.ReadFinished(_buffer, _offset, SizeInBytes);
+            return true;
+        }
+
+        _data = _device.ReadBack(_buffer, _offset, SizeInBytes);
         return true;
     }
 

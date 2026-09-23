@@ -42,7 +42,8 @@ public sealed class StageProfiler : IDisposable
     private readonly IRhiDevice _device;
     private readonly IRhiQuerySet? _queries;
     private readonly IRhiBuffer? _resolved;
-    private readonly IRhiBuffer? _readback;
+    private readonly IRhiBuffer[] _readback;
+    private readonly IRhiReadback?[] _pending;
     private readonly double _periodMilliseconds;
     private readonly int _slots;
     private readonly List<TimedPass>[] _slotPasses;
@@ -73,6 +74,8 @@ public sealed class StageProfiler : IDisposable
         _slotPasses = new List<TimedPass>[framesInFlight];
         _slotNext = new int[framesInFlight];
         _results = new ulong[SlotCapacity];
+        _readback = [];
+        _pending = new IRhiReadback?[framesInFlight];
 
         for (int i = 0; i < framesInFlight; i++)
         {
@@ -93,10 +96,17 @@ public sealed class StageProfiler : IDisposable
             RhiBufferUsage.QueryResolve | RhiBufferUsage.CopySource,
             "stages.resolved"));
 
-        _readback = device.CreateBuffer(new RhiBufferDescriptor(
-            (ulong)(queries * sizeof(ulong)),
-            RhiBufferUsage.CopyDestination | RhiBufferUsage.MapRead,
-            "stages.readback"));
+        // One per slot, so reading one frame's timings never waits on the frame written after it: a
+        // readback is done when the last write to ITS buffer is, and a shared buffer's last write is
+        // always the newest frame.
+        _readback = new IRhiBuffer[framesInFlight];
+        for (int i = 0; i < framesInFlight; i++)
+        {
+            _readback[i] = device.CreateBuffer(new RhiBufferDescriptor(
+                SlotCapacity * sizeof(ulong),
+                RhiBufferUsage.CopyDestination | RhiBufferUsage.MapRead,
+                $"stages.readback.{i}"));
+        }
 
         Available = true;
     }
@@ -170,7 +180,7 @@ public sealed class StageProfiler : IDisposable
     {
         ArgumentNullException.ThrowIfNull(encoder);
 
-        if (_disposed || _queries is null || _resolved is null || _readback is null)
+        if (_disposed || _queries is null || _resolved is null || _readback.Length == 0)
         {
             return;
         }
@@ -185,8 +195,13 @@ public sealed class StageProfiler : IDisposable
         int first = _slot * SlotCapacity;
         ulong offset = (ulong)(first * sizeof(ulong));
 
+        // A readback still waiting on this slot's last copy is for a frame about to be overwritten, and a
+        // buffer still mapped cannot be copied into.
+        _pending[_slot]?.Dispose();
+        _pending[_slot] = null;
+
         encoder.ResolveQuerySet(_queries, first, count, _resolved, offset);
-        encoder.CopyBufferToBuffer(_resolved, offset, _readback, offset, (ulong)(count * sizeof(ulong)));
+        encoder.CopyBufferToBuffer(_resolved, offset, _readback[_slot], 0, (ulong)(count * sizeof(ulong)));
     }
 
     /// <summary>Reads a completed frame's timestamps and folds them into the statistics.</summary>
@@ -197,7 +212,7 @@ public sealed class StageProfiler : IDisposable
     /// <returns><see langword="true"/> when a frame was folded.</returns>
     public bool ReadCompletedFrame(int frameInFlight)
     {
-        if (_disposed || !Enabled || _readback is null)
+        if (_disposed || !Enabled || _readback.Length == 0)
         {
             return false;
         }
@@ -211,11 +226,11 @@ public sealed class StageProfiler : IDisposable
         }
 
         int count = _slotNext[slot];
-        ulong offset = (ulong)(slot * SlotCapacity * sizeof(ulong));
 
-        using IRhiReadback data = _device.ReadBuffer(_readback, offset, (ulong)(count * sizeof(ulong)));
+        // Asked for once and kept until it arrives: a browser cannot block for it, and neither should this.
+        IRhiReadback data = _pending[slot] ??= _device.ReadBuffer(_readback[slot], 0, (ulong)(count * sizeof(ulong)));
 
-        if (!data.IsComplete && !data.Wait(TimeSpan.Zero))
+        if (!data.Wait(TimeSpan.Zero) && !data.IsComplete)
         {
             return false;
         }
@@ -237,6 +252,11 @@ public sealed class StageProfiler : IDisposable
         }
 
         Ledger.CompleteFrame();
+
+        // Read once: the slot's next frame asks again.
+        passes.Clear();
+        data.Dispose();
+        _pending[slot] = null;
         return true;
     }
 
@@ -249,7 +269,16 @@ public sealed class StageProfiler : IDisposable
         }
 
         _disposed = true;
-        _readback?.Dispose();
+        foreach (IRhiReadback? pending in _pending)
+        {
+            pending?.Dispose();
+        }
+
+        foreach (IRhiBuffer buffer in _readback)
+        {
+            buffer.Dispose();
+        }
+
         _resolved?.Dispose();
         _queries?.Dispose();
     }

@@ -208,18 +208,29 @@ internal sealed unsafe partial class VulkanRhiDevice
         Semaphore signal = _presentable[_frameSlot];
         PipelineStageFlags stage = PipelineStageFlags.ColorAttachmentOutputBit;
 
+        // The present's semaphore, and the count a readback of this frame waits for.
+        Semaphore* signals = stackalloc Semaphore[2] { signal, _timeline };
+        ulong* values = stackalloc ulong[2] { 0, HasTimeline ? NextSignal() : 0 };
+        TimelineSemaphoreSubmitInfo counted = new()
+        {
+            SType = StructureType.TimelineSemaphoreSubmitInfo,
+            SignalSemaphoreValueCount = 2,
+            PSignalSemaphoreValues = values,
+        };
+
         fixed (CommandBuffer* first = buffers)
         {
             SubmitInfo submit = new()
             {
                 SType = StructureType.SubmitInfo,
+                PNext = HasTimeline ? &counted : null,
                 WaitSemaphoreCount = 1,
                 PWaitSemaphores = &wait,
                 PWaitDstStageMask = &stage,
                 CommandBufferCount = (uint)buffers.Length,
                 PCommandBuffers = first,
-                SignalSemaphoreCount = 1,
-                PSignalSemaphores = &signal,
+                SignalSemaphoreCount = HasTimeline ? 2u : 1u,
+                PSignalSemaphores = signals,
             };
 
             VkCheck.Ok(
@@ -407,27 +418,31 @@ internal sealed unsafe partial class VulkanRhiDevice
         _pending.Clear();
         HoldForSlot(_frameSlot, buffers);
 
-        if (buffers.Length > 0)
+        // Submitted even with nothing recorded: the fence this slot waits on next time, and the count a
+        // readback of this frame waits for, both need something to signal them.
+        Semaphore timeline = _timeline;
+        ulong value = HasTimeline ? NextSignal() : 0;
+        TimelineSemaphoreSubmitInfo counted = new()
         {
-            fixed (CommandBuffer* first = buffers)
-            {
-                SubmitInfo submit = new()
-                {
-                    SType = StructureType.SubmitInfo,
-                    CommandBufferCount = (uint)buffers.Length,
-                    PCommandBuffers = first,
-                };
+            SType = StructureType.TimelineSemaphoreSubmitInfo,
+            SignalSemaphoreValueCount = 1,
+            PSignalSemaphoreValues = &value,
+        };
 
-                VkCheck.Ok(
-                    _vk.QueueSubmit(_device.Graphics, 1, &submit, _inFlight[_frameSlot]),
-                    "vkQueueSubmit");
-            }
-        }
-        else
+        fixed (CommandBuffer* first = buffers)
         {
-            // Nothing was recorded, so the fence this slot waits on next time has nothing to signal it.
+            SubmitInfo submit = new()
+            {
+                SType = StructureType.SubmitInfo,
+                PNext = HasTimeline ? &counted : null,
+                CommandBufferCount = (uint)buffers.Length,
+                PCommandBuffers = buffers.Length > 0 ? first : null,
+                SignalSemaphoreCount = HasTimeline ? 1u : 0u,
+                PSignalSemaphores = &timeline,
+            };
+
             VkCheck.Ok(
-                _vk.QueueSubmit(_device.Graphics, 0, null, _inFlight[_frameSlot]),
+                _vk.QueueSubmit(_device.Graphics, 1, &submit, _inFlight[_frameSlot]),
                 "vkQueueSubmit");
         }
 
