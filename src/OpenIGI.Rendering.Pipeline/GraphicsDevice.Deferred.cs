@@ -379,7 +379,10 @@ public sealed partial class GraphicsDevice
 
         _grainFrame = (_grainFrame + 1) % ResolvePushBlock.GrainCycle;
 
-        IRhiTextureView? bloom = RecordBloom(scene, post);
+        // The shutter first, because everything after it is lens behaviour and a lens sees the smeared
+        // picture: a bright moving highlight blooms along its own smear rather than from where it was.
+        IRhiTextureView colour = RecordMotionBlur(scene, post) ?? ResolvedScene(scene);
+        IRhiTextureView? bloom = RecordBloom(scene, colour, post);
         float adapted = MeterExposure(scene, post);
 
         Span<float> push = stackalloc float[ResolvePushBlock.Floats];
@@ -400,7 +403,7 @@ public sealed partial class GraphicsDevice
         _sceneExposure = MathF.Max(post.Exposure * adapted, 1e-3f);
 
         resolve.BindGrade(GradeSize(post) > 0f ? _colourLut?.View : null);
-        resolve.BindFrame(ResolvedScene(scene), bloom);
+        resolve.BindFrame(colour, bloom);
 
         using (IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             [new RhiColorAttachment(_frame.Target, RhiLoadOp.Clear, RhiStoreOp.Store, _clearColour)],
@@ -427,7 +430,7 @@ public sealed partial class GraphicsDevice
     /// Before the tone map and after the temporal resolve, as on the Vulkan device, and not for a mask
     /// view: that is a code value rather than radiance, and it gets neither this nor the vignette.
     /// </remarks>
-    private IRhiTextureView? RecordBloom(SceneTargetSet scene, in PostProcessSettings post)
+    private IRhiTextureView? RecordBloom(SceneTargetSet scene, IRhiTextureView colour, in PostProcessSettings post)
     {
         if (!post.WantsBloom || _debugView.IsMask() || _bloom is not { } bloom)
         {
@@ -440,7 +443,7 @@ public sealed partial class GraphicsDevice
         {
             bloom.Record(
                 pass,
-                ResolvedScene(scene),
+                colour,
                 scene.Width,
                 scene.Height,
                 post.BloomIntensity,
@@ -823,6 +826,8 @@ public sealed partial class GraphicsDevice
         DisposeGlazing();
         DisposeGlazingReflection();
         DisposeFog();
+        _motionBlur?.Dispose();
+        _motionBlur = null;
         DisposeSceneReflection();
         _autoExposure?.Dispose();
         _autoExposure = null;

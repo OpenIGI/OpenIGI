@@ -30,7 +30,6 @@ public sealed partial class GraphicsDevice
     /// </remarks>
     private static readonly string[] UnimplementedSettingNames =
     [
-        "r_motion_blur",
         "r_storm",
         "r_material_detail",
     ];

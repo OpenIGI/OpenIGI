@@ -34,8 +34,11 @@ public sealed class GraphicsDeviceTests
         Assert.True(device.Capabilities.SupportsCompute);
         Assert.False(device.Capabilities.SupportsRayQuery);
 
+        // What needs an adapter that traces is named on one that does not; what this path draws is not.
         Assert.NotEmpty(device.Capabilities.UnimplementedSettings);
-        Assert.Contains("r_motion_blur", device.Capabilities.UnimplementedSettings);
+        Assert.Contains("r_rt_shadows", device.Capabilities.UnimplementedSettings);
+        Assert.Contains("r_rt_reflections", device.Capabilities.UnimplementedSettings);
+        Assert.DoesNotContain("r_motion_blur", device.Capabilities.UnimplementedSettings);
         Assert.DoesNotContain("r_fog_quality", device.Capabilities.UnimplementedSettings);
     }
 
