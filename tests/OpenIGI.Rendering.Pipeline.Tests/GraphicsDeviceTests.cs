@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Mesh3D;
 using OpenIGI.Rendering.Rhi;
@@ -40,6 +40,12 @@ public sealed class GraphicsDeviceTests
         Assert.Contains("r_rt_reflections", device.Capabilities.UnimplementedSettings);
         Assert.DoesNotContain("r_motion_blur", device.Capabilities.UnimplementedSettings);
         Assert.DoesNotContain("r_fog_quality", device.Capabilities.UnimplementedSettings);
+
+        // What the Vulkan renderer does not act on either is named here too, so the two options screens
+        // agree -- depth of field above all, which neither draws.
+        Assert.Contains("r_dof", device.Capabilities.UnimplementedSettings);
+        Assert.Contains("r_generate_mipmaps", device.Capabilities.UnimplementedSettings);
+        Assert.Contains("r_camera_taps", device.Capabilities.UnimplementedSettings);
     }
 
     [Fact]

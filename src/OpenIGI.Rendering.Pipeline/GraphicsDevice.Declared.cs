@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Rhi;
 
@@ -25,12 +25,23 @@ public sealed partial class GraphicsDevice
 {
     /// <summary>The settings this device records and does not act on, whatever it draws through.</summary>
     /// <remarks>
-    /// Console-variable names, so a reader can match them against what the settings file holds. Every
-    /// one of them belongs to the deferred stack, which has not moved onto this path yet.
+    /// Console-variable names, so a reader can match them against what the settings file holds. The
+    /// ones the Vulkan renderer does not act on either are named here as it names them, so the two
+    /// devices' options screens agree about what a setting does.
     /// </remarks>
     private static readonly string[] UnimplementedSettingNames =
     [
         "r_material_detail",
+
+        // Depth of field, a pass neither renderer has: every preset leaves it off.
+        "r_dof", "r_dof_range", "r_dof_blur",
+
+        // Every texture arrives with its whole chain already built, so there is no generation to turn
+        // off -- the same reason the Vulkan renderer gives.
+        "r_generate_mipmaps",
+
+        // Superseded: the motion gather takes its sample count from the blur length.
+        "r_camera_taps",
     ];
 
     /// <summary>The settings this device does not act on over the backend it was given.</summary>
