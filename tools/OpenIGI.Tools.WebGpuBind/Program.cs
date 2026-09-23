@@ -34,15 +34,25 @@ try
 
     IReadOnlyList<GeneratedFile> files = new BindingEmitter(model, version).Emit();
 
+    string browser = Path.Combine(root, "src", "OpenIGI.Rendering.WebGpu.Browser");
+
     if (!checkOnly)
     {
         Directory.CreateDirectory(generated);
+        Directory.CreateDirectory(browser);
     }
 
+    // The C# binding into Generated/, and the browser bridge's enum tables beside the bridge.
+    (string Path, GeneratedFile File)[] outputs =
+    [
+        .. files.Select(file => (Path.Combine(generated, file.FileName), file)),
+        (Path.Combine(browser, BrowserEnumEmitter.FileName),
+            new GeneratedFile(BrowserEnumEmitter.FileName, BrowserEnumEmitter.Emit(model, version))),
+    ];
+
     int stale = 0;
-    foreach (GeneratedFile file in files)
+    foreach ((string path, GeneratedFile file) in outputs)
     {
-        string path = Path.Combine(generated, file.FileName);
         byte[] wanted = Encoding.UTF8.GetBytes(file.Text);
         bool exists = File.Exists(path);
 
@@ -72,13 +82,13 @@ try
 
     if (!checkOnly)
     {
-        Console.WriteLine($"{files.Count} file(s), {stale} written.");
+        Console.WriteLine($"{outputs.Length} file(s), {stale} written.");
         return 0;
     }
 
     if (stale == 0)
     {
-        Console.WriteLine($"{files.Count} file(s) are current.");
+        Console.WriteLine($"{outputs.Length} file(s) are current.");
         return 0;
     }
 
