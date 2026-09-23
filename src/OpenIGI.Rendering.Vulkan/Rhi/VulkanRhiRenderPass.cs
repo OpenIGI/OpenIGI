@@ -18,6 +18,7 @@ internal sealed unsafe class VulkanRhiRenderPassEncoder : IRhiRenderPassEncoder
     private readonly CommandBuffer _command;
     private readonly List<VulkanRhiTexture> _attachments;
     private readonly VulkanRhiQuerySet? _occlusion;
+    private readonly RhiTimestampWrites? _timestamps;
     private VulkanRhiPipelineLayout? _layout;
     private bool _ended;
     private bool _disposed;
@@ -28,13 +29,16 @@ internal sealed unsafe class VulkanRhiRenderPassEncoder : IRhiRenderPassEncoder
     /// <param name="command">The command buffer.</param>
     /// <param name="attachments">The textures attached, to put back when the pass ends.</param>
     /// <param name="occlusion">The set an occlusion query writes into.</param>
+    /// <param name="timestamps">The timestamps the pass writes; the end one is written as it ends.</param>
     public VulkanRhiRenderPassEncoder(
         VulkanRhiDevice device,
         Vk vk,
         CommandBuffer command,
         List<VulkanRhiTexture> attachments,
-        VulkanRhiQuerySet? occlusion)
+        VulkanRhiQuerySet? occlusion,
+        RhiTimestampWrites? timestamps = null)
     {
+        _timestamps = timestamps;
         _device = device;
         _vk = vk;
         _command = command;
@@ -246,6 +250,7 @@ internal sealed unsafe class VulkanRhiRenderPassEncoder : IRhiRenderPassEncoder
 
         _vk.CmdEndRendering(_command);
         _ended = true;
+        VulkanRhiTimestamps.End(_vk, _command, _timestamps);
 
         // Back to the layout everything rests in, so whatever reads the result next simply reads it.
         foreach (VulkanRhiTexture attachment in _attachments)

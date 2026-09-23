@@ -132,16 +132,9 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
         }
 
         // The timestamps a pass would write have no dynamic-rendering equivalent: Vulkan writes them
-        // with commands around the pass rather than as part of it. Written here so the meaning is the
-        // same -- the time the pass began and the time it ended.
-        if (descriptor.Timestamps is { } writes && writes.BeginIndex >= 0)
-        {
-            _vk.CmdWriteTimestamp(
-                _command,
-                PipelineStageFlags.TopOfPipeBit,
-                ((VulkanRhiQuerySet)writes.QuerySet).Handle,
-                (uint)writes.BeginIndex);
-        }
+        // with commands around the pass rather than as part of it -- the beginning here, the end when
+        // the pass ends.
+        VulkanRhiTimestamps.Begin(_vk, _command, descriptor.Timestamps);
 
         fixed (RenderingAttachmentInfo* firstColour = colours)
         {
@@ -170,7 +163,8 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
             _vk,
             _command,
             attached,
-            descriptor.OcclusionQuerySet as VulkanRhiQuerySet);
+            descriptor.OcclusionQuerySet as VulkanRhiQuerySet,
+            descriptor.Timestamps);
     }
 
     /// <inheritdoc/>
@@ -181,8 +175,9 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
         // Everything written before this pass has to be visible to it. One barrier at the boundary is
         // what the interface's promise costs, and it is where WebGPU pays nothing.
         Barrier();
+        VulkanRhiTimestamps.Begin(_vk, _command, descriptor.Timestamps);
 
-        return new VulkanRhiComputePassEncoder(_device, _vk, _command);
+        return new VulkanRhiComputePassEncoder(_device, _vk, _command, descriptor.Timestamps);
     }
 
     /// <inheritdoc/>
@@ -322,8 +317,10 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
         ThrowIfFinished();
         Barrier();
 
-        // Eight bytes a result and waited for, which is what the other backend's resolve does too: a
-        // result read before the query finished is whatever was there before.
+        // Eight bytes a result, and NOT waited for. The barrier above has every write recorded before
+        // this finished, so each query written is available; one that never was -- a pass that asked
+        // for a timestamp and was not recorded -- is left out rather than waited for, because a wait on
+        // a query nothing will ever write never ends, and hangs the GPU.
         _vk.CmdCopyQueryPoolResults(
             _command,
             ((VulkanRhiQuerySet)querySet).Handle,
@@ -332,7 +329,7 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
             ((VulkanRhiBuffer)destination).Buffer.Handle,
             destinationOffset,
             sizeof(ulong),
-            QueryResultFlags.Result64Bit | QueryResultFlags.ResultWaitBit);
+            QueryResultFlags.Result64Bit);
     }
 
     /// <inheritdoc/>
@@ -426,6 +423,7 @@ internal sealed unsafe class VulkanRhiComputePassEncoder : IRhiComputePassEncode
     private readonly VulkanRhiDevice _device;
     private readonly Vk _vk;
     private readonly CommandBuffer _command;
+    private readonly RhiTimestampWrites? _timestamps;
     private VulkanRhiPipelineLayout? _layout;
     private bool _dispatched;
     private bool _ended;
@@ -435,11 +433,17 @@ internal sealed unsafe class VulkanRhiComputePassEncoder : IRhiComputePassEncode
     /// <param name="device">The device recording it.</param>
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="command">The command buffer.</param>
-    public VulkanRhiComputePassEncoder(VulkanRhiDevice device, Vk vk, CommandBuffer command)
+    /// <param name="timestamps">The timestamps the pass writes; the end one is written as it ends.</param>
+    public VulkanRhiComputePassEncoder(
+        VulkanRhiDevice device,
+        Vk vk,
+        CommandBuffer command,
+        RhiTimestampWrites? timestamps = null)
     {
         _device = device;
         _vk = vk;
         _command = command;
+        _timestamps = timestamps;
     }
 
     /// <inheritdoc/>
@@ -535,10 +539,29 @@ internal sealed unsafe class VulkanRhiComputePassEncoder : IRhiComputePassEncode
     /// Vulkan has no compute pass to end, so what this ends is the interface's notion of one. The
     /// barrier that makes what was dispatched visible is emitted by whatever begins next.
     /// </remarks>
-    public void EndPass() => _ended = true;
+    public void EndPass()
+    {
+        ThrowIfEnded();
+        _ended = true;
+        VulkanRhiTimestamps.End(_vk, _command, _timestamps);
+    }
 
     /// <inheritdoc/>
-    public void Dispose() => _disposed = true;
+    /// <remarks>A pass left to a <c>using</c> block ends here, and writes its end timestamp.</remarks>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (!_ended)
+        {
+            EndPass();
+        }
+
+        _disposed = true;
+    }
 
     /// <summary>Makes the dispatch before this one visible to this one.</summary>
     /// <remarks>
