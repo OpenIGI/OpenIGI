@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Threading;
@@ -131,33 +131,34 @@ public sealed class MaterialDetailPack : IDisposable
     /// frame asked for it, is read inline as it always was.
     /// </para>
     /// </remarks>
+    /// <returns>The reads, finished when every map has been read; already finished where none are run.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="names"/> is <see langword="null"/>.</exception>
-    public void Prewarm(IEnumerable<string> names)
+    public Task Prewarm(IEnumerable<string> names)
     {
         ArgumentNullException.ThrowIfNull(names);
 
         if (_disposed || _cacheRoot is null)
         {
-            return;
+            return Task.CompletedTask;
         }
 
         string[] wanted = [.. names];
         if (wanted.Length == 0)
         {
-            return;
+            return Task.CompletedTask;
         }
 
         // Only where it overlaps the frame: inline, it would read every map in the frame that asked, for
         // an upload that reads them anyway.
         if (!_work.IsConcurrent)
         {
-            return;
+            return Task.CompletedTask;
         }
 
         // Capped, and the cap matters: unbounded this took every core, and the thread it took them from
         // was the one drawing the frame. See TextureDecodeCache.MaxDecodeThreads, which is the same
         // bargain -- the reads finish well inside the swap either way.
-        _ = _work.Run(() => _work.ForEach(wanted, Math.Max(1, Environment.ProcessorCount / 4), name =>
+        return _work.Run(() => _work.ForEach(wanted, Math.Max(1, Environment.ProcessorCount / 4), name =>
         {
             if (!_disposed && !string.IsNullOrEmpty(name) && !_read.ContainsKey(name))
             {

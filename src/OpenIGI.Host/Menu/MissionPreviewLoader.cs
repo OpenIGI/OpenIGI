@@ -390,6 +390,19 @@ public sealed class MissionPreviewLoader(
         TextureDecodeCache decoded = TextureDecodeCache.StartFor(
             resources, TextureDecodeCache.AlphaTestCutoff, work, context.DetailMaps);
 
+        // And finished before the backdrop is handed over: the swap's surface-cache capture wants nearly
+        // every texture on the render thread, and one the pool has not reached is decoded there, in the
+        // frame. Waited here instead, the menu goes on showing the old backdrop for that time. A decode
+        // that failed is not a reason to lose the backdrop -- the renderer decodes that one itself.
+        try
+        {
+            decoded.Completion.GetAwaiter().GetResult();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.Warning(LogCategory, $"The backdrop's textures did not all decode ahead: {ex.Message}");
+        }
+
         logger.Information(
             LogCategory,
             $"Built the backdrop for mission {missionId} in {clock.ElapsedMilliseconds} ms off the render thread.");
