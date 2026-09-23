@@ -41,8 +41,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Authored per-mission atmosphere. Data rather than code so a level can be re-tuned without a
-         rebuild, which matters because tuning it is done by looking. -->
+    <!-- The window icon. The host's own assets come with OpenIGI.Composition. -->
     <None Include="Assets\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

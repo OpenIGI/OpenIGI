@@ -8,6 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- What the host reads beside the application (AppContext.BaseDirectory/Assets): fonts, the per-mission
+         atmosphere, colour grades, weather textures. Data rather than code so a level can be re-tuned without
+         a rebuild. Copied into every app that references this; the browser build puts them in its file
+         system instead (apps/OpenIGI.Web). -->
+    <None Include="Assets\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\OpenIGI.Core\OpenIGI.Core.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Engine\OpenIGI.Engine.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Game\OpenIGI.Game.csproj" />

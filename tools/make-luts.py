@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates the colour grades in apps/OpenIGI.Desktop/Assets/luts.
+"""Generates the colour grades in apps/OpenIGI.Composition/Assets/luts.
 
 A .cube file is 4096 lines of numbers; committing one with no record of where it came from makes the
 grade unreviewable and unadjustable. This is that record. Run it after changing a look:
@@ -24,7 +24,7 @@ loader reads whatever size a file declares, so an authored grade that needs more
 import os
 
 SIZE = 16
-OUT = os.path.join(os.path.dirname(__file__), "..", "apps", "OpenIGI.Desktop", "Assets", "luts")
+OUT = os.path.join(os.path.dirname(__file__), "..", "apps", "OpenIGI.Composition", "Assets", "luts")
 
 
 def lerp(a, b, t):

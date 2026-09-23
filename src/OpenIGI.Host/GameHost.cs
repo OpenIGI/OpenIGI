@@ -1659,7 +1659,7 @@ internal sealed partial class GameHost : IDisposable
             _logger.Information(
                 "Bake",
                 $"Baked {baked} mission(s). To ship them, copy the .giv files from "
-                    + $"{Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "gi")} into apps/OpenIGI.Desktop/Assets/gi.");
+                    + $"{Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "gi")} into apps/OpenIGI.Composition/Assets/gi.");
             running = false;
         }
 
