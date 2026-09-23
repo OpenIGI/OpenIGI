@@ -12,11 +12,11 @@ namespace OpenIGI.Rendering.Pipeline;
 /// <remarks>
 /// <para>
 /// The second half of the glazing. The front layer (see <see cref="GraphicsDevice"/>'s glazing) records
-/// each pane pixel's normal and distance; after the frame is lit, one ray per pane pixel is marched
-/// through the level's distance field and resolved out of the LIT FRAME where the camera can see what it
-/// hit and out of the surface cache's cards where it cannot, and the result is added to the lit scene
-/// before the temporal resolve. The software form of the Vulkan original's glass reflection pass: this
-/// device traces no rays, so the march is the only half there is.
+/// each pane pixel's normal and distance; after the frame is lit, one ray per pane pixel is traced against
+/// the world where the adapter traces, or marched through the level's distance field where it does not,
+/// and resolved out of the LIT FRAME where the camera can see what it hit, out of the surface cache's cards
+/// where it cannot, and out of the traced albedo where the hit is a texel neither holds. The result is
+/// added to the lit scene before the temporal resolve, as the Vulkan original's glass reflection pass does.
 /// </para>
 /// <para>
 /// It reads what the game hands over for its own GI: the surface cache, the distance field and the roof
@@ -47,6 +47,8 @@ public sealed partial class GraphicsDevice
     private ShelterMapTransform _shelterTransform = ShelterMapTransform.None;
 
     private ComputePass? _glassReflect;
+    private ComputePass? _glassReflectTraced;
+    private IRhiSampler? _tracedAlbedoSampler;
     private ComputeParameters? _glassReflectBlock;
     private IRhiBindGroupLayout? _compositeLayout;
     private FullscreenPipeline? _compositeAdd;
@@ -135,11 +137,35 @@ public sealed partial class GraphicsDevice
 
         EnsureGlazingReflection();
 
-        ComputePass reflect = _glassReflect!;
-        bool marches = BindReflectionWorld(reflect);
+        // Traced where the scene's reflection would trace, as on the Vulkan renderer; marched otherwise.
+        bool traces = WillTraceReflections();
+        ComputePass reflect = traces
+            ? _glassReflectTraced ??= new ComputePass(_device, ShaderModuleId.GlazingReflect, "glazing.reflect", new ShaderVariant("rayquery"))
+            : _glassReflect!;
+        bool complete = BindReflectionWorld(reflect);
+        traces &= complete;
+
+        if (traces)
+        {
+            IRhiRayTracing world = TracedWorld!;
+            reflect.Bind("uScene", world.TraceableScene);
+            reflect.Bind("uTracedAlbedo", world.TracedAlbedo, _tracedAlbedoSampler ??= _device.CreateSampler(
+                new RhiSamplerDescriptor(
+                    MipFilter: RhiFilter.Nearest,
+                    AddressU: RhiAddressMode.Repeat,
+                    AddressV: RhiAddressMode.Repeat,
+                    Label: "glazing.albedo")));
+        }
 
         Span<float> block = stackalloc float[ReflectFloats];
-        WriteReflectBlock(block, scene, marches ? _distanceFieldBinding : DistanceFieldBinding.None, isolate && route <= 0f, route);
+        WriteReflectBlock(
+            block,
+            scene,
+            !traces && complete ? _distanceFieldBinding : DistanceFieldBinding.None,
+            isolate && route <= 0f,
+            route,
+            traces,
+            traces ? TracedWorld!.HitRecordAddress : 0UL);
 
         reflect.Bind("uLit", scene.View(SceneTargetId.Lit), _reflectSampler!);
         reflect.Bind("uSceneDepth", scene.View(SceneTargetId.Depth), _reflectSampler!);
@@ -196,14 +222,24 @@ public sealed partial class GraphicsDevice
 
         // The roofs, which only the march reads: whether a ray that left the field found the sky or lost
         // a ceiling. Fetched rather than sampled.
-        IRhiTextureView? shelter = _shelterTransform.IsPresent ? ViewOf(_shelterMap) : null;
-        reflect.Bind("uShelterMap", shelter ?? standIns.For(Slot(reflection, "uShelterMap")), _reflectSampler!);
+        if (reflect.Declares("uShelterMap"))
+        {
+            IRhiTextureView? shelter = _shelterTransform.IsPresent ? ViewOf(_shelterMap) : null;
+            reflect.Bind("uShelterMap", shelter ?? standIns.For(Slot(reflection, "uShelterMap")), _reflectSampler!);
+        }
 
         return complete;
     }
 
     /// <summary>Fills the trace's block, laid out as the original lays it out.</summary>
-    private void WriteReflectBlock(Span<float> data, SceneTargetSet scene, in DistanceFieldBinding field, bool raw, float route)
+    private void WriteReflectBlock(
+        Span<float> data,
+        SceneTargetSet scene,
+        in DistanceFieldBinding field,
+        bool raw,
+        float route,
+        bool traces,
+        ulong recordAddress)
     {
         data.Clear();
 
@@ -223,8 +259,7 @@ public sealed partial class GraphicsDevice
         data[22] = 1f / scene.Width;
         data[23] = 1f / scene.Height;
 
-        // Never traced: this device has no acceleration structure, so every frame marches.
-        data[24] = 0f;
+        data[24] = traces ? 1f : 0f;
         data[25] = ReflectionReachMetres;
         data[26] = RenderCVars.TracedReflectionClamp.Value;
         data[27] = SkyConditions.ViewHeightFor(altitudeMetres: 2f);
@@ -254,7 +289,11 @@ public sealed partial class GraphicsDevice
         data[45] = _cameraPosition.Y;
         data[46] = _cameraPosition.Z;
 
-        // The material records' address stays nought: only a traced hit reads them.
+        // The hit records' address as a bit pattern: a uniform block holds no 64-bit integer, so the two
+        // halves ride across as floats and the shader reads them back as words.
+        data[48] = BitConverter.UInt32BitsToSingle((uint)recordAddress);
+        data[49] = BitConverter.UInt32BitsToSingle((uint)(recordAddress >> 32));
+
         Vector3f sun = _lighting.WorldSunDirection(_viewToWorld);
         data[52] = sun.X;
         data[53] = sun.Y;
@@ -363,6 +402,8 @@ public sealed partial class GraphicsDevice
         _standInRecords?.Dispose();
         _reflectStandIns?.Dispose();
         _glassReflectBlock?.Dispose();
+        _tracedAlbedoSampler?.Dispose();
+        _glassReflectTraced?.Dispose();
         _glassReflect?.Dispose();
     }
 }

@@ -29,6 +29,8 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
     private readonly VulkanWorldScene _scene;
     private readonly VulkanOpacityMasks _masks;
     private readonly VulkanPlaceholderScene _placeholder;
+    private readonly VulkanTracedAlbedo _albedo;
+    private readonly VulkanRhiTexture _albedoTexture;
     private readonly VulkanRhiAccelerationStructure _placeholderView;
     private readonly VulkanRhiTexture _maskTexture;
     private readonly HashSet<uint> _cutout = [];
@@ -59,6 +61,28 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
     {
         _owner = owner;
         _scene = new VulkanWorldScene(vk, api, device, allocator);
+
+        // Each texture's colour, for a reflected hit; at the resolution the legacy device stores them at.
+        _albedo = new VulkanTracedAlbedo(
+            vk, device, allocator, commands, RenderCVars.ReflectionTexture.Value, ImageLayout.General);
+        _albedoTexture = new VulkanRhiTexture(
+            vk,
+            device.Device,
+            allocator,
+            _albedo.Image,
+            default,
+            new RhiTextureDescriptor(
+                _albedo.Resolution,
+                _albedo.Resolution,
+                RhiTextureFormat.Rgba8UnormSrgb,
+                RhiTextureUsage.Sampled,
+                DepthOrArrayLayers: _albedo.Capacity,
+                Dimension: RhiTextureViewDimension.Texture2DArray,
+                Label: "traced albedo"),
+            owned: false)
+        {
+            Layout = ImageLayout.General,
+        };
 
         // Built at once, as the Vulkan renderer's is: the tracing shaders bind a structure from their first
         // dispatch, before the world has seen a draw.
@@ -126,6 +150,9 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
     public IRhiTextureView CutoutMasks => _maskTexture.View;
 
     /// <inheritdoc/>
+    public IRhiTextureView TracedAlbedo => _albedoTexture.View;
+
+    /// <inheritdoc/>
     public void ObserveTexture(uint textureId, ReadOnlySpan<Bgra32> pixels, int width, int height)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -140,6 +167,17 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
             _cutout.Add(textureId);
             _masks.Register(textureId, pixels, width, height);
         }
+
+        // Every texture, not only the cut-outs: a reflected ray can strike anything. The array turns away
+        // what it does not want, so the size question lives there.
+        _albedo.Register(textureId, pixels, width, height);
+    }
+
+    /// <inheritdoc/>
+    public void ForgetTexture(uint textureId)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _albedo.Release(textureId);
     }
 
     /// <inheritdoc/>
@@ -158,7 +196,16 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
             meshId,
             Adapt(meshId, mesh),
             worldTransform,
-            new RayTracedSurface(surface.IndexOffset, surface.IndexCount, !cutout, maskLayer, -1, mesh.Animated),
+            new RayTracedSurface(
+                surface.IndexOffset,
+                surface.IndexCount,
+                !cutout,
+                maskLayer,
+
+                // A miss is common and fine -- the hit then resolves as it would with no array -- so it
+                // is not a reason to keep the run out, as a missing mask is.
+                _albedo.TryGetLayer(surface.TextureId, out int albedoLayer) ? albedoLayer : -1,
+                mesh.Animated),
             (byte)mask);
     }
 
@@ -202,6 +249,8 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
         _disposed = true;
         _maskTexture.Dispose();
         _masks.Dispose();
+        _albedoTexture.Dispose();
+        _albedo.Dispose();
         _placeholder.Dispose();
         _scene.Dispose();
     }

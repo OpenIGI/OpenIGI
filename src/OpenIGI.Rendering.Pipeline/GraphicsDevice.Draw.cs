@@ -68,6 +68,7 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             _sprites.ForgetTexture(texture.Id);
             _materials.Forget(texture.Id);
             ForgetStorageTexture(texture);
+            TracedWorld?.ForgetTexture(texture.Id);
         }
     }
 

@@ -81,6 +81,13 @@ public interface IRhiRayTracing
     /// <summary>Gets whether the world's structure holds anything worth tracing against.</summary>
     bool IsWorldReady { get; }
 
+    /// <summary>Gets each observed texture's colour, one layer a texture, for a hit a reflection has to shade.</summary>
+    /// <remarks>
+    /// A reflected ray can strike a surface the camera cannot see, where neither the frame nor the surface
+    /// cache has its colour at the hit's own texel; this array does, addressed through the hit records.
+    /// </remarks>
+    IRhiTextureView TracedAlbedo { get; }
+
     /// <summary>Gets the structure a tracing shader binds: the world's once ready, else an empty stand-in.</summary>
     /// <remarks>
     /// A shader that names a structure needs one in its descriptor from its first dispatch, and the world is
@@ -127,6 +134,10 @@ public interface IRhiRayTracing
     /// <summary>Takes a mesh out of the world, for one that is destroyed.</summary>
     /// <param name="meshId">The mesh.</param>
     void Forget(uint meshId);
+
+    /// <summary>Lets a destroyed texture's colour layer go, for a later texture to take.</summary>
+    /// <param name="textureId">The texture.</param>
+    void ForgetTexture(uint textureId);
 
     /// <summary>Empties the world, for a level change.</summary>
     void Reset();
