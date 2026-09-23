@@ -27,13 +27,15 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// </remarks>
 public sealed class DeferredLighting : IDisposable
 {
-    /// <summary>Which compiled form this draws.</summary>
+    /// <summary>The compiled form for a device that traces rays.</summary>
     /// <remarks>
-    /// The software one: the traced form binds an acceleration structure, and the RHI offers one only
-    /// through a capability a browser does not have. A device that can trace stands its own lamp shadows
-    /// up separately rather than compiling a second shading.
+    /// It reads the traced lamp visibility and binds the world, so each lamp the reservoir's one ray did
+    /// not cover gets a ray of its own -- the Vulkan renderer's shading, in its sampled G-buffer form.
     /// </remarks>
-    public static ShaderVariant Variant => new("software.sampled");
+    public static ShaderVariant TracedVariant => new("rayquery.sampled");
+
+    /// <summary>The compiled form everywhere else, which marches the screen for a lamp's shadow.</summary>
+    public static ShaderVariant SoftwareVariant => new("software.sampled");
 
     /// <summary>The G-buffer the shading reads, by the name the module declares and the target it is.</summary>
     private static readonly (string Name, SceneTargetId Target)[] GBuffer =
@@ -60,11 +62,13 @@ public sealed class DeferredLighting : IDisposable
     /// <param name="device">The device the pass runs on.</param>
     /// <param name="framesInFlight">How many frames can be recorded before the first has finished.</param>
     /// <param name="litFormat">The format of the lit target it draws into.</param>
-    public DeferredLighting(IRhiDevice device, int framesInFlight, RhiTextureFormat litFormat)
+    /// <param name="traced">Whether the device traces rays, which chooses <see cref="TracedVariant"/>.</param>
+    public DeferredLighting(IRhiDevice device, int framesInFlight, RhiTextureFormat litFormat, bool traced = false)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentOutOfRangeException.ThrowIfLessThan(framesInFlight, 1);
 
+        Variant = traced ? TracedVariant : SoftwareVariant;
         Reflection = ShaderCatalog.GetReflection(ShaderModuleId.Shading, Variant);
 
         _layout = device.CreateBindGroupLayout(new RhiBindGroupLayoutDescriptor(
@@ -92,6 +96,9 @@ public sealed class DeferredLighting : IDisposable
             Compare: RhiCompare.LessEqual,
             Label: "shading.comparison"));
     }
+
+    /// <summary>Gets which compiled form this draws.</summary>
+    public ShaderVariant Variant { get; }
 
     /// <summary>Gets what the module declares.</summary>
     public ShaderReflection Reflection { get; }
@@ -201,6 +208,30 @@ public sealed class DeferredLighting : IDisposable
     /// fog to read, so the shading never samples it.
     /// </remarks>
     public void BindFog(IRhiTextureView? volume) => BindOrStandIn("uFogVolume", volume);
+
+    /// <summary>Points the traced form at this frame's lamp visibility and the world, where it has them.</summary>
+    /// <param name="visibility">The filtered lamp visibility, or null for a frame that did not trace it.</param>
+    /// <param name="world">The structure the per-lamp rays trace against.</param>
+    /// <remarks>
+    /// Nothing on the software form, which declares neither. On the traced form a frame without a trace
+    /// reads a stand-in, and the lamp block says the lamps are not traced, so it is never sampled.
+    /// </remarks>
+    public void BindLampVisibility(IRhiTextureView? visibility, IRhiAccelerationStructure? world)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (!_bindings.Declares("uLampVisibility"))
+        {
+            return;
+        }
+
+        BindOrStandIn("uLampVisibility", visibility);
+
+        if (world is not null)
+        {
+            _bindings.Bind("uWorldTlas", world);
+        }
+    }
 
     /// <summary>Points the shading at this frame's traced sun shadow, or at nothing.</summary>
     /// <param name="mask">How much sun reaches each pixel, or null for a frame whose sun uses the cascades.</param>

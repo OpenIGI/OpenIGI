@@ -468,6 +468,7 @@ public sealed partial class GraphicsDevice
         RecordSky();
         RecordOcclusion(scene);
         RecordSunShadow(scene);
+        RecordLampShadow(scene);
         RecordFog(scene);
 
         Span<float> gi = stackalloc float[DeferredLightingParameters.GiFloats];
@@ -496,6 +497,7 @@ public sealed partial class GraphicsDevice
         BindGlobalIllumination();
         BindFog();
         BindSunShadow();
+        BindLampShadow();
 
         using IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             [new RhiColorAttachment(scene.View(SceneTargetId.Lit), RhiLoadOp.Clear, RhiStoreOp.Store, RhiClearColor.Transparent)],
@@ -744,7 +746,8 @@ public sealed partial class GraphicsDevice
             [.. GBufferTargets.Select(id => SceneTargetSet.FormatOf(id))],
             SceneTargetSet.FormatOf(SceneTargetId.Depth));
 
-        _shading = new DeferredLighting(_device, FramesInFlight, SceneTargetSet.FormatOf(SceneTargetId.Lit));
+        _shading = new DeferredLighting(
+            _device, FramesInFlight, SceneTargetSet.FormatOf(SceneTargetId.Lit), traced: TracedWorld is not null);
 
         // The forward shader over the lit image: the one the frame draws with, built for the lit format
         // and the scene's depth, and handed the level's fog and sun as that one was.
@@ -820,6 +823,7 @@ public sealed partial class GraphicsDevice
         _autoExposure?.Dispose();
         _autoExposure = null;
         DisposeSunShadow();
+        DisposeLampShadow();
         DisposeGrade();
 
         _scenePass?.Dispose();

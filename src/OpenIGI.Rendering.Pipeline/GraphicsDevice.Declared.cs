@@ -49,7 +49,7 @@ public sealed partial class GraphicsDevice
         .. UnimplementedSettingNames,
         .. temporal ? Array.Empty<string>() : ["r_taa"],
         .. gi ? Array.Empty<string>() : ["r_screen_gi", "r_surface_cache"],
-        .. traced ? Array.Empty<string>() : ["r_rt_shadows"],
+        .. traced ? Array.Empty<string>() : ["r_rt_shadows", "r_rt_lights"],
         .. metered ? Array.Empty<string>() : ["r_autoexposure"],
     ];
 
