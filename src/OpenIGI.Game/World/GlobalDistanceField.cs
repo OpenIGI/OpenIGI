@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 using OpenIGI.Shaders;
@@ -160,8 +160,11 @@ public sealed class GlobalDistanceField : IDisposable
 
         try
         {
+            // Uploaded once and only ever sampled -- the clipmap build reads it, nothing writes it -- so
+            // it is not a storage image. As one, WebGPU widened its twenty-odd million one-byte voxels to
+            // sixteen bytes each on the main thread, which was most of a second of every mission swap.
             TextureHandle atlasTexture = device.CreateVolumeTexture(
-                atlas.Width, atlas.Height, atlas.Depth, VolumeFormat.R8, "sdf.atlas");
+                atlas.Width, atlas.Height, atlas.Depth, VolumeFormat.R8, "sdf.atlas", shaderWritten: false);
             device.UpdateVolumeTexture<byte>(atlasTexture, atlas.Volume);
 
 

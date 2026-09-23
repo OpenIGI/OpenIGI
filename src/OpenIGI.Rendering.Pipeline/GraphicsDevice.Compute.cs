@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Pipeline.Compute;
@@ -294,7 +294,17 @@ public sealed partial class GraphicsDevice
     }
 
     /// <inheritdoc/>
-    public TextureHandle CreateVolumeTexture(int width, int height, int depth, VolumeFormat format, string name)
+    /// <remarks>
+    /// A volume no compute pass writes is allocated without storage usage, so a backend that has to widen
+    /// a storage format -- WebGPU, for a one-byte texel -- keeps it as it was asked for.
+    /// </remarks>
+    public TextureHandle CreateVolumeTexture(
+        int width,
+        int height,
+        int depth,
+        VolumeFormat format,
+        string name,
+        bool shaderWritten = true)
     {
         ThrowIfDisposed();
 
@@ -303,7 +313,7 @@ public sealed partial class GraphicsDevice
             throw new GraphicsDeviceException($"A volume '{name}' needs positive dimensions.");
         }
 
-        return CreateImage(width, height, depth, format, RhiTextureViewDimension.Texture3D, name);
+        return CreateImage(width, height, depth, format, RhiTextureViewDimension.Texture3D, name, shaderWritten);
     }
 
     /// <inheritdoc/>
@@ -609,13 +619,16 @@ public sealed partial class GraphicsDevice
         int depth,
         VolumeFormat format,
         RhiTextureViewDimension dimension,
-        string name)
+        string name,
+        bool shaderWritten = true)
     {
+        RhiTextureUsage usage = RhiTextureUsage.Sampled | RhiTextureUsage.CopySource | RhiTextureUsage.CopyDestination;
+
         IRhiTexture image = _device.CreateTexture(new RhiTextureDescriptor(
             width,
             height,
             FormatOf(format),
-            RhiTextureUsage.Storage | RhiTextureUsage.Sampled | RhiTextureUsage.CopySource | RhiTextureUsage.CopyDestination,
+            shaderWritten ? usage | RhiTextureUsage.Storage : usage,
             DepthOrArrayLayers: depth,
             Dimension: dimension,
             Label: name));

@@ -296,7 +296,7 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 
     /// <inheritdoc/>
     public TextureHandle CreateVolumeTexture(
-        int width, int height, int depth, VolumeFormat format, string name)
+        int width, int height, int depth, VolumeFormat format, string name, bool shaderWritten = true)
     {
         VolumeTextures.Add((name, width, height, depth, format));
         return new TextureHandle(_nextVolumeId++);

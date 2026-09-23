@@ -855,6 +855,12 @@ public interface IGraphicsDevice : IDisposable
     /// <param name="depth">Voxels along z.</param>
     /// <param name="format">What one voxel holds.</param>
     /// <param name="name">A name for the texture, used only in diagnostics.</param>
+    /// <param name="shaderWritten">
+    /// Whether a compute pass writes the volume. False for one that is only ever uploaded and then
+    /// sampled, which a backend may then store in its own format rather than a storage one: WGSL has no
+    /// storage form of a one-byte texel, and a volume allocated for storage there is sixteen bytes a
+    /// voxel and widened on the way in.
+    /// </param>
     /// <returns>A handle to the texture, its contents undefined until written.</returns>
     /// <remarks>
     /// <para>
@@ -870,7 +876,13 @@ public interface IGraphicsDevice : IDisposable
     /// </para>
     /// </remarks>
     /// <exception cref="GraphicsDeviceException">A dimension is not positive, or the device refused it.</exception>
-    TextureHandle CreateVolumeTexture(int width, int height, int depth, VolumeFormat format, string name);
+    TextureHandle CreateVolumeTexture(
+        int width,
+        int height,
+        int depth,
+        VolumeFormat format,
+        string name,
+        bool shaderWritten = true);
 
     /// <summary>Replaces a volume texture's contents.</summary>
     /// <typeparam name="T">The element type. Must match the texture's format.</typeparam>

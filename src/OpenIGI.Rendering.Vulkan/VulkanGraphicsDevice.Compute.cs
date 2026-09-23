@@ -309,7 +309,17 @@ public sealed partial class VulkanGraphicsDevice
     }
 
     /// <inheritdoc/>
-    public TextureHandle CreateVolumeTexture(int width, int height, int depth, VolumeFormat format, string name)
+    /// <remarks>
+    /// Every volume here is a storage image whatever <paramref name="shaderWritten"/> says: Vulkan has a
+    /// storage form of every format this takes, so there is nothing to save by leaving the usage off.
+    /// </remarks>
+    public TextureHandle CreateVolumeTexture(
+        int width,
+        int height,
+        int depth,
+        VolumeFormat format,
+        string name,
+        bool shaderWritten = true)
     {
         ThrowIfDisposed();
         if (width <= 0 || height <= 0 || depth <= 0)
