@@ -375,7 +375,7 @@ public sealed class MissionPreviewLoader(
             distanceField = context.DistanceFields.TryLoad(missionId, fieldResolution);
             if (distanceField is null)
             {
-                pendingField = DistanceFieldBake.Start(scene.Placements, fieldResolution, logger);
+                pendingField = DistanceFieldBake.Start(scene.Placements, work, fieldResolution, logger);
                 logger.Information(
                     LogCategory,
                     $"Mission {missionId} has no cached distance field; baking one at {fieldResolution} voxels behind the menu.");

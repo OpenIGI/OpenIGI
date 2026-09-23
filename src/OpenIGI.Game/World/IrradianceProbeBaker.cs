@@ -1,5 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.World;
@@ -82,37 +83,64 @@ public static class IrradianceProbeBaker
     /// Called with a copy of the field after each bounce pass, so a caller can show the light building up
     /// as it bakes rather than only the finished result. Null to ignore the intermediate passes.
     /// </param>
+    /// <param name="work">
+    /// Where the rows are traced: all at once on a scheduler that runs work concurrently, one a slice on
+    /// one that does not.
+    /// </param>
+    /// <param name="done">
+    /// Given the baked volume, or <see langword="null"/> when the level has nothing to bake around.
+    /// </param>
     /// <param name="cancellationToken">
     /// Asks a bake in progress to stop — a level change or a shutdown while
-    /// <see cref="IrradianceProbeBake"/> is tracing on a worker.
+    /// <see cref="IrradianceProbeBake"/> is tracing.
     /// </param>
-    /// <returns>The baked volume, or <see langword="null"/> when the level has nothing to bake around.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="scene"/> or <paramref name="cast"/> is null.</exception>
-    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
-    public static IrradianceVolume? Bake(
+    /// <returns>The bake, a slice at a time; see <see cref="SteppedJob{T}"/>.</returns>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    public static IEnumerable<bool> Bake(
         WorldScene scene,
         WorldRayCast cast,
         Vector3f sunDirection,
         float spacing,
         Vector3f groundAlbedo,
-        IIgiLogger? logger = null,
-        Action<IrradianceVolume>? onBouncePass = null,
+        IIgiLogger? logger,
+        Action<IrradianceVolume>? onBouncePass,
+        IWorkScheduler work,
+        Action<IrradianceVolume?> done,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(cast);
+        ArgumentNullException.ThrowIfNull(work);
+        ArgumentNullException.ThrowIfNull(done);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        return BakeSlices(
+            scene, cast, sunDirection, spacing, groundAlbedo, logger ?? NullLogger.Instance, onBouncePass, work, done, cancellationToken);
+    }
 
+    /// <summary>The bake itself, checked by <see cref="Bake"/> before it is handed out.</summary>
+    private static IEnumerable<bool> BakeSlices(
+        WorldScene scene,
+        WorldRayCast cast,
+        Vector3f sunDirection,
+        float spacing,
+        Vector3f groundAlbedo,
+        IIgiLogger log,
+        Action<IrradianceVolume>? onBouncePass,
+        IWorkScheduler work,
+        Action<IrradianceVolume?> done,
+        CancellationToken cancellationToken)
+    {
         if (scene.Placements.Count == 0 || spacing <= 0f)
         {
-            return null;
+            done(null);
+            yield break;
         }
 
         if (!TryMeasure(scene, ref spacing, out Vector3f origin, out int countX, out int countY, out int countZ))
         {
             log.Warning(LogCategory, "The level's bounds gave no room for a probe volume.");
-            return null;
+            done(null);
+            yield break;
         }
 
         IrradianceVolume volume = new(origin, spacing, countX, countY, countZ);
@@ -122,20 +150,17 @@ public static class IrradianceProbeBaker
             LogCategory,
             $"Baking {volume.ProbeCount} probes ({countX}x{countY}x{countZ}) at {spacing:0.#} m spacing.");
 
-        // A slice per thread. Every probe writes only its own span of the volume and the cast reads a
-        // collision index nothing is mutating, so there is no sharing to guard -- and the bake is the
+        // A row per piece of work. Every probe writes only its own span of the volume and the cast reads
+        // a collision index nothing is mutating, so there is no sharing to guard -- and the bake is the
         // one part of loading a level that is embarrassingly parallel, which is what makes a spacing
-        // fine enough to resolve a room affordable at all.
+        // fine enough to resolve a room affordable at all. Rows rather than whole slices of the grid, so
+        // that a host tracing them a slice of a frame at a time has pieces small enough to fit.
         // One core is left alone. The bake used to have the machine to itself because it blocked the
         // frame loop; now that it does not, saturating every core makes the frames it no longer blocks
         // stutter instead -- and a level that loads smoothly matters more than a field that arrives a
         // second sooner. Measured on this machine: 2.9 s inline against 5.7 s unrestrained beside a
         // live renderer, for a bake nobody is waiting on.
-        ParallelOptions options = new()
-        {
-            CancellationToken = cancellationToken,
-            MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1),
-        };
+        int parallelism = Math.Max(1, Environment.ProcessorCount - 1);
 
         // One pass per bounce. The first reads no previous light (a surface lit by sun and sky alone);
         // each after it reads the light the last pass left on the geometry, so a further bounce arrives
@@ -159,21 +184,27 @@ public static class IrradianceProbeBaker
             int rowsDone = 0;
             int publishEvery = Math.Max(1, countY * countZ / PublishesPerPass);
 
-            Parallel.For(0, countZ, options, z =>
-            {
-                // Below the render thread, so the bake -- which runs off the main thread but still on the
-                // machine's other cores -- yields to a frame that needs a core rather than starving it. The
-                // level lights up a little slower; the frame it lights up over does not freeze. Set once per
-                // worker (the guard skips the syscall after the first slice a pooled thread runs).
-                if (System.Threading.Thread.CurrentThread.Priority == System.Threading.ThreadPriority.Normal)
+            IEnumerable<bool> rows = Stepping.Range(
+                work,
+                countY * countZ,
+                parallelism,
+                row =>
                 {
-                    System.Threading.Thread.CurrentThread.Priority = System.Threading.ThreadPriority.BelowNormal;
-                }
+                    // Below the render thread, so the bake -- which runs off the main thread but still on
+                    // the machine's other cores -- yields to a frame that needs a core rather than starving
+                    // it. The level lights up a little slower; the frame it lights up over does not freeze.
+                    // Set once per worker (the guard skips the syscall after the first row a pooled thread
+                    // runs), and only where the rows run beside the frame at all.
+                    if (work.IsConcurrent
+                        && System.Threading.Thread.CurrentThread.Priority == System.Threading.ThreadPriority.Normal)
+                    {
+                        System.Threading.Thread.CurrentThread.Priority = System.Threading.ThreadPriority.BelowNormal;
+                    }
 
-                float[] coefficients = new float[IrradianceVolume.CoefficientsPerProbe];
+                    int z = row / countY;
+                    int y = row % countY;
+                    float[] coefficients = new float[IrradianceVolume.CoefficientsPerProbe];
 
-                for (int y = 0; y < countY; y++)
-                {
                     for (int x = 0; x < countX; x++)
                     {
                         TraceProbe(
@@ -195,8 +226,13 @@ public static class IrradianceProbeBaker
                     {
                         onBouncePass(volume.Clone());
                     }
-                }
-            });
+                },
+                cancellationToken);
+
+            foreach (bool slice in rows)
+            {
+                yield return slice;
+            }
 
             // And the finished pass, always -- the partial publishes above skip the tail below the last
             // whole multiple of publishEvery, and the final pass's clone is the one the cache is written
@@ -205,7 +241,7 @@ public static class IrradianceProbeBaker
         }
 
         log.Information(LogCategory, $"Probe bake complete ({Bounces} bounce(s)).");
-        return volume;
+        done(volume);
     }
 
     /// <summary>Works out where the volume sits and how many probes it needs.</summary>

@@ -206,7 +206,7 @@ internal sealed partial class GameHost
             return;
         }
 
-        _sdfBake = DistanceFieldBake.Start(_scene!.Placements, resolution, _logger);
+        _sdfBake = DistanceFieldBake.Start(_scene!.Placements, _work, resolution, _logger);
         _logger.Information(
             "GlobalIllumination",
             $"Baking the level's distance fields at {resolution} voxels; the level will light from the "

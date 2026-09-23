@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
@@ -94,6 +95,31 @@ public sealed class IrradianceProbeBakeTests
     }
 
     [RequiresGameDataFact]
+    public void SteppedInlineItGivesTheFieldTheWorkersGive()
+    {
+        // A single-threaded host traces the probes a row at a time, a slice of a frame per poll. The rows
+        // are independent, so the field must be the same to the last coefficient as the pool's.
+        IrradianceVolume? pooled = StartOnLevelOne().WaitForResult();
+        Assert.NotNull(pooled);
+
+        IrradianceProbeBake stepped = StartOnLevelOne(InlineWorkScheduler.Instance);
+
+        int polls = 0;
+        while (!stepped.Poll())
+        {
+            polls++;
+        }
+
+        // Many slices, not one: the trace really was spread over the polls.
+        Assert.True(polls > 10, $"{polls} poll(s)");
+        Assert.True(stepped.TryCollect(out IrradianceVolume? collected));
+        Assert.NotNull(collected);
+
+        Assert.Equal(pooled.ProbeCount, collected.ProbeCount);
+        Assert.Equal(pooled.Coefficients.ToArray(), collected.Coefficients.ToArray());
+    }
+
+    [RequiresGameDataFact]
     public void CancellingItFinishesRatherThanHanging()
     {
         // Quitting during a bake. The worker is a thread-pool thread, so it cannot hold the process
@@ -112,7 +138,7 @@ public sealed class IrradianceProbeBakeTests
         }
     }
 
-    private static IrradianceProbeBake StartOnLevelOne()
+    private static IrradianceProbeBake StartOnLevelOne(IWorkScheduler? work = null)
     {
         WorldScene scene = RetailLevelOneGround.Scene();
         ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements);
@@ -122,7 +148,8 @@ public sealed class IrradianceProbeBakeTests
             solids.CasterWithDoorsShut(),
             new Vector3f(0.3f, 0.2f, 0.93f),
             TestSpacingMetres,
-            GroundAlbedo);
+            GroundAlbedo,
+            work ?? ThreadPoolWorkScheduler.Instance);
     }
 
     private static bool SpinUntilComplete(IrradianceProbeBake bake)

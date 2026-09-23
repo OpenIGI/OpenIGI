@@ -1,5 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Formats.World;
 
 namespace OpenIGI.Game.World;
@@ -120,8 +121,13 @@ public sealed class SceneDistanceField
     /// <param name="geometry">Supplies a model's drawable geometry, or <see langword="null"/> to skip it.</param>
     /// <param name="resolution">How many voxels the longest axis of each model gets.</param>
     /// <param name="logger">Where to report progress.</param>
+    /// <param name="work">
+    /// Where the models' bakes run: all at once on a scheduler that runs work concurrently, one a slice on
+    /// one that does not.
+    /// </param>
+    /// <param name="complete">Given the scene's field once it is built.</param>
     /// <param name="cancellation">Aborts a bake that is no longer wanted.</param>
-    /// <returns>The scene's field.</returns>
+    /// <returns>The bake, a slice at a time; see <see cref="SteppedJob{T}"/>.</returns>
     /// <remarks>
     /// <b>Geometry is supplied rather than read.</b> A placement names a model, but which mesh describes
     /// it is a question with two defensible answers — the collision hull, which is what the AI sees, or
@@ -129,17 +135,33 @@ public sealed class SceneDistanceField
     /// an argument so the choice sits with the caller and the bake stays testable without a level.
     /// </remarks>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public static SceneDistanceField Build(
+    public static IEnumerable<bool> Build(
         IEnumerable<WorldPlacement> placements,
         Func<MefModel, MeshGeometry?> geometry,
-        int resolution = MeshDistanceFieldBaker.DefaultResolution,
-        IIgiLogger? logger = null,
+        int resolution,
+        IIgiLogger? logger,
+        IWorkScheduler work,
+        Action<SceneDistanceField> complete,
         CancellationToken cancellation = default)
     {
         ArgumentNullException.ThrowIfNull(placements);
         ArgumentNullException.ThrowIfNull(geometry);
+        ArgumentNullException.ThrowIfNull(work);
+        ArgumentNullException.ThrowIfNull(complete);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        return BuildSlices(placements, geometry, resolution, logger ?? NullLogger.Instance, work, complete, cancellation);
+    }
+
+    /// <summary>The bake itself, checked by <see cref="Build"/> before it is handed out.</summary>
+    private static IEnumerable<bool> BuildSlices(
+        IEnumerable<WorldPlacement> placements,
+        Func<MefModel, MeshGeometry?> geometry,
+        int resolution,
+        IIgiLogger log,
+        IWorkScheduler work,
+        Action<SceneDistanceField> complete,
+        CancellationToken cancellation)
+    {
 
         List<MeshDistanceField> fields = [];
         List<Instance> instances = [];
@@ -171,24 +193,30 @@ public sealed class SceneDistanceField
         {
             cancellation.ThrowIfCancellationRequested();
             meshes[i] = geometry(models[i]);
+            yield return true;
         }
 
         // One core is left free, so a bake behind a loading screen or a menu does not take the render
         // thread's with it. This is what used to hold the level for ten to twenty seconds on one core.
         MeshDistanceField?[] bakes = new MeshDistanceField?[models.Count];
-        var options = new ParallelOptions
-        {
-            MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1),
-            CancellationToken = cancellation,
-        };
 
-        Parallel.For(0, models.Count, options, i =>
-        {
-            if (meshes[i] is { } mesh && mesh.Indices.Length >= 3)
+        IEnumerable<bool> perModel = Stepping.Range(
+            work,
+            models.Count,
+            Math.Max(1, Environment.ProcessorCount - 1),
+            i =>
             {
-                bakes[i] = MeshDistanceFieldBaker.Bake(mesh.Vertices, mesh.Indices, resolution);
-            }
-        });
+                if (meshes[i] is { } mesh && mesh.Indices.Length >= 3)
+                {
+                    bakes[i] = MeshDistanceFieldBaker.Bake(mesh.Vertices, mesh.Indices, resolution);
+                }
+            },
+            cancellation);
+
+        foreach (bool slice in perModel)
+        {
+            yield return slice;
+        }
 
         cancellation.ThrowIfCancellationRequested();
 
@@ -262,7 +290,7 @@ public sealed class SceneDistanceField
                 $"  field: range {field.Range:0.#} m, {solid * 100.0 / field.Distances.Length:0.#}% solid.");
         }
 
-        return scene;
+        complete(scene);
     }
 
     /// <summary>The coarsest voxel a field may bake to before it is discarded, in metres.</summary>

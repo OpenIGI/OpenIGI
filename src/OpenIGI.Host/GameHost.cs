@@ -1820,7 +1820,7 @@ internal sealed partial class GameHost : IDisposable
 
                 // Once the bake is done, the authoritative final field is both what the display settles on
                 // and what the cache keeps, so the next load reads it instead of tracing again.
-                if (pendingBake.IsComplete)
+                if (pendingBake.Poll())
                 {
                     if (pendingBake.TryCollect(out IrradianceVolume? finalField) && finalField is not null)
                     {
@@ -2506,7 +2506,7 @@ internal sealed partial class GameHost : IDisposable
                 lastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
 
                 _probeBake = IrradianceProbeBake.Start(
-                    _scene, _bakeCast, _probeBakeSun, _probeBakeSpacing, ProbeBakeAlbedo, _logger);
+                    _scene, _bakeCast, _probeBakeSun, _probeBakeSpacing, ProbeBakeAlbedo, _work, _logger);
 
                 _logger.Information(
                     "GI", $"Re-baking the lighting from scratch (F11); cleared {cleared} cached field(s).");
