@@ -620,6 +620,9 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
             return;
         }
 
+        // The pushes this submission's draws read, uploaded ahead of it in one write a chunk.
+        _pushes?.Flush();
+
         WGPUCommandBuffer[] handles = new WGPUCommandBuffer[commands.Length];
         for (int i = 0; i < commands.Length; i++)
         {

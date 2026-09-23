@@ -101,6 +101,12 @@ public readonly record struct WebGpuPushSlice(IRhiBindGroup Group, uint Offset);
 /// frame's worth of pushes — nothing is reused until the frame that read it has finished.
 /// </para>
 /// <para>
+/// <b>Written once per submission, not once per push.</b> A push lands in a host copy of its chunk and
+/// the device flushes each chunk's written range in one queue write just before it submits
+/// (<see cref="Flush"/>). A queue write a push, which is a draw, cost more than the draws themselves:
+/// mission 1 spent four in ten of its frame there, thousands of calls a frame.
+/// </para>
+/// <para>
 /// So it grows rather than refusing: a frame that needs more than it holds gets another chunk, its own
 /// buffer behind its own bind group, and keeps it. A frame's worth is not a number anything can know in
 /// advance — capturing the surface cache draws the level into every card in one go, thousands of pushes
@@ -111,7 +117,6 @@ public sealed class WebGpuPushRing : IDisposable
 {
     private readonly WebGpuRhiDevice _device;
     private readonly List<Chunk> _chunks = [];
-    private readonly byte[] _staging;
     private readonly int _slice;
     private int _next;
     private bool _disposed;
@@ -127,7 +132,6 @@ public sealed class WebGpuPushRing : IDisposable
 
         _device = device;
         _slice = Math.Max(alignment, Align(Math.Max(WebGpuPushBlocks.LargestBlock, 1), alignment));
-        _staging = new byte[_slice];
 
         Slices = slices;
         _chunks.Add(MakeChunk(0));
@@ -173,11 +177,27 @@ public sealed class WebGpuPushRing : IDisposable
         // Written a whole slice at a time, zero-filled past the data: a uniform binding is sized to the
         // block, and leaving the tail at whatever the last frame put there would hand a shader values
         // nobody wrote.
-        Array.Clear(_staging);
-        data.CopyTo(_staging);
-        _device.WriteBuffer<byte>(chunk.Buffer, offset, _staging);
+        Span<byte> target = chunk.Shadow.AsSpan((int)offset, _slice);
+        target.Clear();
+        data.CopyTo(target);
+        chunk.MarkWritten((int)offset, _slice);
 
         return new WebGpuPushSlice(chunk.Group, offset);
+    }
+
+    /// <summary>Uploads what has been pushed since the last flush, one queue write a chunk.</summary>
+    /// <remarks>Called by the device before every submission, which is what orders it ahead of the draws.</remarks>
+    public void Flush()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        foreach (Chunk chunk in _chunks)
+        {
+            if (chunk.TakeWritten() is (int start, int length) && length > 0)
+            {
+                _device.WriteBuffer<byte>(chunk.Buffer, (ulong)start, chunk.Shadow.AsSpan(start, length));
+            }
+        }
     }
 
     /// <summary>Starts the ring over, once the frame that read it has finished.</summary>
@@ -213,10 +233,40 @@ public sealed class WebGpuPushRing : IDisposable
             RhiBufferUsage.Uniform | RhiBufferUsage.CopyDestination,
             index == 0 ? "push.ring" : $"push.ring.{index}"));
 
-        return new Chunk(buffer, _device.CreatePushGroup(buffer, _slice));
+        return new Chunk(buffer, _device.CreatePushGroup(buffer, _slice), new byte[_slice * Slices]);
     }
 
-    private readonly record struct Chunk(IRhiBuffer Buffer, IRhiBindGroup Group);
+    /// <summary>One buffer of the ring, its bind group, and the host copy pushes are written into first.</summary>
+    private sealed class Chunk(IRhiBuffer buffer, IRhiBindGroup group, byte[] shadow)
+    {
+        private int _start = int.MaxValue;
+        private int _end;
+
+        public IRhiBuffer Buffer { get; } = buffer;
+
+        public IRhiBindGroup Group { get; } = group;
+
+        public byte[] Shadow { get; } = shadow;
+
+        public void MarkWritten(int offset, int length)
+        {
+            _start = Math.Min(_start, offset);
+            _end = Math.Max(_end, offset + length);
+        }
+
+        public (int Start, int Length)? TakeWritten()
+        {
+            if (_start >= _end)
+            {
+                return null;
+            }
+
+            (int, int) range = (_start, _end - _start);
+            _start = int.MaxValue;
+            _end = 0;
+            return range;
+        }
+    }
 
     private static int Align(int value, int alignment) => ((value + alignment - 1) / alignment) * alignment;
 }
