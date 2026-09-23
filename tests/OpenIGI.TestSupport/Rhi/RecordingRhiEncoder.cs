@@ -101,7 +101,7 @@ public sealed class RecordingRhiEncoder(string label) : IRhiCommandEncoder
         in RhiExtent3D size)
     {
         ThrowIfInPass();
-        Add(new RecordedRhiCommand.CopyTextureToBuffer(source.Texture.Label, destination.Texture.Label));
+        Add(new RecordedRhiCommand.CopyTextureToTexture(source.Texture.Label, destination.Texture.Label));
     }
 
     /// <inheritdoc/>

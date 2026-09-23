@@ -91,7 +91,127 @@ public sealed class ComputeSeamTests
             device.CreateComputeShader(ShaderModuleId.CardsLighting, new ShaderVariant("rayquery"), "cards.lighting"));
     }
 
+    [Fact]
+    public void A_WGSL_dispatch_reads_what_each_read_back_image_held_from_a_copy_taken_first()
+    {
+        // The radiance cache eases each probe onto what it held. WGSL cannot read an rgba16float image,
+        // so each of the four volumes is copied before the pass and the copy bound at its history slot.
+        using RecordingRhiDevice rhi = new() { ShaderTarget = ShaderTarget.Wgsl };
+        using GraphicsDevice device = Open(rhi);
+
+        ComputeShaderHandle cache = RadianceCache(device);
+        device.Dispatch(cache, 1, 1, 1);
+
+        string[] copied = [.. rhi.CommandsOf<RecordedRhiCommand.CopyTextureToTexture>().Select(copy => copy.Source)];
+        Assert.Equal(["red", "green", "blue", "distance"], copied);
+
+        // Every copy lands before the pass that reads it.
+        List<RecordedRhiCommand> commands = [.. rhi.Commands];
+        int pass = commands.FindIndex(command => command is RecordedRhiCommand.BeginComputePass);
+        Assert.All(
+            commands.OfType<RecordedRhiCommand.CopyTextureToTexture>(),
+            copy => Assert.True(commands.IndexOf(copy) < pass));
+
+        RecordedBindGroup group = rhi.Resources.OfType<RecordedBindGroup>().Last();
+        Assert.Contains(group.Entries, entry => entry.Binding == 44 && entry.TextureView?.Label == "red.history");
+        Assert.Contains(group.Entries, entry => entry.Binding == 47 && entry.TextureView?.Label == "distance.history");
+    }
+
+    [Fact]
+    public void A_SPIR_V_dispatch_reads_its_images_back_itself_and_copies_nothing()
+    {
+        using RecordingRhiDevice rhi = new();
+        using GraphicsDevice device = Open(rhi);
+
+        ComputeShaderHandle cache = RadianceCache(device);
+        device.Dispatch(cache, 1, 1, 1);
+
+        Assert.Empty(rhi.CommandsOf<RecordedRhiCommand.CopyTextureToTexture>());
+
+        RecordedBindGroup group = rhi.Resources.OfType<RecordedBindGroup>().Last();
+        Assert.DoesNotContain(
+            group.Entries,
+            entry => entry.TextureView?.Label.EndsWith(".history", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public void A_unit_still_holding_the_image_a_dispatch_writes_reads_a_stand_in()
+    {
+        // The bounce gather writes the indirect atlas while the unit the combine samples it through still
+        // holds it. WebGPU refuses the pair in one dispatch; the gather never samples it.
+        using RecordingRhiDevice rhi = new();
+        using GraphicsDevice device = Open(rhi);
+
+        ComputeShaderHandle lighting = device.CreateComputeShader(
+            ShaderModuleId.CardsLighting,
+            new ShaderVariant("software"),
+            "cards.lighting");
+
+        TextureHandle atlas = device.CreateStorageTexture(16, 16, VolumeFormat.Rgba16F, "atlas");
+        device.BindImage(0, atlas, ImageAccess.ReadWrite);
+        device.SetTexture(7, atlas);
+
+        StorageBufferHandle buffer = device.CreateStorageBuffer(256, "buffer");
+        for (int slot = 0; slot < 7; slot++)
+        {
+            device.BindStorageBuffer(slot, buffer);
+        }
+
+        device.Dispatch(lighting, 1);
+
+        RecordedBindGroup group = rhi.Resources.OfType<RecordedBindGroup>().Last();
+        Assert.Contains(group.Entries, entry => entry.Binding == 0 && entry.TextureView?.Label == "atlas");
+        Assert.Contains(group.Entries, entry => entry.Binding == 39 && entry.TextureView?.Label == "compute.standin.flat");
+    }
+
+    [Fact]
+    public void A_unit_holding_a_texture_of_the_wrong_kind_for_the_slot_reads_a_stand_in_of_the_right_one()
+    {
+        // A colour texture left on the unit a depth slot reads: WebGPU refuses it, and no read of it could
+        // have meant anything. The slot gets a depth stand-in, which a colour one would be refused as too.
+        using RecordingRhiDevice rhi = new();
+        using GraphicsDevice device = Open(rhi);
+
+        ComputeShaderHandle resolve = device.CreateComputeShader(
+            ShaderModuleId.CardsScreenResolve,
+            ShaderVariant.Default,
+            "cards.screen.resolve");
+
+        device.BindImage(0, device.CreateStorageTexture(16, 16, VolumeFormat.Rgba16F, "accum"), ImageAccess.Write);
+        device.BindImage(1, device.CreateStorageTexture(16, 16, VolumeFormat.Rgba16F, "position"), ImageAccess.Write);
+        device.SetTexture(5, device.CreateStorageTexture(16, 16, VolumeFormat.Rgba16F, "colour"));
+        device.SetComputeUniform(resolve, "uSceneDepth", 5);
+
+        device.Dispatch(resolve, 1, 1);
+
+        RecordedBindGroup group = rhi.Resources.OfType<RecordedBindGroup>().Last();
+        Assert.Contains(group.Entries, entry => entry.Binding == 33 && entry.TextureView?.Label == "compute.standin.depth");
+    }
+
     private static GraphicsDevice Open(RecordingRhiDevice rhi) => new(rhi, new DisplayMode(64, 64, 32, 60));
+
+    /// <summary>The radiance cache in software with its four volumes and its buffers bound.</summary>
+    private static ComputeShaderHandle RadianceCache(GraphicsDevice device)
+    {
+        ComputeShaderHandle cache = device.CreateComputeShader(
+            ShaderModuleId.CardsRadianceCache,
+            new ShaderVariant("software"),
+            "cards.radiance");
+
+        string[] volumes = ["red", "green", "blue", "distance"];
+        for (int slot = 0; slot < volumes.Length; slot++)
+        {
+            device.BindImage(slot, device.CreateVolumeTexture(4, 4, 4, VolumeFormat.Rgba16F, volumes[slot]), ImageAccess.ReadWrite);
+        }
+
+        StorageBufferHandle buffer = device.CreateStorageBuffer(256, "buffer");
+        for (int slot = 0; slot < 8; slot++)
+        {
+            device.BindStorageBuffer(slot, buffer);
+        }
+
+        return cache;
+    }
 
     /// <summary>The screen filter with everything bound, its accumulation read through unit one.</summary>
     private static ComputeShaderHandle Filter(GraphicsDevice device, out TextureHandle filtered, out TextureHandle accumulated)

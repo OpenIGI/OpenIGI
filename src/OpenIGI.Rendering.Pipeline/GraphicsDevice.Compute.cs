@@ -36,14 +36,20 @@ public sealed partial class GraphicsDevice
     private readonly Dictionary<uint, ComputeKernel> _kernels = [];
     private readonly Dictionary<uint, IRhiBuffer> _storageBuffers = [];
     private readonly Dictionary<uint, IRhiTexture> _storageTextures = [];
+
+    // What each storage texture was asked for, which is the layout of the texels the game hands over and
+    // wants back. A backend may allocate a wider format than this and says so in the texture's own.
+    private readonly Dictionary<uint, RhiTextureFormat> _requestedFormats = [];
     private readonly Dictionary<int, IRhiBuffer> _boundBuffers = [];
-    private readonly Dictionary<int, IRhiTextureView> _boundImages = [];
+    private readonly Dictionary<int, IRhiTexture> _boundImages = [];
     private readonly Dictionary<int, TextureHandle> _boundVolumes = [];
     private readonly Dictionary<int, TextureHandle> _boundTextures = [];
     private uint _nextKernel = 1;
     private uint _nextStorageBuffer = 1;
     private IRhiTexture? _standInVolume;
     private IRhiSampler? _computeSampler;
+    private ImageHistories? _histories;
+    private StandInTextures? _standIns;
 
     /// <inheritdoc/>
     public ComputeShaderHandle CreateComputeShader(ShaderModuleId shaderModule, ShaderVariant variant, string name)
@@ -167,7 +173,7 @@ public sealed partial class GraphicsDevice
                     $"{texture} has one level; level {level} of it cannot be bound for storage.");
             }
 
-            _boundImages[slot] = image.View;
+            _boundImages[slot] = image;
         }
         else
         {
@@ -307,7 +313,7 @@ public sealed partial class GraphicsDevice
         ThrowIfDisposed();
 
         IRhiTexture image = StorageImage(texture);
-        int bytesPerTexel = BytesPerTexel(image.Format);
+        int bytesPerTexel = _requestedFormats[texture.Id].BytesPerTexel();
         int expected = image.Width * image.Height * image.DepthOrArrayLayers * bytesPerTexel;
         int offered = data.Length * Marshal.SizeOf<T>();
 
@@ -356,7 +362,6 @@ public sealed partial class GraphicsDevice
 
         // Load time submits and waits, so the slot past the frames in flight is always free.
         int slot = inFrame ? FrameSlot : FramesInFlight;
-        BindKernel(kernel, slot);
 
         if (inFrame)
         {
@@ -366,13 +371,18 @@ public sealed partial class GraphicsDevice
             CloseScenePass();
             CloseShadowPass();
 
-            using IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(Label: kernel.Label));
+            IRhiCommandEncoder frame = Encoder();
+            BindKernel(kernel, slot, RecordHistories(kernel, frame));
+
+            using IRhiComputePassEncoder pass = frame.BeginComputePass(new RhiComputePassDescriptor(Label: kernel.Label));
             dispatch(pass);
             return;
         }
 
         using (IRhiCommandEncoder encoder = _device.CreateCommandEncoder(kernel.Label))
         {
+            BindKernel(kernel, slot, RecordHistories(kernel, encoder));
+
             using (IRhiComputePassEncoder pass = encoder.BeginComputePass(new RhiComputePassDescriptor(Label: kernel.Label)))
             {
                 dispatch(pass);
@@ -385,15 +395,62 @@ public sealed partial class GraphicsDevice
         kernel.Reset(slot);
     }
 
-    /// <summary>Points each of the module's slots at what the seam has bound to it.</summary>
-    private void BindKernel(ComputeKernel kernel, int slot)
+    /// <summary>
+    /// Copies every image the module reads back into its history, where the module's form reads it from
+    /// there rather than from the image.
+    /// </summary>
+    /// <returns>Each history's view by the name of its slot, or null where this form reads none.</returns>
+    /// <remarks>See <see cref="ImageHistories"/>; on a SPIR-V device the image is read directly and this does nothing.</remarks>
+    private Dictionary<string, IRhiTextureView>? RecordHistories(ComputeKernel kernel, IRhiCommandEncoder encoder)
     {
+        if (!ImageHistories.AreRead(_device))
+        {
+            return null;
+        }
+
+        Dictionary<string, IRhiTextureView>? views = null;
+
+        foreach (ShaderBinding binding in kernel.Reflection.Bindings)
+        {
+            if (ImageHistories.ImageOf(kernel.Reflection, binding) is not { } image)
+            {
+                continue;
+            }
+
+            _histories ??= new ImageHistories(_device, _retired);
+            views ??= new Dictionary<string, IRhiTextureView>(StringComparer.Ordinal);
+            views[binding.Name] = _histories.Record(
+                encoder,
+                BoundImage(kernel, image),
+                image.Dimensions == 3 ? RhiTextureViewDimension.Texture3D : RhiTextureViewDimension.Texture2D);
+        }
+
+        return views;
+    }
+
+    /// <summary>Points each of the module's slots at what the seam has bound to it.</summary>
+    /// <param name="kernel">The kernel about to be dispatched.</param>
+    /// <param name="slot">Which of its parameter buffers this dispatch writes.</param>
+    /// <param name="histories">What each image read back held, where the module's form reads it from a copy.</param>
+    private void BindKernel(ComputeKernel kernel, int slot, Dictionary<string, IRhiTextureView>? histories)
+    {
+        HashSet<IRhiTexture> written = [.. kernel.Reflection.Bindings
+            .Where(binding => binding.Kind == ShaderBindingKind.StorageTexture)
+            .Select(binding => BoundImage(kernel, binding))];
+
         foreach (ShaderBinding binding in kernel.Reflection.Bindings)
         {
             switch (binding.Kind)
             {
                 case ShaderBindingKind.StorageTexture:
-                    kernel.Pass.Bind(binding.Name, BoundImage(kernel, binding));
+                    kernel.Pass.Bind(binding.Name, BoundImage(kernel, binding).View);
+                    break;
+
+                // Declared on every form and read only where the form cannot read the image itself.
+                case ShaderBindingKind.Texture when ImageHistories.ImageOf(kernel.Reflection, binding) is not null:
+                    kernel.Pass.Bind(
+                        binding.Name,
+                        histories?.GetValueOrDefault(binding.Name) ?? StandInFor(binding));
                     break;
 
                 case ShaderBindingKind.StorageBuffer:
@@ -401,7 +458,7 @@ public sealed partial class GraphicsDevice
                     break;
 
                 case ShaderBindingKind.Texture:
-                    kernel.Pass.Bind(binding.Name, SampledAt(kernel, binding).View);
+                    kernel.Pass.Bind(binding.Name, SampledOrStandIn(kernel, binding, written));
                     break;
 
                 case ShaderBindingKind.Sampler:
@@ -420,9 +477,34 @@ public sealed partial class GraphicsDevice
         }
     }
 
-    private IRhiTextureView BoundImage(ComputeKernel kernel, ShaderBinding binding) =>
-        _boundImages.TryGetValue(ComputeBindingSpace.SlotOf(binding.Binding), out IRhiTextureView? view)
-            ? view
+    /// <summary>What a sampled slot reads, unless nothing correct could come of reading it.</summary>
+    /// <remarks>
+    /// <para>
+    /// The game keeps the original's texture units: what it set on a unit stays there until it sets
+    /// something else, across every program and every mode of one, and a program's slot a mode never
+    /// samples still finds whatever the last dispatch left. GL did not care. WebGPU validates every slot
+    /// of every dispatch, so two leftovers it refuses read a stand-in instead:
+    /// </para>
+    /// <list type="bullet">
+    /// <item>an image the same dispatch writes, which WebGPU will not also bind for sampling and which on
+    /// Vulkan a sample would race;</item>
+    /// <item>a texture of the wrong kind for the slot — a depth image on a colour slot, or the reverse —
+    /// which no read could have made sense of on any backend.</item>
+    /// </list>
+    /// </remarks>
+    private IRhiTextureView SampledOrStandIn(ComputeKernel kernel, ShaderBinding binding, HashSet<IRhiTexture> written)
+    {
+        IRhiTextureView view = SampledAt(kernel, binding).View;
+        bool depthSlot = binding.SampleType == ShaderSampleType.Depth;
+
+        return written.Contains(view.Texture) || depthSlot != view.Format.IsDepth()
+            ? StandInFor(binding)
+            : view;
+    }
+
+    private IRhiTexture BoundImage(ComputeKernel kernel, ShaderBinding binding) =>
+        _boundImages.TryGetValue(ComputeBindingSpace.SlotOf(binding.Binding), out IRhiTexture? image)
+            ? image
             : throw new GraphicsDeviceException(
                 $"'{kernel.Label}' needs an image at binding {binding.Binding} ({binding.Name}); none is bound.");
 
@@ -476,6 +558,10 @@ public sealed partial class GraphicsDevice
         return texture is null ? ComputeSampler() : SampledAt(kernel, texture).Sampler;
     }
 
+    /// <summary>A texture of a slot's shape and kind, for a slot that must read nothing it was given.</summary>
+    private IRhiTextureView StandInFor(ShaderBinding binding) =>
+        (_standIns ??= new StandInTextures(_device, "compute.standin")).For(binding);
+
     private IRhiSampler ComputeSampler() =>
         _computeSampler ??= _device.CreateSampler(new RhiSamplerDescriptor(Label: "compute"));
 
@@ -525,6 +611,7 @@ public sealed partial class GraphicsDevice
         // Adopted, so it samples through the ordinary texture path as well as being written as storage.
         TextureHandle handle = _textures.Adopt(image, new TextureDescription(width, height));
         _storageTextures[handle.Id] = image;
+        _requestedFormats[handle.Id] = FormatOf(format);
         return handle;
     }
 
@@ -536,17 +623,10 @@ public sealed partial class GraphicsDevice
         _ => throw new GraphicsDeviceException($"No texture format stands for {format}."),
     };
 
-    private static int BytesPerTexel(RhiTextureFormat format) => format switch
-    {
-        RhiTextureFormat.R8Unorm => 1,
-        RhiTextureFormat.Rgba16Float => 8,
-        _ => 4,
-    };
-
     /// <summary>Copies a whole image to the host.</summary>
     private void ReadImage(IRhiTexture image, Span<byte> destination)
     {
-        int bytesPerTexel = BytesPerTexel(image.Format);
+        int bytesPerTexel = image.Format.BytesPerTexel();
         int row = RhiBufferTextureCopy.AlignRow(image.Width * bytesPerTexel);
         int tight = image.Width * bytesPerTexel;
         int slices = image.DepthOrArrayLayers;
@@ -617,7 +697,15 @@ public sealed partial class GraphicsDevice
             : throw new GraphicsDeviceException($"{texture} names no storage texture on this device.");
 
     /// <summary>Forgets a storage texture the table has just let go of.</summary>
-    private void ForgetStorageTexture(TextureHandle texture) => _storageTextures.Remove(texture.Id);
+    private void ForgetStorageTexture(TextureHandle texture)
+    {
+        _requestedFormats.Remove(texture.Id);
+
+        if (_storageTextures.Remove(texture.Id, out IRhiTexture? image))
+        {
+            _histories?.Forget(image);
+        }
+    }
 
     private void DisposeCompute()
     {
@@ -634,8 +722,11 @@ public sealed partial class GraphicsDevice
         _kernels.Clear();
         _storageBuffers.Clear();
         _storageTextures.Clear();
+        _requestedFormats.Clear();
         _standInVolume?.Dispose();
         _computeSampler?.Dispose();
+        _histories?.Dispose();
+        _standIns?.Dispose();
     }
 
     /// <summary>One compute shader as the seam knows it: its pass, and the parameters set on it by name.</summary>

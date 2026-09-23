@@ -28,6 +28,7 @@ public sealed class StandInTextures : IDisposable
     private readonly IRhiTexture _flat;
     private readonly IRhiTexture _volume;
     private readonly IRhiTexture _slices;
+    private readonly IRhiTexture _depth;
     private readonly IRhiTexture _depthSlices;
     private bool _disposed;
 
@@ -54,7 +55,12 @@ public sealed class StandInTextures : IDisposable
 
         // A depth stand-in is never written: a depth format is not a copy destination, and what a
         // comparison lookup reads out of an untouched one — nought, so nothing is in shadow — is the
-        // answer a frame with no shadow map wants anyway.
+        // answer a frame with no shadow map wants anyway. Read plainly, nought is the far plane under
+        // reverse Z: a scene depth that has nothing in front of it.
+        _depth = device.CreateTexture(new RhiTextureDescriptor(
+            1, 1, RhiTextureFormat.Depth32Float, RhiTextureUsage.Sampled | RhiTextureUsage.RenderTarget,
+            Label: $"{label}.depth"));
+
         _depthSlices = device.CreateTexture(new RhiTextureDescriptor(
             1, 1, RhiTextureFormat.Depth32Float, RhiTextureUsage.Sampled | RhiTextureUsage.RenderTarget,
             DepthOrArrayLayers: 1, Dimension: RhiTextureViewDimension.Texture2DArray,
@@ -87,12 +93,14 @@ public sealed class StandInTextures : IDisposable
             return _volume.View;
         }
 
+        bool depth = binding.SampleType is ShaderSampleType.Depth;
+
         if (!binding.Arrayed)
         {
-            return _flat.View;
+            return depth ? _depth.View : _flat.View;
         }
 
-        return binding.SampleType is ShaderSampleType.Depth ? _depthSlices.View : _slices.View;
+        return depth ? _depthSlices.View : _slices.View;
     }
 
     /// <inheritdoc/>
@@ -106,6 +114,7 @@ public sealed class StandInTextures : IDisposable
         _disposed = true;
 
         _depthSlices.Dispose();
+        _depth.Dispose();
         _slices.Dispose();
         _volume.Dispose();
         _flat.Dispose();

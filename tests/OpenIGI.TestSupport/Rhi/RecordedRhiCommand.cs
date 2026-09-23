@@ -102,6 +102,11 @@ public abstract record RecordedRhiCommand
     /// <param name="Destination">The buffer's label.</param>
     public sealed record CopyTextureToBuffer(string Source, string Destination) : RecordedRhiCommand;
 
+    /// <summary>A copy from one texture into another.</summary>
+    /// <param name="Source">The texture copied from.</param>
+    /// <param name="Destination">The texture copied into.</param>
+    public sealed record CopyTextureToTexture(string Source, string Destination) : RecordedRhiCommand;
+
     /// <summary>A copy into a texture.</summary>
     /// <param name="Source">The buffer's label.</param>
     /// <param name="Destination">The texture's label.</param>
