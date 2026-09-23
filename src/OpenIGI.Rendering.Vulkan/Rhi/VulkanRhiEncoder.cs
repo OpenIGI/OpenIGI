@@ -1,4 +1,4 @@
-using OpenIGI.Rendering.Rhi;
+﻿using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.Vulkan.Interop;
 using Silk.NET.Vulkan;
 
@@ -140,6 +140,16 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
         // the pass ends.
         VulkanRhiTimestamps.Begin(_vk, _command, descriptor.Timestamps);
 
+        // Vulkan resets a query pool rather than overwriting it, and a query written before it was reset
+        // is invalid. The reset is an outside-a-pass command, so it goes here, before rendering begins --
+        // and only when the set has been resolved since it was last reset: a set a frame opens in two
+        // passes (two scene captures) keeps the first pass's results for the one resolve at the end.
+        if (descriptor.OcclusionQuerySet is VulkanRhiQuerySet { NeedsReset: true } occlusion)
+        {
+            _vk.CmdResetQueryPool(_command, occlusion.Handle, 0, (uint)occlusion.Count);
+            occlusion.NeedsReset = false;
+        }
+
         fixed (RenderingAttachmentInfo* firstColour = colours)
         {
             RenderingInfo info = new()
@@ -153,13 +163,6 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
             };
 
             _vk.CmdBeginRendering(_command, &info);
-        }
-
-        // Vulkan resets a query pool rather than overwriting it, and a query read before it was reset is
-        // whatever the last frame left there.
-        if (descriptor.OcclusionQuerySet is VulkanRhiQuerySet occlusion)
-        {
-            _vk.CmdResetQueryPool(_command, occlusion.Handle, 0, (uint)occlusion.Count);
         }
 
         return new VulkanRhiRenderPassEncoder(
@@ -337,6 +340,12 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
             destinationOffset,
             sizeof(ulong),
             QueryResultFlags.Result64Bit);
+
+        // Read, so the next pass to write the set starts it afresh.
+        if (querySet is VulkanRhiQuerySet { Type: RhiQueryType.Occlusion } occlusion)
+        {
+            occlusion.NeedsReset = true;
+        }
     }
 
     /// <inheritdoc/>

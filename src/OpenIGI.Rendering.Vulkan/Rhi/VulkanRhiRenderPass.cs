@@ -1,4 +1,4 @@
-using OpenIGI.Rendering.Rhi;
+﻿using OpenIGI.Rendering.Rhi;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Rhi;
@@ -271,6 +271,7 @@ internal sealed unsafe class VulkanRhiRenderPassEncoder : IRhiRenderPassEncoder
             ?? throw new GraphicsDeviceException("This pass was begun with no occlusion query set.");
 
         _vk.CmdBeginQuery(_command, set.Handle, (uint)queryIndex, QueryControlFlags.None);
+        _activeQuery = queryIndex;
     }
 
     /// <inheritdoc/>
@@ -281,8 +282,13 @@ internal sealed unsafe class VulkanRhiRenderPassEncoder : IRhiRenderPassEncoder
         VulkanRhiQuerySet set = _occlusion
             ?? throw new GraphicsDeviceException("This pass was begun with no occlusion query set.");
 
-        _vk.CmdEndQuery(_command, set.Handle, 0);
+        // The query begun, not the pool's first: WebGPU's end names none, and Vulkan's has to name the
+        // one that is active. Ending query 0 left every other query open to the end of the buffer.
+        _vk.CmdEndQuery(_command, set.Handle, (uint)_activeQuery);
     }
+
+    // The occlusion query begun and not yet ended; WebGPU allows one at a time, and so does this.
+    private int _activeQuery;
 
     /// <inheritdoc/>
     public void PushDebugGroup(string label)

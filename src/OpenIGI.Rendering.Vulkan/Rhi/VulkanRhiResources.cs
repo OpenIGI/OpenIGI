@@ -1,4 +1,4 @@
-using OpenIGI.Rendering.Rhi;
+﻿using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Memory;
 using Silk.NET.Vulkan;
@@ -571,6 +571,13 @@ internal sealed unsafe class VulkanRhiQuerySet : IRhiQuerySet
 
     /// <summary>Gets the pool.</summary>
     public QueryPool Handle { get; }
+
+    /// <summary>Gets or sets whether the pool has to be reset before a pass next writes it.</summary>
+    /// <remarks>
+    /// True from creation, and again once the set has been resolved: an occlusion set is written by the
+    /// passes of a frame and read once at its end, so it is reset once per round of that, not per pass.
+    /// </remarks>
+    public bool NeedsReset { get; set; } = true;
 
     /// <inheritdoc/>
     public RhiQueryType Type { get; }
