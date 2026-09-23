@@ -33,10 +33,29 @@ public sealed unsafe class WebGpuRenderPipeline : WebGpuResource<WGPURenderPipel
 /// </remarks>
 public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
 {
+    // WebGPU's guaranteed minimums, which is as many as any pipeline here uses.
+    private const int MaxGroups = 4;
+    private const int MaxVertexBuffers = 8;
+
     private readonly WebGpuRhiDevice _device;
     private readonly WebGpuPushRing _pushes;
     private readonly int _pushGroup;
     private WGPURenderPassEncoder _handle;
+
+    // What is bound now, so a call that would bind it again is not recorded. wgpu validates and translates
+    // every recorded command when the encoder is finished, and on mission 1 over half of what the frame
+    // recorded restated what was already bound: seventeen thousand draws carried twelve thousand
+    // SetPipeline calls, all but twenty of them the same pipeline again, and most vertex and index buffer
+    // binds likewise. That work was most of the eight milliseconds finish cost a frame.
+    private readonly WGPUBindGroup[] _groups = new WGPUBindGroup[MaxGroups];
+    private readonly uint[] _groupOffsets = new uint[MaxGroups];
+    private readonly bool[] _groupHasOffset = new bool[MaxGroups];
+    private readonly WGPUBuffer[] _vertexBuffers = new WGPUBuffer[MaxVertexBuffers];
+    private readonly ulong[] _vertexOffsets = new ulong[MaxVertexBuffers];
+    private WGPURenderPipeline _pipeline;
+    private WGPUBuffer _indexBuffer;
+    private WGPUIndexFormat _indexFormat;
+    private ulong _indexOffset;
     private bool _ended;
     private bool _disposed;
 
@@ -66,7 +85,14 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
         ArgumentNullException.ThrowIfNull(pipeline);
         ThrowIfEnded();
 
-        Wgpu.wgpuRenderPassEncoderSetPipeline(_handle, ((WebGpuRenderPipeline)pipeline).Handle);
+        WGPURenderPipeline handle = ((WebGpuRenderPipeline)pipeline).Handle;
+        if (handle == _pipeline)
+        {
+            return;
+        }
+
+        _pipeline = handle;
+        Wgpu.wgpuRenderPassEncoderSetPipeline(_handle, handle);
     }
 
     /// <inheritdoc/>
@@ -75,12 +101,31 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
         ArgumentNullException.ThrowIfNull(group);
         ThrowIfEnded();
 
+        WGPUBindGroup handle = ((WebGpuBindGroup)group).Handle;
+
+        // A group with at most one dynamic offset -- every group here, the push group included -- is
+        // remembered with it; one with more is always recorded.
+        if ((uint)index < MaxGroups && dynamicOffsets.Length <= 1)
+        {
+            bool hasOffset = dynamicOffsets.Length == 1;
+            uint offset = hasOffset ? dynamicOffsets[0] : 0u;
+
+            if (_groups[index] == handle && _groupHasOffset[index] == hasOffset && _groupOffsets[index] == offset)
+            {
+                return;
+            }
+
+            _groups[index] = handle;
+            _groupHasOffset[index] = hasOffset;
+            _groupOffsets[index] = offset;
+        }
+
         fixed (uint* offsets = dynamicOffsets)
         {
             Wgpu.wgpuRenderPassEncoderSetBindGroup(
                 _handle,
                 (uint)index,
-                ((WebGpuBindGroup)group).Handle,
+                handle,
                 (nuint)dynamicOffsets.Length,
                 offsets);
         }
@@ -121,10 +166,23 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
         ArgumentNullException.ThrowIfNull(buffer);
         ThrowIfEnded();
 
+        WGPUBuffer handle = ((WebGpuBuffer)buffer).Handle;
+
+        if ((uint)slot < MaxVertexBuffers)
+        {
+            if (_vertexBuffers[slot] == handle && _vertexOffsets[slot] == offset)
+            {
+                return;
+            }
+
+            _vertexBuffers[slot] = handle;
+            _vertexOffsets[slot] = offset;
+        }
+
         Wgpu.wgpuRenderPassEncoderSetVertexBuffer(
             _handle,
             (uint)slot,
-            ((WebGpuBuffer)buffer).Handle,
+            handle,
             offset,
             buffer.SizeInBytes - offset);
     }
@@ -135,10 +193,22 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
         ArgumentNullException.ThrowIfNull(buffer);
         ThrowIfEnded();
 
+        WGPUBuffer handle = ((WebGpuBuffer)buffer).Handle;
+        WGPUIndexFormat translated = WebGpuTranslation.IndexFormat(format);
+
+        if (handle == _indexBuffer && translated == _indexFormat && offset == _indexOffset)
+        {
+            return;
+        }
+
+        _indexBuffer = handle;
+        _indexFormat = translated;
+        _indexOffset = offset;
+
         Wgpu.wgpuRenderPassEncoderSetIndexBuffer(
             _handle,
-            ((WebGpuBuffer)buffer).Handle,
-            WebGpuTranslation.IndexFormat(format),
+            handle,
+            translated,
             offset,
             buffer.SizeInBytes - offset);
     }
