@@ -26,4 +26,17 @@
     <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
   </PropertyGroup>
 
+  <!--
+    The shared libraries are trimmed and compiled ahead of time in the browser build, so the trim and AOT
+    analysers run on every one of them and, with warnings as errors, keep them that way. Not on the source
+    generator (netstandard2.0, never shipped) or the desktop-only Vulkan and OpenGL backends a browser never
+    loads.
+  -->
+  <PropertyGroup Condition="$([MSBuild]::MakeRelative('$(MSBuildThisFileDirectory)', '$(MSBuildProjectDirectory)').StartsWith('src'))
+                            and '$(MSBuildProjectName)' != 'OpenIGI.Generators'
+                            and '$(MSBuildProjectName)' != 'OpenIGI.Rendering.Vulkan'
+                            and '$(MSBuildProjectName)' != 'OpenIGI.Rendering.OpenGL'">
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
 </Project>

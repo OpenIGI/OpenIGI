@@ -52,11 +52,6 @@ namespace OpenIGI.Host;
 /// </summary>
 internal sealed partial class GameHost : IDisposable
 {
-    private static readonly System.Text.Json.JsonSerializerOptions BenchmarkJsonOptions = new()
-    {
-        WriteIndented = true,
-    };
-
     // The camera's clip planes, both measured out of the original's own renderer setup -- see
     // ViewPlanes. The far one is shared with the sky, which sizes its dome to four fifths of it exactly
     // as sub_52CC40 does, and with the first-person layer's shallower projection.
@@ -6533,7 +6528,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 Directory.CreateDirectory(benchmarkDirectory);
             }
 
-            string json = System.Text.Json.JsonSerializer.Serialize(snapshot, BenchmarkJsonOptions);
+            string json = System.Text.Json.JsonSerializer.Serialize(snapshot, RenderPerformanceJsonContext.Default.RenderPerformanceSnapshot);
             File.WriteAllText(benchmarkPath, json);
             _logger.Information("Perf", $"Wrote benchmark snapshot to {Path.GetFullPath(benchmarkPath)}.");
         }

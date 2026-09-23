@@ -33,3 +33,12 @@ public sealed record RenderPerformanceSnapshot(
     double GpuP95Milliseconds,
     double GpuMeasuredMilliseconds,
     IReadOnlyList<RenderStageTiming> GpuStages);
+
+/// <summary>How a <see cref="RenderPerformanceSnapshot"/> is written: indented, by generated code.</summary>
+/// <remarks>
+/// Generated rather than reflected, so the shared libraries stay trimmable: the browser build trims and
+/// compiles ahead of time, where a serializer that discovers its type by reflection finds nothing.
+/// </remarks>
+[System.Text.Json.Serialization.JsonSourceGenerationOptions(WriteIndented = true)]
+[System.Text.Json.Serialization.JsonSerializable(typeof(RenderPerformanceSnapshot))]
+public sealed partial class RenderPerformanceJsonContext : System.Text.Json.Serialization.JsonSerializerContext;
