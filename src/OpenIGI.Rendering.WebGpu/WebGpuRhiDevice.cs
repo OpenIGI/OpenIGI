@@ -322,9 +322,12 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
         // backend runs without a single runtime check. Left in, wgpu guards every array and texture access
         // and puts a counter on every loop -- and the screen gather marches sixteen rays of up to 256 steps
         // for every probe, so the counters alone made its temporal filter two-thirds slower than on
-        // Vulkan. A browser keeps its checks whatever is asked; see wgpu_native.c.
-        WGPUShaderModule handle = Wgpu.wgpuDeviceCreateShaderModuleTrusted(
-            _context.Device, &native, WGPUShaderRuntimeChecks.None);
+        // Vulkan. A browser has no trusted modules and is never asked for one: there the call reaches the
+        // native side through the runtime's interpreter (do_icall), which traps on its 64-bit flags
+        // argument as a function signature mismatch -- the page died building its first pipeline.
+        WGPUShaderModule handle = OperatingSystem.IsBrowser()
+            ? Wgpu.wgpuDeviceCreateShaderModule(_context.Device, &native)
+            : Wgpu.wgpuDeviceCreateShaderModuleTrusted(_context.Device, &native, WGPUShaderRuntimeChecks.None);
         return handle.IsValid
             ? new WebGpuShaderModule(handle, name, ShaderCatalog.GetReflection(descriptor.Module, variant))
             : throw new InvalidOperationException($"The module {descriptor.Module} did not compile.");
