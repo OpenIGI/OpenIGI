@@ -369,22 +369,31 @@ internal sealed class DayNightCycle
         Vector3f warmth = Lerp(Vector3f.One, new Vector3f(1f, 0.55f, 0.30f), lowSun);
         Vector3f colour = authored.Colour * warmth * daylight;
 
-        // The moon: the arc's anti-solar point, so it stands highest at midnight and rises as the sun
-        // sets. It takes the one directional slot only once the sun is fully faded -- the handover
-        // passes through a brief true dark just below the horizon rather than the two fighting over the
-        // light -- and it carries an eightieth of a sun, cool rather than the authored warm (see
-        // DefaultNightColour for why not the physical ratio). Because it flows through the same direction and colour as the sun, the cascades,
-        // the traced shadow and the surface-cache relight all see the same moon for free. The
-        // ATMOSPHERE must not (see Moonrise): handed the moon at face value it scatters a dim but
-        // unmistakably blue daytime sky, where a night sky reads near black -- the shell knocks its
-        // feed down separately. The sun-shadow pipeline also runs at night again; that is the price of
-        // a moon that casts.
-        float moonrise = Smoothstep(0.10f, 0.30f, -direction.Z);
-        Moonrise = moonrise;
-        if (moonrise > 0f)
+        // The moon: the arc's anti-solar point, so it stands highest at midnight and -- being full -- rises
+        // exactly as the sun sets, its light growing as it climbs off the horizon. It carries a small
+        // fraction of a sun, cool rather than the authored warm (see DefaultNightColour for why not the
+        // physical ratio). Because it flows through the same direction and colour as the sun, the
+        // cascades, the traced shadow and the surface-cache relight all see the same moon for free.
+        //
+        // There is one directional slot, and it goes to whichever of the two is BRIGHTER here. So the
+        // handover happens where the fading sun and the rising moon are equally bright, and the light
+        // never falls below the moon's. The moon used to wait for the sun to be fully gone before it began
+        // to rise (sun faded out at an elevation sine of -0.10, moon faded in from there to -0.30), which
+        // put a stretch of total darkness -- no sun, no moon, and so no sky either, since the atmosphere is
+        // fed the same light -- between every dusk and night, and again before every dawn.
+        //
+        // The ATMOSPHERE must not take the moon at face value (see Moonrise): handed it unchanged it
+        // scatters a dim but unmistakably blue daytime sky, where a night sky reads near black -- the shell
+        // knocks its feed down separately, keyed on Moonrise, which is why that stays nought while the sun
+        // still holds the slot.
+        float moonLevel = Smoothstep(0f, 0.15f, -direction.Z);
+        Vector3f moonColour = _nightColour * moonLevel;
+        bool moonHolds = moonLevel > 0f && Luminance(moonColour) > Luminance(colour);
+        Moonrise = moonHolds ? moonLevel : 0f;
+        if (moonHolds)
         {
             direction = -direction;
-            colour = _nightColour * moonrise;
+            colour = moonColour;
         }
 
         // The sky fill crosses from the night's to the authored daytime ambient, so a night scene reads as
@@ -409,4 +418,6 @@ internal sealed class DayNightCycle
     }
 
     private static Vector3f Lerp(Vector3f a, Vector3f b, float t) => a + ((b - a) * t);
+
+    private static float Luminance(Vector3f c) => (0.2126f * c.X) + (0.7152f * c.Y) + (0.0722f * c.Z);
 }

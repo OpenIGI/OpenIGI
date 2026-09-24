@@ -240,4 +240,27 @@ public sealed class DayNightCycleTests
         cycle.Apply(authored);
         Assert.Equal(1f, cycle.StarVisibility);
     }
+
+    [Fact]
+    public void DuskAndDawnNeverPassThroughTotalDarkness()
+    {
+        // A full moon rises as the sun sets, so between day and night the light hands over rather than
+        // going out. It used to go out: the sun faded to nothing just under the horizon and only then did
+        // the moon begin to rise, which left every dusk and dawn a stretch with no light and no sky at all.
+        DirectionalLightSettings authored = AuthoredAt(12f);
+        var cycle = new DayNightCycle();
+        float floor = 0.5f * Luminance(DayNightCycle.DefaultNightColour);
+
+        for (float hour = 0f; hour < 24f; hour += 0.01f)
+        {
+            cycle.Reset(hour);
+            float lit = Luminance(cycle.Apply(authored).Colour);
+
+            Assert.True(
+                lit >= floor,
+                $"At {hour:0.00} h the directional light is {lit:0.#####}, under half the full moon's {2f * floor:0.#####}.");
+        }
+    }
+
+    private static float Luminance(Vector3f c) => (0.2126f * c.X) + (0.7152f * c.Y) + (0.0722f * c.Z);
 }
