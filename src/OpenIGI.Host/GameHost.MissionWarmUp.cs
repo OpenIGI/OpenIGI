@@ -43,6 +43,9 @@ internal sealed partial class GameHost
     // The backdrop asked for while its mission's files were still arriving; see RequestBackdrop.
     private int? _backdropAwaitingFiles;
 
+    // The mission -mission asked for while its files were still arriving; see StartMissionWhenReadable.
+    private int? _startAwaitingFiles;
+
     /// <summary>What the load gate last said it was waiting for, so it is reported once rather than every frame.</summary>
     private string? _loadGateWaitingFor;
 
@@ -292,6 +295,38 @@ internal sealed partial class GameHost
 
         _backdropAwaitingFiles = null;
         loader.Request(missionId);
+    }
+
+    /// <summary>Starts a mission the command line asked for, now or once the gate lets its files be read.</summary>
+    /// <param name="missionId">The mission.</param>
+    /// <remarks>
+    /// The desktop's gate always says yes, so this is the plain start there. A browser fetches a level's
+    /// large files when the level is first wanted, and being asked is what starts the fetch: the start
+    /// waits in <see cref="_startAwaitingFiles"/> and <see cref="RunCommandLineMissionIfDue"/> asks
+    /// again each frame. Started regardless, the level came up with its terrain and models absent.
+    /// </remarks>
+    private void StartMissionWhenReadable(int missionId)
+    {
+        if (MissionFilesReady(missionId, out string? waitingFor))
+        {
+            StartMission(missionId);
+            return;
+        }
+
+        _startAwaitingFiles = missionId;
+        _logger.Information("Mission", $"Mission {missionId} waits for {waitingFor ?? "its files"}.");
+    }
+
+    /// <summary>Starts the command line's mission once its files are there. Call between frames.</summary>
+    private void RunCommandLineMissionIfDue()
+    {
+        if (_startAwaitingFiles is not { } missionId || !MissionFilesReady(missionId, out _))
+        {
+            return;
+        }
+
+        _startAwaitingFiles = null;
+        StartMission(missionId);
     }
 
     /// <summary>Runs the deferred load once the departure has played. Call between frames.</summary>

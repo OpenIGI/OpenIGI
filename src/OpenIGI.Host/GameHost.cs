@@ -1592,8 +1592,10 @@ internal sealed partial class GameHost : IDisposable
             if (_options.StartMission > 0)
             {
                 // Straight into the level, with the shell built and waiting behind Escape rather than shown.
+                // Once its files can be read: on the desktop that is now, in a browser it is when the page
+                // has fetched them -- a level started before that opened with no terrain and no models.
                 ResumeConditions();
-                StartMission(_options.StartMission);
+                StartMissionWhenReadable(_options.StartMission);
             }
             else
             {
@@ -1769,6 +1771,7 @@ internal sealed partial class GameHost : IDisposable
             // A load whose departure has played out runs here, between frames, where the picture it
             // needs has already been held and nothing is half-drawn.
             RunPendingLoadIfDue();
+            RunCommandLineMissionIfDue();
 
             // And a change of game, at the same boundary and for the same reason -- this one disposes
             // the task loop, the resource registry and every presenter, so it must not happen while a
