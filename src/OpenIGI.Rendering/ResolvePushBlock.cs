@@ -48,6 +48,14 @@ public static class ResolvePushBlock
     /// </remarks>
     public const int GrainCycle = 1024;
 
+    /// <summary>The quantization dither's width: one code value of an 8-bit target.</summary>
+    /// <remarks>
+    /// The reference dithers its backbuffer by exactly one code value of the target's depth, triangular
+    /// (PostProcessTonemap.cpp BackbufferQuantizationDithering). That is enough to break up an 8-bit
+    /// display's banding and too little to read as noise.
+    /// </remarks>
+    public const float QuantizationDither = 1f / 255f;
+
     /// <summary>Writes the block.</summary>
     /// <param name="block">Room for <see cref="Floats"/> floats.</param>
     /// <param name="post">What the frame asked for.</param>
@@ -72,6 +80,7 @@ public static class ResolvePushBlock
         block[4] = mask ? 0f : post.Vignette;
         block[5] = state.Aspect;
         block[6] = state.BloomRan ? 1f : 0f;
+        block[7] = mask ? 0f : QuantizationDither;
 
         block[8] = mask ? 0f : Math.Clamp(post.Grain, 0f, 1f);
         block[9] = state.GrainPhase;

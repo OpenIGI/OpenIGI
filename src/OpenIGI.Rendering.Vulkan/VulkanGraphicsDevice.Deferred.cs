@@ -1678,7 +1678,9 @@ public sealed partial class VulkanGraphicsDevice
             maskView ? 0f : post.Vignette,
             _captureHeight / (float)Math.Max(1, _captureWidth),
             bloomRan ? 1f : 0f,
-            0f,
+
+            // The quantization dither: one 8-bit code value, none on a code-value view.
+            maskView ? 0f : ResolvePushBlock.QuantizationDither,
 
             // A mask view is a code value and gets no film on it, for the same reason it gets no curve.
             // The phase is stepped by the golden ratio so successive frames land far apart in the hash
