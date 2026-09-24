@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.WebGpu.Native;
 
@@ -27,6 +27,11 @@ public sealed unsafe class WebGpuReadback : IRhiReadback
     private GCHandle _handle;
     private bool _mapped;
     private bool _disposed;
+
+    // The range the first GetData mapped, handed back to every later one. A browser's WebGPU refuses a
+    // second getMappedRange overlapping the first -- the auto-exposure reads its histogram more than once,
+    // and each read after the first threw -- where native wgpu lets it through.
+    private void* _range;
 
     /// <summary>What the callback writes.</summary>
     private sealed class State
@@ -139,14 +144,17 @@ public sealed unsafe class WebGpuReadback : IRhiReadback
             throw new InvalidOperationException($"The readback failed: {_state.Status}. {_state.Message}".TrimEnd());
         }
 
-        void* data = Wgpu.wgpuBufferGetConstMappedRange(_buffer, _offset, (nuint)SizeInBytes);
-        if (data is null)
+        if (_range is null)
         {
-            throw new InvalidOperationException("The readback completed but the range could not be mapped.");
+            _range = Wgpu.wgpuBufferGetConstMappedRange(_buffer, _offset, (nuint)SizeInBytes);
+            if (_range is null)
+            {
+                throw new InvalidOperationException("The readback completed but the range could not be mapped.");
+            }
         }
 
         _mapped = true;
-        return new ReadOnlySpan<byte>(data, (int)SizeInBytes);
+        return new ReadOnlySpan<byte>(_range, (int)SizeInBytes);
     }
 
     /// <inheritdoc/>
@@ -169,6 +177,7 @@ public sealed unsafe class WebGpuReadback : IRhiReadback
         {
             Wgpu.wgpuBufferUnmap(_buffer);
             _mapped = false;
+            _range = null;
         }
 
         // A cancelled map still calls back, so the handle it will look this up through is left for the
