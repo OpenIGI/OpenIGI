@@ -1,4 +1,4 @@
-namespace OpenIGI.Game.Config;
+﻿namespace OpenIGI.Game.Config;
 
 /// <summary>
 /// Everything the configuration screens read and write: the profile list and the few global settings.
@@ -52,6 +52,53 @@ public sealed class GameConfig
     /// credential, and hashing it would make the two save files mutually unreadable.
     /// </remarks>
     public string ContentControlPassword { get; set; } = string.Empty;
+
+    /// <summary>The controls revision a configuration's profiles have been brought up to.</summary>
+    /// <remarks>
+    /// OpenIGI's own, written as <c>GOControlsVersion</c> into <c>openigi-config.qvm</c>; the retail
+    /// <c>config.qvm</c> has no such call, so anything read from it is revision nought.
+    /// </remarks>
+    public int ControlsVersion { get; set; }
+
+    /// <summary>The revision <see cref="MigrateControls"/> brings a configuration to.</summary>
+    /// <remarks>One: the modern WASD layout with the mouse not inverted, for profiles never rebound.</remarks>
+    public const int CurrentControlsVersion = 1;
+
+    /// <summary>Moves every profile still on the original's controls onto the modern ones, once.</summary>
+    /// <returns><see langword="true"/> when anything was migrated, so the caller knows to save.</returns>
+    /// <remarks>
+    /// <para>
+    /// A new player's profiles come from the retail <c>config.qvm</c> when there is no OpenIGI file yet,
+    /// and that carries the original's arrow-key layout -- and, in the file an installation ships, the
+    /// mouse inverted. A profile whose every original action is still on the original's key was never
+    /// rebound, so it is given the modern layout and the mouse the right way up. One that was rebound is
+    /// left exactly as its player set it, inversion included.
+    /// </para>
+    /// <para>
+    /// Once, by revision: afterwards a player who chooses the arrow keys again keeps them.
+    /// </para>
+    /// </remarks>
+    public bool MigrateControls()
+    {
+        if (ControlsVersion >= CurrentControlsVersion)
+        {
+            return false;
+        }
+
+        bool changed = false;
+
+        foreach (PlayerProfile profile in _profiles)
+        {
+            if (profile.HasRetailDefaultControls())
+            {
+                profile.AdoptModernControls();
+                changed = true;
+            }
+        }
+
+        ControlsVersion = CurrentControlsVersion;
+        return changed;
+    }
 
     /// <summary>Gets or sets a value indicating whether this is the German build.</summary>
     /// <remarks>
@@ -137,7 +184,7 @@ public sealed class GameConfig
     /// </remarks>
     public static GameConfig CreateDefault()
     {
-        GameConfig config = new();
+        GameConfig config = new() { ControlsVersion = CurrentControlsVersion };
         PlayerProfile profile = PlayerProfile.CreateDefault();
         profile.Name = DefaultProfileName;
         profile.Difficulty = 1;

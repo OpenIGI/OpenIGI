@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using OpenIGI.Input;
 
 namespace OpenIGI.Game.Config;
@@ -49,6 +49,45 @@ public sealed class PlayerProfile
         new("Binoculars", "INPUTPORT_DEVICE_KEYBOARD", "KEY_B"),
         new("MapComputer", "INPUTPORT_DEVICE_KEYBOARD", "KEY_C"),
         new("ToggleWalkRun", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT_SHIFT"),
+        new("ZoomIn", "INPUTPORT_DEVICE_KEYBOARD", "KEY_PAGEUP"),
+        new("ZoomOut", "INPUTPORT_DEVICE_KEYBOARD", "KEY_PAGEDOWN"),
+        new("WeaponCategory1", "INPUTPORT_DEVICE_KEYBOARD", "KEY_1"),
+        new("WeaponCategory2", "INPUTPORT_DEVICE_KEYBOARD", "KEY_2"),
+        new("WeaponCategory3", "INPUTPORT_DEVICE_KEYBOARD", "KEY_3"),
+        new("WeaponCategory4", "INPUTPORT_DEVICE_KEYBOARD", "KEY_4"),
+        new("WeaponCategory5", "INPUTPORT_DEVICE_KEYBOARD", "KEY_5"),
+        new("WeaponCategory6", "INPUTPORT_DEVICE_KEYBOARD", "KEY_6"),
+        new("WeaponCategory7", "INPUTPORT_DEVICE_KEYBOARD", "KEY_7"),
+        new("WeaponCategory8", "INPUTPORT_DEVICE_KEYBOARD", "KEY_8"),
+        new("WeaponCategory9", "INPUTPORT_DEVICE_KEYBOARD", "KEY_9"),
+    ];
+
+    /// <summary>The bindings the original's own fresh profile starts with.</summary>
+    /// <remarks>
+    /// The 27 rows <c>Config_ResetToDefaults</c> (<c>0x405300</c>) copies from <c>0x536410</c>, read from
+    /// the binary: DirectInput codes <c>0xCB</c>, <c>0xCD</c>, <c>0xC8</c> and <c>0xD0</c> are the arrow
+    /// keys, jump is Numpad 0, activate the right Shift, walk/run W. The retail <c>config.qvm</c> an
+    /// installation ships lists exactly these. Kept to recognise a profile nobody ever rebound, which is
+    /// what <see cref="HasRetailDefaultControls"/> is for; nothing is given them any more.
+    /// </remarks>
+    public static IReadOnlyList<InputBinding> RetailDefaultBindings { get; } =
+    [
+        new("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT"),
+        new("MoveRight", "INPUTPORT_DEVICE_KEYBOARD", "KEY_RIGHT"),
+        new("MoveUp", "INPUTPORT_DEVICE_KEYBOARD", "KEY_UP"),
+        new("MoveDown", "INPUTPORT_DEVICE_KEYBOARD", "KEY_DOWN"),
+        new("Fire", "INPUTPORT_DEVICE_MOUSE", "MOUSE_BUTTON_1"),
+        new("Reload", "INPUTPORT_DEVICE_KEYBOARD", "KEY_RETURN"),
+        new("Activate", "INPUTPORT_DEVICE_KEYBOARD", "KEY_RIGHT_SHIFT"),
+        new("Crouch", "INPUTPORT_DEVICE_KEYBOARD", "KEY_RIGHT_CTRL"),
+        new("Jump", "INPUTPORT_DEVICE_KEYBOARD", "KEY_NUMPAD0"),
+        new("NextWeapon", "INPUTPORT_DEVICE_MOUSE", "MOUSE_BUTTON_2"),
+        new("PrevWeapon", "INPUTPORT_DEVICE_KEYBOARD", "KEY_O"),
+        new("AlternateFire", "INPUTPORT_DEVICE_KEYBOARD", "KEY_BACKSPACE"),
+        new("Peek", "INPUTPORT_DEVICE_KEYBOARD", "KEY_NUMPAD1"),
+        new("Binoculars", "INPUTPORT_DEVICE_KEYBOARD", "KEY_SPACE"),
+        new("MapComputer", "INPUTPORT_DEVICE_KEYBOARD", "KEY_C"),
+        new("ToggleWalkRun", "INPUTPORT_DEVICE_KEYBOARD", "KEY_W"),
         new("ZoomIn", "INPUTPORT_DEVICE_KEYBOARD", "KEY_PAGEUP"),
         new("ZoomOut", "INPUTPORT_DEVICE_KEYBOARD", "KEY_PAGEDOWN"),
         new("WeaponCategory1", "INPUTPORT_DEVICE_KEYBOARD", "KEY_1"),
@@ -184,6 +223,21 @@ public sealed class PlayerProfile
                 Bindings.Add(binding);
             }
         }
+    }
+
+    /// <summary>Whether every original action is still on the key the original gave it.</summary>
+    /// <returns><see langword="true"/> for a profile nobody rebound; extra actions are not counted.</returns>
+    public bool HasRetailDefaultControls() =>
+        RetailDefaultBindings.All(retail => Bindings.Exists(binding =>
+            string.Equals(binding.Action, retail.Action, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(binding.Device, retail.Device, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(binding.Key, retail.Key, StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>Moves a profile onto the modern controls: the WASD layout, and the mouse not inverted.</summary>
+    public void AdoptModernControls()
+    {
+        ResetBindingsToDefaults();
+        InvertMouse = false;
     }
 
     /// <summary>Restores retail bindings missing from an older OpenIGI profile.</summary>

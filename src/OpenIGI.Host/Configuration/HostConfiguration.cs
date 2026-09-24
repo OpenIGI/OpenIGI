@@ -1,4 +1,4 @@
-using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Config;
@@ -37,6 +37,22 @@ internal static class HostConfiguration
     /// the per-user location, so profiles made before this moved survive rather than appearing lost.
     /// </remarks>
     public static GameConfig Load(VirtualFileSystem fileSystem, IIgiLogger logger)
+    {
+        GameConfig config = Read(fileSystem, logger);
+
+        // Whichever file it came from: a new player's profiles are the retail file's, and those carry the
+        // original's arrow keys. See GameConfig.MigrateControls.
+        if (config.MigrateControls())
+        {
+            logger.Information(
+                "Config",
+                "Profiles still on the original controls were moved to WASD with the mouse not inverted.");
+        }
+
+        return config;
+    }
+
+    private static GameConfig Read(VirtualFileSystem fileSystem, IIgiLogger logger)
     {
         string userPath = SettingsPaths.GetFilePath(FileName);
 
