@@ -16,9 +16,11 @@ const drawable = () => {
   return [Math.max(1, Math.round(box.width * ratio())), Math.max(1, Math.round(box.height * ratio()))];
 };
 
-// Keys the page keeps: reload and the developer tools, which a player expects to reach while a game has
-// the keyboard. Everything else is the game's, and the browser's own use of it is stopped.
-const PAGE_KEYS = new Set(['F5', 'F12']);
+// Keys the page keeps: reload, fullscreen and the developer tools, which a player expects to reach while a
+// game has the keyboard. Everything else is the game's, and the browser's own use of it is stopped. F11
+// was the game's too, so once a game was running the browser never saw it and would not go fullscreen;
+// in the game it only re-bakes the lighting, a developer's key with no place in a browser.
+const PAGE_KEYS = new Set(['F5', 'F11', 'F12']);
 
 function pointerPosition(e) {
   const box = canvas.getBoundingClientRect();
