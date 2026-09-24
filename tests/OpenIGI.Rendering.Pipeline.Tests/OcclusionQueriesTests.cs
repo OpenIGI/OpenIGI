@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Pipeline.Deferred;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.TestSupport.Rhi;
@@ -43,6 +43,31 @@ public sealed class OcclusionQueriesTests
         Probe(rhi, queries, query, slot: 0, samples: 12);
         queries.BeginFrame(1);
         queries.BeginFrame(0);
+        Assert.True(queries.Visible(query));
+    }
+
+    [Fact]
+    public void A_hidden_object_nothing_probes_any_more_is_drawn_again()
+    {
+        // A switch to the vanilla preset stops the probing -- its direct path has no geometry pass to draw a
+        // box into. What was hidden at that moment must not stay hidden: the terrain behind a fence did, and
+        // the frame's black showed through the fence's holes.
+        using RecordingRhiDevice rhi = new();
+        using OcclusionQueries queries = Open(rhi);
+        OcclusionQueryHandle query = queries.Create();
+
+        Probe(rhi, queries, query, slot: 0, samples: 0);
+        queries.BeginFrame(1);
+        Probe(rhi, queries, query, slot: 0, samples: 0);
+        queries.BeginFrame(1);
+        queries.BeginFrame(0);
+        Assert.False(queries.Visible(query));
+
+        for (int frame = 0; frame < 16; frame++)
+        {
+            queries.BeginFrame(frame % Slots);
+        }
+
         Assert.True(queries.Visible(query));
     }
 

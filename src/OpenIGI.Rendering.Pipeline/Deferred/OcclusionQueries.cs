@@ -50,6 +50,18 @@ public sealed class OcclusionQueries : IDisposable
     private readonly bool[] _blocked;
     private readonly Dictionary<uint, State> _queries = [];
     private uint _nextId = 1;
+
+    /// <summary>How many frames a hidden verdict stands without a fresh answer before the object is drawn again.</summary>
+    /// <remarks>
+    /// A hidden object is re-probed every frame, so on a path that probes, its answer is never more than
+    /// a couple of frames old. A path that does not probe at all -- the direct path the vanilla preset
+    /// draws through, which has no geometry pass to draw a box into -- would otherwise hold whatever was
+    /// hidden when it took over hidden for good: switch from a deferred preset to vanilla and walk, and
+    /// the terrain and buildings behind a fence stayed missing, the frame's black showing through it.
+    /// </remarks>
+    private const long StaleFrames = 8;
+
+    private long _frame;
     private int _slot;
     private bool _disposed;
 
@@ -153,7 +165,10 @@ public sealed class OcclusionQueries : IDisposable
     /// <param name="query">The query. An invalid, unknown or never-probed one is visible.</param>
     /// <returns><see langword="true"/> to draw the object.</returns>
     public bool Visible(OcclusionQueryHandle query) =>
-        !query.IsValid || !_queries.TryGetValue(query.Id, out State state) || !state.Hidden;
+        !query.IsValid
+        || !_queries.TryGetValue(query.Id, out State state)
+        || !state.Hidden
+        || _frame - state.AnsweredFrame > StaleFrames;
 
     /// <summary>Opens a frame: reads what its slot last probed, and starts the slot afresh.</summary>
     /// <param name="slot">The frame-in-flight slot the frame records into, whose last frame has finished.</param>
@@ -164,6 +179,7 @@ public sealed class OcclusionQueries : IDisposable
             return;
         }
 
+        _frame++;
         _slot = slot;
         _blocked[slot] = false;
 
@@ -321,7 +337,7 @@ public sealed class OcclusionQueries : IDisposable
 
             // One empty result can be a camera-edge race; two in a row is the object being hidden.
             int empty = passed ? 0 : state.EmptyFrames + 1;
-            _queries[handle] = new State(Pending: false, Hidden: !passed && empty >= 2, EmptyFrames: empty);
+            _queries[handle] = new State(Pending: false, Hidden: !passed && empty >= 2, EmptyFrames: empty, AnsweredFrame: _frame);
         }
 
         data.Dispose();
@@ -345,5 +361,6 @@ public sealed class OcclusionQueries : IDisposable
     /// <param name="Pending">Whether a probe is in flight, so the object is not probed again yet.</param>
     /// <param name="Hidden">Whether the last probes proved it hidden.</param>
     /// <param name="EmptyFrames">Consecutive probes that found nothing, for the two-result hysteresis.</param>
-    private readonly record struct State(bool Pending, bool Hidden, int EmptyFrames);
+    /// <param name="AnsweredFrame">The frame its last answer was read in; see <see cref="StaleFrames"/>.</param>
+    private readonly record struct State(bool Pending, bool Hidden, int EmptyFrames, long AnsweredFrame);
 }

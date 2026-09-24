@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Deferred;
 using OpenIGI.Rendering.Vulkan.Interop;
@@ -49,6 +49,18 @@ internal sealed unsafe class VulkanOcclusionQueries : IDisposable
 
     private readonly Dictionary<uint, State> _queries = [];
     private uint _nextId = 1;
+
+    /// <summary>How many frames a hidden verdict stands without a fresh answer before the object is drawn again.</summary>
+    /// <remarks>
+    /// A hidden object is re-probed every frame, so on a path that probes, its answer is never more than
+    /// a couple of frames old. A path that does not probe at all -- the direct path the vanilla preset
+    /// draws through, which has no geometry pass to draw a box into -- would otherwise hold whatever was
+    /// hidden when it took over hidden for good: switch from a deferred preset to vanilla and walk, and
+    /// the terrain and buildings behind a fence stayed missing, the frame's black showing through it.
+    /// </remarks>
+    private const long StaleFrames = 8;
+
+    private long _frame;
 
     // Per in-flight slot: the (object, local index) pairs it issued, read back when the slot recycles.
     private readonly List<(uint Handle, int Local)>[] _slotIssued;
@@ -121,7 +133,10 @@ internal sealed unsafe class VulkanOcclusionQueries : IDisposable
     /// <param name="query">The query. An invalid, unknown or never-probed handle is treated as visible.</param>
     /// <returns><see langword="true"/> to draw the object.</returns>
     public bool Visible(OcclusionQueryHandle query)
-        => !query.IsValid || !_queries.TryGetValue(query.Id, out State state) || !state.Hidden;
+        => !query.IsValid
+        || !_queries.TryGetValue(query.Id, out State state)
+        || !state.Hidden
+        || _frame - state.AnsweredFrame > StaleFrames;
 
     /// <summary>
     /// Opens the frame: reads back the results this slot last recorded, then resets its block so this
@@ -135,6 +150,8 @@ internal sealed unsafe class VulkanOcclusionQueries : IDisposable
         {
             return;
         }
+
+        _frame++;
 
         if (_slotIssued[slot].Count > 0)
         {
@@ -262,6 +279,7 @@ internal sealed unsafe class VulkanOcclusionQueries : IDisposable
                 Pending = false,
                 EmptyFrames = emptyFrames,
                 Hidden = !passed && emptyFrames >= 2,
+                AnsweredFrame = _frame,
             };
         }
     }
@@ -279,5 +297,6 @@ internal sealed unsafe class VulkanOcclusionQueries : IDisposable
     /// <param name="Pending">Whether a probe is in flight and the object must not be probed again yet.</param>
     /// <param name="Hidden">Whether the last probes proved the object hidden — the inverse of <see cref="Visible"/>.</param>
     /// <param name="EmptyFrames">Consecutive probes that found nothing, for the two-frame hysteresis.</param>
-    private readonly record struct State(bool Pending, bool Hidden, int EmptyFrames);
+    /// <param name="AnsweredFrame">The frame its last answer was read in; see <see cref="StaleFrames"/>.</param>
+    private readonly record struct State(bool Pending, bool Hidden, int EmptyFrames, long AnsweredFrame);
 }
