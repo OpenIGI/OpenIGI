@@ -398,7 +398,12 @@ public sealed partial class GraphicsDevice
             IRhiCommandEncoder frame = Encoder();
             BindKernel(kernel, slot, RecordHistories(kernel, frame));
 
-            using IRhiComputePassEncoder pass = frame.BeginComputePass(new RhiComputePassDescriptor(Label: kernel.Label));
+            // Timed under the GI stage, which is what every dispatch through the seam is: the surface cache's
+            // lighting, its radiance cache, the screen gather and the distance field. Untimed, the stack was
+            // invisible to the stage timings and the benchmark's GPU total alike.
+            using IRhiComputePassEncoder pass = frame.BeginComputePass(new RhiComputePassDescriptor(
+                _profiler.Time(RenderStage.GlobalIllumination),
+                kernel.Label));
             dispatch(pass);
             return;
         }
