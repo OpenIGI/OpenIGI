@@ -51,6 +51,10 @@ OPENIGI_COMPUTE_GLOBALS cbuffer Globals
 
     int uSkyShValid;
     float uBounceScale;
+
+    // Diagnostic (r_gi_source): keep only one source of the gather's light -- 0 all, 1 screen-traced
+    // hits, 2 surface-cache hits, 3 sky; 4 shows the surface cache's own light at the surface instead.
+    int uDebugSource;
 };
 
 #include "../Common/ScreenGather.slang"

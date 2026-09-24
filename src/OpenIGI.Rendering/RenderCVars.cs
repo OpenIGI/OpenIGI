@@ -3333,6 +3333,20 @@ public static class RenderCVars
         CVarOptions.Developer,
         "Time each stage of the frame on the GPU and show the result. Costs a little of what it measures.");
 
+    /// <summary>Diagnostic: which one source of the screen GI gather's light to keep.</summary>
+    /// <remarks>
+    /// The gather lights each probe from three places: screen-traced hits (the last frame's image), hits on
+    /// the surface cache, and the sky where a ray escapes. With r_debug_view ssgi this shows one of them
+    /// alone, so a GI artefact can be pinned on the source that carries it.
+    /// </remarks>
+    public static readonly NumericCVar<int> GiSource = CVar.Int(
+        "r_gi_source",
+        0,
+        0,
+        4,
+        CVarOptions.Developer,
+        "Diagnostic: keep one source of the screen GI: 0 all, 1 screen hits, 2 surface-cache hits, 3 sky, 4 the surface cache itself.");
+
     /// <summary>Which buffer to show instead of the scene.</summary>
     public static readonly EnumCVar<DebugView> Debug = CVar.Choice(
         "r_debug_view",

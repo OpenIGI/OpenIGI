@@ -17,11 +17,12 @@ namespace OpenIGI.Rendering.Vulkan.RayTracing;
 /// transforms, and that is the whole of what it knows about the world.
 /// </para>
 /// <para>
-/// So placements accumulate rather than being rebuilt. Every draw the geometry pass makes is recorded,
-/// keyed by which mesh at which transform, and the set only ever grows. For a world whose geometry does
-/// not move — which is all of this one — that set converges on the whole level within the first seconds
-/// of play and is then stable and complete. A shadow may be missing a caster the camera has never faced;
-/// it is never wrong about one it has.
+/// So placements are remembered rather than rebuilt. Every draw the geometry pass makes -- and every
+/// placement the world renderer offers without drawing, which is the whole level every frame -- is
+/// recorded, keyed by which mesh at which transform, and kept for as long as it goes on being offered.
+/// For a world whose geometry does not move, that set is the whole level from the loading screen on,
+/// stable and complete; a placement that stops being offered (an object that moved) leaves a frame
+/// later rather than staying behind as a ghost.
 /// </para>
 /// <para>
 /// The transforms are stored in absolute world space rather than relative to the camera. Relative would
@@ -49,8 +50,20 @@ internal sealed class VulkanWorldScene : IDisposable
     private readonly VulkanAllocator _allocator;
     private readonly VulkanRayTracingScene _scene;
     private readonly Dictionary<uint, Geometry> _geometries = [];
-    private readonly HashSet<Placement> _placed = [];
+
+    // Every static placement, with the frame it was last offered on. A placement the renderer stops
+    // offering -- an object that has moved, or one the level no longer shows -- is dropped a frame later.
+    private readonly Dictionary<Placement, int> _placed = [];
     private readonly List<VulkanRayTracingInstance> _instances = [];
+
+    // The placement behind each STATIC instance, parallel to the head of the list above, so a placement
+    // that has stopped being offered can be found and dropped.
+    private readonly List<Placement> _instancePlacements = [];
+
+    // How many placements the pass being recorded has offered, and how many the last one did. A pass that
+    // offered none drew no world (a menu over it, a frame skipped), and expires nothing.
+    private int _observedThisPass;
+    private int _observedLastPass;
 
     // Which mesh each placement came from, parallel to the list above. A structure does not keep the same
     // address for its whole life — compacting it replaces it with a smaller copy at a new one — so the
@@ -80,29 +93,10 @@ internal sealed class VulkanWorldScene : IDisposable
     // can be in the right place. See the static/dynamic split over the instance list below.
     private readonly HashSet<uint> _movers = [];
 
-    // Meshes judged movers since the last scene build, whose accumulated static placements have still
-    // to be swept out. Handled with the forgotten ones and in the same pass.
-    private readonly HashSet<uint> _demoted = [];
-
-    // Distinct placements accepted for each mesh since the window opened. A mesh whose placements keep
-    // arriving is one that is moving; a mesh that stands still is discovered once and never adds
-    // another. The test is a rate rather than a total, because a common prop legitimately stands in a
-    // level a few hundred times and a mover produces one per frame per copy -- a margin so wide that
-    // the exact threshold does not matter.
-    private readonly Dictionary<uint, int> _placementsThisWindow = [];
-
-    // Held rather than written inline, so the sweep below binds no closure and allocates nothing.
-    private readonly Predicate<Placement> _forgottenPlacement;
-
     // How many of the leading instances are accumulated static placements. Everything past it is this
     // frame's movers, cleared and refilled every frame -- so a moving object is traced where it is now
     // rather than everywhere it has ever been.
     private int _staticCount;
-
-    // The window over which a mesh's new placements are counted, and how many of them within one
-    // window mean the mesh is moving rather than being discovered.
-    private const int MoverWindowFrames = 240;
-    private const int MoverNewPlacements = 64;
 
     // The shadow casters offered for one frame at a time -- the terrain -- by the version of their
     // contents their structure was built over, and the material record each was given once.
@@ -114,7 +108,6 @@ internal sealed class VulkanWorldScene : IDisposable
     // Admitting a few a frame spreads that over the first second of play, which nobody sees, rather than
     // stalling on the frame the level appears.
     private const int MaxNewGeometriesPerFrame = 8;
-
 
     // Which material ranges of each mesh have been drawn, in the order they were first seen -- which is
     // the order they become geometries in, and therefore the geometry index a hit reports. Accumulated
@@ -162,8 +155,6 @@ internal sealed class VulkanWorldScene : IDisposable
         _device = device;
         _allocator = allocator;
         _scene = new VulkanRayTracingScene(vk, api, device, allocator, MaxInstances);
-        _forgottenPlacement = placement =>
-            _forgotten.Contains(placement.MeshId) || _demoted.Contains(placement.MeshId);
 
         // Host visible and written directly. The records are tiny, they change only when a structure is
         // built, and the alternative -- staging into device-local memory -- would need a transfer
@@ -330,8 +321,11 @@ internal sealed class VulkanWorldScene : IDisposable
         if (!moving)
         {
             placement = Placement.From(meshId, worldTransform);
-            if (_placed.Contains(placement))
+            if (_placed.ContainsKey(placement))
             {
+                // A place this mesh already stands at, offered again: kept for another frame.
+                _placed[placement] = _frame;
+                _observedThisPass++;
                 return;
             }
         }
@@ -371,27 +365,23 @@ internal sealed class VulkanWorldScene : IDisposable
 
         if (!moving)
         {
-            _placed.Add(placement);
+            // Kept for as long as the renderer goes on offering it. There used to be a guess here instead:
+            // a mesh seen at sixty-four new places within a few seconds was judged to be moving, and every
+            // place it had been was swept out of the static scene. It condemned every heavily instanced
+            // static prop -- a light fitting placed ninety-three times, a fence panel, a floor tile, all
+            // discovered at once behind the loading screen or as the camera swept across them -- which then
+            // existed only where a frame drew them. Every GI and shadow ray met a world that gained and lost
+            // walls, fittings and fences with the view, and the bounce light crept across walls and ceilings
+            // in patches that took seconds to settle, moving and at rest. The reference never guesses: a
+            // primitive's mobility says what is static. Here each PLACEMENT answers for itself: re-offered,
+            // it stays; not offered, it goes (see ExpireUnoffered) -- one copy moving no longer condemns the
+            // copies that stand still, nor leaves a trail of where it has been.
+            _placed[placement] = _frame;
+            _observedThisPass++;
             _grewThisFrame = true;
-
-            // Was this a new place for something standing still, or the next place for something on the
-            // move? Count it, and if the count says the mesh keeps arriving somewhere new, judge it a
-            // mover: it stops accumulating from here, and the places it has already been are swept out
-            // with the forgotten meshes before the next scene is built.
-            _placementsThisWindow.TryGetValue(meshId, out int placedThisWindow);
-            placedThisWindow++;
-            _placementsThisWindow[meshId] = placedThisWindow;
-            if (placedThisWindow >= MoverNewPlacements)
-            {
-                _movers.Add(meshId);
-                _demoted.Add(meshId);
-                _placementsThisWindow.Remove(meshId);
-                _instancesChanged = true;
-                moving = true;
-            }
         }
 
-        AddInstance(moving, meshId, VulkanRayTracingInstance.Create(
+        AddInstance(moving, meshId, placement, VulkanRayTracingInstance.Create(
             worldTransform,
 
             // Not the mesh: the first of this structure's material records. A hit adds the geometry index
@@ -412,6 +402,7 @@ internal sealed class VulkanWorldScene : IDisposable
     /// <summary>Files an instance in the static head of the list or the frame's moving tail.</summary>
     /// <param name="moving">Whether the mesh's transform is one this frame supplies rather than remembers.</param>
     /// <param name="meshId">The mesh the instance names, kept parallel to the instance itself.</param>
+    /// <param name="placement">The static placement it stands for; ignored for a moving one.</param>
     /// <param name="instance">The instance to file.</param>
     /// <remarks>
     /// A static placement is inserted at the boundary rather than appended, so the two runs stay
@@ -419,7 +410,7 @@ internal sealed class VulkanWorldScene : IDisposable
     /// working on one array. The shift it costs is over the moving tail alone, which is a handful of
     /// entries, and statics are discovered only over a level's first seconds.
     /// </remarks>
-    private void AddInstance(bool moving, uint meshId, in VulkanRayTracingInstance instance)
+    private void AddInstance(bool moving, uint meshId, in Placement placement, in VulkanRayTracingInstance instance)
     {
         if (moving)
         {
@@ -430,6 +421,7 @@ internal sealed class VulkanWorldScene : IDisposable
 
         _instances.Insert(_staticCount, instance);
         _instanceMeshIds.Insert(_staticCount, meshId);
+        _instancePlacements.Insert(_staticCount, placement);
         _staticCount++;
     }
 
@@ -552,7 +544,7 @@ internal sealed class VulkanWorldScene : IDisposable
             return;
         }
 
-        AddInstance(moving: true, meshId, VulkanRayTracingInstance.Create(
+        AddInstance(moving: true, meshId, default, VulkanRayTracingInstance.Create(
             worldTransform,
             customIndex: (uint)geometry.RecordBase & 0x00FFFFFFu,
             VulkanRayTracingInstance.VisibleToAll,
@@ -570,6 +562,11 @@ internal sealed class VulkanWorldScene : IDisposable
         _quietFrames = _grewThisFrame ? 0 : _quietFrames + 1;
         _grewThisFrame = false;
 
+        // What the pass just finished offered, for the sweep below: placements it did not offer again are
+        // dropped, unless it offered nothing at all -- a frame that drew no world says nothing about it.
+        _observedLastPass = _observedThisPass;
+        _observedThisPass = 0;
+
         // Run from inside the update rather than here: the addresses are only final once this frame's
         // compaction has swapped whatever it is going to swap.
         _scene.BeforeTopLevelBuild = PublishInstances;
@@ -584,13 +581,6 @@ internal sealed class VulkanWorldScene : IDisposable
             _instances.RemoveRange(_staticCount, _instances.Count - _staticCount);
             _instanceMeshIds.RemoveRange(_staticCount, _instanceMeshIds.Count - _staticCount);
             _instancesChanged = true;
-        }
-
-        // A fresh window. Placements are counted per window rather than in total, so a mesh discovered
-        // in pieces as the world streams past is not mistaken for one that is moving.
-        if (_frame % MoverWindowFrames == 0)
-        {
-            _placementsThisWindow.Clear();
         }
     }
 
@@ -646,16 +636,27 @@ internal sealed class VulkanWorldScene : IDisposable
         }
     }
 
-    /// <summary>Drops every placement of a forgotten mesh, in one pass over the lists.</summary>
+    /// <summary>Drops every placement of a forgotten mesh, and every static one no longer offered.</summary>
     /// <remarks>
+    /// <para>
     /// Runs immediately before the placements are handed to the scene, so a forgotten mesh's structure is
     /// never named by a scene that is built -- the same guarantee removing them one at a time gave, at one
     /// walk of the list per frame instead of one per mesh. The order of the survivors is preserved, which
-    /// matters only in that the two lists stay parallel.
+    /// matters only in that the lists stay parallel.
+    /// </para>
+    /// <para>
+    /// A static placement the last pass did not offer again is dropped with them: the object has moved on,
+    /// or the level no longer shows it. The world renderer offers every placement of the level every frame,
+    /// drawn or not, so a still object is always re-offered and a moved one leaves at once rather than as
+    /// a trail. Nothing expires after a pass that offered nothing -- a frame that drew no world.
+    /// </para>
     /// </remarks>
     private void CompactForgotten()
     {
-        if (_forgotten.Count == 0 && _demoted.Count == 0)
+        bool expire = _observedLastPass > 0;
+        int stale = _frame - 1;
+
+        if (_forgotten.Count == 0 && !expire)
         {
             return;
         }
@@ -665,34 +666,48 @@ internal sealed class VulkanWorldScene : IDisposable
         for (int i = 0; i < _instances.Count; i++)
         {
             uint meshId = _instanceMeshIds[i];
+            bool isStatic = i < _staticCount;
 
-            // A demoted mesh loses only what was remembered of it. Its structure stays, and the frame
-            // drawing it goes on placing it in the moving tail -- so the entries past the boundary are
-            // this frame's and are kept whoever they belong to.
-            if (_forgotten.Contains(meshId) || (i < _staticCount && _demoted.Contains(meshId)))
+            if (_forgotten.Contains(meshId))
             {
+                if (isStatic)
+                {
+                    _placed.Remove(_instancePlacements[i]);
+                }
+
+                continue;
+            }
+
+            // Past the boundary is this frame's moving tail, kept whoever it belongs to.
+            if (isStatic && expire
+                && _placed.TryGetValue(_instancePlacements[i], out int lastOffered)
+                && lastOffered < stale)
+            {
+                _placed.Remove(_instancePlacements[i]);
                 continue;
             }
 
             _instances[kept] = _instances[i];
             _instanceMeshIds[kept] = meshId;
-            kept++;
-            if (i < _staticCount)
+            if (isStatic)
             {
+                _instancePlacements[keptStatic] = _instancePlacements[i];
                 keptStatic++;
             }
+
+            kept++;
+        }
+
+        if (kept != _instances.Count)
+        {
+            _instancesChanged = true;
         }
 
         _instances.RemoveRange(kept, _instances.Count - kept);
         _instanceMeshIds.RemoveRange(kept, _instanceMeshIds.Count - kept);
+        _instancePlacements.RemoveRange(keptStatic, _instancePlacements.Count - keptStatic);
         _staticCount = keptStatic;
-
-        // The dedupe set has to lose them too, or it holds a placement for every mesh the level ever
-        // streamed out. A cached predicate, because RemoveWhere over a capturing lambda allocated a
-        // closure per forgotten mesh -- once per evicted page, every time the player moved.
-        _placed.RemoveWhere(_forgottenPlacement);
         _forgotten.Clear();
-        _demoted.Clear();
     }
 
     /// <summary>Forgets a mesh that has been destroyed, so its structure is not kept alive by the scene.</summary>
@@ -723,8 +738,6 @@ internal sealed class VulkanWorldScene : IDisposable
         _surfaces.Remove(meshId);
         _stale.Remove(meshId);
         _movers.Remove(meshId);
-        _demoted.Remove(meshId);
-        _placementsThisWindow.Remove(meshId);
         _instancesChanged = true;
     }
 
@@ -747,12 +760,13 @@ internal sealed class VulkanWorldScene : IDisposable
         _placed.Clear();
         _instances.Clear();
         _instanceMeshIds.Clear();
+        _instancePlacements.Clear();
+        _observedThisPass = 0;
+        _observedLastPass = 0;
         _casterVersions.Clear();
         _casterRecords.Clear();
         _movers.Clear();
-        _demoted.Clear();
         _forgotten.Clear();
-        _placementsThisWindow.Clear();
         _staticCount = 0;
         _instancesChanged = true;
     }
@@ -891,4 +905,5 @@ internal sealed class VulkanWorldScene : IDisposable
                 Pack(m.M31, m.M32, m.M33, m.M34));
         }
     }
+
 }

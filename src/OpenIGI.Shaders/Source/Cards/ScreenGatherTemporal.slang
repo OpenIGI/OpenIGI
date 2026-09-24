@@ -69,6 +69,10 @@ OPENIGI_COMPUTE_GLOBALS cbuffer Globals
     int uSkyShValid;
     float uBounceScale;
 
+    // Diagnostic (r_gi_source): keep only one source of the gather's light -- 0 all, 1 screen-traced
+    // hits, 2 surface-cache hits, 3 sky; 4 shows the surface cache's own light at the surface instead.
+    int uDebugSource;
+
     int uHasHistory;
     int uFrameIndex;
     int uMaxAccumulated;
@@ -150,6 +154,19 @@ void computeMain(uint3 id : SV_DispatchThreadID, uint3 localId : SV_GroupThreadI
         worldNormal = normalize(storedNormal);
         current = GatherIndirect(world, worldNormal, viewPosition, FrameJitter(probe, uFrameIndex));
         valid = 1.0;
+
+        // r_gi_source 4: the surface cache's own stored light at this surface -- what a ray landing here
+        // would read -- in place of what arrives at it, and with no history, so the cache's own changes
+        // over time show exactly as they happen.
+        if (uDebugSource == 4)
+        {
+            float2 found;
+            float2 litFound;
+            float agreement;
+            current = LookupCardHit(world, -worldNormal, found, litFound, agreement)
+                ? uFinal.SampleLevel(uFinalSampler, litFound, 0.0).rgb
+                : float3(0.0, 0.0, 0.0);
+        }
     }
 
     sLight[lid] = current;
@@ -294,6 +311,12 @@ void computeMain(uint3 id : SV_DispatchThreadID, uint3 localId : SV_GroupThreadI
                 }
             }
         }
+    }
+
+    if (uDebugSource == 4)
+    {
+        accumulated = current;
+        frames = 1.0;
     }
 
     uIndirect.Store(probe, float4(accumulated, frames));
