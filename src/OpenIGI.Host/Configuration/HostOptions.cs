@@ -98,6 +98,7 @@ public readonly record struct HostOptions(
         int width = 0;
         int height = 0;
         string? screenshot = null;
+        string? lightingDump = null;
         (double X, double Y, double Z)? cameraPosition = null;
         (float X, float Y, float Z)? sunDirection = null;
 
@@ -109,6 +110,7 @@ public readonly record struct HostOptions(
         float? cameraYawEnd = null;
         float? cameraPitchEnd = null;
         int? flightFrames = null;
+        int flightDelay = 0;
         float cameraShake = 0f;
         int exitAfterFrames = 0;
         int uiScale = Core.Graphics.UiScale.Automatic;
@@ -239,6 +241,10 @@ public readonly record struct HostOptions(
                     exitAfterFrames = 5;
                 }
             }
+            else if (arg.Equals("dumplighting", StringComparison.OrdinalIgnoreCase))
+            {
+                lightingDump = Next(args, ref i, "dumplighting");
+            }
             else if (arg.Equals("frames", StringComparison.OrdinalIgnoreCase))
             {
                 string value = Next(args, ref i, "frames");
@@ -319,6 +325,15 @@ public readonly record struct HostOptions(
                 if (cameraShake < 0f)
                 {
                     throw new ArgumentException($"-camshake expects a non-negative amplitude in degrees, got '{cameraShake}'.", nameof(args));
+                }
+            }
+            else if (arg.Equals("flightdelay", StringComparison.OrdinalIgnoreCase))
+            {
+                string value = Next(args, ref i, "flightdelay");
+                if (!int.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out flightDelay)
+                    || flightDelay < 0)
+                {
+                    throw new ArgumentException($"-flightdelay expects a non-negative frame count, got '{value}'.", nameof(args));
                 }
             }
             else if (arg.Equals("flightframes", StringComparison.OrdinalIgnoreCase))
@@ -574,11 +589,13 @@ public readonly record struct HostOptions(
         {
             CameraPosition = cameraPosition,
             SunDirection = sunDirection,
+            LightingDumpPath = lightingDump,
             FieldOfView = fieldOfView,
             CameraEnd = cameraEnd,
             CameraYawEnd = cameraYawEnd,
             CameraPitchEnd = cameraPitchEnd,
             FlightFrames = flightFrames,
+            FlightDelay = flightDelay,
             CameraShake = cameraShake,
             Difficulty = difficulty,
             StartupCommands = startupCommands,
@@ -699,6 +716,18 @@ public readonly record struct HostOptions(
     public (float X, float Y, float Z)? SunDirection { get; init; }
 
     /// <summary>
+    /// Gets where to write, as JSON, the light the last frame was lit with: the sun or moon, the sky, the
+    /// exposure settings and every lamp fixture as the renderer receives it. <see langword="null"/> writes
+    /// nothing.
+    /// </summary>
+    /// <remarks>
+    /// A tool for lining an external reference render up with this one from the same numbers rather than
+    /// from a second derivation of them, which would drift the moment either side changed. Written on the
+    /// frame a capture exits on, so it describes the picture <c>-screenshot</c> saved beside it.
+    /// </remarks>
+    public string? LightingDumpPath { get; init; }
+
+    /// <summary>
     /// Gets a fixed horizontal field of view in degrees, or null for the game's own ninety. For lining a
     /// capture up against a reference render whose camera lens differs.
     /// </summary>
@@ -727,6 +756,14 @@ public readonly record struct HostOptions(
     /// held frame against the same pose reached standing still measures exactly the smear and nothing else.
     /// </remarks>
     public int? FlightFrames { get; init; }
+
+    /// <summary>Gets how many rendered frames a flight holds its start pose before it moves.</summary>
+    /// <remarks>
+    /// A flight otherwise moves from the first frame, while the level is still loading and every temporal
+    /// history is empty -- so a capture of a walk measured the load, not the walk. Held this long first,
+    /// the move starts from a converged frame, the way a player's does.
+    /// </remarks>
+    public int FlightDelay { get; init; }
 
     /// <summary>
     /// Gets the amplitude in degrees of a per-frame camera shake laid over whatever else the camera is

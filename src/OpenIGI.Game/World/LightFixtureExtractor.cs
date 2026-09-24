@@ -518,6 +518,9 @@ public static class LightFixtureExtractor
         string texture = Dominant(byTexture);
         Vector3f tint = Normalise(colour is null ? new Vector3f(1f, 1f, 1f) : colour(texture));
 
+        Vector3f direction = Facing(facing, facingArea);
+        (Vector3f axis, float halfLength, float halfWidth) = EmittingRect(triangles, cluster, position, direction);
+
         LightFixture fixture = new(
             texture,
             position,
@@ -526,13 +529,98 @@ public static class LightFixtureExtractor
             (float)area,
             (float)extent,
             cluster.Count,
-            Facing(facing, facingArea));
+            direction,
+            axis,
+            halfLength,
+            halfWidth);
 
         // The radius wants the fixture's brightness, and Luminance is the fixture's own definition of
         // it -- computed here rather than inline so the two can never disagree.
         float reach = (float)extent * radiusScale * MathF.Sqrt(MathF.Max(fixture.Luminance, 0f));
 
         return fixture with { Radius = MathF.Max(reach, MinimumRadius) };
+    }
+
+    /// <summary>Measures the rectangle a facing fixture emits from.</summary>
+    /// <remarks>
+    /// <para>
+    /// The long axis is the principal axis of the cluster's vertices in the plane square to the facing,
+    /// each triangle's corners weighted by a third of its area, so a batten's rect runs along its tube
+    /// whatever angle it was placed at. The half-extents are how far the vertices reach along that axis and
+    /// across it, measured from the fixture's centroid -- the point the lamp is lit from -- so the rect
+    /// covers the glass the light comes out of and nothing beside it.
+    /// </para>
+    /// <para>
+    /// Nothing for a fixture that faces nowhere: the renderer lights and shadows that as a point.
+    /// </para>
+    /// </remarks>
+    private static (Vector3f Axis, float HalfLength, float HalfWidth) EmittingRect(
+        List<Triangle> triangles,
+        List<int> cluster,
+        Vector3d centre,
+        Vector3f facing)
+    {
+        double facingLength = Math.Sqrt((facing.X * facing.X) + (facing.Y * facing.Y) + (facing.Z * facing.Z));
+        if (facingLength < 0.5)
+        {
+            return (default, 0f, 0f);
+        }
+
+        Vector3d n = new Vector3d(facing.X, facing.Y, facing.Z) * (1.0 / facingLength);
+
+        // Any vector not parallel to the facing starts the in-plane basis.
+        Vector3d seed = Math.Abs(n.Z) < 0.9 ? new Vector3d(0.0, 0.0, 1.0) : new Vector3d(1.0, 0.0, 0.0);
+        Vector3d e1 = Vector3d.Cross(n, seed);
+        e1 *= 1.0 / e1.Length;
+        Vector3d e2 = Vector3d.Cross(n, e1);
+
+        double sw = 0.0, su = 0.0, sv = 0.0, suu = 0.0, svv = 0.0, suv = 0.0;
+        foreach (int index in cluster)
+        {
+            Triangle triangle = triangles[index];
+            double w = triangle.Area / 3.0;
+            foreach (Vector3d q in (ReadOnlySpan<Vector3d>)[triangle.A, triangle.B, triangle.C])
+            {
+                double u = Vector3d.Dot(q - centre, e1);
+                double v = Vector3d.Dot(q - centre, e2);
+                sw += w; su += w * u; sv += w * v; suu += w * u * u; svv += w * v * v; suv += w * u * v;
+            }
+        }
+
+        Vector3d axis = e1;
+        if (sw > 0.0)
+        {
+            double mu = su / sw, mv = sv / sw;
+            double cuu = (suu / sw) - (mu * mu), cvv = (svv / sw) - (mv * mv), cuv = (suv / sw) - (mu * mv);
+            double angle = 0.5 * Math.Atan2(2.0 * cuv, cuu - cvv);
+            axis = (e1 * Math.Cos(angle)) + (e2 * Math.Sin(angle));
+        }
+
+        Vector3d across = Vector3d.Cross(n, axis);
+        double halfLength = 0.0, halfWidth = 0.0;
+        foreach (int index in cluster)
+        {
+            Triangle triangle = triangles[index];
+            foreach (Vector3d q in (ReadOnlySpan<Vector3d>)[triangle.A, triangle.B, triangle.C])
+            {
+                halfLength = Math.Max(halfLength, Math.Abs(Vector3d.Dot(q - centre, axis)));
+                halfWidth = Math.Max(halfWidth, Math.Abs(Vector3d.Dot(q - centre, across)));
+            }
+        }
+
+        // The longer side is the axis, whichever the covariance picked on a square fitting.
+        if (halfWidth > halfLength)
+        {
+            (halfLength, halfWidth) = (halfWidth, halfLength);
+            axis = across;
+        }
+
+        // Floored at two centimetres: a fitting measured flatter than that is a sliver of geometry, and a
+        // rect of nought width would give every ray the same target.
+        return (
+            new Vector3f((float)axis.X, (float)axis.Y, (float)axis.Z),
+            (float)Math.Max(halfLength, 0.02),
+            (float)Math.Max(halfWidth, 0.02));
     }
 
     /// <summary>Turns a cluster's summed face normals into the direction it throws its light.</summary>

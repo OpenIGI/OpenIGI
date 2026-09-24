@@ -44,10 +44,11 @@ public static partial class LightFixtureStore
     /// fourteen levels — every soldier, chair, camera and bracket among them. 4 gave each lamp sub-mesh
     /// its own emissive strength, so one texture can be a floodlight on one model and a reading lamp on
     /// another. 3 moved emission from the texture to the sub-mesh, 2 added the direction a fixture
-    /// faces, and version 1 was a bare array — which is what an absent version reads as.
+    /// faces, and version 1 was a bare array — which is what an absent version reads as. 7 added the
+    /// emitting rectangle (long axis and half-extents) the lamp's shadow rays are aimed at.
     /// </para>
     /// </remarks>
-    public const int Version = 6;
+    public const int Version = 7;
 
     /// <summary>Writes a mission's fixtures and emitters to a file, creating the directory if needed.</summary>
     /// <param name="path">Where to write.</param>
@@ -222,6 +223,16 @@ public static partial class LightFixtureStore
 
         public float DirectionZ { get; init; }
 
+        public float AxisX { get; init; }
+
+        public float AxisY { get; init; }
+
+        public float AxisZ { get; init; }
+
+        public float HalfLength { get; init; }
+
+        public float HalfWidth { get; init; }
+
         public static Record From(LightFixture fixture) => new()
         {
             Texture = fixture.Texture,
@@ -238,6 +249,11 @@ public static partial class LightFixtureStore
             DirectionX = fixture.Direction.X,
             DirectionY = fixture.Direction.Y,
             DirectionZ = fixture.Direction.Z,
+            AxisX = fixture.Axis.X,
+            AxisY = fixture.Axis.Y,
+            AxisZ = fixture.Axis.Z,
+            HalfLength = fixture.HalfLength,
+            HalfWidth = fixture.HalfWidth,
         };
 
         public LightFixture ToFixture() => new(
@@ -248,7 +264,10 @@ public static partial class LightFixtureStore
             Area,
             Extent,
             TriangleCount,
-            new Vector3f(DirectionX, DirectionY, DirectionZ));
+            new Vector3f(DirectionX, DirectionY, DirectionZ),
+            new Vector3f(AxisX, AxisY, AxisZ),
+            HalfLength,
+            HalfWidth);
     }
 
     [JsonSourceGenerationOptions(WriteIndented = true, DefaultIgnoreCondition = JsonIgnoreCondition.Never)]

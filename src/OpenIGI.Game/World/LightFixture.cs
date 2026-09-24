@@ -71,6 +71,19 @@ namespace OpenIGI.Game.World;
 /// is better lit as a point than as a spot pointing at a guess.
 /// </para>
 /// </param>
+/// <param name="Axis">
+/// The long axis of the fixture's emitting face, a unit vector square to <see cref="Direction"/>, or
+/// zero for a fixture that faces nowhere.
+/// <para>
+/// A fitting is a rectangle, not a disc: a fluorescent batten is over a metre long and a hand wide.
+/// Its shadow rays are aimed at points on THAT rectangle, as the reference samples a rect light on
+/// the rect. Aimed at a disc a quarter of a metre across instead, half the points hung in the air
+/// beside the glass, and from a wall at a grazing angle each frame's rays clipped the housing or not
+/// at random -- the black speckle under every ceiling and beside every lit panel.
+/// </para>
+/// </param>
+/// <param name="HalfLength">Half the emitting face's extent along <see cref="Axis"/>, in metres.</param>
+/// <param name="HalfWidth">Half the emitting face's extent across it, in metres.</param>
 public readonly record struct LightFixture(
     string Texture,
     Vector3d Position,
@@ -79,7 +92,10 @@ public readonly record struct LightFixture(
     float Area,
     float Extent,
     int TriangleCount,
-    Vector3f Direction = default)
+    Vector3f Direction = default,
+    Vector3f Axis = default,
+    float HalfLength = 0f,
+    float HalfWidth = 0f)
 {
     /// <summary>Gets a value indicating whether this fixture throws its light one way.</summary>
     /// <remarks>
@@ -113,6 +129,9 @@ public readonly record struct LightFixture(
     /// </para>
     /// </remarks>
     public float Intensity => Area * Luminance;
+
+    /// <summary>Gets a value indicating whether the fixture's emitting face was measured as a rectangle.</summary>
+    public bool HasRect => IsDirectional && HalfLength > 0f && HalfWidth > 0f;
 
     /// <inheritdoc/>
     public override string ToString() =>

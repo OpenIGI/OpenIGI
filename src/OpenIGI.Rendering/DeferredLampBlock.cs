@@ -40,6 +40,9 @@ public static class DeferredLampBlock
     /// <summary>Where the directions start.</summary>
     public const int DirectionOffset = ColourOffset + (DeferredLocalLight.Maximum * 4);
 
+    /// <summary>Where the emitting rectangles start: xyz the long axis at half length, w the half width.</summary>
+    public const int RectOffset = DirectionOffset + (DeferredLocalLight.Maximum * 4);
+
     /// <summary>Writes the block.</summary>
     /// <param name="block">Room for <see cref="Floats"/> floats.</param>
     /// <param name="state">What the frame's lamps do.</param>
@@ -94,6 +97,11 @@ public static class DeferredLampBlock
             // because both describe the SOURCE rather than its falloff, and the fourth component there
             // was spare.
             block[DirectionOffset + at + 3] = light.SourceRadius;
+
+            block[RectOffset + at] = light.ViewAxis.X;
+            block[RectOffset + at + 1] = light.ViewAxis.Y;
+            block[RectOffset + at + 2] = light.ViewAxis.Z;
+            block[RectOffset + at + 3] = light.HalfWidth;
         }
     }
 }

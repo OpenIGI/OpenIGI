@@ -18,9 +18,9 @@ public static class DeferredLightingBlocks
 
     /// <summary>The size in bytes of the lighting pass's local-light block.</summary>
     /// <remarks>
-    /// Two <c>vec4</c>s of counts and control, then three per light: position and reach, colour and
-    /// strength, and the direction it faces. Sized for <see cref="DeferredLocalLight.Maximum"/>, which
+    /// Two <c>vec4</c>s of counts and control, then four per light: position and reach, colour and
+    /// strength, the direction it faces, and the rectangle it emits from. Sized for <see cref="DeferredLocalLight.Maximum"/>, which
     /// is what the shader's arrays are declared at.
     /// </remarks>
-    public const int LampBytes = 32 + (DeferredLocalLight.Maximum * 48);
+    public const int LampBytes = 32 + (DeferredLocalLight.Maximum * 64);
 }

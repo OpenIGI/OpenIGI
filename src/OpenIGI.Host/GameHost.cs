@@ -3593,7 +3593,7 @@ internal sealed partial class GameHost : IDisposable
                         1,
                         (_options.FlightFrames
                             ?? (_options.IsBenchmark ? BenchmarkSchedule.MeasurementEndFrame : _options.ExitAfterFrames)) - 1);
-                    float t = Math.Clamp((float)flightFrame / span, 0f, 1f);
+                    float t = Math.Clamp((float)(flightFrame - _options.FlightDelay) / span, 0f, 1f);
 
                     Vector3d endPos = _options.CameraEnd is { } e
                         ? new Vector3d(e.X, e.Y, e.Z)
@@ -4635,7 +4635,8 @@ internal sealed partial class GameHost : IDisposable
                     // is how that stand-in is dialled down or removed to confirm what lights enclosed spaces.
                     Vector3f scaledAmbient = light.Ambient * RenderCVars.AmbientScale.Value;
 
-                    _device.SetLighting(new SceneLighting(
+                    _dumpWorldSun = light.Direction;
+                    _device.SetLighting(_dumpLighting = new SceneLighting(
                         EffectiveLighting,
                         viewSunDirection,
                         scaledSun,
@@ -5274,7 +5275,11 @@ if (retailFog)
                             // rather than taken raw: a fixture the extractor measured as a few
                             // centimetres across would cast an edge as hard as a point light's, and no
                             // real fitting is that small.
-                            MathF.Max(fixture.Extent, 0.05f));
+                            MathF.Max(fixture.Extent, 0.05f),
+
+                            // The rectangle the fitting emits from, where its shadow rays are aimed.
+                            fixture.HasRect ? worldToView.Transform(fixture.Axis) * fixture.HalfLength : default,
+                            fixture.HasRect ? fixture.HalfWidth : 0f);
                     }
 
                     // Both backends, through the seam: a windowless interior needs its lamps whichever
@@ -6536,6 +6541,11 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     _logger.Information(
                         "Desktop",
                         $"Wrote {flightFrame} flight frame(s) at {_window.Width}x{_window.Height} beside {_options.ScreenshotPath}.");
+                }
+
+                if (_options.LightingDumpPath is { } lightingDumpPath)
+                {
+                    WriteLightingDump(lightingDumpPath);
                 }
 
                 _soldiers?.LogAiSummary();
