@@ -6468,8 +6468,6 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
             // one sharp thing while the lighting settles, and under the console.
             DrawWorldTitle(batch);
 
-            DrawRendererLabel(batch);
-
             // The console goes over everything, including the menus, so it is the last thing drawn.
             // WantsDraw rather than IsOpen: the watch and performance panels can be pinned to stay up
             // with the console shut. It is false during a capture run whatever the reader pinned, so a

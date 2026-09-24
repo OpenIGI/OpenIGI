@@ -433,17 +433,6 @@ public static class RenderCVars
         CVarOptions.Hidden | CVarOptions.ReadOnly,
         "How far into night the sun has gone, 0 to 1. Dims the picture; not a setting.");
 
-    /// <summary>Whether the renderer drawing the frame is named in a corner of the screen.</summary>
-    /// <remarks>
-    /// For comparing the renderers F10 switches between: a picture only means something next to the name
-    /// of what drew it. Never drawn in a screenshot or a benchmark, so it cannot reach a reference capture.
-    /// </remarks>
-    public static readonly BoolCVar RendererLabel = CVar.Bool(
-        "r_renderer_label",
-        true,
-        CVarOptions.Archive,
-        "Names the renderer drawing the frame -- legacy Vulkan, or the RHI over Vulkan or WebGPU -- in the corner.");
-
     /// <summary>Whether the time of day runs on its own while a mission is played.</summary>
     /// <remarks>
     /// <para>
