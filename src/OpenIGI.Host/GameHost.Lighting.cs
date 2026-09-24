@@ -15,6 +15,10 @@ internal sealed partial class GameHost
     private Vector3f SkyFillColour() =>
         ((_effectiveSun ?? _sun)?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f)) * RenderCVars.SkyLight.Value;
 
+    // The same, for a named sun rather than whatever the last frame used: the surface cache's convergence
+    // runs before a level's first frame has set one.
+    private static Vector3f SkyFillColour(DirectionalLightSettings sun) => sun.Ambient * RenderCVars.SkyLight.Value;
+
     /// <summary>Warms a level's cool zenith ambient towards the horizon as the sun sinks.</summary>
     /// <remarks>
     /// The sky an interior sees at a low sun is the warm horizon, not the cool zenith: the atmosphere
@@ -68,6 +72,142 @@ internal sealed partial class GameHost
         // window and the light off it orange, where the reference keeps a clean cool daylight.
         _ = sinElevation;
         return Vector3f.One;
+    }
+
+    // Used only for a level that declares no Dirlight at all. The angles are mission 1's, which the probe
+    // showed put the sun 60 degrees up at noon, with the warm sun and cool ambient every retail level pairs.
+    private static readonly DirectionalLightSettings FallbackSun = new(
+        DirectionalLightSettings.DirectionFrom(0.5236f, -4.92183f),
+        new Vector3f(1.0f, 0.96f, 0.88f),
+        new Vector3f(0.27f, 0.29f, 0.33f),
+        Beta: 0.5236f,
+        Gamma: -4.92183f,
+        TimeOfDay: 12f,
+        Intensity: 18f,
+        AffectsTerrain: true,
+        AffectsObjects: true);
+
+    /// <summary>The sun -- or the moon -- the level is lit by at the cycle's current hour.</summary>
+    /// <remarks>
+    /// <para>
+    /// One answer for everything that lights the level, because two answers is how the level ended up lit
+    /// twice. The frame used to derive its sun inline while the surface cache converged under
+    /// <c>_effectiveSun ?? _sun</c> -- and during a load the first is not set yet, so the second, the
+    /// level's raw authored Dirlight, lit the whole cache. Every Project I.G.I. mission authors that as a
+    /// NOON sun, so a night mission's every distant surface was converged in daylight and stayed that way:
+    /// the steady refresh only reaches cards near the camera, so a tunnel across the valley glowed until
+    /// the player walked up to it.
+    /// </para>
+    /// <para>
+    /// A pinned reference sun (<c>-sundir</c>) keeps the level's own colour with the pinned direction.
+    /// Otherwise the level's bound sun is swept to the hour; a title that leaves its fill to the renderer
+    /// has its ambient re-pointed to a daylight chroma by day; and under cloud the moon loses most of its
+    /// directional light to the deck.
+    /// </para>
+    /// </remarks>
+    private DirectionalLightSettings CycleSun()
+    {
+        DirectionalLightSettings light;
+        bool pinned = _options.SunDirection is not null;
+        if (_options.SunDirection is { } fixedSun)
+        {
+            // A fixed sun for matching an external reference render: the level's own colour and ambient,
+            // but a direction pinned to the reference's, bypassing the day/night sweep -- which leaves the
+            // cycle's nightfall at nought, so the re-tint below treats it as full day.
+            Vector3f dir = new(fixedSun.X, fixedSun.Y, fixedSun.Z);
+            float len = dir.Length;
+            dir = len > 1e-5f ? dir / len : Vector3f.UnitZ;
+            light = (_sun ?? FallbackSun) with { Direction = dir };
+        }
+        else
+        {
+            // The BOUND sun, not the raw authored one: a title whose levels do not author a noon sun has
+            // already had that answered for it. See DayNightBinding.
+            light = _dayNight.Apply(_cycleSun ?? _sun ?? FallbackSun);
+        }
+
+        // The sun keeps the level's own authored chromaticity, because rewriting it to a neutral key is
+        // the kind of grade that made the reference and this render impossible to compare channel for
+        // channel. Only the ambient is re-pointed, since the level's flat cool triple stands in for a sky
+        // the dynamic model now largely derives itself -- and only for a title that leaves its fill to the
+        // renderer: one that authored an ambient per level means it (the sequel's night fills with a cold
+        // blue). Only by DAY, crossed out as the night comes in: the fill the cycle crosses to at night is
+        // its own moonlit blue, and re-pointed as well a clear night was filled with a warm amber.
+        if (_deferredLighting is null)
+        {
+            Vector3f warmed = DaylightColour(light.Ambient, new Vector3f(1.18f, 0.88f, 0.58f));
+            float day = 1f - _dayNight.Nightfall;
+            light = light with
+            {
+                Ambient = light.Ambient + ((warmed - light.Ambient) * day),
+            };
+        }
+
+        // Under cloud the moon is no longer a lamp in the sky with hard shadows: most of its light reaches
+        // the ground scattered through the deck, which the sky's overcast carries as fill. What stays
+        // directional is the little that comes through thin patches of cloud.
+        if (!pinned && _dayNight.Moonrise > 0f)
+        {
+            float cover = WeatherCloudCover() * _dayNight.Nightfall;
+            light = light with
+            {
+                Colour = light.Colour * ((1f - (0.75f * cover)) * RenderCVars.Moonlight.Value),
+            };
+        }
+
+        return light;
+    }
+
+    // How bright the brightest star is drawn, in the lit scene's own units. Relative to the night sky it is
+    // drawn over, which sits around the airglow's few thousandths: some thirty times that, so the few
+    // brightest stars stand out as points and the rest sit at the edge of seeing, as under a dark sky.
+    private const float StarRadiance = 0.12f;
+
+    // How bright the moon's disc is drawn, likewise, before r_moon_brightness. The real ratio to the sky is
+    // several thousand and would burn the disc to white and flood the bloom across half the screen. This is
+    // bright enough to read as the brightest thing in a night sky, and no brighter: at 2.5 the bloom spread
+    // it into a glow over a third of the sky.
+    private const float MoonDiscRadiance = 1.0f;
+
+    /// <summary>How overcast the sky is, as far as the night is concerned: a raining or snowing level is.</summary>
+    /// <remarks>
+    /// The level's own weather decides it, through the same flag the rain's draw and sound read, not whether
+    /// the storm is drawing this frame. That one goes off whenever the camera steps under a roof, and the
+    /// sky outside does not clear because the player went indoors.
+    /// </remarks>
+    private float WeatherCloudCover()
+    {
+        bool falling = (_rain?.IsWeatherEnabled ?? false) || (_snow?.IsWeatherEnabled ?? false);
+        return falling ? Math.Clamp(0.8f + (0.2f * RenderCVars.StormIntensity.Value), 0f, 1f) : 0f;
+    }
+
+    /// <summary>What the night sky holds this frame beyond the atmosphere: glow, cover, stars and moon.</summary>
+    /// <remarks>
+    /// Everything is weighted by how far into night the cycle is, so a day, or a reference render with a
+    /// pinned sun, carries none of it and draws exactly the sky it always did.
+    /// </remarks>
+    private NightSky FrameNightSky()
+    {
+        float night = _dayNight.Nightfall;
+        if (night <= 0f || _options.SunDirection is not null)
+        {
+            return NightSky.None;
+        }
+
+        float cover = WeatherCloudCover() * night;
+        bool stars = RenderCVars.Stars.Value;
+
+        Vector3f moon = _dayNight.MoonDirection;
+        float moonUp = Math.Clamp((moon.Z + 0.02f) / 0.06f, 0f, 1f);
+        moonUp = moonUp * moonUp * (3f - (2f * moonUp));
+
+        return new NightSky(
+            Airglow: RenderCVars.NightAirglow.Value * night,
+            CloudCover: cover,
+            StarRadiance: stars ? StarRadiance * _dayNight.StarVisibility : 0f,
+            MoonDirection: moon,
+            MoonRadiance: stars ? MoonDiscRadiance * RenderCVars.MoonBrightness.Value * moonUp * night : 0f,
+            Seconds: _loop.TimeSource.Milliseconds / 1000f);
     }
 
     // The mission's authored grade, or the one r_lut_table names instead. Loaded per level rather than

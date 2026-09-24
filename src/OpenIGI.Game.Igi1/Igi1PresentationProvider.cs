@@ -53,6 +53,23 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
     /// <summary>And the fill, the median <c>Back Color</c> over the same seven.</summary>
     public static readonly Vector3f DaylightAmbient = new(0.230769f, 0.288462f, 0.326923f);
 
+    /// <summary>How much exposure a night level takes off at full night, on top of the cycle's own.</summary>
+    /// <remarks>
+    /// <para>
+    /// Far less than the sequel's 0.632. That figure answers a sun left UP and painted nearly black, which
+    /// the eye adaptation reads as a correctly exposed dark subject and lifts back to grey. These levels are
+    /// lit by the cycle's own moon under the horizon-bound sun, so the lighting already computes their
+    /// darkness and the adaptation meets a scene that is dark for the reason a real night is.
+    /// </para>
+    /// <para>
+    /// Measured on mission 3's ground from the spawn view, ultra against vanilla: 0.072 against 0.415
+    /// with the sequel's drop, 0.140 with this one and the brighter moon, sky and dark-adapted eye that
+    /// came with it. The original lights its nights as a grey dusk; the remaster's is meant to read as
+    /// night and still be playable, and this is where that was judged to sit.
+    /// </para>
+    /// </remarks>
+    public const float NightExposureDrop = 0.2f;
+
     /// <inheritdoc/>
     /// <remarks>
     /// <para>
@@ -80,7 +97,8 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
         return new DeferredLighting(
             GlobalLightSettings.Read(levelRoot).ObjectAmbient,
             Nightfall: 1f,
-            new AuthoredNight(NightReferenceHour, DaylightColour, DaylightAmbient, SunIsMoon: false));
+            new AuthoredNight(NightReferenceHour, DaylightColour, DaylightAmbient, SunIsMoon: false),
+            NightExposureDrop: NightExposureDrop);
     }
 
     /// <inheritdoc/>

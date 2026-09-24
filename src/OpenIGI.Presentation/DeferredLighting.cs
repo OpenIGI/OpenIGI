@@ -77,11 +77,17 @@ namespace OpenIGI.Presentation;
 /// the bake rather than doubling it. Project I.G.I. says nothing and keeps the sun it always had.
 /// </para>
 /// </param>
+/// <param name="NightExposureDrop">
+/// How much exposure the level's night takes off at full night, or null for the renderer's own figure,
+/// which was fitted against I.G.I. 2's nearly black night suns. A title whose nights are lit by the
+/// cycle's moon has its darkness computed already, and says how much less to take off on top.
+/// </param>
 public readonly record struct DeferredLighting(
     Vector3f Ambient,
     float Nightfall,
     AuthoredNight? Night = null,
-    bool CompleteBake = false);
+    bool CompleteBake = false,
+    float? NightExposureDrop = null);
 
 /// <summary>Where a level whose authored lighting IS a night sits on the day/night cycle.</summary>
 /// <param name="ReferenceHour">The hour at which the cycle reproduces the level's authored lighting.</param>

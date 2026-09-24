@@ -72,6 +72,65 @@ public sealed class SkyConditionsTests
             SkyConditions.ViewHeightFor(2f),
             SkyConditions.ForScene(Lighting(scale: 1f), Matrix3f.Identity, altitudeMetres: 2f).ViewHeightKm);
 
+    [Fact]
+    public void TheNightGlowIsScaledWithTheSourceItIsDrawnBeside()
+    {
+        SceneLighting lighting = Lighting(scale: 2f) with
+        {
+            Night = new NightSky(Airglow: 0.004f, CloudCover: 0.5f, StarRadiance: 0f, Vector3f.UnitZ, MoonRadiance: 0f),
+        };
+
+        SkyConditions sky = SkyConditions.ForScene(lighting, Matrix3f.Identity, altitudeMetres: 2f);
+
+        Assert.Equal(0.008f, sky.Airglow, 6);
+        Assert.Equal(0.5f, sky.CloudCover, 6);
+    }
+
+    [Fact]
+    public void ADayCarriesNoNightSky()
+    {
+        SkyConditions sky = SkyConditions.ForScene(Lighting(scale: 1f), Matrix3f.Identity, altitudeMetres: 2f);
+
+        Assert.Equal(0f, sky.Airglow);
+        Assert.Equal(0f, sky.CloudCover);
+    }
+
+    [Fact]
+    public void CloudCoverIsHeldBetweenClearAndOvercast()
+    {
+        SceneLighting lighting = Lighting(scale: 1f) with
+        {
+            Night = new NightSky(0f, CloudCover: 3f, 0f, Vector3f.UnitZ, 0f),
+        };
+
+        Assert.Equal(1f, SkyConditions.ForScene(lighting, Matrix3f.Identity, altitudeMetres: 2f).CloudCover);
+    }
+
+    [Fact]
+    public void ACloudingSkyIsRebuilt()
+    {
+        SkyConditions clear = SkyConditions.ForScene(Lighting(scale: 1f), Matrix3f.Identity, altitudeMetres: 2f);
+        SkyConditions overcast = clear with { CloudCover = 0.8f };
+        SkyConditions glowing = clear with { Airglow = 0.004f };
+
+        Assert.True(clear.LooksLike(clear));
+        Assert.False(clear.LooksLike(overcast));
+        Assert.False(clear.LooksLike(glowing));
+    }
+
+    [Fact]
+    public void TheNightSkyRidesInTheBlocksLastTwoSlots()
+    {
+        SkyConditions conditions = SkyConditions.ForScene(Lighting(scale: 1f), Matrix3f.Identity, 2f)
+            with { Airglow = 0.004f, CloudCover = 0.75f };
+        float[] block = new float[SkyParameters.Floats];
+
+        SkyParameters.Write(block, 192, 104, conditions);
+
+        Assert.Equal(0.004f, block[14]);
+        Assert.Equal(0.75f, block[15]);
+    }
+
     private static SceneLighting Lighting(float scale, Vector3f? atmosphereSun = null) => new(
         LightingModel.Dynamic,
         new Vector3f(0f, 0f, 1f),

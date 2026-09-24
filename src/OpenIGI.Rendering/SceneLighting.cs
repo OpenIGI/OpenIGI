@@ -54,6 +54,11 @@ namespace OpenIGI.Rendering;
 /// is dialled to zero to watch the GI carry the surfaces. Deliberately not the <c>r_sky_light</c>-boosted
 /// surface fill: boosting the fog inscatter whites the frame out.
 /// </param>
+/// <param name="Night">
+/// What the night sky holds beyond the atmosphere's own scattering: the airglow floor, the cloud cover,
+/// the stars and the moon's disc. <see cref="NightSky.None"/> by day, which leaves the sky exactly as the
+/// atmosphere alone draws it.
+/// </param>
 public readonly record struct SceneLighting(
     LightingModel Model,
     Vector3f SunDirection,
@@ -63,7 +68,8 @@ public readonly record struct SceneLighting(
     bool CompleteBake = false,
     Vector3f SkyColour = default,
     float SkyLightIntensity = 1f,
-    Vector3f? AtmosphereSunColour = null)
+    Vector3f? AtmosphereSunColour = null,
+    NightSky Night = default)
 {
     /// <summary>
     /// Gets the lighting that reproduces the original: the bakes and nothing else.

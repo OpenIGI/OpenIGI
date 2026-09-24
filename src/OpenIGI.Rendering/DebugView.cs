@@ -199,4 +199,15 @@ public enum DebugView
     /// it should reflect the ground.
     /// </remarks>
     GlassNormal = 25,
+
+    /// <summary>
+    /// How much of each surface's lamp light gets past what stands in its way, after the denoisers: white
+    /// where all of it arrives, black where none does, red where no lamp reaches the surface at all.
+    /// </summary>
+    /// <remarks>
+    /// The traced ratio itself, before any lamp's colour, distance or facing multiplies it -- the one view
+    /// that separates a lamp that is shadowed from a lamp that is simply far away or pointed elsewhere,
+    /// which look the same once shaded.
+    /// </remarks>
+    LampShadow = 26,
 }

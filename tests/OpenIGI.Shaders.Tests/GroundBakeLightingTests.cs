@@ -50,11 +50,12 @@ public sealed class GroundBakeLightingTests
             source,
             StringComparison.Ordinal);
 
-        // Four vectors, and the reflection says so: the push range the pipeline declares comes from here.
+        // Six vectors -- the four the lighting reads and the night sky's moon and stars -- and the reflection
+        // says so: the push range the pipeline declares comes from here.
         ShaderReflection reflection = ShaderCatalog.GetReflection(
             ShaderModuleId.Shading, new ShaderVariant("software"));
 
         Assert.NotNull(reflection.PushBlock);
-        Assert.Equal(64, reflection.PushBlock!.Size);
+        Assert.Equal(96, reflection.PushBlock!.Size);
     }
 }

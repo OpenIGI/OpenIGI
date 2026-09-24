@@ -81,6 +81,16 @@ public interface IRhiRayTracing
     /// <summary>Gets whether the world's structure holds anything worth tracing against.</summary>
     bool IsWorldReady { get; }
 
+    /// <summary>Gets whether the world's structure has stopped growing: nothing new admitted for a while.</summary>
+    bool IsWorldSettled => IsWorldReady;
+
+    /// <summary>Lifts, or restores, the per-frame budget on meshes newly admitted to the world.</summary>
+    /// <param name="unlimited">Whether every mesh offered is admitted in the frame it is offered.</param>
+    void SetUnlimitedAdmission(bool unlimited)
+    {
+        _ = unlimited;
+    }
+
     /// <summary>Gets each observed texture's colour, one layer a texture, for a hit a reflection has to shade.</summary>
     /// <remarks>
     /// A reflected ray can strike a surface the camera cannot see, where neither the frame nor the surface

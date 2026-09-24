@@ -129,7 +129,11 @@ public sealed class AutoExposure : IDisposable
             return _adapted;
         }
 
-        _adapted = _adaptation.Adapt(System.Runtime.InteropServices.MemoryMarshal.Cast<byte, uint>(data.GetData()), deltaSeconds);
+        // How far into night the sky is, so the eye can open further under it; see ExposureAdaptation.
+        _adapted = _adaptation.Adapt(
+            System.Runtime.InteropServices.MemoryMarshal.Cast<byte, uint>(data.GetData()),
+            deltaSeconds,
+            RenderCVars.Nightfall.Value);
 
         data.Dispose();
         _pending[slot] = null;

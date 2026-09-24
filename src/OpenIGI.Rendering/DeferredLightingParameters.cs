@@ -89,7 +89,7 @@ public static class DeferredLightingParameters
     public const int GiFloats = DeferredLightingBlocks.GiBytes / sizeof(float);
 
     /// <summary>How many floats the per-draw light block holds.</summary>
-    public const int LightFloats = 16;
+    public const int LightFloats = 24;
 
     /// <summary>How many cascades the block has room for.</summary>
     public const int Cascades = 4;
@@ -235,6 +235,7 @@ public static class DeferredLightingParameters
     /// <param name="debugView">Which debug view is in force, or nought for the picture.</param>
     /// <param name="paintedSky">Whether the title draws its own sky rather than the marched one.</param>
     /// <param name="bakesWhole">Whether the level's baked light is complete.</param>
+    /// <param name="night">The stars, the moon's disc and the cloud cover the sky is drawn with.</param>
     /// <exception cref="ArgumentException">The block is the wrong length.</exception>
     public static void WriteLight(
         Span<float> block,
@@ -245,7 +246,8 @@ public static class DeferredLightingParameters
         in Vector3f ambient,
         float debugView = 0f,
         bool paintedSky = false,
-        bool bakesWhole = true)
+        bool bakesWhole = true,
+        in NightSky night = default)
     {
         if (block.Length != LightFloats)
         {
@@ -271,5 +273,17 @@ public static class DeferredLightingParameters
 
         block[12] = paintedSky ? 1f : 0f;
         block[14] = bakesWhole ? 1f : 0f;
+
+        block[16] = night.MoonDirection.X;
+        block[17] = night.MoonDirection.Y;
+        block[18] = night.MoonDirection.Z;
+        block[19] = MathF.Max(night.MoonRadiance, 0f);
+
+        block[20] = MathF.Max(night.StarRadiance, 0f);
+        block[21] = Math.Clamp(night.CloudCover, 0f, 1f);
+
+        // Wrapped at an hour: the twinkle only wants a phase, and a float counting up a whole session
+        // loses the fraction a slow sine needs.
+        block[22] = night.Seconds % 3600f;
     }
 }

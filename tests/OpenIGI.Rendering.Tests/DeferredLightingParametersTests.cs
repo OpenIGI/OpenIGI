@@ -18,7 +18,7 @@ public sealed class DeferredLightingParametersTests
     public void The_block_is_the_size_the_shader_declares()
     {
         Assert.Equal(DeferredLightingBlocks.GiBytes / sizeof(float), DeferredLightingParameters.GiFloats);
-        Assert.Equal(16, DeferredLightingParameters.LightFloats);
+        Assert.Equal(24, DeferredLightingParameters.LightFloats);
     }
 
     [Fact]
@@ -190,6 +190,43 @@ public sealed class DeferredLightingParametersTests
         Assert.Equal(7f, block[11]);
         Assert.Equal(1f, block[12]);
         Assert.Equal(0f, block[14]);
+    }
+
+    [Fact]
+    public void The_night_sky_follows_the_four_lighting_vectors()
+    {
+        float[] block = new float[DeferredLightingParameters.LightFloats];
+        NightSky night = new(
+            Airglow: 0.004f,
+            CloudCover: 0.6f,
+            StarRadiance: 0.12f,
+            MoonDirection: new Vector3f(0.1f, 0.2f, 0.9f),
+            MoonRadiance: 2.5f,
+            Seconds: 3605f);
+
+        DeferredLightingParameters.WriteLight(
+            block, Vector3f.UnitZ, 2f, Vector3f.One, 1f, Vector3f.Zero, night: night);
+
+        Assert.Equal(0.1f, block[16]);
+        Assert.Equal(0.2f, block[17]);
+        Assert.Equal(0.9f, block[18]);
+        Assert.Equal(2.5f, block[19]);
+        Assert.Equal(0.12f, block[20]);
+        Assert.Equal(0.6f, block[21]);
+
+        // Wrapped at the hour, so the twinkle's phase keeps its fraction however long a session runs.
+        Assert.Equal(5f, block[22], 3);
+    }
+
+    [Fact]
+    public void A_day_draws_no_stars_and_no_moon()
+    {
+        float[] block = new float[DeferredLightingParameters.LightFloats];
+
+        DeferredLightingParameters.WriteLight(block, Vector3f.UnitZ, 2f, Vector3f.One, 1f, Vector3f.Zero);
+
+        Assert.Equal(0f, block[19]);
+        Assert.Equal(0f, block[20]);
     }
 
     private static DepthUnprojection Unprojection() => new(1f, 1f, 0.1f, 1000f);

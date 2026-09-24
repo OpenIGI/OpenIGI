@@ -182,6 +182,21 @@ public sealed partial class VulkanGraphicsDevice
         return true;
     }
 
+    /// <inheritdoc/>
+    public bool WorldTraceReady => _worldScene is not { IsReady: false };
+
+    /// <inheritdoc/>
+    public bool WorldTraceSettled => _worldScene is not { IsSettled: false };
+
+    /// <inheritdoc/>
+    public void SetTraceAdmission(bool unlimited)
+    {
+        if (_worldScene is { } scene)
+        {
+            scene.UnlimitedAdmission = unlimited;
+        }
+    }
+
     /// <summary>The structure a tracing compute shader binds: the world's, or an empty stand-in.</summary>
     /// <returns>The structure, or null when this adapter cannot trace at all.</returns>
     /// <remarks>

@@ -1699,20 +1699,6 @@ internal sealed partial class GameHost : IDisposable
             GlobalDistanceField.ValidateShader(_device, _logger);
         }
 
-        // Used only for a level that declares no Dirlight at all. The angles are mission 1's, which the
-        // probe showed put the sun 60 degrees up at noon, with the warm sun and cool ambient every retail
-        // level pairs.
-        DirectionalLightSettings defaultSun = new(
-            DirectionalLightSettings.DirectionFrom(0.5236f, -4.92183f),
-            new Vector3f(1.0f, 0.96f, 0.88f),
-            new Vector3f(0.27f, 0.29f, 0.33f),
-            Beta: 0.5236f,
-            Gamma: -4.92183f,
-            TimeOfDay: 12f,
-            Intensity: 18f,
-            AffectsTerrain: true,
-            AffectsObjects: true);
-
         // Reused every frame rather than reallocated; the fit writes into it in place.
         ShadowCascade[] cascadeStorage = new ShadowCascade[ShadowSettings.MaxCascades];
 
@@ -1929,6 +1915,11 @@ internal sealed partial class GameHost : IDisposable
             // reads have to be able to arrive afterwards -- see GameHost.RealtimeGi.cs. A no-op once
             // they exist, which is every frame but the handful after the switch.
             EnsureRealtimeGiStructures();
+
+            // Behind the loading screen the traced world takes every mesh offered in the frame it is
+            // offered, so the level is whole in it before anything is lit against it; in play the per-frame
+            // budget comes back. Said every frame, so no path out of the load can leave it lifted.
+            _device.SetTraceAdmission(IsWarmingUp);
 
             // This frame's share of a convergence in flight, so a level lights up behind the loading
             // screen or under the entry shot's hold rather than in one stall.
@@ -3786,7 +3777,10 @@ internal sealed partial class GameHost : IDisposable
                     // a -lockstep capture reproducible: that mode swaps in a synthetic clock advanced a
                     // fixed amount per pass, so every captured frame smears by exactly the same length.
                     // Clamped because a frame that stalled on a load should not smear the whole screen.
-                    FrameDeltaSeconds: frameDeltaSeconds);
+                    FrameDeltaSeconds: frameDeltaSeconds,
+
+                    // The eye's night vision, only as deep as the night: a day is untouched.
+                    NightShift: RenderCVars.NightShift.Value * RenderCVars.Nightfall.Value);
 
                 if (_giExposureWarmup > 0)
                 {
@@ -4072,24 +4066,9 @@ internal sealed partial class GameHost : IDisposable
                 // The authored sun swept to the current time of day. Held for the frame so every consumer
                 // -- this deferred light, the shadows, the surface cache's relight and its radiance cache,
                 // and the sky fill -- lights from the same swept sun rather than the raw authored one.
-                DirectionalLightSettings light;
-                if (_options.SunDirection is { } fixedSun)
-                {
-                    // A fixed sun for matching an external reference render: the level's own colour and
-                    // ambient, but a direction pinned to the reference's, bypassing the day/night sweep.
-                    Vector3f dir = new(fixedSun.X, fixedSun.Y, fixedSun.Z);
-                    float len = dir.Length;
-                    dir = len > 1e-5f ? dir / len : Vector3f.UnitZ;
-                    light = (_sun ?? defaultSun) with { Direction = dir };
-                }
-                else
-                {
-                    // The BOUND sun, not the raw authored one: a title whose levels do not author a noon
-                    // sun has already had that answered for it. See BindToCycle. Its fill is in there too,
-                    // which is why nothing pins the ambient afterwards any more -- pinning it was what
-                    // held the level at its own hour and made the cycle do nothing.
-                    light = _dayNight.Apply(_cycleSun ?? _sun ?? defaultSun);
-                }
+                // The sun -- or the moon -- this frame lights with. See CycleSun: the same answer the surface
+                // cache is converged under, so the two cannot light the level differently.
+                DirectionalLightSettings light = CycleSun();
 
                 // What the night is doing to the picture, published for the exposure. The sweep is the only
                 // thing that knows how far under the horizon the sun has gone, and the resolve is a long way
@@ -4125,22 +4104,10 @@ internal sealed partial class GameHost : IDisposable
                         ? 0f
                         : _dayNight.Nightfall;
 
-                // The sun keeps the level's own authored chromaticity — the same warm (1, 0.77, 0.62) the
-                // reference scene lights with — because rewriting it to a neutral key is exactly the kind
-                // of grade that made the two renders impossible to compare channel for channel. Only the
-                // ambient is re-pointed, since the level's flat cool triple stands in for a sky the
-                // dynamic model now largely derives itself.
-                // Only for a title that leaves its fill to the renderer. One that authored an ambient
-                // per level means it: the sequel's night mission fills with a cold blue (0.06, 0.10, 0.18)
-                // and re-pointing that to a warm daylight chroma is the same grade this comment warns
-                // against, applied to the one game whose levels say otherwise.
-                if (_deferredLighting is null)
-                {
-                    light = light with
-                    {
-                        Ambient = DaylightColour(light.Ambient, new Vector3f(1.18f, 0.88f, 0.58f)),
-                    };
-                }
+                // And how much a full night of it is worth, which is the title's to say: see
+                // DeferredLighting.NightExposureDrop.
+                RenderCVars.AuthoredNightDropFor.Value =
+                    _deferredLighting?.NightExposureDrop ?? RenderCVars.AuthoredNightDrop;
 
                 _effectiveSun = light;
                 Vector3f viewSunDirection = eye.Orientation.Transposed().Transform(light.Direction);
@@ -4651,11 +4618,17 @@ internal sealed partial class GameHost : IDisposable
                     // the hour it is bound to, so the level's constant adds nothing there -- and away from
                     // that hour it is wrong: scrubbed up to noon, a constant night held the sky at the
                     // floor under a risen sun.
+                    //
+                    // How far down is r_night_sky's to say. Two percent kept the moonlit sky from reading
+                    // as a dim day, and left it and the fill projected from it black; with the resolve's
+                    // night shift doing the job of making it read as night, a third lets the sky light the
+                    // moon's shadows again. See RenderCVars.NightSkyScale.
+                    float nightSky = RenderCVars.NightSkyScale.Value;
                     float nightFeed = _deferredLighting is { Night: null } nightly
-                        ? 1f + ((0.02f - 1f) * Math.Clamp(nightly.Nightfall, 0f, 1f))
+                        ? 1f + ((nightSky - 1f) * Math.Clamp(nightly.Nightfall, 0f, 1f))
                         : 1f;
                     Vector3f atmosphereSun = light.Colour * RenderCVars.AtmosphereSunScale.Value
-                        * (_dayNight.Moonrise > 0f ? 0.02f : nightFeed);
+                        * (_dayNight.Moonrise > 0f ? nightSky : nightFeed);
 
                     // TEMPORARY (r_ambient_scale): the dynamic model fills every surface with this one flat
                     // ambient, so a sealed room reads as lit as open ground. Scaling it here -- towards 0 --
@@ -4686,7 +4659,11 @@ internal sealed partial class GameHost : IDisposable
 
                         // The source that builds both the visible atmosphere and its diffuse SH. Separate
                         // from scaledSun so direct-light calibration does not move the sky with it.
-                        atmosphereSun));
+                        atmosphereSun,
+
+                        // What the night sky holds beyond the air: the glow that lights a moonless night,
+                        // the cloud cover, the stars and the moon's disc. Nothing by day.
+                        FrameNightSky()));
                     _device.BeginPass(ScenePass.Geometry);
 
                     // The sky is geometry as far as the G-buffer is concerned, so without this the dynamic

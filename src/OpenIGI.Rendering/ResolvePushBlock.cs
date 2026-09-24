@@ -87,5 +87,6 @@ public static class ResolvePushBlock
         block[16] = mask ? 1f : post.Contrast;
         block[17] = mask ? 1f : post.Saturation;
         block[18] = !mask && post.GreenPhosphor ? 1f : 0f;
+        block[19] = mask ? 0f : Math.Clamp(post.NightShift, 0f, 1f);
     }
 }

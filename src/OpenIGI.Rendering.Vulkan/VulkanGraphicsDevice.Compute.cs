@@ -35,6 +35,10 @@ namespace OpenIGI.Rendering.Vulkan;
 /// </remarks>
 public sealed partial class VulkanGraphicsDevice
 {
+    // The names a tracing compute program declares its cut-out test's inputs by. See CutoutHit.slang.
+    private const string CutoutRecordsUniform = "uCutoutRecords";
+    private const string CutoutMasksTexture = "uCutoutMasks";
+
     private readonly Dictionary<uint, VulkanComputeShader> _computeShaders = [];
     private readonly Dictionary<uint, VulkanBuffer> _storageBuffers = [];
     private readonly Dictionary<uint, VulkanStorageImage> _storageImages = [];
@@ -468,6 +472,18 @@ public sealed partial class VulkanGraphicsDevice
         bool inFrame = _frameOpen && !_presentPassActive && !_deferredPassActive;
 
 
+        // A tracing program's cut-out test reads the world's hit records by address. Set here rather than by
+        // the caller, because it is the device's own fact about the device's own structure, and a program
+        // that declares no such field ignores it. See CutoutHit.slang.
+        if (program.Traces)
+        {
+            ulong records = _opacityMasks is not null && _worldScene is { IsReady: true } traced
+                ? traced.RecordAddress
+                : 0UL;
+            Span<uint> address = [(uint)records, (uint)(records >> 32)];
+            program.SetUniform(CutoutRecordsUniform, MemoryMarshal.AsBytes(address));
+        }
+
         VulkanComputeShader.Instance instance = program.Acquire(inFrame, _frameLoop.CurrentFrame);
         WriteDescriptorSet(program, instance);
 
@@ -668,6 +684,18 @@ public sealed partial class VulkanGraphicsDevice
 
     private DescriptorImageInfo ResolveSampled(VulkanComputeShader program, ComputeProgramDescription.Resource resource)
     {
+        // The world's cut-out masks, which only the device holds. Named rather than bound by a caller for
+        // the same reason the record address above is set by the device: see CutoutHit.slang.
+        if (resource.Name == CutoutMasksTexture && _opacityMasks is { } masks)
+        {
+            return new DescriptorImageInfo
+            {
+                Sampler = SceneSampler,
+                ImageView = masks.View,
+                ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
+            };
+        }
+
         // A default-block sampler reads from the unit its name was set to; an explicit one from its own
         // binding number, which the API also binds textures by.
         int slot = resource.ByUnit ? program.SamplerUnit(resource.Name) : (int)resource.Slot;

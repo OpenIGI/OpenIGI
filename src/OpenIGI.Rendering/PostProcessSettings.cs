@@ -123,6 +123,12 @@
 /// as the light fills in -- a scene that loads bright and dims. A fast rate during that window lets the
 /// exposure track the convergence instead, holding the displayed brightness steady while the light settles.
 /// </param>
+/// <param name="NightShift">
+/// How far the dim parts of the picture shift towards the eye's night vision, 0 to 1: the Purkinje shift.
+/// Under moonlight the rods take over from the cones, so dim surfaces lose their colour and read as a cool
+/// blue-grey while anything lamp-lit stays in colour. That shift is what makes a night read as night, and
+/// what lets it be shown bright enough to play without looking like a dim day. Nought by day.
+/// </param>
 
 public readonly record struct PostProcessSettings(
     ToneMapOperator ToneMap = ToneMapOperator.Neutral,
@@ -150,7 +156,8 @@ public readonly record struct PostProcessSettings(
     TacticalDisplaySettings Tactical = default,
     BinocularDisplaySettings Binocular = default,
     float ExposureRate = 0.04f,
-    float FrameDeltaSeconds = 1f / 60f)
+    float FrameDeltaSeconds = 1f / 60f,
+    float NightShift = 0f)
 {
     /// <summary>
     /// Gets the settings that pass the scene through untouched.
@@ -202,6 +209,7 @@ public readonly record struct PostProcessSettings(
         || Sharpen > 0f
         || WantsColourLookup
         || GreenPhosphor
+        || NightShift > 0f
         || Tactical.IsActive
         || Binocular.IsActive;
 }

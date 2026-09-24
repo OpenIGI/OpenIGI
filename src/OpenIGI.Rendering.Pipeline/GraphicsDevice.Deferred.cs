@@ -513,7 +513,8 @@ public sealed partial class GraphicsDevice
             _lighting.AmbientColour,
             (int)_debugView,
             _frameHasPaintedSky,
-            _lighting.CompleteBake);
+            _lighting.CompleteBake,
+            _lighting.Night);
 
         shading.BindFrame(scene, FrameSlot, gi, lamps);
         BindGlobalIllumination();

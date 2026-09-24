@@ -211,4 +211,33 @@ public sealed class DayNightCycleTests
         cycle.ResetForLevel(AuthoredAt(0f));
         Assert.Equal(12f, cycle.TimeHours, 4);
     }
+
+    [Fact]
+    public void TheMoonStandsOppositeTheSun()
+    {
+        DirectionalLightSettings authored = AuthoredAt(12f);
+        var cycle = new DayNightCycle();
+
+        cycle.Reset(15f);
+        DirectionalLightSettings applied = cycle.Apply(authored);
+
+        Assert.Equal(-applied.Direction.X, cycle.MoonDirection.X, 4);
+        Assert.Equal(-applied.Direction.Y, cycle.MoonDirection.Y, 4);
+        Assert.Equal(-applied.Direction.Z, cycle.MoonDirection.Z, 4);
+    }
+
+    [Fact]
+    public void TheStarsComeOutOnlyOnceTheSunIsWellDown()
+    {
+        DirectionalLightSettings authored = AuthoredAt(12f);
+        var cycle = new DayNightCycle();
+
+        cycle.Reset(12f);
+        cycle.Apply(authored);
+        Assert.Equal(0f, cycle.StarVisibility);
+
+        cycle.Reset(0f);
+        cycle.Apply(authored);
+        Assert.Equal(1f, cycle.StarVisibility);
+    }
 }

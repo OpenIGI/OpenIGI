@@ -19,6 +19,10 @@ OPENIGI_COMPUTE_SAMPLER(10) SamplerState uPositionHistorySampler;
 
 OPENIGI_COMPUTE_GLOBALS cbuffer Globals
 {
+#if OPENIGI_RAY_QUERY
+    uint2 uCutoutRecords;
+#endif
+
     float4 uClipmapOrigin[4];
     float4 uSkySh[7];
 

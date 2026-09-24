@@ -7,11 +7,15 @@ namespace OpenIGI.Rendering.Sky;
 /// <param name="SunIlluminance">The sun's colour and brightness outside the atmosphere.</param>
 /// <param name="ViewHeightKm">The camera's height from the planet's centre, in kilometres.</param>
 /// <param name="SkyLightIntensity">How brightly the sky lights the world; one is its own brightness.</param>
+/// <param name="Airglow">The night sky's own zenith radiance, already in the table's units; nought by day.</param>
+/// <param name="CloudCover">How overcast the night sky is, 0 to 1.</param>
 public readonly record struct SkyConditions(
     Vector3f SunDirection,
     Vector3f SunIlluminance,
     float ViewHeightKm,
-    float SkyLightIntensity)
+    float SkyLightIntensity,
+    float Airglow = 0f,
+    float CloudCover = 0f)
 {
     /// <summary>
     /// The camera's height above the planet's centre, in the kilometres the atmosphere works in.
@@ -44,7 +48,12 @@ public readonly record struct SkyConditions(
             lighting.WorldSunDirection(viewToWorld),
             new Vector3f(source.X * lighting.Scale, source.Y * lighting.Scale, source.Z * lighting.Scale),
             ViewHeightFor(altitudeMetres),
-            Math.Max(0f, lighting.SkyLightIntensity));
+            Math.Max(0f, lighting.SkyLightIntensity),
+
+            // Scaled with the source for the same reason: the airglow is part of the sky the source
+            // lights, and has to stay in proportion to it when the frame's light scale moves.
+            Math.Max(0f, lighting.Night.Airglow) * lighting.Scale,
+            Math.Clamp(lighting.Night.CloudCover, 0f, 1f));
     }
 
     /// <summary>Whether a sky built for these conditions would look the same built for another.</summary>
@@ -61,7 +70,9 @@ public readonly record struct SkyConditions(
         Near(SunDirection, other.SunDirection)
         && Near(SunIlluminance, other.SunIlluminance)
         && MathF.Abs(ViewHeightKm - other.ViewHeightKm) <= 1e-3f
-        && MathF.Abs(SkyLightIntensity - other.SkyLightIntensity) <= 1e-4f;
+        && MathF.Abs(SkyLightIntensity - other.SkyLightIntensity) <= 1e-4f
+        && MathF.Abs(Airglow - other.Airglow) <= 1e-7f
+        && MathF.Abs(CloudCover - other.CloudCover) <= 1e-4f;
 
     private static bool Near(Vector3f left, Vector3f right) =>
         MathF.Abs(left.X - right.X) <= 1e-5f
@@ -113,7 +124,7 @@ public static class SkyParameters
 
         block[12] = conditions.ViewHeightKm;
         block[13] = conditions.SkyLightIntensity;
-        block[14] = 0f;
-        block[15] = 0f;
+        block[14] = conditions.Airglow;
+        block[15] = conditions.CloudCover;
     }
 }

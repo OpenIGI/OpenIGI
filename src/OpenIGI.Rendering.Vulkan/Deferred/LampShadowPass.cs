@@ -58,6 +58,7 @@ internal sealed class LampShadowPass : IDisposable
         ComputeBindingKind.SampledImage,          // the world normal, to offset off the surface
         ComputeBindingKind.AccelerationStructure, // the world the ray is traced against
         ComputeBindingKind.StorageImage,          // visibility and the reservoir's weight, half resolution
+        ComputeBindingKind.SampledImage,          // the cut-out masks, one layer per cut-out texture
     ];
 
     private readonly VulkanComputePass _pass;
@@ -98,6 +99,8 @@ internal sealed class LampShadowPass : IDisposable
     /// <param name="unprojection">How a depth sample becomes a view position.</param>
     /// <param name="frameIndex">Which frame this is, so the reservoir and the ray move between them.</param>
     /// <param name="lamps">The lamps, packed exactly as the shading pass packs them.</param>
+    /// <param name="maskView">The cut-out masks the rays test cut-out surfaces against.</param>
+    /// <param name="cutoutRecords">Where the hit records naming each surface's mask live; nought for none.</param>
     public unsafe void Record(
         CommandBuffer cmd,
         int frame,
@@ -111,12 +114,15 @@ internal sealed class LampShadowPass : IDisposable
         in Vector3f camera,
         in DepthUnprojection unprojection,
         int frameIndex,
-        ReadOnlySpan<float> lamps)
+        ReadOnlySpan<float> lamps,
+        ImageView maskView,
+        ulong cutoutRecords)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         Span<float> data = stackalloc float[ParamSize / sizeof(float)];
-        LampShadowParameters.WriteTrace(data, width, height, viewToWorld, camera, unprojection, frameIndex, lamps);
+        LampShadowParameters.WriteTrace(
+            data, width, height, viewToWorld, camera, unprojection, frameIndex, lamps, cutoutRecords);
 
         ReadOnlySpan<ComputeResource> resources =
         [
@@ -124,6 +130,7 @@ internal sealed class LampShadowPass : IDisposable
             new ComputeResource(normalView),
             ComputeResource.Scene(scene),
             new ComputeResource(visibilityView),
+            new ComputeResource(maskView),
         ];
 
         _pass.Record(cmd, frame, resources, data, (uint)((width + 7) / 8), (uint)((height + 7) / 8));

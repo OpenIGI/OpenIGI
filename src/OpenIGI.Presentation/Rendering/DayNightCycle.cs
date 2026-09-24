@@ -61,13 +61,25 @@ internal sealed class DayNightCycle
     /// </remarks>
     public const float AutomaticTicksPerDay = 3600f;
 
-    /// <summary>What the moon carries when the level does not say: three-thousandths of a sun, cool.</summary>
+    /// <summary>What the moon carries when the level does not say: about an eightieth of a sun, cool.</summary>
     /// <remarks>
-    /// Enough for the adapted eye to read shape and for the moon to throw a shadow, never enough to read as
-    /// day. This is the cycle's own invention, and it stands for every level that authors no night of its
-    /// own -- which is all of Project I.G.I.
+    /// <para>
+    /// This is the cycle's own invention, and it stands for every level that authors no night of its own --
+    /// which is all of Project I.G.I.
+    /// </para>
+    /// <para>
+    /// <b>Not the physical ratio, on purpose.</b> A full moon is some four hundred thousand times dimmer
+    /// than the sun, about nineteen stops. No display and no eye adaptation this game models spans that,
+    /// and shown at the true ratio a night is simply black. Games and film show a night a few stops under
+    /// day and carry the rest of "night" in colour: a cool key, a blue sky, and the resolve's Purkinje shift
+    /// taking the colour out of what the moon lights. It was three-thousandths of a sun; with an exposure
+    /// that also fell by more than a stop at night, a night mission's ground came out nearly six times
+    /// darker than the original draws it. A fortieth, with the night sky and airglow filling the
+    /// shadows, lit the world as a floodlit yard; at an eightieth it reads as moonlight, and
+    /// <c>r_moonlight</c> scales it from there.
+    /// </para>
     /// </remarks>
-    public static readonly Vector3f DefaultNightColour = new(0.003f, 0.0033f, 0.0043f);
+    public static readonly Vector3f DefaultNightColour = new(0.010f, 0.012f, 0.016f);
 
     /// <summary>And the fill a night crosses to when the level does not say: a faint blue.</summary>
     public static readonly Vector3f DefaultNightAmbient = new(0.03f, 0.045f, 0.08f);
@@ -111,6 +123,24 @@ internal sealed class DayNightCycle
     /// the night lifting it back towards day. Stays nought when <see cref="Apply"/> is bypassed.
     /// </remarks>
     public float Nightfall { get; private set; }
+
+    /// <summary>Gets the world direction towards the moon, whether or not it is up.</summary>
+    /// <remarks>
+    /// The arc's anti-solar point, which is where the cycle hangs its moon -- always full, because it always
+    /// stands opposite the sun. Reported even while the sun holds the directional slot, so the sky can draw
+    /// a rising moon through dusk before its light takes over. Straight down when <see cref="Apply"/> is
+    /// bypassed.
+    /// </remarks>
+    public Vector3f MoonDirection { get; private set; } = -Vector3f.UnitZ;
+
+    /// <summary>Gets how visible the stars are: nought in daylight, one once the sun is well under.</summary>
+    /// <remarks>
+    /// The eye picks out the first stars at nautical twilight and the full field only at astronomical
+    /// twilight, the sun six and eighteen degrees under. The band follows that, in the sine of the sun's
+    /// elevation, so the stars come out through dusk and fade through dawn. Stays nought when
+    /// <see cref="Apply"/> is bypassed.
+    /// </remarks>
+    public float StarVisibility { get; private set; }
 
     /// <summary>Turns the sun's arc about one world axis, for the gizmo to drive as the numpad keys do.</summary>
     /// <param name="axis">0 for X, 1 for Y, 2 for Z.</param>
@@ -330,6 +360,8 @@ internal sealed class DayNightCycle
         // level whose authored sun barely rises has its arc clamped to about that elevation and must still
         // read as full day at its own noon.
         Nightfall = 1f - Smoothstep(-0.35f, 0.10f, direction.Z);
+        StarVisibility = 1f - Smoothstep(-0.30f, -0.08f, direction.Z);
+        MoonDirection = -direction;
 
         // Near the horizon the sun reddens; the tint eases back to white as it climbs. Multiplied by the
         // daylight so the sun fades out entirely at night rather than lingering as a dim disc.
@@ -340,9 +372,8 @@ internal sealed class DayNightCycle
         // The moon: the arc's anti-solar point, so it stands highest at midnight and rises as the sun
         // sets. It takes the one directional slot only once the sun is fully faded -- the handover
         // passes through a brief true dark just below the horizon rather than the two fighting over the
-        // light -- and it carries three-thousandths of a sun, cool rather than the authored warm:
-        // enough for the adapted eye to read shape and for the moon to throw a shadow, never enough to
-        // read as day. Because it flows through the same direction and colour as the sun, the cascades,
+        // light -- and it carries an eightieth of a sun, cool rather than the authored warm (see
+        // DefaultNightColour for why not the physical ratio). Because it flows through the same direction and colour as the sun, the cascades,
         // the traced shadow and the surface-cache relight all see the same moon for free. The
         // ATMOSPHERE must not (see Moonrise): handed the moon at face value it scatters a dim but
         // unmistakably blue daytime sky, where a night sky reads near black -- the shell knocks its

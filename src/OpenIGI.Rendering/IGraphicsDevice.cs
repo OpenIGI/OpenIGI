@@ -493,6 +493,38 @@ public interface IGraphicsDevice : IDisposable
         _ = painted;
     }
 
+    /// <summary>Gets whether a ray traced against the world would meet the level's own geometry.</summary>
+    /// <remarks>
+    /// The world's acceleration structure is only built once the level has been drawn and its geometry
+    /// gathered, and until then a tracing pass binds a stand-in that every ray misses: the answer an empty
+    /// world gives. Anything that lights the level ONCE and keeps the result -- the surface cache's
+    /// load-time convergence -- has to wait for this, or it lights every surface as if nothing stood
+    /// between it and any light. Always true on a device that traces nothing, where the question does not
+    /// arise.
+    /// </remarks>
+    bool WorldTraceReady => true;
+
+    /// <summary>Gets whether the world's acceleration structure has stopped growing.</summary>
+    /// <remarks>
+    /// The structure is filled from what the frames draw and offer, a few meshes a frame, so it is ready
+    /// long before it is whole. Something that lights the level once and keeps the result waits for this,
+    /// and only falls back to <see cref="WorldTraceReady"/> when the level never settles. Always true on a
+    /// device that traces nothing.
+    /// </remarks>
+    bool WorldTraceSettled => true;
+
+    /// <summary>Lifts, or restores, the per-frame budget on geometry newly admitted to the traced world.</summary>
+    /// <param name="unlimited">Whether everything offered is admitted in the frame it is offered.</param>
+    /// <remarks>
+    /// For the loading screen: the budget keeps structure builds out of frames the player sees, and behind
+    /// a load there are none, so lifting it lets the whole level arrive in a few frames rather than a few
+    /// seconds -- and lets what is lit once at load be lit against all of it.
+    /// </remarks>
+    void SetTraceAdmission(bool unlimited)
+    {
+        _ = unlimited;
+    }
+
     /// <summary>Sets the seed for the following draws' hashed alpha test, zero for the hard cut-out.</summary>
     /// <param name="seed">
     /// Zero draws cut-outs with a hard per-pixel test. A value above zero turns on the hashed test, whose

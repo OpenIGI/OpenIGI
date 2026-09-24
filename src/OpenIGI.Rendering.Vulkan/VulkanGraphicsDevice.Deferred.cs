@@ -2333,7 +2333,13 @@ public sealed partial class VulkanGraphicsDevice
             _cameraPosition,
             _unprojection,
             (int)(_frameCounter % 64UL),
-            new ReadOnlySpan<float>(packed, floats));
+            new ReadOnlySpan<float>(packed, floats),
+
+            // The cut-out shapes and the records naming them, as the sun's trace takes them: without a
+            // mask array the pass is handed the white texture and a zero address, and takes every hit as
+            // solid.
+            _opacityMasks?.View ?? _textures[_whiteTexture.Id].View,
+            _opacityMasks is not null && _worldScene is { IsReady: true } records ? records.RecordAddress : 0UL);
 
         DenoiseLampShadow(target, cmd);
     }
@@ -2381,8 +2387,8 @@ public sealed partial class VulkanGraphicsDevice
         // Half a pixel of full-resolution jitter is a quarter of one here, and the buffers this pass
         // works in are half the frame -- so the offset has to be halved with them or the depth it looks
         // up belongs to the wrong sample and a still camera shimmers.
-        float jitterX = _taaSettings.JitterX * 0.5f;
-        float jitterY = _taaSettings.JitterY * VerticalJitterSign * 0.5f;
+        float jitterX = _taaSettings.JitterX * LampShadowParameters.JitterScale;
+        float jitterY = _taaSettings.JitterY * VerticalJitterSign * LampShadowParameters.JitterScale;
 
         // Both halves still run with this off -- the accumulation carries the frame count and the filter
         // carries the depth the shading's upsample reads, and neither is optional. What stops is the
@@ -2406,8 +2412,8 @@ public sealed partial class VulkanGraphicsDevice
             hasHistory,
             jitterX,
             jitterY,
-            _previousJitterX * 0.5f,
-            _previousJitterY * 0.5f,
+            _previousJitterX * LampShadowParameters.JitterScale,
+            _previousJitterY * LampShadowParameters.JitterScale,
             filtering);
 
         OcclusionBarrier(
@@ -2671,7 +2677,8 @@ public sealed partial class VulkanGraphicsDevice
             _frameHasPaintedSky,
 
             // Whether the hybrid model may add a sun to the bake, or whether the bake already has one.
-            _lighting.CompleteBake);
+            _lighting.CompleteBake,
+            _lighting.Night);
 
         fixed (float* pushed = light)
         {

@@ -34,6 +34,15 @@ public sealed partial class GraphicsDevice
     private IRhiRayTracing? TracedWorld => _device.RayTracing;
 
     /// <inheritdoc/>
+    public bool WorldTraceReady => TracedWorld is not { IsWorldReady: false };
+
+    /// <inheritdoc/>
+    public bool WorldTraceSettled => TracedWorld is not { IsWorldSettled: false };
+
+    /// <inheritdoc/>
+    public void SetTraceAdmission(bool unlimited) => TracedWorld?.SetUnlimitedAdmission(unlimited);
+
+    /// <inheritdoc/>
     /// <remarks>
     /// Asked before the capture opens, which is when the game decides whether the cascades are worth
     /// drawing: they are not, on a frame whose sun is traced.

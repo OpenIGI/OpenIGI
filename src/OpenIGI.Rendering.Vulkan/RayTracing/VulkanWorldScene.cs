@@ -134,6 +134,14 @@ internal sealed class VulkanWorldScene : IDisposable
     private bool _recordOverflow;
 
     private int _newThisFrame;
+
+    // Whether this frame grew the scene or turned something away for want of budget, and how many frames
+    // in a row have done neither. See IsSettled.
+    private bool _grewThisFrame;
+    private int _quietFrames;
+
+    /// <summary>How many frames in a row must add nothing before the scene counts as settled.</summary>
+    private const int SettledFrames = 30;
     private bool _instancesChanged;
     private bool _disposed;
 
@@ -175,6 +183,25 @@ internal sealed class VulkanWorldScene : IDisposable
 
     /// <summary>Gets a value indicating whether the scene holds anything worth tracing against.</summary>
     public bool IsReady => _scene.IsReady;
+
+    /// <summary>Gets or sets whether new meshes are admitted without the per-frame budget.</summary>
+    /// <remarks>
+    /// The budget exists to keep a structure build from landing in a frame the player sees. Behind the
+    /// loading screen there is no such frame, and the budget only stretches the time the level spends
+    /// arriving in the structure -- during which anything lit once, the surface cache above all, is lit
+    /// against a world with walls missing. So the shell lifts it for as long as the load holds the picture.
+    /// </remarks>
+    public bool UnlimitedAdmission { get; set; }
+
+    /// <summary>Gets a value indicating whether the scene has stopped growing.</summary>
+    /// <remarks>
+    /// Ready says the scene holds SOMETHING, which is true from the first eight meshes admitted -- the
+    /// per-frame budget -- while a level has hundreds to come. Anything that lights the level once and
+    /// keeps the result has to wait for this instead: a frame count of nothing new admitted and nothing
+    /// turned away for want of budget. Lit against a scene still filling in, every wall not yet admitted
+    /// is missing from its shadows.
+    /// </remarks>
+    public bool IsSettled => IsReady && _quietFrames >= SettledFrames;
 
     /// <summary>Gets how many distinct placements the scene has accumulated.</summary>
     public int PlacementCount => _instances.Count;
@@ -273,7 +300,7 @@ internal sealed class VulkanWorldScene : IDisposable
         if (_geometries.TryGetValue(meshId, out Geometry built)
             && grew
             && !_scene.IsCompacting(built.Structure)
-            && _newThisFrame < MaxNewGeometriesPerFrame)
+            && (UnlimitedAdmission || _newThisFrame < MaxNewGeometriesPerFrame))
         {
             _geometries[meshId] = BuildGeometry(mesh, surfaces, allowUpdate: skinned);
             _scene.RetireStructure(built.Structure);
@@ -316,10 +343,11 @@ internal sealed class VulkanWorldScene : IDisposable
 
         if (!_geometries.TryGetValue(meshId, out Geometry geometry))
         {
-            if (_newThisFrame >= MaxNewGeometriesPerFrame)
+            if (!UnlimitedAdmission && _newThisFrame >= MaxNewGeometriesPerFrame)
             {
                 // Not admitted this frame. The placement is left unrecorded so the next frame offers it
                 // again rather than remembering a mesh it never built.
+                _grewThisFrame = true;
                 return;
             }
 
@@ -344,6 +372,7 @@ internal sealed class VulkanWorldScene : IDisposable
         if (!moving)
         {
             _placed.Add(placement);
+            _grewThisFrame = true;
 
             // Was this a new place for something standing still, or the next place for something on the
             // move? Count it, and if the count says the mesh keeps arriving somewhere new, judge it a
@@ -538,6 +567,8 @@ internal sealed class VulkanWorldScene : IDisposable
     {
         _frame++;
         _newThisFrame = 0;
+        _quietFrames = _grewThisFrame ? 0 : _quietFrames + 1;
+        _grewThisFrame = false;
 
         // Run from inside the update rather than here: the addresses are only final once this frame's
         // compaction has swapped whatever it is going to swap.

@@ -491,7 +491,7 @@ public static class RenderCVars
     public static float EffectiveExposure => MathF.Max(
         Exposure.Value
             - (NightBrightnessDrop * Nightfall.Value)
-            - (AuthoredNightDrop * AuthoredNightfall.Value),
+            - (AuthoredNightDropFor.Value * AuthoredNightfall.Value),
         MinimumExposure);
 
     /// <summary>How much darker a title's OWN night makes the picture, in stops, at full night.</summary>
@@ -535,6 +535,22 @@ public static class RenderCVars
     /// </para>
     /// </remarks>
     public const float AuthoredNightDrop = 0.632f;
+
+    /// <summary>How many units of exposure the current level's own night takes off, at full night.</summary>
+    /// <remarks>
+    /// <see cref="AuthoredNightDrop"/> unless the title says otherwise. It was fitted against I.G.I. 2's
+    /// night missions, which leave the sun up and paint it nearly black. Project I.G.I.'s night missions
+    /// are bound through the cycle's own moon instead, whose darkness the lighting already computes, so
+    /// they carry a drop of their own. Set by the shell as a level loads; read only through
+    /// <see cref="EffectiveExposure"/>.
+    /// </remarks>
+    public static readonly NumericCVar<float> AuthoredNightDropFor = CVar.Float(
+        "r_authored_night_drop",
+        AuthoredNightDrop,
+        0f,
+        2f,
+        CVarOptions.Hidden | CVarOptions.ReadOnly,
+        "How much exposure the level's own night takes off at full night; not a setting.");
 
     /// <summary>How dark a title says its own level is, 0 to 1; 0 for a title that does not say.</summary>
     /// <remarks>
@@ -980,6 +996,28 @@ public static class RenderCVars
         enhanced: "3",
         high: "3",
         ultra: "3");
+    /// <summary>How many slices the whole surface cache is refreshed in, one a frame; 0 turns it off.</summary>
+    /// <remarks>
+    /// The cache near the camera is refreshed every frame within <see cref="GiCacheRadius"/>; this sweep
+    /// keeps the REST of it current -- a far surface follows the sun, the lamps and the world filling in
+    /// within slices / frame rate seconds, instead of keeping its load-time light until the player walks up
+    /// to it. Fewer slices is a faster sweep and a dearer frame.
+    /// </remarks>
+    public static readonly NumericCVar<int> GiFarRefresh = Presets.Define(
+        CVar.Int(
+            "r_gi_far_refresh",
+            128,
+            0,
+            4096,
+            CVarOptions.Archive,
+            "Slices the whole GI cache is refreshed in, one a frame, so far surfaces stay lit correctly. 0 is off."),
+        vanilla: "0",
+
+        // Half the per-frame cost on the preset with the least GPU to spare, for a sweep twice as long.
+        enhanced: "256",
+        high: "128",
+        ultra: "128");
+
     /// <summary>How far from the camera the surface cache keeps refreshing itself, in metres.</summary>
     /// <remarks>
     /// <para>
@@ -1458,6 +1496,120 @@ public static class RenderCVars
         // Preserve the atmosphere and sky SH that ultra was already rendering when r_sun_scale was 7.
         // This is a transport input, not the direct surface-response calibration in r_sun_scale.
         ultra: "7");
+
+    /// <summary>How much of the moon's light the atmosphere scatters into the night sky.</summary>
+    /// <remarks>
+    /// <para>
+    /// A moonlit sky is the daytime sky's own blue, lit by a source some four hundred thousand times
+    /// dimmer. Handed the moon at face value the march drew what the eye reads as a dim DAY, so it was
+    /// knocked down to two percent. That left the sky and the harmonics projected from it black, and
+    /// with them every shadow the moon did not reach: nothing lit a night but the moon's direct light
+    /// and the lamps.
+    /// </para>
+    /// <para>
+    /// What made the moonlit blue read as day was the missing night vision, not the blue. With the
+    /// resolve's night shift taking the colour out of the dim sky, a third of the moon lets the sky light
+    /// the world again and still reads as night.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> NightSkyScale = Presets.Define(
+        CVar.Float(
+            "r_night_sky",
+            0.02f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "How much of the moon's light the night sky scatters, which is what fills a night's shadows."),
+        vanilla: "0.02",
+        enhanced: "0.35",
+        high: "0.35",
+        ultra: "0.35");
+
+    /// <summary>The night sky's own glow at the zenith, in the atmosphere's units.</summary>
+    /// <remarks>
+    /// Airglow: the upper atmosphere's faint emission, which is most of a clear moonless sky's light. It
+    /// is what keeps a night without a moon from being black, and it brightens towards the horizon, where
+    /// the eye looks through more of the glowing layer. Only drawn at night; nought turns it off.
+    /// </remarks>
+    public static readonly NumericCVar<float> NightAirglow = Presets.Define(
+        CVar.Float(
+            "r_night_airglow",
+            0f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "The night sky's own faint glow, which lights a moonless night. 0 is off."),
+        vanilla: "0",
+        enhanced: "0.004",
+        high: "0.004",
+        ultra: "0.004");
+
+    /// <summary>Whether the night sky draws its stars, the galaxy and the moon's disc.</summary>
+    public static readonly BoolCVar Stars = Presets.Define(
+        CVar.Bool(
+            "r_stars",
+            false,
+            CVarOptions.Archive,
+            "Draw the stars, the Milky Way and the moon's disc in a night sky."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>How strongly the moon lights the world, against the cycle's own moon; 0.2 by default.</summary>
+    /// <remarks>
+    /// Scales the moon's light -- what throws moon shadows and lights the ground -- and with it the
+    /// moonlit sky, which is scattered from the same moon, as a dimmer moon makes a darker sky. The disc
+    /// keeps its own dial (<see cref="MoonBrightness"/>), and the airglow that lights a moonless night is
+    /// not the moon's at all.
+    /// </remarks>
+    public static readonly NumericCVar<float> Moonlight = Presets.Define(
+        CVar.Float(
+            "r_moonlight",
+            0.2f,
+            0f,
+            4f,
+            CVarOptions.Archive,
+            "How strongly the moon lights the world; 0 leaves only the night sky's fill."),
+        vanilla: "0.2",
+        enhanced: "0.2",
+        high: "0.2",
+        ultra: "0.2");
+
+    /// <summary>How bright the moon's disc and halo are drawn in a night sky; one is the default.</summary>
+    /// <remarks>
+    /// The disc only: the moonlight on the world is the directional light and is not touched by this.
+    /// </remarks>
+    public static readonly NumericCVar<float> MoonBrightness = Presets.Define(
+        CVar.Float(
+            "r_moon_brightness",
+            1f,
+            0f,
+            4f,
+            CVarOptions.Archive,
+            "How bright the moon's disc and halo are drawn; 0 hides it. Does not change the moonlight."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>How far dim parts of a night picture shift towards night vision, 0 to 1.</summary>
+    /// <remarks>
+    /// The Purkinje shift: see <c>PostProcessSettings.NightShift</c>. Scaled by how far into night the sky
+    /// is, so a day is untouched whatever this is set to.
+    /// </remarks>
+    public static readonly NumericCVar<float> NightShift = Presets.Define(
+        CVar.Float(
+            "r_night_shift",
+            0f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "How much a night's dim surfaces lose their colour to a cool night-vision blue. 0 is off."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>Whether the screen probe gather traces on-screen geometry from the frame before the cache.</summary>
     /// <remarks>

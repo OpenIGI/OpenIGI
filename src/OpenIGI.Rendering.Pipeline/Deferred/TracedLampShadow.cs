@@ -12,12 +12,16 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// <param name="Lamps">The shading's lamp block (<see cref="DeferredLampBlock"/>), byte for byte.</param>
 /// <param name="FrameIndex">Which frame this is, so the reservoir, the ray and the filter's disk move.</param>
 /// <param name="Filter">Whether the denoiser filters; off is for measuring the raw trace against it.</param>
+/// <param name="CutoutMasks">The cut-out masks a candidate hit tests its alpha against.</param>
+/// <param name="RecordAddress">Where the hit records live, which name each hit's mask.</param>
 public readonly record struct TracedLampFrame(
     IRhiAccelerationStructure World,
     Vector3f CameraPosition,
     ReadOnlyMemory<float> Lamps,
     int FrameIndex,
-    bool Filter);
+    bool Filter,
+    IRhiTextureView CutoutMasks,
+    ulong RecordAddress);
 
 /// <summary>
 /// The lamps' shadows asked of the geometry: one ray per half-resolution pixel at the lamp its reservoir
@@ -89,7 +93,7 @@ public sealed class TracedLampShadow : IDisposable
     /// <summary>Gets the half-resolution width the lamps are traced at, for a frame of a given width.</summary>
     /// <param name="width">The render width.</param>
     /// <returns>Half of it, at least one.</returns>
-    public static int HalfOf(int width) => Math.Max(1, width / 2);
+    public static int HalfOf(int width) => LampShadowParameters.TracedSize(width);
 
     /// <summary>Forgets the accumulated history, for a camera that has moved somewhere unrelated.</summary>
     public void Invalidate() => _hasHistory = false;
@@ -192,9 +196,11 @@ public sealed class TracedLampShadow : IDisposable
             frame.CameraPosition,
             state.Unprojection,
             frame.FrameIndex,
-            frame.Lamps.Span);
+            frame.Lamps.Span,
+            frame.RecordAddress);
 
         _trace.Bind("uDepth", depth, _sampler);
+        _trace.Bind("uMasks", frame.CutoutMasks, _sampler);
         _trace.Bind("uNormal", normal, _sampler);
         _trace.Bind("uScene", frame.World);
         _trace.Bind("uVisibility", raw.View);
@@ -207,10 +213,10 @@ public sealed class TracedLampShadow : IDisposable
         {
             Width = _width,
             Height = _height,
-            JitterX = state.JitterX * 0.5f,
-            JitterY = state.JitterY * 0.5f,
-            PreviousJitterX = state.PreviousJitterX * 0.5f,
-            PreviousJitterY = state.PreviousJitterY * 0.5f,
+            JitterX = state.JitterX * LampShadowParameters.JitterScale,
+            JitterY = state.JitterY * LampShadowParameters.JitterScale,
+            PreviousJitterX = state.PreviousJitterX * LampShadowParameters.JitterScale,
+            PreviousJitterY = state.PreviousJitterY * LampShadowParameters.JitterScale,
         };
 
         // Both halves run with the filter off -- the accumulation carries the frame count and the filter the

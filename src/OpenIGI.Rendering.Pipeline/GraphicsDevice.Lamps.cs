@@ -88,7 +88,9 @@ public sealed partial class GraphicsDevice
                     _cameraPosition,
                     _lampBlock,
                     (int)(_frameCounter % 64UL),
-                    RenderCVars.LampDenoise.Value != 0),
+                    RenderCVars.LampDenoise.Value != 0,
+                    TracedWorld!.CutoutMasks,
+                    TracedWorld.HitRecordAddress),
                 state);
         }
 

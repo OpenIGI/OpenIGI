@@ -137,6 +137,12 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
     public bool IsWorldReady => _scene.IsReady;
 
     /// <inheritdoc/>
+    public bool IsWorldSettled => _scene.IsSettled;
+
+    /// <inheritdoc/>
+    public void SetUnlimitedAdmission(bool unlimited) => _scene.UnlimitedAdmission = unlimited;
+
+    /// <inheritdoc/>
     public IRhiAccelerationStructure TraceableScene =>
         _scene.IsReady && WorldScene is { } world ? world : _placeholderView;
 

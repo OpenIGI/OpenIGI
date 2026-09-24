@@ -39,8 +39,18 @@ OPENIGI_COMPUTE_SAMPLER(6) SamplerState uFinalSampler;
 OPENIGI_COMPUTE_SCENE RaytracingAccelerationStructure uScene;
 #endif
 
+#if OPENIGI_RAY_QUERY
+// The world's cut-out masks, and in the globals the address of the hit records naming each surface's
+// layer: both set by the device itself, for the trace's alpha test (CutoutHit.slang).
+OPENIGI_COMPUTE_TEXTURE(3) Texture2DArray<float4> uCutoutMasks;
+#endif
+
 OPENIGI_COMPUTE_GLOBALS cbuffer Globals
 {
+#if OPENIGI_RAY_QUERY
+    uint2 uCutoutRecords;
+#endif
+
     float4 uClipmapOrigin[4];
     float4 uSkySh[7];
 
@@ -181,7 +191,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
             float2 litFound;
             float agreement;
             dist = length(hit - world);
-            radiance = LookupCard(hit, found, litFound, agreement)
+            radiance = LookupCardHit(hit, dir, found, litFound, agreement)
                 ? uFinal.SampleLevel(uFinalSampler, litFound, 0.0).rgb * uBounceScale
                 : float3(0.0, 0.0, 0.0);
         }
