@@ -113,6 +113,14 @@ public sealed unsafe class WebGpuReadback : IRhiReadback
                 break;
             }
 
+            // A browser completes a map only once the page's task has returned to it, so spinning here
+            // can never see it finish: the ten seconds a card dump allows would be ten seconds of a frozen
+            // tab and then the same "not back yet". One poll, and the answer is what it was.
+            if (OperatingSystem.IsBrowser())
+            {
+                return false;
+            }
+
             // At or past the deadline, not only past it: with no time to wait the deadline is now, and a
             // strict test spun -- polling the device and yielding -- until the millisecond tick moved on,
             // which on Windows' timer is up to fifteen of them. The sky's harmonics are asked for that way
