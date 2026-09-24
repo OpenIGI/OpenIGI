@@ -7,7 +7,8 @@ namespace OpenIGI.Audio;
 /// <remarks>
 /// <para>
 /// <c>OpenIGI.Engine</c> and <c>OpenIGI.Game</c> talk to this and never to a backend. The backend is
-/// chosen in the one composition root, <c>apps/OpenIGI.Desktop</c>, exactly as the renderer is.
+/// chosen in the composition root — OpenAL in <c>apps/OpenIGI.Desktop</c>, the Web Audio API in
+/// <c>apps/OpenIGI.Web</c> — exactly as the renderer is.
 /// </para>
 /// <para>
 /// The model is the original's, generalised only where it had to be. There is a fixed pool of voices —

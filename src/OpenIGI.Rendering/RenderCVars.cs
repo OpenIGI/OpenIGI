@@ -2100,31 +2100,44 @@ public static class RenderCVars
         // instead. High keeps a quarter for the presets not held to that reference.
         ultra: "0");
 
-    /// <summary>How glossy an up-facing surface (a floor, a desk top) is made, so it takes a reflection.</summary>
+    /// <summary>How an up-facing surface's (a floor's, a desk top's) roughness differs from a wall's.</summary>
     /// <remarks>
-    /// The game ships one roughness for every surface, so a floor is as matte as a wall and reflects nothing,
-    /// where the reference render's floor is semi-glossy and mirrors the windows. This multiplies an up-facing
-    /// surface's roughness down towards a sheen while leaving the walls matte -- the split the reference has --
-    /// keyed off how far the surface faces the world up. One is off, every surface as its material said. Only
-    /// the dynamic model reflects, so it does nothing under the others.
+    /// <para>
+    /// A multiplier on an up-facing surface's roughness, keyed off how far the surface faces the world up.
+    /// One is off, every surface as its material said. Below one smooths floors towards a sheen so they take
+    /// a reflection while the walls stay matte; above one ROUGHENS them, so they shine less than the walls.
+    /// Only the dynamic model reads it.
+    /// </para>
+    /// <para>
+    /// The game ships one roughness for every surface, and a building's floor at the default 0.6 read as the
+    /// shiniest thing in the room even with this off: a floor is the one surface nearly always seen at a
+    /// grazing angle, where a dielectric's Fresnel term climbs towards all of the light, so the same lamp and
+    /// ambient highlight a wall shows faintly lies across a floor as a polished sheen. It also sits exactly
+    /// on the traced reflection's roughness ceiling (r_rt_reflection_roughness 0.6), so anything that took a
+    /// texel a little smoother handed it a reflection at the 1.7 intensity.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> FloorGloss = Presets.Define(
         CVar.Float(
             "r_floor_gloss",
             1f,
             0.05f,
-            1f,
+            2f,
             CVarOptions.Archive,
-            "Roughness multiplier for up-facing surfaces, so floors reflect while walls stay matte. 1 is off."),
+            "Roughness multiplier for up-facing surfaces: below 1 floors gloss, above 1 they go matte. 1 is off."),
         vanilla: "1",
-        enhanced: "1",
-        high: "1",
 
-        // Off. The screen-space reflection a glossy floor takes cannot describe a thin object -- a chair's
-        // legs, a desk edge -- and smeared them across the floor as hard dark streaks, worse than the matte
-        // floor it replaced. A floor sheen wants a reflection that sees off-screen geometry cleanly, which the
-        // screen trace is not; left off until the probe field can carry the specular instead.
-        ultra: "1");
+        // A quarter rougher: a default floor at 0.75 rather than 0.6. Enough to take the polished sheen off
+        // the grazing view of a building's floor and lift it clear of the traced reflection's ceiling, while
+        // the floor keeps a soft lamp highlight -- concrete and lino are not chalk. Ground is untouched either
+        // way: the geometry pass writes it at full roughness with no specular after this runs.
+        //
+        // Never below one at these presets. The screen-space reflection a glossy floor takes cannot describe
+        // a thin object -- a chair's legs, a desk edge -- and smeared them across the floor as hard dark
+        // streaks, worse than the matte floor it replaced.
+        enhanced: "1.25",
+        high: "1.25",
+        ultra: "1.25");
 
     /// <summary>Whether the overrides folder is drawn, for comparing against the game's own assets.</summary>
     /// <remarks>

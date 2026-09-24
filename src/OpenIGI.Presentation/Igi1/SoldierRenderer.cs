@@ -4247,14 +4247,13 @@ public sealed class SoldierRenderer : IDisposable
                 // the two.
                 DrawWeapon(member, camera, projection);
 
-                // Out of the ambient occlusion. A soldier is thin, close and moving, which is the
-                // worst case for a search that has to guess how deep a surface is from its front
-                // face alone -- it darkened the ground behind every guard in a halo of speckle
-                // that followed him about. The right repair is a thickness test in the search
-                // itself; until that exists, soldiers are left out rather than shaded wrongly.
-                _device.SetMaterialOverride(new SurfaceMaterial(
-                    CastsOcclusion: false,
-                    NoHistory: member.NoHistoryThisFrame));
+                // Matte, and out of the ambient occlusion: see SurfaceMaterial.Body. The occlusion's
+                // right repair is a thickness test in the search itself; until that exists, soldiers
+                // are left out rather than shaded wrongly.
+                _device.SetMaterialOverride(SurfaceMaterial.Body with
+                {
+                    NoHistory = member.NoHistoryThisFrame,
+                });
 
                 foreach (MeshSubset subset in group.Geometry.Subsets)
                 {
@@ -5272,10 +5271,9 @@ public sealed class SoldierRenderer : IDisposable
 
         _device.SetPoseInterpolation(member.PoseBlend, member.PreviousPoseBlend);
 
-        if (member.NoHistoryThisFrame)
-        {
-            _device.SetMaterialOverride(new SurfaceMaterial(NoHistory: true));
-        }
+        // Matte, like every other body: cloth and skin do not shine. It keeps its ambient occlusion,
+        // which is the one way it differs from a guard's.
+        _device.SetMaterialOverride(new SurfaceMaterial(NoHistory: member.NoHistoryThisFrame, Matte: true));
 
         foreach (MeshSubset subset in group.Geometry.Subsets)
         {
@@ -5303,10 +5301,7 @@ public sealed class SoldierRenderer : IDisposable
                 BlendMode.Opaque);
         }
 
-        if (member.NoHistoryThisFrame)
-        {
-            _device.SetMaterialOverride(SurfaceMaterial.Default);
-        }
+        _device.SetMaterialOverride(SurfaceMaterial.Default);
 
         _device.ClearPoseInterpolation();
     }

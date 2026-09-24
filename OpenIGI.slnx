@@ -3,6 +3,7 @@
     <Project Path="apps/OpenIGI.Composition/OpenIGI.Composition.csproj" />
     <Project Path="apps/OpenIGI.Desktop/OpenIGI.Desktop.csproj" />
     <Project Path="src/OpenIGI.Audio.OpenAL/OpenIGI.Audio.OpenAL.csproj" />
+    <Project Path="src/OpenIGI.Audio.Web/OpenIGI.Audio.Web.csproj" />
     <Project Path="src/OpenIGI.Audio/OpenIGI.Audio.csproj" />
     <Project Path="src/OpenIGI.Core/OpenIGI.Core.csproj" />
     <Project Path="src/OpenIGI.Engine/OpenIGI.Engine.csproj" />

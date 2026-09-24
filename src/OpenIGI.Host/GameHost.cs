@@ -4646,7 +4646,12 @@ internal sealed partial class GameHost : IDisposable
                     // same place by a different road: its night missions leave the sun up and paint it
                     // nearly black, so the model -- which only knows night as a sun below the horizon --
                     // has no way to tell. Told by the level instead, and taken to the same floor.
-                    float nightFeed = _deferredLighting is { } nightly
+                    //
+                    // Not for a level bound to the cycle by its night end. Its night IS the moon above, at
+                    // the hour it is bound to, so the level's constant adds nothing there -- and away from
+                    // that hour it is wrong: scrubbed up to noon, a constant night held the sky at the
+                    // floor under a risen sun.
+                    float nightFeed = _deferredLighting is { Night: null } nightly
                         ? 1f + ((0.02f - 1f) * Math.Clamp(nightly.Nightfall, 0f, 1f))
                         : 1f;
                     Vector3f atmosphereSun = light.Colour * RenderCVars.AtmosphereSunScale.Value

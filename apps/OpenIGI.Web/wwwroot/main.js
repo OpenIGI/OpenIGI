@@ -9,6 +9,7 @@
 import { dotnet } from './_framework/dotnet.js';
 import './wgpu-bridge.js';
 import * as platform from './platform.js';
+import * as audio from './audio.js';
 import * as files from './game-files.js';
 
 const GAME_ROOT = '/game';
@@ -90,6 +91,7 @@ async function start() {
 
   platform.install(canvas);
   runtime.setModuleImports('openigi-platform', platform.imports);
+  runtime.setModuleImports('openigi-audio', audio.imports);
   runtime.setModuleImports('openigi-files', files.imports);
 
   const exports = await runtime.getAssemblyExports(runtime.getConfig().mainAssemblyName);
@@ -99,8 +101,9 @@ async function start() {
   canvas.focus();
   game.Boot(args);
 
-  // Frames stepped so far, for anyone measuring from outside (an automated run, the console).
-  globalThis.openigi = { frames: 0 };
+  // Frames stepped so far and the state of the sound, for anyone measuring from outside (an automated
+  // run, the console).
+  globalThis.openigi = { frames: 0, audio: audio.diagnostics };
 
   const frame = () => {
     try {

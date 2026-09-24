@@ -318,6 +318,10 @@ GBufferTargets fragmentMain(Varyings input)
     }
 
     float3 normal = normalize(input.worldNormal);
+
+    // A body: cloth and skin, which do not shine. See the end of this stage for what it is given.
+    bool matte = push.normal0.w < -0.5;
+
     float roughness = push.material.x;
     float metallic = push.material.y;
 
@@ -374,7 +378,13 @@ GBufferTargets fragmentMain(Varyings input)
         // materials.json knows that a given texture is glass and the derivation does not, so the
         // derivation is only allowed to say how much finer structure sits on top. Stored halved,
         // because a multiplier runs past one and a texture channel does not.
-        roughness = clamp(roughness * (detail.z * 2.0), 0.02, 1.0);
+        //
+        // And scaled by the same strength the normal is, which it was not: at High's quarter strength the
+        // normal took a quarter of the map and the roughness took all of it, so a smooth texel on a 0.6
+        // floor came out at 0.36 -- under both reflection ceilings, and handed a full-strength reflection
+        // at the 1.7 intensity. The two halves of one map now move together.
+        float roughnessScale = lerp(1.0, detail.z * 2.0, saturate(frame.surface.x));
+        roughness = clamp(roughness * roughnessScale, 0.02, 1.0);
 
         // Alpha is OCCLUSION -- how much of its surroundings a texel can see, from the horizon search
         // the generator has always run and nothing has ever read. Metal moved to materials.json, where
@@ -384,15 +394,16 @@ GBufferTargets fragmentMain(Varyings input)
     }
 
     // Up-facing surfaces are smoothed towards the floor sheen so a floor takes a reflection while the
-    // walls stay matte, which is the split the reference has. Here the normal is already in world
+    // walls stay matte, which is the split the reference has -- or, above one, roughened, so a floor
+    // seen at a grazing angle does not out-shine the walls around it. Here the normal is already in world
     // space and this world's up is Z, so how up-facing a surface is needs no transform. In the
     // G-buffer rather than in the shading because the roughness written here is what the screen-space
     // reflections decide by as well -- a floor glossy only to the light would be the one surface the
     // setting exists for and still not reflect.
-    if (frame.surface.y < 1.0)
+    if (frame.surface.y != 1.0 && !matte)
     {
         float upFacing = clamp(normal.z, 0.0, 1.0);
-        roughness *= lerp(1.0, frame.surface.y, smoothstep(0.55, 0.85, upFacing));
+        roughness = min(roughness * lerp(1.0, frame.surface.y, smoothstep(0.55, 0.85, upFacing)), 1.0);
     }
 
     // Geometric specular anti-aliasing, and it is the last thing done to the roughness because it is a
@@ -471,6 +482,25 @@ GBufferTargets fragmentMain(Varyings input)
     {
         specular = 0.0;
         roughness = 1.0;
+    }
+
+    // NOR DO THE BODIES, and for a body there is no water exception either.
+    //
+    // A soldier drawn as the default dielectric took every gloss term the modern path has: the derived
+    // roughness map multiplied its 0.6 down towards a mirror, the floor-gloss term above smoothed every
+    // helmet and shoulder for facing up, the specular anti-aliasing could only widen what was left, and
+    // anything under the reflection pass's ceiling was handed a traced reflection. Uniforms read as
+    // plastic. So a body is the ground's treatment -- no specular level, full roughness -- which takes
+    // the sun's and the lamps' highlight and the ambient sheen off it, and the flag tells the two later
+    // passes that would add shine back regardless (the puddle mask in the shading, the reflections) to
+    // leave the pixel alone. The detail NORMAL still applies: that is the folds of the cloth under the
+    // diffuse light, not a sheen.
+    if (matte && shadingModel == kShadingModelDefaultLit)
+    {
+        specular = 0.0;
+        roughness = 1.0;
+        metallic = 0.0;
+        shadingModel |= kShadingFlagMatte;
     }
 
     output.material = EncodeGBufferMaterial(metallic, specular, roughness, shadingModel);

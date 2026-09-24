@@ -259,7 +259,8 @@ internal sealed partial class GameHost
         }
 
         // How the level drives the dynamic renderer, for a title whose sun is a lighting direction
-        // rather than a position in the sky. Project I.G.I. answers nothing and keeps the sweep.
+        // rather than a position in the sky, or for a level whose night only its sky dome says. Project
+        // I.G.I. answers nothing for its daylit levels, which keep the sweep as it was.
         _deferredLighting = _presentation.ReadDeferredLighting(levelRoot);
         if (_deferredLighting is { } lit)
         {
@@ -1530,9 +1531,11 @@ internal sealed partial class GameHost
                 // After the reset, which clears it: a level that authors its own night hands the cycle
                 // that night to cross to, instead of the faint one the cycle invents for a level that
                 // does not have one. See DayNightCycle.SetNightLighting.
-                if (_deferredLighting is { Night: not null } authoredNight)
+                if (_deferredLighting is { Night: { } boundNight } authoredNight)
                 {
-                    _dayNight.SetNightLighting(readSun.Colour, authoredNight.Ambient);
+                    _dayNight.SetNightLighting(
+                        boundNight.SunIsMoon ? readSun.Colour : null,
+                        authoredNight.Ambient);
                 }
                 _logger.Information(
                     "Light",
@@ -2300,7 +2303,7 @@ internal sealed partial class GameHost
                 _shelterField.Depth,
                 MipLevels: 1,
                 TextureFilter.Point,
-                TextureAddressMode.Clamp),
+                TextureAddressMode.Clamp) { HoldsData = true },
             texels);
 
         _device.SetShelterMap(

@@ -77,7 +77,7 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
         IRhiTexture texture = _device.CreateTexture(new RhiTextureDescriptor(
             Math.Max(1, description.Width),
             Math.Max(1, description.Height),
-            RhiTextureFormat.Bgra8UnormSrgb,
+            description.HoldsData ? RhiTextureFormat.Bgra8Unorm : RhiTextureFormat.Bgra8UnormSrgb,
             RhiTextureUsage.Sampled | RhiTextureUsage.CopyDestination,
             MipLevelCount: Math.Max(1, description.MipLevels),
             Label: label.Length > 0 ? label : $"texture-{id}"));

@@ -1,6 +1,6 @@
 ﻿using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
-using OpenIGI.Audio;
+using OpenIGI.Audio.Web;
 using OpenIGI.Composition;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Threading;
@@ -82,11 +82,13 @@ public static partial class Program
         GraphicsDevice device = new(rhi, new DisplayMode(window.Width, window.Height, 32, window.RefreshRate));
         logger.Information("Renderer", $"Drawing through the RHI over WebGPU on {rhi.AdapterName}.");
 
+        // The composition root names the backends: the RHI over WebGPU above, and the Web Audio API here.
+        // GameHost itself sees only the abstractions, exactly as it does on the desktop.
         _game = new GameHost(
             platform,
             window,
             device,
-            NullAudioDeviceFactory.Instance,
+            new WebAudioDeviceFactory(new WebAudioPage()),
             InlineWorkScheduler.Instance,
             new WebLoadGate(),
             TitleCatalog.Rooted(runtime, GameRoot),

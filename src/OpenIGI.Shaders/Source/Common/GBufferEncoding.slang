@@ -18,6 +18,12 @@ static const float kMinRoughness = 0.015625;
 static const int kShadingModelUnlit = 0;
 static const int kShadingModelDefaultLit = 1;
 
+// A flag carried above the shading model in the same byte, which the model's own decode masks off.
+// MATTE: a surface with no specular response at all -- a body. The geometry pass already writes it
+// with no specular and full roughness; the flag is for the two passes that would otherwise put shine
+// back regardless, the wetness in the shading (a puddle on a level helmet) and the reflections.
+static const int kShadingFlagMatte = 16;
+
 float4 EncodeGBufferNormal(float3 worldNormal, float flags)
 {
     return float4((normalize(worldNormal) * 0.5) + 0.5, flags);
@@ -58,6 +64,11 @@ float3 DecodeGBufferNormal(float4 packed)
 int DecodeShadingModel(float4 material)
 {
     return int((material.a * 255.0) + 0.5) & 0xF;
+}
+
+bool DecodeMatte(float4 material)
+{
+    return (int((material.a * 255.0) + 0.5) & kShadingFlagMatte) != 0;
 }
 
 // One over the packing above: the byte carries 128 plus sixteen times the strength, and anything at or

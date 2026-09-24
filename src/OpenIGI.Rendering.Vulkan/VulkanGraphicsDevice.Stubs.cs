@@ -175,7 +175,7 @@ public sealed partial class VulkanGraphicsDevice
     public void SetFloorGloss(float gloss)
     {
         ThrowIfDisposed();
-        _floorGloss = Math.Clamp(gloss, 0f, 1f);
+        _floorGloss = Math.Clamp(gloss, 0f, 2f);
     }
 
     private float _floorGloss = 1f;

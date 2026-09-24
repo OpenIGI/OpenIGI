@@ -78,13 +78,31 @@ namespace OpenIGI.Rendering;
 /// also set.
 /// </para>
 /// </param>
+/// <param name="Matte">
+/// Whether the surface has no specular response at all: no highlight from the sun or a lamp, no
+/// ambient sheen, no reflection, and no standing water.
+/// <para>
+/// For cloth and skin, which is to say for bodies. A soldier drawn as the default dielectric took the
+/// whole of the modern path's gloss machinery -- the derived roughness map multiplying 0.6 down towards
+/// a mirror, the floor-gloss term smoothing every helmet and shoulder because they face up, the traced
+/// reflection that anything under its roughness ceiling receives, and a puddle on the top of every head
+/// in the rain -- and read as plastic. Roughness alone cannot say this: every one of those terms moves
+/// roughness, and the puddle ignores it.
+/// </para>
+/// <para>
+/// Retail has no specular on its models to reproduce. This is the ground's treatment -- specular
+/// nought, roughness one -- extended to the surfaces that should never shine, plus the wetness and
+/// reflection passes being told to leave them alone.
+/// </para>
+/// </param>
 public readonly record struct SurfaceMaterial(
     float Roughness = 0.6f,
     float Metallic = 0.0f,
     float Emissive = 0.0f,
     bool CastsOcclusion = true,
     bool NoHistory = false,
-    bool Glass = false)
+    bool Glass = false,
+    bool Matte = false)
 {
     /// <summary>The emissive channel's value for a surface excluded from ambient occlusion.</summary>
     /// <remarks>
@@ -182,6 +200,19 @@ public readonly record struct SurfaceMaterial(
     /// </para>
     /// </remarks>
     public static SurfaceMaterial Sky { get; } = new(Emissive: 1f, CastsOcclusion: false);
+
+    /// <summary>Gets the material a soldier's body is drawn with.</summary>
+    /// <remarks>
+    /// <para>
+    /// Matte, because cloth and skin do not shine; see <see cref="Matte"/>.
+    /// </para>
+    /// <para>
+    /// And out of the ambient occlusion. A soldier is thin, close and moving, which is the worst case
+    /// for a search that has to guess how deep a surface is from its front face alone -- it darkened
+    /// the ground behind every guard in a halo of speckle that followed him about.
+    /// </para>
+    /// </remarks>
+    public static SurfaceMaterial Body { get; } = new(CastsOcclusion: false, Matte: true);
 
     /// <summary>Gets a value indicating whether this material is the default one.</summary>
     public bool IsDefault => this == Default;

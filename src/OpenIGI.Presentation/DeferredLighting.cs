@@ -52,8 +52,8 @@ namespace OpenIGI.Presentation;
 /// </remarks>
 /// <param name="Night">
 /// Where the level sits on the day/night cycle, for one it authors as a NIGHT. Null for a level whose
-/// authored lighting is already a daytime one, which is every level Project I.G.I. ships and nineteen of
-/// the sequel's twenty-four.
+/// authored lighting is already a daytime one: seven of the thirteen Project I.G.I. missions with a sky
+/// (the other six paint a night dome) and nineteen of the sequel's twenty-four.
 /// </param>
 /// <param name="CompleteBake">
 /// <para>
@@ -108,11 +108,20 @@ public readonly record struct DeferredLighting(
 /// end is what it never authored and has to be supplied: sweeping to noon lights it with
 /// <paramref name="DaylightColour"/> and <paramref name="DaylightAmbient"/>.
 /// </para>
+/// <para>
+/// <b>Whether the authored sun IS the moon depends on the title.</b> I.G.I. 2 paints its night sun nearly
+/// black, which is a night's light and is used as the moon as it stands. Project I.G.I. says night only
+/// with its sky dome and leaves the <c>Dirlight</c> the same near-white noon sun every level authors, which
+/// as a moon lights the night as brightly as a dim day -- so there <paramref name="SunIsMoon"/> is false
+/// and the cycle keeps its own faint moon, taking only the direction.
+/// </para>
 /// </remarks>
+/// <param name="SunIsMoon">Whether the authored sun's colour is the night's moonlight.</param>
 public readonly record struct AuthoredNight(
     float ReferenceHour,
     Vector3f DaylightColour,
-    Vector3f DaylightAmbient);
+    Vector3f DaylightAmbient,
+    bool SunIsMoon = true);
 
 /// <summary>Turns a level's authored sun into the one the day/night cycle can sweep.</summary>
 /// <remarks>

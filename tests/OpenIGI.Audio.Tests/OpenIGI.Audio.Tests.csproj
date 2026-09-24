@@ -4,6 +4,7 @@
     <ProjectReference Include="..\..\src\OpenIGI.Core\OpenIGI.Core.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Audio\OpenIGI.Audio.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Audio.OpenAL\OpenIGI.Audio.OpenAL.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Audio.Web\OpenIGI.Audio.Web.csproj" />
     <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
   </ItemGroup>
 

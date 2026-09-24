@@ -58,6 +58,14 @@ public static class GBufferPushBlock
     /// <summary>The mode that says this draw is the ground's bake, for the baked attachment.</summary>
     public const float GroundBakeMode = 4f;
 
+    /// <summary>The mode that says this draw is matte: no specular, no reflection, no standing water.</summary>
+    /// <remarks>
+    /// Negative because every other reading of the slot is a greater-than test -- the terrain ramp above
+    /// a half, the sequel's ground above two and a half, the bake above three and a half -- so a value
+    /// below nought can be told apart from all of them and trips none of them.
+    /// </remarks>
+    public const float MatteMode = -1f;
+
     /// <summary>Writes the block for one geometry draw.</summary>
     /// <param name="block">Room for <see cref="Floats"/> floats.</param>
     /// <param name="state">What the frame holds.</param>
@@ -108,10 +116,12 @@ public static class GBufferPushBlock
 
             // Three says the lightmap slot is the ground's DETAIL map; four says this draw is the
             // ground's BAKE and belongs in the baked attachment rather than in the colour. Nothing but
-            // I.G.I. 2's ground asks for either.
+            // I.G.I. 2's ground asks for either. Minus one is a matte surface -- a body -- which the
+            // ground is already, by its own mode.
             block[19] = blend == BlendMode.Modulate2X
                 ? GroundBakeMode
-                : state.GroundDetail ? GroundDetailMode : 0f;
+                : state.GroundDetail ? GroundDetailMode
+                : state.Material.Matte ? MatteMode : 0f;
 
             block[20] = normalMatrix.M12;
             block[21] = normalMatrix.M22;

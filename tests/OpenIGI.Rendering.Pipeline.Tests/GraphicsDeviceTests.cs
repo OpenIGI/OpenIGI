@@ -375,6 +375,37 @@ public sealed class GraphicsDeviceTests
     }
 
     [Fact]
+    public void A_body_draws_into_the_G_buffer_as_matte()
+    {
+        // A soldier drawn as the default dielectric took every gloss term the modern path has and read
+        // as plastic. The body material has to reach the geometry pass as the matte mode, which is what
+        // tells the shader to write no specular and flag the pixel for the wetness and reflection passes;
+        // and a draw after it that resets the material must not carry the mode on.
+        using RecordingRhiDevice rhi = new();
+        using GraphicsDevice device = Open(rhi);
+
+        Assert.True(device.BeginSceneCapture(new SceneTargetDescription(64, 64, Deferred: true)));
+        device.BeginPass(ScenePass.Geometry);
+
+        device.SetMaterialOverride(SurfaceMaterial.Body);
+        World(device);
+
+        device.SetMaterialOverride(SurfaceMaterial.Default);
+        World(device);
+
+        device.EndPass();
+        device.EndSceneCapture();
+        device.SwapBuffers();
+
+        float[][] pushed = GeometryPushes(rhi);
+        Assert.Equal(2, pushed.Length);
+
+        Assert.Equal(GBufferPushBlock.MatteMode, pushed[0][19]);
+        Assert.Equal(0f, pushed[0][29]);
+        Assert.Equal(0f, pushed[1][19]);
+    }
+
+    [Fact]
     public void The_forward_pass_draws_over_the_lit_image_after_the_light()
     {
         // The view model, the muzzle flash and every translucent draw: after the shading, over the lit

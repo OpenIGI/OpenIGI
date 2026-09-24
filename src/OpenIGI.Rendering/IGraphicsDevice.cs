@@ -565,8 +565,11 @@ public interface IGraphicsDevice : IDisposable
     /// </param>
     void SetMaterialDetail(float strength);
 
-    /// <summary>Sets how much an up-facing surface's roughness is smoothed, so floors reflect while walls stay matte.</summary>
-    /// <param name="gloss">A multiplier on an up-facing surface's roughness; 1 leaves every surface as its material said.</param>
+    /// <summary>Sets how an up-facing surface's roughness differs from a wall's.</summary>
+    /// <param name="gloss">
+    /// A multiplier on an up-facing surface's roughness, up to two: below 1 smooths floors so they reflect,
+    /// above 1 roughens them so they shine less than the walls; 1 leaves every surface as its material said.
+    /// </param>
     void SetFloorGloss(float gloss);
 
     /// <summary>Sets how textures are sampled.</summary>

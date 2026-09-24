@@ -153,7 +153,7 @@ public sealed partial class GraphicsDevice
     public void SetFloorGloss(float gloss)
     {
         ThrowIfDisposed();
-        _floorGloss = Math.Clamp(gloss, 0f, 1f);
+        _floorGloss = Math.Clamp(gloss, 0f, 2f);
     }
 
     /// <inheritdoc/>
