@@ -26,6 +26,7 @@ public static class WgpuLibrary
     public const string OverrideVariable = "OPENIGI_WGPU_NATIVE";
 
     private static readonly object Gate = new();
+    private static readonly HashSet<Assembly> Registered = [];
     private static bool _registered;
 
     /// <summary>Makes the generated bindings resolvable. Safe to call more than once.</summary>
@@ -54,6 +55,31 @@ public static class WgpuLibrary
 
             NativeLibrary.SetDllImportResolver(typeof(WgpuLibrary).Assembly, Resolve);
             _registered = true;
+        }
+    }
+
+    /// <summary>Makes another assembly's own declarations of these entry points resolvable the same way.</summary>
+    /// <param name="assembly">The assembly that declares them.</param>
+    /// <remarks>
+    /// The backend declares the entry points a frame repeats in its own, compiled assembly (see
+    /// <c>WebGpuHotCalls</c>), and those imports name the same library. A browser build resolves them
+    /// without asking, as above.
+    /// </remarks>
+    public static void Register(Assembly assembly)
+    {
+        ArgumentNullException.ThrowIfNull(assembly);
+
+        if (OperatingSystem.IsBrowser())
+        {
+            return;
+        }
+
+        lock (Gate)
+        {
+            if (Registered.Add(assembly))
+            {
+                NativeLibrary.SetDllImportResolver(assembly, Resolve);
+            }
         }
     }
 

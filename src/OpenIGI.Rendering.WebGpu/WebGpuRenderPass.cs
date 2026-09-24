@@ -100,7 +100,7 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
         }
 
         _pipeline = handle;
-        Wgpu.wgpuRenderPassEncoderSetPipeline(_handle, handle);
+        WebGpuHotCalls.wgpuRenderPassEncoderSetPipeline(_handle.Handle, handle.Handle);
     }
 
     /// <inheritdoc/>
@@ -130,10 +130,10 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
 
         fixed (uint* offsets = dynamicOffsets)
         {
-            Wgpu.wgpuRenderPassEncoderSetBindGroup(
-                _handle,
+            WebGpuHotCalls.wgpuRenderPassEncoderSetBindGroup(
+                _handle.Handle,
                 (uint)index,
-                handle,
+                handle.Handle,
                 (nuint)dynamicOffsets.Length,
                 offsets);
         }
@@ -203,10 +203,10 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
             _vertexOffsets[slot] = offset;
         }
 
-        Wgpu.wgpuRenderPassEncoderSetVertexBuffer(
-            _handle,
+        WebGpuHotCalls.wgpuRenderPassEncoderSetVertexBuffer(
+            _handle.Handle,
             (uint)slot,
-            handle,
+            handle.Handle,
             offset,
             buffer.SizeInBytes - offset);
     }
@@ -229,10 +229,10 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
         _indexFormat = translated;
         _indexOffset = offset;
 
-        Wgpu.wgpuRenderPassEncoderSetIndexBuffer(
-            _handle,
-            handle,
-            translated,
+        WebGpuHotCalls.wgpuRenderPassEncoderSetIndexBuffer(
+            _handle.Handle,
+            handle.Handle,
+            (uint)translated,
             offset,
             buffer.SizeInBytes - offset);
     }
@@ -264,8 +264,8 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
     public void Draw(int vertexCount, int instanceCount = 1, int firstVertex = 0, int firstInstance = 0)
     {
         ThrowIfEnded();
-        Wgpu.wgpuRenderPassEncoderDraw(
-            _handle, (uint)vertexCount, (uint)instanceCount, (uint)firstVertex, (uint)firstInstance);
+        WebGpuHotCalls.wgpuRenderPassEncoderDraw(
+            _handle.Handle, (uint)vertexCount, (uint)instanceCount, (uint)firstVertex, (uint)firstInstance);
     }
 
     /// <inheritdoc/>
@@ -277,8 +277,8 @@ public sealed unsafe class WebGpuRenderPassEncoder : IRhiRenderPassEncoder
         int firstInstance = 0)
     {
         ThrowIfEnded();
-        Wgpu.wgpuRenderPassEncoderDrawIndexed(
-            _handle, (uint)indexCount, (uint)instanceCount, (uint)firstIndex, baseVertex, (uint)firstInstance);
+        WebGpuHotCalls.wgpuRenderPassEncoderDrawIndexed(
+            _handle.Handle, (uint)indexCount, (uint)instanceCount, (uint)firstIndex, baseVertex, (uint)firstInstance);
     }
 
     /// <inheritdoc/>

@@ -114,6 +114,7 @@ public sealed unsafe class WebGpuContext : IDisposable
         string label = "openigi")
     {
         WgpuLibrary.Register();
+        WgpuLibrary.Register(typeof(WebGpuHotCalls).Assembly);
 
         if (!instance.IsValid)
         {

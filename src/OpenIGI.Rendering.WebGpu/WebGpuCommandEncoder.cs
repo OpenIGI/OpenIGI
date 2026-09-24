@@ -387,7 +387,7 @@ public sealed unsafe class WebGpuComputePassEncoder : IRhiComputePassEncoder
         ArgumentNullException.ThrowIfNull(pipeline);
         ThrowIfEnded();
 
-        Wgpu.wgpuComputePassEncoderSetPipeline(_handle, ((WebGpuComputePipeline)pipeline).Handle);
+        WebGpuHotCalls.wgpuComputePassEncoderSetPipeline(_handle.Handle, ((WebGpuComputePipeline)pipeline).Handle.Handle);
     }
 
     /// <inheritdoc/>
@@ -398,10 +398,10 @@ public sealed unsafe class WebGpuComputePassEncoder : IRhiComputePassEncoder
 
         fixed (uint* offsets = dynamicOffsets)
         {
-            Wgpu.wgpuComputePassEncoderSetBindGroup(
-                _handle,
+            WebGpuHotCalls.wgpuComputePassEncoderSetBindGroup(
+                _handle.Handle,
                 (uint)index,
-                ((WebGpuBindGroup)group).Handle,
+                ((WebGpuBindGroup)group).Handle.Handle,
                 (nuint)dynamicOffsets.Length,
                 offsets);
         }
@@ -437,7 +437,7 @@ public sealed unsafe class WebGpuComputePassEncoder : IRhiComputePassEncoder
     public void Dispatch(int x, int y = 1, int z = 1)
     {
         ThrowIfEnded();
-        Wgpu.wgpuComputePassEncoderDispatchWorkgroups(_handle, (uint)x, (uint)y, (uint)z);
+        WebGpuHotCalls.wgpuComputePassEncoderDispatchWorkgroups(_handle.Handle, (uint)x, (uint)y, (uint)z);
     }
 
     /// <inheritdoc/>

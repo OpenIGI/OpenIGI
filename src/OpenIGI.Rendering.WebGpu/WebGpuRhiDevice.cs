@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using OpenIGI.Core.Threading;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.WebGpu.Native;
@@ -549,9 +549,9 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
 
         fixed (T* first = data)
         {
-            Wgpu.wgpuQueueWriteBuffer(
-                _context.Queue,
-                ((WebGpuBuffer)buffer).Handle,
+            WebGpuHotCalls.wgpuQueueWriteBuffer(
+                _context.Queue.Handle,
+                ((WebGpuBuffer)buffer).Handle.Handle,
                 offset,
                 first,
                 (nuint)(data.Length * sizeof(T)));
