@@ -127,8 +127,38 @@ public sealed partial class VulkanGraphicsDevice
         ThrowIfDisposed();
         if (buffer.IsValid && _storageBuffers.Remove(buffer.Id, out VulkanBuffer? resource))
         {
+            Unbind(_boundStorageBuffers, resource);
             QueueDeletion(resource);
         }
+    }
+
+    /// <summary>Takes a destroyed resource out of every compute slot still naming it.</summary>
+    /// <remarks>
+    /// The slots hold the resource itself, not its handle, so nothing else notices it is gone: the next
+    /// dispatch of a kernel that does not rebind that slot writes the freed view or buffer into its
+    /// descriptor set. Switching to the vanilla preset drops the distance field, whose atlas stood bound
+    /// as a volume; switching back, the card lighting's first dispatch -- which runs before the field is
+    /// rebound -- wrote the dead atlas and took the process down inside vkUpdateDescriptorSets. An empty
+    /// slot resolves to the dummy of its kind instead.
+    /// </remarks>
+    private static void Unbind<T>(Dictionary<int, T> slots, T resource)
+        where T : class
+    {
+        foreach (KeyValuePair<int, T> slot in slots)
+        {
+            if (ReferenceEquals(slot.Value, resource))
+            {
+                slots.Remove(slot.Key);
+            }
+        }
+    }
+
+    /// <summary>Takes a destroyed storage image out of the image and volume slots.</summary>
+    /// <param name="image">The image being destroyed.</param>
+    private void UnbindStorageImage(VulkanStorageImage image)
+    {
+        Unbind(_boundImages, image);
+        Unbind(_boundVolumes, image);
     }
 
     /// <inheritdoc/>

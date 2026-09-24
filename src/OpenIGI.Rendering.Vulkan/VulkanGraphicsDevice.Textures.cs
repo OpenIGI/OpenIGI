@@ -81,6 +81,7 @@ public sealed partial class VulkanGraphicsDevice
         // names, so a destroyed volume is not leaked.
         if (_storageImages.Remove(texture.Id, out Compute.VulkanStorageImage? image))
         {
+            UnbindStorageImage(image);
             QueueDeletion(image);
             return;
         }

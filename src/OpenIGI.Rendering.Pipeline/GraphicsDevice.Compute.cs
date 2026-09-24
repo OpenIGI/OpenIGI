@@ -139,7 +139,26 @@ public sealed partial class GraphicsDevice
 
         if (buffer.IsValid && _storageBuffers.Remove(buffer.Id, out IRhiBuffer? resource))
         {
+            Unbind(_boundBuffers, resource);
             _retired.Retire(resource);
+        }
+    }
+
+    /// <summary>Takes a destroyed resource out of every compute slot still naming it.</summary>
+    /// <remarks>
+    /// The slots hold the resource itself, not its handle, so nothing else notices it is gone: a later
+    /// kernel that does not rebind that slot would bind it after its retirement had disposed it. An empty
+    /// slot fails loudly, or resolves to the dummy of its kind, instead.
+    /// </remarks>
+    private static void Unbind<T>(Dictionary<int, T> slots, T resource)
+        where T : class
+    {
+        foreach (KeyValuePair<int, T> slot in slots)
+        {
+            if (ReferenceEquals(slot.Value, resource))
+            {
+                slots.Remove(slot.Key);
+            }
         }
     }
 
@@ -747,6 +766,7 @@ public sealed partial class GraphicsDevice
 
         if (_storageTextures.Remove(texture.Id, out IRhiTexture? image))
         {
+            Unbind(_boundImages, image);
             _histories?.Forget(image);
         }
     }
