@@ -66,7 +66,7 @@ public sealed class RetailAnimationGoldenTests
 
             Assert.True(skeleton.IsTopologicallySorted(), name);
             Assert.Equal(BoneSkeleton.NoParent, skeleton.Parents[0]);
-            Assert.Equal(skeleton.BoneCount, skeleton.RestTranslations.Count);
+            Assert.Equal(skeleton.BoneCount, skeleton.RestTranslations.Length);
         }
     }
 
@@ -121,7 +121,7 @@ public sealed class RetailAnimationGoldenTests
                     }
                 }
 
-                if (animation.Translation.Count > 1)
+                if (animation.Translation.Length > 1)
                 {
                     float last = animation.Translation[^1].Time;
                     if (last > animation.Duration + 0.001f)
@@ -186,7 +186,7 @@ public sealed class RetailAnimationGoldenTests
         {
             foreach (BoneAnimation animation in Load(name).Animations)
             {
-                if (animation.Translation.Count == 1)
+                if (animation.Translation.Length == 1)
                 {
                     BoneTranslationKey key = animation.Translation[0];
                     Assert.Equal(default, key.InTangent);
@@ -195,8 +195,8 @@ public sealed class RetailAnimationGoldenTests
 
                 for (int bone = 0; bone < animation.BoneCount; bone++)
                 {
-                    IReadOnlyList<BoneRotationKey> track = animation.Rotations(bone);
-                    if (track.Count != 1)
+                    ReadOnlySpan<BoneRotationKey> track = animation.Rotations(bone);
+                    if (track.Length != 1)
                     {
                         continue;
                     }
@@ -309,8 +309,8 @@ public sealed class RetailAnimationGoldenTests
 
                 for (int bone = 0; bone < animation.BoneCount; bone++)
                 {
-                    IReadOnlyList<BoneRotationKey> track = animation.Rotations(bone);
-                    if (track.Count < 2)
+                    ReadOnlySpan<BoneRotationKey> track = animation.Rotations(bone);
+                    if (track.Length < 2)
                     {
                         continue;
                     }

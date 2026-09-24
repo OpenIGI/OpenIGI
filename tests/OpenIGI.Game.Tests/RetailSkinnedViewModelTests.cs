@@ -48,7 +48,7 @@ public sealed class RetailSkinnedViewModelTests
             totals[i] = arms.SkinInfluences[i].Weight;
         }
 
-        for (int i = arms.BaseVertexCount; i < arms.SkinInfluences.Count; i++)
+        for (int i = arms.BaseVertexCount; i < arms.SkinInfluences.Length; i++)
         {
             MefSkinInfluence extra = arms.SkinInfluences[i];
             totals[extra.TargetVertex] += extra.Weight;

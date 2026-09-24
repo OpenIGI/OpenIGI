@@ -26,17 +26,17 @@ public sealed class BonePose
     }
 
     /// <summary>Gets each bone's world rotation.</summary>
-    public IReadOnlyList<Matrix3f> Rotations => _rotations;
+    public ReadOnlySpan<Matrix3f> Rotations => _rotations;
 
     /// <summary>Gets each bone's world position, in engine units.</summary>
-    public IReadOnlyList<Vector3f> Positions => _positions;
+    public ReadOnlySpan<Vector3f> Positions => _positions;
 
     /// <summary>Gets each bone's parent, or <see cref="BoneSkeleton.NoParent"/> for the root.</summary>
     /// <remarks>
     /// Carried through from the skeleton so a consumer can treat the pose as a set of <b>segments</b>
     /// rather than a cloud of points — which is what anything measuring a distance to a limb needs.
     /// </remarks>
-    public IReadOnlyList<int> Parents => _parents;
+    public ReadOnlySpan<int> Parents => _parents;
 
     /// <summary>Gets the number of bones.</summary>
     public int BoneCount => _rotations.Length;
@@ -58,16 +58,15 @@ public sealed class BonePose
     /// </remarks>
     public static BonePose Evaluate(
         BoneSkeleton skeleton,
-        IReadOnlyList<Quaternion32> localRotations,
+        ReadOnlySpan<Quaternion32> localRotations,
         Vector3f rootPosition = default,
         Matrix3f? rootRotation = null)
     {
         ArgumentNullException.ThrowIfNull(skeleton);
-        ArgumentNullException.ThrowIfNull(localRotations);
-        if (localRotations.Count != skeleton.BoneCount)
+        if (localRotations.Length != skeleton.BoneCount)
         {
             throw new ArgumentException(
-                $"The skeleton has {skeleton.BoneCount} bones but {localRotations.Count} rotations were given.",
+                $"The skeleton has {skeleton.BoneCount} bones but {localRotations.Length} rotations were given.",
                 nameof(localRotations));
         }
 
@@ -82,16 +81,18 @@ public sealed class BonePose
         int count = skeleton.BoneCount;
         Matrix3f[] rotations = new Matrix3f[count];
         Vector3f[] positions = new Vector3f[count];
+        ReadOnlySpan<int> parents = skeleton.Parents;
+        ReadOnlySpan<Vector3f> rest = skeleton.RestTranslations;
 
         for (int bone = 0; bone < count; bone++)
         {
-            int parent = skeleton.Parents[bone];
+            int parent = parents[bone];
             Matrix3f parentRotation = parent == BoneSkeleton.NoParent ? above : rotations[parent];
             Vector3f parentPosition = parent == BoneSkeleton.NoParent ? rootPosition : positions[parent];
 
             // The position comes first and uses the *parent's* rotation: a bone sits at its parent's
             // origin, offset by its rest translation turned into the parent's frame.
-            positions[bone] = Add(Rotate(parentRotation, skeleton.RestTranslations[bone]), parentPosition);
+            positions[bone] = Add(Rotate(parentRotation, rest[bone]), parentPosition);
 
             // The world orientation is the parent's composed with this bone's local one, parent on the
             // left. The original composes the quaternions as parent * local and converts once;
@@ -100,7 +101,7 @@ public sealed class BonePose
             rotations[bone] = parentRotation * ToMatrix(localRotations[bone]);
         }
 
-        return new BonePose(rotations, positions, [.. skeleton.Parents]);
+        return new BonePose(rotations, positions, parents.ToArray());
     }
 
     /// <summary>Converts an orientation to the 3×3 the palette stores.</summary>

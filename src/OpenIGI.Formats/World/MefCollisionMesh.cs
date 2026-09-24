@@ -1,4 +1,4 @@
-﻿using System.Buffers.Binary;
+using System.Buffers.Binary;
 using OpenIGI.Core;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ilff;
@@ -96,6 +96,7 @@ public sealed class MefCollisionMesh
     /// </remarks>
     public const int NotAPortal = 0xFFFF;
 
+    private readonly MefCollisionFace[] _faces;
     private readonly bool[] _materialIsPortal;
     private readonly int[]? _materialGlobal;
 
@@ -107,7 +108,7 @@ public sealed class MefCollisionMesh
         bool[] materialIsPortal,
         int[]? materialGlobal = null)
     {
-        Faces = faces;
+        _faces = faces;
         Vertices = vertices;
         VertexBones = vertexBones;
         Spheres = spheres;
@@ -150,7 +151,7 @@ public sealed class MefCollisionMesh
     public const int DefaultGlobalMaterial = 1;
 
     /// <summary>Gets the collision triangles.</summary>
-    public IReadOnlyList<MefCollisionFace> Faces { get; }
+    public ReadOnlySpan<MefCollisionFace> Faces => _faces;
 
     /// <summary>Gets the collision vertices, in the model's own space.</summary>
     public IReadOnlyList<Vector3f> Vertices { get; }
@@ -185,7 +186,7 @@ public sealed class MefCollisionMesh
 
     /// <summary>Whether the sphere count is the binary tree's over the faces.</summary>
     /// <remarks><c>2 × faces − 1</c>, which holds for every shipped mesh.</remarks>
-    public bool SphereCountIsBinaryTree => Faces.Count > 0 && Spheres.Count == (2 * Faces.Count) - 1;
+    public bool SphereCountIsBinaryTree => _faces.Length > 0 && Spheres.Count == (2 * _faces.Length) - 1;
 
     /// <summary>Reads collision mesh level zero from a model, if it carries one.</summary>
     /// <param name="container">The model's chunks.</param>

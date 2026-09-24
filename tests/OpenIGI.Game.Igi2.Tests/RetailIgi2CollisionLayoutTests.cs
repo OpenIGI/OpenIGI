@@ -56,7 +56,7 @@ public sealed class RetailIgi2CollisionLayoutTests
             }
 
             withMesh++;
-            faces += mesh.Faces.Count;
+            faces += mesh.Faces.Length;
             vertices += mesh.Vertices.Count;
 
             // Every face indexes vertices that exist. The face row is where the widening lands, so a

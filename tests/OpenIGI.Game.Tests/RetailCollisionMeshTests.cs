@@ -20,9 +20,9 @@ public sealed class RetailCollisionMeshTests
         Assert.True(MefCollisionMesh.TryRead(fence.Model.Container, meshIndex: 0, out MefCollisionMesh? levelZero));
         Assert.True(MefCollisionMesh.TryRead(fence.Model.Container, meshIndex: 1, out MefCollisionMesh? levelOne));
 
-        Assert.Equal(32, levelZero!.Faces.Count);
+        Assert.Equal(32, levelZero!.Faces.Length);
         Assert.Equal(24, levelZero.Vertices.Count);
-        Assert.Equal(16, levelOne!.Faces.Count);
+        Assert.Equal(16, levelOne!.Faces.Length);
         Assert.Equal(10, levelOne.Vertices.Count);
         Assert.Equal(1, levelOne.Materials);
     }
@@ -47,7 +47,7 @@ public sealed class RetailCollisionMeshTests
             }
 
             withMesh++;
-            faces += mesh.Faces.Count;
+            faces += mesh.Faces.Length;
             vertices += mesh.Vertices.Count;
 
             // Every face indexes a vertex the mesh has.
@@ -81,7 +81,7 @@ public sealed class RetailCollisionMeshTests
 
             Assert.True(
                 mesh.SphereCountIsBinaryTree,
-                $"{mesh.Faces.Count} faces against {mesh.Spheres.Count} spheres, expected {(2 * mesh.Faces.Count) - 1}");
+                $"{mesh.Faces.Length} faces against {mesh.Spheres.Count} spheres, expected {(2 * mesh.Faces.Length) - 1}");
 
             checkedMeshes++;
         }

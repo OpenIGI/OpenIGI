@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Formats.Animation;
 
@@ -242,7 +242,7 @@ public sealed class BoneClip
     public Vector3f SampleRoot() => SampleRoot(Time);
 
     private Vector3f SampleRoot(float time) =>
-        _animation.Translation.Count == 0
+        _animation.Translation.Length == 0
             ? default
             : BoneTrackSampler.Sample(_animation.Translation, time);
 

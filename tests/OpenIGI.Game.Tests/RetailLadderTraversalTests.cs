@@ -50,7 +50,7 @@ public sealed class RetailLadderTraversalTests
         BoneObject bones = new(PlayerAnimations());
         Assert.NotNull(bones.Play(0, 168, loops: true));
 
-        float lowestBone = bones.Pose().Positions.Min(static position => position.Z);
+        float lowestBone = bones.Pose().Positions.ToArray().Min(static position => position.Z);
 
         // IGI1 writes the task root at bottom + 3915.776. Animation 168's starting foot is
         // -4128.768 below that root, leaving only the small authored sole penetration at the ground.

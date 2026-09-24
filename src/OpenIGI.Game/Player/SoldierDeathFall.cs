@@ -126,14 +126,14 @@ public static class SoldierDeathFall
         ArgumentNullException.ThrowIfNull(clip);
 
         reach = 0.0;
-        IReadOnlyList<BoneTranslationKey> root = clip.Translation;
-        if (root.Count == 0)
+        ReadOnlySpan<BoneTranslationKey> root = clip.Translation;
+        if (root.Length == 0)
         {
             return default;
         }
 
         Vector3f first = root[0].Position;
-        Vector3f last = root[root.Count - 1].Position;
+        Vector3f last = root[root.Length - 1].Position;
 
         double dx = last.X - first.X;
         double dy = last.Y - first.Y;

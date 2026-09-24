@@ -57,7 +57,7 @@ public sealed class RetailImpactMaterialTests
         GameMaterialRegistry materials = Materials();
         MefCollisionMesh mesh = FenceMesh(0);
 
-        int[] rows = [.. mesh.Faces.Select(face => mesh.GlobalMaterial(face.Material)).Distinct().Order()];
+        int[] rows = [.. mesh.Faces.ToArray().Select(face => mesh.GlobalMaterial(face.Material)).Distinct().Order()];
         Assert.Equal([1, 6, 18], rows);
 
         Assert.True(materials.TryGet(18, out GameMaterial fence));
@@ -87,7 +87,7 @@ public sealed class RetailImpactMaterialTests
         MefCollisionMesh mesh = FenceMesh(1);
 
         Assert.All(
-            mesh.Faces,
+            mesh.Faces.ToArray(),
             face => Assert.Equal(21, mesh.GlobalMaterial(face.Material)));
 
         Assert.True(materials.TryGet(21, out GameMaterial blocker));

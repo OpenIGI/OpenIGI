@@ -191,7 +191,7 @@ public static class HumanHitTest
         hit = default;
 
         int count = mesh.Vertices.Count;
-        if (count == 0 || mesh.Faces.Count == 0)
+        if (count == 0 || mesh.Faces.Length == 0)
         {
             return false;
         }
@@ -308,7 +308,7 @@ public static class HumanHitTest
         hit = default;
 
         int count = mesh.Vertices.Count;
-        if (count == 0 || mesh.Faces.Count == 0)
+        if (count == 0 || mesh.Faces.Length == 0)
         {
             return false;
         }
@@ -443,7 +443,7 @@ public static class HumanHitTest
 
             for (int child = bone + 1; child < pose.BoneCount; child++)
             {
-                if (child >= pose.Parents.Count || pose.Parents[child] != bone)
+                if (child >= pose.Parents.Length || pose.Parents[child] != bone)
                 {
                     continue;
                 }

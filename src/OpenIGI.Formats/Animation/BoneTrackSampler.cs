@@ -21,11 +21,9 @@ public static class BoneTrackSampler
     /// <see langword="true"/> for the Hermite arm, <see langword="false"/> for the linear one.
     /// </param>
     /// <returns>The position, or the zero vector for an empty track.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="keys"/> is <see langword="null"/>.</exception>
-    public static Vector3f Sample(IReadOnlyList<BoneTranslationKey> keys, float time, bool spline = true)
+    public static Vector3f Sample(ReadOnlySpan<BoneTranslationKey> keys, float time, bool spline = true)
     {
-        ArgumentNullException.ThrowIfNull(keys);
-        if (keys.Count == 0)
+        if (keys.Length == 0)
         {
             return default;
         }
@@ -33,12 +31,12 @@ public static class BoneTrackSampler
         // The original scans linearly for the first key at or after the time, and leaves the loop
         // variable at the count when every key is earlier. Both of those edges matter below.
         int index = 0;
-        while (index < keys.Count && keys[index].Time < time)
+        while (index < keys.Length && keys[index].Time < time)
         {
             index++;
         }
 
-        if (index == keys.Count)
+        if (index == keys.Length)
         {
             // Past the last key: hold it. This is also what a one-key track always does.
             return keys[^1].Position;

@@ -44,7 +44,7 @@ public sealed class RetailHumanRigTests
             }
 
             Assert.Equal(HumanParents.Length, skeleton.BoneCount);
-            Assert.Equal(HumanParents, skeleton.Parents);
+            Assert.Equal(HumanParents, skeleton.Parents.ToArray());
             checkedSets++;
         }
 
@@ -91,7 +91,7 @@ public sealed class RetailHumanRigTests
 
         foreach (MefModel model in Models())
         {
-            if (model.Format != MefMeshFormat.Skinned || model.SkinInfluences.Count == 0)
+            if (model.Format != MefMeshFormat.Skinned || model.SkinInfluences.Length == 0)
             {
                 continue;
             }

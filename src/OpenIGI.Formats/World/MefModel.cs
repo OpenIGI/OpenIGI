@@ -92,7 +92,7 @@ public sealed class MefModel
     /// Indexed exactly like the vertex array: the first <see cref="BaseVertexCount"/> entries belong to
     /// base vertices, the rest to extra influences. See <see cref="MefSkinInfluence"/>.
     /// </remarks>
-    public IReadOnlyList<MefSkinInfluence> SkinInfluences => _skinInfluences;
+    public ReadOnlySpan<MefSkinInfluence> SkinInfluences => _skinInfluences;
 
     /// <summary>Gets the underlying container.</summary>
     public IlffContainer Container { get; }

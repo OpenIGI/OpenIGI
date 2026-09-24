@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Formats.Animation;
 
@@ -365,7 +365,7 @@ public sealed class BoneObject
     // BonePose is -- every retail skeleton lists a parent before its children.
     private void Resolve()
     {
-        IReadOnlyList<int> parents = _set.Skeleton.Parents;
+        ReadOnlySpan<int> parents = _set.Skeleton.Parents;
 
         for (int bone = 0; bone < _resolved.Length; bone++)
         {
