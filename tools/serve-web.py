@@ -104,6 +104,9 @@ def main():
     options = parser.parse_args()
 
     handler = functools.partial(Handler, app=options.app, game=options.game)
+    # The page reads an installation's files many at a time, and the listen backlog's default of five
+    # refused the overflow on Windows: a load that failed partway with the connection refused.
+    http.server.ThreadingHTTPServer.request_queue_size = 256
     server = http.server.ThreadingHTTPServer(("127.0.0.1", options.port), handler)
     print(f"http://127.0.0.1:{options.port}/?data=/data/")
     server.serve_forever()
