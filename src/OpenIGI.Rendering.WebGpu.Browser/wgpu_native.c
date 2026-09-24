@@ -350,6 +350,14 @@ CREATE(wgpuDeviceCreateRenderPipeline, WGPURenderPipeline, "createRenderPipeline
 CREATE(wgpuDeviceCreateQuerySet, WGPUQuerySet, "createQuerySet")
 CREATE(wgpuDeviceCreateCommandEncoder, WGPUCommandEncoder, "createCommandEncoder")
 
+/* A browser has no trusted modules: its WebGPU keeps every runtime check, as the specification requires, so
+   the module is made the ordinary way and the request is dropped. */
+WGPUShaderModule wgpuDeviceCreateShaderModuleTrusted(
+    WGPUDevice device, WGPUShaderModuleDescriptor const* d, WGPUShaderRuntimeChecks runtimeChecks) {
+  (void)runtimeChecks;
+  return wgpuDeviceCreateShaderModule(device, d);
+}
+
 WGPUTextureView wgpuTextureCreateView(WGPUTexture texture, WGPUTextureViewDescriptor const* d) {
   return (WGPUTextureView)(uintptr_t)CALL("createView", H(texture), H(d), 0, 0, 0, 0);
 }

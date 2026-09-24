@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using OpenIGI.Core.Threading;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.WebGpu.Native;
@@ -318,7 +318,13 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
             label = label.View,
         };
 
-        WGPUShaderModule handle = Wgpu.wgpuDeviceCreateShaderModule(_context.Device, &native);
+        // Trusted: the WGSL is the library's own, compiled from the same Slang as the SPIR-V the Vulkan
+        // backend runs without a single runtime check. Left in, wgpu guards every array and texture access
+        // and puts a counter on every loop -- and the screen gather marches sixteen rays of up to 256 steps
+        // for every probe, so the counters alone made its temporal filter two-thirds slower than on
+        // Vulkan. A browser keeps its checks whatever is asked; see wgpu_native.c.
+        WGPUShaderModule handle = Wgpu.wgpuDeviceCreateShaderModuleTrusted(
+            _context.Device, &native, WGPUShaderRuntimeChecks.None);
         return handle.IsValid
             ? new WebGpuShaderModule(handle, name, ShaderCatalog.GetReflection(descriptor.Module, variant))
             : throw new InvalidOperationException($"The module {descriptor.Module} did not compile.");
