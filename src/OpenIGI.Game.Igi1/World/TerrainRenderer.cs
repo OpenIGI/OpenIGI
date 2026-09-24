@@ -447,6 +447,12 @@ public sealed class TerrainRenderer : ITerrainPresenter
         if (!batching)
         {
             DrawDirect(camera, result, fadeOffset, fadeSlope);
+
+            // Put back like the batched path below does. Missing here, the vanilla preset -- the only one
+            // that draws unbatched -- left every later cut-out untested: the forest after the ground in
+            // the same frame, and the world's fences and grilles from the next frame on, each drawing
+            // its holes as the black the texture keeps in them.
+            _device.SetAlphaReference(IGraphicsDevice.DefaultAlphaReference);
             Trim();
             return;
         }

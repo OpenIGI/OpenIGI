@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
@@ -216,12 +216,19 @@ public sealed class TerrainStreamingTests
     /// an overlay is additive. So this guards the deferred presets, and vanilla is what they should have
     /// been matching.
     /// </para>
+    /// <para>
+    /// Both paths: the vanilla preset draws unbatched, and that path once returned without putting the
+    /// default back -- so every fence and tree drawn after it showed its holes as solid black.
+    /// </para>
     /// </remarks>
-    [RequiresGameDataFact]
-    public void TheGroundDrawsWithNoAlphaTest()
+    /// <param name="batching">Whether the frame takes the batched path or vanilla's direct one.</param>
+    [RequiresGameDataTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void TheGroundDrawsWithNoAlphaTest(bool batching)
     {
         using Harness harness = Harness.Load(1);
-        harness.Frame(harness.Eye, 0f);
+        harness.Frame(harness.Eye, 0f, batching: batching);
 
         Assert.Contains((byte)0, harness.Device.AlphaReferences);
 
@@ -292,11 +299,15 @@ public sealed class TerrainStreamingTests
         /// <summary>Draws one frame and returns how many terrain triangles it submitted.</summary>
         /// <param name="eye">The camera position in metres.</param>
         /// <param name="yaw">The heading in radians; zero looks along <c>+Y</c>.</param>
+        /// <param name="verticalFieldOfView">The projection's full vertical field of view in radians.</param>
+        /// <param name="aspectRatio">The viewport's width divided by its height.</param>
+        /// <param name="batching">Whether the batched path draws it; false is the vanilla preset's.</param>
         public int Frame(
             Vector3d eye,
             float yaw,
             float verticalFieldOfView = FieldOfView,
-            float aspectRatio = AspectRatio)
+            float aspectRatio = AspectRatio,
+            bool batching = true)
         {
             Terrain.Draw(
                 new Camera3D(eye, Camera3D.LookRotation(yaw, 0f)),
@@ -304,7 +315,7 @@ public sealed class TerrainStreamingTests
                 verticalFieldOfView,
                 aspectRatio,
                 ViewDistance,
-                batching: true,
+                batching,
                 occlusionCulling: false);
             return Terrain.LastTriangleCount;
         }
