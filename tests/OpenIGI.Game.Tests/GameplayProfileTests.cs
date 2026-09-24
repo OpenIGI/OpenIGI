@@ -1,4 +1,4 @@
-using Xunit;
+﻿using Xunit;
 
 namespace OpenIGI.Game.Tests;
 
@@ -32,24 +32,32 @@ public sealed class GameplayProfileTests : IDisposable
         Assert.False(GameplayCVars.Ragdoll.Value);
     }
 
-    /// <summary>The enhanced profile turns them on.</summary>
+    /// <summary>Simulated deaths ship off, and are something a player turns on.</summary>
     [Fact]
-    public void TheEnhancedProfileSimulatesTheDead()
+    public void SimulatedDeathsAreOffByDefault()
     {
+        Assert.False(GameplayCVars.Ragdoll.DefaultValue);
+    }
+
+    /// <summary>The enhanced profile leaves them as the player set them, either way.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TheEnhancedProfileLeavesSimulatedDeathsAlone(bool chosen)
+    {
+        GameplayCVars.Ragdoll.Value = chosen;
         GameplayCVars.Apply(GameplayProfile.Enhanced);
-        Assert.True(GameplayCVars.Ragdoll.Value);
+        Assert.Equal(chosen, GameplayCVars.Ragdoll.Value);
     }
 
     /// <summary>Setting the profile variable applies it, which is how <c>g_preset vanilla</c> works at all.</summary>
     [Fact]
     public void SettingThePresetAppliesIt()
     {
+        GameplayCVars.Preset.Value = GameplayProfile.Enhanced;
         GameplayCVars.Ragdoll.Value = true;
         GameplayCVars.Preset.Value = GameplayProfile.Vanilla;
         Assert.False(GameplayCVars.Ragdoll.Value);
-
-        GameplayCVars.Preset.Value = GameplayProfile.Enhanced;
-        Assert.True(GameplayCVars.Ragdoll.Value);
     }
 
     /// <summary>The custom profile names no values and so changes nothing.</summary>
