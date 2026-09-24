@@ -1,4 +1,4 @@
-using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Host.DevTools;
@@ -92,11 +92,13 @@ public sealed class HostConsole : IDisposable
     /// Whether <c>settings.cfg</c> is read and written. A capture run passes <see langword="false"/> —
     /// see <see cref="IsolatedFromSavedSettings"/>.
     /// </param>
+    /// <param name="firstRunPreset">The graphics preset applied when there are no saved settings.</param>
     /// <exception cref="ArgumentNullException"><paramref name="fileSystem"/> is <see langword="null"/>.</exception>
     public void Start(
         VirtualFileSystem fileSystem,
         IReadOnlyList<string>? startupCommands = null,
-        bool useSavedSettings = true)
+        bool useSavedSettings = true,
+        GraphicsPreset firstRunPreset = GraphicsPreset.Enhanced)
     {
         ArgumentNullException.ThrowIfNull(fileSystem);
 
@@ -124,8 +126,8 @@ public sealed class HostConsole : IDisposable
 
         if (!IsolatedFromSavedSettings && !settingsLoaded)
         {
-            _logger.Information(LogCategory, "No saved settings found; using the Enhanced graphics preset.");
-            GraphicsPresetRegistry.Default.Apply(GraphicsPreset.Enhanced);
+            _logger.Information(LogCategory, $"No saved settings found; using the {firstRunPreset} graphics preset.");
+            GraphicsPresetRegistry.Default.Apply(firstRunPreset);
         }
 
         // Labels the restored settings, so a player who saved on High and has touched nothing since is

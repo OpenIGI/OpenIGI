@@ -827,7 +827,8 @@ internal sealed partial class GameHost : IDisposable
         RegisterRendererSwitchCommand(console.System);
         RegisterOverrideCommands(console.System);
 
-        console.Start(_fileSystem, _options.StartupCommands, useSavedSettings: !_options.Lockstep);
+        console.Start(
+            _fileSystem, _options.StartupCommands, useSavedSettings: !_options.Lockstep, _options.FirstRunPreset);
         _logger = console.WrapLogger(_logger);
         // The scan LoadTitleResources ran: taken off the field because the scan now happens wherever the
         // resources are loaded, and that is a method a title switch calls too.

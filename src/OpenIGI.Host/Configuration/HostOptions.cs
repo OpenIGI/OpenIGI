@@ -3,6 +3,7 @@ using OpenIGI.Platform;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
+using OpenIGI.Rendering.Presets;
 
 namespace OpenIGI.Host.Configuration;
 
@@ -635,6 +636,13 @@ public readonly record struct HostOptions(
     /// again.
     /// </remarks>
     public IReadOnlyList<(int Frame, string Statement)> DeferredCommands { get; init; } = [];
+
+    /// <summary>Gets the graphics preset a player with no saved settings starts on.</summary>
+    /// <remarks>
+    /// Enhanced unless the platform says otherwise; the browser build starts on High. Only a first run
+    /// reads it: once there is a settings file, the file decides.
+    /// </remarks>
+    public GraphicsPreset FirstRunPreset { get; init; } = GraphicsPreset.Enhanced;
 
     /// <summary>
     /// Gets how many frames each leg of an abandon/replay cycle lasts, or <c>0</c> for never. Set by

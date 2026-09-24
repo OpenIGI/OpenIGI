@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices.JavaScript;
+﻿using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
 using OpenIGI.Audio;
 using OpenIGI.Composition;
@@ -13,6 +13,7 @@ using OpenIGI.Platform;
 using OpenIGI.Platform.Web;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Pipeline;
+using OpenIGI.Rendering.Presets;
 using OpenIGI.Rendering.WebGpu;
 
 namespace OpenIGI.Web;
@@ -54,7 +55,8 @@ public static partial class Program
         }
 
         ConsoleLogger logger = new();
-        HostOptions options = HostOptions.Parse(args ?? []);
+        // A first visit starts on High rather than the desktop's Enhanced; a saved choice still wins.
+        HostOptions options = HostOptions.Parse(args ?? []) with { FirstRunPreset = GraphicsPreset.High };
         IGameTitleRuntime runtime = TitleCatalog.Default;
 
         VirtualFileSystem fileSystem = new(logger);
