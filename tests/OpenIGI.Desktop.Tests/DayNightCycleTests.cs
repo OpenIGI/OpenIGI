@@ -247,18 +247,23 @@ public sealed class DayNightCycleTests
         // A full moon rises as the sun sets, so between day and night the light hands over rather than
         // going out. It used to go out: the sun faded to nothing just under the horizon and only then did
         // the moon begin to rise, which left every dusk and dawn a stretch with no light and no sky at all.
+        //
+        // Measured as the direct light and the fill together, because that is what the ground gets: with
+        // both sun and moon on the horizon the direct light is honestly dim, and the twilight sky carries
+        // the scene. Together they must never fall under a moonlit night's.
         DirectionalLightSettings authored = AuthoredAt(12f);
         var cycle = new DayNightCycle();
-        float floor = 0.5f * Luminance(DayNightCycle.DefaultNightColour);
+        float floor = Luminance(DayNightCycle.DefaultNightColour) + Luminance(DayNightCycle.DefaultNightAmbient);
 
         for (float hour = 0f; hour < 24f; hour += 0.01f)
         {
             cycle.Reset(hour);
-            float lit = Luminance(cycle.Apply(authored).Colour);
+            DirectionalLightSettings applied = cycle.Apply(authored);
+            float lit = Luminance(applied.Colour) + Luminance(applied.Ambient);
 
             Assert.True(
-                lit >= floor,
-                $"At {hour:0.00} h the directional light is {lit:0.#####}, under half the full moon's {2f * floor:0.#####}.");
+                lit >= floor * 0.999f,
+                $"At {hour:0.00} h the light and fill are {lit:0.#####}, under a moonlit night's {floor:0.#####}.");
         }
     }
 

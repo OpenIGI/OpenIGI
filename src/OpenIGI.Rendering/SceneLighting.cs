@@ -59,6 +59,15 @@ namespace OpenIGI.Rendering;
 /// the stars and the moon's disc. <see cref="NightSky.None"/> by day, which leaves the sky exactly as the
 /// atmosphere alone draws it.
 /// </param>
+/// <param name="AtmosphereSunDirection">
+/// The WORLD direction towards the sun the atmosphere scatters, when it is not the direct light's. A day
+/// cycle hands the direct slot to the moon at night, but the sky still has to be lit by the sun from
+/// where it really is -- under the horizon, through twilight -- so the dusk fades rather than cuts.
+/// </param>
+/// <param name="AtmosphereMoonColour">
+/// The moon's light for the atmosphere to scatter as a second source, before <paramref name="Scale"/>,
+/// towards <see cref="NightSky.MoonDirection"/>. Nought by day and wherever the cycle hangs no moon.
+/// </param>
 public readonly record struct SceneLighting(
     LightingModel Model,
     Vector3f SunDirection,
@@ -69,7 +78,9 @@ public readonly record struct SceneLighting(
     Vector3f SkyColour = default,
     float SkyLightIntensity = 1f,
     Vector3f? AtmosphereSunColour = null,
-    NightSky Night = default)
+    NightSky Night = default,
+    Vector3f? AtmosphereSunDirection = null,
+    Vector3f AtmosphereMoonColour = default)
 {
     /// <summary>
     /// Gets the lighting that reproduces the original: the bakes and nothing else.

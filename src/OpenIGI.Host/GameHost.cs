@@ -4687,8 +4687,30 @@ internal sealed partial class GameHost : IDisposable
                     float nightFeed = _deferredLighting is { Night: null } nightly
                         ? 1f + ((nightSky - 1f) * Math.Clamp(nightly.Nightfall, 0f, 1f))
                         : 1f;
-                    Vector3f atmosphereSun = light.Colour * RenderCVars.AtmosphereSunScale.Value
-                        * (_dayNight.Moonrise > 0f ? nightSky : nightFeed);
+                    //
+                    // Under the day cycle the sky is handed the sun and the moon as two lights, not
+                    // whichever of them holds the direct slot. The sun comes untinted and from where it
+                    // really is, under the horizon too: the march reddens it, and the planet's shadow
+                    // puts it out a little at a time, which is the twilight. The moon comes as its own
+                    // light, at the knocked-down feed above, from the moment it rises. Handing the sky
+                    // only the direct light made it scatter a sun already reddened and dimmed -- a
+                    // second reddening, the orange-brown dusk -- and then, as the direct light passed to
+                    // the moon, a sun that had gone and a moon not yet up: a black sky and a black fill
+                    // for the half hour between.
+                    float atmosphereScale = RenderCVars.AtmosphereSunScale.Value;
+                    Vector3f atmosphereSun;
+                    Vector3f? atmosphereSunDirection = null;
+                    Vector3f atmosphereMoon = default;
+                    if (_options.SunDirection is null)
+                    {
+                        atmosphereSun = _dayNight.SkySunColour * (atmosphereScale * nightFeed);
+                        atmosphereSunDirection = _dayNight.SunDirection;
+                        atmosphereMoon = _dayNight.MoonColour * (MoonVeil() * atmosphereScale * nightSky);
+                    }
+                    else
+                    {
+                        atmosphereSun = light.Colour * (atmosphereScale * nightFeed);
+                    }
 
                     // TEMPORARY (r_ambient_scale): the dynamic model fills every surface with this one flat
                     // ambient, so a sealed room reads as lit as open ground. Scaling it here -- towards 0 --
@@ -4724,7 +4746,9 @@ internal sealed partial class GameHost : IDisposable
 
                         // What the night sky holds beyond the air: the glow that lights a moonless night,
                         // the cloud cover, the stars and the moon's disc. Nothing by day.
-                        FrameNightSky()));
+                        FrameNightSky(),
+                        atmosphereSunDirection,
+                        atmosphereMoon));
                     _device.BeginPass(ScenePass.Geometry);
 
                     // The sky is geometry as far as the G-buffer is concerned, so without this the dynamic

@@ -41,7 +41,7 @@ internal sealed class SkyAtmosphere : IDisposable
     // Seven vectors of coefficients plus the plain average.
     private const uint IrradianceWidth = 8;
 
-    private const int ParamSize = 4 * 16;
+    private const int ParamSize = SkyParameters.Bytes;
 
     private readonly Vk _vk;
     private readonly VulkanImage _transmittance;
@@ -332,6 +332,8 @@ internal sealed class SkyAtmosphere : IDisposable
         float viewHeightKm,
         float skyLightIntensity)
     {
+        // No moon in the static tables.
+        p.Clear();
         p[0] = width;
         p[1] = height;
         p[2] = 1f / width;

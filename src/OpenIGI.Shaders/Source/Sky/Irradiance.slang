@@ -28,6 +28,9 @@ struct Params
 
     // view height km, sky light intensity, _, _.
     float4 misc;
+    // world direction towards the moon; the moon's illuminance outside the atmosphere, nought by day.
+    float4 moonDir;
+    float4 moonColour;
 };
 
 [[vk::binding(3, 0)]] ConstantBuffer<Params> p;

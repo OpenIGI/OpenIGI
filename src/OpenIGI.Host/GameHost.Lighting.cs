@@ -148,14 +148,20 @@ internal sealed partial class GameHost
         // directional is the little that comes through thin patches of cloud.
         if (!pinned && _dayNight.Moonrise > 0f)
         {
-            float cover = WeatherCloudCover() * _dayNight.Nightfall;
             light = light with
             {
-                Colour = light.Colour * ((1f - (0.75f * cover)) * RenderCVars.Moonlight.Value),
+                Colour = light.Colour * MoonVeil(),
             };
         }
 
         return light;
+    }
+
+    /// <summary>How much of the moon's light is left once the weather and <c>r_moonlight</c> have had it.</summary>
+    private float MoonVeil()
+    {
+        float cover = WeatherCloudCover() * _dayNight.Nightfall;
+        return (1f - (0.75f * cover)) * RenderCVars.Moonlight.Value;
     }
 
     // How bright the brightest star is drawn, in the lit scene's own units. Relative to the night sky it is
@@ -202,7 +208,10 @@ internal sealed partial class GameHost
         moonUp = moonUp * moonUp * (3f - (2f * moonUp));
 
         return new NightSky(
-            Airglow: RenderCVars.NightAirglow.Value * night,
+            // Not weighted by the night: the glow is emission, there all day, and only outshone while the
+            // sun lights the sky. Faded in with the night, it was missing through the whole of dusk, which
+            // left the sky between the sun's last light and full night darker than the night itself.
+            Airglow: RenderCVars.NightAirglow.Value,
             CloudCover: cover,
             StarRadiance: stars ? StarRadiance * _dayNight.StarVisibility : 0f,
             MoonDirection: moon,

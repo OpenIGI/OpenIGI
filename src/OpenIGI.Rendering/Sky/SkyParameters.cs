@@ -9,13 +9,17 @@ namespace OpenIGI.Rendering.Sky;
 /// <param name="SkyLightIntensity">How brightly the sky lights the world; one is its own brightness.</param>
 /// <param name="Airglow">The night sky's own zenith radiance, already in the table's units; nought by day.</param>
 /// <param name="CloudCover">How overcast the night sky is, 0 to 1.</param>
+/// <param name="MoonDirection">The world direction towards the moon.</param>
+/// <param name="MoonIlluminance">The moon's light outside the atmosphere, for the sky to scatter; nought by day.</param>
 public readonly record struct SkyConditions(
     Vector3f SunDirection,
     Vector3f SunIlluminance,
     float ViewHeightKm,
     float SkyLightIntensity,
     float Airglow = 0f,
-    float CloudCover = 0f)
+    float CloudCover = 0f,
+    Vector3f MoonDirection = default,
+    Vector3f MoonIlluminance = default)
 {
     /// <summary>
     /// The camera's height above the planet's centre, in the kilometres the atmosphere works in.
@@ -38,14 +42,17 @@ public readonly record struct SkyConditions(
     /// <remarks>
     /// The atmosphere's source sun is deliberately its own: scaling how surfaces answer the direct light
     /// must not also scale the visible sky and the harmonics projected from it. A caller that does not
-    /// name one gets the direct sun, which is how the two used to be shared.
+    /// name one gets the direct sun, which is how the two used to be shared. So is its direction: the
+    /// direct light is the moon at night, while the sky keeps scattering the sun from wherever it really
+    /// is, under the horizon included, and takes the moon as a second light.
     /// </remarks>
     public static SkyConditions ForScene(in SceneLighting lighting, in Matrix3f viewToWorld, float altitudeMetres)
     {
         Vector3f source = lighting.AtmosphereSunColour ?? lighting.SunColour;
+        Vector3f moon = lighting.AtmosphereMoonColour;
 
         return new SkyConditions(
-            lighting.WorldSunDirection(viewToWorld),
+            lighting.AtmosphereSunDirection ?? lighting.WorldSunDirection(viewToWorld),
             new Vector3f(source.X * lighting.Scale, source.Y * lighting.Scale, source.Z * lighting.Scale),
             ViewHeightFor(altitudeMetres),
             Math.Max(0f, lighting.SkyLightIntensity),
@@ -53,7 +60,9 @@ public readonly record struct SkyConditions(
             // Scaled with the source for the same reason: the airglow is part of the sky the source
             // lights, and has to stay in proportion to it when the frame's light scale moves.
             Math.Max(0f, lighting.Night.Airglow) * lighting.Scale,
-            Math.Clamp(lighting.Night.CloudCover, 0f, 1f));
+            Math.Clamp(lighting.Night.CloudCover, 0f, 1f),
+            lighting.Night.MoonDirection,
+            new Vector3f(moon.X * lighting.Scale, moon.Y * lighting.Scale, moon.Z * lighting.Scale));
     }
 
     /// <summary>Whether a sky built for these conditions would look the same built for another.</summary>
@@ -72,7 +81,9 @@ public readonly record struct SkyConditions(
         && MathF.Abs(ViewHeightKm - other.ViewHeightKm) <= 1e-3f
         && MathF.Abs(SkyLightIntensity - other.SkyLightIntensity) <= 1e-4f
         && MathF.Abs(Airglow - other.Airglow) <= 1e-7f
-        && MathF.Abs(CloudCover - other.CloudCover) <= 1e-4f;
+        && MathF.Abs(CloudCover - other.CloudCover) <= 1e-4f
+        && Near(MoonDirection, other.MoonDirection)
+        && Near(MoonIlluminance, other.MoonIlluminance);
 
     private static bool Near(Vector3f left, Vector3f right) =>
         MathF.Abs(left.X - right.X) <= 1e-5f
@@ -89,7 +100,7 @@ public readonly record struct SkyConditions(
 public static class SkyParameters
 {
     /// <summary>How many floats the block holds.</summary>
-    public const int Floats = 16;
+    public const int Floats = 24;
 
     /// <summary>How many bytes it occupies.</summary>
     public const int Bytes = Floats * sizeof(float);
@@ -126,5 +137,15 @@ public static class SkyParameters
         block[13] = conditions.SkyLightIntensity;
         block[14] = conditions.Airglow;
         block[15] = conditions.CloudCover;
+
+        block[16] = conditions.MoonDirection.X;
+        block[17] = conditions.MoonDirection.Y;
+        block[18] = conditions.MoonDirection.Z;
+        block[19] = 0f;
+
+        block[20] = conditions.MoonIlluminance.X;
+        block[21] = conditions.MoonIlluminance.Y;
+        block[22] = conditions.MoonIlluminance.Z;
+        block[23] = 0f;
     }
 }
