@@ -288,8 +288,13 @@ internal sealed class VulkanWorldScene : IDisposable
         // old one once the frames still tracing against it have finished, and let the placements repoint
         // themselves to the new address on the next scene build. Held to the same per-frame budget as a
         // new mesh, and never done while the old structure is still moving under compaction.
+        //
+        // Or rebuilt later, if it could not be then: a range found on a frame whose budget was spent, or
+        // while the structure was compacting, is marked stale -- and until this retried it, nothing ever
+        // read the mark, so the missing part stayed out of the traced world for good, a hole every ray
+        // passed through.
         if (_geometries.TryGetValue(meshId, out Geometry built)
-            && grew
+            && (grew || _stale.Contains(meshId))
             && !_scene.IsCompacting(built.Structure)
             && (UnlimitedAdmission || _newThisFrame < MaxNewGeometriesPerFrame))
         {

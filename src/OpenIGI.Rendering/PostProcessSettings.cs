@@ -212,4 +212,17 @@ public readonly record struct PostProcessSettings(
         || NightShift > 0f
         || Tactical.IsActive
         || Binocular.IsActive;
+
+    /// <summary>The steady exposure rate <see cref="ExposureRate"/> is measured against.</summary>
+    public const float SteadyExposureRate = 0.04f;
+
+    /// <summary>How much time this frame advances the eye adaptation by.</summary>
+    /// <remarks>
+    /// The frame's real length, not a sixtieth of a second: fixed, the eye adapted twice and a half as fast
+    /// at 144 frames a second as at 60. Scaled by <see cref="ExposureRate"/> against the steady rate, which
+    /// is how the game's faster adaptation while the GI converges after a load reaches the easing -- the
+    /// rate was set and never read. Capped, so a hitch does not snap the exposure.
+    /// </remarks>
+    public float ExposureDeltaSeconds =>
+        Math.Clamp(FrameDeltaSeconds, 0f, 0.25f) * Math.Max(ExposureRate, 0f) / SteadyExposureRate;
 }

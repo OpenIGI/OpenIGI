@@ -316,6 +316,10 @@ internal sealed partial class GameHost : IDisposable
     // decided -- so the cache has converged before it stops.
     private const int GiSettleFrames = 64;
 
+    // How far the eye may move between two frames and still count as the same shot for the screen GI's
+    // histories. Metres; a sprint covers a fraction of this in a frame, a cut or a teleport covers more.
+    private const double GiCutDistance = 2.0;
+
     // Frames left in the exposure warm-up: for a moment after a level's GI starts converging, the adapted
     // exposure eases fast so it tracks the light filling in rather than over-lifting the dark first frames
     // and then walking visibly back down. Reset when the surface cache is (re)built, counted down per frame.
@@ -1105,6 +1109,13 @@ internal sealed partial class GameHost : IDisposable
         int giResolveWidth = 0;
         int giResolveHeight = 0;
         bool giResolveHasHistory = false;
+
+        // What the screen GI's histories were accumulated under, so a cut, a zoom or a new surface cache
+        // can throw them away. See where the gather begins.
+        bool giContinuityValid = false;
+        Vector3d giLastEye = default;
+        DepthUnprojection giLastUnprojection = default;
+        SurfaceCacheLighting? giLastCards = null;
         _capturedCards = null;
         _cardInstances = null;
         _sdfBake = null;
@@ -5072,6 +5083,28 @@ if (retailFog)
                         giIndirectHeight = wantHeight;
                         giHasHistory = false;
                     }
+
+                    // Both histories describe the scene as the last frames saw it. A camera cut (a cutscene, a
+                    // respawn, the death camera, the map taking the eye), a change of projection (a scope's
+                    // zoom -- the reprojection assumes last frame's projection is this frame's) or a surface
+                    // cache rebuilt from dark all make that description wrong, and the plane tests only catch
+                    // part of it: a cut still read one frame of the old view's light.
+                    DepthUnprojection giUnprojection = DepthUnprojection.From(unjitteredProjection, NearPlane, FarPlane);
+                    bool giContinuous = giContinuityValid
+                        && ReferenceEquals(giLastCards, liveGiCards)
+                        && MathF.Abs(giUnprojection.XScale - giLastUnprojection.XScale) < 1e-4f * giLastUnprojection.XScale
+                        && MathF.Abs(giUnprojection.YScale - giLastUnprojection.YScale) < 1e-4f * giLastUnprojection.YScale
+                        && (eye.Position - giLastEye).LengthSquared < GiCutDistance * GiCutDistance;
+                    if (!giContinuous)
+                    {
+                        giHasHistory = false;
+                        giResolveHasHistory = false;
+                    }
+
+                    giContinuityValid = true;
+                    giLastEye = eye.Position;
+                    giLastUnprojection = giUnprojection;
+                    giLastCards = liveGiCards;
 
                     Vector3f giCameraToCache = new(
                         (float)(eye.Position.X - liveGiCards.Origin.X),

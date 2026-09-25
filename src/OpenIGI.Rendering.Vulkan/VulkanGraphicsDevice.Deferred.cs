@@ -1618,7 +1618,7 @@ public sealed partial class VulkanGraphicsDevice
         if (post.AutoExposure && _debugView is DebugView.None or DebugView.Lighting or DebugView.LampLight)
         {
             RecordExposureMetering();
-            adaptedExposure = _deferred.AutoExposure.Adapt(_frameLoop.CurrentFrame, 1f / 60f);
+            adaptedExposure = _deferred.AutoExposure.Adapt(_frameLoop.CurrentFrame, post.ExposureDeltaSeconds);
             _lastAdaptedExposure = adaptedExposure;
         }
 
