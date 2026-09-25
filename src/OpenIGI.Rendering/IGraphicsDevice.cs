@@ -1504,12 +1504,18 @@ public interface IGraphicsDevice : IDisposable
     /// written so that skipping it costs only the reflection.
     /// </para>
     /// </remarks>
+    /// <param name="firstPersonOnly">
+    /// Whether only reflections may find it, as the first-person rig is: the player's own body, which the
+    /// camera never sees. Every other ray -- the GI's, the shadows' -- passes through it, or an invisible
+    /// occluder stands wherever the camera does and darkens whatever the player faces.
+    /// </param>
     void SubmitTracedMesh(
         MeshHandle mesh,
         int indexOffset,
         int indexCount,
         in Matrix4f modelView,
-        TextureHandle diffuse)
+        TextureHandle diffuse,
+        bool firstPersonOnly = false)
     {
     }
 

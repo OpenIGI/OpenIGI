@@ -1074,6 +1074,9 @@ internal sealed partial class GameHost : IDisposable
         TextureHandle[] giAccum = [default, default];
         TextureHandle[] giPosition = [default, default];
         TextureHandle giFiltered = default;
+
+        // The gather's raw per-probe estimates, traced by its first pass and pooled by its second.
+        TextureHandle giRaw = default;
         int giIndirectWidth = 0;
         int giIndirectHeight = 0;
         int giFrame = 0;
@@ -5057,6 +5060,14 @@ if (retailFog)
                         giFiltered = _device.CreateStorageTexture(
                             wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.filtered");
 
+                        if (giRaw.IsValid)
+                        {
+                            _device.DestroyTexture(giRaw);
+                        }
+
+                        giRaw = _device.CreateStorageTexture(
+                            wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.raw");
+
                         giIndirectWidth = wantWidth;
                         giIndirectHeight = wantHeight;
                         giHasHistory = false;
@@ -5116,7 +5127,8 @@ if (retailFog)
                             // resolve carries forward every frame -- unlike the gather's own previous camera,
                             // which only moves on a frame that traced.
                             giResolvePrevWorldToView,
-                            giResolvePrevCameraToCache);
+                            giResolvePrevCameraToCache,
+                            giRaw);
 
                         // The spatial denoise (L6c), if on: smooths the accumulation into a separate atlas that
                         // the deferred fill reads, leaving the history the next frame reprojects onto unfiltered.

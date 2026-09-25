@@ -81,10 +81,11 @@ public sealed partial class GraphicsDevice
         int indexOffset,
         int indexCount,
         in Matrix4f modelView,
-        TextureHandle diffuse)
+        TextureHandle diffuse,
+        bool firstPersonOnly = false)
     {
         ThrowIfDisposed();
-        ObserveForTracing(mesh, modelView, diffuse, indexOffset, indexCount);
+        ObserveForTracing(mesh, modelView, diffuse, indexOffset, indexCount, firstPersonOnly);
     }
 
     /// <summary>Whether this frame's sun is traced: the settings ask for it and the world can answer.</summary>

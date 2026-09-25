@@ -17,6 +17,11 @@ OPENIGI_COMPUTE_SAMPLER(9) SamplerState uHistorySampler;
 OPENIGI_COMPUTE_TEXTURE(10) Texture2D<float4> uPositionHistory;
 OPENIGI_COMPUTE_SAMPLER(10) SamplerState uPositionHistorySampler;
 
+// This frame's raw per-probe estimates (rgb) and whether each probe is real (a): what the first pass
+// traced and the second pools. See uGatherPass.
+OPENIGI_COMPUTE_TEXTURE(12) Texture2D<float4> uRaw;
+OPENIGI_COMPUTE_SAMPLER(12) SamplerState uRawSampler;
+
 OPENIGI_COMPUTE_GLOBALS cbuffer Globals
 {
 #if OPENIGI_RAY_QUERY
@@ -82,18 +87,17 @@ OPENIGI_COMPUTE_GLOBALS cbuffer Globals
     int uHasHistory;
     int uFrameIndex;
     int uMaxAccumulated;
+
+    // 0 traces each probe and stores its raw estimate; 1 pools every probe's full neighbourhood of raw
+    // estimates and folds the result into the history. Split so that a probe on the edge of a workgroup
+    // pools all eight neighbours like any other: in one pass the pool could only see its own group, so the
+    // probes on every 64-pixel tile border pooled half as much and were clamped twice as hard.
+    int uGatherPass;
 };
 
 // Screen hits are read from last frame's picture where they stood last frame; see ScreenTraceRadiance.
 #define OPENIGI_SCREEN_HIT_REPROJECT 1
 #include "../Common/ScreenGather.slang"
-
-// The workgroup's own probes, so a probe can pool its neighbours without reading them back out of an
-// image none of them has finished writing.
-groupshared float3 sLight[64];
-groupshared float sValid[64];
-groupshared float3 sWorld[64];
-groupshared float3 sNormal[64];
 
 // How squarely two probes must face the same way to be pooled. Below this they are two surfaces meeting,
 // and averaging them carries a floor's light onto the wall beside it.
@@ -126,75 +130,83 @@ float2 FrameJitter(int2 probeCoord, int frame)
     return frac(point + float2(rotation, frac(rotation * 1.61803398875)));
 }
 
+// Where a probe stands and which way its surface faces, from this frame's depth and normals.
+bool ProbeSurface(int2 probe, out float3 world, out float3 viewPosition, out float3 worldNormal)
+{
+    world = float3(0.0, 0.0, 0.0);
+    viewPosition = float3(0.0, 0.0, 0.0);
+    worldNormal = float3(0.0, 0.0, 1.0);
+
+    int2 pixel = min(
+        (probe * uProbeStep) + (uProbeStep / 2), int2(uScreenWidth, uScreenHeight) - 1);
+    float2 uv = (float2(pixel) + 0.5) / float2(float(uScreenWidth), float(uScreenHeight));
+    float depth = DepthBilinear(uSceneDepth, uSceneDepthSampler, uv);
+    if (IsSkyDepth(depth))
+    {
+        return false;
+    }
+
+    viewPosition = ViewPositionAt(uv, depth);
+    world = uCameraToCache
+        + (uViewToWorld0 * viewPosition.x)
+        + (uViewToWorld1 * viewPosition.y)
+        + (uViewToWorld2 * viewPosition.z);
+    float3 storedNormal = (uSceneNormal.SampleLevel(uSceneNormalSampler, uv, 0.0).xyz * 2.0) - 1.0;
+    worldNormal = normalize(storedNormal);
+    return true;
+}
+
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void computeMain(uint3 id : SV_DispatchThreadID, uint3 localId : SV_GroupThreadID)
 {
     int2 probe = int2(id.xy);
     int2 grid = (int2(uScreenWidth, uScreenHeight) + (uProbeStep - 1)) / uProbeStep;
-    uint lid = (localId.y * 8u) + localId.x;
 
-    // Out-of-grid threads still take part: they have to reach the barrier below, and they publish a zero
-    // validity, which is the truth about a probe that is not there.
-    bool inGrid = probe.x < grid.x && probe.y < grid.y;
-
-    int2 pixel = min(
-        (probe * uProbeStep) + (uProbeStep / 2), int2(uScreenWidth, uScreenHeight) - 1);
-    float2 uv = (float2(pixel) + 0.5) / float2(float(uScreenWidth), float(uScreenHeight));
-
-    float depth = inGrid ? DepthBilinear(uSceneDepth, uSceneDepthSampler, uv) : 0.0;
-
-    float3 world = float3(0.0, 0.0, 0.0);
-    float3 viewPosition = float3(0.0, 0.0, 0.0);
-    float3 current = float3(0.0, 0.0, 0.0);
-    float3 worldNormal = float3(0.0, 0.0, 1.0);
-    float valid = 0.0;
-
-    if (inGrid && !IsSkyDepth(depth))
-    {
-        viewPosition = ViewPositionAt(uv, depth);
-        world = uCameraToCache
-            + (uViewToWorld0 * viewPosition.x)
-            + (uViewToWorld1 * viewPosition.y)
-            + (uViewToWorld2 * viewPosition.z);
-
-        float3 storedNormal = (uSceneNormal.SampleLevel(uSceneNormalSampler, uv, 0.0).xyz * 2.0) - 1.0;
-        worldNormal = normalize(storedNormal);
-        current = GatherIndirect(world, worldNormal, viewPosition, FrameJitter(probe, uFrameIndex));
-        valid = 1.0;
-
-        // r_gi_source 4: the surface cache's own stored light at this surface -- what a ray landing here
-        // would read -- in place of what arrives at it, and with no history, so the cache's own changes
-        // over time show exactly as they happen.
-        if (uDebugSource == 4)
-        {
-            float2 found;
-            float2 litFound;
-            float agreement;
-            current = LookupCardHit(world, -worldNormal, found, litFound, agreement)
-                ? uFinal.SampleLevel(uFinalSampler, litFound, 0.0).rgb
-                : float3(0.0, 0.0, 0.0);
-        }
-    }
-
-    sLight[lid] = current;
-    sValid[lid] = valid;
-    sWorld[lid] = world;
-    sNormal[lid] = worldNormal;
-
-    GroupMemoryBarrierWithGroupSync();
-
-    if (!inGrid)
+    if (probe.x >= grid.x || probe.y >= grid.y)
     {
         return;
     }
 
-    if (valid < 0.5)
+    float3 world;
+    float3 viewPosition;
+    float3 worldNormal;
+    bool onSurface = ProbeSurface(probe, world, viewPosition, worldNormal);
+
+    if (uGatherPass == 0)
+    {
+        float3 traced = float3(0.0, 0.0, 0.0);
+        if (onSurface)
+        {
+            traced = GatherIndirect(world, worldNormal, viewPosition, FrameJitter(probe, uFrameIndex));
+
+            // r_gi_source 4: the surface cache's own stored light at this surface -- what a ray landing
+            // here would read -- in place of what arrives at it, and with no history, so the cache's own
+            // changes over time show exactly as they happen.
+            if (uDebugSource == 4)
+            {
+                float2 found;
+                float2 litFound;
+                float agreement;
+                traced = LookupCardHit(world, -worldNormal, found, litFound, agreement)
+                    ? uFinal.SampleLevel(uFinalSampler, litFound, 0.0).rgb
+                    : float3(0.0, 0.0, 0.0);
+            }
+        }
+
+        uIndirect.Store(probe, float4(traced, onSurface ? 1.0 : 0.0));
+        uPosition.Store(probe, onSurface ? float4(world - uCameraToCache, 1.0) : float4(0.0, 0.0, 0.0, 0.0));
+        return;
+    }
+
+    if (!onSurface)
     {
         uIndirect.Store(probe, float4(0.0, 0.0, 0.0, 0.0));
         uPosition.Store(probe, float4(0.0, 0.0, 0.0, 0.0));
         return;
     }
+
+    float3 current = uRaw.Load(int3(probe, 0)).rgb;
 
     // How far apart two probes may be and still be the same surface, widened with distance because the
     // probes themselves spread out as the ground recedes.
@@ -204,7 +216,6 @@ void computeMain(uint3 id : SV_DispatchThreadID, uint3 localId : SV_GroupThreadI
     float3 nMax = current;
     float3 nSum = current;
     float nCount = 1.0;
-    int2 lxy = int2(localId.xy);
 
     for (int dy = -1; dy <= 1; dy++)
     {
@@ -215,20 +226,24 @@ void computeMain(uint3 id : SV_DispatchThreadID, uint3 localId : SV_GroupThreadI
                 continue;
             }
 
-            int2 n = lxy + int2(dx, dy);
-            if (n.x < 0 || n.x >= 8 || n.y < 0 || n.y >= 8)
+            int2 n = probe + int2(dx, dy);
+            if (any(n < int2(0, 0)) || any(n >= grid))
             {
                 continue;
             }
 
-            uint nid = (uint(n.y) * 8u) + uint(n.x);
-            if (sValid[nid] > 0.5
-                && distance(sWorld[nid], world) < sameSurface
-                && dot(sNormal[nid], worldNormal) > kSameFacing)
+            float4 raw = uRaw.Load(int3(n, 0));
+            float3 nWorld;
+            float3 nView;
+            float3 nNormal;
+            if (raw.a > 0.5
+                && ProbeSurface(n, nWorld, nView, nNormal)
+                && distance(nWorld, world) < sameSurface
+                && dot(nNormal, worldNormal) > kSameFacing)
             {
-                nMin = min(nMin, sLight[nid]);
-                nMax = max(nMax, sLight[nid]);
-                nSum += sLight[nid];
+                nMin = min(nMin, raw.rgb);
+                nMax = max(nMax, raw.rgb);
+                nSum += raw.rgb;
                 nCount += 1.0;
             }
         }

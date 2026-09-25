@@ -329,7 +329,8 @@ public sealed partial class VulkanGraphicsDevice
         int indexOffset,
         int indexCount,
         in Matrix4f modelView,
-        TextureHandle diffuse)
+        TextureHandle diffuse,
+        bool firstPersonOnly = false)
     {
         ThrowIfDisposed();
 
@@ -342,7 +343,7 @@ public sealed partial class VulkanGraphicsDevice
         // stage and capture checks live in ObserveForRayTracing, which turns this away unless the caller
         // is where a world transform can be composed -- the same restriction a drawn submission is under,
         // for the same reason.
-        ObserveForRayTracing(Resolve(mesh), modelView, diffuse, indexOffset, indexCount);
+        ObserveForRayTracing(Resolve(mesh), modelView, diffuse, indexOffset, indexCount, firstPersonOnly);
     }
 
     /// <inheritdoc/>
