@@ -55,9 +55,11 @@ public sealed class ReflectedSetLayoutTests
         Dictionary<DescriptorType, uint> software = ReflectedSetLayout.Counts(
             ShaderCatalog.GetReflection(ShaderModuleId.Shading, new ShaderVariant("software")));
 
+        // Only the world itself. The lamp visibility used to be the traced form's alone; the software form
+        // reads it too now, from the distance-field lamp trace a renderer without ray tracing runs.
         Assert.Equal(1u, traced[DescriptorType.AccelerationStructureKhr]);
         Assert.False(software.ContainsKey(DescriptorType.AccelerationStructureKhr));
-        Assert.Equal(software[DescriptorType.SampledImage] + 1, traced[DescriptorType.SampledImage]);
+        Assert.Equal(software[DescriptorType.SampledImage], traced[DescriptorType.SampledImage]);
     }
 
     [Fact]

@@ -28,10 +28,17 @@ public sealed class ShaderArraySizeTests
     /// <param name="module">The module.</param>
     [Theory]
     [MemberData(nameof(LampModules))]
-    public void The_lamp_array_is_sized_by_the_constant_the_host_fills_it_by(ShaderModuleId module) =>
-        Assert.Equal(
-            DeferredLocalLight.Maximum.ToString(CultureInfo.InvariantCulture),
-            Variant(module).Defines["OPENIGI_MAX_LAMPS"]);
+    public void The_lamp_array_is_sized_by_the_constant_the_host_fills_it_by(ShaderModuleId module)
+    {
+        // Every variant: the lamp trace has a traced form and a distance-field one, and the host fills the
+        // same block for both.
+        foreach (ShaderVariantEntry variant in ShaderCatalog.Manifest.Module(module).Variants)
+        {
+            Assert.Equal(
+                DeferredLocalLight.Maximum.ToString(CultureInfo.InvariantCulture),
+                variant.Defines["OPENIGI_MAX_LAMPS"]);
+        }
+    }
 
     /// <summary>Each fog module is compiled with the volume count the host fills its block by.</summary>
     /// <param name="module">The module.</param>

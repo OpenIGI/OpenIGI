@@ -7,21 +7,25 @@ using OpenIGI.Shaders;
 namespace OpenIGI.Rendering.Pipeline.Deferred;
 
 /// <summary>What one frame's lamp trace is traced against, and from where.</summary>
-/// <param name="World">The traced world.</param>
+/// <param name="World">The traced world, or null to march the distance field instead.</param>
 /// <param name="CameraPosition">Where the camera is, in absolute world space.</param>
 /// <param name="Lamps">The shading's lamp block (<see cref="DeferredLampBlock"/>), byte for byte.</param>
 /// <param name="FrameIndex">Which frame this is, so the reservoir, the ray and the filter's disk move.</param>
 /// <param name="Filter">Whether the denoiser filters; off is for measuring the raw trace against it.</param>
 /// <param name="CutoutMasks">The cut-out masks a candidate hit tests its alpha against.</param>
 /// <param name="RecordAddress">Where the hit records live, which name each hit's mask.</param>
+/// <param name="FieldClipmaps">The distance field's clipmaps, when <paramref name="World"/> is null.</param>
+/// <param name="Field">The field's block (<see cref="TracedLampShadow.FieldFloats"/> floats), likewise.</param>
 public readonly record struct TracedLampFrame(
-    IRhiAccelerationStructure World,
+    IRhiAccelerationStructure? World,
     Vector3f CameraPosition,
     ReadOnlyMemory<float> Lamps,
     int FrameIndex,
     bool Filter,
-    IRhiTextureView CutoutMasks,
-    ulong RecordAddress);
+    IRhiTextureView? CutoutMasks,
+    ulong RecordAddress,
+    IRhiTextureView? FieldClipmaps = null,
+    ReadOnlyMemory<float> Field = default);
 
 /// <summary>
 /// The lamps' shadows asked of the geometry: one ray per half-resolution pixel at the lamp its reservoir
@@ -44,9 +48,18 @@ public sealed class TracedLampShadow : IDisposable
 {
     private static readonly RhiClearColor Unshadowed = new(1f, 0f, 0f, 0f);
 
+    /// <summary>Floats in the software trace's field block: four corners with their voxel sizes, four ranges, and four integers.</summary>
+    public const int FieldFloats = 24;
+
     private readonly IRhiDevice _device;
     private readonly RetiredResources _retired;
-    private readonly ComputePass _trace;
+    private readonly int _framesInFlight;
+
+    // Made on first use, each by the path that needs it: the traced module exists only as SPIR-V, so on
+    // WebGPU making it would fail, and a Vulkan device that always traces never needs the other.
+    private ComputePass? _trace;
+    private ComputePass? _march;
+    private ComputeParameters? _fieldParameters;
     private readonly ComputePass _temporal;
     private readonly ComputePass _spatial;
     private readonly ComputeParameters _traceParameters;
@@ -75,7 +88,7 @@ public sealed class TracedLampShadow : IDisposable
 
         _device = device;
         _retired = retired;
-        _trace = new ComputePass(device, ShaderModuleId.LampShadow, "lampshadow.trace");
+        _framesInFlight = framesInFlight;
         _temporal = new ComputePass(device, ShaderModuleId.LampDenoiseTemporal, "lampshadow.temporal");
         _spatial = new ComputePass(device, ShaderModuleId.LampDenoiseSpatial, "lampshadow.spatial");
         _traceParameters = new ComputeParameters(
@@ -184,8 +197,11 @@ public sealed class TracedLampShadow : IDisposable
 
         IRhiTexture current = _accumulated[_current]!;
 
-        // The previous frame's accumulation, or this frame's own, cleared, where there is none.
-        IRhiTexture history = _hasHistory ? _accumulated[_current ^ 1]! : current;
+        // The previous frame's accumulation -- always the OTHER image, even with no history to read (the
+        // temporal block says so, and the pass ignores it): WebGPU refuses one image as both the sampled
+        // history and the storage output of a single dispatch, which is what reading "this frame's own,
+        // cleared" did on the first frame.
+        IRhiTexture history = _accumulated[_current ^ 1]!;
 
         Span<float> trace = stackalloc float[LampShadowParameters.TraceFloats];
         LampShadowParameters.WriteTrace(
@@ -199,13 +215,36 @@ public sealed class TracedLampShadow : IDisposable
             frame.Lamps.Span,
             frame.RecordAddress);
 
-        _trace.Bind("uDepth", depth, _sampler);
-        _trace.Bind("uMasks", frame.CutoutMasks, _sampler);
-        _trace.Bind("uNormal", normal, _sampler);
-        _trace.Bind("uScene", frame.World);
-        _trace.Bind("uVisibility", raw.View);
-        _trace.Bind("p", _traceParameters.Write<float>(frameInFlight, trace));
-        _trace.Dispatch(pass, _width, _height);
+        if (frame.World is { } world)
+        {
+            _trace ??= new ComputePass(_device, ShaderModuleId.LampShadow, "lampshadow.trace");
+            _trace.Bind("uDepth", depth, _sampler);
+            _trace.Bind("uMasks", frame.CutoutMasks!, _sampler);
+            _trace.Bind("uNormal", normal, _sampler);
+            _trace.Bind("uScene", world);
+            _trace.Bind("uVisibility", raw.View);
+            _trace.Bind("p", _traceParameters.Write<float>(frameInFlight, trace));
+            _trace.Dispatch(pass, _width, _height);
+        }
+        else if (frame.FieldClipmaps is { } clipmaps)
+        {
+            // The same pass with the ray answered by the distance field: see Lamp/Shadow.slang.
+            _march ??= new ComputePass(
+                _device, ShaderModuleId.LampShadow, "lampshadow.march", new ShaderVariant("software"));
+            _fieldParameters ??= new ComputeParameters(
+                _device, FieldFloats * sizeof(float), _framesInFlight, "lampshadow.field");
+            _march.Bind("uDepth", depth, _sampler);
+            _march.Bind("uNormal", normal, _sampler);
+            _march.Bind("uClipmaps", clipmaps, _sampler);
+            _march.Bind("uVisibility", raw.View);
+            _march.Bind("p", _traceParameters.Write<float>(frameInFlight, trace));
+            _march.Bind("f", _fieldParameters.Write<float>(frameInFlight, frame.Field.Span));
+            _march.Dispatch(pass, _width, _height);
+        }
+        else
+        {
+            return;
+        }
 
         // Half a pixel of full-resolution jitter is a quarter of one here, and the buffers are half the
         // frame, so the offsets halve with them or the depth looked up belongs to the wrong sample.
@@ -276,9 +315,11 @@ public sealed class TracedLampShadow : IDisposable
         _spatialParameters.Dispose();
         _temporalParameters.Dispose();
         _traceParameters.Dispose();
+        _fieldParameters?.Dispose();
         _spatial.Dispose();
         _temporal.Dispose();
-        _trace.Dispose();
+        _trace?.Dispose();
+        _march?.Dispose();
     }
 
     private IRhiTexture Create(RhiTextureFormat format, RhiTextureUsage usage, string label) =>

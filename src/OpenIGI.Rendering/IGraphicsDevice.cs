@@ -858,6 +858,16 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetLocalLights(ReadOnlySpan<DeferredLocalLight> lights);
 
+    /// <summary>Hands over the level's distance field, for a renderer that shadows its lamps without tracing.</summary>
+    /// <param name="field">The field, or <see langword="null"/> while there is none.</param>
+    /// <remarks>
+    /// A no-op by default: a renderer that traces its lamp shadows never reads it. See
+    /// <see cref="LampOcclusionField"/>. Called every frame, so a field rebuilt or dropped is followed.
+    /// </remarks>
+    void SetLampOcclusionField(LampOcclusionField? field)
+    {
+    }
+
     /// <summary>Reads a two-dimensional texture back into memory.</summary>
     /// <param name="texture">The texture to read.</param>
     /// <param name="destination">Receives the texels, row-major and top row first.</param>

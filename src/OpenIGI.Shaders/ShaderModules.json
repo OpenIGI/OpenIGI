@@ -170,6 +170,13 @@
           "targets": [
             "Spirv"
           ]
+        },
+        {
+          "name": "software",
+          "defines": {
+            "OPENIGI_MAX_LAMPS": "160",
+            "OPENIGI_LAMP_FIELD": "1"
+          }
         }
       ]
     },

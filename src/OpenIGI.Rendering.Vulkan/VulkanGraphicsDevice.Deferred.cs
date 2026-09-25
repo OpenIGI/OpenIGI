@@ -535,13 +535,7 @@ public sealed partial class VulkanGraphicsDevice
     {
         SkyConditions sky = SkyConditions.ForScene(_lighting, _viewToWorld, altitudeMetres: 2f);
 
-        _deferred.Sky.Record(
-            _frameCommandBuffer,
-            _frameLoop.CurrentFrame,
-            sky.SunDirection,
-            sky.SunIlluminance,
-            sky.ViewHeightKm,
-            sky.SkyLightIntensity);
+        _deferred.Sky.Record(_frameCommandBuffer, _frameLoop.CurrentFrame, sky);
     }
 
     /// <summary>

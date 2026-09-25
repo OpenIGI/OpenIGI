@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Rendering.Sky;
 using OpenIGI.Rendering.Vulkan.Compute;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Shaders;
@@ -60,14 +61,11 @@ internal sealed class SkyAtmosphere : IDisposable
     private bool _staticTablesBuilt;
     private bool _disposed;
 
-    // The last inputs the sky-view march and its irradiance reduction were run for. Both depend only on the
-    // sun and the view height, which are fixed for a mission unless the day/night cycle is scrubbed -- so
-    // the march is skipped while they hold still and the LUTs keep their last content. See Record.
+    // The last conditions the sky-view march and its irradiance reduction were run for, which are fixed for
+    // a mission unless the day/night cycle is scrubbed -- so the march is skipped while they hold still and
+    // the LUTs keep their last content. See Record.
     private bool _dynamicBuilt;
-    private Vector3f _lastSunDirection;
-    private Vector3f _lastSunIlluminance;
-    private float _lastViewHeightKm;
-    private float _lastSkyLight;
+    private SkyConditions _lastConditions;
 
     /// <summary>Initialises a new instance of the <see cref="SkyAtmosphere"/> class.</summary>
     /// <param name="vk">The core Vulkan API.</param>
@@ -163,25 +161,16 @@ internal sealed class SkyAtmosphere : IDisposable
     /// </remarks>
     public static float ViewHeightKm(float altitudeMetres) => 6360.0f + Math.Max(0.0005f, altitudeMetres * 0.001f);
 
-    // Two directions/colours the sky march can treat as the same input. Tighter than any change the eye
-    // could read in the resulting sky, so the skip never holds a stale LUT through a visible change.
-    private static bool NearlyEqual(Vector3f a, Vector3f b)
-        => MathF.Abs(a.X - b.X) <= 1e-5f && MathF.Abs(a.Y - b.Y) <= 1e-5f && MathF.Abs(a.Z - b.Z) <= 1e-5f;
-
     /// <summary>Records the whole update: the constant tables if they are not built, then this frame's.</summary>
     /// <param name="cmd">The command buffer to record into.</param>
     /// <param name="frame">The frame-in-flight index.</param>
-    /// <param name="sunDirection">The world direction towards the sun.</param>
-    /// <param name="sunIlluminance">The sun's colour and brightness outside the atmosphere.</param>
-    /// <param name="viewHeightKm">The camera's height from the planet's centre.</param>
-    /// <param name="skyLightIntensity">How brightly the sky lights the world; one is its own brightness.</param>
-    public void Record(
-        CommandBuffer cmd,
-        int frame,
-        Vector3f sunDirection,
-        Vector3f sunIlluminance,
-        float viewHeightKm,
-        float skyLightIntensity)
+    /// <param name="conditions">
+    /// The sun, the camera's height, the sky light and the night's airglow and cloud cover -- written by the
+    /// same writer the other renderer's tables use (<see cref="SkyParameters.Write"/>), so the two cannot
+    /// disagree about the sky. This took the first four alone and wrote zeros where the airglow and the
+    /// overcast deck go, so this renderer's night sky never had either.
+    /// </param>
+    public void Record(CommandBuffer cmd, int frame, in SkyConditions conditions)
     {
         if (!_staticTablesBuilt)
         {
@@ -195,16 +184,12 @@ internal sealed class SkyAtmosphere : IDisposable
         // day/night scrub, or more than a metre of altitude -- and let the LUTs keep their content
         // otherwise. The readback below still runs every frame so each frame-in-flight slot the game reads
         // stays populated with that (unchanged) answer.
-        bool skyChanged = !_dynamicBuilt
-            || !NearlyEqual(sunDirection, _lastSunDirection)
-            || !NearlyEqual(sunIlluminance, _lastSunIlluminance)
-            || MathF.Abs(viewHeightKm - _lastViewHeightKm) > 1e-3f
-            || MathF.Abs(skyLightIntensity - _lastSkyLight) > 1e-4f;
+        bool skyChanged = !_dynamicBuilt || !conditions.LooksLike(_lastConditions);
 
         if (skyChanged)
         {
             Span<float> p = stackalloc float[ParamSize / sizeof(float)];
-            WriteParameters(p, SkyViewWidth, SkyViewHeight, sunDirection, sunIlluminance, viewHeightKm, skyLightIntensity);
+            SkyParameters.Write(p, (int)SkyViewWidth, (int)SkyViewHeight, conditions);
 
             _skyViewPass.Record(
                 cmd,
@@ -231,10 +216,7 @@ internal sealed class SkyAtmosphere : IDisposable
 
             Barrier(cmd, _irradiance.Handle);
 
-            _lastSunDirection = sunDirection;
-            _lastSunIlluminance = sunIlluminance;
-            _lastViewHeightKm = viewHeightKm;
-            _lastSkyLight = skyLightIntensity;
+            _lastConditions = conditions;
             _dynamicBuilt = true;
         }
 

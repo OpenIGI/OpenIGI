@@ -1537,6 +1537,13 @@ public static class RenderCVars
     /// Airglow: the upper atmosphere's faint emission, which is most of a clear moonless sky's light. It
     /// is what keeps a night without a moon from being black, and it brightens towards the horizon, where
     /// the eye looks through more of the glowing layer. Only drawn at night; nought turns it off.
+    /// <para>
+    /// Off on every preset. The night was tuned and signed off on the Vulkan renderer, whose sky never
+    /// received the airglow at all -- its sky block wrote nought where it goes -- while WebGPU's did, so the
+    /// presets' 0.004 reached only WebGPU: a faint blue sky the eye adaptation metered and opened up for,
+    /// and a night several times brighter than the one approved. Both renderers read it now; raise it to
+    /// taste on both.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> NightAirglow = Presets.Define(
         CVar.Float(
@@ -1547,9 +1554,9 @@ public static class RenderCVars
             CVarOptions.Archive,
             "The night sky's own faint glow, which lights a moonless night. 0 is off."),
         vanilla: "0",
-        enhanced: "0.004",
-        high: "0.004",
-        ultra: "0.004");
+        enhanced: "0",
+        high: "0",
+        ultra: "0");
 
     /// <summary>Whether the night sky draws its stars, the galaxy and the moon's disc.</summary>
     public static readonly BoolCVar Stars = Presets.Define(

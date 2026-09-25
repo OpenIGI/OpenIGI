@@ -316,6 +316,44 @@ internal sealed partial class GameHost : IDisposable
     // decided -- so the cache has converged before it stops.
     private const int GiSettleFrames = 64;
 
+    // The distance field's per-level sizes and ranges, reused frame to frame for LampFieldFor.
+    private readonly float[] _lampFieldVoxels = new float[4];
+    private readonly float[] _lampFieldRanges = new float[4];
+
+    /// <summary>The level's distance field as a lamp-shadow renderer reads it, or null while there is none.</summary>
+    private LampOcclusionField? LampFieldFor(GlobalDistanceField? field)
+    {
+        if (field is null || !field.Clipmaps.IsValid)
+        {
+            return null;
+        }
+
+        GlobalDistanceFieldSettings settings = field.Settings;
+        int levels = Math.Clamp(settings.Levels, 0, Math.Min(4, field.Origins.Count));
+        if (levels <= 0)
+        {
+            return null;
+        }
+
+        for (int level = 0; level < 4; level++)
+        {
+            int from = Math.Min(level, levels - 1);
+            _lampFieldVoxels[level] = settings.VoxelSizeOf(from);
+            _lampFieldRanges[level] = field.RangeOfLevel(from);
+        }
+
+        return new LampOcclusionField(
+            field.Clipmaps,
+            levels,
+            settings.Resolution,
+            field.Origins[0],
+            field.Origins[Math.Min(1, levels - 1)],
+            field.Origins[Math.Min(2, levels - 1)],
+            field.Origins[Math.Min(3, levels - 1)],
+            _lampFieldVoxels,
+            _lampFieldRanges);
+    }
+
     // How far the eye may move between two frames and still count as the same shot for the screen GI's
     // histories. Metres; a sprint covers a fraction of this in a frame, a cut or a teleport covers more.
     private const double GiCutDistance = 2.0;
@@ -5358,6 +5396,11 @@ if (retailFog)
                     // renderer is drawing it, and the ultra preset -- the one that discards the shipped
                     // bakes entirely and so has NOTHING else lighting an interior -- is the Vulkan path.
                     _device.SetLocalLights(_localLightScratch.AsSpan(0, localCount));
+
+                    // And the distance field those lamps' shadows are marched through wherever the renderer
+                    // cannot trace them -- WebGPU always, Vulkan with the RT switch off. See
+                    // LampOcclusionField.
+                    _device.SetLampOcclusionField(LampFieldFor(_sdfClipmaps));
                 }
 
                 if (mapScene is not null)
