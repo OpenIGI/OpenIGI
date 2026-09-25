@@ -38,6 +38,9 @@ internal sealed partial class GameHost
     // The next slice of the whole-cache refresh. See StepGiRelight.
     private int _giRefreshSlice;
 
+    // Whole sweeps the refresh has completed, which is what advances its jitter from one sweep to the next.
+    private int _giRefreshRounds;
+
     // How many frames the load-time convergence has waited for the world's structure to settle. See
     // BeginGiConvergence.
     private int _giSettleWaitFrames;
@@ -507,6 +510,10 @@ internal sealed partial class GameHost
 
         int slice = _giRefreshSlice % slices;
         _giRefreshSlice = (slice + 1) % slices;
+        if (_giRefreshSlice == 0)
+        {
+            _giRefreshRounds = (_giRefreshRounds + 1) & 0x3fff;
+        }
 
         cards.ConvergeLightSlice(
             CacheSunDirection(sun),
@@ -516,7 +523,13 @@ internal sealed partial class GameHost
             slice,
             slices);
 
-        cards.ConvergeBounceSlice(field, RenderCVars.GlobalIlluminationBoost.Value, pass: 1, slice, slices);
+        // At the steady bounce's own weight and a new jitter every sweep. It passed pass 1, which blends at
+        // one half and jitters every probe the same way every time: each sweep dragged every tile, the
+        // ones by the player included, halfway to one fixed sixteen-ray estimate, and once the steady
+        // bounce idled that estimate was all the cache held -- the per-probe blotches every ray read back.
+        int steady = Math.Max(RenderCVars.GiTemporalFrames.Value, 1);
+        cards.ConvergeBounceSlice(
+            field, RenderCVars.GlobalIlluminationBoost.Value, pass: steady + 1 + _giRefreshRounds, slice, slices);
     }
 
     // A sun under the horizon lights nothing directly, and the cache is told so with no direction at all.

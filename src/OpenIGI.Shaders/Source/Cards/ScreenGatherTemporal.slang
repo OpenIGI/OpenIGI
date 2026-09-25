@@ -46,6 +46,12 @@ OPENIGI_COMPUTE_GLOBALS cbuffer Globals
     float3 uPrevWorldToView2;
     float3 uPrevCameraToCache;
 
+    // the frame the lit target was rendered in -- always the last one -- which screen hits are read through.
+    float3 uColourWorldToView0;
+    float3 uColourWorldToView1;
+    float3 uColourWorldToView2;
+    float3 uColourCameraToCache;
+
     float3 uAtlasSize;
     float3 uLookupMin;
     float3 uSkyColour;
@@ -249,7 +255,11 @@ void computeMain(uint3 id : SV_DispatchThreadID, uint3 localId : SV_GroupThreadI
             if (all(prevUv >= float2(0.0, 0.0)) && all(prevUv <= float2(1.0, 1.0)))
             {
                 float2 gridF = float2(grid);
-                float2 tc = (prevUv * gridF) - 0.5;
+                // Probe k sits at the centre of pixel k*step + step/2, as the gather places it; inverting
+                // that, not uv*grid - 0.5, which is a sixteenth of a probe off at 1080p and more whenever the
+                // frame is not a whole number of tiles -- an offset the resampling compounded every frame.
+                float2 tc = ((prevUv * float2(float(uScreenWidth), float(uScreenHeight)))
+                    - (0.5 * float(uProbeStep)) - 0.5) / float(uProbeStep);
                 float2 tcBase = floor(tc);
                 float2 tcFrac = tc - tcBase;
 

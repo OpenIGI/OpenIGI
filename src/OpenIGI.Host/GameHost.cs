@@ -311,8 +311,9 @@ internal sealed partial class GameHost : IDisposable
     private Vector3f _lastGiSunDirection;
     private Vector3f _lastGiSunColour;
 
-    // How long after the last change the retrace keeps running before it idles -- twice the bounce's own
-    // temporal window, so the multi-bounce fill has fully converged first.
+    // The shortest the retrace keeps running after the last change before it idles. The real window is
+    // worked out per frame from the amortisation spread and the temporal frames -- see where retraceGi is
+    // decided -- so the cache has converged before it stops.
     private const int GiSettleFrames = 64;
 
     // Frames left in the exposure warm-up: for a moment after a level's GI starts converging, the adapted
@@ -4335,8 +4336,15 @@ internal sealed partial class GameHost : IDisposable
                     // keeps its converged atlas with none of the ray tracing, so a still scene stops paying
                     // the periodic covering-slice spike that halved its frame rate.
                     bool giChanged = wantDump || giRebuilt > 0 || giSunMoved;
-                    _giStaticFrames = giChanged ? 0 : Math.Min(_giStaticFrames + 1, GiSettleFrames + 1);
-                    bool retraceGi = _giStaticFrames <= GiSettleFrames;
+                    // Long enough for the cache to actually converge before it stops: a tile is traced once
+                    // per amortisation spread and moves 1/(1+temporal frames) of the way each time, so its
+                    // time constant is spread x (1 + frames) -- some eight hundred frames at every modern
+                    // preset. A fixed 64 froze it a few traces in, with most of the error still there.
+                    int giSettle = Math.Max(
+                        GiSettleFrames,
+                        2 * Math.Max(RenderCVars.GiAmortize.Value, 1) * (1 + Math.Max(RenderCVars.GiTemporalFrames.Value, 1)));
+                    _giStaticFrames = giChanged ? 0 : Math.Min(_giStaticFrames + 1, giSettle + 1);
+                    bool retraceGi = _giStaticFrames <= giSettle;
 
                     if (_cardLighting is { } litCards)
                     {
@@ -5102,7 +5110,13 @@ if (retailFog)
                             // The sky-light fill (L9): a ray that escapes returns the mission's sky, the same sky
                             // the surface cache lights its cards with, so the indirect that replaces the ambient
                             // carries sky light -- with its occlusion, since a ray toward geometry hits it instead.
-                            SkyFillColour());
+                            SkyFillColour(),
+
+                            // The camera the lit target was rendered through: the LAST frame's, which the
+                            // resolve carries forward every frame -- unlike the gather's own previous camera,
+                            // which only moves on a frame that traced.
+                            giResolvePrevWorldToView,
+                            giResolvePrevCameraToCache);
 
                         // The spatial denoise (L6c), if on: smooths the accumulation into a separate atlas that
                         // the deferred fill reads, leaving the history the next frame reprojects onto unfiltered.
@@ -5179,7 +5193,14 @@ if (retailFog)
                         resolveW,
                         resolveH,
                         giResolveHasHistory,
-                        16);
+                        16,
+
+                        // The probes' own traced positions and the frame they were traced in -- the last
+                        // frame that traced, which is not this one whenever the gather's cadence skipped.
+                        giPosition[giLastWrite],
+                        giPrevWorldToView,
+                        giPrevCameraToCache,
+                        giStep);
                     giResolveHasHistory = true;
 
                     // Recorded for the deferred lighting to fold in when the pass closes. Full-resolution, so
