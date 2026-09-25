@@ -78,6 +78,8 @@ OPENIGI_COMPUTE_GLOBALS cbuffer Globals
     int uMaxAccumulated;
 };
 
+// Screen hits are read from last frame's picture where they stood last frame; see ScreenTraceRadiance.
+#define OPENIGI_SCREEN_HIT_REPROJECT 1
 #include "../Common/ScreenGather.slang"
 
 // The workgroup's own probes, so a probe can pool its neighbours without reading them back out of an
