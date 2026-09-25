@@ -38,6 +38,69 @@ internal sealed partial class GameHost
     // The next slice of the whole-cache refresh. See StepGiRelight.
     private int _giRefreshSlice;
 
+    // The radiance cache's own grid when there is no baked field to borrow one from -- which is every
+    // real-time preset, since they leave r_gi off. A level-wide grid inside the probe budget coarsens to
+    // tens of metres on an outdoor level, far too coarse to say anything about a room, so this one is fine
+    // and follows the camera instead, as the reference's radiance cache does: 48 by 48 metres around the
+    // eye and 16 high, at a metre.
+    private const float FollowingCacheSpacing = 1f;
+    private const int FollowingCacheWidth = 48;
+    private const int FollowingCacheHeight = 16;
+
+    // Where the following grid's centre is snapped to, and how far the eye may stray from it before the
+    // grid moves. The slack is what keeps an ordinary walk around a room from re-seeding the grid.
+    private const double FollowingCacheSnap = 4.0;
+    private const double FollowingCacheSlackHorizontal = 8.0;
+    private const double FollowingCacheSlackVertical = 3.0;
+
+    /// <summary>Where the radiance cache's probes sit: the baked field's grid, or one around the eye.</summary>
+    private readonly record struct RadianceCacheGrid(Vector3d Origin, float Spacing, int CountX, int CountY, int CountZ);
+
+    /// <summary>Lays the radiance cache out on the baked field's grid, or on a fine grid following the eye.</summary>
+    /// <param name="cards">The surface cache that owns the radiance cache, for where its grid sits now.</param>
+    /// <param name="eye">The camera's world position.</param>
+    private RadianceCacheGrid? RadianceCacheLayout(SurfaceCacheLighting cards, Vector3d eye)
+    {
+        if (_probeField is { } baked)
+        {
+            return new RadianceCacheGrid(
+                new Vector3d(baked.Origin.X, baked.Origin.Y, baked.Origin.Z),
+                baked.Spacing,
+                baked.CountX,
+                baked.CountY,
+                baked.CountZ);
+        }
+
+        double halfWidth = FollowingCacheSpacing * (FollowingCacheWidth - 1) * 0.5;
+        double halfHeight = FollowingCacheSpacing * (FollowingCacheHeight - 1) * 0.5;
+
+        if (cards.RadianceCacheReady
+            && cards.RadianceCacheSpacing == FollowingCacheSpacing
+            && cards.RadianceCacheCountX == FollowingCacheWidth
+            && cards.RadianceCacheCountY == FollowingCacheWidth
+            && cards.RadianceCacheCountZ == FollowingCacheHeight)
+        {
+            Vector3d current = cards.RadianceCacheOrigin;
+            if (Math.Abs(eye.X - (current.X + halfWidth)) <= FollowingCacheSlackHorizontal
+                && Math.Abs(eye.Y - (current.Y + halfWidth)) <= FollowingCacheSlackHorizontal
+                && Math.Abs(eye.Z - (current.Z + halfHeight)) <= FollowingCacheSlackVertical)
+            {
+                return new RadianceCacheGrid(
+                    current, FollowingCacheSpacing, FollowingCacheWidth, FollowingCacheWidth, FollowingCacheHeight);
+            }
+        }
+
+        double centreX = Math.Round(eye.X / FollowingCacheSnap) * FollowingCacheSnap;
+        double centreY = Math.Round(eye.Y / FollowingCacheSnap) * FollowingCacheSnap;
+        double centreZ = Math.Round(eye.Z / FollowingCacheSnap) * FollowingCacheSnap;
+        return new RadianceCacheGrid(
+            new Vector3d(centreX - halfWidth, centreY - halfWidth, centreZ - halfHeight),
+            FollowingCacheSpacing,
+            FollowingCacheWidth,
+            FollowingCacheWidth,
+            FollowingCacheHeight);
+    }
+
     // How many frames the load-time convergence has waited for the world's structure to settle. See
     // BeginGiConvergence.
     private int _giSettleWaitFrames;
