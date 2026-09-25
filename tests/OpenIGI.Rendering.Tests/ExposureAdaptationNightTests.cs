@@ -15,9 +15,11 @@ public sealed class ExposureAdaptationNightTests
     }
 
     [Fact]
-    public void A_full_night_lets_it_open_two_stops_further()
+    public void A_full_night_lets_it_open_four_tenths_of_a_stop_further()
     {
-        Assert.Equal(40f, new ExposureAdaptation().Adapt(DarkScene(), 1f / 60f, darkAdaptation: 1f), 1);
+        // Four tenths, not two: with the whole frame metered, a night's average sits on this floor, so the
+        // floor is the night's exposure, and it is held where the approved night's views already were.
+        Assert.Equal(10f * MathF.Pow(2f, 0.4f), new ExposureAdaptation().Adapt(DarkScene(), 1f / 60f, darkAdaptation: 1f), 3);
     }
 
     [Fact]
