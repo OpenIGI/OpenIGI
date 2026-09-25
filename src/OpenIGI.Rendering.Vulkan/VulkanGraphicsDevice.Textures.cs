@@ -82,6 +82,7 @@ public sealed partial class VulkanGraphicsDevice
         if (_storageImages.Remove(texture.Id, out Compute.VulkanStorageImage? image))
         {
             UnbindStorageImage(image);
+            ForgetRealtimeProbeVolume(texture);
             QueueDeletion(image);
             return;
         }

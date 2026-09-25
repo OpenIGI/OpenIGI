@@ -344,6 +344,21 @@ public sealed partial class VulkanGraphicsDevice
         _realtimeProbe = null;
     }
 
+    /// <summary>Drops the radiance cache the lighting samples when one of its volumes is destroyed.</summary>
+    /// <remarks>
+    /// The cache is rebuilt whenever the surface cache is -- a preset switch changes its density -- and the
+    /// old one's volumes go before the host offers the new one. Holding on to them until then left the
+    /// lighting pass resolving a volume that no longer existed, which threw mid-frame.
+    /// </remarks>
+    private void ForgetRealtimeProbeVolume(TextureHandle texture)
+    {
+        if (_realtimeProbe is { } field
+            && (field.Red == texture || field.Green == texture || field.Blue == texture || field.Distance == texture))
+        {
+            _realtimeProbe = null;
+        }
+    }
+
     /// <summary>The world-space radiance cache offered in place of the baked probe field.</summary>
     /// <param name="Red">The red channel's harmonics.</param>
     /// <param name="Green">The green channel's.</param>

@@ -67,6 +67,14 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             _materials.Forget(texture.Id);
             ForgetStorageTexture(texture);
             TracedWorld?.ForgetTexture(texture.Id);
+
+            // The radiance cache goes with any of its volumes, or the next lighting pass samples one that
+            // is gone -- the cache is rebuilt with the surface cache, a preset switch among the reasons.
+            if (_realtimeProbe is { } field
+                && (field.Red == texture || field.Green == texture || field.Blue == texture || field.Distance == texture))
+            {
+                _realtimeProbe = null;
+            }
         }
     }
 

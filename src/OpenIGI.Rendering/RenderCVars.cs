@@ -864,6 +864,13 @@ public static class RenderCVars
     /// built out of what it returns — which then lights the scene the next trace reads. Unbounded, that
     /// loop does not settle: past a certain gather strength each pass is brighter than the last. The
     /// reference bounds the same read for the same reason, and calls it the maximum ray intensity.
+    /// <para>
+    /// In EXPOSED units, as the reference's is, and at the reference's ten on every preset. The modern
+    /// presets carried 50.1 applied to raw scene radiance, which at night -- exposure sixteen and up --
+    /// let a ray through some eighty times brighter than the reference would: the few of a probe's
+    /// sixteen rays that landed on a lamp's fixture or its pool of light swung its estimate frame to
+    /// frame, and that was the cloud drifting around every lamp at night.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> ScreenGatherMaxIntensity = Presets.Define(
         CVar.Float(
@@ -872,11 +879,11 @@ public static class RenderCVars
             0.1f,
             1000f,
             CVarOptions.Archive,
-            "Ceiling on a single screen-traced ray's radiance; stops the gather feeding itself."),
+            "Ceiling on a single screen GI ray's radiance as the eye sees it (after exposure); stops the gather feeding itself."),
         vanilla: "10",
-        enhanced: "50.1",
-        high: "50.1",
-        ultra: "50.1");
+        enhanced: "10",
+        high: "10",
+        ultra: "10");
 
     /// <summary>How strongly the screen probe gather's indirect light fills the deferred lighting.</summary>
     /// <remarks>
