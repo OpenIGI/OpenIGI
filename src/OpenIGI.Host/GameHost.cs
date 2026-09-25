@@ -4424,14 +4424,13 @@ internal sealed partial class GameHost : IDisposable
                     // than on the moving screen -- so it stays stable under motion where the screen gather
                     // shimmers. Configured to the baked field's own layout so the two are interchangeable at
                     // the sampler, updated a slab a frame off the freshly bounced cache, and bound in place
-                    // of the baked field for the deferred fill. Laid out on the baked field's grid when
-                    // there is one, and on a fine grid that follows the camera when there is not.
+                    // of the baked field for the deferred fill. Needs the baked field only for its grid.
                     if (RenderCVars.RadianceCache.Value != 0
                         && _cardLighting is { } cacheCards
-                        && RadianceCacheLayout(cacheCards, eye.Position) is { } cacheGrid)
+                        && _probeField is { } cacheGrid)
                     {
                         cacheCards.ConfigureRadianceCache(
-                            cacheGrid.Origin,
+                            new Vector3d(cacheGrid.Origin.X, cacheGrid.Origin.Y, cacheGrid.Origin.Z),
                             cacheGrid.Spacing,
                             cacheGrid.CountX,
                             cacheGrid.CountY,
@@ -4454,7 +4453,7 @@ internal sealed partial class GameHost : IDisposable
                             cacheCards.RadianceCacheGreen,
                             cacheCards.RadianceCacheBlue,
                             cacheCards.RadianceCacheDistance,
-                            new Vector3f((float)cacheGrid.Origin.X, (float)cacheGrid.Origin.Y, (float)cacheGrid.Origin.Z),
+                            cacheGrid.Origin,
                             cacheGrid.Spacing,
                             cacheGrid.CountX,
                             cacheGrid.CountY,
@@ -4960,8 +4959,7 @@ if (retailFog)
                 // turn of the view -- each frame of motion resamples it through the reprojection and clamps
                 // it into the window of one frame's rays, and at one part in thirty-three the bias that
                 // leaves takes the better part of a second to wash back out, which is the cloud that
-                // follows the camera and settles after it stops. The prior (r_gi_cache_prior) is what keeps
-                // the shorter history from reading noisier.
+                // follows the camera and settles after it stops.
                 const int giMaxAccum = 10;
 
                 // The screen trace tier: how far its rays reach across the frame and their step cap, plus the

@@ -3350,24 +3350,10 @@ public static class RenderCVars
         "r_gi_source",
         0,
         0,
-        5,
+        4,
         CVarOptions.Developer,
-        "Diagnostic: keep one source of the screen GI: 0 all, 1 screen hits, 2 surface-cache hits, 3 sky, 4 the surface cache itself, 5 the radiance-cache prior.");
+        "Diagnostic: keep one source of the screen GI: 0 all, 1 screen hits, 2 surface-cache hits, 3 sky, 4 the surface cache itself.");
 
-    /// <summary>How many frames of a screen probe's own rays the radiance cache's estimate is worth.</summary>
-    /// <remarks>
-    /// A probe the camera has just uncovered has no history to reproject; without a prior it starts from one
-    /// frame's rays and reads as a drifting blotch until its accumulation fills. Starting from the radiance
-    /// cache's irradiance at the surface, counted as this many frames, begins it at the smooth answer. 0 turns
-    /// the prior off.
-    /// </remarks>
-    public static readonly NumericCVar<float> GiCachePrior = CVar.Float(
-        "r_gi_cache_prior",
-        8f,
-        0f,
-        32f,
-        CVarOptions.Developer,
-        "Frames of a screen GI probe's own rays the radiance cache's estimate is worth when the probe has little history; 0 off.");
 
     /// <summary>Which buffer to show instead of the scene.</summary>
     public static readonly EnumCVar<DebugView> Debug = CVar.Choice(

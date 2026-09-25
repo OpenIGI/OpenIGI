@@ -17,15 +17,6 @@ OPENIGI_COMPUTE_SAMPLER(9) SamplerState uHistorySampler;
 OPENIGI_COMPUTE_TEXTURE(10) Texture2D<float4> uPositionHistory;
 OPENIGI_COMPUTE_SAMPLER(10) SamplerState uPositionHistorySampler;
 
-// The world radiance cache's first-order harmonics, one volume per channel: what a probe that has lost its
-// history starts from instead of one frame's sixteen rays.
-OPENIGI_COMPUTE_TEXTURE(12) Texture3D<float4> uCacheRed;
-OPENIGI_COMPUTE_SAMPLER(12) SamplerState uCacheRedSampler;
-OPENIGI_COMPUTE_TEXTURE(13) Texture3D<float4> uCacheGreen;
-OPENIGI_COMPUTE_SAMPLER(13) SamplerState uCacheGreenSampler;
-OPENIGI_COMPUTE_TEXTURE(14) Texture3D<float4> uCacheBlue;
-OPENIGI_COMPUTE_SAMPLER(14) SamplerState uCacheBlueSampler;
-
 OPENIGI_COMPUTE_GLOBALS cbuffer Globals
 {
 #if OPENIGI_RAY_QUERY
@@ -59,10 +50,6 @@ OPENIGI_COMPUTE_GLOBALS cbuffer Globals
     float3 uLookupMin;
     float3 uSkyColour;
 
-    // the radiance cache's first probe, relative to this pass's origin, and its probe counts.
-    float3 uCacheOrigin;
-    float3 uCacheCount;
-
     float uClipmapRange[4];
 
     int uShadowLevels;
@@ -83,19 +70,12 @@ OPENIGI_COMPUTE_GLOBALS cbuffer Globals
     float uBounceScale;
 
     // Diagnostic (r_gi_source): keep only one source of the gather's light -- 0 all, 1 screen-traced
-    // hits, 2 surface-cache hits, 3 sky; 4 shows the surface cache's own light at the surface instead,
-    // 5 the radiance cache's prior a probe with no history starts from.
+    // hits, 2 surface-cache hits, 3 sky; 4 shows the surface cache's own light at the surface instead.
     int uDebugSource;
 
     int uHasHistory;
     int uFrameIndex;
     int uMaxAccumulated;
-
-    // the cache's probe spacing, the calibration its stored light carries, and how many frames of the
-    // probe's own rays its prior is worth (0 with no cache, which leaves the probe to its rays alone).
-    float uCacheSpacing;
-    float uCacheScale;
-    float uCachePriorFrames;
 };
 
 #include "../Common/ScreenGather.slang"
@@ -136,87 +116,6 @@ float2 FrameJitter(int2 probeCoord, int frame)
     uint n = uint(frame & 0xffff);
     float2 point = float2(frac(float(n) * 0.61803398875), RadicalInverseBits(n));
     return frac(point + float2(rotation, frac(rotation * 1.61803398875)));
-}
-
-OPENIGI_COMPUTE_TEXTURE(2) Texture3D<float4> uCacheDistance;
-OPENIGI_COMPUTE_SAMPLER(2) SamplerState uCacheDistanceSampler;
-
-// The irradiance the radiance cache holds for a surface here, in the gather's own units (the cosine
-// integral of the incoming radiance, before albedo). The eight probes around the surface are read one by
-// one rather than filtered by the sampler, so that each can be judged: a probe behind the surface or
-// further from it than it could see is on the wrong side of the geometry, and its light is a leak.
-// Returns false where no probe can be trusted, which leaves the probe to its own rays.
-bool CacheIrradiance(float3 world, float3 normal, out float3 irradiance)
-{
-    irradiance = float3(0.0, 0.0, 0.0);
-    if (uCachePriorFrames <= 0.0 || uCacheSpacing <= 0.0)
-    {
-        return false;
-    }
-
-    float3 lookup = world + (normal * (0.25 * uCacheSpacing));
-    float3 grid = (lookup - uCacheOrigin) / uCacheSpacing;
-    int3 count = int3(uCacheCount + 0.5);
-    int3 base = int3(floor(grid));
-    float3 f = grid - float3(base);
-
-    // First-order harmonics of radiance to irradiance: the cosine lobe's band factors (pi and 2pi/3) times
-    // the basis constants the cache projected with.
-    float4 sh = float4(0.886227, 1.023327 * normal);
-
-    float3 sum = float3(0.0, 0.0, 0.0);
-    float weightSum = 0.0;
-
-    for (int corner = 0; corner < 8; corner++)
-    {
-        int3 offset = int3(corner & 1, (corner >> 1) & 1, corner >> 2);
-        int3 probe = base + offset;
-        if (any(probe < int3(0, 0, 0)) || any(probe >= count))
-        {
-            continue;
-        }
-
-        float3 trilinear = lerp(float3(1.0, 1.0, 1.0) - f, f, float3(offset));
-        float weight = trilinear.x * trilinear.y * trilinear.z;
-
-        float3 probeWorld = uCacheOrigin + (float3(probe) * uCacheSpacing);
-        float3 toProbe = probeWorld - world;
-        float toward = length(toProbe);
-
-        // A probe behind the surface sees the other side of it.
-        float facing = (dot(toProbe / max(toward, 1e-4), normal) + 1.0) * 0.5;
-        weight *= (facing * facing) + 0.05;
-
-        // Chebyshev against how far the probe could see, as the deferred fill judges it.
-        float2 moments = uCacheDistance.Load(int4(probe, 0)).xy;
-        if (toward > moments.x)
-        {
-            float variance = max(moments.y - (moments.x * moments.x), 1e-4);
-            float difference = toward - moments.x;
-            float trust = variance / (variance + (difference * difference));
-            weight *= trust * trust * trust;
-        }
-
-        if (weight <= 1e-5)
-        {
-            continue;
-        }
-
-        float3 probeIrradiance = float3(
-            dot(uCacheRed.Load(int4(probe, 0)), sh),
-            dot(uCacheGreen.Load(int4(probe, 0)), sh),
-            dot(uCacheBlue.Load(int4(probe, 0)), sh));
-        sum += max(probeIrradiance, float3(0.0, 0.0, 0.0)) * weight;
-        weightSum += weight;
-    }
-
-    if (weightSum < 0.02)
-    {
-        return false;
-    }
-
-    irradiance = sum / (weightSum * max(uCacheScale, 1e-4));
-    return true;
 }
 
 [shader("compute")]
@@ -331,24 +230,6 @@ void computeMain(uint3 id : SV_DispatchThreadID, uint3 localId : SV_GroupThreadI
     float3 accumulated = est;
     float frames = 0.0;
 
-    // The radiance cache's irradiance here, worth uCachePriorFrames of this probe's own frames. A probe the
-    // camera has just uncovered has no history, and one frame's sixteen rays pooled over a few neighbours
-    // is a blotchy estimate that takes the whole accumulation window to settle -- the cloud that follows
-    // every turn of the view. Starting from the cache instead begins it at the smooth answer and lets its
-    // own rays take over as they accumulate.
-    float3 prior = float3(0.0, 0.0, 0.0);
-    float priorFrames = 0.0;
-    if ((uDebugSource == 0 || uDebugSource == 5) && CacheIrradiance(world, worldNormal, prior))
-    {
-        priorFrames = min(uCachePriorFrames, float(uMaxAccumulated));
-    }
-
-    if (priorFrames > 0.0)
-    {
-        accumulated = lerp(prior, est, 1.0 / (1.0 + priorFrames));
-        frames = priorFrames;
-    }
-
     if (uHasHistory != 0)
     {
         float3 prevView = (uPrevWorldToView0 * (world.x - uPrevCameraToCache.x))
@@ -425,15 +306,6 @@ void computeMain(uint3 id : SV_DispatchThreadID, uint3 localId : SV_GroupThreadI
                         windowCentre + (2.0 * windowHalf));
 
                     frames = min((frameSum / weightSum) + 1.0, float(uMaxAccumulated));
-
-                    // A young history is topped up with the cache to the prior's worth, so a probe
-                    // uncovered a frame or two ago is not back to its own noise.
-                    if (frames < priorFrames)
-                    {
-                        clampedHistory = lerp(prior, clampedHistory, frames / priorFrames);
-                        frames = priorFrames;
-                    }
-
                     float alpha = 1.0 / (1.0 + frames);
                     accumulated = lerp(clampedHistory, est, alpha);
                 }
@@ -444,13 +316,6 @@ void computeMain(uint3 id : SV_DispatchThreadID, uint3 localId : SV_GroupThreadI
     if (uDebugSource == 4)
     {
         accumulated = current;
-        frames = 1.0;
-    }
-
-    // r_gi_source 5: the cache's prior alone, as a probe with no history would start from it.
-    if (uDebugSource == 5)
-    {
-        accumulated = prior;
         frames = 1.0;
     }
 
