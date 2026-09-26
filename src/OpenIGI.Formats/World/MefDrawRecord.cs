@@ -39,6 +39,8 @@ public readonly record struct MefDrawRecord
     /// <param name="vertexSpan">The number of vertices from <paramref name="baseVertex"/>, or zero when unknown.</param>
     /// <param name="indicesAreRelative">Whether indices are relative to <paramref name="baseVertex"/>.</param>
     /// <param name="indices">The triangle-list indices.</param>
+    /// <param name="isTransparent">Whether the record is a sorted, blended face group.</param>
+    /// <param name="isAdditive">Whether a transparent record adds its texture rather than blending it.</param>
     public MefDrawRecord(
         Vector3f centre,
         int materialSlot,
@@ -46,8 +48,12 @@ public readonly record struct MefDrawRecord
         int baseVertex,
         int vertexSpan,
         bool indicesAreRelative,
-        ReadOnlyMemory<ushort> indices)
+        ReadOnlyMemory<ushort> indices,
+        bool isTransparent = false,
+        bool isAdditive = false)
     {
+        IsTransparent = isTransparent;
+        IsAdditive = isTransparent && isAdditive;
         Centre = centre;
         MaterialSlot = materialSlot;
         LightmapPage = lightmapPage;
@@ -84,6 +90,23 @@ public readonly record struct MefDrawRecord
 
     /// <summary>Gets a value indicating whether <see cref="Indices"/> are relative to <see cref="BaseVertex"/>.</summary>
     public bool IndicesAreRelative { get; }
+
+    /// <summary>Gets a value indicating whether the record is a transparent face group.</summary>
+    /// <remarks>
+    /// The word at offset 22 of the compact header. The model draw (<c>0x49DF60</c>) draws a record
+    /// with it clear straight away, opaque and lit, and defers one with it set to the depth-sorted
+    /// transparent pass (<c>0x49EC70</c>). Lightmapped records keep the flag elsewhere and report false.
+    /// </remarks>
+    public bool IsTransparent { get; }
+
+    /// <summary>Gets a value indicating whether a transparent record is drawn additively.</summary>
+    /// <remarks>
+    /// Bit 0 of the byte at offset 24. The transparent pass (<c>0x49EC70</c>) then draws the texture
+    /// alone -- lighting off, the texture colour selected, fog off -- at <c>ONE, ONE</c>; without it,
+    /// lit, at <c>SRCALPHA, INVSRCALPHA</c>. The explosion FireBall (<c>1006_01_1</c>) is one such
+    /// record: a flame painted on black that only reads added to the scene.
+    /// </remarks>
+    public bool IsAdditive { get; }
 
     /// <summary>Gets the triangle-list indices; the count is always a multiple of three.</summary>
     public ReadOnlyMemory<ushort> Indices { get; }

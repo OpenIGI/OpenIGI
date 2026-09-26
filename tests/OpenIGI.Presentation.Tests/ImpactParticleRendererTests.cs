@@ -54,7 +54,7 @@ public sealed class ImpactParticleRendererTests
         (Vector3d position, Vector3f velocity) = ImpactParticleRenderer.AdvanceRetailExplosionMotion(
             Vector3d.Zero,
             Vector3f.Zero,
-            modelScale: 0.9f);
+            gravityScale: 0.9f);
 
         float expectedGravity = 0.9f * 44.600006f * 0.98f;
         Assert.Equal(0f, position.X);
@@ -112,7 +112,7 @@ public sealed class ImpactParticleRendererTests
     }
 
     [RequiresGameDataFact]
-    public void RetailExplosionChildSpritesOutliveTheOneTickParent()
+    public void RetailFireBallOutlivesTheTickItStarts()
     {
         (VirtualFileSystem fileSystem, ResourceRegistry resources, LoadedMission mission) = LoadRetailMission();
         RecordingGraphicsDevice device = new();
@@ -134,9 +134,47 @@ public sealed class ImpactParticleRendererTests
         renderer.Tick();
         renderer.Draw(Camera3D.Default, Matrix4f.Identity, alpha: 1f);
 
-        // The authored 1009 parent is gone after one tick, but its fireball/fragment sprites have a
-        // 0x15-tick lifetime and must still submit their additive draw.
+        // Explosion0 runs once and is gone, but its FireBall lives 75 ticks and keeps adding its flame.
         Assert.Contains(device.MeshDraws, draw => draw.Blend == BlendMode.Additive);
+    }
+
+    [RequiresGameDataFact]
+    public void RetailExplosionModelsDrawWithTheirOwnFaceGroupBlend()
+    {
+        (VirtualFileSystem fileSystem, ResourceRegistry resources, LoadedMission mission) = LoadRetailMission();
+        RecordingGraphicsDevice device = new();
+        using ImpactParticleRenderer renderer = new(device, resources, fileSystem);
+
+        Assert.True(renderer.Load(mission));
+
+        // The FireBall's face group is transparent and additive (0x49EC70 draws it at ONE, ONE); the
+        // fragment's is neither, so it is an ordinary opaque model (0x49DF60).
+        Assert.Equal(BlendMode.Additive, renderer.RetailFireballBlend);
+        Assert.Equal(BlendMode.Opaque, renderer.RetailFragmentBlend);
+        Assert.Equal(26, renderer.RetailFireballModelFrameCount);
+
+        renderer.SpawnRetailExplosion(new Vector3d(8192d, 8192d, 8192d), RetailExplosionShape.CameraLens);
+        renderer.Draw(Camera3D.Default, Matrix4f.Identity, alpha: 1f);
+
+        // The flame adds, the debris is solid, and the only blended draw left is the smoke, whose
+        // texture fades to nothing at its edge. Nothing else could paint a box around the blast.
+        Assert.Contains(device.MeshDraws, draw => draw.Blend == BlendMode.Additive);
+        Assert.Contains(device.MeshDraws, draw => draw.Blend == BlendMode.Opaque);
+        Assert.Single(device.MeshDraws, draw => draw.Blend == BlendMode.AlphaBlend);
+    }
+
+    [Fact]
+    public void FireBallFacesTheEyeAndGrowsTowardIt()
+    {
+        Matrix3f young = ImpactParticleRenderer.FacingEye(
+            Vector3d.Zero, new Vector3d(10d, 0d, 0d), across: 1f, depth: 0.01f);
+        Matrix3f old = ImpactParticleRenderer.FacingEye(
+            Vector3d.Zero, new Vector3d(10d, 0d, 0d), across: 1f, depth: 1f);
+
+        // The dome's own axis (its third row) points at the eye and carries the depth.
+        Assert.Equal(0.01f, young.M31, 5);
+        Assert.Equal(1f, old.M31, 5);
+        Assert.Equal(0f, young.M11 * young.M31, 5);
     }
 
     [RequiresGameDataFact]

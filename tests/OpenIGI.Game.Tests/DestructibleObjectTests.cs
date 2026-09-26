@@ -87,6 +87,61 @@ public sealed class DestructibleObjectTests
     }
 
     [RequiresGameDataFact]
+    public void ARoundOnTheBuildingWallBreaksNoneOfItsPanes()
+    {
+        WorldScene scene = RetailLevelOneGround.Scene();
+        DestructibleObjectRegistry registry = DestructibleObjectRegistry.Build(
+            RetailLevelOneGround.LevelRoot(),
+            scene.Placements,
+            new ScriptVarRegistry(new NativeRegistry()));
+
+        // The round names the Building and its wall; the panes the Building owns are other objects.
+        DestructibleObject pane = registry.Objects.First(item =>
+            item.Kind == DestructibleObjectKind.Glass
+            && scene.Placements.Any(placement =>
+                ReferenceEquals(placement.Owner, item.Owner) && placement.MagicTaskTypeName.Length == 0));
+        WorldPlacement wall = scene.Placements.First(placement =>
+            ReferenceEquals(placement.Owner, pane.Owner) && placement.MagicTaskTypeName.Length == 0);
+
+        Assert.Null(registry.TryDestroy(pane.Owner, wall));
+        Assert.False(pane.IsDestroyed);
+    }
+
+    [RequiresGameDataFact]
+    public void ARoundThatNamesNoObjectBreaksNothing()
+    {
+        WorldScene scene = RetailLevelOneGround.Scene();
+        DestructibleObjectRegistry registry = DestructibleObjectRegistry.Build(
+            RetailLevelOneGround.LevelRoot(),
+            scene.Placements,
+            new ScriptVarRegistry(new NativeRegistry()));
+
+        // A round into a guard or the terrain carries no identity. Retail's trace (0x47B750) only
+        // messages the struck task, so the pane beside that contact stays whole.
+        DestructibleObject pane = registry.Objects.First(item => item.Kind == DestructibleObjectKind.Glass);
+
+        Assert.Null(registry.TryDestroy(owner: null, placement: null));
+        Assert.False(pane.IsDestroyed);
+    }
+
+    [RequiresGameDataFact]
+    public void APlacementUnderAnotherOwnerIsNotThatPane()
+    {
+        WorldScene scene = RetailLevelOneGround.Scene();
+        DestructibleObjectRegistry registry = DestructibleObjectRegistry.Build(
+            RetailLevelOneGround.LevelRoot(),
+            scene.Placements,
+            new ScriptVarRegistry(new NativeRegistry()));
+
+        DestructibleObject pane = registry.Objects.First(item => item.Kind == DestructibleObjectKind.Glass);
+        GameTask stranger = registry.Objects.First(item => !ReferenceEquals(item.Owner, pane.Owner)).Owner;
+
+        Assert.Null(registry.TryDestroy(stranger, pane.Placement));
+        Assert.False(pane.IsDestroyed);
+        Assert.Same(pane, registry.TryDestroy(pane.Owner, pane.Placement));
+    }
+
+    [RequiresGameDataFact]
     public void ExplodeObjectKeepsRetailFireballFragmentAndSmokeAuthorship()
     {
         WorldScene scene = RetailLevelOneGround.Scene();
