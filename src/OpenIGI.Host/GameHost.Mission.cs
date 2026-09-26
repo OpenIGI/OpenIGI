@@ -1338,10 +1338,10 @@ internal sealed partial class GameHost
 
                         // A guard's stray round pops a speaker exactly as the player's does -- the
                         // retail damage message never asked who fired.
-                        DamageAlarmSpeakers(
+                        ApplyRoundContact(
                             worldHit.Position,
-                            owner: blocker.Owner,
-                            placement: blocker.Placement);
+                            blocker.Owner,
+                            blocker.Placement);
 
                         // A guard's round kicks the same burst a player's does -- misses landing
                         // around you are half of what sells incoming fire.

@@ -1052,7 +1052,7 @@ internal sealed partial class GameHost
                 damageFactor: blast.DamageFactor);
 
             // A blast in reach of a speaker takes it off the wall too.
-            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, affectDestructibles: false);
+            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits);
 
             float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
             float dose = ExplosionDamage.Dose(
@@ -1114,16 +1114,14 @@ internal sealed partial class GameHost
         {
             HandleDestructibleImpact(directlyHitVehicle, blast.Position);
         }
-        // Launcher impacts use Explosion0's full collision envelope. Keep the speaker pass for
-        // alarms, but disable its legacy nearest-destructible fallback so one object cannot be
-        // destroyed twice or hide the other authored contacts in the blast.
+        // Launcher impacts use Explosion0's full collision envelope, then the speaker pass for alarms.
         HandleDestructibleBlast(
             source: null,
             originUnits: blast.Position,
             radiusUnits: blast.RadiusUnits,
             falloffUnits: blast.FalloffUnits,
             damageFactor: blast.DamageFactor);
-        DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, affectDestructibles: false);
+        DamageAlarmSpeakers(blast.Position, blast.RadiusUnits);
 
         float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
         float dose = ExplosionDamage.Dose(
@@ -1161,14 +1159,14 @@ internal sealed partial class GameHost
             ScorchSurface(blast.Position, blast.Normal, M203ScorchHalfWidthInUnits);
             _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
             // Match the native explosion callback: visit every visible destructible in the blast
-            // envelope, then handle alarms separately without the nearest-object fallback.
+            // envelope, then handle alarms separately.
             HandleDestructibleBlast(
                 source: null,
                 originUnits: blast.Position,
                 radiusUnits: blast.RadiusUnits,
                 falloffUnits: blast.FalloffUnits,
                 damageFactor: blast.DamageFactor);
-            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, affectDestructibles: false);
+            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits);
 
             float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
             float dose = ExplosionDamage.Dose(
@@ -1225,11 +1223,12 @@ internal sealed partial class GameHost
         // GenericTBA is an authored Explosion0 path, not a gunshot proxy. Post the same AI event
         // at presentation time as the other world blasts, including after an authored delay.
         _soldiers?.NotifyExplosion(position, parameters.ExplosionRadiusUnits);
-        _impactParticles?.SpawnExplosion(
+        _impactParticles?.SpawnRetailExplosion(
             position,
-            Math.Max(1f, RenderCVars.ImpactParticles.Value),
-            Math.Max(1f, parameters.FireballCount),
-            parameters.FragmentCount);
+            new RetailExplosionShape(
+                parameters.ExplosionRadiusUnits,
+                parameters.FireballCount,
+                parameters.FragmentCount));
 
         if (parameters.ExplosionExpression.Length > 0)
         {
@@ -1244,7 +1243,7 @@ internal sealed partial class GameHost
             radiusUnits: parameters.ExplosionRadiusUnits,
             falloffUnits: parameters.ExplosionFalloffUnits,
             damageFactor: damageFactor);
-        DamageAlarmSpeakers(position, parameters.ExplosionRadiusUnits, affectDestructibles: false);
+        DamageAlarmSpeakers(position, parameters.ExplosionRadiusUnits);
 
         if (_player is null)
         {
@@ -1269,57 +1268,54 @@ internal sealed partial class GameHost
         }
     }
 
-    /// <summary>Shoots out whatever alarm speaker an impact landed on.</summary>
-    /// <param name="impactUnits">Where the round or blast hit, in world units.</param>
-    /// <param name="radiusUnits">The destruction's reach — a bullet's touch by default.</param>
+    /// <summary>Hands one round's contact to the exact object it struck, the way retail does.</summary>
+    /// <param name="impactUnits">Where the round landed, in world units.</param>
     /// <param name="owner">The exact placed task struck by a rich trace, when available.</param>
     /// <param name="placement">The exact rendered placement struck, including an attached magic object.</param>
-    /// <param name="affectDestructibles">Whether this contact should also run the destructible-object path.</param>
     /// <param name="destructibleDamage">The firing weapon row's native damage factor.</param>
     /// <remarks>
-    /// Retail routes a weapon hit to the exact task. AlarmLight_Explode (<c>0x43A5F0</c>) and the
-    /// SCameraLens destruction branch (<c>0x441770</c>) permanently silence it, play its report,
-    /// spawn the <c>1009_01_1</c> fireball and swap in the destroyed model. A rich trace preserves
-    /// that identity; explosion radii and legacy projectile contacts use the nearest placed head.
+    /// The round's trace (<c>0x47B750</c>) sends its damage message to the struck task's own type
+    /// handler and searches nothing around the contact. A round that named no object -- one that hit a
+    /// guard or the terrain -- therefore breaks no pane, sets off no barrel and silences no speaker,
+    /// however close one stands. The placement is essential for windows and barrels: their Owner is the
+    /// enclosing Building task, while retail destroys only the exact attached magic object touched.
     /// </remarks>
-    private void DamageAlarmSpeakers(
+    private void ApplyRoundContact(
         Vector3d impactUnits,
-        float radiusUnits = AlarmSpeakerRegistry.HitRadiusUnits,
-        GameTask? owner = null,
-        WorldPlacement? placement = null,
-        bool affectDestructibles = true,
+        GameTask? owner,
+        WorldPlacement? placement,
         float destructibleDamage = 1f)
     {
-        // The same world contact drives both families. The placement is essential for windows and
-        // barrels: their Owner is the enclosing Building task, while retail destroys only the exact
-        // attached magic object that the round touched.
-        if (affectDestructibles)
+        if (_destructibles?.TryDestroy(owner, placement, destructibleDamage) is { } destructible)
         {
-            DestructibleObject? destructible = _destructibles?.TryDestroyAt(
-                impactUnits,
-                radiusUnits,
-                owner,
-                placement,
-                destructibleDamage);
-            if (destructible is not null)
-            {
-                HandleDestructibleImpact(destructible, impactUnits);
-            }
+            HandleDestructibleImpact(destructible, impactUnits);
         }
 
-        if (_alarmSpeakers is not { } speakers)
+        if (_alarmSpeakers?.TryDestroy(owner) is { } speaker)
         {
-            return;
+            ShootOutSpeaker(speaker);
         }
+    }
 
-        AlarmSpeaker? destroyed = owner is not null
-            ? speakers.TryDestroy(owner)
-            : speakers.TryDestroyAt(impactUnits, radiusUnits);
-        if (destroyed is null)
+    /// <summary>Shoots out the nearest alarm speaker inside a blast.</summary>
+    /// <param name="impactUnits">Where the blast went off, in world units.</param>
+    /// <param name="radiusUnits">The blast's radius.</param>
+    private void DamageAlarmSpeakers(Vector3d impactUnits, float radiusUnits)
+    {
+        if (_alarmSpeakers?.TryDestroyAt(impactUnits, radiusUnits) is { } speaker)
         {
-            return;
+            ShootOutSpeaker(speaker);
         }
+    }
 
+    /// <summary>Silences a destroyed alarm speaker or camera and plays its destruction.</summary>
+    /// <remarks>
+    /// AlarmLight_Explode (<c>0x43A5F0</c>) and the SCameraLens destruction branch (<c>0x441770</c>)
+    /// permanently silence it, play its report, spawn the <c>1009_01_1</c> fireball and swap in the
+    /// destroyed model.
+    /// </remarks>
+    private void ShootOutSpeaker(AlarmSpeaker destroyed)
+    {
         // Silenced on the spot, not on the next tick's sweep -- a shot speaker cuts mid-wail.
         if (_sirenVoices.Remove(destroyed, out AudioVoiceHandle siren))
         {
@@ -1345,14 +1341,14 @@ internal sealed partial class GameHost
             }
         }
 
-        // SCameraLens uses the same 1009_01_1 fireball as the grenade path and plays explo_camera
-        // (0x441770). AlarmLight_Explode uses that fireball too, at a slightly smaller 2048-unit size.
-        float intensity = string.Equals(destroyed.Task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal)
-            ? 1f
-            : 0.6f;
-        // Destructible parity owns this effect path: unlike the legacy speaker fallback, retail
-        // destroyed objects spawn the authored fireball without an ExplosionSmoke child.
-        _impactParticles?.SpawnExplosion(destroyed.PositionUnits, intensity, includeSmoke: false);
+        // The SCameraLens branch (0x441770) and AlarmLight_Explode (0x43A5F0) each start their own
+        // Explosion0 with fixed arguments: the lens a 2048 range, three FireBalls and seven fragments,
+        // the light a 4096 range, two FireBalls and five.
+        _impactParticles?.SpawnRetailExplosion(
+            destroyed.PositionUnits,
+            string.Equals(destroyed.Task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal)
+                ? RetailExplosionShape.CameraLens
+                : RetailExplosionShape.AlarmLight);
         _logger.Information("Ai", $"{destroyed.Task.Name} was shot out.");
     }
 
@@ -1477,15 +1473,11 @@ internal sealed partial class GameHost
             _sounds?.PlayDefinition(item.ExplosionSound, item.PositionUnits, priority: 90);
         }
 
-        float intensity = item.ExplosionFireballs > 0
-            ? Math.Clamp(item.ExplosionFireballs, 0.6f, 2f)
-            : 0.8f;
-        _impactParticles?.SpawnExplosion(
+        // ExplodeMagicObj (0x43C0B0) and ExplodeObject (0x481A60) hand Explosion0 their authored full
+        // range, fragment count and FireBall count; the look follows from those alone.
+        _impactParticles?.SpawnRetailExplosion(
             item.PositionUnits,
-            intensity,
-            item.ExplosionFireballs,
-            item.ExplosionFragments,
-            item.HasExplosionSmoke);
+            new RetailExplosionShape(radius, (int)item.ExplosionFireballs, item.ExplosionFragments));
         HandleDestructibleBlast(item, item.PositionUnits, radius, falloff, damageFactor);
         _soldiers?.ApplyExplosion(item.PositionUnits, radius, falloff, damageFactor);
         _soldiers?.NotifyExplosion(item.PositionUnits, radius + falloff);

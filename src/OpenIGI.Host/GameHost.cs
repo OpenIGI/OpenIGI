@@ -3096,18 +3096,18 @@ internal sealed partial class GameHost : IDisposable
                     TickAlarmSpeakers();
                     TickSecurityCameraSounds();
 
-                    // And whether one of this tick's rounds landed ON a speaker. The impact list
-                    // carries both the instant rays and the ballistic arrivals, so either mode can
-                    // shoot the siren off the wall.
+                    // And whether one of this tick's rounds landed ON a speaker, pane or barrel. The
+                    // impact list carries both the instant rays and the ballistic arrivals, so either
+                    // mode can shoot the siren off the wall.
                     foreach (GunImpact playerImpact in _player.Impacts)
                     {
                         if (playerImpact.HitSomething)
                         {
-                            DamageAlarmSpeakers(
+                            ApplyRoundContact(
                                 playerImpact.Position,
-                                owner: playerImpact.Owner,
-                                placement: playerImpact.Placement,
-                                destructibleDamage: _player.HeldWeaponType?.DamageFactor ?? 1f);
+                                playerImpact.Owner,
+                                playerImpact.Placement,
+                                _player.HeldWeaponType?.DamageFactor ?? 1f);
                         }
                     }
 

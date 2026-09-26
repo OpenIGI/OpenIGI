@@ -129,9 +129,6 @@ public sealed class DestructibleObject
 /// </summary>
 public sealed class DestructibleObjectRegistry
 {
-    /// <summary>The default contact radius used when a legacy impact has no exact placement identity.</summary>
-    public const float HitRadiusUnits = 3276.8f;
-
     private const string DestroyedModelParameter = "Destroyed model";
     private const string ExplosionDamageScaleParameter = "Damage scale";
     private const string GlassType = "TASKTYPE_GLASS";
@@ -369,15 +366,23 @@ public sealed class DestructibleObjectRegistry
     }
 
     /// <summary>Applies one weapon hit to the exact placement or owner.</summary>
+    /// <remarks>
+    /// Retail has no search here: the round's trace (<c>0x47B750</c>) hands its damage message to the
+    /// struck task's own type handler and nothing else, so a hit that names no destructible destroys
+    /// none. A placement is the stronger identity -- a wall of the Building that owns a pane names the
+    /// Building, and must not fall back to that pane through the owner.
+    /// </remarks>
     public DestructibleObject? TryDestroy(
         GameTask? owner,
         WorldPlacement? placement = null,
         float damage = 1f)
     {
-        if (placement is not null
-            && _byPlacement.TryGetValue(placement, out DestructibleObject? exactPlacement))
+        if (placement is not null)
         {
-            return ApplyDamage(exactPlacement, damage);
+            return _byPlacement.TryGetValue(placement, out DestructibleObject? exactPlacement)
+                && (owner is null || ReferenceEquals(exactPlacement.Owner, owner))
+                ? ApplyDamage(exactPlacement, damage)
+                : null;
         }
 
         if (owner is null || !_byOwner.TryGetValue(owner, out List<DestructibleObject>? items))
@@ -420,48 +425,6 @@ public sealed class DestructibleObjectRegistry
         return item?.Kind == DestructibleObjectKind.Vehicle
             ? ApplyDamage(item, 1f)
             : null;
-    }
-
-    /// <summary>Applies one weapon hit to the nearest live destructible within the supplied radius.</summary>
-    public DestructibleObject? TryDestroyAt(
-        Vector3d impactUnits,
-        float radiusUnits = HitRadiusUnits,
-        GameTask? owner = null,
-        WorldPlacement? placement = null,
-        float damage = 1f)
-    {
-        if (placement is not null && _byPlacement.TryGetValue(placement, out DestructibleObject? exactPlacement))
-        {
-            return ApplyDamage(exactPlacement, damage);
-        }
-
-        if (owner is not null
-            && _byOwner.TryGetValue(owner, out List<DestructibleObject>? owned)
-            && (owned.Count == 1
-                ? owned[0]
-                : owned.FirstOrDefault(item => item.Placement is null && !item.IsDestroyed)) is { } exactOwner)
-        {
-            return ApplyDamage(exactOwner, damage);
-        }
-
-        DestructibleObject? nearest = null;
-        double nearestDistance = radiusUnits;
-        foreach (DestructibleObject item in _objects)
-        {
-            if (item.IsDestroyed)
-            {
-                continue;
-            }
-
-            double distance = (item.PositionUnits - impactUnits).Length;
-            if (distance <= nearestDistance)
-            {
-                nearestDistance = distance;
-                nearest = item;
-            }
-        }
-
-        return nearest is null ? null : ApplyDamage(nearest, damage);
     }
 
     /// <summary>
