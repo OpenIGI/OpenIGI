@@ -58,7 +58,8 @@ internal sealed partial class GameHost
 
         foreach (GunImpact impact in _player.Impacts)
         {
-            if (!impact.HitSomething || impact.StruckHuman)
+            // A knife records no impact (0x46DFB0), so it never reaches GunShotEffect's dust.
+            if (!impact.HitSomething || impact.StruckHuman || impact.Melee)
             {
                 continue;
             }
@@ -142,7 +143,11 @@ internal sealed partial class GameHost
                     return;
                 }
 
-                _player?.Marks.TryAdd(hit, _worldMaterials);
+                _player?.Marks.TryAdd(
+                    hit,
+                    MarkSurfaceAt(hit.Position, hit.Normal),
+                    _worldMaterials,
+                    probe: _player?.MarkProbe);
                 _impactEffects.SpawnSurfaceImpact(
                     hit.Position, hit.Normal, look, material.Entry, struckHuman: false);
                 string where = FormattableString.Invariant(
@@ -508,15 +513,23 @@ internal sealed partial class GameHost
         }
     }
 
-    /// <summary>Burns the retail <c>burn1.tex</c> scorch onto the surface a blast struck.</summary>
+    /// <summary>The missile's scorch half-width: <c>0x476AC0</c> hands <c>Explosion0</c> 6144.</summary>
+    private const float MissileScorchHalfWidthInUnits = 6144f;
+
+    /// <summary>The M203 round's scorch half-width: <c>0x47647B</c> hands <c>Explosion0</c> 4096.</summary>
+    private const float M203ScorchHalfWidthInUnits = 4096f;
+
+    /// <summary>Burns the retail <c>burn1.tex</c> scorch onto the object a blast struck.</summary>
     /// <param name="positionUnits">The impact point, in world units.</param>
     /// <param name="normal">The struck surface's normal; up when the impact recorded none.</param>
+    /// <param name="halfWidthInUnits">The scorch's half-width, as the launcher passes it.</param>
     /// <remarks>
-    /// The missile impact projects <c>burn1.tex</c> (<c>dword_5C1164</c>) onto the object it hits. Here
-    /// it joins the world's decals, oriented to the surface and drawn by the bullet-mark renderer, so it
-    /// follows the same <c>r_bullet_marks</c> switch.
+    /// <c>Explosion0</c> (<c>0x4811C9</c>) sends <c>burn1.tex</c> (<c>dword_5C1164</c>) to the struck
+    /// object through the same decal message a bullet hole uses, so it lands only on an object that
+    /// takes marks: never on bare terrain, never on a body. Here it joins the world's decals, drawn by
+    /// the bullet-mark renderer, so it follows the same <c>r_bullet_marks</c> switch.
     /// </remarks>
-    private void ScorchSurface(Vector3d positionUnits, Vector3f normal)
+    private void ScorchSurface(Vector3d positionUnits, Vector3f normal, float halfWidthInUnits)
     {
         if (_player is null)
         {
@@ -534,10 +547,41 @@ internal sealed partial class GameHost
             positionUnits.Y + (n.Y * liftUnits),
             positionUnits.Z + (n.Z * liftUnits));
 
-        // A metre-and-a-quarter scorch — larger than a bullet's mark, as a rocket's blast is. The name
-        // carries its .tex so the bullet-mark renderer's LOCAL:common/textures/{name} candidate matches
-        // the exact entry burn1.tex is registered under (common textures, not the level's).
-        _player.Marks.AddMark(at, n, "burn1.tex", 5120f);
+        if (MarkSurfaceAt(positionUnits, n) is not { } surface)
+        {
+            return;
+        }
+
+        // The name carries its .tex so the bullet-mark renderer's LOCAL:common/textures/{name}
+        // candidate matches the exact entry burn1.tex is registered under (common textures, not the
+        // level's).
+        _player.Marks.AddMark(at, n, "burn1.tex", halfWidthInUnits, surface);
+    }
+
+    /// <summary>Names the object whose surface lies at a point, for a mark to be stuck to.</summary>
+    /// <param name="positionUnits">A point on the surface.</param>
+    /// <param name="normal">The surface normal there.</param>
+    /// <returns>The object, or <see langword="null"/> for terrain, nothing, or a type that takes no marks.</returns>
+    private object? MarkSurfaceAt(Vector3d positionUnits, Vector3f normal)
+    {
+        if (_worldTrace is not { } trace)
+        {
+            return null;
+        }
+
+        const double reach = 64.0;
+        Vector3d from = new(
+            positionUnits.X + (normal.X * reach),
+            positionUnits.Y + (normal.Y * reach),
+            positionUnits.Z + (normal.Z * reach));
+        Vector3d to = new(
+            positionUnits.X - (normal.X * reach),
+            positionUnits.Y - (normal.Y * reach),
+            positionUnits.Z - (normal.Z * reach));
+
+        return trace(new WorldTraceRequest(from, to, WorldTraceMask.World), out WorldTraceHit hit)
+            ? BulletMarks.SurfaceOf(hit)
+            : null;
     }
 
     /// <summary>Lays the exhaust glow and smoke trail for every launcher rocket still in the air.</summary>

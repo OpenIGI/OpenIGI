@@ -104,8 +104,35 @@ public static class TerrainRayTrace
             return false;
         }
 
+        nearestHit = nearestHit with { Material = GameMaterialOf(terrain) };
         hit = WorldTraceHit.FromRayHit(request, nearestHit, WorldTraceHitKind.Terrain, label: "terrain");
         return true;
+    }
+
+    /// <summary>The game material row a hit on this terrain reports.</summary>
+    /// <param name="terrain">The level's terrain.</param>
+    /// <returns>The row to look up in the game material table.</returns>
+    /// <remarks>
+    /// <para>
+    /// <c>0x4CB050</c> fills the trace's entry and exit material at <c>0x4CB7C3</c> from
+    /// <c>scene[0xD3C + 4·index]</c> — the same per-level array <c>0x4C1840</c> indexes for a mesh face.
+    /// The index comes from <c>0x4CB810</c>: the low byte of the <c>CreateTerrainMaterial</c> record's
+    /// first field (<c>C28FE0</c>, argument 1, stored by <c>0x4C6670</c>) for the texture modifier that
+    /// covers the point, or for terrain material 0 when none does.
+    /// </para>
+    /// <para>
+    /// So the answer is the level's own, not a constant: <c>Ground</c> in most of the campaign and
+    /// <c>Snow</c> in the four Arctic missions. See <see cref="FootstepSounds.TerrainGameMaterialIndex"/>
+    /// for why one row answers for the whole map. A terrain that declares no material takes row 1, the
+    /// entry <c>0x4C1840</c> falls back to (<c>scene+3392</c>).
+    /// </para>
+    /// </remarks>
+    public static int GameMaterialOf(TerrainData terrain)
+    {
+        ArgumentNullException.ThrowIfNull(terrain);
+        int declared = FootstepSounds.TerrainGameMaterialIndex(terrain.Materials)
+            ?? MefCollisionMesh.DefaultGlobalMaterial;
+        return declared & 0xFF;
     }
 
     /// <summary>Returns a trace delegate bound to one terrain.</summary>

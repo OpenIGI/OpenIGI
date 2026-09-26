@@ -55,6 +55,7 @@ public sealed class WorldTraceTests
             new WorldTraceRequest(from, to, WorldTraceMask.Terrain),
             out WorldTraceHit hit));
         Assert.Equal(WorldTraceHitKind.Terrain, hit.Kind);
+        Assert.Equal(TerrainRayTrace.GameMaterialOf(terrain), hit.Material);
         Assert.Equal(z - 1.0, hit.Position.Z, 1.0);
         Assert.InRange(hit.Fraction, 0.0, 1.0);
     }

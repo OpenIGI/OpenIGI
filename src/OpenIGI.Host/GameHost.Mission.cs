@@ -1319,7 +1319,11 @@ internal sealed partial class GameHost
 
                         if (_worldMaterials is { } table)
                         {
-                            _player.Marks.TryAdd(worldHit, table);
+                            _player.Marks.TryAdd(
+                                worldHit,
+                                BulletMarks.SurfaceOf(blocker),
+                                table,
+                                probe: _player.MarkProbe);
                         }
 
                         PlayBulletImpactSound(
