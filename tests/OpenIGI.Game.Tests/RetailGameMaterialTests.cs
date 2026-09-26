@@ -2,6 +2,7 @@ using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -62,7 +63,7 @@ public sealed class RetailGameMaterialTests
         GameMaterialRegistry materials = Load();
 
         Assert.True(materials.TryGetByName(FootstepSounds.TerrainMaterialName, out GameMaterial ground));
-        Assert.Equal(FootstepSounds.TerrainMaterialIndex, ground.Index);
+        Assert.Equal(MefCollisionMesh.DefaultGlobalMaterial, ground.Index);
         Assert.Equal("hole_concrete1.tex", ground.Entry.EntryTexture);
     }
 
