@@ -743,6 +743,11 @@ internal sealed partial class GameHost
 
         EndStage("the soldiers' meshes and textures");
         _soldiers.Cutscenes = _cutscenes;
+
+        // A round -- or a blade -- that meets a body bleeds before it does anything else (0x45F94A),
+        // whoever struck it. The splash it throws onto the wall behind (0x463AD0) is the only mark a
+        // knife leaves: KnifeStab itself never reaches the decal message.
+        _soldiers.BloodSpray = (owner, at, direction) => SpawnRetailBlood(owner, at, direction);
         _cutscenes?.SetTargetPoseResolver(_soldiers.CutscenePose);
 
         // Interactions are level systems, not AI systems: build them even when a mission has no usable
@@ -1786,11 +1791,26 @@ internal sealed partial class GameHost
                     _missionObjectives?.ShowTransientMessage(missionText.Get(key));
                 };
                 _soldiers?.UseDroppedWeaponPickups(gunPickups);
-                _soldiers?.SetWeaponDropSink((weapon, position, orientation) =>
+                _soldiers?.SetWeaponDropSink((weapon, position, orientation, velocity) =>
                 {
-                    GunPickup pickup = gunPickups.Spawn(position, orientation, weapon);
+                    GunPickup pickup = gunPickups.Spawn(position, orientation, weapon, velocity);
                     _gunPickupRenderer?.Add(loaded, pickup);
                 });
+
+                // What a dropped gun lands on: the same solids and terrain a round strikes, as triangles
+                // for the realistic body and as one ray for the original's fifty-metre drop probe.
+                ObjectCollisionIndex? dropSolids = _worldSolids;
+                TerrainData? dropTerrain = _playerTerrain;
+                _soldiers?.SetDroppedWeaponWorld(
+                    (min, max, into) =>
+                    {
+                        dropSolids?.CollectTriangles(min, max, into);
+                        if (dropTerrain is not null)
+                        {
+                            TerrainRayTrace.CollectTriangles(dropTerrain, min, max, into);
+                        }
+                    },
+                    _worldTrace is { } dropTrace ? WorldTrace.AsRayCast(dropTrace) : null);
                 if (_gunPickups.Items.Count > 0)
                 {
                     _logger.Information("Weapon", $"{_gunPickups.Items.Count} gun pickup(s) available.");

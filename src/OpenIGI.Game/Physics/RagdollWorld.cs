@@ -47,6 +47,17 @@ public sealed class RagdollWorld
     /// <summary>Gets the downward ground query, which reaches the terrain the ray cast does not.</summary>
     public RagdollGround? Ground { get; }
 
+    /// <summary>Gets the solid world triangles around a box, terrain included, for mesh-accurate contacts.</summary>
+    /// <remarks>A dropped weapon's rigid body collides against these; without them it falls back to rays.</remarks>
+    public CollisionTriangleGather? Triangles { get; init; }
+
+    /// <summary>Gets a ray cast against everything solid, terrain included.</summary>
+    /// <remarks>
+    /// <see cref="Cast"/> meets placed objects only. The original's pickup probe (<c>0x46C980</c>) traces
+    /// fifty metres down through terrain and objects alike, which is what this answers.
+    /// </remarks>
+    public WorldRayCast? Trace { get; init; }
+
     /// <summary>Builds a world that is a single horizontal plane, for tests.</summary>
     /// <param name="height">The plane's Z, in engine units.</param>
     /// <returns>The world.</returns>
