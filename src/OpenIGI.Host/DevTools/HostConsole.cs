@@ -93,12 +93,17 @@ public sealed class HostConsole : IDisposable
     /// see <see cref="IsolatedFromSavedSettings"/>.
     /// </param>
     /// <param name="firstRunPreset">The graphics preset applied when there are no saved settings.</param>
+    /// <param name="lockedPreset">
+    /// The one graphics preset this build allows, applied over whatever was saved, or <see langword="null"/>
+    /// to let the player choose. See <see cref="GraphicsPresetRegistry.LockedPreset"/>.
+    /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="fileSystem"/> is <see langword="null"/>.</exception>
     public void Start(
         VirtualFileSystem fileSystem,
         IReadOnlyList<string>? startupCommands = null,
         bool useSavedSettings = true,
-        GraphicsPreset firstRunPreset = GraphicsPreset.Enhanced)
+        GraphicsPreset firstRunPreset = GraphicsPreset.Enhanced,
+        GraphicsPreset? lockedPreset = null)
     {
         ArgumentNullException.ThrowIfNull(fileSystem);
 
@@ -124,7 +129,14 @@ public sealed class HostConsole : IDisposable
             _logger.Information(LogCategory, $"Loaded settings from {_settingsPath}.");
         }
 
-        if (!IsolatedFromSavedSettings && !settingsLoaded)
+        // After the file, so a saved choice cannot outlive the lock, and before the command line, so a
+        // +gfx_preset there is refused like one typed later.
+        if (lockedPreset is { } locked)
+        {
+            _logger.Information(LogCategory, $"This build is locked to the {locked} graphics preset.");
+            GraphicsPresetRegistry.Default.Lock(locked);
+        }
+        else if (!IsolatedFromSavedSettings && !settingsLoaded)
         {
             _logger.Information(LogCategory, $"No saved settings found; using the {firstRunPreset} graphics preset.");
             GraphicsPresetRegistry.Default.Apply(firstRunPreset);

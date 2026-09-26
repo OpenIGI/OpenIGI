@@ -6,6 +6,7 @@ using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Titles;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Game.Config;
 using OpenIGI.Game.Menus;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Configuration;
@@ -290,7 +291,14 @@ internal sealed partial class GameHost
             _loop.Clock.AdoptScheduleFrom(outgoing.Clock);
         }
 
-        _missions = _missionCatalogue(_logger);
+        // A build that offers only the opening of the campaign cuts the catalogue itself, so every route
+        // into a mission -- the lists, a save slot, the command line, a finished mission's successor --
+        // meets the same limit without knowing there is one.
+        IMissionCatalogue<MissionDescriptor> titleMissions = _missionCatalogue(_logger);
+        CampaignLimitedMissionCatalogue? limitedMissions = _options.CampaignMissionLimit is { } limit
+            ? new CampaignLimitedMissionCatalogue(titleMissions, limit)
+            : null;
+        _missions = limitedMissions ?? titleMissions;
         _missions.Register(_loop.Natives);
         _missionState.Register(_loop.Natives);
 
@@ -319,6 +327,20 @@ internal sealed partial class GameHost
             _missions.Scan(_fileSystem, _resources, _loop.Natives);
             _title.LoadTables(_loop, _fileSystem, _resources);
             _configHost.Missions = _missions;
+
+            if (limitedMissions is not null)
+            {
+                _logger.Information(
+                    "Mission",
+                    $"This build offers the first {limitedMissions.Limit} mission(s) of the campaign; {limitedMissions.Count} are available.");
+
+                // The profiles were read before the scan, and one from the full game can be further along
+                // than this build goes.
+                foreach (PlayerProfile profile in _configuration.Profiles)
+                {
+                    profile.ActiveMission = limitedMissions.ClampToOffered(profile.ActiveMission);
+                }
+            }
         }
         catch (EngineFatalException ex)
         {

@@ -656,10 +656,31 @@ public readonly record struct HostOptions(
 
     /// <summary>Gets the graphics preset a player with no saved settings starts on.</summary>
     /// <remarks>
-    /// Enhanced unless the platform says otherwise; the browser build starts on High. Only a first run
-    /// reads it: once there is a settings file, the file decides.
+    /// Enhanced unless the platform says otherwise. Only a first run reads it: once there is a settings
+    /// file, the file decides.
     /// </remarks>
     public GraphicsPreset FirstRunPreset { get; init; } = GraphicsPreset.Enhanced;
+
+    /// <summary>
+    /// Gets the one graphics preset this build allows, or <see langword="null"/> to let the player choose.
+    /// </summary>
+    /// <remarks>
+    /// A property of the build rather than a command-line option: the browser build is held on
+    /// <see cref="GraphicsPreset.Vanilla"/>. It is applied over any saved settings, the menu stops offering
+    /// the others and <c>gfx_preset</c> refuses them. When set, <see cref="FirstRunPreset"/> is not read.
+    /// </remarks>
+    public GraphicsPreset? LockedPreset { get; init; }
+
+    /// <summary>
+    /// Gets how many missions, counted along the campaign from its first, this build offers, or
+    /// <see langword="null"/> for all of them.
+    /// </summary>
+    /// <remarks>
+    /// A property of the build rather than a command-line option: the browser build offers the first six.
+    /// A mission past the limit is not listed, cannot be started from a save or the command line, and
+    /// finishing the last one offered completes the campaign.
+    /// </remarks>
+    public int? CampaignMissionLimit { get; init; }
 
     /// <summary>
     /// Gets how many frames each leg of an abandon/replay cycle lasts, or <c>0</c> for never. Set by

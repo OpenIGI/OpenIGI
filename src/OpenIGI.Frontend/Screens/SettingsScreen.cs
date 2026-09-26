@@ -108,17 +108,25 @@ public sealed class SettingsScreen : ShellScreen
         // "surface-cache relight amortisation" as a slider has not given the player more control, it has
         // given them a decision they cannot make. The console reaches all of it, by name and with help,
         // which is what an advanced interface should be. See GraphicsMenu.
-        (string Title, Func<Panel> Build)[] categories =
+        //
+        // A build locked to one preset has no Graphics category at all: every row on it is either the
+        // preset or a step of one, and offering them would only move the settings off the preset the
+        // build is held on.
+        List<(string Title, Func<Panel> Build)> categories =
         [
-            ("Graphics", BuildGraphicsPanel),
             ("Display", () => BuildSettingsPanel(GraphicsMenu.DisplaySettings)),
             ("Audio", () => BuildCvarPanel(NamesWithPrefix("snd_"), includePresets: false)),
             ("Controls", BuildControlsPanel),
             ("Gameplay", BuildGameplayPanel),
         ];
 
-        string[] tabTitles = new string[categories.Length];
-        for (int i = 0; i < categories.Length; i++)
+        if (Context.Presets.LockedPreset is null)
+        {
+            categories.Insert(0, ("Graphics", BuildGraphicsPanel));
+        }
+
+        string[] tabTitles = new string[categories.Count];
+        for (int i = 0; i < categories.Count; i++)
         {
             tabTitles[i] = categories[i].Title;
         }
@@ -128,7 +136,7 @@ public sealed class SettingsScreen : ShellScreen
         layout.Add(tabs, 0, 0);
 
         var content = new Panel();
-        for (int i = 0; i < categories.Length; i++)
+        for (int i = 0; i < categories.Count; i++)
         {
             Panel panel = categories[i].Build();
             panel.Visibility = i == 0 ? Visibility.Visible : Visibility.Collapsed;

@@ -31,8 +31,10 @@ public static class GraphicsPresetCommands
     {
         if (context.Count == 0)
         {
-            context.Print($"{CommandName} = {registry.Current.ToString().ToLowerInvariant()}");
-            context.Print($"  managing {registry.Managed.Count} setting(s); choices: vanilla | enhanced | high | ultra");
+            context.Print($"{CommandName} = {Name(registry.Current)}");
+            context.Print(registry.LockedPreset is { } held
+                ? $"  managing {registry.Managed.Count} setting(s); this build is locked to {Name(held)}"
+                : $"  managing {registry.Managed.Count} setting(s); choices: vanilla | enhanced | high | ultra");
             return;
         }
 
@@ -43,7 +45,15 @@ public static class GraphicsPresetCommands
             return;
         }
 
+        if (registry.LockedPreset is { } locked && locked != preset)
+        {
+            context.Error($"This build is locked to the {Name(locked)} preset.");
+            return;
+        }
+
         int applied = registry.Apply(preset);
-        context.Print($"Applied '{preset.ToString().ToLowerInvariant()}' to {applied} setting(s).");
+        context.Print($"Applied '{Name(preset)}' to {applied} setting(s).");
     }
+
+    private static string Name(GraphicsPreset preset) => preset.ToString().ToLowerInvariant();
 }

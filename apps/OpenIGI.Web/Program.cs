@@ -37,6 +37,9 @@ public static partial class Program
     /// <summary>Where the page puts the installation.</summary>
     public const string GameRoot = "/game";
 
+    /// <summary>How many missions, from the start of the campaign, the browser build offers.</summary>
+    public const int CampaignMissionLimit = 6;
+
     private static GameHost? _game;
 
     /// <summary>Nothing: the page boots the game once its files are in place.</summary>
@@ -55,8 +58,13 @@ public static partial class Program
         }
 
         ConsoleLogger logger = new();
-        // A first visit starts on High rather than the desktop's Enhanced; a saved choice still wins.
-        HostOptions options = HostOptions.Parse(args ?? []) with { FirstRunPreset = GraphicsPreset.High };
+        // The browser build is the original's picture and the opening of the campaign: the preset is held
+        // on Vanilla whatever was saved, and only the first missions can be played.
+        HostOptions options = HostOptions.Parse(args ?? []) with
+        {
+            LockedPreset = GraphicsPreset.Vanilla,
+            CampaignMissionLimit = CampaignMissionLimit,
+        };
         IGameTitleRuntime runtime = TitleCatalog.Default;
 
         VirtualFileSystem fileSystem = new(logger);

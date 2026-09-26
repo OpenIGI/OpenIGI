@@ -287,6 +287,14 @@ internal sealed partial class GameHost
             return;
         }
 
+        // Nothing could be played from it: a mission the catalogue does not offer cannot be promoted or
+        // started, so it is not built behind the menu either.
+        if (!_missions.TryGet(missionId, out _))
+        {
+            _logger.Warning("Mission", $"Asked for a backdrop of mission {missionId}, which is not offered.");
+            return;
+        }
+
         if (!MissionFilesReady(missionId, out _))
         {
             _backdropAwaitingFiles = missionId;
