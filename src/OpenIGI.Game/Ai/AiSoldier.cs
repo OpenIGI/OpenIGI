@@ -3286,9 +3286,9 @@ public sealed class AiSoldier
         }
 
         // The shared record's position is refreshed only WHILE THE TARGET IS SEEN (sub_48A920 reads it
-        // off the detection slot), and everything combat does -- turning, aiming, hunting, the accuracy
-        // distance -- reads the record (+272), not the target's true position. So a guard fights the
-        // place the squad last SAW the player; one that never saw it itself borrows the squad's record.
+        // off the detection slot). Hunting and the accuracy distance read the record (+272), so a guard
+        // searches where the squad last SAW the player; one that never saw it borrows the squad's record.
+        // Turning to an unseen target and aiming a burst do not: see TrueAimPoint.
         if (_playerSlot.IsVisible)
         {
             Target?.Refresh(lastSeenFeet);
@@ -3362,7 +3362,7 @@ public sealed class AiSoldier
             HasDetectionSlot: _playerSlot.IsRegistered,
             InCone: _playerSlot.IsInCone,
             Visible: _playerSlot.IsVisible,
-            TargetPosition: AimPointOf(enemy, _enemyCrouching),
+            TargetPosition: TrueAimPoint(),
             DistanceToTargetInUnits: Distance(Position, enemy),
             LocomotionState: AiCombatChannels.StateOf(_type, AiStanceChannel.Standing),
             AmmoInClip: weapon.AmmoInClip,
@@ -3371,15 +3371,16 @@ public sealed class AiSoldier
             BurstSize: weapon.BurstSize,
             AimersOnTarget: Target?.Count(AiAimMode.Aiming) ?? 0);
 
-        // The port has no stance machine on a soldier yet, so it is always in its standing state --
-        // which is the state the guard behaviour waits for anyway.
+        // 0x48D080 decides nothing unless the body is in its type's stand state (sub_48EFE0(C, 0)): after a
+        // burst the body racks down through ready and recover to standing before the next one.
         //
         // The accuracy lerp scales over the PLAIN primary view length: 0x48B9C0 reads [HumanAI+176],
         // the third double of the primary block {alpha, gamma, length, alarmLength} -- not the
         // alarm-extended range. Passing the alerted range stretched the ramp and made every alerted
         // guard more accurate at range than retail's.
         AiCombatPhase phaseBeforeUpdate = _combat.Phase;
-        AiCombatCommand command = _combat.Update(sense, standing: true, Vision.Primary.Length);
+        bool standing = AiCombatChannels.IsInStance(_type, AiStanceChannel.Standing, CombatState);
+        AiCombatCommand command = _combat.Update(sense, standing, Vision.Primary.Length);
         Combat = command;
 
         // RPG's two callbacks (0x48CBD0 stand / 0x48CDF0 kneel) share the ordinary fire, reload,
@@ -3923,6 +3924,14 @@ public sealed class AiSoldier
         Target?.Aim(this, AiAimMode.None);
     }
 
+    /// <summary>Where the target really is, raised to where the combat code aims — <c>sub_451380</c>.</summary>
+    /// <remarks>
+    /// The guard's turn to an unseen target and every burst's aim point read the target task's own position
+    /// (0.5 m up, 0.25 m crouched), not the shared record the rest of combat reads; only the distance, and a
+    /// knife guard's turn, use the record.
+    /// </remarks>
+    private Vector3d TrueAimPoint() => AimPointOf(_enemyFeet, _enemyCrouching);
+
     /// <summary>The fire and reload sub-actions the two arms share.</summary>
     /// <param name="enemy">Where the target is.</param>
     /// <param name="weapon">The held weapon's state this tick.</param>
@@ -3932,7 +3941,7 @@ public sealed class AiSoldier
             HasDetectionSlot: _playerSlot.IsRegistered,
             InCone: _playerSlot.IsInCone,
             Visible: _playerSlot.IsVisible,
-            TargetPosition: AimPointOf(enemy, _enemyCrouching),
+            TargetPosition: TrueAimPoint(),
             DistanceToTargetInUnits: Distance(Position, enemy),
             LocomotionState: AiCombatChannels.StateOf(_type, AiStanceChannel.Standing),
             AmmoInClip: weapon.AmmoInClip,
