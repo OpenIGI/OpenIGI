@@ -8,6 +8,12 @@
     <!-- The JavaScript interop's generated marshalling is unsafe code. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <WasmMainJSPath>wwwroot/main.js</WasmMainJSPath>
+    <!-- The runtime's loader gets a content hash in its name like every other file under _framework, and
+         index.html an import map to it, so a host can cache _framework for good and a new build is never
+         run against a browser's copy of the last one. The page's own scripts keep their names and are
+         revalidated on every load instead (hosting/apache/.htaccess). -->
+    <WasmFingerprintDotnetJs>true</WasmFingerprintDotnetJs>
+    <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
     <!-- Links the browser's webgpu.h into the runtime (WgpuBrowser.props). -->
     <WasmBuildNative>true</WasmBuildNative>
     <InvariantGlobalization>true</InvariantGlobalization>

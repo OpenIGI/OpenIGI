@@ -7,6 +7,8 @@
 
 let canvas = null;
 let queue = [];
+let listening = null;
+let resizes = null;
 let wantLock = false;
 let pointerVisible = true;
 
@@ -52,48 +54,69 @@ export function install(target) {
   canvas = target;
   canvas.tabIndex = 0;
 
+  // Every listener hangs off one signal, so that uninstall takes them all away together.
+  listening = new AbortController();
+  const signal = listening.signal;
+
   window.addEventListener('keydown', e => {
     if (PAGE_KEYS.has(e.code) || e.metaKey) return;
     e.preventDefault();
     if (!e.repeat) queue.push(`key ${e.code} 1`);
     if (e.key.length === 1 && !e.ctrlKey && !e.altKey) queue.push(`char ${e.key}`);
-  });
+  }, { signal });
   window.addEventListener('keyup', e => {
     if (PAGE_KEYS.has(e.code) || e.metaKey) return;
     e.preventDefault();
     queue.push(`key ${e.code} 0`);
-  });
+  }, { signal });
 
   canvas.addEventListener('mousedown', e => {
     if (wantLock && document.pointerLockElement !== canvas) lock();
     queue.push(`button ${e.button} 1`);
     e.preventDefault();
-  });
-  window.addEventListener('mouseup', e => queue.push(`button ${e.button} 0`));
-  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  }, { signal });
+  window.addEventListener('mouseup', e => queue.push(`button ${e.button} 0`), { signal });
+  canvas.addEventListener('contextmenu', e => e.preventDefault(), { signal });
   window.addEventListener('mousemove', e => {
     const [x, y] = pointerPosition(e);
     queue.push(`move ${e.movementX} ${e.movementY} ${x} ${y}`);
-  });
+  }, { signal });
   canvas.addEventListener('wheel', e => {
     // Notches, positive away from the player: a pixel delta is about a hundred to the notch, a line
     // delta three.
     const notches = -e.deltaY / (e.deltaMode === 0 ? 100 : e.deltaMode === 1 ? 3 : 1);
     queue.push(`wheel ${notches}`);
     e.preventDefault();
-  }, { passive: false });
+  }, { passive: false, signal });
 
   document.addEventListener('pointerlockchange', () =>
-    queue.push(`lock ${document.pointerLockElement === canvas ? 1 : 0}`));
-  window.addEventListener('focus', () => queue.push('focus 1'));
-  window.addEventListener('blur', () => queue.push('focus 0'));
-  document.addEventListener('visibilitychange', () => queue.push(`focus ${document.hidden ? 0 : 1}`));
-  window.addEventListener('pagehide', () => queue.push('close'));
+    queue.push(`lock ${document.pointerLockElement === canvas ? 1 : 0}`), { signal });
+  window.addEventListener('focus', () => queue.push('focus 1'), { signal });
+  window.addEventListener('blur', () => queue.push('focus 0'), { signal });
+  document.addEventListener('visibilitychange', () => queue.push(`focus ${document.hidden ? 0 : 1}`), { signal });
+  window.addEventListener('pagehide', () => queue.push('close'), { signal });
 
-  new ResizeObserver(() => {
+  resizes = new ResizeObserver(() => {
     const [width, height] = drawable();
     queue.push(`resize ${width} ${height}`);
-  }).observe(canvas);
+  });
+  resizes.observe(canvas);
+}
+
+/**
+ * Stops listening, once the game has ended: the page has the keyboard and the pointer back, and nothing is
+ * queued for a game that will never take it.
+ */
+export function uninstall() {
+  listening?.abort();
+  resizes?.disconnect();
+  listening = null;
+  resizes = null;
+  queue = [];
+  wantLock = false;
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
+  if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+  if (canvas) canvas.style.cursor = '';
 }
 
 /** What the runtime imports, registered under 'openigi-platform'. */

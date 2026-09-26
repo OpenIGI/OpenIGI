@@ -3,22 +3,133 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Project I.G.I. in the browser, played from your own copy of the game.">
   <title>OpenIGI</title>
   <style>
-    html, body { margin: 0; height: 100%; background: #000; color: #d8d8d8; font: 15px/1.4 system-ui, sans-serif; }
-    #view { display: block; width: 100vw; height: 100vh; outline: none; }
-    #overlay { position: fixed; inset: 0; display: grid; place-content: center; gap: 12px; text-align: center; pointer-events: none; }
-    #status { max-width: min(60ch, calc(100vw - 32px)); }
-    #status:empty { display: none; }
-    #pick { pointer-events: auto; font: inherit; padding: 8px 18px; }
+    :root {
+      --bg: #0e0e0f;
+      --text: #ececea;
+      --muted: #8e8d89;
+      --faint: #5f5e5b;
+      --rule: #262626;
+      --error: #e07a64;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* The game takes the whole page once it has booted. */
+    #view { display: block; width: 100vw; height: 100vh; outline: none; background: #000; }
+    #view[hidden] { display: none; }
+
+    /* Everything before the game, and after it. */
+    #landing {
+      position: fixed;
+      inset: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      padding: 0 16px;
+    }
+    #landing[hidden] { display: none; }
+
+    main { width: 100%; max-width: 420px; margin: auto; padding: 48px 0; }
+
+    .name { margin: 0 0 40px; color: var(--muted); font-size: 13px; letter-spacing: 0.08em; }
+    h1 { margin: 0 0 12px; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+    p { margin: 0; }
+    .lead { color: var(--muted); }
+
+    .stage { margin-top: 32px; }
+    .stage[hidden] { display: none; }
+    .stage > * + * { margin-top: 16px; }
+
+    button {
+      appearance: none;
+      height: 40px;
+      padding: 0 18px;
+      border: 1px solid var(--text);
+      border-radius: 6px;
+      background: var(--text);
+      color: var(--bg);
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    button:hover { background: #fff; border-color: #fff; }
+    button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+    button:disabled { background: transparent; border-color: var(--rule); color: var(--faint); cursor: default; }
+    button.quiet { background: transparent; color: var(--text); border-color: #3a3a3a; }
+    button.quiet:hover { border-color: var(--muted); }
+
+    .hint { color: var(--faint); font-size: 13px; }
+    code { font: 12.5px ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--muted); }
+    .error { color: var(--error); font-size: 14px; }
+    .error[hidden] { display: none; }
+
+    .progress { height: 2px; background: var(--rule); overflow: hidden; }
+    .progress > div { height: 100%; width: 0; background: var(--text); transition: width 200ms linear; }
+    .progress.indeterminate > div { width: 25%; animation: sweep 1.4s ease-in-out infinite; }
+    @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(400%); } }
+    .progress-row { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+    footer { width: 100%; max-width: 420px; margin: 0 auto; padding: 16px 0 24px; border-top: 1px solid var(--rule); color: var(--faint); font-size: 12px; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .progress > div { transition: none; }
+      .progress.indeterminate > div { animation: none; width: 100%; opacity: 0.4; }
+    }
   </style>
 </head>
 <body>
-  <canvas id="view"></canvas>
-  <div id="overlay">
-    <div id="status">Loading…</div>
-    <button id="pick" hidden>Choose folder</button>
+  <canvas id="view" hidden></canvas>
+
+  <div id="landing">
+    <main>
+      <p class="name">OPENIGI</p>
+      <h1>Project I.G.I.</h1>
+      <p class="lead">Played in the browser from your own copy of the game. Its files are read on your computer and never uploaded.</p>
+
+      <!-- Choosing the installation. -->
+      <div class="stage" id="stage-pick" aria-live="polite">
+        <button id="pick" type="button">Choose game folder</button>
+        <p class="hint">The folder with <code>IGI.exe</code> in it, usually <code>pc</code> inside the installation.</p>
+        <p class="error" id="pick-error" role="alert" hidden></p>
+        <p class="error" id="support" hidden></p>
+      </div>
+
+      <!-- Starting up. -->
+      <div class="stage" id="stage-loading" aria-live="polite" hidden>
+        <div class="progress indeterminate" id="progress"><div></div></div>
+        <div class="progress-row"><span id="progress-label">Starting</span><span id="progress-value"></span></div>
+      </div>
+
+      <!-- After Quit. -->
+      <div class="stage" id="stage-ended" hidden>
+        <p class="lead">The game has closed. Your settings are saved.</p>
+        <button id="again" type="button">Play again</button>
+      </div>
+
+      <!-- Something went wrong. -->
+      <div class="stage" id="stage-failed" hidden>
+        <p class="error" id="failed-text" role="alert"></p>
+        <button class="quiet" id="retry" type="button">Reload</button>
+      </div>
+    </main>
+
+    <footer>An independent reimplementation, not affiliated with the game's publishers. Requires an original copy of Project I.G.I.</footer>
   </div>
+
+  <!-- Filled in by the publish: where the fingerprinted runtime scripts under _framework are. -->
+  <script type="importmap"></script>
   <script type="module" src="main.js"></script>
 </body>
 </html>
