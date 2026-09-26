@@ -154,5 +154,9 @@ public interface IRhiRayTracing
 
     /// <summary>Records whatever building or refitting the world needs this frame, before anything traces.</summary>
     /// <param name="encoder">The encoder to record into, outside any pass.</param>
-    void RecordSceneUpdate(IRhiCommandEncoder encoder);
+    /// <param name="timestamps">
+    /// Where to record when the update began and ended, or <see langword="null"/>. Asked of the update
+    /// itself rather than of a pass around it, because building structures happens outside any pass.
+    /// </param>
+    void RecordSceneUpdate(IRhiCommandEncoder encoder, RhiTimestampWrites? timestamps = null);
 }

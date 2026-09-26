@@ -82,6 +82,7 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     public void Set2DProjection(int width, int height) => _projection2D = (width, height);
 
     /// <inheritdoc/>
+    /// <remarks>See <see cref="Drawing2D"/> for why nothing is drawn while a scene is being captured.</remarks>
     public void DrawTriangles2D(
         ReadOnlySpan<Vertex2D> vertices,
         ReadOnlySpan<ushort> indices,
@@ -89,17 +90,16 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
         BlendMode blend)
     {
         ThrowIfDisposed();
-        Apply2DProjection();
 
-        if (Capturing)
+        if (Drawing2D)
         {
-            return;
+            Apply2DProjection();
+            _sprites.DrawTriangles(Pass(), vertices, indices, texture, blend);
         }
-
-        _sprites.DrawTriangles(Pass(), vertices, indices, texture, blend);
     }
 
     /// <inheritdoc/>
+    /// <remarks>See <see cref="Drawing2D"/> for why nothing is drawn while a scene is being captured.</remarks>
     public void DrawText2D(
         ReadOnlySpan<Vertex2D> vertices,
         ReadOnlySpan<ushort> indices,
@@ -108,17 +108,35 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
         BlendMode blend)
     {
         ThrowIfDisposed();
-        Apply2DProjection();
 
-        _sprites.DrawText(Pass(), vertices, indices, atlas, parameters, blend);
+        if (Drawing2D)
+        {
+            Apply2DProjection();
+            _sprites.DrawText(Pass(), vertices, indices, atlas, parameters, blend);
+        }
     }
 
     /// <inheritdoc/>
+    /// <remarks>See <see cref="Drawing2D"/> for why nothing is drawn while a scene is being captured.</remarks>
     public void DrawLoadingBackdrop(TextureHandle texture, in LoadingBackdropSettings settings)
     {
         ThrowIfDisposed();
-        _sprites.DrawLoadingBackdrop(Pass(), texture, settings);
+
+        if (Drawing2D)
+        {
+            _sprites.DrawLoadingBackdrop(Pass(), texture, settings);
+        }
     }
+
+    /// <summary>Gets whether a 2D draw goes to the frame now, which it does whenever no scene is being captured.</summary>
+    /// <remarks>
+    /// Two-dimensional drawing is the interface, and it lands on the frame over the resolved scene. While a
+    /// capture is open, the frame is not what is being drawn: opening the frame's pass would close the
+    /// scene's and every draw after it would be lost, and whatever did land on the frame would be painted
+    /// over by the resolve, which covers all of it. So the three 2D draws decline alike until the capture
+    /// has been resolved, where the frame order puts them anyway.
+    /// </remarks>
+    private bool Drawing2D => !Capturing;
 
     /// <inheritdoc/>
     public MeshHandle CreateMesh(ReadOnlySpan<Vertex3D> vertices, ReadOnlySpan<ushort> indices) =>

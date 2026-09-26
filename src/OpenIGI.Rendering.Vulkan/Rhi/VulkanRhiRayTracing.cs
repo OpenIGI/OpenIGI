@@ -25,6 +25,7 @@ namespace OpenIGI.Rendering.Vulkan.Rhi;
 /// </remarks>
 internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
 {
+    private readonly Vk _vk;
     private readonly VulkanRhiDevice _owner;
     private readonly VulkanWorldScene _scene;
     private readonly VulkanOpacityMasks _masks;
@@ -59,6 +60,7 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
         VulkanCommands commands,
         VulkanRhiDevice owner)
     {
+        _vk = vk;
         _owner = owner;
         _scene = new VulkanWorldScene(vk, api, device, allocator);
 
@@ -237,11 +239,15 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
     }
 
     /// <inheritdoc/>
-    public void RecordSceneUpdate(IRhiCommandEncoder encoder)
+    public void RecordSceneUpdate(IRhiCommandEncoder encoder, RhiTimestampWrites? timestamps = null)
     {
         ArgumentNullException.ThrowIfNull(encoder);
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _scene.Record(((VulkanRhiCommandEncoder)encoder).Command, _owner);
+
+        CommandBuffer command = ((VulkanRhiCommandEncoder)encoder).Command;
+        VulkanRhiTimestamps.Begin(_vk, command, timestamps);
+        _scene.Record(command, _owner);
+        VulkanRhiTimestamps.End(_vk, command, timestamps);
     }
 
     /// <inheritdoc/>

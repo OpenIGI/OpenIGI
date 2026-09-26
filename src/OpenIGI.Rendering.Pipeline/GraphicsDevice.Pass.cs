@@ -58,7 +58,10 @@ public sealed partial class GraphicsDevice
                 _clearDepthPending ? RhiLoadOp.Clear : RhiLoadOp.Load,
                 RhiStoreOp.Store,
                 DepthClearValue: 0f),
-            _profiler.Time(RenderStage.Forward),
+
+            // The stage the host has bracketed the draws in, and otherwise what the frame's pass mostly
+            // is: the forward drawing of the direct path.
+            _profiler.Time(_stageBracket ?? RenderStage.Forward),
             Label: "present"));
 
         _clearPending = false;

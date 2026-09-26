@@ -100,6 +100,6 @@ public sealed class TracedWorldReleaseTests
             RecordedBeforeReset = _updates;
         }
 
-        public void RecordSceneUpdate(IRhiCommandEncoder encoder) => _updates++;
+        public void RecordSceneUpdate(IRhiCommandEncoder encoder, RhiTimestampWrites? timestamps = null) => _updates++;
     }
 }

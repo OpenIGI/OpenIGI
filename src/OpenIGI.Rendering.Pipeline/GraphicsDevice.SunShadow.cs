@@ -145,7 +145,7 @@ public sealed partial class GraphicsDevice
             return;
         }
 
-        world.RecordSceneUpdate(Encoder());
+        world.RecordSceneUpdate(Encoder(), _profiler.Time(RenderStage.AccelerationStructure));
     }
 
     /// <summary>Drops the traced world a level change asked to be released, before the frame records anything.</summary>

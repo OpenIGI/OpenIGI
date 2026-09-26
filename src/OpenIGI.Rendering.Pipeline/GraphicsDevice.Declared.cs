@@ -29,6 +29,9 @@ public sealed partial class GraphicsDevice
     /// ones the Vulkan renderer does not act on either are named here as it names them, so the two
     /// devices' options screens agree about what a setting does.
     /// </remarks>
+    // The stage a host bracket has named for the frame's own passes, or none outside a bracket.
+    private RenderStage? _stageBracket;
+
     private static readonly string[] UnimplementedSettingNames =
     [
         "r_material_detail",
@@ -89,18 +92,37 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The RHI times a pass rather than an arbitrary range, so a stage is bracketed where its pass
-    /// begins. The direct path has one pass, which is already timed.
+    /// <para>
+    /// The RHI times a pass rather than an arbitrary range, so a bracket names the stage of the passes
+    /// opened inside it that have no stage of their own: the frame's pass, which the interface, the debug
+    /// drawing and the whole of the direct path draw into. Every scene pass and every lighting dispatch is
+    /// timed as its own stage whatever bracket it falls in.
+    /// </para>
+    /// <para>
+    /// A frame pass already open was timed for what came before the bracket, so while anything is
+    /// measuring it is closed at the bracket's edge and the next draw opens one timed for this stage.
+    /// Nothing is measuring otherwise, and then the break would buy nothing.
+    /// </para>
     /// </remarks>
-    public void BeginStageTiming(RenderStage stage)
-    {
-        // Timed by the pass itself; see StageProfiler.
-    }
+    public void BeginStageTiming(RenderStage stage) => SetStageBracket(stage);
 
     /// <inheritdoc/>
-    public void EndStageTiming()
+    public void EndStageTiming() => SetStageBracket(null);
+
+    /// <summary>Moves into or out of a bracket, closing a frame pass timed for the other side of it.</summary>
+    private void SetStageBracket(RenderStage? stage)
     {
-        // Likewise.
+        if (_stageBracket == stage)
+        {
+            return;
+        }
+
+        _stageBracket = stage;
+
+        if (_profiler.Enabled)
+        {
+            ClosePass();
+        }
     }
 
     /// <inheritdoc/>
