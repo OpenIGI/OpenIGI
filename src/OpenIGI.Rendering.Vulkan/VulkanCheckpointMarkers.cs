@@ -24,6 +24,14 @@ internal static class VulkanCheckpointMarkers
     private const int StageBeginBase = 1;
     private const int StageEndBase = 101;
     private const int PassBase = 301;
+    private const int LabelBase = 1001;
+
+    // Every pass label a marker has been made for, in the order they were first seen: a label's marker
+    // is its index here, so a marker read back from a lost device names the pass without anything having
+    // been kept alive for it. A frame's passes are a fixed few dozen names, so this stays small.
+    private static readonly Dictionary<string, int> LabelIndices = new(StringComparer.Ordinal);
+    private static readonly List<string> Labels = [];
+    private static readonly Lock LabelsLock = new();
 
     /// <summary>A stage ended whose identity the profiler did not have.</summary>
     public const nint StageEndUnknown = 200;
@@ -48,10 +56,40 @@ internal static class VulkanCheckpointMarkers
     /// </remarks>
     public static nint Pass(VulkanPassMarker pass) => PassBase + (int)pass;
 
+    /// <summary>The marker recorded as a pass of the RHI begins, named by its label.</summary>
+    /// <param name="label">The pass's label; an empty one is named as such.</param>
+    /// <returns>The marker, the same one every time for the same label.</returns>
+    public static nint Label(string label)
+    {
+        string name = string.IsNullOrEmpty(label) ? "(unlabelled)" : label;
+
+        lock (LabelsLock)
+        {
+            if (!LabelIndices.TryGetValue(name, out int index))
+            {
+                index = Labels.Count;
+                Labels.Add(name);
+                LabelIndices[name] = index;
+            }
+
+            return LabelBase + index;
+        }
+    }
+
     /// <summary>Names a marker read back from the queue.</summary>
     public static string Describe(nint marker)
     {
         int value = (int)marker;
+
+        if (value >= LabelBase)
+        {
+            lock (LabelsLock)
+            {
+                int index = value - LabelBase;
+                return index < Labels.Count ? $"pass '{Labels[index]}'" : $"unknown pass marker {value}";
+            }
+        }
+
         return value switch
         {
             (int)FrameBegin => "frame begin",

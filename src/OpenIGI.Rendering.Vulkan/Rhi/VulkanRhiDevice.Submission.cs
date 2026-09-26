@@ -88,7 +88,30 @@ internal sealed unsafe partial class VulkanRhiDevice
             : (ulong)Math.Max(0, timeout.Ticks) * 100UL;
 
         Result result = _vk.WaitSemaphores(_device.Device, &info, nanoseconds);
+        if (result == Result.ErrorDeviceLost)
+        {
+            Checked(result, "vkWaitSemaphores");
+        }
+
         return result == Result.Success;
+    }
+
+    /// <summary>Checks what a submit or a wait returned, having a lost device describe itself first.</summary>
+    /// <param name="result">What the call returned.</param>
+    /// <param name="call">The call, for the message.</param>
+    /// <remarks>
+    /// The driver's account of a lost device -- the fault, the last checkpoints the queue passed, the
+    /// memory -- can only be read before the exception unwinds past the call that found it, so every
+    /// submit and every wait comes through here.
+    /// </remarks>
+    private void Checked(Result result, string call)
+    {
+        if (result == Result.ErrorDeviceLost)
+        {
+            _device.ReportDeviceFault();
+        }
+
+        VkCheck.Ok(result, call);
     }
 
     /// <summary>The value the next submission signals, advancing the count.</summary>
@@ -259,7 +282,7 @@ internal sealed unsafe partial class VulkanRhiDevice
                 PSignalSemaphores = &timeline,
             };
 
-            VkCheck.Ok(_vk.QueueSubmit(_device.Graphics, 1, &submit, fence), "vkQueueSubmit");
+            Checked(_vk.QueueSubmit(_device.Graphics, 1, &submit, fence), "vkQueueSubmit");
         }
 
         _loose.Add(new LooseSubmission(fence, all, staging));
@@ -295,7 +318,7 @@ internal sealed unsafe partial class VulkanRhiDevice
 
             if (wait)
             {
-                VkCheck.Ok(_vk.WaitForFences(_device.Device, 1, &fence, true, ulong.MaxValue), "vkWaitForFences");
+                Checked(_vk.WaitForFences(_device.Device, 1, &fence, true, ulong.MaxValue), "vkWaitForFences");
             }
             else if (_vk.GetFenceStatus(_device.Device, fence) != Result.Success)
             {

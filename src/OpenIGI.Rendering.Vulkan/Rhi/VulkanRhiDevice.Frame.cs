@@ -124,7 +124,7 @@ internal sealed unsafe partial class VulkanRhiDevice
         }
 
         Fence fence = _inFlight[_frameSlot];
-        VkCheck.Ok(_vk.WaitForFences(_device.Device, 1, &fence, true, ulong.MaxValue), "vkWaitForFences");
+        Checked(_vk.WaitForFences(_device.Device, 1, &fence, true, ulong.MaxValue), "vkWaitForFences");
 
         // The slot's previous frame has certainly finished, so whatever it was holding can go now.
         _device.GraphicsQueue.Poll();
@@ -242,9 +242,7 @@ internal sealed unsafe partial class VulkanRhiDevice
                 PSignalSemaphores = signals,
             };
 
-            VkCheck.Ok(
-                _vk.QueueSubmit(_device.Graphics, 1, &submit, _inFlight[_frameSlot]),
-                "vkQueueSubmit");
+            Checked(_vk.QueueSubmit(_device.Graphics, 1, &submit, _inFlight[_frameSlot]), "vkQueueSubmit");
         }
 
         Result presented = swapchain.Present(signal, _imageIndex);
@@ -257,7 +255,7 @@ internal sealed unsafe partial class VulkanRhiDevice
             return false;
         }
 
-        VkCheck.Ok(presented, "vkQueuePresentKHR");
+        Checked(presented, "vkQueuePresentKHR");
         return !NeedsReconfigure;
     }
 
@@ -331,7 +329,7 @@ internal sealed unsafe partial class VulkanRhiDevice
                 PSignalSemaphores = &timeline,
             };
 
-            VkCheck.Ok(_vk.QueueSubmit(_device.Graphics, 1, &submit, default), "vkQueueSubmit (flush)");
+            Checked(_vk.QueueSubmit(_device.Graphics, 1, &submit, default), "vkQueueSubmit (flush)");
         }
 
         _acquireWaited |= waitAcquire;
@@ -483,7 +481,7 @@ internal sealed unsafe partial class VulkanRhiDevice
         }
 
         Fence fence = _inFlight[_frameSlot];
-        VkCheck.Ok(_vk.WaitForFences(_device.Device, 1, &fence, true, ulong.MaxValue), "vkWaitForFences");
+        Checked(_vk.WaitForFences(_device.Device, 1, &fence, true, ulong.MaxValue), "vkWaitForFences");
         VkCheck.Ok(_vk.ResetFences(_device.Device, 1, &fence), "vkResetFences");
 
         _device.GraphicsQueue.Poll();
@@ -535,9 +533,7 @@ internal sealed unsafe partial class VulkanRhiDevice
                 PSignalSemaphores = &timeline,
             };
 
-            VkCheck.Ok(
-                _vk.QueueSubmit(_device.Graphics, 1, &submit, _inFlight[_frameSlot]),
-                "vkQueueSubmit");
+            Checked(_vk.QueueSubmit(_device.Graphics, 1, &submit, _inFlight[_frameSlot]), "vkQueueSubmit");
         }
 
         _inFrame = false;

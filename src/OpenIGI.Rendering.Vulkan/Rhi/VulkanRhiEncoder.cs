@@ -135,6 +135,9 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
                 $"The render pass '{descriptor.Label}' has no attachments, so it has no area to draw in.");
         }
 
+        // Where a lost device says it was: the last pass it began, by name.
+        _device.Device.Checkpoint(_command, VulkanCheckpointMarkers.Label(descriptor.Label));
+
         // The timestamps a pass would write have no dynamic-rendering equivalent: Vulkan writes them
         // with commands around the pass rather than as part of it -- the beginning here, the end when
         // the pass ends.
@@ -182,6 +185,7 @@ internal sealed unsafe class VulkanRhiCommandEncoder : IRhiCommandEncoder
         // Everything written before this pass has to be visible to it. One barrier at the boundary is
         // what the interface's promise costs, and it is where WebGPU pays nothing.
         Barrier();
+        _device.Device.Checkpoint(_command, VulkanCheckpointMarkers.Label(descriptor.Label));
         VulkanRhiTimestamps.Begin(_vk, _command, descriptor.Timestamps);
 
         return new VulkanRhiComputePassEncoder(_device, _vk, _command, descriptor.Timestamps);
