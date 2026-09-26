@@ -97,6 +97,28 @@ public sealed class LevelExpressionRuntime
             : (float)CreateEvaluator(owner).EvaluateReal(expression);
     }
 
+    /// <summary>Evaluates an authored expression that is present, as the original's task slots do.</summary>
+    /// <param name="source">The authored expression.</param>
+    /// <param name="owner">The task <c>this.</c> resolves against.</param>
+    /// <param name="value">Receives the result when the expression is present.</param>
+    /// <returns><see langword="false"/> when the slot is empty or did not compile.</returns>
+    /// <remarks>
+    /// <c>sub_4F16C0</c> answers whether a slot holds a non-empty source with compiled code; callers
+    /// such as LevelFlow's update (<c>0x489290</c>) leave their field untouched when it does not, and
+    /// otherwise store <c>sub_4F16E0</c>'s floating-point result.
+    /// </remarks>
+    public bool TryEvaluateReal(string? source, GameTask? owner, out double value)
+    {
+        value = 0.0;
+        if (string.IsNullOrWhiteSpace(source) || Parse(source) is not { } expression)
+        {
+            return false;
+        }
+
+        value = CreateEvaluator(owner).EvaluateReal(expression);
+        return true;
+    }
+
     /// <summary>Evaluates an authored expression for its side effects and returns its integer result.</summary>
     public int Execute(string? source, GameTask? owner = null) => EvaluateInt32(source, 0, owner);
 

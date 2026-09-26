@@ -6,6 +6,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Input;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
@@ -270,11 +271,225 @@ public sealed class MissionObjectiveRuntimeTests
         Assert.Equal(0, runtime.InterfaceTimerRemainingTicks);
     }
 
+    [Fact]
+    public void LevelFlowFailureBindingReachesAuthoredStatusMessageOnTheFollowingTickAndReleases()
+    {
+        GameLoop loop = new();
+        QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("EditVariable"),
+                QvmExpression.Text("Initial value"), QvmExpression.Text("Int32"),
+                QvmExpression.Text("Add"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Sub"), QvmExpression.Text("VarString")),
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("LevelFlow"),
+                QvmExpression.Text("Interface timer enabled"), QvmExpression.Text("bool8"),
+                QvmExpression.Text("Max level play time"), QvmExpression.Text("Real32"),
+                QvmExpression.Text("Complete"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Failed"), QvmExpression.Text("VarString")),
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("StatusMessage"),
+                QvmExpression.Text("Send"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Text"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Is send once"), QvmExpression.Text("bool8"),
+                QvmExpression.Text("Cutscene message"), QvmExpression.Text("bool8"),
+                QvmExpression.Text("Duration"), QvmExpression.Text("Real32")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(2),
+                QvmExpression.Text("EditVariable"),
+                QvmExpression.Text("Failure switch"),
+                QvmExpression.Int(0),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Text(string.Empty)),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(17),
+                QvmExpression.Text("LevelFlow"),
+                QvmExpression.Text("Level flow"),
+                QvmExpression.Int(0),
+                QvmExpression.Real(0f),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Text("EditVariable_2.nValue")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(29),
+                QvmExpression.Text("LevelFlow"),
+                QvmExpression.Text("Secondary level flow"),
+                QvmExpression.Int(0),
+                QvmExpression.Real(0f),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Text("EditVariable_2.nValue")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(23),
+                QvmExpression.Text("StatusMessage"),
+                QvmExpression.Text("Mission Failed"),
+                QvmExpression.Text("LevelFlow_17.isFailed"),
+                QvmExpression.Text("MISSIONFAILED"),
+                QvmExpression.Int(1),
+                QvmExpression.Int(0),
+                QvmExpression.Real(2f))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, loop.Natives).Run());
+
+        DeclaredTask levelFlow = Assert.IsType<DeclaredTask>(loop.Tasks.FromId(17));
+        loop.Variables.BindInt(levelFlow, "unrelated", () => 7, _ => { });
+        MissionObjectiveRuntime runtime = new(loop.Tasks.Root, loop.Variables);
+
+        Assert.True(loop.Variables.TryRead("LevelFlow_17.isFailed", out QvmValue initialFailure));
+        Assert.Equal(0, initialFailure.ToInt32());
+        Assert.True(loop.Variables.TryRead("LevelFlow_29.isFailed", out QvmValue initialSecondFailure));
+        Assert.Equal(0, initialSecondFailure.ToInt32());
+        Assert.True(loop.Variables.TryRead("LevelFlow_17.nTick", out QvmValue initialTick));
+        Assert.Equal(0, initialTick.ToInt32());
+        Assert.True(loop.Variables.TryWrite("StatusMessage_23.nTickSendt", QvmValue.FromInt32(-211)));
+        Assert.True(loop.Variables.TryWrite("EditVariable_2.nValue", QvmValue.FromInt32(1)));
+
+        runtime.Tick();
+
+        Assert.True(runtime.IsFailed);
+        Assert.True(loop.Variables.TryRead("LevelFlow_17.isFailed", out QvmValue failureAfterFlow));
+        Assert.Equal(1, failureAfterFlow.ToInt32());
+        Assert.True(loop.Variables.TryRead("LevelFlow_29.isFailed", out QvmValue secondFailureAfterFlow));
+        Assert.Equal(1, secondFailureAfterFlow.ToInt32());
+        Assert.True(loop.Variables.TryRead("LevelFlow_17.isComplete", out QvmValue completeAfterFlow));
+        Assert.Equal(0, completeAfterFlow.ToInt32());
+        Assert.True(loop.Variables.TryRead("LevelFlow_17.nTick", out QvmValue tickAfterFlow));
+        Assert.Equal(1, tickAfterFlow.ToInt32());
+        Assert.True(new LevelExpressionRuntime(loop.Variables).EvaluateCondition("LevelFlow_17.isFailed", emptyValue: false));
+        Assert.True(loop.Variables.TryRead("StatusMessage_23.isSendt", out QvmValue sentBeforeBinding));
+        Assert.Equal(0, sentBeforeBinding.ToInt32());
+
+        runtime.Tick();
+
+        Assert.True(loop.Variables.TryRead("StatusMessage_23.isSendt", out QvmValue sentAfterBinding));
+        Assert.Equal(1, sentAfterBinding.ToInt32());
+
+        runtime.Release();
+
+        Assert.False(loop.Variables.TryRead("LevelFlow_17.isFailed", out _));
+        Assert.False(loop.Variables.TryRead("LevelFlow_17.isComplete", out _));
+        Assert.False(loop.Variables.TryRead("LevelFlow_17.nTick", out _));
+        Assert.False(loop.Variables.TryRead("LevelFlow_17.eDifficulty", out _));
+        Assert.False(loop.Variables.TryRead("LevelFlow_29.isFailed", out _));
+        Assert.False(loop.Variables.TryRead("Key0.isPressed", out _));
+        Assert.True(loop.Variables.TryRead("LevelFlow_17.unrelated", out QvmValue unrelated));
+        Assert.Equal(7, unrelated.ToInt32());
+    }
+
+    [Fact]
+    public void LevelFlowStoresItsResultTheWayTheOriginalUpdateDoes()
+    {
+        GameLoop loop = new();
+        QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("EditVariable"),
+                QvmExpression.Text("Initial value"), QvmExpression.Text("Int32"),
+                QvmExpression.Text("Add"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Sub"), QvmExpression.Text("VarString")),
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("LevelFlow"),
+                QvmExpression.Text("Interface timer enabled"), QvmExpression.Text("bool8"),
+                QvmExpression.Text("Max level play time"), QvmExpression.Text("Real32"),
+                QvmExpression.Text("Complete"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Failed"), QvmExpression.Text("VarString")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(2),
+                QvmExpression.Text("EditVariable"),
+                QvmExpression.Text("Complete switch"),
+                QvmExpression.Int(0),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Text(string.Empty)),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(3),
+                QvmExpression.Text("EditVariable"),
+                QvmExpression.Text("Failure switch"),
+                QvmExpression.Int(0),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Text(string.Empty)),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(10),
+                QvmExpression.Text("LevelFlow"),
+                QvmExpression.Text("Level flow"),
+                QvmExpression.Int(0),
+                QvmExpression.Real(0f),
+                QvmExpression.Text("EditVariable_2.nValue / 2"),
+                QvmExpression.Text("EditVariable_3.nValue")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(11),
+                QvmExpression.Text("LevelFlow"),
+                QvmExpression.Text("Scripted flow"),
+                QvmExpression.Int(0),
+                QvmExpression.Real(0f),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Text(string.Empty))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, loop.Natives).Run());
+
+        HashSet<KeyCode> held = [KeyCode.D0, KeyCode.D7];
+        MissionObjectiveRuntime runtime = new(
+            loop.Tasks.Root, loop.Variables, difficulty: 2, isKeyDown: held.Contains);
+
+        // 0x488ED0 copies the profile difficulty; the number row is sampled only by an update.
+        Assert.Equal(2, Read(loop, "LevelFlow_10.eDifficulty"));
+        Assert.Equal(0, Read(loop, "Key7.isPressed"));
+
+        // 1 / 2 is 0.5 as the original's float evaluation sees it, and a byte stores it as zero.
+        Assert.True(loop.Variables.TryWrite("EditVariable_2.nValue", QvmValue.FromInt32(1)));
+        runtime.Tick();
+        Assert.Equal(0, Read(loop, "LevelFlow_10.isComplete"));
+        Assert.Equal(-128, Read(loop, "Key0.isPressed"));
+        Assert.Equal(-128, Read(loop, "Key7.isPressed"));
+        Assert.Equal(0, Read(loop, "Key1.isPressed"));
+
+        Assert.True(loop.Variables.TryWrite("EditVariable_2.nValue", QvmValue.FromInt32(2)));
+        runtime.Tick();
+        Assert.Equal(1, Read(loop, "LevelFlow_10.isComplete"));
+        Assert.False(runtime.IsComplete); // The runtime answers for the last LevelFlow, LevelFlow_11.
+
+        // A LevelFlow with empty slots leaves a script's write alone, and a failure clears completion.
+        Assert.True(loop.Variables.TryWrite("LevelFlow_11.isComplete", QvmValue.FromInt32(1)));
+        runtime.Tick();
+        Assert.True(runtime.IsComplete);
+        Assert.True(loop.Variables.TryWrite("LevelFlow_11.isFailed", QvmValue.FromInt32(1)));
+        runtime.Tick();
+        Assert.True(runtime.IsFailed);
+        Assert.False(runtime.IsComplete);
+        Assert.Equal(4, Read(loop, "LevelFlow_11.nTick"));
+
+        Assert.True(loop.Variables.TryWrite("EditVariable_3.nValue", QvmValue.FromInt32(1)));
+        runtime.Tick();
+        Assert.Equal(1, Read(loop, "LevelFlow_10.isFailed"));
+        Assert.Equal(0, Read(loop, "LevelFlow_10.isComplete"));
+
+        runtime.Release();
+        for (int digit = 0; digit < 10; digit++)
+        {
+            Assert.False(loop.Variables.TryRead($"Key{digit}.isPressed", out _));
+        }
+    }
+
+    private static int Read(GameLoop loop, string symbol)
+    {
+        Assert.True(loop.Variables.TryRead(symbol, out QvmValue value), symbol);
+        return value.ToInt32();
+    }
+
     [RequiresGameDataFact]
     public void EveryRetailMissionPublishesObjectivesAndLevelFlow()
     {
         IReadOnlyList<string> scripts = GameData.EnumerateFiles("objects.qvm");
         Assert.Equal(14, scripts.Count);
+        int failureMessageCount = 0;
+        int tickReaderCount = 0;
 
         foreach (string script in scripts)
         {
@@ -286,11 +501,39 @@ public sealed class MissionObjectiveRuntimeTests
             LevelLoader loader = new(root, loop.TaskCommands, loop.Natives, resources);
             loader.LoadScript(resourceName);
 
+            List<DeclaredTask> levelFlows = Walk(root)
+                .OfType<DeclaredTask>()
+                .Where(task => string.Equals(task.Type.Name, "LevelFlow", StringComparison.Ordinal))
+                .ToList();
             MissionObjectiveRuntime runtime = new(root, loop.Variables);
             Assert.True(runtime.HasLevelFlow, $"{script} has no LevelFlow task.");
+            Assert.NotEmpty(levelFlows);
             Assert.True(runtime.DefinitionCount > 0, $"{script} has no DefineComputerObjective task.");
             Assert.True(runtime.StatusMessageCount > 0, $"{script} has no StatusMessage task.");
             Assert.InRange(runtime.Objectives.Count, 0, MissionObjectiveRuntime.ObjectiveSlotCount);
+
+            foreach (DeclaredTask levelFlow in levelFlows)
+            {
+                foreach (string field in LevelFlowFields)
+                {
+                    Assert.True(loop.Variables.TryRead($"{levelFlow.Name}.{field}", out _));
+                }
+            }
+
+            // Levels 6 and 14 time messages off LevelFlow_10.nTick; an unbound one reads zero forever.
+            tickReaderCount += Walk(root)
+                .OfType<DeclaredTask>()
+                .Count(task => task.Type.Parameters
+                    .Select((_, index) => task.GetValue(index))
+                    .OfType<string>()
+                    .Any(text => levelFlows.Any(levelFlow => text.Contains(
+                        $"{levelFlow.Name}.nTick", StringComparison.Ordinal))));
+
+            failureMessageCount += Walk(root)
+                .OfType<DeclaredTask>()
+                .Count(message => string.Equals(message.Type.Name, "StatusMessage", StringComparison.Ordinal)
+                    && levelFlows.Any(levelFlow => String(message, "Send").Contains(
+                        $"{levelFlow.Name}.isFailed", StringComparison.Ordinal)));
 
             if (runtime.InterfaceTimerEnabled)
             {
@@ -318,6 +561,36 @@ public sealed class MissionObjectiveRuntimeTests
                 Assert.Equal(1, active.ToInt32());
                 Assert.True(loop.Variables.TryRead("EditVariable_199.nValue", out var edit));
                 Assert.Equal(1, edit.ToInt32());
+            }
+
+            runtime.Release();
+            foreach (DeclaredTask levelFlow in levelFlows)
+            {
+                foreach (string field in LevelFlowFields)
+                {
+                    Assert.False(loop.Variables.TryRead($"{levelFlow.Name}.{field}", out _));
+                }
+            }
+        }
+
+        Assert.True(failureMessageCount > 0, "No retail StatusMessage reads a LevelFlow isFailed field.");
+        Assert.True(tickReaderCount >= 2, "Levels 6 and 14 should both read a LevelFlow nTick field.");
+    }
+
+    /// <summary>The LevelFlow fields retail's export handler (0x488F90) binds on the task itself.</summary>
+    private static readonly string[] LevelFlowFields = ["isComplete", "isFailed", "nTick", "eDifficulty"];
+
+    private static string String(DeclaredTask task, string name) =>
+        task.TryGetValue(name, out object? value) && value is string text ? text.TrimEnd('\r', '\n') : string.Empty;
+
+    private static IEnumerable<GameTask> Walk(GameTask root)
+    {
+        foreach (GameTask child in root.Children)
+        {
+            yield return child;
+            foreach (GameTask descendant in Walk(child))
+            {
+                yield return descendant;
             }
         }
     }

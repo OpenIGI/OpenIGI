@@ -505,11 +505,15 @@ internal sealed partial class GameHost
                     (parameter, index) => $"{parameter.Name}={activation.GetValue(index) ?? "<null>"}"));
             _logger.Information("Mission", $"[timer] AreaActivate_161 {parameters}");
         }
+        // LevelFlow exports eDifficulty straight from the active profile (0x488ED0), unclamped, and the
+        // number-row keys as Key0..9.isPressed. -difficulty overrides the profile here as it does for the AI.
         _missionObjectives = new MissionObjectiveRuntime(
             levelRoot,
             _loop.Variables,
             missionText.Get,
-            _cutscenes.TryInvokeNative);
+            _cutscenes.TryInvokeNative,
+            difficulty: (int?)_options.Difficulty ?? _configuration.Active?.Difficulty ?? 1,
+            isKeyDown: key => _window.Input.Keyboard.IsDown(key));
 
         // Cinematics are opt-in while their retail parity work is in progress. Do not tear the runtime
         // out: the level expressions still use its native surface, and mission outros may activate it
@@ -2446,6 +2450,7 @@ internal sealed partial class GameHost
         _messages?.Dispose();
         _messages = null;
         _computerHighlights = null;
+        _missionObjectives?.Release();
         _missionObjectives = null;
         _cutscenes = null;
         _securityCameras = null;

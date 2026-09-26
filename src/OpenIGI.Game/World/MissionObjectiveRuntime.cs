@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Player;
+using OpenIGI.Input;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
 
@@ -23,6 +24,7 @@ public sealed class MissionObjectiveRuntime
     public const int MessageSlotCount = 24;
 
     private readonly GameTask _levelRoot;
+    private readonly ScriptVarRegistry _variables;
     private readonly LevelExpressionRuntime _expressions;
     private readonly Func<string, string> _resolveText;
     private readonly List<Definition> _definitions = [];
@@ -30,6 +32,14 @@ public sealed class MissionObjectiveRuntime
     private readonly List<EditVariable> _editVariables = [];
     private readonly List<StatusMessage> _statusMessages = [];
     private readonly List<StatusMessage> _transientMessages = [];
+    private readonly List<LevelFlow> _levelFlows = [];
+
+    /// <summary>
+    /// <c>Key0.isPressed</c> to <c>Key9.isPressed</c>: the globals <c>byte_5C8AA8</c>..<c>byte_5C8AB1</c>,
+    /// indexed by digit, holding the raw DirectInput state byte (<c>0x80</c> when down).
+    /// </summary>
+    private readonly sbyte[] _digitKeys = new sbyte[10];
+    private readonly Func<KeyCode, bool>? _isKeyDown;
 
     /// <summary>The live message slots, exactly as many as <c>0x486650</c> searches.</summary>
     /// <remarks>
@@ -41,28 +51,38 @@ public sealed class MissionObjectiveRuntime
     private readonly List<MissionComputerLogEntry> _log = [];
     private readonly Dictionary<int, HumanOccupant> _soldierOccupants = [];
     private readonly Dictionary<int, VehicleOccupant> _vehicleOccupants = [];
-    private readonly string _completeExpression = string.Empty;
-    private readonly string _failedExpression = string.Empty;
-    private readonly DeclaredTask? _levelFlowTask;
-    private readonly bool _hasLevelFlow;
-    private readonly bool _interfaceTimerEnabled;
-    private readonly float _maximumLevelPlayTimeSeconds;
+
+    /// <summary>The LevelFlow the original's <c>flt_BC2360</c> points at: the last one initialised.</summary>
+    private readonly LevelFlow? _levelFlow;
     private bool _playerAlive = true;
     private int _tick;
-    private int _levelFlowTick;
+    private bool _released;
 
     /// <summary>Builds the runtime from the authored level task tree.</summary>
+    /// <param name="levelRoot">The loaded level's task tree.</param>
+    /// <param name="variables">The mission's script variables.</param>
+    /// <param name="resolveText">Resolves a message resource to its text.</param>
+    /// <param name="native">Answers native calls made from level expressions.</param>
+    /// <param name="difficulty">
+    /// The difficulty LevelFlow exports as <c>eDifficulty</c>: the active profile's field <c>+0</c>, or 1
+    /// when there is no profile, which is what <c>0x488ED0</c> falls back to.
+    /// </param>
+    /// <param name="isKeyDown">Reads the keyboard for the <c>Key0..9.isPressed</c> globals; without it they read up.</param>
     public MissionObjectiveRuntime(
         GameTask levelRoot,
         ScriptVarRegistry variables,
         Func<string, string>? resolveText = null,
-        Func<string, ScriptArguments, QvmValue?>? native = null)
+        Func<string, ScriptArguments, QvmValue?>? native = null,
+        int difficulty = 1,
+        Func<KeyCode, bool>? isKeyDown = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(variables);
         _levelRoot = levelRoot;
+        _variables = variables;
         _expressions = new LevelExpressionRuntime(variables, native);
         _resolveText = resolveText ?? (static key => key);
+        _isKeyDown = isKeyDown;
 
         List<GameTask> tasks = Walk(levelRoot).ToList();
 
@@ -104,12 +124,18 @@ public sealed class MissionObjectiveRuntime
             }
             else if (string.Equals(task.Type.Name, "LevelFlow", StringComparison.Ordinal))
             {
-                _hasLevelFlow = true;
-                _levelFlowTask = declared;
-                _completeExpression = String(declared, "Complete");
-                _failedExpression = String(declared, "Failed");
-                _interfaceTimerEnabled = Bool(declared, "Interface timer enabled");
-                _maximumLevelPlayTimeSeconds = Math.Max(0f, Real(declared, "Max level play time", 0f));
+                // Level 14 sends MISSION_FAILED on LevelFlow_10.isFailed, and levels 6 and 14 time
+                // messages off LevelFlow_10.nTick, so these fields have to be exported, not just computed.
+                LevelFlow flow = new(
+                    declared,
+                    String(declared, "Complete"),
+                    String(declared, "Failed"),
+                    Bool(declared, "Interface timer enabled"),
+                    Math.Max(0f, Real(declared, "Max level play time", 0f)),
+                    difficulty);
+                flow.Export(variables, _digitKeys);
+                _levelFlows.Add(flow);
+                _levelFlow = flow;
             }
             else if (string.Equals(task.Type.Name, "StatusMessage", StringComparison.Ordinal))
             {
@@ -280,13 +306,13 @@ public sealed class MissionObjectiveRuntime
     public int DefinitionCount => _definitions.Count;
 
     /// <summary>Gets whether the level declares the LevelFlow task that owns mission success and failure.</summary>
-    public bool HasLevelFlow => _hasLevelFlow;
+    public bool HasLevelFlow => _levelFlow is not null;
 
     /// <summary>Gets whether LevelFlow asks StatusScreen to show its countdown.</summary>
-    public bool InterfaceTimerEnabled => _interfaceTimerEnabled;
+    public bool InterfaceTimerEnabled => _levelFlow?.InterfaceTimerEnabled ?? false;
 
     /// <summary>Gets the authored maximum play time in seconds.</summary>
-    public float MaximumLevelPlayTimeSeconds => _maximumLevelPlayTimeSeconds;
+    public float MaximumLevelPlayTimeSeconds => _levelFlow?.MaximumLevelPlayTimeSeconds ?? 0f;
 
     /// <summary>Gets the retail countdown in 30 Hz ticks, or no value when the interface timer is disabled.</summary>
     /// <remarks>
@@ -297,23 +323,43 @@ public sealed class MissionObjectiveRuntime
     {
         get
         {
-            if (!_interfaceTimerEnabled)
+            if (_levelFlow is not { InterfaceTimerEnabled: true } flow)
             {
                 return null;
             }
 
-            int maximumTicks = _maximumLevelPlayTimeSeconds >= int.MaxValue / 30f
+            int maximumTicks = flow.MaximumLevelPlayTimeSeconds >= int.MaxValue / 30f
                 ? int.MaxValue
-                : (int)MathF.Round(_maximumLevelPlayTimeSeconds * 30f, MidpointRounding.ToEven);
-            return Math.Max(0, maximumTicks - _levelFlowTick);
+                : (int)MathF.Round(flow.MaximumLevelPlayTimeSeconds * 30f, MidpointRounding.ToEven);
+            return Math.Max(0, maximumTicks - flow.Tick);
         }
     }
 
-    /// <summary>Gets the result of the LevelFlow <c>Complete</c> expression.</summary>
-    public bool IsComplete { get; private set; }
+    /// <summary>Gets LevelFlow's <c>isComplete</c> byte, which a failure clears on the same update.</summary>
+    public bool IsComplete => _levelFlow is { Complete: not 0 };
 
-    /// <summary>Gets the result of the LevelFlow <c>Failed</c> expression.</summary>
-    public bool IsFailed { get; private set; }
+    /// <summary>Gets LevelFlow's <c>isFailed</c> byte, the one <c>LevelFlow_LevelFailed</c> (<c>0x488E50</c>) returns.</summary>
+    public bool IsFailed => _levelFlow is { Failed: not 0 };
+
+    /// <summary>Releases the script fields this runtime adds to the loaded mission.</summary>
+    /// <remarks>
+    /// Each LevelFlow removes exactly what its export added, as the original's unexport handler
+    /// (<c>0x4890F0</c>) does, rather than every binding its task carries.
+    /// </remarks>
+    public void Release()
+    {
+        if (_released)
+        {
+            return;
+        }
+
+        foreach (LevelFlow flow in _levelFlows)
+        {
+            flow.Unexport(_variables);
+        }
+
+        _released = true;
+    }
 
     /// <summary>Evaluates the authored definitions once, after the rest of the mission's tick.</summary>
     public void Tick(Vector3d? playerPosition = null)
@@ -514,14 +560,30 @@ public sealed class MissionObjectiveRuntime
             }
         }
 
-        bool failedLevel = _expressions.EvaluateCondition(
-            _failedExpression, emptyValue: false, _levelFlowTask);
-        bool completeLevel = _expressions.EvaluateCondition(
-            _completeExpression, emptyValue: false, _levelFlowTask);
-        IsFailed = failedLevel;
-        IsComplete = completeLevel && !failedLevel;
+        // LevelFlow::Update (0x489290) updates its child tasks before it writes its own result, so the
+        // messages above see the result of the tick before this one -- as Level 14's MISSION_FAILED does.
+        foreach (LevelFlow flow in _levelFlows)
+        {
+            flow.Update(_expressions);
+            SampleDigitKeys();
+        }
+
         _tick++;
-        _levelFlowTick++;
+    }
+
+    /// <summary>Samples the number row the way the end of <c>0x489290</c> does.</summary>
+    /// <remarks>
+    /// Each global is the DirectInput state byte masked with <c>0x80</c>: <c>Key1</c>..<c>Key9</c> are
+    /// DIK_1..DIK_9 and <c>Key0</c> is DIK_0, which the port's <see cref="KeyCode"/> numbers identically.
+    /// The byte is read back sign-extended (<c>0x4B7F00</c>), so a held key reads -128.
+    /// </remarks>
+    private void SampleDigitKeys()
+    {
+        for (int digit = 0; digit < _digitKeys.Length; digit++)
+        {
+            KeyCode key = digit == 0 ? KeyCode.D0 : (KeyCode)((int)KeyCode.D1 + digit - 1);
+            _digitKeys[digit] = _isKeyDown?.Invoke(key) == true ? unchecked((sbyte)0x80) : (sbyte)0;
+        }
     }
 
     /// <summary>Chooses the valid objective definition and publishes its rows.</summary>
@@ -696,6 +758,97 @@ public sealed class MissionObjectiveRuntime
         string ValidExpression,
         IReadOnlyList<Slot> Slots);
     private sealed record Slot(string TextResource, int LinkTaskId, string CompleteExpression, string FailedExpression);
+
+    /// <summary>One LevelFlow task's state: the fields the original keeps in the task at <c>+96</c>..<c>+104</c>.</summary>
+    private sealed class LevelFlow(
+        DeclaredTask task,
+        string completeExpression,
+        string failedExpression,
+        bool interfaceTimerEnabled,
+        float maximumLevelPlayTimeSeconds,
+        int difficulty)
+    {
+        public DeclaredTask Task { get; } = task;
+        public string CompleteExpression { get; } = completeExpression;
+        public string FailedExpression { get; } = failedExpression;
+        public bool InterfaceTimerEnabled { get; } = interfaceTimerEnabled;
+        public float MaximumLevelPlayTimeSeconds { get; } = maximumLevelPlayTimeSeconds;
+
+        // 0x488ED0 zeroes the result bytes and nTick, and copies the active profile's difficulty.
+
+        /// <summary><c>+96</c>, <c>isComplete</c>: a byte, read back sign-extended.</summary>
+        public sbyte Complete { get; set; }
+
+        /// <summary><c>+97</c>, <c>isFailed</c>.</summary>
+        public sbyte Failed { get; set; }
+
+        /// <summary><c>+100</c>, <c>eDifficulty</c>.</summary>
+        public int Difficulty { get; set; } = difficulty;
+
+        /// <summary><c>+104</c>, <c>nTick</c>: the updates run so far, which the interface timer counts down from.</summary>
+        public int Tick { get; set; }
+
+        /// <summary>Binds what <c>0x488F90</c> binds: four fields and the ten number-row globals.</summary>
+        public void Export(ScriptVarRegistry variables, sbyte[] digitKeys)
+        {
+            variables.BindInt(Task, "isComplete", () => Complete, value => Complete = unchecked((sbyte)value), size: 1);
+            variables.BindInt(Task, "isFailed", () => Failed, value => Failed = unchecked((sbyte)value), size: 1);
+            variables.BindInt(Task, "nTick", () => Tick, value => Tick = value);
+            variables.BindInt(Task, "eDifficulty", () => Difficulty, value => Difficulty = value);
+            for (int digit = 0; digit < digitKeys.Length; digit++)
+            {
+                int index = digit;
+                variables.BindGlobal(
+                    Task,
+                    DigitKeySymbol(index),
+                    new QvmIntegerVariable(
+                        () => digitKeys[index],
+                        value => digitKeys[index] = unchecked((sbyte)value),
+                        size: 1));
+            }
+        }
+
+        /// <summary>Removes what <see cref="Export"/> bound, as <c>0x4890F0</c> does.</summary>
+        public void Unexport(ScriptVarRegistry variables)
+        {
+            variables.Unbind(Task, "isComplete");
+            variables.Unbind(Task, "isFailed");
+            variables.Unbind(Task, "nTick");
+            variables.Unbind(Task, "eDifficulty");
+            for (int digit = 0; digit < 10; digit++)
+            {
+                variables.UnbindGlobal(Task, DigitKeySymbol(digit));
+            }
+        }
+
+        /// <summary>The result half of <c>0x489290</c>, which runs after the task's children.</summary>
+        /// <remarks>
+        /// A slot that is empty or did not compile leaves its byte alone, so a script's own write to it
+        /// stands. A present one stores its floating-point result truncated to a byte, so 0.5 is false.
+        /// A failure clears completion whichever of the two wrote it.
+        /// </remarks>
+        public void Update(LevelExpressionRuntime expressions)
+        {
+            if (expressions.TryEvaluateReal(CompleteExpression, Task, out double complete))
+            {
+                Complete = unchecked((sbyte)(long)complete);
+            }
+
+            if (expressions.TryEvaluateReal(FailedExpression, Task, out double failed))
+            {
+                Failed = unchecked((sbyte)(long)failed);
+            }
+
+            if (Failed != 0)
+            {
+                Complete = 0;
+            }
+
+            Tick++;
+        }
+
+        private static string DigitKeySymbol(int digit) => $"Key{digit}.isPressed";
+    }
 
     private sealed class EditVariable(
         DeclaredTask task,
