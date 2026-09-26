@@ -294,6 +294,11 @@ internal sealed partial class GameHost : IDisposable
     // stackalloc inside the frame loop. Sized to the shader's cap; only the first N entries are ever sent.
     private readonly DeferredLocalLight[] _localLightScratch = new DeferredLocalLight[DeferredLocalLight.Maximum];
 
+    // The same lamps in the storm's frame -- metres from the eye, world axes -- for the drops falling
+    // through their light; how many of them this frame has.
+    private readonly StormLamp[] _stormLamps = new StormLamp[DeferredLocalLight.Maximum];
+    private int _stormLampCount;
+
     // Which fixtures this frame submits, and how far outside its own reach the camera stands for each.
     // Held rather than allocated per frame: this runs on every frame of every level that has lamps.
     private readonly int[] _localLightOrder = new int[DeferredLocalLight.Maximum];
@@ -437,6 +442,15 @@ internal sealed partial class GameHost : IDisposable
     private GlobalLightSettings _globalLight = GlobalLightSettings.None;
     private RainRenderer? _rain;
     private StormRenderer? _storm;
+
+    // The least light a rain drop is lit by, as the displayed picture sees it. Rain in an even light is as
+    // bright as what is behind it and all but disappears, and a night lit only by its sky is that light;
+    // the eye adapted to it still sees the rain as a veil. The drop's own grey, its opacity and the thin,
+    // mostly clear streak it is printed with all come on top, so it takes this much for the rain to read:
+    // chosen by eye on mission 3's night, where 2.5 barely showed, 5 reads as rain with the dome and the
+    // hills clear through it, and the level's daytime fill (about 10) was a wall. See
+    // StormRenderer.BuildDrops.
+    private const float RainVeilDisplay = 5f;
     private SnowRenderer? _snow;
 
     // Where the level's roofs are, seen from above. One thing decides whether the sky can reach a point
@@ -871,7 +885,11 @@ internal sealed partial class GameHost : IDisposable
         RegisterOverrideCommands(console.System);
 
         console.Start(
-            _fileSystem, _options.StartupCommands, useSavedSettings: !_options.Lockstep, _options.FirstRunPreset);
+            _fileSystem,
+            _options.StartupCommands,
+            useSavedSettings: !_options.Lockstep,
+            _options.FirstRunPreset,
+            _options.LockedPreset);
         _logger = console.WrapLogger(_logger);
         // The scan LoadTitleResources ran: taken off the field because the scan now happens wherever the
         // resources are loaded, and that is a method a title switch calls too.
@@ -3574,8 +3592,10 @@ internal sealed partial class GameHost : IDisposable
                     && _activeMission is { } completedMission)
                 {
                     _missionResultHandled = true;
+                    // A successor the catalogue does not offer ends the campaign the way the last mission
+                    // does -- in a build cut to the opening missions, the last one offered is its finale.
                     int nextMissionId = completedMission.NextMissionId;
-                    if (nextMissionId != MissionDescriptor.NextMissionUndefined)
+                    if (nextMissionId != MissionDescriptor.NextMissionUndefined && _missions.TryGet(nextMissionId, out _))
                     {
                         if (_configuration.Active is { } activeProfile)
                         {
@@ -5343,6 +5363,7 @@ if (retailFog)
                 // reach is exactly what these light. The shader also guards on the model and the count.
                 float localLightScale = RenderCVars.LocalLightScale.Value;
                 float localLightRange = RenderCVars.LocalLightRange.Value;
+                _stormLampCount = 0;
                 if (captured
                     && localLightScale > 0f
                     && EffectiveLighting != LightingModel.Baked
@@ -5403,6 +5424,12 @@ if (retailFog)
                             ? worldToView.Transform(fixture.Direction)
                             : default;
 
+                        _stormLamps[i] = new StormLamp(
+                            cameraRelative,
+                            fixture.Radius * localLightRange,
+                            colour * intensity,
+                            fixture.IsDirectional ? fixture.Direction : default);
+
                         _localLightScratch[i] = new DeferredLocalLight(
                             worldToView.Transform(cameraRelative),
                             fixture.Radius * localLightRange,
@@ -5425,6 +5452,7 @@ if (retailFog)
                     // renderer is drawing it, and the ultra preset -- the one that discards the shipped
                     // bakes entirely and so has NOTHING else lighting an interior -- is the Vulkan path.
                     _device.SetLocalLights(_localLightScratch.AsSpan(0, localCount));
+                    _stormLampCount = localCount;
 
                     // And the distance field those lamps' shadows are marched through wherever the renderer
                     // cannot trace them -- WebGPU always, Vulkan with the RT switch off. See
@@ -5601,7 +5629,12 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                         _effectiveSun is null ? Vector3f.UnitZ : stormSun.Direction,
                         stormSunLight,
                         AmbientSkyLight() + (stormSunLight * 0.2f),
-                        _loop.TimeSource.Milliseconds / 1000f);
+                        _loop.TimeSource.Milliseconds / 1000f,
+                        _stormLamps.AsSpan(0, _stormLampCount),
+
+                        // A display level, taken back through the frame's exposure into the scene's
+                        // units, so the drops never sink below a faint grey whatever the night.
+                        RainVeilDisplay / MathF.Max(_device.SceneExposure, 1e-3f));
                 }
                 else if (_storm is not { Enabled: true } && _rain is { IsWeatherEnabled: true } rain)
                 {
