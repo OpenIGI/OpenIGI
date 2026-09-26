@@ -9,9 +9,9 @@ namespace OpenIGI.Game.Tests;
 /// walks <c>0 → 11 → 10 → 6</c> as it raises and fires, and each state holds until its clip finishes — which
 /// is what stops the port's old per-tick inference from looping the firing animation.
 /// </summary>
-public sealed class AiCombatStateMachineTests
+public sealed class HumanSoldierBodyMachineTests
 {
-    private static AiCombatStateMachine.Signals Grounded(
+    private static HumanSoldierBodyMachine.Signals Grounded(
         bool firePose = false,
         bool fireHeld = false,
         bool throwGrenade = false,
@@ -41,24 +41,24 @@ public sealed class AiCombatStateMachineTests
     [Fact]
     public void RaisingTheWeaponRunsStandToRackToReady()
     {
-        AiCombatStateMachine machine = new();
+        HumanSoldierBodyMachine machine = new();
         Assert.Equal(HumanSoldierStates.StandState, machine.State);
 
-        Assert.Equal(AiCombatStateMachine.RackState, machine.Tick(Grounded(firePose: true)));
+        Assert.Equal(HumanSoldierStates.RackState, machine.Tick(Grounded(firePose: true)));
 
         // The rack HOLDS while its clip is still playing.
-        Assert.Equal(AiCombatStateMachine.RackState, machine.Tick(Grounded(firePose: true)));
-        Assert.Equal(AiCombatStateMachine.RackState, machine.Tick(Grounded(firePose: true)));
+        Assert.Equal(HumanSoldierStates.RackState, machine.Tick(Grounded(firePose: true)));
+        Assert.Equal(HumanSoldierStates.RackState, machine.Tick(Grounded(firePose: true)));
 
         // Only when the clip finishes does it advance to ready.
-        Assert.Equal(AiCombatStateMachine.ReadyState, machine.Tick(Grounded(firePose: true, animDone: true)));
+        Assert.Equal(HumanSoldierStates.ReadyState, machine.Tick(Grounded(firePose: true, animDone: true)));
     }
 
     /// <summary>From ready, holding the trigger fires; FIRE holds down while the trigger stays down.</summary>
     [Fact]
     public void FiringHoldsWhileTheTriggerIsDown()
     {
-        AiCombatStateMachine machine = new();
+        HumanSoldierBodyMachine machine = new();
         machine.Tick(Grounded(firePose: true));                       // -> rack
         machine.Tick(Grounded(firePose: true, animDone: true));       // -> ready
 
@@ -76,13 +76,13 @@ public sealed class AiCombatStateMachineTests
     [Fact]
     public void ReleasingTheTriggerRunsBackDownToStand()
     {
-        AiCombatStateMachine machine = new();
+        HumanSoldierBodyMachine machine = new();
         machine.Tick(Grounded(firePose: true));                       // -> rack
         machine.Tick(Grounded(firePose: true, animDone: true));       // -> ready
         machine.Tick(Grounded(firePose: true, fireHeld: true));       // -> fire
 
         // Trigger released, still posed, clip done: back to ready (another burst can follow).
-        Assert.Equal(AiCombatStateMachine.ReadyState, machine.Tick(Grounded(firePose: true, animDone: true)));
+        Assert.Equal(HumanSoldierStates.ReadyState, machine.Tick(Grounded(firePose: true, animDone: true)));
 
         // Pose dropped: ready -> recover.
         Assert.Equal(HumanSoldierStates.ReloadState, machine.Tick(Grounded()));
@@ -96,49 +96,49 @@ public sealed class AiCombatStateMachineTests
     [Fact]
     public void GroundFlinchAndDeathPreemptTheFiringPose()
     {
-        AiCombatStateMachine airborne = new();
+        HumanSoldierBodyMachine airborne = new();
         airborne.Tick(Grounded(firePose: true, fireHeld: true));
         Assert.Equal(
             HumanSoldierStates.AirborneState,
-            airborne.Tick(new AiCombatStateMachine.Signals(false, false, false, true, true, false, false, false, false, false, false, false, false)));
+            airborne.Tick(new HumanSoldierBodyMachine.Signals(false, false, false, true, true, false, false, false, false, false, false, false, false)));
 
-        AiCombatStateMachine flinched = new();
+        HumanSoldierBodyMachine flinched = new();
         flinched.Tick(Grounded(firePose: true, fireHeld: true));
         Assert.Equal(
             HumanSoldierStates.FlinchState,
-            flinched.Tick(new AiCombatStateMachine.Signals(true, true, false, true, true, false, false, false, false, false, false, false, false)));
+            flinched.Tick(new HumanSoldierBodyMachine.Signals(true, true, false, true, true, false, false, false, false, false, false, false, false)));
 
-        AiCombatStateMachine killed = new();
+        HumanSoldierBodyMachine killed = new();
         killed.Tick(Grounded(firePose: true, fireHeld: true));
         Assert.Equal(
             HumanSoldierStates.DeathState,
-            killed.Tick(new AiCombatStateMachine.Signals(true, false, true, true, true, false, false, false, false, false, false, false, false)));
+            killed.Tick(new HumanSoldierBodyMachine.Signals(true, false, true, true, true, false, false, false, false, false, false, false, false)));
     }
 
     [Fact]
     public void GrenadeChannelRunsMeasuredOneShotState()
     {
-        AiCombatStateMachine machine = new();
+        HumanSoldierBodyMachine machine = new();
 
         Assert.Equal(
             HumanSoldierStates.GrenadeThrowState,
             machine.Tick(Grounded(throwGrenade: true)));
         Assert.Equal(HumanSoldierStates.GrenadeThrowState, machine.Tick(Grounded()));
         Assert.Equal(HumanSoldierStates.StandState, machine.Tick(Grounded(animDone: true)));
-        Assert.Equal(58, HumanSoldierStates.AnimationOf(HumanSoldierStates.GrenadeThrowState));
+        Assert.Equal(58, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.GrenadeThrowState));
     }
 
     [Fact]
     public void CloseCombatChannelRunsMeasuredOneShotState()
     {
-        AiCombatStateMachine machine = new();
+        HumanSoldierBodyMachine machine = new();
 
         Assert.Equal(
             HumanSoldierStates.CloseCombatState,
             machine.Tick(Grounded(closeCombat: true)));
         Assert.Equal(HumanSoldierStates.CloseCombatState, machine.Tick(Grounded()));
         Assert.Equal(HumanSoldierStates.StandState, machine.Tick(Grounded(animDone: true)));
-        Assert.Equal(70, HumanSoldierStates.AnimationOf(HumanSoldierStates.CloseCombatState));
+        Assert.Equal(70, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.CloseCombatState));
     }
 
     [Theory]
@@ -150,19 +150,19 @@ public sealed class AiCombatStateMachineTests
         int rollState,
         int animation)
     {
-        AiCombatStateMachine machine = new();
+        HumanSoldierBodyMachine machine = new();
 
         Assert.Equal(rollState, machine.Tick(Grounded(rollLeft: left, rollRight: right)));
         Assert.Equal(rollState, machine.Tick(Grounded(rollLeft: left, rollRight: right)));
         Assert.Equal(HumanSoldierStates.KneelingState, machine.Tick(Grounded(animDone: true)));
         Assert.Equal(HumanSoldierStates.StandState, machine.Tick(Grounded()));
-        Assert.Equal(animation, HumanSoldierStates.AnimationOf(rollState));
+        Assert.Equal(animation, HumanSoldierStates.Table.AnimationOf(rollState));
     }
 
     [Fact]
     public void LieDownHoldsProneUntilChannelIsReleased()
     {
-        AiCombatStateMachine machine = new();
+        HumanSoldierBodyMachine machine = new();
 
         Assert.Equal(HumanSoldierStates.LieDownState, machine.Tick(Grounded(lieDown: true)));
         Assert.Equal(HumanSoldierStates.LieDownState, machine.Tick(Grounded(lieDown: true)));
@@ -172,15 +172,15 @@ public sealed class AiCombatStateMachineTests
         Assert.Equal(HumanSoldierStates.GetUpState, machine.Tick(Grounded()));
         Assert.Equal(HumanSoldierStates.GetUpState, machine.Tick(Grounded()));
         Assert.Equal(HumanSoldierStates.StandState, machine.Tick(Grounded(animDone: true)));
-        Assert.Equal(12, HumanSoldierStates.AnimationOf(HumanSoldierStates.LieDownState));
-        Assert.Equal(16, HumanSoldierStates.AnimationOf(HumanSoldierStates.ProneState));
-        Assert.Equal(13, HumanSoldierStates.AnimationOf(HumanSoldierStates.GetUpState));
+        Assert.Equal(12, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.LieDownState));
+        Assert.Equal(16, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.ProneState));
+        Assert.Equal(13, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.GetUpState));
     }
 
     [Fact]
     public void ProneTriggerUsesTheProneFiringState()
     {
-        AiCombatStateMachine machine = new();
+        HumanSoldierBodyMachine machine = new();
         machine.Tick(Grounded(lieDown: true));
         machine.Tick(Grounded(lieDown: true, animDone: true));
 
@@ -198,7 +198,7 @@ public sealed class AiCombatStateMachineTests
     [Fact]
     public void KneelRunsTransitionStableReadyAndFireStates()
     {
-        AiCombatStateMachine machine = new();
+        HumanSoldierBodyMachine machine = new();
 
         Assert.Equal(HumanSoldierStates.CrouchDownState, machine.Tick(Grounded(kneel: true)));
         Assert.Equal(HumanSoldierStates.CrouchDownState, machine.Tick(Grounded(kneel: true)));
@@ -221,7 +221,7 @@ public sealed class AiCombatStateMachineTests
     [Fact]
     public void KneelingLieDownUsesItsOwnTransition()
     {
-        AiCombatStateMachine machine = new();
+        HumanSoldierBodyMachine machine = new();
         machine.Tick(Grounded(kneel: true));
         machine.Tick(Grounded(kneel: true, animDone: true));
 
@@ -236,21 +236,21 @@ public sealed class AiCombatStateMachineTests
     [Fact]
     public void RawReloadSlotSelectsDisplayedReloadOnly()
     {
-        AiCombatStateMachine machine = new();
+        HumanSoldierBodyMachine machine = new();
 
         Assert.Equal(
             HumanSoldierStates.DisplayReloadState,
             machine.Tick(Grounded(reloadPressed: true)));
         Assert.Equal(HumanSoldierStates.DisplayReloadState, machine.Tick(Grounded()));
         Assert.Equal(
-            AiCombatStateMachine.ReadyState,
+            HumanSoldierStates.ReadyState,
             machine.Tick(Grounded(firePose: true, animDone: true)));
     }
 
     [Fact]
     public void RawReloadSlotUsesProneReloadStateWhileLyingDown()
     {
-        AiCombatStateMachine machine = new();
+        HumanSoldierBodyMachine machine = new();
         machine.Tick(Grounded(lieDown: true));
         machine.Tick(Grounded(lieDown: true, animDone: true));
 
@@ -261,13 +261,13 @@ public sealed class AiCombatStateMachineTests
         Assert.Equal(
             HumanSoldierStates.ProneState,
             machine.Tick(Grounded(lieDown: true, animDone: true)));
-        Assert.Equal(21, HumanSoldierStates.AnimationOf(HumanSoldierStates.ProneReloadState));
+        Assert.Equal(21, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.ProneReloadState));
     }
 
     [Fact]
     public void ForwardRunUsesItsTriggerForwardingState()
     {
-        AiCombatStateMachine machine = new();
+        HumanSoldierBodyMachine machine = new();
 
         Assert.Equal(
             HumanSoldierStates.RunState,
@@ -287,21 +287,21 @@ public sealed class AiCombatStateMachineTests
     [Fact]
     public void SoldierAnimationModesSeparateLoopsFromOneShots()
     {
-        Assert.Equal(1, HumanSoldierStates.ModeOf(HumanSoldierStates.StandState));
-        Assert.Equal(1, HumanSoldierStates.ModeOf(HumanSoldierStates.RunState));
-        Assert.Equal(1, HumanSoldierStates.ModeOf(HumanSoldierStates.RunFiringState));
-        Assert.Equal(1, HumanSoldierStates.ModeOf(HumanSoldierStates.FiringState));
+        Assert.Equal(1, HumanSoldierStates.Table.ModeOf(HumanSoldierStates.StandState));
+        Assert.Equal(1, HumanSoldierStates.Table.ModeOf(HumanSoldierStates.RunState));
+        Assert.Equal(1, HumanSoldierStates.Table.ModeOf(HumanSoldierStates.RunFiringState));
+        Assert.Equal(1, HumanSoldierStates.Table.ModeOf(HumanSoldierStates.FiringState));
 
-        Assert.Equal(0, HumanSoldierStates.ModeOf(AiCombatStateMachine.RackState));
-        Assert.Equal(0, HumanSoldierStates.ModeOf(HumanSoldierStates.ReloadState));
-        Assert.Equal(0, HumanSoldierStates.ModeOf(HumanSoldierStates.RollLeftState));
-        Assert.Equal(0, HumanSoldierStates.ModeOf(HumanSoldierStates.DisplayReloadState));
+        Assert.Equal(0, HumanSoldierStates.Table.ModeOf(HumanSoldierStates.RackState));
+        Assert.Equal(0, HumanSoldierStates.Table.ModeOf(HumanSoldierStates.ReloadState));
+        Assert.Equal(0, HumanSoldierStates.Table.ModeOf(HumanSoldierStates.RollLeftState));
+        Assert.Equal(0, HumanSoldierStates.Table.ModeOf(HumanSoldierStates.DisplayReloadState));
     }
 
     [Fact]
     public void StandSignalPrecedenceMatchesRetail()
     {
-        AiCombatStateMachine machine = new();
+        HumanSoldierBodyMachine machine = new();
 
         Assert.Equal(
             HumanSoldierStates.LieDownState,
@@ -320,7 +320,7 @@ public sealed class AiCombatStateMachineTests
 
         machine.Reset();
         Assert.Equal(
-            AiCombatStateMachine.RackState,
+            HumanSoldierStates.RackState,
             machine.Tick(Grounded(
                 firePose: true,
                 throwGrenade: true,
@@ -333,10 +333,10 @@ public sealed class AiCombatStateMachineTests
     [Fact]
     public void TheCombatStatesMapToTheirMeasuredAnimations()
     {
-        Assert.Equal(2, HumanSoldierStates.AnimationOf(HumanSoldierStates.StandState));   // 0 -> stand
-        Assert.Equal(53, HumanSoldierStates.AnimationOf(AiCombatStateMachine.RackState)); // 11 -> rack
-        Assert.Equal(54, HumanSoldierStates.AnimationOf(AiCombatStateMachine.ReadyState)); // 10 -> ready
-        Assert.Equal(56, HumanSoldierStates.AnimationOf(HumanSoldierStates.FiringState)); // 6 -> fire
-        Assert.Equal(55, HumanSoldierStates.AnimationOf(HumanSoldierStates.ReloadState)); // 12 -> recover
+        Assert.Equal(2, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.StandState));   // 0 -> stand
+        Assert.Equal(53, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.RackState)); // 11 -> rack
+        Assert.Equal(54, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.ReadyState)); // 10 -> ready
+        Assert.Equal(56, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.FiringState)); // 6 -> fire
+        Assert.Equal(55, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.ReloadState)); // 12 -> recover
     }
 }

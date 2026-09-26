@@ -757,7 +757,7 @@ public sealed class AiSoldierCombatWiringTests
         Assert.Equal(AiPatrolAction.CloseCombat, soldier.PatrolAction);
         Assert.Contains(soldier.ChannelWrites, write => write.Channel == AiCombatChannel.CloseCombat);
         Assert.Equal(HumanSoldierStates.CloseCombatState, soldier.TickCombatState(animationDone: false));
-        Assert.Equal(70, HumanSoldierStates.AnimationOf(soldier.CombatState));
+        Assert.Equal(70, HumanSoldierStates.Table.AnimationOf(soldier.CombatState));
 
         soldier.Tick(tick, enemyEye, 0.0, enemyFeet: enemyFeet);
         Assert.DoesNotContain(soldier.ChannelWrites, write => write.Channel == AiCombatChannel.CloseCombat);

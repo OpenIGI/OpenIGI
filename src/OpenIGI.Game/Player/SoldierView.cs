@@ -23,13 +23,6 @@ namespace OpenIGI.Game.Player;
 /// </remarks>
 public sealed class SoldierView
 {
-    /// <summary>
-    /// The animation a soldier stands in when its task declares none (<c>-1</c>) or declares an id the
-    /// set does not hold — the literal <c>2</c> in <c>0x456E50</c>.
-    /// </summary>
-    /// <remarks>Every shipped set starts its ids at 2, so the fallback resolves in all six.</remarks>
-    public const int FallbackStandAnimation = 2;
-
     private BoneObject _bones;
     private BonePose? _pose;
     private BonePose? _unrotatedPose;
@@ -53,12 +46,14 @@ public sealed class SoldierView
         Soldier = soldier;
         _bones = new BoneObject(set);
 
-        // 0x456E50: -1 means "no stand declared" and plays 2; a declared id that is not in the set
-        // prints "Animation #%d not found" and also plays 2. Both go to bone 0 with flags 0 - the
-        // immediate arm, loop bit clear.
+        // 0x456E50: -1 means "no stand declared" and plays the class's fallback (2; 6 for a female
+        // soldier's 0x454F10); a declared id that is not in the set prints "Animation #%d not found" and
+        // plays the fallback too. Both go to bone 0 with flags 0 - the immediate arm, loop bit clear.
         int declared = soldier.StandAnimation;
         DeclaredStandAnimationFound = declared >= 0 && set.TryGet(declared, out _);
-        StandAnimation = declared >= 0 && DeclaredStandAnimationFound ? declared : FallbackStandAnimation;
+        StandAnimation = declared >= 0 && DeclaredStandAnimationFound
+            ? declared
+            : soldier.Class.FallbackStandAnimation;
         CurrentAnimation = StandAnimation;
 
         // The stand animation LOOPS. 0x456E50 passes flags 0, whose bit 0 is the loop bit -- but a stand

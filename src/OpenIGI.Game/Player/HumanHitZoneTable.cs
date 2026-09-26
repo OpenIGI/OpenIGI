@@ -137,6 +137,23 @@ public static class HumanHitZoneTable
         new(LethalMultiplier, 27, 22, 22),
     ];
 
+    /// <summary>The female soldiers' table, at <c>0x53E508</c>.</summary>
+    /// <remarks>
+    /// The soldier's multipliers with one set of clips for every zone: limb animation 6, reactions 13.
+    /// A female soldier's death plays the struck zone's first reaction (<c>0x4546C0</c>), so she has one
+    /// death clip wherever she is hit.
+    /// </remarks>
+    public static IReadOnlyList<HumanHitZone> FemaleSoldier { get; } =
+        WithAnimations(static _ => (6, 13));
+
+    /// <summary>The RPG soldiers' table, at <c>0x53E798</c>.</summary>
+    /// <remarks>
+    /// The soldier's multipliers with the RPG set's clips: limb animation 13 everywhere, and reaction 15
+    /// except zone 14 (16), the head (18) and the neck (12).
+    /// </remarks>
+    public static IReadOnlyList<HumanHitZone> RpgSoldier { get; } =
+        WithAnimations(static zone => (13, zone switch { 14 => 16, 15 => 18, 16 => 12, _ => 15 }));
+
     /// <summary>How many hits of a given weapon a zone takes to kill.</summary>
     /// <param name="damageFactor">The weapon's <c>Damage Factor</c>.</param>
     /// <param name="zoneMultiplier">The struck zone's multiplier.</param>
@@ -153,5 +170,22 @@ public static class HumanHitZoneTable
         }
 
         return (int)MathF.Ceiling(MaximumHealth / perHit);
+    }
+
+    /// <summary>A table with the soldier's multipliers and a class's own clips.</summary>
+    /// <remarks>
+    /// Every soldier class's table carries the same seventeen multipliers; only the animation ids differ,
+    /// and within a zone its two reactions are equal.
+    /// </remarks>
+    private static HumanHitZone[] WithAnimations(Func<int, (int Limb, int Reaction)> clips)
+    {
+        var table = new HumanHitZone[Soldier.Count];
+        for (int zone = 0; zone < table.Length; zone++)
+        {
+            (int limb, int reaction) = clips(zone);
+            table[zone] = new HumanHitZone(Soldier[zone].Multiplier, limb, reaction, reaction);
+        }
+
+        return table;
     }
 }

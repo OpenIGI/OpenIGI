@@ -42,8 +42,8 @@ public sealed class RetailSoldierViewTests
         foreach (BoneAnimationSet set in mission.CommonPack.AnimationSets)
         {
             Assert.True(
-                set.TryGet(SoldierView.FallbackStandAnimation, out _),
-                $"set {set.Skeleton.Id} lacks animation {SoldierView.FallbackStandAnimation}");
+                set.TryGet(HumanSoldierClass.Soldier.FallbackStandAnimation, out _),
+                $"set {set.Skeleton.Id} lacks animation {HumanSoldierClass.Soldier.FallbackStandAnimation}");
         }
     }
 

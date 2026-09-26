@@ -179,13 +179,23 @@ public sealed class AiSoldier
     /// <param name="phase">Which of the four detection phases it sweeps on — staggering the level's guards.</param>
     /// <param name="seed">The wander seed, so a level is reproducible tick for tick.</param>
     /// <param name="random">The mission-wide IGI random stream, or a seed-local stream for isolated tests.</param>
+    /// <param name="soldierClass">The body's class, whose machine the brain drives. Defaults to the ordinary soldier.</param>
     /// <remarks>
     /// <paramref name="graph"/> may be <see langword="null"/>: a soldier whose level ships no graph for
     /// its <c>HumanAI</c> still detects and fights — nothing in the stand-and-fight arm needs a node.
     /// Only patrolling and the combat repositioning searches are graph work, and they no-op without one.
     /// </remarks>
-    public AiSoldier(GraphFile? graph, Vector3d position, float facing, int phase, int seed, IgiRandom? random = null)
+    public AiSoldier(
+        GraphFile? graph,
+        Vector3d position,
+        float facing,
+        int phase,
+        int seed,
+        IgiRandom? random = null,
+        HumanSoldierClass? soldierClass = null)
     {
+        SoldierClass = soldierClass ?? HumanSoldierClass.Soldier;
+        Body = SoldierClass.CreateBody();
         _graph = graph;
         Position = position;
         _legOrigin = position;
@@ -1325,38 +1335,57 @@ public sealed class AiSoldier
     /// <summary>Gets what the combat behaviour asked for on the last tick it ran.</summary>
     public AiCombatCommand Combat { get; private set; }
 
-    private readonly AiCombatStateMachine _combatMachine = new();
+    /// <summary>Gets the class of the body this brain drives.</summary>
+    public HumanSoldierClass SoldierClass { get; }
 
-    /// <summary>Gets the soldier's combat locomotion state — the real machine, not the old inference.</summary>
-    public int CombatState => _combatMachine.State;
+    /// <summary>Gets the body machine — <c>Human+748</c> of the soldier this brain drives.</summary>
+    public HumanBodyMachine Body { get; }
+
+    /// <summary>Gets the body's state — the real machine, not the old inference.</summary>
+    public int CombatState => Body.State;
 
     /// <summary>Gets whether this tick entered a new body state rather than running its per-tick callback.</summary>
-    public bool CombatStateChangedThisTick => _combatMachine.ChangedThisTick;
+    public bool CombatStateChangedThisTick => Body.ChangedThisTick;
 
-    /// <summary>Runs one tick of the combat locomotion machine and returns the state to animate.</summary>
+    /// <summary>Runs one tick of the body machine and returns the state to animate.</summary>
     /// <param name="animationDone">Whether the state's clip finished a cycle this tick — the machine's <c>0x1</c> bit.</param>
-    /// <returns>The locomotion state, whose clip the renderer plays.</returns>
+    /// <returns>The body state, whose clip the renderer plays.</returns>
     /// <remarks>
-    /// The fire pose and the trigger come from the combat command the arm produced this tick; the machine
-    /// holds each state until its clip ends, which is what the old per-tick inference could not do and why
-    /// the firing animation looped. See <see cref="AiCombatStateMachine"/>.
+    /// The body reads the input frame this tick's writes built — each channel on the slot its AI type
+    /// resolves it to, every raw write on its own slot, and the trigger on slot 6 — so each class's signal
+    /// handler finds its bits where the original's does. See <see cref="HumanBodyInput"/>.
     /// </remarks>
     public int TickCombatState(bool animationDone) =>
-        _combatMachine.Tick(new AiCombatStateMachine.Signals(
-            OnGround: true,
-            Flinch: false,
+        Body.Tick(new HumanBodyInput(
+            WrittenFrame(),
+            animationDone,
             Dead: Activity == AiSoldierActivity.Dead,
-            FirePose: Combat.FirePose,
-            FireHeld: Combat.PullTrigger,
-            ThrowGrenade: WroteChannel(AiCombatChannel.ThrowGrenade),
-            CloseCombat: WroteChannel(AiCombatChannel.CloseCombat),
-            Kneel: WroteChannel(AiCombatChannel.Kneel),
-            LieDown: WroteChannel(AiCombatChannel.LieDown),
-            RollLeft: WroteRawInputSlot(2),
-            RollRight: WroteRawInputSlot(3),
-            ReloadPressed: WroteRawInputSlot(8),
-            AnimationDone: animationDone,
             MovingForward: IsMovingInCombat));
+
+    /// <summary>The input frame this tick's writes put together — <c>Human+432</c>.</summary>
+    private PlayerInputFrame WrittenFrame()
+    {
+        PlayerInputFrame frame = default;
+        foreach (AiChannelWrite write in _channelWrites)
+        {
+            if (write.Slot != AiCombatChannels.None)
+            {
+                frame[write.Slot] = write.Value;
+            }
+        }
+
+        foreach (AiRawInputWrite write in _rawInputWrites)
+        {
+            frame[write.Slot] = write.Value;
+        }
+
+        if (Combat.PullTrigger)
+        {
+            frame[(int)PlayerInputSlot.Fire] = 1f;
+        }
+
+        return frame;
+    }
 
     /// <summary>Gets which sub-state the combat behaviour is in.</summary>
     public AiCombatPhase CombatPhase => _combat?.Phase ?? AiCombatPhase.Ended;
@@ -1754,7 +1783,7 @@ public sealed class AiSoldier
         Func<AiSoldier, AiCombatWeaponState>? weapon = null)
     {
         int seed = Math.Max(0, RuntimeId - 1);
-        AiSoldier fresh = new(_graph, position, facing, seed & 3, seed, _random)
+        AiSoldier fresh = new(_graph, position, facing, seed & 3, seed, _random, SoldierClass)
         {
             PlayerIsEnemy = PlayerIsEnemy,
             RuntimeId = RuntimeId,
@@ -2058,7 +2087,7 @@ public sealed class AiSoldier
         if (!enemyAlive && Activity == AiSoldierActivity.Engaging)
         {
             Combat = new AiCombatCommand();
-            _combatMachine.Reset();
+            Body.Reset();
             _movingInCombat = false;
             LeaveCombatOccupancy();
             Activity = Route is not null || _route.Count > 0
@@ -2500,7 +2529,7 @@ public sealed class AiSoldier
         }
 
         _combat?.Cancel();
-        _combatMachine.Reset();
+        Body.Reset();
         Combat = new AiCombatCommand();
         _movingInCombat = false;
         LeaveCombatOccupancy();
@@ -2654,7 +2683,7 @@ public sealed class AiSoldier
         _fallFlatDeadline = -1;
         _combatAfterFallFlat = false;
         SetTarget(null);
-        _combatMachine.Reset();
+        Body.Reset();
         Route = null;
         _route.Clear();
         DestinationNode = -1;
@@ -2749,7 +2778,7 @@ public sealed class AiSoldier
         CancelCombatForScriptedReaction();
         EndScriptedFire();
         SetTarget(null);
-        _combatMachine.Reset();
+        Body.Reset();
         _fallFlatDeadline = -1;
         _combatAfterFallFlat = false;
         _panicDestination = destination.Value;
@@ -3157,7 +3186,7 @@ public sealed class AiSoldier
             _combat?.Begin();
             _patrol?.Begin();
             _gunnerCombat?.Begin();
-            _combatMachine.Reset();
+            Body.Reset();
             _detectionShoutDone = false;
 
             // The arm installer (0x48ABA0) picks the sub-arm from the BODY: crouched -> the kneel arm

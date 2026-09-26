@@ -785,6 +785,7 @@ internal sealed partial class GameHost
         _soldiers.SetHitSound(position => PlayHitSound(
             HumanVariantSound.AiHitPrefix, HumanVariantSound.AiHitVariants, position));
         _soldiers.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(_soundRandom));
+        _soldiers.SetPlayerDeltaTranslationScale(() => _playerDeltaTranslationScale);
 
         // AIAction_PlaySound (0x48DF80) either attaches the definition to the human or starts it at
         // HumanAI's current position. Both begin at the same live position; the backend owns any voice
@@ -1882,6 +1883,9 @@ internal sealed partial class GameHost
                 if (config.Parameters is { } tuning)
                 {
                     candidate.UseParameters(tuning);
+
+                    // Argument 0 scales the animation's delta translation -- the player's, and Ekk's.
+                    _playerDeltaTranslationScale = tuning.DeltaTranslationScale;
 
                     // Argument 7 is the player's maximum health (Human+600, 0x410370's overwrite) --
                     // 3.0 in retail, and the single number that sets the player's time-to-kill.

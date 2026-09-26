@@ -165,6 +165,7 @@ internal sealed partial class GameHost : IDisposable
     // --- The player's own life, damage and death ---
     private int _playerDifficulty;
     private float _playerMaximumHealth;
+    private float _playerDeltaTranslationScale = HumanMotion.DefaultDeltaTranslationScale;
     private float _electricFenceDose = ElectricFenceContact.DefaultDamageFactor;
     private HumanHealth _playerHealth = null!;
     private bool _playerDead;

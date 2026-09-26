@@ -11,9 +11,8 @@ namespace OpenIGI.Game.Player;
 /// function then calls <c>0x489E70(human, stateId, 0.15f)</c>, which indexes it.
 /// </para>
 /// <para>
-/// <b>Animation id 0 means "this state names its own clip"</b>, not animation 0 — clip ids start at 2.
-/// It is the same marker the player's table uses, and it is what the three death states carry
-/// (<see cref="SoldierDeath"/>).
+/// <b>Animation id 0 means "this state names its own clip"</b> (<see cref="HumanBodyStateTable.SelfDriven"/>),
+/// and it is what the three death states carry (<see cref="SoldierDeath"/>).
 /// </para>
 /// <para>
 /// <b>These ids are a soldier's, not the player's.</b> The same number in the player's animation set is
@@ -23,11 +22,12 @@ namespace OpenIGI.Game.Player;
 /// </remarks>
 public static class HumanSoldierStates
 {
-    /// <summary>How many states a soldier's machine has.</summary>
-    public const int StateCount = 38;
-
-    /// <summary>The animation id that means "this state names its own clip".</summary>
-    public const int SelfDriven = 0;
+    /// <summary>Gets the soldier's <c>{animation, mode}</c> table, transcribed from <c>0x53ED10</c>.</summary>
+    public static HumanBodyStateTable Table { get; } = new(
+        (2, 1), (34, 1), (3, 1), (57, 1), (10, 0), (11, 0), (56, 1), (14, 0), (58, 0), (70, 0),
+        (54, 0), (53, 0), (55, 0), (7, 0), (19, 0), (12, 0), (13, 0), (48, 1), (52, 1), (18, 0),
+        (33, 0), (32, 0), (9, 1), (15, 0), (8, 0), (20, 0), (16, 0), (17, 0), (21, 0), (2, 1),
+        (0, 0), (26, 0), (0, 0), (0, 0), (0, 0), (0, 0), (31, 1), (2, 0));
 
     /// <summary>The blend time a soldier's state entry passes, in seconds.</summary>
     /// <remarks>
@@ -104,6 +104,12 @@ public static class HumanSoldierStates
     /// <summary>The displayed standing reload state, animation 14.</summary>
     /// <remarks>Raw input slot 8/signal <c>0x800</c> selects it; direct weapon reloads do not.</remarks>
     public const int DisplayReloadState = 7;
+
+    /// <summary>The ready state between bursts, animation 54 — <c>0x45B6E0</c>.</summary>
+    public const int ReadyState = 10;
+
+    /// <summary>The weapon-raise state, animation 53 — <c>0x458810</c>.</summary>
+    public const int RackState = 11;
 
     /// <summary>The standing-to-kneeling transition, animation 7.</summary>
     public const int CrouchDownState = 13;
@@ -199,47 +205,4 @@ public static class HumanSoldierStates
     /// other direction.
     /// </remarks>
     public const int DeathState = 32;
-
-    // {animation, mode} per state, transcribed from 0x53ED10 -- 38 pairs, 304 bytes.
-    private static readonly (int Animation, int Mode)[] Table =
-    [
-        (2, 1), (34, 1), (3, 1), (57, 1), (10, 0), (11, 0), (56, 1), (14, 0), (58, 0), (70, 0),
-        (54, 0), (53, 0), (55, 0), (7, 0), (19, 0), (12, 0), (13, 0), (48, 1), (52, 1), (18, 0),
-        (33, 0), (32, 0), (9, 1), (15, 0), (8, 0), (20, 0), (16, 0), (17, 0), (21, 0), (2, 1),
-        (0, 0), (26, 0), (0, 0), (0, 0), (0, 0), (0, 0), (31, 1), (2, 0),
-    ];
-
-    /// <summary>The clip a state plays.</summary>
-    /// <param name="state">The locomotion state — <c>Human+764</c>.</param>
-    /// <returns>The animation id, or <c>-1</c> for a state outside the table.</returns>
-    /// <remarks>
-    /// A state carrying <see cref="SelfDriven"/> is returned as <c>-1</c> too: the caller has to name
-    /// the clip itself, and handing back 0 would play whatever clip happened to be first.
-    /// </remarks>
-    public static int AnimationOf(int state)
-    {
-        if (state < 0 || state >= StateCount)
-        {
-            return -1;
-        }
-
-        int animation = Table[state].Animation;
-        return animation == SelfDriven ? -1 : animation;
-    }
-
-    /// <summary>The mode a state's clip plays in.</summary>
-    /// <param name="state">The locomotion state.</param>
-    /// <returns>The mode, or <c>-1</c> for a state outside the table.</returns>
-    /// <remarks>
-    /// The second field of each pair is passed by <c>0x489E70</c> through <c>0x489EA0</c> to
-    /// <c>0x4D61D0</c> as the animation flag word. Mode one loops; mode zero is a one-shot. The retail
-    /// trace confirms the same split (stand/run/fire modes are one, rack/recover/roll/reload are zero).
-    /// </remarks>
-    public static int ModeOf(int state) => state >= 0 && state < StateCount ? Table[state].Mode : -1;
-
-    /// <summary>Whether a state names its own clip rather than taking one from the table.</summary>
-    /// <param name="state">The locomotion state.</param>
-    /// <returns><see langword="true"/> when the table's entry is <see cref="SelfDriven"/>.</returns>
-    public static bool IsSelfDriven(int state) =>
-        state >= 0 && state < StateCount && Table[state].Animation == SelfDriven;
 }

@@ -268,6 +268,11 @@ public sealed class SoldierRenderer : IDisposable
     /// <param name="cooldown">Draws the gap; see <c>HumanVariantSound.HitCooldownTicks</c>.</param>
     public void SetHitCooldown(Func<int>? cooldown) => _hitCooldown = cooldown;
 
+    /// <summary>Sets where the player's delta-translation scale is read from — <c>humanplayer.qvm</c> argument 0.</summary>
+    /// <param name="scale">Reads the scale; <see langword="null"/> uses the retail default.</param>
+    /// <remarks>Ekk moves by it too: see <see cref="HumanSoldierClass.ScalesEkkRootMotion"/>.</remarks>
+    public void SetPlayerDeltaTranslationScale(Func<float>? scale) => _playerDeltaTranslationScale = scale;
+
     /// <summary>Plays a struck soldier's grunt unless it is still inside its cooldown.</summary>
     private void ReportHitSound(SoldierView view)
     {
@@ -350,6 +355,7 @@ public sealed class SoldierRenderer : IDisposable
     private Action<Vector3d, float>? _meleeStrikeSink;
     private AnimTriggerRegistry? _animationTriggers;
     private Func<int>? _hitCooldown;
+    private Func<float>? _playerDeltaTranslationScale;
     private readonly Dictionary<SoldierView, int> _hitQuietUntil = [];
     private Action<Footstep>? _footstepSound;
     private GameMaterialRegistry? _materials;
@@ -359,8 +365,6 @@ public sealed class SoldierRenderer : IDisposable
     /// <summary>This frame's ground-snap results by queried position; see <see cref="SnapToGround"/>.</summary>
     private readonly Dictionary<(double X, double Y, double Z), double> _groundSnaps = [];
     private int _deathsSoFar;
-    private int _walkAnimation = -1;
-    private int _runAnimation = -1;
     private int _tick;
     private int _travelSamples;
     private double _travelTotal;
@@ -1436,15 +1440,6 @@ public sealed class SoldierRenderer : IDisposable
             _logger.Warning(LogCategory, "The level ships no nav graph, so no soldier can patrol.");
         }
 
-        // The walk clip is the locomotion table's forward-travelling state (state 1 travels +Y), read from
-        // 0x538870 -- not a chosen id.
-        _walkAnimation = HumanLocomotionStates.For(1).AnimationId;
-
-        // The run clip is the soldier's own RunState (0x53ED10), measured off "Combat - Follow": a chasing
-        // guard runs in state 17 = animation 48 at ~4.4 m/s, not the 1.28 m/s walk. Its own root motion is
-        // what makes the chase move at run speed instead of strolling.
-        _runAnimation = HumanSoldierStates.AnimationOf(HumanSoldierStates.RunState);
-
         // The level's authored patrol paths, keyed by the PatrolPath task's own id -- what AIAction_Patrol's
         // first argument names (ai.md 7.1).
         AiPatrolPathRegistry? paths = levelRoot is null ? null : AiPatrolPathRegistry.Build(levelRoot);
@@ -1504,7 +1499,7 @@ public sealed class SoldierRenderer : IDisposable
                     }
                 }
 
-                AiSoldier brain = new(graph, initialPosition, GammaOf(view), index & 3, index, _aiRandom);
+                AiSoldier brain = new(graph, initialPosition, GammaOf(view), index & 3, index, _aiRandom, view.Soldier.Class);
                 // A soldier on the player's own team must not engage the player. The brain's noise and
                 // vision gates read this: detection and every player-origin gunshot/impact/walk event are
                 // refused for a same-team player, so the friendly patrol stands down instead of shooting us.
@@ -1613,7 +1608,7 @@ public sealed class SoldierRenderer : IDisposable
         foreach (SoldierView v in _groups.SelectMany(g => g.Soldiers).Select(m => m.View))
         {
             total++;
-            if (v.Bones.Set.TryGet(_runAnimation, out _))
+            if (v.Bones.Set.TryGet(v.Soldier.Class.RunAnimation, out _))
             {
                 hasRun++;
             }
@@ -1622,8 +1617,8 @@ public sealed class SoldierRenderer : IDisposable
         _logger.Information(
             LogCategory,
             $"{_brains.Count} soldier(s) with brains ({patrolling} scripted, {perTask} from their own " +
-            $"MISSION:AI script), walk animation {_walkAnimation}, run animation {_runAnimation} " +
-            $"(in {hasRun} of {total} soldier set(s); the rest fall back to the walk when chasing).");
+            $"MISSION:AI script); {hasRun} of {total} soldier set(s) hold their class's run clip, the rest " +
+            "fall back to the walk when chasing.");
         _logger.Information(
             LogCategory,
             $"Soldiers per nav graph: " +
@@ -2051,11 +2046,7 @@ public sealed class SoldierRenderer : IDisposable
         // states 6, 18, 22 and 27 (standing, running, kneeling and prone fire respectively). Previously
         // this method ran before the body state tick, so rounds left during rack/ready/recover clips.
         bool bodyForwardsTrigger = mounted is not null
-            || (!brain.CombatStateChangedThisTick
-                && brain.CombatState is HumanSoldierStates.FiringState
-                    or HumanSoldierStates.RunFiringState
-                    or HumanSoldierStates.KneelFiringState
-                    or HumanSoldierStates.ProneFiringState);
+            || (!brain.CombatStateChangedThisTick && brain.Body.IsFiring);
         bool blocked = mounted is not null
             ? mounted.FireCooldownTicks > 0 || mounted.AmmunitionSample <= 0
             : member is null || member.FireCooldown > 0 || member.AmmoInClip <= 0 || member.ReloadTicks > 0;
@@ -2995,9 +2986,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             _combat[freshView] = combat;
         }
-        _health[freshView] = new HumanHealth(
-            HumanHitZoneTable.Soldier,
-            combat?.MaximumHealth ?? HumanHitZoneTable.MaximumHealth);
+        _health[freshView] = NewHealth(freshView);
 
         AiSoldier freshBrain = deadBrain.Respawned(
             freshView.Position,
@@ -3383,6 +3372,11 @@ public sealed class SoldierRenderer : IDisposable
             }
 
             double travel = Math.Abs(view.RootMotion().Y);
+            if (brain.SoldierClass.ScalesEkkRootMotion && brain.Type == AiType.Ekk)
+            {
+                // 0x4550B0 scales a female soldier's delta translation by flt_56E1E8 when her brain is Ekk.
+                travel *= _playerDeltaTranslationScale?.Invoke() ?? HumanMotion.DefaultDeltaTranslationScale;
+            }
 
             // Retail ground truth, measured by hooking 0x48E920 in the original: a walking guard covers
             // 160-185 units a tick, about 1.28 m/s, varying through the gait cycle. Recorded here so the
@@ -3596,8 +3590,9 @@ public sealed class SoldierRenderer : IDisposable
                 ? rememberedState
                 : -1;
             _lastCombatState[view] = combatState ?? -1;
-            if (previousCombatState == HumanSoldierStates.GrenadeThrowState
-                && (combatState ?? -1) != HumanSoldierStates.GrenadeThrowState
+            if (brain.SoldierClass.GrenadeThrowState is { } grenadeState
+                && previousCombatState == grenadeState
+                && (combatState ?? -1) != grenadeState
                 && _grenades is { } lobbed)
             {
                 ThrowAiGrenade(brain, feet, lobbed);
@@ -3639,6 +3634,9 @@ public sealed class SoldierRenderer : IDisposable
             // A patrol ANIMATION command names a clip outright; a soldier in a fight plays its WEAPON's
             // own clips; otherwise the gait picks between the walk cycle and the soldier's stand
             // animation.
+            HumanSoldierClass soldierClass = brain.SoldierClass;
+            int walkAnimation = soldierClass.WalkAnimation;
+            int runAnimation = soldierClass.RunAnimation;
             if (brain.RequestedAnimation >= 0)
             {
                 view.PlayStateAnimation(brain.RequestedAnimation, loops: false);
@@ -3654,9 +3652,9 @@ public sealed class SoldierRenderer : IDisposable
                 // the fire pose, whose zero root motion feeds AdvanceInCombat a zero step -- the exact
                 // "engaging, never moving" stall. Retail's Follow is a full-body run state (17), not the
                 // stand cycle with feet glued down.
-                if (_runAnimation < 0 || !view.SetMoving(true, _runAnimation))
+                if (runAnimation < 0 || !view.SetMoving(true, runAnimation))
                 {
-                    view.SetMoving(true, _walkAnimation);
+                    view.SetMoving(true, walkAnimation);
                 }
             }
             else if (brain.Activity == AiSoldierActivity.Engaging && brain.IsMounted)
@@ -3665,36 +3663,36 @@ public sealed class SoldierRenderer : IDisposable
                 // the StationaryGun task reads slot 6 and fires; it does not enter the ordinary
                 // 0/12/10/6 carried-weapon body cycle.
                 int mountedState = AiCombatChannels.StateOf(brain.Type, AiStanceChannel.Mounted);
-                int animation = HumanSoldierStates.AnimationOf(mountedState);
+                int animation = soldierClass.States.AnimationOf(mountedState);
                 if (animation < 0
-                    || !view.PlayStateAnimation(animation, HumanSoldierStates.ModeOf(mountedState) == 1))
+                    || !view.PlayStateAnimation(animation, soldierClass.States.Loops(mountedState)))
                 {
-                    view.SetMoving(false, _walkAnimation);
+                    view.SetMoving(false, walkAnimation);
                 }
             }
             else if (combatState is { } combatBodyState)
             {
-                int anim = HumanSoldierStates.AnimationOf(combatBodyState);
+                int anim = brain.Body.CurrentAnimation;
                 bool placed = anim >= 0
-                    && view.PlayStateAnimation(anim, HumanSoldierStates.ModeOf(combatBodyState) == 1);
+                    && view.PlayStateAnimation(anim, soldierClass.States.Loops(combatBodyState));
                 if (placed)
                 {
                     _combatClipMissing.Remove(view);
                 }
                 else
                 {
-                    view.SetMoving(false, _walkAnimation);
+                    view.SetMoving(false, walkAnimation);
                     _combatClipMissing.Add(view);
                 }
             }
             else if (brain.Activity == AiSoldierActivity.FallenFlat)
             {
                 int state = AiCombatChannels.StateOf(brain.Type, AiStanceChannel.Prone);
-                int animation = HumanSoldierStates.AnimationOf(state);
+                int animation = soldierClass.States.AnimationOf(state);
                 if (animation < 0
-                    || !view.PlayStateAnimation(animation, HumanSoldierStates.ModeOf(state) == 1))
+                    || !view.PlayStateAnimation(animation, soldierClass.States.Loops(state)))
                 {
-                    view.SetMoving(false, _walkAnimation);
+                    view.SetMoving(false, walkAnimation);
                 }
             }
             else if (brain.Activity == AiSoldierActivity.Patrolling && !brain.IsWalking)
@@ -3705,14 +3703,14 @@ public sealed class SoldierRenderer : IDisposable
                 // as RunTo, so an alarmed guard RUNS between its posts -- playing the walk clip here is
                 // what made them amble out of the barracks at 1.28 m/s. The run clip's own root motion
                 // carries the brain at run speed; sets without one fall back to the walk.
-                if (_runAnimation < 0 || !view.SetMoving(true, _runAnimation))
+                if (runAnimation < 0 || !view.SetMoving(true, runAnimation))
                 {
-                    view.SetMoving(true, _walkAnimation);
+                    view.SetMoving(true, walkAnimation);
                 }
             }
             else
             {
-                view.SetMoving(brain.Activity == AiSoldierActivity.Patrolling, _walkAnimation);
+                view.SetMoving(brain.Activity == AiSoldierActivity.Patrolling, walkAnimation);
             }
 
             view.PlaceAt(brain.Position, brain.Orientation);
@@ -5446,14 +5444,7 @@ public sealed class SoldierRenderer : IDisposable
                 {
                     continue;
                 }
-                if (!_health.TryGetValue(soldier, out HumanHealth? health))
-                {
-                    float maximum = _combat.TryGetValue(soldier, out AiCombatParameters? row)
-                        ? row.MaximumHealth
-                        : HumanHitZoneTable.MaximumHealth;
-                    health = new HumanHealth(HumanHitZoneTable.Soldier, maximum);
-                    _health[soldier] = health;
-                }
+                HumanHealth health = HealthOf(soldier);
 
                 if (health.IsDead)
                 {
@@ -5688,15 +5679,7 @@ public sealed class SoldierRenderer : IDisposable
                 {
                     continue;
                 }
-                if (!_health.TryGetValue(soldier, out HumanHealth? health))
-                {
-                    float maximum = _combat.TryGetValue(soldier, out AiCombatParameters? row)
-                        ? row.MaximumHealth
-                        : HumanHitZoneTable.MaximumHealth;
-
-                    health = new HumanHealth(HumanHitZoneTable.Soldier, maximum);
-                    _health[soldier] = health;
-                }
+                HumanHealth health = HealthOf(soldier);
 
                 if (health.IsDead)
                 {
@@ -5909,6 +5892,26 @@ public sealed class SoldierRenderer : IDisposable
         }
     }
 
+    /// <summary>Gets a soldier's damage state, creating it on the first hit.</summary>
+    private HumanHealth HealthOf(SoldierView soldier)
+    {
+        if (!_health.TryGetValue(soldier, out HumanHealth? health))
+        {
+            health = NewHealth(soldier);
+            _health[soldier] = health;
+        }
+
+        return health;
+    }
+
+    /// <summary>
+    /// A fresh damage state — <c>0x489C30</c> over the class's hit-zone table, with the settings row's
+    /// maximum health once <c>0x406F70</c> has configured the soldier.
+    /// </summary>
+    private HumanHealth NewHealth(SoldierView soldier) => new(
+        soldier.Soldier.Class.HitZones,
+        _combat.TryGetValue(soldier, out AiCombatParameters? row) ? row.MaximumHealth : HumanHitZoneTable.MaximumHealth);
+
     /// <summary>Puts a soldier into the general death state — <c>0x45C440</c>, joined up.</summary>
     /// <remarks>
     /// <para>
@@ -5924,21 +5927,25 @@ public sealed class SoldierRenderer : IDisposable
         Matrix3f orientation = view.Orientation;
         Vector3f forward = new(orientation.M12, orientation.M22, orientation.M32);
 
+        HumanSoldierClass soldierClass = view.Soldier.Class;
+        SoldierDeathMode mode = SoldierDeath.ModeFor(category);
+        _brains.TryGetValue(view, out AiSoldier? brain);
+        int scriptOverride = brain?.DeathAnimationOverride ?? -1;
+
+        // 0x45C440 turns the body to the round (0x45DAA0) only in its thrown branch, which the script's
+        // override skips: a crumple falls with the facing it died with.
         Vector3d travel = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
         float facing = GammaOf(view);
-        bool front = SoldierDeath.TurnToTheShot(travel, forward, ref facing);
+        bool front = true;
+        if (scriptOverride == -1 && soldierClass.TurnsToTheShot(mode))
+        {
+            front = SoldierDeath.TurnToTheShot(travel, forward, ref facing);
+        }
 
         // The engine's own rand(2). Alternating is not the same distribution, but the two retail head-row
         // entries are equal and the two crumple clips are a pair, so what the flip has to do is vary them.
         int flip = _deathsSoFar++ & 1;
-        _brains.TryGetValue(view, out AiSoldier? brain);
-        int animation = SoldierDeath.Choose(
-            SoldierDeath.ModeFor(category),
-            hit.Zone,
-            HumanHitZoneTable.Soldier,
-            front,
-            flip,
-            brain?.DeathAnimationOverride ?? -1);
+        int animation = soldierClass.ChooseDeathAnimation(mode, hit.Zone, front, flip, scriptOverride);
 
         Vector3d fall = default;
         if (animation >= 0 && view.Bones.Set.TryGet(animation, out BoneAnimation clip) && _cast is { } cast)
@@ -6088,14 +6095,7 @@ public sealed class SoldierRenderer : IDisposable
                 {
                     continue;
                 }
-                if (!_health.TryGetValue(soldier, out HumanHealth? health))
-                {
-                    float maximum = _combat.TryGetValue(soldier, out AiCombatParameters? row)
-                        ? row.MaximumHealth
-                        : HumanHitZoneTable.MaximumHealth;
-                    health = new HumanHealth(HumanHitZoneTable.Soldier, maximum);
-                    _health[soldier] = health;
-                }
+                HumanHealth health = HealthOf(soldier);
                 if (health.IsDead)
                 {
                     continue;

@@ -109,12 +109,34 @@ public partial class HumanPlayerTask : HumanTask
 /// by name in the chained <c>Human</c> handler <c>0x45F890</c>. See <c>player.md</c> §15.
 /// </para>
 /// <para>
-/// The siblings <c>HumanSoldierFemale</c>/<c>HumanSoldierRPG</c>/<c>HumanSoldierPistol</c> exist in
-/// the engine but no retail level declares them, so only this one is transcribed.
+/// <b>The siblings share this task.</b> <c>HumanSoldierFemale</c> (Level 14) and <c>HumanSoldierRPG</c>
+/// (Level 10) are separate classes in the original, registered beside this one under <c>Human</c>, but
+/// every level declares them with the same six parameters and their handlers are this class's over
+/// different data. <see cref="HumanSoldierFemaleTask"/> and <see cref="HumanSoldierRpgTask"/> carry that
+/// data as their <see cref="Class"/>.
 /// </para>
 /// </remarks>
 public partial class HumanSoldierTask : HumanTask
 {
+    /// <summary>Initializes an ordinary soldier with its constructor's defaults.</summary>
+    public HumanSoldierTask()
+        : this(HumanSoldierClass.Soldier)
+    {
+    }
+
+    /// <summary>Initializes a soldier of the given class with that class's constructor defaults.</summary>
+    /// <param name="soldierClass">The class, whose defaults the level's parameters then overwrite.</param>
+    protected HumanSoldierTask(HumanSoldierClass soldierClass)
+    {
+        ArgumentNullException.ThrowIfNull(soldierClass);
+        Class = soldierClass;
+        BoneHierarchy = soldierClass.DefaultBoneHierarchy;
+        StandAnimation = soldierClass.DefaultStandAnimation;
+    }
+
+    /// <summary>Gets which of the soldier classes this is.</summary>
+    public HumanSoldierClass Class { get; }
+
     /// <summary>Gets or sets the position the level places the soldier at.</summary>
     [ScriptParam(ScriptParamType.ObjectPos, "Position")]
     public Vector3d SpawnPosition { get => Position; set => Position = value; }
@@ -139,6 +161,26 @@ public partial class HumanSoldierTask : HumanTask
     /// <summary>Gets or sets the animation the soldier stands in.</summary>
     [ScriptParam(ScriptParamType.Int32, "Stand Animation")]
     public int StandAnimation { get; set; }
+}
+
+/// <summary>A female soldier — the original's <c>HumanSoldierFemale</c>, registered at <c>0x454970</c>.</summary>
+public sealed class HumanSoldierFemaleTask : HumanSoldierTask
+{
+    /// <summary>Initializes a female soldier with <c>0x454B10</c>'s defaults.</summary>
+    public HumanSoldierFemaleTask()
+        : base(HumanSoldierClass.FemaleSoldier)
+    {
+    }
+}
+
+/// <summary>An RPG soldier — the original's <c>HumanSoldierRPG</c>, registered at <c>0x456AD0</c>.</summary>
+public sealed class HumanSoldierRpgTask : HumanSoldierTask
+{
+    /// <summary>Initializes an RPG soldier with <c>0x456C70</c>'s defaults.</summary>
+    public HumanSoldierRpgTask()
+        : base(HumanSoldierClass.RpgSoldier)
+    {
+    }
 }
 
 /// <summary>

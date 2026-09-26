@@ -1,10 +1,9 @@
-using OpenIGI.Game.Player;
-
-namespace OpenIGI.Game.Ai;
+namespace OpenIGI.Game.Player;
 
 /// <summary>
-/// The soldier locomotion machine's <b>combat cycle</b> — the states a stationary fighting soldier moves
-/// through and, crucially, <b>when</b> it moves, read out of <c>off_53EC10</c>'s per-tick functions.
+/// A soldier's body machine — <c>off_53EC10</c>'s thirty-eight states, packed by <c>0x45CCF0</c> — and in
+/// particular its <b>combat cycle</b>: the states a fighting soldier moves through and <b>when</b> it
+/// moves, read out of the per-tick functions.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -38,8 +37,25 @@ namespace OpenIGI.Game.Ai;
 /// §19.
 /// </para>
 /// </remarks>
-public sealed class AiCombatStateMachine
+public sealed class HumanSoldierBodyMachine : HumanBodyMachine
 {
+    // The frame slots 0x45CCF0 packs into the bits this machine reads.
+    private const int RollLeftSlot = 2;
+    private const int RollRightSlot = 3;
+    private const int FireSlot = 6;
+    private const int ReloadSlot = 8;
+    private const int KneelSlot = 21;
+    private const int LieDownSlot = 22;
+    private const int FirePoseSlot = 27;
+    private const int ThrowGrenadeSlot = 29;
+    private const int CloseCombatSlot = 30;
+
+    /// <summary>Initializes a soldier's machine, standing.</summary>
+    public HumanSoldierBodyMachine()
+        : base(HumanSoldierStates.Table, HumanSoldierStates.StandState)
+    {
+    }
+
     /// <summary>The flag-word inputs one tick of the machine reads — the bits <c>sub_45CCF0</c> packs.</summary>
     /// <param name="OnGround">Bit <c>0x4</c>: the body has ground under it. Losing it drops to falling.</param>
     /// <param name="Flinch">Bit <c>0x10000</c>: the recoil threshold was passed this tick.</param>
@@ -69,42 +85,47 @@ public sealed class AiCombatStateMachine
         bool RollRight,
         bool ReloadPressed,
         bool AnimationDone,
-        bool MovingForward = false);
-
-    /// <summary>Gets the state the machine is in.</summary>
-    public int State { get; private set; } = HumanSoldierStates.StandState;
-
-    /// <summary>Gets the state it was in before <see cref="State"/>.</summary>
-    public int PreviousState { get; private set; } = HumanSoldierStates.StandState;
-
-    /// <summary>Gets a value indicating whether <see cref="State"/> changed on the last <see cref="Tick"/>.</summary>
-    public bool ChangedThisTick { get; private set; }
-
-    /// <summary>Puts the machine back to standing — what re-arming combat does.</summary>
-    public void Reset()
+        bool MovingForward = false)
     {
-        PreviousState = State;
-        State = HumanSoldierStates.StandState;
-        ChangedThisTick = PreviousState != State;
+        /// <summary>Packs the flag word from the frame the way <c>0x45CCF0</c> does.</summary>
+        /// <param name="input">What the body reads this tick.</param>
+        /// <returns>The decoded flag word.</returns>
+        public static Signals Pack(in HumanBodyInput input) => new(
+            input.OnGround,
+            input.Flinch,
+            input.Dead,
+            FirePose: input.IsSet(FirePoseSlot),
+            FireHeld: input.IsSet(FireSlot),
+            ThrowGrenade: input.IsSet(ThrowGrenadeSlot),
+            CloseCombat: input.IsSet(CloseCombatSlot),
+            Kneel: input.IsSet(KneelSlot),
+            LieDown: input.IsSet(LieDownSlot),
+            RollLeft: input.IsSet(RollLeftSlot),
+            RollRight: input.IsSet(RollRightSlot),
+            ReloadPressed: input.IsSet(ReloadSlot),
+            AnimationDone: input.AnimationDone,
+            MovingForward: input.MovingForward);
     }
 
-    /// <summary>Runs one tick, taking at most one transition.</summary>
-    /// <param name="signals">The flag-word inputs this tick.</param>
+    /// <inheritdoc/>
+    /// <remarks>The four states whose per-ticks forward frame slot 6 to the weapon.</remarks>
+    public override bool IsFiring => State is HumanSoldierStates.FiringState
+        or HumanSoldierStates.RunFiringState
+        or HumanSoldierStates.KneelFiringState
+        or HumanSoldierStates.ProneFiringState;
+
+    /// <inheritdoc/>
+    public override bool IsMoving => State is HumanSoldierStates.RunState or HumanSoldierStates.RunFiringState;
+
+    /// <summary>Runs one tick on an already-packed flag word.</summary>
+    /// <param name="signals">The decoded flag word.</param>
     /// <returns>The state after the tick.</returns>
-    public int Tick(in Signals signals)
-    {
-        int next = Next(signals);
-        ChangedThisTick = next != State;
-        if (ChangedThisTick)
-        {
-            PreviousState = State;
-            State = next;
-        }
+    public int Tick(in Signals signals) => Advance(NextState(signals));
 
-        return State;
-    }
+    /// <inheritdoc/>
+    protected override int NextState(in HumanBodyInput input) => NextState(Signals.Pack(input));
 
-    private int Next(in Signals s)
+    private int NextState(in Signals s)
     {
         // The evasive/prone branch has state-specific hit/death outcomes. These are the exact exits
         // from 0x45B900, 0x458BF0, 0x45BA80, 0x45BF90 and 0x45BB40.
@@ -371,7 +392,7 @@ public sealed class AiCombatStateMachine
         if (State == HumanSoldierStates.DisplayReloadState)
         {
             return s.AnimationDone
-                ? (s.FirePose ? ReadyState : HumanSoldierStates.StandState)
+                ? (s.FirePose ? HumanSoldierStates.ReadyState : HumanSoldierStates.StandState)
                 : HumanSoldierStates.DisplayReloadState;
         }
 
@@ -385,7 +406,7 @@ public sealed class AiCombatStateMachine
                 : s.LieDown
                     ? HumanSoldierStates.LieDownState
                     : s.FirePose
-                        ? RackState
+                        ? HumanSoldierStates.RackState
                         : s.ThrowGrenade
                             ? HumanSoldierStates.GrenadeThrowState
                             : s.ReloadPressed
@@ -412,17 +433,17 @@ public sealed class AiCombatStateMachine
                 : HumanSoldierStates.CloseCombatState,
 
             // 0x458810: the rack holds until its clip finishes, then goes to ready.
-            RackState => s.AnimationDone ? ReadyState : RackState,
+            HumanSoldierStates.RackState => s.AnimationDone ? HumanSoldierStates.ReadyState : HumanSoldierStates.RackState,
 
             // 0x45B6E0: from ready, fire when the trigger is down under the fire pose; drop out otherwise.
-            ReadyState => s.FirePose
-                ? (s.FireHeld ? HumanSoldierStates.FiringState : ReadyState)
+            HumanSoldierStates.ReadyState => s.FirePose
+                ? (s.FireHeld ? HumanSoldierStates.FiringState : HumanSoldierStates.ReadyState)
                 : HumanSoldierStates.ReloadState,
 
             // 0x45B060: FIRE holds while the trigger stays down; when the clip finishes AND the trigger is
             // released it goes back to ready (still posed) or drops to recover. This hold is the loop fix.
             HumanSoldierStates.FiringState => s.AnimationDone && !s.FireHeld
-                ? (s.FirePose ? ReadyState : HumanSoldierStates.ReloadState)
+                ? (s.FirePose ? HumanSoldierStates.ReadyState : HumanSoldierStates.ReloadState)
                 : HumanSoldierStates.FiringState,
 
             // 0x45B820: recover holds until its clip finishes, then stands.
@@ -432,10 +453,4 @@ public sealed class AiCombatStateMachine
             _ => State,
         };
     }
-
-    /// <summary>The weapon-raise state, animation 53 — <c>off_53EC10</c> state 11.</summary>
-    public const int RackState = 11;
-
-    /// <summary>The ready state between bursts, animation 54 — <c>off_53EC10</c> state 10.</summary>
-    public const int ReadyState = 10;
 }

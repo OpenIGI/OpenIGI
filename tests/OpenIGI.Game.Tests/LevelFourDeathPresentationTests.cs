@@ -44,6 +44,7 @@ public sealed class LevelFourDeathPresentationTests
             for (int flip = 0; flip < 2; flip++)
             {
                 int clip = SoldierDeath.Choose(
+                    SoldierDeathClips.Soldier,
                     mode,
                     zone,
                     HumanHitZoneTable.Soldier,

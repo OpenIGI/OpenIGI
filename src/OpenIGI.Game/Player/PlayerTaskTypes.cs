@@ -28,6 +28,12 @@ public static class PlayerTaskTypes
     /// <summary>The script name of the AI character type.</summary>
     public const string HumanSoldier = "HumanSoldier";
 
+    /// <summary>The script name of the female AI character type.</summary>
+    public const string HumanSoldierFemale = "HumanSoldierFemale";
+
+    /// <summary>The script name of the RPG AI character type.</summary>
+    public const string HumanSoldierRpg = "HumanSoldierRPG";
+
     /// <summary>The script name of the player's input source.</summary>
     public const string HumanPlayerInput = "HumanPlayerInput";
 
@@ -41,6 +47,8 @@ public static class PlayerTaskTypes
 
         types.Register<HumanPlayerTask>(HumanPlayer, parent);
         types.Register<HumanSoldierTask>(HumanSoldier, parent);
+        types.Register<HumanSoldierFemaleTask>(HumanSoldierFemale, parent);
+        types.Register<HumanSoldierRpgTask>(HumanSoldierRpg, parent);
         types.Register<HumanPlayerInputTask>(HumanPlayerInput, parent);
     }
 }

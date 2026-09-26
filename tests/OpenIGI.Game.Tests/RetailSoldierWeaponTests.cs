@@ -92,16 +92,18 @@ public sealed class RetailSoldierWeaponTests
 
         File.WriteAllText(Path.Combine(Path.GetTempPath(), "openigi-soldier-weapon-census.txt"), report.ToString());
 
-        // The measured corpus, over all fourteen levels. Not every soldier is armed -- a civilian carries
-        // nothing and a few scripted soldiers are props -- but 645 of 692 are, which is what makes this a
-        // mechanism rather than a special case.
-        Assert.Equal(692, soldiers);
-        Assert.Equal(645, armed);
+        // The measured corpus, over all fourteen levels, counting Level 10's RPG soldier and Level 14's
+        // five female soldiers. Not every soldier is armed -- a civilian carries nothing and a few scripted
+        // soldiers are props -- but 651 of 698 are, which is what makes this a mechanism rather than a
+        // special case.
+        Assert.Equal(698, soldiers);
+        Assert.Equal(651, armed);
 
-        // Twelve distinct weapons and twelve distinct models, one apiece: nothing shares a model and
-        // nothing resolves to an empty one.
-        Assert.Equal(12, byWeapon.Count);
-        Assert.Equal(12, byModel.Count);
+        // Fourteen distinct weapons and fourteen distinct models, one apiece: nothing shares a model and
+        // nothing resolves to an empty one. The RPG soldier's launcher and a female soldier's Colt are two.
+        Assert.Equal(14, byWeapon.Count);
+        Assert.Equal(14, byModel.Count);
+        Assert.Equal(1, byWeapon["WEAPON_ID_RPG18"]);
 
         // The AK is what most of the game's guards actually hold.
         Assert.Equal(445, byWeapon["WEAPON_ID_AK47"]);

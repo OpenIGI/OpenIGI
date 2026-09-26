@@ -171,6 +171,7 @@ public sealed class RetailSoldierDeathTests
                     foreach (int flip in new[] { 0, 1 })
                     {
                         int id = SoldierDeath.Choose(
+                            SoldierDeathClips.Soldier,
                             SoldierDeath.ModeFor(category), zone, HumanHitZoneTable.Soldier, front, flip);
                         Assert.True(set.TryGet(id, out _), $"{category}/{zone}/{front}/{flip} named {id}.");
                     }
