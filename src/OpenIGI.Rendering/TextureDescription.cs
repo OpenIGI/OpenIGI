@@ -28,6 +28,15 @@ public readonly record struct TextureDescription(
     {
     }
 
+    /// <summary>Gets a value indicating whether the texels are numbers rather than colours.</summary>
+    /// <remarks>
+    /// A device that stores colour textures as sRGB decodes every read of them, which is right for a
+    /// picture and ruins packed data: the shelter map's two height bytes come back gamma-decoded, every
+    /// roof reads lower than it stands, and water pools on the floors under them. Such a texture is
+    /// stored linear, so a load returns the bytes that were uploaded.
+    /// </remarks>
+    public bool HoldsData { get; init; }
+
     /// <summary>Gets the number of pixels in mip level 0.</summary>
     public int PixelCount => Width * Height;
 

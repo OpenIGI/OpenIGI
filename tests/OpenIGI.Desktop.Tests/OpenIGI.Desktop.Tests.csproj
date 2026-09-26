@@ -8,19 +8,19 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\..\apps\OpenIGI.Desktop\Assets\fonts\Saira-Regular.ttf"
+    <None Include="..\..\apps\OpenIGI.Composition\Assets\fonts\Saira-Regular.ttf"
           Link="Assets\fonts\Saira-Regular.ttf"
           CopyToOutputDirectory="PreserveNewest" />
 
     <!-- The storm's drop sheet, so the tests that read its layout read the shipped images rather than a
          copy of them that is free to drift. -->
-    <None Include="..\..\apps\OpenIGI.Desktop\Assets\weather\*.png"
+    <None Include="..\..\apps\OpenIGI.Composition\Assets\weather\*.png"
           Link="Assets\weather\%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />
 
     <!-- The lamps named by hand, for the same reason: the test has to read the file the game ships, or
          it pins a copy that is free to drift away from it. -->
-    <None Include="..\..\apps\OpenIGI.Desktop\Assets\lamps.json"
+    <None Include="..\..\apps\OpenIGI.Composition\Assets\lamps.json"
           Link="Assets\lamps.json"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

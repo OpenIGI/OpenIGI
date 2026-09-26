@@ -1,4 +1,4 @@
-using OpenIGI.Game.Config;
+﻿using OpenIGI.Game.Config;
 using OpenIGI.Game.Menus;
 using OpenIGI.Input;
 using OpenIGI.Scripting.Expressions;
@@ -25,6 +25,87 @@ public sealed class ConfigTests
         Assert.All(config.Profiles, profile => Assert.False(string.IsNullOrWhiteSpace(profile.Name)));
         Assert.InRange(config.ActiveIndex, 0, config.Profiles.Count - 1);
     }
+
+    [Fact]
+    public void AProfileStillOnTheOriginalControlsMovesToWasdWithTheMouseTheRightWayUp()
+    {
+        // What a new player got: the retail file's arrow keys and, in the one an installation ships, the
+        // mouse inverted.
+        GameConfig config = RetailShaped(invert: true);
+
+        Assert.True(config.MigrateControls());
+
+        PlayerProfile profile = config.Profiles[0];
+        Assert.Equal("KEY_W", Key(profile, "MoveUp"));
+        Assert.Equal("KEY_A", Key(profile, "MoveLeft"));
+        Assert.Equal("KEY_SPACE", Key(profile, "Jump"));
+        Assert.False(profile.InvertMouse);
+        Assert.Equal(GameConfig.CurrentControlsVersion, config.ControlsVersion);
+    }
+
+    [Fact]
+    public void AProfileItsPlayerReboundKeepsItsControlsAndItsInversion()
+    {
+        GameConfig config = RetailShaped(invert: true);
+        PlayerProfile profile = config.Profiles[0];
+        int jump = profile.Bindings.FindIndex(b => b.Action == "Jump");
+        profile.Bindings[jump] = new("Jump", "INPUTPORT_DEVICE_KEYBOARD", "KEY_SPACE");
+
+        Assert.False(config.MigrateControls());
+
+        Assert.Equal("KEY_UP", Key(profile, "MoveUp"));
+        Assert.True(profile.InvertMouse);
+    }
+
+    [Fact]
+    public void TheControlsMoveOnceAndAPlayerWhoChoosesTheArrowKeysAgainKeepsThem()
+    {
+        GameConfig config = RetailShaped(invert: false);
+        config.MigrateControls();
+
+        PlayerProfile profile = config.Profiles[0];
+        profile.Bindings.Clear();
+        profile.Bindings.AddRange(PlayerProfile.RetailDefaultBindings);
+
+        GameConfig reloaded = ConfigScript.Load(ConfigScriptWriter.Write(config));
+
+        Assert.Equal(GameConfig.CurrentControlsVersion, reloaded.ControlsVersion);
+        Assert.False(reloaded.MigrateControls());
+        Assert.Equal("KEY_UP", Key(reloaded.Profiles[0], "MoveUp"));
+    }
+
+    [Fact]
+    public void AFreshConfigurationIsAlreadyOnTheModernControls()
+    {
+        GameConfig config = GameConfig.CreateDefault();
+
+        Assert.False(config.MigrateControls());
+        Assert.Equal("KEY_W", Key(config.Profiles[0], "MoveUp"));
+        Assert.False(config.Profiles[0].InvertMouse);
+    }
+
+    [RequiresGameDataFact]
+    public void TheRetailSaveFilesUntouchedProfilesComeUpOnWasd()
+    {
+        GameConfig config = LoadRetail();
+
+        Assert.Equal(0, config.ControlsVersion);
+        config.MigrateControls();
+
+        Assert.Contains(config.Profiles, profile => Key(profile, "MoveUp") == "KEY_W" && !profile.InvertMouse);
+    }
+
+    private static GameConfig RetailShaped(bool invert)
+    {
+        GameConfig config = ConfigScript.Load(ConfigScriptWriter.Write(new GameConfig()));
+        config.Add(new PlayerProfile { Name = "Joe", InvertMouse = invert });
+        config.Profiles[0].Bindings.AddRange(PlayerProfile.RetailDefaultBindings);
+        config.ControlsVersion = 0;
+        return config;
+    }
+
+    private static string Key(PlayerProfile profile, string action) =>
+        profile.Bindings.First(b => string.Equals(b.Action, action, StringComparison.OrdinalIgnoreCase)).Key;
 
     [Fact]
     public void EveryProfileCarriesItsOwnSettingsAndBindings()

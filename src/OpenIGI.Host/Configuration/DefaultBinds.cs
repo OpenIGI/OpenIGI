@@ -36,6 +36,11 @@ public static class DefaultBinds
         ("f8", "toggle r_overrides"),
         ("f9", "toggle r_pbr"),
 
+        // Rebuilds the game over the other graphics API -- Vulkan or WebGPU -- and puts the player back
+        // where they stood, so the two can be compared on one view. A command, not a setting: the API is
+        // chosen by OPENIGI_RENDERER when the game starts, and nothing is written to settings.cfg.
+        ("f10", "r_switch_renderer"),
+
         // The wall switch for whichever of the level's lamps the crosshair is on, and the fault. Neither
         // writes a setting -- they act on the level that is loaded and nothing survives it -- so the rule
         // this table exists for has nothing to check on them.

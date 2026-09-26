@@ -1,6 +1,7 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Threading;
 
 namespace OpenIGI.Rendering;
 
@@ -38,6 +39,7 @@ public sealed class MaterialDetailPack : IDisposable
     private const string LogCategory = "Material";
 
     private readonly IGraphicsDevice _device;
+    private readonly IWorkScheduler _work;
     private readonly IIgiLogger _logger;
 
     // Detail PNGs read and decoded ahead of the render thread by Prewarm. A name maps to its pixels, or
@@ -57,6 +59,7 @@ public sealed class MaterialDetailPack : IDisposable
 
     /// <summary>Initialises a new instance of the <see cref="MaterialDetailPack"/> class.</summary>
     /// <param name="device">The device the maps are uploaded to.</param>
+    /// <param name="work">Where maps are read and derived off the frame, where the platform has anywhere.</param>
     /// <param name="logger">Where to report what was found and what would not load.</param>
     /// <param name="cacheDirectory">
     /// Where maps derived on demand are written, or empty for none. Read from as well as written to, and
@@ -72,12 +75,15 @@ public sealed class MaterialDetailPack : IDisposable
     /// </remarks>
     public MaterialDetailPack(
         IGraphicsDevice device,
+        IWorkScheduler work,
         IIgiLogger? logger = null,
         string? cacheDirectory = null)
     {
         ArgumentNullException.ThrowIfNull(device);
+        ArgumentNullException.ThrowIfNull(work);
 
         _device = device;
+        _work = work;
         _logger = logger ?? NullLogger.Instance;
 
         if (!string.IsNullOrWhiteSpace(cacheDirectory))
@@ -125,28 +131,34 @@ public sealed class MaterialDetailPack : IDisposable
     /// frame asked for it, is read inline as it always was.
     /// </para>
     /// </remarks>
+    /// <returns>The reads, finished when every map has been read; already finished where none are run.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="names"/> is <see langword="null"/>.</exception>
-    public void Prewarm(IEnumerable<string> names)
+    public Task Prewarm(IEnumerable<string> names)
     {
         ArgumentNullException.ThrowIfNull(names);
 
         if (_disposed || _cacheRoot is null)
         {
-            return;
+            return Task.CompletedTask;
         }
 
         string[] wanted = [.. names];
         if (wanted.Length == 0)
         {
-            return;
+            return Task.CompletedTask;
+        }
+
+        // Only where it overlaps the frame: inline, it would read every map in the frame that asked, for
+        // an upload that reads them anyway.
+        if (!_work.IsConcurrent)
+        {
+            return Task.CompletedTask;
         }
 
         // Capped, and the cap matters: unbounded this took every core, and the thread it took them from
         // was the one drawing the frame. See TextureDecodeCache.MaxDecodeThreads, which is the same
         // bargain -- the reads finish well inside the swap either way.
-        ParallelOptions options = new() { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount / 4) };
-
-        _ = Task.Run(() => Parallel.ForEach(wanted, options, name =>
+        return _work.Run(() => _work.ForEach(wanted, Math.Max(1, Environment.ProcessorCount / 4), name =>
         {
             if (!_disposed && !string.IsNullOrEmpty(name) && !_read.ContainsKey(name))
             {
@@ -238,7 +250,7 @@ public sealed class MaterialDetailPack : IDisposable
 
         // Copied because the caller's span is a view onto a decode buffer it is about to reuse.
         Bgra32[] source = pixels[..(width * height)].ToArray();
-        _running.Add(Task.Run(() => DeriveToCache(name, source, width, height)));
+        _running.Add(_work.Run(() => DeriveToCache(name, source, width, height)));
     }
 
     /// <summary>Derives a detail map from pixels in hand and attaches it.</summary>
@@ -313,7 +325,10 @@ public sealed class MaterialDetailPack : IDisposable
         {
             (Bgra32[] chain, int levels) = LinearMipChain.Build(packed, width, height);
             TextureHandle map = _device.CreateTexture(
-                new TextureDescription(width, height, levels, TextureFilter.Linear, TextureAddressMode.Repeat),
+                new TextureDescription(width, height, levels, TextureFilter.Linear, TextureAddressMode.Repeat)
+                {
+                    HoldsData = true,
+                },
                 chain);
 
             // Keyed by the diffuse it was made for, so Dispose releases it. The name is synthetic
@@ -362,7 +377,10 @@ public sealed class MaterialDetailPack : IDisposable
                 (Bgra32[] chain, int levels) = LinearMipChain.Build(item.Pixels, item.Width, item.Height);
                 map = _device.CreateTexture(
                     new TextureDescription(
-                        item.Width, item.Height, levels, TextureFilter.Linear, TextureAddressMode.Repeat),
+                        item.Width, item.Height, levels, TextureFilter.Linear, TextureAddressMode.Repeat)
+                    {
+                        HoldsData = true,
+                    },
                     chain);
             }
             catch (Exception error) when (error is ArgumentException or GraphicsDeviceException)
@@ -562,7 +580,12 @@ public sealed class MaterialDetailPack : IDisposable
             // normal's x through a display decode and re-encode biases every average it takes.
             (Bgra32[] chain, int levels) = LinearMipChain.Build(read.Pixels, read.Width, read.Height);
             return _device.CreateTexture(
-                new TextureDescription(read.Width, read.Height, levels, TextureFilter.Linear, TextureAddressMode.Repeat),
+                new TextureDescription(read.Width, read.Height, levels, TextureFilter.Linear, TextureAddressMode.Repeat)
+                {
+                    // Numbers, so stored as they were uploaded: a device that keeps colour textures as
+                    // sRGB would otherwise decode a normal's x on every read.
+                    HoldsData = true,
+                },
                 chain);
         }
         catch (GraphicsDeviceException error)

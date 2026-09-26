@@ -44,7 +44,7 @@ internal sealed class VulkanPlaceholderScene : IDisposable
         VulkanDevice device,
         VulkanAllocator allocator,
         VulkanCommands commands,
-        VulkanQueue queue)
+        ISubmissionClock queue)
     {
         const BufferUsageFlags usage = BufferUsageFlags.AccelerationStructureBuildInputReadOnlyBitKhr
             | BufferUsageFlags.ShaderDeviceAddressBit

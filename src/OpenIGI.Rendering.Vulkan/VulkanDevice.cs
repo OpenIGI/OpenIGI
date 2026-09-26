@@ -31,7 +31,6 @@ internal sealed unsafe class VulkanDevice : IDisposable
     private readonly bool _deviceFaultEnabled;
     private nint _cmdSetCheckpoint;
     private nint _getQueueCheckpointData;
-    private readonly List<VulkanQueue> _queues = [];
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="VulkanDevice"/> class.</summary>
@@ -59,16 +58,8 @@ internal sealed unsafe class VulkanDevice : IDisposable
         LoadDiagnosticCheckpoints();
 
         VulkanQueuePlan plan = selection.Queues;
-        GraphicsQueue = CreateQueue(plan.Graphics, VulkanQueueKind.Graphics);
-        PresentQueue = plan.Present == plan.Graphics
-            ? GraphicsQueue
-            : CreateQueue(plan.Present, VulkanQueueKind.Graphics);
-        AsyncComputeQueue = plan.HasDedicatedCompute
-            ? CreateQueue(plan.AsyncCompute, VulkanQueueKind.AsyncCompute)
-            : GraphicsQueue;
-        TransferQueue = plan.HasDedicatedTransfer
-            ? CreateQueue(plan.Transfer, VulkanQueueKind.Transfer)
-            : GraphicsQueue;
+        Graphics = QueueAt(plan.Graphics);
+        Present = plan.GraphicsAndPresentUnified ? Graphics : QueueAt(plan.Present);
 
         if (!_vk.TryGetDeviceExtension(instance.Instance, Device, out KhrSwapchain swapchain))
         {
@@ -118,33 +109,11 @@ internal sealed unsafe class VulkanDevice : IDisposable
     /// <summary>Gets the logical device.</summary>
     public Device Device { get; }
 
-    /// <summary>Gets the queue drawing is submitted to.</summary>
-    public VulkanQueue GraphicsQueue { get; }
+    /// <summary>Gets the queue every submission goes to.</summary>
+    public Queue Graphics { get; }
 
-    /// <summary>Gets the queue images are presented from.</summary>
-    public VulkanQueue PresentQueue { get; }
-
-    /// <summary>
-    /// Gets the queue long-running compute is submitted to — a dedicated engine where the adapter has
-    /// one, and the graphics queue where it does not.
-    /// </summary>
-    public VulkanQueue AsyncComputeQueue { get; }
-
-    /// <summary>Gets the queue bulk uploads are submitted to.</summary>
-    public VulkanQueue TransferQueue { get; }
-
-    /// <summary>Gets every distinct queue the device created, for teardown and for polling completion.</summary>
-    public IReadOnlyList<VulkanQueue> Queues => _queues;
-
-    /// <summary>Gets the raw graphics queue handle.</summary>
-    /// <remarks>For the paths that still submit directly rather than through a payload.</remarks>
-    public Queue Graphics => GraphicsQueue.Handle;
-
-    /// <summary>Gets the raw present queue handle.</summary>
-    public Queue Present => PresentQueue.Handle;
-
-    /// <summary>Gets the raw asynchronous-compute queue handle.</summary>
-    public Queue Compute => AsyncComputeQueue.Handle;
+    /// <summary>Gets the queue images are presented from: the graphics queue, where its family can present.</summary>
+    public Queue Present { get; }
 
     /// <summary>Gets the swapchain extension loaded for the device.</summary>
     public KhrSwapchain Swapchain { get; }
@@ -383,13 +352,6 @@ internal sealed unsafe class VulkanDevice : IDisposable
 
         _disposed = true;
 
-        foreach (VulkanQueue queue in _queues)
-        {
-            queue.Dispose();
-        }
-
-        _queues.Clear();
-
         // Before the device is destroyed: saving the cache reads it back out of the driver.
         _pipelineCache.Dispose();
 
@@ -399,10 +361,9 @@ internal sealed unsafe class VulkanDevice : IDisposable
         _vk.DestroyDevice(Device, null);
     }
 
-    private VulkanQueue CreateQueue(VulkanQueueSlot slot, VulkanQueueKind kind)
+    private Queue QueueAt(VulkanQueueSlot slot)
     {
-        VulkanQueue queue = new(_vk, this, slot, kind);
-        _queues.Add(queue);
+        _vk.GetDeviceQueue(Device, slot.Family, slot.Index, out Queue queue);
         return queue;
     }
 

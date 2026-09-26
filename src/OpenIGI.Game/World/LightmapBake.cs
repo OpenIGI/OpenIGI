@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Threading;
 
 namespace OpenIGI.Game.World;
 
@@ -28,20 +29,22 @@ public sealed class LightmapBake
 {
     private const string LogCategory = "Lightmap";
 
-    private readonly Task<BakedLightmaps?> _work;
+    private readonly ScheduledJob<BakedLightmaps?> _job;
     private readonly CancellationTokenSource _cancellation;
+    private readonly IIgiLogger _log;
     private bool _collected;
 
-    private LightmapBake(Task<BakedLightmaps?> work, CancellationTokenSource cancellation)
+    private LightmapBake(ScheduledJob<BakedLightmaps?> job, CancellationTokenSource cancellation, IIgiLogger log)
     {
-        _work = work;
+        _job = job;
         _cancellation = cancellation;
+        _log = log;
     }
 
     /// <summary>Gets whether the bake has finished, however it finished.</summary>
-    public bool IsComplete => _work.IsCompleted;
+    public bool IsComplete => _job.IsFinished;
 
-    /// <summary>Starts baking a level's object lightmaps on a worker.</summary>
+    /// <summary>Starts baking a level's object lightmaps: on a worker where the scheduler has one, a slice per poll where it does not.</summary>
     /// <param name="scene">The scene, for each covered placement's lightmap entry.</param>
     /// <param name="targets">The texel maps from <see cref="LightmapBaker.EnumerateTargets"/>, built by the caller.</param>
     /// <param name="triangles">The world-space lightmapped triangles from <see cref="LightmapBaker.BuildTriangles"/>.</param>
@@ -50,6 +53,7 @@ public sealed class LightmapBake
     /// <param name="sunDirection">The direction light arrives from, pointing towards the sun.</param>
     /// <param name="sunColour">The sun's colour.</param>
     /// <param name="skyColour">The sky's radiance a ray that escapes returns.</param>
+    /// <param name="work">Where the bake runs; see <see cref="ScheduledJob{T}"/>.</param>
     /// <param name="bounces">How many indirect passes to gather.</param>
     /// <param name="hemisphereRays">Rays per texel per pass.</param>
     /// <param name="logger">Where to report the bake's duration.</param>
@@ -64,6 +68,7 @@ public sealed class LightmapBake
         Vector3f sunDirection,
         Vector3f sunColour,
         Vector3f skyColour,
+        IWorkScheduler work,
         int bounces = 4,
         int hemisphereRays = 64,
         IIgiLogger? logger = null)
@@ -73,61 +78,77 @@ public sealed class LightmapBake
         ArgumentNullException.ThrowIfNull(triangles);
         ArgumentNullException.ThrowIfNull(bvh);
         ArgumentNullException.ThrowIfNull(cast);
+        ArgumentNullException.ThrowIfNull(work);
 
         IIgiLogger log = logger ?? NullLogger.Instance;
         CancellationTokenSource cancellation = new();
+        CancellationToken token = cancellation.Token;
 
-        Task<BakedLightmaps?> work = Task.Run(
-            () =>
-            {
-                long startedAt = Stopwatch.GetTimestamp();
+        SteppedJob<BakedLightmaps?> job = new(done => Bake(
+            scene, targets, triangles, bvh, cast, sunDirection, sunColour, skyColour, bounces, hemisphereRays, work, log, done, token));
 
-                try
-                {
-                    // The token goes INTO each phase, not merely between them. A phase is tens of seconds
-                    // of path tracing across every core; a bake cancelled at the top of one went on
-                    // tracing the level the player had just abandoned for the whole of it -- the new level
-                    // loading against a machine with nothing left to load it with, which is what leaving a
-                    // big mission felt like -- and held its texel maps, triangles and BVH the entire time.
-                    // Several of those overlapped at a few hundred megabytes each. Parallel.For takes the
-                    // token itself, so cancelling now stops within an iteration.
-                    cancellation.Token.ThrowIfCancellationRequested();
-                    LightmapBaker.BakeDirectAndSky(
-                        targets, cast, sunDirection, sunColour, skyColour, hemisphereRays, cancellation.Token);
+        return new LightmapBake(new ScheduledJob<BakedLightmaps?>(job, work), cancellation, log);
+    }
 
-                    cancellation.Token.ThrowIfCancellationRequested();
-                    LightmapBaker.BakeBounces(
-                        targets, triangles, bvh, skyColour, bounces, hemisphereRays, cancellation.Token);
+    /// <summary>The bake's phases, a slice at a time.</summary>
+    private static IEnumerable<bool> Bake(
+        WorldScene scene,
+        IReadOnlyList<LightmapBaker.LightmapTarget> targets,
+        LightmapBaker.LightmapTriangle[] triangles,
+        LightmapBaker.LightmapBvh bvh,
+        WorldRayCast cast,
+        Vector3f sunDirection,
+        Vector3f sunColour,
+        Vector3f skyColour,
+        int bounces,
+        int hemisphereRays,
+        IWorkScheduler work,
+        IIgiLogger log,
+        Action<BakedLightmaps?> done,
+        CancellationToken token)
+    {
+        long startedAt = Stopwatch.GetTimestamp();
 
-                    cancellation.Token.ThrowIfCancellationRequested();
-                    LightmapBaker.Denoise(targets, cancellationToken: cancellation.Token);
+        // The token goes INTO each phase, not merely between them. A phase is tens of seconds of path
+        // tracing across every core; a bake cancelled at the top of one went on tracing the level the
+        // player had just abandoned for the whole of it -- the new level loading against a machine with
+        // nothing left to load it with, which is what leaving a big mission felt like -- and held its
+        // texel maps, triangles and BVH the entire time. Several of those overlapped at a few hundred
+        // megabytes each. Each phase reads the token per texel, so cancelling stops within a block.
+        token.ThrowIfCancellationRequested();
 
-                    cancellation.Token.ThrowIfCancellationRequested();
-                    BakedLightmaps baked = BakedLightmaps.Compose(scene, targets);
+        foreach (bool slice in LightmapBaker.BakeDirectAndSky(
+            targets, cast, sunDirection, sunColour, skyColour, hemisphereRays, work, token))
+        {
+            yield return slice;
+        }
 
-                    double seconds = Stopwatch.GetElapsedTime(startedAt).TotalSeconds;
-                    log.Information(
-                        LogCategory,
-                        FormattableString.Invariant(
-                            $"Lightmap bake took {seconds:0.00} s on a worker over {baked.ObjectCount} object(s); it swaps in from the next frame."));
-                    return baked;
-                }
-                catch (OperationCanceledException)
-                {
-                    // Quitting or changing level during a bake: the pages are simply never collected and the
-                    // shipped lightmaps stay in place.
-                    return null;
-                }
-                catch (Exception ex)
-                {
-                    // A bake that throws must not take the game with it; the shipped lightmaps are the fallback.
-                    log.Error(LogCategory, $"The lightmap bake failed and the shipped lightmaps stay: {ex.Message}", ex);
-                    return null;
-                }
-            },
-            CancellationToken.None);
+        token.ThrowIfCancellationRequested();
 
-        return new LightmapBake(work, cancellation);
+        foreach (bool slice in LightmapBaker.BakeBounces(
+            targets, triangles, bvh, skyColour, bounces, hemisphereRays, work, token))
+        {
+            yield return slice;
+        }
+
+        token.ThrowIfCancellationRequested();
+
+        foreach (bool slice in LightmapBaker.Denoise(targets, work, cancellationToken: token))
+        {
+            yield return slice;
+        }
+
+        token.ThrowIfCancellationRequested();
+
+        BakedLightmaps baked = BakedLightmaps.Compose(scene, targets);
+
+        double seconds = Stopwatch.GetElapsedTime(startedAt).TotalSeconds;
+        log.Information(
+            LogCategory,
+            FormattableString.Invariant(
+                $"Lightmap bake took {seconds:0.00} s over {baked.ObjectCount} object(s); it swaps in from the next frame."));
+
+        done(baked);
     }
 
     /// <summary>Takes the finished pages, if the bake is finished.</summary>
@@ -138,13 +159,21 @@ public sealed class LightmapBake
     {
         baked = null;
 
-        if (_collected || !_work.IsCompleted)
+        if (_collected || !_job.Poll())
         {
             return false;
         }
 
         _collected = true;
-        baked = _work.Result;
+
+        // A bake that throws must not take the game with it; the shipped lightmaps are the fallback. A
+        // cancelled one -- quitting, or changing level -- is simply never collected.
+        if (_job.Failure is { } failure)
+        {
+            _log.Error(LogCategory, $"The lightmap bake failed and the shipped lightmaps stay: {failure.Message}", failure);
+        }
+
+        baked = _job.Result;
         return true;
     }
 
@@ -154,7 +183,7 @@ public sealed class LightmapBake
     public BakedLightmaps? WaitForResult()
     {
         _collected = true;
-        return _work.GetAwaiter().GetResult();
+        return _job.Wait();
     }
 
     /// <summary>Asks the bake to stop, for a level change or a shutdown.</summary>

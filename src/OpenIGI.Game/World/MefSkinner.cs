@@ -35,7 +35,7 @@ public static class MefSkinner
     public static bool IsSkinned(MefModel model)
     {
         ArgumentNullException.ThrowIfNull(model);
-        return model.Format == MefMeshFormat.Skinned && model.SkinInfluences.Count > 0;
+        return model.Format == MefMeshFormat.Skinned && model.SkinInfluences.Length > 0;
     }
 
     /// <summary>Gets the highest bone index the model's rig names, or <c>-1</c> when it has none.</summary>
@@ -95,15 +95,17 @@ public static class MefSkinner
         }
 
         ReadOnlySpan<MefVertex> source = model.Vertices;
-        IReadOnlyList<MefSkinInfluence> influences = model.SkinInfluences;
+        ReadOnlySpan<MefSkinInfluence> influences = model.SkinInfluences;
+        ReadOnlySpan<Matrix3f> rotations = pose.Rotations;
+        ReadOnlySpan<Vector3f> positions = pose.Positions;
 
         // 1. Base vertices. Each is placed by its one bone, then scaled by its own trailing float.
         for (int i = 0; i < baseCount; i++)
         {
             MefVertex vertex = source[i];
             MefSkinInfluence binding = influences[i];
-            Matrix3f rotation = pose.Rotations[binding.BoneIndex];
-            Vector3f translation = pose.Positions[binding.BoneIndex];
+            Matrix3f rotation = rotations[binding.BoneIndex];
+            Vector3f translation = positions[binding.BoneIndex];
 
             Vector3f position = Rotate(rotation, vertex.Position);
             position = new Vector3f(
@@ -122,7 +124,7 @@ public static class MefSkinner
 
         // 2. Extra influences. The same 40 bytes read differently: each names a base vertex it adds to,
         // its own bone, and a weight. No scale, and the normal is left as the base vertex wrote it.
-        for (int i = baseCount; i < influences.Count; i++)
+        for (int i = baseCount; i < influences.Length; i++)
         {
             MefSkinInfluence extra = influences[i];
             if (extra.TargetVertex >= baseCount)
@@ -131,8 +133,8 @@ public static class MefSkinner
             }
 
             MefVertex vertex = source[i];
-            Vector3f contribution = Rotate(pose.Rotations[extra.BoneIndex], vertex.Position);
-            Vector3f translation = pose.Positions[extra.BoneIndex];
+            Vector3f contribution = Rotate(rotations[extra.BoneIndex], vertex.Position);
+            Vector3f translation = positions[extra.BoneIndex];
 
             Vertex3D target = destination[extra.TargetVertex];
             destination[extra.TargetVertex] = new Vertex3D(

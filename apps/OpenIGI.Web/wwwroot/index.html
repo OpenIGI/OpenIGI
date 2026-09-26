@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Project I.G.I. in the browser, played from your own copy of the game.">
+  <title>OpenIGI</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0c0b'/%3E%3Ccircle cx='16' cy='16' r='8.5' fill='none' stroke='%23ecebe6' stroke-width='2.2'/%3E%3Ccircle cx='16' cy='16' r='2.4' fill='%23ecebe6'/%3E%3C/svg%3E">
+  <link rel="preload" href="landing/bg.webp" as="image" type="image/webp">
+  <link rel="preload" href="landing/archivo.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="landing/jetbrains-mono.woff2" as="font" type="font/woff2" crossorigin>
+  <style>
+    /* Both variable fonts, served with the page (SIL Open Font License; see landing/OFL-*.txt). */
+    @font-face {
+      font-family: "Archivo";
+      src: url("landing/archivo.woff2") format("woff2");
+      font-weight: 400 800;
+      font-stretch: 62% 125%;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "JetBrains Mono";
+      src: url("landing/jetbrains-mono.woff2") format("woff2");
+      font-weight: 400 500;
+      font-display: swap;
+    }
+
+    :root {
+      --bg: #0b0c0b;
+      --text: #ecebe6;
+      --soft: #c9c7c0;
+      --note: #d6d4cd;
+      --muted: #b4b2ab;
+      --dim: #a3a19a;
+      --faint: #8a8882;
+      --ok: #7fc28c;
+      --error: #e0735f;
+      --sans: "Archivo", system-ui, sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body { background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
+
+    /* The game takes the whole page once it has booted. */
+    #view { display: block; width: 100vw; height: 100vh; outline: none; background: #000; }
+    #view[hidden] { display: none; }
+
+    /* Everything before the game, and after it: a screenshot from the desktop build, darkened towards
+       the corner the text sits in and along the top and bottom edges. */
+    #landing {
+      position: fixed;
+      inset: 0;
+      overflow-y: auto;
+      font-family: var(--sans);
+      background:
+        radial-gradient(90% 80% at 0% 100%, rgba(11, 12, 11, 0.8) 0%, rgba(11, 12, 11, 0.45) 40%, rgba(11, 12, 11, 0) 75%),
+        linear-gradient(to bottom, rgba(11, 12, 11, 0.4) 0%, rgba(11, 12, 11, 0) 18%, rgba(11, 12, 11, 0) 80%, rgba(11, 12, 11, 0.6) 100%),
+        url("landing/bg.webp") center / cover no-repeat,
+        radial-gradient(120% 90% at 85% 10%, #2a2f27 0%, #141613 45%, #0b0c0b 80%);
+    }
+    #landing[hidden] { display: none; }
+
+    .page {
+      min-height: 100%;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 40px;
+      padding: clamp(20px, 3vw, 40px);
+    }
+
+    .mono { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.12em; text-transform: uppercase; }
+
+    header { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+    header .name { font-weight: 500; }
+    .gpu { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+    .gpu::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+    .gpu[data-state="ok"]::before { background: var(--ok); }
+    .gpu[data-state="no"]::before { background: var(--error); }
+
+    .content { align-self: end; display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 32px; }
+
+    main { display: flex; flex-direction: column; gap: 28px; max-width: 520px; }
+    main .mono { color: var(--muted); }
+    h1 {
+      margin: 0;
+      font-size: clamp(44px, 5.6vw, 80px);
+      line-height: 0.95;
+      font-weight: 700;
+      font-stretch: 80%;
+      letter-spacing: -0.015em;
+    }
+    .lead { margin: 0; font-size: 17px; line-height: 1.55; color: var(--soft); text-wrap: pretty; }
+
+    .action { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+    .action[hidden] { display: none; }
+
+    .play {
+      appearance: none;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 15px 26px;
+      border: none;
+      border-radius: 999px;
+      background: var(--text);
+      color: var(--bg);
+      font: 600 16px/1.2 var(--sans);
+      cursor: pointer;
+      transition: gap 0.2s ease, background-color 0.2s ease;
+    }
+    .play:hover { gap: 20px; background: #fff; }
+    .play:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+    .play:disabled { background: rgba(236, 235, 230, 0.25); color: rgba(11, 12, 11, 0.7); cursor: default; gap: 14px; }
+
+    .status { font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--faint); }
+    .status[data-tone="ok"] { color: var(--ok); }
+    .status[data-tone="error"] { color: var(--error); }
+
+    .change {
+      appearance: none;
+      padding: 0;
+      border: none;
+      background: none;
+      color: var(--muted);
+      font: 12px/1.6 var(--mono);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      cursor: pointer;
+    }
+    .change:hover { color: var(--text); }
+    .change[hidden] { display: none; }
+
+    .loading { display: flex; flex-direction: column; gap: 12px; width: min(360px, 100%); }
+    .loading[hidden] { display: none; }
+    .progress { height: 2px; background: rgba(236, 235, 230, 0.15); overflow: hidden; }
+    .progress > div { height: 100%; width: 0; background: var(--text); transition: width 0.2s linear; }
+    .progress.indeterminate > div { width: 25%; animation: sweep 1.4s ease-in-out infinite; }
+    @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(400%); } }
+    .loading .status { display: flex; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; }
+
+    .note {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-width: 300px;
+      padding: 12px 14px;
+      border: 1px solid rgba(236, 235, 230, 0.1);
+      border-radius: 10px;
+      background: rgba(11, 12, 11, 0.55);
+      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(8px);
+      color: var(--note);
+      font: 11.5px/1.6 var(--mono);
+    }
+    .note span:first-child { color: var(--text); }
+    .note span:last-child { color: var(--dim); }
+
+    footer {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px 24px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(236, 235, 230, 0.12);
+      color: var(--faint);
+      font: 11px/1.6 var(--mono);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .play, .progress > div { transition: none; }
+      .progress.indeterminate > div { animation: none; width: 100%; opacity: 0.4; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="view" hidden></canvas>
+
+  <div id="landing">
+    <div class="page">
+      <header class="mono">
+        <span class="name">OpenIGI</span>
+        <span class="gpu" id="gpu" data-state="checking">Checking…</span>
+      </header>
+
+      <div class="content">
+        <main>
+          <span class="mono">Browser edition</span>
+          <h1>Project I.G.I.</h1>
+          <p class="lead">Played in the browser from your own copy of the game. Its files are read on your computer and never uploaded.</p>
+
+          <!-- Choosing the folder, playing, and what happened last. -->
+          <div class="action" id="action" aria-live="polite">
+            <button class="play" id="play" type="button"><span id="play-label">Choose game folder</span><span aria-hidden="true">→</span></button>
+            <span class="status" id="status">The folder with IGI.exe in it, usually pc inside the installation.</span>
+            <button class="change" id="change" type="button" hidden>Choose another folder</button>
+          </div>
+
+          <!-- Starting up. -->
+          <div class="loading" id="loading" aria-live="polite" hidden>
+            <div class="progress indeterminate" id="progress"><div></div></div>
+            <span class="status"><span id="progress-label">Starting</span><span id="progress-value"></span></span>
+          </div>
+        </main>
+
+        <aside class="note">
+          <span>Screenshot from the desktop build. Download link coming soon.</span>
+          <span>In the browser, only the vanilla graphics preset is available.</span>
+        </aside>
+      </div>
+
+      <footer>
+        <span>An independent reimplementation, not affiliated with the game's publishers.</span>
+        <span>Requires an original copy of Project I.G.I.</span>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Filled in by the publish: where the fingerprinted runtime scripts under _framework are. -->
+  <script type="importmap"></script>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

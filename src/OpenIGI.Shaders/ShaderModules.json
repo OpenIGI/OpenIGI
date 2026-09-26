@@ -1,0 +1,422 @@
+{
+  "slangVersion": "2026.13.1-1-g84792eb15",
+  "modules": [
+    {
+      "id": "Sprite2D",
+      "source": "Ui/Sprite2D.slang"
+    },
+    {
+      "id": "SdfText",
+      "source": "Ui/SdfText.slang"
+    },
+    {
+      "id": "Loading",
+      "source": "Ui/Loading.slang"
+    },
+    {
+      "id": "Mesh3D",
+      "source": "World/Mesh3D.slang"
+    },
+    {
+      "id": "Shadow",
+      "source": "World/Shadow.slang"
+    },
+    {
+      "id": "Card",
+      "source": "World/Card.slang"
+    },
+    {
+      "id": "GBuffer",
+      "source": "World/GBuffer.slang"
+    },
+    {
+      "id": "Glass",
+      "source": "World/Glass.slang"
+    },
+    {
+      "id": "GlassLayer",
+      "source": "World/GlassLayer.slang"
+    },
+    {
+      "id": "Occlusion",
+      "source": "World/Occlusion.slang"
+    },
+    {
+      "id": "Outline",
+      "source": "World/Outline.slang"
+    },
+    {
+      "id": "BloomDownsample",
+      "source": "Post/BloomDownsample.slang"
+    },
+    {
+      "id": "BloomBlur",
+      "source": "Post/BloomBlur.slang"
+    },
+    {
+      "id": "BloomCombine",
+      "source": "Post/BloomCombine.slang"
+    },
+    {
+      "id": "UpscaleRejectionDilate",
+      "source": "TemporalUpscale/RejectionDilate.slang"
+    },
+    {
+      "id": "UpscaleResolveHistory",
+      "source": "TemporalUpscale/ResolveHistory.slang"
+    },
+    {
+      "id": "ShadowAccumulate",
+      "source": "TemporalUpscale/ShadowAccumulate.slang"
+    },
+    {
+      "id": "UpscaleSpatialAntiAliasing",
+      "source": "TemporalUpscale/SpatialAntiAliasing.slang"
+    },
+    {
+      "id": "UpscaleThinGeometry",
+      "source": "TemporalUpscale/ThinGeometry.slang"
+    },
+    {
+      "id": "UpscaleDecimateHistory",
+      "source": "TemporalUpscale/DecimateHistory.slang"
+    },
+    {
+      "id": "UpscaleDilateVelocity",
+      "source": "TemporalUpscale/DilateVelocity.slang"
+    },
+    {
+      "id": "MotionBlurFlatten",
+      "source": "Post/MotionBlurFlatten.slang"
+    },
+    {
+      "id": "MotionBlurDilate",
+      "source": "Post/MotionBlurDilate.slang"
+    },
+    {
+      "id": "MotionBlurApply",
+      "source": "Post/MotionBlurApply.slang"
+    },
+    {
+      "id": "FogScatter",
+      "source": "Fog/FogScatter.slang",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {
+            "OPENIGI_MAX_FOG_VOLUMES": "8",
+            "OPENIGI_MAX_LAMPS": "160",
+            "OPENIGI_FOG_PARAMS_BINDING": "9"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FogIntegrate",
+      "source": "Fog/FogIntegrate.slang",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {
+            "OPENIGI_MAX_FOG_VOLUMES": "8",
+            "OPENIGI_MAX_LAMPS": "160",
+            "OPENIGI_FOG_PARAMS_BINDING": "3"
+          }
+        }
+      ]
+    },
+    {
+      "id": "UpscaleRejectShading",
+      "source": "TemporalUpscale/RejectShading.slang",
+      "variants": [
+        {
+          "name": "group16",
+          "defines": {
+            "OPENIGI_UPSCALE_GROUP": "16"
+          },
+          "targets": [
+            "Spirv"
+          ]
+        },
+        {
+          "name": "group8",
+          "defines": {
+            "OPENIGI_UPSCALE_GROUP": "8"
+          }
+        }
+      ]
+    },
+    {
+      "id": "UpscaleUpdateHistory",
+      "source": "TemporalUpscale/UpdateHistory.slang"
+    },
+    {
+      "id": "LampDenoiseTemporal",
+      "source": "Lamp/DenoiseTemporal.slang"
+    },
+    {
+      "id": "LampDenoiseSpatial",
+      "source": "Lamp/DenoiseSpatial.slang"
+    },
+    {
+      "id": "LampShadow",
+      "source": "Lamp/Shadow.slang",
+      "variants": [
+        {
+          "name": "default",
+          "defines": {
+            "OPENIGI_MAX_LAMPS": "160"
+          },
+          "targets": [
+            "Spirv"
+          ]
+        },
+        {
+          "name": "software",
+          "defines": {
+            "OPENIGI_MAX_LAMPS": "160",
+            "OPENIGI_LAMP_FIELD": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Velocity",
+      "source": "Deferred/Velocity.slang"
+    },
+    {
+      "id": "ObjectVelocity",
+      "source": "Deferred/ObjectVelocity.slang"
+    },
+    {
+      "id": "Ssao",
+      "source": "Deferred/Ssao.slang"
+    },
+    {
+      "id": "ShadowDenoise",
+      "source": "Deferred/ShadowDenoise.slang"
+    },
+    {
+      "id": "ExposureHistogram",
+      "source": "Deferred/ExposureHistogram.slang"
+    },
+    {
+      "id": "SunShadow",
+      "source": "Deferred/SunShadow.slang",
+      "variants": [
+        {
+          "name": "default",
+          "targets": [
+            "Spirv"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SkyTransmittance",
+      "source": "Sky/Transmittance.slang"
+    },
+    {
+      "id": "SkyMultiScatter",
+      "source": "Sky/MultiScatter.slang"
+    },
+    {
+      "id": "SkyView",
+      "source": "Sky/SkyView.slang"
+    },
+    {
+      "id": "SkyIrradiance",
+      "source": "Sky/Irradiance.slang"
+    },
+    {
+      "id": "GlazingReflect",
+      "source": "Glazing/Reflect.slang",
+      "variants": [
+        {
+          "name": "rayquery",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "1"
+          },
+          "targets": [
+            "Spirv"
+          ]
+        },
+        {
+          "name": "software",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "0"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Reflect",
+      "source": "Reflection/Reflect.slang",
+      "variants": [
+        {
+          "name": "rayquery",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "1"
+          },
+          "targets": [
+            "Spirv"
+          ]
+        },
+        {
+          "name": "software",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "0"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ReflectCompositeDraw",
+      "source": "Reflection/CompositeDraw.slang"
+    },
+    {
+      "id": "Shading",
+      "source": "Deferred/Shading.slang",
+      "variants": [
+        {
+          "name": "rayquery",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "1",
+            "OPENIGI_MAX_LAMPS": "160"
+          },
+          "targets": [
+            "Spirv"
+          ]
+        },
+        {
+          "name": "software",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "0",
+            "OPENIGI_MAX_LAMPS": "160"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Resolve",
+      "source": "Deferred/Resolve.slang",
+      "variants": [
+        {
+          "name": "default"
+        }
+      ]
+    },
+    {
+      "id": "FieldClipmapRead",
+      "source": "Field/ClipmapRead.slang",
+      "variants": [
+        {
+          "name": "default",
+          "targets": [
+            "Spirv"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "FieldClipmapBuild",
+      "source": "Field/ClipmapBuild.slang"
+    },
+    {
+      "id": "CardsScreenFilter",
+      "source": "Cards/ScreenFilter.slang"
+    },
+    {
+      "id": "CardsScreenResolve",
+      "source": "Cards/ScreenResolve.slang"
+    },
+    {
+      "id": "CardsRadianceCache",
+      "source": "Cards/RadianceCache.slang",
+      "variants": [
+        {
+          "name": "rayquery",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "1"
+          },
+          "targets": [
+            "Spirv"
+          ]
+        },
+        {
+          "name": "software",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "0"
+          }
+        }
+      ]
+    },
+    {
+      "id": "CardsScreenGather",
+      "source": "Cards/ScreenGather.slang",
+      "variants": [
+        {
+          "name": "rayquery",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "1"
+          },
+          "targets": [
+            "Spirv"
+          ]
+        },
+        {
+          "name": "software",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "0"
+          }
+        }
+      ]
+    },
+    {
+      "id": "CardsLighting",
+      "source": "Cards/Lighting.slang",
+      "variants": [
+        {
+          "name": "rayquery",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "1"
+          },
+          "targets": [
+            "Spirv"
+          ]
+        },
+        {
+          "name": "software",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "0"
+          }
+        }
+      ]
+    },
+    {
+      "id": "CardsScreenGatherTemporal",
+      "source": "Cards/ScreenGatherTemporal.slang",
+      "variants": [
+        {
+          "name": "rayquery",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "1"
+          },
+          "targets": [
+            "Spirv"
+          ]
+        },
+        {
+          "name": "software",
+          "defines": {
+            "OPENIGI_RAY_QUERY": "0"
+          }
+        }
+      ]
+    },
+    {
+      "id": "CopyDepth",
+      "source": "Deferred/CopyDepth.slang"
+    }
+  ]
+}

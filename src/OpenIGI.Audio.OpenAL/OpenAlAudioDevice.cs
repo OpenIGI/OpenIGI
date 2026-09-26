@@ -29,6 +29,10 @@ namespace OpenIGI.Audio.OpenAL;
 /// close likeness rather than a reproduction. Making it exact would mean owning the mixer.
 /// </para>
 /// <para>
+/// The voice pool, stealing, handles and stream refills are <see cref="VoicePool{TVoice}"/>'s, shared
+/// with every other backend; what is here is only what OpenAL itself needs to be told.
+/// </para>
+/// <para>
 /// If no device can be opened the object still constructs and behaves as silence, with
 /// <see cref="IsAvailable"/> false. Nothing about a missing sound card may stop the game booting.
 /// </para>
@@ -37,22 +41,17 @@ public sealed class OpenAlAudioDevice : IAudioDevice
 {
     private const string LogCategory = "Audio";
 
-    /// <summary>How many frames of a stream each queued buffer holds.</summary>
-    /// <remarks>About a sixteenth of a second at 48 kHz — short enough that a volume change is prompt.</remarks>
-    private const int StreamFramesPerBuffer = 3072;
-
     private readonly IIgiLogger _logger;
     private readonly AudioDeviceOptions _options;
     private readonly Lock _gate = new();
-    private readonly float[] _categoryGains = [1f, 1f, 1f, 1f];
+    private readonly MixBuses _buses = new();
     private readonly Dictionary<int, BufferRecord> _buffers = [];
-    private readonly List<OpenAlVoice> _voices = [];
 
+    private VoicePool<OpenAlVoice> _pool = VoicePool.Empty<OpenAlVoice>();
     private AL? _al;
     private ALContext? _alc;
     private unsafe Device* _device;
     private unsafe Context* _context;
-    private short[] _streamScratch = [];
     private int _nextBufferHandle = 1;
     private AudioListenerState _listener = AudioListenerState.Default;
     private bool _disposed;
@@ -83,7 +82,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
     public bool IsAvailable => _al is not null;
 
     /// <inheritdoc/>
-    public int VoiceCount => _voices.Count;
+    public int VoiceCount => _pool.Count;
 
     /// <inheritdoc/>
     public int ActiveVoiceCount
@@ -92,7 +91,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
         {
             lock (_gate)
             {
-                return _voices.Count(voice => voice.IsActive);
+                return _pool.ActiveCount;
             }
         }
     }
@@ -111,12 +110,12 @@ public sealed class OpenAlAudioDevice : IAudioDevice
     /// <inheritdoc/>
     public void SetCategoryGain(SoundCategory category, float gain)
     {
-        _categoryGains[(int)category] = Math.Clamp(gain, 0f, 1f);
+        _buses.Set(category, gain);
 
         // Every sounding voice on that bus has to be re-levelled; OpenAL has no bus of its own.
         lock (_gate)
         {
-            foreach (OpenAlVoice voice in _voices)
+            foreach (OpenAlVoice voice in _pool.Voices)
             {
                 if (voice.IsActive && voice.Parameters.Category == category)
                 {
@@ -127,7 +126,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
     }
 
     /// <inheritdoc/>
-    public float GetCategoryGain(SoundCategory category) => _categoryGains[(int)category];
+    public float GetCategoryGain(SoundCategory category) => _buses.Get(category);
 
     /// <inheritdoc/>
     public AudioBufferHandle CreateBuffer(AudioFormat format, ReadOnlySpan<byte> pcm)
@@ -172,11 +171,11 @@ public sealed class OpenAlAudioDevice : IAudioDevice
             }
 
             // A source still bound to the buffer would keep it alive and leak it, so stop those first.
-            foreach (OpenAlVoice voice in _voices)
+            foreach (OpenAlVoice voice in _pool.Voices)
             {
-                if (voice.IsActive && voice.Stream is null && voice.Buffer == buffer)
+                if (voice.IsActive && !voice.IsStreaming && voice.Buffer == buffer)
                 {
-                    Retire(voice);
+                    _pool.Retire(voice);
                 }
             }
 
@@ -199,7 +198,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
                 return AudioVoiceHandle.None;
             }
 
-            OpenAlVoice? voice = Acquire(parameters.Priority);
+            OpenAlVoice? voice = _pool.Acquire(parameters.Priority);
             if (voice is null)
             {
                 return AudioVoiceHandle.None;
@@ -213,7 +212,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
             ApplyParameters(voice, parameters);
             al.SourcePlay(voice.Source);
 
-            return MakeHandle(voice);
+            return voice.Handle;
         }
     }
 
@@ -230,7 +229,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
 
         lock (_gate)
         {
-            OpenAlVoice? voice = Acquire(parameters.Priority);
+            OpenAlVoice? voice = _pool.Acquire(parameters.Priority);
             if (voice is null)
             {
                 source.Dispose();
@@ -240,7 +239,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
             voice.Stream = source;
             voice.StreamDrained = false;
             voice.Parameters = parameters;
-            voice.StreamBuffers ??= al.GenBuffers(OpenAlVoice.StreamBufferCount);
+            voice.StreamBuffers ??= al.GenBuffers(VoiceSlot.StreamBufferCount);
 
             // A queued source must not have AL_LOOPING set: looping applies to the whole queue and
             // would replay stale buffers instead of asking the stream to rewind.
@@ -261,7 +260,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
 
             if (filled == 0)
             {
-                Retire(voice);
+                _pool.Retire(voice);
                 return AudioVoiceHandle.None;
             }
 
@@ -274,7 +273,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
             }
 
             al.SourcePlay(voice.Source);
-            return MakeHandle(voice);
+            return voice.Handle;
         }
     }
 
@@ -283,7 +282,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
     {
         lock (_gate)
         {
-            return TryResolve(voice, out _);
+            return _pool.TryResolve(voice, out _);
         }
     }
 
@@ -292,7 +291,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
     {
         lock (_gate)
         {
-            if (!TryResolve(voice, out OpenAlVoice? slot))
+            if (!_pool.TryResolve(voice, out OpenAlVoice? slot))
             {
                 return;
             }
@@ -307,9 +306,9 @@ public sealed class OpenAlAudioDevice : IAudioDevice
     {
         lock (_gate)
         {
-            if (TryResolve(voice, out OpenAlVoice? slot))
+            if (_pool.TryResolve(voice, out OpenAlVoice? slot))
             {
-                Retire(slot);
+                _pool.Retire(slot);
             }
         }
     }
@@ -319,13 +318,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
     {
         lock (_gate)
         {
-            foreach (OpenAlVoice voice in _voices)
-            {
-                if (voice.IsActive)
-                {
-                    Retire(voice);
-                }
-            }
+            _pool.RetireAll();
         }
     }
 
@@ -339,14 +332,14 @@ public sealed class OpenAlAudioDevice : IAudioDevice
 
         lock (_gate)
         {
-            foreach (OpenAlVoice voice in _voices)
+            foreach (OpenAlVoice voice in _pool.Voices)
             {
                 if (!voice.IsActive)
                 {
                     continue;
                 }
 
-                if (voice.Stream is not null)
+                if (voice.IsStreaming)
                 {
                     PumpStream(al, voice);
                     continue;
@@ -355,7 +348,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
                 al.GetSourceProperty(voice.Source, GetSourceInteger.SourceState, out int state);
                 if ((SourceState)state == SourceState.Stopped)
                 {
-                    Retire(voice);
+                    _pool.Retire(voice);
                 }
             }
         }
@@ -418,11 +411,9 @@ public sealed class OpenAlAudioDevice : IAudioDevice
         // remarks. Setting it once here is enough, since it is global to the context.
         _al.DistanceModel(Silk.NET.OpenAL.DistanceModel.LinearDistanceClamped);
 
+        AL al = _al;
         int count = Math.Max(1, _options.VoiceCount);
-        for (int i = 0; i < count; i++)
-        {
-            _voices.Add(new OpenAlVoice(i, _al.GenSource()));
-        }
+        _pool = new VoicePool<OpenAlVoice>(count, index => new OpenAlVoice(index, al.GenSource()), Silence);
 
         ApplyListener(_listener);
         _logger.Information(LogCategory, $"OpenAL ready: {count} voices, {(_options.Spatial ? "3D" : "vanilla pan")}.");
@@ -434,7 +425,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
         {
             if (_al is { } al)
             {
-                foreach (OpenAlVoice voice in _voices)
+                foreach (OpenAlVoice voice in _pool.Voices)
                 {
                     al.SourceStop(voice.Source);
                     al.DeleteSource(voice.Source);
@@ -455,14 +446,14 @@ public sealed class OpenAlAudioDevice : IAudioDevice
             }
             else
             {
-                foreach (OpenAlVoice voice in _voices)
+                foreach (OpenAlVoice voice in _pool.Voices)
                 {
                     voice.Stream?.Dispose();
                     voice.Stream = null;
                 }
             }
 
-            _voices.Clear();
+            _pool = VoicePool.Empty<OpenAlVoice>();
             _buffers.Clear();
 
             if (_alc is { } alc)
@@ -488,84 +479,19 @@ public sealed class OpenAlAudioDevice : IAudioDevice
         }
     }
 
-    /// <summary>Finds a free slot, or steals the least important active one.</summary>
-    /// <remarks>
-    /// The original has no equivalent: with all 32 of its voices busy, whatever asked next simply does
-    /// not play, however important it was. Stealing is a divergence, and it is the reason the player's
-    /// own weapon cannot be silenced by a crowd of distant ones.
-    /// </remarks>
-    private OpenAlVoice? Acquire(int priority)
+    /// <summary>Stops a voice's source, before the pool clears the slot for reuse.</summary>
+    private void Silence(OpenAlVoice voice)
     {
-        OpenAlVoice? weakest = null;
-
-        foreach (OpenAlVoice voice in _voices)
+        if (_al is not { } al)
         {
-            if (!voice.IsActive)
-            {
-                voice.IsActive = true;
-                return voice;
-            }
-
-            if (weakest is null || voice.Parameters.Priority < weakest.Parameters.Priority)
-            {
-                weakest = voice;
-            }
+            return;
         }
 
-        if (weakest is null || weakest.Parameters.Priority >= priority)
-        {
-            return null;
-        }
+        al.SourceStop(voice.Source);
 
-        Retire(weakest);
-        weakest.IsActive = true;
-        return weakest;
-    }
-
-    private void Retire(OpenAlVoice voice)
-    {
-        if (_al is { } al)
-        {
-            al.SourceStop(voice.Source);
-
-            // Detaching also releases every buffer still queued on a streaming source, which is what
-            // makes the slot reusable without deleting and regenerating its buffers.
-            al.SetSourceProperty(voice.Source, SourceInteger.Buffer, 0);
-        }
-
-        voice.Stream?.Dispose();
-        voice.Stream = null;
-        voice.StreamDrained = false;
-        voice.Buffer = AudioBufferHandle.None;
-        voice.IsActive = false;
-        voice.Generation++;
-    }
-
-    private static AudioVoiceHandle MakeHandle(OpenAlVoice voice) =>
-        new((voice.Generation << 16) | (voice.Index + 1));
-
-    private bool TryResolve(AudioVoiceHandle handle, out OpenAlVoice voice)
-    {
-        voice = null!;
-        if (!handle.IsValidHandle)
-        {
-            return false;
-        }
-
-        int index = (handle.Value & 0xFFFF) - 1;
-        if (index < 0 || index >= _voices.Count)
-        {
-            return false;
-        }
-
-        OpenAlVoice candidate = _voices[index];
-        if (!candidate.IsActive || candidate.Generation != (handle.Value >> 16))
-        {
-            return false;
-        }
-
-        voice = candidate;
-        return true;
+        // Detaching also releases every buffer still queued on a streaming source, which is what
+        // makes the slot reusable without deleting and regenerating its buffers.
+        al.SetSourceProperty(voice.Source, SourceInteger.Buffer, 0);
     }
 
     private void ApplyParameters(OpenAlVoice voice, in VoiceParameters parameters)
@@ -575,7 +501,6 @@ public sealed class OpenAlAudioDevice : IAudioDevice
             return;
         }
 
-        float categoryGain = _categoryGains[(int)parameters.Category];
         al.SetSourceProperty(voice.Source, SourceFloat.Pitch, VanillaSpatialiser.ClampPitch(parameters.Pitch));
 
         if (_options.Spatial && parameters.IsPositional)
@@ -598,7 +523,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
             // The linear model divides by (max - reference). They must never be equal, or the gain is
             // 0/0 and the voice comes out silent rather than loud -- see SetDistances.
             SetDistances(al, voice.Source, parameters.MinimumDistance, parameters.MaximumDistance, rolloff: 1f);
-            al.SetSourceProperty(voice.Source, SourceFloat.Gain, Gain(parameters.Gain, categoryGain));
+            al.SetSourceProperty(voice.Source, SourceFloat.Gain, _buses.Level(parameters.Gain, parameters.Category));
             return;
         }
 
@@ -616,7 +541,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
         al.SetSourceProperty(voice.Source, SourceVector3.Position, MathF.Sin(angle), 0f, -MathF.Cos(angle));
         al.SetSourceProperty(voice.Source, SourceVector3.Velocity, 0f, 0f, 0f);
         SetDistances(al, voice.Source, minimum: 1f, maximum: 2f, rolloff: 0f);
-        al.SetSourceProperty(voice.Source, SourceFloat.Gain, Gain(gain, categoryGain));
+        al.SetSourceProperty(voice.Source, SourceFloat.Gain, _buses.Level(gain, parameters.Category));
     }
 
     /// <summary>Sets a source's distance range, keeping the two distances apart.</summary>
@@ -638,16 +563,6 @@ public sealed class OpenAlAudioDevice : IAudioDevice
         al.SetSourceProperty(source, SourceFloat.MaxDistance, far);
         al.SetSourceProperty(source, SourceFloat.RolloffFactor, rolloff);
     }
-
-    /// <summary>Puts a gain through the original's curve, then applies the bus and master gains.</summary>
-    /// <remarks>
-    /// The quantisation is the point: the original looks its gain up in a 10001-entry table whose unit
-    /// is a thousand per halving, which is appreciably steeper than decibels. Going through
-    /// <see cref="AudioVolumeCurve"/> is what carries that loudness shape onto a backend that has never
-    /// heard of DirectSound.
-    /// </remarks>
-    private static float Gain(float gain, float categoryGain) =>
-        AudioVolumeCurve.Quantise(Math.Clamp(gain, 0f, 1f)) * categoryGain;
 
     private unsafe void ApplyListener(in AudioListenerState listener)
     {
@@ -688,7 +603,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
             // voices whenever the listener moves is what the original's per-tick recompute was.
             if (!_options.Spatial)
             {
-                foreach (OpenAlVoice voice in _voices)
+                foreach (OpenAlVoice voice in _pool.Voices)
                 {
                     if (voice.IsActive && voice.Parameters.IsPositional)
                     {
@@ -724,7 +639,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
         al.GetSourceProperty(voice.Source, GetSourceInteger.BuffersQueued, out int queued);
         if (queued == 0)
         {
-            Retire(voice);
+            _pool.Retire(voice);
             return;
         }
 
@@ -737,58 +652,21 @@ public sealed class OpenAlAudioDevice : IAudioDevice
         }
     }
 
-    /// <summary>Pulls one buffer's worth of samples from a voice's stream.</summary>
+    /// <summary>Pulls one buffer's worth of samples from a voice's stream into an OpenAL buffer.</summary>
     /// <returns><see langword="false"/> when the stream is finished and the buffer was not filled.</returns>
     private bool FillStreamBuffer(AL al, OpenAlVoice voice, uint name)
     {
-        if (voice.Stream is not { } stream || voice.StreamDrained)
-        {
-            return false;
-        }
-
-        AudioFormat format = stream.Format;
-        int wanted = StreamFramesPerBuffer * format.Channels;
-        if (_streamScratch.Length < wanted)
-        {
-            _streamScratch = new short[wanted];
-        }
-
-        int written = 0;
-        bool rewound = false;
-        while (written < wanted)
-        {
-            int read = stream.Read(_streamScratch.AsSpan(written, wanted - written));
-            if (read > 0)
-            {
-                written += read;
-                continue;
-            }
-
-            if (!voice.Parameters.Looping || !stream.CanRestart || rewound)
-            {
-                // Once per fill, and that bound is the point rather than an optimisation. A source that
-                // reports nothing with samples still to come -- because the tail of this buffer is
-                // smaller than the block it decodes, say -- would otherwise be rewound, asked again,
-                // report nothing again, and be rewound again, for ever. A loop point is worth crossing
-                // once in a buffer; twice means the source is not going to fill it.
-                voice.StreamDrained = true;
-                break;
-            }
-
-            rewound = true;
-            stream.Restart();
-        }
-
-        if (written == 0)
+        ReadOnlySpan<short> samples = _pool.FillStreamBuffer(voice);
+        if (samples.IsEmpty || voice.Stream is not { } stream)
         {
             return false;
         }
 
         unsafe
         {
-            fixed (short* samples = _streamScratch)
+            fixed (short* pcm = samples)
             {
-                al.BufferData(name, ToBufferFormat(format), samples, written * sizeof(short), format.SampleRate);
+                al.BufferData(name, ToBufferFormat(stream.Format), pcm, samples.Length * sizeof(short), stream.Format.SampleRate);
             }
         }
 

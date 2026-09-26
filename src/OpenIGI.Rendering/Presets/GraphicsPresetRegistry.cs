@@ -32,6 +32,16 @@ public sealed class GraphicsPresetRegistry
     /// <summary>Gets the preset the settings currently correspond to.</summary>
     public GraphicsPreset Current { get; private set; } = GraphicsPreset.Custom;
 
+    /// <summary>Gets the one preset that may be applied, or <see langword="null"/> when any may be.</summary>
+    /// <remarks>
+    /// Set by <see cref="Lock"/>, for a build that ships a single picture -- the browser build is held on
+    /// <see cref="GraphicsPreset.Vanilla"/>. The lock is on choosing a preset, not on the variables: the
+    /// menu still frames its backdrop through the depth-of-field settings, and the console still reaches
+    /// any variable by name, so <see cref="Current"/> can read <see cref="GraphicsPreset.Custom"/> while
+    /// locked exactly as it can otherwise.
+    /// </remarks>
+    public GraphicsPreset? LockedPreset { get; private set; }
+
     /// <summary>Gets the variables this registry manages.</summary>
     public IReadOnlyCollection<ICVar> Managed => _managed.Keys;
 
@@ -60,11 +70,20 @@ public sealed class GraphicsPresetRegistry
     /// <summary>Applies a preset to every variable it names.</summary>
     /// <param name="preset">The preset to apply. <see cref="GraphicsPreset.Custom"/> does nothing.</param>
     /// <returns>How many variables were assigned.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The registry is locked to another preset; see <see cref="LockedPreset"/>.
+    /// </exception>
     public int Apply(GraphicsPreset preset)
     {
         if (preset == GraphicsPreset.Custom)
         {
             return 0;
+        }
+
+        if (!IsAllowed(preset))
+        {
+            throw new InvalidOperationException(
+                $"The graphics preset is locked to {LockedPreset}; {preset} cannot be applied.");
         }
 
         int index = (int)preset;
@@ -94,6 +113,37 @@ public sealed class GraphicsPresetRegistry
         SetCurrent(preset);
         return applied;
     }
+
+    /// <summary>Applies a preset and makes it the only one that may be applied from then on.</summary>
+    /// <param name="preset">The preset to hold the settings on.</param>
+    /// <returns>How many variables were assigned.</returns>
+    /// <remarks>
+    /// Called once the settings file has been read, so whatever a saved file restored is replaced by the
+    /// locked preset rather than surviving underneath it. Locking again to the same preset re-applies it.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="preset"/> is <see cref="GraphicsPreset.Custom"/>.</exception>
+    /// <exception cref="InvalidOperationException">The registry is already locked to another preset.</exception>
+    public int Lock(GraphicsPreset preset)
+    {
+        if (preset == GraphicsPreset.Custom)
+        {
+            throw new ArgumentOutOfRangeException(nameof(preset), preset, "Custom is a reading, not a preset to lock to.");
+        }
+
+        if (!IsAllowed(preset))
+        {
+            throw new InvalidOperationException(
+                $"The graphics preset is already locked to {LockedPreset}; it cannot be locked to {preset}.");
+        }
+
+        LockedPreset = preset;
+        return Apply(preset);
+    }
+
+    /// <summary>Whether a preset may be applied under the current lock.</summary>
+    /// <param name="preset">The preset in question.</param>
+    /// <returns><see langword="true"/> when nothing is locked or <paramref name="preset"/> is the locked one.</returns>
+    public bool IsAllowed(GraphicsPreset preset) => LockedPreset is not { } locked || locked == preset;
 
     /// <summary>Works out which preset, if any, the current settings correspond to.</summary>
     /// <returns>The matching preset, or <see cref="GraphicsPreset.Custom"/>.</returns>

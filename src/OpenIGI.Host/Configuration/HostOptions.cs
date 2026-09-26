@@ -3,6 +3,7 @@ using OpenIGI.Platform;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Igi1;
 using OpenIGI.Rendering;
+using OpenIGI.Rendering.Presets;
 
 namespace OpenIGI.Host.Configuration;
 
@@ -97,6 +98,7 @@ public readonly record struct HostOptions(
         int width = 0;
         int height = 0;
         string? screenshot = null;
+        string? lightingDump = null;
         (double X, double Y, double Z)? cameraPosition = null;
         (float X, float Y, float Z)? sunDirection = null;
 
@@ -108,6 +110,7 @@ public readonly record struct HostOptions(
         float? cameraYawEnd = null;
         float? cameraPitchEnd = null;
         int? flightFrames = null;
+        int flightDelay = 0;
         float cameraShake = 0f;
         int exitAfterFrames = 0;
         int uiScale = Core.Graphics.UiScale.Automatic;
@@ -126,6 +129,7 @@ public readonly record struct HostOptions(
         bool vanillaMenu = false;
         string? shellTab = null;
         int entryCamMission = 0;
+        MissionTimeOfDay entryTime = MissionTimeOfDay.Default;
         int computerCamFrame = 0;
         int missionCycleFrames = 0;
         int titleCycleFrames = 0;
@@ -237,6 +241,10 @@ public readonly record struct HostOptions(
                     exitAfterFrames = 5;
                 }
             }
+            else if (arg.Equals("dumplighting", StringComparison.OrdinalIgnoreCase))
+            {
+                lightingDump = Next(args, ref i, "dumplighting");
+            }
             else if (arg.Equals("frames", StringComparison.OrdinalIgnoreCase))
             {
                 string value = Next(args, ref i, "frames");
@@ -317,6 +325,15 @@ public readonly record struct HostOptions(
                 if (cameraShake < 0f)
                 {
                     throw new ArgumentException($"-camshake expects a non-negative amplitude in degrees, got '{cameraShake}'.", nameof(args));
+                }
+            }
+            else if (arg.Equals("flightdelay", StringComparison.OrdinalIgnoreCase))
+            {
+                string value = Next(args, ref i, "flightdelay");
+                if (!int.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out flightDelay)
+                    || flightDelay < 0)
+                {
+                    throw new ArgumentException($"-flightdelay expects a non-negative frame count, got '{value}'.", nameof(args));
                 }
             }
             else if (arg.Equals("flightframes", StringComparison.OrdinalIgnoreCase))
@@ -432,6 +449,17 @@ public readonly record struct HostOptions(
                 if (!int.TryParse(value, out entryCamMission) || entryCamMission <= 0)
                 {
                     throw new ArgumentException($"-entrycam expects a mission id, got '{value}'.", nameof(args));
+                }
+            }
+            else if (arg.Equals("entrytime", StringComparison.OrdinalIgnoreCase))
+            {
+                // The campaign's Time choice for -entrycam, picked through the same path the dropdown
+                // takes, so a capture reaches a night mission the way a player does: the backdrop re-lit
+                // first, then Play.
+                string value = Next(args, ref i, "entrytime");
+                if (!Enum.TryParse(value, ignoreCase: true, out entryTime) || !Enum.IsDefined(entryTime))
+                {
+                    throw new ArgumentException($"-entrytime expects default, day or night, got '{value}'.", nameof(args));
                 }
             }
             else if (arg.Equals("computercam", StringComparison.OrdinalIgnoreCase))
@@ -561,11 +589,13 @@ public readonly record struct HostOptions(
         {
             CameraPosition = cameraPosition,
             SunDirection = sunDirection,
+            LightingDumpPath = lightingDump,
             FieldOfView = fieldOfView,
             CameraEnd = cameraEnd,
             CameraYawEnd = cameraYawEnd,
             CameraPitchEnd = cameraPitchEnd,
             FlightFrames = flightFrames,
+            FlightDelay = flightDelay,
             CameraShake = cameraShake,
             Difficulty = difficulty,
             StartupCommands = startupCommands,
@@ -573,6 +603,7 @@ public readonly record struct HostOptions(
             VanillaMenu = vanillaMenu,
             ShellTab = shellTab,
             EntryCamMission = entryCamMission,
+            EntryTime = entryTime,
             ComputerCamFrame = computerCamFrame,
             MissionCycleFrames = missionCycleFrames,
             TitleCycleFrames = titleCycleFrames,
@@ -596,6 +627,13 @@ public readonly record struct HostOptions(
     /// </remarks>
     public int EntryCamMission { get; init; }
 
+    /// <summary>Gets the time of day <c>-entrycam</c> chooses on the campaign before pressing Play.</summary>
+    /// <remarks>
+    /// Chosen through the dropdown's own path, a second before Play, so the backdrop is re-lit under the
+    /// menu first as it is for a player. Set by <c>-entrytime</c>.
+    /// </remarks>
+    public MissionTimeOfDay EntryTime { get; init; }
+
     /// <summary>
     /// Gets the frame the map computer opens itself on, or <c>0</c> for never. Set by <c>-computercam</c>.
     /// </summary>
@@ -615,6 +653,34 @@ public readonly record struct HostOptions(
     /// again.
     /// </remarks>
     public IReadOnlyList<(int Frame, string Statement)> DeferredCommands { get; init; } = [];
+
+    /// <summary>Gets the graphics preset a player with no saved settings starts on.</summary>
+    /// <remarks>
+    /// Enhanced unless the platform says otherwise. Only a first run reads it: once there is a settings
+    /// file, the file decides.
+    /// </remarks>
+    public GraphicsPreset FirstRunPreset { get; init; } = GraphicsPreset.Enhanced;
+
+    /// <summary>
+    /// Gets the one graphics preset this build allows, or <see langword="null"/> to let the player choose.
+    /// </summary>
+    /// <remarks>
+    /// A property of the build rather than a command-line option: the browser build is held on
+    /// <see cref="GraphicsPreset.Vanilla"/>. It is applied over any saved settings, the menu stops offering
+    /// the others and <c>gfx_preset</c> refuses them. When set, <see cref="FirstRunPreset"/> is not read.
+    /// </remarks>
+    public GraphicsPreset? LockedPreset { get; init; }
+
+    /// <summary>
+    /// Gets how many missions, counted along the campaign from its first, this build offers, or
+    /// <see langword="null"/> for all of them.
+    /// </summary>
+    /// <remarks>
+    /// A property of the build rather than a command-line option: the browser build offers the first six.
+    /// A mission past the limit is not listed, cannot be started from a save or the command line, and
+    /// finishing the last one offered completes the campaign.
+    /// </remarks>
+    public int? CampaignMissionLimit { get; init; }
 
     /// <summary>
     /// Gets how many frames each leg of an abandon/replay cycle lasts, or <c>0</c> for never. Set by
@@ -671,6 +737,18 @@ public readonly record struct HostOptions(
     public (float X, float Y, float Z)? SunDirection { get; init; }
 
     /// <summary>
+    /// Gets where to write, as JSON, the light the last frame was lit with: the sun or moon, the sky, the
+    /// exposure settings and every lamp fixture as the renderer receives it. <see langword="null"/> writes
+    /// nothing.
+    /// </summary>
+    /// <remarks>
+    /// A tool for lining an external reference render up with this one from the same numbers rather than
+    /// from a second derivation of them, which would drift the moment either side changed. Written on the
+    /// frame a capture exits on, so it describes the picture <c>-screenshot</c> saved beside it.
+    /// </remarks>
+    public string? LightingDumpPath { get; init; }
+
+    /// <summary>
     /// Gets a fixed horizontal field of view in degrees, or null for the game's own ninety. For lining a
     /// capture up against a reference render whose camera lens differs.
     /// </summary>
@@ -699,6 +777,14 @@ public readonly record struct HostOptions(
     /// held frame against the same pose reached standing still measures exactly the smear and nothing else.
     /// </remarks>
     public int? FlightFrames { get; init; }
+
+    /// <summary>Gets how many rendered frames a flight holds its start pose before it moves.</summary>
+    /// <remarks>
+    /// A flight otherwise moves from the first frame, while the level is still loading and every temporal
+    /// history is empty -- so a capture of a walk measured the load, not the walk. Held this long first,
+    /// the move starts from a converged frame, the way a player's does.
+    /// </remarks>
+    public int FlightDelay { get; init; }
 
     /// <summary>
     /// Gets the amplitude in degrees of a per-frame camera shake laid over whatever else the camera is
@@ -770,6 +856,13 @@ public readonly record struct HostOptions(
     /// </summary>
     public bool BakeAll { get; init; }
 
+    /// <summary>Gets where to pick the game up, when this run follows a switch of renderer.</summary>
+    /// <remarks>
+    /// Not a command-line option: the composition root sets it for the run it starts after the last one
+    /// ended to change renderer. Its mission is <see cref="StartMission"/>; this adds the hour and the pose.
+    /// </remarks>
+    public RendererSwitch? Resume { get; init; }
+
     /// <summary>Gets the usage text.</summary>
     /// <returns>A short description of every option.</returns>
     public static string Usage =>
@@ -796,9 +889,6 @@ public readonly record struct HostOptions(
           -size WxH        Client size when windowed or exclusive.
                            Default 640x480 windowed, the monitor's own fullscreen.
           -novsync         Do not wait for the vertical blank.
-          -opengl          Draw with the legacy OpenGL backend. Vulkan is the default,
-                           and -vulkan asks for it explicitly. OPENIGI_BACKEND=opengl
-                           does the same as -opengl for a whole shell.
           -screenshot <f>  Write a BMP of the rendered frame and quit. Implies -frames 5.
           -frames <n>      Quit after n rendered frames. 0 runs until closed.
           -lockstep        Drive the simulation from a synthetic clock, one tick per loop pass,
@@ -845,6 +935,8 @@ public readonly record struct HostOptions(
           -entrycam <n>    Boot the shell on mission <n>, wait for its backdrop, then press Play by
                            itself, so the menu-to-mission entry can be measured and captured from a
                            known frame rather than from whenever somebody clicked.
+          -entrytime <t>   The campaign's Time choice for -entrycam: default, day or night, chosen
+                           a second before Play the way the dropdown chooses it.
           -missioncycle N  Abandon the mission to the campaign and play it again every N frames, so the
                            cost of leaving a level -- and whether it releases what it built -- can be
                            measured over many cycles instead of clicked through by hand.

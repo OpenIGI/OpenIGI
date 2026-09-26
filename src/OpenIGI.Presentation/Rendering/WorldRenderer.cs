@@ -950,16 +950,13 @@ public sealed class WorldRenderer : IWorldPresenter
     /// tuning problem, it is the reflection being a function of where the player has looked.
     /// </para>
     /// <para>
-    /// <b>The rule, which is the reference's.</b> Visibility decides what is DRAWN; distance and
-    /// projected size decide what is TRACED. A placement is admitted unless it is both too far away and
-    /// too small to matter — near things stay in whatever their size, and a hillside stays in at any
-    /// distance because it still subtends an angle. The reference culls its own ray tracing scene on
-    /// exactly this pair (a radius of three hundred metres and a projected angle of one degree) and
-    /// never on the view frustum.
+    /// <b>The rule.</b> Visibility decides what is DRAWN; the whole level is TRACED. Every placement is
+    /// offered every frame whether the camera can see it or not, so the traced world holds the level's
+    /// static geometry entire and keeps each placement exactly as long as it is still there.
     /// </para>
     /// <para>
-    /// Cheap on the frames that do not trace: the backend's submission returns at once when there is no
-    /// traced world, and the radius test rejects most of a level before the subsets are even resolved.
+    /// Cheap: the backend's submission returns at once when there is no traced world, and for a placement
+    /// it already holds the whole cost is a hash lookup per subset.
     /// </para>
     /// </remarks>
     private void SubmitTracedOnly(
@@ -978,24 +975,14 @@ public sealed class WorldRenderer : IWorldPresenter
             return;
         }
 
-        float centreSq = (viewX * viewX) + (viewY * viewY) + (viewZ * viewZ);
-
-        // To the sphere's SURFACE, not its centre, so a large object standing close is not judged by how
-        // far away the middle of it is.
-        float reach = RenderCVars.TracedWorldRadius.Value;
-        float surface = MathF.Max(MathF.Sqrt(centreSq) - radius, 0f);
-        bool tooFar = surface > reach;
-
-        // And its projected size, as the tangent of the half-angle it subtends. Squared on both sides so
-        // neither a square root nor a trigonometric call is needed per placement.
-        float tangent = MathF.Tan(Math.Clamp(RenderCVars.TracedWorldAngle.Value, 0.01f, 89.99f)
-            * MathF.PI / 180f);
-        bool tooSmall = centreSq > 0f && (radius * radius) < (tangent * tangent * centreSq);
-
-        if (tooFar && tooSmall)
-        {
-            return;
-        }
+        // EVERY placement, however far or small, every frame. The traced world keeps a static placement
+        // only for as long as it goes on being offered (VulkanWorldScene), which is what lets an object
+        // that moves leave the structure at once instead of leaving a trail -- so anything not offered
+        // here disappears from every ray. It used to be culled at three hundred metres and a degree of
+        // arc, the reference's own culling; but the reference caches every static instance up front
+        // and culls per frame against that, whereas here what was not offered was never admitted: the
+        // props, fittings and shells around the player's start were judged from the loading-screen
+        // camera, arrived only once play began, and the lighting crept across the room as they did.
 
         SubsetDraw[] subsets = model.Subsets ?? ResolveSubsets(scene, model, displayed);
         foreach (SubsetDraw subset in subsets)

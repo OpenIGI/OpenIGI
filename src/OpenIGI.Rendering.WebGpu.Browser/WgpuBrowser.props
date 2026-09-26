@@ -1,0 +1,15 @@
+<Project>
+  <!--
+    The browser build's webgpu.h, for a browser-wasm application to import.
+
+    wgpu_native.c is linked into the runtime's wasm under the name the bindings import, so the
+    WebGPU backend's P/Invokes land in it unchanged; the bridge it forwards to, and the enum tables
+    the bridge reads, are served beside the page.
+  -->
+  <ItemGroup>
+    <NativeFileReference Include="$(MSBuildThisFileDirectory)wgpu_native.c" />
+    <Content Include="$(MSBuildThisFileDirectory)*.js"
+             Link="wwwroot/%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

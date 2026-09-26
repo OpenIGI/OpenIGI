@@ -202,7 +202,8 @@ public sealed class MaterialLibrary
             // every unnamed wall in the level into the translucency pass. Saying a surface is seen
             // through is a statement about that surface and has no sensible blanket value.
             NoHistory: false,
-            Glass: Flag(element, "glass") ?? false);
+            Glass: Flag(element, "glass") ?? false,
+            Matte: Flag(element, "matte") ?? fallback.Matte);
     }
 
     private static bool? Flag(JsonElement element, string name) =>

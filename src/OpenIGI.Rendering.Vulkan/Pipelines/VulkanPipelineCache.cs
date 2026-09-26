@@ -10,12 +10,11 @@ namespace OpenIGI.Rendering.Vulkan.Pipelines;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is the other half of the work <see cref="Shaders.ShaderBinaryCache"/> already saves. That one
-/// stops the same GLSL going through <c>shaderc</c> twice; this one stops the same SPIR-V going
-/// through the driver's own compiler twice. The driver's half is the larger of the two on a modern
-/// card, and none of it is visible as loading — it lands as a hitch on the first frame that happens
-/// to need a permutation, which for this renderer means the first time a mesh is drawn with a
-/// particular depth, cull and blend combination.
+/// The shader library compiles every module to SPIR-V at build time, so nothing here compiles a shader;
+/// what is left to save is the driver's own half, which turns that SPIR-V into something the card runs.
+/// That half is the larger of the two on a modern card, and none of it is visible as loading — it lands
+/// as a hitch on the first frame that happens to need a permutation, which for this renderer means the
+/// first time a mesh is drawn with a particular depth, cull and blend combination.
 /// </para>
 /// <para>
 /// The header is checked before the blob is handed back. Vulkan says a cache built by a different

@@ -1,4 +1,4 @@
-using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Rendering.Presets;
 using Xunit;
 
@@ -236,6 +236,82 @@ public sealed class GraphicsPresetRegistryTests
         presets.Apply(GraphicsPreset.Vanilla);
 
         Assert.Equal(0, presets.Apply(GraphicsPreset.Custom));
+        Assert.Equal(0, fog.Value);
+        Assert.Equal(GraphicsPreset.Vanilla, presets.Current);
+    }
+
+    [Fact]
+    public void Lock_AppliesThePresetOverWhateverWasRestored()
+    {
+        GraphicsPresetRegistry presets = new();
+        NumericCVar<int> fog = Declare(presets, "r_fog_quality", 3, "0", "1", "3", "4");
+
+        // As if settings.cfg had restored a saved Ultra.
+        fog.Value = 4;
+
+        presets.Lock(GraphicsPreset.Vanilla);
+
+        Assert.Equal(0, fog.Value);
+        Assert.Equal(GraphicsPreset.Vanilla, presets.Current);
+        Assert.Equal(GraphicsPreset.Vanilla, presets.LockedPreset);
+    }
+
+    [Fact]
+    public void Lock_RefusesEveryOtherPreset()
+    {
+        GraphicsPresetRegistry presets = new();
+        NumericCVar<int> fog = Declare(presets, "r_fog_quality", 3, "0", "1", "3", "4");
+        presets.Lock(GraphicsPreset.Vanilla);
+
+        foreach (GraphicsPreset preset in (ReadOnlySpan<GraphicsPreset>)
+            [GraphicsPreset.Enhanced, GraphicsPreset.High, GraphicsPreset.Ultra])
+        {
+            Assert.False(presets.IsAllowed(preset));
+            Assert.Throws<InvalidOperationException>(() => presets.Apply(preset));
+            Assert.Throws<InvalidOperationException>(() => presets.Lock(preset));
+        }
+
+        Assert.Equal(0, fog.Value);
+        Assert.Equal(GraphicsPreset.Vanilla, presets.Current);
+    }
+
+    [Fact]
+    public void Lock_StillAllowsTheLockedPresetBack()
+    {
+        GraphicsPresetRegistry presets = new();
+        NumericCVar<int> fog = Declare(presets, "r_fog_quality", 3, "0", "1", "3", "4");
+        presets.Lock(GraphicsPreset.Vanilla);
+
+        // The lock is on choosing a preset, not on the variables: a hand change still reads Custom, and
+        // re-applying the locked preset is how the settings get back to it.
+        fog.Value = 2;
+        Assert.Equal(GraphicsPreset.Custom, presets.Current);
+
+        Assert.Equal(1, presets.Apply(GraphicsPreset.Vanilla));
+        Assert.Equal(0, fog.Value);
+        Assert.Equal(GraphicsPreset.Vanilla, presets.Current);
+    }
+
+    [Fact]
+    public void Lock_RejectsCustom()
+    {
+        GraphicsPresetRegistry presets = new();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => presets.Lock(GraphicsPreset.Custom));
+        Assert.Null(presets.LockedPreset);
+    }
+
+    [Fact]
+    public void GfxPresetCommand_RefusesAPresetOutsideTheLock()
+    {
+        GraphicsPresetRegistry presets = new();
+        NumericCVar<int> fog = Declare(presets, "r_fog_quality", 3, "0", "1", "3", "4");
+        presets.Lock(GraphicsPreset.Vanilla);
+
+        ConsoleSystem console = new(_variables);
+        GraphicsPresetCommands.Register(console, presets);
+        console.Execute("gfx_preset ultra");
+
         Assert.Equal(0, fog.Value);
         Assert.Equal(GraphicsPreset.Vanilla, presets.Current);
     }

@@ -3,6 +3,7 @@ using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Core.Titles;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
@@ -51,11 +52,6 @@ namespace OpenIGI.Host;
 /// </summary>
 internal sealed partial class GameHost : IDisposable
 {
-    private static readonly System.Text.Json.JsonSerializerOptions BenchmarkJsonOptions = new()
-    {
-        WriteIndented = true,
-    };
-
     // The camera's clip planes, both measured out of the original's own renderer setup -- see
     // ViewPlanes. The far one is shared with the sky, which sizes its dome to four fifths of it exactly
     // as sub_52CC40 does, and with the first-person layer's shallower projection.
@@ -66,8 +62,14 @@ internal sealed partial class GameHost : IDisposable
     // level that somehow never finishes tracing must not become a game that never starts.
     private const int LightingWaitMilliseconds = 30_000;
 
+    // How long -entrytime lets the backdrop show the chosen hour before -entrycam presses Play: about a
+    // second of the menu, as a player choosing it would leave.
+    private const int EntryTimeSettleFrames = 60;
+
     // --- Environment, supplied by the composition root ---
     private readonly IPlatformHost _platform;
+    private readonly IWorkScheduler _work;
+    private readonly ILoadGate _loadGate;
     private readonly IGameWindow _window;
     private readonly IAudioDeviceFactory _audioFactory;
     // The games this build can run. Held rather than resolved once, because the shell can change which
@@ -153,6 +155,12 @@ internal sealed partial class GameHost : IDisposable
     // read, because acting on it means reloading every texture in the level -- so it has to happen on the
     // frame the variable CHANGES and not on every frame it is false.
     private bool _overridesApplied = true;
+
+    // The run, one frame per step; see Frames. Null before Start and after Stop.
+    private IEnumerator<bool>? _frames;
+    private bool _stepping;
+    private bool _stopRequested;
+    private int _exitCode;
 
     // --- The player's own life, damage and death ---
     private int _playerDifficulty;
@@ -286,6 +294,11 @@ internal sealed partial class GameHost : IDisposable
     // stackalloc inside the frame loop. Sized to the shader's cap; only the first N entries are ever sent.
     private readonly DeferredLocalLight[] _localLightScratch = new DeferredLocalLight[DeferredLocalLight.Maximum];
 
+    // The same lamps in the storm's frame -- metres from the eye, world axes -- for the drops falling
+    // through their light; how many of them this frame has.
+    private readonly StormLamp[] _stormLamps = new StormLamp[DeferredLocalLight.Maximum];
+    private int _stormLampCount;
+
     // Which fixtures this frame submits, and how far outside its own reach the camera stands for each.
     // Held rather than allocated per frame: this runs on every frame of every level that has lamps.
     private readonly int[] _localLightOrder = new int[DeferredLocalLight.Maximum];
@@ -303,9 +316,52 @@ internal sealed partial class GameHost : IDisposable
     private Vector3f _lastGiSunDirection;
     private Vector3f _lastGiSunColour;
 
-    // How long after the last change the retrace keeps running before it idles -- twice the bounce's own
-    // temporal window, so the multi-bounce fill has fully converged first.
+    // The shortest the retrace keeps running after the last change before it idles. The real window is
+    // worked out per frame from the amortisation spread and the temporal frames -- see where retraceGi is
+    // decided -- so the cache has converged before it stops.
     private const int GiSettleFrames = 64;
+
+    // The distance field's per-level sizes and ranges, reused frame to frame for LampFieldFor.
+    private readonly float[] _lampFieldVoxels = new float[4];
+    private readonly float[] _lampFieldRanges = new float[4];
+
+    /// <summary>The level's distance field as a lamp-shadow renderer reads it, or null while there is none.</summary>
+    private LampOcclusionField? LampFieldFor(GlobalDistanceField? field)
+    {
+        if (field is null || !field.Clipmaps.IsValid)
+        {
+            return null;
+        }
+
+        GlobalDistanceFieldSettings settings = field.Settings;
+        int levels = Math.Clamp(settings.Levels, 0, Math.Min(4, field.Origins.Count));
+        if (levels <= 0)
+        {
+            return null;
+        }
+
+        for (int level = 0; level < 4; level++)
+        {
+            int from = Math.Min(level, levels - 1);
+            _lampFieldVoxels[level] = settings.VoxelSizeOf(from);
+            _lampFieldRanges[level] = field.RangeOfLevel(from);
+        }
+
+        return new LampOcclusionField(
+            field.Clipmaps,
+            levels,
+            settings.Resolution,
+            field.Origins[0],
+            field.Origins[Math.Min(1, levels - 1)],
+            field.Origins[Math.Min(2, levels - 1)],
+            field.Origins[Math.Min(3, levels - 1)],
+            _lampFieldVoxels,
+            _lampFieldRanges);
+    }
+
+    // How far the eye may move between two frames and still count as the same shot for the screen GI's
+    // histories. Metres; a sprint covers a fraction of this in a frame, a cut or a teleport covers more.
+    private const double GiCutDistance = 2.0;
 
     // Frames left in the exposure warm-up: for a moment after a level's GI starts converging, the adapted
     // exposure eases fast so it tracks the light filling in rather than over-lifting the dark first frames
@@ -386,6 +442,15 @@ internal sealed partial class GameHost : IDisposable
     private GlobalLightSettings _globalLight = GlobalLightSettings.None;
     private RainRenderer? _rain;
     private StormRenderer? _storm;
+
+    // The least light a rain drop is lit by, as the displayed picture sees it. Rain in an even light is as
+    // bright as what is behind it and all but disappears, and a night lit only by its sky is that light;
+    // the eye adapted to it still sees the rain as a veil. The drop's own grey, its opacity and the thin,
+    // mostly clear streak it is printed with all come on top, so it takes this much for the rain to read:
+    // chosen by eye on mission 3's night, where 2.5 barely showed, 5 reads as rain with the dome and the
+    // hills clear through it, and the level's daytime fill (about 10) was a wall. See
+    // StormRenderer.BuildDrops.
+    private const float RainVeilDisplay = 5f;
     private SnowRenderer? _snow;
 
     // Where the level's roofs are, seen from above. One thing decides whether the sky can reach a point
@@ -411,14 +476,22 @@ internal sealed partial class GameHost : IDisposable
     // Which row -backdropcycle is on, so each is asked for once rather than on every frame past its mark.
     private long _backdropCycleRow = -1;
 
+    /// <summary>How many ticks a step may run in a row before it returns to its host without a picture.</summary>
+    private const int MaxTicksPerStep = 8;
+
     /// <summary>Milliseconds since the process was started, for the start-up timings.</summary>
     /// <remarks>
     /// From the OS's own record of when the process began rather than a stopwatch this class starts, so
     /// the runtime's own start-up -- assembly loading and the first JIT, which is a good share of the
-    /// wait -- is inside the number rather than before it.
+    /// wait -- is inside the number rather than before it. A browser keeps no such record, so there it
+    /// counts from the host's first use: the runtime's own start-up is the page's to report.
     /// </remarks>
     private static double SinceProcessStart() =>
-        (DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime).TotalMilliseconds;
+        OperatingSystem.IsBrowser()
+            ? HostUptime.Elapsed.TotalMilliseconds
+            : (DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime).TotalMilliseconds;
+
+    private static readonly System.Diagnostics.Stopwatch HostUptime = System.Diagnostics.Stopwatch.StartNew();
     private DirectionalLightSettings? _sun;
 
     // The interactive day/night cycle, and the sun it produces for this frame -- the authored sun swept to
@@ -565,6 +638,8 @@ internal sealed partial class GameHost : IDisposable
     /// <param name="window">The game window whose input and frames drive the loop.</param>
     /// <param name="device">The graphics device every renderer draws through.</param>
     /// <param name="audioFactory">Opens the audio backend; re-called whenever the device settings change.</param>
+    /// <param name="work">Where work off the frame loop runs: beside it on the desktop, inline in a browser.</param>
+    /// <param name="loadGate">Whether a mission's files can be read yet; always, on the desktop.</param>
     /// <param name="titles">The games this build can run, and where each of them is installed.</param>
     /// <param name="startOn">The one to open on.</param>
     /// <param name="fileSystem">The virtual file system the original installation is read through.</param>
@@ -583,6 +658,8 @@ internal sealed partial class GameHost : IDisposable
         IGameWindow window,
         IGraphicsDevice device,
         IAudioDeviceFactory audioFactory,
+        IWorkScheduler work,
+        ILoadGate loadGate,
         ITitleCatalog titles,
         GameTitle startOn,
         VirtualFileSystem fileSystem,
@@ -602,6 +679,8 @@ internal sealed partial class GameHost : IDisposable
         _window = window;
         _device = device;
         _audioFactory = audioFactory;
+        _work = work;
+        _loadGate = loadGate;
         _titles = titles;
         _titleRuntime = binding.Runtime;
         _presentation = binding.Presentation;
@@ -615,7 +694,86 @@ internal sealed partial class GameHost : IDisposable
 
     /// <summary>Builds the world, runs the frame loop until the game is asked to quit, then shuts down.</summary>
     /// <returns>The process exit code.</returns>
+    /// <remarks>
+    /// <see cref="Start"/>, then <see cref="Step"/> until it says the game has finished, then
+    /// <see cref="Stop"/>: the same three calls a host that cannot block drives one at a time, from its
+    /// own frame callback.
+    /// </remarks>
     public int Run()
+    {
+        Start();
+
+        while (Step())
+        {
+        }
+
+        Stop();
+        return _exitCode;
+    }
+
+    /// <summary>Builds the world and everything the first frame needs, and returns before drawing it.</summary>
+    /// <exception cref="InvalidOperationException">The host has already been started.</exception>
+    public void Start()
+    {
+        if (_frames is not null)
+        {
+            throw new InvalidOperationException("The host has already been started.");
+        }
+
+        _frames = Frames().GetEnumerator();
+        _stepping = _frames.MoveNext();
+    }
+
+    /// <summary>Runs one frame: events, simulation, the picture.</summary>
+    /// <returns>
+    /// <see langword="true"/> while the game goes on; <see langword="false"/> once it has been asked to
+    /// quit, by which point it has also shut itself down.
+    /// </returns>
+    /// <remarks>
+    /// Never blocks waiting for the next frame's time. The desktop's own pacing still sleeps inside a
+    /// frame where it decides the display has not caught up; a host whose frames are paced for it steps
+    /// once per callback.
+    /// </remarks>
+    public bool Step()
+    {
+        if (_frames is null || !_stepping)
+        {
+            return false;
+        }
+
+        _stepping = _frames.MoveNext();
+        return _stepping;
+    }
+
+    /// <summary>Ends the game if it is still running -- saving what it saves on the way out -- and lets it go.</summary>
+    public void Stop()
+    {
+        if (_frames is null)
+        {
+            return;
+        }
+
+        // Asked to stop part way: the loop sees the request at its next test and runs the same shutdown
+        // it runs when the player quits, so settings are saved however the host came to an end.
+        _stopRequested = true;
+
+        while (_stepping)
+        {
+            _stepping = _frames.MoveNext();
+        }
+
+        _frames.Dispose();
+        _frames = null;
+    }
+
+    /// <summary>The whole of the game's run, one frame per step.</summary>
+    /// <returns>An element at the top of every frame, before it runs.</returns>
+    /// <remarks>
+    /// An iterator so that the frame loop's own state -- its pacers, its timestamps, the shell and the
+    /// preview loader, forty-odd locals the loop reads -- lives exactly where it always did, in the order
+    /// it always did, and a step is one pass of the loop. The compiler keeps them between steps.
+    /// </remarks>
+    private IEnumerable<bool> Frames()
     {
         // The UI is authored against the original's 640x480 back buffer and is centred, NEVER SCALED, so
         // the projection is the back buffer's own size and MenuLayout.ToScreen does the centring. Passing
@@ -642,6 +800,16 @@ internal sealed partial class GameHost : IDisposable
             if (width <= 0 || height <= 0)
             {
                 return;
+            }
+
+            // The back buffer follows the window. Without this only the viewport did: a browser canvas
+            // resized by the page -- or by F11 -- kept presenting a surface at its old size, and WebGPU
+            // refuses a viewport larger than the target it is drawn into, so every frame after the resize
+            // was thrown away and the picture froze.
+            DisplayMode mode = _device.CurrentMode;
+            if (mode.Width != width || mode.Height != height)
+            {
+                _device.SetMode(mode with { Width = width, Height = height });
             }
 
             _device.SetViewport(new Viewport(0, 0, width, height));
@@ -713,9 +881,15 @@ internal sealed partial class GameHost : IDisposable
         RegisterLampCommands(console.System);
         RegisterImpactCommands(console.System);
         RegisterCameraCommands(console.System);
+        RegisterRendererSwitchCommand(console.System);
         RegisterOverrideCommands(console.System);
 
-        console.Start(_fileSystem, _options.StartupCommands, useSavedSettings: !_options.Lockstep);
+        console.Start(
+            _fileSystem,
+            _options.StartupCommands,
+            useSavedSettings: !_options.Lockstep,
+            _options.FirstRunPreset,
+            _options.LockedPreset);
         _logger = console.WrapLogger(_logger);
         // The scan LoadTitleResources ran: taken off the field because the scan now happens wherever the
         // resources are loaded, and that is a method a title switch calls too.
@@ -748,27 +922,27 @@ internal sealed partial class GameHost : IDisposable
         // that nothing on this thread depends on, and start-up is the one time the player is waiting for
         // this thread specifically. Everything that touches the audio device does so from the frame loop,
         // which is collected below, before the first line that reads it.
-        Task audioReady = Task.Run(OpenAudioDevice);
+        Task audioReady = _work.Run(OpenAudioDevice);
 
         // Set before anything uploads a texture: the sampler a texture is created with is the one it
         // keeps, so a level loaded before this would keep the filtering it started with.
         _device.SetTextureQuality(RenderCVars.Anisotropy.Value);
-        RenderCVars.Anisotropy.Changed += (_, _) => _device.SetTextureQuality(RenderCVars.Anisotropy.Value);
+        WhenChanged(RenderCVars.Anisotropy, () => _device.SetTextureQuality(RenderCVars.Anisotropy.Value));
 
         _device.VSyncEnabled = RenderCVars.VSync.Value;
-        RenderCVars.VSync.Changed += (_, _) => _device.VSyncEnabled = RenderCVars.VSync.Value;
+        WhenChanged(RenderCVars.VSync, () => _device.VSyncEnabled = RenderCVars.VSync.Value);
 
-        RenderCVars.WeatherEnabled.Changed += (_, _) => ApplyWeatherSettings();
-        RenderCVars.WeatherStyle.Changed += (_, _) => ApplyWeatherSettings();
-        RenderCVars.WeatherSpeed.Changed += (_, _) => ApplyWeatherSettings();
-        RenderCVars.WeatherForce.Changed += (_, _) => ApplyWeatherSettings();
-        RenderCVars.Storm.Changed += (_, _) => ApplyWeatherSettings();
-        RenderCVars.StormIntensity.Changed += (_, _) => ApplyWeatherSettings();
+        WhenChanged(RenderCVars.WeatherEnabled, ApplyWeatherSettings);
+        WhenChanged(RenderCVars.WeatherStyle, ApplyWeatherSettings);
+        WhenChanged(RenderCVars.WeatherSpeed, ApplyWeatherSettings);
+        WhenChanged(RenderCVars.WeatherForce, ApplyWeatherSettings);
+        WhenChanged(RenderCVars.Storm, ApplyWeatherSettings);
+        WhenChanged(RenderCVars.StormIntensity, ApplyWeatherSettings);
 
         // Timing is pushed on change rather than read per frame, because switching it off is what discards
         // the history -- the peaks after switching it back on should belong to the run being watched.
         _device.SetStageTiming(RenderCVars.PerformanceLog.Value);
-        RenderCVars.PerformanceLog.Changed += (_, _) => _device.SetStageTiming(RenderCVars.PerformanceLog.Value);
+        WhenChanged(RenderCVars.PerformanceLog, () => _device.SetStageTiming(RenderCVars.PerformanceLog.Value));
 
         _menuHost = new MenuHost(
             _window.Input,
@@ -960,6 +1134,9 @@ internal sealed partial class GameHost : IDisposable
         TextureHandle[] giAccum = [default, default];
         TextureHandle[] giPosition = [default, default];
         TextureHandle giFiltered = default;
+
+        // The gather's raw per-probe estimates, traced by its first pass and pooled by its second.
+        TextureHandle giRaw = default;
         int giIndirectWidth = 0;
         int giIndirectHeight = 0;
         int giFrame = 0;
@@ -988,6 +1165,13 @@ internal sealed partial class GameHost : IDisposable
         int giResolveWidth = 0;
         int giResolveHeight = 0;
         bool giResolveHasHistory = false;
+
+        // What the screen GI's histories were accumulated under, so a cut, a zoom or a new surface cache
+        // can throw them away. See where the gather begins.
+        bool giContinuityValid = false;
+        Vector3d giLastEye = default;
+        DepthUnprojection giLastUnprojection = default;
+        SurfaceCacheLighting? giLastCards = null;
         _capturedCards = null;
         _cardInstances = null;
         _sdfBake = null;
@@ -1033,6 +1217,7 @@ internal sealed partial class GameHost : IDisposable
         // per-user data, and because the game's art with a filter over it is not ours to redistribute.
         _detailMaps = new(
             _device,
+            _work,
             _logger,
             Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "detail"));
 
@@ -1066,8 +1251,8 @@ internal sealed partial class GameHost : IDisposable
         // Re-graded for whatever is actually on screen: the mission being played, else the menu's
         // backdrop, else whatever -mission asked for. Reading `_options.StartMission` unconditionally
         // meant changing the table from the console while browsing the campaign re-graded to mission 0.
-        RenderCVars.ColourLookupTable.Changed += (_, _) =>
-            ApplyColourLookup(_activeMission?.Id ?? _backdrop?.MissionId ?? _options.StartMission);
+        WhenChanged(RenderCVars.ColourLookupTable, () =>
+            ApplyColourLookup(_activeMission?.Id ?? _backdrop?.MissionId ?? _options.StartMission));
 
         // The level's own sun, read from its Dirlight task -- section 12.
         // Null until a level is loaded, and for a level that declares none.
@@ -1185,6 +1370,7 @@ internal sealed partial class GameHost : IDisposable
 
         // -entrycam: Play has not been pressed yet. Set only when the flag asked for it.
         bool entryCamPending = false;
+        long entryTimeChosenAt = -1;
         ShellHost? shellHostForEntryCam = null;
 
         // When the mission-entry shot last read the clock.
@@ -1213,8 +1399,9 @@ internal sealed partial class GameHost : IDisposable
         // adopted -- see the collect further down.
         DistanceFieldBake.Result? bakedFieldForBackdrop = null;
 
-        // The menu is held to the display's rate rather than rendering as fast as it can. See FramePacer.
-        var menuPacer = new FramePacer();
+        // The menu is held to the display's rate rather than rendering as fast as it can, where the
+        // platform leaves the rate to the loop. See IFramePacer.
+        IFramePacer menuPacer = _platform.CreateFramePacer();
         bool lastPassRendered = false;
 
         // How long a mission has to stay selected before its level is built. Every selection re-arms the
@@ -1241,9 +1428,9 @@ internal sealed partial class GameHost : IDisposable
         {
             _menuCameras = MenuCameraLibrary.Load(
                 Path.Combine(AppContext.BaseDirectory, "Assets", "menu-cameras.json"), _logger);
-            missionWarmer = new MissionWarmer(_gamePath, _missions, _logger);
+            missionWarmer = new MissionWarmer(_gamePath, _missions, _logger, _work);
             previewLoader = new MissionPreviewLoader(
-                _gamePath, _missions, _magic, _giCache, _menuCameras, _previewContext, _logger);
+                _gamePath, _missions, _magic, _giCache, _menuCameras, _previewContext, _logger, _work);
 
             // Saira for body, Saira Condensed as a distance field for the headings the shell sets large.
             shellBodyFont = UiFontLibrary.Load(_device, UiFontLibrary.Body, 48f);
@@ -1316,7 +1503,7 @@ internal sealed partial class GameHost : IDisposable
 
                         if (CinematicLoadAvailable)
                         {
-                            BeginCinematicLoad(Promote);
+                            BeginCinematicLoad(id, Promote);
                         }
                         else
                         {
@@ -1337,7 +1524,7 @@ internal sealed partial class GameHost : IDisposable
 
                     if (CinematicLoadAvailable)
                     {
-                        BeginCinematicLoad(LoadCold);
+                        BeginCinematicLoad(id, LoadCold);
                     }
                     else
                     {
@@ -1397,7 +1584,7 @@ internal sealed partial class GameHost : IDisposable
 
                         if (CinematicLoadAvailable)
                         {
-                            BeginCinematicLoad(Restart);
+                            BeginCinematicLoad(mission.Id, Restart);
                         }
                         else
                         {
@@ -1477,7 +1664,10 @@ internal sealed partial class GameHost : IDisposable
             if (_options.StartMission > 0)
             {
                 // Straight into the level, with the shell built and waiting behind Escape rather than shown.
-                StartMission(_options.StartMission);
+                // Once its files can be read: on the desktop that is now, in a browser it is when the page
+                // has fetched them -- a level started before that opened with no terrain and no models.
+                ResumeConditions();
+                StartMissionWhenReadable(_options.StartMission);
             }
             else
             {
@@ -1494,7 +1684,7 @@ internal sealed partial class GameHost : IDisposable
 
                 if (previewLoader is { } opening)
                 {
-                    opening.Request(firstShowcase);
+                    RequestBackdrop(opening, firstShowcase);
                 }
                 else
                 {
@@ -1568,7 +1758,7 @@ internal sealed partial class GameHost : IDisposable
             _logger.Information(
                 "Bake",
                 $"Baked {baked} mission(s). To ship them, copy the .giv files from "
-                    + $"{Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "gi")} into apps/OpenIGI.Desktop/Assets/gi.");
+                    + $"{Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "gi")} into apps/OpenIGI.Composition/Assets/gi.");
             running = false;
         }
 
@@ -1579,20 +1769,6 @@ internal sealed partial class GameHost : IDisposable
         {
             GlobalDistanceField.ValidateShader(_device, _logger);
         }
-
-        // Used only for a level that declares no Dirlight at all. The angles are mission 1's, which the
-        // probe showed put the sun 60 degrees up at noon, with the warm sun and cool ambient every retail
-        // level pairs.
-        DirectionalLightSettings defaultSun = new(
-            DirectionalLightSettings.DirectionFrom(0.5236f, -4.92183f),
-            new Vector3f(1.0f, 0.96f, 0.88f),
-            new Vector3f(0.27f, 0.29f, 0.33f),
-            Beta: 0.5236f,
-            Gamma: -4.92183f,
-            TimeOfDay: 12f,
-            Intensity: 18f,
-            AffectsTerrain: true,
-            AffectsObjects: true);
 
         // Reused every frame rather than reallocated; the fit writes into it in place.
         ShadowCascade[] cascadeStorage = new ShadowCascade[ShadowSettings.MaxCascades];
@@ -1608,8 +1784,36 @@ internal sealed partial class GameHost : IDisposable
         // not read the mouse and must never grab the cursor out from under whatever they are actually doing.
         bool captureMode = _options.Lockstep;
 
-        while (running && _loop.IsRunning && !_window.IsClosing)
+        // What the last pass of the loop did, and how many ticks in a row have run without a step
+        // returning to its host. See the top of the loop.
+        FrameOutcome lastOutcome = FrameOutcome.Idle;
+        int ticksSinceStep = 0;
+
+        while (running && !_stopRequested && _loop.IsRunning && !_window.IsClosing)
         {
+            // The top of a frame is where a step returns to its host: everything since the last step is
+            // one frame, and nothing of the next has started. A host that asked to stop while it was away
+            // is answered here, before the frame it would otherwise draw.
+            //
+            // A frame ends with a pass that drew, or one with nothing due -- not with a tick, which draws
+            // nothing. A browser steps once per display refresh, and handing it back a refresh with no
+            // picture in it made a clock that had fallen behind catch up at one tick a refresh; a
+            // headless browser then throttles a page that has stopped drawing to once a second, and it
+            // never caught up again. Bounded, so a long catch-up still returns now and then.
+            if (lastOutcome != FrameOutcome.Tick || ++ticksSinceStep >= MaxTicksPerStep)
+            {
+                ticksSinceStep = 0;
+                yield return true;
+            }
+
+            // Until this pass runs the loop: one that ends before it has drawn nothing and ticked nothing.
+            lastOutcome = FrameOutcome.Idle;
+
+            if (_stopRequested)
+            {
+                break;
+            }
+
             // The whole point of promoting the backdrop instead of loading it is that no frame is ever
             // blocked, and that is a claim about milliseconds rather than a matter of opinion. Every pass
             // is timed, and the worst one seen since Play was pressed is reported when the entry finishes.
@@ -1625,6 +1829,7 @@ internal sealed partial class GameHost : IDisposable
             // A load whose departure has played out runs here, between frames, where the picture it
             // needs has already been held and nothing is half-drawn.
             RunPendingLoadIfDue();
+            RunCommandLineMissionIfDue();
 
             // And a change of game, at the same boundary and for the same reason -- this one disposes
             // the task loop, the resource registry and every presenter, so it must not happen while a
@@ -1632,13 +1837,13 @@ internal sealed partial class GameHost : IDisposable
             // its game list, its campaign and which entry is current are all the title's.
             if (SwitchTitleIfDue())
             {
-                missionWarmer = new MissionWarmer(_gamePath, _missions, _logger);
+                missionWarmer = new MissionWarmer(_gamePath, _missions, _logger, _work);
 
                 // Closed rather than dropped: it owns a worker that may be part way through building the
                 // outgoing game's backdrop, and the replacement below would otherwise race it.
                 previewLoader?.Dispose();
                 previewLoader = new MissionPreviewLoader(
-                    _gamePath, _missions, _magic, _giCache, _menuCameras, _previewContext, _logger);
+                    _gamePath, _missions, _magic, _giCache, _menuCameras, _previewContext, _logger, _work);
 
                 if (shellHost is not null && shellBodyFont is not null && shellHeadingFont is not null && saves is not null)
                 {
@@ -1718,7 +1923,7 @@ internal sealed partial class GameHost : IDisposable
 
                 // Once the bake is done, the authoritative final field is both what the display settles on
                 // and what the cache keeps, so the next load reads it instead of tracing again.
-                if (pendingBake.IsComplete)
+                if (pendingBake.Poll())
                 {
                     if (pendingBake.TryCollect(out IrradianceVolume? finalField) && finalField is not null)
                     {
@@ -1781,6 +1986,11 @@ internal sealed partial class GameHost : IDisposable
             // reads have to be able to arrive afterwards -- see GameHost.RealtimeGi.cs. A no-op once
             // they exist, which is every frame but the handful after the switch.
             EnsureRealtimeGiStructures();
+
+            // Behind the loading screen the traced world takes every mesh offered in the frame it is
+            // offered, so the level is whole in it before anything is lit against it; in play the per-frame
+            // budget comes back. Said every frame, so no path out of the load can leave it lifted.
+            _device.SetTraceAdmission(IsWarmingUp);
 
             // This frame's share of a convergence in flight, so a level lights up behind the loading
             // screen or under the entry shot's hold rather than in one stall.
@@ -2236,7 +2446,7 @@ internal sealed partial class GameHost : IDisposable
                 // over is built through exactly the path a player's selection would have built it through.
                 int firstShowcase = _options.EntryCamMission > 0 ? _options.EntryCamMission : ShowcaseMissionId;
                 currentShowcaseMissionId = firstShowcase;
-                previewLoader?.Request(firstShowcase);
+                RequestBackdrop(previewLoader, firstShowcase);
             }
 
             // The backdrop is made playable here, on the frames where nothing is happening but a menu.
@@ -2254,11 +2464,25 @@ internal sealed partial class GameHost : IDisposable
                 && entryBackdrop.MissionId == _options.EntryCamMission
                 && _arming is { IsArmed: true })
             {
-                entryCamPending = false;
-                _logger.Information("Menu", $"-entrycam is pressing Play on mission {entryBackdrop.MissionId}.");
-                shellHostForEntryCam?.StartMission(
-                    entryBackdrop.MissionId,
-                    _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal);
+                // -entrytime: the time chosen first, as the dropdown chooses it, and Play a second later
+                // over the backdrop that choice re-lit.
+                if (_options.EntryTime != MissionTimeOfDay.Default && entryTimeChosenAt < 0)
+                {
+                    entryTimeChosenAt = _loop.Clock.FrameCount;
+                    shellHostForEntryCam?.SetMissionConditions(_conditions with { TimeOfDay = _options.EntryTime });
+                }
+
+                bool settled = entryTimeChosenAt < 0
+                    || _loop.Clock.FrameCount - entryTimeChosenAt >= EntryTimeSettleFrames;
+
+                if (settled)
+                {
+                    entryCamPending = false;
+                    _logger.Information("Menu", $"-entrycam is pressing Play on mission {entryBackdrop.MissionId}.");
+                    shellHostForEntryCam?.StartMission(
+                        entryBackdrop.MissionId,
+                        _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal);
+                }
             }
 
             // -backdropcycle walks the campaign's rows on a fixed cadence, taking the same path a player
@@ -2280,7 +2504,7 @@ internal sealed partial class GameHost : IDisposable
                             _logger.Information("Menu", $"-backdropcycle: selecting mission {next}.");
                             pendingPreviewMissionId = null;
                             currentShowcaseMissionId = next;
-                            previewLoader.Request(next);
+                            RequestBackdrop(previewLoader, next);
                         }
                     }
                 }
@@ -2295,7 +2519,13 @@ internal sealed partial class GameHost : IDisposable
                 && _loop.TimeSource.Milliseconds - previewRequestedAtMs > PreviewSettleMs)
             {
                 pendingPreviewMissionId = null;
-                previewLoader?.Request(previewMissionId);
+                RequestBackdrop(previewLoader, previewMissionId);
+            }
+
+            // A backdrop whose mission's files were still arriving, asked for again until they are there.
+            if (menuMode && !pauseMenu && _backdropAwaitingFiles is { } awaitingFiles)
+            {
+                RequestBackdrop(previewLoader, awaitingFiles);
             }
 
             // The handover. Everything a backdrop is made of was built off the render thread; what is left
@@ -2404,7 +2634,7 @@ internal sealed partial class GameHost : IDisposable
                 lastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
 
                 _probeBake = IrradianceProbeBake.Start(
-                    _scene, _bakeCast, _probeBakeSun, _probeBakeSpacing, ProbeBakeAlbedo, _logger);
+                    _scene, _bakeCast, _probeBakeSun, _probeBakeSpacing, ProbeBakeAlbedo, _work, _logger);
 
                 _logger.Information(
                     "GI", $"Re-baking the lighting from scratch (F11); cleared {cleared} cached field(s).");
@@ -2577,7 +2807,7 @@ internal sealed partial class GameHost : IDisposable
                 }
                 else
                 {
-                    _camera.Update(_window.Input, elapsed);
+                    _camera.Update(ViewInput, elapsed);
 
                     // The cursor is locked away while a mouse button is held, the way a scene editor's is,
                     // so the view keeps turning however far the mouse is dragged. It comes back on release.
@@ -2622,6 +2852,7 @@ internal sealed partial class GameHost : IDisposable
 
             BeginStage();
             FrameOutcome outcome = _loop.RunFrame();
+            lastOutcome = outcome;
             EndStageIfSlow("the loop's own frame (present, ticks, task tree)");
 
             // The number that says how long the player waited for a picture, said once. Everything above
@@ -2728,7 +2959,7 @@ internal sealed partial class GameHost : IDisposable
                     }
                     else
                     {
-                        _player.Tick(_window.Input, _ground);
+                        _player.Tick(ViewInput, _ground);
                         // PlayerCamera advances its interaction registry before it resolves this
                         // tick's activate target. Do not advance the same registry again below.
                         interactionsTickedByPlayer = true;
@@ -3361,8 +3592,10 @@ internal sealed partial class GameHost : IDisposable
                     && _activeMission is { } completedMission)
                 {
                     _missionResultHandled = true;
+                    // A successor the catalogue does not offer ends the campaign the way the last mission
+                    // does -- in a build cut to the opening missions, the last one offered is its finale.
                     int nextMissionId = completedMission.NextMissionId;
-                    if (nextMissionId != MissionDescriptor.NextMissionUndefined)
+                    if (nextMissionId != MissionDescriptor.NextMissionUndefined && _missions.TryGet(nextMissionId, out _))
                     {
                         if (_configuration.Active is { } activeProfile)
                         {
@@ -3433,7 +3666,7 @@ internal sealed partial class GameHost : IDisposable
                         1,
                         (_options.FlightFrames
                             ?? (_options.IsBenchmark ? BenchmarkSchedule.MeasurementEndFrame : _options.ExitAfterFrames)) - 1);
-                    float t = Math.Clamp((float)flightFrame / span, 0f, 1f);
+                    float t = Math.Clamp((float)(flightFrame - _options.FlightDelay) / span, 0f, 1f);
 
                     Vector3d endPos = _options.CameraEnd is { } e
                         ? new Vector3d(e.X, e.Y, e.Z)
@@ -3617,7 +3850,10 @@ internal sealed partial class GameHost : IDisposable
                     // a -lockstep capture reproducible: that mode swaps in a synthetic clock advanced a
                     // fixed amount per pass, so every captured frame smears by exactly the same length.
                     // Clamped because a frame that stalled on a load should not smear the whole screen.
-                    FrameDeltaSeconds: frameDeltaSeconds);
+                    FrameDeltaSeconds: frameDeltaSeconds,
+
+                    // The eye's night vision, only as deep as the night: a day is untouched.
+                    NightShift: RenderCVars.NightShift.Value * RenderCVars.Nightfall.Value);
 
                 if (_giExposureWarmup > 0)
                 {
@@ -3903,24 +4139,9 @@ internal sealed partial class GameHost : IDisposable
                 // The authored sun swept to the current time of day. Held for the frame so every consumer
                 // -- this deferred light, the shadows, the surface cache's relight and its radiance cache,
                 // and the sky fill -- lights from the same swept sun rather than the raw authored one.
-                DirectionalLightSettings light;
-                if (_options.SunDirection is { } fixedSun)
-                {
-                    // A fixed sun for matching an external reference render: the level's own colour and
-                    // ambient, but a direction pinned to the reference's, bypassing the day/night sweep.
-                    Vector3f dir = new(fixedSun.X, fixedSun.Y, fixedSun.Z);
-                    float len = dir.Length;
-                    dir = len > 1e-5f ? dir / len : Vector3f.UnitZ;
-                    light = (_sun ?? defaultSun) with { Direction = dir };
-                }
-                else
-                {
-                    // The BOUND sun, not the raw authored one: a title whose levels do not author a noon
-                    // sun has already had that answered for it. See BindToCycle. Its fill is in there too,
-                    // which is why nothing pins the ambient afterwards any more -- pinning it was what
-                    // held the level at its own hour and made the cycle do nothing.
-                    light = _dayNight.Apply(_cycleSun ?? _sun ?? defaultSun);
-                }
+                // The sun -- or the moon -- this frame lights with. See CycleSun: the same answer the surface
+                // cache is converged under, so the two cannot light the level differently.
+                DirectionalLightSettings light = CycleSun();
 
                 // What the night is doing to the picture, published for the exposure. The sweep is the only
                 // thing that knows how far under the horizon the sun has gone, and the resolve is a long way
@@ -3956,22 +4177,10 @@ internal sealed partial class GameHost : IDisposable
                         ? 0f
                         : _dayNight.Nightfall;
 
-                // The sun keeps the level's own authored chromaticity — the same warm (1, 0.77, 0.62) the
-                // reference scene lights with — because rewriting it to a neutral key is exactly the kind
-                // of grade that made the two renders impossible to compare channel for channel. Only the
-                // ambient is re-pointed, since the level's flat cool triple stands in for a sky the
-                // dynamic model now largely derives itself.
-                // Only for a title that leaves its fill to the renderer. One that authored an ambient
-                // per level means it: the sequel's night mission fills with a cold blue (0.06, 0.10, 0.18)
-                // and re-pointing that to a warm daylight chroma is the same grade this comment warns
-                // against, applied to the one game whose levels say otherwise.
-                if (_deferredLighting is null)
-                {
-                    light = light with
-                    {
-                        Ambient = DaylightColour(light.Ambient, new Vector3f(1.18f, 0.88f, 0.58f)),
-                    };
-                }
+                // And how much a full night of it is worth, which is the title's to say: see
+                // DeferredLighting.NightExposureDrop.
+                RenderCVars.AuthoredNightDropFor.Value =
+                    _deferredLighting?.NightExposureDrop ?? RenderCVars.AuthoredNightDrop;
 
                 _effectiveSun = light;
                 Vector3f viewSunDirection = eye.Orientation.Transposed().Transform(light.Direction);
@@ -4057,7 +4266,7 @@ internal sealed partial class GameHost : IDisposable
                         : 0.006f;
 
                 // Fog is an outdoor medium, and where it is outdoors is decided a froxel at a time inside
-                // the march itself -- see the shelter lookup in VolumetricFogShaderSource. It used to be
+                // the march itself -- see the shelter lookup in the FogScatter shader module. It used to be
                 // decided once for the whole frame, standing the march down while the camera was inside a
                 // building, because the haze sitting between the eye and a window washed out the yard
                 // beyond it: fog marched straight through the wall. Switching the march off answers that
@@ -4068,6 +4277,12 @@ internal sealed partial class GameHost : IDisposable
                     && RenderCVars.OffscreenScene.Value
                     && RenderCVars.Deferred.Value;
 
+                // The mission actually on screen, as the colour grade reads it. This read -mission's id, so a
+                // mission entered from the campaign -- where that is nought -- was drawn in the generic
+                // default haze instead of its own tuned fog, and looked different from the same mission
+                // started any other way, a renderer switch included.
+                int fogMission = _activeMission?.Id ?? _backdrop?.MissionId ?? _options.StartMission;
+
                 VolumetricFogSettings medium = VolumetricFogSettings.Off;
                 if (wantsFog)
                 {
@@ -4075,7 +4290,7 @@ internal sealed partial class GameHost : IDisposable
                     // coordinates carry a kilometres-large absolute offset, so it has to be anchored to
                     // the scene's own ground before the march can compare a sample against it.
                     medium = fogPresets.Resolve(
-                        _options.StartMission,
+                        fogMission,
                         authoredDensity,
                         (float)(_scene.GroundHeight + (_sky is { HasSky: true } ? _sky.PlaneHeight : 0f)),
                         RenderCVars.FogQuality.Value);
@@ -4193,8 +4408,15 @@ internal sealed partial class GameHost : IDisposable
                     // keeps its converged atlas with none of the ray tracing, so a still scene stops paying
                     // the periodic covering-slice spike that halved its frame rate.
                     bool giChanged = wantDump || giRebuilt > 0 || giSunMoved;
-                    _giStaticFrames = giChanged ? 0 : Math.Min(_giStaticFrames + 1, GiSettleFrames + 1);
-                    bool retraceGi = _giStaticFrames <= GiSettleFrames;
+                    // Long enough for the cache to actually converge before it stops: a tile is traced once
+                    // per amortisation spread and moves 1/(1+temporal frames) of the way each time, so its
+                    // time constant is spread x (1 + frames) -- some eight hundred frames at every modern
+                    // preset. A fixed 64 froze it a few traces in, with most of the error still there.
+                    int giSettle = Math.Max(
+                        GiSettleFrames,
+                        2 * Math.Max(RenderCVars.GiAmortize.Value, 1) * (1 + Math.Max(RenderCVars.GiTemporalFrames.Value, 1)));
+                    _giStaticFrames = giChanged ? 0 : Math.Min(_giStaticFrames + 1, giSettle + 1);
+                    bool retraceGi = _giStaticFrames <= giSettle;
 
                     if (_cardLighting is { } litCards)
                     {
@@ -4419,7 +4641,7 @@ internal sealed partial class GameHost : IDisposable
                 _device.SetVolumetricFog(
                     medium,
                     new Vector3f((float)eye.Position.X, (float)eye.Position.Y, (float)eye.Position.Z),
-                    wantsFog ? fogPresets.VolumesFor(_options.StartMission) : ReadOnlySpan<LocalFogVolume>.Empty);
+                    wantsFog ? fogPresets.VolumesFor(fogMission) : ReadOnlySpan<LocalFogVolume>.Empty);
 
                 // Filled BEFORE the scene capture opens: a cascade renders into its own framebuffer, and
                 // beginning a capture first would leave the shell holding two render targets at once.
@@ -4471,18 +4693,56 @@ internal sealed partial class GameHost : IDisposable
                     // same place by a different road: its night missions leave the sun up and paint it
                     // nearly black, so the model -- which only knows night as a sun below the horizon --
                     // has no way to tell. Told by the level instead, and taken to the same floor.
-                    float nightFeed = _deferredLighting is { } nightly
-                        ? 1f + ((0.02f - 1f) * Math.Clamp(nightly.Nightfall, 0f, 1f))
+                    //
+                    // Not for a level bound to the cycle by its night end. Its night IS the moon above, at
+                    // the hour it is bound to, so the level's constant adds nothing there -- and away from
+                    // that hour it is wrong: scrubbed up to noon, a constant night held the sky at the
+                    // floor under a risen sun.
+                    //
+                    // How far down is r_night_sky's to say. Two percent kept the moonlit sky from reading
+                    // as a dim day, and left it and the fill projected from it black; with the resolve's
+                    // night shift doing the job of making it read as night, a third lets the sky light the
+                    // moon's shadows again. See RenderCVars.NightSkyScale.
+                    float nightSky = RenderCVars.NightSkyScale.Value;
+                    float nightFeed = _deferredLighting is { Night: null } nightly
+                        ? 1f + ((nightSky - 1f) * Math.Clamp(nightly.Nightfall, 0f, 1f))
                         : 1f;
-                    Vector3f atmosphereSun = light.Colour * RenderCVars.AtmosphereSunScale.Value
-                        * (_dayNight.Moonrise > 0f ? 0.02f : nightFeed);
+                    //
+                    // Under the day cycle the sky is handed the sun and the moon as two lights, not
+                    // whichever of them holds the direct slot. The sun comes untinted and from where it
+                    // really is, under the horizon too: the march reddens it, and the planet's shadow
+                    // puts it out a little at a time, which is the twilight. The moon comes as its own
+                    // light, at the knocked-down feed above, from the moment it rises. Handing the sky
+                    // only the direct light made it scatter a sun already reddened and dimmed -- a
+                    // second reddening, the orange-brown dusk -- and then, as the direct light passed to
+                    // the moon, a sun that had gone and a moon not yet up: a black sky and a black fill
+                    // for the half hour between.
+                    float atmosphereScale = RenderCVars.AtmosphereSunScale.Value;
+                    Vector3f atmosphereSun;
+                    Vector3f? atmosphereSunDirection = null;
+                    Vector3f atmosphereMoon = default;
+                    if (_options.SunDirection is null)
+                    {
+                        atmosphereSun = _dayNight.SkySunColour * (atmosphereScale * nightFeed);
+                        atmosphereSunDirection = _dayNight.SunDirection;
+                        // The moon above the weather, whole: the sky's cloud deck is lit by all of it and
+                        // passes on its own share (see SkyView's deck transmission), while the clear air
+                        // scatters only r_night_sky's. Knocked down or veiled here as well, the deck took
+                        // the cloud's toll twice and a rainy night came out black.
+                        atmosphereMoon = _dayNight.MoonColour * (RenderCVars.Moonlight.Value * atmosphereScale);
+                    }
+                    else
+                    {
+                        atmosphereSun = light.Colour * (atmosphereScale * nightFeed);
+                    }
 
                     // TEMPORARY (r_ambient_scale): the dynamic model fills every surface with this one flat
                     // ambient, so a sealed room reads as lit as open ground. Scaling it here -- towards 0 --
                     // is how that stand-in is dialled down or removed to confirm what lights enclosed spaces.
                     Vector3f scaledAmbient = light.Ambient * RenderCVars.AmbientScale.Value;
 
-                    _device.SetLighting(new SceneLighting(
+                    _dumpWorldSun = light.Direction;
+                    _device.SetLighting(_dumpLighting = new SceneLighting(
                         EffectiveLighting,
                         viewSunDirection,
                         scaledSun,
@@ -4506,7 +4766,14 @@ internal sealed partial class GameHost : IDisposable
 
                         // The source that builds both the visible atmosphere and its diffuse SH. Separate
                         // from scaledSun so direct-light calibration does not move the sky with it.
-                        atmosphereSun));
+                        atmosphereSun,
+
+                        // What the night sky holds beyond the air: the glow that lights a moonless night,
+                        // the cloud cover, the stars and the moon's disc. Nothing by day.
+                        FrameNightSky(),
+                        atmosphereSunDirection,
+                        atmosphereMoon,
+                        nightSky));
                     _device.BeginPass(ScenePass.Geometry);
 
                     // The sky is geometry as far as the G-buffer is concerned, so without this the dynamic
@@ -4796,7 +5063,13 @@ if (retailFog)
                 // light. It replaces the ambient inside the shade rather than compositing over the frame, so
                 // there is no ambient to zero and nothing runs after the lighting.
                 const int giStep = 8;
-                const int giMaxAccum = 32;
+                // The probes' running average, capped at the reference's screen-probe temporal limit of
+                // ten frames. It was thirty-two, and a history that long outlives every
+                // turn of the view -- each frame of motion resamples it through the reprojection and clamps
+                // it into the window of one frame's rays, and at one part in thirty-three the bias that
+                // leaves takes the better part of a second to wash back out, which is the cloud that
+                // follows the camera and settles after it stops.
+                const int giMaxAccum = 10;
 
                 // The screen trace tier: how far its rays reach across the frame and their step cap, plus the
                 // surface thickness its hit test assumes. Metres, save the step count.
@@ -4885,10 +5158,40 @@ if (retailFog)
                         giFiltered = _device.CreateStorageTexture(
                             wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.filtered");
 
+                        if (giRaw.IsValid)
+                        {
+                            _device.DestroyTexture(giRaw);
+                        }
+
+                        giRaw = _device.CreateStorageTexture(
+                            wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.raw");
+
                         giIndirectWidth = wantWidth;
                         giIndirectHeight = wantHeight;
                         giHasHistory = false;
                     }
+
+                    // Both histories describe the scene as the last frames saw it. A camera cut (a cutscene, a
+                    // respawn, the death camera, the map taking the eye), a change of projection (a scope's
+                    // zoom -- the reprojection assumes last frame's projection is this frame's) or a surface
+                    // cache rebuilt from dark all make that description wrong, and the plane tests only catch
+                    // part of it: a cut still read one frame of the old view's light.
+                    DepthUnprojection giUnprojection = DepthUnprojection.From(unjitteredProjection, NearPlane, FarPlane);
+                    bool giContinuous = giContinuityValid
+                        && ReferenceEquals(giLastCards, liveGiCards)
+                        && MathF.Abs(giUnprojection.XScale - giLastUnprojection.XScale) < 1e-4f * giLastUnprojection.XScale
+                        && MathF.Abs(giUnprojection.YScale - giLastUnprojection.YScale) < 1e-4f * giLastUnprojection.YScale
+                        && (eye.Position - giLastEye).LengthSquared < GiCutDistance * GiCutDistance;
+                    if (!giContinuous)
+                    {
+                        giHasHistory = false;
+                        giResolveHasHistory = false;
+                    }
+
+                    giContinuityValid = true;
+                    giLastEye = eye.Position;
+                    giLastUnprojection = giUnprojection;
+                    giLastCards = liveGiCards;
 
                     Vector3f giCameraToCache = new(
                         (float)(eye.Position.X - liveGiCards.Origin.X),
@@ -4938,7 +5241,14 @@ if (retailFog)
                             // The sky-light fill (L9): a ray that escapes returns the mission's sky, the same sky
                             // the surface cache lights its cards with, so the indirect that replaces the ambient
                             // carries sky light -- with its occlusion, since a ray toward geometry hits it instead.
-                            SkyFillColour());
+                            SkyFillColour(),
+
+                            // The camera the lit target was rendered through: the LAST frame's, which the
+                            // resolve carries forward every frame -- unlike the gather's own previous camera,
+                            // which only moves on a frame that traced.
+                            giResolvePrevWorldToView,
+                            giResolvePrevCameraToCache,
+                            giRaw);
 
                         // The spatial denoise (L6c), if on: smooths the accumulation into a separate atlas that
                         // the deferred fill reads, leaving the history the next frame reprojects onto unfiltered.
@@ -5015,7 +5325,14 @@ if (retailFog)
                         resolveW,
                         resolveH,
                         giResolveHasHistory,
-                        16);
+                        16,
+
+                        // The probes' own traced positions and the frame they were traced in -- the last
+                        // frame that traced, which is not this one whenever the gather's cadence skipped.
+                        giPosition[giLastWrite],
+                        giPrevWorldToView,
+                        giPrevCameraToCache,
+                        giStep);
                     giResolveHasHistory = true;
 
                     // Recorded for the deferred lighting to fold in when the pass closes. Full-resolution, so
@@ -5046,6 +5363,7 @@ if (retailFog)
                 // reach is exactly what these light. The shader also guards on the model and the count.
                 float localLightScale = RenderCVars.LocalLightScale.Value;
                 float localLightRange = RenderCVars.LocalLightRange.Value;
+                _stormLampCount = 0;
                 if (captured
                     && localLightScale > 0f
                     && EffectiveLighting != LightingModel.Baked
@@ -5106,6 +5424,12 @@ if (retailFog)
                             ? worldToView.Transform(fixture.Direction)
                             : default;
 
+                        _stormLamps[i] = new StormLamp(
+                            cameraRelative,
+                            fixture.Radius * localLightRange,
+                            colour * intensity,
+                            fixture.IsDirectional ? fixture.Direction : default);
+
                         _localLightScratch[i] = new DeferredLocalLight(
                             worldToView.Transform(cameraRelative),
                             fixture.Radius * localLightRange,
@@ -5117,13 +5441,23 @@ if (retailFog)
                             // rather than taken raw: a fixture the extractor measured as a few
                             // centimetres across would cast an edge as hard as a point light's, and no
                             // real fitting is that small.
-                            MathF.Max(fixture.Extent, 0.05f));
+                            MathF.Max(fixture.Extent, 0.05f),
+
+                            // The rectangle the fitting emits from, where its shadow rays are aimed.
+                            fixture.HasRect ? worldToView.Transform(fixture.Axis) * fixture.HalfLength : default,
+                            fixture.HasRect ? fixture.HalfWidth : 0f);
                     }
 
                     // Both backends, through the seam: a windowless interior needs its lamps whichever
                     // renderer is drawing it, and the ultra preset -- the one that discards the shipped
                     // bakes entirely and so has NOTHING else lighting an interior -- is the Vulkan path.
                     _device.SetLocalLights(_localLightScratch.AsSpan(0, localCount));
+                    _stormLampCount = localCount;
+
+                    // And the distance field those lamps' shadows are marched through wherever the renderer
+                    // cannot trace them -- WebGPU always, Vulkan with the RT switch off. See
+                    // LampOcclusionField.
+                    _device.SetLampOcclusionField(LampFieldFor(_sdfClipmaps));
                 }
 
                 if (mapScene is not null)
@@ -5272,11 +5606,12 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 if (_storm is { IsActive: true } storm)
                 {
                     // Direction and colour from the one effective sun the deferred pass shades with, and
-                    // the fill from the SAME sky the global illumination is seeded with — not the level's
-                    // raw ambient triple, which is a chromaticity that says what colour the fill is and
-                    // nothing about how much of it there is. The storm multiplies its colours by this, so
-                    // handing over a unit-magnitude tint is what pinned every drop at white in a dark
-                    // level and then let the auto-exposure make it worse.
+                    // the fill from the sky the deferred lighting itself shades with, averaged over every
+                    // direction -- not the level's raw ambient triple, which is a chromaticity that says
+                    // what colour the fill is and nothing about how much of it there is, and at night is
+                    // several times the light the scene gets. The storm multiplies its colours by this,
+                    // so handing over more light than the scene has drew every drop brighter than the
+                    // ground behind it: a rainy night became a wall of rain with nothing visible through it.
                     DirectionalLightSettings stormSun = _effectiveSun ?? default;
                     Vector3f stormSunLight =
                         stormSun.Colour * RenderCVars.SunScale.Value * RenderCVars.LightScale.Value;
@@ -5293,8 +5628,13 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                         smoothPresentation ? tickBlend : 1f,
                         _effectiveSun is null ? Vector3f.UnitZ : stormSun.Direction,
                         stormSunLight,
-                        SkyFillColour() + (stormSunLight * 0.2f),
-                        _loop.TimeSource.Milliseconds / 1000f);
+                        AmbientSkyLight() + (stormSunLight * 0.2f),
+                        _loop.TimeSource.Milliseconds / 1000f,
+                        _stormLamps.AsSpan(0, _stormLampCount),
+
+                        // A display level, taken back through the frame's exposure into the scene's
+                        // units, so the drops never sink below a faint grey whatever the night.
+                        RainVeilDisplay / MathF.Max(_device.SceneExposure, 1e-3f));
                 }
                 else if (_storm is not { Enabled: true } && _rain is { IsWeatherEnabled: true } rain)
                 {
@@ -6362,6 +6702,8 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 cutsceneCaptureCount++;
             }
 
+            AdvanceRendererSwitch();
+
             if (_options.ExitAfterFrames > 0 && _loop.Clock.FrameCount >= _options.ExitAfterFrames)
             {
                 // A flight has already written its frames one by one; only a single-still capture writes here.
@@ -6377,6 +6719,11 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     _logger.Information(
                         "Desktop",
                         $"Wrote {flightFrame} flight frame(s) at {_window.Width}x{_window.Height} beside {_options.ScreenshotPath}.");
+                }
+
+                if (_options.LightingDumpPath is { } lightingDumpPath)
+                {
+                    WriteLightingDump(lightingDumpPath);
                 }
 
                 _soldiers?.LogAiSummary();
@@ -6427,7 +6774,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 Directory.CreateDirectory(benchmarkDirectory);
             }
 
-            string json = System.Text.Json.JsonSerializer.Serialize(snapshot, BenchmarkJsonOptions);
+            string json = System.Text.Json.JsonSerializer.Serialize(snapshot, RenderPerformanceJsonContext.Default.RenderPerformanceSnapshot);
             File.WriteAllText(benchmarkPath, json);
             _logger.Information("Perf", $"Wrote benchmark snapshot to {Path.GetFullPath(benchmarkPath)}.");
         }
@@ -6501,7 +6848,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
             "Desktop",
             $"Shutting down after {_loop.Clock.TickCount} ticks and {_loop.Clock.FrameCount} frames.");
 
-        return 0;
+        _exitCode = 0;
     }
 
     /// <summary>
@@ -6969,6 +7316,9 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
     /// </summary>
     public void Dispose()
     {
+        // First, so nothing below can be reached through a setting changed after this game has gone.
+        ReleaseSettingHandlers();
+
         _sky?.Dispose();
         _rain?.Dispose();
         _storm?.Dispose();

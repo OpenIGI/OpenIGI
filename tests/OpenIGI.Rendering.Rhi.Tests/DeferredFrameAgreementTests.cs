@@ -1,0 +1,536 @@
+using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
+using OpenIGI.Rendering.Pipeline;
+using OpenIGI.Rendering.Rhi;
+using OpenIGI.Rendering.Vulkan.Rhi;
+using OpenIGI.Rendering.WebGpu;
+using Xunit;
+using Xunit.Abstractions;
+
+namespace OpenIGI.Rendering.Rhi.Tests;
+
+/// <summary>
+/// A whole deferred frame, described once and drawn on both backends, arriving at the same picture.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The sequence the game itself drives: a scene capture opened, a geometry pass, world geometry through
+/// the ordinary mesh path, the capture closed — which is where the shading runs — and a resolve onto
+/// the frame. Nothing here says which backend it is for, and nothing here knows there are three passes
+/// rather than one.
+/// </para>
+/// <para>
+/// This is the gate the whole move is for. Everything else proves a pass can run; this proves the frame
+/// a player would see is the same frame.
+/// </para>
+/// </remarks>
+public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
+{
+    private const int Size = 64;
+
+    [Fact]
+    public void Both_backends_draw_the_same_deferred_frame()
+    {
+        byte[]? vulkan = TryOnVulkan(out string? vulkanReason);
+        byte[]? webgpu = TryOnWebGpu(out string? webgpuReason);
+
+        if (vulkan is null || webgpu is null)
+        {
+            Assert.Fail(
+                "Both backends are needed to compare them, and one was missing: "
+                + (vulkan is null ? vulkanReason : webgpuReason));
+
+            return;
+        }
+
+        int differing = 0;
+        int worst = 0;
+
+        for (int i = 0; i < vulkan.Length; i++)
+        {
+            int difference = Math.Abs(vulkan[i] - webgpu[i]);
+
+            if (difference > 0)
+            {
+                differing++;
+                worst = Math.Max(worst, difference);
+            }
+        }
+
+        output.WriteLine($"{differing} channel(s) differ, worst by {worst}");
+        output.WriteLine($"vulkan centre {Describe(vulkan)}");
+        output.WriteLine($"vulkan corner {Describe(vulkan, 2, 2)}");
+        output.WriteLine($"webgpu centre {Describe(webgpu)}");
+
+        // One is what a different rasteriser's edge rules earn, and no more: the two run the same
+        // shaders over the same geometry.
+        Assert.True(worst <= 1, $"The two backends disagree by {worst}, over {differing} channel(s).");
+
+        // And a triangle was drawn, shaded and resolved rather than the frame being one flat colour: the
+        // middle is the surface's own green and the corner, which no triangle reached, is the sky. Two
+        // backends agree about a uniform frame perfectly, so the comparison above is worth only as much
+        // as this.
+        Assert.True(vulkan[Centre + 1] > vulkan[Centre], "The middle of the frame is not the green that was drawn.");
+        Assert.True(vulkan[Centre + 1] > vulkan[Centre + 2], "The middle of the frame is not the green that was drawn.");
+
+        int corner = ((2 * Size) + 2) * 4;
+        Assert.True(
+            Math.Abs(vulkan[corner + 1] - vulkan[Centre + 1]) > 8,
+            "The corner and the middle shaded the same, so nothing was drawn into the G-buffer.");
+
+        // And the corner is the marched sky rather than the flat white a stand-in table gives: blue
+        // before red, as a daytime sky is.
+        Assert.True(
+            vulkan[corner] > vulkan[corner + 2] + 8,
+            $"The sky is {Describe(vulkan, 2, 2)}, which is not an atmosphere's blue.");
+
+        // The forward pass drew over the light, in the corner it was put in.
+        int forward = (((Size / 8) * Size) + (Size - (Size / 8))) * 4;
+        output.WriteLine($"vulkan forward {Describe(vulkan, Size - (Size / 8), Size / 8)}");
+        Assert.True(
+            vulkan[forward + 2] > vulkan[forward + 1] + 32 && vulkan[forward + 2] > vulkan[forward] + 32,
+            $"The forward quad's corner is {Describe(vulkan, Size - (Size / 8), Size / 8)}, not the red that was drawn.");
+
+        // And the right way up. The triangle's apex points up the screen, so its base covers the lower
+        // left of the frame and the same place mirrored into the upper half is sky. A frame turned over
+        // by any of its three passes agrees with itself perfectly on both backends -- each pass reads
+        // what the last wrote the same wrong way up -- so only a question about WHERE can catch it.
+        int below = ((((Size * 4) / 5) * Size) + BaseColumn) * 4;
+        int above = ((((Size / 5) * Size) + BaseColumn) * 4);
+
+        output.WriteLine($"vulkan below {Describe(vulkan, BaseColumn, (Size * 4) / 5)}");
+        output.WriteLine($"vulkan above {Describe(vulkan, BaseColumn, Size / 5)}");
+
+        Assert.True(
+            Math.Abs(vulkan[below + 1] - vulkan[Centre + 1]) <= 8,
+            "The lower left of the frame is not the triangle's base, so the frame is upside down.");
+        Assert.True(
+            Math.Abs(vulkan[above + 1] - vulkan[Centre + 1]) > 8,
+            "The upper left of the frame is the triangle, so the frame is upside down.");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void The_albedo_view_shows_the_colour_that_was_drawn(bool textured)
+    {
+        // Once from the vertex colour and once from a texture, because the two reach linear space by
+        // different roads: the vertex colour is decoded by the shader, and a texture on this path is an
+        // sRGB image the SAMPLER decodes -- which a shader written for UNORM images decoded again.
+        byte[]? vulkan = TryOnVulkan(out string? vulkanReason, DebugView.Albedo, textured);
+        byte[]? webgpu = TryOnWebGpu(out string? webgpuReason, DebugView.Albedo, textured);
+
+        if (vulkan is null || webgpu is null)
+        {
+            Assert.Fail(
+                "Both backends are needed to compare them, and one was missing: "
+                + (vulkan is null ? vulkanReason : webgpuReason));
+
+            return;
+        }
+
+        output.WriteLine($"vulkan centre {Describe(vulkan)}");
+        output.WriteLine($"webgpu centre {Describe(webgpu)}");
+
+        // A mask view is the code value as it was stored, with no curve, grade or film on it: the colour
+        // that was drawn, to within the encode and decode it went through on the way.
+        foreach (byte[] frame in (byte[][])[vulkan, webgpu])
+        {
+            Assert.InRange(frame[Centre], 0, 1);
+            Assert.InRange(frame[Centre + 1], 219, 221);
+            Assert.InRange(frame[Centre + 2], 39, 41);
+        }
+    }
+
+    [Fact]
+    public void The_temporal_resolve_runs_in_the_frame_and_starts_from_it()
+    {
+        // Vulkan alone: two of the chain's modules have no WGSL form, so WebGPU stands the chain down and
+        // names r_taa instead. On its first frame the resolve has no history to weigh, so what it hands
+        // the tone map is the frame itself -- to within the spatial filter's reach at an edge.
+        byte[]? plain = TryOnVulkan(out string? reason);
+        byte[]? resolved = TryOnVulkan(out string? temporalReason, temporal: true);
+
+        Assert.True(plain is not null && resolved is not null, reason ?? temporalReason);
+
+        int differing = 0;
+        int worst = 0;
+
+        for (int i = 0; i < plain!.Length; i++)
+        {
+            int difference = Math.Abs(plain[i] - resolved![i]);
+            worst = Math.Max(worst, difference);
+            differing += difference > 8 ? 1 : 0;
+        }
+
+        output.WriteLine($"{differing} channel(s) differ by more than 8, worst by {worst}");
+        output.WriteLine($"resolved centre {Describe(resolved!)}");
+
+        Assert.True(resolved![Centre + 1] > resolved[Centre + 2], "The resolved frame lost the green that was drawn.");
+        Assert.True(differing < plain.Length / 20, $"{differing} channels moved: the resolve is not starting from the frame.");
+    }
+
+    [Fact]
+    public void Both_backends_spill_the_same_bloom()
+    {
+        // Nineteen compute passes -- six halvings, a separable blur at each, and the sum -- bound on both
+        // backends, and what they add has to be the same light. The red quad in the corner is the brightest
+        // thing in the frame, so the sky beside it has to come out redder with the scatter than without.
+        byte[]? vulkan = TryOnVulkan(out string? vulkanReason, bloom: 0.5f);
+        byte[]? webgpu = TryOnWebGpu(out string? webgpuReason, bloom: 0.5f);
+        byte[]? plain = TryOnVulkan(out string? plainReason, bloom: 0f);
+
+        Assert.True(
+            vulkan is not null && webgpu is not null && plain is not null,
+            vulkanReason ?? webgpuReason ?? plainReason);
+
+        int worst = 0;
+
+        for (int i = 0; i < vulkan!.Length; i++)
+        {
+            worst = Math.Max(worst, Math.Abs(vulkan[i] - webgpu![i]));
+        }
+
+        // Just left of the quad, above the triangle's apex: sky, four pixels from the red.
+        int x = (Size * 11) / 16;
+        int y = Size / 8;
+        int beside = ((y * Size) + x) * 4;
+
+        output.WriteLine($"worst difference {worst}");
+        output.WriteLine($"beside, bloom {Describe(vulkan, x, y)}, without {Describe(plain!, x, y)}");
+
+        Assert.True(worst <= 1, $"The two backends disagree about the bloom by {worst}.");
+        Assert.True(
+            vulkan[beside + 2] - vulkan[beside] > plain![beside + 2] - plain[beside],
+            "The sky beside the quad is no redder with the bloom than without it.");
+    }
+
+    [Fact]
+    public void Both_backends_occlude_alike()
+    {
+        // The gather over the depth the triangle wrote, shown as the code values it produced: it has to
+        // bind on both backends, agree, and have written something -- a view of a cleared occlusion
+        // image is uniform, and two backends agree about a uniform image perfectly.
+        byte[]? vulkan = TryOnVulkan(out string? vulkanReason, DebugView.Ao);
+        byte[]? webgpu = TryOnWebGpu(out string? webgpuReason, DebugView.Ao);
+
+        Assert.True(vulkan is not null && webgpu is not null, vulkanReason ?? webgpuReason);
+
+        int worst = 0;
+
+        for (int i = 0; i < vulkan!.Length; i++)
+        {
+            worst = Math.Max(worst, Math.Abs(vulkan[i] - webgpu![i]));
+        }
+
+        output.WriteLine($"worst difference {worst}, centre {Describe(vulkan)}");
+
+        Assert.True(worst <= 1, $"The two backends disagree about the occlusion by {worst}.");
+        Assert.True(vulkan[Centre + 1] > 128, $"The triangle's occlusion is {Describe(vulkan)}: nothing was gathered.");
+    }
+
+    [Fact]
+    public void Both_backends_shadow_alike()
+    {
+        // A cascade drawn and compared against, shown as the sun's visibility: a depth array rendered
+        // one layer at a time, bound as a depth texture and read through a comparison sampler, which is
+        // three things WebGPU checks that Vulkan does not.
+        byte[]? vulkan = TryOnVulkan(out string? vulkanReason, DebugView.SunShadow, shadows: true);
+        byte[]? webgpu = TryOnWebGpu(out string? webgpuReason, DebugView.SunShadow, shadows: true);
+
+        Assert.True(vulkan is not null && webgpu is not null, vulkanReason ?? webgpuReason);
+
+        int worst = 0;
+
+        for (int i = 0; i < vulkan!.Length; i++)
+        {
+            worst = Math.Max(worst, Math.Abs(vulkan[i] - webgpu![i]));
+        }
+
+        output.WriteLine($"worst difference {worst}, centre {Describe(vulkan)}, corner {Describe(vulkan, 2, 2)}");
+
+        Assert.True(worst <= 1, $"The two backends disagree about the shadow by {worst}.");
+    }
+
+    [Fact]
+    public void Both_backends_see_through_a_pane_alike()
+    {
+        // The glazing's transmission: its own pipeline and its own group, laid premultiplied over the
+        // lit triangle. The two backends have to agree, and where the pane is the triangle has to have
+        // taken its blue.
+        byte[]? vulkan = TryOnVulkan(out string? vulkanReason, glass: true);
+        byte[]? webgpu = TryOnWebGpu(out string? webgpuReason, glass: true);
+        byte[]? plain = TryOnVulkan(out string? plainReason);
+
+        Assert.True(
+            vulkan is not null && webgpu is not null && plain is not null,
+            vulkanReason ?? webgpuReason ?? plainReason);
+
+        int worst = 0;
+
+        for (int i = 0; i < vulkan!.Length; i++)
+        {
+            worst = Math.Max(worst, Math.Abs(vulkan[i] - webgpu![i]));
+        }
+
+        // Inside the pane, on the triangle.
+        int x = Size / 2;
+        int y = (Size * 11) / 16;
+        int behind = ((y * Size) + x) * 4;
+
+        output.WriteLine($"worst difference {worst}; through the pane {Describe(vulkan, x, y)}, without {Describe(plain!, x, y)}");
+
+        Assert.True(worst <= 1, $"The two backends disagree about the pane by {worst}.");
+        Assert.True(
+            vulkan[behind] - vulkan[behind + 1] > plain![behind] - plain[behind + 1],
+            "The triangle behind the pane took none of its blue.");
+    }
+
+    /// <summary>A column the triangle's base covers near the bottom of the frame and its apex does not reach near the top.</summary>
+    private const int BaseColumn = 14;
+
+    /// <summary>The frame everything here compares, written once and run twice.</summary>
+    private static void DrawFrame(GraphicsDevice device, DebugView view, bool textured, bool temporal, float? bloom, bool shadows, bool glass)
+    {
+        device.SetDebugView(view);
+
+        // The occlusion, where the frame is asked to show it: the gather over the depth the geometry wrote.
+        device.SetAmbientOcclusion(view is DebugView.Ao
+            ? new AmbientOcclusionSettings(Quality: 1)
+            : AmbientOcclusionSettings.Off);
+
+        Assert.True(
+            device.BeginSceneCapture(new SceneTargetDescription(Size, Size, Deferred: true)),
+            "The capture was declined.");
+
+        // What the game does as a capture opens: it clears the frame for the target it knows about. The
+        // resolve covers the whole frame, so that clear must not outlive it.
+        device.Clear(new Bgra32(255, 0, 255, 255));
+
+        // What a frame tells the device before it draws: where the eye is, and how a depth becomes a
+        // position. Both arrive with passes this path does not run, which is why they are set here
+        // rather than assumed.
+        // One cascade where the frame is to be shadowed: the light looking straight down the view, its
+        // projection the identity, so what the triangle writes into the map is what the shading finds.
+        device.SetShadows(
+            shadows ? new ShadowSettings(CascadeCount: 1, Resolution: Size) : ShadowSettings.Off,
+            shadows ? [new ShadowCascade(Matrix3f.Identity, Matrix4f.Identity, Vector3f.Zero, 1000f, 1000f, 0.1f)] : [],
+            new DepthUnprojection(1f, 1f, 0.1f, 1000f),
+            Matrix3f.Identity);
+
+        device.SetTemporalAntiAliasing(
+            temporal ? new TemporalAaSettings(Enabled: true) : default,
+            Matrix4f.Identity,
+            Vector3d.Zero,
+            Matrix3f.Identity);
+
+        // The original's surfaces, under a daytime sun. The bakes light the triangle whatever the sun
+        // is; the sun is there for the atmosphere, which marches a black sky for a black one.
+        device.SetLighting(SceneLighting.Baked with
+        {
+            // The hybrid model where the frame is shadowed, since the baked one never looks at a map.
+            Model = shadows ? LightingModel.Hybrid : LightingModel.Baked,
+            SunDirection = new Vector3f(0.3f, 0.9f, 0.31f).Normalized(),
+            SunColour = new Vector3f(10f, 10f, 10f),
+        });
+        device.SetProjection(Matrix4f.Identity);
+        device.SetDepthState(DepthState.TestAndWrite);
+        device.SetCullMode(CullMode.None);
+        device.SetModelAmbient(Vector3f.One);
+
+        // The same green either way: carried by the vertices over no texture, or by a texture under
+        // white vertices.
+        Bgra32 green = new(0, 220, 40, 255);
+        Bgra32 vertexColour = textured ? Bgra32.White : green;
+
+        TextureHandle texture = textured
+            ? device.CreateTexture(new TextureDescription(1, 1), [green])
+            : TextureHandle.None;
+
+        MeshHandle mesh = device.CreateMesh(
+            [
+                new Vertex3D(new Vector3f(-0.7f, -0.7f, 0.5f), Vector3f.UnitZ, 0f, 0f, colour: vertexColour),
+                new Vertex3D(new Vector3f(0.7f, -0.7f, 0.5f), Vector3f.UnitZ, 1f, 0f, colour: vertexColour),
+                new Vertex3D(new Vector3f(0f, 0.7f, 0.5f), Vector3f.UnitZ, 0.5f, 1f, colour: vertexColour),
+            ],
+            [0, 1, 2]);
+
+        if (shadows && device.BeginShadowCascade(0))
+        {
+            device.DrawMesh(mesh, 0, 3, Matrix4f.Identity, texture, TextureHandle.None, BlendMode.Opaque);
+            device.EndShadowCascade();
+        }
+
+        device.BeginPass(ScenePass.Geometry);
+        device.DrawMesh(mesh, 0, 3, Matrix4f.Identity, texture, TextureHandle.None, BlendMode.Opaque);
+        device.EndPass();
+
+        // And over the light, what a G-buffer cannot hold: a red quad in the top-right corner, drawn in
+        // the forward pass against the depth the triangle wrote.
+        Bgra32 red = new(0, 0, 200, 255);
+        MeshHandle quad = device.CreateMesh(
+            [
+                new Vertex3D(new Vector3f(0.5f, 0.5f, 0.5f), Vector3f.UnitZ, 0f, 0f, colour: red),
+                new Vertex3D(new Vector3f(0.95f, 0.5f, 0.5f), Vector3f.UnitZ, 1f, 0f, colour: red),
+                new Vertex3D(new Vector3f(0.95f, 0.95f, 0.5f), Vector3f.UnitZ, 1f, 1f, colour: red),
+                new Vertex3D(new Vector3f(0.5f, 0.95f, 0.5f), Vector3f.UnitZ, 0f, 1f, colour: red),
+            ],
+            [0, 1, 2, 0, 2, 3]);
+
+        device.BeginPass(ScenePass.Forward);
+        device.DrawMesh(quad, 0, 6, Matrix4f.Identity, TextureHandle.None, TextureHandle.None, BlendMode.Opaque);
+
+        if (glass)
+        {
+            // A pane over the triangle's lower half: a blue texel a quarter opaque, which the glazing
+            // keeps -- the geometry pass takes a pane's opaque texels and this takes the rest. At minus a
+            // fifth, because the glazing's vertex stage remaps depth as half of w minus z to suit a real
+            // projection: under this frame's identity that puts the pane at 0.6, in front of the triangle.
+            TextureHandle pane = device.CreateTexture(new TextureDescription(1, 1), [new Bgra32(220, 60, 20, 64)]);
+            MeshHandle window = device.CreateMesh(
+                [
+                    new Vertex3D(new Vector3f(-0.5f, -0.6f, -0.2f), Vector3f.UnitZ, 0f, 0f),
+                    new Vertex3D(new Vector3f(0.5f, -0.6f, -0.2f), Vector3f.UnitZ, 1f, 0f),
+                    new Vertex3D(new Vector3f(0.5f, -0.1f, -0.2f), Vector3f.UnitZ, 1f, 1f),
+                    new Vertex3D(new Vector3f(-0.5f, -0.1f, -0.2f), Vector3f.UnitZ, 0f, 1f),
+                ],
+                [0, 1, 2, 0, 2, 3]);
+
+            device.SetMaterialOverride(new SurfaceMaterial(Glass: true));
+            device.SetDepthState(DepthState.TestOnly);
+            device.DrawMesh(window, 0, 6, Matrix4f.Identity, pane, TextureHandle.None, BlendMode.AlphaBlend);
+            device.SetDepthState(DepthState.TestAndWrite);
+            device.SetMaterialOverride(SurfaceMaterial.Default);
+        }
+
+        device.EndPass();
+
+        device.EndSceneCapture();
+
+        // Stated rather than defaulted: PostProcessSettings is a record struct, so `new()` runs the
+        // ZEROING constructor and none of its declared defaults -- an exposure of nought, a saturation
+        // of nought, a white point of nought. That is not "no grading"; it is a grey frame, and two
+        // backends agree about a grey frame perfectly.
+        device.ResolveScene(new PostProcessSettings(
+            ToneMapOperator.Neutral,
+            Exposure: 1f,
+            WhitePoint: 1.6f,
+            Contrast: 1f,
+            Saturation: 1f,
+
+            // The lens scatter is added only under a filmic curve, so a frame that says anything about
+            // it -- nought included -- is resolved under one.
+            BloomIntensity: bloom ?? 0f)
+            with
+        {
+            ToneMap = bloom is null ? ToneMapOperator.Neutral : ToneMapOperator.Aces,
+
+            // Everything spills, as ultra carries it: nothing in a frame this dim passes a threshold of one.
+            BloomThreshold = 0f,
+        });
+
+        // And what it does after: the letterbox and the HUD go on top. A clear still pending from the
+        // capture would be honoured by this pass and take the whole picture with it.
+        device.Set2DProjection(Size, Size);
+        device.DrawTriangles2D(
+            [
+                new Vertex2D(Size - 2, 0, 0f, 0f, Bgra32.White),
+                new Vertex2D(Size, 0, 0f, 0f, Bgra32.White),
+                new Vertex2D(Size, 2, 0f, 0f, Bgra32.White),
+            ],
+            [0, 1, 2],
+            TextureHandle.None,
+            BlendMode.Opaque);
+
+        device.SwapBuffers();
+    }
+
+    private static byte[]? TryOnVulkan(out string? reason, DebugView view = DebugView.None, bool textured = false, bool temporal = false, float? bloom = null, bool shadows = false, bool glass = false)
+    {
+        reason = null;
+
+        try
+        {
+            using VulkanRhi vulkan = VulkanRhi.CreateOffscreen(Size, Size, GraphicsDevice.DefaultPresentFormat);
+
+            using (GraphicsDevice device = new(vulkan.Device, new DisplayMode(Size, Size, 32, 60)))
+            {
+                DrawFrame(device, view, textured, temporal, bloom, shadows, glass);
+            }
+
+            return Read(vulkan.Device, vulkan.OffscreenTarget(0));
+        }
+        catch (Exception error)
+        {
+            reason = $"No Vulkan device here: {error.Message}";
+            return null;
+        }
+    }
+
+    private static byte[]? TryOnWebGpu(out string? reason, DebugView view = DebugView.None, bool textured = false, bool temporal = false, float? bloom = null, bool shadows = false, bool glass = false)
+    {
+        reason = null;
+
+        try
+        {
+            using WebGpuRhiDevice rhi = WebGpuRhiDevice.Create();
+            rhi.AttachOffscreen(Size, Size, GraphicsDevice.DefaultPresentFormat);
+
+            using (GraphicsDevice device = new(rhi, new DisplayMode(Size, Size, 32, 60)))
+            {
+                DrawFrame(device, view, textured, temporal, bloom, shadows, glass);
+            }
+
+            return Read(rhi, rhi.OffscreenTarget(0));
+        }
+        catch (Exception error)
+        {
+            reason = $"No WebGPU device here: {error.Message}";
+            return null;
+        }
+    }
+
+    /// <summary>Brings one frame back to the host, un-padded.</summary>
+    private static byte[] Read(IRhiDevice device, IRhiTexture target)
+    {
+        int row = RhiBufferTextureCopy.AlignRow(Size * 4);
+
+        using IRhiBuffer readback = device.CreateBuffer(new RhiBufferDescriptor(
+            (ulong)(row * Size),
+            RhiBufferUsage.CopyDestination | RhiBufferUsage.MapRead,
+            "frame.readback"));
+
+        using (IRhiCommandEncoder encoder = device.CreateCommandEncoder("read"))
+        {
+            encoder.CopyTextureToBuffer(
+                new RhiTextureRegion(target),
+                new RhiBufferTextureCopy(readback, 0, row, Size),
+                new RhiExtent3D(Size, Size));
+
+            device.Submit([encoder.Finish()]);
+        }
+
+        using IRhiReadback data = device.ReadBuffer(readback);
+        Assert.True(data.Wait(TimeSpan.FromSeconds(10)), "The frame never came back.");
+
+        ReadOnlySpan<byte> padded = data.GetData();
+        byte[] pixels = new byte[Size * Size * 4];
+
+        for (int y = 0; y < Size; y++)
+        {
+            padded.Slice(y * row, Size * 4).CopyTo(pixels.AsSpan(y * Size * 4));
+        }
+
+        return pixels;
+    }
+
+    private static int Centre => ((((Size / 2) * Size) + (Size / 2)) * 4);
+
+    private static string Describe(byte[] pixels) => Describe(pixels, Size / 2, Size / 2);
+
+    private static string Describe(byte[] pixels, int x, int y)
+    {
+        int at = (((y * Size) + x) * 4);
+        return $"b{pixels[at]} g{pixels[at + 1]} r{pixels[at + 2]}";
+    }
+}

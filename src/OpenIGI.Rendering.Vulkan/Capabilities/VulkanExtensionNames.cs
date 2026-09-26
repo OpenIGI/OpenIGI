@@ -47,6 +47,15 @@ internal static class VulkanExtensionNames
     /// <summary>Pipeline libraries: linking ray-tracing shader stages compiled separately.</summary>
     public const string PipelineLibrary = "VK_KHR_pipeline_library";
 
+    /// <summary>Compute shader derivatives: an implicit-level sample in a compute stage, taken across quads.</summary>
+    /// <remarks>
+    /// Slang compiles a compute module that samples at an implicit level to the capability this names,
+    /// and the surface cache's screen passes and the distance field's build do. Without it enabled the
+    /// modules are invalid; the driver answered them anyway, with the quad derivatives the capability
+    /// describes, so enabling it makes legal what every frame already did.
+    /// </remarks>
+    public const string ComputeShaderDerivatives = "VK_KHR_compute_shader_derivatives";
+
     /// <summary>Position fetch: reading a hit triangle's vertex positions straight from the acceleration structure.</summary>
     /// <remarks>
     /// Without it a hit shader has to reach back into the mesh's own vertex and index buffers to work out

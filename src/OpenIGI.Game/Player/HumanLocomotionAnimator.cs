@@ -103,7 +103,7 @@ public sealed class HumanLocomotionAnimator
             return default;
         }
 
-        if (animation.Translation.Count == 0)
+        if (animation.Translation.Length == 0)
         {
             Time += TimePerTick;
             return default;

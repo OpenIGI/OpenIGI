@@ -1,6 +1,7 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
@@ -258,7 +259,8 @@ internal sealed partial class GameHost
         }
 
         // How the level drives the dynamic renderer, for a title whose sun is a lighting direction
-        // rather than a position in the sky. Project I.G.I. answers nothing and keeps the sweep.
+        // rather than a position in the sky, or for a level whose night only its sky dome says. Project
+        // I.G.I. answers nothing for its daylit levels, which keep the sweep as it was.
         _deferredLighting = _presentation.ReadDeferredLighting(levelRoot);
         if (_deferredLighting is { } lit)
         {
@@ -1060,7 +1062,7 @@ internal sealed partial class GameHost
                             _lightmapBake?.Cancel();
                             _lightmapBake = LightmapBake.Start(
                                 bakeScene, lmTargets, lmTris, lmBvh, bakeCast, bakeSunDirection, lmSun, lmSky,
-                                bounces: 4, hemisphereRays: 128, _logger);
+                                _work, bounces: 4, hemisphereRays: 128, logger: _logger);
 
                             if (_options.Lockstep && _lightmapBake.WaitForResult() is { } readyLightmaps)
                             {
@@ -1111,6 +1113,7 @@ internal sealed partial class GameHost
                             // and IGI's palette is concrete, snow and dirt, so a warm grey is not far off
                             // any of them.
                             ProbeBakeAlbedo,
+                            _work,
                             _logger);
 
                         if (_options.Lockstep)
@@ -1528,9 +1531,11 @@ internal sealed partial class GameHost
                 // After the reset, which clears it: a level that authors its own night hands the cycle
                 // that night to cross to, instead of the faint one the cycle invents for a level that
                 // does not have one. See DayNightCycle.SetNightLighting.
-                if (_deferredLighting is { Night: not null } authoredNight)
+                if (_deferredLighting is { Night: { } boundNight } authoredNight)
                 {
-                    _dayNight.SetNightLighting(readSun.Colour, authoredNight.Ambient);
+                    _dayNight.SetNightLighting(
+                        boundNight.SunIsMoon ? readSun.Colour : null,
+                        authoredNight.Ambient);
                 }
                 _logger.Information(
                     "Light",
@@ -2038,6 +2043,9 @@ internal sealed partial class GameHost
                 // Walking is what starting a mission means. The free camera is the debugging tool, so
                 // it is the thing you switch to rather than the thing you start in.
                 _playerMode = !_options.StartFlying;
+
+                // After a switch of renderer, back where the view was before it.
+                ResumePose();
                 _logger.Information(
                     "Player",
                     _playerMode
@@ -2295,7 +2303,7 @@ internal sealed partial class GameHost
                 _shelterField.Depth,
                 MipLevels: 1,
                 TextureFilter.Point,
-                TextureAddressMode.Clamp),
+                TextureAddressMode.Clamp) { HoldsData = true },
             texels);
 
         _device.SetShelterMap(
@@ -2494,7 +2502,7 @@ internal sealed partial class GameHost
 
         Vector3f sunColour = _sun?.Colour ?? new Vector3f(1f, 1f, 1f);
         Vector3f skyColour = _sun?.Ambient ?? new Vector3f(0.3f, 0.3f, 0.3f);
-        LightmapBaker.BakeDirectAndSky(targets, cast, sunDirection, sunColour, skyColour, hemisphereRays: 64);
+        Stepping.Drain(LightmapBaker.BakeDirectAndSky(targets, cast, sunDirection, sunColour, skyColour, 64, _work));
 
         // Phase 3: fold in the multi-bounce indirect. Build the lightmapped triangles and a BVH over them,
         // then gather several bounces reading the last pass's light. Grey albedo for now (colour is 3b),
@@ -2507,7 +2515,7 @@ internal sealed partial class GameHost
                 $"Albedo: {coloured}/{triangles.Length} triangles got a resolved colour; samples ({triangles[0].Albedo.X:F2},{triangles[0].Albedo.Y:F2},{triangles[0].Albedo.Z:F2}) ({triangles[triangles.Length / 2].Albedo.X:F2},{triangles[triangles.Length / 2].Albedo.Y:F2},{triangles[triangles.Length / 2].Albedo.Z:F2})."));
         LightmapBaker.LightmapBvh bvh = LightmapBaker.LightmapBvh.Build(triangles);
         _logger.Information("Lightmap", $"Built a BVH over {triangles.Length} triangle(s); gathering bounces.");
-        LightmapBaker.BakeBounces(targets, triangles, bvh, skyColour, passes: 4, hemisphereRays: 64);
+        Stepping.Drain(LightmapBaker.BakeBounces(targets, triangles, bvh, skyColour, 4, 64, _work));
 
         // A numerical spot-check on the largest page: how many texels it covered, and a few of them with
         // their world position (should sit near the placement) and baked radiance (sunlit near the sun

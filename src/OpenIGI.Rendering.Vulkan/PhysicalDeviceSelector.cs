@@ -112,15 +112,11 @@ internal sealed unsafe class PhysicalDeviceSelector
             $"Selected adapter '{selection.Name}' (Vulkan {api.Major}.{api.Minor}.{api.Patch}).");
 
         VulkanQueuePlan queues = selection.Queues;
-        string compute = queues.HasDedicatedCompute
-            ? $"family {queues.AsyncCompute.Family}"
-            : "shared with graphics";
-        string transfer = queues.HasDedicatedTransfer
-            ? $"family {queues.Transfer.Family}"
-            : "shared";
         _logger.Information(
             "Vulkan",
-            $"Queues: graphics family {queues.Graphics.Family}, async compute {compute}, transfer {transfer}.");
+            queues.GraphicsAndPresentUnified
+                ? $"Queue: family {queues.Graphics.Family}, drawing and presenting."
+                : $"Queues: graphics family {queues.Graphics.Family}, present family {queues.Present.Family}.");
 
         string tracing = capabilities.HardwareRayTracing
             ? capabilities.RayTracingPipeline ? "ray query and ray-tracing pipeline" : "ray query only"
@@ -279,19 +275,10 @@ internal sealed unsafe class PhysicalDeviceSelector
         return [.. available.Except(withdrawn)];
     }
 
-    /// <summary>Works out which queue of which family each kind of work will be submitted to.</summary>
+    /// <summary>Works out which families the backend draws and presents on.</summary>
     /// <remarks>
-    /// <para>
-    /// What matters is independence from the graphics engine, so a family only counts as asynchronous
-    /// compute if it is a <em>different</em> family from the graphics one — a second queue drawn from the
-    /// graphics family is still the same hardware and the work still serialises. A transfer family is
-    /// stricter still: it must carry neither graphics nor compute, which is what identifies a real copy
-    /// engine rather than a general family that happens to accept transfers.
-    /// </para>
-    /// <para>
-    /// Not finding either is normal and not a failure. The slot falls back to the graphics queue, work
-    /// runs in order, and every caller is written the same way regardless.
-    /// </para>
+    /// A family that does both is preferred, so the common path needs one queue and no cross-family
+    /// sharing of the swapchain's images. An adapter with no family that can do either is refused.
     /// </remarks>
     private bool TryPlanQueues(PhysicalDevice device, [NotNullWhen(true)] out VulkanQueuePlan? plan)
     {
@@ -348,51 +335,23 @@ internal sealed unsafe class PhysicalDeviceSelector
             present = unified;
         }
 
-        int asyncCompute = graphics;
-        for (uint i = 0; i < count; i++)
-        {
-            if (i != (uint)graphics && families[i].QueueFlags.HasFlag(QueueFlags.ComputeBit))
-            {
-                asyncCompute = (int)i;
-                break;
-            }
-        }
-
-        int transfer = graphics;
-        for (uint i = 0; i < count; i++)
-        {
-            QueueFlags flags = families[i].QueueFlags;
-            bool dedicated = flags.HasFlag(QueueFlags.TransferBit)
-                && !flags.HasFlag(QueueFlags.GraphicsBit)
-                && !flags.HasFlag(QueueFlags.ComputeBit);
-            if (dedicated && i != (uint)graphics && i != (uint)asyncCompute)
-            {
-                transfer = (int)i;
-                break;
-            }
-        }
-
-        // One queue per family is what the backend uses: a second queue from the same family shares the
-        // hardware, so it buys ordering flexibility rather than parallelism, and it is not needed here.
-        Dictionary<uint, uint> queueCounts = new()
-        {
-            [(uint)graphics] = 1,
-            [(uint)present] = 1,
-            [(uint)asyncCompute] = 1,
-            [(uint)transfer] = 1,
-        };
-
         plan = new VulkanQueuePlan(
             new VulkanQueueSlot((uint)graphics, 0),
-            new VulkanQueueSlot((uint)present, 0),
-            new VulkanQueueSlot((uint)asyncCompute, 0),
-            new VulkanQueueSlot((uint)transfer, 0),
-            queueCounts);
+            new VulkanQueueSlot((uint)present, 0));
         return true;
     }
 
     private bool PresentSupported(PhysicalDevice device, uint queueFamily)
     {
+        // A device with no surface presents nothing, and asking the driver whether a queue can present
+        // to a surface that does not exist is undefined: it does not answer false, it takes the process
+        // down. A headless device -- a test, a compute-only tool -- says every queue presents, which
+        // leaves the choice to the other criteria and makes the present queue the graphics one.
+        if (_surface.Handle == 0)
+        {
+            return true;
+        }
+
         Bool32 supported = false;
         VkCheck.Ok(
             _khrSurface.GetPhysicalDeviceSurfaceSupport(device, queueFamily, _surface, &supported),

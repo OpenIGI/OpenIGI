@@ -37,6 +37,18 @@ internal sealed partial class GameHost
     /// <summary>The load the sequence will run once the departure has played out.</summary>
     private Action? _pendingLoad;
 
+    /// <summary>The mission that load brings up, for the load gate to be asked about.</summary>
+    private int _pendingLoadMission;
+
+    // The backdrop asked for while its mission's files were still arriving; see RequestBackdrop.
+    private int? _backdropAwaitingFiles;
+
+    // The mission -mission asked for while its files were still arriving; see StartMissionWhenReadable.
+    private int? _startAwaitingFiles;
+
+    /// <summary>What the load gate last said it was waiting for, so it is reported once rather than every frame.</summary>
+    private string? _loadGateWaitingFor;
+
     /// <summary>The briefing, posted on the nearest surface at the start. See r_world_briefing.</summary>
     private WorldTitleRenderer? _briefingPost;
     private bool _briefingPosted;
@@ -134,6 +146,7 @@ internal sealed partial class GameHost
     /// <summary>
     /// Starts the going-in sequence and defers the load until its departure has played.
     /// </summary>
+    /// <param name="missionId">The mission the load brings up.</param>
     /// <param name="load">What brings the mission up: a promotion of the backdrop, or a cold start.</param>
     /// <remarks>
     /// The order is the whole design. The clean picture -- the level as the player sees it now, with no
@@ -142,10 +155,12 @@ internal sealed partial class GameHost
     /// block on the load. Loading first and presenting after was the old order, and it froze the menu,
     /// interface and all, for the length of the load.
     /// </remarks>
-    private void BeginCinematicLoad(Action load)
+    private void BeginCinematicLoad(int missionId, Action load)
     {
         ArgumentNullException.ThrowIfNull(load);
         _pendingLoad = load;
+        _pendingLoadMission = missionId;
+        _loadGateWaitingFor = null;
         _loadSequence.Begin(capturePicture: true);
     }
 
@@ -242,11 +257,104 @@ internal sealed partial class GameHost
         }
     }
 
+    /// <summary>Whether a mission's files can all be read now, as the load gate says.</summary>
+    /// <param name="missionId">The mission.</param>
+    /// <param name="waitingFor">What is still missing, when they cannot.</param>
+    /// <returns>
+    /// <see langword="true"/> when they can. A mission the catalogue does not know has no files to wait for;
+    /// whatever then tries to load it reports it.
+    /// </returns>
+    private bool MissionFilesReady(int missionId, out string? waitingFor)
+    {
+        waitingFor = null;
+        return _missions.Missions.FirstOrDefault(m => m.Id == missionId) is not { } mission
+            || _loadGate.IsReady(mission, out waitingFor);
+    }
+
+    /// <summary>Asks for a menu backdrop, once its mission's files are there.</summary>
+    /// <param name="loader">The backdrop builder, if the menu has one.</param>
+    /// <param name="missionId">The mission to show.</param>
+    /// <remarks>
+    /// A backdrop is a mission loaded behind the menu, and reads the same files a played one does. Until
+    /// the gate says they are there -- a browser reads a level's large files when it is first wanted --
+    /// the request waits in <see cref="_backdropAwaitingFiles"/> and the menu asks again each frame; the
+    /// newest request replaces one still waiting.
+    /// </remarks>
+    private void RequestBackdrop(MissionPreviewLoader? loader, int missionId)
+    {
+        if (loader is null)
+        {
+            return;
+        }
+
+        // Nothing could be played from it: a mission the catalogue does not offer cannot be promoted or
+        // started, so it is not built behind the menu either.
+        if (!_missions.TryGet(missionId, out _))
+        {
+            _logger.Warning("Mission", $"Asked for a backdrop of mission {missionId}, which is not offered.");
+            return;
+        }
+
+        if (!MissionFilesReady(missionId, out _))
+        {
+            _backdropAwaitingFiles = missionId;
+            return;
+        }
+
+        _backdropAwaitingFiles = null;
+        loader.Request(missionId);
+    }
+
+    /// <summary>Starts a mission the command line asked for, now or once the gate lets its files be read.</summary>
+    /// <param name="missionId">The mission.</param>
+    /// <remarks>
+    /// The desktop's gate always says yes, so this is the plain start there. A browser fetches a level's
+    /// large files when the level is first wanted, and being asked is what starts the fetch: the start
+    /// waits in <see cref="_startAwaitingFiles"/> and <see cref="RunCommandLineMissionIfDue"/> asks
+    /// again each frame. Started regardless, the level came up with its terrain and models absent.
+    /// </remarks>
+    private void StartMissionWhenReadable(int missionId)
+    {
+        if (MissionFilesReady(missionId, out string? waitingFor))
+        {
+            StartMission(missionId);
+            return;
+        }
+
+        _startAwaitingFiles = missionId;
+        _logger.Information("Mission", $"Mission {missionId} waits for {waitingFor ?? "its files"}.");
+    }
+
+    /// <summary>Starts the command line's mission once its files are there. Call between frames.</summary>
+    private void RunCommandLineMissionIfDue()
+    {
+        if (_startAwaitingFiles is not { } missionId || !MissionFilesReady(missionId, out _))
+        {
+            return;
+        }
+
+        _startAwaitingFiles = null;
+        StartMission(missionId);
+    }
+
     /// <summary>Runs the deferred load once the departure has played. Call between frames.</summary>
     private void RunPendingLoadIfDue()
     {
         if (!_loadSequence.WantsLoad || _pendingLoad is not { } load)
         {
+            return;
+        }
+
+        // Not until the mission's files can be read. The sequence holds its picture meanwhile, and the
+        // load runs on the frame the gate says yes -- on the desktop, always the first.
+        if (!MissionFilesReady(_pendingLoadMission, out string? waitingFor))
+        {
+            if (!string.Equals(waitingFor, _loadGateWaitingFor, StringComparison.Ordinal))
+            {
+                _loadGateWaitingFor = waitingFor;
+                _logger.Information("Mission", $"Mission {_pendingLoadMission} waits for {waitingFor ?? "its files"}.");
+            }
+
             return;
         }
 
@@ -603,6 +711,7 @@ internal sealed partial class GameHost
         }
 
         _loadSequence.Update(elapsed, ready: _loadSequence.Loaded && !_warmUp.IsActive);
+        AdvanceResumeHold(revealed: _loadSequence.Loaded && !_warmUp.IsActive, loadActive: _loadSequence.IsActive);
 
         if (!_loadSequence.IsActive || !ShowsLoadingPanel)
         {
@@ -657,6 +766,12 @@ internal sealed partial class GameHost
     /// <param name="batch">The 2D batch, not begun.</param>
     private void PaintLoadingScreen(SpriteBatch batch)
     {
+        // After a switch of renderer the other renderer's picture stands in for the whole screen.
+        if (PaintResumeFrame())
+        {
+            return;
+        }
+
         float width = _window.Width;
         float height = _window.Height;
         float seconds = _loop.TimeSource.Milliseconds / 1000f;

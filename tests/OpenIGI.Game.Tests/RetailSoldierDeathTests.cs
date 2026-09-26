@@ -52,11 +52,11 @@ public sealed class RetailSoldierDeathTests
         {
             Assert.True(set.TryGet(id, out BoneAnimation clip), $"Animation {id} is missing from set {DeathSet}.");
 
-            IReadOnlyList<BoneTranslationKey> root = clip.Translation;
-            Assert.True(root.Count > 1, $"Animation {id} has no root motion to fall with.");
+            ReadOnlySpan<BoneTranslationKey> root = clip.Translation;
+            Assert.True(root.Length > 1, $"Animation {id} has no root motion to fall with.");
 
             float start = root[0].Position.Z;
-            float end = root[root.Count - 1].Position.Z;
+            float end = root[root.Length - 1].Position.Z;
 
             // Starts standing, ends on the floor. 2000 units is 0.49 m -- a generous halfway line that
             // separates every one of these from the two literals below.

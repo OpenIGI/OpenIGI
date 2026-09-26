@@ -1,0 +1,82 @@
+# OpenIGI web build on Apache (cPanel): goes beside index.html in the publish's wwwroot.
+# Serves the pre-compressed .br / .gz files the publish wrote beside each file, with the right types.
+
+Options -Indexes
+
+# --- Types the runtime needs --------------------------------------------------------------------
+AddType application/wasm            .wasm
+AddType text/javascript             .js .mjs
+AddType application/json            .json
+AddType application/octet-stream    .dat .dll .pdb .blat .webcil
+AddType image/webp                  .webp
+AddType font/woff2                  .woff2
+
+# --- Pre-compressed files ------------------------------------------------------------------------
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Brotli first, where the browser accepts it and the file exists.
+  RewriteCond %{HTTP:Accept-Encoding} br
+  RewriteCond %{REQUEST_FILENAME}.br -f
+  RewriteRule ^(.+)$ $1.br [L]
+
+  # Otherwise gzip.
+  RewriteCond %{HTTP:Accept-Encoding} gzip
+  RewriteCond %{REQUEST_FILENAME}.gz -f
+  RewriteRule ^(.+)$ $1.gz [L]
+</IfModule>
+
+# The type of a compressed file is the type of the file it holds, set by its full name rather than by a
+# rewrite flag, which not every host honours: a .js sent as application/octet-stream is refused by the
+# browser as a module script and the page stops at "Loading...".
+<FilesMatch "\.wasm\.(br|gz)$">
+  ForceType application/wasm
+</FilesMatch>
+<FilesMatch "\.m?js\.(br|gz)$">
+  ForceType text/javascript
+</FilesMatch>
+<FilesMatch "\.json\.(br|gz)$">
+  ForceType application/json
+</FilesMatch>
+<FilesMatch "\.html\.(br|gz)$">
+  ForceType text/html
+</FilesMatch>
+<FilesMatch "\.css\.(br|gz)$">
+  ForceType text/css
+</FilesMatch>
+<FilesMatch "\.txt\.(br|gz)$">
+  ForceType text/plain
+</FilesMatch>
+<FilesMatch "\.wav\.(br|gz)$">
+  ForceType audio/wav
+</FilesMatch>
+<FilesMatch "\.(dat|dll|pdb|blat|webcil)\.(br|gz)$">
+  ForceType application/octet-stream
+</FilesMatch>
+
+# Never compress an already compressed file a second time.
+<FilesMatch "\.(br|gz)$">
+  SetEnv no-gzip 1
+  SetEnv no-brotli 1
+</FilesMatch>
+
+<IfModule mod_headers.c>
+  <FilesMatch "\.br$">
+    Header set Content-Encoding br
+    Header append Vary Accept-Encoding
+  </FilesMatch>
+  <FilesMatch "\.gz$">
+    Header set Content-Encoding gzip
+    Header append Vary Accept-Encoding
+  </FilesMatch>
+
+  # How long a browser keeps a file. Everything keeps its name from one build to the next -- the page, its
+  # scripts, the host's assets -- except the runtime under _framework, which has a content hash in every
+  # name (name.0123456789.wasm), so its files can be kept for good and the rest are revalidated on every
+  # load (a small 304 while unchanged), which is what makes a new upload show at once. Matched by name
+  # rather than by a _framework/.htaccess: a file section is applied after every directory's, on any host.
+  Header set Cache-Control "no-cache"
+  <FilesMatch "\.[a-z0-9]{10}\.(wasm|js|dat|json)(\.br|\.gz)?$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+</IfModule>

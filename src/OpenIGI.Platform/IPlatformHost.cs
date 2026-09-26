@@ -17,4 +17,8 @@ public interface IPlatformHost
     /// <returns>The new window, not yet visible. Call <see cref="IGameWindow.Show"/> to display it.</returns>
     /// <exception cref="PlatformException">The window could not be created.</exception>
     IGameWindow CreateWindow(in WindowSettings settings);
+
+    /// <summary>Creates the pacer a loop on this platform holds itself to a rate with.</summary>
+    /// <returns>A pacer that waits, or one that never does where the platform paces the loop itself.</returns>
+    IFramePacer CreateFramePacer();
 }

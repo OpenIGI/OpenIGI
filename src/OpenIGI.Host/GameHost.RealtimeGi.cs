@@ -1,4 +1,5 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Host.Lighting;
 using OpenIGI.Rendering;
@@ -33,6 +34,24 @@ internal sealed partial class GameHost
     // SurfaceCacheConvergence for why it is spread rather than run: as one call it was a multi-second
     // stall, and one that landed mid-play whenever the field arrived after the level did.
     private SurfaceCacheConvergence? _giConvergence;
+
+    // The next slice of the whole-cache refresh. See StepGiRelight.
+    private int _giRefreshSlice;
+
+    // Whole sweeps the refresh has completed, which is what advances its jitter from one sweep to the next.
+    private int _giRefreshRounds;
+
+    // How many frames the load-time convergence has waited for the world's structure to settle. See
+    // BeginGiConvergence.
+    private int _giSettleWaitFrames;
+
+    /// <summary>The longest the convergence waits for the traced world to stop growing, in frames.</summary>
+    /// <remarks>
+    /// Ten seconds at sixty. A level that never settles -- something keeps arriving at the edge of the
+    /// admission radius -- converges against what it has rather than not at all, and the refresh sweep
+    /// corrects it as the rest arrives.
+    /// </remarks>
+    private const int GiSettleTimeoutFrames = 600;
 
     // Which mission's lamps are applied, so a promotion does not survey a level whose backdrop already
     // did -- that survey was the largest single cost of pressing Play.
@@ -206,7 +225,7 @@ internal sealed partial class GameHost
             return;
         }
 
-        _sdfBake = DistanceFieldBake.Start(_scene!.Placements, resolution, _logger);
+        _sdfBake = DistanceFieldBake.Start(_scene!.Placements, _work, resolution, _logger);
         _logger.Information(
             "GlobalIllumination",
             $"Baking the level's distance fields at {resolution} voxels; the level will light from the "
@@ -363,7 +382,30 @@ internal sealed partial class GameHost
             return;
         }
 
-        DirectionalLightSettings? sun = _effectiveSun ?? _sun;
+        // Not against the stand-in. Until the level's own acceleration structure exists, a tracing pass
+        // binds one that every ray misses, so a convergence run now would light every surface as if no
+        // wall stood between it and any lamp or the sun -- and the result is kept. The frame loop asks
+        // again every frame until it can.
+        if (!_device.WorldTraceReady)
+        {
+            return;
+        }
+
+        // And not against a world still filling in. The structure admits a few meshes a frame from what
+        // the frames draw and offer, so for a while after it is ready most of the level is missing from
+        // it -- and every wall missing is a wall this one-off lighting shines through. Wait until nothing
+        // new has arrived for a while, or give up waiting and let the refresh sweep catch up.
+        if (!_device.WorldTraceSettled && _giSettleWaitFrames++ < GiSettleTimeoutFrames)
+        {
+            return;
+        }
+
+        // The sun the frame will light with, derived the same way -- NOT _effectiveSun ?? _sun. During a
+        // load the first is not set for this level yet, and the second is the level's raw authored
+        // Dirlight, which every Project I.G.I. mission authors as a noon sun: a night mission's whole
+        // cache was converged in daylight. See CycleSun.
+        DirectionalLightSettings sun = CycleSun();
+        _giRefreshSlice = 0;
 
         // Whole-cache bounces, so each one is worth a full pass -- and capped, because that is what makes
         // them affordable. The old one-shot convergence ran two whole-cache iterations and then seven
@@ -378,9 +420,9 @@ internal sealed partial class GameHost
         _giConvergence = new SurfaceCacheConvergence(
             cards,
             field,
-            sun is { IsBelowHorizon: false } lit ? lit.Direction : default,
-            (sun?.Colour ?? default) * (RenderCVars.SunScale.Value * RenderCVars.LightScale.Value),
-            SkyFillColour(),
+            CacheSunDirection(sun),
+            sun.Colour * (RenderCVars.SunScale.Value * RenderCVars.LightScale.Value),
+            SkyFillColour(sun),
             RenderCVars.GlobalIlluminationBoost.Value,
             fullPasses);
 
@@ -394,10 +436,30 @@ internal sealed partial class GameHost
     /// <summary>Runs this frame's share of the convergence, if one is in flight. Once per frame.</summary>
     private void StepGiConvergence()
     {
-        if (_giConvergence is not { } job || job.IsComplete)
+        if (_giConvergence is null || _giConvergence.IsComplete)
         {
-            return;
+            // Nothing in flight. A level whose cache and field are both here but which has not converged
+            // was waiting on the world's structure; ask again. One that has converged is relit when what it
+            // was lit by has moved on.
+            if (!_giConverged)
+            {
+                if (_cardLighting is not null && _sdfClipmaps is not null)
+                {
+                    BeginGiConvergence();
+                }
+            }
+            else
+            {
+                StepGiRelight();
+            }
+
+            if (_giConvergence is null || _giConvergence.IsComplete)
+            {
+                return;
+            }
         }
+
+        SurfaceCacheConvergence job = _giConvergence;
 
         if (_cardLighting is null || _sdfClipmaps is null)
         {
@@ -412,6 +474,67 @@ internal sealed partial class GameHost
             FinishGiConvergence();
         }
     }
+
+    /// <summary>Refreshes one slice of the WHOLE cache, direct light and one bounce, every frame.</summary>
+    /// <remarks>
+    /// <para>
+    /// The steady-state refresh only reaches cards within <c>r_gi_cache_radius</c> of the camera, and the
+    /// load-time convergence runs once. So whatever the far cards were converged under stayed there: a
+    /// world structure still filling in (walls not yet admitted, and so not in anyone's shadow), a clock
+    /// that has moved on, lamps that arrived or were switched after it. The player saw it put right only
+    /// by walking up to each place in turn.
+    /// </para>
+    /// <para>
+    /// The reference keeps its surface cache current the same way: a per-frame budget of card updates
+    /// over the whole scene rather than a radius around the eye. Here the whole cache is swept a slice a
+    /// frame, the direct term relit under this frame's sun and lamps and a bounce folded in at half
+    /// weight, so a far surface follows every change within a few seconds and never pops -- both halves
+    /// blend. The slices near the camera are refreshed twice, which costs little and changes nothing.
+    /// </para>
+    /// <para>
+    /// Relighting the direct term alone, as this first did, changed nothing anyone could see: the far
+    /// cards show the FINAL atlas, which only the bounce writes, and the steady bounce is radius-culled
+    /// too.
+    /// </para>
+    /// </remarks>
+    private void StepGiRelight()
+    {
+        int slices = RenderCVars.GiFarRefresh.Value;
+        if (slices <= 0
+            || _cardLighting is not { } cards
+            || _sdfClipmaps is not { } field
+            || _effectiveSun is not { } sun)
+        {
+            return;
+        }
+
+        int slice = _giRefreshSlice % slices;
+        _giRefreshSlice = (slice + 1) % slices;
+        if (_giRefreshSlice == 0)
+        {
+            _giRefreshRounds = (_giRefreshRounds + 1) & 0x3fff;
+        }
+
+        cards.ConvergeLightSlice(
+            CacheSunDirection(sun),
+            sun.Colour * (RenderCVars.SunScale.Value * RenderCVars.LightScale.Value),
+            SkyFillColour(sun),
+            field,
+            slice,
+            slices);
+
+        // At the steady bounce's own weight and a new jitter every sweep. It passed pass 1, which blends at
+        // one half and jitters every probe the same way every time: each sweep dragged every tile, the
+        // ones by the player included, halfway to one fixed sixteen-ray estimate, and once the steady
+        // bounce idled that estimate was all the cache held -- the per-probe blotches every ray read back.
+        int steady = Math.Max(RenderCVars.GiTemporalFrames.Value, 1);
+        cards.ConvergeBounceSlice(
+            field, RenderCVars.GlobalIlluminationBoost.Value, pass: steady + 1 + _giRefreshRounds, slice, slices);
+    }
+
+    // A sun under the horizon lights nothing directly, and the cache is told so with no direction at all.
+    private static Vector3f CacheSunDirection(DirectionalLightSettings sun) =>
+        sun.IsBelowHorizon ? default : sun.Direction;
 
     private void FinishGiConvergence()
     {
@@ -440,6 +563,7 @@ internal sealed partial class GameHost
     private void DiscardDistanceFields()
     {
         _giConverged = false;
+        _giSettleWaitFrames = 0;
         _giConvergence = null;
         // Clearing the latch as well as the structures, so the next level -- or the next resolution --
         // gets its own attempt rather than inheriting this one's verdict.
@@ -455,6 +579,7 @@ internal sealed partial class GameHost
     private void DiscardSurfaceCache()
     {
         _giConverged = false;
+        _giSettleWaitFrames = 0;
         _giConvergence = null;
         _attemptedCardDensity = float.NaN;
         _capturedCards = null;
@@ -510,7 +635,7 @@ internal sealed partial class GameHost
         }
 
         // The lit cache reads the fixtures as area emitters; one built before they were known has to be
-        // told about them.
+        // told about them. The refresh sweep carries them to the far cards.
         _cardLighting?.SetLocalLights(_lightFixtures);
     }
 

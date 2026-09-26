@@ -1,12 +1,13 @@
 using System.Diagnostics;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.World;
 
 /// <summary>
-/// A probe bake running on a worker, and the handover of its result to the render thread.
+/// A probe bake running off the frame, and the handover of its result to the render thread.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -33,16 +34,18 @@ public sealed class IrradianceProbeBake
 {
     private const string LogCategory = "GI";
 
-    private readonly Task<IrradianceVolume?> _work;
+    private readonly ScheduledJob<IrradianceVolume?> _job;
     private readonly CancellationTokenSource _cancellation;
     private readonly Stream _stream;
+    private readonly IIgiLogger _log;
     private bool _collected;
 
-    private IrradianceProbeBake(Task<IrradianceVolume?> work, CancellationTokenSource cancellation, Stream stream)
+    private IrradianceProbeBake(ScheduledJob<IrradianceVolume?> job, CancellationTokenSource cancellation, Stream stream, IIgiLogger log)
     {
-        _work = work;
+        _job = job;
         _cancellation = cancellation;
         _stream = stream;
+        _log = log;
     }
 
     // The worker publishes each bounce pass's field here as it finishes; the render thread takes the
@@ -82,9 +85,14 @@ public sealed class IrradianceProbeBake
     }
 
     /// <summary>Gets whether the trace has finished, however it finished.</summary>
-    public bool IsComplete => _work.IsCompleted;
+    public bool IsComplete => _job.IsFinished;
 
-    /// <summary>Starts tracing a level's probe field on a worker.</summary>
+    /// <summary>Asks whether the trace has finished, tracing a slice of it first where it runs inline.</summary>
+    /// <returns><see langword="true"/> once it has finished, however it finished.</returns>
+    /// <remarks>What the frame loop calls each frame; on a single-threaded host this is the bake's progress.</remarks>
+    public bool Poll() => _job.Poll();
+
+    /// <summary>Starts tracing a level's probe field: on a worker where the scheduler has one, a slice per poll where it does not.</summary>
     /// <param name="scene">The level, for its bounds.</param>
     /// <param name="cast">
     /// How to ask the world what a ray meets. Must be safe to call from another thread for as long as
@@ -93,6 +101,7 @@ public sealed class IrradianceProbeBake
     /// <param name="sunDirection">The direction light arrives from, pointing towards the sun.</param>
     /// <param name="spacing">The distance between probes, in metres.</param>
     /// <param name="groundAlbedo">What the level bounces, per channel.</param>
+    /// <param name="work">Where the trace runs; see <see cref="ScheduledJob{T}"/>.</param>
     /// <param name="logger">Where to report the bake's size and duration.</param>
     /// <returns>A handle to poll with <see cref="TryCollect"/>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="scene"/> or <paramref name="cast"/> is null.</exception>
@@ -102,54 +111,54 @@ public sealed class IrradianceProbeBake
         Vector3f sunDirection,
         float spacing,
         Vector3f groundAlbedo,
+        IWorkScheduler work,
         IIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(cast);
+        ArgumentNullException.ThrowIfNull(work);
 
         IIgiLogger log = logger ?? NullLogger.Instance;
         CancellationTokenSource cancellation = new();
+        CancellationToken token = cancellation.Token;
         Stream stream = new();
 
-        Task<IrradianceVolume?> work = Task.Run(
-            () =>
-            {
-                long startedAt = Stopwatch.GetTimestamp();
+        SteppedJob<IrradianceVolume?> job = new(done => Trace(scene, cast, sunDirection, spacing, groundAlbedo, log, stream, work, done, token));
+        return new IrradianceProbeBake(new ScheduledJob<IrradianceVolume?>(job, work), cancellation, stream, log);
+    }
 
-                try
-                {
-                    IrradianceVolume? volume = IrradianceProbeBaker.Bake(
-                        scene, cast, sunDirection, spacing, groundAlbedo, log, stream.Publish, cancellation.Token);
+    /// <summary>The trace, a slice at a time, and how long it took once it is done.</summary>
+    private static IEnumerable<bool> Trace(
+        WorldScene scene,
+        WorldRayCast cast,
+        Vector3f sunDirection,
+        float spacing,
+        Vector3f groundAlbedo,
+        IIgiLogger log,
+        Stream stream,
+        IWorkScheduler work,
+        Action<IrradianceVolume?> done,
+        CancellationToken token)
+    {
+        long startedAt = Stopwatch.GetTimestamp();
+        IrradianceVolume? volume = null;
 
-                    if (volume is not null)
-                    {
-                        double seconds = Stopwatch.GetElapsedTime(startedAt).TotalSeconds;
-                        log.Information(
-                            LogCategory,
-                            FormattableString.Invariant(
-                                $"Probe bake took {seconds:0.00} s on a worker; the field lights the level from the next frame."));
-                    }
+        foreach (bool slice in IrradianceProbeBaker.Bake(
+            scene, cast, sunDirection, spacing, groundAlbedo, log, stream.Publish, work, baked => volume = baked, token))
+        {
+            yield return slice;
+        }
 
-                    return volume;
-                }
-                catch (OperationCanceledException)
-                {
-                    // Quitting or changing level during a bake. Nothing to report: the volume is simply
-                    // never collected, and the level keeps the flat ambient term it has been using.
-                    return null;
-                }
-                catch (Exception ex)
-                {
-                    // A bake that throws must not take the game with it. The thrown frame is lost either
-                    // way; losing the level as well is the worse outcome, and the fallback -- flat
-                    // ambient -- is what every preset below high runs on anyway.
-                    log.Error(LogCategory, $"The probe bake failed and the level will use flat ambient: {ex.Message}", ex);
-                    return null;
-                }
-            },
-            CancellationToken.None);
+        if (volume is not null)
+        {
+            double seconds = Stopwatch.GetElapsedTime(startedAt).TotalSeconds;
+            log.Information(
+                LogCategory,
+                FormattableString.Invariant(
+                    $"Probe bake took {seconds:0.00} s; the field lights the level from the next frame."));
+        }
 
-        return new IrradianceProbeBake(work, cancellation, stream);
+        done(volume);
     }
 
     /// <summary>Takes the newest bounce pass's field the render thread has not yet uploaded.</summary>
@@ -176,13 +185,22 @@ public sealed class IrradianceProbeBake
     {
         volume = null;
 
-        if (_collected || !_work.IsCompleted)
+        if (_collected || !_job.Poll())
         {
             return false;
         }
 
         _collected = true;
-        volume = _work.Result;
+
+        // A bake that throws must not take the game with it. The level keeps the flat ambient every
+        // preset below high runs on anyway; a cancelled one -- quitting, or changing level -- is simply
+        // never collected, and has nothing to report.
+        if (_job.Failure is { } failure)
+        {
+            _log.Error(LogCategory, $"The probe bake failed and the level will use flat ambient: {failure.Message}", failure);
+        }
+
+        volume = _job.Result;
         return true;
     }
 
@@ -197,7 +215,7 @@ public sealed class IrradianceProbeBake
     public IrradianceVolume? WaitForResult()
     {
         _collected = true;
-        return _work.GetAwaiter().GetResult();
+        return _job.Wait();
     }
 
     /// <summary>Asks the trace to stop, for a level change or a shutdown.</summary>

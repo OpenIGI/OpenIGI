@@ -113,10 +113,10 @@ public sealed class MaterialMapPackingContractTests
     /// A neutral map must be the neutral texture the device substitutes when there is no pack at all.
     /// </summary>
     /// <remarks>
-    /// <c>VulkanGraphicsDevice.CreateNeutralDetailTexture</c> uploads a single texel of (128, 128, 128, 255)
-    /// for every surface with no map, and the shader multiplies rather than branches — so "no pack" and "a
-    /// pack that says change nothing" have to be the same four bytes or turning a pack on would shift every
-    /// surface in the level slightly, with nothing to say why.
+    /// <c>TextureTable.NeutralDetail</c> is a single texel of (128, 128, 128, 255) bound for every surface
+    /// with no map, and the shader multiplies rather than branches — so "no pack" and "a pack that says
+    /// change nothing" have to be the same four bytes or turning a pack on would shift every surface in the
+    /// level slightly, with nothing to say why.
     /// </remarks>
     [Fact]
     public void NeutralMapMatchesTheDeviceFallback()

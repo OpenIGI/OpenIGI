@@ -113,6 +113,23 @@ internal sealed unsafe class VulkanCommands : IDisposable
         return buffers;
     }
 
+    /// <summary>Gives back buffers <see cref="AllocatePrimary"/> handed out, once the GPU has finished with them.</summary>
+    /// <param name="buffers">The buffers; none may still be executing.</param>
+    public void Free(IReadOnlyList<CommandBuffer> buffers)
+    {
+        ArgumentNullException.ThrowIfNull(buffers);
+        if (buffers.Count == 0)
+        {
+            return;
+        }
+
+        CommandBuffer[] handles = [.. buffers];
+        fixed (CommandBuffer* first = handles)
+        {
+            _vk.FreeCommandBuffers(_device.Device, _pool, (uint)handles.Length, first);
+        }
+    }
+
     /// <summary>Records and submits a one-off command buffer, then waits for it to finish.</summary>
     /// <param name="record">Records the commands into the buffer.</param>
     /// <exception cref="GraphicsDeviceException">The submission failed.</exception>

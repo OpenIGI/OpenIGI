@@ -76,6 +76,20 @@ public sealed class MaterialLibraryTests : IDisposable
     }
 
     [Fact]
+    public void AMatteEntryIsReadAndAnUnmarkedOneIsNot()
+    {
+        // Matte takes the whole specular response off a surface, reflections and standing water
+        // included, so it has to be said of a texture rather than assumed of one.
+        MaterialLibrary library = Write("""
+            { "textures": { "400_01_1": { "matte": true }, "400_02_1": { "roughness": 0.9 } } }
+            """);
+
+        Assert.True(library.For("400_01_1").Matte);
+        Assert.False(library.For("400_02_1").Matte);
+        Assert.False(library.For("unknown").Matte);
+    }
+
+    [Fact]
     public void AnUnknownTextureTakesTheDefault()
     {
         MaterialLibrary library = Write("""{ "default": { "roughness": 0.7 } }""");

@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The renderer itself, over the RHI and nothing else.
+
+       What a frame of this game looks like lives here: which passes run in what order, what the
+       G-buffer holds, when the surface cache is relit, how a sprite reaches the back buffer. None of
+       it names a graphics API, so both backends draw the same frame rather than two frames that
+       resemble each other.
+
+       The rule this project exists to enforce: no reference to OpenIGI.Rendering.Vulkan or
+       OpenIGI.Rendering.WebGpu, ever. A pass that needs something only one backend has asks the RHI
+       for the capability and stands down without it. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\OpenIGI.Rendering.Rhi\OpenIGI.Rendering.Rhi.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Which textures are in-place histories is decided from a module's reflection alone, and a wrong
+         answer binds a stand-in where the game bound a real texture, silently, on every backend. That
+         rule is implementation detail and stays internal; the test project is allowed to see it. -->
+    <InternalsVisibleTo Include="OpenIGI.Rendering.Pipeline.Tests" />
+  </ItemGroup>
+
+</Project>

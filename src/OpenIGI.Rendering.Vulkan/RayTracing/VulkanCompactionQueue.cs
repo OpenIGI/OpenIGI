@@ -67,9 +67,6 @@ internal sealed unsafe class VulkanCompactionQueue : IDisposable
         ResetPool();
     }
 
-    /// <summary>Gets a value indicating whether anything is waiting to be compacted.</summary>
-    public bool HasWork => _requested.Count > 0 || _active.Count > 0;
-
     /// <summary>Whether a structure is still somewhere in the compaction handshake.</summary>
     /// <param name="structure">The structure to check for.</param>
     /// <returns>
@@ -123,7 +120,7 @@ internal sealed unsafe class VulkanCompactionQueue : IDisposable
     /// </remarks>
     public void Record(
         CommandBuffer commandBuffer,
-        VulkanQueue queue,
+        ISubmissionClock queue,
         Action<VulkanAccelerationStructure> retire)
     {
         ArgumentNullException.ThrowIfNull(queue);
@@ -202,7 +199,7 @@ internal sealed unsafe class VulkanCompactionQueue : IDisposable
         _vk.DestroyQueryPool(_device.Device, _queryPool, null);
     }
 
-    private void RecordQueries(CommandBuffer commandBuffer, VulkanQueue queue)
+    private void RecordQueries(CommandBuffer commandBuffer, ISubmissionClock queue)
     {
         ulong completed = queue.CompletedValue;
 

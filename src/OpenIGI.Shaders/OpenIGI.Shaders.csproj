@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The shader library: one Slang source per module under Source/, compiled at BUILD time to
+       SPIR-V and WGSL by tools/OpenIGI.Tools.ShaderBuild and committed under Generated/. Nothing
+       here compiles a shader at run time, which is what lets the browser target exist and what
+       keeps load-time compiles off the render thread on the desktop.
+
+       The generated outputs are committed rather than built by this project on purpose: the build
+       needs slangc, and a contributor without the Vulkan SDK should still be able to build and run
+       the game. CI runs the tool in check mode so the committed outputs cannot go stale. -->
+
+  <ItemGroup>
+    <EmbeddedResource Include="ShaderModules.json" LogicalName="OpenIGI.Shaders.ShaderModules.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Generated\**\*.spv" LogicalName="OpenIGI.Shaders.Generated.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Generated\**\*.wgsl" LogicalName="OpenIGI.Shaders.Generated.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Generated\**\*.json" LogicalName="OpenIGI.Shaders.Generated.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The Slang sources are not compiled by MSBuild, but they belong to the project so that an
+         editor shows them and a rename moves them. -->
+    <None Include="Source\**\*.slang" />
+  </ItemGroup>
+
+</Project>

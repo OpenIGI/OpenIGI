@@ -202,6 +202,35 @@ public sealed class SilkGameWindow : IGameWindow
     /// <summary>Gets the Vulkan surface source this window exposes.</summary>
     public IVkSurface? VkSurface => _window.VkSurface;
 
+    /// <summary>Gets the window's native handles, or null on a window system that has none to give.</summary>
+    /// <remarks>
+    /// macOS has none here: a surface there is made from a Metal layer, which this window does not create.
+    /// </remarks>
+    public DesktopWindowHandles? NativeHandles
+    {
+        get
+        {
+            INativeWindow? native = _window.Native;
+
+            if (native?.Win32 is { } win32)
+            {
+                return new DesktopWindowHandles(DesktopWindowSystem.Win32, win32.HInstance, win32.Hwnd);
+            }
+
+            if (native?.Wayland is { } wayland)
+            {
+                return new DesktopWindowHandles(DesktopWindowSystem.Wayland, wayland.Display, wayland.Surface);
+            }
+
+            if (native?.X11 is { } x11)
+            {
+                return new DesktopWindowHandles(DesktopWindowSystem.Xlib, x11.Display, (nint)x11.Window);
+            }
+
+            return null;
+        }
+    }
+
     /// <inheritdoc/>
     public string Title
     {

@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
@@ -147,61 +148,116 @@ public static class LightmapBaker
     /// <param name="sunColour">The sun's radiance, per channel.</param>
     /// <param name="skyColour">The radiance a fully open texel receives from the sky, per channel.</param>
     /// <param name="hemisphereRays">Cosine-weighted rays per texel for the sky term.</param>
+    /// <param name="work">
+    /// Where the texels are traced: all at once on a scheduler that runs work concurrently, a block a
+    /// slice on one that does not.
+    /// </param>
     /// <param name="cancellationToken">Cancels a bake in flight.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="targets"/> or <paramref name="cast"/> is null.</exception>
-    public static void BakeDirectAndSky(
+    /// <returns>The phase, a slice at a time; <see cref="Stepping.Drain"/> runs it outright.</returns>
+    /// <exception cref="ArgumentNullException">A required argument is null.</exception>
+    public static IEnumerable<bool> BakeDirectAndSky(
         IReadOnlyList<LightmapTarget> targets,
         WorldRayCast cast,
         Vector3f sunDirection,
         Vector3f sunColour,
         Vector3f skyColour,
-        int hemisphereRays = 64,
+        int hemisphereRays,
+        IWorkScheduler work,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(targets);
         ArgumentNullException.ThrowIfNull(cast);
+        ArgumentNullException.ThrowIfNull(work);
 
         Vector3f[] hemisphere = CosineHemisphere(Math.Max(hemisphereRays, 1));
         bool hasSun = (sunDirection.X * sunDirection.X)
             + (sunDirection.Y * sunDirection.Y)
             + (sunDirection.Z * sunDirection.Z) > 1e-6f;
 
-        ParallelOptions options = new()
-        {
-            CancellationToken = cancellationToken,
-            MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1),
-        };
+        TexelBlock[] blocks = TexelBlock.Of(targets);
 
-        Parallel.For(0, targets.Count, options, t =>
-        {
-            if (Thread.CurrentThread.Priority == ThreadPriority.Normal)
+        return Stepping.Range(
+            work,
+            blocks.Length,
+            Parallelism,
+            b =>
             {
-                Thread.CurrentThread.Priority = ThreadPriority.BelowNormal;
+                LowerPriority(work);
+
+                TexelBlock block = blocks[b];
+                LightmapTarget target = targets[block.Target];
+
+                // A block of a page rather than the whole page per piece of work: a big page is thousands
+                // of texels each casting a hemisphere of rays, seconds of work nothing can interrupt from
+                // outside. Cancelling a bake used to leave every core on it for the better part of a
+                // minute, which is what leaving a level felt like; and a host tracing a slice of a frame at
+                // a time needs pieces that fit. The token is still read per texel -- one field read against
+                // a hundred and twenty-eight ray casts -- so it stops inside a block too.
+                for (int i = block.From; i < block.To; i++)
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
+                    LightmapTexel texel = target.Texels[i];
+
+                    if (texel.IsCovered)
+                    {
+                        (target.Direct[i], target.Radiance[i]) =
+                            ShadeTexel(texel, cast, hasSun, sunDirection, sunColour, skyColour, hemisphere);
+                    }
+                }
+            },
+            cancellationToken);
+    }
+
+    /// <summary>How many pieces of a phase run at once where they run together: every core but one.</summary>
+    /// <remarks>
+    /// The bake used to have the machine to itself because it blocked the frame loop; now that it does
+    /// not, saturating every core makes the frames it no longer blocks stutter instead.
+    /// </remarks>
+    private static int Parallelism => Math.Max(1, Environment.ProcessorCount - 1);
+
+    /// <summary>Puts a worker below the render thread, where the bake runs beside the frame at all.</summary>
+    /// <remarks>
+    /// So the bake yields to a frame that needs a core rather than starving it. Set once per pooled thread;
+    /// the guard skips the call after the first piece it runs.
+    /// </remarks>
+    private static void LowerPriority(IWorkScheduler work)
+    {
+        if (work.IsConcurrent && Thread.CurrentThread.Priority == ThreadPriority.Normal)
+        {
+            Thread.CurrentThread.Priority = ThreadPriority.BelowNormal;
+        }
+    }
+
+    /// <summary>A run of one page's texels: the piece of work a phase is divided into.</summary>
+    /// <param name="Target">Which page.</param>
+    /// <param name="From">Its first texel.</param>
+    /// <param name="To">One past its last.</param>
+    private readonly record struct TexelBlock(int Target, int From, int To)
+    {
+        /// <summary>How many texels a block holds: small enough for a slice of a frame to trace.</summary>
+        private const int Texels = 64;
+
+        /// <summary>Every page's texels, in blocks, in page order.</summary>
+        public static TexelBlock[] Of(IReadOnlyList<LightmapTarget> targets)
+        {
+            List<TexelBlock> blocks = [];
+
+            for (int t = 0; t < targets.Count; t++)
+            {
+                int count = targets[t].Texels.Length;
+
+                for (int from = 0; from < count; from += Texels)
+                {
+                    blocks.Add(new TexelBlock(t, from, Math.Min(count, from + Texels)));
+                }
             }
 
-            LightmapTarget target = targets[t];
-
-            // A whole target's page per iteration, and a big one is thousands of texels each casting a
-            // hemisphere of rays -- seconds of work that Parallel.For cannot interrupt between iterations
-            // because it is inside one. Cancelling the bake left every core on it for the better part of a
-            // minute, which is what leaving a level felt like. One field read per texel against a hundred
-            // and twenty-eight ray casts costs nothing measurable and stops it inside a texel instead.
-            for (int i = 0; i < target.Texels.Length; i++)
-            {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    return;
-                }
-
-                LightmapTexel texel = target.Texels[i];
-
-                if (texel.IsCovered)
-                {
-                    (target.Direct[i], target.Radiance[i]) =
-                        ShadeTexel(texel, cast, hasSun, sunDirection, sunColour, skyColour, hemisphere);
-                }
-            }
-        });
+            return [.. blocks];
+        }
     }
 
     // The light one texel receives: the sun if the shadow ray to it is clear, plus the share of the sky
@@ -976,31 +1032,47 @@ public static class LightmapBaker
     /// <param name="skyColour">The radiance a ray that leaves the level receives.</param>
     /// <param name="passes">How many bounces to accumulate; each reads the last.</param>
     /// <param name="hemisphereRays">Cosine-weighted gather rays per texel.</param>
+    /// <param name="work">
+    /// Where the texels are gathered: all at once on a scheduler that runs work concurrently, a block a
+    /// slice on one that does not.
+    /// </param>
     /// <param name="cancellationToken">Cancels a bake in flight.</param>
+    /// <returns>The phase, a slice at a time; <see cref="Stepping.Drain"/> runs it outright.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
-    public static void BakeBounces(
+    public static IEnumerable<bool> BakeBounces(
         IReadOnlyList<LightmapTarget> targets,
         LightmapTriangle[] triangles,
         LightmapBvh bvh,
         Vector3f skyColour,
-        int passes = 4,
-        int hemisphereRays = 64,
+        int passes,
+        int hemisphereRays,
+        IWorkScheduler work,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(targets);
         ArgumentNullException.ThrowIfNull(triangles);
         ArgumentNullException.ThrowIfNull(bvh);
+        ArgumentNullException.ThrowIfNull(work);
 
+        return BounceSlices(targets, triangles, bvh, skyColour, passes, hemisphereRays, work, cancellationToken);
+    }
+
+    /// <summary>The bounce passes, checked by <see cref="BakeBounces"/> before they are handed out.</summary>
+    private static IEnumerable<bool> BounceSlices(
+        IReadOnlyList<LightmapTarget> targets,
+        LightmapTriangle[] triangles,
+        LightmapBvh bvh,
+        Vector3f skyColour,
+        int passes,
+        int hemisphereRays,
+        IWorkScheduler work,
+        CancellationToken cancellationToken)
+    {
         Vector3f[] hemisphere = CosineHemisphere(Math.Max(hemisphereRays, 1));
         float inverseRays = 1f / hemisphere.Length;
         float biasMetres = (float)(RayBiasUnits / WorldScene.UnitsPerMetre);
         double reachMetres = RayReachMetres;
-
-        ParallelOptions options = new()
-        {
-            CancellationToken = cancellationToken,
-            MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1),
-        };
+        TexelBlock[] blocks = TexelBlock.Of(targets);
 
         for (int pass = 0; pass < Math.Max(passes, 1); pass++)
         {
@@ -1008,7 +1080,7 @@ public static class LightmapBaker
             // to stop must not allocate a level's worth of radiance to throw away.
             if (cancellationToken.IsCancellationRequested)
             {
-                return;
+                yield break;
             }
 
             // The light the last pass left, so this pass reads a stable snapshot rather than racing itself.
@@ -1018,17 +1090,15 @@ public static class LightmapBaker
                 previous[t] = (Vector3f[])targets[t].Radiance.Clone();
             }
 
-            Parallel.For(0, targets.Count, options, t =>
+            IEnumerable<bool> gathered = Stepping.Range(work, blocks.Length, Parallelism, b =>
             {
-                if (Thread.CurrentThread.Priority == ThreadPriority.Normal)
-                {
-                    Thread.CurrentThread.Priority = ThreadPriority.BelowNormal;
-                }
+                LowerPriority(work);
 
-                LightmapTarget target = targets[t];
+                TexelBlock block = blocks[b];
+                LightmapTarget target = targets[block.Target];
 
-                // As in the direct pass: the iteration is a whole page, so the token is read per texel.
-                for (int i = 0; i < target.Texels.Length; i++)
+                // As in the direct pass: the token is read per texel as well as per block.
+                for (int i = block.From; i < block.To; i++)
                 {
                     if (cancellationToken.IsCancellationRequested)
                     {
@@ -1086,7 +1156,13 @@ public static class LightmapBaker
                         direct.Y + (gather.Y * inverseRays),
                         direct.Z + (gather.Z * inverseRays));
                 }
-            });
+            },
+            cancellationToken);
+
+            foreach (bool slice in gathered)
+            {
+                yield return slice;
+            }
         }
     }
 
@@ -1110,30 +1186,29 @@ public static class LightmapBaker
     /// baked into the cached result and costs nothing at runtime.
     /// </para>
     /// </remarks>
+    /// <param name="work">Where the pages are filtered: all at once where the scheduler can, a page a slice where not.</param>
     /// <param name="cancellationToken">Stops the filter part-way, for a level left during its bake.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="targets"/> is null.</exception>
-    public static void Denoise(
+    /// <returns>The filter, a slice at a time; <see cref="Stepping.Drain"/> runs it outright.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="targets"/> or <paramref name="work"/> is null.</exception>
+    public static IEnumerable<bool> Denoise(
         IReadOnlyList<LightmapTarget> targets,
+        IWorkScheduler work,
         int iterations = 4,
         float positionSigmaMetres = 0.35f,
         float normalPower = 48f,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(targets);
+        ArgumentNullException.ThrowIfNull(work);
 
-        if (iterations <= 0)
-        {
-            return;
-        }
-
-        ParallelOptions options = new()
-        {
-            CancellationToken = cancellationToken,
-            MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1),
-        };
-
-        Parallel.ForEach(
-            targets, options, target => DenoiseTarget(target, iterations, positionSigmaMetres, normalPower));
+        // A page at a time: the filter spreads each texel over its neighbours, so a page is the smallest
+        // piece it divides into.
+        return Stepping.Range(
+            work,
+            iterations > 0 ? targets.Count : 0,
+            Parallelism,
+            t => DenoiseTarget(targets[t], iterations, positionSigmaMetres, normalPower),
+            cancellationToken);
     }
 
     // The B3-spline row an à-trous filter uses along each axis; the 2D kernel is its outer product.

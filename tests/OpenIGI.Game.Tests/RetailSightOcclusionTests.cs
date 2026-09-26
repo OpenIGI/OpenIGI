@@ -132,7 +132,7 @@ public sealed class RetailSightOcclusionTests
 
         int withWorldMesh = doors.Count(door =>
             MefCollisionMesh.TryRead(door.Model.Container, meshIndex: 0, out MefCollisionMesh? world)
-            && world is { Faces.Count: > 0 });
+            && world is { Faces.Length: > 0 });
         int indexed = ObjectCollisionIndex.Build(doors).Count;
         Assert.Equal(doors.Length, withWorldMesh);
         Assert.Equal(doors.Length, indexed);

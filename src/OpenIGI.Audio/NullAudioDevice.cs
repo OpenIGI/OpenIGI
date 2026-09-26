@@ -18,7 +18,7 @@ public sealed class NullAudioDevice : IAudioDevice
     /// <summary>The shared instance.</summary>
     public static readonly NullAudioDevice Instance = new();
 
-    private readonly float[] _categoryGains = [1f, 1f, 1f, 1f];
+    private readonly MixBuses _buses = new();
     private readonly HashSet<int> _voices = [];
     private int _nextHandle = 1;
 
@@ -40,11 +40,10 @@ public sealed class NullAudioDevice : IAudioDevice
     public AudioListenerState Listener { get; set; } = AudioListenerState.Default;
 
     /// <inheritdoc/>
-    public void SetCategoryGain(SoundCategory category, float gain) =>
-        _categoryGains[(int)category] = Math.Clamp(gain, 0f, 1f);
+    public void SetCategoryGain(SoundCategory category, float gain) => _buses.Set(category, gain);
 
     /// <inheritdoc/>
-    public float GetCategoryGain(SoundCategory category) => _categoryGains[(int)category];
+    public float GetCategoryGain(SoundCategory category) => _buses.Get(category);
 
     /// <inheritdoc/>
     public AudioBufferHandle CreateBuffer(AudioFormat format, ReadOnlySpan<byte> pcm)

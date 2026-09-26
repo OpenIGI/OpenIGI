@@ -16,6 +16,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The composition root's own decisions (which graphics API a run starts on, and which one the
+         switch moves to) are internal to it; its test project may see them. -->
+    <InternalsVisibleTo Include="OpenIGI.Desktop.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\OpenIGI.Core\OpenIGI.Core.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Engine\OpenIGI.Engine.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Game\OpenIGI.Game.csproj" />
@@ -28,6 +34,8 @@
     <ProjectReference Include="..\..\src\OpenIGI.Presentation\OpenIGI.Presentation.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Host\OpenIGI.Host.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Rendering.Vulkan\OpenIGI.Rendering.Vulkan.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Rendering.Pipeline\OpenIGI.Rendering.Pipeline.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Rendering.WebGpu\OpenIGI.Rendering.WebGpu.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.UI\OpenIGI.UI.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Frontend\OpenIGI.Frontend.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Audio\OpenIGI.Audio.csproj" />
@@ -35,11 +43,11 @@
     <ProjectReference Include="..\..\src\OpenIGI.Input\OpenIGI.Input.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Platform\OpenIGI.Platform.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Platform.Desktop\OpenIGI.Platform.Desktop.csproj" />
+    <ProjectReference Include="..\OpenIGI.Composition\OpenIGI.Composition.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Authored per-mission atmosphere. Data rather than code so a level can be re-tuned without a
-         rebuild, which matters because tuning it is done by looking. -->
+    <!-- The window icon. The host's own assets come with OpenIGI.Composition. -->
     <None Include="Assets\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

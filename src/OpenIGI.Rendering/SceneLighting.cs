@@ -54,6 +54,23 @@ namespace OpenIGI.Rendering;
 /// is dialled to zero to watch the GI carry the surfaces. Deliberately not the <c>r_sky_light</c>-boosted
 /// surface fill: boosting the fog inscatter whites the frame out.
 /// </param>
+/// <param name="Night">
+/// What the night sky holds beyond the atmosphere's own scattering: the airglow floor, the cloud cover,
+/// the stars and the moon's disc. <see cref="NightSky.None"/> by day, which leaves the sky exactly as the
+/// atmosphere alone draws it.
+/// </param>
+/// <param name="AtmosphereSunDirection">
+/// The WORLD direction towards the sun the atmosphere scatters, when it is not the direct light's. A day
+/// cycle hands the direct slot to the moon at night, but the sky still has to be lit by the sun from
+/// where it really is -- under the horizon, through twilight -- so the dusk fades rather than cuts.
+/// </param>
+/// <param name="AtmosphereMoonColour">
+/// The moon's light above the atmosphere and any cloud, before <paramref name="Scale"/>, towards
+/// <see cref="NightSky.MoonDirection"/>: what the sky's cloud deck is lit by, and, scaled by
+/// <paramref name="AtmosphereMoonScattering"/>, what its clear air scatters. Nought by day and wherever the
+/// cycle hangs no moon.
+/// </param>
+/// <param name="AtmosphereMoonScattering">How much of that moon the clear air scatters; one is all of it.</param>
 public readonly record struct SceneLighting(
     LightingModel Model,
     Vector3f SunDirection,
@@ -63,7 +80,11 @@ public readonly record struct SceneLighting(
     bool CompleteBake = false,
     Vector3f SkyColour = default,
     float SkyLightIntensity = 1f,
-    Vector3f? AtmosphereSunColour = null)
+    Vector3f? AtmosphereSunColour = null,
+    NightSky Night = default,
+    Vector3f? AtmosphereSunDirection = null,
+    Vector3f AtmosphereMoonColour = default,
+    float AtmosphereMoonScattering = 1f)
 {
     /// <summary>
     /// Gets the lighting that reproduces the original: the bakes and nothing else.
@@ -77,4 +98,27 @@ public readonly record struct SceneLighting(
         new Vector3f(0f, 0f, 1f),
         new Vector3f(0f, 0f, 0f),
         new Vector3f(0f, 0f, 0f));
+
+    /// <summary>Gets the direction towards the sun in world space, for whatever works in the world's.</summary>
+    /// <param name="viewToWorld">The camera's rotation from view space into world space.</param>
+    /// <returns>The unit direction towards the sun, or straight up when there is no direction to turn.</returns>
+    /// <remarks>
+    /// <see cref="SunDirection"/> is in view space because the G-buffer's normals are. The atmosphere
+    /// and the traced passes are worlds of their own, so they want it turned back, once, rather than
+    /// inside everything that reads it.
+    /// </remarks>
+    public Vector3f WorldSunDirection(in Matrix3f viewToWorld)
+    {
+        Vector3f view = SunDirection;
+        Vector3f world = new(
+            (viewToWorld.M11 * view.X) + (viewToWorld.M12 * view.Y) + (viewToWorld.M13 * view.Z),
+            (viewToWorld.M21 * view.X) + (viewToWorld.M22 * view.Y) + (viewToWorld.M23 * view.Z),
+            (viewToWorld.M31 * view.X) + (viewToWorld.M32 * view.Y) + (viewToWorld.M33 * view.Z));
+
+        float length = MathF.Sqrt((world.X * world.X) + (world.Y * world.Y) + (world.Z * world.Z));
+
+        return length > 1e-5f
+            ? new Vector3f(world.X / length, world.Y / length, world.Z / length)
+            : new Vector3f(0f, 0f, 1f);
+    }
 }

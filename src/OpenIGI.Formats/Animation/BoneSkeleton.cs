@@ -62,10 +62,10 @@ public sealed class BoneSkeleton
     public int BoneCount => _parents.Length;
 
     /// <summary>Gets each bone's parent, or <see cref="NoParent"/> for a root.</summary>
-    public IReadOnlyList<int> Parents => _parents;
+    public ReadOnlySpan<int> Parents => _parents;
 
     /// <summary>Gets each bone's rest translation relative to its parent, in engine units.</summary>
-    public IReadOnlyList<Vector3f> RestTranslations => _restTranslations;
+    public ReadOnlySpan<Vector3f> RestTranslations => _restTranslations;
 
     /// <summary>
     /// Reports whether every parent index is a root or refers to an earlier bone.

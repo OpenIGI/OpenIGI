@@ -2,6 +2,8 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 
+using OpenIGI.Shaders;
+
 namespace OpenIGI.TestSupport;
 
 /// <summary>
@@ -294,7 +296,7 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 
     /// <inheritdoc/>
     public TextureHandle CreateVolumeTexture(
-        int width, int height, int depth, VolumeFormat format, string name)
+        int width, int height, int depth, VolumeFormat format, string name, bool shaderWritten = true)
     {
         VolumeTextures.Add((name, width, height, depth, format));
         return new TextureHandle(_nextVolumeId++);
@@ -376,7 +378,10 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
-    public ComputeShaderHandle CreateComputeShader(string source, string name)
+    public ComputeShaderHandle CreateComputeShader(
+        ShaderModuleId shaderModule,
+        ShaderVariant variant,
+        string name)
     {
         ComputeShaders.Add(name);
         return new ComputeShaderHandle(_nextComputeId++);
@@ -668,7 +673,10 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
             throw new GraphicsDeviceException($"Cannot begin the {pass} pass outside a scene capture.");
         }
 
-        if (CurrentPass != ScenePass.None)
+        // The front layer closes the geometry pass itself, as both real devices do.
+        bool closesGeometry = pass == ScenePass.GlassLayer && CurrentPass == ScenePass.Geometry;
+
+        if (CurrentPass != ScenePass.None && !closesGeometry)
         {
             throw new GraphicsDeviceException($"The {CurrentPass} pass is still open.");
         }

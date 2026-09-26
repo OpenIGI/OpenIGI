@@ -7,6 +7,48 @@ on:
     branches: [ master, develop ]
 
 jobs:
+  # Two things in this repository are generated and committed: the compiled shaders, and the WebGPU
+  # bindings. Both are committed so that a contributor without slangc -- or without any interest in the
+  # web backend -- can still build and run the game. This is what stops either going stale: a source
+  # edited without its generated form following is a game that draws last week's shader, or a binding
+  # that no longer matches the header it is called through.
+  #
+  # Windows, and the tagged Windows download, because that is the pairing that was actually measured
+  # against the committed output: it and the Vulkan SDK's own build of the same release produce
+  # byte-identical SPIR-V for every artefact. Another platform's build of it very likely does too and has
+  # not been checked, so it is not what the gate runs on.
+  generated:
+    name: generated-artefacts
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # The release is read out of the manifest, so the compiler installed here and the one the output
+      # was produced with cannot drift apart without the check saying so.
+      - name: Install slangc
+        shell: pwsh
+        run: |
+          $pinned = (Get-Content src/OpenIGI.Shaders/ShaderModules.json -Raw | ConvertFrom-Json).slangVersion
+          $release = $pinned.Split('-')[0]
+          Write-Host "Pinned slang release: $release (from $pinned)"
+          $url = "https://github.com/shader-slang/slang/releases/download/v$release/slang-$release-windows-x86_64.zip"
+          Invoke-WebRequest -Uri $url -OutFile slang.zip
+          Expand-Archive -Path slang.zip -DestinationPath "$env:RUNNER_TEMP/slang" -Force
+          "OPENIGI_SLANGC=$env:RUNNER_TEMP/slang/bin/slangc.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Check the committed shaders
+        run: dotnet run --project tools/OpenIGI.Tools.ShaderBuild --configuration Release -- --check
+
+      # The WebGPU bindings are generated from the headers committed beside them, so this needs no
+      # native toolchain at all -- only the same dotnet the step above already set up.
+      - name: Check the committed WebGPU bindings
+        run: dotnet run --project tools/OpenIGI.Tools.WebGpuBind --configuration Release -- --check
+
   build:
     name: build-and-test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

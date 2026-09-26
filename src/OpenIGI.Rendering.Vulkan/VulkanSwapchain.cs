@@ -35,7 +35,6 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
 
     private SwapchainKHR _handle;
     private Image[] _images = [];
-    private ImageView[] _imageViews = [];
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="VulkanSwapchain"/> class.</summary>
@@ -45,7 +44,12 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
     /// <param name="height">The desired height in pixels.</param>
     /// <param name="vsync">Whether presentation should wait for the vertical blank.</param>
     /// <exception cref="GraphicsDeviceException">The swapchain could not be created.</exception>
-    public VulkanSwapchain(VulkanInstance instance, VulkanDevice device, int width, int height, bool vsync)
+    public VulkanSwapchain(
+        VulkanInstance instance,
+        VulkanDevice device,
+        int width,
+        int height,
+        bool vsync)
     {
         ArgumentNullException.ThrowIfNull(instance);
         ArgumentNullException.ThrowIfNull(device);
@@ -69,12 +73,6 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
 
     /// <summary>Gets the swapchain's images.</summary>
     public ReadOnlySpan<Image> Images => _images;
-
-    /// <summary>Gets one view per swapchain image, in image order.</summary>
-    public ReadOnlySpan<ImageView> ImageViews => _imageViews;
-
-    /// <summary>Gets how many images the swapchain holds.</summary>
-    public int ImageCount => _images.Length;
 
     /// <summary>Gets one swapchain image by index, for a read back to the CPU.</summary>
     /// <param name="index">The image index.</param>
@@ -144,7 +142,7 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
     public void Recreate(int width, int height, bool vsync)
     {
         _device.WaitIdle();
-        DestroyViewsAndSwapchain();
+        DestroySwapchain();
         Create(width, height, vsync);
     }
 
@@ -157,7 +155,7 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
         }
 
         _disposed = true;
-        DestroyViewsAndSwapchain();
+        DestroySwapchain();
     }
 
     private void Create(int width, int height, bool vsync)
@@ -220,7 +218,6 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
         Extent = extent;
 
         AcquireImages();
-        CreateImageViews();
     }
 
     private SurfaceFormatKHR ChooseFormat()
@@ -242,9 +239,13 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
                 "vkGetPhysicalDeviceSurfaceFormatsKHR");
         }
 
+        // Unsigned-normalised: the renderer encodes its own output, and wants the bytes it wrote stored as
+        // they stand. An sRGB image would encode them a second time -- the whole frame one gamma too light.
+        const Format wanted = Format.B8G8R8A8Unorm;
+
         foreach (SurfaceFormatKHR candidate in formats)
         {
-            if (candidate.Format == Format.B8G8R8A8Unorm
+            if (candidate.Format == wanted
                 && candidate.ColorSpace == ColorSpaceKHR.SpaceSrgbNonlinearKhr)
             {
                 return candidate;
@@ -341,43 +342,8 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
         }
     }
 
-    private void CreateImageViews()
+    private void DestroySwapchain()
     {
-        _imageViews = new ImageView[_images.Length];
-        for (int i = 0; i < _images.Length; i++)
-        {
-            ImageViewCreateInfo createInfo = new()
-            {
-                SType = StructureType.ImageViewCreateInfo,
-                Image = _images[i],
-                ViewType = ImageViewType.Type2D,
-                Format = Format,
-                Components = default,
-                SubresourceRange = new ImageSubresourceRange
-                {
-                    AspectMask = ImageAspectFlags.ColorBit,
-                    BaseMipLevel = 0,
-                    LevelCount = 1,
-                    BaseArrayLayer = 0,
-                    LayerCount = 1,
-                },
-            };
-
-            ImageView view;
-            VkCheck.Ok(_vk.CreateImageView(_device.Device, &createInfo, null, &view), "vkCreateImageView");
-            _imageViews[i] = view;
-        }
-    }
-
-    private void DestroyViewsAndSwapchain()
-    {
-        foreach (ImageView view in _imageViews)
-        {
-            _vk.DestroyImageView(_device.Device, view, null);
-        }
-
-        _imageViews = [];
-
         if (_handle.Handle != 0)
         {
             _khrSwapchain.DestroySwapchain(_device.Device, _handle, null);

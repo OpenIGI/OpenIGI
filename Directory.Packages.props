@@ -10,15 +10,12 @@
     <PackageVersion Include="Silk.NET.Windowing" Version="2.22.0" />
     <PackageVersion Include="Silk.NET.Input" Version="2.22.0" />
     <!-- Vulkan backend. The core loader plus the KHR extensions (surface, swapchain, and the
-         ray-tracing/acceleration-structure set the hardware-RT GI path will need) and the EXT
-         extensions (debug utils). Shaderc compiles the engine's GLSL to SPIR-V at load, and
-         SPIRV.Reflect reads that SPIR-V back to build descriptor-set layouts without any shader
-         having to hand-declare them. -->
+         ray-tracing/acceleration-structure set the hardware-RT GI path needs) and the EXT extensions
+         (debug utils). Nothing compiles or reflects a shader here: OpenIGI.Shaders compiles every
+         module to SPIR-V at build time and commits the reflection beside it. -->
     <PackageVersion Include="Silk.NET.Vulkan" Version="2.22.0" />
     <PackageVersion Include="Silk.NET.Vulkan.Extensions.KHR" Version="2.22.0" />
     <PackageVersion Include="Silk.NET.Vulkan.Extensions.EXT" Version="2.22.0" />
-    <PackageVersion Include="Silk.NET.Shaderc" Version="2.22.0" />
-    <PackageVersion Include="Silk.NET.SPIRV.Reflect" Version="2.22.0" />
     <!-- Vulkan on macOS is MoltenVK translating to Metal, and there is no system loader to find it:
          Apple ships no Vulkan. Silk's loader looks for libvulkan.dylib and then libMoltenVK.dylib, and
          checks the application's own directory, so shipping the dylib beside the executable is the whole

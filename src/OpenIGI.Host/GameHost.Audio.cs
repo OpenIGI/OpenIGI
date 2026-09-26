@@ -375,7 +375,7 @@ internal sealed partial class GameHost
                      AudioCVars.AmbienceVolume,
                  ])
         {
-            variable.Changed += (_, _) => ApplyCategoryGains();
+            WhenChanged(variable, ApplyCategoryGains);
         }
     }
 

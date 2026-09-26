@@ -41,32 +41,30 @@ public static class BoneRotationSampler
     /// </param>
     /// <param name="spline"><see langword="true"/> for SQUAD, <see langword="false"/> for a plain slerp.</param>
     /// <returns>The orientation, or the identity for an empty track.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="keys"/> is <see langword="null"/>.</exception>
     public static Quaternion32 Sample(
-        IReadOnlyList<BoneRotationKey> keys,
+        ReadOnlySpan<BoneRotationKey> keys,
         float time,
         float duration,
         bool cyclic = false,
         bool spline = true)
     {
-        ArgumentNullException.ThrowIfNull(keys);
-        if (keys.Count == 0)
+        if (keys.Length == 0)
         {
             return new Quaternion32(0f, 0f, 0f, 1f);
         }
 
-        if (keys.Count == 1)
+        if (keys.Length == 1)
         {
             return keys[0].Rotation;
         }
 
         int index = 0;
-        while (index < keys.Count && keys[index].Time < time)
+        while (index < keys.Length && keys[index].Time < time)
         {
             index++;
         }
 
-        if (index < keys.Count && keys[index].Time == time)
+        if (index < keys.Length && keys[index].Time == time)
         {
             return keys[index].Rotation;
         }
@@ -75,7 +73,7 @@ public static class BoneRotationSampler
         int to;
         float s;
 
-        if (index == keys.Count)
+        if (index == keys.Length)
         {
             float lastTime = keys[^1].Time;
             if (!cyclic || duration <= lastTime)
@@ -85,7 +83,7 @@ public static class BoneRotationSampler
 
             // A cyclic clip bridges the gap between its last key and its first, over whatever time is
             // left before the duration. That is why the two need not be equal in the data.
-            from = keys.Count - 1;
+            from = keys.Length - 1;
             to = 0;
             s = (time - lastTime) / (duration - lastTime);
         }

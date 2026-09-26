@@ -1,4 +1,6 @@
-﻿using OpenIGI.Formats;
+﻿using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Tasks;
+using OpenIGI.Formats;
 using OpenIGI.Game.Igi1.World;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
@@ -16,6 +18,88 @@ public sealed class Igi1PresentationProvider : ITitlePresentationProvider
 {
     /// <summary>Gets the shared instance.</summary>
     public static Igi1PresentationProvider Instance { get; } = new();
+
+    /// <summary>The dome luminance at or under which a level is drawn as night.</summary>
+    /// <remarks>
+    /// <para>
+    /// Fitted to a gap in the data rather than to a continuum. Measured as
+    /// <see cref="SkyDomeColours.MeanLuminance"/> over the thirteen missions that declare a sky, the
+    /// daylit ones read 0.47 (1, 4), 0.50 (8), 0.52 (5) and 0.86 (2, 6, 10); the dark ones read 0.23
+    /// (12), 0.26 (11), 0.28 (3, 9), 0.30 (13) and 0.35 (7). Nothing falls between 0.35 and 0.47.
+    /// </para>
+    /// <para>
+    /// The dark six are what vanilla draws as night -- a slate or navy dome over ground lit by its bake --
+    /// and they are exactly the six the dynamic path drew as a bright noon, because their <c>Dirlight</c>
+    /// is authored at the same 12 o'clock as everyone else's. Mission 14 is indoors and declares no sky.
+    /// </para>
+    /// </remarks>
+    public const float NightSkyLuminance = 0.4f;
+
+    /// <summary>The hour a night level is bound to the cycle at: midnight, said as 24.</summary>
+    /// <remarks>
+    /// Twenty-four rather than nought because <c>DayNightCycle.Apply</c> hears nought as "the level said
+    /// nothing". See the sequel's provider, which binds its night levels at the same hour.
+    /// </remarks>
+    public const float NightReferenceHour = 24f;
+
+    /// <summary>The daylight sun a night level sweeps up to, taken from the levels that author a day.</summary>
+    /// <remarks>
+    /// The per-channel median of the <c>Front Color</c> over the seven daylit missions (1, 2, 4, 5, 6, 8,
+    /// 10). A night level authors no day of its own, and its own sun cannot stand in: it is the light the
+    /// original shines on unbaked models under that night sky, which the cycle uses as the moon.
+    /// </remarks>
+    public static readonly Vector3f DaylightColour = new(0.923077f, 0.769231f, 0.615385f);
+
+    /// <summary>And the fill, the median <c>Back Color</c> over the same seven.</summary>
+    public static readonly Vector3f DaylightAmbient = new(0.230769f, 0.288462f, 0.326923f);
+
+    /// <summary>How much exposure a night level takes off at full night, on top of the cycle's own.</summary>
+    /// <remarks>
+    /// <para>
+    /// Far less than the sequel's 0.632. That figure answers a sun left UP and painted nearly black, which
+    /// the eye adaptation reads as a correctly exposed dark subject and lifts back to grey. These levels are
+    /// lit by the cycle's own moon under the horizon-bound sun, so the lighting already computes their
+    /// darkness and the adaptation meets a scene that is dark for the reason a real night is.
+    /// </para>
+    /// <para>
+    /// Measured on mission 3's ground from the spawn view, ultra against vanilla: 0.072 against 0.415
+    /// with the sequel's drop, 0.140 with this one and the brighter moon, sky and dark-adapted eye that
+    /// came with it. The original lights its nights as a grey dusk; the remaster's is meant to read as
+    /// night and still be playable, and this is where that was judged to sit.
+    /// </para>
+    /// </remarks>
+    public const float NightExposureDrop = 0.2f;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// Nothing for a daylit level, which keeps the sweep exactly as it was: the authored sun is a noon
+    /// sun and the cycle's arc is fitted through it.
+    /// </para>
+    /// <para>
+    /// A level whose dome is painted as night is bound to the cycle by its NIGHT end, as the sequel's
+    /// night levels are: it opens at midnight with its authored sun as the moon and its authored model
+    /// ambient -- the <c>GlobalLight</c> band the original lights models with, equal to the
+    /// <c>Dirlight</c>'s back colour in every mission -- as the night fill, and the clock sweeps it up to
+    /// a day it never authored. Its bakes are not whole, so the hybrid sun stays.
+    /// </para>
+    /// </remarks>
+    public DeferredLighting? ReadDeferredLighting(GameTask levelRoot)
+    {
+        ArgumentNullException.ThrowIfNull(levelRoot);
+
+        if (!SkyDomeColours.TryRead(levelRoot, out SkyDomeColours dome)
+            || dome.MeanLuminance > NightSkyLuminance)
+        {
+            return null;
+        }
+
+        return new DeferredLighting(
+            GlobalLightSettings.Read(levelRoot).ObjectAmbient,
+            Nightfall: 1f,
+            new AuthoredNight(NightReferenceHour, DaylightColour, DaylightAmbient, SunIsMoon: false),
+            NightExposureDrop: NightExposureDrop);
+    }
 
     /// <inheritdoc/>
     public IWorldPresenter CreateWorld(in WorldPresentationRequest request) =>

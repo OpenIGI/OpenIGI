@@ -1,7 +1,6 @@
 ﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Memory;
-using OpenIGI.Rendering.Vulkan.Textures;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.RayTracing;
@@ -54,6 +53,9 @@ internal sealed unsafe class VulkanOpacityMasks : IDisposable
     private readonly VulkanCommands _commands;
     private readonly VulkanDevice _owner;
     private readonly DeviceMemory _memory;
+
+    // The layout the array rests in between uploads: general, where the RHI keeps every texture it binds.
+    private const ImageLayout Resting = ImageLayout.General;
     private readonly Dictionary<uint, int> _layers = [];
     private int _next;
     private bool _disposed;
@@ -63,7 +65,11 @@ internal sealed unsafe class VulkanOpacityMasks : IDisposable
     /// <param name="device">The device the array lives on.</param>
     /// <param name="allocator">The allocator backing the image.</param>
     /// <param name="commands">The pool the one-off upload commands come from.</param>
-    public VulkanOpacityMasks(Vk vk, VulkanDevice device, VulkanAllocator allocator, VulkanCommands commands)
+    public VulkanOpacityMasks(
+        Vk vk,
+        VulkanDevice device,
+        VulkanAllocator allocator,
+        VulkanCommands commands)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
@@ -238,7 +244,7 @@ internal sealed unsafe class VulkanOpacityMasks : IDisposable
                 cmd,
                 image,
                 ImageLayout.TransferDstOptimal,
-                ImageLayout.ShaderReadOnlyOptimal,
+                Resting,
                 PipelineStageFlags.TransferBit,
                 PipelineStageFlags.ComputeShaderBit,
                 AccessFlags.TransferWriteBit,
@@ -269,7 +275,7 @@ internal sealed unsafe class VulkanOpacityMasks : IDisposable
             Transition(
                 cmd,
                 image,
-                ImageLayout.ShaderReadOnlyOptimal,
+                Resting,
                 ImageLayout.TransferDstOptimal,
                 PipelineStageFlags.ComputeShaderBit,
                 PipelineStageFlags.TransferBit,
@@ -297,7 +303,7 @@ internal sealed unsafe class VulkanOpacityMasks : IDisposable
                 cmd,
                 image,
                 ImageLayout.TransferDstOptimal,
-                ImageLayout.ShaderReadOnlyOptimal,
+                Resting,
                 PipelineStageFlags.TransferBit,
                 PipelineStageFlags.ComputeShaderBit,
                 AccessFlags.TransferWriteBit,
@@ -363,5 +369,38 @@ internal sealed unsafe class VulkanOpacityMasks : IDisposable
         ImageView view;
         VkCheck.Ok(_vk.CreateImageView(_device, &createInfo, null, &view), "vkCreateImageView (opacity masks)");
         return view;
+    }
+
+    // What share of the top level fails the shaders' alpha cut. One percent is enough to mean the texture
+    // is masked at all -- a wire fence is mostly hole, a railing mostly not, and neither is a solid pane.
+    private const float CutoutTexelFraction = 0.01f;
+
+    /// <summary>Whether a texture's top level is cut out enough to need a mask of its own.</summary>
+    /// <param name="pixels">The top level.</param>
+    /// <param name="width">Its width.</param>
+    /// <param name="height">Its height.</param>
+    /// <returns><see langword="true"/> when enough of it fails the alpha cut to be masked at all.</returns>
+    /// <remarks>
+    /// The shaders' own cut, a half in alpha, counted over the top level: a texture with a few stray
+    /// transparent texels is not a cut-out, and tracing it as one would cost a mask lookup on every hit.
+    /// </remarks>
+    public static bool IsCutout(ReadOnlySpan<Bgra32> pixels, int width, int height)
+    {
+        int count = width * height;
+        if (count <= 0 || count > pixels.Length)
+        {
+            return false;
+        }
+
+        int cut = 0;
+        for (int i = 0; i < count; i++)
+        {
+            if (pixels[i].A < 128)
+            {
+                cut++;
+            }
+        }
+
+        return cut / (float)count > CutoutTexelFraction;
     }
 }

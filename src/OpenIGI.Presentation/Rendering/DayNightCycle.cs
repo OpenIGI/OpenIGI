@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
+using OpenIGI.Rendering.Sky;
 
 namespace OpenIGI.Presentation.Rendering;
 
@@ -61,13 +62,25 @@ internal sealed class DayNightCycle
     /// </remarks>
     public const float AutomaticTicksPerDay = 3600f;
 
-    /// <summary>What the moon carries when the level does not say: three-thousandths of a sun, cool.</summary>
+    /// <summary>What the moon carries when the level does not say: about an eightieth of a sun, cool.</summary>
     /// <remarks>
-    /// Enough for the adapted eye to read shape and for the moon to throw a shadow, never enough to read as
-    /// day. This is the cycle's own invention, and it stands for every level that authors no night of its
-    /// own -- which is all of Project I.G.I.
+    /// <para>
+    /// This is the cycle's own invention, and it stands for every level that authors no night of its own --
+    /// which is all of Project I.G.I.
+    /// </para>
+    /// <para>
+    /// <b>Not the physical ratio, on purpose.</b> A full moon is some four hundred thousand times dimmer
+    /// than the sun, about nineteen stops. No display and no eye adaptation this game models spans that,
+    /// and shown at the true ratio a night is simply black. Games and film show a night a few stops under
+    /// day and carry the rest of "night" in colour: a cool key, a blue sky, and the resolve's Purkinje shift
+    /// taking the colour out of what the moon lights. It was three-thousandths of a sun; with an exposure
+    /// that also fell by more than a stop at night, a night mission's ground came out nearly six times
+    /// darker than the original draws it. A fortieth, with the night sky and airglow filling the
+    /// shadows, lit the world as a floodlit yard; at an eightieth it reads as moonlight, and
+    /// <c>r_moonlight</c> scales it from there.
+    /// </para>
     /// </remarks>
-    public static readonly Vector3f DefaultNightColour = new(0.003f, 0.0033f, 0.0043f);
+    public static readonly Vector3f DefaultNightColour = new(0.010f, 0.012f, 0.016f);
 
     /// <summary>And the fill a night crosses to when the level does not say: a faint blue.</summary>
     public static readonly Vector3f DefaultNightAmbient = new(0.03f, 0.045f, 0.08f);
@@ -77,6 +90,22 @@ internal sealed class DayNightCycle
 
     // How fast the re-orientation keys turn the arc, in radians a second -- about fifty degrees.
     private const float TurnRate = 0.9f;
+
+    // The elevation sine the authored sun colour is taken to be seen through: thirty degrees, where the
+    // air takes little enough that a level's sun reads as its artists painted it. Lower than this the
+    // sun's colour comes from the air (see AtmosphereTransmittance); higher, it stays the authored one.
+    private const float ClearSunSine = 0.5f;
+
+    // The sine of the sun's angular radius, a quarter of a degree: how far across the horizon the disc
+    // takes to set, and so how long its last light takes to go.
+    private const float SunDiscSine = 0.0047f;
+
+    // Where the fill finishes crossing from day to night: the sun eighteen degrees under, the end of
+    // astronomical twilight, when the last of its light has left the sky.
+    private const float TwilightEndSine = -0.31f;
+
+    // And where it starts: the sun some nine degrees up, as the golden hour begins.
+    private const float TwilightStartSine = 0.15f;
 
     private float _timeHours = 12f;
     private float _rotX;
@@ -95,10 +124,9 @@ internal sealed class DayNightCycle
 
     /// <summary>Gets how risen the moon is: nought while the sun stands, one at full night.</summary>
     /// <remarks>
-    /// So the shell can treat the moon differently from the sun where the two must not be interchangeable
-    /// -- the atmosphere above all, which scatters whatever illuminance it is handed and would render a
-    /// moonlit sky as a dim but unmistakably blue day. Stays nought when <see cref="Apply"/> is bypassed
-    /// (a pinned <c>-sundir</c> reference sun), which never hangs a moon.
+    /// Nought until the moon holds the direct light, which is when the shell lets the weather and
+    /// <c>r_moonlight</c> at it. Stays nought when <see cref="Apply"/> is bypassed (a pinned <c>-sundir</c>
+    /// reference sun), which never hangs a moon.
     /// </remarks>
     public float Moonrise { get; private set; }
 
@@ -111,6 +139,48 @@ internal sealed class DayNightCycle
     /// the night lifting it back towards day. Stays nought when <see cref="Apply"/> is bypassed.
     /// </remarks>
     public float Nightfall { get; private set; }
+
+    /// <summary>Gets the world direction towards the moon, whether or not it is up.</summary>
+    /// <remarks>
+    /// The arc's anti-solar point, which is where the cycle hangs its moon -- always full, because it always
+    /// stands opposite the sun. Reported even while the sun holds the directional slot, so the sky can draw
+    /// a rising moon through dusk before its light takes over. Straight down when <see cref="Apply"/> is
+    /// bypassed.
+    /// </remarks>
+    public Vector3f MoonDirection { get; private set; } = -Vector3f.UnitZ;
+
+    /// <summary>Gets how visible the stars are: nought in daylight, one once the sun is well under.</summary>
+    /// <remarks>
+    /// The eye picks out the first stars at nautical twilight and the full field only at astronomical
+    /// twilight, the sun six and eighteen degrees under. The band follows that, in the sine of the sun's
+    /// elevation, so the stars come out through dusk and fade through dawn. Stays nought when
+    /// <see cref="Apply"/> is bypassed.
+    /// </remarks>
+    public float StarVisibility { get; private set; }
+
+    /// <summary>Gets the world direction towards the sun, wherever it is -- under the horizon included.</summary>
+    /// <remarks>
+    /// Unlike <see cref="Direction"/>, never the moon's. The sky keeps scattering the sun from here after
+    /// the moon has taken the direct light: that is the twilight glow, which fades as the sun sinks rather
+    /// than going out when the direct light changes hands. Straight up when <see cref="Apply"/> is bypassed.
+    /// </remarks>
+    public Vector3f SunDirection { get; private set; } = Vector3f.UnitZ;
+
+    /// <summary>Gets the sun's light before the air has coloured it, for the sky to scatter.</summary>
+    /// <remarks>
+    /// The level's authored sun, untinted and at full strength whatever the hour. The sky's own march
+    /// reddens and dims it on the way through, and the planet's shadow puts it out; a sun already
+    /// reddened and dimmed here would be reddened a second time -- which is what turned every direction of
+    /// a sunset sky orange-brown -- and would take the twilight glow down with the direct light.
+    /// </remarks>
+    public Vector3f SkySunColour { get; private set; }
+
+    /// <summary>Gets the moon's light as it stands, before any weather: nought until it rises.</summary>
+    /// <remarks>
+    /// Reported whether or not it holds the direct light, so the sky can scatter it as a second source
+    /// from the moment it clears the horizon rather than only once it outshines the setting sun.
+    /// </remarks>
+    public Vector3f MoonColour { get; private set; }
 
     /// <summary>Turns the sun's arc about one world axis, for the gizmo to drive as the numpad keys do.</summary>
     /// <param name="axis">0 for X, 1 for Y, 2 for Z.</param>
@@ -319,10 +389,6 @@ internal sealed class DayNightCycle
         float directionLength = direction.Length;
         direction = directionLength > 1e-5f ? direction / directionLength : Vector3f.UnitZ;
 
-        // How much of a day the surface sees: zero once the sun is a little below the horizon, one once it
-        // is a little above, a soft twilight band between. Colour and sky fill both cross this band.
-        float daylight = Smoothstep(-0.10f, 0.10f, direction.Z);
-
         // How far into night the sky is, for the exposure. Deliberately a WIDER and lower band than the
         // daylight above: that one is about whether there is a sun to light with and wants to be decisive
         // about it, this one is about how dark the picture should be shown and wants the whole of dusk to
@@ -330,35 +396,66 @@ internal sealed class DayNightCycle
         // level whose authored sun barely rises has its arc clamped to about that elevation and must still
         // read as full day at its own noon.
         Nightfall = 1f - Smoothstep(-0.35f, 0.10f, direction.Z);
+        StarVisibility = 1f - Smoothstep(-0.30f, -0.08f, direction.Z);
+        MoonDirection = -direction;
+        SunDirection = direction;
+        SkySunColour = authored.Colour;
 
-        // Near the horizon the sun reddens; the tint eases back to white as it climbs. Multiplied by the
-        // daylight so the sun fades out entirely at night rather than lingering as a dim disc.
-        float lowSun = 1f - Smoothstep(0f, 0.30f, direction.Z);
-        Vector3f warmth = Lerp(Vector3f.One, new Vector3f(1f, 0.55f, 0.30f), lowSun);
-        Vector3f colour = authored.Colour * warmth * daylight;
+        // What reaches the ground of the sun is what the air lets through along the path to it: the same
+        // air the sky is marched through, so the light on the walls and the sky above them always agree.
+        // Low, the path is long and the blue is scattered out of it first, then the green, leaving the
+        // golden hour's amber and the last minutes' deep red, and much less of it. Taken relative to a sun
+        // thirty degrees up, which the authored colour is read as, and never brighter than authored.
+        //
+        // The disc sets across its own width rather than at a point, so the last of it goes over a
+        // fraction of a degree instead of switching off.
+        Vector3f through = AtmosphereTransmittance.At(Math.Max(direction.Z, 0f));
+        Vector3f clear = AtmosphereTransmittance.At(Math.Max(d.Z, ClearSunSine));
+        Vector3f air = new(
+            Math.Min(through.X / Math.Max(clear.X, 1e-6f), 1f),
+            Math.Min(through.Y / Math.Max(clear.Y, 1e-6f), 1f),
+            Math.Min(through.Z / Math.Max(clear.Z, 1e-6f), 1f));
+        float disc = Smoothstep(-SunDiscSine, SunDiscSine, direction.Z);
+        Vector3f colour = authored.Colour * air * disc;
 
-        // The moon: the arc's anti-solar point, so it stands highest at midnight and rises as the sun
-        // sets. It takes the one directional slot only once the sun is fully faded -- the handover
-        // passes through a brief true dark just below the horizon rather than the two fighting over the
-        // light -- and it carries three-thousandths of a sun, cool rather than the authored warm:
-        // enough for the adapted eye to read shape and for the moon to throw a shadow, never enough to
-        // read as day. Because it flows through the same direction and colour as the sun, the cascades,
-        // the traced shadow and the surface-cache relight all see the same moon for free. The
-        // ATMOSPHERE must not (see Moonrise): handed the moon at face value it scatters a dim but
-        // unmistakably blue daytime sky, where a night sky reads near black -- the shell knocks its
-        // feed down separately. The sun-shadow pipeline also runs at night again; that is the price of
-        // a moon that casts.
-        float moonrise = Smoothstep(0.10f, 0.30f, -direction.Z);
-        Moonrise = moonrise;
-        if (moonrise > 0f)
+        // The moon: the arc's anti-solar point, so it stands highest at midnight and -- being full -- rises
+        // exactly as the sun sets, its light growing as it climbs off the horizon. It carries a small
+        // fraction of a sun, cool rather than the authored warm (see DefaultNightColour for why not the
+        // physical ratio). Because it flows through the same direction and colour as the sun, the
+        // cascades, the traced shadow and the surface-cache relight all see the same moon for free.
+        //
+        // There is one directional slot, and it goes to whichever of the two is BRIGHTER here. So the
+        // handover happens where the fading sun and the rising moon are equally bright, and the light
+        // never falls below the moon's. The moon used to wait for the sun to be fully gone before it began
+        // to rise (sun faded out at an elevation sine of -0.10, moon faded in from there to -0.30), which
+        // put a stretch of total darkness between every dusk and night, and again before every dawn.
+        //
+        // The sky does not share this slot: it is handed the sun (SunDirection, SkySunColour) and the moon
+        // (MoonDirection, MoonColour) as two lights of its own, so it glows through twilight whichever of
+        // them the direct light belongs to.
+        float moonLevel = Smoothstep(0f, 0.15f, -direction.Z);
+        Vector3f moonColour = _nightColour * moonLevel;
+        MoonColour = moonColour;
+        bool moonHolds = moonLevel > 0f && Luminance(moonColour) > Luminance(colour);
+        Moonrise = moonHolds ? moonLevel : 0f;
+        if (moonHolds)
         {
             direction = -direction;
-            colour = _nightColour * moonrise;
+            colour = moonColour;
         }
 
         // The sky fill crosses from the night's to the authored daytime ambient, so a night scene reads as
-        // moonlit rather than lit by a sun that is no longer there.
-        Vector3f ambient = Lerp(_nightAmbient, authored.Ambient, daylight);
+        // moonlit rather than lit by a sun that is no longer there -- across the whole of twilight, from
+        // the golden hour to the sun eighteen degrees under, as the sky's own light goes. It used to cross
+        // within six degrees either side of the horizon, which had the fill at night while the sky still
+        // glowed and the moon was still too low to light anything: the dark moment between every dusk
+        // and night.
+        //
+        // Crossed in ratio rather than in step, as light is seen: the sky's light falls by roughly the
+        // same factor for every degree the sun sinks, so an even fade to the eye is an even fade in the
+        // logarithm. It never dips under the night's fill on the way.
+        float twilight = Smoothstep(TwilightEndSine, TwilightStartSine, direction.Z);
+        Vector3f ambient = RatioLerp(_nightAmbient, authored.Ambient, twilight);
 
         _lastDirection = direction;
 
@@ -377,5 +474,16 @@ internal sealed class DayNightCycle
         return t * t * (3f - (2f * t));
     }
 
-    private static Vector3f Lerp(Vector3f a, Vector3f b, float t) => a + ((b - a) * t);
+    private static Vector3f RatioLerp(Vector3f a, Vector3f b, float t) => new(
+        RatioLerp(a.X, b.X, t),
+        RatioLerp(a.Y, b.Y, t),
+        RatioLerp(a.Z, b.Z, t));
+
+    // Geometric where both ends are light, straight where either is black: a ratio from nothing is not one.
+    private static float RatioLerp(float a, float b, float t) =>
+        a > 1e-6f && b > 1e-6f
+            ? a * MathF.Pow(b / a, t)
+            : a + ((b - a) * t);
+
+    private static float Luminance(Vector3f c) => (0.2126f * c.X) + (0.7152f * c.Y) + (0.0722f * c.Z);
 }

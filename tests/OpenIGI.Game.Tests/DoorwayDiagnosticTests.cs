@@ -67,7 +67,7 @@ public sealed class DoorwayDiagnosticTests
         // Its doorway/window openings are portals (material 7 is the door the log hit), and a body walks
         // through their faces.
         Assert.True(mesh!.IsPortal(7), "material 7 is the doorway portal");
-        Assert.Contains(mesh.Faces, f => f.Material == 7 && mesh.IsPortal(f.Material));
+        Assert.Contains(mesh.Faces.ToArray(), f => f.Material == 7 && mesh.IsPortal(f.Material));
 
         // A plain wall material stays solid.
         Assert.False(mesh.IsPortal(1), "material 1 is solid wall, not a portal");

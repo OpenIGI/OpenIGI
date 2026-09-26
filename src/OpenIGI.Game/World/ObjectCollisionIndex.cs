@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats;
 using OpenIGI.Formats.World;
@@ -457,7 +457,7 @@ public sealed class ObjectCollisionIndex
             int total = 0;
             foreach (Entry entry in _entries)
             {
-                total += entry.Mesh.Faces.Count;
+                total += entry.Mesh.Faces.Length;
             }
 
             return total;
@@ -556,7 +556,7 @@ public sealed class ObjectCollisionIndex
             // Character HSMC meshes stay at the authored spawn. World traces (AI sight, bullets)
             // would hit that leftover hull before the live detection mark and treat the player as
             // cover. Live humans are not static world; skip them on the world index.
-            if (meshes.Default is { Faces.Count: > 0 } defaultMesh
+            if (meshes.Default is { Faces.Length: > 0 } defaultMesh
                 && !IsCharacterPlacement(placement))
             {
                 entries.Add(Entry.Create(
@@ -565,7 +565,7 @@ public sealed class ObjectCollisionIndex
             }
 
             MefCollisionMesh? playerMesh = meshes.Player;
-            if (playerMesh is { Faces.Count: > 0 } && !(hasElevator && IsElevatorShaftVolume(placement.Instance.Name)))
+            if (playerMesh is { Faces.Length: > 0 } && !(hasElevator && IsElevatorShaftVolume(placement.Instance.Name)))
             {
                 playerEntries.Add(Entry.Create(
                     playerMesh, origin, placement.Orientation, placement.Instance.Name, label, placement.TaskName,

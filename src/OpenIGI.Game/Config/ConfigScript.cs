@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 
@@ -95,12 +95,13 @@ public sealed class ConfigScript
         return config;
     }
 
-    /// <summary>The sixteen names a configuration file may call.</summary>
+    /// <summary>The names a configuration file may call: the retail file's, and OpenIGI's own <c>GOControlsVersion</c>.</summary>
     /// <remarks>Listed in the order a retail file uses them, which is also the order the writer emits.</remarks>
     public static IReadOnlyList<string> NativeNames { get; } =
     [
         "GOStart",
         "GOContentControlPW",
+        "GOControlsVersion",
         "GOPlayer",
         "GOActiveMission",
         "GOInMouInv",
@@ -158,6 +159,9 @@ public sealed class ConfigScript
             // It arrives before any GOPlayer, so it is stashed and applied once they all exist.
             natives.RegisterFunction("GOStart", c => Set(() => _pendingActive = c.GetInt32(0)), 1);
             natives.RegisterFunction("GOContentControlPW", c => Set(() => config.ContentControlPassword = c.GetString(0)), 1);
+
+            // OpenIGI's own; see GameConfig.ControlsVersion. The retail file never calls it.
+            natives.RegisterFunction("GOControlsVersion", c => Set(() => config.ControlsVersion = c.GetInt32(0)), 1);
 
             natives.RegisterFunction("GOPlayer", c => Set(() =>
             {

@@ -91,7 +91,7 @@ a probe of the running original
 !.github/**/*.md
 # An added asset's provenance, licence and preparation recipe are not working notes: they have to
 # ship with the binary they describe, or nobody downstream can tell what they are allowed to do with it.
-!apps/OpenIGI.Desktop/Assets/**/README.md
+!apps/OpenIGI.Composition/Assets/**/README.md
 
 # Debug captures written next to the executable by the terrain/birdseye dumps.
 /out_*.bmp

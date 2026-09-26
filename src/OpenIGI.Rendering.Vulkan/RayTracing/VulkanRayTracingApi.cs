@@ -27,9 +27,6 @@ internal sealed class VulkanRayTracingApi : IDisposable
     /// <summary>The alignment an acceleration structure's backing memory is placed at.</summary>
     public const ulong StructureAlignment = 256;
 
-    /// <summary>The alignment the instance descriptor array must start at.</summary>
-    public const ulong InstanceBufferAlignment = 16;
-
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="VulkanRayTracingApi"/> class.</summary>

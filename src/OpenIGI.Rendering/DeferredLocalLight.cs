@@ -51,13 +51,20 @@ namespace OpenIGI.Rendering;
 /// emitting geometry reaches from its centroid, because it needs that for the light's reach.
 /// </para>
 /// </param>
+/// <param name="ViewAxis">
+/// The long axis of the fixture's emitting rectangle in view space, scaled to HALF its length, or zero
+/// for a fixture lit as a point. Its shadow rays are aimed at points on this rectangle.
+/// </param>
+/// <param name="HalfWidth">Half the emitting rectangle's width, across <paramref name="ViewAxis"/>, in metres.</param>
 public readonly record struct DeferredLocalLight(
     Vector3f ViewPosition,
     float Radius,
     Vector3f Colour,
     float Intensity,
     Vector3f ViewDirection = default,
-    float SourceRadius = 0f)
+    float SourceRadius = 0f,
+    Vector3f ViewAxis = default,
+    float HalfWidth = 0f)
 {
     /// <summary>The most local lights a single frame can carry, matching the lighting shader's array size.</summary>
     /// <remarks>

@@ -1,4 +1,4 @@
-using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Core.Configuration;
 
 namespace OpenIGI.Game;
 
@@ -51,10 +51,14 @@ public static class GameplayCVars
     /// weapon's momentum.
     /// </para>
     /// <para>Applies to guards and to the player alike; both die through the same rig.</para>
+    /// <para>
+    /// Off by default, and no profile turns it on: the canned deaths are the game as shipped, and the
+    /// simulation is something a player asks for.
+    /// </para>
     /// </remarks>
     public static readonly BoolCVar Ragdoll = CVar.Bool(
         "g_ragdoll",
-        true,
+        false,
         CVarOptions.Archive,
         "Simulate the dead instead of playing the original's canned death animations.");
 
@@ -298,10 +302,6 @@ public static class GameplayCVars
                 // The one gameplay-mutating option. Enhanced deliberately does NOT set it back: it is
                 // an opt-in on top of any profile, but vanilla means the 2000 build, full stop.
                 Ballistics.Value = false;
-                break;
-
-            case GameplayProfile.Enhanced:
-                Ragdoll.Value = true;
                 break;
 
             default:

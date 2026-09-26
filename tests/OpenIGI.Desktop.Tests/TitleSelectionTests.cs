@@ -1,5 +1,5 @@
 using OpenIGI.Core.Titles;
-using OpenIGI.Desktop;
+using OpenIGI.Composition;
 using OpenIGI.Host.Configuration;
 using Xunit;
 
@@ -38,8 +38,8 @@ public sealed class TitleSelectionTests
     [Fact]
     public void Each_title_names_its_own_path_variable()
     {
-        string first = DesktopTitleCatalog.GamePathVariableFor(GameTitle.Igi1);
-        string second = DesktopTitleCatalog.GamePathVariableFor(GameTitle.Igi2);
+        string first = TitleCatalog.GamePathVariableFor(GameTitle.Igi1);
+        string second = TitleCatalog.GamePathVariableFor(GameTitle.Igi2);
 
         Assert.Equal(HostOptions.GamePathVariable, first);
         Assert.Equal("IGI2_GAME_PATH", second);
@@ -58,7 +58,7 @@ public sealed class TitleSelectionTests
     [InlineData("  igi2  ")]
     public void A_known_title_id_resolves(string id)
     {
-        Assert.True(DesktopTitleCatalog.TryResolve(id, out Engine.Titles.IGameTitleRuntime? runtime));
+        Assert.True(TitleCatalog.TryResolve(id, out Engine.Titles.IGameTitleRuntime? runtime));
         Assert.Equal(id.Trim(), runtime!.Title.Id, StringComparer.OrdinalIgnoreCase);
     }
 
@@ -69,12 +69,12 @@ public sealed class TitleSelectionTests
     [InlineData(null)]
     public void An_unknown_title_id_resolves_to_nothing(string? id)
     {
-        Assert.False(DesktopTitleCatalog.TryResolve(id, out Engine.Titles.IGameTitleRuntime? runtime));
+        Assert.False(TitleCatalog.TryResolve(id, out Engine.Titles.IGameTitleRuntime? runtime));
         Assert.Null(runtime);
 
         // And the message the caller prints names what it would have accepted.
-        Assert.Contains("igi1", DesktopTitleCatalog.KnownTitleIds, StringComparison.Ordinal);
-        Assert.Contains("igi2", DesktopTitleCatalog.KnownTitleIds, StringComparison.Ordinal);
+        Assert.Contains("igi1", TitleCatalog.KnownTitleIds, StringComparison.Ordinal);
+        Assert.Contains("igi2", TitleCatalog.KnownTitleIds, StringComparison.Ordinal);
     }
 
     /// <summary>Every title this build lists has the four things a host needs from it.</summary>
@@ -86,22 +86,39 @@ public sealed class TitleSelectionTests
     [Fact]
     public void Every_listed_title_has_a_runtime_a_walk_a_catalogue_and_a_presentation()
     {
-        Assert.NotEmpty(DesktopTitleCatalog.All);
+        Assert.NotEmpty(TitleCatalog.All);
 
-        foreach (Engine.Titles.IGameTitleRuntime runtime in DesktopTitleCatalog.All)
+        foreach (Engine.Titles.IGameTitleRuntime runtime in TitleCatalog.All)
         {
             GameTitle title = runtime.Title;
 
-            Assert.Same(runtime, DesktopTitleCatalog.For(title));
-            Assert.NotNull(DesktopTitleCatalog.WorldBuilderFor(title));
-            Assert.NotNull(DesktopTitleCatalog.MissionCatalogueFor(title));
-            Assert.NotNull(DesktopTitleCatalog.PresentationFor(title));
-            Assert.NotEmpty(DesktopTitleCatalog.GamePathVariableFor(title));
+            Assert.Same(runtime, TitleCatalog.For(title));
+            Assert.NotNull(TitleCatalog.WorldBuilderFor(title));
+            Assert.NotNull(TitleCatalog.MissionCatalogueFor(title));
+            Assert.NotNull(TitleCatalog.PresentationFor(title));
+            Assert.NotEmpty(TitleCatalog.GamePathVariableFor(title));
         }
 
         // The ids are distinct, which is what makes -title able to name one of them.
         Assert.Equal(
-            DesktopTitleCatalog.All.Count,
-            DesktopTitleCatalog.All.Select(static r => r.Title.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+            TitleCatalog.All.Count,
+            TitleCatalog.All.Select(static r => r.Title.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    /// <summary>A rooted catalogue offers its one title, bound to the root it was given.</summary>
+    /// <remarks>
+    /// What a browser runs: no environment to read and nothing to probe, and a second title it cannot
+    /// resolve rather than one bound to an installation that is not there.
+    /// </remarks>
+    [Fact]
+    public void A_rooted_catalogue_offers_one_title_at_its_root()
+    {
+        Host.Titles.ITitleCatalog catalog = TitleCatalog.Rooted(TitleCatalog.Default, "/game");
+
+        Assert.Equal([TitleCatalog.Default.Title], catalog.Titles);
+        Assert.True(catalog.TryResolve(TitleCatalog.Default.Title, out Host.Titles.TitleBinding? binding));
+        Assert.Equal("/game", binding.DataRoot);
+        Assert.Same(TitleCatalog.Default, binding.Runtime);
+        Assert.False(catalog.TryResolve(GameTitle.Igi2, out _));
     }
 }

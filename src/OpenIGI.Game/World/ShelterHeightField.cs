@@ -438,7 +438,7 @@ public sealed class ShelterHeightField
                 cache[placement.Model] = mesh;
             }
 
-            if (mesh is { Faces.Count: > 0, Vertices.Count: > 0 })
+            if (mesh is { Faces.Length: > 0, Vertices.Count: > 0 })
             {
                 solids.Add((placement, mesh));
             }

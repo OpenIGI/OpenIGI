@@ -162,9 +162,11 @@ internal sealed partial class GameHost
         _dayNight.ResetForLevel(_cycleSun, RenderCVars.TimeOfDay.Value);
 
         // After the reset, which clears it -- the same order the mission path keeps.
-        if (preview.Sun is { } nightSun && _deferredLighting is { Night: not null } authoredNight)
+        if (preview.Sun is { } nightSun && _deferredLighting is { Night: { } boundNight } authoredNight)
         {
-            _dayNight.SetNightLighting(nightSun.Colour, authoredNight.Ambient);
+            _dayNight.SetNightLighting(
+                boundNight.SunIsMoon ? nightSun.Colour : null,
+                authoredNight.Ambient);
         }
 
         // A mission with no shipped bake previews on sun and sky alone. Tracing one is seconds of CPU for a
@@ -251,7 +253,7 @@ internal sealed partial class GameHost
             Path.Combine(AppContext.BaseDirectory, "Assets", "menu-cameras.json"), _logger);
 
         using var loader = new MissionPreviewLoader(
-            _gamePath, _missions, _magic, _giCache, cameras, _previewContext, _logger);
+            _gamePath, _missions, _magic, _giCache, cameras, _previewContext, _logger, _work);
         var entries = new List<ShowcasePointFile.Entry>();
 
         foreach (MissionDescriptor descriptor in _missions.InCampaignOrder())

@@ -179,7 +179,7 @@ public sealed class ElevatorCabEntryCollisionTests
 
                 bool hasPlayerMesh = MefCollisionMesh.TryRead(
                     p.Model.Container, meshIndex: 1, out MefCollisionMesh? player)
-                    && player is { Faces.Count: > 0 };
+                    && player is { Faces.Length: > 0 };
                 if (!hasPlayerMesh)
                 {
                     continue;

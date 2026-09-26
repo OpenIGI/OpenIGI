@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using System.Text;
 using OpenIGI.Scripting.Qvm;
@@ -56,6 +56,7 @@ public static class ConfigScriptWriter
         // The active profile index, which the loader applies after every GOPlayer has been read.
         builder.Call("GOStart", Number(config.ActiveIndex));
         builder.Call("GOContentControlPW", Text(config.ContentControlPassword));
+        builder.Call("GOControlsVersion", Number(config.ControlsVersion));
 
         foreach (PlayerProfile profile in config.Profiles)
         {

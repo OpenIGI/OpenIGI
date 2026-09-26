@@ -108,6 +108,18 @@ internal sealed class VulkanDeviceCapabilities
     /// <summary>Gets a value indicating whether 16-bit values may be stored in buffers.</summary>
     public bool Storage16Bit { get; init; }
 
+    /// <summary>Gets a value indicating whether a shader may read the draw's own parameters.</summary>
+    /// <remarks>
+    /// Slang declares the SPIR-V capability for it in any stage that reads <c>SV_VertexID</c>, so every
+    /// full-screen pass needs it enabled; a module that declares a capability the device did not enable is
+    /// invalid, however the driver treats it.
+    /// </remarks>
+    public bool ShaderDrawParameters { get; init; }
+
+    /// <summary>Gets a value indicating whether a compute stage may take derivatives across quads.</summary>
+    /// <remarks>See <see cref="VulkanExtensionNames.ComputeShaderDerivatives"/>.</remarks>
+    public bool ComputeDerivativeGroupQuads { get; init; }
+
     /// <summary>Gets a value indicating whether shaders may compute in half precision.</summary>
     public bool ShaderFloat16 { get; init; }
 

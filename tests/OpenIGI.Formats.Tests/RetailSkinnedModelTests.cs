@@ -60,13 +60,13 @@ public sealed class RetailSkinnedModelTests
                 // Every other format is all base vertices and carries no bindings at all.
                 Assert.Equal(model.Vertices.Length, model.BaseVertexCount);
                 Assert.Equal(0, model.ExtraInfluenceCount);
-                Assert.Empty(model.SkinInfluences);
+                Assert.Equal(0, model.SkinInfluences.Length);
                 continue;
             }
 
             skinned++;
             Assert.Equal(model.Vertices.Length, model.BaseVertexCount + model.ExtraInfluenceCount);
-            Assert.Equal(model.Vertices.Length, model.SkinInfluences.Count);
+            Assert.Equal(model.Vertices.Length, model.SkinInfluences.Length);
             Assert.True(model.ExtraInfluenceCount > 0);
         }
 
@@ -89,7 +89,7 @@ public sealed class RetailSkinnedModelTests
 
             models++;
             double[] total = new double[model.BaseVertexCount];
-            for (int i = 0; i < model.SkinInfluences.Count; i++)
+            for (int i = 0; i < model.SkinInfluences.Length; i++)
             {
                 MefSkinInfluence influence = model.SkinInfluences[i];
                 int target = i < model.BaseVertexCount ? i : influence.TargetVertex;

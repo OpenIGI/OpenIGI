@@ -216,8 +216,10 @@ public interface ITitlePresentationProvider
     /// behind that, over all of I.G.I. 2's levels.
     /// </para>
     /// <para>
-    /// Project I.G.I. answers nothing and keeps the sweep, the moon and the elevation-derived exposure
-    /// untouched — which its regression captures require, since every one of them is a dynamic frame.
+    /// Project I.G.I. answers nothing for a daylit level and keeps the sweep, the moon and the
+    /// elevation-derived exposure untouched — which its regression captures require, since every one of
+    /// them is a dynamic frame. It answers only for the six missions whose sky dome it paints as night,
+    /// which its <c>Dirlight</c> cannot say: every level authors that sun at the same noon.
     /// </para>
     /// </remarks>
     DeferredLighting? ReadDeferredLighting(GameTask levelRoot) => null;

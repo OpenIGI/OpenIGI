@@ -53,14 +53,4 @@ internal sealed class PhysicalDeviceSelection
 
     /// <summary>Gets the device extensions to enable on the logical device.</summary>
     public IReadOnlyList<string> DeviceExtensions => Capabilities.EnabledExtensions;
-
-    /// <summary>
-    /// Gets a value indicating whether rays can be traced against hardware acceleration structures.
-    /// </summary>
-    /// <remarks>
-    /// The seam the whole exercise is aimed at: the indirect-lighting passes trace either a software
-    /// distance field or a hardware acceleration structure, and this is the one question that chooses
-    /// between them.
-    /// </remarks>
-    public bool SupportsRayTracing => Capabilities.HardwareRayTracing;
 }

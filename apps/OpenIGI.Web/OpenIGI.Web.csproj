@@ -1,0 +1,91 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+
+  <!-- The game in a browser: the same host as the desktop's, over the canvas, WebGPU and the files the
+       person picked. Built with `dotnet publish`; the page is wwwroot/index.html in the publish output. -->
+  <PropertyGroup>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <OutputType>Exe</OutputType>
+    <!-- The JavaScript interop's generated marshalling is unsafe code. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <WasmMainJSPath>wwwroot/main.js</WasmMainJSPath>
+    <!-- The runtime's loader gets a content hash in its name like every other file under _framework, and
+         index.html an import map to it, so a host can cache _framework for good and a new build is never
+         run against a browser's copy of the last one. The page's own scripts keep their names and are
+         revalidated on every load instead (hosting/apache/.htaccess). -->
+    <WasmFingerprintDotnetJs>true</WasmFingerprintDotnetJs>
+    <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
+    <!-- Links the browser's webgpu.h into the runtime (WgpuBrowser.props). -->
+    <WasmBuildNative>true</WasmBuildNative>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- A level's buffers and textures are hundreds of megabytes; start with room for them and allow the
+         whole 32-bit address space. -->
+    <EmccInitialHeapSize>536870912</EmccInitialHeapSize>
+    <EmccMaximumHeapSize>4294967296</EmccMaximumHeapSize>
+  </PropertyGroup>
+
+  <!-- The release build is the one a player runs, so it is the optimised one without flags to remember:
+       `dotnet publish -c Release` compiles the managed code ahead of time to WebAssembly (the interpreter
+       it replaces runs the frame several times slower), optimises the native link for speed rather than
+       size, and trims what nothing reaches. The publish also writes .br and .gz beside every file, which
+       a host serves with Content-Encoding. A Debug build stays interpreted, for build speed. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <RunAOTCompilation>true</RunAOTCompilation>
+    <WasmEnableSIMD>true</WasmEnableSIMD>
+    <EmccCompileOptimizationFlag>-O3</EmccCompileOptimizationFlag>
+    <EmccLinkOptimizationFlag>-O3</EmccLinkOptimizationFlag>
+    <PublishTrimmed>true</PublishTrimmed>
+    <DebuggerSupport>false</DebuggerSupport>
+    <EventSourceSupport>false</EventSourceSupport>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenIGI.Composition\OpenIGI.Composition.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Audio\OpenIGI.Audio.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Audio.Web\OpenIGI.Audio.Web.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Engine\OpenIGI.Engine.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Host\OpenIGI.Host.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Platform\OpenIGI.Platform.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Platform.Web\OpenIGI.Platform.Web.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Rendering.Pipeline\OpenIGI.Rendering.Pipeline.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Rendering.WebGpu\OpenIGI.Rendering.WebGpu.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The host's assets (apps/OpenIGI.Composition/Assets), served beside the page with a list of them in
+         host-assets.json. The page writes them where the host looks, /Assets in the runtime's file system,
+         since the application's directory there is the root. -->
+    <HostAsset Include="..\OpenIGI.Composition\Assets\**\*"
+               Exclude="..\OpenIGI.Composition\Assets\**\*.md;..\OpenIGI.Composition\Assets\**\.gitignore" />
+    <Content Include="@(HostAsset)"
+             Link="wwwroot\Assets\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="ListHostAssets" BeforeTargets="AssignTargetPaths">
+    <PropertyGroup>
+      <_HostAssetList>$(IntermediateOutputPath)host-assets.json</_HostAssetList>
+    </PropertyGroup>
+    <ItemGroup>
+      <_HostAssetLine Include="@(HostAsset->'&quot;Assets/%(RecursiveDir)%(Filename)%(Extension)&quot;'->Replace('\', '/'))" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(_HostAssetList)" Lines="[;@(_HostAssetLine, ',%0A');]" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Content Include="$(_HostAssetList)" Link="wwwroot\host-assets.json" CopyToOutputDirectory="PreserveNewest" />
+      <FileWrites Include="$(_HostAssetList)" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <!-- Interpreted rather than compiled ahead of time: the Mono AOT compiler crashes on the generated
+         WebGPU bindings (an sgen assertion in mono-aot-cross, 10.0.12), and they are P/Invoke stubs with
+         nothing to gain from compiling. -->
+    <_AOT_InternalForceInterpretAssemblies Include="OpenIGI.Rendering.WebGpu.Native.dll" />
+  </ItemGroup>
+
+  <Import Project="..\..\src\OpenIGI.Rendering.WebGpu.Browser\WgpuBrowser.props" />
+  <Import Project="..\..\src\OpenIGI.Platform.Web\WebPlatform.props" />
+  <Import Project="..\..\src\OpenIGI.Audio.Web\WebAudio.props" />
+
+</Project>

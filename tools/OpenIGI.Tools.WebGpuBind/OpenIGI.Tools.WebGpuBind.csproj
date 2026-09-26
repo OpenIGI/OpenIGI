@@ -1,0 +1,11 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Generates the WebGPU bindings from the headers committed in the Native project. It references
+       nothing: what it reads is C and what it writes is text, and a dependency on the project it
+       writes into would only be a cycle waiting to happen. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+</Project>

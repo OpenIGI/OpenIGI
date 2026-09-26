@@ -13,7 +13,7 @@
     catching.
   -->
   <ItemGroup>
-    <None Include="..\..\apps\OpenIGI.Desktop\Assets\fonts\*.ttf"
+    <None Include="..\..\apps\OpenIGI.Composition\Assets\fonts\*.ttf"
           Link="Assets\fonts\%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

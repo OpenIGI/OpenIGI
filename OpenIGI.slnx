@@ -1,7 +1,9 @@
 <Solution>
   <Folder Name="/apps/">
+    <Project Path="apps/OpenIGI.Composition/OpenIGI.Composition.csproj" />
     <Project Path="apps/OpenIGI.Desktop/OpenIGI.Desktop.csproj" />
     <Project Path="src/OpenIGI.Audio.OpenAL/OpenIGI.Audio.OpenAL.csproj" />
+    <Project Path="src/OpenIGI.Audio.Web/OpenIGI.Audio.Web.csproj" />
     <Project Path="src/OpenIGI.Audio/OpenIGI.Audio.csproj" />
     <Project Path="src/OpenIGI.Core/OpenIGI.Core.csproj" />
     <Project Path="src/OpenIGI.Engine/OpenIGI.Engine.csproj" />
@@ -14,11 +16,17 @@
     <Project Path="src/OpenIGI.Modding/OpenIGI.Modding.csproj" />
     <Project Path="src/OpenIGI.Platform.Desktop/OpenIGI.Platform.Desktop.csproj" />
     <Project Path="src/OpenIGI.Platform/OpenIGI.Platform.csproj" />
+    <Project Path="src/OpenIGI.Platform.Web/OpenIGI.Platform.Web.csproj" />
     <Project Path="src/OpenIGI.Presentation/OpenIGI.Presentation.csproj" />
     <Project Path="src/OpenIGI.Host/OpenIGI.Host.csproj" />
+    <Project Path="src/OpenIGI.Rendering.Rhi/OpenIGI.Rendering.Rhi.csproj" />
+    <Project Path="src/OpenIGI.Rendering.Pipeline/OpenIGI.Rendering.Pipeline.csproj" />
+    <Project Path="src/OpenIGI.Rendering.WebGpu.Native/OpenIGI.Rendering.WebGpu.Native.csproj" />
+    <Project Path="src/OpenIGI.Rendering.WebGpu/OpenIGI.Rendering.WebGpu.csproj" />
     <Project Path="src/OpenIGI.Rendering.Vulkan/OpenIGI.Rendering.Vulkan.csproj" />
     <Project Path="src/OpenIGI.Rendering/OpenIGI.Rendering.csproj" />
     <Project Path="src/OpenIGI.Scripting/OpenIGI.Scripting.csproj" />
+    <Project Path="src/OpenIGI.Shaders/OpenIGI.Shaders.csproj" />
     <Project Path="src/OpenIGI.UI/OpenIGI.UI.csproj" />
     <Project Path="src/OpenIGI.Frontend/OpenIGI.Frontend.csproj" />
   </Folder>
@@ -34,9 +42,15 @@
     <Project Path="tests/OpenIGI.Game.Igi1.Tests/OpenIGI.Game.Igi1.Tests.csproj" />
     <Project Path="tests/OpenIGI.Game.Igi2.Tests/OpenIGI.Game.Igi2.Tests.csproj" />
     <Project Path="tests/OpenIGI.Input.Tests/OpenIGI.Input.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Platform.Web.Tests/OpenIGI.Platform.Web.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.Tests/OpenIGI.Rendering.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Rendering.Pipeline.Tests/OpenIGI.Rendering.Pipeline.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Rendering.Rhi.Tests/OpenIGI.Rendering.Rhi.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Rendering.WebGpu.Native.Tests/OpenIGI.Rendering.WebGpu.Native.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Rendering.WebGpu.Tests/OpenIGI.Rendering.WebGpu.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.Vulkan.Tests/OpenIGI.Rendering.Vulkan.Tests.csproj" />
     <Project Path="tests/OpenIGI.Scripting.Tests/OpenIGI.Scripting.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Shaders.Tests/OpenIGI.Shaders.Tests.csproj" />
     <Project Path="tests/OpenIGI.UI.Tests/OpenIGI.UI.Tests.csproj" />
     <Project Path="tests/OpenIGI.Frontend.Tests/OpenIGI.Frontend.Tests.csproj" />
     <Project Path="tests/OpenIGI.Desktop.Tests/OpenIGI.Desktop.Tests.csproj" />
@@ -46,5 +60,7 @@
     <Project Path="tools/OpenIGI.Tools.QvmDisasm/OpenIGI.Tools.QvmDisasm.csproj" />
     <Project Path="tools/OpenIGI.Tools.TaskCensus/OpenIGI.Tools.TaskCensus.csproj" />
     <Project Path="tools/OpenIGI.Tools.ResExtract/OpenIGI.Tools.ResExtract.csproj" />
+    <Project Path="tools/OpenIGI.Tools.ShaderBuild/OpenIGI.Tools.ShaderBuild.csproj" />
+    <Project Path="tools/OpenIGI.Tools.WebGpuBind/OpenIGI.Tools.WebGpuBind.csproj" />
   </Folder>
 </Solution>

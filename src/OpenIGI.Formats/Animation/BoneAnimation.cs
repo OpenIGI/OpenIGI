@@ -99,7 +99,7 @@ public sealed class BoneAnimation
     /// <see cref="Duration"/> — the displacement at the end of the cycle, so a loop can take the whole
     /// cycle's travel.
     /// </remarks>
-    public IReadOnlyList<BoneTranslationKey> Translation => _translation;
+    public ReadOnlySpan<BoneTranslationKey> Translation => _translation;
 
     /// <summary>Gets the events, in file order.</summary>
     public IReadOnlyList<BoneAnimationEvent> Events => _events;
@@ -111,7 +111,7 @@ public sealed class BoneAnimation
     /// <param name="bone">The bone index.</param>
     /// <returns>The keys, in time order. Never empty for retail data, but may be.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="bone"/> is not a bone.</exception>
-    public IReadOnlyList<BoneRotationKey> Rotations(int bone)
+    public ReadOnlySpan<BoneRotationKey> Rotations(int bone)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(bone);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(bone, _rotations.Length);

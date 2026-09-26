@@ -23,4 +23,8 @@ public sealed class DesktopPlatformHost : IPlatformHost
 
         return new SilkGameWindow(settings);
     }
+
+    /// <inheritdoc/>
+    /// <remarks>A sleep for the coarse part of the wait and a spin for the rest; see <see cref="DesktopFramePacer"/>.</remarks>
+    public IFramePacer CreateFramePacer() => new DesktopFramePacer();
 }

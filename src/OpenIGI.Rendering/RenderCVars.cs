@@ -281,9 +281,9 @@ public static class RenderCVars
         // is a real loss to a preset whose whole job is the best picture. The cheaper tiers spend exactly
         // that, and buy back most of a traced-GI frame with it.
         //
-        // The cut-out mip bias (VulkanGraphicsDevice's TextureMipLodBias) is derived from this, so a tier
-        // rendering below native still samples chain-link and foliage at the sharpness its output
-        // resolution wants rather than discarding it. At native the bias is zero, which is correct.
+        // The cut-out mip bias (TextureLodBias.FromSettings) is derived from this, so a tier rendering below
+        // native still samples chain-link and foliage at the sharpness its output resolution wants rather
+        // than discarding it. At native the bias is zero, which is correct.
         ultra: "1");
 
     /// <summary>Whether the scene is rendered offscreen instead of straight to the back buffer.</summary>
@@ -491,7 +491,7 @@ public static class RenderCVars
     public static float EffectiveExposure => MathF.Max(
         Exposure.Value
             - (NightBrightnessDrop * Nightfall.Value)
-            - (AuthoredNightDrop * AuthoredNightfall.Value),
+            - (AuthoredNightDropFor.Value * AuthoredNightfall.Value),
         MinimumExposure);
 
     /// <summary>How much darker a title's OWN night makes the picture, in stops, at full night.</summary>
@@ -535,6 +535,22 @@ public static class RenderCVars
     /// </para>
     /// </remarks>
     public const float AuthoredNightDrop = 0.632f;
+
+    /// <summary>How many units of exposure the current level's own night takes off, at full night.</summary>
+    /// <remarks>
+    /// <see cref="AuthoredNightDrop"/> unless the title says otherwise. It was fitted against I.G.I. 2's
+    /// night missions, which leave the sun up and paint it nearly black. Project I.G.I.'s night missions
+    /// are bound through the cycle's own moon instead, whose darkness the lighting already computes, so
+    /// they carry a drop of their own. Set by the shell as a level loads; read only through
+    /// <see cref="EffectiveExposure"/>.
+    /// </remarks>
+    public static readonly NumericCVar<float> AuthoredNightDropFor = CVar.Float(
+        "r_authored_night_drop",
+        AuthoredNightDrop,
+        0f,
+        2f,
+        CVarOptions.Hidden | CVarOptions.ReadOnly,
+        "How much exposure the level's own night takes off at full night; not a setting.");
 
     /// <summary>How dark a title says its own level is, 0 to 1; 0 for a title that does not say.</summary>
     /// <remarks>
@@ -848,6 +864,13 @@ public static class RenderCVars
     /// built out of what it returns — which then lights the scene the next trace reads. Unbounded, that
     /// loop does not settle: past a certain gather strength each pass is brighter than the last. The
     /// reference bounds the same read for the same reason, and calls it the maximum ray intensity.
+    /// <para>
+    /// In EXPOSED units, as the reference's is, and at the reference's ten on every preset. The modern
+    /// presets carried 50.1 applied to raw scene radiance, which at night -- exposure sixteen and up --
+    /// let a ray through some eighty times brighter than the reference would: the few of a probe's
+    /// sixteen rays that landed on a lamp's fixture or its pool of light swung its estimate frame to
+    /// frame, and that was the cloud drifting around every lamp at night.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> ScreenGatherMaxIntensity = Presets.Define(
         CVar.Float(
@@ -856,11 +879,11 @@ public static class RenderCVars
             0.1f,
             1000f,
             CVarOptions.Archive,
-            "Ceiling on a single screen-traced ray's radiance; stops the gather feeding itself."),
+            "Ceiling on a single screen GI ray's radiance as the eye sees it (after exposure); stops the gather feeding itself."),
         vanilla: "10",
-        enhanced: "50.1",
-        high: "50.1",
-        ultra: "50.1");
+        enhanced: "10",
+        high: "10",
+        ultra: "10");
 
     /// <summary>How strongly the screen probe gather's indirect light fills the deferred lighting.</summary>
     /// <remarks>
@@ -980,6 +1003,28 @@ public static class RenderCVars
         enhanced: "3",
         high: "3",
         ultra: "3");
+    /// <summary>How many slices the whole surface cache is refreshed in, one a frame; 0 turns it off.</summary>
+    /// <remarks>
+    /// The cache near the camera is refreshed every frame within <see cref="GiCacheRadius"/>; this sweep
+    /// keeps the REST of it current -- a far surface follows the sun, the lamps and the world filling in
+    /// within slices / frame rate seconds, instead of keeping its load-time light until the player walks up
+    /// to it. Fewer slices is a faster sweep and a dearer frame.
+    /// </remarks>
+    public static readonly NumericCVar<int> GiFarRefresh = Presets.Define(
+        CVar.Int(
+            "r_gi_far_refresh",
+            128,
+            0,
+            4096,
+            CVarOptions.Archive,
+            "Slices the whole GI cache is refreshed in, one a frame, so far surfaces stay lit correctly. 0 is off."),
+        vanilla: "0",
+
+        // Half the per-frame cost on the preset with the least GPU to spare, for a sweep twice as long.
+        enhanced: "256",
+        high: "128",
+        ultra: "128");
+
     /// <summary>How far from the camera the surface cache keeps refreshing itself, in metres.</summary>
     /// <remarks>
     /// <para>
@@ -1458,6 +1503,126 @@ public static class RenderCVars
         // Preserve the atmosphere and sky SH that ultra was already rendering when r_sun_scale was 7.
         // This is a transport input, not the direct surface-response calibration in r_sun_scale.
         ultra: "7");
+
+    /// <summary>How much of the moon's light the atmosphere scatters into the night sky.</summary>
+    /// <remarks>
+    /// <para>
+    /// A moonlit sky is the daytime sky's own blue, lit by a source some four hundred thousand times
+    /// dimmer. Handed the moon at face value the march drew what the eye reads as a dim DAY, so it was
+    /// knocked down to two percent. That left the sky and the harmonics projected from it black, and
+    /// with them every shadow the moon did not reach: nothing lit a night but the moon's direct light
+    /// and the lamps.
+    /// </para>
+    /// <para>
+    /// What made the moonlit blue read as day was the missing night vision, not the blue. With the
+    /// resolve's night shift taking the colour out of the dim sky, a third of the moon lets the sky light
+    /// the world again and still reads as night.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> NightSkyScale = Presets.Define(
+        CVar.Float(
+            "r_night_sky",
+            0.02f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "How much of the moon's light the night sky scatters, which is what fills a night's shadows."),
+        vanilla: "0.02",
+        enhanced: "0.35",
+        high: "0.35",
+        ultra: "0.35");
+
+    /// <summary>The night sky's own glow at the zenith, in the atmosphere's units.</summary>
+    /// <remarks>
+    /// Airglow: the upper atmosphere's faint emission, which is most of a clear moonless sky's light. It
+    /// is what keeps a night without a moon from being black, and it brightens towards the horizon, where
+    /// the eye looks through more of the glowing layer. Nought turns it off.
+    /// <para>
+    /// On for every preset, faintly. Once the exposure meters the whole frame, the night is metered off
+    /// the sky and the ground together, and without the glow a clear night had almost nothing in it to
+    /// meter: a black frame with stars. The glow is the moonless night's own light, so it is what that
+    /// frame should be showing -- at 0.0005, a dark night; 0.004 reads as a bright one.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> NightAirglow = Presets.Define(
+        CVar.Float(
+            "r_night_airglow",
+            0.0005f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "The night sky's own faint glow, which lights a moonless night. 0 is off."),
+        vanilla: "0.0005",
+        enhanced: "0.0005",
+        high: "0.0005",
+        ultra: "0.0005");
+
+    /// <summary>Whether the night sky draws its stars, the galaxy and the moon's disc.</summary>
+    public static readonly BoolCVar Stars = Presets.Define(
+        CVar.Bool(
+            "r_stars",
+            false,
+            CVarOptions.Archive,
+            "Draw the stars, the Milky Way and the moon's disc in a night sky."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>How strongly the moon lights the world, against the cycle's own moon; 0.1 by default.</summary>
+    /// <remarks>
+    /// Scales the moon's light -- what throws moon shadows and lights the ground -- and with it the
+    /// moonlit sky, which is scattered from the same moon, as a dimmer moon makes a darker sky. The disc
+    /// keeps its own dial (<see cref="MoonBrightness"/>), and the airglow that lights a moonless night is
+    /// not the moon's at all.
+    /// </remarks>
+    public static readonly NumericCVar<float> Moonlight = Presets.Define(
+        CVar.Float(
+            "r_moonlight",
+            0.1f,
+            0f,
+            4f,
+            CVarOptions.Archive,
+            "How strongly the moon lights the world; 0 leaves only the night sky's fill."),
+        vanilla: "0.1",
+        enhanced: "0.1",
+        high: "0.1",
+        ultra: "0.1");
+
+    /// <summary>How bright the moon's disc and halo are drawn in a night sky; one is the default.</summary>
+    /// <remarks>
+    /// The disc only: the moonlight on the world is the directional light and is not touched by this.
+    /// </remarks>
+    public static readonly NumericCVar<float> MoonBrightness = Presets.Define(
+        CVar.Float(
+            "r_moon_brightness",
+            1f,
+            0f,
+            4f,
+            CVarOptions.Archive,
+            "How bright the moon's disc and halo are drawn; 0 hides it. Does not change the moonlight."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>How far dim parts of a night picture shift towards night vision, 0 to 1.</summary>
+    /// <remarks>
+    /// The Purkinje shift: see <c>PostProcessSettings.NightShift</c>. Scaled by how far into night the sky
+    /// is, so a day is untouched whatever this is set to.
+    /// </remarks>
+    public static readonly NumericCVar<float> NightShift = Presets.Define(
+        CVar.Float(
+            "r_night_shift",
+            0f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "How much a night's dim surfaces lose their colour to a cool night-vision blue. 0 is off."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>Whether the screen probe gather traces on-screen geometry from the frame before the cache.</summary>
     /// <remarks>
@@ -2100,31 +2265,44 @@ public static class RenderCVars
         // instead. High keeps a quarter for the presets not held to that reference.
         ultra: "0");
 
-    /// <summary>How glossy an up-facing surface (a floor, a desk top) is made, so it takes a reflection.</summary>
+    /// <summary>How an up-facing surface's (a floor's, a desk top's) roughness differs from a wall's.</summary>
     /// <remarks>
-    /// The game ships one roughness for every surface, so a floor is as matte as a wall and reflects nothing,
-    /// where the reference render's floor is semi-glossy and mirrors the windows. This multiplies an up-facing
-    /// surface's roughness down towards a sheen while leaving the walls matte -- the split the reference has --
-    /// keyed off how far the surface faces the world up. One is off, every surface as its material said. Only
-    /// the dynamic model reflects, so it does nothing under the others.
+    /// <para>
+    /// A multiplier on an up-facing surface's roughness, keyed off how far the surface faces the world up.
+    /// One is off, every surface as its material said. Below one smooths floors towards a sheen so they take
+    /// a reflection while the walls stay matte; above one ROUGHENS them, so they shine less than the walls.
+    /// Only the dynamic model reads it.
+    /// </para>
+    /// <para>
+    /// The game ships one roughness for every surface, and a building's floor at the default 0.6 read as the
+    /// shiniest thing in the room even with this off: a floor is the one surface nearly always seen at a
+    /// grazing angle, where a dielectric's Fresnel term climbs towards all of the light, so the same lamp and
+    /// ambient highlight a wall shows faintly lies across a floor as a polished sheen. It also sits exactly
+    /// on the traced reflection's roughness ceiling (r_rt_reflection_roughness 0.6), so anything that took a
+    /// texel a little smoother handed it a reflection at the 1.7 intensity.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> FloorGloss = Presets.Define(
         CVar.Float(
             "r_floor_gloss",
             1f,
             0.05f,
-            1f,
+            2f,
             CVarOptions.Archive,
-            "Roughness multiplier for up-facing surfaces, so floors reflect while walls stay matte. 1 is off."),
+            "Roughness multiplier for up-facing surfaces: below 1 floors gloss, above 1 they go matte. 1 is off."),
         vanilla: "1",
-        enhanced: "1",
-        high: "1",
 
-        // Off. The screen-space reflection a glossy floor takes cannot describe a thin object -- a chair's
-        // legs, a desk edge -- and smeared them across the floor as hard dark streaks, worse than the matte
-        // floor it replaced. A floor sheen wants a reflection that sees off-screen geometry cleanly, which the
-        // screen trace is not; left off until the probe field can carry the specular instead.
-        ultra: "1");
+        // A quarter rougher: a default floor at 0.75 rather than 0.6. Enough to take the polished sheen off
+        // the grazing view of a building's floor and lift it clear of the traced reflection's ceiling, while
+        // the floor keeps a soft lamp highlight -- concrete and lino are not chalk. Ground is untouched either
+        // way: the geometry pass writes it at full roughness with no specular after this runs.
+        //
+        // Never below one at these presets. The screen-space reflection a glossy floor takes cannot describe
+        // a thin object -- a chair's legs, a desk edge -- and smeared them across the floor as hard dark
+        // streaks, worse than the matte floor it replaced.
+        enhanced: "1.25",
+        high: "1.25",
+        ultra: "1.25");
 
     /// <summary>Whether the overrides folder is drawn, for comparing against the game's own assets.</summary>
     /// <remarks>
@@ -2552,20 +2730,17 @@ public static class RenderCVars
             0f,
             0.2f,
             CVarOptions.Archive,
-            "Film grain. A little also hides the banding an 8-bit display gives a smooth gradient."),
+            "Film grain, an artistic effect. Banding is handled by the resolve's own one-step dither."),
 
-        // A fifth of the slider's own range, which is a grain you have to look for rather than one that
-        // reads as noise. It was off on every preset for a while: added on the assumption that the
-        // temporal accumulation would keep it to a suggestion, then turned off when there was no
-        // accumulation to do that and it was one more source of noise on top of the stochastic passes.
-        // Both halves of that argument have moved -- the temporal resolve carries the frame now -- and the
-        // complaint it answers has not: an 8-bit display bands a smooth gradient (a sky, a wall falling
-        // into shadow) into visible steps, and a dither at this depth is what breaks them up. Off at
-        // vanilla, which has neither the gradients nor the resolve.
+        // Off on every preset. It was 0.03 to break up an 8-bit display's banding, which is a dither's job
+        // and not a grain's: at that strength it moved nearly four code values either way every frame,
+        // and at night -- where most of a frame is a few code values above black -- it changed nearly
+        // half the pixels of one frame to the next and read as noise over every shadow. The resolve now
+        // dithers by one code value, as the reference does, which removes the banding without the noise.
         vanilla: "0",
-        enhanced: "0.03",
-        high: "0.03",
-        ultra: "0.03");
+        enhanced: "0",
+        high: "0",
+        ultra: "0");
 
     /// <summary>How far the red and blue channels separate towards the corners.</summary>
     public static readonly NumericCVar<float> ChromaticAberration = Presets.Define(
@@ -3170,6 +3345,21 @@ public static class RenderCVars
         false,
         CVarOptions.Developer,
         "Time each stage of the frame on the GPU and show the result. Costs a little of what it measures.");
+
+    /// <summary>Diagnostic: which one source of the screen GI gather's light to keep.</summary>
+    /// <remarks>
+    /// The gather lights each probe from three places: screen-traced hits (the last frame's image), hits on
+    /// the surface cache, and the sky where a ray escapes. With r_debug_view ssgi this shows one of them
+    /// alone, so a GI artefact can be pinned on the source that carries it.
+    /// </remarks>
+    public static readonly NumericCVar<int> GiSource = CVar.Int(
+        "r_gi_source",
+        0,
+        0,
+        4,
+        CVarOptions.Developer,
+        "Diagnostic: keep one source of the screen GI: 0 all, 1 screen hits, 2 surface-cache hits, 3 sky, 4 the surface cache itself.");
+
 
     /// <summary>Which buffer to show instead of the scene.</summary>
     public static readonly EnumCVar<DebugView> Debug = CVar.Choice(

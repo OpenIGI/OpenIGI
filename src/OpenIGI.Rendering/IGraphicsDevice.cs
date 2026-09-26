@@ -1,6 +1,8 @@
 ﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 
+using OpenIGI.Shaders;
+
 namespace OpenIGI.Rendering;
 
 /// <summary>
@@ -491,6 +493,38 @@ public interface IGraphicsDevice : IDisposable
         _ = painted;
     }
 
+    /// <summary>Gets whether a ray traced against the world would meet the level's own geometry.</summary>
+    /// <remarks>
+    /// The world's acceleration structure is only built once the level has been drawn and its geometry
+    /// gathered, and until then a tracing pass binds a stand-in that every ray misses: the answer an empty
+    /// world gives. Anything that lights the level ONCE and keeps the result -- the surface cache's
+    /// load-time convergence -- has to wait for this, or it lights every surface as if nothing stood
+    /// between it and any light. Always true on a device that traces nothing, where the question does not
+    /// arise.
+    /// </remarks>
+    bool WorldTraceReady => true;
+
+    /// <summary>Gets whether the world's acceleration structure has stopped growing.</summary>
+    /// <remarks>
+    /// The structure is filled from what the frames draw and offer, a few meshes a frame, so it is ready
+    /// long before it is whole. Something that lights the level once and keeps the result waits for this,
+    /// and only falls back to <see cref="WorldTraceReady"/> when the level never settles. Always true on a
+    /// device that traces nothing.
+    /// </remarks>
+    bool WorldTraceSettled => true;
+
+    /// <summary>Lifts, or restores, the per-frame budget on geometry newly admitted to the traced world.</summary>
+    /// <param name="unlimited">Whether everything offered is admitted in the frame it is offered.</param>
+    /// <remarks>
+    /// For the loading screen: the budget keeps structure builds out of frames the player sees, and behind
+    /// a load there are none, so lifting it lets the whole level arrive in a few frames rather than a few
+    /// seconds -- and lets what is lit once at load be lit against all of it.
+    /// </remarks>
+    void SetTraceAdmission(bool unlimited)
+    {
+        _ = unlimited;
+    }
+
     /// <summary>Sets the seed for the following draws' hashed alpha test, zero for the hard cut-out.</summary>
     /// <param name="seed">
     /// Zero draws cut-outs with a hard per-pixel test. A value above zero turns on the hashed test, whose
@@ -563,8 +597,11 @@ public interface IGraphicsDevice : IDisposable
     /// </param>
     void SetMaterialDetail(float strength);
 
-    /// <summary>Sets how much an up-facing surface's roughness is smoothed, so floors reflect while walls stay matte.</summary>
-    /// <param name="gloss">A multiplier on an up-facing surface's roughness; 1 leaves every surface as its material said.</param>
+    /// <summary>Sets how an up-facing surface's roughness differs from a wall's.</summary>
+    /// <param name="gloss">
+    /// A multiplier on an up-facing surface's roughness, up to two: below 1 smooths floors so they reflect,
+    /// above 1 roughens them so they shine less than the walls; 1 leaves every surface as its material said.
+    /// </param>
     void SetFloorGloss(float gloss);
 
     /// <summary>Sets how textures are sampled.</summary>
@@ -821,6 +858,16 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetLocalLights(ReadOnlySpan<DeferredLocalLight> lights);
 
+    /// <summary>Hands over the level's distance field, for a renderer that shadows its lamps without tracing.</summary>
+    /// <param name="field">The field, or <see langword="null"/> while there is none.</param>
+    /// <remarks>
+    /// A no-op by default: a renderer that traces its lamp shadows never reads it. See
+    /// <see cref="LampOcclusionField"/>. Called every frame, so a field rebuilt or dropped is followed.
+    /// </remarks>
+    void SetLampOcclusionField(LampOcclusionField? field)
+    {
+    }
+
     /// <summary>Reads a two-dimensional texture back into memory.</summary>
     /// <param name="texture">The texture to read.</param>
     /// <param name="destination">Receives the texels, row-major and top row first.</param>
@@ -853,6 +900,12 @@ public interface IGraphicsDevice : IDisposable
     /// <param name="depth">Voxels along z.</param>
     /// <param name="format">What one voxel holds.</param>
     /// <param name="name">A name for the texture, used only in diagnostics.</param>
+    /// <param name="shaderWritten">
+    /// Whether a compute pass writes the volume. False for one that is only ever uploaded and then
+    /// sampled, which a backend may then store in its own format rather than a storage one: WGSL has no
+    /// storage form of a one-byte texel, and a volume allocated for storage there is sixteen bytes a
+    /// voxel and widened on the way in.
+    /// </param>
     /// <returns>A handle to the texture, its contents undefined until written.</returns>
     /// <remarks>
     /// <para>
@@ -868,7 +921,13 @@ public interface IGraphicsDevice : IDisposable
     /// </para>
     /// </remarks>
     /// <exception cref="GraphicsDeviceException">A dimension is not positive, or the device refused it.</exception>
-    TextureHandle CreateVolumeTexture(int width, int height, int depth, VolumeFormat format, string name);
+    TextureHandle CreateVolumeTexture(
+        int width,
+        int height,
+        int depth,
+        VolumeFormat format,
+        string name,
+        bool shaderWritten = true);
 
     /// <summary>Replaces a volume texture's contents.</summary>
     /// <typeparam name="T">The element type. Must match the texture's format.</typeparam>
@@ -954,24 +1013,26 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetEnvironmentCube(TextureHandle cube);
 
-    /// <summary>Compiles a compute program.</summary>
-    /// <param name="source">The GLSL compute shader.</param>
-    /// <param name="name">A name for the program, used only in diagnostics.</param>
+    /// <summary>Creates a compute program from one of the shader library's modules.</summary>
+    /// <param name="shaderModule">The compute module.</param>
+    /// <param name="variant">Which compiled form to load.</param>
+    /// <param name="name">A name for the program, used in diagnostics.</param>
     /// <returns>A handle to the program.</returns>
     /// <remarks>
     /// <para>
-    /// The first member of this seam that not every backend can honour. Compute needs GL 4.3, which
-    /// desktop has and macOS — frozen at 4.1 — does not, so a caller must check
+    /// A member of this seam that not every backend can honour. Compute needs GL 4.3, which desktop has
+    /// and macOS -- frozen at 4.1 -- does not, so a caller must check
     /// <see cref="GraphicsCapabilities.SupportsCompute"/> and have a path that does not need it.
     /// </para>
     /// <para>
-    /// Programs are compiled up front rather than lazily, because a compile failure is a fault in the
-    /// build rather than a condition to recover from, and finding it at load is worth more than finding
-    /// it on the frame that first needed the pass.
+    /// The module was compiled by the build rather than at load, so a mistake in it is a failed build
+    /// instead of a level that does not start. Programs are still created up front rather than lazily:
+    /// a pipeline that cannot be built is a fault to find at load, not on the frame that first needed
+    /// the pass.
     /// </para>
     /// </remarks>
-    /// <exception cref="GraphicsDeviceException">Compute is unsupported, or the program did not compile.</exception>
-    ComputeShaderHandle CreateComputeShader(string source, string name);
+    /// <exception cref="GraphicsDeviceException">Compute is unsupported, or the pipeline failed.</exception>
+    ComputeShaderHandle CreateComputeShader(ShaderModuleId shaderModule, ShaderVariant variant, string name);
 
     /// <summary>Releases a compute program.</summary>
     /// <param name="shader">The program to release. The null handle is ignored.</param>
@@ -1356,11 +1417,21 @@ public interface IGraphicsDevice : IDisposable
     /// <summary>Declares which part of the frame the following draws belong to.</summary>
     /// <param name="pass">The part of the frame.</param>
     /// <remarks>
+    /// <para>
     /// The renderers themselves never call this; the shell does, around the groups of draws it already
     /// makes. That is what lets the backend shade an opaque surface into a G-buffer and a translucent
     /// one directly, without any renderer in the game learning that there are two ways to be drawn.
+    /// </para>
+    /// <para>
+    /// The glazing's front layer is the one pass that may begin while another is open: it begins with the
+    /// geometry pass still open and closes it, without the shading that ending the geometry pass would
+    /// run -- the front layer has to be drawn between the two.
+    /// </para>
     /// </remarks>
-    /// <exception cref="GraphicsDeviceException">No capture is in progress, or a pass is already open.</exception>
+    /// <exception cref="GraphicsDeviceException">
+    /// No capture is in progress, or a pass is already open other than the geometry pass the front layer
+    /// closes.
+    /// </exception>
     void BeginPass(ScenePass pass);
 
     /// <summary>Ends the current pass.</summary>
@@ -1443,12 +1514,18 @@ public interface IGraphicsDevice : IDisposable
     /// written so that skipping it costs only the reflection.
     /// </para>
     /// </remarks>
+    /// <param name="firstPersonOnly">
+    /// Whether only reflections may find it, as the first-person rig is: the player's own body, which the
+    /// camera never sees. Every other ray -- the GI's, the shadows' -- passes through it, or an invisible
+    /// occluder stands wherever the camera does and darkens whatever the player faces.
+    /// </param>
     void SubmitTracedMesh(
         MeshHandle mesh,
         int indexOffset,
         int indexCount,
         in Matrix4f modelView,
-        TextureHandle diffuse)
+        TextureHandle diffuse,
+        bool firstPersonOnly = false)
     {
     }
 

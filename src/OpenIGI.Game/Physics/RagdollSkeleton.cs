@@ -464,7 +464,7 @@ public sealed class RagdollSkeleton
         }
 
         ReadOnlySpan<MefVertex> vertices = skinned.Vertices;
-        int shared = Math.Min(skinned.BaseVertexCount, skinned.SkinInfluences.Count);
+        int shared = Math.Min(skinned.BaseVertexCount, skinned.SkinInfluences.Length);
         for (int i = 0; i < shared && i < vertices.Length; i++)
         {
             int bone = skinned.SkinInfluences[i].BoneIndex;

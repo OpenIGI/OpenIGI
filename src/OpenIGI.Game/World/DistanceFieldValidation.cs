@@ -2,6 +2,7 @@ using System.Globalization;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
+using OpenIGI.Shaders;
 
 namespace OpenIGI.Game.World;
 
@@ -78,7 +79,8 @@ public static class DistanceFieldValidation
 
         try
         {
-            shader = device.CreateComputeShader(ReadSource, "sdf.clipmap.read");
+            shader = device.CreateComputeShader(
+                ShaderModuleId.FieldClipmapRead, ShaderVariant.Default, "sdf.clipmap.read");
             buffer = device.CreateStorageBuffer(count * sizeof(uint), "sdf.clipmap.readback");
 
             device.BindImage(0, clipmaps.Clipmaps, ImageAccess.Read);
@@ -115,40 +117,6 @@ public static class DistanceFieldValidation
             device.DestroyComputeShader(shader);
         }
     }
-
-    private const string ReadSource =
-        """
-        #version 430 core
-
-        layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
-
-        layout(r8, binding = 0) uniform readonly image3D uClipmaps;
-
-        layout(std430, binding = 0) buffer Readback
-        {
-            uint uValues[];
-        };
-
-        uniform int uResolution;
-        uniform int uLevel;
-
-        void main()
-        {
-            ivec3 at = ivec3(gl_GlobalInvocationID);
-
-            if (any(greaterThanEqual(at, ivec3(uResolution))))
-            {
-                return;
-            }
-
-            int index = (((at.z * uResolution) + at.y) * uResolution) + at.x;
-
-            // Back through the byte range it was stored in, so the comparison is against what was
-            // written rather than a float that rounded on the way out.
-            uValues[index] = uint(round(
-                imageLoad(uClipmaps, ivec3(at.xy, (uLevel * uResolution) + at.z)).r * 255.0));
-        }
-        """;
 
     /// <summary>Compares one clipmap level against the exact field.</summary>
     /// <param name="device">The device holding the clipmaps.</param>

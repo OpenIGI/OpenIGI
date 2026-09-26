@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The WebGPU implementation of the RHI: the renderer's interface, answered through wgpu-native on
+       the desktop and through the browser's own WebGPU later. Everything that is a translation between
+       the two vocabularies lives here; the raw C API is the Native project and knows nothing of this
+       one. -->
+
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenIGI.Rendering.Rhi\OpenIGI.Rendering.Rhi.csproj" />
+    <ProjectReference Include="..\OpenIGI.Rendering.WebGpu.Native\OpenIGI.Rendering.WebGpu.Native.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenIGI.Rendering.WebGpu.Tests" />
+  </ItemGroup>
+
+</Project>

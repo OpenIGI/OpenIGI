@@ -97,7 +97,7 @@ public sealed class RetailHumanViewTests
         BoneAnimationSet viewSet = ViewSet();
         Assert.True(viewSet.TryGet(action.FullBody, out BoneAnimation injection));
         Assert.True(
-            injection.Rotations(HumanAttachPoints.FirstPersonWeapon).Count > 1,
+            injection.Rotations(HumanAttachPoints.FirstPersonWeapon).Length > 1,
             "The medipack fire clip does not animate the first-person arm attachment.");
 
         HumanView view = new(viewSet);
@@ -210,7 +210,7 @@ public sealed class RetailHumanViewTests
                 continue;
             }
 
-            Assert.NotEmpty(clip.Translation);
+            Assert.True(clip.Translation.Length > 0);
             Vector3f hold = clip.Translation[0].Position;
             distinct.Add($"{hold.X:0.###},{hold.Y:0.###},{hold.Z:0.###}");
             total++;
@@ -290,10 +290,10 @@ public sealed class RetailHumanViewTests
         // rotation key per bone, so the held pose really is motionless. Its attack carries 22.
         for (int bone = 0; bone < view.Skeleton.BoneCount; bone++)
         {
-            Assert.Single(idle.Rotations(bone));
+            Assert.Equal(1, idle.Rotations(bone).Length);
         }
 
-        Assert.Equal(22, attack.Rotations(HumanAttachPoints.FirstPersonWeapon).Count);
+        Assert.Equal(22, attack.Rotations(HumanAttachPoints.FirstPersonWeapon).Length);
     }
 
     [RequiresGameDataFact]

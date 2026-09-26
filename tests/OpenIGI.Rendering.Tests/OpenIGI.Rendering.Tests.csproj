@@ -11,7 +11,7 @@
     copy of them. A grade that parses in a test and not in the game is the failure worth catching.
   -->
   <ItemGroup>
-    <None Include="..\..\apps\OpenIGI.Desktop\Assets\luts\*.cube"
+    <None Include="..\..\apps\OpenIGI.Composition\Assets\luts\*.cube"
           Link="Assets\luts\%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

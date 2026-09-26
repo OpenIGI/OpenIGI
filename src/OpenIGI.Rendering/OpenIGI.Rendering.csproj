@@ -11,4 +11,8 @@
                       GlobalPropertiesToRemove="PublishTrimmed;TrimMode;PublishReadyToRun;PublishSingleFile;IncludeNativeLibrariesForSelfExtract;SelfContained;RuntimeIdentifier" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\OpenIGI.Shaders\OpenIGI.Shaders.csproj" />
+  </ItemGroup>
+
 </Project>

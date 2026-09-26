@@ -34,7 +34,7 @@ internal sealed partial class GameHost
     /// device, which is exactly the moment a worker is free.
     /// </remarks>
     private void BeginReadingSharedAnimations() =>
-        _sharedAnimationsTask ??= Task.Run(() =>
+        _sharedAnimationsTask ??= _work.Run(() =>
             (ReadAnimationSet("000.iff", "the player cannot walk"),
              ReadAnimationSet("005.iff", "no weapon can be held")));
 

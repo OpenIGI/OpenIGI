@@ -1,6 +1,8 @@
 ﻿using OpenIGI.Audio.OpenAL;
+using OpenIGI.Composition;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Core.Titles;
 using OpenIGI.Desktop;
 using OpenIGI.Engine.Configuration;
@@ -11,14 +13,18 @@ using OpenIGI.Host.Infrastructure;
 using OpenIGI.Host;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.Platform;
-using OpenIGI.Rendering.Vulkan;
+using OpenIGI.Rendering.Pipeline;
+using OpenIGI.Rendering.Rhi;
+using OpenIGI.Rendering.Vulkan.Rhi;
+using OpenIGI.Rendering.WebGpu;
 using OpenIGI.Rendering;
 
 HostOptions options;
 try
 {
-    // -vulkan is still swallowed rather than rejected. It names the only backend there is, so it does
-    // nothing, but a shortcut or a script that has carried it since there were two should keep working.
+    // -vulkan is still swallowed rather than rejected. It names the default backend, so it does nothing,
+    // but a shortcut or a script that has carried it since there was a choice of renderers should keep
+    // working. The backend is chosen by OPENIGI_RENDERER.
     options = HostOptions.Parse(
         args.Where(a => !a.Equals("-vulkan", StringComparison.OrdinalIgnoreCase)).ToArray());
 }
@@ -84,16 +90,16 @@ string? probed = null;
 
 if (options.Title is { } requestedTitle)
 {
-    if (!DesktopTitleCatalog.TryResolve(requestedTitle, out titleRuntime))
+    if (!TitleCatalog.TryResolve(requestedTitle, out titleRuntime))
     {
         Console.Error.WriteLine($"'{requestedTitle}' is not a game this build runs.");
-        Console.Error.WriteLine($"  -title {DesktopTitleCatalog.KnownTitleIds}");
+        Console.Error.WriteLine($"  -title {TitleCatalog.KnownTitleIds}");
         return 2;
     }
 }
 else
 {
-    titleRuntime = DesktopTitleCatalog.Probe(searched, out probed) ?? DesktopTitleCatalog.Default;
+    titleRuntime = TitleCatalog.Probe(searched, out probed) ?? TitleCatalog.Default;
 }
 
 GameTitle title = titleRuntime.Title;
@@ -102,7 +108,7 @@ GameTitle title = titleRuntime.Title;
 // executable. Per title, because a machine may have both installed and one variable cannot say where
 // two of them are.
 string? gamePath = options.GamePath
-    ?? Environment.GetEnvironmentVariable(DesktopTitleCatalog.GamePathVariableFor(title))
+    ?? Environment.GetEnvironmentVariable(TitleCatalog.GamePathVariableFor(title))
     ?? probed
     ?? GameProfileResolver.DiscoverDataRoot(searched, title);
 
@@ -112,9 +118,9 @@ if (string.IsNullOrWhiteSpace(gamePath))
     Console.Error.WriteLine();
     Console.Error.WriteLine($"Put OpenIGI in the folder that holds {title.SignatureFile}, or point it at one:");
     Console.Error.WriteLine("  -game <dir>");
-    Console.Error.WriteLine($"  {DesktopTitleCatalog.GamePathVariableFor(title)}=<dir>");
+    Console.Error.WriteLine($"  {TitleCatalog.GamePathVariableFor(title)}=<dir>");
     Console.Error.WriteLine();
-    Console.Error.WriteLine($"To run a different game: -title {DesktopTitleCatalog.KnownTitleIds}");
+    Console.Error.WriteLine($"To run a different game: -title {TitleCatalog.KnownTitleIds}");
     Console.Error.WriteLine();
     Console.Error.WriteLine("Looked in:");
 
@@ -193,28 +199,94 @@ using (window)
         Environment.GetEnvironmentVariable("OPENIGI_VK_VALIDATION"),
         "1",
         StringComparison.Ordinal);
-    // The deferred, HDR renderer -- the G-buffer, cascaded shadows and the GI passes -- is the modern
-    // path; the direct renderer is the vanilla fallback. It is on by default and chosen per preset by the
-    // r_hdr/r_deferred cvars (BeginSceneCapture declines it where a preset does not ask for it), so vanilla
-    // still draws direct. OPENIGI_VK_DEFERRED=0 forces the direct path for debugging.
-    bool vulkanDeferred = !string.Equals(
-        Environment.GetEnvironmentVariable("OPENIGI_VK_DEFERRED"),
-        "0",
-        StringComparison.Ordinal);
-    using IGraphicsDevice device = new VulkanGraphicsDevice(
-        new VulkanSurfaceProvider(window.VkSurface!),
-        displayMode,
-        vulkanValidation,
-        vulkanDeferred,
-        options.ScreenshotPath is not null,
-        logger);
 
-    // The composition root is the only place that names a concrete backend: the graphics device
-    // above, and the audio factory here. GameHost itself sees only the abstractions.
-    using GameHost game = new(
-        platform, window, device, OpenAlAudioDeviceFactory.Instance,
-        DesktopTitleCatalog.Catalog, titleRuntime.Title,
-        fileSystem, options, gamePath, logger);
-    return game.Run();
+    // OPENIGI_RENDERER picks the API the renderer runs over: Vulkan unless it asks for webgpu, the
+    // browser's API through wgpu-native, which is how the web build's renderer is compared against the
+    // desktop's on one machine.
+    string? requested = Environment.GetEnvironmentVariable("OPENIGI_RENDERER");
+    if (!RendererSwitchOrder.IsKnown(requested))
+    {
+        logger.Warning("Renderer", $"OPENIGI_RENDERER={requested} names no renderer; drawing over Vulkan.");
+    }
+
+    RendererBackend backend = RendererSwitchOrder.Parse(requested);
+    HostOptions runOptions = options;
+
+    // F10 (r_switch_renderer) ends the game to change API rather than to quit. Everything the game
+    // holds on the GPU belongs to the device that made it, so the game is built again, over the other
+    // API and on the same window, and put back where it was.
+    while (true)
+    {
+        int code = RunOnce(backend, runOptions, out RendererSwitch? switched);
+        if (switched is null || window.IsClosing)
+        {
+            return code;
+        }
+
+        backend = RendererSwitchOrder.Next(backend);
+        runOptions = runOptions with
+        {
+            StartMission = switched.MissionId,
+            PlayCutscenes = false,
+            Resume = switched,
+
+            // What the first run was scripted to do has been done: a -runat that switched renderer would
+            // switch again, and -entrycam would press Play over a mission already being played.
+            DeferredCommands = [],
+            EntryCamMission = 0,
+
+            // And where it opened the camera: the resumed pose decides where the view is, and a flight
+            // left in place would fly its path again from the start.
+            CameraPosition = null,
+            CameraEnd = null,
+            CameraYawEnd = null,
+            CameraPitchEnd = null,
+            FlightFrames = null,
+            CameraShake = 0f,
+        };
+
+        logger.Information("Renderer", $"Switching to {RendererSwitchOrder.Describe(backend)}.");
+    }
+
+    int RunOnce(RendererBackend backend, HostOptions runOptions, out RendererSwitch? switched)
+    {
+        using VulkanRhi? vulkan = backend == RendererBackend.Vulkan
+            ? VulkanRhi.CreateForSurface(
+                new VulkanSurfaceProvider(window.VkSurface!),
+                width,
+                height,
+                vsync: true,
+                logger,
+                vulkanValidation)
+            : null;
+
+        using WebGpuRhiDevice? webGpu = backend == RendererBackend.WebGpu
+            ? WebGpuWindow.Create(window, width, height, vsync: true)
+            : null;
+
+        IRhiDevice rhiDevice = vulkan is not null ? vulkan.Device : webGpu!;
+
+        // WebGPU reports its timestamps in nanoseconds already.
+        using IGraphicsDevice device = new GraphicsDevice(
+            rhiDevice,
+            displayMode,
+            vulkan?.TimestampPeriodNanoseconds ?? 1.0,
+            runOptions.ScreenshotPath is not null,
+            logger);
+
+        logger.Information(
+            "Renderer",
+            $"Drawing over {RendererSwitchOrder.Describe(backend)} on {rhiDevice.AdapterName}.");
+
+        // The composition root is the only place that names a concrete backend: the graphics device
+        // above, and the audio factory here. GameHost itself sees only the abstractions.
+        using GameHost game = new(
+            platform, window, device, OpenAlAudioDeviceFactory.Instance, ThreadPoolWorkScheduler.Instance, AlwaysReadyLoadGate.Instance,
+            TitleCatalog.Catalog, titleRuntime.Title,
+            fileSystem, runOptions, gamePath, logger);
+        int code = game.Run();
+        switched = game.RendererSwitchRequest;
+        return code;
+    }
 }
 }

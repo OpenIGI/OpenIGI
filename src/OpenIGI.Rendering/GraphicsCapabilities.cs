@@ -43,6 +43,14 @@ public readonly record struct GraphicsCapabilities(
     /// <summary>Gets the highest sample count the backend will honour for a scene target.</summary>
     public int MaxSampleCount { get; init; }
 
+    /// <summary>Gets the most workgroups one compute dispatch may have along x.</summary>
+    /// <remarks>
+    /// What a one-dimensional dispatch over a long list has to be sliced to. Vulkan drivers commonly offer
+    /// billions along x; WebGPU guarantees 65535 and adapters rarely offer more, and a dispatch past it is
+    /// refused outright. 65535 unless a backend says otherwise, because every API promises that much.
+    /// </remarks>
+    public int MaxComputeGroupsX { get; init; } = 65535;
+
     /// <summary>Gets the names of the settings this backend accepts and records but does not yet act on.</summary>
     /// <remarks>
     /// <para>

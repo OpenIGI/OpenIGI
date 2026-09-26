@@ -1,5 +1,6 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Threading;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Presentation.Igi1;
@@ -70,11 +71,23 @@ public sealed class TextureDecodeCache
     /// <summary>Gets how many textures the cache was seeded with.</summary>
     public int Count => _images.Count;
 
+    /// <summary>Gets the decode and the detail maps' reads, finished once every texture is ready to upload.</summary>
+    /// <remarks>
+    /// Waited on by whoever builds a backdrop off the render thread, before handing it over. Adopted any
+    /// earlier, the surface-cache capture on the render thread reached textures the pool had not, and
+    /// decoded them itself -- most of a second of every backdrop swap in the menu.
+    /// </remarks>
+    public Task Completion { get; private set; } = Task.CompletedTask;
+
     /// <summary>
     /// Seeds a cache from every texture a registry holds and starts decoding them on the thread pool.
     /// </summary>
     /// <param name="resources">The level's own registry, read on the calling thread and only there.</param>
     /// <param name="cutoff">The alpha-test cutoff the shaders compare against.</param>
+    /// <param name="work">
+    /// Where the textures are decoded ahead of the frames that ask for them. Where nothing runs beside the
+    /// caller, nothing is decoded ahead: each is decoded when it is taken.
+    /// </param>
     /// <param name="detail">
     /// The session's detail-map pack, told to read the same names' PNGs on the pool. Optional; without it
     /// the maps are read on the render thread as they always were.
@@ -89,9 +102,11 @@ public sealed class TextureDecodeCache
     public static TextureDecodeCache StartFor(
         ResourceRegistry resources,
         float cutoff,
+        IWorkScheduler work,
         MaterialDetailPack? detail = null)
     {
         ArgumentNullException.ThrowIfNull(resources);
+        ArgumentNullException.ThrowIfNull(work);
 
         TextureDecodeCache cache = new();
         List<Lazy<Decoded?>> pending = [];
@@ -123,16 +138,16 @@ public sealed class TextureDecodeCache
 
         // The other half of what a texture costs the render thread: its derived normal and roughness,
         // which live in a PNG beside the pack and were being inflated inside the upload.
-        detail?.Prewarm(names);
+        Task maps = detail?.Prewarm(names) ?? Task.CompletedTask;
 
-        if (pending.Count > 0)
-        {
-            // Fire and forget: the renderer's own Take is what makes the result observable, and it forces
-            // any value this has not got to yet. Nothing waits on the task itself.
-            ParallelOptions options = new() { MaxDegreeOfParallelism = MaxDecodeThreads };
-            _ = Task.Run(() => Parallel.ForEach(pending, options, item => _ = item.Value));
-        }
+        // The renderer's own Take forces any value this has not got to yet, so nothing HAS to wait -- but a
+        // builder that can should, see Completion. Where nothing runs beside the caller there is nothing to
+        // get ahead of, so each texture is decoded when it is taken.
+        Task textures = pending.Count > 0 && work.IsConcurrent
+            ? work.Run(() => work.ForEach(pending, MaxDecodeThreads, item => _ = item.Value))
+            : Task.CompletedTask;
 
+        cache.Completion = Task.WhenAll(textures, maps);
         return cache;
     }
 

@@ -123,6 +123,12 @@
 /// as the light fills in -- a scene that loads bright and dims. A fast rate during that window lets the
 /// exposure track the convergence instead, holding the displayed brightness steady while the light settles.
 /// </param>
+/// <param name="NightShift">
+/// How far the dim parts of the picture shift towards the eye's night vision, 0 to 1: the Purkinje shift.
+/// Under moonlight the rods take over from the cones, so dim surfaces lose their colour and read as a cool
+/// blue-grey while anything lamp-lit stays in colour. That shift is what makes a night read as night, and
+/// what lets it be shown bright enough to play without looking like a dim day. Nought by day.
+/// </param>
 
 public readonly record struct PostProcessSettings(
     ToneMapOperator ToneMap = ToneMapOperator.Neutral,
@@ -150,7 +156,8 @@ public readonly record struct PostProcessSettings(
     TacticalDisplaySettings Tactical = default,
     BinocularDisplaySettings Binocular = default,
     float ExposureRate = 0.04f,
-    float FrameDeltaSeconds = 1f / 60f)
+    float FrameDeltaSeconds = 1f / 60f,
+    float NightShift = 0f)
 {
     /// <summary>
     /// Gets the settings that pass the scene through untouched.
@@ -202,6 +209,20 @@ public readonly record struct PostProcessSettings(
         || Sharpen > 0f
         || WantsColourLookup
         || GreenPhosphor
+        || NightShift > 0f
         || Tactical.IsActive
         || Binocular.IsActive;
+
+    /// <summary>The steady exposure rate <see cref="ExposureRate"/> is measured against.</summary>
+    public const float SteadyExposureRate = 0.04f;
+
+    /// <summary>How much time this frame advances the eye adaptation by.</summary>
+    /// <remarks>
+    /// The frame's real length, not a sixtieth of a second: fixed, the eye adapted twice and a half as fast
+    /// at 144 frames a second as at 60. Scaled by <see cref="ExposureRate"/> against the steady rate, which
+    /// is how the game's faster adaptation while the GI converges after a load reaches the easing -- the
+    /// rate was set and never read. Capped, so a hitch does not snap the exposure.
+    /// </remarks>
+    public float ExposureDeltaSeconds =>
+        Math.Clamp(FrameDeltaSeconds, 0f, 0.25f) * Math.Max(ExposureRate, 0f) / SteadyExposureRate;
 }
