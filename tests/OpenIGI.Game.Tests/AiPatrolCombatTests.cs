@@ -291,6 +291,34 @@ public sealed class AiPatrolCombatTests
 
     private static Func<double> AlwaysZero() => () => 0.0;
 
+    /// <summary>
+    /// <c>0x48BFD0</c> draws a loaded soldier's grenade against <c>+15756</c>, the row's "grenade throw when
+    /// reload probability", and an empty one's against <c>+15752</c> — the opposite of what the names suggest.
+    /// </summary>
+    [Fact]
+    public void ALoadedPatrolDrawsItsGrenadeAgainstTheWhenReloadProbability()
+    {
+        AiPatrolCombat loadedOnly = new(Parameters(grenade: 0f, grenadeWhenReloading: 1f), () => 0.5);
+        Assert.Equal(AiPatrolAction.ThrowGrenade, loadedOnly.Choose(Sense(hasGrenade: true, ammo: 30)));
+        Assert.Equal(AiPatrolAction.Reload, loadedOnly.Choose(Sense(hasGrenade: true, ammo: 0)));
+
+        AiPatrolCombat emptyOnly = new(Parameters(grenade: 1f, grenadeWhenReloading: 0f), () => 0.5);
+        Assert.Equal(AiPatrolAction.Fire, emptyOnly.Choose(Sense(hasGrenade: true, ammo: 30)));
+        Assert.Equal(AiPatrolAction.ThrowGrenade, emptyOnly.Choose(Sense(hasGrenade: true, ammo: 0)));
+    }
+
+    /// <summary>Anya's and Ekk's chooser, <c>0x48AE90</c>, has no rifle butt and no grenade.</summary>
+    [Fact]
+    public void TheNamedCharactersNeitherStrikeNorThrow()
+    {
+        AiPatrolCombat named = new(Parameters(grenade: 1f, grenadeWhenReloading: 1f), () => 0.0, closeQuarters: false);
+
+        Assert.Equal(
+            AiPatrolAction.Fire,
+            named.Choose(Sense(distance: AiPatrolCombat.CloseCombatRangeInUnits - 1.0, hasGrenade: true)));
+        Assert.Equal(AiPatrolAction.Reload, named.Choose(Sense(hasGrenade: true, ammo: 0)));
+    }
+
     private static AiPatrolCombat Patrol() => new(Parameters(), () => 0.0);
 
     private static AiPatrolSense Sense(
@@ -313,7 +341,9 @@ public sealed class AiPatrolCombatTests
         float rollOrLieDownProbability = 0.5f,
         float rollSideProbability = 0.5f,
         float closeCombatHitProbability = 0.4f,
-        float closeCombatDamage = 0.5f) =>
+        float closeCombatDamage = 0.5f,
+        float grenade = 0f,
+        float grenadeWhenReloading = 0f) =>
         new(new HumanAiConfigItemTask
         {
             AiTypeName = "AITYPE_PATROL_AK",
@@ -324,8 +354,10 @@ public sealed class AiPatrolCombatTests
             EvasiveActionProbability = evasiveActionProbability,
             EvasiveStandRollOrLieDownProbability = rollOrLieDownProbability,
             EvasiveStandRollSideProbability = rollSideProbability,
-            GrenadeThrowProbability = 0f,
-            GrenadeThrowWhenReloadingProbability = 0f,
+            GrenadeThrowProbability = grenade,
+            GrenadeThrowWhenReloadingProbability = grenadeWhenReloading,
+            GrenadeMinimumDistanceMetres = 1f,
+            GrenadeMaximumDistanceMetres = 20f,
             CloseCombatHitProbability = closeCombatHitProbability,
             CloseCombatDamage = closeCombatDamage,
             MinimumClipFraction = 0.8f,

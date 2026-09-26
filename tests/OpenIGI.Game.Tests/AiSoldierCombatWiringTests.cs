@@ -1000,7 +1000,9 @@ public sealed class AiSoldierCombatWiringTests
                 DifficultyName = "GD_2",
                 TargetingTimeoutSeconds = 15f,
                 TrackingDistanceMetres = 100f,
+                // A soldier with rounds in its clip draws against the "when reload" probability (+15756).
                 GrenadeThrowProbability = grenadeProbability,
+                GrenadeThrowWhenReloadingProbability = grenadeProbability,
                 GrenadeMinimumDistanceMetres = 1f,
                 GrenadeMaximumDistanceMetres = 20f,
                 MinimumClipFraction = 0.8f,

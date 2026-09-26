@@ -158,14 +158,21 @@ public sealed class AiPatrolCombat
     /// <summary>Initializes a new instance of the <see cref="AiPatrolCombat"/> class.</summary>
     /// <param name="parameters">The AI's combat row, keyed by type and difficulty.</param>
     /// <param name="random">A source of values in <c>[0, 1)</c>.</param>
+    /// <param name="closeQuarters">
+    /// Whether the chooser considers the rifle butt and the grenade. Anya's and Ekk's arm (<c>0x48AC60</c>)
+    /// zeroes the close-combat range and runs its own chooser, <c>0x48AE90</c>, which has neither test.
+    /// </param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public AiPatrolCombat(AiCombatParameters parameters, Func<double> random)
+    public AiPatrolCombat(AiCombatParameters parameters, Func<double> random, bool closeQuarters = true)
     {
         ArgumentNullException.ThrowIfNull(parameters);
         ArgumentNullException.ThrowIfNull(random);
         _parameters = parameters;
         _random = random;
+        _closeQuarters = closeQuarters;
     }
+
+    private readonly bool _closeQuarters;
 
     /// <summary>Gets the node the soldier is walking to, or −1 — <c>HumanAI+15848</c>.</summary>
     public int DestinationNodeId { get; private set; } = -1;
@@ -242,7 +249,7 @@ public sealed class AiPatrolCombat
         if (sense.Visible)
         {
             // (b) Close enough for the rifle butt.
-            if (sense.DistanceToTargetInUnits < CloseCombatRangeInUnits)
+            if (_closeQuarters && sense.DistanceToTargetInUnits < CloseCombatRangeInUnits)
             {
                 return AiPatrolAction.CloseCombat;
             }
@@ -258,8 +265,9 @@ public sealed class AiPatrolCombat
                     return AiPatrolAction.Follow;
                 }
 
-                // (d) Grenade?
-                if (WantsGrenade(sense, _parameters.GrenadeThrowProbability))
+                // (d) Grenade? With a loaded clip 0x48BFD0 draws against +15756, the row's
+                // "grenade throw when reload probability" -- not the plain one, which is (f)'s.
+                if (WantsGrenade(sense, _parameters.GrenadeThrowWhenReloadingProbability))
                 {
                     return AiPatrolAction.ThrowGrenade;
                 }
@@ -270,8 +278,8 @@ public sealed class AiPatrolCombat
                     : AiPatrolAction.Fire;
             }
 
-            // (f) Empty clip: a grenade instead of reloading, on a SECOND probability.
-            return WantsGrenade(sense, _parameters.GrenadeThrowWhenReloadingProbability)
+            // (f) Empty clip: a grenade instead of reloading, drawn against +15752.
+            return WantsGrenade(sense, _parameters.GrenadeThrowProbability)
                 ? AiPatrolAction.ThrowGrenade
                 : AiPatrolAction.Reload;
         }
@@ -377,13 +385,18 @@ public sealed class AiPatrolCombat
     /// <summary>Clears the follow destination — what <c>Follow</c> does once it arrives.</summary>
     public void ArrivedAtDestination() => DestinationNodeId = -1;
 
+    /// <summary>Points a running Follow at a new node — the re-search <c>0x48C860</c> makes.</summary>
+    /// <param name="node">The node found toward the target.</param>
+    public void RedirectTo(int node) => DestinationNodeId = node;
+
     private AiPatrolAction WatchOrGiveUp() =>
         _notVisibleTicks > _parameters.TargetingTimeoutTicks
             ? AiPatrolAction.End
             : AiPatrolAction.LookForTarget;
 
     private bool WantsGrenade(in AiPatrolSense sense, float probability) =>
-        sense.HasGrenade
+        _closeQuarters
+        && sense.HasGrenade
         && sense.DistanceToTargetInUnits > _parameters.GrenadeMinimumDistanceInUnits
         && sense.DistanceToTargetInUnits < _parameters.GrenadeMaximumDistanceInUnits
         && _random() <= probability;

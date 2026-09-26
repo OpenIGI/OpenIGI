@@ -486,6 +486,9 @@ public sealed class AiSoldier
     // Whether this tick's fed enemy is another soldier rather than the player.
     private bool _enemyIsSoldier;
 
+    // The target's node when a running Follow last searched: 0x48A920 flags a re-search when it changes.
+    private int _followTargetNode = -1;
+
     // sub_48A920's squad-ping counter, argBlock+28 of the running combat action.
     private int _alertPingCounter;
 
@@ -1259,7 +1262,7 @@ public sealed class AiSoldier
             ? null
             : new AiGuardCombat(parameters, _random.NextDouble);
         _patrol = Arm is AiCombatArm.Patrol or AiCombatArm.NamedCharacter
-            ? new AiPatrolCombat(parameters, _random.NextDouble)
+            ? new AiPatrolCombat(parameters, _random.NextDouble, closeQuarters: Arm == AiCombatArm.Patrol)
             : null;
         _gunnerCombat = Arm == AiCombatArm.Gunner ? new AiGunnerCombat(this) : null;
 
@@ -3232,7 +3235,7 @@ public sealed class AiSoldier
             // The arm installer (0x48ABA0) picks the sub-arm from the BODY: crouched -> the kneel arm
             // (0x48C250/0x48C280), prone -> the prone arm. A patrol crouch-walking its route when
             // combat installs therefore fights kneeling until it moves or the row says otherwise.
-            _patrolKneeling = IsCrouching;
+            _patrolKneeling = IsCrouching && Arm == AiCombatArm.Patrol;
         }
 
         Activity = AiSoldierActivity.Engaging;
@@ -3462,8 +3465,10 @@ public sealed class AiSoldier
         AiCombatWeaponState weapon = _weapon!();
 
         // 0x48BC00 asks 0x48BE30 before it runs an already-installed child and before its ordinary
-        // chooser. The drained event counters are the exact three words the original tests.
-        if (!_patrolProne)
+        // chooser. The drained event counters are the exact three words the original tests. Follow,
+        // RePosition and LookForTarget replace that per-tick while they run, so a moving soldier never
+        // asks, and the named characters' per-tick (0x48ACC0) never calls it at all.
+        if (!_patrolProne && Arm == AiCombatArm.Patrol && !IsPatrolMovementInstalled)
         {
             bool underFire = Events.DrainedCount(AiEvent.TakingDamage) > 0
                 || Events.DrainedCount(AiEvent.Gunshot) > 0
@@ -3479,8 +3484,11 @@ public sealed class AiSoldier
 
             if (evasion == AiEvasiveAction.LieDown)
             {
+                // sub_48AE70 installs the prone arm with no child, which cancels whatever was running.
                 _patrolProne = true;
                 _patrolRollChild = null;
+                _patrolOneShotChild = null;
+                _combat!.CancelChild();
             }
             else if (evasion is AiEvasiveAction.RollLeft or AiEvasiveAction.RollRight)
             {
@@ -3551,12 +3559,32 @@ public sealed class AiSoldier
         if (_combat!.Phase != AiCombatPhase.Stand)
         {
             _channelWrites.Clear();
-            if (_patrolProne)
+            HoldPosture();
+            RunSharedSubAction(enemy, weapon);
+            return;
+        }
+
+        // 0x48C860 replaces the arm's per-tick until the soldier arrives: the chooser is not asked, so a
+        // chaser runs its whole leg instead of stopping to shoot the moment the target is in range. It
+        // re-searches only when the target has moved onto another node.
+        if (IsPatrolMovementInstalled && PatrolAction == AiPatrolAction.Follow)
+        {
+            _channelWrites.Clear();
+            Combat = default;
+            if (_playerSlot.IsVisible)
             {
-                WriteChannel(AiCombatChannel.LieDown, 1f);
+                int targetNode = NearestNode(enemy);
+                if (targetNode != _followTargetNode)
+                {
+                    _followTargetNode = targetNode;
+                    if (FindFreePosition(enemy, towardTarget: true) is int nearer && nearer != CurrentNode)
+                    {
+                        _patrol!.RedirectTo(nearer);
+                    }
+                }
             }
 
-            RunSharedSubAction(enemy, weapon);
+            FollowTarget(enemy, rootMotionThisTick);
             return;
         }
 
@@ -3657,15 +3685,7 @@ public sealed class AiSoldier
         AiPatrolAction action = _patrol!.Choose(sense);
         PatrolAction = action;
         _channelWrites.Clear();
-        if (_patrolProne)
-        {
-            WriteChannel(AiCombatChannel.LieDown, 1f);
-        }
-        else if (_patrolKneeling)
-        {
-            // The kneel dispatcher holds channel 1 every tick, exactly as the prone one holds 2.
-            WriteChannel(AiCombatChannel.Kneel, 1f);
-        }
+        HoldPosture();
 
         Combat = default;
 
@@ -3693,9 +3713,9 @@ public sealed class AiSoldier
                     return;
                 }
 
+                // 0x48DBB0 only raises channel 9; it does not turn the body.
                 _patrolOneShotChild = action;
                 WriteChannel(AiCombatChannel.CloseCombat, 1f);
-                TurnTowards(AimPointOf(enemy, _enemyCrouching), (float)AiGuardCombat.AimToleranceRadians);
 
                 // The strike resolves with the trigger: the damage model (probability-gated factor)
                 // is attested retail data, while the exact native strike tick is not — see
@@ -3704,15 +3724,16 @@ public sealed class AiSoldier
                 return;
 
             case AiPatrolAction.ThrowGrenade:
-                if (_patrolProne)
+                if (_patrolProne || _patrolKneeling)
                 {
-                    // The retail prone arm only logs "liedown throw grenade"; it installs no child.
+                    // The prone and kneel arms only log "liedown/kneel throw grenade"; neither installs
+                    // a child (0x48C540, 0x48C280).
                     return;
                 }
 
+                // 0x48DBF0 only raises channel 8; it does not turn the body.
                 _patrolOneShotChild = action;
                 WriteChannel(AiCombatChannel.ThrowGrenade, 1f);
-                TurnTowards(AimPointOf(enemy, _enemyCrouching), (float)AiGuardCombat.AimToleranceRadians);
                 return;
 
             case AiPatrolAction.LookForTarget:
@@ -3764,6 +3785,7 @@ public sealed class AiSoldier
                     return;
                 }
 
+                _followTargetNode = NearestNode(enemy);
                 FollowTarget(enemy, rootMotionThisTick);
                 return;
 
@@ -3772,6 +3794,25 @@ public sealed class AiSoldier
             default:
                 RunSharedSubAction(enemy, weapon);
                 return;
+        }
+    }
+
+    /// <summary>Whether a movement behaviour — Follow, RePosition or a walking LookForTarget — owns the tick.</summary>
+    private bool IsPatrolMovementInstalled =>
+        (PatrolAction == AiPatrolAction.Follow && _patrol!.DestinationNodeId >= 0)
+        || PatrolAction == AiPatrolAction.RePosition
+        || (PatrolAction == AiPatrolAction.LookForTarget && _route.Count > 0);
+
+    /// <summary>Holds the posture channel the kneel and prone arms, and their children, write every tick.</summary>
+    private void HoldPosture()
+    {
+        if (_patrolProne)
+        {
+            WriteChannel(AiCombatChannel.LieDown, 1f);
+        }
+        else if (_patrolKneeling)
+        {
+            WriteChannel(AiCombatChannel.Kneel, 1f);
         }
     }
 
@@ -3859,7 +3900,8 @@ public sealed class AiSoldier
 
         if (IsFacing(AimPointOf(enemy, _enemyCrouching), FollowFireConeRadians))
         {
-            if ((Target?.Count(AiAimMode.Aiming) ?? 0) >= AiCombatTarget.MaximumAimers)
+            if ((Target?.Count(AiAimMode.Aiming) ?? 0) >= AiCombatTarget.MaximumAimers
+                && Target?.ModeOf(this) != AiAimMode.Aiming)
             {
                 Target?.Aim(this, AiAimMode.Crowded);
                 return;
