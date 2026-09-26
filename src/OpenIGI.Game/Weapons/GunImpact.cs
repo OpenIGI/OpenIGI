@@ -19,6 +19,10 @@ namespace OpenIGI.Game.Weapons;
 /// it: <c>0x4083C0</c> packages the direction with the contact, and <c>0x438440</c> hands it on as the
 /// axis the surface chips fly along.
 /// </param>
+/// <param name="Melee">
+/// Whether a knife made the contact rather than a round. <c>KnifeStab</c> (<c>0x46DFB0</c>) only hands
+/// the struck object its hit message: no <c>GunShotEffect</c>, so no mark, no sound, no dust.
+/// </param>
 /// <remarks>
 /// <para>
 /// <b>This is one cast, not the original's loop.</b> <c>0x47B750</c> keeps casting while range is left,
@@ -37,4 +41,5 @@ public readonly record struct GunImpact(
     WorldPlacement? Placement = null,
     bool StruckHuman = false,
     WorldRayHit Wall = default,
-    Vector3f Direction = default);
+    Vector3f Direction = default,
+    bool Melee = false);

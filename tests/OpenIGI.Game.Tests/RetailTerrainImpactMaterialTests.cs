@@ -11,7 +11,7 @@ using Xunit;
 
 namespace OpenIGI.Game.Tests;
 
-/// <summary>Checks that a round striking open ground is marked by the level's own terrain material.</summary>
+/// <summary>Checks that a round striking open ground names the level's own terrain material.</summary>
 /// <remarks>
 /// <c>0x4CB050</c> names a terrain hit's material from the <c>CreateTerrainMaterial</c> record, so it is
 /// the level that decides — <c>Ground</c> in most missions and <c>Snow</c> in the four Arctic ones — not
@@ -44,7 +44,7 @@ public sealed class RetailTerrainImpactMaterialTests
     }
 
     [RequiresGameDataFact]
-    public void ASnowTerrainTraceMarksWithSnow()
+    public void ASnowTerrainTraceNamesSnowAndLeavesNoMark()
     {
         (LoadedMission mission, GameMaterialRegistry materials, WorldScene scene) = Load(7);
         TerrainData terrain = mission.Terrain!;
@@ -72,17 +72,14 @@ public sealed class RetailTerrainImpactMaterialTests
 
             Assert.Equal(snow.Index, hit.Material);
 
+            // The row decides the sound and the dust, but nothing is stuck to the ground: the terrain
+            // pass reports no object for the decal message to reach (0x4CC2A0), so a round into snow
+            // leaves no hole however the Snow row is authored.
+            Assert.Null(BulletMarks.SurfaceOf(hit));
             BulletMarks marks = new();
             WorldRayHit impact = new(hit.Position, hit.Normal, hit.Distance, hit.Material);
-            if (snow.RecordsImpacts)
-            {
-                Assert.True(marks.TryAdd(impact, materials));
-                Assert.Equal(snow.Entry.EntryTexture, Assert.Single(marks.Marks).Texture);
-            }
-            else
-            {
-                Assert.False(marks.TryAdd(impact, materials));
-            }
+            Assert.False(marks.TryAdd(impact, BulletMarks.SurfaceOf(hit), materials));
+            Assert.Empty(marks.Marks);
 
             return;
         }

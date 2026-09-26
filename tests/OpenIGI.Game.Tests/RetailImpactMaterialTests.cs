@@ -69,10 +69,10 @@ public sealed class RetailImpactMaterialTests
         Assert.True(metal.RecordsImpacts);
 
         BulletMarks marks = new();
-        Assert.False(marks.TryAdd(Hit(18), materials));
+        Assert.False(marks.TryAdd(Hit(18), new object(), materials));
         Assert.Empty(marks.Marks);
 
-        Assert.True(marks.TryAdd(Hit(6), materials));
+        Assert.True(marks.TryAdd(Hit(6), new object(), materials));
         Assert.Equal("bullethole_metal.tex", Assert.Single(marks.Marks).Texture);
     }
 
@@ -96,7 +96,7 @@ public sealed class RetailImpactMaterialTests
         Assert.All(blocker.BulletSounds, sound => Assert.Equal(string.Empty, sound));
 
         BulletMarks marks = new();
-        Assert.False(marks.TryAdd(Hit(21), materials));
+        Assert.False(marks.TryAdd(Hit(21), new object(), materials));
         Assert.Equal(
             string.Empty,
             BulletImpactSounds.PickForImpact(materials, struckHuman: false, 21, new IgiRandom()));
@@ -135,7 +135,7 @@ public sealed class RetailImpactMaterialTests
         Assert.True(faces.GetValueOrDefault(14) > 100, "level one has Glass faces");
 
         BulletMarks marks = new();
-        Assert.True(marks.TryAdd(Hit(14), materials));
+        Assert.True(marks.TryAdd(Hit(14), new object(), materials));
         Assert.Equal("hole_plexi1.tex", Assert.Single(marks.Marks).Texture);
     }
 

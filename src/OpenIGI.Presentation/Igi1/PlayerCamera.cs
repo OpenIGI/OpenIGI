@@ -166,6 +166,8 @@ public sealed class PlayerCamera
     /// <summary>Gets the marks rounds have left on the world.</summary>
     public BulletMarks Marks { get; } = new();
 
+    private readonly List<PendingMark> _pendingMarks = [];
+
     /// <summary>Gets the rounds in flight under <c>g_ballistics</c>, for the tracer renderer.</summary>
     /// <remarks>Empty whenever the option is off — nothing is ever spawned into it.</remarks>
     public BallisticSimulation Ballistics => _ballistics;
@@ -2542,10 +2544,17 @@ public sealed class PlayerCamera
             {
                 GroundImpact?.Invoke(impact.Wall.Position);
 
-                // The surface decides what the hit looks like, out of the material its own face names.
+                // The surface decides what the hit looks like, out of the material its own face names,
+                // and the struck object decides whether it takes a mark at all.
                 if (_materials is { } materials)
                 {
-                    Marks.TryAdd(impact.Wall, materials);
+                    Marks.TryAdd(
+                        impact.Wall,
+                        BulletMarks.SurfaceOf(impact.Owner, impact.Placement),
+                        materials,
+                        isEntry: !impact.Wall.IsExit,
+                        exitCrossing: impact.Wall.IsExit,
+                        probe: _body.Walls);
                 }
             }
 
@@ -2591,146 +2600,242 @@ public sealed class PlayerCamera
         WeaponCategory category,
         float penetrationPower)
     {
+        if (category == WeaponCategory.Knife)
+        {
+            ResolveStab(shot, damageFactor, category);
+            return;
+        }
+
         Vector3d direction = new(shot.Direction.X, shot.Direction.Y, shot.Direction.Z);
         Vector3d origin = shot.Origin;
         float remaining = shot.RangeInUnits;
         bool deflected = false;
         bool leftASurface = false;
 
-        // The march is bounded by the range it spends, but a surface reporting a zero-length step would
-        // spend none. Cap the passes at the number of impacts one round may record.
-        for (int pass = 0; pass < GunShotBallistics.MaximumRecordedImpacts && remaining > 0f; pass++)
+        // The impacts the march records, marked only once it is over: 0x47C262 decides each one's entry
+        // flag after the loop, from whether the round ever glanced and from which way the LAST surface
+        // faced. A round that glances therefore marks even the surfaces it met BEFORE the glance as exits.
+        _pendingMarks.Clear();
+        March();
+        CommitMarks(deflected);
+
+        void March()
         {
-            Vector3d end = origin + (direction * remaining);
-
-            // The direction the effect dispatcher carries with the contact. It changes mid-march when
-            // the round glances, so it is taken fresh each pass rather than from the shot.
-            Vector3f travel = new((float)direction.X, (float)direction.Y, (float)direction.Z);
-
-            WorldTraceHit richHit = default;
-            bool struckWall = _walls is not null
-                && _walls.TryTrace(new WorldTraceRequest(origin, end, WorldTraceMask.World), out richHit);
-            WorldRayHit hit = struckWall ? richHit.RayHit : default;
-
-            // Both, then the nearer. A guard in front of a wall takes the round and the wall stays
-            // clean; one behind it does not, and the wall is marked.
-            HumanHit human = default;
-            bool struckHuman = Humans is { } humans
-                && humans(origin, end, damageFactor, category, out human)
-                && (!struckWall || human.Distance < hit.Distance);
-
-            if (struckHuman)
+            // The march is bounded by the range it spends, but a surface reporting a zero-length step would
+            // spend none. Cap the passes at the number of impacts one round may record.
+            for (int pass = 0; pass < GunShotBallistics.MaximumRecordedImpacts && remaining > 0f; pass++)
             {
-                HumanHits++;
-                LastHumanZone = human.Zone;
-                _impacts.Add(
-                    new GunImpact(human.Position, true, remaining, StruckHuman: true, Direction: travel));
-                return;
-            }
+                Vector3d end = origin + (direction * remaining);
 
-            if (!struckWall)
-            {
-                _impacts.Add(new GunImpact(end, false, remaining, Direction: travel));
-                return;
-            }
+                // The direction the effect dispatcher carries with the contact. It changes mid-march when
+                // the round glances, so it is taken fresh each pass rather than from the shot.
+                Vector3f travel = new((float)direction.X, (float)direction.Y, (float)direction.Z);
 
-            remaining = GunShotBallistics.ConsumeRange(remaining, (float)hit.Distance);
+                WorldTraceHit richHit = default;
+                bool struckWall = _walls is not null
+                    && _walls.TryTrace(new WorldTraceRequest(origin, end, WorldTraceMask.World), out richHit);
+                WorldRayHit hit = struckWall ? richHit.RayHit : default;
 
-            // Coming OUT of something. The original marks the far side and says nothing: no sound, no
-            // hit message, no penetration test. It only remembers that it happened.
-            if (hit.IsExit)
-            {
-                if (_materials is { } far)
+                // Both, then the nearer. A guard in front of a wall takes the round and the wall stays
+                // clean; one behind it does not, and the wall is marked.
+                HumanHit human = default;
+                bool struckHuman = Humans is { } humans
+                    && humans(origin, end, damageFactor, category, out human)
+                    && (!struckWall || human.Distance < hit.Distance);
+
+                if (struckHuman)
                 {
-                    Marks.TryAdd(hit, far, isEntry: false);
-                }
-
-                leftASurface = true;
-                if (remaining <= 0f)
-                {
+                    HumanHits++;
+                    LastHumanZone = human.Zone;
+                    _impacts.Add(
+                        new GunImpact(human.Position, true, remaining, StruckHuman: true, Direction: travel));
                     return;
                 }
 
-                origin = StepOff(hit.Position, direction);
-                continue;
-            }
-
-            GroundImpact?.Invoke(hit.Position);
-
-            _impacts.Add(new GunImpact(
-                hit.Position,
-                true,
-                remaining,
-                richHit.Owner,
-                richHit.Placement,
-                Wall: hit,
-                Direction: travel));
-
-            // A round that has already come out of something stops on the next thing it enters,
-            // whatever that thing is made of — it has spent its one pass through.
-            if (leftASurface)
-            {
-                Mark(hit, isEntry: !deflected);
-                return;
-            }
-
-            GameMaterial? struck = _materials is { } rows && rows.TryGet(hit.Material, out GameMaterial row)
-                ? row
-                : null;
-            if (struck is null || remaining <= 0f)
-            {
-                Mark(hit, isEntry: !deflected);
-                return;
-            }
-
-            // The graze first. The collision index has already turned the normal to face the ray, so
-            // the angle between the reversed travel and that normal is the incidence 0x4B2B30 returns:
-            // near zero arriving square on, near a right angle arriving along the surface.
-            if (GunShotBallistics.CanDeflect(deflected))
-            {
-                float incidence = IncidenceRadians(direction, hit.Normal);
-                if (_random.NextSingle()
-                    < GunShotBallistics.DeflectionChance(struck.RicochetAngleDegrees, incidence))
+                if (!struckWall)
                 {
-                    // 0x47BD7B sounds the whizz directly here rather than through the material's
-                    // window, so a round that glances always gets one.
-                    deflected = true;
-                    Deflected?.Invoke(hit.Position);
+                    _impacts.Add(new GunImpact(end, false, remaining, Direction: travel));
+                    return;
+                }
 
-                    // 0x47C262: a round that has glanced marks every surface it met as an EXIT, which
-                    // on metal and concrete is the dent rather than the hole. The latch is set here,
-                    // before the impact is recorded at 0x47BDED.
-                    Mark(hit, isEntry: false);
-                    direction = Reflect(direction, hit.Normal);
+                remaining = GunShotBallistics.ConsumeRange(remaining, (float)hit.Distance);
+
+                // Coming OUT of something. The original marks the far side and says nothing: no sound, no
+                // hit message, no penetration test. It only remembers that it happened.
+                if (hit.IsExit)
+                {
+                    Record(hit, richHit, exitCrossing: true);
+
+                    leftASurface = true;
+                    if (remaining <= 0f)
+                    {
+                        return;
+                    }
+
                     origin = StepOff(hit.Position, direction);
                     continue;
                 }
-            }
 
-            // Then the bite. The original will not let a round through a surface whose trace named no
-            // object, whatever the margin, so a hit on the bare level shell always stops it.
-            if (richHit.Owner is null
-                || !GunShotBallistics.Penetrates(
-                    penetrationPower, struck.BulletResistance, _random.NextSingle()))
-            {
-                Mark(hit, isEntry: !deflected);
-                return;
-            }
+                GroundImpact?.Invoke(hit.Position);
 
-            Mark(hit, isEntry: !deflected);
-            origin = StepOff(hit.Position, direction);
+                _impacts.Add(new GunImpact(
+                    hit.Position,
+                    true,
+                    remaining,
+                    richHit.Owner,
+                    richHit.Placement,
+                    Wall: hit,
+                    Direction: travel));
+
+                // A round that has already come out of something stops on the next thing it enters,
+                // whatever that thing is made of — it has spent its one pass through.
+                if (leftASurface)
+                {
+                    Record(hit, richHit, exitCrossing: false);
+                    return;
+                }
+
+                GameMaterial? struck = _materials is { } rows && rows.TryGet(hit.Material, out GameMaterial row)
+                    ? row
+                    : null;
+                if (struck is null || remaining <= 0f)
+                {
+                    Record(hit, richHit, exitCrossing: false);
+                    return;
+                }
+
+                // The graze first. The collision index has already turned the normal to face the ray, so
+                // the angle between the reversed travel and that normal is the incidence 0x4B2B30 returns:
+                // near zero arriving square on, near a right angle arriving along the surface.
+                if (GunShotBallistics.CanDeflect(deflected))
+                {
+                    float incidence = IncidenceRadians(direction, hit.Normal);
+                    if (_random.NextSingle()
+                        < GunShotBallistics.DeflectionChance(struck.RicochetAngleDegrees, incidence))
+                    {
+                        // 0x47BD7B sounds the whizz directly here rather than through the material's
+                        // window, so a round that glances always gets one.
+                        deflected = true;
+                        Deflected?.Invoke(hit.Position);
+
+                        // 0x47C262: a round that has glanced marks every surface it met as an EXIT, which
+                        // on metal and concrete is the dent rather than the hole. The latch is set here,
+                        // before the impact is recorded at 0x47BDED; CommitMarks reads it.
+                        Record(hit, richHit, exitCrossing: false);
+                        direction = Reflect(direction, hit.Normal);
+                        origin = StepOff(hit.Position, direction);
+                        continue;
+                    }
+                }
+
+                // Then the bite. The original will not let a round through a surface whose trace named no
+                // object, whatever the margin, so a hit on the bare level shell always stops it.
+                if (richHit.Owner is null
+                    || !GunShotBallistics.Penetrates(
+                        penetrationPower, struck.BulletResistance, _random.NextSingle()))
+                {
+                    Record(hit, richHit, exitCrossing: false);
+                    return;
+                }
+
+                Record(hit, richHit, exitCrossing: false);
+                origin = StepOff(hit.Position, direction);
+            }
         }
 
-        // The surface decides what the hit looks like, out of the material its own face names. A row
-        // that records no impact leaves nothing -- Fence and MetalFence are two such rows.
-        void Mark(in WorldRayHit surface, bool isEntry)
+        // One recorded impact. The surface decides what it looks like, out of the material its own face
+        // names, and the struck OBJECT decides whether it takes a mark at all -- terrain and the types
+        // that refuse the decal message never do.
+        void Record(in WorldRayHit surface, in WorldTraceHit contact, bool exitCrossing)
         {
-            if (_materials is { } table)
+            if (_pendingMarks.Count < GunShotBallistics.MaximumRecordedImpacts)
             {
-                Marks.TryAdd(surface, table, isEntry);
+                _pendingMarks.Add(new PendingMark(surface, BulletMarks.SurfaceOf(contact), exitCrossing));
             }
         }
     }
+
+    /// <summary>Marks the impacts one round recorded, with the flags the original gives them.</summary>
+    /// <param name="deflected">Whether the round glanced at any point.</param>
+    /// <remarks>
+    /// <c>0x47C262</c>: every impact is an exit once the round has glanced. Otherwise each is an entry
+    /// except the last, which is an exit when its surface faced away from the round.
+    /// </remarks>
+    private void CommitMarks(bool deflected)
+    {
+        if (_materials is not { } table)
+        {
+            _pendingMarks.Clear();
+            return;
+        }
+
+        for (int i = 0; i < _pendingMarks.Count; i++)
+        {
+            PendingMark pending = _pendingMarks[i];
+            bool isEntry = !deflected && (i < _pendingMarks.Count - 1 || !pending.Hit.IsExit);
+            Marks.TryAdd(pending.Hit, pending.Surface, table, isEntry, pending.ExitCrossing, _body.Walls);
+        }
+
+        _pendingMarks.Clear();
+    }
+
+    /// <summary>Resolves a knife stab the way <c>KnifeStab</c> (<c>0x46DFB0</c>) does.</summary>
+    /// <remarks>
+    /// <para>
+    /// The knife is not a gun ray. Its task casts along the blade and, if the cast meets something that
+    /// answers the hit message, hands it that message and nothing else: it never records an impact,
+    /// so there is no <c>GunShotEffect</c>, no mark, no impact sound and no dust.
+    /// </para>
+    /// <para>
+    /// The contact is still reported, flagged <see cref="GunImpact.Melee"/>, because the hit message is
+    /// what breaks a pane or shoots out a speaker. Retail tries up to three blade angles
+    /// (-15, -5 and +5 degrees) until one lands; this casts the one straight ahead.
+    /// </para>
+    /// </remarks>
+    private void ResolveStab(GunProjectile shot, float damageFactor, WeaponCategory category)
+    {
+        Vector3d direction = new(shot.Direction.X, shot.Direction.Y, shot.Direction.Z);
+        Vector3d origin = shot.Origin;
+        float range = shot.RangeInUnits;
+        Vector3d end = origin + (direction * range);
+        Vector3f travel = new((float)direction.X, (float)direction.Y, (float)direction.Z);
+
+        WorldTraceHit contact = default;
+        bool struckWall = _walls is not null
+            && _walls.TryTrace(new WorldTraceRequest(origin, end, WorldTraceMask.World), out contact);
+
+        HumanHit human = default;
+        bool struckHuman = Humans is { } humans
+            && humans(origin, end, damageFactor, category, out human)
+            && (!struckWall || human.Distance < contact.Distance);
+
+        if (struckHuman)
+        {
+            HumanHits++;
+            LastHumanZone = human.Zone;
+            _impacts.Add(new GunImpact(
+                human.Position, true, range, StruckHuman: true, Direction: travel, Melee: true));
+            return;
+        }
+
+        if (!struckWall)
+        {
+            _impacts.Add(new GunImpact(end, false, range, Direction: travel, Melee: true));
+            return;
+        }
+
+        _impacts.Add(new GunImpact(
+            contact.Position,
+            true,
+            range,
+            contact.Owner,
+            contact.Placement,
+            Wall: contact.RayHit,
+            Direction: travel,
+            Melee: true));
+    }
+
+    private readonly record struct PendingMark(WorldRayHit Hit, object? Surface, bool ExitCrossing);
 
     /// <summary>Raised where a round glanced off a surface, so the whizz can be sounded there.</summary>
     /// <remarks>

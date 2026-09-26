@@ -798,7 +798,8 @@ internal sealed partial class GameHost
 
         foreach (GunImpact impact in _player.Impacts)
         {
-            if (!impact.HitSomething)
+            // A knife records no impact (0x46DFB0), so it never reaches the material's sounds.
+            if (!impact.HitSomething || impact.Melee)
             {
                 continue;
             }
@@ -1082,7 +1083,7 @@ internal sealed partial class GameHost
 
         _sounds?.PlayDefinition("explo_02_m", blast.Position, priority: 90);
         SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
-        ScorchSurface(blast.Position, blast.Normal);
+        ScorchSurface(blast.Position, blast.Normal, MissileScorchHalfWidthInUnits);
         _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
         // Car's native direct-weapon callback (IGI1 0x42FC40) enters destruction immediately. Keep
         // the exact collision identity from the missile trace so a hull hit cannot be reduced to a
@@ -1137,7 +1138,7 @@ internal sealed partial class GameHost
             // reached its own detonation path.
             _sounds?.PlayDefinition("explo_proxy", blast.Position, priority: 90);
             SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
-            ScorchSurface(blast.Position, blast.Normal);
+            ScorchSurface(blast.Position, blast.Normal, M203ScorchHalfWidthInUnits);
             _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
             // Match the native explosion callback: visit every visible destructible in the blast
             // envelope, then handle alarms separately without the nearest-object fallback.
@@ -1413,6 +1414,13 @@ internal sealed partial class GameHost
             if (item.Placement is { } placement)
             {
                 _impactParticles?.SpawnGlassShatter(placement, impactUnits ?? item.PositionUnits);
+            }
+
+            // The holes in it were a child of the pane (0x47D438), so they go with it -- which is why a
+            // round that breaks the glass leaves no hole hanging in the empty frame.
+            if (BulletMarks.SurfaceOf(item.Owner, item.Placement) is { } shattered)
+            {
+                _player?.Marks.Forget(shattered);
             }
             // GlassShatter_Sound is a world noise. The existing retail ground-impact route is the
             // matching AI event used for non-human world contacts; it also keeps a pane behind a wall

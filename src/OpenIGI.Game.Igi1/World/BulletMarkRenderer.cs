@@ -249,7 +249,8 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
         Vector3f right = Normalise(Cross(reference, normal));
         Vector3f up = Normalise(Cross(normal, right));
 
-        float half = (float)(mark.SizeInUnits / WorldScene.UnitsPerMetre * 0.5);
+        // The size is the half-width: 0x47D920 lays the four corners at +-size on both axes.
+        float half = (float)(mark.SizeInUnits / WorldScene.UnitsPerMetre);
         Vector3d centre = new(
             (mark.Position.X / WorldScene.UnitsPerMetre) + (normal.X * DepthBiasInMetres) - eye.X,
             (mark.Position.Y / WorldScene.UnitsPerMetre) + (normal.Y * DepthBiasInMetres) - eye.Y,

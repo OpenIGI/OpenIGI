@@ -33,7 +33,7 @@ public sealed class RetailBulletImpactMaterialTests
         BulletMarks marks = new();
         WorldRayHit hit = new(default, new(0f, 0f, 1f), 0.0, selected.Value.Global);
 
-        Assert.True(marks.TryAdd(hit, materials));
+        Assert.True(marks.TryAdd(hit, new object(), materials));
         BulletMark mark = Assert.Single(marks.Marks);
         Assert.Equal(selected.Value.Material.Entry.EntryTexture, mark.Texture);
         Assert.NotEqual(concrete.Entry.EntryTexture, mark.Texture);
@@ -78,7 +78,7 @@ public sealed class RetailBulletImpactMaterialTests
 
                 Assert.Equal(global, hit.Material);
                 BulletMarks marks = new();
-                Assert.True(marks.TryAdd(hit, materials));
+                Assert.True(marks.TryAdd(hit, BulletMarks.SurfaceOf(placement.Owner, placement), materials));
                 Assert.Equal(material.Entry.TextureFor(isEntry: true), Assert.Single(marks.Marks).Texture);
                 return;
             }
