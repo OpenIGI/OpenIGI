@@ -65,9 +65,12 @@ namespace OpenIGI.Rendering;
 /// where it really is -- under the horizon, through twilight -- so the dusk fades rather than cuts.
 /// </param>
 /// <param name="AtmosphereMoonColour">
-/// The moon's light for the atmosphere to scatter as a second source, before <paramref name="Scale"/>,
-/// towards <see cref="NightSky.MoonDirection"/>. Nought by day and wherever the cycle hangs no moon.
+/// The moon's light above the atmosphere and any cloud, before <paramref name="Scale"/>, towards
+/// <see cref="NightSky.MoonDirection"/>: what the sky's cloud deck is lit by, and, scaled by
+/// <paramref name="AtmosphereMoonScattering"/>, what its clear air scatters. Nought by day and wherever the
+/// cycle hangs no moon.
 /// </param>
+/// <param name="AtmosphereMoonScattering">How much of that moon the clear air scatters; one is all of it.</param>
 public readonly record struct SceneLighting(
     LightingModel Model,
     Vector3f SunDirection,
@@ -80,7 +83,8 @@ public readonly record struct SceneLighting(
     Vector3f? AtmosphereSunColour = null,
     NightSky Night = default,
     Vector3f? AtmosphereSunDirection = null,
-    Vector3f AtmosphereMoonColour = default)
+    Vector3f AtmosphereMoonColour = default,
+    float AtmosphereMoonScattering = 1f)
 {
     /// <summary>
     /// Gets the lighting that reproduces the original: the bakes and nothing else.

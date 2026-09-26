@@ -4705,7 +4705,11 @@ internal sealed partial class GameHost : IDisposable
                     {
                         atmosphereSun = _dayNight.SkySunColour * (atmosphereScale * nightFeed);
                         atmosphereSunDirection = _dayNight.SunDirection;
-                        atmosphereMoon = _dayNight.MoonColour * (MoonVeil() * atmosphereScale * nightSky);
+                        // The moon above the weather, whole: the sky's cloud deck is lit by all of it and
+                        // passes on its own share (see SkyView's deck transmission), while the clear air
+                        // scatters only r_night_sky's. Knocked down or veiled here as well, the deck took
+                        // the cloud's toll twice and a rainy night came out black.
+                        atmosphereMoon = _dayNight.MoonColour * (RenderCVars.Moonlight.Value * atmosphereScale);
                     }
                     else
                     {
@@ -4748,7 +4752,8 @@ internal sealed partial class GameHost : IDisposable
                         // the cloud cover, the stars and the moon's disc. Nothing by day.
                         FrameNightSky(),
                         atmosphereSunDirection,
-                        atmosphereMoon));
+                        atmosphereMoon,
+                        nightSky));
                     _device.BeginPass(ScenePass.Geometry);
 
                     // The sky is geometry as far as the G-buffer is concerned, so without this the dynamic
@@ -5573,11 +5578,12 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 if (_storm is { IsActive: true } storm)
                 {
                     // Direction and colour from the one effective sun the deferred pass shades with, and
-                    // the fill from the SAME sky the global illumination is seeded with — not the level's
-                    // raw ambient triple, which is a chromaticity that says what colour the fill is and
-                    // nothing about how much of it there is. The storm multiplies its colours by this, so
-                    // handing over a unit-magnitude tint is what pinned every drop at white in a dark
-                    // level and then let the auto-exposure make it worse.
+                    // the fill from the sky the deferred lighting itself shades with, averaged over every
+                    // direction -- not the level's raw ambient triple, which is a chromaticity that says
+                    // what colour the fill is and nothing about how much of it there is, and at night is
+                    // several times the light the scene gets. The storm multiplies its colours by this,
+                    // so handing over more light than the scene has drew every drop brighter than the
+                    // ground behind it: a rainy night became a wall of rain with nothing visible through it.
                     DirectionalLightSettings stormSun = _effectiveSun ?? default;
                     Vector3f stormSunLight =
                         stormSun.Colour * RenderCVars.SunScale.Value * RenderCVars.LightScale.Value;
@@ -5594,7 +5600,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                         smoothPresentation ? tickBlend : 1f,
                         _effectiveSun is null ? Vector3f.UnitZ : stormSun.Direction,
                         stormSunLight,
-                        SkyFillColour() + (stormSunLight * 0.2f),
+                        AmbientSkyLight() + (stormSunLight * 0.2f),
                         _loop.TimeSource.Milliseconds / 1000f);
                 }
                 else if (_storm is not { Enabled: true } && _rain is { IsWeatherEnabled: true } rain)

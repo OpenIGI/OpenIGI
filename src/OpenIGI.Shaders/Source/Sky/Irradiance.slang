@@ -28,7 +28,8 @@ struct Params
 
     // view height km, sky light intensity, _, _.
     float4 misc;
-    // world direction towards the moon; the moon's illuminance outside the atmosphere, nought by day.
+    // world direction towards the moon and the share of it the air scatters; the moon's illuminance
+    // outside the atmosphere, nought by day.
     float4 moonDir;
     float4 moonColour;
 };

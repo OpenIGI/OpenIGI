@@ -15,6 +15,39 @@ internal sealed partial class GameHost
     private Vector3f SkyFillColour() =>
         ((_effectiveSun ?? _sun)?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f)) * RenderCVars.SkyLight.Value;
 
+    /// <summary>The sky's light averaged over every direction, as the lighting pass itself has it.</summary>
+    /// <returns>
+    /// The radiance a white diffuse surface would send back if the sky lit it from all round, with
+    /// <c>r_sky_light</c> already in it; the flat fill where the renderer has no sky to report.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// For what hangs in the air rather than sits on a surface -- a falling drop is lit from every side.
+    /// Taken from the same harmonics the deferred lighting and the fog read, averaged over the sphere: the
+    /// linear terms' constants, and a third of the <c>z</c>-squared term, the only quadratic one whose
+    /// average is not nought.
+    /// </para>
+    /// <para>
+    /// Not the level's flat ambient. That is what the renderer fell back on before it had a sky, and at
+    /// night it is several times the light the scene is actually lit by -- which is what drew every rain
+    /// streak brighter than the ground it fell past, and a rainy night as a wall of rain.
+    /// </para>
+    /// </remarks>
+    private Vector3f AmbientSkyLight()
+    {
+        Span<float> harmonics = stackalloc float[28];
+
+        if (!_device.TryGetSkyIrradiance(harmonics))
+        {
+            return SkyFillColour();
+        }
+
+        return new Vector3f(
+            MathF.Max(0f, harmonics[3] + (harmonics[14] / 3f)),
+            MathF.Max(0f, harmonics[7] + (harmonics[18] / 3f)),
+            MathF.Max(0f, harmonics[11] + (harmonics[22] / 3f)));
+    }
+
     // The same, for a named sun rather than whatever the last frame used: the surface cache's convergence
     // runs before a level's first frame has set one.
     private static Vector3f SkyFillColour(DirectionalLightSettings sun) => sun.Ambient * RenderCVars.SkyLight.Value;

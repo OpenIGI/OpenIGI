@@ -10,7 +10,11 @@ namespace OpenIGI.Rendering.Sky;
 /// <param name="Airglow">The night sky's own zenith radiance, already in the table's units; nought by day.</param>
 /// <param name="CloudCover">How overcast the night sky is, 0 to 1.</param>
 /// <param name="MoonDirection">The world direction towards the moon.</param>
-/// <param name="MoonIlluminance">The moon's light outside the atmosphere, for the sky to scatter; nought by day.</param>
+/// <param name="MoonIlluminance">The moon's light outside the atmosphere; nought by day.</param>
+/// <param name="MoonScattering">
+/// How much of the moon the clear air scatters, where one is all of it. A cloud deck is lit by the whole moon
+/// whatever this is.
+/// </param>
 public readonly record struct SkyConditions(
     Vector3f SunDirection,
     Vector3f SunIlluminance,
@@ -19,7 +23,8 @@ public readonly record struct SkyConditions(
     float Airglow = 0f,
     float CloudCover = 0f,
     Vector3f MoonDirection = default,
-    Vector3f MoonIlluminance = default)
+    Vector3f MoonIlluminance = default,
+    float MoonScattering = 1f)
 {
     /// <summary>
     /// The camera's height above the planet's centre, in the kilometres the atmosphere works in.
@@ -62,7 +67,8 @@ public readonly record struct SkyConditions(
             Math.Max(0f, lighting.Night.Airglow) * lighting.Scale,
             Math.Clamp(lighting.Night.CloudCover, 0f, 1f),
             lighting.Night.MoonDirection,
-            new Vector3f(moon.X * lighting.Scale, moon.Y * lighting.Scale, moon.Z * lighting.Scale));
+            new Vector3f(moon.X * lighting.Scale, moon.Y * lighting.Scale, moon.Z * lighting.Scale),
+            Math.Max(0f, lighting.AtmosphereMoonScattering));
     }
 
     /// <summary>Whether a sky built for these conditions would look the same built for another.</summary>
@@ -83,7 +89,8 @@ public readonly record struct SkyConditions(
         && MathF.Abs(Airglow - other.Airglow) <= 1e-7f
         && MathF.Abs(CloudCover - other.CloudCover) <= 1e-4f
         && Near(MoonDirection, other.MoonDirection)
-        && Near(MoonIlluminance, other.MoonIlluminance);
+        && Near(MoonIlluminance, other.MoonIlluminance)
+        && MathF.Abs(MoonScattering - other.MoonScattering) <= 1e-5f;
 
     private static bool Near(Vector3f left, Vector3f right) =>
         MathF.Abs(left.X - right.X) <= 1e-5f
@@ -141,7 +148,7 @@ public static class SkyParameters
         block[16] = conditions.MoonDirection.X;
         block[17] = conditions.MoonDirection.Y;
         block[18] = conditions.MoonDirection.Z;
-        block[19] = 0f;
+        block[19] = conditions.MoonScattering;
 
         block[20] = conditions.MoonIlluminance.X;
         block[21] = conditions.MoonIlluminance.Y;
