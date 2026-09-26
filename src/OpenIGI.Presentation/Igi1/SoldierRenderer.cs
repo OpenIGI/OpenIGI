@@ -2268,7 +2268,19 @@ public sealed class SoldierRenderer : IDisposable
     /// <param name="step">Where the foot landed, in units.</param>
     /// <param name="walkerPosition">The player's live position.</param>
     /// <param name="radiusUnits">The ground material's hearing radius × 4096 — <c>0x463920</c>.</param>
-    public void NotifyWalk(Vector3d step, Vector3d walkerPosition, double radiusUnits)
+    public void NotifyWalk(Vector3d step, Vector3d walkerPosition, double radiusUnits) =>
+        NotifyHumanNoise(AiEvent.Walk, step, walkerPosition, radiusUnits);
+
+    /// <summary>Delivers a noise the player makes to every guard it reaches — see <see cref="AiSoldier.ReceiveHumanNoise"/>.</summary>
+    /// <param name="type">The event: a walk, a door, a fence climb or a ladder step.</param>
+    /// <param name="position">Where the noise is.</param>
+    /// <param name="source">The player's live position.</param>
+    /// <param name="radiusUnits">How far it carries.</param>
+    public void NotifyHumanNoise(
+        AiEvent type,
+        Vector3d position,
+        Vector3d source,
+        double radiusUnits = AiSoldier.HumanNoiseRadiusInUnits)
     {
         int heard = 0;
         foreach ((SoldierView view, AiSoldier brain) in _brains)
@@ -2277,13 +2289,13 @@ public sealed class SoldierRenderer : IDisposable
             {
                 continue;
             }
-            if (brain.ReceiveWalk(step, walkerPosition, radiusUnits))
+            if (brain.ReceiveHumanNoise(type, position, source, radiusUnits))
             {
                 heard++;
             }
         }
 
-        ReportNoise("walk", heard, radiusUnits);
+        ReportNoise(type.ToString().ToLowerInvariant(), heard, radiusUnits);
     }
 
     /// <summary>Delivers IGI1's visible grenade-takeoff event (type 17).</summary>

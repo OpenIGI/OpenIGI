@@ -973,17 +973,22 @@ internal sealed partial class GameHost
             }
             else
             {
-                _soldiers.NotifyExplosion(blast.Position, blast.RadiusUnits);
+                // The AI hears a grenade over 10 m and a mine over 25 m, however big the blast.
+                _soldiers.NotifyExplosion(
+                    blast.Position,
+                    blast.IsProximityMine
+                        ? AiSoldier.LargeExplosionEventRadiusInUnits
+                        : AiSoldier.GrenadeExplosionEventRadiusInUnits);
             }
         }
 
         foreach (MissileDetonation blast in _player.Missiles.Detonations)
         {
-            _soldiers.NotifyExplosion(blast.Position, blast.RadiusUnits);
+            _soldiers.NotifyExplosion(blast.Position, AiSoldier.LargeExplosionEventRadiusInUnits);
         }
         foreach (MissileDetonation blast in _vehicleMissiles.Detonations)
         {
-            _soldiers.NotifyExplosion(blast.Position, blast.RadiusUnits);
+            _soldiers.NotifyExplosion(blast.Position, AiSoldier.LargeExplosionEventRadiusInUnits);
         }
 
         foreach (M203Detonation blast in _player.M203.Detonations)
@@ -1480,7 +1485,7 @@ internal sealed partial class GameHost
             new RetailExplosionShape(radius, (int)item.ExplosionFireballs, item.ExplosionFragments));
         HandleDestructibleBlast(item, item.PositionUnits, radius, falloff, damageFactor);
         _soldiers?.ApplyExplosion(item.PositionUnits, radius, falloff, damageFactor);
-        _soldiers?.NotifyExplosion(item.PositionUnits, radius + falloff);
+        _soldiers?.NotifyExplosion(item.PositionUnits, AiSoldier.LargeExplosionEventRadiusInUnits);
 
         if (_player is not null && !_playerHealth.IsDead)
         {

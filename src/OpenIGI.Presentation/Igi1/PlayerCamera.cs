@@ -2,6 +2,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons.Ballistics;
@@ -279,6 +280,14 @@ public sealed class PlayerCamera
     /// receives damage instead and does not also manufacture a ground-impact event behind itself.
     /// </remarks>
     public Action<Vector3d>? GroundImpact { get; set; }
+
+    /// <summary>Gets or sets where the player's door, fence and ladder noises are offered to the AI.</summary>
+    /// <remarks>
+    /// Invoked with <see cref="AiEvent.Door"/> whenever the player toggles a door, by hand or at the end of
+    /// a pick (<c>0x40C270</c>); with <see cref="AiEvent.Fence"/> on every tick of a fence climb but the
+    /// first and the last (<c>0x411770</c>); and with <see cref="AiEvent.Ladder"/> at each ladder step.
+    /// </remarks>
+    public Action<AiEvent>? AiNoise { get; set; }
 
     /// <summary>Gets how many of this player's rounds have struck a human.</summary>
     public int HumanHits { get; private set; }
@@ -1349,6 +1358,7 @@ public sealed class PlayerCamera
                 break;
             case InteractionAction.OpenDoor:
                 interaction.Door?.Toggle();
+                AiNoise?.Invoke(AiEvent.Door);
                 TaskActivated?.Invoke(interaction.Task.Id);
                 break;
             case InteractionAction.MountWire:
@@ -1525,7 +1535,11 @@ public sealed class PlayerCamera
         // State 41 plants the task root at the authored fence mount and lets animation 171 carry the
         // visible body over it. Its own duration accessor returns six seconds (0x440270), not the
         // one-second parabolic placeholder this replaces.
-        if (_interactionTick >= fence.DurationTicks)
+        if (_interactionTick < fence.DurationTicks)
+        {
+            AiNoise?.Invoke(AiEvent.Fence);
+        }
+        else
         {
             _body.Position = _fenceExitPosition;
             EndInteraction(completed: false, terrain);
@@ -1538,6 +1552,12 @@ public sealed class PlayerCamera
         if (completed)
         {
             interaction.CompleteUse();
+            if (interaction.Door is not null)
+            {
+                // A finished pick unlocks and toggles the door, and posts the same noise (0x40C160).
+                AiNoise?.Invoke(AiEvent.Door);
+            }
+
             TaskActivated?.Invoke(interaction.Task.Id);
         }
         else
@@ -2152,6 +2172,7 @@ public sealed class PlayerCamera
     {
         _climb.CompleteStep();
         _body.Position = _climb.Position;
+        AiNoise?.Invoke(AiEvent.Ladder);
     }
 
     /// <summary>Consumes animation 170's endpoint and resolves the roof when state 39 detaches.</summary>

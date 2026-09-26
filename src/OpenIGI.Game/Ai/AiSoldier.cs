@@ -764,9 +764,24 @@ public sealed class AiSoldier
         Target?.Refresh(_lastSeenFeet);
     }
 
+    /// <summary>
+    /// How far the EXPLOSION event of a demolition, a placed mine, a missile, a wreck or a camera carries —
+    /// 25 m (<c>0x47C80000</c>), whatever the size of the blast itself.
+    /// </summary>
+    /// <remarks>
+    /// Every poster hands <c>0x480FE0</c> its own fixed radius for the AI event, separate from the blast's
+    /// damage radius: <c>ExplodeObject</c> (<c>0x481A60</c>), <c>ExplodeMagicObj</c> (<c>0x43C0B0</c>), the
+    /// missile (<c>0x428390</c>), a destroyed vehicle (<c>0x42E5A0</c>), the proximity mine
+    /// (<c>0x476340</c>) and the security camera (<c>0x441770</c>) all pass this.
+    /// </remarks>
+    public const double LargeExplosionEventRadiusInUnits = 25.0 * 4096.0;
+
+    /// <summary>How far a hand grenade's EXPLOSION event carries — 10 m (<c>0x47200000</c>, <c>0x476AC0</c>).</summary>
+    public const double GrenadeExplosionEventRadiusInUnits = 10.0 * 4096.0;
+
     /// <summary>Delivers the native type-21 explosion event when the blast reaches this soldier.</summary>
     /// <param name="explosionPosition">The world-space centre of the explosion.</param>
-    /// <param name="rangeInUnits">The authored blast contact envelope, in engine units.</param>
+    /// <param name="rangeInUnits">The event's own radius, fixed by the kind of explosion, in engine units.</param>
     /// <returns><see langword="true"/> when the event was queued.</returns>
     /// <remarks>
     /// IGI1 registers <c>AIEVENT_EXPLOSION</c> as event 21 in the native AI registrar at
@@ -867,36 +882,8 @@ public sealed class AiSoldier
     public bool ReceiveGroundImpact(
         Vector3d impactPosition,
         Vector3d shooterPosition,
-        double radiusInUnits = GroundImpactRadiusInUnits)
-    {
-        if (Activity == AiSoldierActivity.Dead || !PlayerIsEnemy || radiusInUnits < 0.0)
-        {
-            return false;
-        }
-
-        double distance = Distance(Position, impactPosition);
-        if (distance > radiusInUnits)
-        {
-            return false;
-        }
-
-        LastEventDistance = distance;
-        _playerEventSourcePosition = shooterPosition;
-        RefreshBelievedTarget();
-
-        Events.Post(
-            new AiEventRecord(
-                AiEvent.GroundImpact,
-                -1,
-                AiEventFilter.InRange | AiEventFilter.SubjectIsHuman | AiEventFilter.OtherSide,
-                (float)radiusInUnits,
-                impactPosition,
-                -1,
-                -1),
-            owner: RuntimeId,
-            worldTests: null);
-        return true;
-    }
+        double radiusInUnits = GroundImpactRadiusInUnits) =>
+        ReceiveHumanNoise(AiEvent.GroundImpact, impactPosition, shooterPosition, radiusInUnits);
 
     /// <summary>The IGI1 bullet-impact reaction radius: five metres, or 20480 engine units.</summary>
     public const double GroundImpactRadiusInUnits = 5.0 * 4096.0;
@@ -912,30 +899,56 @@ public sealed class AiSoldier
     /// that gate, because the crouch belongs to the walker, not the listener. <c>guard.qvm</c> answers WALK
     /// with <c>AIAction_SetCombat</c>, which is how a guard investigates footsteps it cannot see.
     /// </remarks>
-    public bool ReceiveWalk(Vector3d stepPosition, Vector3d walkerPosition, double radiusInUnits)
+    public bool ReceiveWalk(Vector3d stepPosition, Vector3d walkerPosition, double radiusInUnits) =>
+        ReceiveHumanNoise(AiEvent.Walk, stepPosition, walkerPosition, radiusInUnits);
+
+    /// <summary>The radius of the noise a door, a fence climb or a ladder step makes — 5 m (<c>0x46A00000</c>).</summary>
+    public const double HumanNoiseRadiusInUnits = 5.0 * 4096.0;
+
+    /// <summary>
+    /// Delivers a noise an enemy human makes — footsteps, a landing or a round's impact, a door it opens or
+    /// closes, a fence it climbs, a ladder step.
+    /// </summary>
+    /// <param name="type">
+    /// <see cref="AiEvent.Walk"/>, <see cref="AiEvent.GroundImpact"/>, <see cref="AiEvent.Door"/>,
+    /// <see cref="AiEvent.Fence"/> or <see cref="AiEvent.Ladder"/>.
+    /// </param>
+    /// <param name="position">Where the noise is — the human's own position for a door, fence or ladder.</param>
+    /// <param name="source">The human's live position, for the actions that read the event's source.</param>
+    /// <param name="radiusInUnits">How far it carries.</param>
+    /// <returns><see langword="true"/> when the soldier heard it.</returns>
+    /// <remarks>
+    /// Each is broadcast to every AI with filter <c>0x46</c> — in range, from a live human, of the other
+    /// side — and the range test passes at exactly the radius (<c>0x450110</c> rejects only
+    /// <c>radius &lt; distance</c>). The posters are <c>0x463920</c> (walk), <c>0x408460</c> (landing),
+    /// <c>0x40C270</c> (a door the player toggles, opened or picked), <c>0x411770</c> (every tick of a fence
+    /// climb but its first and last) and the three ladder states' step (<c>0x40D6B0</c>, <c>0x40D920</c>,
+    /// <c>0x40DA80</c>).
+    /// </remarks>
+    public bool ReceiveHumanNoise(AiEvent type, Vector3d position, Vector3d source, double radiusInUnits)
     {
-        if (Activity == AiSoldierActivity.Dead || !PlayerIsEnemy)
+        if (Activity == AiSoldierActivity.Dead || !PlayerIsEnemy || radiusInUnits < 0.0)
         {
             return false;
         }
 
-        double distance = Distance(Position, stepPosition);
+        double distance = Distance(Position, position);
         if (distance > radiusInUnits)
         {
             return false;
         }
 
         LastEventDistance = distance;
-        _playerEventSourcePosition = walkerPosition;
+        _playerEventSourcePosition = source;
         RefreshBelievedTarget();
 
         Events.Post(
             new AiEventRecord(
-                AiEvent.Walk,
+                type,
                 -1,
                 AiEventFilter.InRange | AiEventFilter.SubjectIsHuman | AiEventFilter.OtherSide,
                 (float)radiusInUnits,
-                stepPosition,
+                position,
                 -1,
                 -1),
             owner: RuntimeId,

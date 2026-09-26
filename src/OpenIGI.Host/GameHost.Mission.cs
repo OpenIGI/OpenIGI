@@ -1988,6 +1988,8 @@ internal sealed partial class GameHost
                         return found;
                     };
                     candidate.GroundImpact = impact => guards.NotifyGroundImpact(impact, candidate.Body.Position);
+                    candidate.AiNoise = noise => guards.NotifyHumanNoise(
+                        noise, candidate.Body.Position, candidate.Body.Position);
 
                     // A glancing round whizzes where it turned, on the ricochet sound's own limit --
                     // 0x47BD7B sounds it there directly rather than through the material's window.
