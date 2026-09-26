@@ -30,11 +30,20 @@ public sealed class PlayerCameraKnifeTests
         camera.UseViewRig(LoadViewSet());
         camera.UseWalls(ObjectCollisionIndex.Build([]));
 
+        // Only the third blade angle reaches the body, so the stab must sweep all three to land.
         int callbackCount = 0;
+        List<double> reaches = [];
         camera.Humans = (Vector3d origin, Vector3d end, float _, WeaponCategory category, out HumanHit hit) =>
         {
             callbackCount++;
+            reaches.Add((end - origin).Length);
             Assert.Equal(WeaponCategory.Knife, category);
+            if (callbackCount < PlayerCamera.KnifeFanRadians.Length)
+            {
+                hit = default;
+                return false;
+            }
+
             hit = new HumanHit(
                 new Vector3d(origin.X, origin.Y + (PlayerCamera.UnitsPerMetre * 0.5), origin.Z),
                 PlayerCamera.UnitsPerMetre * 0.5,
@@ -62,11 +71,32 @@ public sealed class PlayerCameraKnifeTests
         }
 
         Assert.True(stabbed, "the knife never struck");
-        Assert.True(callbackCount > 0);
+        Assert.Equal(PlayerCamera.KnifeFanRadians.Length, callbackCount);
+        Assert.All(reaches, reach => Assert.Equal(PlayerCamera.KnifeReachInUnits, reach, 3));
         GunImpact impact = Assert.Single(camera.Impacts);
         Assert.True(impact.Melee);
         Assert.True(impact.StruckHuman);
         Assert.Empty(camera.Marks.Marks);
+    }
+
+    /// <summary>
+    /// <c>0x46DF70</c> sweeps -15, -5 then +5 degrees about the view's up axis, and <c>0x4B3790</c>
+    /// makes a negative angle swing the blade toward the view's right.
+    /// </summary>
+    [Fact]
+    public void TheBladeSweepsFromRightToLeftAboutTheUpAxis()
+    {
+        Assert.Equal(-15.0, PlayerCamera.KnifeFanRadians[0] * 180.0 / Math.PI, 3);
+        Assert.Equal(-5.0, PlayerCamera.KnifeFanRadians[1] * 180.0 / Math.PI, 3);
+        Assert.Equal(5.0, PlayerCamera.KnifeFanRadians[2] * 180.0 / Math.PI, 3);
+
+        Vector3f forward = new(0f, 1f, 0f);
+        Vector3f right = new(1f, 0f, 0f);
+        Vector3d first = PlayerCamera.KnifeBladeDirection(forward, right, PlayerCamera.KnifeFanRadians[0]);
+
+        Assert.Equal(Math.Sin(15.0 * Math.PI / 180.0), first.X, 6);
+        Assert.Equal(Math.Cos(15.0 * Math.PI / 180.0), first.Y, 6);
+        Assert.Equal(0.0, first.Z, 6);
     }
 
     private static BoneAnimationSet LoadViewSet() => BoneAnimationSet.Read(File.ReadAllBytes(

@@ -2487,6 +2487,10 @@ public sealed class PlayerCamera
                     visualOffset,
                     GameplayCVars.BallisticsMinimumFlight.Value);
             }
+            else if (category == WeaponCategory.Knife)
+            {
+                ResolveStab(shot, right, damageFactor, category);
+            }
             else
             {
                 ResolveShot(shot, damageFactor, category, held?.PenetrationPower ?? 0f);
@@ -2600,12 +2604,6 @@ public sealed class PlayerCamera
         WeaponCategory category,
         float penetrationPower)
     {
-        if (category == WeaponCategory.Knife)
-        {
-            ResolveStab(shot, damageFactor, category);
-            return;
-        }
-
         Vector3d direction = new(shot.Direction.X, shot.Direction.Y, shot.Direction.Z);
         Vector3d origin = shot.Origin;
         float remaining = shot.RangeInUnits;
@@ -2779,59 +2777,97 @@ public sealed class PlayerCamera
         _pendingMarks.Clear();
     }
 
+    /// <summary>How far the knife reaches, in world units: <c>0x46E033</c> scales the blade by 8192.</summary>
+    public const double KnifeReachInUnits = 8192.0;
+
+    /// <summary>The blade angles <c>KnifeStab</c> tries, in order, in radians about the view's up axis.</summary>
+    /// <remarks>
+    /// <c>0x46DF70</c> starts at <c>-0.2617994</c> (-15 degrees) and adds <c>0.17453294</c> (10 degrees)
+    /// twice, stopping at the first angle that lands.
+    /// </remarks>
+    public static readonly float[] KnifeFanRadians = [-0.2617994f, -0.2617994f + 0.17453294f, -0.2617994f + (2f * 0.17453294f)];
+
+    /// <summary>The direction of one blade angle.</summary>
+    /// <param name="forward">The view's forward (+Y) axis.</param>
+    /// <param name="right">The view's right (+X) axis.</param>
+    /// <param name="angle">The angle, in radians.</param>
+    /// <returns>The blade direction.</returns>
+    /// <remarks>
+    /// <c>0x4B3790</c> post-multiplies the view by the Z rotation <c>0x4B3BE0</c> builds, and the stab
+    /// takes the result's middle column: <c>cos a * forward - sin a * right</c>. A negative angle
+    /// therefore swings the blade to the right.
+    /// </remarks>
+    public static Vector3d KnifeBladeDirection(Vector3f forward, Vector3f right, float angle)
+    {
+        double c = Math.Cos(angle);
+        double s = Math.Sin(angle);
+        return new Vector3d(
+            (c * forward.X) - (s * right.X),
+            (c * forward.Y) - (s * right.Y),
+            (c * forward.Z) - (s * right.Z));
+    }
+
     /// <summary>Resolves a knife stab the way <c>KnifeStab</c> (<c>0x46DFB0</c>) does.</summary>
     /// <remarks>
     /// <para>
-    /// The knife is not a gun ray. Its task casts along the blade and, if the cast meets something that
-    /// answers the hit message, hands it that message and nothing else: it never records an impact,
-    /// so there is no <c>GunShotEffect</c>, no mark, no impact sound and no dust.
+    /// The knife is not a gun ray. Its task sweeps the blade across <see cref="KnifeFanRadians"/>, a
+    /// <see cref="KnifeReachInUnits"/> cast at each, and hands the first thing that answers the hit
+    /// message that message and nothing else: it never records an impact, so there is no
+    /// <c>GunShotEffect</c>, no mark, no impact sound and no dust.
     /// </para>
     /// <para>
-    /// The contact is still reported, flagged <see cref="GunImpact.Melee"/>, because the hit message is
-    /// what breaks a pane or shoots out a speaker. Retail tries up to three blade angles
-    /// (-15, -5 and +5 degrees) until one lands; this casts the one straight ahead.
+    /// A body answers, so it ends the sweep. The port cannot ask a wall whether its type answers, so a
+    /// wall does not end it; the first wall met is reported, flagged <see cref="GunImpact.Melee"/>, only
+    /// when no angle reached a body -- that is what lets a stab break a pane or silence a speaker.
     /// </para>
     /// </remarks>
-    private void ResolveStab(GunProjectile shot, float damageFactor, WeaponCategory category)
+    private void ResolveStab(GunProjectile shot, Vector3f right, float damageFactor, WeaponCategory category)
     {
-        Vector3d direction = new(shot.Direction.X, shot.Direction.Y, shot.Direction.Z);
+        Vector3f forward = shot.Direction;
         Vector3d origin = shot.Origin;
-        float range = shot.RangeInUnits;
-        Vector3d end = origin + (direction * range);
-        Vector3f travel = new((float)direction.X, (float)direction.Y, (float)direction.Z);
+        float range = (float)KnifeReachInUnits;
+        GunImpact? firstWall = null;
 
-        WorldTraceHit contact = default;
-        bool struckWall = _walls is not null
-            && _walls.TryTrace(new WorldTraceRequest(origin, end, WorldTraceMask.World), out contact);
-
-        HumanHit human = default;
-        bool struckHuman = Humans is { } humans
-            && humans(origin, end, damageFactor, category, out human)
-            && (!struckWall || human.Distance < contact.Distance);
-
-        if (struckHuman)
+        foreach (float angle in KnifeFanRadians)
         {
-            HumanHits++;
-            LastHumanZone = human.Zone;
-            _impacts.Add(new GunImpact(
-                human.Position, true, range, StruckHuman: true, Direction: travel, Melee: true));
-            return;
+            Vector3d direction = KnifeBladeDirection(forward, right, angle);
+            Vector3d end = origin + (direction * KnifeReachInUnits);
+            Vector3f travel = new((float)direction.X, (float)direction.Y, (float)direction.Z);
+
+            WorldTraceHit contact = default;
+            bool struckWall = _walls is not null
+                && _walls.TryTrace(new WorldTraceRequest(origin, end, WorldTraceMask.World), out contact);
+
+            // A body behind the wall is out of reach: the blade stops where the wall is.
+            Vector3d reach = struckWall ? contact.Position : end;
+            if (Humans is { } humans && humans(origin, reach, damageFactor, category, out HumanHit human))
+            {
+                HumanHits++;
+                LastHumanZone = human.Zone;
+                _impacts.Add(new GunImpact(
+                    human.Position, true, range, StruckHuman: true, Direction: travel, Melee: true));
+                return;
+            }
+
+            if (struckWall && firstWall is null)
+            {
+                firstWall = new GunImpact(
+                    contact.Position,
+                    true,
+                    range,
+                    contact.Owner,
+                    contact.Placement,
+                    Wall: contact.RayHit,
+                    Direction: travel,
+                    Melee: true);
+            }
         }
 
-        if (!struckWall)
-        {
-            _impacts.Add(new GunImpact(end, false, range, Direction: travel, Melee: true));
-            return;
-        }
-
-        _impacts.Add(new GunImpact(
-            contact.Position,
-            true,
+        _impacts.Add(firstWall ?? new GunImpact(
+            origin + (new Vector3d(forward.X, forward.Y, forward.Z) * KnifeReachInUnits),
+            false,
             range,
-            contact.Owner,
-            contact.Placement,
-            Wall: contact.RayHit,
-            Direction: travel,
+            Direction: forward,
             Melee: true));
     }
 
