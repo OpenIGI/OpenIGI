@@ -4,9 +4,9 @@ OpenIGI web build - hosting on cPanel (Apache)
 1. Upload
    Extract this zip into the folder you want to serve it from, for example public_html/ or a subfolder
    such as public_html/igi/. Every path in the page is relative, so any folder works.
-   Keep both .htaccess files (the root one and _framework/.htaccess): they give every file its MIME type,
-   serve the pre-compressed .br / .gz files and set how long browsers keep each file.
-   (In cPanel's File Manager, turn on "Show Hidden Files" to see them.)
+   Put apache/.htaccess beside index.html: it gives every file its MIME type, serves the pre-compressed
+   .br / .gz files and sets how long browsers keep each file.
+   (In cPanel's File Manager, turn on "Show Hidden Files" to see it.)
 
 2. HTTPS is required
    Browsers only allow WebGPU on a secure page, so open the site over https://. cPanel's

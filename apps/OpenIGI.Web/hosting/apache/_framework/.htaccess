@@ -1,6 +1,0 @@
-# The runtime: every file here has a content hash in its name (the publish fingerprints the loader as well,
-# and index.html's import map points at it), so no copy of one can ever be out of date. Cached for good.
-# Everything else -- types, the pre-compressed files -- comes from the .htaccess above.
-<IfModule mod_headers.c>
-  Header set Cache-Control "public, max-age=31536000, immutable"
-</IfModule>

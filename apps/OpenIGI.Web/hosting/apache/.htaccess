@@ -62,9 +62,13 @@ AddType application/octet-stream    .dat .dll .pdb .blat .webcil
     Header append Vary Accept-Encoding
   </FilesMatch>
 
-  # Everything at this level keeps its name from one build to the next -- the page, its scripts, the host's
-  # assets -- so a browser revalidates it on every load (a small 304 while it is unchanged) and a new
-  # upload is picked up at once. The runtime under _framework has a content hash in every name and is kept
-  # for good instead: see _framework/.htaccess.
+  # How long a browser keeps a file. Everything keeps its name from one build to the next -- the page, its
+  # scripts, the host's assets -- except the runtime under _framework, which has a content hash in every
+  # name (name.0123456789.wasm), so its files can be kept for good and the rest are revalidated on every
+  # load (a small 304 while unchanged), which is what makes a new upload show at once. Matched by name
+  # rather than by a _framework/.htaccess: a file section is applied after every directory's, on any host.
   Header set Cache-Control "no-cache"
+  <FilesMatch "\.[a-z0-9]{10}\.(wasm|js|dat|json)(\.br|\.gz)?$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
 </IfModule>
