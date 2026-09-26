@@ -243,6 +243,15 @@ public sealed class DroppedWeaponModeTests(ITestOutputHelper output)
             Assert.Equal(600.0, pickup.Position.Y, 6);
             Assert.Equal(RetailGunDrop.RestAboveSurface, pickup.Position.Z, 6);
             Assert.True(clatters >= 1);
+
+            // At rest it is drawn at rest whatever the frame's share of the tick. The blend used to keep
+            // interpolating from the last falling state, a tick below the floor, and the gun flickered
+            // up and down in place for ever.
+            foreach (float share in new[] { 0f, 0.35f, 0.7f, 1f })
+            {
+                pickup.Present(share, smooth: true);
+                Assert.Equal(RetailGunDrop.RestAboveSurface, pickup.DrawPosition.Z, 6);
+            }
         }
         finally
         {

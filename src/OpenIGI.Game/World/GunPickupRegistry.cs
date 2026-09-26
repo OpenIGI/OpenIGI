@@ -109,6 +109,15 @@ public sealed class GunPickup
 
     internal void Tick(RagdollWorld world)
     {
+        // A gun at rest is drawn at rest. Without this the blend keeps interpolating from the last moving
+        // state -- for the original's drop, a tick of fall below the floor -- on every frame for ever,
+        // and the gun flickers up and down in place.
+        if (_motion is { IsResting: true } resting)
+        {
+            _previousMotion = resting;
+            return;
+        }
+
         if (_motion is { } motion && !motion.IsResting)
         {
             _previousMotion = motion;
