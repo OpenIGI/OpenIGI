@@ -730,7 +730,12 @@ public sealed class MefModel
                 indices[j] = index;
             }
 
-            records[i] = new MefDrawRecord(centre, materialSlot, lightmapPage, baseVertex, span0, true, indices);
+            // The compact header's tail is the face group's blend state (0x49DF60, 0x49EC70); the
+            // lightmapped header lays its fields out differently.
+            bool isTransparent = !lightmappedHeader && BinaryPrimitives.ReadUInt16LittleEndian(header[22..]) != 0;
+            bool isAdditive = !lightmappedHeader && (header[24] & 1) != 0;
+            records[i] = new MefDrawRecord(
+                centre, materialSlot, lightmapPage, baseVertex, span0, true, indices, isTransparent, isAdditive);
             triangles += indexCount / 3;
             offset += headerSize + indexBytes;
         }
