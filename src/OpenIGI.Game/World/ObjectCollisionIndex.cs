@@ -597,6 +597,79 @@ public sealed class ObjectCollisionIndex
     public bool TryCast(Vector3d origin, Vector3d end, out WorldRayHit hit) =>
         CastIndexed(_entries, _defaultGrid, _dynamicDefault, origin, end, out hit);
 
+    /// <summary>Collects every live solid triangle of the default collision level that touches a box.</summary>
+    /// <param name="min">The box's low corner, in world units.</param>
+    /// <param name="max">The box's high corner.</param>
+    /// <param name="into">Receives the triangles; not cleared first.</param>
+    /// <remarks>
+    /// The same geometry and the same live filters as <see cref="TryCast"/> -- collected pickups,
+    /// destroyed objects, passable owners and dormant containers are absent, doors are where they are
+    /// now, and portal faces are not solid -- so a rigid body rests on exactly what a round would hit.
+    /// </remarks>
+    public void CollectTriangles(Vector3d min, Vector3d max, List<CollisionTriangle> into)
+    {
+        ArgumentNullException.ThrowIfNull(into);
+
+        foreach (Entry entry in _dynamicDefault)
+        {
+            CollectEntry(entry, min, max, into);
+        }
+
+        foreach (int index in _defaultGrid.Oversized)
+        {
+            Entry entry = _entries[index];
+            if (!entry.IsDynamic)
+            {
+                CollectEntry(entry, min, max, into);
+            }
+        }
+
+        _defaultGrid.BeginQuery();
+        int x0 = StaticGrid.CellOf(min.X), x1 = StaticGrid.CellOf(max.X);
+        int y0 = StaticGrid.CellOf(min.Y), y1 = StaticGrid.CellOf(max.Y);
+        for (int x = x0; x <= x1; x++)
+        {
+            for (int y = y0; y <= y1; y++)
+            {
+                if (!_defaultGrid.TryGetCell(x, y, out int[] indices))
+                {
+                    continue;
+                }
+
+                foreach (int index in indices)
+                {
+                    Entry entry = _entries[index];
+                    if (!_defaultGrid.AlreadyVisited(index) && !entry.IsDynamic)
+                    {
+                        CollectEntry(entry, min, max, into);
+                    }
+                }
+            }
+        }
+    }
+
+    private void CollectEntry(Entry entry, Vector3d min, Vector3d max, List<CollisionTriangle> into)
+    {
+        if (GenericPickups?.IsCollected(entry.Owner) == true
+            || Destructibles?.IsDestroyed(entry.Placement) == true
+            || _passable.Contains(entry.Owner)
+            || !ConditionalContainerGate.IsTaskActive(entry.Owner))
+        {
+            return;
+        }
+
+        // Sphere against box: the nearest point of the box to the centre, within the radius.
+        double dx = Math.Max(min.X - entry.Centre.X, Math.Max(0.0, entry.Centre.X - max.X));
+        double dy = Math.Max(min.Y - entry.Centre.Y, Math.Max(0.0, entry.Centre.Y - max.Y));
+        double dz = Math.Max(min.Z - entry.Centre.Z, Math.Max(0.0, entry.Centre.Z - max.Z));
+        if ((dx * dx) + (dy * dy) + (dz * dz) > entry.Radius * entry.Radius)
+        {
+            return;
+        }
+
+        entry.CollectTriangles(min, max, into);
+    }
+
     /// <summary>Casts against live world collision while excluding one task's attached placements.</summary>
     /// <remarks>
     /// A moving vehicle starts its obstacle probe at its front edge. Excluding the vehicle owner keeps
@@ -1581,6 +1654,23 @@ public sealed class ObjectCollisionIndex
             }
 
             return (min, max);
+        }
+
+        public void CollectTriangles(Vector3d min, Vector3d max, List<CollisionTriangle> into)
+        {
+            foreach (MefCollisionFace face in Mesh.Faces)
+            {
+                if (Mesh.IsPortal(face.Material))
+                {
+                    continue;
+                }
+
+                CollisionTriangle triangle = new(_vertices[face.I0], _vertices[face.I1], _vertices[face.I2]);
+                if (triangle.Overlaps(min, max))
+                {
+                    into.Add(triangle);
+                }
+            }
         }
 
         public bool TryCast(

@@ -15,6 +15,10 @@ public sealed class GunPickup
     private DroppedGunState? _previousMotion;
     private DroppedGunCollider? _collider;
     private DroppedGunMeshBody? _body;
+    private RigidMeshBody? _rigid;
+    private RetailGunDrop? _retail;
+    private bool _realistic;
+    private (Vector3d Position, double Speed)? _impact;
     private Vector3d _drawPosition;
     private Matrix3f _drawOrientation;
 
@@ -68,18 +72,39 @@ public sealed class GunPickup
     {
         ArgumentNullException.ThrowIfNull(collider);
         _collider = collider;
-        if (_motion is { } motion)
+        if (_motion is { } motion && _realistic)
         {
             _body = collider.CreateRigidBody(motion.Position, motion.Orientation, motion.Velocity, InitialSpin());
         }
     }
 
-    internal void StartFalling()
+    /// <summary>Gets the weapon's real mass, from its retail record, in kilograms.</summary>
+    /// <remarks>A record that names none weighs what a typical rifle does.</remarks>
+    public double MassKilograms => Weapon.MassInGrams > 0 ? Weapon.MassInGrams / 1000.0 : 3.0;
+
+    /// <summary>Starts the fall.</summary>
+    /// <param name="realistic">Whether to fall as a rigid body; otherwise exactly as the original's pickup.</param>
+    /// <param name="velocity">What the gun leaves the hand with, units per tick; the original ignores it.</param>
+    internal void StartFalling(bool realistic, Vector3d velocity)
     {
-        _motion = new DroppedGunState(_position, _orientation, default);
+        _realistic = realistic;
+        Matrix3f orientation = realistic ? _orientation : RetailGunDrop.LyingOrientation(_orientation);
+        _motion = new DroppedGunState(_position, orientation, realistic ? velocity : default);
         _previousMotion = _motion;
         _drawPosition = _position;
-        _drawOrientation = _orientation;
+        _drawOrientation = orientation;
+    }
+
+    /// <summary>Takes the landing this pickup made on its last tick, if it made one.</summary>
+    /// <param name="position">Where it struck, in world units.</param>
+    /// <param name="speed">How fast it closed, units per tick.</param>
+    /// <returns><see langword="true"/> once per landing.</returns>
+    internal bool TryTakeImpact(out Vector3d position, out double speed)
+    {
+        (position, speed) = _impact ?? default;
+        bool any = _impact is not null;
+        _impact = null;
+        return any;
     }
 
     internal void Tick(RagdollWorld world)
@@ -87,6 +112,41 @@ public sealed class GunPickup
         if (_motion is { } motion && !motion.IsResting)
         {
             _previousMotion = motion;
+            if (!_realistic)
+            {
+                _retail ??= new RetailGunDrop(
+                    motion.Position,
+                    RetailGunDrop.RestHeightBelow(motion.Position, world.Trace ?? world.Cast));
+                double falling = _retail.FallSpeed;
+                if (_retail.Tick())
+                {
+                    _impact = (_retail.Position, Math.Abs(falling));
+                }
+
+                _motion = new DroppedGunState(_retail.Position, motion.Orientation, default, _retail.IsResting);
+                return;
+            }
+
+            if (world.Triangles is { } triangles && _collider?.Hull is { } hull)
+            {
+                // The gun's real mass and the inertia of its own mesh, against the real world triangles.
+                _rigid ??= new RigidMeshBody(
+                    hull,
+                    MassKilograms,
+                    motion.Position,
+                    motion.Orientation,
+                    motion.Velocity,
+                    InitialSpin() * 0.5);
+                _rigid.Step(triangles);
+                if (_rigid.LastImpactSpeed > 0.0)
+                {
+                    _impact = (_rigid.LastImpactPosition, _rigid.LastImpactSpeed);
+                }
+
+                _motion = new DroppedGunState(_rigid.Position, _rigid.Orientation, _rigid.Velocity, _rigid.IsAtRest);
+                return;
+            }
+
             if (_body is { } body)
             {
                 // Every rendered weapon contact point is swept through terrain and world surfaces.  No
@@ -159,6 +219,7 @@ public sealed class GunPickupRegistry
     public const double VerticalTolerance = 4096.0;
 
     private readonly List<GunPickup> _items = [];
+    private readonly List<GunPickupImpact> _impacts = [];
     private readonly AmmoTypeRegistry _ammunition;
 
     private GunPickupRegistry(AmmoTypeRegistry ammunition) => _ammunition = ammunition;
@@ -216,13 +277,18 @@ public sealed class GunPickupRegistry
     /// Gun's drop handler calls <c>GunPickup_Create</c> at <c>0x46C980</c>, passing the gun's weapon id
     /// and world transform. Runtime drops deliberately use the same type and range test as authored
     /// <c>GunPickup</c> tasks; only their task owner is absent.</remarks>
-    public GunPickup Spawn(Vector3d position, Matrix3f orientation, WeaponType weapon)
+    /// <param name="position">The hand position, in world units.</param>
+    /// <param name="orientation">The hand orientation.</param>
+    /// <param name="weapon">The weapon.</param>
+    /// <param name="velocity">What the gun leaves the hand with, units per tick.</param>
+    /// <returns>The pickup.</returns>
+    public GunPickup Spawn(Vector3d position, Matrix3f orientation, WeaponType weapon, Vector3d velocity = default)
     {
         ArgumentNullException.ThrowIfNull(weapon);
 
         bool hasAmmo = _ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
         GunPickup pickup = new(null, position, orientation, weapon, hasAmmo ? ammo : null);
-        pickup.StartFalling();
+        pickup.StartFalling(GameplayCVars.RealisticDrops.Value, velocity);
         _items.Add(pickup);
         return pickup;
     }
@@ -231,14 +297,22 @@ public sealed class GunPickupRegistry
     public void Tick(RagdollWorld world)
     {
         ArgumentNullException.ThrowIfNull(world);
+        _impacts.Clear();
         foreach (GunPickup pickup in _items)
         {
             if (!pickup.IsCollected)
             {
                 pickup.Tick(world);
+                if (pickup.TryTakeImpact(out Vector3d at, out double speed))
+                {
+                    _impacts.Add(new GunPickupImpact(pickup, at, speed));
+                }
             }
         }
     }
+
+    /// <summary>Gets the landings dropped guns made on the last tick, for their sound.</summary>
+    public IReadOnlyList<GunPickupImpact> Impacts => _impacts;
 
     /// <summary>Tests the exact horizontal/vertical split used by retail.</summary>
     public static bool IsWithinRange(Vector3d player, Vector3d pickup)
@@ -294,3 +368,9 @@ public sealed class GunPickupRegistry
             ? Matrix3f.FromEngineEulerAngles(angles.X, angles.Y, angles.Z)
             : Matrix3f.Identity;
 }
+
+/// <summary>One landing a dropped gun made.</summary>
+/// <param name="Pickup">The gun.</param>
+/// <param name="Position">Where it struck, in world units.</param>
+/// <param name="Speed">How fast it closed with the surface, units per tick.</param>
+public readonly record struct GunPickupImpact(GunPickup Pickup, Vector3d Position, double Speed);

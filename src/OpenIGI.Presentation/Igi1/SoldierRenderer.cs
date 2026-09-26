@@ -156,7 +156,9 @@ public sealed class SoldierRenderer : IDisposable
     private readonly Dictionary<SoldierView, SoldierView> _npcTargetByBrain = [];
     private WorldInteractionRegistry? _interactions;
     private Action<int>? _aiTaskActivator;
-    private Action<WeaponType, Vector3d, Matrix3f>? _weaponDrop;
+    private Action<WeaponType, Vector3d, Matrix3f, Vector3d>? _weaponDrop;
+    private CollisionTriangleGather? _dropTriangles;
+    private WorldRayCast? _dropTrace;
     private Action<string, Vector3d, bool>? _scriptSound;
     private Action<int, bool, WeaponType?, Vector3d>? _weaponSound;
     private GunPickupRegistry? _droppedWeaponPickups;
@@ -211,7 +213,17 @@ public sealed class SoldierRenderer : IDisposable
     public void SetDeathSound(Action<Vector3d>? report) => _deathSound = report;
 
     /// <summary>Publishes a gun when a dead soldier's weapon becomes a world pickup.</summary>
-    public void SetWeaponDropSink(Action<WeaponType, Vector3d, Matrix3f>? report) => _weaponDrop = report;
+    public void SetWeaponDropSink(Action<WeaponType, Vector3d, Matrix3f, Vector3d>? report) => _weaponDrop = report;
+
+    /// <summary>Gives dropped weapons the world they collide with.</summary>
+    /// <param name="triangles">The solid triangles near a box, terrain included, for the realistic body.</param>
+    /// <param name="trace">A cast against everything solid, terrain included, for the original's drop probe.</param>
+    public void SetDroppedWeaponWorld(CollisionTriangleGather? triangles, WorldRayCast? trace)
+    {
+        _dropTriangles = triangles;
+        _dropTrace = trace;
+        _ragdollWorld = null;
+    }
 
     /// <summary>Gives dropped weapons a collision world after they leave a dead soldier.</summary>
     public void UseDroppedWeaponPickups(GunPickupRegistry? pickups) => _droppedWeaponPickups = pickups;
@@ -2698,7 +2710,11 @@ public sealed class SoldierRenderer : IDisposable
         AiSoldier.GroundQuery? ground = MakeGroundQuery();
         _ragdollWorld = new RagdollWorld(
             _cast,
-            ground is null ? null : (double x, double y, double z, out double groundZ) => ground(x, y, z, out groundZ));
+            ground is null ? null : (double x, double y, double z, out double groundZ) => ground(x, y, z, out groundZ))
+        {
+            Triangles = _dropTriangles,
+            Trace = _dropTrace,
+        };
         return _ragdollWorld;
     }
 
@@ -5990,9 +6006,32 @@ public sealed class SoldierRenderer : IDisposable
             if (droppedWeapon is { } dropped)
             {
                 member.Weapon = null;
-                _weaponDrop?.Invoke(dropped, dropPosition, dropRotation);
+                _weaponDrop?.Invoke(
+                    dropped,
+                    dropPosition,
+                    dropRotation,
+                    DropVelocity(SoldierDeathFall.RotateAboutZ(new Vector3d(carried.X, carried.Y, carried.Z), facing), travel));
             }
         }
+    }
+
+    /// <summary>What a gun leaves a dying hand with: the body's own motion plus a share of the round's knock.</summary>
+    /// <param name="carried">The body's motion, units per tick, in world space.</param>
+    /// <param name="travel">The killing round's line.</param>
+    /// <returns>The launch velocity, units per tick.</returns>
+    /// <remarks>
+    /// The grip opens as the round lands, so the gun keeps what the body was doing and takes a small
+    /// push along the shot -- sixty centimetres a second, a sideways stumble rather than a throw -- with a
+    /// little lift from the arm flinching. Only the realistic drop reads it; the original's ignores it.
+    /// </remarks>
+    internal static Vector3d DropVelocity(Vector3d carried, Vector3d travel)
+    {
+        const double knock = 0.6 * 4096.0 / 30.0;
+        const double lift = 0.3 * 4096.0 / 30.0;
+        Vector3d flat = new(travel.X, travel.Y, 0.0);
+        double length = flat.Length;
+        Vector3d push = length > 1e-6 ? flat * (knock / length) : default;
+        return carried + push + new Vector3d(0.0, 0.0, lift);
     }
 
     /// <summary>Gets a delegate that offers rounds to these soldiers.</summary>

@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Physics;
 
@@ -15,6 +16,7 @@ public sealed class DroppedGunCollider
 {
     private readonly Vector3f[] _vertices;
     private readonly Vector3f[] _contactVertices;
+    private ConvexHull? _hull;
 
     /// <summary>Copies the rendered weapon hierarchy's vertices as a pickup collider.</summary>
     public DroppedGunCollider(IEnumerable<Vector3f> vertices)
@@ -28,6 +30,11 @@ public sealed class DroppedGunCollider
 
         _contactVertices = BuildSupportVertices(_vertices);
     }
+
+    /// <summary>Gets the convex hull of the rendered vertices, the realistic body's collider.</summary>
+    /// <remarks>Built on first use and kept, so only a drop that simulates realistically pays for it.</remarks>
+    public ConvexHull? Hull => _hull ??= ConvexHull.Build(
+        [.. _vertices.Select(vertex => new Vector3d(vertex.X, vertex.Y, vertex.Z))]);
 
     /// <summary>Gets the number of source vertices in this collider.</summary>
     public int VertexCount => _vertices.Length;
@@ -411,6 +418,113 @@ public sealed class DroppedGunMeshBody
         long cellY = (long)Math.Floor(y / GroundMemoCellUnits);
         long cellZ = (long)Math.Floor(z / GroundMemoCellUnits);
         return ((cellX & 0x1FFFFF) << 42) | ((cellY & 0x1FFFFF) << 21) | (cellZ & 0x1FFFFF);
+    }
+}
+
+/// <summary>A gun falling the way the original's <c>GunPickup</c> falls: straight down, bouncing at half speed.</summary>
+/// <remarks>
+/// <para>
+/// <c>GunPickup_Create</c> (<c>0x46C980</c>) lays the gun on its side -- it keeps only the hand's heading
+/// from the <c>0x4B3C50</c> decomposition and sets the other two angles to 0 and 90 degrees -- and traces
+/// from half a metre above the drop point to fifty metres below it. The gun comes to rest ten centimetres
+/// (409.6 units) above whatever that trace meets, or at the drop height when it meets nothing.
+/// </para>
+/// <para>
+/// <c>GunPickup</c>'s tick (<c>0x46CEA0</c>) then moves only Z. Below the rest height it is put back on it
+/// and its speed reversed and halved, with one of <c>weapondrop_01</c>/<c>_02</c>. It keeps moving while
+/// above the rest height or faster than 409.6 units a tick, and otherwise stops.
+/// </para>
+/// </remarks>
+public sealed class RetailGunDrop
+{
+    /// <summary>How far above the traced surface the gun comes to rest: the 409.6 <c>0x46C980</c> adds.</summary>
+    public const double RestAboveSurface = 409.6;
+
+    /// <summary>How far above the drop point the ground trace starts: 2048 units, half a metre.</summary>
+    public const double TraceAbove = 2048.0;
+
+    /// <summary>How far below the drop point the ground trace reaches: 204800 units, fifty metres.</summary>
+    public const double TraceBelow = 204800.0;
+
+    /// <summary>The speed under which a gun at its rest height stops: 409.6 units a tick.</summary>
+    public const double StopSpeed = 409.6;
+
+    /// <summary>Starts a retail drop.</summary>
+    /// <param name="position">The hand position, in world units.</param>
+    /// <param name="restHeight">Where the gun comes to rest.</param>
+    public RetailGunDrop(Vector3d position, double restHeight)
+    {
+        Position = position;
+        RestHeight = restHeight;
+    }
+
+    /// <summary>Gets the gun's position.</summary>
+    public Vector3d Position { get; private set; }
+
+    /// <summary>Gets the height it comes to rest at.</summary>
+    public double RestHeight { get; }
+
+    /// <summary>Gets the falling speed: positive is downward, units per tick.</summary>
+    public double FallSpeed { get; private set; }
+
+    /// <summary>Gets whether it has stopped.</summary>
+    public bool IsResting { get; private set; }
+
+    /// <summary>The orientation the original gives a dropped gun: on its side, the hand's heading kept.</summary>
+    /// <param name="hand">The hand's world orientation.</param>
+    /// <returns><c>Z(heading) · Y(90°)</c>.</returns>
+    /// <remarks>
+    /// <c>0x4B3C50</c> wraps every angle into <c>[0, 2π)</c>, so <c>0x46C980</c>'s tests always choose 0 for
+    /// the first and +90 degrees for the second; only <c>atan2(M21, M11)</c>, the heading, survives.
+    /// </remarks>
+    public static Matrix3f LyingOrientation(Matrix3f hand)
+    {
+        float heading = MathF.Atan2(hand.M21, hand.M11);
+        return Matrix3f.FromEngineEulerAngles(0f, MathF.PI / 2f, heading);
+    }
+
+    /// <summary>Finds where a gun dropped at a point comes to rest.</summary>
+    /// <param name="position">The drop point.</param>
+    /// <param name="trace">A cast against everything solid; <see langword="null"/> when there is none.</param>
+    /// <returns>The rest height.</returns>
+    public static double RestHeightBelow(Vector3d position, WorldRayCast? trace)
+    {
+        Vector3d from = new(position.X, position.Y, position.Z + TraceAbove);
+        Vector3d to = new(position.X, position.Y, position.Z - TraceBelow);
+        return trace is not null && trace(from, to, out WorldRayHit hit)
+            ? hit.Position.Z + RestAboveSurface
+            : position.Z;
+    }
+
+    /// <summary>Advances one tick, exactly as <c>0x46CEA0</c> does.</summary>
+    /// <returns><see langword="true"/> when the gun bounced this tick, which is when the original plays a drop sound.</returns>
+    public bool Tick()
+    {
+        if (IsResting)
+        {
+            return false;
+        }
+
+        bool bounced = false;
+        if (Position.Z < RestHeight)
+        {
+            Position = new Vector3d(Position.X, Position.Y, RestHeight);
+            FallSpeed *= -0.5;
+            bounced = true;
+        }
+
+        if (Position.Z > RestHeight || Math.Abs(FallSpeed) >= StopSpeed)
+        {
+            Position = new Vector3d(Position.X, Position.Y, Position.Z - FallSpeed);
+            FallSpeed += DroppedGunPhysics.GravityPerTick;
+        }
+        else
+        {
+            FallSpeed = 0.0;
+            IsResting = true;
+        }
+
+        return bounced;
     }
 }
 

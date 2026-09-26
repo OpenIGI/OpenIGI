@@ -8,7 +8,7 @@ using Xunit;
 
 namespace OpenIGI.Engine.Tests.Audio;
 
-/// <summary>Checks the shared retail bullet and human-hit definitions through Level 1–5 sound mounts.</summary>
+/// <summary>Checks the shared retail bullet, human-hit and weapon-drop definitions through Level 1–5 sound mounts.</summary>
 /// <remarks>Skipped when <c>IGI_GAME_PATH</c> is unset.</remarks>
 public sealed class RetailBulletSoundTests
 {
@@ -43,6 +43,13 @@ public sealed class RetailBulletSoundTests
         "player_hit_4",
     ];
 
+    // GunPickup's two landing clatters, chosen by a coin toss at every bounce (0x46CEA0).
+    private static readonly string[] WeaponDropSounds =
+    [
+        "weapondrop_01",
+        "weapondrop_02",
+    ];
+
     [RequiresGameDataTheory]
     [InlineData(1)]
     [InlineData(2)]
@@ -67,7 +74,7 @@ public sealed class RetailBulletSoundTests
         Assert.True(bank.MountDirectory("LOCAL:common/sounds") > 0);
         Assert.True(bank.MountDirectory("MISSION:sounds") > 0);
 
-        foreach (string name in SurfaceBulletSounds.Concat(HumanHitSounds))
+        foreach (string name in SurfaceBulletSounds.Concat(HumanHitSounds).Concat(WeaponDropSounds))
         {
             Assert.True(definitions.TryResolve(name, out SoundDefinition? definition),
                 $"Level {level}: retail definition '{name}' is absent.");

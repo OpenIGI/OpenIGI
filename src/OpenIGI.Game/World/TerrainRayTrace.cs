@@ -152,23 +152,7 @@ public static class TerrainRayTrace
         ref bool found)
     {
         TerrainCommandBlock block = leaf.Block;
-        Vector3d[] vertices = new Vector3d[block.VertexCount];
-        for (int i = 0; i < vertices.Length; i++)
-        {
-            TerrainPackedVertex packed = block.Vertex(i);
-            (int x, int y) = TerrainOrientation.Transform(leaf.Cursor.Orientation, packed.X, packed.Y);
-            double worldX = leaf.Origin.X + (x * leaf.UnitScale);
-            double worldY = leaf.Origin.Y + (y * leaf.UnitScale);
-            double worldZ = leaf.Origin.Z + (packed.Z * leaf.UnitScale);
-
-            // 0x4C9020 adds the bound heightmap's sample exactly as the ground query does.
-            if (leaf.Heights.IsBound)
-            {
-                worldZ += leaf.Heights.Sample(worldX, worldY);
-            }
-
-            vertices[i] = new Vector3d(worldX, worldY, worldZ);
-        }
+        Vector3d[] vertices = LeafVertices(leaf);
 
         for (int i = 0; i < block.TriangleCount; i++)
         {
@@ -208,6 +192,79 @@ public static class TerrainRayTrace
                 new Vector3f((float)normal.X, (float)normal.Y, (float)normal.Z),
                 length * fraction);
         }
+    }
+
+    /// <summary>Collects every terrain triangle that touches a box.</summary>
+    /// <param name="terrain">The level's terrain.</param>
+    /// <param name="min">The box's low corner, in world units.</param>
+    /// <param name="max">The box's high corner.</param>
+    /// <param name="into">Receives the triangles; not cleared first.</param>
+    /// <remarks>
+    /// The same leaves and the same vertices -- heightmap sample included -- that <see cref="TryTrace"/>
+    /// intersects, so a body resting on the ground rests on the surface a round would strike.
+    /// </remarks>
+    public static void CollectTriangles(TerrainData terrain, Vector3d min, Vector3d max, List<CollisionTriangle> into)
+    {
+        ArgumentNullException.ThrowIfNull(terrain);
+        ArgumentNullException.ThrowIfNull(into);
+
+        HashSet<(int Node, int X, int Y, int Z)> visited = [];
+        for (int cx = Cell(min.X); cx <= Cell(max.X); cx++)
+        {
+            for (int cy = Cell(min.Y); cy <= Cell(max.Y); cy++)
+            {
+                for (int cz = Cell(min.Z); cz <= Cell(max.Z); cz++)
+                {
+                    Vector3i point = new(CellCentre(cx), CellCentre(cy), CellCentre(cz));
+                    if (!TerrainLeafQuery.TryFindLeaf(terrain, point, out TerrainLeaf leaf)
+                        || !visited.Add((leaf.Cursor.NodeIndex, leaf.Origin.X, leaf.Origin.Y, leaf.Origin.Z)))
+                    {
+                        continue;
+                    }
+
+                    TerrainCommandBlock block = leaf.Block;
+                    Vector3d[] vertices = LeafVertices(leaf);
+                    for (int i = 0; i < block.TriangleCount; i++)
+                    {
+                        TerrainTriangle t = block.Triangle(i);
+                        if (t.I0 >= vertices.Length || t.I1 >= vertices.Length || t.I2 >= vertices.Length)
+                        {
+                            continue;
+                        }
+
+                        CollisionTriangle triangle = new(vertices[t.I0], vertices[t.I1], vertices[t.I2]);
+                        if (triangle.Overlaps(min, max))
+                        {
+                            into.Add(triangle);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static Vector3d[] LeafVertices(in TerrainLeaf leaf)
+    {
+        TerrainCommandBlock block = leaf.Block;
+        Vector3d[] vertices = new Vector3d[block.VertexCount];
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            TerrainPackedVertex packed = block.Vertex(i);
+            (int x, int y) = TerrainOrientation.Transform(leaf.Cursor.Orientation, packed.X, packed.Y);
+            double worldX = leaf.Origin.X + (x * leaf.UnitScale);
+            double worldY = leaf.Origin.Y + (y * leaf.UnitScale);
+            double worldZ = leaf.Origin.Z + (packed.Z * leaf.UnitScale);
+
+            // 0x4C9020 adds the bound heightmap's sample exactly as the ground query does.
+            if (leaf.Heights.IsBound)
+            {
+                worldZ += leaf.Heights.Sample(worldX, worldY);
+            }
+
+            vertices[i] = new Vector3d(worldX, worldY, worldZ);
+        }
+
+        return vertices;
     }
 
     private static int Cell(double coordinate) => (int)Math.Floor(coordinate / LeafSize);

@@ -62,6 +62,35 @@ public static class GameplayCVars
         CVarOptions.Archive,
         "Simulate the dead instead of playing the original's canned death animations.");
 
+    /// <summary>Whether a dropped weapon falls as a real rigid body or the way the original drops it.</summary>
+    /// <remarks>
+    /// <para>
+    /// Off in the Vanilla preset, which drops a gun exactly as <c>GunPickup</c> does
+    /// (<c>0x46C980</c>/<c>0x46CEA0</c>): laid on its side, falling straight down onto the surface
+    /// under it and bouncing at half speed until it settles.
+    /// </para>
+    /// <para>
+    /// On in every other preset: the gun leaves the hand with the body's motion and the round's knock,
+    /// and falls as a rigid body with its real mass, the inertia of its own mesh and contacts against
+    /// the real world triangles -- tumbling, bouncing, sliding off slopes and lying across ledges.
+    /// </para>
+    /// <para>
+    /// Where the gun ends up decides where the player picks it up, so this is a second exception to
+    /// the rule above, alongside <see cref="Ballistics"/>. It is safe for the same reason: the Vanilla
+    /// preset forces it off, and the regression gate runs Vanilla.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar RealisticDrops = Rendering.Presets.GraphicsPresetRegistry.Default.Define(
+        CVar.Bool(
+            "g_realistic_drops",
+            true,
+            CVarOptions.Archive,
+            "Dropped weapons fall as real rigid bodies. Off drops them the way the original does."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
     /// <summary>How hard a round throws a body it kills.</summary>
     /// <remarks>
     /// <para>
