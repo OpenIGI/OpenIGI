@@ -53,8 +53,18 @@ public sealed partial class GraphicsDevice
     private TextureHandle _screenIndirect = TextureHandle.None;
     private float _screenIndirectStrength;
     private bool _screenIndirectFullResolution;
-    private RealtimeProbeField? _realtimeProbe;
+    private ProbeField? _realtimeProbe;
+    private ProbeField? _bakedProbe;
     private IrradianceVolumeSettings _volumeSettings = IrradianceVolumeSettings.Off;
+
+    /// <summary>Gets the probe field the shading reads this frame, if any.</summary>
+    /// <remarks>
+    /// The radiance cache when it is offered, the baked field otherwise, as on the Vulkan device. The
+    /// cache describes its own grid -- an origin, a spacing and a count of its own -- so everything the
+    /// shading is told about the field comes from whichever this is, or every lookup lands in the wrong
+    /// cell.
+    /// </remarks>
+    private ProbeField? ActiveProbeField => _realtimeProbe ?? _bakedProbe;
 
     /// <summary>Gets whether a device can run the whole of the game's GI stack.</summary>
     /// <param name="device">The device.</param>
@@ -119,7 +129,7 @@ public sealed partial class GraphicsDevice
             return;
         }
 
-        _realtimeProbe = new RealtimeProbeField(red, green, blue, distance, origin, spacing, countX, countY, countZ);
+        _realtimeProbe = new ProbeField(red, green, blue, distance, origin, spacing, countX, countY, countZ);
     }
 
     /// <inheritdoc/>
@@ -127,6 +137,97 @@ public sealed partial class GraphicsDevice
     {
         ThrowIfDisposed();
         _realtimeProbe = null;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// Uploaded into four volumes of its own, one per irradiance channel and one for the distance moments,
+    /// in the layout the radiance cache writes: the shading reads both through the same four slots, and
+    /// cannot tell them apart. A new field gets new volumes and the old ones are retired with the frames
+    /// still reading them, so nothing in flight has its field rewritten underneath it.
+    /// </para>
+    /// <para>
+    /// Half floats, as the cache's are. The coefficients need nothing more, and the distance moments are
+    /// bounded by the bake's longest ray, thirty metres, whose square is far inside the range; a full
+    /// float volume is also one a browser may not be able to filter.
+    /// </para>
+    /// </remarks>
+    public void SetIrradianceVolume(IrradianceVolume? volume)
+    {
+        ThrowIfDisposed();
+        ReleaseBakedProbe();
+
+        if (volume is null || volume.ProbeCount == 0)
+        {
+            return;
+        }
+
+        int count = volume.ProbeCount;
+        Half[] red = new Half[count * 4];
+        Half[] green = new Half[count * 4];
+        Half[] blue = new Half[count * 4];
+        Half[] distance = new Half[count * 4];
+
+        ReadOnlySpan<float> coefficients = volume.Coefficients;
+        ReadOnlySpan<float> moments = volume.Distances;
+
+        for (int probe = 0; probe < count; probe++)
+        {
+            int from = probe * IrradianceVolume.CoefficientsPerProbe;
+            int to = probe * 4;
+
+            for (int i = 0; i < 4; i++)
+            {
+                red[to + i] = (Half)coefficients[from + i];
+                green[to + i] = (Half)coefficients[from + 4 + i];
+                blue[to + i] = (Half)coefficients[from + 8 + i];
+            }
+
+            distance[to] = (Half)moments[probe * 2];
+            distance[to + 1] = (Half)moments[(probe * 2) + 1];
+        }
+
+        _bakedProbe = new ProbeField(
+            BakedVolume(volume, red, "probe.red"),
+            BakedVolume(volume, green, "probe.green"),
+            BakedVolume(volume, blue, "probe.blue"),
+            BakedVolume(volume, distance, "probe.distance"),
+            volume.Origin,
+            volume.Spacing,
+            volume.CountX,
+            volume.CountY,
+            volume.CountZ);
+    }
+
+    /// <summary>One of the baked field's volumes, made and filled.</summary>
+    private TextureHandle BakedVolume(IrradianceVolume volume, ReadOnlySpan<Half> texels, string name)
+    {
+        TextureHandle handle = CreateVolumeTexture(
+            volume.CountX,
+            volume.CountY,
+            volume.CountZ,
+            VolumeFormat.Rgba16F,
+            name,
+            shaderWritten: false);
+
+        UpdateVolumeTexture(handle, texels);
+        return handle;
+    }
+
+    /// <summary>Lets the baked field's volumes go with the frames still reading them.</summary>
+    private void ReleaseBakedProbe()
+    {
+        if (_bakedProbe is not { } field)
+        {
+            return;
+        }
+
+        _bakedProbe = null;
+        DestroyTexture(field.Red);
+        DestroyTexture(field.Green);
+        DestroyTexture(field.Blue);
+        DestroyTexture(field.Distance);
     }
 
     /// <inheritdoc/>
@@ -139,7 +240,7 @@ public sealed partial class GraphicsDevice
     /// <summary>What the shading is told about the GI this frame, over what it is told of everything else.</summary>
     private DeferredLightingState WithGlobalIllumination(in DeferredLightingState state)
     {
-        RealtimeProbeField? field = _realtimeProbe;
+        ProbeField? field = ActiveProbeField;
         bool screen = _screenIndirectStrength > 0f && _screenIndirect.IsValid;
 
         return state with
@@ -166,7 +267,7 @@ public sealed partial class GraphicsDevice
             return;
         }
 
-        RealtimeProbeField? field = _realtimeProbe;
+        ProbeField? field = ActiveProbeField;
 
         shading.BindIndirect(
             _screenIndirectStrength > 0f ? ViewOf(_screenIndirect) : null,
@@ -219,8 +320,8 @@ public sealed partial class GraphicsDevice
         return handle;
     }
 
-    /// <summary>The radiance cache as the game handed it over: four volumes and the grid they describe.</summary>
-    private readonly record struct RealtimeProbeField(
+    /// <summary>A probe field: four volumes and the grid they describe, the radiance cache's or the bake's.</summary>
+    private readonly record struct ProbeField(
         TextureHandle Red,
         TextureHandle Green,
         TextureHandle Blue,
