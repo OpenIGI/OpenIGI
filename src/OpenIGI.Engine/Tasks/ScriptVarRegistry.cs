@@ -137,8 +137,31 @@ public sealed class ScriptVarRegistry
         ArgumentNullException.ThrowIfNull(variable);
         ArgumentException.ThrowIfNullOrEmpty(field);
 
-        string symbol = $"{task.Name}.{field}";
+        return BindSymbol(task, $"{task.Name}.{field}", variable);
+    }
 
+    /// <summary>Binds a name that is not prefixed with its owner's, such as <c>Key0.isPressed</c>.</summary>
+    /// <param name="owner">The task whose unexport removes the binding.</param>
+    /// <param name="symbol">The full script name.</param>
+    /// <param name="variable">The storage binding.</param>
+    /// <returns>The symbol name that was bound.</returns>
+    /// <remarks>
+    /// Some export handlers publish globals beside their own fields: LevelFlow's (<c>0x488F90</c>) binds
+    /// <c>Key0.isPressed</c> to <c>Key9.isPressed</c>, and its unexport (<c>0x4890F0</c>) removes them.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="symbol"/> is empty.</exception>
+    public string BindGlobal(GameTask owner, string symbol, IQvmVariable variable)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentNullException.ThrowIfNull(variable);
+        ArgumentException.ThrowIfNullOrEmpty(symbol);
+
+        return BindSymbol(owner, symbol, variable);
+    }
+
+    private string BindSymbol(GameTask task, string symbol, IQvmVariable variable)
+    {
         // A second export of the same task would otherwise throw. The original guards against that with
         // a per-task "already exported" byte; this keeps the registry itself idempotent as well.
         _symbols.Unregister(symbol);
@@ -228,7 +251,25 @@ public sealed class ScriptVarRegistry
         ArgumentNullException.ThrowIfNull(task);
         ArgumentException.ThrowIfNullOrEmpty(field);
 
-        string symbol = $"{task.Name}.{field}";
+        return UnbindSymbol(task, $"{task.Name}.{field}");
+    }
+
+    /// <summary>Removes one global binding a task owns.</summary>
+    /// <param name="owner">The task that bound it with <see cref="BindGlobal"/>.</param>
+    /// <param name="symbol">The full script name.</param>
+    /// <returns><see langword="true"/> when that exact name was bound by <paramref name="owner"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="owner"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="symbol"/> is empty.</exception>
+    public bool UnbindGlobal(GameTask owner, string symbol)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentException.ThrowIfNullOrEmpty(symbol);
+
+        return UnbindSymbol(owner, symbol);
+    }
+
+    private bool UnbindSymbol(GameTask task, string symbol)
+    {
         if (!_byTask.TryGetValue(task, out List<string>? names) || !names.Remove(symbol))
         {
             return false;
