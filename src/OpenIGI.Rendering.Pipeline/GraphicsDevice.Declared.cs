@@ -34,8 +34,6 @@ public sealed partial class GraphicsDevice
 
     private static readonly string[] UnimplementedSettingNames =
     [
-        "r_material_detail",
-
         // Depth of field, a pass neither renderer has: every preset leaves it off.
         "r_dof", "r_dof_range", "r_dof_blur",
 
@@ -127,8 +125,8 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Kept for the card capture, which writes it into every page it draws. The shading paths that
-    /// would otherwise read it have not moved onto this device yet.
+    /// Read by the geometry pass, which writes it into the G-buffer's material, and by the card capture,
+    /// which writes it into every page it draws.
     /// </remarks>
     public void SetMaterialOverride(in SurfaceMaterial material) => _material = material;
 
@@ -140,13 +138,41 @@ public sealed partial class GraphicsDevice
     public void SetAlphaHash(float seed) => _alphaHashSeed = seed;
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Recorded against the diffuse texture's own id and looked up whenever a draw names that diffuse, so
+    /// nothing between here and the G-buffer has to carry it: the material group a draw binds is keyed by
+    /// all three textures and built once.
+    /// </remarks>
     public void SetTextureDetail(TextureHandle diffuse, TextureHandle detail)
     {
+        ThrowIfDisposed();
+
+        if (_textures.Find(diffuse) is null)
+        {
+            throw new GraphicsDeviceException($"{diffuse} does not belong to this device.");
+        }
+
+        if (_textures.Find(detail) is not null)
+        {
+            _textureDetail[diffuse.Id] = detail.Id;
+        }
+        else
+        {
+            _textureDetail.Remove(diffuse.Id);
+        }
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Per frame rather than per draw, so it travels in the geometry pass's surface block rather than in
+    /// the push block every draw already fills. Nought folds the whole detail term away in the shader,
+    /// which is what every preset below high asks for. Written with the floor gloss as the next capture
+    /// opens.
+    /// </remarks>
     public void SetMaterialDetail(float strength)
     {
+        ThrowIfDisposed();
+        _materialDetail = MathF.Max(strength, 0f);
     }
 
     /// <inheritdoc/>

@@ -43,10 +43,25 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
         _device = device;
         _retired = retired;
         White = Create(new TextureDescription(1, 1), [new Bgra32(255, 255, 255, 255)], "white");
+        NeutralDetail = Create(
+            new TextureDescription(1, 1) { HoldsData = true },
+            [new Bgra32(128, 128, 128, 255)],
+            "neutral-detail");
     }
 
     /// <summary>Gets the handle of the white texel every unbound slot resolves to.</summary>
     public TextureHandle White { get; }
+
+    /// <summary>Gets the surface-detail texel a diffuse with no detail map of its own is given.</summary>
+    /// <remarks>
+    /// Not white, and the exact values are the point. A flat tangent normal is a half in x and y, since
+    /// the channel stores the range minus one to one biased into nought to one; a roughness multiplier of
+    /// one is stored halved, so a half again; and the alpha holds how dielectric a surface is, so opaque
+    /// leaves the material's own metallic alone. Every term of the detail block folds to what it would
+    /// have been, so no draw needs a flag saying whether it has a map. Stored as data, not colour, so a
+    /// read returns the half it was given rather than a decoded fifth.
+    /// </remarks>
+    public TextureHandle NeutralDetail { get; }
 
     /// <summary>Gets how many textures are loaded, the white one included.</summary>
     public int Count => _textures.Count;
@@ -109,7 +124,7 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
     /// <returns><see langword="true"/> when one was destroyed.</returns>
     public bool Destroy(TextureHandle handle)
     {
-        if (handle.Id == White.Id || !_textures.Remove(handle.Id, out Entry entry))
+        if (handle.Id == White.Id || handle.Id == NeutralDetail.Id || !_textures.Remove(handle.Id, out Entry entry))
         {
             return false;
         }

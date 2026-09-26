@@ -14,6 +14,9 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     private readonly TextureTable _textures;
     private readonly Dictionary<uint, RhiMesh> _meshTable = [];
 
+    // Each diffuse's derived detail map, by texture id; see SetTextureDetail.
+    private readonly Dictionary<uint, uint> _textureDetail = [];
+
     private uint _nextMesh = 1;
     private Matrix4f _projection = Matrix4f.Identity;
     private DepthState _depthState = DepthState.Disabled;
@@ -62,6 +65,14 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
 
         if (_textures.Destroy(texture))
         {
+            // A pairing either side of it goes too: a diffuse whose map is gone is given the neutral one.
+            _textureDetail.Remove(texture.Id);
+
+            foreach (uint diffuse in _textureDetail.Where(pair => pair.Value == texture.Id).Select(pair => pair.Key).ToList())
+            {
+                _textureDetail.Remove(diffuse);
+            }
+
             // Every group that named it goes with it, or the next frame binds a view that is gone.
             _sprites.ForgetTexture(texture.Id);
             _materials.Forget(texture.Id);
@@ -403,11 +414,17 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             indexCount,
             diffuse,
             lightmap,
-            TextureHandle.None,
+            DetailFor(diffuse),
             blend,
             _depthState,
             _cullMode,
             _alphaReference);
+
+    /// <summary>The detail map a diffuse was paired with, or the neutral one where it has none.</summary>
+    private TextureHandle DetailFor(TextureHandle diffuse) =>
+        _textureDetail.TryGetValue(diffuse.Id, out uint detail)
+            ? new TextureHandle(detail)
+            : _textures.NeutralDetail;
 
     /// <summary>Fills the block a forward draw carries, from the scene as it stands.</summary>
     /// <param name="push">Room for the block.</param>

@@ -10,13 +10,9 @@ using OpenIGI.Shaders;
 namespace OpenIGI.Rendering.Pipeline;
 
 /// <summary>
-/// The resource seams that are not the frame's own: blits, occlusion queries, outlines, and the members
-/// of the remaster's stack this device has not taken over — cubes, the fog volume, the probe field.
+/// The resource seams that are not the frame's own: blits, the frame copy, occlusion queries, outlines
+/// and the temporal settings.
 /// </summary>
-/// <remarks>
-/// What has not moved over refuses rather than pretending, because a handle handed back from here would
-/// be one nothing could ever honour.
-/// </remarks>
 public sealed partial class GraphicsDevice
 {
     /// <inheritdoc/>

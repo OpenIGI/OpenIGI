@@ -29,10 +29,10 @@ namespace OpenIGI.Rendering.Pipeline;
 /// lit image against the scene's own depth, as the Vulkan original draws them in its second subpass.
 /// </para>
 /// <para>
-/// What is not here yet is named honestly rather than drawn wrongly. There are no cascades, no ambient
-/// occlusion, no temporal resolve, no bloom and no glazing, and every one of those is either a console
-/// variable this device reports as unimplemented or a pass whose draws are dropped. The alternative —
-/// drawing a window pane as ordinary translucency, say — would be a frame that looks finished and is not.
+/// What a backend cannot run is named honestly rather than drawn wrongly: its console variables are
+/// reported as unimplemented (see <see cref="GraphicsCapabilities.UnimplementedSettings"/>) and its pass
+/// stands down, rather than, say, a window pane being drawn as ordinary translucency -- a frame that
+/// looks finished and is not.
 /// </para>
 /// </remarks>
 public sealed partial class GraphicsDevice
@@ -77,6 +77,8 @@ public sealed partial class GraphicsDevice
     private bool _frameHasPaintedSky;
     private float _floorGloss = 1f;
     private float _writtenFloorGloss = float.NaN;
+    private float _materialDetail;
+    private float _writtenMaterialDetail = float.NaN;
     private float _sceneExposure = 1f;
     private int _grainFrame;
     private Matrix3f _viewToWorld = Matrix3f.Identity;
@@ -335,9 +337,9 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The shading draws every view it knows from the G-buffer it is reading, and the resolve shows the
-    /// code values of those that are masks rather than tone mapping them. A view whose pass has not moved
-    /// onto this path shows what the shading draws for it, which for most of them is black.
+    /// The shading draws every view it knows from the G-buffer it is reading, the temporal resolve draws
+    /// its own, and the final resolve shows the code values of those that are masks rather than tone
+    /// mapping them. A view of a pass the backend cannot run shows what the shading draws without it.
     /// </remarks>
     public void SetDebugView(DebugView view)
     {
@@ -608,10 +610,10 @@ public sealed partial class GraphicsDevice
 
     /// <summary>What the shading is told about this frame.</summary>
     /// <remarks>
-    /// Most of it is switched off, because most of what it describes has not moved onto this path: there
-    /// is no probe field, no screen atlas, no occlusion, no cascades, no wetness and no fog volume. Each
-    /// becomes a line here on the day its pass lands (the fog's is WithFog), and until then the shading reads the value that
-    /// says "not this frame" rather than a stand-in's contents.
+    /// Only the frame's own numbers. Everything else the shading reads -- the cascades, the sky's tables,
+    /// the lamps, the GI, the wetness, the fog -- is bound by name by the pass that makes it, and a pass
+    /// that did not run this frame leaves the value that says "not this frame" rather than a stand-in's
+    /// contents.
     /// </remarks>
     private DeferredLightingState LightingState() => new(
         _unprojection,
@@ -784,6 +786,7 @@ public sealed partial class GraphicsDevice
             "surface"));
 
         _writtenFloorGloss = float.NaN;
+        _writtenMaterialDetail = float.NaN;
         WriteSurfaceBlock();
 
         _surfaceGroup = _device.CreateBindGroup(new RhiBindGroupDescriptor(
@@ -836,9 +839,9 @@ public sealed partial class GraphicsDevice
     /// <remarks>
     /// <para>
     /// Not a block of zeros. The floor gloss is a MULTIPLY on an up-facing surface's roughness, and one
-    /// is its identity: nought makes every floor a mirror. The detail strength is nought on purpose —
-    /// the detail maps it trusts are not bound on this path, and a strength over a stand-in would bend
-    /// every normal in the world by the stand-in's colour.
+    /// is its identity: nought makes every floor a mirror. The detail strength is how far the derived
+    /// detail maps are trusted, and a diffuse without one is given the neutral map, whose every term is
+    /// an identity -- so a strength never bends a surface that has nothing to bend it with.
     /// </para>
     /// <para>
     /// Written only when it changes, because the buffer is one for every frame in flight and the gloss
@@ -847,17 +850,19 @@ public sealed partial class GraphicsDevice
     /// </remarks>
     private void WriteSurfaceBlock()
     {
-        if (_surfaceUniform is not { } uniform || _floorGloss.Equals(_writtenFloorGloss))
+        if (_surfaceUniform is not { } uniform
+            || (_floorGloss.Equals(_writtenFloorGloss) && _materialDetail.Equals(_writtenMaterialDetail)))
         {
             return;
         }
 
         Span<float> block = stackalloc float[SurfaceBlockFloats];
-        block[0] = 0f;
+        block[0] = _materialDetail;
         block[1] = _floorGloss;
 
         _device.WriteBuffer<float>(uniform, 0, block);
         _writtenFloorGloss = _floorGloss;
+        _writtenMaterialDetail = _materialDetail;
     }
 
     /// <summary>How many floats the geometry pass's per-frame surface block holds.</summary>

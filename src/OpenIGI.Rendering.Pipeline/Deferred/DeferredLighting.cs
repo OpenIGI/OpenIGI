@@ -18,11 +18,10 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// backends can run.
 /// </para>
 /// <para>
-/// The shading reads far more than the renderer over the RHI yet produces: a probe field, the
-/// atmosphere's tables, the cascades, the lamps. A slot a shader names has to be filled whether or not
-/// this frame has anything for it, so everything the frame does not supply is bound to a one-texel
-/// stand-in of the right shape, chosen from the module's own description of the slot. As each of those
-/// passes is built over the RHI, it takes its slot by name and the stand-in stops being used for it.
+/// The shading reads a great deal -- the probe field, the atmosphere's tables, the cascades, the lamps --
+/// and not every frame supplies all of it. A slot a shader names has to be filled whether or not this
+/// frame has anything for it, so each pass takes its slot by name, and a slot whose pass did not run is
+/// bound to a one-texel stand-in of the right shape, chosen from the module's own description of it.
 /// </para>
 /// </remarks>
 public sealed class DeferredLighting : IDisposable

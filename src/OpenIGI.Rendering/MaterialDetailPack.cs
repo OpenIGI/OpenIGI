@@ -325,7 +325,10 @@ public sealed class MaterialDetailPack : IDisposable
         {
             (Bgra32[] chain, int levels) = LinearMipChain.Build(packed, width, height);
             TextureHandle map = _device.CreateTexture(
-                new TextureDescription(width, height, levels, TextureFilter.Linear, TextureAddressMode.Repeat),
+                new TextureDescription(width, height, levels, TextureFilter.Linear, TextureAddressMode.Repeat)
+                {
+                    HoldsData = true,
+                },
                 chain);
 
             // Keyed by the diffuse it was made for, so Dispose releases it. The name is synthetic
@@ -374,7 +377,10 @@ public sealed class MaterialDetailPack : IDisposable
                 (Bgra32[] chain, int levels) = LinearMipChain.Build(item.Pixels, item.Width, item.Height);
                 map = _device.CreateTexture(
                     new TextureDescription(
-                        item.Width, item.Height, levels, TextureFilter.Linear, TextureAddressMode.Repeat),
+                        item.Width, item.Height, levels, TextureFilter.Linear, TextureAddressMode.Repeat)
+                    {
+                        HoldsData = true,
+                    },
                     chain);
             }
             catch (Exception error) when (error is ArgumentException or GraphicsDeviceException)
@@ -574,7 +580,12 @@ public sealed class MaterialDetailPack : IDisposable
             // normal's x through a display decode and re-encode biases every average it takes.
             (Bgra32[] chain, int levels) = LinearMipChain.Build(read.Pixels, read.Width, read.Height);
             return _device.CreateTexture(
-                new TextureDescription(read.Width, read.Height, levels, TextureFilter.Linear, TextureAddressMode.Repeat),
+                new TextureDescription(read.Width, read.Height, levels, TextureFilter.Linear, TextureAddressMode.Repeat)
+                {
+                    // Numbers, so stored as they were uploaded: a device that keeps colour textures as
+                    // sRGB would otherwise decode a normal's x on every read.
+                    HoldsData = true,
+                },
                 chain);
         }
         catch (GraphicsDeviceException error)
