@@ -8,6 +8,8 @@ AddType application/wasm            .wasm
 AddType text/javascript             .js .mjs
 AddType application/json            .json
 AddType application/octet-stream    .dat .dll .pdb .blat .webcil
+AddType image/webp                  .webp
+AddType font/woff2                  .woff2
 
 # --- Pre-compressed files ------------------------------------------------------------------------
 <IfModule mod_rewrite.c>
@@ -41,6 +43,12 @@ AddType application/octet-stream    .dat .dll .pdb .blat .webcil
 </FilesMatch>
 <FilesMatch "\.css\.(br|gz)$">
   ForceType text/css
+</FilesMatch>
+<FilesMatch "\.txt\.(br|gz)$">
+  ForceType text/plain
+</FilesMatch>
+<FilesMatch "\.wav\.(br|gz)$">
+  ForceType audio/wav
 </FilesMatch>
 <FilesMatch "\.(dat|dll|pdb|blat|webcil)\.(br|gz)$">
   ForceType application/octet-stream

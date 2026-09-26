@@ -34,9 +34,15 @@ const SEQUEL_SIGNATURE_FILE = 'igi2.exe';
 
 /** A folder the game cannot be played from, with what to tell the person. */
 export class InstallationError extends Error {
-  constructor(message) {
+  /**
+   * @param {string} message
+   * @param {boolean} permission Whether it is only that the browser was not allowed to read the folder,
+   *   which asking again may change, rather than that the folder is not the game or is gone.
+   */
+  constructor(message, permission = false) {
     super(message);
     this.name = 'InstallationError';
+    this.permission = permission;
   }
 }
 
@@ -73,10 +79,8 @@ async function locate(picked, candidates) {
   }
 
   throw new InstallationError(sequel
-    ? `"${picked}" is I.G.I. 2: Covert Strike. This page plays Project I.G.I.; choose its folder instead.`
-    : `"${picked}" is not a Project I.G.I. installation. Choose the folder the game is installed in: the ` +
-      'one holding IGI.exe, config.qvm and the missions folder (in a retail install, the "pc" folder ' +
-      "inside the game's folder).");
+    ? `/${picked} is I.G.I. 2: Covert Strike. Choose Project I.G.I.'s folder instead.`
+    : `No Project I.G.I. installation in /${picked}. Choose the folder with IGI.exe in it, usually pc.`);
 }
 
 /**
@@ -153,6 +157,8 @@ export async function fromDirectory(handle) {
 
   return {
     name: found ? `${handle.name}/${found}` : handle.name,
+    /** The folder the person picked, which can be remembered for their next visit. */
+    handle,
     async list() {
       const files = [];
       const walk = async (dir, prefix) => {
@@ -173,6 +179,86 @@ export async function fromDirectory(handle) {
       return new Uint8Array(await (await file.entry.getFile()).arrayBuffer());
     },
   };
+}
+
+// --- The folder, remembered ------------------------------------------------------------------------------
+//
+// A picked folder's handle can be kept in the page's IndexedDB, so a returning player is offered Play instead
+// of the picker. The browser does not carry the permission over: reading the folder again needs a fresh
+// yes, which it will only ask for from a click -- so a remembered folder is opened from the Play button,
+// never as the page loads.
+
+const DATABASE = 'openigi';
+const STORE = 'folders';
+const GAME_FOLDER = 'game';
+
+function database() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DATABASE, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore(STORE);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function transact(mode, work) {
+  const db = await database();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE, mode);
+      const request = work(transaction.objectStore(STORE));
+      transaction.oncomplete = () => resolve(request.result);
+      transaction.onerror = () => reject(transaction.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+/** Keeps the folder a game was just played from, for the next visit. */
+export async function rememberFolder(handle) {
+  try {
+    await transact('readwrite', store => store.put(handle, GAME_FOLDER));
+  } catch (error) {
+    console.warn(`The game folder could not be remembered: ${error}`); // A private window, for one.
+  }
+}
+
+/** The folder remembered from the last visit, or null. */
+export async function rememberedFolder() {
+  try {
+    return (await transact('readonly', store => store.get(GAME_FOLDER))) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Forgets the remembered folder. */
+export async function forgetFolder() {
+  try {
+    await transact('readwrite', store => store.delete(GAME_FOLDER));
+  } catch {
+    // Nothing was remembered, or nothing can be.
+  }
+}
+
+/**
+ * Opens a remembered folder again. Asks the browser for permission to read it when it does not hold it
+ * still, so it must be called from a click.
+ * @param {FileSystemDirectoryHandle} handle
+ */
+export async function reopen(handle) {
+  if ((await handle.queryPermission({ mode: 'read' })) !== 'granted'
+    && (await handle.requestPermission({ mode: 'read' })) !== 'granted') {
+    throw new InstallationError(`Permission to read /${handle.name} was not given. Press Play to be asked again.`, true);
+  }
+
+  try {
+    return await fromDirectory(handle);
+  } catch (error) {
+    if (error.name === 'NotFoundError') throw new InstallationError(`/${handle.name} is no longer there. Choose the game folder again.`);
+    throw error;
+  }
 }
 
 /**

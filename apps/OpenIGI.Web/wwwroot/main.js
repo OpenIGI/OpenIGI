@@ -17,41 +17,41 @@ const GAME_ROOT = '/game';
 const $ = id => document.getElementById(id);
 const canvas = $('view');
 const landing = $('landing');
+const play = $('play');
+const change = $('change');
 
 const query = new URLSearchParams(location.search);
 const args = (query.get('args') ?? '').split(' ').filter(Boolean);
 
+const HINT = 'The folder with IGI.exe in it, usually pc inside the installation.';
+
 // --- The landing page ----------------------------------------------------------------------------------
 
-/** Shows one stage of the panel: 'pick', 'loading', 'ended' or 'failed'. */
-function stage(name) {
-  for (const element of document.querySelectorAll('.stage')) element.hidden = element.id !== `stage-${name}`;
+/** The action under the text: the button's label, the line below it, and whether a folder can be changed. */
+function offer(label, status, tone = 'neutral', canChange = false) {
+  $('play-label').textContent = label;
+  $('status').textContent = status;
+  $('status').dataset.tone = tone;
+  change.hidden = !canChange;
+  $('action').hidden = false;
+  $('loading').hidden = true;
 }
 
-/** The loading stage's line, with how far it has got as a fraction, or none while that is unknown. */
+/** The loading line in place of the action, with how far it has got as a fraction, or none while unknown. */
 function progress(label, fraction = null, value = '') {
+  $('action').hidden = true;
+  $('loading').hidden = false;
   $('progress-label').textContent = label;
   $('progress-value').textContent = value;
   $('progress').classList.toggle('indeterminate', fraction === null);
   $('progress').firstElementChild.style.width = fraction === null ? '' : `${Math.round(fraction * 100)}%`;
 }
 
-/** Why the folder just picked cannot be played from, or nothing to clear it. */
-function pickError(message) {
-  $('pick-error').textContent = message ?? '';
-  $('pick-error').hidden = !message;
-}
-
-/** The page again, in place of the game: after it has ended, or when it could not start or went on. */
-function showLanding(name, message) {
+/** The page again, in place of the game. */
+function showLanding() {
   canvas.hidden = true;
   landing.hidden = false;
-  if (message) $('failed-text').textContent = message;
-  stage(name);
 }
-
-$('again').addEventListener('click', () => location.reload());
-$('retry').addEventListener('click', () => location.reload());
 
 // --- WebGPU --------------------------------------------------------------------------------------------
 
@@ -64,7 +64,7 @@ const adapterReady = (async () => {
   if (!navigator.gpu) return { reason: 'This browser has no WebGPU. Use a current Chrome or Edge.' };
   try {
     const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
-    return adapter ? { adapter } : { reason: 'This browser offers WebGPU but no graphics adapter for it. Check that hardware acceleration is on.' };
+    return adapter ? { adapter } : { reason: 'This browser offers WebGPU but no graphics adapter. Check that hardware acceleration is on.' };
   } catch (error) {
     return { reason: `WebGPU could not start: ${error.message}` };
   }
@@ -86,6 +86,106 @@ async function acquireDevice() {
   return { adapter, device };
 }
 
+// --- Choosing the installation -------------------------------------------------------------------------
+
+/** Asks for the game's folder; null when the person closes the picker. Throws an InstallationError. */
+async function pickFolder() {
+  if (window.showDirectoryPicker) {
+    try {
+      return await files.fromDirectory(await window.showDirectoryPicker({ id: 'openigi-game', mode: 'read' }));
+    } catch (error) {
+      if (error.name === 'AbortError') return null;
+      throw error;
+    }
+  }
+
+  return new Promise((chosen, failed) => {
+    const input = Object.assign(document.createElement('input'), { type: 'file', webkitdirectory: true });
+    input.addEventListener('change', () => files.fromFileList(input.files).then(chosen, failed));
+    input.addEventListener('cancel', () => chosen(null));
+    input.click();
+  });
+}
+
+/**
+ * The installation to play, settled on the landing page: ?data=<url> at once when given (for automated
+ * runs); otherwise the person picks the folder, or plays the one remembered from their last visit, and
+ * presses Play. Nothing starts until they do.
+ */
+async function chooseSource() {
+  const data = query.get('data');
+  if (data) return files.fromUrl(data.endsWith('/') ? data : `${data}/`);
+
+  const { adapter, reason } = await adapterReady;
+  if (!adapter) {
+    play.disabled = true;
+    offer('Choose game folder', reason, 'error');
+    return new Promise(() => {}); // Nothing can be played here.
+  }
+
+  // What Play would start now: a folder just picked and found to be the game, or one remembered.
+  let ready = null;
+  let remembered = await files.rememberedFolder();
+  if (remembered) offer('Play game', `Game folder: /${remembered.name}`, 'neutral', true);
+  else offer('Choose game folder', HINT);
+
+  return new Promise((settle, fail) => {
+    // Once the installation is settled the buttons are the page's again (Play again, Reload).
+    const listening = new AbortController();
+    const resolve = source => { listening.abort(); settle(source); };
+    const reject = error => { listening.abort(); fail(error); };
+
+    let busy = false;
+    const act = async choose => {
+      if (busy) return;
+      busy = true;
+      play.disabled = true;
+      try {
+        if (!choose && ready) {
+          resolve(ready);
+          return;
+        }
+
+        if (!choose && remembered) {
+          try {
+            resolve(await files.reopen(remembered));
+          } catch (error) {
+            if (!(error instanceof files.InstallationError)) throw error;
+            if (error.permission) {
+              offer('Play game', error.message, 'error', true);
+              return;
+            }
+            // Gone, or no longer the game: forgotten, and the person picks again.
+            await files.forgetFolder();
+            remembered = null;
+            offer('Choose game folder', error.message, 'error');
+          }
+          return;
+        }
+
+        const picked = await pickFolder();
+        if (picked) {
+          ready = picked;
+          if (picked.handle) await files.rememberFolder(picked.handle);
+          offer('Play game', `Found the game in /${picked.name}. Ready.`, 'ok', true);
+        }
+      } catch (error) {
+        if (!(error instanceof files.InstallationError)) {
+          reject(error);
+          return;
+        }
+        offer(ready || remembered ? 'Play game' : 'Choose game folder', error.message, 'error', Boolean(ready || remembered));
+      } finally {
+        busy = false;
+        play.disabled = false;
+      }
+    };
+
+    play.addEventListener('click', () => act(false), { signal: listening.signal });
+    change.addEventListener('click', () => act(true), { signal: listening.signal });
+  });
+}
+
 // --- Starting ------------------------------------------------------------------------------------------
 
 /**
@@ -102,68 +202,18 @@ async function writeHostAssets(fs) {
   }));
 }
 
-/**
- * Where the installation comes from: ?data=<url> when given, otherwise the folder the person picks --
- * asked again, with the reason, for as long as what they pick is not the game.
- */
-async function chooseSource() {
-  const data = query.get('data');
-  if (data) return files.fromUrl(data.endsWith('/') ? data : `${data}/`);
-
-  const pick = $('pick');
-  const support = $('support');
-  // Said only when the game cannot run here, and then before the person goes looking for the folder.
-  const { adapter, reason } = await adapterReady;
-  support.textContent = reason ?? '';
-  support.hidden = Boolean(adapter);
-  pick.disabled = !adapter;
-
-  const open = async () => {
-    if (window.showDirectoryPicker) {
-      try {
-        return await files.fromDirectory(await window.showDirectoryPicker({ id: 'openigi-game', mode: 'read' }));
-      } catch (error) {
-        if (error.name === 'AbortError') return null; // The person closed the picker.
-        throw error;
-      }
-    }
-
-    return new Promise((chosen, failed) => {
-      const input = Object.assign(document.createElement('input'), { type: 'file', webkitdirectory: true });
-      input.addEventListener('change', () => files.fromFileList(input.files).then(chosen, failed));
-      input.addEventListener('cancel', () => chosen(null));
-      input.click();
-    });
-  };
-
-  return new Promise((resolve, reject) => {
-    pick.addEventListener('click', async () => {
-      if (pick.disabled) return;
-      pick.disabled = true;
-      pickError(null);
-      try {
-        const source = await open();
-        if (source) {
-          resolve(source);
-          return;
-        }
-      } catch (error) {
-        if (!(error instanceof files.InstallationError)) {
-          reject(error);
-          return;
-        }
-        pickError(error.message);
-      }
-      pick.disabled = false;
-    });
-  });
+/** After the game, or instead of it: the page offers a reload, which starts again from the landing page. */
+function offerReload(label, status, tone) {
+  showLanding();
+  offer(label, status, tone);
+  play.disabled = false;
+  play.onclick = () => location.reload();
+  play.focus();
 }
 
 async function start() {
-  stage('pick');
   const source = await chooseSource();
 
-  stage('loading');
   progress('Starting graphics');
   const { adapter, device } = await acquireDevice();
   globalThis.OpenIgiWebGpu.init({ adapter, device, canvas });
@@ -205,7 +255,7 @@ async function start() {
     } catch (error) {
       platform.uninstall();
       device.destroy();
-      showLanding('failed', `The game stopped: ${error.message}`);
+      offerReload('Reload', `The game stopped: ${error.message}`, 'error');
       throw error;
     }
 
@@ -219,13 +269,18 @@ async function start() {
     // picture, which the page replaces.
     platform.uninstall();
     device.destroy();
-    showLanding('ended');
-    $('again').focus();
+    offerReload('Play again', 'The game has closed. Your settings are saved.', 'neutral');
   };
   requestAnimationFrame(frame);
 }
 
+// What the header says about the browser, as soon as it is known.
+adapterReady.then(({ adapter }) => {
+  $('gpu').dataset.state = adapter ? 'ok' : 'no';
+  $('gpu').textContent = adapter ? 'WebGPU ready' : 'No WebGPU';
+});
+
 start().catch(error => {
   console.error(error);
-  showLanding('failed', error.message);
+  offerReload('Reload', error.message, 'error');
 });
