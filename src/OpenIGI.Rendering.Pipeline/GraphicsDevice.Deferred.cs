@@ -200,19 +200,25 @@ public sealed partial class GraphicsDevice
     }
 
     /// <summary>Opens the pass that writes the G-buffer.</summary>
-    private void BeginGeometryPass(SceneTargetSet scene)
+    /// <param name="scene">The frame's targets.</param>
+    /// <param name="resume">
+    /// Whether this picks the pass up again after a flush broke it, keeping what it had drawn rather than
+    /// clearing it.
+    /// </param>
+    private void BeginGeometryPass(SceneTargetSet scene, bool resume = false)
     {
         // The whole G-buffer cleared at once: coverage, normal, material and baked light all read as
         // nothing where no surface reached, and the shading tests the depth rather than any of them.
         ClosePass();
 
+        RhiLoadOp load = resume ? RhiLoadOp.Load : RhiLoadOp.Clear;
         RhiColorAttachment[] attachments = new RhiColorAttachment[GBufferTargets.Length];
 
         for (int i = 0; i < GBufferTargets.Length; i++)
         {
             attachments[i] = new RhiColorAttachment(
                 scene.View(GBufferTargets[i]),
-                RhiLoadOp.Clear,
+                load,
                 RhiStoreOp.Store,
                 RhiClearColor.Transparent);
         }
@@ -224,7 +230,7 @@ public sealed partial class GraphicsDevice
 
                 // Reverse-Z: the far plane is nought, so a pass that clears starts with everything
                 // already further away than anything it will draw.
-                RhiLoadOp.Clear,
+                load,
                 RhiStoreOp.Store,
                 DepthClearValue: 0f),
             _profiler.Time(RenderStage.Geometry),

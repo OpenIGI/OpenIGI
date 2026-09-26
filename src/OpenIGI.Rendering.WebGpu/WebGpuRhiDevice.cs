@@ -666,6 +666,14 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Nothing is held here: every submit goes to the queue as it is made, so there is nothing to send
+    /// early, and the wait belongs to the readback that follows -- which polls the queue until it drains,
+    /// and on a browser, which will not block, reports what it has instead.
+    /// </remarks>
+    public void Flush() => ThrowIfDisposed();
+
+    /// <inheritdoc/>
     public IRhiCommandEncoder CreateCommandEncoder(string label = "")
     {
         ThrowIfDisposed();

@@ -127,6 +127,9 @@ public abstract record RecordedRhiCommand
     /// <param name="Labels">The names of what was submitted, in order.</param>
     public sealed record Submit(IReadOnlyList<string> Labels) : RecordedRhiCommand;
 
+    /// <summary>Everything submitted so far was sent ahead of the frame's end and waited for.</summary>
+    public sealed record Flush : RecordedRhiCommand;
+
     /// <summary>A frame was acquired.</summary>
     /// <param name="Index">Which image.</param>
     /// <param name="FrameInFlight">Which set of per-frame resources it may write.</param>

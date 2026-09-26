@@ -222,6 +222,9 @@ public sealed class RecordingRhiDevice : IRhiDevice
     }
 
     /// <inheritdoc/>
+    public void Flush() => _commands.Add(new RecordedRhiCommand.Flush());
+
+    /// <inheritdoc/>
     public void WriteBuffer<T>(IRhiBuffer buffer, ulong offset, ReadOnlySpan<T> data)
         where T : unmanaged
     {

@@ -89,11 +89,22 @@ public sealed partial class GraphicsDevice
         CloseScenePass();
         CloseShadowPass();
 
+        OpenShadowCascade(cascade, map, resume: false);
+        _shadowsDrawn = true;
+        return true;
+    }
+
+    /// <summary>Opens one cascade's pass.</summary>
+    /// <param name="cascade">Which cascade.</param>
+    /// <param name="map">The shadow map it is a layer of.</param>
+    /// <param name="resume">Whether this picks the cascade up again after a flush, keeping what it drew.</param>
+    private void OpenShadowCascade(int cascade, IRhiTexture map, bool resume)
+    {
         _shadowPass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             [],
             new RhiDepthAttachment(
                 _shadowLayers[cascade],
-                RhiLoadOp.Clear,
+                resume ? RhiLoadOp.Load : RhiLoadOp.Clear,
                 RhiStoreOp.Store,
                 DepthClearValue: 1f),
             _profiler.Time(RenderStage.Shadows),
@@ -102,8 +113,6 @@ public sealed partial class GraphicsDevice
         _shadowPass.SetViewport(0, 0, map.Width, map.Height, 0f, 1f);
         _shadowPass.SetScissor(0, 0, map.Width, map.Height);
         _shadowCascade = cascade;
-        _shadowsDrawn = true;
-        return true;
     }
 
     /// <inheritdoc/>

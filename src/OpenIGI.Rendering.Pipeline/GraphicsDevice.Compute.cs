@@ -713,23 +713,26 @@ public sealed partial class GraphicsDevice
         }
     }
 
-    /// <summary>Copies something into a staging buffer on a submission of its own, waits, and reads it.</summary>
+    /// <summary>Copies something into a staging buffer, waits for the copy, and reads it.</summary>
+    /// <remarks>
+    /// Outside a frame the copy goes on a submission of its own. Inside one, what it reads may have been
+    /// written by the frame itself, so the copy is recorded after everything the frame has drawn and the
+    /// frame is flushed with it; see <see cref="FlushFrame"/>.
+    /// </remarks>
     private byte[] ReadBack(int bytes, Action<IRhiCommandEncoder, IRhiBuffer> copy)
     {
-        if (_inFrame)
-        {
-            throw new GraphicsDeviceException(
-                "A compute result cannot be read back in the middle of a frame on this device: the work that "
-                + "would have to finish first is part of a frame that has not been submitted.");
-        }
-
         using IRhiBuffer staging = _device.CreateBuffer(new RhiBufferDescriptor(
             (ulong)bytes,
             RhiBufferUsage.CopyDestination | RhiBufferUsage.MapRead,
             "compute.readback"));
 
-        using (IRhiCommandEncoder encoder = _device.CreateCommandEncoder("compute.readback"))
+        if (_inFrame)
         {
+            FlushFrame(encoder => copy(encoder, staging));
+        }
+        else
+        {
+            using IRhiCommandEncoder encoder = _device.CreateCommandEncoder("compute.readback");
             copy(encoder, staging);
             _device.Submit([encoder.Finish("compute.readback")]);
         }

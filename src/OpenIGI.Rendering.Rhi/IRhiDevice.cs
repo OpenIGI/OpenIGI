@@ -112,6 +112,22 @@ public interface IRhiDevice : IDisposable
     /// <param name="commands">What to submit, in order.</param>
     void Submit(ReadOnlySpan<IRhiCommandBuffer> commands);
 
+    /// <summary>Sends everything submitted so far to the GPU now, and waits until it has finished.</summary>
+    /// <remarks>
+    /// <para>
+    /// A backend may hold what is submitted during a frame and send it when the frame ends -- the Vulkan
+    /// one does, so that the image acquired for the frame is waited on once and presented once. That
+    /// leaves nothing a readback made in the middle of a frame can wait for. This sends the held work
+    /// ahead of the frame's end, so a readback of what it wrote completes; the frame then goes on and
+    /// ends as usual.
+    /// </para>
+    /// <para>
+    /// A diagnostic's tool, not a frame's: it stalls the host on the GPU. Where the platform cannot
+    /// block, it sends what it holds and returns, and a readback polls across frames instead.
+    /// </para>
+    /// </remarks>
+    void Flush();
+
     /// <summary>Writes host data into a buffer.</summary>
     /// <typeparam name="T">The element type.</typeparam>
     /// <param name="buffer">The buffer.</param>

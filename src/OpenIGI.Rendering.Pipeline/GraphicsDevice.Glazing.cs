@@ -81,20 +81,23 @@ public sealed partial class GraphicsDevice
     private void PrepareGlazing() => _glassGroup = GlassGroup(sceneDepth: null);
 
     /// <summary>Opens the front layer's pass, whose draws record the nearest pane at each pixel.</summary>
+    /// <param name="scene">The frame's targets.</param>
+    /// <param name="resume">Whether this picks the pass up again after a flush, keeping what it drew.</param>
     /// <remarks>
     /// Its own colour and depth, both cleared: nought alpha is no pane, and a reverse-Z depth of nought is
     /// as far as a pane can be. The scene's depth is READ here, in the shader, which is how a pane behind
     /// a wall is kept out of the layer -- the pass's own depth only settles pane against pane.
     /// </remarks>
-    private void BeginGlassLayerPass(SceneTargetSet scene)
+    private void BeginGlassLayerPass(SceneTargetSet scene, bool resume = false)
     {
         ClosePass();
 
         _glassGroup = GlassGroup(scene.View(SceneTargetId.Depth));
+        RhiLoadOp load = resume ? RhiLoadOp.Load : RhiLoadOp.Clear;
 
         _scenePass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
-            [new RhiColorAttachment(scene.View(SceneTargetId.GlassLayer), RhiLoadOp.Clear, RhiStoreOp.Store, RhiClearColor.Transparent)],
-            new RhiDepthAttachment(scene.View(SceneTargetId.GlassDepth), RhiLoadOp.Clear, RhiStoreOp.Store, DepthClearValue: 0f),
+            [new RhiColorAttachment(scene.View(SceneTargetId.GlassLayer), load, RhiStoreOp.Store, RhiClearColor.Transparent)],
+            new RhiDepthAttachment(scene.View(SceneTargetId.GlassDepth), load, RhiStoreOp.Store, DepthClearValue: 0f),
             Label: "glazing.layer"));
 
         ApplySceneViewport(_scenePass);

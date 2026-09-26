@@ -30,6 +30,10 @@ internal sealed unsafe partial class VulkanRhiDevice
     private int _frameSlot;
     private bool _inFrame;
 
+    // Whether a flush in this frame has already waited on the acquired image, which a binary semaphore
+    // allows exactly once: the frame's own submit then goes without.
+    private bool _acquireWaited;
+
     /// <summary>Gives this device the swapchain it presents through.</summary>
     /// <param name="swapchain">The swapchain, which the caller keeps ownership of.</param>
     /// <remarks>
@@ -150,6 +154,7 @@ internal sealed unsafe partial class VulkanRhiDevice
         VulkanRhiTexture target = WrapSwapchainImage(swapchain, _imageIndex);
         _frameTextures[_frameSlot] = target;
         _inFrame = true;
+        _acquireWaited = false;
 
         frame = new RhiFrame(target.View, (int)_imageIndex, _frameSlot);
         return true;
@@ -208,6 +213,10 @@ internal sealed unsafe partial class VulkanRhiDevice
         Semaphore signal = _presentable[_frameSlot];
         PipelineStageFlags stage = PipelineStageFlags.ColorAttachmentOutputBit;
 
+        // A flush earlier in the frame waited on the image already, and finished before anything after
+        // it was sent, so everything here is ordered after the acquire without waiting a second time.
+        uint waits = _acquireWaited ? 0u : 1u;
+
         // The present's semaphore, and the count a readback of this frame waits for.
         Semaphore* signals = stackalloc Semaphore[2] { signal, _timeline };
         ulong* values = stackalloc ulong[2] { 0, HasTimeline ? NextSignal() : 0 };
@@ -224,7 +233,7 @@ internal sealed unsafe partial class VulkanRhiDevice
             {
                 SType = StructureType.SubmitInfo,
                 PNext = HasTimeline ? &counted : null,
-                WaitSemaphoreCount = 1,
+                WaitSemaphoreCount = waits,
                 PWaitSemaphores = &wait,
                 PWaitDstStageMask = &stage,
                 CommandBufferCount = (uint)buffers.Length,
@@ -250,6 +259,91 @@ internal sealed unsafe partial class VulkanRhiDevice
 
         VkCheck.Ok(presented, "vkQueuePresentKHR");
         return !NeedsReconfigure;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// Inside a frame, what the frame has held so far goes out as a submit of its own. It waits on the
+    /// acquired image -- for the whole batch, since what it holds may already draw into it -- unless an
+    /// earlier flush did, and the host then waits for the batch to finish. That wait is what keeps the
+    /// rest of the frame correct: everything sent after it is ordered after an acquire that has
+    /// certainly happened, so the frame's own submit no longer waits on the semaphore, which a binary
+    /// semaphore could not allow twice anyway.
+    /// </para>
+    /// <para>
+    /// The command buffers stay with the frame's slot, released when its fence says the frame is done,
+    /// exactly as if they had gone out with the rest of it.
+    /// </para>
+    /// </remarks>
+    public void Flush()
+    {
+        ThrowIfDisposed();
+
+        if (!_inFrame)
+        {
+            // Outside a frame every submission already went out as it was made.
+            FlushUploads();
+            ReleaseFinishedLoose(wait: true);
+            return;
+        }
+
+        CommandBuffer upload = TakeUpload(_pendingStaging);
+        if (upload.Handle != 0)
+        {
+            _pending.Add(upload);
+        }
+
+        if (_pending.Count == 0)
+        {
+            return;
+        }
+
+        CommandBuffer[] buffers = [.. _pending];
+        _pending.Clear();
+        HoldForSlot(_frameSlot, buffers);
+
+        bool waitAcquire = _offscreen.Length == 0 && !_acquireWaited;
+        Semaphore wait = waitAcquire ? _acquired[_frameSlot] : default;
+        PipelineStageFlags stage = PipelineStageFlags.AllCommandsBit;
+
+        Semaphore timeline = _timeline;
+        ulong value = HasTimeline ? NextSignal() : 0;
+        TimelineSemaphoreSubmitInfo counted = new()
+        {
+            SType = StructureType.TimelineSemaphoreSubmitInfo,
+            SignalSemaphoreValueCount = 1,
+            PSignalSemaphoreValues = &value,
+        };
+
+        fixed (CommandBuffer* first = buffers)
+        {
+            SubmitInfo submit = new()
+            {
+                SType = StructureType.SubmitInfo,
+                PNext = HasTimeline ? &counted : null,
+                WaitSemaphoreCount = waitAcquire ? 1u : 0u,
+                PWaitSemaphores = &wait,
+                PWaitDstStageMask = &stage,
+                CommandBufferCount = (uint)buffers.Length,
+                PCommandBuffers = first,
+                SignalSemaphoreCount = HasTimeline ? 1u : 0u,
+                PSignalSemaphores = &timeline,
+            };
+
+            VkCheck.Ok(_vk.QueueSubmit(_device.Graphics, 1, &submit, default), "vkQueueSubmit (flush)");
+        }
+
+        _acquireWaited |= waitAcquire;
+
+        if (HasTimeline)
+        {
+            WaitForTicket(value, Timeout.InfiniteTimeSpan);
+        }
+        else
+        {
+            VkCheck.Ok(_vk.QueueWaitIdle(_device.Graphics), "vkQueueWaitIdle (flush)");
+        }
     }
 
     /// <inheritdoc/>
