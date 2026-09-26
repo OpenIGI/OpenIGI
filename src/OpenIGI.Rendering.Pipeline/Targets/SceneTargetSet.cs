@@ -58,7 +58,8 @@ public sealed class SceneTargetSet : IDisposable
         new(SceneTargetId.DilatedVelocity, RhiTextureFormat.Rg16Float, SceneTargetScale.Full, Compute),
         new(SceneTargetId.ClosestDepth, RhiTextureFormat.R32Float, SceneTargetScale.Full, Compute),
         new(SceneTargetId.ClosestOccluder, RhiTextureFormat.R32Uint, SceneTargetScale.Full, Compute),
-        new(SceneTargetId.ResolveOutput, RhiTextureFormat.Rgba16Float, SceneTargetScale.Full, Compute),
+        // At the presented size: the resolve reconstructs to it, and everything after reads it there.
+        new(SceneTargetId.ResolveOutput, RhiTextureFormat.Rgba16Float, SceneTargetScale.Output, Compute),
         new(SceneTargetId.ResolveHistoryColour, RhiTextureFormat.Rgba16Float, SceneTargetScale.Double, Compute, SceneTargetHistory.PingPong),
         new(SceneTargetId.ResolveHistoryMetadata, RhiTextureFormat.R8Unorm, SceneTargetScale.Double, Compute, SceneTargetHistory.PingPong),
 
@@ -94,12 +95,14 @@ public sealed class SceneTargetSet : IDisposable
     /// <param name="device">The device the targets live on.</param>
     /// <param name="width">The frame's width in pixels.</param>
     /// <param name="height">Its height.</param>
-    public SceneTargetSet(IRhiDevice device, int width, int height)
+    /// <param name="outputWidth">The width it is presented at, or nought for the frame's own.</param>
+    /// <param name="outputHeight">The height it is presented at, or nought for the frame's own.</param>
+    public SceneTargetSet(IRhiDevice device, int width, int height, int outputWidth = 0, int outputHeight = 0)
     {
         ArgumentNullException.ThrowIfNull(device);
 
         _device = device;
-        Allocate(width, height);
+        Allocate(width, height, outputWidth, outputHeight);
     }
 
     /// <summary>What one texel of a target holds, whatever size the frame happens to be.</summary>
@@ -128,6 +131,12 @@ public sealed class SceneTargetSet : IDisposable
 
     /// <summary>Gets its height.</summary>
     public int Height { get; private set; }
+
+    /// <summary>Gets the width the frame is presented at: its own, unless a render scale is in force.</summary>
+    public int OutputWidth { get; private set; }
+
+    /// <summary>Gets the height the frame is presented at.</summary>
+    public int OutputHeight { get; private set; }
 
     /// <summary>Gets one target, or the one a history pair is writing this frame.</summary>
     /// <param name="id">Which one.</param>
@@ -172,38 +181,62 @@ public sealed class SceneTargetSet : IDisposable
     /// <param name="scale">How the target's size follows the frame's.</param>
     /// <param name="width">The frame's width.</param>
     /// <param name="height">Its height.</param>
+    /// <param name="outputWidth">The width it is presented at, or nought for the frame's own.</param>
+    /// <param name="outputHeight">The height it is presented at, or nought for the frame's own.</param>
     /// <returns>The target's size, never smaller than one texel.</returns>
     /// <remarks>
     /// Half rounds <b>up</b>, so an odd frame's half-size target still covers every pixel of it. Rounding
     /// down leaves the last row and column reading a texel that was never written, which at half
     /// resolution is a two-pixel band down two edges of the picture.
     /// </remarks>
-    public static (int Width, int Height) SizeOf(SceneTargetScale scale, int width, int height) => scale switch
+    public static (int Width, int Height) SizeOf(
+        SceneTargetScale scale,
+        int width,
+        int height,
+        int outputWidth = 0,
+        int outputHeight = 0) => scale switch
     {
         SceneTargetScale.Half => (Math.Max(1, (width + 1) / 2), Math.Max(1, (height + 1) / 2)),
         SceneTargetScale.Double => (Math.Max(1, width * 2), Math.Max(1, height * 2)),
+        SceneTargetScale.Output => (
+            Math.Max(1, outputWidth > 0 ? outputWidth : width),
+            Math.Max(1, outputHeight > 0 ? outputHeight : height)),
         _ => (Math.Max(1, width), Math.Max(1, height)),
     };
 
     /// <summary>Rebuilds every target for a new frame size.</summary>
     /// <param name="width">The new width in pixels.</param>
     /// <param name="height">The new height.</param>
+    /// <param name="outputWidth">The width it is presented at, or nought for the frame's own.</param>
+    /// <param name="outputHeight">The height it is presented at, or nought for the frame's own.</param>
     /// <remarks>
     /// Everything goes and is remade rather than only what changed size, because every target's size
     /// follows the frame's: there is no such thing here as one that survives a resize.
     /// </remarks>
-    public void Resize(int width, int height)
+    public void Resize(int width, int height, int outputWidth = 0, int outputHeight = 0)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (width == Width && height == Height)
+        if (Matches(width, height, outputWidth, outputHeight))
         {
             return;
         }
 
         Release();
-        Allocate(width, height);
+        Allocate(width, height, outputWidth, outputHeight);
     }
+
+    /// <summary>Whether the set is already built for a frame and output of these sizes.</summary>
+    /// <param name="width">The frame's width.</param>
+    /// <param name="height">Its height.</param>
+    /// <param name="outputWidth">The width it is presented at, or nought for the frame's own.</param>
+    /// <param name="outputHeight">The height it is presented at, or nought for the frame's own.</param>
+    /// <returns><see langword="true"/> when nothing would change.</returns>
+    public bool Matches(int width, int height, int outputWidth = 0, int outputHeight = 0) =>
+        width == Width
+        && height == Height
+        && (outputWidth > 0 ? outputWidth : width) == OutputWidth
+        && (outputHeight > 0 ? outputHeight : height) == OutputHeight;
 
     /// <summary>Which half of a pair this frame writes; always the only one for a target with no pair.</summary>
     private int Parity(SceneTargetId id) => _targets[id].Length == 1 ? 0 : (int)(Frame & 1);
@@ -220,17 +253,19 @@ public sealed class SceneTargetSet : IDisposable
         Release();
     }
 
-    private void Allocate(int width, int height)
+    private void Allocate(int width, int height, int outputWidth, int outputHeight)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(width, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(height, 1);
 
         Width = width;
         Height = height;
+        OutputWidth = outputWidth > 0 ? outputWidth : width;
+        OutputHeight = outputHeight > 0 ? outputHeight : height;
 
         foreach (SceneTargetSpec spec in Layout)
         {
-            (int targetWidth, int targetHeight) = SizeOf(spec.Scale, width, height);
+            (int targetWidth, int targetHeight) = SizeOf(spec.Scale, width, height, OutputWidth, OutputHeight);
             int count = spec.History is SceneTargetHistory.PingPong ? 2 : 1;
 
             IRhiTexture[] pair = new IRhiTexture[count];

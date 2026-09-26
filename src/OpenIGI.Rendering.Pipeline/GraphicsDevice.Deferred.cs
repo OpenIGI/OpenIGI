@@ -108,7 +108,11 @@ public sealed partial class GraphicsDevice
         // Whatever the caller drew before the capture belongs to the frame, not to the G-buffer.
         ClosePass();
 
-        EnsureDeferred(Math.Max(1, description.Width), Math.Max(1, description.Height));
+        EnsureDeferred(
+            Math.Max(1, description.Width),
+            Math.Max(1, description.Height),
+            description.PresentWidth,
+            description.PresentHeight);
         WriteSurfaceBlock();
 
         // Outside any pass, because a structure cannot be built inside one.
@@ -458,11 +462,12 @@ public sealed partial class GraphicsDevice
             _profiler.Time(RenderStage.Bloom),
             "bloom")))
         {
+            (int width, int height) = PostSize(scene);
             bloom.Record(
                 pass,
                 colour,
-                scene.Width,
-                scene.Height,
+                width,
+                height,
                 post.BloomIntensity,
                 post.BloomThreshold,
                 FrameSlot);
@@ -746,20 +751,20 @@ public sealed partial class GraphicsDevice
     }
 
     /// <summary>Builds everything the deferred frame needs, at the size it is asked for.</summary>
-    private void EnsureDeferred(int width, int height)
+    private void EnsureDeferred(int width, int height, int outputWidth, int outputHeight)
     {
-        if (_scene is { } existing && existing.Width == width && existing.Height == height)
+        if (_scene is { } existing && existing.Matches(width, height, outputWidth, outputHeight))
         {
             return;
         }
 
         if (_scene is { } resized)
         {
-            resized.Resize(width, height);
+            resized.Resize(width, height, outputWidth, outputHeight);
             return;
         }
 
-        _scene = new SceneTargetSet(_device, width, height);
+        _scene = new SceneTargetSet(_device, width, height, outputWidth, outputHeight);
 
         _surfaceLayout = _device.CreateBindGroupLayout(new RhiBindGroupLayoutDescriptor(
             [new RhiBindGroupLayoutEntry(0, RhiBindingType.UniformBuffer, RhiShaderStages.Graphics)],

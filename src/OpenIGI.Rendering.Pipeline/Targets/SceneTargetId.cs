@@ -137,6 +137,12 @@ public enum SceneTargetScale
 
     /// <summary>Twice the frame in each axis.</summary>
     Double,
+
+    /// <summary>
+    /// The size the frame is presented at: larger than the frame under a render scale, where the
+    /// temporal resolve reconstructs the picture up to it.
+    /// </summary>
+    Output,
 }
 
 /// <summary>Whether a target is one image or a pair swapped each frame.</summary>

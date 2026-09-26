@@ -145,7 +145,7 @@ public sealed class TemporalResolve : IDisposable
         DilateRejection(pass, targets, state, frameInFlight, width, height);
         SpatialAntiAliasing(pass, targets, state, settings, frameInFlight, width, height);
         UpdateHistory(pass, targets, state, settings, frameInFlight, width, height);
-        ResolveHistory(pass, targets, settings, frameInFlight, width, height);
+        ResolveHistory(pass, targets, settings, frameInFlight, width, height, targets.OutputWidth, targets.OutputHeight);
     }
 
     /// <inheritdoc/>
@@ -326,12 +326,14 @@ public sealed class TemporalResolve : IDisposable
     {
         Span<float> block = stackalloc float[TemporalParameters.UpdateHistoryFloats];
 
+        // Told the size the history is resolved to, which is how it weighs each history texel's share of
+        // an output pixel: under a render scale that is the presented size, not this frame's.
         TemporalParameters.WriteUpdateHistory(
             block,
             state,
             settings,
-            width,
-            height,
+            targets.OutputWidth,
+            targets.OutputHeight,
             TemporalHistoryInputs.All);
 
         _updateHistory.Bind("uCurrent", targets.View(SceneTargetId.Lit));
@@ -356,13 +358,16 @@ public sealed class TemporalResolve : IDisposable
             height * settings.EffectiveHistoryScale);
     }
 
+    /// <summary>Resolves the history to the output, which a render scale makes larger than the frame.</summary>
     private void ResolveHistory(
         IRhiComputePassEncoder pass,
         SceneTargetSet targets,
         in TemporalResolveSettings settings,
         int frame,
         int width,
-        int height)
+        int height,
+        int outputWidth,
+        int outputHeight)
     {
         Span<float> block = stackalloc float[TemporalParameters.ResolveHistoryFloats];
 
@@ -371,8 +376,8 @@ public sealed class TemporalResolve : IDisposable
             settings,
             width * settings.EffectiveHistoryScale,
             height * settings.EffectiveHistoryScale,
-            width,
-            height);
+            outputWidth,
+            outputHeight);
 
         _resolveHistory.Bind("uHistoryColour", targets.View(SceneTargetId.ResolveHistoryColour));
         _resolveHistory.Bind("uOutput", targets.View(SceneTargetId.ResolveOutput));
@@ -383,6 +388,6 @@ public sealed class TemporalResolve : IDisposable
         _resolveHistory.Bind("p", _resolve.Write<float>(frame, block));
 
         _resolveHistory.BindRemainingSamplers(_sampler);
-        _resolveHistory.Dispatch(pass, width, height);
+        _resolveHistory.Dispatch(pass, outputWidth, outputHeight);
     }
 }

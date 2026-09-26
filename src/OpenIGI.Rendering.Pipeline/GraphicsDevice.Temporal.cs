@@ -147,7 +147,7 @@ public sealed partial class GraphicsDevice
         TemporalResolveSettings settings = TemporalResolveSettings.ForFrame(
             _taa,
             scene.Width,
-            CurrentMode.Width,
+            scene.OutputWidth,
             _debugView);
 
         ClosePass();
@@ -191,6 +191,14 @@ public sealed partial class GraphicsDevice
     /// <summary>The image the resolve reads: the temporal output when the resolve ran, the lit one otherwise.</summary>
     private IRhiTextureView ResolvedScene(SceneTargetSet scene) =>
         scene.View(_temporalResolved ? SceneTargetId.ResolveOutput : SceneTargetId.Lit);
+
+    /// <summary>The size of that image, which is what the lens passes after it work at.</summary>
+    /// <remarks>
+    /// The presented size when the temporal resolve ran, since it reconstructs to it; the frame's own
+    /// otherwise, which under a render scale the final resolve then stretches to the window.
+    /// </remarks>
+    private (int Width, int Height) PostSize(SceneTargetSet scene) =>
+        _temporalResolved ? (scene.OutputWidth, scene.OutputHeight) : (scene.Width, scene.Height);
 
     private void DisposeTemporal()
     {

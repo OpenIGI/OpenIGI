@@ -147,6 +147,45 @@ public sealed class SceneTargetSetTests
     }
 
     [Fact]
+    public void Under_a_render_scale_the_resolve_output_is_at_the_presented_size()
+    {
+        // The temporal resolve reconstructs to the window's size; everything before it runs at the
+        // frame's own, and the history stays twice the frame rather than twice the output.
+        using RecordingRhiDevice device = new();
+        using SceneTargetSet targets = new(device, 1280, 720, 1920, 1080);
+
+        Assert.Equal((1920, 1080), (targets.OutputWidth, targets.OutputHeight));
+        Assert.Equal(1920, targets[SceneTargetId.ResolveOutput].Width);
+        Assert.Equal(1080, targets[SceneTargetId.ResolveOutput].Height);
+        Assert.Equal(1280, targets[SceneTargetId.Lit].Width);
+        Assert.Equal(2560, targets[SceneTargetId.ResolveHistoryColour].Width);
+    }
+
+    [Fact]
+    public void A_change_of_output_size_alone_rebuilds_the_set()
+    {
+        using RecordingRhiDevice device = new();
+        using SceneTargetSet targets = new(device, 1280, 720, 1920, 1080);
+
+        Assert.True(targets.Matches(1280, 720, 1920, 1080));
+        Assert.False(targets.Matches(1280, 720, 2560, 1440));
+
+        targets.Resize(1280, 720, 2560, 1440);
+
+        Assert.Equal(2560, targets[SceneTargetId.ResolveOutput].Width);
+    }
+
+    [Fact]
+    public void Without_an_output_size_the_output_is_the_frame()
+    {
+        using RecordingRhiDevice device = new();
+        using SceneTargetSet targets = new(device, 1280, 720);
+
+        Assert.Equal((1280, 720), (targets.OutputWidth, targets.OutputHeight));
+        Assert.Equal(1280, targets[SceneTargetId.ResolveOutput].Width);
+    }
+
+    [Fact]
     public void A_resize_to_the_size_it_already_is_changes_nothing()
     {
         using RecordingRhiDevice device = new();

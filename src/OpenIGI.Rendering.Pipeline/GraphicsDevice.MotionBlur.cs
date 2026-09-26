@@ -28,14 +28,18 @@ public sealed partial class GraphicsDevice
             _profiler.Time(RenderStage.CameraEffects),
             "motionblur"));
 
+        // At the size of the picture it smears, which the resolve has already reconstructed to the
+        // presented size under a render scale; the motion and the depth are read by position, not texel.
+        (int width, int height) = PostSize(scene);
+
         return _motionBlur.Record(
             pass,
             FrameSlot,
             ResolvedScene(scene),
             scene.View(SceneTargetId.Velocity),
             scene.View(SceneTargetId.Depth),
-            scene.Width,
-            scene.Height,
+            width,
+            height,
             post,
             _unprojection);
     }
