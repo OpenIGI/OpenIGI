@@ -1342,7 +1342,6 @@ public sealed class AiSoldier
     }
 
     private bool _movingInCombat;
-    private bool _rpgKneeling;
     private AiPatrolAction? _patrolOneShotChild;
     private AiEvasiveAction? _patrolRollChild;
     private bool _patrolProne;
@@ -3248,17 +3247,18 @@ public sealed class AiSoldier
 
         if (!_combatInstalled || CombatPhase == AiCombatPhase.Ended)
         {
-            _combat?.Begin();
+            // The installers leave the body as they find it and pick the sub-arm from it: crouched -> the
+            // kneel arm (0x48ABA0 -> 0x48C250, the RPG's 0x48CB40 -> its kneel tick), prone -> the prone
+            // arm (0x48C510). A patrol crouching on its route when combat installs fights kneeling.
+            bool crouched = IsCrouching || AiCombatChannels.IsInStance(_type, AiStanceChannel.Kneeling, CombatState);
+            bool prone = AiCombatChannels.IsInStance(_type, AiStanceChannel.Prone, CombatState);
+            _combat?.Begin(crouched);
             _patrol?.Begin();
             _gunnerCombat?.Begin();
-            Body.Reset();
             _detectionShoutDone = false;
             _alertPingCounter = 0;
-
-            // The arm installer (0x48ABA0) picks the sub-arm from the BODY: crouched -> the kneel arm
-            // (0x48C250/0x48C280), prone -> the prone arm. A patrol crouch-walking its route when
-            // combat installs therefore fights kneeling until it moves or the row says otherwise.
-            _patrolKneeling = IsCrouching && Arm == AiCombatArm.Patrol;
+            _patrolProne = prone && Arm == AiCombatArm.Patrol;
+            _patrolKneeling = crouched && !_patrolProne && Arm == AiCombatArm.Patrol;
         }
 
         _combatInstalled = true;
@@ -3323,6 +3323,7 @@ public sealed class AiSoldier
             return;
         }
 
+        bool mounted = false;
         if (_gunnerCombat is not null)
         {
             AiStationaryGun? gun = GunnerId == -1 ? null : _stationaryGun?.Invoke(GunnerId);
@@ -3356,6 +3357,8 @@ public sealed class AiSoldier
                 }
                 return;
             }
+
+            mounted = gunner.RunMountedWeapon;
         }
 
         if (_patrol is not null)
@@ -3364,19 +3367,10 @@ public sealed class AiSoldier
             return;
         }
 
+        // A knife gets no branch of its own. 0x48D080's close-combat test reads HumanAI+15836 == 5, a word
+        // only the constructor ever writes, so it is dead; a guard holding a knife reaches the fire child,
+        // sets up no burst (sub_48B9C0 has none for it) and stands.
         AiCombatWeaponState weapon = _weapon();
-
-        // A guard holding a KNIFE never sets up a burst: 0x48D080 tests the held category against 5 and
-        // instead turns to the shared record position and raises the close-combat channel every tick,
-        // taking no aim slot.
-        if (weapon.Category == WeaponCategory.Knife)
-        {
-            WriteChannel(AiCombatChannel.CloseCombat, 1f);
-            TurnTowards(AimPointOf(enemy, _enemyCrouching), (float)AiGuardCombat.AimToleranceRadians);
-            Target?.Aim(this, AiAimMode.None);
-            Combat = default;
-            return;
-        }
 
         AiCombatSense sense = new(
             HasDetectionSlot: _playerSlot.IsRegistered,
@@ -3398,26 +3392,30 @@ public sealed class AiSoldier
         // the third double of the primary block {alpha, gamma, length, alarmLength} -- not the
         // alarm-extended range. Passing the alerted range stretched the ramp and made every alerted
         // guard more accurate at range than retail's.
-        AiCombatPhase phaseBeforeUpdate = _combat.Phase;
-        bool standing = AiCombatChannels.IsInStance(_type, AiStanceChannel.Standing, CombatState);
-        AiCombatCommand command = _combat.Update(sense, standing, Vision.Primary.Length);
-        Combat = command;
-
-        // RPG's two callbacks (0x48CBD0 stand / 0x48CDF0 kneel) share the ordinary fire, reload,
-        // target and close-combat children. At a completed decision boundary they change stance on
-        // the original 40% draw; the kneeling callback holds channel 1 every tick.
-        if (Arm == AiCombatArm.Rpg
-            && phaseBeforeUpdate != AiCombatPhase.Stand
-            && _combat.Phase == AiCombatPhase.Stand
-            && sense.Visible
-            && _random.NextDouble() < 0.40000001)
+        AiCombatCommand command;
+        if (mounted)
         {
-            _rpgKneeling = !_rpgKneeling;
+            command = _combat.UpdateMounted(sense, enemy, Vision.Primary.Length);
+        }
+        else if (Arm == AiCombatArm.Rpg)
+        {
+            // 0x48CBD0 gates on the stand state, 0x48CDF0 (and the reload it installs) on the kneel one.
+            AiStanceChannel stance = _combat.RpgKneeling ? AiStanceChannel.Kneeling : AiStanceChannel.Standing;
+            command = _combat.UpdateRpg(
+                sense, AiCombatChannels.IsInStance(_type, stance, CombatState), Vision.Primary.Length);
+        }
+        else
+        {
+            bool standing = AiCombatChannels.IsInStance(_type, AiStanceChannel.Standing, CombatState);
+            command = _combat.Update(sense, standing, Vision.Primary.Length);
         }
 
-        // The same writes 0x48EF70 makes, recorded rather than applied -- see ChannelWrites.
+        Combat = command;
+
+        // The same writes 0x48EF70 makes, recorded rather than applied -- see ChannelWrites. The RPG's
+        // kneel tick and every child it installs hold channel 1 on every tick.
         _channelWrites.Clear();
-        if (Arm == AiCombatArm.Rpg && _rpgKneeling)
+        if (Arm == AiCombatArm.Rpg && _combat.RpgKneeling)
         {
             WriteChannel(AiCombatChannel.Kneel, 1f);
         }
@@ -3443,12 +3441,12 @@ public sealed class AiSoldier
 
         if (command.TurnTo is { } point)
         {
-            if (MountedGun is { } mounted)
+            if (MountedGun is { } emplacement)
             {
                 // State 36 stays attached at the mount heading. The StationaryGun task, not the
                 // Human root, consumes the turn inputs and clamps the barrel to its authored cone.
-                Facing = mounted.MountFacing;
-                _combat.ReportAimed(mounted.Contains(point));
+                Facing = emplacement.MountFacing;
+                _combat.ReportAimed(emplacement.Contains(point));
             }
             else
             {
@@ -3535,13 +3533,13 @@ public sealed class AiSoldier
             return;
         }
 
-        // 0x48C540 holds logical channel 2 throughout the prone behavior. State 15 owns the drop,
-        // state 26 is stable prone, and releasing the channel selects state 16 (get-up).
+        // 0x48C540 holds logical channel 2 throughout the prone behavior and chooses only once the body
+        // is in the type's prone state (sub_48EFE0(C, 2)); releasing the channel selects the get-up.
         if (_patrolProne)
         {
             _channelWrites.Clear();
             WriteChannel(AiCombatChannel.LieDown, 1f);
-            if (CombatState is not HumanSoldierStates.ProneState and not 27 and not 28)
+            if (!AiCombatChannels.IsInStance(_type, AiStanceChannel.Prone, CombatState))
             {
                 Combat = default;
                 return;
@@ -3646,6 +3644,15 @@ public sealed class AiSoldier
             return;
         }
 
+        // "Waiting for kneel state" -- 0x48C280 holds channel 1 and chooses only in the kneel state.
+        if (_patrolKneeling && !AiCombatChannels.IsInStance(_type, AiStanceChannel.Kneeling, CombatState))
+        {
+            _channelWrites.Clear();
+            HoldPosture();
+            Combat = default;
+            return;
+        }
+
         // A negative "Combat liedown mim distance" stands the kneel and prone arms straight back up:
         // both dispatchers test the row value at +15800 (settings item +620 x 4096) and become the
         // standing arm when it is below zero (0x48C280 / 0x48C540).
@@ -3704,6 +3711,17 @@ public sealed class AiSoldier
         AiPatrolAction action = _patrol!.Choose(sense);
         PatrolAction = action;
         _channelWrites.Clear();
+
+        // The kneel and prone arms answer a move with the stand arm (0x48BBD0) and the move's own per-tick
+        // on the same tick, writing the posture channel 0: the soldier sets off as it rises, with no
+        // wait for the stand state and no second decision.
+        if ((_patrolProne || _patrolKneeling)
+            && action is AiPatrolAction.RePosition or AiPatrolAction.Follow or AiPatrolAction.LookForTarget)
+        {
+            _patrolProne = false;
+            _patrolKneeling = false;
+        }
+
         HoldPosture();
 
         Combat = default;
@@ -3711,20 +3729,16 @@ public sealed class AiSoldier
         switch (action)
         {
             case AiPatrolAction.End:
-                if (_patrolProne || _patrolKneeling)
-                {
-                    _patrolProne = false;
-                    _patrolKneeling = false;
-                    _channelWrites.Clear();
-                    return;
-                }
-
+                // Every arm ends the action outright (case 8 -> sub_450FF0); the body rises by itself
+                // once nothing holds its posture channel.
                 EndCombat();
                 return;
 
             case AiPatrolAction.CloseCombat:
                 if (_patrolProne || _patrolKneeling)
                 {
+                    // Close enough to strike from the ground: the arm only becomes the stand arm, and the
+                    // strike is chosen again once the body is up.
                     _patrolProne = false;
                     _patrolKneeling = false;
                     _channelWrites.Clear();
@@ -3755,14 +3769,6 @@ public sealed class AiSoldier
                 return;
 
             case AiPatrolAction.LookForTarget:
-                if (_patrolProne || _patrolKneeling)
-                {
-                    _patrolProne = false;
-                    _patrolKneeling = false;
-                    _channelWrites.Clear();
-                    return;
-                }
-
                 Target?.Aim(this, AiAimMode.Crowded);
 
                 // The original walks to its destination EVERY tick and the action is only the upper body,
@@ -3782,27 +3788,11 @@ public sealed class AiSoldier
                 return;
 
             case AiPatrolAction.RePosition:
-                if (_patrolProne || _patrolKneeling)
-                {
-                    _patrolProne = false;
-                    _patrolKneeling = false;
-                    _channelWrites.Clear();
-                    return;
-                }
-
                 HeadFor(CurrentNode);
                 AdvanceInCombat(rootMotionThisTick);
                 return;
 
             case AiPatrolAction.Follow:
-                if (_patrolProne || _patrolKneeling)
-                {
-                    _patrolProne = false;
-                    _patrolKneeling = false;
-                    _channelWrites.Clear();
-                    return;
-                }
-
                 _followTargetNode = NearestNode(enemy);
                 FollowTarget(enemy, rootMotionThisTick);
                 return;

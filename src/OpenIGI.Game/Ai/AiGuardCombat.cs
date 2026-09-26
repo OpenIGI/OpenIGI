@@ -114,6 +114,9 @@ public sealed class AiGuardCombat
     private Vector3d _trackedAim;
     private Vector3d _targetThisTick;
 
+    // The RPG arm's +15824: -1 on install, 0 after a shot, 1 after a reload, 2 after a stance change.
+    private int _rpgState = -1;
+
     /// <summary>Initializes a new instance of the <see cref="AiGuardCombat"/> class.</summary>
     /// <param name="parameters">The AI's combat row.</param>
     /// <param name="random">A source of values in <c>[0, 1)</c>.</param>
@@ -154,8 +157,14 @@ public sealed class AiGuardCombat
     /// The original also fills <c>HumanAI+15828</c> with the initial movement delay here, but nothing
     /// reads that counter (§10.5) so there is nothing to carry.
     /// </remarks>
-    public void Begin()
+    /// <param name="crouched">
+    /// Whether the body is crouched when the action is taken — the RPG arm's install (<c>0x48CB40</c>)
+    /// starts on its kneel tick then. The other arms ignore it.
+    /// </param>
+    public void Begin(bool crouched = false)
     {
+        RpgKneeling = crouched;
+        _rpgState = -1;
         Phase = AiCombatPhase.Stand;
         _missTicks = 0;
         _roundsLeft = 0;
@@ -278,6 +287,12 @@ public sealed class AiGuardCombat
             return new AiCombatCommand { Aim = AiAimMode.Crowded };
         }
 
+        return StartBurst(sense, primaryViewLengthInUnits, AiAimMode.Aiming);
+    }
+
+    // sub_48B9C0 and the fire child it installs, shared by every arm that stands and shoots.
+    private AiCombatCommand StartBurst(in AiCombatSense sense, double primaryViewLengthInUnits, AiAimMode aim)
+    {
         // The first burst of an engagement is deliberately made half as accurate, and the flag is
         // consumed here exactly as the original clears its argument-block byte after the call.
         AiCombatBurst burst = AiCombatBurst.Begin(
@@ -298,7 +313,160 @@ public sealed class AiGuardCombat
         _trackedAim = _targetThisTick;
         Phase = AiCombatPhase.Fire;
 
-        return new AiCombatCommand { Aim = AiAimMode.Aiming, StartedBurst = burst };
+        // The RPG arm takes no aim slot at all, which is not the same as releasing one.
+        return new AiCombatCommand { Aim = aim == AiAimMode.None ? null : aim, StartedBurst = burst };
+    }
+
+    /// <summary>Gets whether the RPG arm is on its kneel tick (<c>0x48CDF0</c>) rather than its stand tick.</summary>
+    /// <remarks>The kneel tick and every child it installs hold channel 1 — the shoulder — on every tick.</remarks>
+    public bool RpgKneeling { get; private set; }
+
+    /// <summary>Runs one tick of the RPG soldier's arm — <c>0x48CBD0</c> standing, <c>0x48CDF0</c> kneeling.</summary>
+    /// <param name="sense">What the body looks like this tick.</param>
+    /// <param name="inStance">
+    /// Whether the body is in the tick's own state: standing (0) for the stand tick, kneeling (7) for the
+    /// kneel tick and for the reload, which always runs at the shoulder.
+    /// </param>
+    /// <param name="primaryViewLengthInUnits">The AI's primary view length, for the accuracy scaling.</param>
+    /// <returns>What the body should do.</returns>
+    /// <remarks>
+    /// <para>
+    /// The guard's children fire and reload, but the decision is the RPG's own. With a round loaded — or
+    /// straight after a reload, which forces a shot — it fires, except that after a shot or a stance change
+    /// it first draws, and below 0.4 swaps between its stand and kneel ticks instead of shooting. With no
+    /// round it reloads kneeling: from the stand tick <c>0x48AE70</c> switches to the kneel tick and runs it
+    /// at once, so the reload starts on the same tick.
+    /// </para>
+    /// <para>
+    /// It takes no aim slot on the target record (it never calls <c>sub_4511F0</c>), so the crowding limit
+    /// that holds back a fifth guard never holds back a rocket.
+    /// </para>
+    /// </remarks>
+    public AiCombatCommand UpdateRpg(in AiCombatSense sense, bool inStance, double primaryViewLengthInUnits)
+    {
+        if (Phase == AiCombatPhase.Ended)
+        {
+            return new AiCombatCommand { Ended = true };
+        }
+
+        _targetThisTick = sense.TargetPosition;
+        int misses = _missTicks;
+        _missTicks = 0;
+
+        if (!sense.HasDetectionSlot)
+        {
+            return End();
+        }
+
+        if (Phase == AiCombatPhase.Fire)
+        {
+            return Firing(sense);
+        }
+
+        if (Phase == AiCombatPhase.Reload)
+        {
+            return Reloading(sense, inStance);
+        }
+
+        if (!inStance)
+        {
+            return default;
+        }
+
+        if (!sense.Visible)
+        {
+            _missTicks = misses + 1;
+            if (_missTicks > _parameters.TargetingTimeoutTicks)
+            {
+                return End();
+            }
+
+            if (!sense.InCone)
+            {
+                return new AiCombatCommand { TurnTo = _targetThisTick };
+            }
+        }
+
+        if (sense.AmmoInClip <= 0 && _rpgState != 1)
+        {
+            RpgKneeling = true;
+            _rpgState = 1;
+            Phase = AiCombatPhase.Reload;
+            return Reloading(sense, standing: false);
+        }
+
+        // Only straight after a shot is the draw made; below 0.4 the arm changes stance instead of firing.
+        // On install, after a reload or after a stance change the shot is taken without one.
+        if (_rpgState == 0 && _random() < 0.40000001)
+        {
+            RpgKneeling = !RpgKneeling;
+            _rpgState = 2;
+            return default;
+        }
+
+        if (!sense.Visible)
+        {
+            return default;
+        }
+
+        _rpgState = 0;
+        return StartBurst(sense, primaryViewLengthInUnits, AiAimMode.None);
+    }
+
+    /// <summary>Runs one tick of a gunner on its emplacement — <c>0x48D340</c>'s mounted branch.</summary>
+    /// <param name="sense">What the body looks like this tick.</param>
+    /// <param name="recordPosition">The shared target record's position (<c>+15016 + 272</c>).</param>
+    /// <param name="primaryViewLengthInUnits">The AI's primary view length, for the accuracy scaling.</param>
+    /// <returns>What the body should do.</returns>
+    /// <remarks>
+    /// There is no stance gate and no reload: the gun is fed by its own task. While the target is seen a
+    /// finished burst gives way to the next on the same tick; the moment it is lost the burst is dropped
+    /// (<c>a2+36 = 0</c>), the aim slot released and the barrel swung to where the squad last saw it, until
+    /// the targeting timeout ends the action.
+    /// </remarks>
+    public AiCombatCommand UpdateMounted(in AiCombatSense sense, Vector3d recordPosition, double primaryViewLengthInUnits)
+    {
+        if (Phase == AiCombatPhase.Ended)
+        {
+            return new AiCombatCommand { Ended = true };
+        }
+
+        _targetThisTick = sense.TargetPosition;
+        int misses = _missTicks;
+        _missTicks = 0;
+
+        if (!sense.HasDetectionSlot)
+        {
+            return End();
+        }
+
+        if (!sense.Visible)
+        {
+            _missTicks = misses + 1;
+            if (_missTicks > _parameters.TargetingTimeoutTicks)
+            {
+                return End();
+            }
+
+            CancelChild();
+            return new AiCombatCommand { Aim = AiAimMode.None, TurnTo = recordPosition };
+        }
+
+        if (Phase == AiCombatPhase.Fire)
+        {
+            AiCombatCommand firing = Firing(sense);
+            if (Phase == AiCombatPhase.Fire)
+            {
+                return firing;
+            }
+        }
+
+        if (sense.AimersOnTarget >= AiCombatTarget.MaximumAimers)
+        {
+            return new AiCombatCommand { Aim = AiAimMode.Crowded };
+        }
+
+        return StartBurst(sense, primaryViewLengthInUnits, AiAimMode.Aiming);
     }
 
     /// <summary>Reports whether the turn the last command asked for reached its tolerance.</summary>
