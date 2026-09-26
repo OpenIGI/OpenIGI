@@ -19,10 +19,6 @@ namespace OpenIGI.Game.Player;
 /// A reload asked for away from the shoulder raises it first. The per-ticks also accept bit
 /// <c>0x10</c> as the aim, which <c>0x456CF0</c> never sets and nothing in the port raises.
 /// </para>
-/// <para>
-/// <c>0x4566A0</c> re-enters the fall on every tick the body is off the ground, restarting it. The
-/// port's AI bodies never leave the ground, so the fall is modelled as held instead.
-/// </para>
 /// </remarks>
 public sealed class HumanSoldierRpgBodyMachine : HumanBodyMachine
 {
@@ -32,13 +28,15 @@ public sealed class HumanSoldierRpgBodyMachine : HumanBodyMachine
     private const int AimSlot = 21;
     private const int ScriptedAnimationSlot = 22;
 
-    // +3332: the request 0x456CF0 stores from slot 22, and the clip 0x456960 took from it on entry.
-    private int _scriptedAnimationRequest;
-    private int _scriptedAnimation;
 
     /// <summary>Initializes an RPG soldier's machine, standing.</summary>
     public HumanSoldierRpgBodyMachine()
-        : base(HumanSoldierRpgStates.Table, HumanSoldierRpgStates.StandState)
+        : base(
+            HumanSoldierRpgStates.Table,
+            HumanSoldierRpgStates.StandState,
+            HumanHitZoneTable.RpgSoldier,
+            HumanSoldierRpgStates.FlinchState,
+            HumanSoldierRpgStates.ScriptedAnimationState)
     {
     }
 
@@ -48,27 +46,18 @@ public sealed class HumanSoldierRpgBodyMachine : HumanBodyMachine
     /// <inheritdoc/>
     public override bool IsMoving => State is WalkState or RunState;
 
-    /// <inheritdoc/>
-    /// <remarks>
-    /// <see cref="ScriptedAnimationState"/> plays the id the AI wrote to frame slot 22 — <c>+3332</c>,
-    /// which <c>0x456960</c> hands to <c>0x489EA0</c> as a one-shot.
-    /// </remarks>
-    public override int CurrentAnimation =>
-        State == ScriptedAnimationState ? _scriptedAnimation : base.CurrentAnimation;
 
     /// <inheritdoc/>
     protected override int NextState(in HumanBodyInput input)
     {
+        NoteScriptedAnimationRequest(input, ScriptedAnimationSlot);
         Signals s = Signals.Pack(input);
-        if (s.ScriptedAnimationRequested)
-        {
-            _scriptedAnimationRequest = s.ScriptedAnimation;
-        }
 
         return State switch
         {
-            // 0x4566A0: lands to standing, or dies if the kill landed in the air. It tests no flinch.
-            AirborneState => !input.OnGround ? AirborneState : input.Dead ? DeathState : StandState,
+            // 0x4566A0: re-enters itself on every tick off the ground, restarting the fall; lands to standing,
+            // or dies if the kill landed in the air. It tests no flinch.
+            AirborneState => !input.OnGround ? Restart(AirborneState) : input.Dead ? DeathState : StandState,
 
             // 0x4560F0: the shoulder raise tests the ground and the kill, not the flinch.
             ShoulderRaiseState => !input.OnGround ? AirborneState
@@ -89,16 +78,6 @@ public sealed class HumanSoldierRpgBodyMachine : HumanBodyMachine
         };
     }
 
-    /// <inheritdoc/>
-    protected override void OnEntered(int state)
-    {
-        if (state == ScriptedAnimationState)
-        {
-            // 0x456960 plays +3332 and then clears it: the request is spent, so only a fresh -1 ends it.
-            _scriptedAnimation = _scriptedAnimationRequest;
-            _scriptedAnimationRequest = 0;
-        }
-    }
 
     private int Act(in Signals s) => State switch
     {
@@ -148,7 +127,7 @@ public sealed class HumanSoldierRpgBodyMachine : HumanBodyMachine
         AimToFireState => s.AnimationDone ? AimedFiringState : AimToFireState,
 
         // 0x456A10: any movement, fire or aim bit in 0x81FE1 — or a request of -1 — ends it.
-        ScriptedAnimationState => s.EndsScriptedAnimation || _scriptedAnimationRequest == -1
+        ScriptedAnimationState => s.EndsScriptedAnimation || ScriptedAnimationCancelled
             ? StandState
             : ScriptedAnimationState,
 
@@ -164,7 +143,6 @@ public sealed class HumanSoldierRpgBodyMachine : HumanBodyMachine
         bool Reload,
         bool Aim,
         bool ScriptedAnimationRequested,
-        int ScriptedAnimation,
         bool EndsScriptedAnimation)
     {
         public static Signals Pack(in HumanBodyInput input)
@@ -178,7 +156,6 @@ public sealed class HumanSoldierRpgBodyMachine : HumanBodyMachine
                 Reload: input.IsSet(ReloadSlot),
                 Aim: aim,
                 ScriptedAnimationRequested: input.IsSet(ScriptedAnimationSlot),
-                ScriptedAnimation: (int)input.Frame[ScriptedAnimationSlot],
                 EndsScriptedAnimation: input.AsksForAction || aim || input.AnimationDone);
         }
     }

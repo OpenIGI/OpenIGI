@@ -27,13 +27,15 @@ public sealed class HumanSoldierFemaleBodyMachine : HumanBodyMachine
     private const int UseObjectSlot = 22;
     private const int WeaponDrawnSlot = 23;
 
-    // +3340: the request 0x454BA0 stores from slot 21, and the clip 0x4547F0 took from it on entry.
-    private int _scriptedAnimationRequest;
-    private int _scriptedAnimation;
 
     /// <summary>Initializes a female soldier's machine, standing.</summary>
     public HumanSoldierFemaleBodyMachine()
-        : base(HumanSoldierFemaleStates.Table, HumanSoldierFemaleStates.StandState)
+        : base(
+            HumanSoldierFemaleStates.Table,
+            HumanSoldierFemaleStates.StandState,
+            HumanHitZoneTable.FemaleSoldier,
+            HumanSoldierFemaleStates.FlinchState,
+            HumanSoldierFemaleStates.ScriptedAnimationState)
     {
     }
 
@@ -43,23 +45,12 @@ public sealed class HumanSoldierFemaleBodyMachine : HumanBodyMachine
     /// <inheritdoc/>
     public override bool IsMoving => State is WalkState or RunState;
 
-    /// <inheritdoc/>
-    /// <remarks>
-    /// <see cref="ScriptedAnimationState"/> plays the id the AI wrote to frame slot 21 — <c>+3340</c>,
-    /// which <c>0x4547F0</c> hands to <c>0x489EA0</c> in loop mode.
-    /// </remarks>
-    public override int CurrentAnimation =>
-        State == ScriptedAnimationState ? _scriptedAnimation : base.CurrentAnimation;
 
     /// <inheritdoc/>
     protected override int NextState(in HumanBodyInput input)
     {
+        NoteScriptedAnimationRequest(input, ScriptedAnimationSlot);
         Signals s = Signals.Pack(input);
-        if (s.ScriptedAnimationRequested)
-        {
-            // 0x454BA0 stores slot 21's value at +3340 on every tick the slot is written.
-            _scriptedAnimationRequest = s.ScriptedAnimation;
-        }
 
         return State switch
         {
@@ -82,16 +73,6 @@ public sealed class HumanSoldierFemaleBodyMachine : HumanBodyMachine
         };
     }
 
-    /// <inheritdoc/>
-    protected override void OnEntered(int state)
-    {
-        if (state == ScriptedAnimationState)
-        {
-            // 0x4547F0 plays +3340 and then clears it: the request is spent, so only a fresh -1 ends it.
-            _scriptedAnimation = _scriptedAnimationRequest;
-            _scriptedAnimationRequest = 0;
-        }
-    }
 
     private int Act(in Signals s) => State switch
     {
@@ -132,7 +113,7 @@ public sealed class HumanSoldierFemaleBodyMachine : HumanBodyMachine
         LowerWeaponState => s.AnimationDone ? StandState : LowerWeaponState,
 
         // 0x454880: any movement, fire or weapon bit in 0x301FE1 — or a request of -1 — ends it.
-        ScriptedAnimationState => s.EndsScriptedAnimation || _scriptedAnimationRequest == -1
+        ScriptedAnimationState => s.EndsScriptedAnimation || ScriptedAnimationCancelled
             ? StandState
             : ScriptedAnimationState,
 
@@ -148,7 +129,6 @@ public sealed class HumanSoldierFemaleBodyMachine : HumanBodyMachine
         bool Reload,
         bool WeaponDrawn,
         bool ScriptedAnimationRequested,
-        int ScriptedAnimation,
         bool EndsScriptedAnimation)
     {
         public static Signals Pack(in HumanBodyInput input)
@@ -162,7 +142,6 @@ public sealed class HumanSoldierFemaleBodyMachine : HumanBodyMachine
                 Reload: input.IsSet(ReloadSlot),
                 WeaponDrawn: weaponDrawn,
                 ScriptedAnimationRequested: input.IsSet(ScriptedAnimationSlot),
-                ScriptedAnimation: (int)input.Frame[ScriptedAnimationSlot],
                 EndsScriptedAnimation: input.AsksForAction
                     || weaponDrawn
                     || input.IsSet(UseObjectSlot)

@@ -25,6 +25,10 @@ namespace OpenIGI.Game.Player;
 /// frame slot 4, so it reports the fact here.
 /// </param>
 /// <param name="Running">Bit <c>0x40000</c>: the run byte at <c>Human+3328</c>.</param>
+/// <param name="HitZone">
+/// The zone the hit that raised <paramref name="Flinch"/> struck — <c>Human+744</c>, which names the flinch
+/// clip. <c>-1</c> when nothing was hit.
+/// </param>
 public readonly record struct HumanBodyInput(
     PlayerInputFrame Frame,
     bool AnimationDone,
@@ -32,7 +36,8 @@ public readonly record struct HumanBodyInput(
     bool Flinch = false,
     bool Dead = false,
     bool MovingForward = false,
-    bool Running = false)
+    bool Running = false,
+    int HitZone = -1)
 {
     // Frame slots 2..9, packed as bits 0x20..0x1000 by every class's signal handler.
     private const int FirstActionSlot = 2;

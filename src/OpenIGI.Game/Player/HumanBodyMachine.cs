@@ -12,23 +12,50 @@ namespace OpenIGI.Game.Player;
 /// tick. What differs between classes is the state set, their entries and per-ticks, and the table of
 /// clips at <c>Human+824</c> — which is what a derived class supplies.
 /// </para>
+/// <para>
+/// Two entries are the same shape in every class and live here. The flinch state plays the struck zone's
+/// limb clip — the row <c>Human+744</c> names in the class's hit-zone table, <c>+4</c> into it — and the
+/// scripted-animation state plays the clip the AI wrote to its class's request slot, consuming the
+/// request as it enters so only a fresh <c>-1</c> can end it.
+/// </para>
 /// </remarks>
 public abstract class HumanBodyMachine
 {
-    /// <summary>Initializes a machine standing in <paramref name="standState"/>.</summary>
+    private readonly IReadOnlyList<HumanHitZone> _hitZones;
+    private readonly int _flinchState;
+    private readonly int _scriptedAnimationState;
+    private int _lastHitZone = -1;
+    private int _flinchAnimation = -1;
+    private int _scriptedAnimationRequest;
+    private int _scriptedAnimation = -1;
+    private bool _restart;
+
+    /// <summary>Initializes a machine standing in <paramref name="initialState"/>.</summary>
     /// <param name="table">The class's <c>{animation, mode}</c> table.</param>
-    /// <param name="standState">The state the machine starts in and returns to on <see cref="Reset"/>.</param>
-    protected HumanBodyMachine(HumanBodyStateTable table, int standState)
+    /// <param name="initialState">The state the machine starts in and returns to on <see cref="Reset"/>.</param>
+    /// <param name="hitZones">The class's hit-zone table, whose rows name the flinch clips.</param>
+    /// <param name="flinchState">The state a flinch enters.</param>
+    /// <param name="scriptedAnimationState">The state that plays the clip the AI names.</param>
+    protected HumanBodyMachine(
+        HumanBodyStateTable table,
+        int initialState,
+        IReadOnlyList<HumanHitZone> hitZones,
+        int flinchState,
+        int scriptedAnimationState)
     {
         ArgumentNullException.ThrowIfNull(table);
+        ArgumentNullException.ThrowIfNull(hitZones);
         StateTable = table;
-        InitialState = standState;
-        State = standState;
-        PreviousState = standState;
+        InitialState = initialState;
+        State = initialState;
+        PreviousState = initialState;
+        _hitZones = hitZones;
+        _flinchState = flinchState;
+        _scriptedAnimationState = scriptedAnimationState;
     }
 
-    /// <summary>Gets the class's <c>{animation, mode}</c> table.</summary>
-    public HumanBodyStateTable StateTable { get; }
+    /// <summary>Gets the <c>{animation, mode}</c> table in force — <c>Human+824</c>.</summary>
+    public HumanBodyStateTable StateTable { get; private set; }
 
     /// <summary>Gets the state the machine starts in and stands in — every class's state 0.</summary>
     public int InitialState { get; }
@@ -49,9 +76,23 @@ public abstract class HumanBodyMachine
     /// <summary>Gets whether the machine is in forward locomotion, walking or running.</summary>
     public abstract bool IsMoving { get; }
 
+    /// <summary>
+    /// Gets the clip a death in the current posture plays when it is not the general death's to choose, or
+    /// <see langword="null"/> when the general death chooses.
+    /// </summary>
+    public virtual int? PostureDeathAnimation => null;
+
+    /// <summary>Gets whether the body is flinching from a hit, whatever the AI is doing.</summary>
+    public virtual bool IsFlinching => State == _flinchState;
+
     /// <summary>Gets the clip the current state plays, or <c>-1</c> when it names none.</summary>
-    /// <remarks>A class whose states name their own clip at entry overrides this.</remarks>
-    public virtual int CurrentAnimation => StateTable.AnimationOf(State);
+    public int CurrentAnimation =>
+        State == _flinchState ? _flinchAnimation
+        : State == _scriptedAnimationState ? _scriptedAnimation
+        : StateTable.AnimationOf(State);
+
+    /// <summary>Gets whether the stored scripted-animation request is the <c>-1</c> that ends the state.</summary>
+    protected bool ScriptedAnimationCancelled => _scriptedAnimationRequest == -1;
 
     /// <summary>Puts the machine back to standing.</summary>
     public void Reset() => Advance(InitialState);
@@ -59,7 +100,16 @@ public abstract class HumanBodyMachine
     /// <summary>Runs one tick, taking at most one transition.</summary>
     /// <param name="input">What the body reads this tick.</param>
     /// <returns>The state after the tick.</returns>
-    public int Tick(in HumanBodyInput input) => Advance(NextState(input));
+    public int Tick(in HumanBodyInput input)
+    {
+        if (input.Flinch && input.HitZone >= 0)
+        {
+            // The hit handler writes the struck zone to Human+744 before it raises the flinch bit.
+            _lastHitZone = input.HitZone;
+        }
+
+        return Advance(NextState(input));
+    }
 
     /// <summary>Chooses the state the current state's per-tick leaves for.</summary>
     /// <param name="input">What the body reads this tick.</param>
@@ -80,25 +130,76 @@ public abstract class HumanBodyMachine
         : input.Dead ? death
         : null;
 
+    /// <summary>Stores the scripted-animation request the class's signal handler reads from its slot.</summary>
+    /// <param name="input">What the body reads this tick.</param>
+    /// <param name="slot">The frame slot the class keeps the request in.</param>
+    /// <remarks>The handler stores the slot's value on every tick the slot is written.</remarks>
+    protected void NoteScriptedAnimationRequest(in HumanBodyInput input, int slot)
+    {
+        if (input.IsSet(slot))
+        {
+            _scriptedAnimationRequest = (int)input.Frame[slot];
+        }
+    }
+
+    /// <summary>Installs a different <c>{animation, mode}</c> table, as a class's update may.</summary>
+    /// <param name="table">The table to read clips from.</param>
+    protected void UseStateTable(HumanBodyStateTable table)
+    {
+        ArgumentNullException.ThrowIfNull(table);
+        StateTable = table;
+    }
+
+    /// <summary>Asks for the current state to be entered again, restarting its clip.</summary>
+    /// <param name="state">The state a per-tick transitions to itself.</param>
+    /// <returns><paramref name="state"/>, for the per-tick to return.</returns>
+    /// <remarks>
+    /// A per-tick that names its own state still runs the transition — previous state, entry, the clip from
+    /// the top — which is how a fresh prone flinch restarts the flinch it lands in.
+    /// </remarks>
+    protected int Restart(int state)
+    {
+        _restart = true;
+        return state;
+    }
+
     /// <summary>Takes a transition the way <c>0x4EC1E0</c> does, or stays.</summary>
     /// <param name="next">The state to be in after this tick.</param>
     /// <returns>The state after the tick.</returns>
     protected int Advance(int next)
     {
-        ChangedThisTick = next != State;
+        ChangedThisTick = next != State || _restart;
+        _restart = false;
         if (ChangedThisTick)
         {
             PreviousState = State;
             State = next;
-            OnEntered(next);
+            Enter(next);
         }
 
         return State;
     }
 
-    /// <summary>Runs a state's entry side effects.</summary>
+    /// <summary>Runs a class's own entry side effects, after the shared ones.</summary>
     /// <param name="state">The state just entered.</param>
     protected virtual void OnEntered(int state)
     {
+    }
+
+    private void Enter(int state)
+    {
+        if (state == _flinchState)
+        {
+            _flinchAnimation = _lastHitZone >= 0 && _lastHitZone < _hitZones.Count
+                ? _hitZones[_lastHitZone].LimbAnimation
+                : -1;
+        }
+        else if (state == _scriptedAnimationState)
+        {
+            _scriptedAnimation = _scriptedAnimationRequest;
+            _scriptedAnimationRequest = 0;
+        }
+
+        OnEntered(state);
     }
 }

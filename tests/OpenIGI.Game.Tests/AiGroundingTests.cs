@@ -35,7 +35,7 @@ public sealed class AiGroundingTests
         });
         soldier.Kill();
 
-        soldier.TickDeadBody(new Vector3f(20f, 30f, -80f));
+        soldier.TickDeadBody(new Vector3f(20f, 30f, -80f), deathClipEnded: false);
 
         Assert.Equal(initial.Z, soldier.Position.Z);
         Assert.Equal(initial.X + 20.0, soldier.Position.X);

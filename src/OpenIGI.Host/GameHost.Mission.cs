@@ -782,8 +782,7 @@ internal sealed partial class GameHost
         }
 
         // The grunt a soldier makes at a non-fatal hit, rate-limited per human.
-        _soldiers.SetHitSound(position => PlayHitSound(
-            HumanVariantSound.AiHitPrefix, HumanVariantSound.AiHitVariants, position));
+        _soldiers.SetHitSound((prefix, variants, position) => PlayHitSound(prefix, variants, position));
         _soldiers.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(_soundRandom));
         _soldiers.SetMeleeStrikeSink(StrikePlayer);
         _soldiers.SetPlayerDeltaTranslationScale(() => _playerDeltaTranslationScale);

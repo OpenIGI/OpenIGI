@@ -1245,6 +1245,11 @@ public sealed class AiSoldier
 
         _type = type;
         _weapon = weapon;
+        if (Body is HumanSoldierBodyMachine soldierBody)
+        {
+            soldierBody.UseClips(SoldierClipsFor(type));
+        }
+
         Arm = AiCombatArms.For(type);
 
         // The patrol arm's own fire and reload sub-actions ARE the guard arm's - the original installs
@@ -1260,6 +1265,17 @@ public sealed class AiSoldier
 
         CombatParameters = parameters;
     }
+
+    // 0x45CF90's switch over the brain's type: which Human+824 a HumanSoldier plays.
+    private static HumanBodyStateTable SoldierClipsFor(AiType type) => type switch
+    {
+        AiType.Priboi => HumanSoldierStates.PriboiTable,
+        AiType.Civilian => HumanSoldierStates.CivilianTable,
+        AiType.SpetnazPatrolUzi or AiType.SpetnazPatrolAk or AiType.SpetnazPatrolSpas
+            or AiType.SpetnazGuardUzi or AiType.SpetnazGuardAk or AiType.SpetnazGuardSpas
+            => HumanSoldierStates.SpetsnazTable,
+        _ => HumanSoldierStates.Table,
+    };
 
     /// <summary>Gets whether the carried inventory contains a grenade weapon.</summary>
     /// <remarks>
@@ -1351,12 +1367,28 @@ public sealed class AiSoldier
     /// resolves it to, every raw write on its own slot, and the trigger on slot 6 — so each class's signal
     /// handler finds its bits where the original's does. See <see cref="HumanBodyInput"/>.
     /// </remarks>
-    public int TickCombatState(bool animationDone) =>
-        Body.Tick(new HumanBodyInput(
+    public int TickCombatState(bool animationDone)
+    {
+        int state = Body.Tick(new HumanBodyInput(
             WrittenFrame(),
             animationDone,
+            Flinch: _flinchZone >= 0,
             Dead: Activity == AiSoldierActivity.Dead,
-            MovingForward: IsMovingInCombat));
+            MovingForward: IsMovingInCombat,
+            HitZone: _flinchZone));
+
+        // 0x45D080 clears the flinch bit straight after the machine's tick: it is a one-tick pulse, and a
+        // state that does not test it on that tick loses it.
+        _flinchZone = -1;
+        return state;
+    }
+
+    /// <summary>Raises the flinch bit a hit that passed the soldier's recoil rule sets.</summary>
+    /// <param name="zone">The zone the hit struck — <c>Human+744</c>, which names the flinch clip.</param>
+    public void Flinch(int zone) => _flinchZone = zone;
+
+    // The zone of this tick's flinching hit, or -1: machine+8's 0x10000 bit with Human+744 beside it.
+    private int _flinchZone = -1;
 
     /// <summary>The input frame this tick's writes put together — <c>Human+432</c>.</summary>
     private PlayerInputFrame WrittenFrame()
@@ -1723,6 +1755,7 @@ public sealed class AiSoldier
     {
         Activity = AiSoldierActivity.Dead;
         DeathFallVelocity = fallVelocity;
+        _deathClipEnded = false;
         Route = null;
         _route.Clear();
         DestinationNode = -1;
@@ -1820,6 +1853,9 @@ public sealed class AiSoldier
     /// <summary>Gets the corrective velocity the death-fall solver returned, in engine units per tick.</summary>
     public Vector3d DeathFallVelocity { get; private set; }
 
+    // Whether the death clip has ended, after which the corpse no longer slides.
+    private bool _deathClipEnded;
+
     /// <summary>
     /// Steps a dead body for one tick — the death state's per-tick (<c>0x45C700</c>) joined to the soldier
     /// update's ordinary root-motion move and ground query (<c>0x45D080</c>).
@@ -1828,6 +1864,7 @@ public sealed class AiSoldier
     /// What the death clip's own root-motion track moved this tick, in the body's model space. The soldier
     /// update rotates exactly this into world space and hands it to the movement integrator.
     /// </param>
+    /// <param name="deathClipEnded">Whether the death clip ended this tick, after which the corpse stops sliding.</param>
     /// <remarks>
     /// <para>
     /// Three things move a corpse, and all three are here: the clip's root motion, the solver's corrective
@@ -1842,7 +1879,7 @@ public sealed class AiSoldier
     /// height is retained and the renderer's root sample supplies the visible fall pose.
     /// </para>
     /// </remarks>
-    public void TickDeadBody(Vector3f rootMotionDelta)
+    public void TickDeadBody(Vector3f rootMotionDelta, bool deathClipEnded)
     {
         if (Activity != AiSoldierActivity.Dead)
         {
@@ -1852,9 +1889,13 @@ public sealed class AiSoldier
         Vector3d local = new(rootMotionDelta.X, rootMotionDelta.Y, rootMotionDelta.Z);
         Vector3d world = SoldierDeathFall.RotateAboutZ(local, Facing);
 
-        double x = Position.X + world.X + DeathFallVelocity.X;
-        double y = Position.Y + world.Y + DeathFallVelocity.Y;
-        double z = Position.Z + world.Z + DeathFallVelocity.Z;
+        // 0x45C700 adds the fall solver's velocity until the death clip ends, then hands the corpse to
+        // 0x45C740, which adds nothing more.
+        _deathClipEnded |= deathClipEnded;
+        Vector3d slide = _deathClipEnded ? default : DeathFallVelocity;
+        double x = Position.X + world.X + slide.X;
+        double y = Position.Y + world.Y + slide.Y;
+        double z = Position.Z + world.Z + slide.Z;
 
         if (_ground is not null && _ground(x, y, z + GroundProbeAboveUnits, out double groundZ))
         {

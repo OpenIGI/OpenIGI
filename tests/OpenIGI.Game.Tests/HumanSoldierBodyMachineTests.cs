@@ -11,7 +11,7 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 public sealed class HumanSoldierBodyMachineTests
 {
-    private static HumanSoldierBodyMachine.Signals Grounded(
+    private static HumanSoldierBodyMachine.Signal Grounded(
         bool firePose = false,
         bool fireHeld = false,
         bool throwGrenade = false,
@@ -21,21 +21,23 @@ public sealed class HumanSoldierBodyMachineTests
         bool rollLeft = false,
         bool rollRight = false,
         bool reloadPressed = false,
-        bool animDone = false) =>
-        new(
-            OnGround: true,
-            Flinch: false,
-            Dead: false,
-            FirePose: firePose,
-            FireHeld: fireHeld,
-            ThrowGrenade: throwGrenade,
-            CloseCombat: closeCombat,
-            Kneel: kneel,
-            LieDown: lieDown,
-            RollLeft: rollLeft,
-            RollRight: rollRight,
-            ReloadPressed: reloadPressed,
-            AnimationDone: animDone);
+        bool animDone = false,
+        bool movingForward = false) =>
+        HumanSoldierBodyMachine.Signal.OnGround
+        | Bit(firePose, HumanSoldierBodyMachine.Signal.FirePose)
+        | Bit(fireHeld, HumanSoldierBodyMachine.Signal.Fire)
+        | Bit(throwGrenade, HumanSoldierBodyMachine.Signal.ThrowGrenade)
+        | Bit(closeCombat, HumanSoldierBodyMachine.Signal.CloseCombat)
+        | Bit(kneel, HumanSoldierBodyMachine.Signal.Kneel)
+        | Bit(lieDown, HumanSoldierBodyMachine.Signal.LieDown)
+        | Bit(rollLeft, HumanSoldierBodyMachine.Signal.RollLeft)
+        | Bit(rollRight, HumanSoldierBodyMachine.Signal.RollRight)
+        | Bit(reloadPressed, HumanSoldierBodyMachine.Signal.Reload)
+        | Bit(animDone, HumanSoldierBodyMachine.Signal.AnimationDone)
+        | Bit(movingForward, HumanSoldierBodyMachine.Signal.Forward | HumanSoldierBodyMachine.Signal.TenseRun);
+
+    private static HumanSoldierBodyMachine.Signal Bit(bool set, HumanSoldierBodyMachine.Signal bit) =>
+        set ? bit : HumanSoldierBodyMachine.Signal.None;
 
     /// <summary>Raising the weapon runs stand → rack → ready, and the rack holds until its clip finishes.</summary>
     [Fact]
@@ -100,19 +102,19 @@ public sealed class HumanSoldierBodyMachineTests
         airborne.Tick(Grounded(firePose: true, fireHeld: true));
         Assert.Equal(
             HumanSoldierStates.AirborneState,
-            airborne.Tick(new HumanSoldierBodyMachine.Signals(false, false, false, true, true, false, false, false, false, false, false, false, false)));
+            airborne.Tick(HumanSoldierBodyMachine.Signal.FirePose | HumanSoldierBodyMachine.Signal.Fire));
 
         HumanSoldierBodyMachine flinched = new();
         flinched.Tick(Grounded(firePose: true, fireHeld: true));
         Assert.Equal(
             HumanSoldierStates.FlinchState,
-            flinched.Tick(new HumanSoldierBodyMachine.Signals(true, true, false, true, true, false, false, false, false, false, false, false, false)));
+            flinched.Tick(Grounded(firePose: true, fireHeld: true) | HumanSoldierBodyMachine.Signal.Flinch));
 
         HumanSoldierBodyMachine killed = new();
         killed.Tick(Grounded(firePose: true, fireHeld: true));
         Assert.Equal(
             HumanSoldierStates.DeathState,
-            killed.Tick(new HumanSoldierBodyMachine.Signals(true, false, true, true, true, false, false, false, false, false, false, false, false)));
+            killed.Tick(Grounded(firePose: true, fireHeld: true) | HumanSoldierBodyMachine.Signal.Dead));
     }
 
     [Fact]
@@ -271,16 +273,24 @@ public sealed class HumanSoldierBodyMachineTests
 
         Assert.Equal(
             HumanSoldierStates.RunState,
-            machine.Tick(Grounded() with { MovingForward = true }));
+            machine.Tick(Grounded(movingForward: true)));
         Assert.Equal(
             HumanSoldierStates.RunFiringState,
-            machine.Tick(Grounded(fireHeld: true) with { MovingForward = true }));
+            machine.Tick(Grounded(fireHeld: true, movingForward: true)));
         Assert.Equal(
             HumanSoldierStates.RunFiringState,
-            machine.Tick(Grounded(fireHeld: true) with { MovingForward = true }));
+            machine.Tick(Grounded(fireHeld: true, movingForward: true)));
+
+        // 0x45AB00 returns to the run only once the clip ends with the trigger released.
+        Assert.Equal(
+            HumanSoldierStates.RunFiringState,
+            machine.Tick(Grounded(movingForward: true)));
         Assert.Equal(
             HumanSoldierStates.RunState,
-            machine.Tick(Grounded() with { MovingForward = true }));
+            machine.Tick(Grounded(movingForward: true, animDone: true)));
+
+        // 0x457FC0 leaves the tense run for the forward gait, whose own per-tick then stands.
+        Assert.Equal(HumanSoldierStates.ForwardState, machine.Tick(Grounded()));
         Assert.Equal(HumanSoldierStates.StandState, machine.Tick(Grounded()));
     }
 

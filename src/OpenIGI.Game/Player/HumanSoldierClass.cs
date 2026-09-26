@@ -28,11 +28,12 @@ public sealed class HumanSoldierClass
         int fallbackStandAnimation,
         HumanBodyStateTable states,
         int walkAnimation,
-        int runAnimation,
+        int runState,
         IReadOnlyList<HumanHitZone> hitZones,
         SoldierDeathClips? deathClips,
         bool scalesEkkRootMotion,
         int? grenadeThrowState,
+        HumanRecoilRule recoilRule,
         Func<HumanBodyMachine> createBody)
     {
         TypeName = typeName;
@@ -41,11 +42,12 @@ public sealed class HumanSoldierClass
         FallbackStandAnimation = fallbackStandAnimation;
         States = states;
         WalkAnimation = walkAnimation;
-        RunAnimation = runAnimation;
+        RunState = runState;
         HitZones = hitZones;
         DeathClips = deathClips;
         ScalesEkkRootMotion = scalesEkkRootMotion;
         GrenadeThrowState = grenadeThrowState;
+        RecoilRule = recoilRule;
         _createBody = createBody;
     }
 
@@ -61,11 +63,12 @@ public sealed class HumanSoldierClass
         fallbackStandAnimation: 2,
         HumanSoldierStates.Table,
         walkAnimation: HumanLocomotionStates.For(1).AnimationId,
-        runAnimation: HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.RunState),
+        HumanSoldierStates.RunState,
         HumanHitZoneTable.Soldier,
         SoldierDeathClips.Soldier,
         scalesEkkRootMotion: false,
         grenadeThrowState: HumanSoldierStates.GrenadeThrowState,
+        HumanRecoilRule.Threshold,
         static () => new HumanSoldierBodyMachine());
 
     /// <summary>Gets the female soldier — <c>0x454970</c>, the class of Level 14's Anya and Ekk.</summary>
@@ -76,11 +79,12 @@ public sealed class HumanSoldierClass
         fallbackStandAnimation: 6,
         HumanSoldierFemaleStates.Table,
         walkAnimation: HumanSoldierFemaleStates.Table.AnimationOf(HumanSoldierFemaleStates.WalkState),
-        runAnimation: HumanSoldierFemaleStates.Table.AnimationOf(HumanSoldierFemaleStates.RunState),
+        HumanSoldierFemaleStates.RunState,
         HumanHitZoneTable.FemaleSoldier,
         deathClips: null,
         scalesEkkRootMotion: true,
         grenadeThrowState: null,
+        HumanRecoilRule.ThresholdWithoutFlinch,
         static () => new HumanSoldierFemaleBodyMachine());
 
     /// <summary>Gets the RPG soldier — <c>0x456AD0</c>, Level 10's launcher.</summary>
@@ -91,11 +95,12 @@ public sealed class HumanSoldierClass
         fallbackStandAnimation: 2,
         HumanSoldierRpgStates.Table,
         walkAnimation: HumanSoldierRpgStates.Table.AnimationOf(HumanSoldierRpgStates.WalkState),
-        runAnimation: HumanSoldierRpgStates.Table.AnimationOf(HumanSoldierRpgStates.RunState),
+        HumanSoldierRpgStates.RunState,
         HumanHitZoneTable.RpgSoldier,
         SoldierDeathClips.RpgSoldier,
         scalesEkkRootMotion: false,
         grenadeThrowState: null,
+        HumanRecoilRule.EveryHit,
         static () => new HumanSoldierRpgBodyMachine());
 
     /// <summary>Gets the script name the level data instantiates the class under.</summary>
@@ -117,8 +122,12 @@ public sealed class HumanSoldierClass
     /// <summary>Gets the clip a moving body walks in.</summary>
     public int WalkAnimation { get; }
 
-    /// <summary>Gets the clip a moving body runs in.</summary>
-    public int RunAnimation { get; }
+    /// <summary>Gets the state a moving body runs in.</summary>
+    /// <remarks>Its clip comes from the body's table in force, which a soldier's type may have replaced.</remarks>
+    public int RunState { get; }
+
+    /// <summary>Gets the clip a moving body runs in under the class's base table.</summary>
+    public int RunAnimation => States.AnimationOf(RunState);
 
     /// <summary>Gets the class's hit-zone table, as its constructor hands it to <c>0x489C30</c>.</summary>
     public IReadOnlyList<HumanHitZone> HitZones { get; }
@@ -138,6 +147,20 @@ public sealed class HumanSoldierClass
 
     /// <summary>Gets the state whose end releases a thrown grenade, or <see langword="null"/> for a class that throws none.</summary>
     public int? GrenadeThrowState { get; }
+
+    /// <summary>Gets how the class answers a hit that does not kill.</summary>
+    public HumanRecoilRule RecoilRule { get; }
+
+    /// <summary>Gets whether the AI settings row's recoil threshold applies to this class.</summary>
+    /// <remarks><c>0x406F70</c> writes <c>Human+3332</c> only when the type word is <c>HumanSoldier</c>'s.</remarks>
+    public bool TakesConfiguredRecoilThreshold => ReferenceEquals(this, Soldier);
+
+    /// <summary>Starts a soldier's recoil.</summary>
+    /// <param name="configuredThreshold">The settings row's threshold, when the soldier has one.</param>
+    /// <returns>The accumulator.</returns>
+    public HumanRecoil CreateRecoil(float? configuredThreshold) => new(
+        RecoilRule,
+        TakesConfiguredRecoilThreshold && configuredThreshold is { } threshold ? threshold : HumanRecoil.DefaultThreshold);
 
     /// <summary>Gets every modelled class.</summary>
     public static IReadOnlyList<HumanSoldierClass> All { get; } = [Soldier, FemaleSoldier, RpgSoldier];

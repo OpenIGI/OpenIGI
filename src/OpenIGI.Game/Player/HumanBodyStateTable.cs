@@ -34,6 +34,22 @@ public sealed class HumanBodyStateTable
         _entries = [.. entries];
     }
 
+    /// <summary>A copy with some states' clips replaced, their modes kept.</summary>
+    /// <param name="clips">The states whose clip differs, and the clip each plays.</param>
+    /// <returns>The new table.</returns>
+    /// <remarks>How a class's alternative tables relate to its base one: same states, same modes, some clips.</remarks>
+    public HumanBodyStateTable WithAnimations(params (int State, int Animation)[] clips)
+    {
+        ArgumentNullException.ThrowIfNull(clips);
+        var entries = ((int Animation, int Mode)[])_entries.Clone();
+        foreach ((int state, int animation) in clips)
+        {
+            entries[state] = (animation, entries[state].Mode);
+        }
+
+        return new HumanBodyStateTable(entries);
+    }
+
     /// <summary>Gets how many states the machine has.</summary>
     public int StateCount => _entries.Length;
 

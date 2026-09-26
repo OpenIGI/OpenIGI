@@ -89,6 +89,7 @@ public sealed class SoldierRenderer : IDisposable
     /// </remarks>
     private readonly Func<IHeldWeaponPresenter>? _heldWeapons;
     private readonly Dictionary<SoldierView, HumanHealth> _health = [];
+    private readonly Dictionary<SoldierView, HumanRecoil> _recoil = [];
     // FUN_004D9620 writes Human+0xA0 from FUN_004D0950(model), which reads the authored model bound
     // at model+0x78. This is the exact value used by the retail detector; the derived vertex radius is
     // not a substitute because it is materially smaller for the retail soldier models.
@@ -243,7 +244,7 @@ public sealed class SoldierRenderer : IDisposable
     /// <summary>Sounds a soldier's grunt at being hit, rate-limited the way the original is.</summary>
     /// <param name="report">The sink, or <see langword="null"/> to make hits silent.</param>
     /// <remarks>The argument is the body's position in engine units.</remarks>
-    public void SetHitSound(Action<Vector3d>? report) => _hitSound = report;
+    public void SetHitSound(Action<string, int, Vector3d>? report) => _hitSound = report;
 
     /// <summary>Reports a close-combat strike against the player, already probability-gated.</summary>
     /// <param name="report">The sink, or <see langword="null"/> to drop strikes.</param>
@@ -274,7 +275,10 @@ public sealed class SoldierRenderer : IDisposable
     public void SetPlayerDeltaTranslationScale(Func<float>? scale) => _playerDeltaTranslationScale = scale;
 
     /// <summary>Plays a struck soldier's grunt unless it is still inside its cooldown.</summary>
-    private void ReportHitSound(SoldierView view)
+    private void ReportHitSound(
+        SoldierView view,
+        string prefix = HumanVariantSound.AiHitPrefix,
+        int variants = HumanVariantSound.AiHitVariants)
     {
         if (_hitSound is null || _hitCooldown is null)
         {
@@ -289,7 +293,7 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         _hitQuietUntil[view] = _tick + _hitCooldown();
-        _hitSound(view.Position);
+        _hitSound(prefix, variants, view.Position);
     }
 
     /// <summary>Resolves what a soldier's step landed on and hands the footstep out.</summary>
@@ -351,7 +355,7 @@ public sealed class SoldierRenderer : IDisposable
     }
 
     private Action<Vector3d>? _deathSound;
-    private Action<Vector3d>? _hitSound;
+    private Action<string, int, Vector3d>? _hitSound;
     private Action<Vector3d, float>? _meleeStrikeSink;
     private AnimTriggerRegistry? _animationTriggers;
     private Func<int>? _hitCooldown;
@@ -3373,8 +3377,12 @@ public sealed class SoldierRenderer : IDisposable
                 // A corpse is still stepped. The death state's per-tick (0x45C700) adds the fall solver's
                 // corrective velocity, the soldier update moves the body by the death clip's own root
                 // motion, and the ground query catches it. Freezing the body here is what left it standing.
-                brain.Kill();
-                brain.TickDeadBody(view.RootMotion());
+                if (brain.Activity != AiSoldierActivity.Dead)
+                {
+                    brain.Kill();
+                }
+
+                brain.TickDeadBody(view.RootMotion(), view.Bones.SourceOf(0)?.EndedThisTick ?? false);
                 view.PlaceAt(brain.Position, view.Orientation);
                 Member? corpse = FindMember(view);
                 if (corpse is not null)
@@ -3588,13 +3596,18 @@ public sealed class SoldierRenderer : IDisposable
             // The body machine consumes this tick's AI channel writes before the weapon consumes the
             // body's forwarded trigger. Running it after FireIfAsked let a round leave while the body
             // was still in rack/ready/recover and skipped state 18 entirely during a running burst.
+            // 0x45D080 ticks the body every tick whatever the AI is doing, which is what lets a patrolling
+            // guard flinch; its state drives the clip in a fight, and a flinch whatever the activity.
             int? combatState = null;
-            if (!brain.IsMounted
-                && brain.Activity is AiSoldierActivity.Engaging or AiSoldierActivity.FiringAtTask)
+            if (!brain.IsMounted)
             {
                 bool animationDone = (view.Bones.SourceOf(0)?.EndedThisTick ?? false)
                     || _combatClipMissing.Contains(view);
-                combatState = brain.TickCombatState(animationDone);
+                int bodyState = brain.TickCombatState(animationDone);
+                if (brain.Activity is AiSoldierActivity.Engaging or AiSoldierActivity.FiringAtTask)
+                {
+                    combatState = bodyState;
+                }
             }
 
             // The grenade leaves the hand when the throw state ENDS -- the clip has swung. The
@@ -3652,8 +3665,16 @@ public sealed class SoldierRenderer : IDisposable
             // animation.
             HumanSoldierClass soldierClass = brain.SoldierClass;
             int walkAnimation = soldierClass.WalkAnimation;
-            int runAnimation = soldierClass.RunAnimation;
-            if (brain.RequestedAnimation >= 0)
+            int runAnimation = brain.Body.StateTable.AnimationOf(soldierClass.RunState);
+            if (brain.Body.IsFlinching)
+            {
+                // A flinch owns the body over any other clip: every per-tick leaves for it on the pulse.
+                if (!view.PlayStateAnimation(brain.Body.CurrentAnimation, soldierClass.States.Loops(brain.Body.State)))
+                {
+                    _combatClipMissing.Add(view);
+                }
+            }
+            else if (brain.RequestedAnimation >= 0)
             {
                 view.PlayStateAnimation(brain.RequestedAnimation, loops: false);
             }
@@ -3679,7 +3700,7 @@ public sealed class SoldierRenderer : IDisposable
                 // the StationaryGun task reads slot 6 and fires; it does not enter the ordinary
                 // 0/12/10/6 carried-weapon body cycle.
                 int mountedState = AiCombatChannels.StateOf(brain.Type, AiStanceChannel.Mounted);
-                int animation = soldierClass.States.AnimationOf(mountedState);
+                int animation = brain.Body.StateTable.AnimationOf(mountedState);
                 if (animation < 0
                     || !view.PlayStateAnimation(animation, soldierClass.States.Loops(mountedState)))
                 {
@@ -3704,7 +3725,7 @@ public sealed class SoldierRenderer : IDisposable
             else if (brain.Activity == AiSoldierActivity.FallenFlat)
             {
                 int state = AiCombatChannels.StateOf(brain.Type, AiStanceChannel.Prone);
-                int animation = soldierClass.States.AnimationOf(state);
+                int animation = brain.Body.StateTable.AnimationOf(state);
                 if (animation < 0
                     || !view.PlayStateAnimation(animation, soldierClass.States.Loops(state)))
                 {
@@ -5490,18 +5511,18 @@ public sealed class SoldierRenderer : IDisposable
                     continue;
                 }
 
-                health.Apply(ExplosionDamage.Zone, dose, brain?.IsInstantDeathDisabled ?? false);
+                float dealt = health.Apply(ExplosionDamage.Zone, dose, brain?.IsInstantDeathDisabled ?? false);
+                brain?.ReceiveDamage(position);
 
                 if (health.IsDead)
                 {
+                    // 0x45A3D0 records death mode 0 for a blast: the body is thrown, turned to it.
                     HumanHit hit = new(feet, distance, ExplosionDamage.Zone, 0f, 0f);
-                    brain?.ReceiveDamage(position);
-                    Die(soldier, hit, position, feet, WeaponCategory.Grenade);
+                    Die(soldier, hit, position, feet, WeaponCategory.Grenade, SoldierDeathMode.Untouched);
                 }
                 else
                 {
-                    brain?.ReceiveDamage(position);
-                    ReportHitSound(soldier);
+                    ReactToHit(soldier, brain, ExplosionDamage.Zone, dealt, explosion: true);
                 }
             }
         }
@@ -5837,28 +5858,21 @@ public sealed class SoldierRenderer : IDisposable
         bool invulnerable = friendlyFire || (brain?.IsInvulnerable ?? false);
         if (!invulnerable)
         {
-            struck.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
+            float dealt = struck.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
+            brain?.ReceiveDamage(origin);
 
             if (struck.IsDead && struckView is not null)
             {
-                brain?.ReceiveDamage(origin);
-                Die(struckView, hit, origin, end, category);
+                Die(struckView, hit, origin, end, category, SoldierDeath.ModeFor(category));
             }
-            else
+            else if (struckView is not null)
             {
-                brain?.ReceiveDamage(origin);
+                ReactToHit(struckView, brain, hit.Zone, dealt, explosion: false);
 
-                // The grunt. 0x4553E0 plays it on the branch where the hit was NOT fatal -- a killing
-                // round goes to the death state, which has its own cry -- and 0x4637C0 rate-limits it
-                // per human, or a soldier caught in a burst would grunt on every round that landed.
-                // 0x45D3C0 adds the blade's own sound when the weapon's category is the knife.
-                if (struckView is not null)
+                // 0x45D3C0 adds the blade's own sound to the grunt when the weapon's category is the knife.
+                if (category == WeaponCategory.Knife)
                 {
-                    ReportHitSound(struckView);
-                    if (category == WeaponCategory.Knife)
-                    {
-                        _scriptSound?.Invoke(KnifeStabSound, struckView.Position, true);
-                    }
+                    _scriptSound?.Invoke(KnifeStabSound, struckView.Position, true);
                 }
             }
         }
@@ -5913,6 +5927,36 @@ public sealed class SoldierRenderer : IDisposable
         return health;
     }
 
+    /// <summary>A non-lethal hit: the soldier's class decides whether it flinches, and it grunts.</summary>
+    /// <remarks>
+    /// Every hit handler plays the grunt on the non-lethal branch, and an explosion only when it made the
+    /// soldier react (<c>0x45A3D0</c>). The flinch is the bit the handlers raise for the body machine.
+    /// </remarks>
+    private void ReactToHit(SoldierView soldier, AiSoldier? brain, int zone, float dealt, bool explosion)
+    {
+        if (!_recoil.TryGetValue(soldier, out HumanRecoil? recoil))
+        {
+            float? configured = _combat.TryGetValue(soldier, out AiCombatParameters? row) ? row.RecoilThreshold : null;
+            recoil = soldier.Soldier.Class.CreateRecoil(configured);
+            _recoil[soldier] = recoil;
+        }
+
+        HumanRecoilOutcome outcome = recoil.Absorb(dealt);
+        if (outcome.Flinches)
+        {
+            brain?.Flinch(zone);
+        }
+
+        if (!explosion)
+        {
+            ReportHitSound(soldier);
+        }
+        else if (outcome.Reacted)
+        {
+            ReportHitSound(soldier, HumanVariantSound.AiExplosionHitPrefix, HumanVariantSound.AiExplosionHitVariants);
+        }
+    }
+
     /// <summary>
     /// A fresh damage state — <c>0x489C30</c> over the class's hit-zone table, with the settings row's
     /// maximum health once <c>0x406F70</c> has configured the soldier.
@@ -5931,30 +5975,46 @@ public sealed class SoldierRenderer : IDisposable
     /// brain is told, so it steps the body every tick from then on instead of freezing it.
     /// </para>
     /// </remarks>
-    private void Die(SoldierView view, HumanHit hit, Vector3d origin, Vector3d end, WeaponCategory category)
+    private void Die(
+        SoldierView view,
+        HumanHit hit,
+        Vector3d origin,
+        Vector3d end,
+        WeaponCategory category,
+        SoldierDeathMode mode)
     {
         Matrix3f orientation = view.Orientation;
         Vector3f forward = new(orientation.M12, orientation.M22, orientation.M32);
 
         HumanSoldierClass soldierClass = view.Soldier.Class;
-        SoldierDeathMode mode = SoldierDeath.ModeFor(category);
         _brains.TryGetValue(view, out AiSoldier? brain);
         int scriptOverride = brain?.DeathAnimationOverride ?? -1;
-
-        // 0x45C440 turns the body to the round (0x45DAA0) only in its thrown branch, which the script's
-        // override skips: a crumple falls with the facing it died with.
         Vector3d travel = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
         float facing = GammaOf(view);
-        bool front = true;
-        if (scriptOverride == -1 && soldierClass.TurnsToTheShot(mode))
-        {
-            front = SoldierDeath.TurnToTheShot(travel, forward, ref facing);
-        }
 
-        // The engine's own rand(2). Alternating is not the same distribution, but the two retail head-row
-        // entries are equal and the two crumple clips are a pair, so what the flip has to do is vary them.
-        int flip = _deathsSoFar++ & 1;
-        int animation = soldierClass.ChooseDeathAnimation(mode, hit.Zone, front, flip, scriptOverride);
+        int animation;
+        if (brain?.Body.PostureDeathAnimation is { } postureDeath)
+        {
+            // A kneeling or prone body dies in its posture's own state (0x45C5A0, 0x45C650), which plays a
+            // fixed clip and does not turn.
+            animation = postureDeath;
+        }
+        else
+        {
+            // 0x45C440 turns the body to the round (0x45DAA0) only in its thrown branch, which the script's
+            // override skips: a crumple falls with the facing it died with.
+            bool front = true;
+            if (scriptOverride == -1 && soldierClass.TurnsToTheShot(mode))
+            {
+                front = SoldierDeath.TurnToTheShot(travel, forward, ref facing);
+            }
+
+            // The engine's own rand(2). Alternating is not the same distribution, but the two retail
+            // head-row entries are equal and the two crumple clips are a pair, so what the flip has to do
+            // is vary them.
+            int flip = _deathsSoFar++ & 1;
+            animation = soldierClass.ChooseDeathAnimation(mode, hit.Zone, front, flip, scriptOverride);
+        }
 
         Vector3d fall = default;
         if (animation >= 0 && view.Bones.Set.TryGet(animation, out BoneAnimation clip) && _cast is { } cast)
@@ -6166,16 +6226,16 @@ public sealed class SoldierRenderer : IDisposable
             bool invulnerable = friendlyFire || (brain?.IsInvulnerable ?? false);
             if (!invulnerable)
             {
-                health.Apply(candidate.Zone, weapon.DamageFactor, brain?.IsInstantDeathDisabled ?? false);
+                float dealt = health.Apply(candidate.Zone, weapon.DamageFactor, brain?.IsInstantDeathDisabled ?? false);
 
                 if (health.IsDead)
                 {
-                    Die(struckView, candidate, origin, end, weapon.Category);
+                    Die(struckView, candidate, origin, end, weapon.Category, SoldierDeath.ModeFor(weapon.Category));
                 }
                 else
                 {
                     brain?.ReceiveDamage(origin);
-                    ReportHitSound(struckView);
+                    ReactToHit(struckView, brain, candidate.Zone, dealt, explosion: false);
                 }
             }
 
