@@ -134,6 +134,9 @@ public sealed class RetailBulletImpactMaterialTests
         return index.TryCast(to, from, out hit);
     }
 
+    /// <summary>The retail material table, as level 1 loads it.</summary>
+    internal static GameMaterialRegistry LevelOneMaterials() => Load(1).Materials;
+
     private static (LoadedMission Mission, GameMaterialRegistry Materials) Load(int missionId)
     {
         VirtualFileSystem fileSystem = new();

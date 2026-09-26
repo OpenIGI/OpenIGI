@@ -147,7 +147,7 @@ internal sealed partial class GameHost
                     hit,
                     MarkSurfaceAt(hit.Position, hit.Normal),
                     _worldMaterials,
-                    probe: _effectWalls);
+                    probe: _player?.MarkProbe);
                 _impactEffects.SpawnSurfaceImpact(
                     hit.Position, hit.Normal, look, material.Entry, struckHuman: false);
                 string where = FormattableString.Invariant(

@@ -811,6 +811,14 @@ public sealed class PlayerCamera
         _animator = new HumanLocomotionAnimator(set);
     }
 
+    /// <summary>Gets the cast a mark's corner test probes with, or null when no walls are loaded.</summary>
+    /// <remarks>
+    /// It has to be the same collision the rounds strike. <c>0x47D920</c> probes each corner a few
+    /// millimetres either side of the struck face, so a cast over any other mesh -- the player's
+    /// movement level in particular -- misses every corner and drops every mark.
+    /// </remarks>
+    public WorldRayCast? MarkProbe => _walls?.Caster();
+
     /// <summary>Makes the level's placed objects solid.</summary>
     /// <param name="walls">The index built over the scene's placements.</param>
     /// <exception cref="ArgumentNullException"><paramref name="walls"/> is <see langword="null"/>.</exception>
@@ -2558,7 +2566,7 @@ public sealed class PlayerCamera
                         materials,
                         isEntry: !impact.Wall.IsExit,
                         exitCrossing: impact.Wall.IsExit,
-                        probe: _body.Walls);
+                        probe: MarkProbe);
                 }
             }
 
@@ -2771,7 +2779,7 @@ public sealed class PlayerCamera
         {
             PendingMark pending = _pendingMarks[i];
             bool isEntry = !deflected && (i < _pendingMarks.Count - 1 || !pending.Hit.IsExit);
-            Marks.TryAdd(pending.Hit, pending.Surface, table, isEntry, pending.ExitCrossing, _body.Walls);
+            Marks.TryAdd(pending.Hit, pending.Surface, table, isEntry, pending.ExitCrossing, MarkProbe);
         }
 
         _pendingMarks.Clear();
