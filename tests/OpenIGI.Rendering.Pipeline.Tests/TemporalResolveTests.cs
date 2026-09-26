@@ -33,28 +33,39 @@ public sealed class TemporalResolveTests(ITestOutputHelper output)
 
         output.WriteLine($"{dispatches.Count} dispatch(es)");
 
-        Assert.Equal(9, dispatches.Count);
-        Assert.Equal(9, device.CommandsOf<RecordedRhiCommand.SetPipeline>().Count);
+        Assert.Equal(8, dispatches.Count);
+        Assert.Equal(8, device.CommandsOf<RecordedRhiCommand.SetPipeline>().Count);
     }
 
     [Fact]
     public void The_occluder_scatter_is_emptied_before_the_dilation_builds_it()
     {
-        // The dilation builds it with an atomic minimum. Left as the last frame had it, every frame's
-        // minimum took in every frame before, the decimation found an occluder in front of every history
-        // texel, and the resolve passed the raw frame straight through -- measured against the Vulkan
-        // renderer, its parallax view came out fully inverted.
+        // The dilation builds it with an atomic. Left as the last frame had it, every frame's scatter took
+        // in every frame before, the decimation found an occluder in front of every history texel, and the
+        // resolve passed the raw frame straight through -- its parallax view came out fully inverted.
         using RecordingRhiDevice device = new();
         using SceneTargetSet targets = new(device, 64, 64);
         using TemporalResolve resolve = new(device, framesInFlight: 2);
 
         Record(device, resolve, targets);
 
-        List<string> pipelines = [.. device.CommandsOf<RecordedRhiCommand.SetPipeline>().Select(set => set.Label)];
-        output.WriteLine(string.Join(", ", pipelines));
+        IReadOnlyList<RecordedRhiCommand> commands = device.Commands;
+        int cleared = commands
+            .Select((command, index) => (command, index))
+            .Where(entry => entry.command is RecordedRhiCommand.WriteBuffer clear && clear.Label == "ClosestOccluder")
+            .Select(entry => entry.index)
+            .DefaultIfEmpty(-1)
+            .First();
+        int dilated = commands
+            .Select((command, index) => (command, index))
+            .Where(entry => entry.command is RecordedRhiCommand.SetPipeline set
+                && set.Label.Contains("DilateVelocity", StringComparison.OrdinalIgnoreCase))
+            .Select(entry => entry.index)
+            .DefaultIfEmpty(-1)
+            .First();
 
-        Assert.Contains("ClearOccluder", pipelines[0], StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("DilateVelocity", pipelines[1], StringComparison.OrdinalIgnoreCase);
+        Assert.True(cleared >= 0, "The occluder scatter was never cleared.");
+        Assert.True(dilated > cleared, "The dilation ran before the occluder scatter was cleared.");
     }
 
     [Fact]
@@ -161,12 +172,7 @@ public sealed class TemporalResolveTests(ITestOutputHelper output)
         int frameInFlight = 0)
     {
         using IRhiCommandEncoder encoder = device.CreateCommandEncoder("frame");
-
-        using (IRhiComputePassEncoder pass = encoder.BeginComputePass(new RhiComputePassDescriptor(Label: "upscale")))
-        {
-            resolve.Record(pass, targets, State(targets), TemporalResolveSettings.Default, frameInFlight);
-        }
-
+        resolve.Record(encoder, targets, State(targets), TemporalResolveSettings.Default, frameInFlight);
         device.Submit([encoder.Finish()]);
     }
 

@@ -26,7 +26,6 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// </remarks>
 public sealed class TemporalResolve : IDisposable
 {
-    private readonly ComputePass _clearOccluder;
     private readonly ComputePass _dilateVelocity;
     private readonly ComputePass _decimateHistory;
     private readonly ComputePass _thinGeometry;
@@ -54,7 +53,6 @@ public sealed class TemporalResolve : IDisposable
     {
         ArgumentNullException.ThrowIfNull(device);
 
-        _clearOccluder = new ComputePass(device, ShaderModuleId.UpscaleClearOccluder, "upscale.clear-occluder");
         _dilateVelocity = new ComputePass(device, ShaderModuleId.UpscaleDilateVelocity, "upscale.dilate-velocity");
         _decimateHistory = new ComputePass(device, ShaderModuleId.UpscaleDecimateHistory, "upscale.decimate");
         _thinGeometry = new ComputePass(device, ShaderModuleId.UpscaleThinGeometry, "upscale.thin");
@@ -82,9 +80,9 @@ public sealed class TemporalResolve : IDisposable
     /// <param name="device">The device.</param>
     /// <returns><see langword="true"/> when every module the chain is built from has the device's form.</returns>
     /// <remarks>
-    /// Two of them do not have a WGSL one: the velocity dilation scatters its occluders with an atomic on
-    /// a storage texture, which WGSL cannot express, and the shading rejection shares its tile the same
-    /// way. So on WebGPU the chain stands down whole rather than half of it running.
+    /// Every one of them has a WGSL form as well as a SPIR-V one, so this is true on both backends; it is
+    /// asked rather than assumed so that a module which lost its form for a target would stand the chain
+    /// down whole, named in the unimplemented settings, rather than let half of it run.
     /// </remarks>
     public static bool RunsOn(IRhiDevice device)
     {
@@ -92,7 +90,6 @@ public sealed class TemporalResolve : IDisposable
 
         return ((ReadOnlySpan<(ShaderModuleId Module, ShaderVariant Variant)>)
             [
-                (ShaderModuleId.UpscaleClearOccluder, default),
                 (ShaderModuleId.UpscaleDilateVelocity, default),
                 (ShaderModuleId.UpscaleDecimateHistory, default),
                 (ShaderModuleId.UpscaleThinGeometry, default),
@@ -123,8 +120,8 @@ public sealed class TemporalResolve : IDisposable
             : UpscaleRejectShadingVariants.Compact;
     }
 
-    /// <summary>Records the whole chain for one frame.</summary>
-    /// <param name="pass">The compute pass to record into.</param>
+    /// <summary>Records the whole chain for one frame, in a compute pass of its own.</summary>
+    /// <param name="encoder">The frame's encoder, outside any pass.</param>
     /// <param name="targets">The frame's targets.</param>
     /// <param name="state">The frame and the one before it.</param>
     /// <param name="settings">What the resolve is asked to do.</param>
@@ -133,22 +130,33 @@ public sealed class TemporalResolve : IDisposable
     /// The order is the whole of it. Every pass reads what the one before it wrote, and the two that
     /// read the previous frame — the decimation and the update — read the other half of a history pair
     /// rather than what this frame has already put there.
+    /// <para>
+    /// Its own pass because the closest-occluder scatter has to be emptied first, and a buffer is cleared
+    /// by a command that cannot be recorded inside a pass. Left as the last frame had it, every frame's
+    /// scatter would take in every frame before, the decimation would find an occluder in front of every
+    /// history texel and reject the whole of it, and the resolve would pass the raw frame straight through.
+    /// </para>
     /// </remarks>
+    /// <param name="timestamps">Where to time the pass, or <see langword="null"/>.</param>
     public void Record(
-        IRhiComputePassEncoder pass,
+        IRhiCommandEncoder encoder,
         SceneTargetSet targets,
         in TemporalFrameState state,
         in TemporalResolveSettings settings,
-        int frameInFlight)
+        int frameInFlight,
+        RhiTimestampWrites? timestamps = null)
     {
-        ArgumentNullException.ThrowIfNull(pass);
+        ArgumentNullException.ThrowIfNull(encoder);
         ArgumentNullException.ThrowIfNull(targets);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         int width = targets.Width;
         int height = targets.Height;
 
-        ClearOccluder(pass, targets);
+        encoder.ClearBuffer(targets.ClosestOccluder);
+
+        using IRhiComputePassEncoder pass = encoder.BeginComputePass(new RhiComputePassDescriptor(timestamps, "upscale"));
+
         DilateVelocity(pass, targets, state, frameInFlight, width, height);
         DecimateHistory(pass, targets, state, frameInFlight, width, height);
         ThinGeometry(pass, targets, state, settings, frameInFlight, width, height);
@@ -171,7 +179,7 @@ public sealed class TemporalResolve : IDisposable
 
         foreach (IDisposable owned in (ReadOnlySpan<IDisposable>)
         [
-            _clearOccluder, _dilateVelocity, _decimateHistory, _thinGeometry, _rejectShading,
+            _dilateVelocity, _decimateHistory, _thinGeometry, _rejectShading,
             _rejectionDilate, _spatialAntiAliasing, _updateHistory, _resolveHistory,
             _reprojection, _thin, _shading, _dilate, _spatial, _update, _resolve,
             _sampler,
@@ -183,15 +191,6 @@ public sealed class TemporalResolve : IDisposable
 
     private static ComputeParameters Block(IRhiDevice device, int floats, int framesInFlight, string label) =>
         new(device, floats * sizeof(float), framesInFlight, label);
-
-    /// <summary>Empties the closest-occluder scatter, which the dilation builds with an atomic minimum.</summary>
-    private void ClearOccluder(IRhiComputePassEncoder pass, SceneTargetSet targets)
-    {
-        IRhiTexture occluder = targets.Current(SceneTargetId.ClosestOccluder);
-
-        _clearOccluder.Bind("uOccluder", occluder.View);
-        _clearOccluder.Dispatch(pass, occluder.Width, occluder.Height);
-    }
 
     private void DilateVelocity(
         IRhiComputePassEncoder pass,
@@ -208,7 +207,7 @@ public sealed class TemporalResolve : IDisposable
         _dilateVelocity.Bind("uVelocity", targets.View(SceneTargetId.Velocity));
         _dilateVelocity.Bind("uDilatedVelocity", targets.View(SceneTargetId.DilatedVelocity));
         _dilateVelocity.Bind("uClosestDepth", targets.View(SceneTargetId.ClosestDepth));
-        _dilateVelocity.Bind("uOccluder", targets.View(SceneTargetId.ClosestOccluder));
+        _dilateVelocity.Bind("uOccluder", targets.ClosestOccluder);
         _dilateVelocity.Bind("p", _reprojection.Write<float>(frame, block));
 
         _dilateVelocity.BindRemainingSamplers(_sampler);
@@ -232,7 +231,7 @@ public sealed class TemporalResolve : IDisposable
         // The other half of the pair: what the frame before this one wrote, not what this one just did.
         _decimateHistory.Bind("uPrevDepth", targets.PreviousView(SceneTargetId.PreviousDepth));
         _decimateHistory.Bind("uRejection", targets.View(SceneTargetId.HistoryRejection));
-        _decimateHistory.Bind("uOccluder", targets.View(SceneTargetId.ClosestOccluder));
+        _decimateHistory.Bind("uOccluder", targets.ClosestOccluder);
         _decimateHistory.Bind("p", _reprojection.Write<float>(frame, block));
 
         _decimateHistory.BindRemainingSamplers(_sampler);

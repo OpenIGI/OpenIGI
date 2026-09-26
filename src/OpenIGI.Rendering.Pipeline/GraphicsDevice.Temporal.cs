@@ -163,16 +163,16 @@ public sealed partial class GraphicsDevice
 
         RecordObjectVelocity(scene);
 
+        if (settings.Enabled && _temporal is { } temporal)
+        {
+            temporal.Record(Encoder(), scene, state, settings, FrameSlot, _profiler.Time(RenderStage.TemporalResolve));
+            _temporalResolved = true;
+        }
+
         using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
             _profiler.Time(RenderStage.TemporalResolve),
-            "temporal")))
+            "copy-depth")))
         {
-            if (settings.Enabled && _temporal is { } temporal)
-            {
-                temporal.Record(pass, scene, state, settings, FrameSlot);
-                _temporalResolved = true;
-            }
-
             copy.Bind("uDepth", scene.View(SceneTargetId.Depth));
             copy.Bind("uPreviousDepth", scene.View(SceneTargetId.PreviousDepth));
             copy.Dispatch(pass, scene.Width, scene.Height);

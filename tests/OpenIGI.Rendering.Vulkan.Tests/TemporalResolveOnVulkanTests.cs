@@ -65,9 +65,10 @@ public sealed class TemporalResolveOnVulkanTests(ITestOutputHelper output)
                             frame,
                             frame,
                             hasHistory: frame > 0);
-
-                        resolve.Record(pass, targets, State(), TemporalResolveSettings.Default, frame);
                     }
+
+                    // In a pass of its own, which it opens after emptying the occluder scatter.
+                    resolve.Record(encoder, targets, State(), TemporalResolveSettings.Default, frame);
 
                     device.Submit([encoder.Finish()]);
                 }
@@ -107,12 +108,7 @@ public sealed class TemporalResolveOnVulkanTests(ITestOutputHelper output)
     private static void Run(VulkanRhiDevice device, TemporalResolve resolve, SceneTargetSet targets, int frame)
     {
         using IRhiCommandEncoder encoder = device.CreateCommandEncoder("upscale");
-
-        using (IRhiComputePassEncoder pass = encoder.BeginComputePass(new RhiComputePassDescriptor(Label: "upscale")))
-        {
-            resolve.Record(pass, targets, State(targets.Width, targets.Height), TemporalResolveSettings.Default, frame);
-        }
-
+        resolve.Record(encoder, targets, State(targets.Width, targets.Height), TemporalResolveSettings.Default, frame);
         device.Submit([encoder.Finish()]);
     }
 

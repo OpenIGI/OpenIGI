@@ -417,10 +417,6 @@
     {
       "id": "CopyDepth",
       "source": "Deferred/CopyDepth.slang"
-    },
-    {
-      "id": "UpscaleClearOccluder",
-      "source": "TemporalUpscale/ClearOccluder.slang"
     }
   ]
 }

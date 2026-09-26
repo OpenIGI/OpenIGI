@@ -55,7 +55,6 @@ public sealed class SceneTargetSet : IDisposable
         new(SceneTargetId.Velocity, RhiTextureFormat.Rg16Float, SceneTargetScale.Full, Compute | RhiTextureUsage.RenderTarget),
         new(SceneTargetId.DilatedVelocity, RhiTextureFormat.Rg16Float, SceneTargetScale.Full, Compute),
         new(SceneTargetId.ClosestDepth, RhiTextureFormat.R32Float, SceneTargetScale.Full, Compute),
-        new(SceneTargetId.ClosestOccluder, RhiTextureFormat.R32Uint, SceneTargetScale.Full, Compute),
         // At the presented size: the resolve reconstructs to it, and everything after reads it there.
         new(SceneTargetId.ResolveOutput, RhiTextureFormat.Rgba16Float, SceneTargetScale.Output, Compute),
         new(SceneTargetId.ResolveHistoryColour, RhiTextureFormat.Rgba16Float, SceneTargetScale.Double, Compute, SceneTargetHistory.PingPong),
@@ -87,6 +86,7 @@ public sealed class SceneTargetSet : IDisposable
 
     private readonly IRhiDevice _device;
     private readonly Dictionary<SceneTargetId, IRhiTexture[]> _targets = [];
+    private IRhiBuffer? _closestOccluder;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="SceneTargetSet"/> class.</summary>
@@ -135,6 +135,15 @@ public sealed class SceneTargetSet : IDisposable
 
     /// <summary>Gets the height the frame is presented at.</summary>
     public int OutputHeight { get; private set; }
+
+    /// <summary>Gets the closest-occluder scatter: one word per pixel of the frame, row by row.</summary>
+    /// <remarks>
+    /// A buffer rather than an image because the temporal resolve builds it with an atomic, and WGSL has
+    /// atomics on storage buffers and never on textures. The words are the complement of a view depth's
+    /// float bits, so nought is "nothing reprojected here" and a clear empties it.
+    /// </remarks>
+    public IRhiBuffer ClosestOccluder => _closestOccluder
+        ?? throw new ObjectDisposedException(nameof(SceneTargetSet));
 
     /// <summary>Gets one target, or the one a history pair is writing this frame.</summary>
     /// <param name="id">Which one.</param>
@@ -280,6 +289,11 @@ public sealed class SceneTargetSet : IDisposable
 
             _targets[spec.Id] = pair;
         }
+
+        _closestOccluder = _device.CreateBuffer(new RhiBufferDescriptor(
+            (ulong)width * (ulong)height * sizeof(uint),
+            RhiBufferUsage.Storage | RhiBufferUsage.CopyDestination,
+            "ClosestOccluder"));
     }
 
     private void Release()
@@ -293,5 +307,7 @@ public sealed class SceneTargetSet : IDisposable
         }
 
         _targets.Clear();
+        _closestOccluder?.Dispose();
+        _closestOccluder = null;
     }
 }

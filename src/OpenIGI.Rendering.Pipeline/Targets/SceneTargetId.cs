@@ -49,9 +49,6 @@ public enum SceneTargetId
     /// <summary>The nearest depth of each neighbourhood, for the dilation.</summary>
     ClosestDepth,
 
-    /// <summary>Which neighbour the nearest depth came from, packed.</summary>
-    ClosestOccluder,
-
     /// <summary>The temporal resolve's output, at the size of the frame.</summary>
     ResolveOutput,
 

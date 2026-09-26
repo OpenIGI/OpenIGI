@@ -93,13 +93,30 @@ public sealed class ComputeProgramTests(ITestOutputHelper output)
         Dictionary<int, RhiBindGroupLayoutEntry> entries = device.Resources
             .OfType<RecordedBindGroupLayout>()
             .SelectMany(layout => layout.Entries)
-            .Where(entry => entry.Type == RhiBindingType.StorageTexture)
             .ToDictionary(entry => entry.Binding);
 
-        // Two of this module's three storage textures are written and never read; one is both.
+        // Both of this module's storage textures are written and never read.
+        Assert.Equal(RhiBindingType.StorageTexture, entries[program.Slot("uDilatedVelocity").Binding].Type);
         Assert.Equal(RhiStorageAccess.WriteOnly, entries[program.Slot("uDilatedVelocity").Binding].StorageAccess);
         Assert.Equal(RhiStorageAccess.WriteOnly, entries[program.Slot("uClosestDepth").Binding].StorageAccess);
-        Assert.Equal(RhiStorageAccess.ReadWrite, entries[program.Slot("uOccluder").Binding].StorageAccess);
+
+        // The occluder scatter is built with an atomic, which only a storage buffer carries on every target.
+        Assert.Equal(RhiBindingType.StorageBuffer, entries[program.Slot("uOccluder").Binding].Type);
+    }
+
+    [Fact]
+    public void A_storage_buffer_only_read_is_bound_read_only()
+    {
+        // The decimation reads the occluder scatter the dilation built and never writes it.
+        using RecordingRhiDevice device = new();
+        using ComputeProgram program = new(device, ShaderModuleId.UpscaleDecimateHistory);
+
+        RhiBindGroupLayoutEntry occluder = device.Resources
+            .OfType<RecordedBindGroupLayout>()
+            .SelectMany(layout => layout.Entries)
+            .Single(entry => entry.Binding == program.Slot("uOccluder").Binding);
+
+        Assert.Equal(RhiBindingType.ReadOnlyStorageBuffer, occluder.Type);
     }
 
     [Fact]
