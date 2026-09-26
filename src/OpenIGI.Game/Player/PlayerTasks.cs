@@ -183,6 +183,16 @@ public sealed class HumanSoldierRpgTask : HumanSoldierTask
     }
 }
 
+/// <summary>A pistol soldier — the original's <c>HumanSoldierPistol</c>, registered at <c>0x459880</c>.</summary>
+public sealed class HumanSoldierPistolTask : HumanSoldierTask
+{
+    /// <summary>Initializes a pistol soldier with <c>0x459A20</c>'s defaults.</summary>
+    public HumanSoldierPistolTask()
+        : base(HumanSoldierClass.PistolSoldier)
+    {
+    }
+}
+
 /// <summary>
 /// The player's input source — the original's <c>HumanPlayerInput</c>.
 /// </summary>

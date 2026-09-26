@@ -1069,7 +1069,7 @@ internal sealed partial class GameHost
             if (dose > 0f && !_playerHealth.IsDead)
             {
                 _playerHealth.Apply(ExplosionDamage.Zone, dose);
-                _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
+                PresentPlayerExplosionHit(blast.Position, blast.RadiusUnits);
 
                 // A blast that zeroes the health kills exactly the way a bullet does -- without
                 // this the player stood at zero for ever.
@@ -1138,7 +1138,7 @@ internal sealed partial class GameHost
         if (dose > 0f && !_playerHealth.IsDead)
         {
             _playerHealth.Apply(ExplosionDamage.Zone, dose);
-            _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
+            PresentPlayerExplosionHit(blast.Position, blast.RadiusUnits);
             if (_playerHealth.IsDead)
             {
                 BeginPlayerDeath(blast.Position, ExplosionDamage.Zone, -1, WeaponCategory.Grenade);
@@ -1147,6 +1147,35 @@ internal sealed partial class GameHost
     }
 
     /// <summary>Applies M203 impacts emitted by the native-style projectile task.</summary>
+    /// <summary>What a blast that reaches the player does to the view — the tail of <c>0x412990</c>.</summary>
+    /// <param name="blastPosition">The blast's centre, in units.</param>
+    /// <param name="radiusUnits">The blast radius, in units.</param>
+    /// <remarks>
+    /// The view shakes by <c>k</c> of a hit's shake — all of it inside three radii of the eye, fading to
+    /// nothing at nine — for the explosion's own duration, and the four corners flash on four separate draws.
+    /// </remarks>
+    private void PresentPlayerExplosionHit(Vector3d blastPosition, float radiusUnits)
+    {
+        double beyond = (_player!.EyeUnits - blastPosition).Length - (radiusUnits * 3.0);
+        double share = beyond < 0.0 ? 1.0 : 1.0 - (beyond / (radiusUnits * 6.0));
+        if (share > 0.0)
+        {
+            _player.InstallViewShake(
+                (float)(HumanViewShake.HitPositionUnits * share),
+                (float)(HumanViewShake.HitAngleRadians * share),
+                ExplosionShakeTicks);
+        }
+
+        _damageFlash.HitEveryCorner(
+            _soundRandom.NextSingle(),
+            _soundRandom.NextSingle(),
+            _soundRandom.NextSingle(),
+            _soundRandom.NextSingle());
+    }
+
+    // The explosion message's duration (+20), which 0x47F200 fills with 90 ticks.
+    private const int ExplosionShakeTicks = 90;
+
     private void ResolveM203Detonations()
     {
         if (_player is null)
@@ -1183,7 +1212,7 @@ internal sealed partial class GameHost
             if (dose > 0f && !_playerHealth.IsDead)
             {
                 _playerHealth.Apply(ExplosionDamage.Zone, dose);
-                _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
+                PresentPlayerExplosionHit(blast.Position, blast.RadiusUnits);
                 if (_playerHealth.IsDead)
                 {
                     BeginPlayerDeath(blast.Position, ExplosionDamage.Zone, -1, WeaponCategory.Gun);
@@ -1265,7 +1294,7 @@ internal sealed partial class GameHost
         if (dose > 0f && !_playerHealth.IsDead)
         {
             _playerHealth.Apply(ExplosionDamage.Zone, dose);
-            _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
+            PresentPlayerExplosionHit(position, parameters.ExplosionRadiusUnits);
             if (_playerHealth.IsDead)
             {
                 BeginPlayerDeath(position, ExplosionDamage.Zone, -1, WeaponCategory.Grenade);
@@ -1499,7 +1528,7 @@ internal sealed partial class GameHost
             if (dose > 0f)
             {
                 _playerHealth.Apply(ExplosionDamage.Zone, dose);
-                _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
+                PresentPlayerExplosionHit(item.PositionUnits, radius);
                 if (_playerHealth.IsDead)
                 {
                     BeginPlayerDeath(item.PositionUnits, ExplosionDamage.Zone, -1, WeaponCategory.Grenade);

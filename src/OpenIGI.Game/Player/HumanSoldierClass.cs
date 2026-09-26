@@ -2,7 +2,7 @@ namespace OpenIGI.Game.Player;
 
 /// <summary>
 /// What distinguishes one AI-driven <c>Human</c> class from another — <c>HumanSoldier</c>,
-/// <c>HumanSoldierFemale</c> and <c>HumanSoldierRPG</c>.
+/// <c>HumanSoldierFemale</c>, <c>HumanSoldierRPG</c> and <c>HumanSoldierPistol</c>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -13,8 +13,8 @@ namespace OpenIGI.Game.Player;
 /// rather than carrying three copies of the pipeline.
 /// </para>
 /// <para>
-/// <c>HumanSoldierPistol</c> (<c>0x459880</c>) is a fourth sibling. No retail level declares it and its
-/// machine (<c>off_53E8B8</c>) has not been read, so it is not modelled.
+/// <c>HumanSoldierPistol</c> (<c>0x459880</c>) is a fourth sibling. No shipped level declares it, but a mod
+/// may, and the original carries it complete.
 /// </para>
 /// </remarks>
 public sealed class HumanSoldierClass
@@ -34,8 +34,12 @@ public sealed class HumanSoldierClass
         bool scalesEkkRootMotion,
         int? grenadeThrowState,
         HumanRecoilRule recoilRule,
-        Func<HumanBodyMachine> createBody)
+        Func<HumanBodyMachine> createBody,
+        bool landsCloseCombatBlow = true,
+        bool soundsKnifeStab = true)
     {
+        LandsCloseCombatBlow = landsCloseCombatBlow;
+        SoundsKnifeStab = soundsKnifeStab;
         TypeName = typeName;
         DefaultBoneHierarchy = defaultBoneHierarchy;
         DefaultStandAnimation = defaultStandAnimation;
@@ -103,6 +107,31 @@ public sealed class HumanSoldierClass
         HumanRecoilRule.EveryHit,
         static () => new HumanSoldierRpgBodyMachine());
 
+    /// <summary>Gets the pistol soldier — <c>0x459880</c>.</summary>
+    /// <remarks>
+    /// The soldier with the pistol set's clips and deaths (<c>0x53E9B8</c>, <c>0x4593C0</c>). Its create
+    /// (<c>0x459A20</c>) writes bone hierarchy 3, and its update never swaps the clip table by AI type
+    /// (<c>0x454EE0</c> sits where the soldier's <c>0x45CF90</c> does). Its close-combat entry sets
+    /// <c>+3353</c>, which the strike is gated on, so its blow never lands; and its bullet handler
+    /// (<c>0x45A230</c>) has no knife sound.
+    /// </remarks>
+    public static HumanSoldierClass PistolSoldier { get; } = new(
+        PlayerTaskTypes.HumanSoldierPistol,
+        defaultBoneHierarchy: 3,
+        defaultStandAnimation: -1,
+        fallbackStandAnimation: 2,
+        HumanSoldierStates.PistolTable,
+        walkAnimation: HumanLocomotionStates.For(1).AnimationId,
+        HumanSoldierStates.RunState,
+        HumanHitZoneTable.PistolSoldier,
+        SoldierDeathClips.PistolSoldier,
+        scalesEkkRootMotion: false,
+        grenadeThrowState: HumanSoldierStates.GrenadeThrowState,
+        HumanRecoilRule.Threshold,
+        HumanSoldierBodyMachine.ForPistol,
+        landsCloseCombatBlow: false,
+        soundsKnifeStab: false);
+
     /// <summary>Gets the script name the level data instantiates the class under.</summary>
     public string TypeName { get; }
 
@@ -148,6 +177,15 @@ public sealed class HumanSoldierClass
     /// <summary>Gets the state whose end releases a thrown grenade, or <see langword="null"/> for a class that throws none.</summary>
     public int? GrenadeThrowState { get; }
 
+    /// <summary>Gets whether a close-combat strike of this class does damage.</summary>
+    public bool LandsCloseCombatBlow { get; }
+
+    /// <summary>Gets whether a non-lethal knife hit on this class plays the blade's sound.</summary>
+    public bool SoundsKnifeStab { get; }
+
+    /// <summary>Gets whether the class's update swaps its clip table by the brain's AI type (<c>0x45CF90</c>).</summary>
+    public bool SwapsClipsByAiType => ReferenceEquals(this, Soldier);
+
     /// <summary>Gets how the class answers a hit that does not kill.</summary>
     public HumanRecoilRule RecoilRule { get; }
 
@@ -163,7 +201,7 @@ public sealed class HumanSoldierClass
         TakesConfiguredRecoilThreshold && configuredThreshold is { } threshold ? threshold : HumanRecoil.DefaultThreshold);
 
     /// <summary>Gets every modelled class.</summary>
-    public static IReadOnlyList<HumanSoldierClass> All { get; } = [Soldier, FemaleSoldier, RpgSoldier];
+    public static IReadOnlyList<HumanSoldierClass> All { get; } = [Soldier, FemaleSoldier, RpgSoldier, PistolSoldier];
 
     /// <summary>Builds a new body machine of this class, standing.</summary>
     /// <returns>The machine.</returns>

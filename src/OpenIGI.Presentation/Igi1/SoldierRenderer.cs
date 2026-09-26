@@ -5894,7 +5894,7 @@ public sealed class SoldierRenderer : IDisposable
                 ReactToHit(struckView, brain, hit.Zone, dealt, explosion: false);
 
                 // 0x45D3C0 adds the blade's own sound to the grunt when the weapon's category is the knife.
-                if (category == WeaponCategory.Knife)
+                if (category == WeaponCategory.Knife && struckView.Soldier.Class.SoundsKnifeStab)
                 {
                     _scriptSound?.Invoke(KnifeStabSound, struckView.Position, true);
                 }

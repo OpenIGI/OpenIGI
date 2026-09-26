@@ -1300,7 +1300,7 @@ public sealed class AiSoldier
 
         _type = type;
         _weapon = weapon;
-        if (Body is HumanSoldierBodyMachine soldierBody)
+        if (SoldierClass.SwapsClipsByAiType && Body is HumanSoldierBodyMachine soldierBody)
         {
             soldierBody.UseClips(SoldierClipsFor(type));
         }
@@ -3896,7 +3896,8 @@ public sealed class AiSoldier
                 // The strike resolves with the trigger: the damage model (probability-gated factor)
                 // is attested retail data, while the exact native strike tick is not — see
                 // AiPatrolCombat.RollMeleeStrike. Range was already established by the chooser.
-                _pendingMeleeStrike = _patrol.RollMeleeStrike();
+                float strike = _patrol.RollMeleeStrike();
+                _pendingMeleeStrike = SoldierClass.LandsCloseCombatBlow ? strike : 0f;
                 return;
 
             case AiPatrolAction.ThrowGrenade:

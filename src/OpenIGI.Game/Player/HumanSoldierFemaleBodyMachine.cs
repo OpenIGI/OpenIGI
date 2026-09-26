@@ -54,7 +54,7 @@ public sealed class HumanSoldierFemaleBodyMachine : HumanBodyMachine
 
         return State switch
         {
-            // 0x4544C0's per-tick: the fall is the one state with no airborne test of its own.
+            // 0x454510 (entered by 0x4544C0): the fall is the one state with no airborne test of its own.
             AirborneState => input.Flinch ? FlinchState : input.Dead ? DeathState : input.OnGround ? StandState : AirborneState,
 
             // 0x454630: a flinch can still be knocked off its feet or killed; it tests no flinch.

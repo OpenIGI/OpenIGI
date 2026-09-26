@@ -47,6 +47,9 @@ public sealed record SoldierDeathClips(int ThrownBackwards, int ThrownForwards, 
 
     /// <summary>Gets the RPG soldier's clips — the literals in <c>0x4567C0</c>.</summary>
     public static SoldierDeathClips RpgSoldier { get; } = new(15, 16, 14, 12);
+
+    /// <summary>Gets the pistol soldier's clips — <c>0x4593C0</c>: <c>28 - (front ? 1 : 0)</c>, and <c>{26, 24}</c>.</summary>
+    public static SoldierDeathClips PistolSoldier { get; } = new(27, 28, 26, 24);
 }
 
 /// <summary>

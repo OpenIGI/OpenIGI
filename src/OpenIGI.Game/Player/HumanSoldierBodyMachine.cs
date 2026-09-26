@@ -37,13 +37,35 @@ public sealed class HumanSoldierBodyMachine : HumanBodyMachine
     // requests, and the clip's own end. Not the request bit itself and not the run byte.
     private const Signal EndsScriptedAnimation = (Signal)0xFD81FE1;
 
+    private readonly bool _pistol;
     private int _proneFlinchTicks;
 
     /// <summary>Initializes a soldier's machine, standing.</summary>
     public HumanSoldierBodyMachine()
-        : base(Table, StandState, HumanHitZoneTable.Soldier, FlinchState, ScriptedAnimationState)
+        : this(pistol: false)
     {
     }
+
+    private HumanSoldierBodyMachine(bool pistol)
+        : base(
+            pistol ? PistolTable : Table,
+            StandState,
+            pistol ? HumanHitZoneTable.PistolSoldier : HumanHitZoneTable.Soldier,
+            FlinchState,
+            ScriptedAnimationState)
+    {
+        _pistol = pistol;
+    }
+
+    /// <summary>Builds the pistol soldier's machine — <c>off_53E8B8</c>, standing.</summary>
+    /// <returns>The machine.</returns>
+    /// <remarks>
+    /// <c>HumanSoldierPistol</c> (<c>0x459880</c>) runs the soldier's 38 states and most of its per-ticks
+    /// over its own clips. Its own per-ticks for the rolls, the kneel and prone changes and the kneel to prone
+    /// (<c>0x458DD0</c>, <c>0x458950</c>, <c>0x458A30</c>, <c>0x458B10</c>, <c>0x459040</c>) test the flinch
+    /// the soldier's do not, and its posture deaths play 29 and 30.
+    /// </remarks>
+    public static HumanSoldierBodyMachine ForPistol() => new(pistol: true);
 
     /// <summary>The flag word <c>0x45CCF0</c> packs — <c>machine+8</c>, bit for bit.</summary>
     [Flags]
@@ -141,15 +163,17 @@ public sealed class HumanSoldierBodyMachine : HumanBodyMachine
     {
         RollLeftState or RollRightState or CrouchDownState or StandUpState or KneelingState
             or KneelRollLeftState or KneelRollRightState or KneelFiringState or KneelReloadState
-            or KneelReadyState or KneelToProneState => KneelDeathAnimation,
+            or KneelReadyState or KneelToProneState => _pistol ? PistolKneelDeathAnimation : KneelDeathAnimation,
         LieDownState or GetUpState or ProneState or ProneFiringState or ProneReloadState
-            or ProneFlinchState => ProneDeathAnimation,
+            or ProneFlinchState => _pistol ? PistolProneDeathAnimation : ProneDeathAnimation,
         _ => null,
     };
 
-    // The literals 0x45C5A0 and 0x45C650 play.
+    // The literals 0x45C5A0 and 0x45C650 play, and the pistol soldier's 0x459520 and 0x4595D0.
     private const int KneelDeathAnimation = 24;
     private const int ProneDeathAnimation = 25;
+    private const int PistolKneelDeathAnimation = 29;
+    private const int PistolProneDeathAnimation = 30;
 
     /// <summary>Packs the flag word from the frame the way <c>0x45CCF0</c> does.</summary>
     /// <param name="input">What the body reads this tick.</param>
@@ -241,8 +265,22 @@ public sealed class HumanSoldierBodyMachine : HumanBodyMachine
         : Has(s, Signal.Dead) ? death
         : null;
 
+    // The rolls and posture changes into and out of the kneel: no flinch on a soldier, the flinch (30) on the
+    // pistol soldier.
+    private int? KneelChangePrefix(Signal s) => Prefix(s, KneelDeathState, flinches: _pistol);
+
+    // Lying down and getting up: no flinch on a soldier, the prone flinch (31) on the pistol soldier.
+    private int? ProneChangePrefix(Signal s) => _pistol ? PronePrefix(s) : Prefix(s, ProneDeathState, flinches: false);
+
+    // Whether slot 24 was held on the last tick -- the previous frame's +368.
+    private bool _useObjectHeld;
+
     private int NextState(Signal s)
     {
+        // The frame is copied to the previous one (+272) every tick; state 36 reads slot 24 in both.
+        bool useObjectPressed = Has(s, Signal.UseObject) && !_useObjectHeld;
+        _useObjectHeld = Has(s, Signal.UseObject);
+
         return State switch
         {
             // 0x457A00.
@@ -267,8 +305,8 @@ public sealed class HumanSoldierBodyMachine : HumanBodyMachine
                     : !Has(s, Signal.Running) ? ForwardState
                     : Roll(s) ?? (Has(s, Signal.Forward) ? FastForwardState : StandState)),
 
-            // 0x45B900: the rolls end kneeling, and test no flinch.
-            RollLeftState or RollRightState => Prefix(s, KneelDeathState, flinches: false)
+            // 0x45B900: the rolls end kneeling, and test no flinch (the pistol's 0x458DD0 does).
+            RollLeftState or RollRightState => KneelChangePrefix(s)
                 ?? (Has(s, Signal.AnimationDone) ? KneelingState : State),
 
             // 0x45B060: the fire holds until its clip ends with the trigger released.
@@ -291,15 +329,15 @@ public sealed class HumanSoldierBodyMachine : HumanBodyMachine
             ReloadState => Prefix(s, DeathState) ?? (Has(s, Signal.AnimationDone) ? StandState : ReloadState),
 
             // 0x45B900, 0x45B9C0: kneeling down and standing back up test no flinch.
-            CrouchDownState => Prefix(s, KneelDeathState, flinches: false)
+            CrouchDownState => KneelChangePrefix(s)
                 ?? (Has(s, Signal.AnimationDone) ? KneelingState : CrouchDownState),
-            StandUpState => Prefix(s, KneelDeathState, flinches: false)
+            StandUpState => KneelChangePrefix(s)
                 ?? (Has(s, Signal.AnimationDone) ? StandState : StandUpState),
 
             // 0x45BA80, 0x45BB40.
-            LieDownState => Prefix(s, ProneDeathState, flinches: false)
+            LieDownState => ProneChangePrefix(s)
                 ?? (Has(s, Signal.AnimationDone) ? ProneState : LieDownState),
-            GetUpState => Prefix(s, ProneDeathState, flinches: false)
+            GetUpState => ProneChangePrefix(s)
                 ?? (Has(s, Signal.AnimationDone) ? StandState : GetUpState),
 
             // 0x457FC0: the tense run fires on the move, and leaves the tense gait for walk or the forward gaits.
@@ -327,7 +365,7 @@ public sealed class HumanSoldierBodyMachine : HumanBodyMachine
                 : KneelingState),
 
             // 0x45B900 again for the kneeling rolls.
-            KneelRollLeftState or KneelRollRightState => Prefix(s, KneelDeathState, flinches: false)
+            KneelRollLeftState or KneelRollRightState => KneelChangePrefix(s)
                 ?? (Has(s, Signal.AnimationDone) ? KneelingState : State),
 
             // 0x458EB0.
@@ -343,7 +381,7 @@ public sealed class HumanSoldierBodyMachine : HumanBodyMachine
                 : KneelingState),
 
             // 0x45BED0.
-            KneelToProneState => Prefix(s, KneelDeathState, flinches: false)
+            KneelToProneState => KneelChangePrefix(s)
                 ?? (Has(s, Signal.AnimationDone) ? ProneState : KneelToProneState),
 
             // 0x45BF90, 0x45C0C0, 0x459180: prone flinches into the prone flinch and dies prone.
@@ -377,8 +415,9 @@ public sealed class HumanSoldierBodyMachine : HumanBodyMachine
             ScriptedAnimationState => Prefix(s, DeathState)
                 ?? ((s & EndsScriptedAnimation) != 0 || ScriptedAnimationCancelled ? StandState : ScriptedAnimationState),
 
-            // 0x45C9B0, 0x45CA80: the use-object states, which only the object dispatch enters.
-            UseObjectState => Has(s, Signal.UseObject) || Has(s, Signal.Dead) ? StandState : UseObjectState,
+            // 0x45C9B0, 0x45CA80: the use-object states, which only the object dispatch enters. The first
+            // leaves on a fresh press of slot 24 -- held from before, it stays -- or on death.
+            UseObjectState => useObjectPressed || Has(s, Signal.Dead) ? StandState : UseObjectState,
             UseObjectOnceState => Has(s, Signal.AnimationDone) ? StandState : UseObjectOnceState,
 
             // 0x45C700: the three deaths have no exits.

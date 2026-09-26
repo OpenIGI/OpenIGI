@@ -45,6 +45,15 @@ public static class HumanSoldierStates
         (ReadyState, 5), (RackState, 67), (ReloadState, 68), (CrouchDownState, 93), (StandUpState, 95),
         (RunState, 76), (KneelingState, 94));
 
+    /// <summary>
+    /// Gets the pistol soldier's table, <c>0x53E9B8</c> — the same 38 states over the pistol set's clips.
+    /// </summary>
+    public static HumanBodyStateTable PistolTable { get; } = new(
+        (2, 1), (33, 1), (3, 1), (4, 1), (18, 0), (17, 0), (6, 1), (21, 0), (34, 0), (49, 0),
+        (5, 0), (35, 0), (36, 0), (7, 0), (8, 0), (12, 0), (16, 0), (32, 1), (37, 1), (9, 0),
+        (20, 0), (19, 0), (11, 1), (22, 0), (10, 0), (15, 0), (13, 0), (14, 0), (23, 0), (2, 1),
+        (0, 0), (31, 0), (0, 0), (0, 0), (0, 0), (0, 0), (39, 1), (2, 0));
+
     /// <summary>The blend time a soldier's state entry passes, in seconds.</summary>
     /// <remarks>
     /// <b>Zero, measured.</b> Forty-four state lookups against this table in a live retail mission all

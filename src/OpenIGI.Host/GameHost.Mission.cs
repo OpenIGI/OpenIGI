@@ -1426,13 +1426,15 @@ internal sealed partial class GameHost
                         (float)(to.Y - from.Y),
                         (float)(to.Z - from.Z));
                     Vector3f viewIncoming = _player.Camera.Orientation.Transposed().Transform(incoming);
-                    _damageFlash.Hit(viewIncoming, _soundRandom.NextSingle());
 
-                    // And the grunt, on the same branch 0x412440 plays it.
+                    // 0x412440's order: the grunt, then the shake, then the flash, each on its own draw.
                     if (!_playerHealth.IsDead)
                     {
                         PlayPlayerGrunt();
                     }
+
+                    InstallPlayerHitShake();
+                    _damageFlash.Hit(viewIncoming, _soundRandom.NextSingle());
 
                     // Every connecting round SHOVES the player 5 km/h along its travel -- the hit
                     // handler (0x412440) normalises the round's direction and adds x/y x 189.62962
@@ -2737,6 +2739,17 @@ internal sealed partial class GameHost
     /// Flat, not positional: the sound belongs to the player, who is the listener. The limit is what lets
     /// sustained fire stagger the player without stuttering the sound.
     /// </remarks>
+    /// <summary>
+    /// The shake a bullet or a blow puts in the view — <c>0x412440</c> and <c>0x412CE0</c>: a draw clamped
+    /// to <c>[0.25, 1]</c> scales the full 5 cm and 0.75 degrees, for fifteen ticks.
+    /// </summary>
+    private void InstallPlayerHitShake()
+    {
+        float share = Math.Clamp(_soundRandom.NextSingle(), 0.25f, 1f);
+        _player!.InstallViewShake(
+            HumanViewShake.HitPositionUnits * share, HumanViewShake.HitAngleRadians * share, HumanViewShake.HitTicks);
+    }
+
     private void PlayPlayerGrunt()
     {
         if (_loop.Clock.TickCount < _playerHitQuietUntil)
@@ -2783,6 +2796,7 @@ internal sealed partial class GameHost
                 priority: 250);
         }
 
+        InstallPlayerHitShake();
         _damageFlash.HitEveryCorner(
             _soundRandom.NextSingle(),
             _soundRandom.NextSingle(),
@@ -2956,7 +2970,14 @@ internal sealed partial class GameHost
             return;
         }
 
-        _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
+        // 0x412F80: the full shake for forty-five ticks, and four separate corner draws.
+        player.InstallViewShake(
+            HumanViewShake.HitPositionUnits, HumanViewShake.HitAngleRadians, HumanViewShake.FenceTicks);
+        _damageFlash.HitEveryCorner(
+            _soundRandom.NextSingle(),
+            _soundRandom.NextSingle(),
+            _soundRandom.NextSingle(),
+            _soundRandom.NextSingle());
         if (!shock.IsLethal)
         {
             // 0x412F80 selects this fence-specific cue after it has added the direct zone-13 dose.

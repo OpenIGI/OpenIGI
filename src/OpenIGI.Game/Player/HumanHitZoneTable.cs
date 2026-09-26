@@ -154,6 +154,24 @@ public static class HumanHitZoneTable
     public static IReadOnlyList<HumanHitZone> RpgSoldier { get; } =
         WithAnimations(static zone => (13, zone switch { 14 => 16, 15 => 18, 16 => 12, _ => 15 }));
 
+    /// <summary>The pistol soldiers' table, at <c>0x53EAE8</c>.</summary>
+    /// <remarks>
+    /// The soldier's multipliers with the pistol set's clips: the limbs 45, 48, 46 and 47 by body part and 25
+    /// for the torso, head and neck; reactions 26 and 27 by part, 28 for zone 14, 44 the head and 24 the neck.
+    /// </remarks>
+    public static IReadOnlyList<HumanHitZone> PistolSoldier { get; } =
+        WithAnimations(static zone => zone switch
+        {
+            < 3 => (45, 26),
+            < 6 => (48, 27),
+            < 9 => (46, 26),
+            < 12 => (47, 27),
+            14 => (25, 28),
+            15 => (25, 44),
+            16 => (25, 24),
+            _ => (25, 27),
+        });
+
     /// <summary>How many hits of a given weapon a zone takes to kill.</summary>
     /// <param name="damageFactor">The weapon's <c>Damage Factor</c>.</param>
     /// <param name="zoneMultiplier">The struck zone's multiplier.</param>
