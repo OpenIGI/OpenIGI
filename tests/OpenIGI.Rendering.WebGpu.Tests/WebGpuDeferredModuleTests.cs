@@ -18,7 +18,7 @@ public sealed class WebGpuDeferredModuleTests
 {
     [WebGpuFact]
     public void The_shading_compiles_and_its_group_is_accepted() =>
-        Accepts(ShaderModuleId.Shading, new ShaderVariant("software.sampled"));
+        Accepts(ShaderModuleId.Shading, new ShaderVariant("software"));
 
     [WebGpuFact]
     public void The_resolve_compiles_and_its_group_is_accepted() =>

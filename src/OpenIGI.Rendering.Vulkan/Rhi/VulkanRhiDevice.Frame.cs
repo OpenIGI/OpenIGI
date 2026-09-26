@@ -51,9 +51,9 @@ internal sealed unsafe partial class VulkanRhiDevice
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The swapchain's own, which is what the window system chose rather than what the renderer would
-    /// have liked: this backend's surface prefers an unsigned-normalised image, because the legacy path
-    /// encodes its own output. A pipeline built for anything else draws into it invalidly.
+    /// The swapchain's own, which is what the window system chose rather than what the renderer would have
+    /// liked: this backend's surface prefers an unsigned-normalised image, because the interface composites
+    /// and blends at the display encoding. A pipeline built for anything else draws into it invalidly.
     /// </remarks>
     public RhiTextureFormat SurfaceFormat => _offscreen.Length > 0
         ? _offscreen[0].Format
@@ -127,7 +127,6 @@ internal sealed unsafe partial class VulkanRhiDevice
         Checked(_vk.WaitForFences(_device.Device, 1, &fence, true, ulong.MaxValue), "vkWaitForFences");
 
         // The slot's previous frame has certainly finished, so whatever it was holding can go now.
-        _device.GraphicsQueue.Poll();
         RetireFrameTexture(_frameSlot);
         ReleaseSlot(_frameSlot);
 
@@ -484,7 +483,6 @@ internal sealed unsafe partial class VulkanRhiDevice
         Checked(_vk.WaitForFences(_device.Device, 1, &fence, true, ulong.MaxValue), "vkWaitForFences");
         VkCheck.Ok(_vk.ResetFences(_device.Device, 1, &fence), "vkResetFences");
 
-        _device.GraphicsQueue.Poll();
         ReleaseSlot(_frameSlot);
 
         _inFrame = true;

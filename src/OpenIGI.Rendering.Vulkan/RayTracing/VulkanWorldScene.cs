@@ -1,6 +1,5 @@
 ﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Vulkan.Memory;
-using OpenIGI.Rendering.Vulkan.Meshes;
 using OpenIGI.Rendering.Vulkan.Queues;
 using Silk.NET.Vulkan;
 
@@ -748,11 +747,11 @@ internal sealed class VulkanWorldScene : IDisposable
 
     /// <summary>Drops the whole accumulated world, for a level change.</summary>
     /// <remarks>
-    /// Through the scene, not around it. Disposing the structures here would leave the scene still
-    /// holding them -- in its live set, its pending builds and its compaction queue -- and the next
-    /// frame would measure and build memory that had been freed. The scene's own <c>Clear</c> frees them
-    /// and forgets them together, and empties the top-level structure so no trace names them either.
-    /// Requires the device to be idle; see <c>VulkanGraphicsDevice.ReleaseWorld</c>, its only caller.
+    /// Through the scene, not around it. Disposing the structures here would leave the scene still holding
+    /// them -- in its live set, its pending builds and its compaction queue -- and the next frame would
+    /// measure and build memory that had been freed. The scene's own <c>Clear</c> frees them and forgets them
+    /// together, and empties the top-level structure so no trace names them either. Requires the device to be
+    /// idle; see <c>VulkanRhiRayTracing.Reset</c>, its only caller, which a level change reaches.
     /// </remarks>
     public void Reset()
     {

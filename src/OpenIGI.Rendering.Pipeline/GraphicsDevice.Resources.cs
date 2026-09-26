@@ -55,10 +55,9 @@ public sealed partial class GraphicsDevice
     /// <inheritdoc/>
     /// <remarks>
     /// <para>
-    /// The held picture the menu dissolves from, copied inside the frame as the Vulkan renderer copies
-    /// it: whatever has drawn so far -- the outgoing level, resolved, before the interface goes over it --
-    /// is copied out, and the frame's pass reopens on top of it so nothing drawn is lost and the draws
-    /// that follow can sample the copy.
+    /// The held picture the menu dissolves from, copied inside the frame: whatever has drawn so far -- the
+    /// outgoing level, resolved, before the interface goes over it -- is copied out, and the frame's pass
+    /// reopens on top of it so nothing drawn is lost and the draws that follow can sample the copy.
     /// </para>
     /// <para>
     /// The texture takes the frame's channel order, in its sRGB form. A copy moves bytes and cannot
@@ -119,7 +118,7 @@ public sealed partial class GraphicsDevice
     /// <inheritdoc/>
     /// <remarks>
     /// Visible until proven hidden: a query nothing has answered yet -- the direct path draws no
-    /// geometry pass to probe in -- keeps its object drawn, as on the Vulkan renderer.
+    /// geometry pass to probe in -- keeps its object drawn.
     /// </remarks>
     public bool OcclusionVisible(OcclusionQueryHandle query)
     {
@@ -130,9 +129,8 @@ public sealed partial class GraphicsDevice
     /// <inheritdoc/>
     /// <remarks>
     /// A box is drawn against the geometry pass's depth, so a query is only probed while that pass is
-    /// open. Anywhere else the object is left as it was rather than probed, as on the Vulkan renderer.
-    /// The box takes the projection the geometry is drawn with, which on this path already is the
-    /// target's clip space.
+    /// open. Anywhere else the object is left as it was rather than probed. The box takes the projection the
+    /// geometry is drawn with, which on this path already is the target's clip space.
     /// </remarks>
     public void IssueOcclusionQuery(OcclusionQueryHandle query, in Matrix4f modelView, in OcclusionBounds bounds)
     {
@@ -156,15 +154,15 @@ public sealed partial class GraphicsDevice
     /// <inheritdoc/>
     /// <remarks>
     /// <para>
-    /// The Vulkan renderer's glow, drawn into whichever pass is open: the forward pass over the lit image
-    /// when a scene is being captured, the frame itself on the direct path. Anywhere else -- the geometry
-    /// pass, a card capture -- there is nothing to mark and the call does nothing, as it does there.
+    /// The selection glow, drawn into whichever pass is open: the forward pass over the lit image when a
+    /// scene is being captured, the frame itself on the direct path. Anywhere else -- the geometry pass, a
+    /// card capture -- there is nothing to mark and the call does nothing.
     /// </para>
     /// <para>
     /// A mask lays the model's silhouette into depth just inside the near plane; then a stack of shells,
     /// widest and faintest first, draws the model pushed outwards in screen space, each asked only for the
     /// opacity the rings outside it have not already given, so the stack adds up to a falloff rather than
-    /// a band. The numbers are the Vulkan renderer's.
+    /// a band.
     /// </para>
     /// </remarks>
     public void DrawOutline(

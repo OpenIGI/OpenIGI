@@ -19,14 +19,13 @@ namespace OpenIGI.Rendering.Pipeline;
 /// that half-float colour into the eight-bit frame a display takes.
 /// </para>
 /// <para>
-/// The shading reads them as TEXTURES rather than as subpass inputs, which is the one structural
-/// difference from the Vulkan original: WebGPU has no subpasses at all, so the same shader is compiled
-/// once for each and this path takes the sampled form. What they produce is identical.
+/// The shading reads them as TEXTURES rather than as subpass inputs: WebGPU has no subpasses at all, and
+/// one form that every backend has is one form to keep right.
 /// </para>
 /// <para>
 /// After the shading, the forward pass: what cannot be in a G-buffer because a G-buffer holds one surface
 /// per pixel — the translucency, the muzzle flash, and the first-person arms and weapon — drawn over the
-/// lit image against the scene's own depth, as the Vulkan original draws them in its second subpass.
+/// lit image against the scene's own depth.
 /// </para>
 /// <para>
 /// What a backend cannot run is named honestly rather than drawn wrongly: its console variables are
@@ -265,8 +264,8 @@ public sealed partial class GraphicsDevice
     /// <summary>Points a scene pass at the scene's viewport, or at the first-person layer's sliver of it.</summary>
     /// <param name="pass">The pass to set.</param>
     /// <remarks>
-    /// The sliver spans the whole render, as the Vulkan original's does: the rig is drawn over the whole
-    /// view whatever sub-viewport the world was drawn in.
+    /// The sliver spans the whole render: the rig is drawn over the whole view whatever sub-viewport the
+    /// world was drawn in.
     /// </remarks>
     private void ApplySceneViewport(IRhiRenderPassEncoder pass)
     {
@@ -382,6 +381,8 @@ public sealed partial class GraphicsDevice
         RecordTemporal();
         SealEncoder("frame.temporal");
 
+        ReportTracedWorld();
+
         // Read by the shading, the fog and the rig's forward draws, all done now.
         _localLightCount = 0;
 
@@ -424,8 +425,7 @@ public sealed partial class GraphicsDevice
             GradeSize: GradeSize(post)));
 
         // What a painted sky is divided by as it is drawn, so that it leaves the tone map at the colour
-        // it was painted. Last frame's, as it is on the Vulkan device: the sky is drawn before the frame
-        // says what it will be exposed by.
+        // it was painted. Last frame's: the sky is drawn before the frame says what it will be exposed by.
         _sceneExposure = MathF.Max(post.Exposure * adapted, 1e-3f);
 
         resolve.BindGrade(GradeSize(post) > 0f ? _colourLut?.View : null);
@@ -456,8 +456,8 @@ public sealed partial class GraphicsDevice
     /// <summary>Builds the lens scatter from the picture the resolve is about to read, where one is asked for.</summary>
     /// <returns>The summed bloom, or null where none ran.</returns>
     /// <remarks>
-    /// Before the tone map and after the temporal resolve, as on the Vulkan device, and not for a mask
-    /// view: that is a code value rather than radiance, and it gets neither this nor the vignette.
+    /// Before the tone map and after the temporal resolve, and not for a mask view: that is a code value
+    /// rather than radiance, and it gets neither this nor the vignette.
     /// </remarks>
     private IRhiTextureView? RecordBloom(SceneTargetSet scene, IRhiTextureView colour, in PostProcessSettings post)
     {
@@ -731,7 +731,7 @@ public sealed partial class GraphicsDevice
         Span<float> push = stackalloc float[ForwardPushBlock.Floats];
         WriteForward(push, modelView, blend, hasLightmap, _sceneExposure);
 
-        // A draw reflects when the frame has named a cube, as on the Vulkan renderer.
+        // A draw reflects when the frame has named a cube.
         (bool reflective, IRhiBindGroup environment) = EnvironmentFor();
         IRhiRenderPipeline pipeline = pipelines.ForState(_depthState, _cullMode, blend, _alphaReference, reflective);
 

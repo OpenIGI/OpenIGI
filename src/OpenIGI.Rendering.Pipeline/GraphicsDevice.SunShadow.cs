@@ -11,15 +11,15 @@ namespace OpenIGI.Rendering.Pipeline;
 /// <summary>The traced sun shadow: the world fed to the backend's ray tracing, and the mask traced against it.</summary>
 /// <remarks>
 /// <para>
-/// Where the adapter traces, the sun's shadow is asked of the geometry rather than of cascades, as it is on
-/// the Vulkan renderer. The world is built from what the frame draws: every G-buffer draw is observed with
-/// the transform it was drawn at, the first-person rig's opaque forward draws are observed where only a
-/// reflection can find them, the terrain arrives through <see cref="SubmitShadowCaster"/>, and each cut-out
-/// texture's alpha is kept as a mask the moment its pixels are in hand.
+/// Where the adapter traces, the sun's shadow is asked of the geometry rather than of cascades. The world is
+/// built from what the frame draws: every G-buffer draw is observed with the transform it was drawn at, the
+/// first-person rig's opaque forward draws are observed where only a reflection can find them, the terrain
+/// arrives through <see cref="SubmitShadowCaster"/>, and each cut-out texture's alpha is kept as a mask the
+/// moment its pixels are in hand.
 /// </para>
 /// <para>
-/// The structure is updated as the capture opens, from what was observed up to then -- the same point the
-/// Vulkan renderer records it -- and traced between the G-buffer and the shading.
+/// The structure is updated as the capture opens, from what was observed up to then, and traced between the
+/// G-buffer and the shading.
 /// </para>
 /// </remarks>
 public sealed partial class GraphicsDevice
@@ -196,7 +196,7 @@ public sealed partial class GraphicsDevice
 
         TemporalFrameState state = TemporalState(scene);
 
-        // A shadow, so it reports under the shadows' stage, as it does on the Vulkan renderer.
+        // A shadow, so it reports under the shadows' stage.
         using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
             _profiler.Time(RenderStage.Shadows),
             "sunshadow")))

@@ -6,11 +6,10 @@ namespace OpenIGI.Rendering.Pipeline;
 /// <summary>The cube maps a level bakes, and the state that says which one a run of draws reflects.</summary>
 /// <remarks>
 /// <para>
-/// The Vulkan renderer's arrangement. A cube is six faces of one edge and one level, filled a face at a
-/// time; <see cref="SetEnvironmentCube"/> names the one the draws that follow reflect, and a draw reflects
-/// exactly when one is named and known -- the reflective variant of the forward pipeline, with the cube
-/// bound in its second group. Every other draw binds the white stand-in, which no variant that does not
-/// reflect ever samples.
+/// A cube is six faces of one edge and one level, filled a face at a time; <see cref="SetEnvironmentCube"/>
+/// names the one the draws that follow reflect, and a draw reflects exactly when one is named and known --
+/// the reflective variant of the forward pipeline, with the cube bound in its second group. Every other draw
+/// binds the white stand-in, which no variant that does not reflect ever samples.
 /// </para>
 /// <para>
 /// Stored as sRGB, like every texture on this path: the sampler decodes and the shader, told the sampler
@@ -43,8 +42,8 @@ public sealed partial class GraphicsDevice
             Dimension: RhiTextureViewDimension.Cube,
             Label: name));
 
-        // Black until a face is written, as the Vulkan renderer's placeholder is: a reflection is ADDED
-        // to the surface, and a face nobody filled should add nothing.
+        // Black until a face is written: a reflection is ADDED to the surface, and a face nobody filled
+        // should add nothing.
         Bgra32[] black = new Bgra32[edge * edge];
 
         for (int face = 0; face < CubeFaces; face++)

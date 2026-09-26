@@ -12,9 +12,9 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The Vulkan renderer's scheme, over the RHI. An object registers a query; while the geometry pass is
-/// open its bounding box is drawn against the depth the real geometry wrote, colour and depth writes off,
-/// inside an occlusion query. No sample passing means the box was wholly behind something nearer.
+/// An object registers a query; while the geometry pass is open its bounding box is drawn against the depth
+/// the real geometry wrote, colour and depth writes off, inside an occlusion query. No sample passing means
+/// the box was wholly behind something nearer.
 /// </para>
 /// <para>
 /// <b>Results lag, and that is safe.</b> Each frame in flight owns a query set. Its results are resolved
@@ -31,7 +31,7 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 public sealed class OcclusionQueries : IDisposable
 {
     /// <summary>How many boxes one frame can probe. A box that does not fit stays as it was.</summary>
-    /// <remarks>WebGPU's ceiling on a query set, and the Vulkan renderer's per-frame block.</remarks>
+    /// <remarks>WebGPU's ceiling on a query set.</remarks>
     public const int PerFrameCapacity = 4096;
 
     /// <summary>How many bytes of push data the box shader reads: a matrix and two corners.</summary>

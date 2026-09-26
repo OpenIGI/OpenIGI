@@ -29,12 +29,12 @@ public sealed class DeferredLighting : IDisposable
     /// <summary>The compiled form for a device that traces rays.</summary>
     /// <remarks>
     /// It reads the traced lamp visibility and binds the world, so each lamp the reservoir's one ray did
-    /// not cover gets a ray of its own -- the Vulkan renderer's shading, in its sampled G-buffer form.
+    /// not cover gets a ray of its own.
     /// </remarks>
-    public static ShaderVariant TracedVariant => new("rayquery.sampled");
+    public static ShaderVariant TracedVariant => new("rayquery");
 
     /// <summary>The compiled form everywhere else, which marches the screen for a lamp's shadow.</summary>
-    public static ShaderVariant SoftwareVariant => new("software.sampled");
+    public static ShaderVariant SoftwareVariant => new("software");
 
     /// <summary>The G-buffer the shading reads, by the name the module declares and the target it is.</summary>
     private static readonly (string Name, SceneTargetId Target)[] GBuffer =

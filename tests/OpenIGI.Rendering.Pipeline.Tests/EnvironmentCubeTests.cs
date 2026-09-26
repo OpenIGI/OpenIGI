@@ -5,7 +5,7 @@ using Xunit;
 
 namespace OpenIGI.Rendering.Pipeline.Tests;
 
-/// <summary>That a named cube makes the following draws reflect it, as on the Vulkan renderer.</summary>
+/// <summary>That a named cube makes the following draws reflect it.</summary>
 public sealed class EnvironmentCubeTests
 {
     [Fact]

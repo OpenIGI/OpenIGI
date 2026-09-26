@@ -79,7 +79,7 @@ public static partial class Program
             window.Width,
             window.Height);
 
-        GraphicsDevice device = new(rhi, new DisplayMode(window.Width, window.Height, 32, window.RefreshRate));
+        GraphicsDevice device = new(rhi, new DisplayMode(window.Width, window.Height, 32, window.RefreshRate), logger: logger);
         logger.Information("Renderer", $"Drawing through the RHI over WebGPU on {rhi.AdapterName}.");
 
         // The composition root names the backends: the RHI over WebGPU above, and the Web Audio API here.

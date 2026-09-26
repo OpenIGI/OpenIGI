@@ -21,9 +21,9 @@ namespace OpenIGI.Rendering.Pipeline;
 /// written down twice.
 /// </para>
 /// <para>
-/// A dispatch inside a frame is recorded into it, in a compute pass of its own — the pass boundary is
-/// the barrier, which is why <see cref="MemoryBarrier"/> has nothing to add. Outside a frame, which is a
-/// level loading, it is submitted on its own and waited for, as the Vulkan original does.
+/// A dispatch inside a frame is recorded into it, in a compute pass of its own — the pass boundary is the
+/// barrier, which is why <see cref="MemoryBarrier"/> has nothing to add. Outside a frame, which is a level
+/// loading, it is submitted on its own and waited for.
 /// </para>
 /// <para>
 /// The parameter block is snapshotted per dispatch, into a buffer of its own, because the game sets a
@@ -824,7 +824,7 @@ public sealed partial class GraphicsDevice
             }
 
             // A sampled texture the parameter block also names is read through a unit: sharing the name
-            // IS the declaration, as it is on the Vulkan device.
+            // IS the declaration.
             foreach (ShaderBinding binding in Reflection.Bindings)
             {
                 if (binding.Kind is ShaderBindingKind.Texture && _fields.ContainsKey(binding.Name))

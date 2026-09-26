@@ -30,17 +30,16 @@ public readonly record struct TracedSunShadowFrame(
 /// </summary>
 /// <remarks>
 /// <para>
-/// The same three dispatches and the same parameter blocks as the Vulkan renderer's passes
-/// (<see cref="SunShadowParameters"/>). SunShadow traces a ray from each pixel towards a point on the sun's
-/// disc and stores whether it got there and how far the occluder was; ShadowDenoise spreads each answer
-/// over the penumbra that distance implies; ShadowAccumulate reprojects the previous frames' mean and
-/// averages this one into it. The shading reads the result in place of the cascades.
+/// Three dispatches and their parameter blocks (<see cref="SunShadowParameters"/>). SunShadow traces a ray
+/// from each pixel towards a point on the sun's disc and stores whether it got there and how far the occluder
+/// was; ShadowDenoise spreads each answer over the penumbra that distance implies; ShadowAccumulate
+/// reprojects the previous frames' mean and averages this one into it. The shading reads the result in place
+/// of the cascades.
 /// </para>
 /// <para>
 /// <b>Four images.</b> The raw trace, the mask the shading reads, and two accumulations that ping-pong:
 /// the one written this frame is read as history the next. The accumulations are cleared when made, so
-/// a first frame reads zero frames of history -- the denoise then reconstructs at full width, as it does
-/// on the Vulkan renderer's freshly cleared targets.
+/// a first frame reads zero frames of history -- the denoise then reconstructs at full width.
 /// </para>
 /// </remarks>
 public sealed class TracedSunShadow : IDisposable

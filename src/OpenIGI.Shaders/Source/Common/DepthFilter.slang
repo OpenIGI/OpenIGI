@@ -4,10 +4,9 @@
 // WebGPU cannot filter a depth image at all, and cannot filter a 32-bit float one without a feature
 // many adapters lack; it binds either only as an unfilterable texture. So on WGSL the read is four
 // plain loads weighted as a bilinear sampler weights them. On SPIR-V it stays the sampler's own, and
-// that is not a matter of taste: the hardware's weights carry less precision than these, which at a
-// silhouette -- where the four depths are metres apart -- moves the answer, and the legacy renderer's
-// picture has to stay what it was. Measured: loading on SPIR-V as well moved mission 1's occlusion by
-// up to 129 levels along edges.
+// the two are not interchangeable: the hardware's weights carry less precision than these, which at a
+// silhouette -- where the four depths are metres apart -- moves the answer. Measured: loading on SPIR-V
+// as well moved mission 1's occlusion by up to 129 levels along edges.
 
 #ifndef OPENIGI_DEPTH_FILTER_INCLUDED
 #define OPENIGI_DEPTH_FILTER_INCLUDED
@@ -39,8 +38,8 @@ float DepthBilinear(DepthTexture2D depth, SamplerState linear, float2 uv)
 }
 
 /// A depth read in a compute stage the way ComputeSample reads a colour: the sampler's own implicit-level
-/// read on SPIR-V, which is what the legacy renderer has always done there, and the four loads where the
-/// target can neither filter depth nor sample at an implicit level outside a fragment stage.
+/// read on SPIR-V, and the four loads where the target can neither filter depth nor sample at an implicit
+/// level outside a fragment stage.
 float DepthComputeSample(DepthTexture2D depth, SamplerState linear, float2 uv)
 {
     __target_switch

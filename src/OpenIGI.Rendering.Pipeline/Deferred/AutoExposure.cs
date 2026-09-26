@@ -10,16 +10,15 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The Vulkan renderer's metering on the RHI: the same ExposureHistogram module and parameter block, and the
-/// same host half (<see cref="ExposureAdaptation"/>). The histogram is cleared, built, and copied into the
-/// frame slot's own readback buffer; the slot's previous histogram is read as the slot comes round again,
-/// when the frame that wrote it has finished -- two frames of lag, as the Vulkan renderer has, far below
-/// what an eye easing over a second can show.
+/// The ExposureHistogram module and its parameter block, with the host half in
+/// <see cref="ExposureAdaptation"/>. The histogram is cleared, built, and copied into the frame slot's own
+/// readback buffer; the slot's previous histogram is read as the slot comes round again, when the frame that
+/// wrote it has finished -- two frames of lag, far below what an eye easing over a second can show.
 /// </para>
 /// <para>
-/// The module's buffer form, counting into a storage buffer where the legacy renderer counts into an image:
-/// WGSL has atomics on storage buffers and none on textures, so this runs on WebGPU too. A device without
-/// the form stands this down (<see cref="RunsOn"/>) and the resolve keeps the setting's own exposure.
+/// The module's buffer form, counting into a storage buffer rather than an image: WGSL has atomics on storage
+/// buffers and none on textures, so this runs on WebGPU too. A device without the form stands this down
+/// (<see cref="RunsOn"/>) and the resolve keeps the setting's own exposure.
 /// </para>
 /// </remarks>
 public sealed class AutoExposure : IDisposable
@@ -47,13 +46,12 @@ public sealed class AutoExposure : IDisposable
         ArgumentOutOfRangeException.ThrowIfLessThan(framesInFlight, 1);
 
         _device = device;
-        _histogram = new ComputePass(device, ShaderModuleId.ExposureHistogram, "exposure.histogram", Variant);
+        _histogram = new ComputePass(device, ShaderModuleId.ExposureHistogram, "exposure.histogram");
         _parameters = new ComputeParameters(
             device, ExposureAdaptation.ParameterFloats * sizeof(float), framesInFlight, "exposure");
         _sampler = device.CreateSampler(new RhiSamplerDescriptor(Label: "exposure"));
 
-        // The counters, a storage buffer rather than the legacy renderer's image: its atomics are the only
-        // kind WGSL has.
+        // The counters, a storage buffer rather than an image: its atomics are the only kind WGSL has.
         _bins = device.CreateBuffer(new RhiBufferDescriptor(
             HistogramBytes,
             RhiBufferUsage.Storage | RhiBufferUsage.CopySource | RhiBufferUsage.CopyDestination,
@@ -74,16 +72,13 @@ public sealed class AutoExposure : IDisposable
     /// <summary>Gets the exposure scale the metering last settled on; one before any histogram arrives.</summary>
     public float Adapted => _adapted;
 
-    /// <summary>The histogram module's form that counts into a buffer, which every target compiles.</summary>
-    public static ShaderVariant Variant => new("buffer");
-
     /// <summary>Gets whether a device can meter at all.</summary>
     /// <param name="device">The device.</param>
     /// <returns><see langword="true"/> where the histogram module has the device's form.</returns>
     public static bool RunsOn(IRhiDevice device)
     {
         ArgumentNullException.ThrowIfNull(device);
-        return ShaderCatalog.Compiles(ShaderModuleId.ExposureHistogram, Variant, device.ShaderTarget);
+        return ShaderCatalog.Compiles(ShaderModuleId.ExposureHistogram, ShaderVariant.Default, device.ShaderTarget);
     }
 
     /// <summary>Starts mapping a slot whose histogram has just been submitted.</summary>

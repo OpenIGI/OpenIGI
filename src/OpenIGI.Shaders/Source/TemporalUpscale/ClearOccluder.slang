@@ -4,8 +4,8 @@
 // nothing reprojected onto has to read as "nothing in front", not as whatever last frame left. Not
 // cleared, every frame's minimum takes in every frame before it, and the decimation that reads it finds
 // an occluder in front of every history texel and rejects the whole of it -- the resolve then passes
-// the raw frame through and looks like it is working. The Vulkan original clears it with a transfer;
-// WebGPU has no command that clears a texture, so this is a pass.
+// the raw frame through and looks like it is working. WebGPU has no command that clears a texture, so
+// this is a pass.
 
 [[vk::binding(0, 0)]] [[vk::image_format("r32ui")]] RWTexture2D<uint> uOccluder;
 

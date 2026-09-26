@@ -868,9 +868,6 @@ public readonly record struct HostOptions(
           -size WxH        Client size when windowed or exclusive.
                            Default 640x480 windowed, the monitor's own fullscreen.
           -novsync         Do not wait for the vertical blank.
-          -opengl          Draw with the legacy OpenGL backend. Vulkan is the default,
-                           and -vulkan asks for it explicitly. OPENIGI_BACKEND=opengl
-                           does the same as -opengl for a whole shell.
           -screenshot <f>  Write a BMP of the rendered frame and quit. Implies -frames 5.
           -frames <n>      Quit after n rendered frames. 0 runs until closed.
           -lockstep        Drive the simulation from a synthetic clock, one tick per loop pass,

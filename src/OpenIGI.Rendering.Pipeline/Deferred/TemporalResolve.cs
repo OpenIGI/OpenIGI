@@ -58,7 +58,7 @@ public sealed class TemporalResolve : IDisposable
         _dilateVelocity = new ComputePass(device, ShaderModuleId.UpscaleDilateVelocity, "upscale.dilate-velocity");
         _decimateHistory = new ComputePass(device, ShaderModuleId.UpscaleDecimateHistory, "upscale.decimate");
         _thinGeometry = new ComputePass(device, ShaderModuleId.UpscaleThinGeometry, "upscale.thin");
-        _rejectShading = new ComputePass(device, ShaderModuleId.UpscaleRejectShading, "upscale.reject", RejectShadingVariant);
+        _rejectShading = new ComputePass(device, ShaderModuleId.UpscaleRejectShading, "upscale.reject", RejectShadingVariantFor(device));
         _rejectionDilate = new ComputePass(device, ShaderModuleId.UpscaleRejectionDilate, "upscale.reject-dilate");
         _spatialAntiAliasing = new ComputePass(device, ShaderModuleId.UpscaleSpatialAntiAliasing, "upscale.spatial");
         _updateHistory = new ComputePass(device, ShaderModuleId.UpscaleUpdateHistory, "upscale.update");
@@ -96,7 +96,7 @@ public sealed class TemporalResolve : IDisposable
                 (ShaderModuleId.UpscaleDilateVelocity, default),
                 (ShaderModuleId.UpscaleDecimateHistory, default),
                 (ShaderModuleId.UpscaleThinGeometry, default),
-                (ShaderModuleId.UpscaleRejectShading, RejectShadingVariant),
+                (ShaderModuleId.UpscaleRejectShading, RejectShadingVariantFor(device)),
                 (ShaderModuleId.UpscaleRejectionDilate, default),
                 (ShaderModuleId.UpscaleSpatialAntiAliasing, default),
                 (ShaderModuleId.UpscaleUpdateHistory, default),
@@ -104,13 +104,24 @@ public sealed class TemporalResolve : IDisposable
             ]).ToArray().All(entry => ShaderCatalog.Compiles(entry.Module, entry.Variant, device.ShaderTarget));
     }
 
-    /// <summary>The variant of the shading rejection this build uses.</summary>
+    /// <summary>The variant of the shading rejection a device runs.</summary>
+    /// <param name="device">The device.</param>
+    /// <returns>The widest tile its shared memory holds, among those compiled for it.</returns>
     /// <remarks>
-    /// The eight-wide tile, which every adapter has the shared memory for. The sixteen-wide one carries
-    /// its apron once over four times the area and is the faster of the two where it fits; choosing
-    /// between them by what the adapter reports belongs with the rest of the preset work.
+    /// The sixteen-wide tile carries its apron once over four times the area and is the faster of the two
+    /// where it fits; the eight-wide one fits every adapter. A group that asks for more shared memory than
+    /// the adapter allows is not a slow path but a pipeline that will not build, so the choice is made
+    /// from what the device reports, before the module is handed over.
     /// </remarks>
-    private static ShaderVariant RejectShadingVariant => new("group8");
+    private static ShaderVariant RejectShadingVariantFor(IRhiDevice device)
+    {
+        (ShaderVariant widest, _) = UpscaleRejectShadingVariants.Select(
+            (uint)Math.Max(0, device.Limits.MaxComputeWorkgroupStorageBytes));
+
+        return ShaderCatalog.Compiles(ShaderModuleId.UpscaleRejectShading, widest, device.ShaderTarget)
+            ? widest
+            : UpscaleRejectShadingVariants.Compact;
+    }
 
     /// <summary>Records the whole chain for one frame.</summary>
     /// <param name="pass">The compute pass to record into.</param>

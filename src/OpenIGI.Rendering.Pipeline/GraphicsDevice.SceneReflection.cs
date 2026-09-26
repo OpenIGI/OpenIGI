@@ -6,23 +6,23 @@ using OpenIGI.Shaders;
 
 namespace OpenIGI.Rendering.Pipeline;
 
-/// <summary>What the wet ground and the glossy surfaces reflect: the Vulkan renderer's reflection pass.</summary>
+/// <summary>What the wet ground and the glossy surfaces reflect: the scene's reflection pass.</summary>
 /// <remarks>
 /// <para>
-/// One of two answers a frame, as there: a ray against the world where the adapter traces, the switches
-/// allow and the surface cache is lit; a march through the depth buffer and then the level's distance field
-/// everywhere else. The same Reflect module and parameter block (<see cref="ReflectionParameters"/>), after
+/// One of two answers a frame: a ray against the world where the adapter traces, the switches allow and the
+/// surface cache is lit; a march through the depth buffer and then the level's distance field everywhere
+/// else. Either is the Reflect module with its parameter block (<see cref="ReflectionParameters"/>), after
 /// the frame is lit and its translucency drawn and before the glazing and the temporal resolve -- so a pane
 /// reflects a road with its reflections in, and the resolve steadies what one ray a pixel finds.
 /// </para>
 /// <para>
-/// The composite is the glazing's, the blend unit adding the reflection to the lit scene where the Vulkan
-/// renderer adds in place from compute; the answer is the same.
+/// The composite is the glazing's, the blend unit adding the reflection to the lit scene: adding in place
+/// from a compute stage is something WGSL cannot do to an rgba16float image.
 /// </para>
 /// </remarks>
 public sealed partial class GraphicsDevice
 {
-    // How far a traced reflected ray reaches before it counts as having left: the Vulkan renderer's figure.
+    // How far a traced reflected ray reaches before it counts as having left for the sky.
     private const float TracedReflectionReachMetres = 1000f;
 
     private ReflectionSettings _reflectionSettings = ReflectionSettings.Off;
@@ -72,6 +72,11 @@ public sealed partial class GraphicsDevice
         bool complete = BindReflectionWorld(reflect);
         traces &= complete;
         bool marchesField = !traces && complete;
+
+        if (_reflectionSettings.Enabled)
+        {
+            ReportReflectionTrace(complete);
+        }
 
         // Worth running where either answer is there: the screen march, or the world beyond it.
         if (!_reflectionSettings.Enabled || (!_reflectionSettings.Marches && !traces && !marchesField))

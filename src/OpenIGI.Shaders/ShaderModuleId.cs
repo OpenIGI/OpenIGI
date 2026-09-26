@@ -148,9 +148,6 @@ public enum ShaderModuleId
     /// <summary>Reflections: what each surface reflects, traced or marched.</summary>
     Reflect,
 
-    /// <summary>Reflections: the reflection added back into the lit scene, in place.</summary>
-    ReflectComposite,
-
     /// <summary>Reflections: the reflection laid over the lit scene by blending, for either backend.</summary>
     ReflectCompositeDraw,
 
@@ -159,9 +156,6 @@ public enum ShaderModuleId
 
     /// <summary>Deferred: the lit scene brought to the display, with everything the lens does.</summary>
     Resolve,
-
-    /// <summary>A sweep of rays across a known quad, to prove an adapter's ray query traverses.</summary>
-    RayQuerySelfTest,
 
     /// <summary>Distance field: one clipmap level read back for the validation.</summary>
     FieldClipmapRead,

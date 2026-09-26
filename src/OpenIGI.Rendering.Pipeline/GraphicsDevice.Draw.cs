@@ -244,8 +244,8 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     public void SetFirstPersonGeometry(bool firstPerson)
     {
         // Leaving the layer puts the scene's draws back on the full depth range; entering it moves them
-        // into the sliver, as the Vulkan original does. Only the scene's passes have a sliver: the direct
-        // path clears its depth instead, which is what the interface describes.
+        // into the sliver. Only the scene's passes have a sliver: the direct path clears its depth instead,
+        // which is what the interface describes.
         if (_firstPerson != firstPerson && Capturing)
         {
             SetForegroundLayer(firstPerson);

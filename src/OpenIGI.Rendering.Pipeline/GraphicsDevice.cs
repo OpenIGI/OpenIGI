@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Pipeline.Deferred;
 using OpenIGI.Rendering.Pipeline.Diagnostics;
@@ -17,15 +18,16 @@ namespace OpenIGI.Rendering.Pipeline;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is the original's direct path: the world drawn forward into the back buffer, the HUD and menus
-/// over it, and nothing kept afterwards. It reports <see cref="GraphicsCapabilities.SupportsSceneCapture"/>
-/// false, which is what tells everything above to run that path and not the remaster's — so the
-/// settings the deferred stack owns are recorded and named rather than silently ignored.
+/// It draws both of the game's paths. The direct one is the original's: the world drawn forward into the
+/// back buffer, the HUD and menus over it, and nothing kept afterwards -- what the vanilla preset asks for.
+/// The deferred one is the remaster's, drawn whenever a scene capture is open; it reports
+/// <see cref="GraphicsCapabilities.SupportsSceneCapture"/>, and a preset that does not want it declines to
+/// open one.
 /// </para>
 /// <para>
-/// <b>Why vanilla first.</b> It is a whole renderer rather than a slice of one: every pass it needs has
-/// moved, so it can be run and compared against what the Vulkan device draws today. The deferred stack
-/// is the larger half and follows behind it, pass by pass, against that comparison.
+/// <b>Two halves.</b> The direct path is a whole renderer rather than a slice of one: every pass it needs
+/// is here, and it can be run and judged on its own. The deferred stack is the larger half, and is drawn
+/// whenever a scene capture is open.
 /// </para>
 /// </remarks>
 public sealed partial class GraphicsDevice : IGraphicsDevice
@@ -67,15 +69,18 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     /// screenshot run, a flight — says so here, because the copy has to be recorded INSIDE the frame and
     /// a caller asking afterwards is a frame too late.
     /// </param>
+    /// <param name="logger">Where the renderer's status lines go, or null to write none.</param>
     public GraphicsDevice(
         IRhiDevice device,
         in DisplayMode mode,
         double timestampPeriodNanoseconds = 1.0,
-        bool captureFrames = false)
+        bool captureFrames = false,
+        IIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
 
         _device = device;
+        _logger = logger;
         CurrentMode = mode;
         PresentFormat = device.SurfaceFormat;
         _captureAlways = captureFrames;
@@ -86,9 +91,8 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
             SupportsNonPowerOfTwoTextures: true,
             $"RHI over {(device.ShaderTarget == ShaderTarget.Wgsl ? "WebGPU" : "Vulkan")} — {device.AdapterName}")
         {
-            // The G-buffer, the shading over it, the atmosphere and the resolve: a real mission's frame,
-            // agreeing with the Vulkan renderer's under the same lighting model. What it does not draw
-            // yet is named in UnimplementedSettings rather than drawn wrongly.
+            // The G-buffer, the shading over it, the atmosphere and the resolve: a real mission's frame.
+            // What it does not draw yet is named in UnimplementedSettings rather than drawn wrongly.
             SupportsSceneCapture = true,
             SupportsFloatRenderTargets = true,
 
@@ -98,7 +102,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
             SupportsCompute = GiRunsOn(device),
 
             // Where the backend traces, the GI stack builds its ray-query forms and the compute seam binds
-            // them the traced world, as the Vulkan renderer does.
+            // them the traced world.
             SupportsRayQuery = GiRunsOn(device) && device.RayTracing is not null,
             MaxSampleCount = device.Limits.MaxSampleCount,
             MaxComputeGroupsX = device.Limits.MaxComputeWorkgroupsPerDimension,
@@ -135,8 +139,8 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     /// <para>
     /// The device's own, asked once when this is built: every pipeline drawing into a frame has to be
     /// built for the frame's format, and the window system chooses it. A desktop swapchain here hands
-    /// out an unsigned-normalised image because the legacy path encodes its own output; an offscreen
-    /// target is whatever it was attached as; a browser canvas may be sRGB.
+    /// out an unsigned-normalised image, so the interface composites and blends at the display encoding;
+    /// an offscreen target is whatever it was attached as; a browser canvas may be sRGB.
     /// </para>
     /// <para>
     /// It was a constant, and a constant is what a pipeline built for sRGB and pointed at an

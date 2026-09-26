@@ -7,8 +7,8 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Held, as on the Vulkan device: it is two vectors in the shading's own block and a few in the
-    /// reflection's, so it arrives with the frame's parameters and costs no binding and no pass.
+    /// Held: it is two vectors in the shading's own block and a few in the reflection's, so it arrives with
+    /// the frame's parameters and costs no binding and no pass.
     /// </remarks>
     public void SetWetness(in WetnessSettings wetness)
     {

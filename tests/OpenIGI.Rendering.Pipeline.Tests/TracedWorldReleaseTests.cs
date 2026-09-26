@@ -70,6 +70,8 @@ public sealed class TracedWorldReleaseTests
 
         public int PlacementCount => 0;
 
+        public RhiTracedWorldStatistics Statistics => default;
+
         public ulong HitRecordAddress => 0;
 
         public IRhiTextureView CutoutMasks => throw new NotSupportedException();

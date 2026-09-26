@@ -73,9 +73,8 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
     /// </remarks>
     public const int MaxLayers = 1024;
 
-    // The layout the array rests in between uploads: shader-readable for the legacy device, general for
-    // the RHI, where every texture a pass binds rests in general.
-    private readonly ImageLayout _resting;
+    // The layout the array rests in between uploads: general, where the RHI keeps every texture it binds.
+    private const ImageLayout Resting = ImageLayout.General;
 
     /// <summary>How much video memory the whole array is allowed to take, in bytes.</summary>
     /// <remarks>
@@ -146,16 +145,13 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
     /// <c>r_reflection_texture</c>, which is where this comes from — and it is fixed for the life of the
     /// array, because the image is allocated here and nothing resizes it.
     /// </param>
-    /// <param name="resting">The layout the array rests in between uploads.</param>
     public VulkanTracedAlbedo(
         Vk vk,
         VulkanDevice device,
         VulkanAllocator allocator,
         VulkanCommands commands,
-        int resolution,
-        ImageLayout resting = ImageLayout.ShaderReadOnlyOptimal)
+        int resolution)
     {
-        _resting = resting;
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(allocator);
@@ -433,7 +429,7 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
                 cmd,
                 image,
                 ImageLayout.TransferDstOptimal,
-                _resting,
+                Resting,
                 PipelineStageFlags.TransferBit,
                 PipelineStageFlags.ComputeShaderBit,
                 AccessFlags.TransferWriteBit,
@@ -464,7 +460,7 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
             Transition(
                 cmd,
                 image,
-                _resting,
+                Resting,
                 ImageLayout.TransferDstOptimal,
                 PipelineStageFlags.ComputeShaderBit,
                 PipelineStageFlags.TransferBit,
@@ -492,7 +488,7 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
                 cmd,
                 image,
                 ImageLayout.TransferDstOptimal,
-                _resting,
+                Resting,
                 PipelineStageFlags.TransferBit,
                 PipelineStageFlags.ComputeShaderBit,
                 AccessFlags.TransferWriteBit,

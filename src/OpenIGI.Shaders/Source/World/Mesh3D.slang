@@ -261,7 +261,7 @@ float4 fragmentMain(Varyings input) : SV_Target
     // eye, which is the marker's zero. Every other marker returns here -- the world, anything
     // translucent, and the UNLIT rig's two, which is the rig shaded as ordinary geometry. Two
     // once fell through into the key below with no key to light it, and the vanilla rig was a
-    // black silhouette on both renderers.
+    // black silhouette.
     if (abs(marker) > 0.5)
     {
         // What the hardware fog did for the original: the surface faded into the air's own

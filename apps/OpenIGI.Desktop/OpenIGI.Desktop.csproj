@@ -16,6 +16,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The composition root's own decisions (which graphics API a run starts on, and which one the
+         switch moves to) are internal to it; its test project may see them. -->
+    <InternalsVisibleTo Include="OpenIGI.Desktop.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\OpenIGI.Core\OpenIGI.Core.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Engine\OpenIGI.Engine.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Game\OpenIGI.Game.csproj" />

@@ -24,10 +24,9 @@ public sealed partial class GraphicsDevice
 {
     /// <summary>The vertical jitter's sign once it reaches history space.</summary>
     /// <remarks>
-    /// The game hands over a jitter in OpenGL's clip convention. Both renderers displace the rasterised
-    /// image UP the target for a positive one — the legacy one by flipping Y in its vertex stages, this
-    /// one by flipping the viewport — so the history looks for that sample the other way, as the Vulkan
-    /// device's <c>VerticalJitterSign</c> says.
+    /// The game hands over a jitter in OpenGL's clip convention. Flipping the viewport displaces the
+    /// rasterised image UP the target for a positive one, so the history looks for that sample the other
+    /// way; horizontal is untouched by the flip.
     /// </remarks>
     private const float VerticalJitterSign = -1f;
 

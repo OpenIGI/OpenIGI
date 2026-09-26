@@ -40,12 +40,6 @@ internal sealed class VulkanRhiBuffer : IRhiBuffer
     /// <inheritdoc/>
     public RhiBufferUsage Usage { get; }
 
-    /// <summary>Gets or sets which stages last touched it, so a barrier can wait on the right one.</summary>
-    public PipelineStageFlags LastStage { get; set; } = PipelineStageFlags.TopOfPipeBit;
-
-    /// <summary>Gets or sets how it was last accessed.</summary>
-    public AccessFlags LastAccess { get; set; }
-
     /// <inheritdoc/>
     public void Dispose()
     {

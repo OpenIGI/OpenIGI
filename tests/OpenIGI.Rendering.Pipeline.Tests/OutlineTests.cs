@@ -5,7 +5,7 @@ using Xunit;
 
 namespace OpenIGI.Rendering.Pipeline.Tests;
 
-/// <summary>That the selection glow is drawn as the Vulkan renderer draws it: a mask, then the shells.</summary>
+/// <summary>That the selection glow is drawn as an inverted hull: a mask, then the shells.</summary>
 public sealed class OutlineTests
 {
     [Fact]

@@ -41,8 +41,8 @@ public sealed class GraphicsDeviceTests
         Assert.DoesNotContain("r_motion_blur", device.Capabilities.UnimplementedSettings);
         Assert.DoesNotContain("r_fog_quality", device.Capabilities.UnimplementedSettings);
 
-        // What the Vulkan renderer does not act on either is named here too, so the two options screens
-        // agree -- depth of field above all, which neither draws.
+        // What this renderer never acts on is named whatever the adapter, so the options screen says so:
+        // depth of field above all, which it does not draw.
         Assert.Contains("r_dof", device.Capabilities.UnimplementedSettings);
         Assert.Contains("r_generate_mipmaps", device.Capabilities.UnimplementedSettings);
         Assert.Contains("r_camera_taps", device.Capabilities.UnimplementedSettings);

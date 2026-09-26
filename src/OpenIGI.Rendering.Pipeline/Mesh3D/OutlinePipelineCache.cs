@@ -21,11 +21,11 @@ public enum OutlinePass
 /// </summary>
 /// <remarks>
 /// <para>
-/// The Vulkan renderer's inverted hull. The mask writes the model's silhouette into depth at a depth just
-/// inside the near plane, writing no colour; each shell draws the model pushed outwards in screen space and
-/// tests <em>greater</em> in reverse-Z, so it loses against the mask -- the glow stops at the model -- and
-/// wins against the world behind. A shell blends its colour over the picture and forces the target's alpha
-/// to nought, because that alpha is the frame's marker of world geometry and a glow is not world.
+/// An inverted hull. The mask writes the model's silhouette into depth at a depth just inside the near plane,
+/// writing no colour; each shell draws the model pushed outwards in screen space and tests <em>greater</em>
+/// in reverse-Z, so it loses against the mask -- the glow stops at the model -- and wins against the world
+/// behind. A shell blends its colour over the picture and forces the target's alpha to nought, because that
+/// alpha is the frame's marker of world geometry and a glow is not world.
 /// </para>
 /// <para>
 /// The glow goes into whatever pass is open: the forward pass over the lit image, or the frame itself on

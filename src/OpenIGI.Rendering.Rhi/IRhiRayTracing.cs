@@ -109,6 +109,9 @@ public interface IRhiRayTracing
     /// <summary>Gets how many placements the world holds.</summary>
     int PlacementCount { get; }
 
+    /// <summary>Gets what the world holds, for the renderer to report.</summary>
+    RhiTracedWorldStatistics Statistics { get; }
+
     /// <summary>Gets the device address of the hit records a shader looks a hit's material up in.</summary>
     ulong HitRecordAddress { get; }
 

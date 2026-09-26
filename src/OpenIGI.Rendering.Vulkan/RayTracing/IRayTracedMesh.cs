@@ -2,8 +2,8 @@ namespace OpenIGI.Rendering.Vulkan.RayTracing;
 
 /// <summary>What the traced world reads of a mesh: where its triangles are and whether they move.</summary>
 /// <remarks>
-/// Both renderers' meshes answer it -- the legacy device's own and the RHI's -- so one traced world serves
-/// both. Every vertex is a <see cref="Vertex3D"/>, which is what the hit records tell a ray to expect.
+/// The RHI's meshes answer it, so the traced world reads a mesh without knowing how it was made. Every
+/// vertex is a <see cref="Vertex3D"/>, which is what the hit records tell a ray to expect.
 /// </remarks>
 internal interface IRayTracedMesh
 {

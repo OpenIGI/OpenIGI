@@ -10,9 +10,9 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Uploaded as the Vulkan device uploads it: the file's triples widened into half-float voxels with red
-    /// varying fastest, which is also the order a volume's own memory runs. The cube it replaces is retired
-    /// rather than freed, because a grade can be chosen while frames that sample the old one are in flight.
+    /// The file's triples are uploaded widened into half-float voxels with red varying fastest, which is also
+    /// the order a volume's own memory runs. The cube it replaces is retired rather than freed, because a
+    /// grade can be chosen while frames that sample the old one are in flight.
     /// </remarks>
     public void SetColourLookup(ColourLookupTable? table)
     {
@@ -62,7 +62,7 @@ public sealed partial class GraphicsDevice
     }
 
     /// <summary>The grade cube's edge for this frame, or nought where the frame is not graded.</summary>
-    /// <remarks>On the Vulkan device's terms: a cube loaded, the strength above nought, and not a mask view.</remarks>
+    /// <remarks>A cube loaded, the strength above nought, and not a mask view.</remarks>
     private float GradeSize(in PostProcessSettings post) =>
         _colourLut is not null && post.ColourLookup > 0f && !_debugView.IsMask() ? _colourLutSize : 0f;
 

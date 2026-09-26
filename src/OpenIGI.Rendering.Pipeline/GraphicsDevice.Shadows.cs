@@ -9,10 +9,9 @@ namespace OpenIGI.Rendering.Pipeline;
 /// <summary>The sun's shadow cascades: the world drawn from the light, once per slice of the view.</summary>
 /// <remarks>
 /// <para>
-/// The Vulkan original's, pass for pass. The game divides the view into cascades and hands each one's
-/// projection and light rotation to <see cref="SetShadows"/>, then draws the casters into each between
-/// <see cref="BeginShadowCascade"/> and <see cref="EndShadowCascade"/>. Each cascade is one layer of a
-/// depth array the shading compares against.
+/// The game divides the view into cascades and hands each one's projection and light rotation to
+/// <see cref="SetShadows"/>, then draws the casters into each between <see cref="BeginShadowCascade"/> and
+/// <see cref="EndShadowCascade"/>. Each cascade is one layer of a depth array the shading compares against.
 /// </para>
 /// <para>
 /// This depth runs FORWARDS, unlike the scene's: cleared to one and tested less-or-equal, because it is
@@ -42,8 +41,10 @@ public sealed partial class GraphicsDevice
     /// <remarks>
     /// Keeps the depth unprojection and view rotation the shading needs, and composes each cascade's
     /// camera-relative world-to-clip matrix — the orthographic projection after the world-to-light
-    /// rotation, with no transpose, for the reason the Vulkan device's <c>ComposeCascade</c> gives. Sizes
-    /// the shadow map to the cascade count and resolution.
+    /// rotation, with no transpose: a <c>Matrix4f</c> is a column-vector multiply whose rows ARE the light's
+    /// axes, so the rotation goes in as it stands, and the transposed spelling a <c>Matrix3f</c> needs would
+    /// apply the inverse and slide every shadow off its caster. Sizes the shadow map to the cascade count and
+    /// resolution.
     /// </remarks>
     public void SetShadows(
         in ShadowSettings settings,

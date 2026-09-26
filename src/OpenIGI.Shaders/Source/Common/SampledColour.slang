@@ -1,14 +1,13 @@
 // What a colour texture's sample is, and the one line that makes it linear.
 //
-// The engine's textures hold display-encoded colour. The legacy renderer stores them in UNORM images,
-// so a sample comes back still encoded and a stage that lights in linear space decodes it itself. The
-// renderer over the RHI stores them in sRGB images, where the SAMPLER decodes -- before it filters,
-// which is the more correct of the two -- and a stage that decoded again would square the curve: a
-// dark green of 36 comes out at 5, and the whole world goes near black.
+// The engine's textures hold display-encoded colour. In a UNORM image a sample comes back still
+// encoded, and a stage that lights in linear space decodes it itself. The renderer stores them in sRGB
+// images, where the SAMPLER decodes -- before it filters, which is the more correct of the two -- and a
+// stage that decoded again would square the curve: a dark green of 36 comes out at 5, and the whole
+// world goes near black.
 //
 // So which of the two a pipeline is bound to is a constant of the pipeline, not of the shader. It
-// DEFAULTS to the legacy renderer's images, so a pipeline built without supplying it draws exactly what
-// it drew before. Only the RHI path sets it.
+// DEFAULTS to a UNORM image, so a pipeline reading the renderer's sRGB images has to supply it.
 
 #ifndef OPENIGI_SAMPLED_COLOUR_INCLUDED
 #define OPENIGI_SAMPLED_COLOUR_INCLUDED

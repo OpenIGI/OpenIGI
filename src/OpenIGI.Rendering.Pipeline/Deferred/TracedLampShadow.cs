@@ -33,15 +33,14 @@ public readonly record struct TracedLampFrame(
 /// </summary>
 /// <remarks>
 /// <para>
-/// The same three dispatches and parameter blocks as the Vulkan renderer's passes
-/// (<see cref="LampShadowParameters"/>): LampShadow traces, LampDenoiseTemporal accumulates onto a
-/// reprojected, clamped history, LampDenoiseSpatial filters what is left. The shading upsamples the
-/// filtered result by depth.
+/// Three dispatches and their parameter blocks (<see cref="LampShadowParameters"/>): LampShadow traces,
+/// LampDenoiseTemporal accumulates onto a reprojected, clamped history, LampDenoiseSpatial filters what is
+/// left. The shading upsamples the filtered result by depth.
 /// </para>
 /// <para>
 /// <b>Four images</b>, all at half resolution: the raw trace, two accumulations that ping-pong, and the
-/// filtered result. All are cleared to an unshadowed room when made (visibility one, nothing else), as the
-/// Vulkan renderer's are, so a first frame reads light rather than a frame of black.
+/// filtered result. All are cleared to an unshadowed room when made (visibility one, nothing else), so a
+/// first frame reads light rather than a frame of black.
 /// </para>
 /// </remarks>
 public sealed class TracedLampShadow : IDisposable

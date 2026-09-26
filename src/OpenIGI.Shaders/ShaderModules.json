@@ -198,21 +198,7 @@
     },
     {
       "id": "ExposureHistogram",
-      "source": "Deferred/ExposureHistogram.slang",
-      "variants": [
-        {
-          "name": "default",
-          "targets": [
-            "Spirv"
-          ]
-        },
-        {
-          "name": "buffer",
-          "defines": {
-            "OPENIGI_HISTOGRAM_BUFFER": "1"
-          }
-        }
-      ]
+      "source": "Deferred/ExposureHistogram.slang"
     },
     {
       "id": "SunShadow",
@@ -285,18 +271,6 @@
       ]
     },
     {
-      "id": "ReflectComposite",
-      "source": "Reflection/Composite.slang",
-      "variants": [
-        {
-          "name": "default",
-          "targets": [
-            "Spirv"
-          ]
-        }
-      ]
-    },
-    {
       "id": "ReflectCompositeDraw",
       "source": "Reflection/CompositeDraw.slang"
     },
@@ -319,28 +293,6 @@
           "defines": {
             "OPENIGI_RAY_QUERY": "0",
             "OPENIGI_MAX_LAMPS": "160"
-          },
-          "targets": [
-            "Spirv"
-          ]
-        },
-        {
-          "name": "rayquery.sampled",
-          "defines": {
-            "OPENIGI_RAY_QUERY": "1",
-            "OPENIGI_MAX_LAMPS": "160",
-            "OPENIGI_SAMPLED_GBUFFER": "1"
-          },
-          "targets": [
-            "Spirv"
-          ]
-        },
-        {
-          "name": "software.sampled",
-          "defines": {
-            "OPENIGI_RAY_QUERY": "0",
-            "OPENIGI_MAX_LAMPS": "160",
-            "OPENIGI_SAMPLED_GBUFFER": "1"
           }
         }
       ]
@@ -351,18 +303,6 @@
       "variants": [
         {
           "name": "default"
-        }
-      ]
-    },
-    {
-      "id": "RayQuerySelfTest",
-      "source": "RayTracing/SelfTest.slang",
-      "variants": [
-        {
-          "name": "default",
-          "targets": [
-            "Spirv"
-          ]
         }
       ]
     },

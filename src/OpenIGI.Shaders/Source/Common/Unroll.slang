@@ -7,8 +7,7 @@
 // temporal resolve's rejection pass ran five times slower on WebGPU than on Vulkan for exactly that.
 // Unrolled before the WGSL is written, the counters are constants and none of that happens.
 //
-// SPIR-V keeps its loops as they were -- it is what the legacy renderer runs, and its picture has to stay
-// what it was to the bit.
+// SPIR-V keeps its loops as they were: its driver unrolls them itself, as above.
 //
 // Put OPENIGI_UNROLL in front of a loop whose trip count the compiler can work out.
 

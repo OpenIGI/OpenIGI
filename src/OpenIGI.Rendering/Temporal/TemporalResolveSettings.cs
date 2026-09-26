@@ -79,10 +79,10 @@ public readonly record struct TemporalResolveSettings(
     /// <param name="view">What the frame shows instead of the scene, if anything.</param>
     /// <returns>The resolve's settings.</returns>
     /// <remarks>
-    /// The same choices the Vulkan device makes inline: the history ceiling and the thin-geometry
-    /// relaxation from their console variables, and the guide's blend from how many rendered pixels feed
-    /// each presented one — a frame rendered at a quarter of the pixels leans on its guide sixteen times
-    /// less, because each of its samples stands for more of the output.
+    /// The history ceiling and the thin-geometry relaxation from their console variables, and the guide's
+    /// blend from how many rendered pixels feed each presented one — a frame rendered at a quarter of the
+    /// pixels leans on its guide sixteen times less, because each of its samples stands for more of the
+    /// output.
     /// </remarks>
     public static TemporalResolveSettings ForFrame(
         in TemporalAaSettings taa,

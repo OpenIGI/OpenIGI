@@ -22,14 +22,12 @@ public readonly record struct SceneTargetSpec(
 /// <para>
 /// A table rather than a field each. What a target is — its format, its size rule and what it may be
 /// used for — is a fact about the renderer, so it is written down once and the allocation, the resize
-/// and the release all read it. The Vulkan original spent a field, a property, an allocation and four
-/// scattered lines on every one of forty images, which is how two of them ended up at subtly different
-/// sizes.
+/// and the release all read it. A field, a property, an allocation and four scattered lines for every one
+/// of forty images is how two of them end up at subtly different sizes.
 /// </para>
 /// <para>
-/// There are no render passes or framebuffers here, which is most of what the original was. The RHI
-/// states attachments when a pass begins, so a target is a texture and nothing else, and adding one
-/// costs a row.
+/// There are no render passes or framebuffers here. The RHI states attachments when a pass begins, so a
+/// target is a texture and nothing else, and adding one costs a row.
 /// </para>
 /// </remarks>
 public sealed class SceneTargetSet : IDisposable

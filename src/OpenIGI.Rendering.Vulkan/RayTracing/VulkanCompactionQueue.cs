@@ -67,9 +67,6 @@ internal sealed unsafe class VulkanCompactionQueue : IDisposable
         ResetPool();
     }
 
-    /// <summary>Gets a value indicating whether anything is waiting to be compacted.</summary>
-    public bool HasWork => _requested.Count > 0 || _active.Count > 0;
-
     /// <summary>Whether a structure is still somewhere in the compaction handshake.</summary>
     /// <param name="structure">The structure to check for.</param>
     /// <returns>

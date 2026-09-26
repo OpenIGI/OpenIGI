@@ -14,7 +14,6 @@ using OpenIGI.Host;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.Platform;
 using OpenIGI.Rendering.Pipeline;
-using OpenIGI.Rendering.Vulkan;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.Vulkan.Rhi;
 using OpenIGI.Rendering.WebGpu;
@@ -23,8 +22,9 @@ using OpenIGI.Rendering;
 HostOptions options;
 try
 {
-    // -vulkan is still swallowed rather than rejected. It names the only backend there is, so it does
-    // nothing, but a shortcut or a script that has carried it since there were two should keep working.
+    // -vulkan is still swallowed rather than rejected. It names the default backend, so it does nothing,
+    // but a shortcut or a script that has carried it since there was a choice of renderers should keep
+    // working. The backend is chosen by OPENIGI_RENDERER.
     options = HostOptions.Parse(
         args.Where(a => !a.Equals("-vulkan", StringComparison.OrdinalIgnoreCase)).ToArray());
 }
@@ -199,34 +199,31 @@ using (window)
         Environment.GetEnvironmentVariable("OPENIGI_VK_VALIDATION"),
         "1",
         StringComparison.Ordinal);
-    // The deferred, HDR renderer -- the G-buffer, cascaded shadows and the GI passes -- is the modern
-    // path; the direct renderer is the vanilla fallback. It is on by default and chosen per preset by the
-    // r_hdr/r_deferred cvars (BeginSceneCapture declines it where a preset does not ask for it), so vanilla
-    // still draws direct. OPENIGI_VK_DEFERRED=0 forces the direct path for debugging.
-    bool vulkanDeferred = !string.Equals(
-        Environment.GetEnvironmentVariable("OPENIGI_VK_DEFERRED"),
-        "0",
-        StringComparison.Ordinal);
-    // OPENIGI_RENDERER=rhi draws through OpenIGI.Rendering.Pipeline instead: the same renderer over the
-    // backend-neutral interface, which is what the browser will run. It draws the deferred frame, with
-    // the passes it has not taken over yet named in its UnimplementedSettings, and it is opt-in until it
-    // draws everything the device below it does. OPENIGI_RENDERER=webgpu runs that renderer over WebGPU
-    // (wgpu-native), the browser's API, for A/B against Vulkan on the same machine.
-    string? renderer = Environment.GetEnvironmentVariable("OPENIGI_RENDERER");
+
+    // OPENIGI_RENDERER picks the API the renderer runs over: Vulkan unless it asks for webgpu, the
+    // browser's API through wgpu-native, which is how the web build's renderer is compared against the
+    // desktop's on one machine.
+    string? requested = Environment.GetEnvironmentVariable("OPENIGI_RENDERER");
+    if (!RendererSwitchOrder.IsKnown(requested))
+    {
+        logger.Warning("Renderer", $"OPENIGI_RENDERER={requested} names no renderer; drawing over Vulkan.");
+    }
+
+    RendererBackend backend = RendererSwitchOrder.Parse(requested);
     HostOptions runOptions = options;
 
-    // F10 (r_switch_renderer) ends the game to change renderer rather than to quit. Everything the game
-    // holds on the GPU belongs to the renderer that made it, so the game is built again, on the other
-    // renderer and the same window, and put back where it was.
+    // F10 (r_switch_renderer) ends the game to change API rather than to quit. Everything the game
+    // holds on the GPU belongs to the device that made it, so the game is built again, over the other
+    // API and on the same window, and put back where it was.
     while (true)
     {
-        int code = RunOnce(renderer, runOptions, out RendererSwitch? switched);
+        int code = RunOnce(backend, runOptions, out RendererSwitch? switched);
         if (switched is null || window.IsClosing)
         {
             return code;
         }
 
-        renderer = RendererSwitchOrder.Next(renderer);
+        backend = RendererSwitchOrder.Next(backend);
         runOptions = runOptions with
         {
             StartMission = switched.MissionId,
@@ -248,15 +245,12 @@ using (window)
             CameraShake = 0f,
         };
 
-        logger.Information("Renderer", $"Switching to the {RendererSwitchOrder.Describe(renderer)} renderer.");
+        logger.Information("Renderer", $"Switching to {RendererSwitchOrder.Describe(backend)}.");
     }
 
-    int RunOnce(string? renderer, HostOptions runOptions, out RendererSwitch? switched)
+    int RunOnce(RendererBackend backend, HostOptions runOptions, out RendererSwitch? switched)
     {
-        bool useRhi = string.Equals(renderer, "rhi", StringComparison.OrdinalIgnoreCase);
-        bool useWebGpu = string.Equals(renderer, "webgpu", StringComparison.OrdinalIgnoreCase);
-
-        using VulkanRhi? rhi = useRhi
+        using VulkanRhi? vulkan = backend == RendererBackend.Vulkan
             ? VulkanRhi.CreateForSurface(
                 new VulkanSurfaceProvider(window.VkSurface!),
                 width,
@@ -266,32 +260,23 @@ using (window)
                 vulkanValidation)
             : null;
 
-        using WebGpuRhiDevice? webGpu = useWebGpu
+        using WebGpuRhiDevice? webGpu = backend == RendererBackend.WebGpu
             ? WebGpuWindow.Create(window, width, height, vsync: true)
             : null;
 
-        IRhiDevice? rhiDevice = rhi is not null ? rhi.Device : webGpu;
+        IRhiDevice rhiDevice = vulkan is not null ? vulkan.Device : webGpu!;
 
         // WebGPU reports its timestamps in nanoseconds already.
-        using IGraphicsDevice device = rhiDevice is not null
-            ? new GraphicsDevice(
-                rhiDevice,
-                displayMode,
-                rhi?.TimestampPeriodNanoseconds ?? 1.0,
-                runOptions.ScreenshotPath is not null)
-            : new VulkanGraphicsDevice(
-                new VulkanSurfaceProvider(window.VkSurface!),
-                displayMode,
-                vulkanValidation,
-                vulkanDeferred,
-                runOptions.ScreenshotPath is not null,
-                logger);
+        using IGraphicsDevice device = new GraphicsDevice(
+            rhiDevice,
+            displayMode,
+            vulkan?.TimestampPeriodNanoseconds ?? 1.0,
+            runOptions.ScreenshotPath is not null,
+            logger);
 
         logger.Information(
             "Renderer",
-            rhiDevice is not null
-                ? $"Drawing through the RHI over {(webGpu is not null ? "WebGPU" : "Vulkan")} on {rhiDevice.AdapterName}."
-                : "Drawing through the legacy Vulkan renderer.");
+            $"Drawing over {RendererSwitchOrder.Describe(backend)} on {rhiDevice.AdapterName}.");
 
         // The composition root is the only place that names a concrete backend: the graphics device
         // above, and the audio factory here. GameHost itself sees only the abstractions.

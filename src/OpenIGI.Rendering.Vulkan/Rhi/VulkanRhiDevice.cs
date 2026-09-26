@@ -94,7 +94,7 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice, RayTracing.IS
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The legacy device's traced world, fed through the interface -- see <see cref="VulkanRhiRayTracing"/>.
+    /// The traced world, fed through the interface -- see <see cref="VulkanRhiRayTracing"/>.
     /// Null on an adapter that does not trace.
     /// </remarks>
     public IRhiRayTracing? RayTracing => _rayTracing;

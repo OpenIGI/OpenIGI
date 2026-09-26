@@ -40,10 +40,10 @@
 //
 // WGSL forbids an implicit-level sample outside a fragment stage -- it has no derivatives there -- so
 // a module sampling that way is refused outright. SPIR-V has them: Slang compiles the sample to quad
-// derivatives (VK_KHR_compute_shader_derivatives, which the device enables), and the legacy renderer has
-// always sampled so. The answer is NOT the one an explicit level zero gets -- switched over, mission 1's
-// lit frame moved by up to three levels across two thousand pixels -- so the SPIR-V form keeps what it
-// has always done and WGSL takes the level it can express.
+// derivatives (VK_KHR_compute_shader_derivatives, which the device enables). The answer is NOT the one
+// an explicit level zero gets -- switched over, mission 1's lit frame moved by up to three levels across
+// two thousand pixels -- so the SPIR-V form keeps the implicit-level sample and WGSL takes the level it
+// can express.
 
 /// A flat texture sampled in a compute stage.
 float4 ComputeSample(Texture2D<float4> texture, SamplerState sampler, float2 uv)

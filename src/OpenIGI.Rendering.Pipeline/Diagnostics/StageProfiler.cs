@@ -15,11 +15,11 @@ namespace OpenIGI.Rendering.Pipeline.Diagnostics;
 /// writes into as it begins and ends.
 /// </para>
 /// <para>
-/// <b>A pass rather than an arbitrary range.</b> The Vulkan original bracketed whatever commands it
-/// liked; the RHI only lets a pass be timed, because that is the only shape a browser has. It is also
-/// the more honest measurement: a timestamp written outside a pass measures the gap between passes as
-/// well as the pass. A stage that spans several passes sums them, which is what the ledger already does
-/// for a stage that runs more than once.
+/// <b>A pass rather than an arbitrary range.</b> The RHI only lets a pass be timed, not whatever commands
+/// happen to lie between two points, because that is the only shape a browser has. It is also the more honest
+/// measurement: a timestamp written outside a pass measures the gap between passes as well as the pass. A
+/// stage that spans several passes sums them, which is what the ledger already does for a stage that runs
+/// more than once.
 /// </para>
 /// <para>
 /// <b>Why the results lag, and why that costs nothing.</b> A query's result is not ready when the pass

@@ -61,8 +61,9 @@ public static class Mesh3DConstants
     /// <summary>Whether the target's clip space runs with Y downwards, as Vulkan's does.</summary>
     /// <remarks>
     /// Declared by every vertex stage that turns one of the engine's OpenGL projections into clip
-    /// space, which is all of them; see <c>Common/ClipSpace.slang</c>. It defaults to flipping, which
-    /// is what the renderer has always done, so only a pipeline drawing through the RHI supplies it.
+    /// space, which is all of them; see <c>Common/ClipSpace.slang</c>. The shader defaults to flipping, the
+    /// convention of a Vulkan target reached through a positive-height viewport; a pipeline built for the
+    /// RHI supplies nought through <see cref="TargetConstants"/>.
     /// </remarks>
     public const int ClipYDown = 64;
 
@@ -70,15 +71,16 @@ public static class Mesh3DConstants
     /// <remarks>
     /// Declared by the stages that light in linear space; see <c>Common/SampledColour.slang</c>. Every
     /// texture on the RHI path is stored in an sRGB image, so its sampler decodes, and a stage that
-    /// decoded again would square the curve. It defaults to the legacy renderer's UNORM images.
+    /// decoded again would square the curve. The shader defaults to an unsigned-normalised image, whose
+    /// sample comes back still encoded, so a stage reading an sRGB image has to be told.
     /// </remarks>
     public const int SamplerDecodes = 66;
 
     /// <summary>Whether the target applies the sRGB transfer itself as it stores.</summary>
     /// <remarks>
     /// Declared by the stages that finish at the display encoding; see <c>Common/TargetEncoding.slang</c>.
-    /// Such a stage hands an encoding target its colour decoded, so that it is encoded once. It defaults
-    /// to the legacy renderer's UNORM targets.
+    /// Such a stage hands an encoding target its colour decoded, so that it is encoded once. The shader
+    /// defaults to an unsigned-normalised target, which stores what it is given.
     /// </remarks>
     public const int TargetEncodes = 65;
 
@@ -135,9 +137,10 @@ public static class Mesh3DConstants
     /// <para>
     /// A target that encodes as it stores blends AFTER decoding, in linear space. Compositing at the
     /// display encoding there raises every pass's weight to the curve's power on the way in, and the
-    /// ground's passes, which partition to one, sum to less: measured, mission 1's direct path drifted
-    /// from a mean difference of 5 to one of 10 against the legacy renderer. So over such a target the
-    /// sampler's decode and the target's encode are left to bracket a linear composite.
+    /// ground's passes, which partition to one, sum to less: measured, mission 1's direct path doubled its
+    /// mean difference from the same frame drawn into a target that stores what it is given, from 5 to 10. So
+    /// over such a target the sampler's decode and the target's encode are left to bracket a linear
+    /// composite.
     /// </para>
     /// </remarks>
     public static IReadOnlyDictionary<int, RhiConstant> Describe(

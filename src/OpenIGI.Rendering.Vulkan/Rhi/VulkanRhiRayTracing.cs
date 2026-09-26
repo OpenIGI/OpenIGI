@@ -8,19 +8,17 @@ using Silk.NET.Vulkan;
 namespace OpenIGI.Rendering.Vulkan.Rhi;
 
 /// <summary>
-/// The RHI's traced world on Vulkan: the legacy device's own, fed through the interface.
+/// The RHI's traced world on Vulkan, fed through the interface.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The same world the legacy renderer traces its sun shadow against -- structures per mesh, placements
-/// accumulated from the frame's draws, skinned meshes refitted, the terrain placed as drawn, cut-out masks
-/// and the hit records that name them -- so the RHI's traced shadow is that shadow, not a second
-/// implementation of it. What differs is only who asks: meshes arrive as RHI buffers and the
-/// submissions' progress comes from the RHI device's own timeline.
+/// The traced world: structures per mesh, placements accumulated from the frame's draws, skinned meshes
+/// refitted, the terrain placed as drawn, cut-out masks and the hit records that name them. Meshes arrive
+/// as RHI buffers and the submissions' progress comes from the RHI device's own timeline.
 /// </para>
 /// <para>
-/// A cut-out texture is decided by the legacy device's own test (<c>VulkanTexture.IsCutout</c>). Such a
-/// surface with no mask to test against is kept out of the world rather than traced as a solid board.
+/// A cut-out texture is decided by <see cref="VulkanOpacityMasks.IsCutout"/>. Such a surface with no mask
+/// to test against is kept out of the world rather than traced as a solid board.
 /// </para>
 /// </remarks>
 internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
@@ -64,9 +62,9 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
         _owner = owner;
         _scene = new VulkanWorldScene(vk, api, device, allocator);
 
-        // Each texture's colour, for a reflected hit; at the resolution the legacy device stores them at.
+        // Each texture's colour, for a reflected hit; at the resolution r_reflection_texture asks for.
         _albedo = new VulkanTracedAlbedo(
-            vk, device, allocator, commands, RenderCVars.ReflectionTexture.Value, ImageLayout.General);
+            vk, device, allocator, commands, RenderCVars.ReflectionTexture.Value);
         _albedoTexture = new VulkanRhiTexture(
             vk,
             device.Device,
@@ -86,15 +84,15 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
             Layout = ImageLayout.General,
         };
 
-        // Built at once, as the Vulkan renderer's is: the tracing shaders bind a structure from their first
-        // dispatch, before the world has seen a draw.
+        // Built at once: the tracing shaders bind a structure from their first dispatch, before the world
+        // has seen a draw.
         _placeholder = new VulkanPlaceholderScene(vk, api, device, allocator, commands, owner);
         _placeholderView = new VulkanRhiAccelerationStructure(
             _placeholder.TopLevel ?? throw new InvalidOperationException("The placeholder scene built no structure."),
             "placeholder");
 
         // Resting in general, as every texture the RHI binds does.
-        _masks = new VulkanOpacityMasks(vk, device, allocator, commands, ImageLayout.General);
+        _masks = new VulkanOpacityMasks(vk, device, allocator, commands);
         _maskTexture = new VulkanRhiTexture(
             vk,
             device.Device,
@@ -152,6 +150,15 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
     public int PlacementCount => _scene.PlacementCount;
 
     /// <inheritdoc/>
+    public RhiTracedWorldStatistics Statistics => new(
+        _scene.GeometryCount,
+        _scene.SkinnedGeometryCount,
+        _scene.CasterGeometryCount,
+        _scene.PlacementCount,
+        _albedo.Count,
+        _albedo.Overflowed);
+
+    /// <inheritdoc/>
     public ulong HitRecordAddress => _scene.RecordAddress;
 
     /// <inheritdoc/>
@@ -170,7 +177,7 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
             return;
         }
 
-        if (Textures.VulkanTexture.IsCutout(pixels, width, height))
+        if (VulkanOpacityMasks.IsCutout(pixels, width, height))
         {
             _cutout.Add(textureId);
             _masks.Register(textureId, pixels, width, height);

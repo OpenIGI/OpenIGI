@@ -6,7 +6,7 @@ using Xunit;
 
 namespace OpenIGI.Rendering.Pipeline.Tests;
 
-/// <summary>That the RHI's occlusion queries reach the Vulkan renderer's verdicts, on its hysteresis.</summary>
+/// <summary>That the RHI's occlusion queries reach their verdicts, on their hysteresis.</summary>
 public sealed class OcclusionQueriesTests
 {
     private const int Slots = 2;

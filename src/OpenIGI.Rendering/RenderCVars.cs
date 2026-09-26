@@ -281,9 +281,9 @@ public static class RenderCVars
         // is a real loss to a preset whose whole job is the best picture. The cheaper tiers spend exactly
         // that, and buy back most of a traced-GI frame with it.
         //
-        // The cut-out mip bias (VulkanGraphicsDevice's TextureMipLodBias) is derived from this, so a tier
-        // rendering below native still samples chain-link and foliage at the sharpness its output
-        // resolution wants rather than discarding it. At native the bias is zero, which is correct.
+        // The cut-out mip bias (TextureLodBias.FromSettings) is derived from this, so a tier rendering below
+        // native still samples chain-link and foliage at the sharpness its output resolution wants rather
+        // than discarding it. At native the bias is zero, which is correct.
         ultra: "1");
 
     /// <summary>Whether the scene is rendered offscreen instead of straight to the back buffer.</summary>

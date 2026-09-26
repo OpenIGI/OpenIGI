@@ -11,10 +11,9 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The same two dispatches and the same parameter block as the Vulkan renderer's pass
-/// (<see cref="VolumetricFogParameters"/>): FogScatter lights each froxel and blends it with the previous
-/// frame's, FogIntegrate accumulates the column front to back, and the shading samples the result at the
-/// pixel's own screen position and depth.
+/// Two dispatches sharing one parameter block (<see cref="VolumetricFogParameters"/>): FogScatter lights each
+/// froxel and blends it with the previous frame's, FogIntegrate accumulates the column front to back, and the
+/// shading samples the result at the pixel's own screen position and depth.
 /// </para>
 /// <para>
 /// <b>Three volumes.</b> The scattering volume is written this frame and read as history the next, so it

@@ -1,10 +1,10 @@
 // The scene's depth, bound for reading, in the form each target allows.
 //
 // WebGPU refuses a depth-format view on a float texture slot, and cannot filter a depth texture at all;
-// so on WGSL the slot is declared a depth texture and every read is made of plain loads. SPIR-V keeps the
-// float slot and the sampler's own reads it has always had: those are what the legacy renderer runs, and
-// its picture has to stay what it was to the bit -- which is also why these are macros that expand to the
-// very expressions they replace, rather than functions the compiler might emit differently.
+// so on WGSL the slot is declared a depth texture and every read is made of plain loads. SPIR-V keeps a
+// float slot and the sampler's own reads (DepthFilter.slang says why the two are not interchangeable),
+// and these are macros that expand to the very expressions they replace, rather than functions the
+// compiler might emit differently.
 //
 // Declare with OPENIGI_DEPTH_SLOT(slot) uDepth; and read through the three macros below.
 

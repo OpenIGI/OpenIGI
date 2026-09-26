@@ -1,8 +1,6 @@
-using System.Diagnostics;
-using OpenIGI.Rendering.Vulkan.Shaders;
 using Xunit;
 
-namespace OpenIGI.Rendering.Vulkan.Tests;
+namespace OpenIGI.Rendering.Tests;
 
 /// <summary>
 /// The three shaders that cut a fragment out on its alpha, and the constant they now share.
@@ -22,7 +20,7 @@ namespace OpenIGI.Rendering.Vulkan.Tests;
 /// what is left here is the number itself and the two the games ask for.
 /// </para>
 /// </remarks>
-public sealed class AlphaReferenceShaderTests
+public sealed class AlphaReferenceTests
 {
     /// <summary>The default is the half the port always tested at, to within a texel value.</summary>
     /// <remarks>
@@ -55,30 +53,5 @@ public sealed class AlphaReferenceShaderTests
 
         Assert.Equal(0.2509804f, CutOut / 255f, 6);
         Assert.Equal(0.1254902f, Foliage / 255f, 6);
-    }
-
-    private static void Compile(string name, string source)
-    {
-        string directory = Path.Combine(Path.GetTempPath(), "openigi-alpha-reference-tests");
-        Directory.CreateDirectory(directory);
-        string path = Path.Combine(directory, name);
-        string output = path + ".spv";
-        File.WriteAllText(path, source);
-
-        using Process process = new()
-        {
-            StartInfo = new ProcessStartInfo(Glslc.Path)
-            {
-                ArgumentList = { "-fshader-stage=frag", "--target-env=vulkan1.2", "-o", output, path },
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            },
-        };
-
-        process.Start();
-        string errors = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-
-        Assert.True(process.ExitCode == 0, $"{name} did not compile:{Environment.NewLine}{errors}");
     }
 }

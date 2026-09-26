@@ -10,11 +10,11 @@ namespace OpenIGI.Rendering.Pipeline.Mesh3D;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The Vulkan original's glass pipeline in its transmission form. What comes through a pane is its
-/// colour, lightmap and vertex colour multiplied, premultiplied by how transparent it is and fogged by its
-/// distance, and laid over the lit image with one-and-one-minus-source-alpha — so the tint darkens what
-/// is behind it by exactly the share the pane covers. Tested against the scene's depth and never
-/// writing it: a pane that wrote depth would hide the tracers, the flame and the smoke behind it.
+/// The glass pipeline in its transmission form. What comes through a pane is its colour, lightmap and vertex
+/// colour multiplied, premultiplied by how transparent it is and fogged by its distance, and laid over the
+/// lit image with one-and-one-minus-source-alpha — so the tint darkens what is behind it by exactly the share
+/// the pane covers. Tested against the scene's depth and never writing it: a pane that wrote depth would hide
+/// the tracers, the flame and the smoke behind it.
 /// </para>
 /// <para>
 /// The FRONT LAYER form shares the vertex stage, the groups and the push block, and differs in the two

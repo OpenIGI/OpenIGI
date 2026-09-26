@@ -19,7 +19,7 @@ public sealed class BindingShapeTests
     {
         ShaderReflection reflection = ShaderCatalog.GetReflection(
             ShaderModuleId.Shading,
-            new ShaderVariant("software.sampled"));
+            new ShaderVariant("software"));
 
         ShaderBinding map = Single(reflection, "uShadowMap");
         ShaderBinding sampler = Single(reflection, "uShadowMapSampler");
@@ -63,11 +63,12 @@ public sealed class BindingShapeTests
         // What the split was for: both were compiled for Vulkan alone while they declared combined
         // image samplers, which WGSL has no type for.
         Assert.True(Compiles(ShaderModuleId.Resolve, ShaderVariant.DefaultName, ShaderTarget.Wgsl));
-        Assert.True(Compiles(ShaderModuleId.Shading, "software.sampled", ShaderTarget.Wgsl));
-
-        // The subpass form stays Vulkan's: WebGPU has no subpasses, which is why the sampled one exists.
-        Assert.False(Compiles(ShaderModuleId.Shading, "software", ShaderTarget.Wgsl));
+        Assert.True(Compiles(ShaderModuleId.Shading, "software", ShaderTarget.Wgsl));
         Assert.True(Compiles(ShaderModuleId.Shading, "software", ShaderTarget.Spirv));
+
+        // The traced form stays Vulkan's: a ray query is a thing WebGPU does not have.
+        Assert.False(Compiles(ShaderModuleId.Shading, "rayquery", ShaderTarget.Wgsl));
+        Assert.True(Compiles(ShaderModuleId.Shading, "rayquery", ShaderTarget.Spirv));
     }
 
     private static bool Compiles(ShaderModuleId module, string variant, ShaderTarget target) =>

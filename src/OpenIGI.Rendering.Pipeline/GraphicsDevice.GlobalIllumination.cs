@@ -59,10 +59,9 @@ public sealed partial class GraphicsDevice
 
     /// <summary>Gets the probe field the shading reads this frame, if any.</summary>
     /// <remarks>
-    /// The radiance cache when it is offered, the baked field otherwise, as on the Vulkan device. The
-    /// cache describes its own grid -- an origin, a spacing and a count of its own -- so everything the
-    /// shading is told about the field comes from whichever this is, or every lookup lands in the wrong
-    /// cell.
+    /// The radiance cache when it is offered, the baked field otherwise. The cache describes its own grid --
+    /// an origin, a spacing and a count of its own -- so everything the shading is told about the field comes
+    /// from whichever this is, or every lookup lands in the wrong cell.
     /// </remarks>
     private ProbeField? ActiveProbeField => _realtimeProbe ?? _bakedProbe;
 

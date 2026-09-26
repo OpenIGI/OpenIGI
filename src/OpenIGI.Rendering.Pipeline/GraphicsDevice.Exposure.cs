@@ -10,9 +10,9 @@ public sealed partial class GraphicsDevice
 
     /// <summary>Meters the lit scene and returns what the eye has adapted to, or one where it does not adapt.</summary>
     /// <remarks>
-    /// On the Vulkan device's terms: only with the setting on, only for the picture and the two debug views
-    /// that are still a shaded scene, and eased by a fixed sixtieth of a second a frame. A device that cannot
-    /// build the histogram exposes by the setting alone, and says so at start-up.
+    /// Only with the setting on, only for the picture and the two debug views that are still a shaded scene,
+    /// and eased by a fixed sixtieth of a second a frame. A device that cannot build the histogram exposes by
+    /// the setting alone, and says so at start-up.
     /// </remarks>
     private float MeterExposure(SceneTargetSet scene, in PostProcessSettings post)
     {

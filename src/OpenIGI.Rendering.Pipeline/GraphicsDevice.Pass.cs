@@ -13,7 +13,7 @@ namespace OpenIGI.Rendering.Pipeline;
 /// <para>
 /// A clear is therefore not a command but a property of the next pass. That is the only shape the RHI
 /// has, and it is also what a tiler wants; the cost is that a clear mid-frame ends the pass and starts
-/// another, which is what the Vulkan device's own present pass did anyway.
+/// another.
 /// </para>
 /// </remarks>
 public sealed partial class GraphicsDevice

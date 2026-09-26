@@ -33,11 +33,8 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
     private readonly KhrSwapchain _khrSwapchain;
     private readonly SurfaceKHR _surface;
 
-    private readonly bool _encodesOutput;
-
     private SwapchainKHR _handle;
     private Image[] _images = [];
-    private ImageView[] _imageViews = [];
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="VulkanSwapchain"/> class.</summary>
@@ -46,24 +43,16 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
     /// <param name="width">The desired width in pixels.</param>
     /// <param name="height">The desired height in pixels.</param>
     /// <param name="vsync">Whether presentation should wait for the vertical blank.</param>
-    /// <param name="encodesOutput">
-    /// Whether the renderer above encodes its own output. The legacy path does, so its images are
-    /// unsigned-normalised and what a shader writes is stored as it stands; the shared renderer writes
-    /// LINEAR colour and wants the hardware to encode it, so its images are sRGB. Getting this backwards
-    /// does not fail — it draws the whole frame with one gamma too many or too few.
-    /// </param>
     /// <exception cref="GraphicsDeviceException">The swapchain could not be created.</exception>
     public VulkanSwapchain(
         VulkanInstance instance,
         VulkanDevice device,
         int width,
         int height,
-        bool vsync,
-        bool encodesOutput = true)
+        bool vsync)
     {
         ArgumentNullException.ThrowIfNull(instance);
         ArgumentNullException.ThrowIfNull(device);
-        _encodesOutput = encodesOutput;
         _vk = instance.Vk;
         _device = device;
         _khrSurface = instance.KhrSurface;
@@ -84,12 +73,6 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
 
     /// <summary>Gets the swapchain's images.</summary>
     public ReadOnlySpan<Image> Images => _images;
-
-    /// <summary>Gets one view per swapchain image, in image order.</summary>
-    public ReadOnlySpan<ImageView> ImageViews => _imageViews;
-
-    /// <summary>Gets how many images the swapchain holds.</summary>
-    public int ImageCount => _images.Length;
 
     /// <summary>Gets one swapchain image by index, for a read back to the CPU.</summary>
     /// <param name="index">The image index.</param>
@@ -159,7 +142,7 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
     public void Recreate(int width, int height, bool vsync)
     {
         _device.WaitIdle();
-        DestroyViewsAndSwapchain();
+        DestroySwapchain();
         Create(width, height, vsync);
     }
 
@@ -172,7 +155,7 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
         }
 
         _disposed = true;
-        DestroyViewsAndSwapchain();
+        DestroySwapchain();
     }
 
     private void Create(int width, int height, bool vsync)
@@ -235,7 +218,6 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
         Extent = extent;
 
         AcquireImages();
-        CreateImageViews();
     }
 
     private SurfaceFormatKHR ChooseFormat()
@@ -257,9 +239,9 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
                 "vkGetPhysicalDeviceSurfaceFormatsKHR");
         }
 
-        // What the renderer above wants stored. A path that encodes its own output wants the bytes it
-        // wrote kept; one that writes linear colour wants the hardware to encode them.
-        Format wanted = _encodesOutput ? Format.B8G8R8A8Unorm : Format.B8G8R8A8Srgb;
+        // Unsigned-normalised: the renderer encodes its own output, and wants the bytes it wrote stored as
+        // they stand. An sRGB image would encode them a second time -- the whole frame one gamma too light.
+        const Format wanted = Format.B8G8R8A8Unorm;
 
         foreach (SurfaceFormatKHR candidate in formats)
         {
@@ -360,43 +342,8 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
         }
     }
 
-    private void CreateImageViews()
+    private void DestroySwapchain()
     {
-        _imageViews = new ImageView[_images.Length];
-        for (int i = 0; i < _images.Length; i++)
-        {
-            ImageViewCreateInfo createInfo = new()
-            {
-                SType = StructureType.ImageViewCreateInfo,
-                Image = _images[i],
-                ViewType = ImageViewType.Type2D,
-                Format = Format,
-                Components = default,
-                SubresourceRange = new ImageSubresourceRange
-                {
-                    AspectMask = ImageAspectFlags.ColorBit,
-                    BaseMipLevel = 0,
-                    LevelCount = 1,
-                    BaseArrayLayer = 0,
-                    LayerCount = 1,
-                },
-            };
-
-            ImageView view;
-            VkCheck.Ok(_vk.CreateImageView(_device.Device, &createInfo, null, &view), "vkCreateImageView");
-            _imageViews[i] = view;
-        }
-    }
-
-    private void DestroyViewsAndSwapchain()
-    {
-        foreach (ImageView view in _imageViews)
-        {
-            _vk.DestroyImageView(_device.Device, view, null);
-        }
-
-        _imageViews = [];
-
         if (_handle.Handle != 0)
         {
             _khrSwapchain.DestroySwapchain(_device.Device, _handle, null);

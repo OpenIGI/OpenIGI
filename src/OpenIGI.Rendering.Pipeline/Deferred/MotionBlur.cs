@@ -7,11 +7,10 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// <summary>The camera shutter: the frame smeared along each pixel's own motion.</summary>
 /// <remarks>
 /// <para>
-/// The Vulkan renderer's chain on the RHI, the same four modules and the same blocks
-/// (<see cref="MotionBlurParameters"/>): the colour halved, each pixel's travel flattened and its tile's
-/// range recorded, each tile dilated by its neighbours, and the gather along it. After the temporal resolve
-/// and before the bloom -- a lens sees the smeared picture, so a bright moving highlight blooms along its own
-/// smear rather than from where it no longer is.
+/// A chain of four modules sharing one set of blocks (<see cref="MotionBlurParameters"/>): the colour halved,
+/// each pixel's travel flattened and its tile's range recorded, each tile dilated by its neighbours, and the
+/// gather along it. After the temporal resolve and before the bloom -- a lens sees the smeared picture, so a
+/// bright moving highlight blooms along its own smear rather than from where it no longer is.
 /// </para>
 /// <para>
 /// Five images, owned here and remade with the frame's size: the half colour, the flattened motion, the

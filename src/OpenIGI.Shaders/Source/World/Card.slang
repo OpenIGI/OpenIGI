@@ -112,7 +112,7 @@ CardTargets fragmentMain(Varyings input)
 
     // Linear, as the lighting reads it. Decoded here only where the sampler has not already: on the RHI's
     // sRGB images a second decode squared the curve and the whole surface cache lit a world a quarter as
-    // bright as the one on screen. The legacy branch keeps its own curve, which is what it always drew.
+    // bright as the one on screen. Where the sampler has not decoded, the shader's own curve does.
     float3 albedo = (cSamplerDecodes != 0 ? diffuse.rgb : SrgbToLinear(diffuse.rgb)) * input.color.rgb;
 
     CardTargets output;

@@ -12,8 +12,8 @@ public sealed partial class GraphicsDevice
     /// <summary>Smears the resolved frame along its motion, where the setting asks for any.</summary>
     /// <returns>The smeared colour, or null where the frame is not blurred.</returns>
     /// <remarks>
-    /// On the Vulkan device's terms: some amount asked for, and a picture rather than a debug view -- a
-    /// view isolating one term is not a moving photograph -- save the two views that are still a shaded scene.
+    /// Some amount asked for, and a picture rather than a debug view -- a view isolating one term is not a
+    /// moving photograph -- save the two views that are still a shaded scene.
     /// </remarks>
     private IRhiTextureView? RecordMotionBlur(SceneTargetSet scene, in PostProcessSettings post)
     {

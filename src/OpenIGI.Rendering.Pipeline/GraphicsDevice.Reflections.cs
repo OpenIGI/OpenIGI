@@ -16,17 +16,16 @@ namespace OpenIGI.Rendering.Pipeline;
 /// the world where the adapter traces, or marched through the level's distance field where it does not,
 /// and resolved out of the LIT FRAME where the camera can see what it hit, out of the surface cache's cards
 /// where it cannot, and out of the traced albedo where the hit is a texel neither holds. The result is
-/// added to the lit scene before the temporal resolve, as the Vulkan original's glass reflection pass does.
+/// added to the lit scene before the temporal resolve.
 /// </para>
 /// <para>
 /// It reads what the game hands over for its own GI: the surface cache, the distance field and the roof
 /// map. A frame missing one of them still runs, over stand-ins and a field of nought levels, and the
-/// panes then reflect the screen and the sky -- as the original does in the same state.
+/// panes then reflect the screen and the sky.
 /// </para>
 /// <para>
-/// The composite differs from the original's in form and not in answer: that one adds in place from a
-/// compute stage, which WGSL cannot do to an rgba16float image, so here the blend unit adds (see
-/// <c>Reflection/CompositeDraw.slang</c>).
+/// The composite is drawn rather than computed: adding in place from a compute stage is something WGSL
+/// cannot do to an rgba16float image, so the blend unit adds (see <c>Reflection/CompositeDraw.slang</c>).
 /// </para>
 /// </remarks>
 public sealed partial class GraphicsDevice
@@ -38,7 +37,7 @@ public sealed partial class GraphicsDevice
     private const int ShelterOffset = 16 + (21 * 4);
 
     // How far a ray reaches, in metres. The cards describe the level's built area and a kilometre covers
-    // every level's with room to spare; the original's figure.
+    // every level's with room to spare.
     private const float ReflectionReachMetres = 1000f;
 
     private SurfaceCacheBinding _surfaceCacheBinding = SurfaceCacheBinding.None;
@@ -101,6 +100,7 @@ public sealed partial class GraphicsDevice
     /// <summary>Starts a frame's glazing over: no panes yet, and no rig drawn.</summary>
     private void ResetGlazingFrame()
     {
+        ReportGlazing();
         _glassPanes = 0;
         _viewModelLensX = 0f;
         _viewModelLensY = 0f;
@@ -137,13 +137,19 @@ public sealed partial class GraphicsDevice
 
         EnsureGlazingReflection();
 
-        // Traced where the scene's reflection would trace, as on the Vulkan renderer; marched otherwise.
+        // Traced where the scene's reflection would trace; marched otherwise.
         bool traces = WillTraceReflections();
         ComputePass reflect = traces
             ? _glassReflectTraced ??= new ComputePass(_device, ShaderModuleId.GlazingReflect, "glazing.reflect", new ShaderVariant("rayquery"))
             : _glassReflect!;
         bool complete = BindReflectionWorld(reflect);
         traces &= complete;
+
+        _glazingReflection = traces
+            ? "reflections traced against the world"
+            : complete
+                ? "reflections marched through the distance field"
+                : "reflections from the screen and the sky only";
 
         if (traces)
         {

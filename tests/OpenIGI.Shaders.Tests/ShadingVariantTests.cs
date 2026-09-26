@@ -1,21 +1,14 @@
-﻿using Xunit;
+using Xunit;
 
 namespace OpenIGI.Shaders.Tests;
 
 /// <summary>
-/// That the sampled variant of the shading is the same shader reading the same things.
+/// That the shading's two forms read the G-buffer and bind their textures the way both targets can.
 /// </summary>
 /// <remarks>
-/// <para>
-/// A subpass input is the attachment the pass before wrote, read at this very pixel and nowhere else,
-/// which on a tiler never leaves the tile. It is also a thing only Vulkan has: WebGPU has no subpasses,
-/// so the renderer built over the RHI reads the same texels as ordinary textures from a second pass.
-/// </para>
-/// <para>
-/// The two have to shade identically, and the way to be sure of that is that they are one source with
-/// one line different. What this checks is that nothing else drifted: same bindings, same numbers, same
-/// kinds, same constants — with exactly the five G-buffer inputs changing what they are.
-/// </para>
+/// The two forms differ only in whether lamps trace their shadows; everything they read is declared the
+/// same way, and in the only shapes WGSL shares with SPIR-V: the G-buffer as ordinary textures read at
+/// the pixel, and each texture beside a sampler of its own.
 /// </remarks>
 public sealed class ShadingVariantTests
 {
@@ -25,80 +18,31 @@ public sealed class ShadingVariantTests
     [Theory]
     [InlineData("rayquery")]
     [InlineData("software")]
-    public void The_sampled_variant_binds_what_the_subpass_one_binds(string variant)
+    public void The_g_buffer_is_read_as_textures(string variant)
     {
-        ShaderReflection subpass = ShaderCatalog.GetReflection(ShaderModuleId.Shading, new ShaderVariant(variant));
+        // A subpass input is a thing only Vulkan has, and WebGPU has no subpasses: the pass that shades
+        // reads the G-buffer the pass before wrote as ordinary textures.
+        ShaderReflection reflection = ShaderCatalog.GetReflection(ShaderModuleId.Shading, new ShaderVariant(variant));
 
-        ShaderReflection sampled = ShaderCatalog.GetReflection(
-            ShaderModuleId.Shading,
-            new ShaderVariant(variant + ".sampled"));
+        Assert.DoesNotContain(reflection.Bindings, binding => binding.Kind is ShaderBindingKind.InputAttachment);
 
-        Assert.Equal(subpass.Bindings.Count, sampled.Bindings.Count);
-
-        for (int i = 0; i < subpass.Bindings.Count; i++)
+        foreach (string name in GBuffer)
         {
-            ShaderBinding before = subpass.Bindings[i];
-            ShaderBinding after = sampled.Bindings[i];
-
-            Assert.Equal(before.Name, after.Name);
-            Assert.Equal(before.Group, after.Group);
-            Assert.Equal(before.Binding, after.Binding);
-
-            // The five that change, and nothing else.
-            if (GBuffer.Contains(before.Name))
-            {
-                Assert.Equal(ShaderBindingKind.InputAttachment, before.Kind);
-                Assert.Equal(ShaderBindingKind.Texture, after.Kind);
-            }
-            else
-            {
-                Assert.Equal(before.Kind, after.Kind);
-            }
+            ShaderBinding binding = Assert.Single(reflection.Bindings, b => b.Name == name);
+            Assert.Equal(ShaderBindingKind.Texture, binding.Kind);
         }
     }
 
     [Theory]
     [InlineData("rayquery")]
     [InlineData("software")]
-    public void The_sampled_variant_keeps_the_same_push_block_and_constants(string variant)
-    {
-        ShaderReflection subpass = ShaderCatalog.GetReflection(ShaderModuleId.Shading, new ShaderVariant(variant));
-
-        ShaderReflection sampled = ShaderCatalog.GetReflection(
-            ShaderModuleId.Shading,
-            new ShaderVariant(variant + ".sampled"));
-
-        Assert.Equal(subpass.PushBlock?.Size, sampled.PushBlock?.Size);
-        Assert.Equal(subpass.SpecializationConstants.Count, sampled.SpecializationConstants.Count);
-
-        Assert.Equal(
-            subpass.EntryPoints.Select(entry => entry.Name),
-            sampled.EntryPoints.Select(entry => entry.Name));
-    }
-
-    [Fact]
-    public void The_subpass_variant_is_still_the_one_a_module_gets_by_default()
-    {
-        // The path that has always drawn this frame is the one that needs nothing said about it.
-        ShaderReflection defaulted = ShaderCatalog.GetReflection(
-            ShaderModuleId.Shading,
-            new ShaderVariant("software"));
-
-        Assert.Contains(defaulted.Bindings, binding => binding.Kind is ShaderBindingKind.InputAttachment);
-    }
-
-    [Theory]
-    [InlineData("rayquery")]
-    [InlineData("software")]
-    [InlineData("rayquery.sampled")]
-    [InlineData("software.sampled")]
     public void The_shading_declares_its_textures_and_samplers_apart(string variant)
     {
         // WGSL has no combined image sampler, and a module that declares one cannot be compiled for the
         // browser at all -- so the deferred group declares each texture and the sampler it is read with
-        // in two slots of its own, which is the only shape both targets share. Checked on the subpass
-        // variants too: they are one source, and a combined sampler reintroduced for Vulkan's
-        // convenience would take the sampled variants with it.
+        // in two slots of its own, which is the only shape both targets share. Checked on the traced form
+        // too: they are one source, and a combined sampler reintroduced for Vulkan's convenience would
+        // take the browser's form with it.
         ShaderReflection reflection = ShaderCatalog.GetReflection(
             ShaderModuleId.Shading,
             new ShaderVariant(variant));
@@ -111,8 +55,6 @@ public sealed class ShadingVariantTests
     [Theory]
     [InlineData("rayquery")]
     [InlineData("software")]
-    [InlineData("rayquery.sampled")]
-    [InlineData("software.sampled")]
     public void Each_of_the_shadings_samplers_sits_in_the_slot_after_its_texture(string variant)
     {
         // The convention the whole library follows and every host binds by: texture n, sampler n + 1.

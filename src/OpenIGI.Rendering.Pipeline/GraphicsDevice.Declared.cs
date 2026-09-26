@@ -23,22 +23,21 @@ namespace OpenIGI.Rendering.Pipeline;
 /// </remarks>
 public sealed partial class GraphicsDevice
 {
-    /// <summary>The settings this device records and does not act on, whatever it draws through.</summary>
-    /// <remarks>
-    /// Console-variable names, so a reader can match them against what the settings file holds. The
-    /// ones the Vulkan renderer does not act on either are named here as it names them, so the two
-    /// devices' options screens agree about what a setting does.
-    /// </remarks>
     // The stage a host bracket has named for the frame's own passes, or none outside a bracket.
     private RenderStage? _stageBracket;
 
+    /// <summary>The settings this device records and does not act on, whatever it draws through.</summary>
+    /// <remarks>
+    /// Console-variable names, so a reader can match them against what the settings file holds, and so
+    /// the options screen can say which settings do nothing on this device.
+    /// </remarks>
     private static readonly string[] UnimplementedSettingNames =
     [
-        // Depth of field, a pass neither renderer has: every preset leaves it off.
+        // Depth of field, a pass this renderer does not have: every preset leaves it off.
         "r_dof", "r_dof_range", "r_dof_blur",
 
         // Every texture arrives with its whole chain already built, so there is no generation to turn
-        // off -- the same reason the Vulkan renderer gives.
+        // off.
         "r_generate_mipmaps",
 
         // Superseded: the motion gather takes its sample count from the blur length.
@@ -62,8 +61,8 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The setting times what the eye has adapted to while a capture is open, as on the Vulkan device; one
-    /// outside it, because the direct path never tone-maps: what it draws is what is shown.
+    /// The setting times what the eye has adapted to while a capture is open; one outside it, because the
+    /// direct path never tone-maps: what it draws is what is shown.
     /// </remarks>
     public float SceneExposure => _capturing
         ? MathF.Max(RenderCVars.EffectiveExposure * (_autoExposure?.Adapted ?? 1f), 1e-3f)
