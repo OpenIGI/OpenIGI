@@ -8,6 +8,7 @@
     html, body { margin: 0; height: 100%; background: #000; color: #d8d8d8; font: 15px/1.4 system-ui, sans-serif; }
     #view { display: block; width: 100vw; height: 100vh; outline: none; }
     #overlay { position: fixed; inset: 0; display: grid; place-content: center; gap: 12px; text-align: center; pointer-events: none; }
+    #status { max-width: min(60ch, calc(100vw - 32px)); }
     #status:empty { display: none; }
     #pick { pointer-events: auto; font: inherit; padding: 8px 18px; }
   </style>

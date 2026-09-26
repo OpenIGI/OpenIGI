@@ -50,23 +50,56 @@ async function writeHostAssets(fs) {
   }));
 }
 
-/** Where the installation comes from: ?data=<url> when given, otherwise the folder the person picks. */
+/**
+ * Where the installation comes from: ?data=<url> when given, otherwise the folder the person picks --
+ * asked again, with the reason, for as long as what they pick is not the game.
+ */
 function chooseSource() {
   const data = query.get('data');
-  if (data) return Promise.resolve(files.urlSource(data.endsWith('/') ? data : `${data}/`));
+  if (data) return files.fromUrl(data.endsWith('/') ? data : `${data}/`);
 
-  return new Promise(resolve => {
-    pick.hidden = false;
-    say('Choose the folder Project I.G.I. is installed in.');
-    pick.addEventListener('click', async () => {
+  const ask = 'Choose the folder Project I.G.I. is installed in.';
+  return new Promise((resolve, reject) => {
+    let busy = false;
+    const open = async () => {
       if (window.showDirectoryPicker) {
-        resolve(files.directorySource(await window.showDirectoryPicker({ id: 'openigi-game', mode: 'read' })));
-        return;
+        try {
+          return await files.fromDirectory(await window.showDirectoryPicker({ id: 'openigi-game', mode: 'read' }));
+        } catch (error) {
+          if (error.name === 'AbortError') return null; // The person closed the picker.
+          throw error;
+        }
       }
 
-      const input = Object.assign(document.createElement('input'), { type: 'file', webkitdirectory: true });
-      input.addEventListener('change', () => resolve(files.fileListSource(input.files)));
-      input.click();
+      return new Promise((chosen, failed) => {
+        const input = Object.assign(document.createElement('input'), { type: 'file', webkitdirectory: true });
+        input.addEventListener('change', () => files.fromFileList(input.files).then(chosen, failed));
+        input.addEventListener('cancel', () => chosen(null));
+        input.click();
+      });
+    };
+
+    pick.hidden = false;
+    say(ask);
+    pick.addEventListener('click', async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const source = await open();
+        if (source) {
+          resolve(source);
+          return;
+        }
+        say(ask);
+      } catch (error) {
+        if (!(error instanceof files.InstallationError)) {
+          reject(error);
+          return;
+        }
+        say(error.message);
+      } finally {
+        busy = false;
+      }
     });
   });
 }
