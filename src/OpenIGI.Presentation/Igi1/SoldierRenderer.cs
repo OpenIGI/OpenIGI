@@ -3694,11 +3694,12 @@ public sealed class SoldierRenderer : IDisposable
                     view.SetMoving(true, walkAnimation);
                 }
             }
-            else if (brain.Activity == AiSoldierActivity.Engaging && brain.IsMounted)
+            else if (brain.IsMounted)
             {
                 // HumanSoldier state 36 is the attached emplacement pose. It keeps ownership while
                 // the StationaryGun task reads slot 6 and fires; it does not enter the ordinary
-                // 0/12/10/6 carried-weapon body cycle.
+                // 0/12/10/6 carried-weapon body cycle. It is the body's, not the brain's: a gunner the
+                // Activate action put on the gun stays on it between fights.
                 int mountedState = AiCombatChannels.StateOf(brain.Type, AiStanceChannel.Mounted);
                 int animation = brain.Body.StateTable.AnimationOf(mountedState);
                 if (animation < 0

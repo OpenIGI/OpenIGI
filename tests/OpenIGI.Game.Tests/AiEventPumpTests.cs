@@ -324,4 +324,49 @@ public sealed class AiEventPumpTests
         Assert.Null(list.Tick());
         Assert.False(list.HasPending);
     }
+
+    /// <summary>
+    /// A new action goes on at the head (<c>0x4AF910</c>): it runs, and sets the cap, while what it was
+    /// pushed over waits.
+    /// </summary>
+    [Fact]
+    public void APushedActionRunsAheadOfWhatItWasPushedOver()
+    {
+        int ranBeneath = 0;
+        int ranPushed = 0;
+        var beneath = new AiPendingAction(5, 0, () => ranBeneath++, pushable: true);
+        var pushed = new AiPendingAction(2, 0, () => ranPushed++);
+        var list = new AiPendingActionList();
+        list.Push(beneath);
+        list.Push(pushed);
+
+        Assert.Same(pushed, list.Tick());
+        Assert.Equal(1, ranPushed);
+        Assert.Equal(0, ranBeneath);
+        Assert.Equal(2, list.PriorityCap);
+    }
+
+    /// <summary>
+    /// <c>0x450EE0</c> ends every action above the first pushable one, and keeps that one and everything
+    /// beneath it.
+    /// </summary>
+    [Fact]
+    public void MakingRoomEndsEverythingAboveTheFirstPushableAction()
+    {
+        var bottom = new AiPendingAction(9, 0, null, name: "bottom");
+        var pushable = new AiPendingAction(5, 0, null, pushable: true, name: "pushable");
+        var middle = new AiPendingAction(3, 0, null, name: "middle");
+        var top = new AiPendingAction(2, 0, null, name: "top");
+        var list = new AiPendingActionList();
+        list.Push(bottom);
+        list.Push(pushable);
+        list.Push(middle);
+        list.Push(top);
+
+        List<string> ended = [];
+        list.PopToPushable(action => ended.Add(action.Name));
+
+        Assert.Equal(["top", "middle"], ended);
+        Assert.Equal([pushable, bottom], list.Actions);
+    }
 }

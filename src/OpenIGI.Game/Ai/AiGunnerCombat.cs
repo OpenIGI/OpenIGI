@@ -24,11 +24,12 @@ public sealed class AiGunnerCombat
     public bool IsMounted => _mounted is not null;
     public int ConeTicks => _coneTicks;
 
-    public void Begin()
-    {
-        End();
-        _coneTicks = ConeGraceTicks;
-    }
+    /// <summary>Arms the arm for a new combat action.</summary>
+    /// <remarks>
+    /// <c>0x48D2C0</c> re-arms the 30-tick cone counter and nothing else: a gunner the Activate action has
+    /// already put on the gun starts the fight on it.
+    /// </remarks>
+    public void Begin() => _coneTicks = ConeGraceTicks;
 
     /// <summary>Claims the authored emplacement when the AI activation script reaches it.</summary>
     /// <remarks>

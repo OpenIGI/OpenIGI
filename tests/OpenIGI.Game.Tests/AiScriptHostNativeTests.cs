@@ -185,7 +185,10 @@ public sealed class AiScriptHostNativeTests
     {
         (AiScriptHost host, _) = Host();
         AiSoldier soldier = Soldier();
-        soldier.SetScript(host, CallNative("AIAction_LookAtEvent", LookAtEventArgs));
+
+        // Only the gunshot branch acts: an action produced on CREATE would carry priority -1 (0x44FC90's
+        // creation dispatch) and cap the pump shut for as long as it ran.
+        soldier.SetScript(host, CallNativeOn(AiEvent.Gunshot, "AIAction_LookAtEvent", LookAtEventArgs));
 
         // A shot to the soldier's east, well inside the 30 m hearing range.
         Vector3d shot = new(
@@ -316,6 +319,31 @@ public sealed class AiScriptHostNativeTests
     private static QvmProgram CallNative(string native, int[] args)
     {
         QvmWriter writer = new();
+        EmitCall(writer, native, args);
+        writer.Code.Emit(QvmOpcode.Brk);
+        return QvmProgram.Read(writer.Build());
+    }
+
+    // The same call, made only when the dispatched event is one type -- the shape of every branch in the
+    // shipped archetypes: GetCurrentEventType() == AIEVENT_x.
+    private static QvmProgram CallNativeOn(AiEvent type, string native, int[] args)
+    {
+        QvmWriter writer = new();
+        QvmLabel compare = writer.Code.CreateLabel();
+        QvmLabel skip = writer.Code.CreateLabel();
+
+        writer.PushSymbol("AIFunction_GetCurrentEventType");
+        writer.Code.Call();
+        writer.Code.Branch(QvmOpcode.Bra, compare);
+        writer.Code.MarkLabel(compare).Push((int)type).Emit(QvmOpcode.Eq);
+        writer.Code.Branch(QvmOpcode.Bf, skip);
+        EmitCall(writer, native, args);
+        writer.Code.MarkLabel(skip).Emit(QvmOpcode.Brk);
+        return QvmProgram.Read(writer.Build());
+    }
+
+    private static void EmitCall(QvmWriter writer, string native, int[] args)
+    {
         QvmLabel[] labels = new QvmLabel[args.Length];
         for (int i = 0; i < args.Length; i++)
         {
@@ -332,8 +360,7 @@ public sealed class AiScriptHostNativeTests
             writer.Code.MarkLabel(labels[i]).Push(args[i]).Emit(QvmOpcode.Brk);
         }
 
-        writer.Code.MarkLabel(after).Emit(QvmOpcode.Brk);
-        return QvmProgram.Read(writer.Build());
+        writer.Code.MarkLabel(after).Emit(QvmOpcode.Pop);
     }
 
     private static string GraphPath() => Path.Combine(

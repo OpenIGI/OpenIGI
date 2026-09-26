@@ -12,6 +12,12 @@ namespace OpenIGI.Game.Tests;
 /// <summary>End-to-end coverage for mission-script action bodies that are not ordinary combat.</summary>
 public sealed class AiScriptedActionTests
 {
+    // The archetypes' declared priority positions (their CREATE branches), and AIACTIONFLAG_PUSHABLE.
+    private const int FlashbangPosition = 2;
+    private const int CombatPosition = 5;
+    private const int GunshotMissPosition = 10;
+    private const int Pushable = (int)AiActionFlagWord.Pushable;
+
     [Fact]
     public void FireAtTaskTracksTheTaskAndHonoursTheInterBurstDelay()
     {
@@ -86,19 +92,11 @@ public sealed class AiScriptedActionTests
     }
 
     [Fact]
-    public void FallFlatHoldsProneThenRunsTheFollowingCombatAction()
+    public void FallFlatHoldsProneForItsDuration()
     {
         Vector3d position = new(1000, 2000, 3000);
         AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
-        soldier.SetCombat(
-            AiType.GuardAk,
-            new AiCombatParameters(new HumanAiConfigItemTask()),
-            () => new AiCombatWeaponState(30, 30, 3, WeaponCategory.Gun));
-
-        soldier.ApplyActions([
-            new AiProducedAction("AIAction_FallFlat", [1, 0], 0, [1f, 0f]),
-            new AiProducedAction("AIAction_SetCombat", [0], 0),
-        ]);
+        soldier.ApplyActions([new AiProducedAction("AIAction_FallFlat", [1, 0], GunshotMissPosition, [1f, 0f])]);
 
         Vector3d enemy = new(position.X, position.Y - 100_000, position.Z);
         for (int tick = 1; tick <= 31; tick++)
@@ -109,7 +107,34 @@ public sealed class AiScriptedActionTests
         }
 
         soldier.Tick(32, enemy, 0.0, enemyAlive: false);
+        Assert.Equal(AiSoldierActivity.Idle, soldier.Activity);
+        Assert.False(soldier.PendingActions.HasPending);
+    }
+
+    [Fact]
+    public void TheCombatASetCombatPostsEndsTheFallFlatItFollowed()
+    {
+        // guard.qsc's GUNSHOTMISS branch: FallFlat, then one time in ten SetCombat. SetCombat posts COMBAT
+        // and ends in its own start (0x48E560), leaving the fall on the stack; COMBAT outranks the miss, so
+        // the next pump installs the fight, and 0x450EE0 ends the non-pushable fall to make room for it.
+        Vector3d position = new(1000, 2000, 3000);
+        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        soldier.SetCombat(
+            AiType.GuardAk,
+            new AiCombatParameters(new HumanAiConfigItemTask()),
+            () => new AiCombatWeaponState(30, 30, 3, WeaponCategory.Gun));
+
+        soldier.ApplyActions([
+            new AiProducedAction("AIAction_FallFlat", [1, 0], GunshotMissPosition, [1f, 0f]),
+            new AiProducedAction("AIAction_SetCombat", [Pushable], GunshotMissPosition),
+        ]);
+        Assert.Equal(["AIAction_FallFlat"], soldier.PendingActions.Actions.Select(action => action.Name));
+
+        soldier.Tick(1, new Vector3d(position.X, position.Y - 100_000, position.Z), 0.0);
+
         Assert.Equal(AiSoldierActivity.Engaging, soldier.Activity);
+        Assert.DoesNotContain(soldier.ChannelWrites, write => write.Channel == AiCombatChannel.LieDown);
+        Assert.Equal(["AIAction_Combat"], soldier.PendingActions.Actions.Select(action => action.Name));
     }
 
     [Fact]
@@ -175,7 +200,7 @@ public sealed class AiScriptedActionTests
     }
 
     [Fact]
-    public void FlashbangAnimationInterruptsAnActiveCombatAction()
+    public void AReactionEndsANonPushableCombatAction()
     {
         AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
@@ -183,22 +208,52 @@ public sealed class AiScriptedActionTests
             new AiCombatParameters(new HumanAiConfigItemTask()),
             () => new AiCombatWeaponState(30, 30, 1, WeaponCategory.Gun));
 
-        soldier.ApplyActions([new AiProducedAction("AIAction_Combat", [], 0)]);
+        soldier.ApplyActions([new AiProducedAction("AIAction_Combat", [0], CombatPosition)]);
         Assert.Equal(AiSoldierActivity.Engaging, soldier.Activity);
 
-        soldier.ApplyActions([
-            new AiProducedAction("AIAction_PlayAnimation", [39, 0], 0),
-        ]);
+        soldier.ApplyActions([new AiProducedAction("AIAction_PlayAnimation", [39, 0], FlashbangPosition)]);
 
         Assert.Equal(AiSoldierActivity.Idle, soldier.Activity);
         Assert.Equal(AiCombatPhase.Ended, soldier.CombatPhase);
         Assert.Equal(39, soldier.RequestedAnimation);
+        Assert.Equal(["AIAction_PlayAnimation"], soldier.PendingActions.Actions.Select(action => action.Name));
+    }
+
+    [Fact]
+    public void AReactionSuspendsAPushableCombatActionWhichResumesAfterIt()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        soldier.SetCombat(
+            AiType.GuardAk,
+            new AiCombatParameters(new HumanAiConfigItemTask()),
+            () => new AiCombatWeaponState(30, 30, 1, WeaponCategory.Gun));
+        Vector3d enemy = new(0, 5 * 4096, 0);
+
+        soldier.ApplyActions([new AiProducedAction("AIAction_Combat", [Pushable], CombatPosition)]);
+        soldier.ApplyActions([new AiProducedAction("AIAction_PlayAnimation", [39, 0], FlashbangPosition)]);
+
+        Assert.Equal(
+            ["AIAction_PlayAnimation", "AIAction_Combat"],
+            soldier.PendingActions.Actions.Select(action => action.Name));
+        Assert.NotEqual(AiCombatPhase.Ended, soldier.CombatPhase);
+
+        soldier.Tick(1, enemy, 0.0);
+        Assert.Equal(AiSoldierActivity.Idle, soldier.Activity);
+        Assert.Equal(39, soldier.RequestedAnimation);
         Assert.False(soldier.Combat.PullTrigger);
 
+        // The clip ends: its action finishes on its next run, and the fight beneath runs the tick after.
+        soldier.ReportAnimationFinished();
+        soldier.Tick(2, enemy, 0.0);
+        Assert.Equal(-1, soldier.RequestedAnimation);
+        Assert.Equal(["AIAction_Combat"], soldier.PendingActions.Actions.Select(action => action.Name));
+
+        soldier.Tick(3, enemy, 0.0);
+        Assert.Equal(AiSoldierActivity.Engaging, soldier.Activity);
     }
 
     [RequiresGameDataFact]
-    public void RetailGuardFlashbangBranchStopsAnActiveEngagement()
+    public void RetailGuardFlashbangBranchSuspendsAnActiveEngagement()
     {
         string guardPath = Path.Combine(GameData.RequireRoot(), "common", "ai", "guard.qvm");
         QvmProgram guard = QvmProgram.Read(File.ReadAllBytes(guardPath));
@@ -209,20 +264,25 @@ public sealed class AiScriptedActionTests
             () => new AiCombatWeaponState(30, 30, 1, WeaponCategory.Gun));
         soldier.SetScript(new AiScriptHost(RetailAiNatives()), guard);
 
-        // The first tick dispatches the archetype's creation, which declares the events it hears.
+        // The first tick dispatches the archetype's creation, which declares the events it hears; the fight
+        // is then what guard.qsc's COMBAT branch installs -- pushable, at COMBAT's position.
         soldier.Tick(1, new Vector3d(0, -100_000, 0), 0.0, enemyAlive: false);
-        soldier.ApplyActions([new AiProducedAction("AIAction_Combat", [], 0)]);
+        soldier.ApplyActions([new AiProducedAction("AIAction_Combat", [Pushable], CombatPosition)]);
 
         Vector3d flash = new(0, 4 * 4096, soldier.EyePosition().Z);
         Assert.True(soldier.ReceiveFlashbang(flash));
 
-        soldier.Tick(2, new Vector3d(0, -100_000, 0), 0.0, enemyAlive: false);
+        soldier.Tick(2, new Vector3d(0, -100_000, 0), 0.0);
 
         Assert.Equal(AiSoldierActivity.Idle, soldier.Activity);
-        Assert.Equal(AiCombatPhase.Ended, soldier.CombatPhase);
+        Assert.NotEqual(AiCombatPhase.Ended, soldier.CombatPhase);
         Assert.Equal(39, soldier.RequestedAnimation);
         Assert.False(soldier.Combat.PullTrigger);
 
+        // Beneath the fight, the pushable AIAction_Idle(1) the IDLE branch installed on the first tick.
+        Assert.Equal(
+            ["AIAction_PlayAnimation", "AIAction_Combat", "AIAction_Idle"],
+            soldier.PendingActions.Actions.Select(action => action.Name));
     }
 
     [RequiresGameDataFact]
@@ -258,12 +318,12 @@ public sealed class AiScriptedActionTests
                 + $"pending={soldier.Events.PendingCount(AiEvent.Flashbang)} "
                 + $"phase={soldier.CombatPhase} anim={soldier.RequestedAnimation} "
                 + $"activity={soldier.Activity}");
-        Assert.Equal(AiCombatPhase.Ended, soldier.CombatPhase);
+        Assert.NotEqual(AiCombatPhase.Ended, soldier.CombatPhase);
         Assert.Equal(39, soldier.RequestedAnimation);
         Assert.False(soldier.Combat.PullTrigger);
 
-        // The reaction owns more than the one dispatch tick. A guard that can still see Bond must
-        // remain unable to recreate its combat arm until the renderer reports clip 39 complete.
+        // The reaction owns more than the one dispatch tick: the fight beneath it does not fire until the
+        // renderer reports clip 39 complete, and nothing ranked below FLASHBANG gets through meanwhile.
         for (int tick = 32; tick <= 40; tick++)
         {
             soldier.Tick(tick, enemy, 0.0, enemyFeet: feet);
@@ -272,9 +332,12 @@ public sealed class AiScriptedActionTests
             Assert.False(soldier.Combat.PullTrigger);
         }
 
+        // The flinch over, the same engagement carries on -- it was suspended, not ended.
         soldier.ReportAnimationFinished();
         soldier.Tick(41, enemy, 0.0, enemyFeet: feet);
         Assert.Equal(-1, soldier.RequestedAnimation);
+        soldier.Tick(42, enemy, 0.0, enemyFeet: feet);
+        Assert.Equal(AiSoldierActivity.Engaging, soldier.Activity);
     }
 
     [RequiresGameDataFact]
@@ -323,9 +386,14 @@ public sealed class AiScriptedActionTests
         Assert.True(sawPanic, "The retail grenade-land branch never produced a running panic reaction.");
     }
 
-    [RequiresGameDataFact]
-    public void RemovingAlarmActionsReleasesAnAlarmPanelClaim()
+    [RequiresGameDataTheory]
+    [InlineData(CombatPosition, true)]
+    [InlineData((int)AiEvent.AlarmOn, false)]
+    public void RemovingAlarmActionsEndsWhatTheNinthDeclaredEventsIdInstalled(int installedAt, bool survives)
     {
+        // 0x44DBC0 compares each action's priority POSITION with the event TYPE at order[8]. A soldier with
+        // no script hears every type in type order, so order[8] is ALARMON (8): what was installed at
+        // position 8 ends, and an alarm run installed from COMBAT keeps its claims.
         GraphFile graph = GraphFile.Read(File.ReadAllBytes(Path.Combine(
             GameData.RequireRoot(), "missions", "location0", "level1", "graphs", "graph4019.dat")));
         Vector3d start = graph.Nodes[0].Position;
@@ -345,15 +413,15 @@ public sealed class AiScriptedActionTests
             },
             _ => { });
 
-        soldier.ApplyActions([new AiProducedAction("AIAction_Activate", [20, 1, 0], 0)]);
+        soldier.ApplyActions([new AiProducedAction("AIAction_Activate", [20, 1, Pushable], installedAt)]);
         Assert.True(claims.Contains(20));
         Assert.True(claims.Contains(30));
 
         soldier.RemoveAlarmActions();
 
-        Assert.False(claims.Contains(20));
-        Assert.False(claims.Contains(30));
-        Assert.Equal(AiSoldierActivity.Idle, soldier.Activity);
+        Assert.Equal(survives, claims.Contains(20));
+        Assert.Equal(survives, claims.Contains(30));
+        Assert.Equal(survives, soldier.PendingActions.HasPending);
     }
 
     [RequiresGameDataFact]

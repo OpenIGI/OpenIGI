@@ -575,25 +575,33 @@ public sealed class AiSoldierCombatWiringTests
             },
             _ => { });
 
+        // gunner.qsc's COMBAT branch while the gun is free: Activate, then Combat, both pushable. Each goes
+        // on at the head, so the fight is on top and the walk to the gun waits beneath it.
         soldier.ApplyActions([
-            new AiProducedAction("AIAction_Activate", [500, 1, 0], 0),
-            new AiProducedAction("AIAction_Combat", [], 0),
+            new AiProducedAction("AIAction_Activate", [500, 1, (int)AiActionFlagWord.Pushable], 5),
+            new AiProducedAction("AIAction_Combat", [(int)AiActionFlagWord.Pushable], 5),
         ]);
+        Assert.Equal(
+            ["AIAction_Combat", "AIAction_Activate"],
+            soldier.PendingActions.Actions.Select(action => action.Name));
+
+        // The fight runs, and 0x48D340 takes the gun once the target has held its cone for 30 ticks.
         Vector3d farEnemy = new(start.X, start.Y + (500 * Metre), start.Z);
-        soldier.Tick(1, farEnemy, rootMotionThisTick: 200.0);
-
-        Assert.False(soldier.IsMounted, "combat must not discard the live activation route");
-
-        for (int tick = 2; tick <= 5000 && !soldier.IsMounted; tick++)
+        for (int tick = 1; tick <= 5000 && !soldier.IsMounted; tick++)
         {
             soldier.Tick(tick, farEnemy, rootMotionThisTick: 200.0);
         }
 
-        Assert.True(soldier.IsMounted, "the gunner reached its task but never claimed the emplacement");
+        Assert.True(soldier.IsMounted, "the gunner never took the emplacement");
         Assert.Same(gun, soldier.MountedGun);
         Assert.Equal(gun.MountPosition, soldier.Position);
         Assert.True(gun.IsOccupied);
-        Assert.False(claims.Contains(500));
+
+        // The suspended Activate beneath still holds its claim: it has not run yet.
+        Assert.True(claims.Contains(500));
+        Assert.Equal(
+            ["AIAction_Combat", "AIAction_Activate"],
+            soldier.PendingActions.Actions.Select(action => action.Name));
     }
 
     /// <summary>
