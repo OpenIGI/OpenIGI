@@ -158,6 +158,10 @@ public sealed class AiSoldier
         _host = host;
         _script = script;
         _archetypeScript = archetype;
+
+        // A scripted AI starts as the constructor leaves it (0x44F060): nothing admitted but its creation,
+        // and nothing enabled until the creation branch declares what it wants to hear.
+        Events = new AiEventQueues();
     }
 
     /// <summary>Gets a value indicating whether a behaviour script is driving this soldier.</summary>
@@ -213,10 +217,11 @@ public sealed class AiSoldier
         _playerSlot.Register(0);
 
         Vision = new AiVision();
+        // A soldier without a script runs the built-in fallback, which hears every type in type order.
         Events = new AiEventQueues { IsInitialised = true };
         foreach (AiEvent type in Enum.GetValues<AiEvent>())
         {
-            Events.SetEnabled(type, true);
+            Events.Declare(type);
         }
 
         CurrentNode = NearestNode(position);
@@ -260,7 +265,7 @@ public sealed class AiSoldier
     public AiEyeSnapshot Eye { get; private set; }
 
     /// <summary>Gets its event queues.</summary>
-    public AiEventQueues Events { get; }
+    public AiEventQueues Events { get; private set; }
 
     /// <summary>Diagnostics: the last event type this brain dispatched, or <see langword="null"/>.</summary>
     public AiEvent? LastDispatchedEvent { get; set; }
@@ -407,8 +412,6 @@ public sealed class AiSoldier
 
     // Which event types the running script has declared a priority for, and how many so far, so
     // AIFunction_SetEventPriority can rebuild the dispatch order in call order (0x44E0C0).
-    private readonly HashSet<AiEvent> _prioritised = [];
-    private int _priorityDeclared;
 
     // The current enemy position, captured each tick, so AIFunction_IsEventBehind can answer against it.
     private Vector3d _enemyPosition;
@@ -601,20 +604,10 @@ public sealed class AiSoldier
     /// <param name="type">The event type the script wants considered.</param>
     /// <remarks>
     /// The original enables the type and <b>appends</b> it to the priority order the first time it is named,
-    /// building the whole order in call order. The port keeps every type enabled (it posts only a handful),
-    /// so this rewrites the <em>order</em>: the first declared type goes to the front, the next behind it,
-    /// and so on — which is what decides, when two events are pending on one tick, the one the script sees.
+    /// building the whole order in call order — which is what decides, when two events are pending on one
+    /// tick, the one the script sees, and makes a type the script never names inaudible.
     /// </remarks>
-    public void DeclareEventPriority(AiEvent type)
-    {
-        if (!_prioritised.Add(type))
-        {
-            return;
-        }
-
-        Events.SetPriority(type, Math.Min(_priorityDeclared, AiEventQueues.TypeCount - 1));
-        _priorityDeclared++;
-    }
+    public void DeclareEventPriority(AiEvent type) => Events.Declare(type);
 
     /// <summary>Whether the enemy is behind the soldier — <c>AIFunction_IsEventBehind</c> (<c>0x44E860</c>).</summary>
     /// <returns><see langword="true"/> when the enemy is behind the facing plane.</returns>
@@ -2006,8 +1999,15 @@ public sealed class AiSoldier
         if (!_created)
         {
             _created = true;
-            Events.Post(AiEventRecord.Simple(AiEvent.Create), owner: 0, worldTests: null);
-            RunScript();
+            if (HasScript)
+            {
+                Events.DispatchCreate(Dispatch);
+            }
+            else
+            {
+                Events.Post(AiEventRecord.Simple(AiEvent.Create), owner: 0, worldTests: null);
+                RunScript();
+            }
         }
 
         // The detection cascade in order: the phase gate, then the cone, then the line-of-sight cast behind
@@ -2092,15 +2092,15 @@ public sealed class AiSoldier
         Alerted = alarmOn
             || (Activity == AiSoldierActivity.Engaging && Target is not null && _playerSlot.IsRegistered);
 
-        if (_playerSlot.IsVisible)
-        {
-            Events.Post(AiEventRecord.Simple(AiEvent.Combat), owner: 0, worldTests: null);
-        }
-        else if (_route.Count == 0 && Route is null && _lookAtPoint is null && _activate is null
+        // 0x44F410 posts no COMBAT of its own -- that is the SetCombat runner's (0x48E560), which the script
+        // reaches from ENEMYDETECTION -- and posts IDLE whenever the pending-action list is empty. Declared
+        // priority, not a pending-event test, keeps IDLE behind the events that matter: the old "nothing
+        // pending" condition never let IDLE through while the alarm posted ALARMON every tick, which froze
+        // a guard in place for the rest of the alarm.
+        if (_route.Count == 0 && Route is null && _lookAtPoint is null && _activate is null
             && _scriptedFire is null && _panicDestination < 0
             && Activity != AiSoldierActivity.FallenFlat
-            && !_pendingActions.HasPending
-            && !Events.HasAnyPending)
+            && !_pendingActions.HasPending)
         {
             // A running LookAtEvent is a pending ACTION too, and the pending-action list being empty is
             // the idle post's whole condition -- without this the next Idle dispatch re-ran the script
@@ -2414,37 +2414,40 @@ public sealed class AiSoldier
         }
 
         _pendingRanDuringDispatch = false;
-        Events.Pump(_pendingActions.PriorityCap, (type, slot) =>
-        {
-            // What sub_44D850 reads mid-dispatch: the current event's own position, off the queue head.
-            AiEventRecord? current = Events.HeadOf(type);
-            _currentEventPosition = current?.Position;
-            _currentEventSource = current?.Source ?? 0;
-
-            // AIFunction_GetEventDistance (0x44E930) measures the CURRENT queue record from the AI at
-            // dispatch time. Keeping the value written when an event was posted let a later visibility
-            // sweep or alert overwrite a queued gunshot's distance before guard.qvm saw it.
-            if (_currentEventPosition is { } eventPosition)
-            {
-                LastEventDistance = Distance(Position, eventPosition);
-            }
-
-            bool handled = _host.Run(_script, this, type, slot, _archetypeScript);
-            LastDispatchedEvent = type;
-            if (handled)
-            {
-                QueueActions(_host.Produced);
-            }
-
-            _currentEventPosition = null;
-            _currentEventSource = 0;
-            return handled;
-        });
+        Events.Pump(_pendingActions.PriorityCap, Dispatch);
 
         if (!_pendingRanDuringDispatch)
         {
             _pendingActions.Tick();
         }
+    }
+
+    /// <summary>Runs the script for one event type at a priority position, and installs what it produced.</summary>
+    private bool Dispatch(AiEvent type, int slot)
+    {
+        // What sub_44D850 reads mid-dispatch: the current event's own position, off the queue head.
+        AiEventRecord? current = Events.HeadOf(type);
+        _currentEventPosition = current?.Position;
+        _currentEventSource = current?.Source ?? 0;
+
+        // AIFunction_GetEventDistance (0x44E930) measures the CURRENT queue record from the AI at
+        // dispatch time. Keeping the value written when an event was posted let a later visibility
+        // sweep or alert overwrite a queued gunshot's distance before guard.qvm saw it.
+        if (_currentEventPosition is { } eventPosition)
+        {
+            LastEventDistance = Distance(Position, eventPosition);
+        }
+
+        bool handled = _host!.Run(_script!, this, type, slot, _archetypeScript);
+        LastDispatchedEvent = type;
+        if (handled)
+        {
+            QueueActions(_host.Produced);
+        }
+
+        _currentEventPosition = null;
+        _currentEventSource = 0;
+        return handled;
     }
 
     private void QueueActions(IReadOnlyList<AiProducedAction> actions)

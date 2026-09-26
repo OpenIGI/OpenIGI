@@ -106,17 +106,49 @@ public sealed class AiEventPumpTests
         Assert.Equal(AiEventFilter.InView | AiEventFilter.InRange | AiEventFilter.SubjectIsEnemy, seen);
     }
 
-    /// <summary>Queues are visited in priority order, which <c>AIFunction_SetEventPriority</c> rewrites.</summary>
+    /// <summary>
+    /// The order is the declaration order: <c>AIFunction_SetEventPriority</c> (<c>0x44E0C0</c>) enables a type and
+    /// appends it the first time it is named, and naming it again changes nothing.
+    /// </summary>
     [Fact]
-    public void TheQueuesAreVisitedInPriorityOrder()
+    public void TheOrderIsTheDeclarationOrder()
     {
         var queues = new AiEventQueues { IsInitialised = true };
-        Assert.Equal(AiEvent.Create, queues.PriorityOrder[0]);
+        Assert.Empty(queues.PriorityOrder);
 
-        queues.SetPriority(AiEvent.Gunshot, 0);
-        Assert.Equal(AiEvent.Gunshot, queues.PriorityOrder[0]);
-        Assert.Equal(AiEventQueues.TypeCount, queues.PriorityOrder.Count);
-        Assert.Equal(AiEventQueues.TypeCount, queues.PriorityOrder.Distinct().Count());
+        queues.Declare(AiEvent.Gunshot);
+        queues.Declare(AiEvent.Idle);
+        queues.Declare(AiEvent.Gunshot);
+
+        Assert.Equal([AiEvent.Gunshot, AiEvent.Idle], queues.PriorityOrder);
+        Assert.True(queues.IsEnabled(AiEvent.Gunshot));
+        Assert.False(queues.IsEnabled(AiEvent.Combat));
+    }
+
+    /// <summary>
+    /// Creation is dispatched directly on the first tick, at position -1, and initialises the AI; the ordered
+    /// pump could not reach it, since the order is empty until the creation branch declares it.
+    /// </summary>
+    [Fact]
+    public void CreationIsDispatchedDirectlyAndInitialises()
+    {
+        var queues = new AiEventQueues();
+        AiEvent? seen = null;
+        int slot = 0;
+
+        queues.DispatchCreate((type, position) =>
+        {
+            seen = type;
+            slot = position;
+            queues.Declare(AiEvent.Gunshot);
+            return true;
+        });
+
+        Assert.Equal(AiEvent.Create, seen);
+        Assert.Equal(-1, slot);
+        Assert.True(queues.IsInitialised);
+        Assert.True(queues.Post(AiEventRecord.Simple(AiEvent.Gunshot), 1, null));
+        Assert.False(queues.Post(AiEventRecord.Simple(AiEvent.Combat), 1, null));
     }
 
     /// <summary>
@@ -127,10 +159,8 @@ public sealed class AiEventPumpTests
     public void OneTypeDispatchesPerTickButAnEmptyHandlerDoesNotBlock()
     {
         var queues = new AiEventQueues { IsInitialised = true };
-        queues.SetEnabled(AiEvent.Gunshot, true);
-        queues.SetEnabled(AiEvent.Combat, true);
-        queues.SetPriority(AiEvent.Gunshot, 0);
-        queues.SetPriority(AiEvent.Combat, 1);
+        queues.Declare(AiEvent.Gunshot);
+        queues.Declare(AiEvent.Combat);
         queues.Post(AiEventRecord.Simple(AiEvent.Gunshot), 1, null);
         queues.Post(AiEventRecord.Simple(AiEvent.Combat), 1, null);
 
@@ -152,10 +182,8 @@ public sealed class AiEventPumpTests
     public void NothingIsOfferedAfterATypeHandlesTheTick()
     {
         var queues = new AiEventQueues { IsInitialised = true };
-        queues.SetEnabled(AiEvent.Gunshot, true);
-        queues.SetEnabled(AiEvent.Combat, true);
-        queues.SetPriority(AiEvent.Gunshot, 0);
-        queues.SetPriority(AiEvent.Combat, 1);
+        queues.Declare(AiEvent.Gunshot);
+        queues.Declare(AiEvent.Combat);
         queues.Post(AiEventRecord.Simple(AiEvent.Gunshot), 1, null);
         queues.Post(AiEventRecord.Simple(AiEvent.Combat), 1, null);
 
@@ -178,10 +206,8 @@ public sealed class AiEventPumpTests
     public void AnUndispatchedEventIsDiscardedNotDeferred()
     {
         var queues = new AiEventQueues { IsInitialised = true };
-        queues.SetEnabled(AiEvent.Gunshot, true);
-        queues.SetEnabled(AiEvent.Combat, true);
-        queues.SetPriority(AiEvent.Gunshot, 0);
-        queues.SetPriority(AiEvent.Combat, 1);
+        queues.Declare(AiEvent.Gunshot);
+        queues.Declare(AiEvent.Combat);
         queues.Post(AiEventRecord.Simple(AiEvent.Gunshot), 1, null);
         queues.Post(AiEventRecord.Simple(AiEvent.Combat), 1, null);
         queues.Post(AiEventRecord.Simple(AiEvent.Combat), 1, null);
@@ -205,8 +231,12 @@ public sealed class AiEventPumpTests
     public void ThePriorityCapKeepsLowRankedEventsOut()
     {
         var queues = new AiEventQueues { IsInitialised = true };
-        queues.SetEnabled(AiEvent.Combat, true);
-        queues.SetPriority(AiEvent.Combat, 5);
+        foreach (AiEvent ahead in new[] { AiEvent.Gunshot, AiEvent.Walk, AiEvent.Alert, AiEvent.Idle, AiEvent.Door })
+        {
+            queues.Declare(ahead);
+        }
+
+        queues.Declare(AiEvent.Combat);
         queues.Post(AiEventRecord.Simple(AiEvent.Combat), 1, null);
 
         // Cap 5 means positions 0..4 may dispatch; Combat sits at 5 and is shut out - and still drained.

@@ -208,12 +208,15 @@ public sealed class AiScriptedActionTests
             new AiCombatParameters(new HumanAiConfigItemTask()),
             () => new AiCombatWeaponState(30, 30, 1, WeaponCategory.Gun));
         soldier.SetScript(new AiScriptHost(RetailAiNatives()), guard);
+
+        // The first tick dispatches the archetype's creation, which declares the events it hears.
+        soldier.Tick(1, new Vector3d(0, -100_000, 0), 0.0, enemyAlive: false);
         soldier.ApplyActions([new AiProducedAction("AIAction_Combat", [], 0)]);
 
         Vector3d flash = new(0, 4 * 4096, soldier.EyePosition().Z);
         Assert.True(soldier.ReceiveFlashbang(flash));
 
-        soldier.Tick(1, new Vector3d(0, -100_000, 0), 0.0, enemyAlive: false);
+        soldier.Tick(2, new Vector3d(0, -100_000, 0), 0.0, enemyAlive: false);
 
         Assert.Equal(AiSoldierActivity.Idle, soldier.Activity);
         Assert.Equal(AiCombatPhase.Ended, soldier.CombatPhase);

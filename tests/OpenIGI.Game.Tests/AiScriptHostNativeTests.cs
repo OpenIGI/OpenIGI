@@ -118,6 +118,7 @@ public sealed class AiScriptHostNativeTests
     {
         (AiScriptHost host, _) = Host();
         AiSoldier soldier = Soldier();
+        soldier.SetScript(host, CallNative("AIAction_LookAtEvent", LookAtEventArgs));
 
         Run(host, soldier, "AIFunction_SetEventPriority", (int)AiEvent.Combat);
         Run(host, soldier, "AIFunction_SetEventPriority", (int)AiEvent.EnemyDetection);
@@ -196,7 +197,9 @@ public sealed class AiScriptHostNativeTests
         // Far away and never seen: the only stimulus is the sound.
         Vector3d enemyEye = new(soldier.Position.X, soldier.Position.Y + (500 * 4096.0), soldier.Position.Z);
 
-        soldier.Tick(1, enemyEye, rootMotionThisTick: 0.0);   // CREATE dispatches
+        // CREATE dispatches; a real archetype's creation branch then declares what it hears.
+        soldier.Tick(1, enemyEye, rootMotionThisTick: 0.0);
+        soldier.DeclareEventPriority(AiEvent.Gunshot);
         Assert.True(soldier.HearGunshot(shot, silenced: false));
 
         for (int tick = 2; tick < 40; tick++)
