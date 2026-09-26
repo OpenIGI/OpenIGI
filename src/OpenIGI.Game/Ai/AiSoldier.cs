@@ -65,7 +65,7 @@ public sealed class AiSoldier
     private readonly AiDetectionSlot _playerSlot = new();
     private readonly AiMovementStep _steering = new();
     private readonly IgiRandom _random;
-    private readonly List<int> _route = [];
+    private readonly List<AiWaypoint> _route = [];
     private readonly AiPendingActionList _pendingActions = new();
 
     // The action the stack ran last: it is the one whose gait and crouch the body is carrying.
@@ -81,6 +81,23 @@ public sealed class AiSoldier
     // This tick's inputs, for the action the stack runs.
     private double _rootMotionThisTick;
     private bool _enemyAlive = true;
+
+    // Floats 0 and 4 of this tick's input frame: the turn over pi and the walker's forward.
+    private float _turnInput;
+    private bool _forwardInput;
+    private readonly HumanBodyTurn _bodyTurn = new();
+
+    // Human+2056 / +2080: the leg an AI's feet are interpolated along. 0x462390 casts no ray for an AI.
+    private Vector3d _groundLegFrom;
+    private Vector3d _groundLegTo;
+    private bool _groundLegSet;
+
+    /// <summary>
+    /// One item of the movement queue — <c>0x452080</c>'s record: the point walked to (<c>+8</c>), whether a
+    /// door stands on the hop (<c>+32</c>), and the node that becomes the current one when it is reached
+    /// (<c>+36</c>).
+    /// </summary>
+    private readonly record struct AiWaypoint(Vector3d Point, int Node, bool Door);
 
     /// <summary>
     /// The fraction of the eye-to-mark segment beyond which an object contact no longer hides the target —
@@ -149,7 +166,6 @@ public sealed class AiSoldier
     private OpenIGI.Scripting.Qvm.QvmProgram? _archetypeScript;
 
     // Where the current leg started, so the soldier's height can follow the graph along it.
-    private Vector3d _legOrigin;
     private bool _created;
 
     /// <summary>Gives the soldier its behaviour scripts, so the script decides what it does.</summary>
@@ -215,7 +231,6 @@ public sealed class AiSoldier
         Body = SoldierClass.CreateBody();
         _graph = graph;
         Position = position;
-        _legOrigin = position;
         Facing = facing;
         _random = random ?? new IgiRandom(unchecked((uint)seed));
 
@@ -1192,8 +1207,7 @@ public sealed class AiSoldier
     public bool LastSeparationFallback { get; set; }
 
     /// <summary>Diagnostic: the current route's first waypoint, in engine units.</summary>
-    public Vector3d? DebugWaypoint =>
-        _route.Count > 0 && _graph?.NodeAt(_route[0]) is { } wp ? wp.Position : null;
+    public Vector3d? DebugWaypoint => _route.Count > 0 ? _route[0].Point : null;
 
     /// <summary>Gives the soldier an occlusion test, so it stops seeing through walls.</summary>
     /// <param name="sight">The test, or <see langword="null"/> to see through everything.</param>
@@ -1737,55 +1751,171 @@ public sealed class AiSoldier
         }
     }
 
-    /// <summary>Heads for a graph node, following the route table.</summary>
+    /// <summary>Plans a walk to a graph node — <c>0x4518E0</c>.</summary>
     /// <param name="node">The destination node id.</param>
-    /// <returns><see langword="true"/> when a route exists or the soldier is already there.</returns>
+    /// <param name="point">
+    /// An exact point to finish at inside the destination node, or <see langword="null"/> for its centre.
+    /// </param>
+    /// <returns><see langword="true"/> when the whole route was planned.</returns>
     /// <remarks>
-    /// When the soldier is already at the destination (<c>CurrentNode == node</c>), the route is empty and
-    /// the call succeeds — the caller should advance to its next command rather than stalling. The original
-    /// handles this in <c>0x4518E0</c> where <c>from == to</c> creates a waypoint at the current position
-    /// and returns.
+    /// <para>
+    /// The queue is of <b>points</b>, not nodes. Where a hop leaves a node the walker aims for the edge of
+    /// that node's square on the line to the next one, and where it arrives, for the edge it crosses
+    /// (<c>0x4520C0</c>); the destination's own centre — or the exact point, when it lies inside the node —
+    /// is last. So a soldier cuts across a node's square instead of touching every centre.
+    /// </para>
+    /// <para>
+    /// It starts from the current node when the soldier is standing in it. Otherwise it first walks back into
+    /// a node: the current one, or the next node of the old queue when the soldier is already inside that,
+    /// or when that one is nearer the destination by the route's cost than the current node is by distance.
+    /// </para>
+    /// <para>
+    /// A route that breaks off (<c>"Error in graph %d routenet"</c>) keeps what was built and the goal, as
+    /// the original does, and the walk carries on along it.
+    /// </para>
     /// </remarks>
-    public bool GoTo(int node)
+    public bool GoTo(int node, Vector3d? point = null)
     {
-        if (_graph?.RouteTable is null)
+        if (_graph?.RouteTable is not { } routes || _graph.NodeAt(node) is not { } target)
         {
             return false;
         }
 
-        if (_graph.NodeAt(node) is null)
+        int start = RouteStart(node, routes);
+        _route.Clear();
+        DestinationNode = node;
+
+        int at = start == -1 ? CurrentNode : start;
+        if (start != -1)
         {
-            return false;
+            GraphNode entered = _graph.NodeAt(start)!;
+            Vector3d toward = new(entered.Position.X - Position.X, entered.Position.Y - Position.Y, 0.0);
+            _route.Add(new AiWaypoint(EdgePoint(entered, toward, exit: false), start, Door: false));
         }
 
-        if (CurrentNode < 0)
+        if (at == node)
         {
-            return false;
-        }
-
-        if (CurrentNode == node)
-        {
-            _route.Clear();
-            DestinationNode = node;
-            _legOrigin = Position;
+            _route.Add(new AiWaypoint(point ?? target.Position, node, Door: false));
             return true;
         }
 
-        IReadOnlyList<int> route = _graph.RouteTable.EnumerateRoute(CurrentNode, node);
-        if (route.Count == 0)
+        while (at >= 0
+            && routes.TryGetStep(at, node, out int next, out _)
+            && _graph.NodeAt(at) is { } from
+            && _graph.NodeAt(next) is { } to)
         {
-            return false;
+            bool door = IsDoorNode(from) && IsDoorNode(to);
+            Vector3d hop = to.Position - from.Position;
+            if (next == node)
+            {
+                bool atPoint = false;
+                if (point is { } exact)
+                {
+                    _route.Add(new AiWaypoint(EdgePoint(to, hop, exit: false), node, door));
+                    atPoint = IsInsideNodeBox(exact, to, NodeDevianceMetres);
+                }
+
+                _route.Add(atPoint
+                    ? new AiWaypoint(new Vector3d(point!.Value.X, point.Value.Y, to.Position.Z), node, Door: false)
+                    : new AiWaypoint(to.Position, node, door));
+                return true;
+            }
+
+            // The first hop leaves by the current node's edge only from inside it.
+            if (at != CurrentNode || IsInsideNodeBox(Position, from, NodeDevianceMetres))
+            {
+                _route.Add(new AiWaypoint(EdgePoint(from, hop, exit: true), at, door));
+            }
+
+            _route.Add(new AiWaypoint(EdgePoint(to, hop, exit: false), next, Door: false));
+            at = next;
         }
 
-        // Do not publish a destination until its route has been built. A failed combat Follow used to
-        // leave DestinationNode set with an empty route; HeadFor then regarded it as already installed on
-        // every later tick, stranding a visible, engaging soldier in place indefinitely.
-        _route.Clear();
-        _route.AddRange(route);
-        DestinationNode = node;
-        _legOrigin = Position;
-        return true;
+        return false;
     }
+
+    // The deviance every node-square test in the planner and the walker adds to the radius -- 0.3 m.
+    private const double NodeDevianceMetres = 0.3;
+
+    // Which node the planner starts from, or -1 to walk from the current node as it stands.
+    private int RouteStart(int destination, GraphRouteTable routes)
+    {
+        if (CurrentNode < 0
+            || _graph!.NodeAt(CurrentNode) is not { } current
+            || IsInsideNodeBox(Position, current, NodeDevianceMetres))
+        {
+            return -1;
+        }
+
+        double fromCurrent = Distance(current.Position, Position);
+        int next = -1;
+        foreach (AiWaypoint waypoint in _route)
+        {
+            if (waypoint.Node != CurrentNode)
+            {
+                next = waypoint.Node;
+                break;
+            }
+        }
+
+        if (next < 0 || _graph.NodeAt(next) is not { } ahead)
+        {
+            return CurrentNode;
+        }
+
+        if (IsInsideNodeBox(Position, ahead, NodeDevianceMetres))
+        {
+            return next;
+        }
+
+        if (next == destination)
+        {
+            return Distance(ahead.Position, Position) < fromCurrent ? next : CurrentNode;
+        }
+
+        // "ERROR IN ROUTENET" leaves the current node as the start.
+        return routes.TryGetStep(next, destination, out _, out float cost) && cost < fromCurrent
+            ? next
+            : CurrentNode;
+    }
+
+    /// <summary>
+    /// Where a line out of a node's centre leaves its square — <c>0x4520C0</c>.
+    /// </summary>
+    /// <param name="node">The node, whose square is its radius either side of the centre on the world axes.</param>
+    /// <param name="direction">The line's direction; only its horizontal part is used.</param>
+    /// <param name="exit">
+    /// <see langword="true"/> for the edge the line leaves by, <see langword="false"/> for the one it enters by.
+    /// </param>
+    /// <returns>The point on the edge at the centre's height, or the centre when the line is too short to leave.</returns>
+    private static Vector3d EdgePoint(GraphNode node, Vector3d direction, bool exit)
+    {
+        double half = node.Radius * GraphNode.MetreInUnits;
+        double dx = direction.X;
+        double dy = direction.Y;
+        double offsetX;
+        double offsetY;
+        if (Math.Abs(dx) > half && Math.Abs(half / dx * dy) <= half)
+        {
+            offsetX = Math.CopySign(half, dx);
+            offsetY = Math.Abs(half / dx) * dy;
+        }
+        else if (Math.Abs(dy) > half && Math.Abs(half / dy * dx) <= half)
+        {
+            offsetX = Math.Abs(half / dy) * dx;
+            offsetY = Math.CopySign(half, dy);
+        }
+        else
+        {
+            return node.Position;
+        }
+
+        return exit
+            ? new Vector3d(node.Position.X + offsetX, node.Position.Y + offsetY, node.Position.Z)
+            : new Vector3d(node.Position.X - offsetX, node.Position.Y - offsetY, node.Position.Z);
+    }
+
+    private static bool IsDoorNode(GraphNode node) => (node.Criteria & GraphNodeCriteria.Door) != 0;
 
     /// <summary>Marks the soldier dead; it stops thinking, but the body keeps being stepped.</summary>
     /// <param name="fallVelocity">
@@ -2168,8 +2298,10 @@ public sealed class AiSoldier
         // above it has finished -- a pushable fight outlasts a flashbang's flinch.
         if (_pendingActions.Tick() is null)
         {
-            RunWithoutAction(rootMotionThisTick);
+            RunWithoutAction();
         }
+
+        StepBody();
     }
 
     /// <summary>Runs one tick of an action the stack chose — its <c>+24</c> — and ends it when it is done.</summary>
@@ -2177,19 +2309,18 @@ public sealed class AiSoldier
     {
         _runningAction = action.Name;
         int tick = _lastTick;
-        double rootMotion = _rootMotionThisTick;
         switch (action.Name)
         {
             case ActionCombat:
-                RunCombat(tick, rootMotion);
+                RunCombat(tick);
                 break;
 
             case ActionPatrol:
-                RunPatrolCommand(tick, rootMotion);
+                RunPatrolCommand(tick);
                 break;
 
             case ActionActivate:
-                RunActivate(rootMotion);
+                RunActivate();
                 break;
 
             case "AIAction_FallFlat":
@@ -2207,7 +2338,7 @@ public sealed class AiSoldier
                 break;
 
             case "AIAction_RunPanicking":
-                RunPanicking(rootMotion);
+                RunPanicking();
                 break;
 
             case "AIAction_LookAtEvent":
@@ -2217,7 +2348,7 @@ public sealed class AiSoldier
             case "AIAction_WalkToNode":
             case "AIAction_RunToNode":
             case "AIAction_MoveToEvent":
-                if (StepTowardsNode(_goToNode, rootMotion))
+                if (StepTowardsNode(_goToNode))
                 {
                     _goToNode = -1;
                     Activity = AiSoldierActivity.Idle;
@@ -2253,7 +2384,7 @@ public sealed class AiSoldier
     /// A scripted AI with no action writes no channel and stands. A soldier without a script keeps the
     /// built-in fallback's one habit: it walks a route it was sent along.
     /// </remarks>
-    private void RunWithoutAction(double rootMotionThisTick)
+    private void RunWithoutAction()
     {
         _runningAction = null;
         if (HasScript || _route.Count == 0)
@@ -2264,11 +2395,11 @@ public sealed class AiSoldier
         }
 
         Activity = AiSoldierActivity.Patrolling;
-        Advance(rootMotionThisTick);
+        Advance();
     }
 
     /// <summary>The combat action's per-tick: the arm, unless its target is gone.</summary>
-    private void RunCombat(int tick, double rootMotionThisTick)
+    private void RunCombat(int tick)
     {
         // The target is dead: leave combat outright rather than keep firing at where it fell. The
         // unregister (0x4894E0) is immediate, and 0x44F410 releases the combat record whose target the
@@ -2281,12 +2412,12 @@ public sealed class AiSoldier
         }
 
         Activity = AiSoldierActivity.Engaging;
-        Fight(tick, _lastSeenFeet, rootMotionThisTick);
+        Fight(tick, _lastSeenFeet);
     }
 
     /// <summary>
     /// The LookAtEvent per-tick (<c>0x48E0A0</c>): sets its deadline on its first tick, turns to the event
-    /// with the instant combat turn, and completes once it is both aimed inside 2 degrees and past it.
+    /// through the turn-to-point entry, and completes once it is both aimed inside 2 degrees and past it.
     /// </summary>
     private void RunLookAtEvent(int tick)
     {
@@ -2297,8 +2428,7 @@ public sealed class AiSoldier
         }
 
         Activity = AiSoldierActivity.Idle;
-        TurnTowards(watched, (float)AiGuardCombat.AimToleranceRadians);
-        if (IsFacing(watched, (float)AiGuardCombat.AimToleranceRadians) && tick > _lookAtDeadline)
+        if (TurnTowards(watched, (float)AiGuardCombat.AimToleranceRadians) && tick > _lookAtDeadline)
         {
             _lookAtPoint = null;
         }
@@ -2309,10 +2439,10 @@ public sealed class AiSoldier
     /// claims. Retail picks the gait from the action's run flag and presses through input channel 4 -- the
     /// port walks its ordinary route and invokes the activation directly; both are recorded stand-ins.
     /// </summary>
-    private void RunActivate(double rootMotionThisTick)
+    private void RunActivate()
     {
         ActivateTask pressing = _activate!.Value;
-        if (!StepTowardsNode(pressing.Node, rootMotionThisTick))
+        if (!StepTowardsNode(pressing.Node))
         {
             Activity = AiSoldierActivity.Patrolling;
             return;
@@ -2345,9 +2475,9 @@ public sealed class AiSoldier
     }
 
     /// <summary>The RunPanicking per-tick: run to the chosen node, and end on arrival.</summary>
-    private void RunPanicking(double rootMotionThisTick)
+    private void RunPanicking()
     {
-        if (StepTowardsNode(_panicDestination, rootMotionThisTick))
+        if (StepTowardsNode(_panicDestination))
         {
             _panicDestination = -1;
             Activity = AiSoldierActivity.Idle;
@@ -2370,13 +2500,20 @@ public sealed class AiSoldier
     /// smoothed over.
     /// </para>
     /// </remarks>
-    private void RunPatrolCommand(int tick, double rootMotionThisTick)
+    private void RunPatrolCommand(int tick)
     {
         AiPatrolRoute route = Route!;
         if (route.Current is not { } command)
         {
             Activity = AiSoldierActivity.Idle;
             return;
+        }
+
+        // The crouch flag is written to the kneel channel at the top of every tick, before the command
+        // runs: a Crouch command kneels from the tick after it, and the first tick of a walk still kneels.
+        if (route.IsCrouching)
+        {
+            WriteChannel(AiCombatChannel.Kneel, 1f);
         }
 
         bool finished = route.Begin(tick);
@@ -2397,7 +2534,7 @@ public sealed class AiSoldier
             case AiPatrolCommandKind.WalkTo:
             case AiPatrolCommandKind.RunTo:
                 RequestedAnimation = -1;
-                finished = StepTowardsNode(command.Operand, rootMotionThisTick);
+                finished = StepTowardsNode(command.Operand);
                 break;
 
             case AiPatrolCommandKind.LookAtNode:
@@ -2430,37 +2567,52 @@ public sealed class AiSoldier
         }
     }
 
-    private bool StepTowardsNode(int node, double rootMotionThisTick)
+    /// <summary>
+    /// The walk to a node that the patrol walker, the go-to actions, the alarm run and panic share —
+    /// <c>0x4522A0</c> into <c>0x4518E0</c>.
+    /// </summary>
+    /// <returns><see langword="true"/> on the tick the walk ends.</returns>
+    /// <remarks>
+    /// It plans only when the goal changes, and walks the queue otherwise, so a soldier pushed off its line
+    /// does not re-plan. A plan that fails returns before stepping; the goal is then set, and on the next tick
+    /// the soldier walks whatever part of the route was built and ends when it runs out.
+    /// </remarks>
+    private bool StepTowardsNode(int node)
     {
-        if (DestinationNode != node || _route.Count == 0)
-        {
-            if (!GoTo(node))
-            {
-                return true;
-            }
-        }
-
-        if (_route.Count == 0)
+        if (_graph?.RouteTable is null)
         {
             return true;
+        }
+
+        if (DestinationNode != node && !GoTo(node))
+        {
+            return false;
         }
 
         Activity = AiSoldierActivity.Patrolling;
-        Advance(rootMotionThisTick);
-        return _route.Count == 0;
+        return Advance();
     }
 
+    /// <summary>A patrol's LookAtNode — <c>0x452580</c>, the look-at entry into the turn.</summary>
+    /// <returns><see langword="true"/> once facing the node within 3 degrees.</returns>
+    /// <remarks>
+    /// The look-at entry sets the turn clamp to 0.0259 rad of input per tick (<c>0x3CD4629B</c>), so a
+    /// patrol turns to look at a node at about 24 degrees a second rather than snapping to it; the walk and
+    /// the combat turns set it back to pi.
+    /// </remarks>
     private bool FaceNode(int node)
     {
-        GraphNode? target = _graph?.NodeAt(node);
-        if (target is null)
+        if (_graph?.NodeAt(node) is not { } target)
         {
             return true;
         }
 
-        TurnTowards(target.Position, AiPatrolRoute.LookAtToleranceRadians);
-        return IsFacing(target.Position, AiPatrolRoute.LookAtToleranceRadians);
+        _steering.YawClamp = LookAtTurnClamp;
+        return SteerTowards(target.Position, AiPatrolRoute.LookAtToleranceRadians);
     }
+
+    // 0x452580's clamp on both angles, in radians -- 0x3CD4629B.
+    private const float LookAtTurnClamp = 0.025925925f;
 
     private bool IsFacing(Vector3d target, float tolerance)
     {
@@ -2913,11 +3065,11 @@ public sealed class AiSoldier
         Activity = AiSoldierActivity.Patrolling;
     }
 
-    /// <summary>The start shared by WalkToNode, RunToNode and MoveToEvent: plan a route to a node.</summary>
+    /// <summary>The start shared by WalkToNode, RunToNode and MoveToEvent: name the node to walk to.</summary>
     /// <param name="node">The destination, or a negative id when there is none, which leaves nothing to run.</param>
     private void BeginGoTo(int node)
     {
-        _goToNode = node >= 0 && GoTo(node) ? node : -1;
+        _goToNode = node >= 0 && _graph?.NodeAt(node) is not null ? node : -1;
         if (_goToNode >= 0)
         {
             Activity = AiSoldierActivity.Patrolling;
@@ -3029,184 +3181,165 @@ public sealed class AiSoldier
         Events.Pump(AiEventQueues.UnboundedPriorityCap, (_, _) => true);
     }
 
-    private bool ChooseNextLeg()
+    /// <summary>
+    /// Walks the movement queue for one tick — the planner's stepping loop around <c>0x451540</c>.
+    /// </summary>
+    /// <returns><see langword="true"/> once the queue is empty: the walk is over.</returns>
+    /// <remarks>
+    /// <para>
+    /// Reaching a waypoint (within 0.3 m on both of the body's horizontal axes, height ignored) pops it,
+    /// makes its node the current one and steps the next waypoint in the same tick
+    /// (<c>while (sub_451540(ai) == 0)</c>), so a walker never pauses at an intermediate point. Only an
+    /// empty queue ends the walk, and that also clears the goal.
+    /// </para>
+    /// <para>
+    /// The walker only writes the frame: the turn, and forward. The body turns and moves after it, on its
+    /// own clip — see <see cref="StepBody"/>.
+    /// </para>
+    /// </remarks>
+    private bool Advance()
     {
-        if (_graph?.RouteTable is null || _graph.Nodes.Count < 2)
+        while (_route.Count > 0)
+        {
+            AiWaypoint waypoint = _route[0];
+            if (waypoint.Door && HoldForDoor(waypoint.Point))
+            {
+                return false;
+            }
+
+            AiMovementOutcome outcome = _steering.Step(
+                Position, Orientation, waypoint.Point, 0f, 0f, out AiSteeringFrame frame);
+            LastSteeringForward = frame.Forward;
+            LastSteeringOutcome = outcome;
+            if (outcome == AiMovementOutcome.WaypointReached)
+            {
+                // Reaching the waypoint also drops the door handle (ai+15946/+15948), so the next door hop
+                // searches afresh.
+                CurrentNode = waypoint.Node;
+                _route.RemoveAt(0);
+                _doorAtHop = null;
+                _doorSearched = false;
+                continue;
+            }
+
+            TurnTowards(waypoint.Point, 0f);
+            _forwardInput = true;
+            return false;
+        }
+
+        DestinationNode = -1;
+        return true;
+    }
+
+    /// <summary>A door hop's hold — the door branch of <c>0x451540</c>.</summary>
+    /// <returns><see langword="true"/> while the soldier waits on the door rather than walking.</returns>
+    /// <remarks>
+    /// The walker finds the nearest door once per hop and acts on its state: 1 (closed) and 3 (closing) —
+    /// open it with the player's own use (<c>sub_447DA0</c>) and hold; 2 (moving) — "Waiting for door to
+    /// open", hold; 0 (open) — walk through. Holding turns to the waypoint at the 2-degree door tolerance.
+    /// </remarks>
+    private bool HoldForDoor(Vector3d waypoint)
+    {
+        if (_doors is null)
         {
             return false;
         }
 
-        if (CurrentNode < 0)
+        if (!_doorSearched)
         {
-            CurrentNode = NearestNode(Position);
-            if (CurrentNode < 0)
-            {
-                return false;
-            }
+            _doorAtHop = _graph?.NodeAt(CurrentNode) is { } from ? _doors(from.Position) : null;
+            _doorSearched = true;
         }
 
-        // Wander: pick a reachable node that is not where we already are, then follow the table to it.
-        for (int attempt = 0; attempt < 8; attempt++)
+        if (_doorAtHop is not { } door)
         {
-            GraphNode candidate = _graph.Nodes[NextBounded(_graph.Nodes.Count)];
-            if (candidate.Id == CurrentNode || candidate.IsExcludedFromNearestQuery)
-            {
-                continue;
-            }
-
-            IReadOnlyList<int> route = _graph.RouteTable.EnumerateRoute(CurrentNode, candidate.Id);
-            if (route.Count == 0)
-            {
-                continue;
-            }
-
-            _route.Clear();
-            _route.AddRange(route);
-            DestinationNode = candidate.Id;
-            return true;
+            return false;
         }
 
-        return false;
-    }
-
-    private void Advance(double rootMotionThisTick)
-    {
-        GraphNode? next = _graph?.NodeAt(_route[0]);
-        if (next is null)
+        int state = door.UseState;
+        if (state is 1 or 3)
         {
-            _route.RemoveAt(0);
-            return;
+            door.CommandOpen();
+        }
+        else if (state != 2)
+        {
+            return false;
         }
 
-        Vector3d waypoint = next.Position;
-
-        // A DOOR hop: the planner (sub_4518E0) flags a queue item when BOTH ends of the hop carry the
-        // door criteria bit, and the walker (sub_451540) then finds the nearest door once per hop and
-        // acts on its state: 1 (closed) and 3 (closing) -> OPEN IT YOURSELF (the same sub_447DA0 the
-        // player's use calls) and hold; 2 (in motion) -> "Waiting for door to open", hold; 0 (open) ->
-        // walk through. Holding turns to the waypoint at the 2-degree door tolerance.
-        if (_doors is not null
-            && _graph?.NodeAt(CurrentNode) is { } from
-            && (from.Criteria & GraphNodeCriteria.Door) != 0
-            && (next.Criteria & GraphNodeCriteria.Door) != 0)
-        {
-            if (!_doorSearched)
-            {
-                _doorAtHop = _doors(from.Position);
-                _doorSearched = true;
-            }
-
-            if (_doorAtHop is { } door)
-            {
-                int state = door.UseState;
-                if (state is 1 or 3)
-                {
-                    door.CommandOpen();
-                    TurnTowards(waypoint, AiMovementStep.DoorFacingTolerance);
-                    return;
-                }
-
-                if (state == 2)
-                {
-                    // "Waiting for door to open"
-                    TurnTowards(waypoint, AiMovementStep.DoorFacingTolerance);
-                    return;
-                }
-            }
-        }
-        else
-        {
-            _doorAtHop = null;
-            _doorSearched = false;
-        }
-
-        // Turn towards the waypoint as fast as the move-to-node clamp allows -- pi, which is "as fast as you
-        // like" (ai.md 7).
-        TurnTowards(waypoint, 0f);
-
-        AiMovementOutcome outcome = _steering.Step(
-            Position, Orientation, waypoint, 0f, 0f, out AiSteeringFrame frame);
-        LastSteeringForward = frame.Forward;
-        LastSteeringOutcome = outcome;
-        LastAdvanceRm = rootMotionThisTick;
-
-
-        if (outcome == AiMovementOutcome.WaypointReached)
-        {
-            CurrentNode = next.Id;
-            _route.RemoveAt(0);
-
-            // The next leg is measured from where the soldier actually is, not from the node it nominally
-            // reached -- arrival is a 0.3 m box, so those differ. Reaching the waypoint also drops the
-            // door handle (ai+15946/+15948 cleared in the arrival branch), so the next door hop
-            // searches afresh.
-            _legOrigin = Position;
-            _doorAtHop = null;
-            _doorSearched = false;
-            return;
-        }
-
-        // Forward is a literal 1.0 in the frame, so the distance covered is the clip's own root motion.
-        if (frame.Forward > 0f && rootMotionThisTick > 0.0)
-        {
-            double x = Position.X + (Math.Sin(-Facing) * rootMotionThisTick);
-            double y = Position.Y + (Math.Cos(Facing) * rootMotionThisTick);
-            LastMovedTo = new Vector3d(x, y, Position.Z);
-            LastFacingDeg = Facing * 180.0 / Math.PI;
-            Position = new Vector3d(x, y, QueryGroundHeight(x, y, waypoint));
-        }
-    }
-
-    /// <summary>Finds the ground height at a position, using the terrain query when available.</summary>
-    /// <param name="x">World X, in engine units.</param>
-    /// <param name="y">World Y, in engine units.</param>
-    /// <param name="waypoint">The node being walked to, used as a fallback when no terrain is available.</param>
-    /// <returns>The Z to stand at, in engine units.</returns>
-    private double QueryGroundHeight(double x, double y, Vector3d waypoint)
-    {
-        if (_ground is not null && _ground(x, y, Position.Z + GroundProbeAboveUnits, out double groundZ))
-        {
-            return groundZ;
-        }
-
-        return HeightAlongLegTo(waypoint, x, y);
+        TurnTowards(waypoint, AiMovementStep.DoorFacingTolerance);
+        return true;
     }
 
     /// <summary>
-    /// The height a soldier walking towards a waypoint should be at, taken from the nav graph.
+    /// The part of the body's update the AI's frame drives — <c>0x45D080</c>: turn (<c>0x4610C0</c>), then
+    /// move on the clip's own root motion (<c>0x4614B0</c>) at the graph's height (<c>0x462390</c>).
     /// </summary>
-    /// <param name="waypoint">The node being walked to.</param>
-    /// <param name="x">The soldier's new X.</param>
-    /// <param name="y">The soldier's new Y.</param>
-    /// <returns>The new Z, in engine units.</returns>
     /// <remarks>
+    /// <para>The turn is the one the player's own mouse goes through: see <see cref="HumanBodyTurn"/>.</para>
     /// <para>
-    /// <b>A recorded divergence.</b> The original does not do this: the AI steers a <c>Human</c> through the
-    /// player's own input frame (§7 and <c>player.md</c> §2), so a soldier's height comes from the same
-    /// ground query and slope handling the player uses — <c>HumanGroundQuery</c>, already read in M8 but not
-    /// yet wired to soldiers. Until it is, keeping a soldier's own Z made it walk out of a raised position
-    /// into mid-air, because a leg leaving a watchtower node kept the tower's height all the way along it.
-    /// </para>
-    /// <para>
-    /// Interpolating along the leg is the honest stand-in, because a nav node's position is on the walkable
-    /// surface by construction, so the straight line between two of them tracks the ground the graph was
-    /// authored against. It is wrong wherever the ground between two nodes is not planar; the ground query
-    /// is the fix, and this is listed in <c>TODO.md</c> as such.
+    /// An AI's height is not found by a ray at all: <c>0x462390</c> interpolates it along the leg between the
+    /// last two waypoints, which by construction lie on the ground the graph was authored against.
     /// </para>
     /// </remarks>
-    private double HeightAlongLegTo(Vector3d waypoint, double x, double y)
+    private void StepBody()
     {
-        double legX = waypoint.X - _legOrigin.X;
-        double legY = waypoint.Y - _legOrigin.Y;
-        double lengthSquared = (legX * legX) + (legY * legY);
-        if (lengthSquared <= 1.0)
+        float input = _turnInput;
+        _turnInput = 0f;
+        if (IsMounted)
         {
-            return waypoint.Z;
+            // 0x4610C0's attached branch takes the emplacement's frame instead.
+            _bodyTurn.Reset();
+        }
+        else
+        {
+            Facing = Wrap((float)(Facing + _bodyTurn.Step(input)));
         }
 
-        double travelled = (((x - _legOrigin.X) * legX) + ((y - _legOrigin.Y) * legY)) / lengthSquared;
-        travelled = Math.Clamp(travelled, 0.0, 1.0);
-        return _legOrigin.Z + ((waypoint.Z - _legOrigin.Z) * travelled);
+        bool forward = _forwardInput;
+        _forwardInput = false;
+        LastAdvanceRm = _rootMotionThisTick;
+        if (!forward || _rootMotionThisTick <= 0.0)
+        {
+            return;
+        }
+
+        double x = Position.X + (Math.Sin(-Facing) * _rootMotionThisTick);
+        double y = Position.Y + (Math.Cos(Facing) * _rootMotionThisTick);
+        LastMovedTo = new Vector3d(x, y, Position.Z);
+        LastFacingDeg = Facing * 180.0 / Math.PI;
+        Position = new Vector3d(x, y, GroundHeight(x, y));
+    }
+
+    /// <summary>An AI's feet height — <c>0x462390</c>'s graph branch.</summary>
+    /// <param name="x">The new X.</param>
+    /// <param name="y">The new Y.</param>
+    /// <returns>The height along the leg to the head waypoint, or the current node's with nothing to walk.</returns>
+    private double GroundHeight(double x, double y)
+    {
+        if (_route.Count == 0)
+        {
+            return _graph?.NodeAt(CurrentNode)?.Position.Z ?? Position.Z;
+        }
+
+        Vector3d head = _route[0].Point;
+        if (!_groundLegSet)
+        {
+            _groundLegFrom = Position;
+            _groundLegTo = Position;
+            _groundLegSet = true;
+        }
+
+        if (Distance(head, _groundLegTo) > 100.0)
+        {
+            _groundLegFrom = _groundLegTo;
+            _groundLegTo = head;
+        }
+
+        double length = Distance(_groundLegTo, _groundLegFrom);
+        double remaining = length > 0.0
+            ? Math.Clamp(Distance(_groundLegTo, new Vector3d(x, y, Position.Z)) / length, 0.0, 1.0)
+            : 0.0;
+        return ((1.0 - remaining) * (_groundLegTo.Z - _groundLegFrom.Z)) + _groundLegFrom.Z;
     }
 
     private int PriorityPositionOf(AiEvent type)
@@ -3280,7 +3413,7 @@ public sealed class AiSoldier
     /// the original.
     /// </para>
     /// </remarks>
-    private void Fight(int tick, Vector3d lastSeenFeet, double rootMotionThisTick)
+    private void Fight(int tick, Vector3d lastSeenFeet)
     {
         // Recomputed every combat tick: AdvanceInCombat sets it when it actually steps.
         _movingInCombat = false;
@@ -3363,7 +3496,7 @@ public sealed class AiSoldier
 
         if (_patrol is not null)
         {
-            FightAsPatrol(tick, enemy, rootMotionThisTick);
+            FightAsPatrol(tick, enemy);
             return;
         }
 
@@ -3450,8 +3583,7 @@ public sealed class AiSoldier
             }
             else
             {
-                TurnTowards(point, (float)AiGuardCombat.AimToleranceRadians);
-                _combat.ReportAimed(IsFacing(point, (float)AiGuardCombat.AimToleranceRadians));
+                _combat.ReportAimed(TurnTowards(point, (float)AiGuardCombat.AimToleranceRadians));
             }
         }
 
@@ -3464,7 +3596,6 @@ public sealed class AiSoldier
     /// <summary>Runs the move-and-fight arm for one tick — <c>0x48ABA0</c>.</summary>
     /// <param name="tick">The engine tick used by the ten-tick evasion cooldown.</param>
     /// <param name="enemy">Where the target is.</param>
-    /// <param name="rootMotionThisTick">The run clip's own root motion this tick, for the walk to a destination.</param>
     /// <remarks>
     /// <para>
     /// The chooser decides (<see cref="AiPatrolCombat.Choose"/>) and this turns the decision into
@@ -3477,7 +3608,7 @@ public sealed class AiSoldier
     /// body leaves state 0, then complete while states 8/9 own animations 58/70 to completion.
     /// </para>
     /// </remarks>
-    private void FightAsPatrol(int tick, Vector3d enemy, double rootMotionThisTick)
+    private void FightAsPatrol(int tick, Vector3d enemy)
     {
         AiCombatWeaponState weapon = _weapon!();
 
@@ -3601,7 +3732,7 @@ public sealed class AiSoldier
                 }
             }
 
-            FollowTarget(enemy, rootMotionThisTick);
+            FollowTarget(enemy);
             return;
         }
 
@@ -3778,7 +3909,7 @@ public sealed class AiSoldier
                 // turns to watch.
                 if (_route.Count > 0)
                 {
-                    AdvanceInCombat(rootMotionThisTick);
+                    AdvanceInCombat();
                 }
                 else
                 {
@@ -3789,12 +3920,12 @@ public sealed class AiSoldier
 
             case AiPatrolAction.RePosition:
                 HeadFor(CurrentNode);
-                AdvanceInCombat(rootMotionThisTick);
+                AdvanceInCombat();
                 return;
 
             case AiPatrolAction.Follow:
                 _followTargetNode = NearestNode(enemy);
-                FollowTarget(enemy, rootMotionThisTick);
+                FollowTarget(enemy);
                 return;
 
             case AiPatrolAction.Fire:
@@ -3858,13 +3989,12 @@ public sealed class AiSoldier
 
     /// <summary>Advances on, or hunts for, the target — <c>0x48C860</c>, <c>"Combat - Follow"</c>.</summary>
     /// <param name="enemy">Where the target is.</param>
-    /// <param name="rootMotionThisTick">The run clip's own root motion this tick, for the walk to a destination.</param>
     /// <remarks>
     /// <b>A patrol fires while it is running at you</b>, with no burst set up and no aim solve — one
     /// round per tick straight into the trigger slot, whenever the target is inside a <b>16.3°</b> cone
     /// about its forward axis (<c>dot &gt; 0.96</c>). §13.7.
     /// </remarks>
-    private void FollowTarget(Vector3d enemy, double rootMotionThisTick)
+    private void FollowTarget(Vector3d enemy)
     {
         int destination = _patrol!.DestinationNodeId;
         if (destination < 0)
@@ -3898,7 +4028,7 @@ public sealed class AiSoldier
             return;
         }
 
-        AdvanceInCombat(rootMotionThisTick);
+        AdvanceInCombat();
 
         if (!_playerSlot.IsVisible)
         {
@@ -3991,8 +4121,7 @@ public sealed class AiSoldier
 
         if (command.TurnTo is { } point)
         {
-            TurnTowards(point, (float)AiGuardCombat.AimToleranceRadians);
-            _combat.ReportAimed(IsFacing(point, (float)AiGuardCombat.AimToleranceRadians));
+            _combat.ReportAimed(TurnTowards(point, (float)AiGuardCombat.AimToleranceRadians));
         }
     }
 
@@ -4014,14 +4143,14 @@ public sealed class AiSoldier
             return CurrentNode == node || _route.Count > 0;
         }
 
-        return GoTo(node);
+        // The combat walk finishes at the claimed sub-slot inside the node (0x4522A0 with ai+16048).
+        return GoTo(node, _combatFreePosition);
     }
 
     /// <summary>How close to the claimed sub-slot counts as standing on it — half a metre.</summary>
     private const double FreePositionArrivalInUnits = 2048.0;
 
     /// <summary>Steps the soldier along its combat route, the same walk the patrol path uses.</summary>
-    /// <param name="rootMotionThisTick">The run clip's own root motion this tick, in engine units.</param>
     /// <remarks>
     /// The move-and-fight arm sets a Follow/RePosition destination but the original then <em>walks</em> to
     /// it — the AI steers its <c>Human</c> through the input frame and the body's mover carries it. Without
@@ -4030,50 +4159,15 @@ public sealed class AiSoldier
     /// delivers the body to the node, the walk finishes at the <b>claimed sub-slot</b> inside it — retail's
     /// <c>sub_4522A0</c> against the position at <c>HumanAI+16048</c>.
     /// </remarks>
-    private void AdvanceInCombat(double rootMotionThisTick)
+    private void AdvanceInCombat()
     {
         if (_route.Count > 0)
         {
             // Tell the renderer to play the walk clip this tick so next tick has root motion to move by.
             _movingInCombat = true;
-            Advance(rootMotionThisTick);
-            return;
-        }
-
-        // The route delivered the soldier to the NODE; the claimed sub-slot inside it is the real
-        // destination — retail's walk helper (sub_4522A0) finishes at the position kept in ai+16048,
-        // which is what spreads a squad over a large node instead of stacking it on the centre.
-        if (_combatFreePosition is { } slot)
-        {
-            double dx = slot.X - Position.X;
-            double dy = slot.Y - Position.Y;
-            double distance = Math.Sqrt((dx * dx) + (dy * dy));
-            if (distance <= FreePositionArrivalInUnits)
-            {
-                _combatFreePosition = null;
-                return;
-            }
-
-            double step = Math.Min(rootMotionThisTick, distance);
-            if (step <= 0.0)
-            {
-                _movingInCombat = true;
-                return;
-            }
-
-            _movingInCombat = true;
-            TurnTowards(slot, AiPatrolRoute.LookAtToleranceRadians);
-            Position = new Vector3d(
-                Position.X + (dx / distance * step),
-                Position.Y + (dy / distance * step),
-                GroundZAt(Position.X + (dx / distance * step), Position.Y + (dy / distance * step)));
+            Advance();
         }
     }
-
-    private double GroundZAt(double x, double y) =>
-        _ground is { } ground && ground(x, y, Position.Z + GroundProbeAboveUnits, out double z)
-            ? z
-            : Position.Z;
 
     /// <summary>
     /// The height the free-position can-shoot ray starts above a candidate node — the <c>AIGraph</c>
@@ -4201,25 +4295,33 @@ public sealed class AiSoldier
     public static Vector3d AimPointOf(Vector3d target, bool crouching = false) =>
         new(target.X, target.Y, target.Z + (crouching ? 1024.0 : 2048.0));
 
-    private void TurnTowards(Vector3d target, float tolerance)
+    /// <summary>The turn-to-point entry — <c>0x4525B0</c>, which sets the clamps to pi first.</summary>
+    /// <returns>Whether the facing was already within the tolerance before this tick's turn.</returns>
+    private bool TurnTowards(Vector3d target, float tolerance)
+    {
+        _steering.YawClamp = MathF.PI;
+        return SteerTowards(target, tolerance);
+    }
+
+    /// <summary>
+    /// Writes the turn toward a point into the frame — <c>0x4522D0</c>: the yaw error, clamped, over pi.
+    /// </summary>
+    /// <returns>Whether the error, measured before this tick's turn, is within the tolerance.</returns>
+    /// <remarks>It writes the frame whether or not the facing is already good enough; the body does the turning.</remarks>
+    private bool SteerTowards(Vector3d target, float tolerance)
     {
         double dx = target.X - Position.X;
         double dy = target.Y - Position.Y;
         if ((dx * dx) + (dy * dy) < 1.0)
         {
-            return;
+            _turnInput = 0f;
+            return true;
         }
 
-        float wanted = (float)Math.Atan2(-dx, dy);
-        float error = Wrap(wanted - Facing);
-        if (Math.Abs(error) <= tolerance)
-        {
-            return;
-        }
-
-        // The steering clamp is what bounds a turn: pi for moving, about 1.47 degrees for aiming.
+        float error = Wrap((float)Math.Atan2(-dx, dy) - Facing);
         float limit = _steering.YawClamp;
-        Facing = Wrap(Facing + Math.Clamp(error, -limit, limit));
+        _turnInput = Math.Clamp(error, -limit, limit) / MathF.PI;
+        return Math.Abs(error) <= tolerance;
     }
 
     private int NearestNode(Vector3d from) =>

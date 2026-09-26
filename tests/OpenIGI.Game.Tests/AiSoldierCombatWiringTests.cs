@@ -449,9 +449,12 @@ public sealed class AiSoldierCombatWiringTests
             $"the patrol never fired (activity {soldier.Activity}, action {soldier.PatrolAction})");
     }
 
-    /// <summary>A rejected route never becomes a destination which combat can mistake for an active walk.</summary>
+    /// <summary>
+    /// A route that breaks off keeps the goal, as <c>0x4518E0</c> does ("Error in graph %d routenet"),
+    /// with nothing to walk: the plan reports the failure and the queue is empty.
+    /// </summary>
     [RequiresGameDataFact]
-    public void AnUnreachableCombatDestinationIsNotPublished()
+    public void AnUnreachableDestinationKeepsTheGoalWithNothingToWalk()
     {
         GraphFile graph = GraphFile.Read(File.ReadAllBytes(Path.Combine(
             GameData.RequireRoot(), "missions", "location0", "level1", "graphs", "graph4019.dat")));
@@ -479,7 +482,8 @@ public sealed class AiSoldierCombatWiringTests
             graph, unreachable.Value.From.Position, facing: 0f, phase: 0, seed: 1);
 
         Assert.False(soldier.GoTo(unreachable.Value.To.Id));
-        Assert.Equal(-1, soldier.DestinationNode);
+        Assert.Equal(unreachable.Value.To.Id, soldier.DestinationNode);
+        Assert.Null(soldier.DebugWaypoint);
     }
 
     /// <summary>

@@ -3733,6 +3733,17 @@ public sealed class SoldierRenderer : IDisposable
                     view.SetMoving(false, walkAnimation);
                 }
             }
+            else if (brain.IsCrouching)
+            {
+                // A patrol's Crouch command holds the kneel channel every tick (0x48E920): the body goes
+                // down (state 13) and holds the kneel (19) until a walk releases it.
+                int state = brain.CombatState;
+                int animation = brain.Body.CurrentAnimation;
+                if (animation < 0 || !view.PlayStateAnimation(animation, brain.Body.StateTable.Loops(state)))
+                {
+                    view.SetMoving(false, walkAnimation);
+                }
+            }
             else if (brain.Activity == AiSoldierActivity.Patrolling && !brain.IsWalking)
             {
                 // The patrol cursor's gait flag (+21) is applied EVERY tick by the retail walker

@@ -506,10 +506,12 @@ public sealed class SoldierRendererHitscanTests
                 + $"waypoints={brains[harrison].DebugWaypoint},{brains[escortOne].DebugWaypoint},{brains[escortTwo].DebugWaypoint} "
                 + $"models={harrison.Soldier.SoldierModel},{escortOne.Soldier.SoldierModel},{escortTwo.Soldier.SoldierModel} "
                 + $"area={rescue}");
-        Assert.Equal(113, brains[harrison].DestinationNode);
+        // Each is walking to its authored node or already on it: arrival clears the goal (0x4518E0 sets
+        // ai+15920 to -1 when the queue runs out) and leaves the node as the current one.
+        Assert.True(HeadingForOrOn(brains[harrison], 113));
         Assert.Equal(3, rescueArrivals.Count);
-        Assert.Equal(112, brains[escortOne].DestinationNode);
-        Assert.Equal(114, brains[escortTwo].DestinationNode);
+        Assert.True(HeadingForOrOn(brains[escortOne], 112));
+        Assert.True(HeadingForOrOn(brains[escortTwo], 114));
 
         // Feed all six live friendlies through the real area/timer/message runtimes while Harrison is
         // physically inside area 154. The authored rescue cannot advance team one's stage before the
@@ -1295,4 +1297,7 @@ public sealed class SoldierRendererHitscanTests
 
         public void Dispose() => GameplayCVars.Ragdoll.Value = _previous;
     }
+
+    private static bool HeadingForOrOn(AiSoldier brain, int node) =>
+        brain.DestinationNode == node || (brain.DestinationNode == -1 && brain.CurrentNode == node);
 }
