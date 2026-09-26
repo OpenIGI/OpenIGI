@@ -226,16 +226,6 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     }
 
     /// <inheritdoc/>
-    public void SetPoseInterpolation(float currentBlend, float previousBlend)
-    {
-        _poseBlend = currentBlend;
-        _ = previousBlend;
-    }
-
-    /// <inheritdoc/>
-    public void ClearPoseInterpolation() => _poseBlend = 0f;
-
-    /// <inheritdoc/>
     public void SetLighting(in SceneLighting lighting) => _lighting = lighting;
 
     /// <inheritdoc/>
@@ -279,6 +269,7 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
             {
                 ObserveForTracing(mesh, modelView, diffuse, indexOffset, indexCount);
                 DrawGeometry(call, modelView, blend);
+                NoteObjectMotion(mesh, call.Mesh, indexOffset, indexCount, modelView, blend);
             }
             else if (CurrentPass is ScenePass.GlassLayer)
             {
@@ -294,6 +285,7 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
                 }
 
                 DrawForward(call, [], modelView, blend, lightmap.IsValid);
+                NoteObjectMotion(mesh, call.Mesh, indexOffset, indexCount, modelView, blend);
             }
 
             return;

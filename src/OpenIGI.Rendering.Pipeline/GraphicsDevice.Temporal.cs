@@ -16,9 +16,8 @@ namespace OpenIGI.Rendering.Pipeline;
 /// The resolve then reads the resolved image rather than the raw one.
 /// </para>
 /// <para>
-/// What moves under its own power — a soldier, a door, the held weapon — is not rasterised into the
-/// motion field yet, so the camera's motion stands in for it. That is the difference between this and
-/// the Vulkan original, and it shows as a trail behind a figure crossing the view.
+/// What moves under its own power — a soldier, a door, the held weapon — is stamped over the camera's
+/// motion with its own before anything reads the field. See <see cref="ObjectVelocityPass"/>.
 /// </para>
 /// </remarks>
 public sealed partial class GraphicsDevice
@@ -123,9 +122,16 @@ public sealed partial class GraphicsDevice
 
     /// <summary>Records the motion, the resolve and the depth copy, once the lit image is finished.</summary>
     /// <remarks>
+    /// <para>
     /// Everything temporal measures against the previous frame, which moves on exactly once per captured
     /// frame, here, whether or not the resolve itself was asked for — so that turning it on mid-mission
     /// does not measure the first frame against the start of the level.
+    /// </para>
+    /// <para>
+    /// The motion is derived on every captured frame, not only when the resolve runs: the motion blur
+    /// reads it too, and with the resolve off it would otherwise smear along whatever motion was last
+    /// written, or none.
+    /// </para>
     /// </remarks>
     private void RecordTemporal()
     {
@@ -133,6 +139,7 @@ public sealed partial class GraphicsDevice
 
         if (_scene is not { } scene || _screenPasses is not { } screen || _copyDepth is not { } copy)
         {
+            RollObjectMotion();
             return;
         }
 
@@ -146,13 +153,23 @@ public sealed partial class GraphicsDevice
         ClosePass();
         CloseScenePass();
 
+        // The camera's motion from the depth, then each moving object's own over it: a raster pass, so
+        // the two sit either side of a compute pass boundary.
+        using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
+            _profiler.Time(RenderStage.TemporalResolve),
+            "velocity")))
+        {
+            screen.RecordVelocity(pass, scene, state, FrameSlot);
+        }
+
+        RecordObjectVelocity(scene);
+
         using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
             _profiler.Time(RenderStage.TemporalResolve),
             "temporal")))
         {
             if (settings.Enabled && _temporal is { } temporal)
             {
-                screen.RecordVelocity(pass, scene, state, FrameSlot);
                 temporal.Record(pass, scene, state, settings, FrameSlot);
                 _temporalResolved = true;
             }
@@ -168,6 +185,7 @@ public sealed partial class GraphicsDevice
         _previousJitterX = state.JitterX;
         _previousJitterY = state.JitterY;
         _hasPreviousFrame = true;
+        RollObjectMotion();
     }
 
     /// <summary>The image the resolve reads: the temporal output when the resolve ran, the lit one otherwise.</summary>
@@ -176,6 +194,7 @@ public sealed partial class GraphicsDevice
 
     private void DisposeTemporal()
     {
+        DisposeObjectVelocity();
         _copyDepth?.Dispose();
         _copyDepth = null;
         _temporal?.Dispose();

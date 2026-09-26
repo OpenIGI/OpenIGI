@@ -331,6 +331,7 @@ public sealed partial class GraphicsDevice
         Matrix3f viewToWorld)
     {
         _taa = settings;
+        _temporalProjection = projection;
         _cameraPositionPrecise = cameraPosition;
         _cameraPosition = new Vector3f(
             (float)cameraPosition.X,
