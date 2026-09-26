@@ -1636,8 +1636,39 @@ internal sealed partial class GameHost
                 ? WorldTrace.Nearest(liveSolids.Tracer(), TerrainRayTrace.Caster(liveTerrain))
                 : liveSolids.Tracer()
             : null;
+
+        // What the impact effects trace against, built here rather than beside the security cameras
+        // because the terrain is only known now: a blood droplet lands on the ground at least as often
+        // as it hits a wall, and the splash behind a body needs whatever is three metres past it. The
+        // player's movement cast will not do: it is a coarser collision whose rows name no mark, so every
+        // splash traced against it was refused.
+        //
+        // The terrain leaf reports no material row, so a hit on open ground comes back as Air and marks
+        // nothing -- which would leave the ground clean of both bullet holes and blood, where retail's
+        // Ground row names hole_concrete1.tex. The level's own terrain row is substituted, which is the
+        // same row the footsteps and the player's material lookup read.
+        _effectWalls = _worldTrace is { } effectTrace
+            ? (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+            {
+                if (!effectTrace(
+                        new WorldTraceRequest(origin, end, WorldTraceMask.World), out WorldTraceHit rich))
+                {
+                    hit = default;
+                    return false;
+                }
+
+                hit = rich.RayHit;
+                if (rich.Kind == WorldTraceHitKind.Terrain && hit.Material == 0 && _effectTerrainRow is int ground)
+                {
+                    hit = hit with { Material = ground };
+                }
+
+                return true;
+            }
+            : null;
         _player = null;
         _playerMode = false;
+        _pendingGenericTbaExplosions.Clear();
 
         // A fresh mission is a fresh life: the last one's death, its red wash and its death camera do not
         // carry over.
@@ -1921,6 +1952,9 @@ internal sealed partial class GameHost
             _tracers = null;
             _impactParticles?.Dispose();
             _impactParticles = null;
+            _retailImpacts?.Dispose();
+            _retailImpacts = null;
+            _impactEffects.Clear();
             _explosions?.Dispose();
             _explosions = null;
             _missileSmoke?.Dispose();
@@ -1981,6 +2015,29 @@ internal sealed partial class GameHost
                 if (!_impactParticles.Load(loaded))
                 {
                     _logger.Warning("Impact", "The retail IGI1 explosion model '1009_01_1' was not bound; using the sprite fallback.");
+                }
+
+                // The original's own impact effects: concrete1.spr dust, the material's own chip model,
+                // and blood1/blood2 for a body. The runtime keeps the motion; this only draws it. Without
+                // it the blood is still thrown and still stamps its splashes, but no drop or mist is seen.
+                _retailImpacts?.Dispose();
+                _retailImpacts = new RetailImpactRenderer(_device, _resources, _fileSystem);
+                int impactModels = _retailImpacts.Load(loaded);
+                _impactEffects.Clear();
+                _impactEffects.SetMistFrameCount(_retailImpacts.MistFrameCount);
+                if (!_retailImpacts.SpritesAvailable)
+                {
+                    _logger.Warning(
+                        "Impact",
+                        "concrete1.spr, blood1.spr or blood2.spr did not resolve; the original's "
+                            + "impact dust and blood will not draw.");
+                }
+                else
+                {
+                    _logger.Debug(
+                        "Impact",
+                        $"Retail impact effects bound: {impactModels} chip model(s), "
+                            + $"{_retailImpacts.MistFrameCount} blood frame(s).");
                 }
 
                 // The retail 1009_01_1 fireball, shared by every blast in the level. Loads its real
@@ -2437,6 +2494,7 @@ internal sealed partial class GameHost
         _marks?.Dispose();
         _tracers?.Dispose();
         _impactParticles?.Dispose();
+        _retailImpacts?.Dispose();
         _explosions?.Dispose();
         _missileSmoke?.Dispose();
         _cameraStatusLights?.Dispose();
@@ -2463,6 +2521,8 @@ internal sealed partial class GameHost
         _marks = null;
         _tracers = null;
         _impactParticles = null;
+        _retailImpacts = null;
+        _impactEffects.Clear();
         _explosions = null;
         _missileSmoke = null;
         _cameraStatusLights = null;
@@ -2474,6 +2534,7 @@ internal sealed partial class GameHost
         _scene = null;
         _playerTerrain = null;
         _ground = null;
+        _effectWalls = null;
         _worldSolids = null;
         _destructibles = null;
         _worldMaterials = null;
