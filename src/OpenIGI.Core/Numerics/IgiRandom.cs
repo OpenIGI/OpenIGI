@@ -63,15 +63,20 @@ public sealed class IgiRandom
     {
     }
 
-    /// <summary>Draws the next value.</summary>
-    /// <returns>A value in <c>[0, 1)</c>, quantised to <see cref="Scale"/>.</returns>
-    public double NextDouble()
+    /// <summary>Draws the next raw word — <c>0x4B4740</c> itself, the whole accumulator.</summary>
+    /// <returns>The accumulator after the step.</returns>
+    /// <remarks>Some callers test it directly, such as the parity <c>0x412CE0</c> picks a sound by.</remarks>
+    public uint NextRaw()
     {
         _c ^= _a >> 7;
         _b ^= _c;
         _a += _b;
-        return (ushort)_a * Scale;
+        return _a;
     }
+
+    /// <summary>Draws the next value.</summary>
+    /// <returns>A value in <c>[0, 1)</c>, quantised to <see cref="Scale"/>.</returns>
+    public double NextDouble() => (ushort)NextRaw() * Scale;
 
     /// <summary>Draws the next value as a <see cref="float"/>.</summary>
     /// <returns>A value in <c>[0, 1)</c>.</returns>

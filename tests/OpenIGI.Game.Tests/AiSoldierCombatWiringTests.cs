@@ -106,6 +106,73 @@ public sealed class AiSoldierCombatWiringTests
     }
 
     /// <summary>
+    /// "Hey you!" is for the player: <c>sub_48A920</c> tests the target's class against HumanPlayer's before the
+    /// per-action latch, so a soldier fighting an NPC stays silent and still challenges the player later.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void ASoldierFightingAnNpcKeepsItsChallengeForThePlayer()
+    {
+        AiSoldier soldier = Soldier(out Vector3d position);
+        Vector3d enemy = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
+        int requests = 0;
+
+        for (int tick = 1; tick <= 300; tick++)
+        {
+            soldier.Tick(tick, enemy, rootMotionThisTick: 0.0, enemyIsSoldier: tick <= 150);
+            if (soldier.DetectionShoutRequestedThisTick)
+            {
+                Assert.True(tick > 150, $"the soldier challenged an NPC on tick {tick}");
+                requests++;
+            }
+
+            Spend(soldier);
+        }
+
+        Assert.Equal(1, requests);
+    }
+
+    /// <summary>
+    /// An engaged soldier pings its squad on the engagement's first tick with a target and every twentieth
+    /// after — <c>sub_48A920</c>'s counter lives in the combat action, not on the mission's clock.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void AnEngagedSoldierPingsItsSquadFromItsFirstTickEveryTwenty()
+    {
+        AiSoldier soldier = Soldier(out Vector3d position);
+        Vector3d enemy = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
+        List<int> pings = [];
+        int engagedFrom = -1;
+
+        for (int tick = 1; tick <= 120; tick++)
+        {
+            soldier.Tick(tick, enemy, rootMotionThisTick: 0.0);
+            if (engagedFrom < 0 && soldier.Activity == AiSoldierActivity.Engaging)
+            {
+                engagedFrom = tick;
+            }
+
+            if (soldier.AlertPingDueThisTick)
+            {
+                pings.Add(tick);
+            }
+
+            Spend(soldier);
+        }
+
+        Assert.NotEmpty(pings);
+        Assert.Equal(engagedFrom, pings[0]);
+        Assert.All(pings.Zip(pings.Skip(1)), pair => Assert.Equal(AiSoldier.AlertPingPeriodTicks, pair.Second - pair.First));
+    }
+
+    [Fact]
+    public void TheDetectionMarkSitsWhereSub465820PutsIt()
+    {
+        // 0xE147AE14:0x40A6147A standing and 0x66666666:0x40966666 crouched.
+        Assert.Equal(2826.24, AiSoldier.DetectionRaiseStandingInUnits, precision: 9);
+        Assert.Equal(1433.6, AiSoldier.DetectionRaiseCrouchedInUnits, precision: 9);
+    }
+
+    /// <summary>
     /// The combat behaviour is <b>re-armed</b> every time the soldier engages, however it got there.
     /// </summary>
     /// <remarks>

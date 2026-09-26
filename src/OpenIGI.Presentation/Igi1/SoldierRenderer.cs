@@ -355,6 +355,9 @@ public sealed class SoldierRenderer : IDisposable
     private Action<Vector3d, float>? _meleeStrikeSink;
     private AnimTriggerRegistry? _animationTriggers;
     private Func<int>? _hitCooldown;
+
+    // The sound 0x45D3C0 adds to a soldier's grunt when a knife made the hit.
+    private const string KnifeStabSound = "stab_01";
     private Func<float>? _playerDeltaTranslationScale;
     private readonly Dictionary<SoldierView, int> _hitQuietUntil = [];
     private Action<Footstep>? _footstepSound;
@@ -785,56 +788,93 @@ public sealed class SoldierRenderer : IDisposable
     /// <summary>The most see-through layers a single sight probe steps through before giving up.</summary>
     private const int SightSkipLimit = 8;
 
-    /// <summary>Adapts the shared world trace for AI sight without solidifying authored portals.</summary>
+    /// <summary>Whether the eye can see a point along a plain cast, any contact blocking.</summary>
     /// <remarks>
-    /// MEF portal faces describe doorway and window openings; they are not physical cover. Actual
-    /// closed door leaves remain ordinary collision geometry and still block this cast.
+    /// The binocular overlay's rule: the retail detector culls by sector/portal visibility, which
+    /// see-through surfaces do not bound. See <see cref="HasLineOfSight(WorldTraceCast, Vector3d, Vector3d, double)"/>.
     /// </remarks>
-    internal static WorldRayCast AiSightCast(WorldTraceCast cast) =>
-        WorldTrace.AsRayCast(cast, WorldTraceMask.World, tracePortals: false);
+    internal static bool HasLineOfSight(WorldRayCast cast, Vector3d from, Vector3d to)
+    {
+        ArgumentNullException.ThrowIfNull(cast);
+        return HasLineOfSight(
+            (in WorldTraceRequest request, out WorldTraceHit hit) =>
+            {
+                bool found = cast(request.Origin, request.End, out WorldRayHit plain);
+                hit = found
+                    ? WorldTraceHit.FromRayHit(request, plain, WorldTraceHitKind.StaticObject)
+                    : default;
+                return found;
+            },
+            from,
+            to,
+            objectTolerance: 1.0);
+    }
 
     /// <summary>Whether the eye can see a point, treating glass and fences as non-occluding.</summary>
+    /// <param name="trace">The world trace.</param>
+    /// <param name="from">The eye.</param>
+    /// <param name="to">The point looked at.</param>
+    /// <param name="objectTolerance">
+    /// How far along the eye-to-point segment, as a fraction, an object contact has to be before it stops
+    /// counting as cover. <c>1</c> makes every contact block.
+    /// </param>
     /// <remarks>
-    /// The retail detector culls by sector/portal visibility, which see-through surfaces do not bound.
+    /// <para>
     /// A cast returns only its NEAREST contact, so a single probe would stop at a chain-link fence and
     /// never notice a solid wall right behind it. This steps the ray past each transparent surface
     /// (glass, wire) and keeps looking, so a guard behind a fence is seen but one behind the wall the
     /// fence stands in front of is not. See <see cref="GameMaterial.IsSightTransparent"/>.
+    /// </para>
+    /// <para>
+    /// Terrain always blocks. An object contact blocks only nearer than the tolerance: the AI's sight ray
+    /// (<c>0x489B20</c>) is visible when <c>0x4CE410</c> reports no contact <em>or</em> the contact's segment
+    /// fraction is at least 0.79, and <c>0x4CE410</c> forces the fraction to zero for a terrain hit.
+    /// </para>
     /// </remarks>
-    internal static bool HasLineOfSight(WorldRayCast cast, Vector3d from, Vector3d to)
+    internal static bool HasLineOfSight(WorldTraceCast trace, Vector3d from, Vector3d to, double objectTolerance)
     {
+        ArgumentNullException.ThrowIfNull(trace);
+
+        Vector3d segment = new(to.X - from.X, to.Y - from.Y, to.Z - from.Z);
+        double segmentLength = Math.Sqrt((segment.X * segment.X) + (segment.Y * segment.Y) + (segment.Z * segment.Z));
         Vector3d origin = from;
-        for (int step = 0; step < SightSkipLimit; step++)
+        double travelled = 0d;
+        for (int step = 0; step <= SightSkipLimit; step++)
         {
-            if (!cast(origin, to, out WorldRayHit hit))
+            // Portal faces are not traced. They describe the doorway and window openings for the renderer's
+            // sector visibility, not collision, so 0x4CE410's object handlers never meet them; a closed
+            // door leaf is its own collision geometry and still blocks.
+            if (!trace(new WorldTraceRequest(origin, to, WorldTraceMask.World), out WorldTraceHit hit))
             {
                 return true;
             }
 
-            if (!GameMaterial.IsSightTransparent(hit.Material))
+            bool transparent = GameMaterial.IsSightTransparent(hit.Material);
+            if (!transparent || step == SightSkipLimit)
             {
-                return false;
+                // The traversal budget is a safety bound, not evidence that the remainder is clear: past
+                // it, whatever the cast reports is cover.
+                if (hit.Kind == WorldTraceHitKind.Terrain || segmentLength <= 0d)
+                {
+                    return false;
+                }
+
+                return (travelled + hit.Distance) / segmentLength >= objectTolerance;
             }
 
-            Vector3d ray = new(to.X - origin.X, to.Y - origin.Y, to.Z - origin.Z);
-            double length = Math.Sqrt((ray.X * ray.X) + (ray.Y * ray.Y) + (ray.Z * ray.Z));
+            double remaining = segmentLength - travelled;
             double advance = hit.Distance + SightSkipEpsilonUnits;
-            if (length <= 0d || advance >= length)
+            if (advance >= remaining)
             {
                 return true;
             }
 
-            double fraction = advance / length;
-            origin = new(
-                origin.X + (ray.X * fraction),
-                origin.Y + (ray.Y * fraction),
-                origin.Z + (ray.Z * fraction));
+            travelled += advance;
+            double fraction = travelled / segmentLength;
+            origin = new(from.X + (segment.X * fraction), from.Y + (segment.Y * fraction), from.Z + (segment.Z * fraction));
         }
 
-        // The traversal budget is a safety bound, not evidence that the remainder is clear. One
-        // final query distinguishes a genuinely clear remainder from a wall, but does not step
-        // through a ninth transparent layer.
-        return !cast(origin, to, out _);
+        return true;
     }
 
     /// <summary>Gets or sets the active authored cutscene transform source.</summary>
@@ -1379,7 +1419,7 @@ public sealed class SoldierRenderer : IDisposable
     /// bound to the one its own <c>HumanAI</c>'s <c>Graph ID</c> names; one that names a graph the level
     /// does not ship gets no brain rather than being routed over somebody else's node ids.
     /// </param>
-    /// <param name="sight">The world cast used for line of sight, or <see langword="null"/> to see through walls.</param>
+    /// <param name="sight">The world trace used for line of sight, or <see langword="null"/> to see through walls.</param>
     /// <param name="scripts">Where the archetype behaviour script is read from, or <see langword="null"/> for none.</param>
     /// <param name="natives">The registry the behaviour script resolves its AI natives against.</param>
     /// <param name="levelRoot">
@@ -1399,7 +1439,7 @@ public sealed class SoldierRenderer : IDisposable
     /// </remarks>
     public int Animate(
         IReadOnlyDictionary<int, GraphFile> graphs,
-        WorldRayCast? sight = null,
+        WorldTraceCast? sight = null,
         ResourceRegistry? scripts = null,
         NativeRegistry? natives = null,
         GameTask? levelRoot = null,
@@ -1410,7 +1450,7 @@ public sealed class SoldierRenderer : IDisposable
         ArgumentNullException.ThrowIfNull(graphs);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        _sight = sight;
+        _sight = sight is null ? null : WorldTrace.AsRayCast(sight, WorldTraceMask.World);
         _brains.Clear();
         _brainsByRuntimeId.Clear();
         _guardGenerators.Clear();
@@ -1558,7 +1598,7 @@ public sealed class SoldierRenderer : IDisposable
                     // blind to a player immediately outside, even though the remainder of the ray was clear.
                     // Step past retail Glass/Water/Fence/Ladder faces, while an ordinary wall or physical
                     // closed-door leaf remains cover.
-                    brain.SetLineOfSight((from, to) => HasLineOfSight(sight, from, to));
+                    brain.SetLineOfSight((from, to) => HasLineOfSight(sight, from, to, AiSoldier.SightObstructionTolerance));
                 }
 
                 // Which script this soldier runs: its own MISSION:AI/<taskid>.qvm when the level ships one,
@@ -2144,7 +2184,6 @@ public sealed class SoldierRenderer : IDisposable
     public void NotifyGunshot(Vector3d origin, double range, SoldierView? except = null)
     {
         int heard = 0;
-        List<AiSoldier> listeners = [];
         foreach ((SoldierView view, AiSoldier brain) in _brains)
         {
             if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
@@ -2156,41 +2195,16 @@ public sealed class SoldierRenderer : IDisposable
                 continue;
             }
 
-            // A player-team NPC's round is player-origin for the listener's team gate. An opposing
-            // NPC's round remains AI-origin, so a friendly can react to nearby hostile gunfire.
-            bool fromPlayerTeam = except is null || except.Soldier.Team == _playerTeam;
-            if (brain.HearGunshot(origin, range, fromPlayer: fromPlayerTeam))
+            // The record carries the shooter's side (the player's, when nobody is excepted), and a
+            // listener on that side does not admit it.
+            int shooterTeam = except?.Soldier.Team ?? _playerTeam;
+            if (brain.HearGunshot(origin, range, fromSameSide: shooterTeam == view.Soldier.Team))
             {
                 heard++;
-                listeners.Add(brain);
             }
-        }
-
-        HashSet<AiSoldier> directlyHeard = [.. listeners];
-        foreach (AiSoldier listener in listeners)
-        {
-            NotifySquadmates(listener, directlyHeard);
         }
 
         ReportNoise("gunshot", heard, range);
-    }
-
-    /// <summary>Propagates a combat stimulus through the existing nearby-guard alert event.</summary>
-    private void NotifySquadmates(AiSoldier source, HashSet<AiSoldier>? alreadyNotified = null)
-    {
-        foreach ((SoldierView view, AiSoldier neighbour) in _brains)
-        {
-            if (!ConditionalContainerGate.IsTaskActive(view.Soldier)
-                || ReferenceEquals(neighbour, source)
-                || alreadyNotified?.Contains(neighbour) == true
-                || neighbour.Alerted
-                || neighbour.Events.PendingCount(AiEvent.Alert) > 0)
-            {
-                continue;
-            }
-
-            neighbour.ReceiveAlert(source.Position, source.RuntimeId);
-        }
     }
 
     /// <summary>Delivers IGI1's type-21 explosion alert to every active soldier in the blast envelope.</summary>
@@ -3613,14 +3627,16 @@ public sealed class SoldierRenderer : IDisposable
                 _lastDetectionShoutTick = _tick;
             }
 
-            // An engaged guard pulls in the guards beside it: every 20 ticks it posts AIEVENT_ALERT
-            // with a 6.875 m reach (sub_48A920's %20 counter -> sub_48AB10, radius 28160). This is how
-            // one guard's fight wakes the room even before anybody fires.
-            if (brain.Activity == AiSoldierActivity.Engaging && _tick % AiSoldier.AlertPingPeriodTicks == 0)
+            // An engaged guard pulls in the guards beside it: AIEVENT_ALERT with a 7 m reach and filter
+            // 0x26, so only its own side admits it (sub_48A920 -> sub_48AB10). This is how one guard's
+            // fight wakes the room even before anybody fires.
+            if (brain.AlertPingDueThisTick)
             {
-                foreach (AiSoldier neighbour in _brains.Values)
+                foreach ((SoldierView neighbourView, AiSoldier neighbour) in _brains)
                 {
-                    if (!ReferenceEquals(neighbour, brain))
+                    if (!ReferenceEquals(neighbour, brain)
+                        && neighbourView.Soldier.Team == view.Soldier.Team
+                        && ConditionalContainerGate.IsTaskActive(neighbourView.Soldier))
                     {
                         neighbour.ReceiveAlert(brain.Position, brain.RuntimeId);
                     }
@@ -5479,18 +5495,12 @@ public sealed class SoldierRenderer : IDisposable
                 if (health.IsDead)
                 {
                     HumanHit hit = new(feet, distance, ExplosionDamage.Zone, 0f, 0f);
-                    if (brain?.ReceiveDamage(position) == true)
-                    {
-                        NotifySquadmates(brain);
-                    }
+                    brain?.ReceiveDamage(position);
                     Die(soldier, hit, position, feet, WeaponCategory.Grenade);
                 }
                 else
                 {
-                    if (brain?.ReceiveDamage(position) == true)
-                    {
-                        NotifySquadmates(brain);
-                    }
+                    brain?.ReceiveDamage(position);
                     ReportHitSound(soldier);
                 }
             }
@@ -5831,25 +5841,24 @@ public sealed class SoldierRenderer : IDisposable
 
             if (struck.IsDead && struckView is not null)
             {
-                if (brain?.ReceiveDamage(origin) == true)
-                {
-                    NotifySquadmates(brain);
-                }
+                brain?.ReceiveDamage(origin);
                 Die(struckView, hit, origin, end, category);
             }
             else
             {
-                if (brain?.ReceiveDamage(origin) == true)
-                {
-                    NotifySquadmates(brain);
-                }
+                brain?.ReceiveDamage(origin);
 
                 // The grunt. 0x4553E0 plays it on the branch where the hit was NOT fatal -- a killing
                 // round goes to the death state, which has its own cry -- and 0x4637C0 rate-limits it
                 // per human, or a soldier caught in a burst would grunt on every round that landed.
+                // 0x45D3C0 adds the blade's own sound when the weapon's category is the knife.
                 if (struckView is not null)
                 {
                     ReportHitSound(struckView);
+                    if (category == WeaponCategory.Knife)
+                    {
+                        _scriptSound?.Invoke(KnifeStabSound, struckView.Position, true);
+                    }
                 }
             }
         }

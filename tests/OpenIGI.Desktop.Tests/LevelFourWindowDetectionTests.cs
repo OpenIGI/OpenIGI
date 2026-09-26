@@ -115,7 +115,7 @@ public sealed class LevelFourWindowDetectionTests
             Assert.True(renderer.Load(mission, root) > 0);
             Assert.True(renderer.Animate(
                 new Dictionary<int, GraphFile>(),
-                sight: SoldierRenderer.AiSightCast(world),
+                sight: world,
                 scripts: resources,
                 natives: loop.Natives,
                 levelRoot: root,

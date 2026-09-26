@@ -1252,7 +1252,7 @@ public sealed class SoldierRendererHitscanTests
         }
         Assert.True(renderer.Animate(
             graphs,
-            solids.Caster(),
+            solids.Tracer(),
             resources,
             loop.Natives,
             root,

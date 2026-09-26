@@ -71,22 +71,20 @@ public sealed class AiSoldier
     private bool _pendingRanDuringDispatch;
 
     /// <summary>
-    /// The late-contact threshold read by retail's native sight query.
+    /// The fraction of the eye-to-mark segment beyond which an object contact no longer hides the target —
+    /// <c>0x489B20</c>'s <c>fraction &gt;= 0.79000002</c>.
     /// </summary>
     /// <remarks>
-    /// Retail <c>0x489B20</c> is a real five-block function in both Ghidra and radare2. After
-    /// its world query it accepts a clear result or a hit parameter at least as large as the
-    /// float stored at <c>0x534230</c>, whose retail value is <c>0.790000021</c>. Replacing that
-    /// threshold with 1.0 changes that native query. The port's current sight cast excludes human
-    /// hulls, however, so this value must not be applied to its world-only contacts: doing so makes
-    /// solid cover in the final 21% of the segment transparent. Keep the recovered value as evidence
-    /// until the port can identify the target-human contact separately.
+    /// Terrain always blocks (<c>0x4CE410</c> forces its fraction to zero). An object — a crate, a wall, a
+    /// building, most of what the levels are made of — hides the target only when it is nearer than this,
+    /// so cover pressed up against the target leaves it visible.
     /// </remarks>
     public const double SightObstructionTolerance = 0.79000002;
 
     /// <summary>
     /// How far above its feet a standing human reports itself to detection — the Z offset the descriptor
-    /// handler adds in <c>sub_465820</c> (0.7 m; the exact stored double, bits <c>0x40A66666E1400014</c>).
+    /// handler adds in <c>sub_465820</c>: 2826.24 units (0.69 m), stored as the dwords <c>0xE147AE14</c> and
+    /// <c>0x40A6147A</c>.
     /// </summary>
     /// <remarks>
     /// Vision does <b>not</b> test the target's eye. The candidate describes itself for the sweep
@@ -95,11 +93,14 @@ public sealed class AiSoldier
     /// player whose head cleared a sill while retail's waist-height mark stayed hidden.
     /// </remarks>
     public static readonly double DetectionRaiseStandingInUnits =
-        BitConverter.Int64BitsToDouble(0x40A66666E1400014);
+        BitConverter.Int64BitsToDouble(0x40A6147AE147AE14);
 
-    /// <summary>The crouched raise — <c>sub_465820</c>'s other constant, 1305.6 units (0.319 m).</summary>
+    /// <summary>
+    /// The crouched raise — <c>sub_465820</c>'s other constant, 1433.6 units (0.35 m), the dwords
+    /// <c>0x66666666</c> and <c>0x40966666</c>.
+    /// </summary>
     public static readonly double DetectionRaiseCrouchedInUnits =
-        BitConverter.Int64BitsToDouble(0x4094666666666666);
+        BitConverter.Int64BitsToDouble(0x4096666666666666);
 
     /// <summary>Tests whether the line between two world points is clear enough to see along.</summary>
     /// <param name="from">The eye.</param>
@@ -438,7 +439,6 @@ public sealed class AiSoldier
     private int _currentEventSource;
     private Vector3d? _playerEventSourcePosition;
     private Action<int>? _responseRouter;
-    private bool _combatPerceptionAlert;
 
     /// <summary>Gets or sets the renderer-local identity stored in inter-soldier event source fields.</summary>
     public int RuntimeId { get; set; }
@@ -482,6 +482,16 @@ public sealed class AiSoldier
     // sub_48A920's arg-block byte +33: a visible player may produce one detection bark during this
     // combat action. The mission-wide 90-tick gate lives in SoldierRenderer, beside all other AIs.
     private bool _detectionShoutDone;
+
+    // Whether this tick's fed enemy is another soldier rather than the player.
+    private bool _enemyIsSoldier;
+
+    // sub_48A920's squad-ping counter, argBlock+28 of the running combat action.
+    private int _alertPingCounter;
+
+    /// <summary>Gets whether this tick's combat pinged the squad — <c>sub_48AB10</c> out of <c>sub_48A920</c>.</summary>
+    /// <remarks>The renderer delivers it to this soldier's own side within <see cref="AlertPingRadiusInUnits"/>.</remarks>
+    public bool AlertPingDueThisTick { get; private set; }
 
     /// <summary>Gets whether this tick reached IGI 1's once-per-engagement detection-shout site.</summary>
     public bool DetectionShoutRequestedThisTick { get; private set; }
@@ -653,29 +663,31 @@ public sealed class AiSoldier
         => HearGunshot(
             shotPosition,
             silenced ? AiScriptApi.SilencedGunshotRange : AiScriptApi.GunshotRange,
-            fromPlayer: true);
+            fromSameSide: !PlayerIsEnemy);
 
     /// <summary>Delivers a gunshot using the weapon record's exact AI detection range.</summary>
     /// <param name="shotPosition">Where the round was fired.</param>
     /// <param name="range">The weapon's <c>AI Detection Range</c>, in engine units.</param>
     /// <returns><see langword="true"/> when a gunshot event was posted.</returns>
     public bool HearGunshot(Vector3d shotPosition, double range)
-        => HearGunshot(shotPosition, range, fromPlayer: true);
+        => HearGunshot(shotPosition, range, fromSameSide: !PlayerIsEnemy);
 
     /// <summary>
-    /// Delivers a gunshot using the weapon record's exact AI detection range, distinguishing who fired it.
+    /// Delivers a gunshot using the weapon record's exact AI detection range, knowing whose side fired it.
     /// </summary>
     /// <param name="shotPosition">Where the round was fired.</param>
     /// <param name="range">The weapon's <c>AI Detection Range</c>, in engine units.</param>
-    /// <param name="fromPlayer">
-    /// Whether the player fired the round. A friendly (non-enemy) soldier is deaf to the player's own shots
-    /// — they share the player's side — but must still hear a hostile AI soldier firing, so this gate applies
-    /// only to player-origin gunshots.
-    /// </param>
+    /// <param name="fromSameSide">Whether the shooter is on this soldier's own side.</param>
     /// <returns><see langword="true"/> when a gunshot event was posted.</returns>
-    public bool HearGunshot(Vector3d shotPosition, double range, bool fromPlayer)
+    /// <remarks>
+    /// The weapon's fire handler (<c>0x479780</c>) posts the record with the shooter's side and filter
+    /// <c>0x46</c>, and admission (<c>0x450110</c>) rejects a record whose side is the listener's own under
+    /// bit <c>0x40</c>. So nobody hears their own side firing: a guard does not come running because a
+    /// teammate opened up, and a friendly does not react to the player's shots.
+    /// </remarks>
+    public bool HearGunshot(Vector3d shotPosition, double range, bool fromSameSide)
     {
-        if (Activity == AiSoldierActivity.Dead || (fromPlayer && !PlayerIsEnemy))
+        if (Activity == AiSoldierActivity.Dead || fromSameSide)
         {
             return false;
         }
@@ -698,20 +710,29 @@ public sealed class AiSoldier
 
         LastEventDistance = distance;
         _playerEventSourcePosition = shotPosition;
-        _combatPerceptionAlert = true;
 
-        // Hearing refreshes the guard's belief with the target's true position: sub_48A920's
-        // else-branch runs sub_451380 over the shared record (+272) whenever the tick drained hearing
-        // or alert events even though the slot is not visible. This must also run for the first shot an
-        // idle guard hears; otherwise SetCombat starts it fighting the zero vector.
-        if (_enemyKnown)
-        {
-            _lastSeenFeet = _enemyFeet;
-            SetTarget(_defaultTarget);
-            Target?.Refresh(_lastSeenFeet);
-        }
+        RefreshBelievedTarget();
 
         return true;
+    }
+
+    /// <summary>Points the target record at where the target really is, after an admitted stimulus.</summary>
+    /// <remarks>
+    /// <c>sub_48A920</c> runs <c>sub_451380</c> over the shared record whenever the tick drained one of
+    /// ALERT, WALK, GROUNDIMPACT, DOOR, FENCE, LADDER, TAKINGDAMAGE, GUNSHOT, GRENADELAND or GUNSHOTMISS,
+    /// even though the target is not in sight. EXPLOSION is not among them. It also has to run for the
+    /// first stimulus an idle guard receives, or SetCombat starts it fighting the zero vector.
+    /// </remarks>
+    private void RefreshBelievedTarget()
+    {
+        if (!_enemyKnown)
+        {
+            return;
+        }
+
+        _lastSeenFeet = _enemyFeet;
+        SetTarget(_defaultTarget);
+        Target?.Refresh(_lastSeenFeet);
     }
 
     /// <summary>Delivers the native type-21 explosion event when the blast reaches this soldier.</summary>
@@ -740,12 +761,6 @@ public sealed class AiSoldier
 
         LastEventDistance = distance;
         _playerEventSourcePosition = explosionPosition;
-        if (_enemyKnown)
-        {
-            _lastSeenFeet = _enemyFeet;
-            SetTarget(_defaultTarget);
-            Target?.Refresh(_lastSeenFeet);
-        }
 
         return Events.Post(
             new AiEventRecord(
@@ -791,12 +806,7 @@ public sealed class AiSoldier
 
         LastEventDistance = distance;
         _playerEventSourcePosition = shooterPosition;
-        if (_enemyKnown)
-        {
-            _lastSeenFeet = _enemyFeet;
-            SetTarget(_defaultTarget);
-            Target?.Refresh(_lastSeenFeet);
-        }
+        RefreshBelievedTarget();
 
         // -1 is the renderer's player-originator sentinel. The event position is the actual nearest point
         // on the round, while BeginFallFlat resolves the source separately to the player's live position.
@@ -843,12 +853,7 @@ public sealed class AiSoldier
 
         LastEventDistance = distance;
         _playerEventSourcePosition = shooterPosition;
-        if (_enemyKnown)
-        {
-            _lastSeenFeet = _enemyFeet;
-            SetTarget(_defaultTarget);
-            Target?.Refresh(_lastSeenFeet);
-        }
+        RefreshBelievedTarget();
 
         Events.Post(
             new AiEventRecord(
@@ -893,12 +898,7 @@ public sealed class AiSoldier
 
         LastEventDistance = distance;
         _playerEventSourcePosition = walkerPosition;
-        if (_enemyKnown)
-        {
-            _lastSeenFeet = _enemyFeet;
-            SetTarget(_defaultTarget);
-            Target?.Refresh(_lastSeenFeet);
-        }
+        RefreshBelievedTarget();
 
         Events.Post(
             new AiEventRecord(
@@ -969,7 +969,7 @@ public sealed class AiSoldier
 
         LastEventDistance = distance;
         _playerEventSourcePosition = grenadePosition;
-        return Events.Post(
+        bool posted = Events.Post(
             new AiEventRecord(
                 AiEvent.GrenadeLand,
                 -1,
@@ -980,6 +980,12 @@ public sealed class AiSoldier
                 0),
             owner: RuntimeId,
             worldTests: null);
+        if (posted)
+        {
+            RefreshBelievedTarget();
+        }
+
+        return posted;
     }
 
     /// <summary>The native flashbang AI event radius: ten metres, or 40960 engine units.</summary>
@@ -1049,12 +1055,12 @@ public sealed class AiSoldier
 
         LastEventDistance = Distance(Position, attackerPosition);
         _playerEventSourcePosition = attackerPosition;
-        _combatPerceptionAlert = true;
+        RefreshBelievedTarget();
         return true;
     }
 
-    /// <summary>The alert ping's reach — 28160 units, 6.875 m (<c>sub_48AB10</c>'s radius, float bits <c>1189085184</c>).</summary>
-    public const double AlertPingRadiusInUnits = 28160.0;
+    /// <summary>The alert ping's reach — 28672 units, 7 m (<c>sub_48AB10</c> pushes float bits <c>0x46E00000</c>).</summary>
+    public const double AlertPingRadiusInUnits = 28672.0;
 
     /// <summary>How often an engaged guard pings — every 20 ticks (<c>sub_48A920</c>'s <c>% 20</c> counter).</summary>
     public const int AlertPingPeriodTicks = 20;
@@ -1064,18 +1070,14 @@ public sealed class AiSoldier
     /// <param name="source">The alerting guard's runtime task identity, used by <c>SendResponse</c>.</param>
     /// <returns><see langword="false"/> when out of the ping's reach or dead.</returns>
     /// <remarks>
-    /// The record: type 5 (<c>ALERT</c>), filter mask 38, radius 6.875 m, source = the alerting guard,
-    /// subject = the target it is fighting. The distance gate is applied here, the way
-    /// <see cref="HearGunshot(Vector3d, bool)"/> applies its own.
+    /// The record: type 5 (<c>ALERT</c>), filter mask <c>0x26</c> (in range, a human subject, the same side),
+    /// radius 7 m, source = the alerting guard, subject = the target it is fighting. Admission has no other
+    /// gate: an already-alert guard, or one with an alert queued, still takes the record. The side test is
+    /// the caller's, which knows both teams; the distance gate is applied here.
     /// </remarks>
     public bool ReceiveAlert(Vector3d alerterPosition, int source = 0)
     {
         if (Activity == AiSoldierActivity.Dead)
-        {
-            return false;
-        }
-
-        if (Alerted || Events.PendingCount(AiEvent.Alert) > 0)
         {
             return false;
         }
@@ -1098,17 +1100,11 @@ public sealed class AiSoldier
         }
 
         LastEventDistance = distance;
-        _combatPerceptionAlert = true;
 
         // The same target refresh arm handles both hearing and squad alert records. A nearby guard that
         // has never seen Jones therefore inherits the fighting guard's target record and turns on the
         // squad's current player position instead of world origin.
-        if (_enemyKnown)
-        {
-            _lastSeenFeet = _enemyFeet;
-            SetTarget(_defaultTarget);
-            Target?.Refresh(_lastSeenFeet);
-        }
+        RefreshBelievedTarget();
 
         return true;
     }
@@ -1921,6 +1917,8 @@ public sealed class AiSoldier
         _lastTick = tick;
         _rawInputWrites.Clear();
         DetectionShoutRequestedThisTick = false;
+        AlertPingDueThisTick = false;
+        _enemyIsSoldier = enemyIsSoldier;
 
         // A scripted one-shot clip releases the animation slot the moment the renderer says it ended,
         // so the soldier goes back to whatever its activity plays. Staged cutscene actors are exempt:
@@ -1967,9 +1965,6 @@ public sealed class AiSoldier
             Events.Post(AiEventRecord.Simple(AiEvent.Create), owner: 0, worldTests: null);
             RunScript();
         }
-
-        bool alert = alarmOn || _combatPerceptionAlert;
-        _combatPerceptionAlert = false;
 
         // The detection cascade in order: the phase gate, then the cone, then the line-of-sight cast behind
         // it -- the expensive test is never paid for someone outside the cone (ai.md 5.1).
@@ -2030,7 +2025,6 @@ public sealed class AiSoldier
 
         if (_playerSlot.IsVisible)
         {
-            alert = true;
             LastEventDistance = _playerSlot.Distance;
             _lastSeenFeet = _enemyFeet;
             SetTarget(_defaultTarget);
@@ -2047,8 +2041,12 @@ public sealed class AiSoldier
             Events.Post(AiEventRecord.Simple(AiEvent.AlarmOff), owner: 0, worldTests: null);
         }
 
-        // The alert latch is recomputed from scratch every tick, from those two causes only (ai.md 3.1).
-        Alerted = alert;
+        // 0x44F410 recomputes the alert latch from scratch every tick from two causes only: the alarm, or a
+        // combat record (+15016) whose target the detection scan still registers (0x489BE0 tests the slot's
+        // registered byte, not its visibility). Hearing, damage and alerts do not set it, and a fighting
+        // guard that loses sight keeps the alarm view length for as long as its target lives.
+        Alerted = alarmOn
+            || (Activity == AiSoldierActivity.Engaging && Target is not null && _playerSlot.IsRegistered);
 
         if (_playerSlot.IsVisible)
         {
@@ -3188,6 +3186,7 @@ public sealed class AiSoldier
             _gunnerCombat?.Begin();
             Body.Reset();
             _detectionShoutDone = false;
+            _alertPingCounter = 0;
 
             // The arm installer (0x48ABA0) picks the sub-arm from the BODY: crouched -> the kneel arm
             // (0x48C250/0x48C280), prone -> the prone arm. A patrol crouch-walking its route when
@@ -3223,12 +3222,23 @@ public sealed class AiSoldier
         _movingInCombat = false;
         _rawInputWrites.Clear();
 
-        // sub_48A920: only a currently visible player reaches the bark; the per-action latch is set
-        // even when another AI used the shared 90-tick sound gate, so this engagement never retries.
-        if (_playerSlot.IsVisible && !_detectionShoutDone)
+        // sub_48A920: the bark needs a visible target whose class is HumanPlayer (word_5385B0), tested before
+        // the per-action latch -- so a soldier fighting an NPC neither shouts nor spends its one bark, and
+        // still challenges the player when it turns on him. The latch is set even when another AI holds
+        // the shared 90-tick sound gate, so this engagement never retries.
+        if (_playerSlot.IsVisible && !_enemyIsSoldier && !_detectionShoutDone)
         {
             DetectionShoutRequestedThisTick = true;
             _detectionShoutDone = true;
+        }
+
+        // sub_48A920 pings the squad on the engagement's first tick with a valid target and every 20th
+        // after, counting in the combat action's own block -- not on a mission-wide tick -- and only
+        // while the detection scan still registers the target.
+        if (_playerSlot.IsRegistered)
+        {
+            AlertPingDueThisTick = _alertPingCounter == 0;
+            _alertPingCounter = (_alertPingCounter + 1) % AlertPingPeriodTicks;
         }
 
         // The shared record's position is refreshed only WHILE THE TARGET IS SEEN (sub_48A920 reads it

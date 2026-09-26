@@ -114,6 +114,23 @@ public sealed class HumanDamageFlash
         }
     }
 
+    /// <summary>Applies the flash a close-combat blow writes — each corner from its own draw.</summary>
+    /// <param name="topLeft">The random draw for the top-left corner.</param>
+    /// <param name="topRight">The random draw for the top-right corner.</param>
+    /// <param name="bottomRight">The random draw for the bottom-right corner.</param>
+    /// <param name="bottomLeft">The random draw for the bottom-left corner.</param>
+    /// <remarks>
+    /// The player's blunt-hit handler (<c>0x412CE0</c>) has no direction to map: it writes
+    /// <c>(rand + 1) * 0.4</c> into each of the four floats at <c>+3532</c> in turn, so every corner lands
+    /// somewhere in the ordinary hit range independently of the others.
+    /// </remarks>
+    public void HitEveryCorner(float topLeft, float topRight, float bottomRight, float bottomLeft) =>
+        SetCorners(
+            RetailIntensity(topLeft),
+            RetailIntensity(topRight),
+            RetailIntensity(bottomRight),
+            RetailIntensity(bottomLeft));
+
     /// <summary>Converts a retail random draw into its damage-flash alpha.</summary>
     public static float RetailIntensity(float randomUnit) =>
         MinimumHitIntensity + (Math.Clamp(randomUnit, 0f, 1f) * HitIntensityRange);

@@ -60,17 +60,29 @@ public sealed class AiTeamGatingTests
 
     /// <summary>
     /// A same-team soldier is deaf to the PLAYER's gunshot (see above), but must still hear a hostile AI
-    /// soldier firing nearby — it is on the player's side, not on the hostile soldier's. The origin gate
-    /// therefore applies only to player-origin rounds; an AI-origin shot is delivered to every live soldier in
-    /// earshot so a friendly can react to hostile gunfire.
+    /// soldier firing nearby — it is on the player's side, not on the hostile soldier's. Admission
+    /// (<c>0x450110</c>) compares the record's side with the listener's, not the shooter's identity.
     /// </summary>
     [RequiresGameDataFact]
     public void ASameTeamSoldierHearsHostileAiGunfire()
     {
         AiSoldier friendly = Soldier(out Vector3d position, playerIsEnemy: false);
 
-        Assert.True(friendly.HearGunshot(Away(position, 5 * Metre), AiScriptApi.GunshotRange, fromPlayer: false));
+        Assert.True(friendly.HearGunshot(Away(position, 5 * Metre), AiScriptApi.GunshotRange, fromSameSide: false));
         Assert.True(friendly.Events.PendingCount(AiEvent.Gunshot) > 0);
+    }
+
+    /// <summary>
+    /// Nobody hears their own side firing: bit <c>0x40</c> of the gunshot's filter rejects a record whose
+    /// side is the listener's, so a guard does not come running because a teammate opened up.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void ASoldierDoesNotHearItsOwnSideFiring()
+    {
+        AiSoldier guard = Soldier(out Vector3d position, playerIsEnemy: true);
+
+        Assert.False(guard.HearGunshot(Away(position, 5 * Metre), AiScriptApi.GunshotRange, fromSameSide: true));
+        Assert.Equal(0, guard.Events.PendingCount(AiEvent.Gunshot));
     }
 
     /// <summary>
