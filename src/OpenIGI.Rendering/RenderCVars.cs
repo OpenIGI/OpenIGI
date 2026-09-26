@@ -1538,24 +1538,24 @@ public static class RenderCVars
     /// is what keeps a night without a moon from being black, and it brightens towards the horizon, where
     /// the eye looks through more of the glowing layer. Nought turns it off.
     /// <para>
-    /// On for every preset but vanilla. Once the exposure meters the whole frame, the night is metered
-    /// off the sky and the ground together, and without the glow a clear night had almost nothing in it
-    /// to meter: a black frame with stars. The glow is the moonless night's own light, so it is what
-    /// that frame should be showing.
+    /// On for every preset, faintly. Once the exposure meters the whole frame, the night is metered off
+    /// the sky and the ground together, and without the glow a clear night had almost nothing in it to
+    /// meter: a black frame with stars. The glow is the moonless night's own light, so it is what that
+    /// frame should be showing -- at 0.0005, a dark night; 0.004 reads as a bright one.
     /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> NightAirglow = Presets.Define(
         CVar.Float(
             "r_night_airglow",
-            0f,
+            0.0005f,
             0f,
             1f,
             CVarOptions.Archive,
             "The night sky's own faint glow, which lights a moonless night. 0 is off."),
-        vanilla: "0",
-        enhanced: "0.004",
-        high: "0.004",
-        ultra: "0.004");
+        vanilla: "0.0005",
+        enhanced: "0.0005",
+        high: "0.0005",
+        ultra: "0.0005");
 
     /// <summary>Whether the night sky draws its stars, the galaxy and the moon's disc.</summary>
     public static readonly BoolCVar Stars = Presets.Define(
@@ -1569,7 +1569,7 @@ public static class RenderCVars
         high: "1",
         ultra: "1");
 
-    /// <summary>How strongly the moon lights the world, against the cycle's own moon; 0.2 by default.</summary>
+    /// <summary>How strongly the moon lights the world, against the cycle's own moon; 0.1 by default.</summary>
     /// <remarks>
     /// Scales the moon's light -- what throws moon shadows and lights the ground -- and with it the
     /// moonlit sky, which is scattered from the same moon, as a dimmer moon makes a darker sky. The disc
@@ -1579,15 +1579,15 @@ public static class RenderCVars
     public static readonly NumericCVar<float> Moonlight = Presets.Define(
         CVar.Float(
             "r_moonlight",
-            0.2f,
+            0.1f,
             0f,
             4f,
             CVarOptions.Archive,
             "How strongly the moon lights the world; 0 leaves only the night sky's fill."),
-        vanilla: "0.2",
-        enhanced: "0.2",
-        high: "0.2",
-        ultra: "0.2");
+        vanilla: "0.1",
+        enhanced: "0.1",
+        high: "0.1",
+        ultra: "0.1");
 
     /// <summary>How bright the moon's disc and halo are drawn in a night sky; one is the default.</summary>
     /// <remarks>
