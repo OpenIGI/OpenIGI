@@ -46,7 +46,10 @@ public sealed class GraphicsDeviceTests
         Assert.Contains("r_dof", device.Capabilities.UnimplementedSettings);
         Assert.Contains("r_generate_mipmaps", device.Capabilities.UnimplementedSettings);
         Assert.Contains("r_camera_taps", device.Capabilities.UnimplementedSettings);
-        Assert.Contains("r_gi", device.Capabilities.UnimplementedSettings);
+
+        // The baked probe field and the material detail maps are carried, so neither is named.
+        Assert.DoesNotContain("r_gi", device.Capabilities.UnimplementedSettings);
+        Assert.DoesNotContain("r_material_detail", device.Capabilities.UnimplementedSettings);
     }
 
     [Fact]
