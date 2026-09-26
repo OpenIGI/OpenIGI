@@ -71,14 +71,17 @@ float2 ImageUv(float4 clip)
     return float2((ndc.x * 0.5) + 0.5, (-ndc.y * 0.5) + 0.5);
 }
 
+// Four channels, of which the target keeps the first two. A backend that cannot write the velocity's
+// two-channel format as storage widens it to four, and a fragment stage must answer every channel its
+// target has; the pipeline's write mask keeps the other two out of the image wherever they arrive.
 [shader("fragment")]
-float2 fragmentMain(Varyings input) : SV_Target
+float4 fragmentMain(Varyings input) : SV_Target
 {
     // Behind the previous camera: it had no screen position to have moved from.
     if (input.previousClip.w < 1e-3)
     {
-        return float2(0.0, 0.0);
+        return float4(0.0, 0.0, 0.0, 0.0);
     }
 
-    return ImageUv(input.currentClip) - ImageUv(input.previousClip);
+    return float4(ImageUv(input.currentClip) - ImageUv(input.previousClip), 0.0, 0.0);
 }

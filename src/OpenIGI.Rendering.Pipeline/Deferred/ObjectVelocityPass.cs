@@ -79,9 +79,11 @@ internal sealed class ObjectVelocityPass : IDisposable
     // a rounding difference between the two rasterisations.
     private const float DepthBias = 4f;
 
+    private readonly IRhiDevice _device;
+    private readonly ShaderReflection _reflection;
     private readonly IRhiShaderModule _module;
     private readonly IRhiPipelineLayout _layout;
-    private readonly IRhiRenderPipeline _pipeline;
+    private readonly Dictionary<RhiTextureFormat, IRhiRenderPipeline> _pipelines = [];
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="ObjectVelocityPass"/> class.</summary>
@@ -90,7 +92,8 @@ internal sealed class ObjectVelocityPass : IDisposable
     {
         ArgumentNullException.ThrowIfNull(device);
 
-        ShaderReflection reflection = ShaderCatalog.GetReflection(ShaderModuleId.ObjectVelocity);
+        _device = device;
+        _reflection = ShaderCatalog.GetReflection(ShaderModuleId.ObjectVelocity);
         _module = device.CreateShaderModule(
             new RhiShaderModuleDescriptor(ShaderModuleId.ObjectVelocity, Label: "ObjectVelocity"));
         _layout = device.CreatePipelineLayout(new RhiPipelineLayoutDescriptor(
@@ -98,14 +101,29 @@ internal sealed class ObjectVelocityPass : IDisposable
             PushDataBytes,
             RhiShaderStages.Vertex | RhiShaderStages.Fragment,
             "ObjectVelocity"));
+    }
 
-        _pipeline = device.CreateRenderPipeline(new RhiRenderPipelineDescriptor(
+    /// <summary>The pipeline that draws into a velocity image of this format, built on first use.</summary>
+    /// <param name="velocity">The format the velocity image actually has.</param>
+    /// <remarks>
+    /// Taken from the image rather than from the target table: a backend that cannot write the table's
+    /// format as storage -- WebGPU, for a two-channel half float -- widens it, and a pipeline built for the
+    /// narrower format is one the pass refuses.
+    /// </remarks>
+    private IRhiRenderPipeline PipelineFor(RhiTextureFormat velocity)
+    {
+        if (_pipelines.TryGetValue(velocity, out IRhiRenderPipeline? existing))
+        {
+            return existing;
+        }
+
+        IRhiRenderPipeline pipeline = _device.CreateRenderPipeline(new RhiRenderPipelineDescriptor(
             _layout,
             new RhiShaderStage(
                 _module,
-                reflection.EntryPointFor(ShaderStage.Vertex).Name,
-                ShaderConstants.Declared(reflection, Mesh3DConstants.TargetConstants)),
-            new RhiShaderStage(_module, reflection.EntryPointFor(ShaderStage.Fragment).Name),
+                _reflection.EntryPointFor(ShaderStage.Vertex).Name,
+                ShaderConstants.Declared(_reflection, Mesh3DConstants.TargetConstants)),
+            new RhiShaderStage(_module, _reflection.EntryPointFor(ShaderStage.Fragment).Name),
 
             // Both frames' positions come from whole-pose streams; the rest of each vertex is stepped over.
             [
@@ -118,7 +136,7 @@ internal sealed class ObjectVelocityPass : IDisposable
                     RhiVertexStepMode.Vertex,
                     [new RhiVertexElement(1, RhiVertexFormat.Float32x3, 0)]),
             ],
-            [new RhiColorTargetState(SceneTargetSet.FormatOf(SceneTargetId.Velocity), null, RhiColorWrite.Red | RhiColorWrite.Green)],
+            [new RhiColorTargetState(velocity, null, RhiColorWrite.Red | RhiColorWrite.Green)],
             new RhiDepthStencilState(
                 SceneTargetSet.FormatOf(SceneTargetId.Depth),
                 DepthWrite: false,
@@ -126,7 +144,10 @@ internal sealed class ObjectVelocityPass : IDisposable
                 DepthBiasConstant: DepthBias),
             new RhiPrimitiveState(RhiPrimitiveTopology.TriangleList, RhiCullMode.None),
             SampleCount: 1,
-            "ObjectVelocity"));
+            $"ObjectVelocity-{velocity}"));
+
+        _pipelines[velocity] = pipeline;
+        return pipeline;
     }
 
     /// <summary>Records the pass: one draw per moving mesh, over the velocity image.</summary>
@@ -155,7 +176,7 @@ internal sealed class ObjectVelocityPass : IDisposable
             timestamps,
             Label: "object-velocity"));
 
-        pass.SetPipeline(_pipeline);
+        pass.SetPipeline(PipelineFor(scene.View(SceneTargetId.Velocity).Texture.Format));
         pass.SetScissor(0, 0, scene.Width, scene.Height);
 
         Span<float> push = stackalloc float[PushDataBytes / sizeof(float)];
@@ -210,7 +231,13 @@ internal sealed class ObjectVelocityPass : IDisposable
         }
 
         _disposed = true;
-        _pipeline.Dispose();
+
+        foreach (IRhiRenderPipeline pipeline in _pipelines.Values)
+        {
+            pipeline.Dispose();
+        }
+
+        _pipelines.Clear();
         _layout.Dispose();
         _module.Dispose();
     }

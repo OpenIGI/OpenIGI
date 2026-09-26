@@ -82,11 +82,18 @@ public sealed unsafe class WebGpuCommandEncoder : IRhiCommandEncoder
 
             if (descriptor.DepthAttachment is { } attachment)
             {
+                // A read-only depth is neither loaded nor stored by the pass -- it is the image as it stands --
+                // and WebGPU refuses a pass that states either operation for one, as the browser bridge
+                // already knows.
                 depth = new WGPURenderPassDepthStencilAttachment
                 {
                     view = ((WebGpuTextureView)attachment.View).Handle,
-                    depthLoadOp = WebGpuTranslation.LoadOp(attachment.DepthLoad),
-                    depthStoreOp = WebGpuTranslation.StoreOp(attachment.DepthStore),
+                    depthLoadOp = attachment.DepthReadOnly
+                        ? WGPULoadOp.Undefined
+                        : WebGpuTranslation.LoadOp(attachment.DepthLoad),
+                    depthStoreOp = attachment.DepthReadOnly
+                        ? WGPUStoreOp.Undefined
+                        : WebGpuTranslation.StoreOp(attachment.DepthStore),
                     depthClearValue = attachment.DepthClearValue,
                     depthReadOnly = attachment.DepthReadOnly ? 1u : 0u,
                 };
