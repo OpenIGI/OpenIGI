@@ -244,6 +244,18 @@ public sealed class SecurityCameraRegistryTests
         Assert.Equal(SecurityCameraBeep.BodyDetected, camera.Beep);
     }
 
+    [RequiresGameDataFact]
+    public void EveryMissionOneLensMeasuresBlastsFromItsHeadModelsBound()
+    {
+        Fixture fixture = Build();
+
+        // The live game reports 1.0 x 2863.5869 for every intact 313_02_1 head: 0x4422F0 multiplies the
+        // lens's extent by 0x4D0950's MESH+0x78.
+        AlarmSpeaker[] cameras = [.. fixture.Speakers.Speakers.Where(speaker => speaker.AccumulatesDamage)];
+        Assert.Equal(5, cameras.Length);
+        Assert.All(cameras, camera => Assert.Equal(2863.5869f, camera.ExplosionContactRadiusUnits, 2));
+    }
+
     private static SecurityCameraSubject Soldier(Vector3d feet, bool alive) =>
         new(new object(), new Vector3d(feet.X, feet.Y, feet.Z + 2828.8), CamerasSide: true, alive);
 
@@ -266,7 +278,9 @@ public sealed class SecurityCameraRegistryTests
         registry.BindScene(scene.Placements);
         Assert.Equal(5, registry.Cameras.Count);
         Assert.Equal(2, registry.ControlCount);
-        return new Fixture(registry, loop.Variables);
+        AlarmSpeakerRegistry speakers = AlarmSpeakerRegistry.Build(root, loop.Variables);
+        speakers.BindScene(scene.Placements);
+        return new Fixture(registry, loop.Variables, speakers);
     }
 
     private static Vector3d TargetStraightAhead(SecurityCamera camera, double metres)
@@ -287,5 +301,8 @@ public sealed class SecurityCameraRegistryTests
         Assert.Equal(expected, value.Integer);
     }
 
-    private sealed record Fixture(SecurityCameraRegistry Registry, ScriptVarRegistry Variables);
+    private sealed record Fixture(
+        SecurityCameraRegistry Registry,
+        ScriptVarRegistry Variables,
+        AlarmSpeakerRegistry Speakers);
 }

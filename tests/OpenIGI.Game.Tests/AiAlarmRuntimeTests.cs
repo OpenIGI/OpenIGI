@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
@@ -121,6 +122,59 @@ public sealed class AiAlarmRuntimeTests
         Assert.True(destroyed.IsDestroyed);
         Assert.False(speakers.Speakers.Single(speaker => speaker.Task.Id == 13).IsDestroyed);
         Assert.Null(speakers.TryDestroy(left));
+    }
+
+    [Fact]
+    public void ACameraAddsUpItsRoundsAndBreaksOnlyAtHalfDamage()
+    {
+        (AlarmSpeakerRegistry speakers, GameTask camera) = OneCamera();
+
+        // Retail Mission 1, probed live: each round sends 0.2 to 0x4422B0, which adds it to the lens's
+        // +260 and explodes once that reaches the 0.5 at +264 -- 0.2, 0.4, then 0.6 on the third round.
+        Assert.Null(speakers.TryDestroy(camera, 0.2f));
+        Assert.Null(speakers.TryDestroy(camera, 0.2f));
+        AlarmSpeaker destroyed = Assert.IsType<AlarmSpeaker>(speakers.TryDestroy(camera, 0.2f));
+
+        Assert.True(destroyed.IsDestroyed);
+        Assert.Equal(0.6f, destroyed.Damage, 5);
+        Assert.Null(speakers.TryDestroy(camera, 0.2f));
+    }
+
+    [Fact]
+    public void ABlastAddsItsContactDoseToACameraMeasuredFromItsHead()
+    {
+        (AlarmSpeakerRegistry speakers, GameTask cameraTask) = OneCamera();
+        AlarmSpeaker camera = speakers.Speakers.Single();
+
+        // 0x4422F0 -> 0x416C90: past radius + contact radius the dose falls off linearly to zero.
+        const float Radius = 4096f;
+        const float Falloff = 4096f;
+        Vector3d halfway = camera.PositionUnits + new Vector3d(1f + Radius + (Falloff / 2), 0, 0);
+        Assert.Empty(speakers.ApplyExplosion(halfway, Radius, Falloff, damageFactor: 0.4f));
+        Assert.Equal(0.2f, camera.Damage, 5);
+        Assert.False(camera.IsDestroyed);
+
+        // Inside the radius the whole factor lands, and the sum now passes 0.5.
+        Assert.Same(camera, Assert.Single(speakers.ApplyExplosion(camera.PositionUnits, Radius, Falloff, 0.4f)));
+        Assert.True(speakers.IsDestroyed(cameraTask));
+    }
+
+    private static (AlarmSpeakerRegistry Speakers, GameTask Camera) OneCamera()
+    {
+        NativeRegistry natives = new();
+        TaskTypeRegistry types = new();
+        TaskTree tree = new(types);
+        ScriptVarRegistry variables = new(natives);
+        TaskScriptCommands commands = new(tree, variables);
+        commands.Register(natives);
+
+        QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call("Task_DeclareParameters", QvmExpression.Text("SCamera")),
+            QvmExpression.Call(
+                "Task_New", QvmExpression.Int(12), QvmExpression.Text("SCamera"), QvmExpression.Text("Lens"))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, natives).Run());
+
+        return (AlarmSpeakerRegistry.Build(tree.Root, variables), Assert.IsType<DeclaredTask>(tree.FromId(12)));
     }
 
     [Fact]

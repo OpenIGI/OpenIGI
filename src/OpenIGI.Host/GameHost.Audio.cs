@@ -1057,7 +1057,7 @@ internal sealed partial class GameHost
                 damageFactor: blast.DamageFactor);
 
             // A blast in reach of a speaker takes it off the wall too.
-            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits);
+            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
 
             ReachPlayerWithBlast(blast.Position, blast.RadiusUnits, blast.FalloffUnits);
             float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
@@ -1127,7 +1127,7 @@ internal sealed partial class GameHost
             radiusUnits: blast.RadiusUnits,
             falloffUnits: blast.FalloffUnits,
             damageFactor: blast.DamageFactor);
-        DamageAlarmSpeakers(blast.Position, blast.RadiusUnits);
+        DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
 
         ReachPlayerWithBlast(blast.Position, blast.RadiusUnits, blast.FalloffUnits);
         float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
@@ -1231,7 +1231,7 @@ internal sealed partial class GameHost
                 radiusUnits: blast.RadiusUnits,
                 falloffUnits: blast.FalloffUnits,
                 damageFactor: blast.DamageFactor);
-            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits);
+            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
 
             ReachPlayerWithBlast(blast.Position, blast.RadiusUnits, blast.FalloffUnits);
             float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
@@ -1309,7 +1309,7 @@ internal sealed partial class GameHost
             radiusUnits: parameters.ExplosionRadiusUnits,
             falloffUnits: parameters.ExplosionFalloffUnits,
             damageFactor: damageFactor);
-        DamageAlarmSpeakers(position, parameters.ExplosionRadiusUnits);
+        DamageAlarmSpeakers(position, parameters.ExplosionRadiusUnits, parameters.ExplosionFalloffUnits, damageFactor);
 
         if (_player is null)
         {
@@ -1358,18 +1358,25 @@ internal sealed partial class GameHost
             HandleDestructibleImpact(destructible, impactUnits);
         }
 
-        if (_alarmSpeakers?.TryDestroy(owner) is { } speaker)
+        if (_alarmSpeakers?.TryDestroy(owner, destructibleDamage) is { } speaker)
         {
             ShootOutSpeaker(speaker);
         }
     }
 
-    /// <summary>Shoots out the nearest alarm speaker inside a blast.</summary>
+    /// <summary>Hands a blast to the alarm emitters: cameras add its dose, a siren or lamp inside breaks.</summary>
     /// <param name="impactUnits">Where the blast went off, in world units.</param>
     /// <param name="radiusUnits">The blast's radius.</param>
-    private void DamageAlarmSpeakers(Vector3d impactUnits, float radiusUnits)
+    /// <param name="falloffUnits">How far past the radius its damage takes to reach zero.</param>
+    /// <param name="damageFactor">The blast's damage factor.</param>
+    private void DamageAlarmSpeakers(Vector3d impactUnits, float radiusUnits, float falloffUnits, float damageFactor)
     {
-        if (_alarmSpeakers?.TryDestroyAt(impactUnits, radiusUnits) is { } speaker)
+        if (_alarmSpeakers is null)
+        {
+            return;
+        }
+
+        foreach (AlarmSpeaker speaker in _alarmSpeakers.ApplyExplosion(impactUnits, radiusUnits, falloffUnits, damageFactor))
         {
             ShootOutSpeaker(speaker);
         }
