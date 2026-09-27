@@ -128,6 +128,16 @@ public sealed class GraphFile
     public IReadOnlyList<int> DiscardedNodeIds { get; }
 
     /// <summary>
+    /// Gets or sets the owning <c>AIGraph</c> task's "Node cover midoffset", in metres -- its <c>+128</c>, which
+    /// the free-position can-shoot ray starts that far above a candidate node (<c>sub_48B6E0</c>).
+    /// </summary>
+    /// <remarks>
+    /// The constructor's default is 1.0, but levels set it per graph: mission 1's main compound graph (task
+    /// 4019, 264 nodes) says 0.5 while its small graphs say 1. Read live from a retail run with the probe.
+    /// </remarks>
+    public double CoverMidOffsetMetres { get; set; } = 1.0;
+
+    /// <summary>
     /// Transforms every node's position from the graph's own frame into world space by adding an offset.
     /// </summary>
     /// <param name="graphPosition">The graph task's declared <c>Position</c>, in engine units.</param>

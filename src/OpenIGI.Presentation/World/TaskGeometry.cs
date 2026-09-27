@@ -9,6 +9,31 @@ namespace OpenIGI.Presentation.World;
 /// </summary>
 internal static class TaskGeometry
 {
+    /// <summary>Finds a declared task by id and reads one of its named parameters.</summary>
+    /// <param name="root">The tree to search.</param>
+    /// <param name="taskId">The task's id.</param>
+    /// <param name="name">The parameter's declared name.</param>
+    /// <param name="value">Receives the value.</param>
+    /// <returns><see langword="true"/> when the task exists and declares the parameter.</returns>
+    public static bool TryFindValue(GameTask root, int taskId, string name, out object? value)
+    {
+        if (root.Id == taskId && root is DeclaredTask declared && declared.TryGetValue(name, out value))
+        {
+            return true;
+        }
+
+        foreach (GameTask child in root.Children)
+        {
+            if (TryFindValue(child, taskId, name, out value))
+            {
+                return true;
+            }
+        }
+
+        value = null;
+        return false;
+    }
+
     /// <summary>Finds a task by id and returns its graph or world position, or the origin when not found.</summary>
     /// <param name="root">The task tree to search.</param>
     /// <param name="taskId">The id of the task whose position is wanted.</param>

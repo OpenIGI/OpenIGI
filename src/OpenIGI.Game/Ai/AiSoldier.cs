@@ -146,6 +146,30 @@ public sealed class AiSoldier
     public static readonly double DetectionRaiseCrouchedInUnits =
         BitConverter.Int64BitsToDouble(0x4096666666666666);
 
+    /// <summary>How far above its feet a standing human's origin (<c>Human+32</c>) is — 0.97 m.</summary>
+    /// <remarks>
+    /// The port keeps a human's position at its feet; IGI.exe keeps it at the model origin, which its ground
+    /// query stands at the node or ground height plus the root bone's height (<c>0x462390</c> via
+    /// <c>sub_48A340</c>). Measured on the retail game: the player landed at 0.97 m over the port's ground at
+    /// the mission-1 spawn, and guard 2003's origin matches the port's drawn origin (the soldier model's
+    /// lowest vertex is 0.970 m below it) to the centimetre.
+    /// </remarks>
+    public const double HumanOriginStandingInUnits = 0.97 * 4096.0;
+
+    /// <summary>How far above its feet a crouched human's origin is — 0.46 m, measured on the retail player.</summary>
+    public const double HumanOriginCrouchedInUnits = 0.46 * 4096.0;
+
+    /// <summary>How far above its feet a human's detection mark is: its origin plus <c>sub_465820</c>'s raise.</summary>
+    /// <param name="crouching">Whether the human is crouched.</param>
+    /// <returns>The height in units.</returns>
+    /// <remarks>
+    /// <c>sub_465820</c> adds the raise to <c>Human+32</c>, the origin -- not the feet. Adding it to the
+    /// feet put every mark, and so every sight ray, about a metre low.
+    /// </remarks>
+    public static double DetectionMarkAboveFeet(bool crouching) => crouching
+        ? HumanOriginCrouchedInUnits + DetectionRaiseCrouchedInUnits
+        : HumanOriginStandingInUnits + DetectionRaiseStandingInUnits;
+
     /// <summary>Tests whether the line between two world points is clear enough to see along.</summary>
     /// <param name="from">The eye.</param>
     /// <param name="to">The target.</param>
@@ -1692,28 +1716,37 @@ public sealed class AiSoldier
     /// <para>
     /// The original hands one produced action to <c>0x450E70</c> and several to <c>0x450F10</c>, and both do
     /// the same three things. First <c>0x450EE0</c> ends every action above the first pushable one on the
-    /// stack. Then each produced action goes on at the <b>head</b>, in script order — so the last one the
-    /// script named is the one that runs, and the others wait beneath it — and its start function runs.
+    /// stack. Then each produced action goes on at the <b>head</b> and its start function runs.
     /// </para>
     /// <para>
-    /// Every action takes the <b>first</b> produced action's flag word: a branch that names a pushable action
-    /// first makes all of its actions pushable. A start that finishes its own action (SetCombat posts
-    /// COMBAT; a refused Activate never begins) leaves nothing on the stack.
+    /// The produced list is built in script order (each <c>AIAction_*</c> appends at the tail through
+    /// <c>0x450E10</c> -> <c>0x4AF8F0</c>), and <c>0x450F10</c> walks it from the TAIL back, adding each to the
+    /// head (<c>0x4AF910</c>). So the FIRST action the script named ends up on top and runs first: a guard's
+    /// COMBAT branch, <c>Activate(alarm trigger)</c> then <c>Combat</c>, runs to the alarm and fights after.
+    /// Installing in script order had the fight on top, and a guard that saw you never went for the alarm.
+    /// </para>
+    /// <para>
+    /// Every action takes the flag word of the first one walked -- the LAST the script named. A start that
+    /// finishes its own action (SetCombat posts COMBAT; a refused Activate never begins) leaves nothing on the
+    /// stack.
     /// </para>
     /// </remarks>
     public void ApplyActions(IReadOnlyList<AiProducedAction> actions)
     {
         ArgumentNullException.ThrowIfNull(actions);
-        LastActions = actions;
+
+        // A copy: the script host reuses its produced-action list for the next soldier it runs.
+        LastActions = [.. actions];
         if (actions.Count == 0)
         {
             return;
         }
 
         _pendingActions.PopToPushable(action => EndAction(action.Name));
-        bool pushable = (FlagsOf(actions[0]) & AiActionFlagWord.Pushable) != 0;
-        foreach (AiProducedAction produced in actions)
+        bool pushable = (FlagsOf(actions[^1]) & AiActionFlagWord.Pushable) != 0;
+        for (int index = actions.Count - 1; index >= 0; index--)
         {
+            AiProducedAction produced = actions[index];
             // 0x450F10 draws the 6..11-tick countdown before each start. Only an action with no run
             // function waits on it, but every AI subsystem shares this random stream.
             int countdown = (int)((_random.NextDouble() + 1.0) * 0.2 * 30.0);
@@ -1882,6 +1915,10 @@ public sealed class AiSoldier
     /// <param name="point">
     /// An exact point to finish at inside the destination node, or <see langword="null"/> for its centre.
     /// </param>
+    /// <param name="claim">
+    /// Whether the walk claims its destination's cell first (<c>0x4518E0</c>'s fourth argument), as the patrol
+    /// walker, WalkToNode, RunToNode and MoveToEvent do.
+    /// </param>
     /// <returns><see langword="true"/> when the whole route was planned.</returns>
     /// <remarks>
     /// <para>
@@ -1900,11 +1937,18 @@ public sealed class AiSoldier
     /// the original does, and the walk carries on along it.
     /// </para>
     /// </remarks>
-    public bool GoTo(int node, Vector3d? point = null)
+    public bool GoTo(int node, Vector3d? point = null, bool claim = false)
     {
         if (_graph?.RouteTable is not { } routes || _graph.NodeAt(node) is not { } target)
         {
             return false;
+        }
+
+        // 0x4518E0's fourth argument: the walk claims its destination's cell before it plans (sub_452D20),
+        // and the claimed position is the one a later RePosition walks back to.
+        if (claim && _occupancy is not null)
+        {
+            _combatFreePosition = _occupancy.ClaimAt(_graph, target, this, point ?? target.Position);
         }
 
         int start = RouteStart(node, routes);
@@ -2264,7 +2308,7 @@ public sealed class AiSoldier
             : new Vector3d(
                 feet.X,
                 feet.Y,
-                feet.Z + (enemyCrouching ? DetectionRaiseCrouchedInUnits : DetectionRaiseStandingInUnits));
+                feet.Z + DetectionMarkAboveFeet(enemyCrouching));
         AiDetectionCandidate candidate = new(
             enemyIsSoldier ? OfferedSoldierId : AiDetectionCandidate.PlayerId,
             OtherSide: enemyIsSoldier || PlayerIsEnemy,
@@ -2822,7 +2866,9 @@ public sealed class AiSoldier
             return true;
         }
 
-        if (DestinationNode != node && !GoTo(node))
+        // The patrol walker (0x48E920), WalkToNode/RunToNode (0x48EBF0/0x48EC50) and MoveToEvent (0x48E020)
+        // all plan with the claim flag set.
+        if (DestinationNode != node && !GoTo(node, claim: true))
         {
             return false;
         }
@@ -3042,7 +3088,10 @@ public sealed class AiSoldier
         _patrolRollChild = null;
         _patrolProne = false;
         _patrolKneeling = false;
-        LeaveCombatOccupancy();
+        _repositionLatched = false;
+
+        // The node claim outlives the fight: nothing in IGI.exe releases HumanAI+16032 when combat ends --
+        // only death (0x44F410), a claiming walk (0x4518E0) or a search that claims elsewhere replaces it.
         SetTarget(null);
         if (Activity == AiSoldierActivity.Engaging)
         {
@@ -3646,6 +3695,7 @@ public sealed class AiSoldier
             _detectionShoutDone = false;
             _alertPingCounter = 0;
             _patrolProne = prone && Arm == AiCombatArm.Patrol;
+            _repositionLatched = false;
             _patrolKneeling = crouched && !_patrolProne && Arm == AiCombatArm.Patrol;
         }
 
@@ -3992,6 +4042,27 @@ public sealed class AiSoldier
             return;
         }
 
+        // 0x48C760 likewise replaces the per-tick until the walk to the claimed cell arrives (0x4522A0 returns
+        // true and 0x48AE70 reinstalls the parent). The node the soldier stands on changes along the way
+        // without ending it, so a patrol caught mid-leg runs the whole leg -- re-asking the chooser each tick
+        // stopped it at the first node it crossed.
+        if (_repositionLatched && PatrolAction == AiPatrolAction.RePosition)
+        {
+            _channelWrites.Clear();
+            Combat = default;
+            // The walk was planned when RePosition was installed; the latch only follows it. Re-planning
+            // here would hand an arrived soldier a fresh one-point route every tick, and it would never end.
+            if (_route.Count > 0)
+            {
+                AdvanceInCombat();
+                return;
+            }
+
+            // Arrived (or nowhere left to walk): the parent per-tick runs again from the next tick.
+            _repositionLatched = false;
+            return;
+        }
+
         // A one-shot child (grenade throw, melee, roll) owns the body until its clip completes — the
         // retail child at action+36, which the stand tick runs INSTEAD of the chooser and clears when
         // it reports done (0x48BC00). The machine leaves StandState for the throw/melee/roll and
@@ -4054,17 +4125,11 @@ public sealed class AiSoldier
         double distance = Distance(Position, enemy);
         bool visible = TargetSlot.IsVisible;
 
-        // Only the branch that needs a search runs one, as the original's call sites do.
-        int? toward = null;
-        int? away = null;
-        if (visible && distance > (CombatParameters?.TrackingDistanceInUnits ?? double.MaxValue))
-        {
-            toward = FindFreePosition(enemy, towardTarget: true);
-        }
-        else if (!visible)
-        {
-            away = FindFreePosition(enemy, towardTarget: false);
-        }
+        // Only the branch that needs a search runs one, as the original's call sites do: a search CLAIMS
+        // the node it accepts, so running both every tick moved the soldier's claim about on ticks the
+        // chooser never used it -- and, rejecting its own claim next time, flipped between two nodes.
+        Func<int?> toward = () => FindFreePosition(enemy, towardTarget: true);
+        Func<int?> away = () => FindFreePosition(enemy, towardTarget: false);
 
         // "On its own node" gates the whole chooser: rule (a) walks back before anything else fires.
         // Retail's RePosition (0x48C760) walks the BODY onto the node and completes; the port walks the
@@ -4095,6 +4160,7 @@ public sealed class AiSoldier
             FreePositionTowardTarget: toward,
             FreePositionAwayFromTarget: away);
 
+        _chooserCalls++;
         AiPatrolAction action = _patrol!.Choose(sense);
         PatrolAction = action;
         _channelWrites.Clear();
@@ -4176,8 +4242,22 @@ public sealed class AiSoldier
                 return;
 
             case AiPatrolAction.RePosition:
-                HeadFor(CurrentNode);
-                AdvanceInCombat();
+                // 0x48C760 walks to the CLAIMED cell (HumanAI+16048) on the claimed node (+16032), not to the
+                // node the soldier last stood on -- for a patrol caught mid-leg that is where its leg was
+                // going. Without a claim it only logs "HumanAI #%d has no nodeoccupationitem" and stands.
+                if (_occupancy is null)
+                {
+                    HeadFor(CurrentNode);
+                    AdvanceInCombat();
+                    _repositionLatched = _route.Count > 0;
+                }
+                else if (_occupancy.ClaimedNode(this) is int claimed)
+                {
+                    HeadFor(claimed);
+                    AdvanceInCombat();
+                    _repositionLatched = _route.Count > 0;
+                }
+
                 return;
 
             case AiPatrolAction.Follow:
@@ -4434,10 +4514,16 @@ public sealed class AiSoldier
     /// <remarks>
     /// Casting from the node's raw ground position instead grazed the terrain and kerbs at the ray's
     /// very first step, so almost every candidate failed the can-shoot test and a hunting patrol could
-    /// never find anywhere to go — the "engaging, never moving" stall. The port does not yet model the
-    /// AIGraph script parameters, so the constructor's default stands in for all graphs.
+    /// never find anywhere to go — the "engaging, never moving" stall. This is only the constructor's
+    /// default: the live height is <see cref="FreePositionRayHeightOf"/>, from each graph's own task.
     /// </remarks>
     public const double FreePositionRayHeightInUnits = 4096.0;
+
+    /// <summary>The can-shoot ray's height above a node of this graph — its task's cover mid offset × 4096.</summary>
+    /// <param name="graph">The graph, or <see langword="null"/> for the constructor's default.</param>
+    /// <returns>The height in units.</returns>
+    public static double FreePositionRayHeightOf(GraphFile? graph) =>
+        (graph?.CoverMidOffsetMetres ?? 1.0) * GraphNode.MetreInUnits;
 
     /// <summary>One line of combat-decision state, for diffing the port against the retail probe log.</summary>
     /// <returns>The formatted line.</returns>
@@ -4461,6 +4547,76 @@ public sealed class AiSoldier
             $"away={(away is { } a ? a.ToString(System.Globalization.CultureInfo.InvariantCulture) : "-")}";
     }
 
+    /// <summary>One line of this tick's decision state, for scenario traces.</summary>
+    /// <returns>The stack, the event that ran, what is queued, and what the scan holds on the target.</returns>
+    public string DescribeTick()
+    {
+        string stack = string.Join(">", _pendingActions.Actions.Select(a => a.Name.Replace("AIAction_", "", StringComparison.Ordinal)));
+        string pending = string.Join(
+            ",",
+            Enumerable.Range(0, 24).Select(i => (AiEvent)i).Where(t => Events.PendingCount(t) > 0).Select(t => $"{t}x{Events.PendingCount(t)}"));
+        string enemies = string.Join(
+            ",",
+            _enemies.Select(e => $"{e.Candidate.Id}{(e.Slot.IsInCone ? "c" : "")}{(e.Slot.IsVisible ? "v" : "")}"));
+        string patrol = Route is { } walking ? $"path {walking.Path.Id} cmd {walking.Current?.Kind}({walking.Current?.Operand})" : "-";
+        return $"act={Activity} run={_runningAction?.Replace("AIAction_", "", StringComparison.Ordinal) ?? "-"} stack=[{stack}] patrol=[{patrol}] alarm={AlarmTriggerId}/{AlarmControlId}/{AlarmAccess}:{(AlarmTriggerId != -1 ? GetAlarmTriggerDistance() / 4096.0 : -1):0.0}m last=[{string.Join(";", LastActions.Select(a => $"{a.Name.Replace("AIAction_", "", StringComparison.Ordinal)}({string.Join(",", a.Arguments)})"))}] " +
+            $"evt={LastDispatchedEvent?.ToString() ?? "-"} pend=[{pending}] tgt={_targetId} reg={TargetSlot.IsRegistered} " +
+            $"cone={TargetSlot.IsInCone} vis={TargetSlot.IsVisible} alert={Alerted} inst={_combatInstalled} phase={CombatPhase} " +
+            $"state={CombatState} trig={Combat.PullTrigger} pa={PatrolAction} route={_route.Count} dest={DestinationNode} node={CurrentNode} onNode={CurrentNode < 0 || IsStandingOnNode(CurrentNode)} latched={_repositionLatched} chooses={_chooserCalls} claim={_occupancy?.ClaimedNode(this)?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-"} " +
+            $"believed={(Target is { HasBeenSeen: true } seenRecord ? $"({seenRecord.Position.X / 4096.0:0.0},{seenRecord.Position.Y / 4096.0:0.0}) tnode={NearestNode(seenRecord.Position)}" : "-")} " +
+            $"enemies=[{enemies}] facing={Facing * 180.0 / Math.PI:0} eyeYaw={Math.Atan2(-Eye.Orientation.M12, Eye.Orientation.M22) * 180.0 / Math.PI:0} " +
+            $"pos=({Position.X / 4096.0:0.0},{Position.Y / 4096.0:0.0},{Position.Z / 4096.0:0.0})";
+    }
+
+    /// <summary>How the free-position search judges the target's node and its links, for scenario traces.</summary>
+    /// <returns>One entry per candidate: full, can-shoot and on-the-route.</returns>
+    public string DescribeFreeSearch()
+    {
+        Vector3d enemy = Target is { HasBeenSeen: true } shared ? shared.Position : _lastSeenFeet;
+        int targetNode = NearestNode(enemy);
+        if (_graph is null || targetNode < 0)
+        {
+            return "-";
+        }
+
+        IEnumerable<int> candidates = new[] { targetNode }.Concat(_graph.LinksOf(targetNode).Select(link => link.Other(targetNode)));
+        return string.Join(
+            " ",
+            candidates.Select(id =>
+            {
+                GraphNode? node = _graph.NodeAt(id);
+                bool full = _occupancy?.IsFull(_graph, id) ?? false;
+                bool shoot = node is not null && (_sight is null || _sight(
+                    new Vector3d(node.Position.X, node.Position.Y, node.Position.Z + FreePositionRayHeightOf(_graph)),
+                    AimPointOf(enemy)));
+                bool route = AiFreePosition.ShortensTheRoute(_graph, id, CurrentNode, targetNode);
+                return $"{id}:{(full ? "F" : "")}{(shoot ? "s" : "")}{(route ? "r" : "")}";
+            }));
+    }
+
+    /// <summary>The graph nodes within a radius of a point, for scenario traces.</summary>
+    /// <param name="point">The centre, in engine units.</param>
+    /// <param name="radius">The radius, in engine units.</param>
+    /// <returns>One line per node: id, position in metres, distance, radius and links.</returns>
+    public IEnumerable<string> DescribeNodesNear(Vector3d point, double radius)
+    {
+        if (_graph is null)
+        {
+            yield break;
+        }
+
+        foreach (GraphNode node in _graph.Nodes)
+        {
+            double distance = Distance(node.Position, point);
+            if (distance <= radius)
+            {
+                string links = string.Join(",", _graph.LinksOf(node.Id).Select(link => link.Other(node.Id)));
+                yield return $"node {node.Id} ({node.Position.X / 4096.0:0.0},{node.Position.Y / 4096.0:0.0},{node.Position.Z / 4096.0:0.0}) " +
+                    $"d={distance / 4096.0:0.0} r={node.Radius:0.00} criteria={node.Criteria} links=[{links}]";
+            }
+        }
+    }
+
     /// <summary>Asks <see cref="AiFreePosition"/> where to stand.</summary>
     /// <param name="enemy">Where the target is.</param>
     /// <param name="towardTarget">Whether to apply the direction test.</param>
@@ -4473,6 +4629,20 @@ public sealed class AiSoldier
     private int? FindFreePosition(Vector3d enemy, bool towardTarget, bool claim = true)
     {
         int targetNode = NearestNode(enemy);
+        int? found = FindFreePositionFrom(targetNode, enemy, towardTarget, claim);
+        if (claim)
+        {
+            LastFreeSearch = $"t{_lastTick} from={CurrentNode} target={targetNode} toward={towardTarget} -> {found?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-"}";
+        }
+
+        return found;
+    }
+
+    /// <summary>The last claiming free-position search, for scenario traces.</summary>
+    public string LastFreeSearch { get; private set; } = "-";
+
+    private int? FindFreePositionFrom(int targetNode, Vector3d enemy, bool towardTarget, bool claim)
+    {
         return targetNode < 0 || _graph is null
             ? null
             : AiFreePosition.Find(
@@ -4485,7 +4655,7 @@ public sealed class AiSoldier
                         new Vector3d(
                             node.Position.X,
                             node.Position.Y,
-                            node.Position.Z + FreePositionRayHeightInUnits),
+                            node.Position.Z + FreePositionRayHeightOf(_graph)),
                         AimPointOf(enemy))),
                 occupancy: claim ? _occupancy : null,
                 claimant: claim ? this : null,
@@ -4499,14 +4669,13 @@ public sealed class AiSoldier
     /// <param name="occupancy">The registry, shared by every brain in the level.</param>
     public void SetNodeOccupancy(AiNodeOccupancy? occupancy) => _occupancy = occupancy;
 
-    /// <summary>The combat action's end releases its node claim, as the end fn <c>0x48D7D0</c> does.</summary>
-    private void LeaveCombatOccupancy()
-    {
-        _occupancy?.Release(this);
-        _combatFreePosition = null;
-    }
-
     private bool _patrolKneeling;
+
+    // How many times the patrol chooser has run -- for scenario traces.
+    private int _chooserCalls;
+
+    // Whether RePosition (0x48C760) owns the per-tick until its walk arrives.
+    private bool _repositionLatched;
 
     /// <summary>Whether the soldier is standing inside a node.</summary>
     /// <param name="nodeId">The node to test.</param>
@@ -4541,16 +4710,19 @@ public sealed class AiSoldier
             && localY >= -halfExtent && localY <= halfExtent;
     }
 
-    /// <summary>Where an AI aims at a human — its position (feet), half a metre up.</summary>
-    /// <param name="target">The target task's position — its feet, not its eye.</param>
+    /// <summary>Where an AI aims at a human — its origin, half a metre up.</summary>
+    /// <param name="target">The target's feet, as the port keeps a human's position.</param>
     /// <param name="crouching">Whether the target is crouching, which halves the raise.</param>
     /// <remarks>
-    /// <c>sub_451380</c> copies the target task's own position out of the shared record and adds
-    /// <b>2048 units (0.5 m) standing, 1024 (0.25 m) crouching</b> to Z — verified in the decompile:
-    /// <c>a1[2] += crouch ? 1024.0 : 2048.0</c>.
+    /// <c>sub_451380</c> copies the target task's own position (<c>Human+32</c>, its origin) out of the shared
+    /// record and adds <b>2048 units (0.5 m) standing, 1024 (0.25 m) crouching</b> to Z — verified in the
+    /// decompile: <c>a1[2] += crouch ? 1024.0 : 2048.0</c>. The port's position is the feet, so the origin's
+    /// height goes in first: chest height, where adding the raise to the feet aimed at the shins.
     /// </remarks>
     public static Vector3d AimPointOf(Vector3d target, bool crouching = false) =>
-        new(target.X, target.Y, target.Z + (crouching ? 1024.0 : 2048.0));
+        new(target.X, target.Y, target.Z + (crouching
+            ? HumanOriginCrouchedInUnits + 1024.0
+            : HumanOriginStandingInUnits + 2048.0));
 
     /// <summary>The turn-to-point entry — <c>0x4525B0</c>, which sets the clamps to pi first.</summary>
     /// <param name="target">The point to turn to.</param>

@@ -305,14 +305,15 @@ public sealed class AiSoldierCombatWiringTests
     /// seen with.
     /// </summary>
     /// <remarks>
-    /// The aim point is the target task's own position plus <b>2048 units</b> (0.5 m), or <b>1024</b>
+    /// The aim point is the target task's own position (<c>Human+32</c>, its origin, 0.97 m over the feet the
+    /// port keeps) plus <b>2048 units</b> (0.5 m), or <b>1024</b>
     /// (0.25 m) crouched — read straight out of <c>IGI.exe</c>'s <c>sub_451380</c>:
     /// <c>a1[2] += crouch ? 1024.0 : 2048.0</c>, where the crouch is the <i>target's</i> flag
     /// (<c>Human+829</c>). Feeding the eye instead put the point half a metre <i>above the head</i>, and
     /// every resolved round arrived at head height.
     /// </remarks>
     [RequiresGameDataFact]
-    public void CombatAimsAtTheFeetRaisedHalfAMetre()
+    public void CombatAimsAtTheOriginRaisedHalfAMetre()
     {
         AiSoldier soldier = Soldier(out Vector3d position);
 
@@ -332,7 +333,8 @@ public sealed class AiSoldierCombatWiringTests
         }
 
         Assert.NotNull(aim);
-        Assert.Equal(feet.Z + 2048.0, aim.Value.Z, precision: 3);
+        // sub_451380 raises the ORIGIN (Human+32), which stands 0.97 m over the feet the port keeps.
+        Assert.Equal(feet.Z + AiSoldier.HumanOriginStandingInUnits + 2048.0, aim.Value.Z, precision: 3);
     }
 
     /// <summary>A crouching target halves the raise — 1024 units, 0.25 m.</summary>
@@ -357,7 +359,7 @@ public sealed class AiSoldierCombatWiringTests
         }
 
         Assert.NotNull(aim);
-        Assert.Equal(feet.Z + 1024.0, aim.Value.Z, precision: 3);
+        Assert.Equal(feet.Z + AiSoldier.HumanOriginCrouchedInUnits + 1024.0, aim.Value.Z, precision: 3);
     }
 
     /// <summary>
@@ -579,14 +581,15 @@ public sealed class AiSoldierCombatWiringTests
             },
             _ => { });
 
-        // gunner.qsc's COMBAT branch while the gun is free: Activate, then Combat, both pushable. Each goes
-        // on at the head, so the fight is on top and the walk to the gun waits beneath it.
+        // gunner.qsc's COMBAT branch while the gun is free: Activate, then Combat, both pushable. 0x450F10
+        // walks the produced list from its tail, adding each at the head, so the walk to the gun is on top
+        // and the fight waits beneath it.
         soldier.ApplyActions([
             new AiProducedAction("AIAction_Activate", [500, 1, (int)AiActionFlagWord.Pushable], 5),
             new AiProducedAction("AIAction_Combat", [(int)AiActionFlagWord.Pushable], 5),
         ]);
         Assert.Equal(
-            ["AIAction_Combat", "AIAction_Activate"],
+            ["AIAction_Activate", "AIAction_Combat"],
             soldier.PendingActions.Actions.Select(action => action.Name));
 
         // The fight runs, and 0x48D340 takes the gun once the target has held its cone for 30 ticks.
@@ -605,11 +608,8 @@ public sealed class AiSoldierCombatWiringTests
         Assert.Equal(gun.MountPosition, soldier.Position);
         Assert.True(gun.IsOccupied);
 
-        // The suspended Activate beneath still holds its claim: it has not run yet.
-        Assert.True(claims.Contains(500));
-        Assert.Equal(
-            ["AIAction_Combat", "AIAction_Activate"],
-            soldier.PendingActions.Actions.Select(action => action.Name));
+        // The walk to the gun has finished; the fight it was installed over is what runs now.
+        Assert.Equal(["AIAction_Combat"], soldier.PendingActions.Actions.Select(action => action.Name));
     }
 
     /// <summary>

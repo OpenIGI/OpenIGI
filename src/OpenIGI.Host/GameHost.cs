@@ -5012,6 +5012,7 @@ if (retailFog)
 
                 // Soldiers draw under the same world projection: 0x4D9620 leaves +212 at 1, so 0x49F700
                 // never swaps in the view-model block for them (player.md section 15.3).
+                _soldiers?.ObserveView(eye, projection);
                 _soldiers?.Draw(eye, projection);
 
                 // The player's own body, once it has fallen -- drawn only under the death camera, so it never

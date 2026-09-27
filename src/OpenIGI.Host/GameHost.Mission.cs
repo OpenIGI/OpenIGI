@@ -879,6 +879,13 @@ internal sealed partial class GameHost
                         Vector3d graphPos = TaskGeometry.FindPosition(levelRoot, graphId);
                         graph.ApplyWorldOffset(graphPos);
 
+                        // The graph task's own "Node cover midoffset" -- where the can-shoot ray starts.
+                        if (TaskGeometry.TryFindValue(levelRoot, graphId, "Node cover midoffset", out object? midOffset)
+                            && midOffset is IConvertible convertible)
+                        {
+                            graph.CoverMidOffsetMetres = convertible.ToDouble(System.Globalization.CultureInfo.InvariantCulture);
+                        }
+
                         graphs[graphId] = graph;
                     }
                     catch (GraphFormatException ex)
@@ -893,7 +900,7 @@ internal sealed partial class GameHost
                 _logger.Information(
                     "Ai",
                     $"Nav graphs: {graphs.Count} — " +
-                    string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n")));
+                    string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n@{p.Value.CoverMidOffsetMetres:0.##}m")));
 
                 // The difficulty every guard reads its combat row at. Faithfully the ACTIVE PLAYER PROFILE's
                 // (sub_406F70 takes it from sub_406220()'s first field), so the difficulty the player picked
@@ -1398,11 +1405,14 @@ internal sealed partial class GameHost
                         return;
                     }
 
-                    // Only now the probability gate: retail rolls `random > probability -> no hit` inside
-                    // the cast's evaluate when the trace actually MEETS a human (the context carries
-                    // Human+1236, loaded at spawn by sub_474360). A failed roll is a round that flew past
-                    // -- through to whatever stands behind the player, where it marks.
-                    if (_shotRandom.NextDouble() > probability)
+                    // Only now the probability gate, and it is rolled TWICE: the cast offers the player to
+                    // the Human's evaluate (0x45E3E0, `random <= probability` for player 0 only) once as the
+                    // octree visit's gate (0x45F500 -> 0x45F53D) and again for the narrow contact after the
+                    // 0.94 m sphere test (0x45F580, then the per-shape dispatch -> 0x4D76DA). Measured on
+                    // Hard at 16 m: 105 rounds, 74 passed the first roll (p 0.695), 30 hit. One roll made
+                    // the port's guards hit about 1/p times as often. A failed roll is a round that flew
+                    // past -- through to whatever stands behind the player, where it marks.
+                    if (_shotRandom.NextDouble() > probability || _shotRandom.NextDouble() > probability)
                     {
                         // The roll failed against the player -- the round flies past to whoever stands
                         // behind them: an opposing soldier if the shooter is hostile, a guard if the

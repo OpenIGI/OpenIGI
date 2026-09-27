@@ -83,11 +83,12 @@ public enum AiRollSpace
 /// </param>
 /// <param name="AimersOnTarget">How many attackers already hold an aiming mode on this target.</param>
 /// <param name="FreePositionTowardTarget">
-/// What <c>FindFreePosition</c> answers with the toward-the-target test <b>on</b>, or
-/// <see langword="null"/> when it finds nothing.
+/// Runs <c>FindFreePosition</c> with the toward-the-target test <b>on</b>, answering
+/// <see langword="null"/> when it finds nothing. A search claims the node it accepts, so the chooser
+/// calls it only on the branch where <c>sub_48BFD0</c> does.
 /// </param>
 /// <param name="FreePositionAwayFromTarget">
-/// What it answers with that test <b>off</b> — the search query. See §13.6.
+/// Runs it with that test <b>off</b> — the search query. See §13.6.
 /// </param>
 public readonly record struct AiPatrolSense(
     bool HasDetectionSlot,
@@ -98,8 +99,8 @@ public readonly record struct AiPatrolSense(
     int AmmoInClip,
     bool HasGrenade,
     int AimersOnTarget,
-    int? FreePositionTowardTarget,
-    int? FreePositionAwayFromTarget);
+    Func<int?>? FreePositionTowardTarget,
+    Func<int?>? FreePositionAwayFromTarget);
 
 /// <summary>
 /// The move-and-fight arm — <c>0x48ABA0</c>'s decision half, i.e. <c>sub_48BFD0</c> (the action choice)
@@ -258,7 +259,7 @@ public sealed class AiPatrolCombat
             {
                 // (c) Too far to shoot from here? Walk at him.
                 if (sense.DistanceToTargetInUnits > _parameters.TrackingDistanceInUnits
-                    && sense.FreePositionTowardTarget is int toward
+                    && sense.FreePositionTowardTarget?.Invoke() is int toward
                     && toward != sense.CurrentNodeId)
                 {
                     DestinationNodeId = toward;
@@ -292,7 +293,7 @@ public sealed class AiPatrolCombat
             return WatchOrGiveUp();
         }
 
-        if (sense.FreePositionAwayFromTarget is int away && away != sense.CurrentNodeId)
+        if (sense.FreePositionAwayFromTarget?.Invoke() is int away && away != sense.CurrentNodeId)
         {
             DestinationNodeId = away;
             _notVisibleTicks = 0;   // <<< somewhere new to look RESETS the timeout

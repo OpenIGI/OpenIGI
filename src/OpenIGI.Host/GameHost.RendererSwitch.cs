@@ -35,7 +35,17 @@ internal sealed partial class GameHost
     private readonly InputState _stillInput = new();
 
     /// <summary>Gets the input the player and the free camera are steered by this frame.</summary>
-    private InputState ViewInput => _resumeHold == ResumeHold.Holding ? _stillInput : _window.Input;
+    private InputState ViewInput => ScriptedViewInput
+        ?? (_resumeHold == ResumeHold.Holding ? _stillInput : _window.Input);
+
+    /// <summary>
+    /// Gets or sets input a harness steers the player with in place of the window's, or <see langword="null"/>.
+    /// </summary>
+    /// <remarks>
+    /// A lockstep run marks the window's input captured every frame so a capture cannot see the mouse; a
+    /// scenario that has to press the trigger hands its own state here instead.
+    /// </remarks>
+    internal InputState? ScriptedViewInput { get; set; }
 
     /// <summary>Where a resumed game is in holding the switched-from picture.</summary>
     private enum ResumeHold

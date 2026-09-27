@@ -34,13 +34,16 @@ public sealed class AiPerceptionRetailIntegrationTests
                 continue;
             }
 
+            // The eye follows the body only while the soldier is drawn close up (see the next test).
+            fixture.Renderer.ObserveAllForTesting();
+
             // AiEyeSnapshot converts world deltas into local eye space with delta * orientation.
             // Therefore a local +Y target is transformed back to world space with the transpose.
             Vector3d forward = soldier.Orientation.Transposed().Transform(new Vector3d(0.0, 5.0 * Metre, 0.0));
             Vector3d mark = new(
                 soldier.Position.X + forward.X,
                 soldier.Position.Y + forward.Y,
-                soldier.Position.Z + AiSoldier.DetectionRaiseStandingInUnits);
+                soldier.Position.Z + AiSoldier.DetectionMarkAboveFeet(crouching: false));
             (double distance, bool inCone, _, _, _) = soldier.ProbeDetection(mark);
             if (!inCone)
             {
@@ -64,6 +67,38 @@ public sealed class AiPerceptionRetailIntegrationTests
         }
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    /// <summary>
+    /// A guard the player has never drawn looks along its eye bone's rest orientation, whatever its body
+    /// faces -- measured on the retail game, where seventeen of mission 1's twenty-one guards shared that
+    /// exact matrix until the view turned onto them.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void AnUndrawnGuardLooksAlongTheRestPoseNotItsBody()
+    {
+        using Fixture fixture = Fixture.Load(1);
+        AiSoldier soldier = fixture.Renderer.BrainsForTesting.First(brain =>
+            brain.PlayerIsEnemy && Math.Abs(Math.Sin(brain.Facing)) > 0.9);
+
+        // Five metres along the body's own forward: to the side of the rest-pose eye, so out of its cone.
+        Vector3d forward = soldier.Orientation.Transposed().Transform(new Vector3d(0.0, 5.0 * Metre, 0.0));
+        Vector3d bodyAhead = new(
+            soldier.Position.X + forward.X,
+            soldier.Position.Y + forward.Y,
+            soldier.Position.Z + AiSoldier.DetectionMarkAboveFeet(crouching: false));
+        Assert.False(soldier.ProbeDetection(bodyAhead).InCone, "an undrawn guard's eye followed its body");
+
+        // Five metres along world +Y: where the rest-pose eye looks.
+        Vector3d northAhead = new(
+            soldier.Position.X,
+            soldier.Position.Y + (5.0 * Metre),
+            soldier.Position.Z + AiSoldier.DetectionMarkAboveFeet(crouching: false));
+        Assert.True(soldier.ProbeDetection(northAhead).InCone, "an undrawn guard's eye missed its rest direction");
+
+        // Once drawn close up, the eye follows the body.
+        fixture.Renderer.ObserveAllForTesting();
+        Assert.True(soldier.ProbeDetection(bodyAhead).InCone, "a drawn guard's eye did not follow its body");
     }
 
     private sealed class Fixture(SoldierRenderer renderer) : IDisposable

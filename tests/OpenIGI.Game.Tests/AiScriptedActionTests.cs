@@ -112,11 +112,12 @@ public sealed class AiScriptedActionTests
     }
 
     [Fact]
-    public void TheCombatASetCombatPostsEndsTheFallFlatItFollowed()
+    public void TheCombatASetCombatPostsSuspendsTheFallFlatItFollowed()
     {
         // guard.qsc's GUNSHOTMISS branch: FallFlat, then one time in ten SetCombat. SetCombat posts COMBAT
         // and ends in its own start (0x48E560), leaving the fall on the stack; COMBAT outranks the miss, so
-        // the next pump installs the fight, and 0x450EE0 ends the non-pushable fall to make room for it.
+        // the next pump installs the fight. 0x450F10 gives every action the flag word of the LAST one named
+        // -- SetCombat's pushable -- so the fall is not ended but suspended beneath the fight.
         Vector3d position = new(1000, 2000, 3000);
         AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
@@ -134,7 +135,9 @@ public sealed class AiScriptedActionTests
 
         Assert.Equal(AiSoldierActivity.Engaging, soldier.Activity);
         Assert.DoesNotContain(soldier.ChannelWrites, write => write.Channel == AiCombatChannel.LieDown);
-        Assert.Equal(["AIAction_Combat"], soldier.PendingActions.Actions.Select(action => action.Name));
+        Assert.Equal(
+            ["AIAction_Combat", "AIAction_FallFlat"],
+            soldier.PendingActions.Actions.Select(action => action.Name));
     }
 
     [Fact]

@@ -857,7 +857,12 @@ public sealed class SoldierRenderer : IDisposable
             {
                 // The traversal budget is a safety bound, not evidence that the remainder is clear: past
                 // it, whatever the cast reports is cover.
-                if (hit.Kind == WorldTraceHitKind.Terrain || segmentLength <= 0d)
+                // A static object blocks wherever it is met. 0x489B20 does accept a returned fraction of 0.79 or
+                // more, but the handlers never return one for placed geometry: 359 retail sight casts logged by
+                // the probe came back either clear at 1.0 or blocked at exactly 0.0 -- including a mission-1
+                // tower guard's ray that met the small barracks' roof 82% of the way along, which the old
+                // "past 0.79 is clear" rule let through. Only a moving object keeps the tolerance, unmeasured.
+                if (hit.Kind is WorldTraceHitKind.Terrain or WorldTraceHitKind.StaticObject || segmentLength <= 0d)
                 {
                     return false;
                 }
@@ -902,6 +907,62 @@ public sealed class SoldierRenderer : IDisposable
 
     /// <summary>Gets the live AI brains for focused renderer-path tests.</summary>
     internal IReadOnlyList<AiSoldier> BrainsForTesting => [.. _brains.Values];
+
+    internal IReadOnlyList<KeyValuePair<SoldierView, AiSoldier>> BrainPairsForTesting => [.. _brains];
+
+    internal bool IsInViewForTesting(SoldierView view) => FindMember(view)?.InView ?? false;
+
+    /// <summary>Marks every soldier drawn close up, as a frame looking at all of them would.</summary>
+    internal void ObserveAllForTesting()
+    {
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                member.InView = true;
+            }
+        }
+    }
+
+    internal string DescribeViewForTesting(SoldierView view)
+    {
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                if (ReferenceEquals(member.View, view) && _lastObservedCamera is { } camera)
+                {
+                    Matrix4f mv = camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation);
+                    BonePose pose = view.Pose();
+                    string eye = HumanAttachPoints.AiEye < pose.BoneCount ? pose.Positions[HumanAttachPoints.AiEye].ToString() : "-";
+                    return $"lowestZ={group.LowestVertexZ:0.000} eyeOffset={eye} viewZ={view.Position.Z / 4096.0:0.000} drawnZ={member.DrawnWhere.Z:0.000} " +
+                        $"cam={camera.Position} viewPos=({mv.M41:0.0},{mv.M42:0.0},{mv.M43:0.0})";
+                }
+            }
+        }
+
+        return "-";
+    }
+
+    private Camera3D? _lastObservedCamera;
+
+    private WorldTraceCast? _sightTraceForTesting;
+
+    /// <summary>What an AI sight ray from one point to another meets first, for scenario traces.</summary>
+    internal string DescribeSightForTesting(Vector3d from, Vector3d to)
+    {
+        if (_sightTraceForTesting is not { } trace)
+        {
+            return "no trace";
+        }
+
+        bool clear = HasLineOfSight(trace, from, to, AiSoldier.SightObstructionTolerance);
+        WorldTraceRequest request = new(from, to, WorldTraceMask.World) { TracePortals = false };
+        Vector3d along = to - from;
+        return trace(in request, out WorldTraceHit hit)
+            ? $"clear={clear} facing={((hit.Normal.X * along.X) + (hit.Normal.Y * along.Y) + (hit.Normal.Z * along.Z) < 0 ? "front" : "BACK")} hit {hit.Kind} at {hit.Distance / 4096.0:0.00} m of {Vector3d.Distance(from, to) / 4096.0:0.00} m, fraction {hit.Fraction:0.000}, material {hit.Material} '{hit.Label}' owner {hit.Owner?.Id}, at ({hit.Position.X / 4096.0:0.0},{hit.Position.Y / 4096.0:0.0},{hit.Position.Z / 4096.0:0.0})"
+            : $"clear={clear} no contact";
+    }
 
     /// <summary>Resolves a human task's live pose for an EditCamera link or target.</summary>
     public CutsceneTargetPose? CutscenePose(int taskId)
@@ -1454,6 +1515,7 @@ public sealed class SoldierRenderer : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         _sight = sight is null ? null : WorldTrace.AsRayCast(sight, WorldTraceMask.World);
+        _sightTraceForTesting = sight;
         _brains.Clear();
         _brainsByRuntimeId.Clear();
         _guardGenerators.Clear();
@@ -2075,6 +2137,12 @@ public sealed class SoldierRenderer : IDisposable
 
         AiCombatCommand command = brain.Combat;
 
+        // 0x478BA0 zeroes the gun's rounds-this-pull count whenever the trigger is up.
+        if (!command.PullTrigger && member is not null)
+        {
+            member.RoundsThisPull = 0;
+        }
+
         if (mounted is null && member is not null
             && (command.PressReload || command.ReloadWeaponDirectly)
             && member.ReloadTicks == 0
@@ -2129,13 +2197,90 @@ public sealed class SoldierRenderer : IDisposable
         // at burst setup, 0x48B9C0). A follow-firing patrol has no aim solve at all (ai.md 13.7) -- it
         // sprays along its own facing whenever the target is inside a 16.3-degree cone, so its ray runs
         // along the body's heading at the aim point's height.
-        Vector3d aim = brain.Combat.TurnTo ?? SprayTarget(brain, enemyFeet, enemyCrouching);
+        Vector3d target = brain.Combat.TurnTo ?? SprayTarget(brain, enemyFeet, enemyCrouching);
         Vector3d origin = mounted?.Position ?? brain.EyePosition();
+        Vector3d aim = SpreadRound(brain, mounted, weapon, member, origin, target);
         _onRound?.Invoke(origin, aim, brain.HitProbability, weapon, view);
 
         // Every other soldier near the shot hears it -- the same AIEVENT_GUNSHOT a player's shot raises.
         NotifyGunshot(origin, weapon.AiDetectionRange, except: view);
         return true;
+    }
+
+    /// <summary>
+    /// Where a guard's round really goes: along the gun, with the weapon's cone about it — <c>0x478BA0</c>,
+    /// the same Gun_Fire the player's rounds come out of.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Retail's round leaves along the firer's own orientation (the matrix its fire message carries, or the
+    /// gun's), not along a line to the target, and is then turned by rand³ × the weapon's spread about a
+    /// random bearing -- the minimum spread for the first four rounds of a pull, the maximum after. A guard
+    /// only aims by turning its body and view onto the point (to within 2 degrees before it opens fire), so
+    /// those two errors are all the accuracy it has.
+    /// </para>
+    /// <para>
+    /// Measured on the retail game with the probe (mission 1, Hard, a stationary guard at 15-22 m): 242
+    /// rounds passed 0-3.5 m from the player and 7 hit -- about 3%. Casting every round exactly at the aim
+    /// point and leaving only the probability roll made 107 of 181 hit.
+    /// </para>
+    /// </remarks>
+    private Vector3d SpreadRound(
+        AiSoldier brain,
+        AiStationaryGun? mounted,
+        WeaponType weapon,
+        Member? member,
+        Vector3d origin,
+        Vector3d target)
+    {
+        double reach = Math.Max(Vector3d.Distance(origin, target), WorldScene.UnitsPerMetre);
+
+        // The emplacement's barrel is aimed by its own task; a carried gun points where the soldier looks.
+        Vector3f forward;
+        Vector3f right;
+        Vector3f up;
+        if (mounted is not null)
+        {
+            Vector3d line = target - origin;
+            forward = new Vector3f((float)(line.X / reach), (float)(line.Y / reach), (float)(line.Z / reach)).Normalized();
+            right = Vector3f.Cross(forward, new Vector3f(0f, 0f, 1f)).Normalized();
+            up = Vector3f.Cross(right, forward).Normalized();
+        }
+        else
+        {
+            Matrix3f view = brain.ViewOrientation.Transposed();
+            forward = ToFloat(view.Transform(new Vector3d(0.0, 1.0, 0.0)));
+            right = ToFloat(view.Transform(new Vector3d(1.0, 0.0, 0.0)));
+            up = ToFloat(view.Transform(new Vector3d(0.0, 0.0, 1.0)));
+        }
+
+        int roundsThisPull = member?.RoundsThisPull ?? 0;
+        if (member is not null)
+        {
+            member.RoundsThisPull++;
+        }
+
+        float cone = GunFiring.ConeAngle(weapon, roundsThisPull);
+        Vector3f direction = forward;
+        if (cone != 0f)
+        {
+            Span<float> samples =
+            [
+                _aiRandom.NextSingle(),
+                _aiRandom.NextSingle(),
+                _aiRandom.NextSingle(),
+                _aiRandom.NextSingle(),
+            ];
+            (float radius, float bearing) = GunFiring.SampleCone(cone, samples);
+            direction = GunFiring.OffsetInCone(forward, right, up, radius, bearing);
+        }
+
+        return new Vector3d(
+            origin.X + (direction.X * reach),
+            origin.Y + (direction.Y * reach),
+            origin.Z + (direction.Z * reach));
+
+        static Vector3f ToFloat(Vector3d v) => new((float)v.X, (float)v.Y, (float)v.Z);
     }
 
     /// <summary>Where a follow-firing patrol's round goes: along its own facing, at the aim point's height.</summary>
@@ -2525,7 +2670,7 @@ public sealed class SoldierRenderer : IDisposable
                 view.Position.Y,
                 SnapToGround(view.Position.X, view.Position.Y, view.Position.Z));
             Vector3d soldierMark = new(
-                soldierFeet.X, soldierFeet.Y, soldierFeet.Z + AiSoldier.DetectionRaiseStandingInUnits);
+                soldierFeet.X, soldierFeet.Y, soldierFeet.Z + AiSoldier.DetectionMarkAboveFeet(crouching: false));
             AiCombatTarget record = _npcTargets.GetValueOrDefault(view)
                 ?? (_npcTargets[view] = new AiCombatTarget($"Soldier{view.Soldier.Id}"));
             humans.Add(new AiDetectionCandidate(
@@ -2539,6 +2684,22 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         return humans;
+    }
+
+    private Group? FindGroup(SoldierView view)
+    {
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                if (ReferenceEquals(member.View, view))
+                {
+                    return group;
+                }
+            }
+        }
+
+        return null;
     }
 
     private Member? FindMember(SoldierView view)
@@ -3067,16 +3228,95 @@ public sealed class SoldierRenderer : IDisposable
                         view.Position.Z + AiSoldier.HumanSeparationEyeHeight);
                 }
 
+                // The bone offset is from the model's origin, which is drawn above the feet by the model's
+                // lowest vertex -- as IGI.exe's Human+32 stands above them. Adding it to the feet put the
+                // eye at waist height, below every parapet a guard looks over.
                 Vector3f eye = pose.Positions[HumanAttachPoints.AiEye];
+                double originLift = FindGroup(view) is { } group ? -group.LowestVertexZ * WorldScene.UnitsPerMetre : 0.0;
                 return new Vector3d(
                     view.Position.X + eye.X,
                     view.Position.Y + eye.Y,
-                    view.Position.Z + eye.Z);
+                    view.Position.Z + originLift + eye.Z);
             },
             // The attachment supplies the animated eye POSITION only; its local rotation differs by
             // skeleton and clip. The snapshot (0x489960) tests against the view matrix: the body's heading
             // tipped by the view's own pitch.
-            () => brain.ViewOrientation);
+            //
+            // But only while the soldier is DRAWN. 0x44F410 copies the eye's matrix out of the bone palette
+            // ([Human+0x70]+0x2B8), and the palette is filled by the skinning in the draw callback
+            // (0x49F700), which runs only for a soldier inside the render camera's frustum (0x4D06C0). A
+            // guard off the player's screen keeps looking the way it last did on it -- and one never drawn
+            // looks along its rest pose, about five degrees off world +Y whatever its body faces. Measured
+            // on the retail game with the probe: seventeen of twenty-one mission-1 guards shared that exact
+            // rest matrix, and turning the view onto one made its eye follow its body within two ticks.
+            () =>
+            {
+                Member? member = FindMember(view);
+                if (member is null)
+                {
+                    return brain.ViewOrientation;
+                }
+
+                if (member.InView)
+                {
+                    member.EyeOrientation = brain.ViewOrientation;
+                }
+
+                return member.EyeOrientation ?? RestEyeOrientation;
+            });
+    }
+
+    /// <summary>
+    /// The eye matrix of a guard the player has never drawn -- bone 5's rest orientation, unrotated by the
+    /// body, read off every undrawn guard of mission 1 by the probe (the cone test's snapshot, +24).
+    /// </summary>
+    internal static readonly Matrix3f RestEyeOrientation = new(
+        0.9956f, -0.0927f, 0.0076f,
+        0.0919f, 0.9926f, 0.0784f,
+        -0.0148f, -0.0774f, 0.9968f);
+
+    /// <summary>
+    /// The soldier model's bounding radius the draw callback's frustum test scales by 1.41, in metres.
+    /// </summary>
+    /// <remarks>
+    /// An approximation: retail reads it from the model's LOD record (<c>+60</c>), which is not parsed yet, and
+    /// the skinned geometry's own bounds are not in posed model space. A metre about the model origin -- the
+    /// pelvis, 0.8 m under the eye bone -- covers a standing body, and only decides guards at the screen edge.
+    /// </remarks>
+    private const float SkinCullRadiusMetres = 1.0f;
+
+    /// <summary>How far from the camera a drawn soldier's eye bone is still refreshed, in metres.</summary>
+    /// <remarks>
+    /// Measured on the retail game: past about 51 m the soldier is drawn at its fifth LOD (0x4CFF70 returns
+    /// 4; 50.6 m gave 3 and 51.9 m gave 4), and that LOD's skinning leaves the eye bone's palette entry as it
+    /// was -- a guard skinned at 65 m kept its rest-pose eye, one at 50 m followed its body. The LOD pick is by
+    /// view depth scaled by the field of view, so zoomed optics would reach further; that is not modelled.
+    /// </remarks>
+    private const double EyeRefreshDistanceMetres = 51.0;
+
+    /// <summary>
+    /// Records which soldiers the main view draws closely enough to refresh their eyes this frame -- the
+    /// frustum sphere test retail's draw callback makes before it skins a body (<c>0x4D06C0</c>, the model's
+    /// radius times 1.41), and the LOD range within which that skinning reaches the eye bone.
+    /// </summary>
+    /// <param name="camera">The frame's main camera.</param>
+    /// <param name="projection">Its projection.</param>
+    /// <remarks>Only the main view counts: the shadow cascades' light cameras skin nothing in the original.</remarks>
+    public void ObserveView(in Camera3D camera, in Matrix4f projection)
+    {
+        _lastObservedCamera = camera;
+        FrustumCulling.Frustum frustum = FrustumCulling.Frustum.FromProjection(projection);
+        BoundingSphere test = new(Vector3f.Zero, SkinCullRadiusMetres * 1.41f);
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                member.InView = ConditionalContainerGate.IsTaskActive(member.View.Soldier)
+                    && member.HasFrameState
+                    && Vector3d.Distance(member.DrawnWhere, camera.Position) <= EyeRefreshDistanceMetres
+                    && frustum.SphereVisible(camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation), test);
+            }
+        }
     }
 
     private static IEnumerable<GuardGeneratorTask> FindGuardGenerators(GameTask task)
@@ -3224,9 +3464,7 @@ public sealed class SoldierRenderer : IDisposable
             : new Vector3d(
                 feet.X,
                 feet.Y,
-                feet.Z + (enemyCrouching
-                    ? AiSoldier.DetectionRaiseCrouchedInUnits
-                    : AiSoldier.DetectionRaiseStandingInUnits));
+                feet.Z + AiSoldier.DetectionMarkAboveFeet(enemyCrouching));
 
         // EVERY soldier's rig is advanced, not just each group's representative. Ticking only the
         // representative left every other soldier's BoneObject frozen, so its RootMotion() was zero and the
@@ -6086,7 +6324,10 @@ public sealed class SoldierRenderer : IDisposable
     /// </summary>
     /// <param name="origin">Where the round starts, in world units.</param>
     /// <param name="end">Where the round stops.</param>
-    /// <param name="hitProbability">The firing AI's chance the round is on target (its <c>Human+1236</c>).</param>
+    /// <param name="hitProbability">
+    /// The firing AI's chance the round is on target (its <c>Human+1236</c>). Retail rolls it only against the
+    /// player, so a soldier the round meets never consults it; it is kept for the callers' symmetry.
+    /// </param>
     /// <param name="weapon">The firing weapon, whose damage factor and category apply on a hit.</param>
     /// <param name="shooter">The soldier that fired; its own body is never offered the round.</param>
     /// <param name="worldHit">
@@ -6099,11 +6340,12 @@ public sealed class SoldierRenderer : IDisposable
     /// body the round met and stopped at); <see langword="false"/> when it met nobody and flies on.
     /// </returns>
     /// <remarks>
-    /// <b>The damage is applied here</b>, exactly as in <see cref="TryShoot"/>. Same-team fire and
-    /// scripted invulnerability (500.qvm sets <c>SetInvulnerability(TRUE)</c> on the friendly squad,
-    /// so they cannot die) make the round <em>meet</em> the body but do nothing; the body is still a
-    /// physical obstacle that consumes the round. The nearest candidates roll first (retail's cast
-    /// meets the nearest human and a failed roll flies the round on to the next one behind).
+    /// <b>The damage is applied here</b>, exactly as in <see cref="TryShoot"/>. The Human's evaluate
+    /// (<c>0x45E3E0</c>) decides each body the round meets, nearest first: one on the shooter's own side
+    /// (<c>Human+252</c>) lets it pass through to the next, any other takes it -- with no probability roll,
+    /// which retail makes only for the player. Scripted invulnerability (500.qvm sets
+    /// <c>SetInvulnerability(TRUE)</c> on the friendly squad, so they cannot die) makes the round
+    /// <em>meet</em> the body but do nothing; the body is still a physical obstacle that consumes it.
     /// </remarks>
     public bool TryShootAiRound(
         Vector3d origin,
@@ -6176,9 +6418,10 @@ public sealed class SoldierRenderer : IDisposable
 
         foreach ((HumanHealth health, SoldierView struckView, HumanHit candidate, _) in candidates)
         {
-            // The renderer's own shot random -- the player path rolls in the round handler, but this
-            // path lives here, so the AI spread lives here too.
-            if (_aiRandom.NextDouble() > hitProbability)
+            // No probability roll against a soldier: the Human's evaluate (0x45E3E0) rolls the round's
+            // probability only when the struck human is player 0. Any other body is hit outright unless
+            // the shooter is on its side (Human+252), and then the round passes THROUGH it and flies on.
+            if (shooter is not null && struckView.Soldier.Team == shooter.Soldier.Team)
             {
                 continue;
             }
@@ -6186,11 +6429,9 @@ public sealed class SoldierRenderer : IDisposable
             hit = candidate;
             AiSoldier? brain = _brains.TryGetValue(struckView, out AiSoldier? b) ? b : null;
 
-            // Same-team fire and scripted invulnerability make the round MEET the body but do nothing --
-            // exactly like the player's TryShoot. The round is still consumed: an invulnerable body is a
-            // physical obstacle.
-            bool friendlyFire = shooter is not null && struckView.Soldier.Team == shooter.Soldier.Team;
-            bool invulnerable = friendlyFire || (brain?.IsInvulnerable ?? false);
+            // Scripted invulnerability makes the round MEET the body but do nothing -- exactly like the
+            // player's TryShoot. The round is still consumed: an invulnerable body is a physical obstacle.
+            bool invulnerable = brain?.IsInvulnerable ?? false;
             if (!invulnerable)
             {
                 float dealt = health.Apply(candidate.Zone, weapon.DamageFactor, brain?.IsInstantDeathDisabled ?? false);
@@ -6211,7 +6452,7 @@ public sealed class SoldierRenderer : IDisposable
                 $"[dmg] port zone={candidate.Zone} ({HumanDamage.ZoneName(candidate.Zone)}) bone={candidate.Bone} "
                     + $"dmgFactor={weapon.DamageFactor:0.000} invuln={(invulnerable ? 1 : 0)} "
                     + $"instDeathDisabled={(brain?.IsInstantDeathDisabled ?? false ? 1 : 0)} "
-                    + $"friendly={(friendlyFire ? 1 : 0)} accum={health.Damage:0.000} max={health.MaximumHealth:0.000} "
+                    + $"accum={health.Damage:0.000} max={health.MaximumHealth:0.000} "
                     + $"dead={(health.IsDead ? 1 : 0)}");
             PassedBy(candidate.Position, struckView);
             return true;
@@ -6666,6 +6907,12 @@ public sealed class SoldierRenderer : IDisposable
     {
         public SoldierView View { get; } = view;
 
+        /// <summary>Whether the last frame's main view drew this soldier -- retail's cue to re-skin it.</summary>
+        public bool InView { get; set; }
+
+        /// <summary>The eye orientation from the last frame that drew this soldier, or none yet.</summary>
+        public Matrix3f? EyeOrientation { get; set; }
+
         public Vector3d Position { get; } = position;
 
         /// <summary>Whether the authored origin is cinematic staging rather than a gameplay spawn.</summary>
@@ -6705,6 +6952,9 @@ public sealed class SoldierRenderer : IDisposable
 
         /// <summary>Ticks left before the weapon's cadence lets another round out.</summary>
         public int FireCooldown { get; set; }
+
+        /// <summary>Rounds fired since the trigger went down — the gun's <c>+320</c> that picks the spread.</summary>
+        public int RoundsThisPull { get; set; }
 
         /// <summary>Ticks left of a reload.</summary>
         public int ReloadTicks { get; set; }

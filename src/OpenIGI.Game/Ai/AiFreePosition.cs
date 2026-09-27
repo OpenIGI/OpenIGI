@@ -13,14 +13,14 @@ namespace OpenIGI.Game.Ai;
 /// <i>can I shoot from there</i>.
 /// </para>
 /// <para>
-/// The search is a breadth-first walk outward from <b>the target's</b> nearest node, expanding at most
-/// <see cref="DefaultBudget"/> new nodes, and it runs no pathfinding: the direction test is three
+/// The search is a breadth-first walk outward from <b>the target's</b> nearest node, testing at most
+/// <see cref="DefaultBudget"/> nodes beyond it, and it runs no pathfinding: the direction test is three
 /// lookups in §1's precomputed route table.
 /// </para>
 /// </remarks>
 public static class AiFreePosition
 {
-    /// <summary>How many new nodes the search may expand — the original always passes five.</summary>
+    /// <summary>How many nodes beyond the target's the search may test — the original always passes five.</summary>
     public const int DefaultBudget = 5;
 
     /// <summary>
@@ -48,7 +48,7 @@ public static class AiFreePosition
     /// <see langword="null"/> to skip it — <b>a recorded divergence</b>, because without it a soldier
     /// will advance to somewhere it cannot actually shoot from.
     /// </param>
-    /// <param name="budget">How many new nodes may be expanded.</param>
+    /// <param name="budget">How many nodes beyond the target's may be tested and rejected.</param>
     /// <param name="occupancy">
     /// The level's shared node-claim registry, or <see langword="null"/> to search without occupancy —
     /// <c>0x48B260</c> rejects a full node before the can-shoot ray and CLAIMS an accepted one.
@@ -80,18 +80,25 @@ public static class AiFreePosition
             return targetNodeId;
         }
 
+        // 0x48B050 counts the nodes it TESTS and rejects (v15, bumped as each one joins the queue), not the
+        // nodes it expands: once five have failed it stops, mid-neighbour-list. So the search never looks
+        // past the target node and five more; counting expansions instead tested every neighbour of five
+        // nodes and sent a soldier to a node across the compound.
         HashSet<int> visited = [targetNodeId];
         Queue<int> queue = new();
         queue.Enqueue(targetNodeId);
-        int expanded = 0;
+        int rejected = 0;
 
-        while (queue.Count > 0 && expanded < budget)
+        while (queue.Count > 0 && rejected < budget)
         {
             int node = queue.Dequeue();
-            expanded++;
-
             foreach (GraphLink link in graph.LinksOf(node))
             {
+                if (rejected >= budget)
+                {
+                    break;
+                }
+
                 int neighbour = link.Other(node);
                 if (neighbour < 0 || !visited.Add(neighbour))
                 {
@@ -104,6 +111,7 @@ public static class AiFreePosition
                 }
 
                 queue.Enqueue(neighbour);
+                rejected++;
             }
         }
 
@@ -167,6 +175,14 @@ public static class AiFreePosition
         if (towardTarget && !ShortensTheRoute(graph, candidateId, myNodeId, targetNodeId))
         {
             return false;
+        }
+
+        // 0x48B260 accepts the node its caller already holds outright -- no capacity test, no can-shoot
+        // ray, no new claim (the record it finds IS HumanAI+16032). A small node's zero-capacity grid
+        // would otherwise count the soldier's own claim as "full" and push it off its node.
+        if (occupancy is not null && claimant is not null && occupancy.IsClaimedBy(graph, candidateId, claimant))
+        {
+            return true;
         }
 
         // The occupancy gates from 0x48B260: a node whose record says it is full is rejected before

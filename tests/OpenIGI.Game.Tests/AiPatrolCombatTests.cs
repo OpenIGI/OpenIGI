@@ -332,7 +332,7 @@ public sealed class AiPatrolCombatTests
         int aimers = 0,
         int? freeToward = null,
         int? freeAway = null) =>
-        new(hasSlot, visible, distance, currentNode, standingOnOwnNode, ammo, hasGrenade, aimers, freeToward, freeAway);
+        new(hasSlot, visible, distance, currentNode, standingOnOwnNode, ammo, hasGrenade, aimers, () => freeToward, () => freeAway);
 
     // A PATROL_AK row on GD_2, with the fields each test needs overridable.
     private static AiCombatParameters Parameters(

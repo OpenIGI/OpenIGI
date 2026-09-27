@@ -30,13 +30,16 @@ public sealed class AiSightWiringTests
     }
 
     [Theory]
-    [InlineData(WorldTraceHitKind.StaticObject, 8_000.0, true)]
+    [InlineData(WorldTraceHitKind.StaticObject, 8_200.0, false)]
     [InlineData(WorldTraceHitKind.StaticObject, 7_000.0, false)]
     [InlineData(WorldTraceHitKind.Terrain, 9_500.0, false)]
-    public void AnObjectHidesTheTargetOnlyNearerThanRetailsTolerance(WorldTraceHitKind kind, double distance, bool seen)
+    [InlineData(WorldTraceHitKind.DynamicObject, 8_000.0, true)]
+    [InlineData(WorldTraceHitKind.DynamicObject, 7_000.0, false)]
+    public void PlacedGeometryHidesTheTargetWhereverItIsMet(WorldTraceHitKind kind, double distance, bool seen)
     {
-        // 0x489B20: visible when 0x4CE410 reports no contact or a contact fraction of at least 0.79; a terrain
-        // contact is forced to fraction zero, so it always hides.
+        // 0x489B20 accepts a returned fraction of 0.79 or more, but for terrain and placed geometry the retail
+        // casts only ever return 0.0 when blocked -- measured with the probe, including a static roof met 82%
+        // along. Only a moving object is still given the tolerance.
         WorldTraceCast trace = (in WorldTraceRequest request, out WorldTraceHit hit) =>
         {
             hit = new WorldTraceHit(default, default, distance, distance / 10_000.0, Material: 0, kind);

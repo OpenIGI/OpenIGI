@@ -231,7 +231,7 @@ public sealed class HeldGun
                 ];
 
                 (float radius, float bearing) = GunFiring.SampleCone(cone, samples);
-                direction = Offset(forward, right, up, radius, bearing);
+                direction = GunFiring.OffsetInCone(forward, right, up, radius, bearing);
             }
 
             _projectiles.Add(new GunProjectile(
@@ -287,18 +287,4 @@ public sealed class HeldGun
             (weapon.RandomRecoilZ * d2r * y) + (weapon.FixedRecoilZ * d2r));
     }
 
-    // Rotates the barrel by a polar offset within the cone. The original builds a basis from the
-    // direction (0x414A60), makes a rotation from the two angles (0x4B38E0) and multiplies the two
-    // 3x3s; the first column of the product is the direction, which is what this computes directly.
-    private static Vector3f Offset(
-        Vector3f forward,
-        Vector3f right,
-        Vector3f up,
-        float radius,
-        float bearing)
-    {
-        float sin = MathF.Sin(radius);
-        Vector3f lateral = (right * (MathF.Cos(bearing) * sin)) + (up * (MathF.Sin(bearing) * sin));
-        return ((forward * MathF.Cos(radius)) + lateral).Normalized();
-    }
 }
