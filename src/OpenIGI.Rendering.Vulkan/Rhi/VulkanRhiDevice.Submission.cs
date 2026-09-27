@@ -39,6 +39,9 @@ internal sealed unsafe partial class VulkanRhiDevice
     private ulong _uploadChunkUsed;
     private ulong _uploadBytes;
 
+    // The buffers the upload being recorded has already copied into.
+    private readonly HashSet<ulong> _uploadTargets = [];
+
     // What the frame being recorded will submit, beyond the command buffers in _pending.
     private readonly List<VulkanBuffer> _pendingStaging = [];
 
@@ -141,6 +144,37 @@ internal sealed unsafe partial class VulkanRhiDevice
             VkCheck.Ok(_vk.BeginCommandBuffer(_upload, &begin), "vkBeginCommandBuffer");
         }
 
+        // Copies in one command buffer are not ordered by where they were recorded, and a buffer written
+        // twice before a submission -- the distance field's cell lists, rebuilt for two levels in one
+        // frame -- would end holding whichever copy the GPU happened to finish last, or a mixture of both.
+        // The interface promises the later write, so a copy into a buffer this upload has already written
+        // waits for the ones before it. Synchronisation validation reports it as a write-after-write
+        // hazard, and on Metal, which runs blits concurrently, it is not only a theoretical one.
+        if (!_uploadTargets.Add(destination.Handle))
+        {
+            MemoryBarrier ordered = new()
+            {
+                SType = StructureType.MemoryBarrier,
+                SrcAccessMask = AccessFlags.TransferWriteBit,
+                DstAccessMask = AccessFlags.TransferWriteBit,
+            };
+
+            _vk.CmdPipelineBarrier(
+                _upload,
+                PipelineStageFlags.TransferBit,
+                PipelineStageFlags.TransferBit,
+                0,
+                1,
+                &ordered,
+                0,
+                null,
+                0,
+                null);
+
+            _uploadTargets.Clear();
+            _uploadTargets.Add(destination.Handle);
+        }
+
         BufferCopy region = new() { SrcOffset = _uploadChunkUsed, DstOffset = offset, Size = size };
         _vk.CmdCopyBuffer(_upload, chunk.Handle, destination, 1, &region);
 
@@ -223,6 +257,7 @@ internal sealed unsafe partial class VulkanRhiDevice
         _uploadChunks.Clear();
         _uploadChunkUsed = 0;
         _uploadBytes = 0;
+        _uploadTargets.Clear();
         return upload;
     }
 
@@ -397,3 +432,4 @@ internal sealed unsafe partial class VulkanRhiDevice
 
     private sealed record LooseSubmission(Fence Fence, List<CommandBuffer> Commands, List<VulkanBuffer> Staging);
 }
+
