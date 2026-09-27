@@ -272,11 +272,30 @@ internal sealed unsafe partial class VulkanRhiDevice
     {
         if (_poolRemaining <= 0)
         {
-            _pool = CreatePool();
-            _pools.Add(_pool);
-            _poolRemaining = PoolCapacity;
+            OpenPool();
         }
 
+        Result result = TryAllocate(layout, out DescriptorSet set);
+
+        // Counting sets is not the whole of what a pool can run out of: each descriptor type has its own
+        // budget, and a layout heavy in one type spends it long before the pool's sets are gone. Some
+        // drivers overcommit a pool and never say so; MoltenVK's argument buffers hold it to exactly what
+        // it was made with, and answers with either of these. Both mean this pool is done, and the
+        // specification's remedy is another pool, so the set is asked for once more from a fresh one.
+        if (result is Result.ErrorOutOfPoolMemory or Result.ErrorFragmentedPool)
+        {
+            OpenPool();
+            result = TryAllocate(layout, out set);
+        }
+
+        VkCheck.Ok(result, "vkAllocateDescriptorSets");
+
+        _poolRemaining--;
+        return set;
+    }
+
+    private Result TryAllocate(DescriptorSetLayout layout, out DescriptorSet set)
+    {
         DescriptorSetLayout local = layout;
         DescriptorSetAllocateInfo info = new()
         {
@@ -286,11 +305,17 @@ internal sealed unsafe partial class VulkanRhiDevice
             PSetLayouts = &local,
         };
 
-        DescriptorSet set;
-        VkCheck.Ok(_vk.AllocateDescriptorSets(_device.Device, &info, &set), "vkAllocateDescriptorSets");
+        DescriptorSet allocated;
+        Result result = _vk.AllocateDescriptorSets(_device.Device, &info, &allocated);
+        set = allocated;
+        return result;
+    }
 
-        _poolRemaining--;
-        return set;
+    private void OpenPool()
+    {
+        _pool = CreatePool();
+        _pools.Add(_pool);
+        _poolRemaining = PoolCapacity;
     }
 
     private DescriptorPool CreatePool()
