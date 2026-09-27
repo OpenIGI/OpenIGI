@@ -905,6 +905,43 @@ public sealed class SoldierRenderer : IDisposable
         return contacts;
     }
 
+    /// <summary>
+    /// Every live soldier as a security camera's scan is offered it — <c>0x45FE30</c>'s description, in the
+    /// global human list's order.
+    /// </summary>
+    /// <remarks>
+    /// The lens scans for team 1 (<c>0x4415C0</c>), so a team-1 soldier counts as the cameras' own side: its
+    /// body is what a camera raises the alarm on at once. The mark is the one the guards' own scan tests
+    /// (<c>sub_465820</c>), the same for a body as for a standing soldier.
+    /// </remarks>
+    public IReadOnlyList<SecurityCameraSubject> CameraSubjects()
+    {
+        List<SecurityCameraSubject> subjects = [];
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
+
+            Vector3d feet = new(
+                view.Position.X,
+                view.Position.Y,
+                SnapToGround(view.Position.X, view.Position.Y, view.Position.Z));
+            bool dead = view.IsDead
+                || brain.Activity == AiSoldierActivity.Dead
+                || (_health.TryGetValue(view, out HumanHealth? health) && health.IsDead);
+            subjects.Add(new SecurityCameraSubject(
+                view,
+                new Vector3d(feet.X, feet.Y, feet.Z + AiSoldier.DetectionMarkAboveFeet(crouching: false)),
+                CamerasSide: view.Soldier.Team == 1,
+                Alive: !dead,
+                view.Soldier));
+        }
+
+        return subjects;
+    }
+
     /// <summary>Gets the live AI brains for focused renderer-path tests.</summary>
     internal IReadOnlyList<AiSoldier> BrainsForTesting => [.. _brains.Values];
 

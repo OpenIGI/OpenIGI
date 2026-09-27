@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Ai;
@@ -49,6 +50,26 @@ public sealed class AlarmSpeaker(
     /// <summary>Gets or sets whether the speaker has been shot out — retail's <c>+417</c>.</summary>
     /// <remarks>Permanent: a destroyed speaker never sounds again, whatever its expression says.</remarks>
     public bool IsDestroyed { get; set; }
+
+    /// <summary>Gets whether damage adds up before it breaks, as a camera lens's does.</summary>
+    /// <remarks>
+    /// A security camera's lens sums every round's and blast's damage (<c>+260</c>) and explodes only once
+    /// the sum reaches <see cref="AlarmSpeakerRegistry.CameraDestroyThreshold"/>; the other emitters break on
+    /// their first hit.
+    /// </remarks>
+    public bool AccumulatesDamage =>
+        string.Equals(Task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal);
+
+    /// <summary>Gets the damage taken so far — the lens's <c>+260</c>.</summary>
+    public float Damage { get; internal set; }
+
+    /// <summary>Gets the radius a blast's falloff is measured from, in engine units.</summary>
+    /// <remarks>
+    /// <c>0x4422F0</c> hands <c>0x416C90</c> the lens's largest extent (<c>1</c>) times its head model's bound
+    /// (<c>0x4D0950</c>, <c>MESH+0x78</c>) — 2863.59 units for the intact <c>313_02_1</c>, as the live game
+    /// reports.
+    /// </remarks>
+    public float ExplosionContactRadiusUnits { get; internal set; } = 1f;
 }
 
 /// <summary>All placed sirens in one mission and whether each is sounding.</summary>
@@ -155,13 +176,29 @@ public sealed class AlarmSpeakerRegistry
             }
 
             speaker.PositionUnits = placement.Position * WorldScene.UnitsPerMetre;
+            if (placement.Model is { NativeMarkerBound: > 0f } model && float.IsFinite(model.NativeMarkerBound))
+            {
+                speaker.ExplosionContactRadiusUnits = model.NativeMarkerBound;
+            }
         }
     }
 
-    /// <summary>Destroys the exact alarm object named by a rich world trace.</summary>
+    /// <summary>The damage that breaks a security camera's lens.</summary>
+    /// <remarks>
+    /// <c>0x4415C0</c> writes <c>0.5</c> into the lens's <c>+264</c>; its hit handlers (<c>0x4422B0</c> for a
+    /// round, <c>0x4422F0</c> for a blast) add to <c>+260</c> and flag the explosion once the sum reaches it.
+    /// Retail's rounds carry 0.2 in Mission 1, so a camera takes three.
+    /// </remarks>
+    public const float CameraDestroyThreshold = 0.5f;
+
+    /// <summary>Hands one round to the exact alarm object named by a rich world trace.</summary>
     /// <param name="owner">The placing task hit by the trace.</param>
-    /// <returns>The newly destroyed speaker, or <see langword="null"/>.</returns>
-    public AlarmSpeaker? TryDestroy(GameTask? owner)
+    /// <param name="damage">
+    /// The round's damage — the firing weapon's <c>Damage Factor</c>. A camera adds it up; every other
+    /// emitter breaks on the first hit whatever it is.
+    /// </param>
+    /// <returns>The speaker this round destroyed, or <see langword="null"/>.</returns>
+    public AlarmSpeaker? TryDestroy(GameTask? owner, float damage = float.PositiveInfinity)
     {
         if (owner is null
             || !_byTask.TryGetValue(owner, out AlarmSpeaker? speaker)
@@ -171,15 +208,60 @@ public sealed class AlarmSpeakerRegistry
             return null;
         }
 
-        speaker.IsDestroyed = true;
-        return speaker;
+        return Damage(speaker, damage) ? speaker : null;
+    }
+
+    /// <summary>Hands a blast to every speaker it reaches.</summary>
+    /// <param name="impactUnits">Where the blast went off, in world units.</param>
+    /// <param name="radiusUnits">The blast's radius.</param>
+    /// <param name="falloffUnits">How far past the radius its damage takes to reach zero.</param>
+    /// <param name="damageFactor">The blast's damage factor.</param>
+    /// <returns>The speakers this blast destroyed.</returns>
+    /// <remarks>
+    /// A camera takes the shared contact dose (<c>0x416C90</c>) measured from its head's bound and adds it
+    /// to what it has already taken (<c>0x4422F0</c>), so a grenade in reach breaks it outright while a
+    /// weak or distant one only wears it down. The other emitters keep the nearest-inside-the-radius rule.
+    /// </remarks>
+    public IReadOnlyList<AlarmSpeaker> ApplyExplosion(
+        Vector3d impactUnits,
+        float radiusUnits,
+        float falloffUnits,
+        float damageFactor)
+    {
+        List<AlarmSpeaker> destroyed = [];
+        foreach (AlarmSpeaker camera in _speakers)
+        {
+            if (camera.AccumulatesDamage && !camera.IsDestroyed && camera.CanBeDestroyed)
+            {
+                float dose = ExplosionDamage.Dose(
+                    (float)(camera.PositionUnits - impactUnits).Length,
+                    camera.ExplosionContactRadiusUnits,
+                    radiusUnits,
+                    falloffUnits,
+                    damageFactor);
+                if (dose > 0f && Damage(camera, dose))
+                {
+                    destroyed.Add(camera);
+                }
+            }
+        }
+
+        if (TryDestroyAt(impactUnits, radiusUnits) is { } speaker)
+        {
+            destroyed.Add(speaker);
+        }
+
+        return destroyed;
     }
 
     /// <summary>Destroys whatever speaker an impact landed on, if it landed on one.</summary>
     /// <param name="impactUnits">Where the round or blast hit, in world units.</param>
     /// <param name="radiusUnits">How far the destruction reaches — a bullet's touch, a blast's radius.</param>
     /// <returns>The speaker destroyed, or <see langword="null"/> when the hit struck none.</returns>
-    /// <remarks>The nearest one inside the radius takes it; one impact fells at most one speaker.</remarks>
+    /// <remarks>
+    /// The nearest one inside the radius takes it; one impact fells at most one speaker. Cameras are left
+    /// to <see cref="ApplyExplosion"/> and <see cref="TryDestroy"/>, which add their damage up.
+    /// </remarks>
     public AlarmSpeaker? TryDestroyAt(Vector3d impactUnits, float radiusUnits = HitRadiusUnits)
     {
         AlarmSpeaker? nearest = null;
@@ -187,7 +269,7 @@ public sealed class AlarmSpeakerRegistry
 
         foreach (AlarmSpeaker speaker in _speakers)
         {
-            if (speaker.IsDestroyed || !speaker.CanBeDestroyed)
+            if (speaker.IsDestroyed || !speaker.CanBeDestroyed || speaker.AccumulatesDamage)
             {
                 continue;
             }
@@ -206,6 +288,22 @@ public sealed class AlarmSpeakerRegistry
         }
 
         return nearest;
+    }
+
+    // A camera adds the hit to its sum and breaks at the threshold; anything else breaks outright.
+    private static bool Damage(AlarmSpeaker speaker, float damage)
+    {
+        if (speaker.AccumulatesDamage)
+        {
+            speaker.Damage += damage;
+            if (speaker.Damage < CameraDestroyThreshold)
+            {
+                return false;
+            }
+        }
+
+        speaker.IsDestroyed = true;
+        return true;
     }
 
     private void Add(AlarmSpeaker speaker)
