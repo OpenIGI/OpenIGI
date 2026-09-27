@@ -16,7 +16,32 @@ public enum SecurityCameraBeep
 
     /// <summary>The camera has confirmed the intruder and exports <c>isDetection</c>.</summary>
     Detected,
+
+    /// <summary>
+    /// The camera has found one of its own side fallen — a guard's body or a destroyed camera — and exports
+    /// <c>isDetection</c> at once (<c>camera_beep_al</c>).
+    /// </summary>
+    BodyDetected,
 }
+
+/// <summary>
+/// One object the camera's detection scan (<c>0x489750</c>) is offered this tick, as it describes itself:
+/// a human through <c>0x45FE30</c> or another camera through <c>0x442A30</c>.
+/// </summary>
+/// <param name="Key">Who it is; a camera restarts its confirmation whenever this changes.</param>
+/// <param name="Mark">The point the cone and the sight ray test, in engine units.</param>
+/// <param name="CamerasSide">
+/// Whether it is on team 1, the side every lens scans for (<c>0x4415C0</c> passes team 1): soldiers and
+/// cameras are, the player is not.
+/// </param>
+/// <param name="Alive">Whether it is alive — for a camera, not yet exploded.</param>
+/// <param name="Task">Its task, which the sight ray does not collide with, or <see langword="null"/>.</param>
+public readonly record struct SecurityCameraSubject(
+    object Key,
+    Vector3d Mark,
+    bool CamerasSide,
+    bool Alive,
+    GameTask? Task = null);
 
 /// <summary>The lens lamp selected by retail <c>SCameraLens</c>'s render callback.</summary>
 public enum SecurityCameraLamp
@@ -46,8 +71,8 @@ public sealed class SecurityCamera
     private const float TrackingStep = 0.75f * DegreesToRadians;
     private const int DetectionDelayTicks = 90;
     private const int ResumeScanDelayTicks = 60;
-    private const float StandingTargetHeight = 2828.8f;
-    private const float CrouchingTargetHeight = 1433.6f;
+    internal const float StandingTargetHeight = 2828.8f;
+    internal const float CrouchingTargetHeight = 1433.6f;
 
     private readonly float _holderGamma;
     private readonly float _cameraGamma;
@@ -65,7 +90,7 @@ public sealed class SecurityCamera
     private int _scanDirection;
     private int _endDelay;
     private int _resumeScanDelay;
-    private bool _hadTarget;
+    private object? _targetKey;
     private bool _lampPulseLarge;
     private float _previousAlpha;
     private float _previousGamma;
@@ -97,6 +122,7 @@ public sealed class SecurityCamera
         _previousAlpha = CurrentAlpha;
         _previousGamma = CurrentGamma;
         HeadPositionUnits = ReadPosition(task);
+        HolderPositionUnits = HeadPositionUnits;
         RefreshTransform();
     }
 
@@ -203,11 +229,16 @@ public sealed class SecurityCamera
         IsMoving = false;
     }
 
+    /// <summary>Gets the camera's own mark as another lens's scan sees it — the holder origin.</summary>
+    /// <remarks><c>0x442A30</c> describes an <c>SCamera</c> by its task position (<c>+32</c>).</remarks>
+    public Vector3d HolderPositionUnits { get; private set; }
+
+    /// <summary>Gets whether the confirmed target is one of the camera's own side fallen.</summary>
+    public bool IsBodyTarget { get; private set; }
+
     internal void Tick(
         bool powered,
-        Vector3d targetFeet,
-        bool targetCrouching,
-        bool targetAlive,
+        IReadOnlyList<SecurityCameraSubject> subjects,
         WorldTraceCast? sight)
     {
         _previousAlpha = CurrentAlpha;
@@ -240,25 +271,40 @@ public sealed class SecurityCamera
 
         CurrentAlpha = MoveTowards(CurrentAlpha, _cameraAlpha, PitchStep);
 
-        Vector3d target = new(
-            targetFeet.X,
-            targetFeet.Y,
-            targetFeet.Z + (targetCrouching ? CrouchingTargetHeight : StandingTargetHeight));
-        bool visible = targetAlive
-            && new AiEyeSnapshot(
-                sightOrigin,
-                sightOrientation,
-                _viewCone,
-                default,
-                secondaryEnabled: false).IsVisible(target)
-            && !IsOccluded(sight, sightOrigin, target);
-
-        if (visible)
+        // 0x441BF0 picks its target from the scan's two lists. Every lens scans with flags 6 (0x4415C0):
+        // its own side DEAD goes to +428 and the other side ALIVE to +416; the living of its own side and
+        // the other side's dead are never registered. The first visible entry of +428 is taken, then the
+        // first visible entry of +416 replaces it -- an intruder outranks a body.
+        SecurityCameraSubject? target = null;
+        bool bodyTarget = false;
+        AiEyeSnapshot eye = new(sightOrigin, sightOrientation, _viewCone, default, secondaryEnabled: false);
+        foreach (bool fallenList in (ReadOnlySpan<bool>)[true, false])
         {
-            if (!_hadTarget)
+            foreach (SecurityCameraSubject subject in subjects)
             {
-                DetectionTime = DetectionDelayTicks;
-                _hadTarget = true;
+                bool registered = fallenList
+                    ? subject.CamerasSide && !subject.Alive
+                    : !subject.CamerasSide && subject.Alive;
+                if (registered
+                    && !ReferenceEquals(subject.Task, Task)
+                    && eye.IsVisible(subject.Mark)
+                    && !IsOccluded(sight, sightOrigin, subject.Mark, subject.Task))
+                {
+                    target = subject;
+                    bodyTarget = fallenList;
+                    break;
+                }
+            }
+        }
+
+        if (target is { } seen)
+        {
+            // A new target restarts the confirmation: none for a body (detected this very tick), 90
+            // ticks for an intruder. The same target keeps counting down across ticks.
+            if (!Equals(_targetKey, seen.Key))
+            {
+                _targetKey = seen.Key;
+                DetectionTime = bodyTarget ? 0 : DetectionDelayTicks;
             }
 
             if (DetectionTime > 0)
@@ -270,15 +316,19 @@ public sealed class SecurityCamera
                 IsDetection = true;
             }
 
-            Beep = IsDetection ? SecurityCameraBeep.Detected : SecurityCameraBeep.Suspicious;
-            Track(target, sightOrigin, sightOrientation);
+            IsBodyTarget = bodyTarget;
+            Beep = !IsDetection ? SecurityCameraBeep.Suspicious
+                : bodyTarget ? SecurityCameraBeep.BodyDetected
+                : SecurityCameraBeep.Detected;
+            Track(seen.Mark, sightOrigin, sightOrientation);
         }
         else
         {
             DetectionTime = 0;
-            if (_hadTarget)
+            IsBodyTarget = false;
+            if (_targetKey is not null)
             {
-                _hadTarget = false;
+                _targetKey = null;
                 _resumeScanDelay = ResumeScanDelayTicks;
             }
 
@@ -353,7 +403,7 @@ public sealed class SecurityCamera
         }
     }
 
-    private bool IsOccluded(WorldTraceCast? sight, Vector3d origin, Vector3d target)
+    private bool IsOccluded(WorldTraceCast? sight, Vector3d origin, Vector3d target, GameTask? subject)
     {
         if (sight is null)
         {
@@ -366,6 +416,7 @@ public sealed class SecurityCamera
                 target,
                 WorldTraceMask.World,
                 IgnoredOwner: Task,
+                IgnoredSubject: subject,
                 TracePortals: true),
             out _);
     }
@@ -444,6 +495,7 @@ public sealed class SecurityCameraRegistry
     private readonly List<SecurityCamera> _cameras = [];
     private readonly Dictionary<GameTask, SecurityCamera> _byTask = [];
     private readonly List<Control> _controls = [];
+    private readonly List<SecurityCameraSubject> _subjects = [];
     private readonly LevelExpressionRuntime _expressions;
     private readonly WorldTraceCast? _sight;
 
@@ -487,13 +539,53 @@ public sealed class SecurityCameraRegistry
         }
     }
 
+    /// <summary>The key the player goes by among a camera's scan subjects.</summary>
+    public static readonly object PlayerKey = new();
+
+    /// <summary>Advances all lenses against the player alone.</summary>
+    public void Tick(Vector3d targetFeet, bool targetCrouching, bool targetAlive) =>
+        Tick(targetFeet, targetCrouching, targetAlive, playerOnCamerasSide: false, []);
+
     /// <summary>Advances all lenses, then the <c>SCameraControl</c> expressions that consume them.</summary>
-    public void Tick(Vector3d targetFeet, bool targetCrouching, bool targetAlive)
+    /// <param name="targetFeet">The player's feet, in engine units.</param>
+    /// <param name="targetCrouching">Whether the player is crouching, which lowers the mark.</param>
+    /// <param name="targetAlive">Whether the player is alive.</param>
+    /// <param name="playerOnCamerasSide">Whether the player is on team 1, the cameras' side.</param>
+    /// <param name="soldiers">
+    /// Every live soldier in the global human list's order, as <c>0x45FE30</c> describes it. The cameras
+    /// themselves are appended here (<c>0x442A30</c>), so one lens sees another that has been destroyed.
+    /// </param>
+    public void Tick(
+        Vector3d targetFeet,
+        bool targetCrouching,
+        bool targetAlive,
+        bool playerOnCamerasSide,
+        IReadOnlyList<SecurityCameraSubject> soldiers)
     {
+        ArgumentNullException.ThrowIfNull(soldiers);
+
+        _subjects.Clear();
+        _subjects.Add(new SecurityCameraSubject(
+            PlayerKey,
+            new Vector3d(
+                targetFeet.X,
+                targetFeet.Y,
+                targetFeet.Z + (targetCrouching
+                    ? SecurityCamera.CrouchingTargetHeight
+                    : SecurityCamera.StandingTargetHeight)),
+            playerOnCamerasSide,
+            targetAlive));
+        _subjects.AddRange(soldiers);
+        foreach (SecurityCamera camera in _cameras)
+        {
+            _subjects.Add(new SecurityCameraSubject(
+                camera, camera.HolderPositionUnits, CamerasSide: true, Alive: !camera.IsExploded, camera.Task));
+        }
+
         foreach (SecurityCamera camera in _cameras)
         {
             bool powered = _expressions.EvaluateCondition(camera.OnExpression, emptyValue: true, camera.Task);
-            camera.Tick(powered, targetFeet, targetCrouching, targetAlive, _sight);
+            camera.Tick(powered, _subjects, _sight);
         }
 
         foreach (Control control in _controls)

@@ -1657,6 +1657,7 @@ internal sealed partial class GameHost
             {
                 SecurityCameraBeep.Suspicious => "camera_beep_s",
                 SecurityCameraBeep.Detected => "camera_beep_l",
+                SecurityCameraBeep.BodyDetected => "camera_beep_al",
                 _ => string.Empty,
             };
 

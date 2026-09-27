@@ -188,6 +188,65 @@ public sealed class SecurityCameraRegistryTests
         AssertScript(fixture.Variables, "SCamera_1301.isExploded", 1);
     }
 
+    [RequiresGameDataFact]
+    public void CameraRaisesItsAlarmAtOnceOnAGuardsBodyInView()
+    {
+        Fixture fixture = Build();
+        SecurityCamera camera = fixture.Registry.Cameras[0];
+        SecurityCameraSubject body = Soldier(TargetStraightAhead(camera, 5.0), alive: false);
+
+        // 0x441BF0: a +428 target (own side, dead) starts with no countdown, so it is detected this tick.
+        fixture.Registry.Tick(default, false, targetAlive: false, playerOnCamerasSide: false, [body]);
+
+        Assert.Equal(0, camera.DetectionTime);
+        Assert.True(camera.IsDetection);
+        Assert.True(camera.IsBodyTarget);
+        Assert.Equal(SecurityCameraBeep.BodyDetected, camera.Beep);
+        AssertScript(fixture.Variables, "SCamera_1301.isDetection", 1);
+    }
+
+    [RequiresGameDataFact]
+    public void CameraIgnoresALivingGuardOfItsOwnSide()
+    {
+        Fixture fixture = Build();
+        SecurityCamera camera = fixture.Registry.Cameras[0];
+        SecurityCameraSubject guard = Soldier(TargetStraightAhead(camera, 5.0), alive: true);
+
+        // Scan flags 6 (0x4415C0) register the own side only when dead.
+        for (int tick = 0; tick < 120; tick++)
+        {
+            fixture.Registry.Tick(default, false, targetAlive: false, playerOnCamerasSide: false, [guard]);
+        }
+
+        Assert.False(camera.IsDetection);
+        Assert.Equal(SecurityCameraBeep.None, camera.Beep);
+    }
+
+    [RequiresGameDataFact]
+    public void AVisiblePlayerOutranksABodyAndTheBodyIsTakenAtOnceWhenHeLeaves()
+    {
+        Fixture fixture = Build();
+        SecurityCamera camera = fixture.Registry.Cameras[0];
+        Vector3d playerFeet = TargetStraightAhead(camera, 5.0);
+        SecurityCameraSubject body = Soldier(TargetStraightAhead(camera, 4.0), alive: false);
+
+        // The +416 list (other side, alive) is read second and replaces the +428 pick.
+        fixture.Registry.Tick(playerFeet, false, targetAlive: true, playerOnCamerasSide: false, [body]);
+        Assert.Equal(89, camera.DetectionTime);
+        Assert.False(camera.IsDetection);
+        Assert.False(camera.IsBodyTarget);
+        Assert.Equal(SecurityCameraBeep.Suspicious, camera.Beep);
+
+        // The target changes to the body: its countdown restarts at zero.
+        fixture.Registry.Tick(playerFeet, false, targetAlive: false, playerOnCamerasSide: false, [body]);
+        Assert.Equal(0, camera.DetectionTime);
+        Assert.True(camera.IsDetection);
+        Assert.Equal(SecurityCameraBeep.BodyDetected, camera.Beep);
+    }
+
+    private static SecurityCameraSubject Soldier(Vector3d feet, bool alive) =>
+        new(new object(), new Vector3d(feet.X, feet.Y, feet.Z + 2828.8), CamerasSide: true, alive);
+
     private static Fixture Build(WorldTraceCast? sight = null)
     {
         VirtualFileSystem fileSystem = new();

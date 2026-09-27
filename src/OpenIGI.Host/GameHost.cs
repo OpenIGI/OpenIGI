@@ -3232,7 +3232,14 @@ internal sealed partial class GameHost : IDisposable
                 {
                     bool crouching = _playerMode && _player is not null && _player.IsCrouched;
 
-                    cameras.Tick(watchedFeet, crouching, targetAlive: !_playerDead);
+                    // Retail's lenses scan every human and every camera (0x489750): a guard's body or a
+                    // destroyed camera in view raises the alarm at once, as the player does after 90 ticks.
+                    cameras.Tick(
+                        watchedFeet,
+                        crouching,
+                        targetAlive: !_playerDead,
+                        playerOnCamerasSide: (_soldiers?.PlayerTeam ?? 0) == 1,
+                        _soldiers?.CameraSubjects() ?? []);
                     if (_worldSolids is { } cameraSolids)
                     {
                         foreach (SecurityCamera camera in cameras.Cameras)
