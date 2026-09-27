@@ -106,6 +106,73 @@ public sealed class AiSoldierCombatWiringTests
     }
 
     /// <summary>
+    /// "Hey you!" is for the player: <c>sub_48A920</c> tests the target's class against HumanPlayer's before the
+    /// per-action latch, so a soldier fighting an NPC stays silent and still challenges the player later.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void ASoldierFightingAnNpcKeepsItsChallengeForThePlayer()
+    {
+        AiSoldier soldier = Soldier(out Vector3d position);
+        Vector3d enemy = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
+        int requests = 0;
+
+        for (int tick = 1; tick <= 300; tick++)
+        {
+            soldier.Tick(tick, enemy, rootMotionThisTick: 0.0, enemyIsSoldier: tick <= 150);
+            if (soldier.DetectionShoutRequestedThisTick)
+            {
+                Assert.True(tick > 150, $"the soldier challenged an NPC on tick {tick}");
+                requests++;
+            }
+
+            Spend(soldier);
+        }
+
+        Assert.Equal(1, requests);
+    }
+
+    /// <summary>
+    /// An engaged soldier pings its squad on the engagement's first tick with a target and every twentieth
+    /// after — <c>sub_48A920</c>'s counter lives in the combat action, not on the mission's clock.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void AnEngagedSoldierPingsItsSquadFromItsFirstTickEveryTwenty()
+    {
+        AiSoldier soldier = Soldier(out Vector3d position);
+        Vector3d enemy = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
+        List<int> pings = [];
+        int engagedFrom = -1;
+
+        for (int tick = 1; tick <= 120; tick++)
+        {
+            soldier.Tick(tick, enemy, rootMotionThisTick: 0.0);
+            if (engagedFrom < 0 && soldier.Activity == AiSoldierActivity.Engaging)
+            {
+                engagedFrom = tick;
+            }
+
+            if (soldier.AlertPingDueThisTick)
+            {
+                pings.Add(tick);
+            }
+
+            Spend(soldier);
+        }
+
+        Assert.NotEmpty(pings);
+        Assert.Equal(engagedFrom, pings[0]);
+        Assert.All(pings.Zip(pings.Skip(1)), pair => Assert.Equal(AiSoldier.AlertPingPeriodTicks, pair.Second - pair.First));
+    }
+
+    [Fact]
+    public void TheDetectionMarkSitsWhereSub465820PutsIt()
+    {
+        // 0xE147AE14:0x40A6147A standing and 0x66666666:0x40966666 crouched.
+        Assert.Equal(2826.24, AiSoldier.DetectionRaiseStandingInUnits, precision: 9);
+        Assert.Equal(1433.6, AiSoldier.DetectionRaiseCrouchedInUnits, precision: 9);
+    }
+
+    /// <summary>
     /// The combat behaviour is <b>re-armed</b> every time the soldier engages, however it got there.
     /// </summary>
     /// <remarks>
@@ -238,14 +305,15 @@ public sealed class AiSoldierCombatWiringTests
     /// seen with.
     /// </summary>
     /// <remarks>
-    /// The aim point is the target task's own position plus <b>2048 units</b> (0.5 m), or <b>1024</b>
+    /// The aim point is the target task's own position (<c>Human+32</c>, its origin, 0.97 m over the feet the
+    /// port keeps) plus <b>2048 units</b> (0.5 m), or <b>1024</b>
     /// (0.25 m) crouched — read straight out of <c>IGI.exe</c>'s <c>sub_451380</c>:
     /// <c>a1[2] += crouch ? 1024.0 : 2048.0</c>, where the crouch is the <i>target's</i> flag
     /// (<c>Human+829</c>). Feeding the eye instead put the point half a metre <i>above the head</i>, and
     /// every resolved round arrived at head height.
     /// </remarks>
     [RequiresGameDataFact]
-    public void CombatAimsAtTheFeetRaisedHalfAMetre()
+    public void CombatAimsAtTheOriginRaisedHalfAMetre()
     {
         AiSoldier soldier = Soldier(out Vector3d position);
 
@@ -265,7 +333,8 @@ public sealed class AiSoldierCombatWiringTests
         }
 
         Assert.NotNull(aim);
-        Assert.Equal(feet.Z + 2048.0, aim.Value.Z, precision: 3);
+        // sub_451380 raises the ORIGIN (Human+32), which stands 0.97 m over the feet the port keeps.
+        Assert.Equal(feet.Z + AiSoldier.HumanOriginStandingInUnits + 2048.0, aim.Value.Z, precision: 3);
     }
 
     /// <summary>A crouching target halves the raise — 1024 units, 0.25 m.</summary>
@@ -290,7 +359,7 @@ public sealed class AiSoldierCombatWiringTests
         }
 
         Assert.NotNull(aim);
-        Assert.Equal(feet.Z + 1024.0, aim.Value.Z, precision: 3);
+        Assert.Equal(feet.Z + AiSoldier.HumanOriginCrouchedInUnits + 1024.0, aim.Value.Z, precision: 3);
     }
 
     /// <summary>
@@ -382,9 +451,12 @@ public sealed class AiSoldierCombatWiringTests
             $"the patrol never fired (activity {soldier.Activity}, action {soldier.PatrolAction})");
     }
 
-    /// <summary>A rejected route never becomes a destination which combat can mistake for an active walk.</summary>
+    /// <summary>
+    /// A route that breaks off keeps the goal, as <c>0x4518E0</c> does ("Error in graph %d routenet"),
+    /// with nothing to walk: the plan reports the failure and the queue is empty.
+    /// </summary>
     [RequiresGameDataFact]
-    public void AnUnreachableCombatDestinationIsNotPublished()
+    public void AnUnreachableDestinationKeepsTheGoalWithNothingToWalk()
     {
         GraphFile graph = GraphFile.Read(File.ReadAllBytes(Path.Combine(
             GameData.RequireRoot(), "missions", "location0", "level1", "graphs", "graph4019.dat")));
@@ -412,7 +484,8 @@ public sealed class AiSoldierCombatWiringTests
             graph, unreachable.Value.From.Position, facing: 0f, phase: 0, seed: 1);
 
         Assert.False(soldier.GoTo(unreachable.Value.To.Id));
-        Assert.Equal(-1, soldier.DestinationNode);
+        Assert.Equal(unreachable.Value.To.Id, soldier.DestinationNode);
+        Assert.Null(soldier.DebugWaypoint);
     }
 
     /// <summary>
@@ -508,25 +581,35 @@ public sealed class AiSoldierCombatWiringTests
             },
             _ => { });
 
+        // gunner.qsc's COMBAT branch while the gun is free: Activate, then Combat, both pushable. 0x450F10
+        // walks the produced list from its tail, adding each at the head, so the walk to the gun is on top
+        // and the fight waits beneath it.
         soldier.ApplyActions([
-            new AiProducedAction("AIAction_Activate", [500, 1, 0], 0),
-            new AiProducedAction("AIAction_Combat", [], 0),
+            new AiProducedAction("AIAction_Activate", [500, 1, (int)AiActionFlagWord.Pushable], 5),
+            new AiProducedAction("AIAction_Combat", [(int)AiActionFlagWord.Pushable], 5),
         ]);
+        Assert.Equal(
+            ["AIAction_Activate", "AIAction_Combat"],
+            soldier.PendingActions.Actions.Select(action => action.Name));
+
+        // The fight runs, and 0x48D340 takes the gun once the target has held its cone for 30 ticks.
         Vector3d farEnemy = new(start.X, start.Y + (500 * Metre), start.Z);
-        soldier.Tick(1, farEnemy, rootMotionThisTick: 200.0);
-
-        Assert.False(soldier.IsMounted, "combat must not discard the live activation route");
-
-        for (int tick = 2; tick <= 5000 && !soldier.IsMounted; tick++)
+        for (int tick = 1; tick <= 5000 && !soldier.IsMounted; tick++)
         {
             soldier.Tick(tick, farEnemy, rootMotionThisTick: 200.0);
         }
 
-        Assert.True(soldier.IsMounted, "the gunner reached its task but never claimed the emplacement");
+        Assert.True(soldier.IsMounted, "the gunner never took the emplacement");
         Assert.Same(gun, soldier.MountedGun);
+
+        // The object dispatch seats the body in the use-object state (36) and consumes the mount's slot 24.
+        soldier.TickCombatState(animationDone: false);
+        Assert.Equal(HumanSoldierStates.UseObjectState, soldier.CombatState);
         Assert.Equal(gun.MountPosition, soldier.Position);
         Assert.True(gun.IsOccupied);
-        Assert.False(claims.Contains(500));
+
+        // The walk to the gun has finished; the fight it was installed over is what runs now.
+        Assert.Equal(["AIAction_Combat"], soldier.PendingActions.Actions.Select(action => action.Name));
     }
 
     /// <summary>
@@ -588,17 +671,20 @@ public sealed class AiSoldierCombatWiringTests
             start.Position.X + (5000 * Metre), start.Position.Y, start.Position.Z);
         Vector3d before = soldier.Position;
 
-        // First tick: the closed door is opened rather than walked into, and the soldier has not moved.
-        soldier.Tick(1, farEnemy, rootMotionThisTick: 200.0);
+        // First tick: the closed door is opened rather than walked into -- the walker writes no forward, so
+        // the body stands and its clip carries it nowhere.
+        soldier.Tick(1, farEnemy, rootMotionThisTick: 0.0);
         door.Tick();
 
         Assert.Equal(2, door.UseState);
+        Assert.False(soldier.WalksForward);
         Assert.Equal(before, soldier.Position);
 
-        // It holds while the door swings.
+        // It holds while the door swings. The clip, and so its root motion, follows the body: it walks only
+        // on a tick after the walker wrote forward.
         for (int tick = 2; tick <= 30; tick++)
         {
-            soldier.Tick(tick, farEnemy, rootMotionThisTick: 200.0);
+            soldier.Tick(tick, farEnemy, rootMotionThisTick: soldier.WalksForward ? 200.0 : 0.0);
             door.Tick();
             Assert.Equal(before, soldier.Position);
         }
@@ -607,7 +693,7 @@ public sealed class AiSoldierCombatWiringTests
         Assert.True(door.IsFullyOpen);
         for (int tick = 31; tick <= 41; tick++)
         {
-            soldier.Tick(tick, farEnemy, rootMotionThisTick: 200.0);
+            soldier.Tick(tick, farEnemy, rootMotionThisTick: soldier.WalksForward ? 200.0 : 0.0);
             door.Tick();
         }
 
@@ -757,7 +843,7 @@ public sealed class AiSoldierCombatWiringTests
         Assert.Equal(AiPatrolAction.CloseCombat, soldier.PatrolAction);
         Assert.Contains(soldier.ChannelWrites, write => write.Channel == AiCombatChannel.CloseCombat);
         Assert.Equal(HumanSoldierStates.CloseCombatState, soldier.TickCombatState(animationDone: false));
-        Assert.Equal(70, HumanSoldierStates.AnimationOf(soldier.CombatState));
+        Assert.Equal(70, HumanSoldierStates.Table.AnimationOf(soldier.CombatState));
 
         soldier.Tick(tick, enemyEye, 0.0, enemyFeet: enemyFeet);
         Assert.DoesNotContain(soldier.ChannelWrites, write => write.Channel == AiCombatChannel.CloseCombat);
@@ -877,9 +963,16 @@ public sealed class AiSoldierCombatWiringTests
             }),
             () => new AiCombatWeaponState(30, 30, 30, WeaponCategory.Gun));
 
+        // Dead, the enemy is not registered; alive again, the scan registers it on the soldier's next phase
+        // tick (0x489750 runs on tick % 4 == phase), and a fight started then has its slot.
         soldier.Tick(1, enemy, 0.0, enemyAlive: false);
+        for (int tick = 2; tick <= 4; tick++)
+        {
+            soldier.Tick(tick, enemy, 0.0, enemyAlive: true);
+        }
+
         soldier.ApplyActions([new AiProducedAction("AIAction_SetCombat", [], 0)]);
-        soldier.Tick(2, enemy, 0.0, enemyAlive: true);
+        soldier.Tick(5, enemy, 0.0, enemyAlive: true);
 
         Assert.NotEqual(AiCombatPhase.Ended, soldier.CombatPhase);
     }
@@ -933,7 +1026,9 @@ public sealed class AiSoldierCombatWiringTests
                 DifficultyName = "GD_2",
                 TargetingTimeoutSeconds = 15f,
                 TrackingDistanceMetres = 100f,
+                // A soldier with rounds in its clip draws against the "when reload" probability (+15756).
                 GrenadeThrowProbability = grenadeProbability,
+                GrenadeThrowWhenReloadingProbability = grenadeProbability,
                 GrenadeMinimumDistanceMetres = 1f,
                 GrenadeMaximumDistanceMetres = 20f,
                 MinimumClipFraction = 0.8f,

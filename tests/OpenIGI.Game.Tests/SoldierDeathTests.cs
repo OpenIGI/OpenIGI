@@ -34,7 +34,7 @@ public sealed class SoldierDeathTests
     public void AThrownBodyFallsAlongTheRound(SoldierDeathMode mode, bool front, int animation) =>
         Assert.Equal(
             animation,
-            SoldierDeath.Choose(mode, zone: 3, HumanHitZoneTable.Soldier, front, coinFlip: 0));
+            SoldierDeath.Choose(SoldierDeathClips.Soldier, mode, zone: 3, HumanHitZoneTable.Soldier, front, coinFlip: 0));
 
     /// <summary>An ordinary kill picks one of the two crumple clips, in the order the flip indexes them.</summary>
     [Fact]
@@ -71,6 +71,7 @@ public sealed class SoldierDeathTests
         Assert.Equal(
             9,
             SoldierDeath.Choose(
+                SoldierDeathClips.Soldier,
                 SoldierDeathMode.Crumple,
                 SoldierDeath.HeadZone,
                 HumanHitZoneTable.Soldier,
@@ -253,6 +254,7 @@ public sealed class SoldierDeathTests
         Math.Atan2(-(ray.To.X - ray.From.X), ray.To.Y - ray.From.Y);
 
     private static int Choose(int zone, int flip) => SoldierDeath.Choose(
+        SoldierDeathClips.Soldier,
         SoldierDeathMode.Crumple,
         zone,
         HumanHitZoneTable.Soldier,

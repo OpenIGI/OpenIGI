@@ -106,17 +106,49 @@ public sealed class AiEventPumpTests
         Assert.Equal(AiEventFilter.InView | AiEventFilter.InRange | AiEventFilter.SubjectIsEnemy, seen);
     }
 
-    /// <summary>Queues are visited in priority order, which <c>AIFunction_SetEventPriority</c> rewrites.</summary>
+    /// <summary>
+    /// The order is the declaration order: <c>AIFunction_SetEventPriority</c> (<c>0x44E0C0</c>) enables a type and
+    /// appends it the first time it is named, and naming it again changes nothing.
+    /// </summary>
     [Fact]
-    public void TheQueuesAreVisitedInPriorityOrder()
+    public void TheOrderIsTheDeclarationOrder()
     {
         var queues = new AiEventQueues { IsInitialised = true };
-        Assert.Equal(AiEvent.Create, queues.PriorityOrder[0]);
+        Assert.Empty(queues.PriorityOrder);
 
-        queues.SetPriority(AiEvent.Gunshot, 0);
-        Assert.Equal(AiEvent.Gunshot, queues.PriorityOrder[0]);
-        Assert.Equal(AiEventQueues.TypeCount, queues.PriorityOrder.Count);
-        Assert.Equal(AiEventQueues.TypeCount, queues.PriorityOrder.Distinct().Count());
+        queues.Declare(AiEvent.Gunshot);
+        queues.Declare(AiEvent.Idle);
+        queues.Declare(AiEvent.Gunshot);
+
+        Assert.Equal([AiEvent.Gunshot, AiEvent.Idle], queues.PriorityOrder);
+        Assert.True(queues.IsEnabled(AiEvent.Gunshot));
+        Assert.False(queues.IsEnabled(AiEvent.Combat));
+    }
+
+    /// <summary>
+    /// Creation is dispatched directly on the first tick, at position -1, and initialises the AI; the ordered
+    /// pump could not reach it, since the order is empty until the creation branch declares it.
+    /// </summary>
+    [Fact]
+    public void CreationIsDispatchedDirectlyAndInitialises()
+    {
+        var queues = new AiEventQueues();
+        AiEvent? seen = null;
+        int slot = 0;
+
+        queues.DispatchCreate((type, position) =>
+        {
+            seen = type;
+            slot = position;
+            queues.Declare(AiEvent.Gunshot);
+            return true;
+        });
+
+        Assert.Equal(AiEvent.Create, seen);
+        Assert.Equal(-1, slot);
+        Assert.True(queues.IsInitialised);
+        Assert.True(queues.Post(AiEventRecord.Simple(AiEvent.Gunshot), 1, null));
+        Assert.False(queues.Post(AiEventRecord.Simple(AiEvent.Combat), 1, null));
     }
 
     /// <summary>
@@ -127,10 +159,8 @@ public sealed class AiEventPumpTests
     public void OneTypeDispatchesPerTickButAnEmptyHandlerDoesNotBlock()
     {
         var queues = new AiEventQueues { IsInitialised = true };
-        queues.SetEnabled(AiEvent.Gunshot, true);
-        queues.SetEnabled(AiEvent.Combat, true);
-        queues.SetPriority(AiEvent.Gunshot, 0);
-        queues.SetPriority(AiEvent.Combat, 1);
+        queues.Declare(AiEvent.Gunshot);
+        queues.Declare(AiEvent.Combat);
         queues.Post(AiEventRecord.Simple(AiEvent.Gunshot), 1, null);
         queues.Post(AiEventRecord.Simple(AiEvent.Combat), 1, null);
 
@@ -152,10 +182,8 @@ public sealed class AiEventPumpTests
     public void NothingIsOfferedAfterATypeHandlesTheTick()
     {
         var queues = new AiEventQueues { IsInitialised = true };
-        queues.SetEnabled(AiEvent.Gunshot, true);
-        queues.SetEnabled(AiEvent.Combat, true);
-        queues.SetPriority(AiEvent.Gunshot, 0);
-        queues.SetPriority(AiEvent.Combat, 1);
+        queues.Declare(AiEvent.Gunshot);
+        queues.Declare(AiEvent.Combat);
         queues.Post(AiEventRecord.Simple(AiEvent.Gunshot), 1, null);
         queues.Post(AiEventRecord.Simple(AiEvent.Combat), 1, null);
 
@@ -178,10 +206,8 @@ public sealed class AiEventPumpTests
     public void AnUndispatchedEventIsDiscardedNotDeferred()
     {
         var queues = new AiEventQueues { IsInitialised = true };
-        queues.SetEnabled(AiEvent.Gunshot, true);
-        queues.SetEnabled(AiEvent.Combat, true);
-        queues.SetPriority(AiEvent.Gunshot, 0);
-        queues.SetPriority(AiEvent.Combat, 1);
+        queues.Declare(AiEvent.Gunshot);
+        queues.Declare(AiEvent.Combat);
         queues.Post(AiEventRecord.Simple(AiEvent.Gunshot), 1, null);
         queues.Post(AiEventRecord.Simple(AiEvent.Combat), 1, null);
         queues.Post(AiEventRecord.Simple(AiEvent.Combat), 1, null);
@@ -205,8 +231,12 @@ public sealed class AiEventPumpTests
     public void ThePriorityCapKeepsLowRankedEventsOut()
     {
         var queues = new AiEventQueues { IsInitialised = true };
-        queues.SetEnabled(AiEvent.Combat, true);
-        queues.SetPriority(AiEvent.Combat, 5);
+        foreach (AiEvent ahead in new[] { AiEvent.Gunshot, AiEvent.Walk, AiEvent.Alert, AiEvent.Idle, AiEvent.Door })
+        {
+            queues.Declare(ahead);
+        }
+
+        queues.Declare(AiEvent.Combat);
         queues.Post(AiEventRecord.Simple(AiEvent.Combat), 1, null);
 
         // Cap 5 means positions 0..4 may dispatch; Combat sits at 5 and is shut out - and still drained.
@@ -293,5 +323,50 @@ public sealed class AiEventPumpTests
         var list = new AiPendingActionList();
         Assert.Null(list.Tick());
         Assert.False(list.HasPending);
+    }
+
+    /// <summary>
+    /// A new action goes on at the head (<c>0x4AF910</c>): it runs, and sets the cap, while what it was
+    /// pushed over waits.
+    /// </summary>
+    [Fact]
+    public void APushedActionRunsAheadOfWhatItWasPushedOver()
+    {
+        int ranBeneath = 0;
+        int ranPushed = 0;
+        var beneath = new AiPendingAction(5, 0, () => ranBeneath++, pushable: true);
+        var pushed = new AiPendingAction(2, 0, () => ranPushed++);
+        var list = new AiPendingActionList();
+        list.Push(beneath);
+        list.Push(pushed);
+
+        Assert.Same(pushed, list.Tick());
+        Assert.Equal(1, ranPushed);
+        Assert.Equal(0, ranBeneath);
+        Assert.Equal(2, list.PriorityCap);
+    }
+
+    /// <summary>
+    /// <c>0x450EE0</c> ends every action above the first pushable one, and keeps that one and everything
+    /// beneath it.
+    /// </summary>
+    [Fact]
+    public void MakingRoomEndsEverythingAboveTheFirstPushableAction()
+    {
+        var bottom = new AiPendingAction(9, 0, null, name: "bottom");
+        var pushable = new AiPendingAction(5, 0, null, pushable: true, name: "pushable");
+        var middle = new AiPendingAction(3, 0, null, name: "middle");
+        var top = new AiPendingAction(2, 0, null, name: "top");
+        var list = new AiPendingActionList();
+        list.Push(bottom);
+        list.Push(pushable);
+        list.Push(middle);
+        list.Push(top);
+
+        List<string> ended = [];
+        list.PopToPushable(action => ended.Add(action.Name));
+
+        Assert.Equal(["top", "middle"], ended);
+        Assert.Equal([pushable, bottom], list.Actions);
     }
 }

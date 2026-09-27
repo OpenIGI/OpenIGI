@@ -376,6 +376,99 @@ public sealed class AiGuardCombatTests
         Assert.Equal(0.5f, first.StartedBurst!.Value.HitProbability, 5);
     }
 
+    [Fact]
+    public void AnRpgFiresOnItsFirstDecisionWithoutADraw()
+    {
+        // 0x48CB40 installs +15824 = -1: only a state of 0 (straight after a shot) draws. A draw below
+        // 0.4 would change stance instead of firing.
+        AiGuardCombat rpg = new(Parameters(), () => 0.1);
+
+        AiCombatCommand command = rpg.UpdateRpg(Sense(), inStance: true, ViewLength);
+
+        Assert.NotNull(command.StartedBurst);
+        Assert.False(rpg.RpgKneeling);
+        Assert.Null(command.Aim);
+    }
+
+    [Theory]
+    [InlineData(0.39, true)]
+    [InlineData(0.40000001, false)]
+    public void AfterAShotAnRpgChangesStanceOnADrawBelowPointFour(double draw, bool changes)
+    {
+        AiGuardCombat rpg = new(Parameters(maximumRoundsPerSequence: 1), () => draw);
+        rpg.UpdateRpg(Sense(), inStance: true, ViewLength);
+        rpg.UpdateRpg(Sense() with { AmmoInClip = 29 }, inStance: true, ViewLength);
+        rpg.UpdateRpg(Sense() with { AmmoInClip = 29 }, inStance: true, ViewLength);
+        Assert.Equal(AiCombatPhase.Stand, rpg.Phase);
+
+        AiCombatCommand decision = rpg.UpdateRpg(Sense() with { AmmoInClip = 29 }, inStance: true, ViewLength);
+
+        Assert.Equal(changes, rpg.RpgKneeling);
+        Assert.Equal(!changes, decision.StartedBurst is not null);
+    }
+
+    [Fact]
+    public void AnEmptyRpgReloadsAtTheShoulderAndThenFiresWithoutADraw()
+    {
+        // Every draw is below 0.4: a stance draw would change stance instead of firing.
+        AiGuardCombat rpg = new(Parameters(), () => 0.1);
+
+        // From the stand tick, 0x48AE70 switches to the kneel tick and the reload starts at once.
+        AiCombatCommand reload = rpg.UpdateRpg(Sense() with { AmmoInClip = 0 }, inStance: true, ViewLength);
+        Assert.True(rpg.RpgKneeling);
+        Assert.Equal(AiCombatPhase.Reload, rpg.Phase);
+        Assert.True(reload.ReleaseTrigger);
+
+        // 0x48DD10 is done only with a round loaded AND the body kneeling.
+        rpg.UpdateRpg(Sense(), inStance: false, ViewLength);
+        Assert.Equal(AiCombatPhase.Reload, rpg.Phase);
+        rpg.UpdateRpg(Sense(), inStance: true, ViewLength);
+        Assert.Equal(AiCombatPhase.Stand, rpg.Phase);
+
+        Assert.NotNull(rpg.UpdateRpg(Sense(), inStance: true, ViewLength).StartedBurst);
+        Assert.True(rpg.RpgKneeling);
+    }
+
+    [Fact]
+    public void AnRpgIsNotHeldBackByTheCrowdOfAimers()
+    {
+        AiGuardCombat rpg = new(Parameters(), () => 0.99);
+
+        AiCombatCommand command = rpg.UpdateRpg(
+            Sense() with { AimersOnTarget = AiCombatTarget.MaximumAimers }, inStance: true, ViewLength);
+
+        Assert.NotNull(command.StartedBurst);
+    }
+
+    [Fact]
+    public void AMountedGunnerDropsItsBurstTheMomentItLosesSight()
+    {
+        AiGuardCombat gunner = Guard();
+        Vector3d record = new(1, 2, 3);
+        Assert.NotNull(gunner.UpdateMounted(Sense(), record, ViewLength).StartedBurst);
+        Assert.Equal(AiCombatPhase.Fire, gunner.Phase);
+
+        AiCombatCommand unseen = gunner.UpdateMounted(Sense() with { Visible = false }, record, ViewLength);
+
+        Assert.Equal(AiCombatPhase.Stand, gunner.Phase);
+        Assert.False(unseen.PullTrigger);
+        Assert.Equal(AiAimMode.None, unseen.Aim);
+        Assert.Equal(record, unseen.TurnTo);
+    }
+
+    [Fact]
+    public void AMountedGunnerStartsItsNextBurstOnTheTickTheLastOneEnds()
+    {
+        AiGuardCombat gunner = new(Parameters(maximumRoundsPerSequence: 1), () => 0.0);
+        gunner.UpdateMounted(Sense(), default, ViewLength);
+        gunner.UpdateMounted(Sense() with { AmmoInClip = 29 }, default, ViewLength);
+
+        AiCombatCommand next = gunner.UpdateMounted(Sense() with { AmmoInClip = 29 }, default, ViewLength);
+
+        Assert.NotNull(next.StartedBurst);
+        Assert.Equal(AiCombatPhase.Fire, gunner.Phase);
+    }
+
     private static AiCombatCommand RunOneReload(AiGuardCombat combat)
     {
         combat.Update(Sense() with { AmmoInClip = 0 }, standing: true, ViewLength);
@@ -414,7 +507,8 @@ public sealed class AiGuardCombatTests
     private static AiCombatParameters Parameters(
         float targetingTimeoutSeconds = 15f,
         float minimumShotDelaySeconds = 0f,
-        float aimPrecision = 0.6f) =>
+        float aimPrecision = 0.6f,
+        int maximumRoundsPerSequence = 30) =>
         new(new HumanAiConfigItemTask
         {
             AiTypeName = "AITYPE_GUARD_AK",
@@ -422,7 +516,7 @@ public sealed class AiGuardCombatTests
             TargetingTimeoutSeconds = targetingTimeoutSeconds,
             MinimumClipFraction = 0.8f,
             RandomClipFraction = 0.2f,
-            MaximumRoundsPerSequence = 30,
+            MaximumRoundsPerSequence = maximumRoundsPerSequence,
             HitProbabilityAtMinimumRange = 1.0f,
             HitProbabilityAtMaximumRange = 0.3f,
             MinimumShotDelaySeconds = minimumShotDelaySeconds,

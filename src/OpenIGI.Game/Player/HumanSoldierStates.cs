@@ -11,9 +11,8 @@ namespace OpenIGI.Game.Player;
 /// function then calls <c>0x489E70(human, stateId, 0.15f)</c>, which indexes it.
 /// </para>
 /// <para>
-/// <b>Animation id 0 means "this state names its own clip"</b>, not animation 0 — clip ids start at 2.
-/// It is the same marker the player's table uses, and it is what the three death states carry
-/// (<see cref="SoldierDeath"/>).
+/// <b>Animation id 0 means "this state names its own clip"</b> (<see cref="HumanBodyStateTable.SelfDriven"/>),
+/// and it is what the three death states carry (<see cref="SoldierDeath"/>).
 /// </para>
 /// <para>
 /// <b>These ids are a soldier's, not the player's.</b> The same number in the player's animation set is
@@ -23,11 +22,37 @@ namespace OpenIGI.Game.Player;
 /// </remarks>
 public static class HumanSoldierStates
 {
-    /// <summary>How many states a soldier's machine has.</summary>
-    public const int StateCount = 38;
+    /// <summary>Gets the soldier's <c>{animation, mode}</c> table, transcribed from <c>0x53ED10</c>.</summary>
+    public static HumanBodyStateTable Table { get; } = new(
+        (2, 1), (34, 1), (3, 1), (57, 1), (10, 0), (11, 0), (56, 1), (14, 0), (58, 0), (70, 0),
+        (54, 0), (53, 0), (55, 0), (7, 0), (19, 0), (12, 0), (13, 0), (48, 1), (52, 1), (18, 0),
+        (33, 0), (32, 0), (9, 1), (15, 0), (8, 0), (20, 0), (16, 0), (17, 0), (21, 0), (2, 1),
+        (0, 0), (26, 0), (0, 0), (0, 0), (0, 0), (0, 0), (31, 1), (2, 0));
 
-    /// <summary>The animation id that means "this state names its own clip".</summary>
-    public const int SelfDriven = 0;
+    /// <summary>Gets the Spetsnaz soldiers' table, <c>0x53EE40</c> — their own stand, gaits and combat cycle.</summary>
+    public static HumanBodyStateTable SpetsnazTable { get; } = Table.WithAnimations(
+        (StandState, 62), (WalkState, 60), (ForwardState, 60), (FastForwardState, 81), (FiringState, 63),
+        (ReadyState, 80), (RackState, 78), (ReloadState, 79));
+
+    /// <summary>Gets Priboi's table, <c>0x53EF70</c>.</summary>
+    public static HumanBodyStateTable PriboiTable { get; } = Table.WithAnimations(
+        (StandState, 64), (WalkState, 65), (ForwardState, 65), (FastForwardState, 66), (FiringState, 69),
+        (ReadyState, 5), (RackState, 67), (ReloadState, 68));
+
+    /// <summary>Gets the civilians' table, <c>0x53F0A0</c> — Priboi's combat clips, and their own walk and crouch.</summary>
+    public static HumanBodyStateTable CivilianTable { get; } = Table.WithAnimations(
+        (StandState, 77), (WalkState, 76), (ForwardState, 76), (FastForwardState, 75), (FiringState, 69),
+        (ReadyState, 5), (RackState, 67), (ReloadState, 68), (CrouchDownState, 93), (StandUpState, 95),
+        (RunState, 76), (KneelingState, 94));
+
+    /// <summary>
+    /// Gets the pistol soldier's table, <c>0x53E9B8</c> — the same 38 states over the pistol set's clips.
+    /// </summary>
+    public static HumanBodyStateTable PistolTable { get; } = new(
+        (2, 1), (33, 1), (3, 1), (4, 1), (18, 0), (17, 0), (6, 1), (21, 0), (34, 0), (49, 0),
+        (5, 0), (35, 0), (36, 0), (7, 0), (8, 0), (12, 0), (16, 0), (32, 1), (37, 1), (9, 0),
+        (20, 0), (19, 0), (11, 1), (22, 0), (10, 0), (15, 0), (13, 0), (14, 0), (23, 0), (2, 1),
+        (0, 0), (31, 0), (0, 0), (0, 0), (0, 0), (0, 0), (39, 1), (2, 0));
 
     /// <summary>The blend time a soldier's state entry passes, in seconds.</summary>
     /// <remarks>
@@ -89,6 +114,15 @@ public static class HumanSoldierStates
     /// <summary>The state a soldier stands in.</summary>
     public const int StandState = 0;
 
+    /// <summary>Walking forward, animation 34 — slot 25 with forward (<c>0x457D30</c>).</summary>
+    public const int WalkState = 1;
+
+    /// <summary>The forward gait with the run byte clear, animation 3 (<c>0x45AD10</c>).</summary>
+    public const int ForwardState = 2;
+
+    /// <summary>The forward gait with the run byte set, animation 57 (<c>0x4582C0</c>).</summary>
+    public const int FastForwardState = 3;
+
     /// <summary>The standing roll-left state, animation 10.</summary>
     /// <remarks>
     /// <c>0x48D830</c> writes raw input slot 2, whose <c>0x20</c> signal selects this state in
@@ -105,8 +139,18 @@ public static class HumanSoldierStates
     /// <remarks>Raw input slot 8/signal <c>0x800</c> selects it; direct weapon reloads do not.</remarks>
     public const int DisplayReloadState = 7;
 
+    /// <summary>The ready state between bursts, animation 54 — <c>0x45B6E0</c>.</summary>
+    public const int ReadyState = 10;
+
+    /// <summary>The weapon-raise state, animation 53 — <c>0x458810</c>.</summary>
+    public const int RackState = 11;
+
     /// <summary>The standing-to-kneeling transition, animation 7.</summary>
     public const int CrouchDownState = 13;
+
+    /// <summary>Kneeling back up to standing, animation 19 (<c>0x45B9C0</c>).</summary>
+    /// <remarks>No per-tick enters it: no write of 14 to <c>Human+764</c> exists in the executable.</remarks>
+    public const int StandUpState = 14;
 
     /// <summary>The transition from standing to prone, animation 12.</summary>
     /// <remarks>
@@ -192,6 +236,10 @@ public static class HumanSoldierStates
     /// </remarks>
     public const int FlinchState = 30;
 
+    /// <summary>The prone flinch, animation 26 (<c>0x45C370</c>).</summary>
+    /// <remarks>After its first twenty ticks a fresh flinch restarts it.</remarks>
+    public const int ProneFlinchState = 31;
+
     /// <summary>The state a soldier dies into.</summary>
     /// <remarks>
     /// Entered on flag <c>0x20000</c>, the other bit <c>0x45D3C0</c> raises, and its entry is
@@ -200,46 +248,18 @@ public static class HumanSoldierStates
     /// </remarks>
     public const int DeathState = 32;
 
-    // {animation, mode} per state, transcribed from 0x53ED10 -- 38 pairs, 304 bytes.
-    private static readonly (int Animation, int Mode)[] Table =
-    [
-        (2, 1), (34, 1), (3, 1), (57, 1), (10, 0), (11, 0), (56, 1), (14, 0), (58, 0), (70, 0),
-        (54, 0), (53, 0), (55, 0), (7, 0), (19, 0), (12, 0), (13, 0), (48, 1), (52, 1), (18, 0),
-        (33, 0), (32, 0), (9, 1), (15, 0), (8, 0), (20, 0), (16, 0), (17, 0), (21, 0), (2, 1),
-        (0, 0), (26, 0), (0, 0), (0, 0), (0, 0), (0, 0), (31, 1), (2, 0),
-    ];
+    /// <summary>The kneeling death, animation 24 — rolls, kneels and kneel changes die here (<c>0x45C5A0</c>).</summary>
+    public const int KneelDeathState = 33;
 
-    /// <summary>The clip a state plays.</summary>
-    /// <param name="state">The locomotion state — <c>Human+764</c>.</param>
-    /// <returns>The animation id, or <c>-1</c> for a state outside the table.</returns>
-    /// <remarks>
-    /// A state carrying <see cref="SelfDriven"/> is returned as <c>-1</c> too: the caller has to name
-    /// the clip itself, and handing back 0 would play whatever clip happened to be first.
-    /// </remarks>
-    public static int AnimationOf(int state)
-    {
-        if (state < 0 || state >= StateCount)
-        {
-            return -1;
-        }
+    /// <summary>The prone death, animation 25 — prone states and their changes die here (<c>0x45C650</c>).</summary>
+    public const int ProneDeathState = 34;
 
-        int animation = Table[state].Animation;
-        return animation == SelfDriven ? -1 : animation;
-    }
+    /// <summary>Playing the clip the AI named in slot 23 (<c>0x45C750</c>).</summary>
+    public const int ScriptedAnimationState = 35;
 
-    /// <summary>The mode a state's clip plays in.</summary>
-    /// <param name="state">The locomotion state.</param>
-    /// <returns>The mode, or <c>-1</c> for a state outside the table.</returns>
-    /// <remarks>
-    /// The second field of each pair is passed by <c>0x489E70</c> through <c>0x489EA0</c> to
-    /// <c>0x4D61D0</c> as the animation flag word. Mode one loops; mode zero is a one-shot. The retail
-    /// trace confirms the same split (stand/run/fire modes are one, rack/recover/roll/reload are zero).
-    /// </remarks>
-    public static int ModeOf(int state) => state >= 0 && state < StateCount ? Table[state].Mode : -1;
+    /// <summary>Using an object of type 6 — the mounted pose, animation 31 (<c>0x45C8B0</c>).</summary>
+    public const int UseObjectState = 36;
 
-    /// <summary>Whether a state names its own clip rather than taking one from the table.</summary>
-    /// <param name="state">The locomotion state.</param>
-    /// <returns><see langword="true"/> when the table's entry is <see cref="SelfDriven"/>.</returns>
-    public static bool IsSelfDriven(int state) =>
-        state >= 0 && state < StateCount && Table[state].Animation == SelfDriven;
+    /// <summary>Using an object of type 3, animation 2 (<c>0x45CA50</c>).</summary>
+    public const int UseObjectOnceState = 37;
 }

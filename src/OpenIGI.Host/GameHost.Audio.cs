@@ -973,17 +973,22 @@ internal sealed partial class GameHost
             }
             else
             {
-                _soldiers.NotifyExplosion(blast.Position, blast.RadiusUnits);
+                // The AI hears a grenade over 10 m and a mine over 25 m, however big the blast.
+                _soldiers.NotifyExplosion(
+                    blast.Position,
+                    blast.IsProximityMine
+                        ? AiSoldier.LargeExplosionEventRadiusInUnits
+                        : AiSoldier.GrenadeExplosionEventRadiusInUnits);
             }
         }
 
         foreach (MissileDetonation blast in _player.Missiles.Detonations)
         {
-            _soldiers.NotifyExplosion(blast.Position, blast.RadiusUnits);
+            _soldiers.NotifyExplosion(blast.Position, AiSoldier.LargeExplosionEventRadiusInUnits);
         }
         foreach (MissileDetonation blast in _vehicleMissiles.Detonations)
         {
-            _soldiers.NotifyExplosion(blast.Position, blast.RadiusUnits);
+            _soldiers.NotifyExplosion(blast.Position, AiSoldier.LargeExplosionEventRadiusInUnits);
         }
 
         foreach (M203Detonation blast in _player.M203.Detonations)
@@ -1054,6 +1059,7 @@ internal sealed partial class GameHost
             // A blast in reach of a speaker takes it off the wall too.
             DamageAlarmSpeakers(blast.Position, blast.RadiusUnits);
 
+            ReachPlayerWithBlast(blast.Position, blast.RadiusUnits, blast.FalloffUnits);
             float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
             float dose = ExplosionDamage.Dose(
                 playerDistance,
@@ -1064,7 +1070,7 @@ internal sealed partial class GameHost
             if (dose > 0f && !_playerHealth.IsDead)
             {
                 _playerHealth.Apply(ExplosionDamage.Zone, dose);
-                _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
+                FlashPlayerForBlast();
 
                 // A blast that zeroes the health kills exactly the way a bullet does -- without
                 // this the player stood at zero for ever.
@@ -1123,6 +1129,7 @@ internal sealed partial class GameHost
             damageFactor: blast.DamageFactor);
         DamageAlarmSpeakers(blast.Position, blast.RadiusUnits);
 
+        ReachPlayerWithBlast(blast.Position, blast.RadiusUnits, blast.FalloffUnits);
         float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
         float dose = ExplosionDamage.Dose(
             playerDistance,
@@ -1133,7 +1140,7 @@ internal sealed partial class GameHost
         if (dose > 0f && !_playerHealth.IsDead)
         {
             _playerHealth.Apply(ExplosionDamage.Zone, dose);
-            _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
+            FlashPlayerForBlast();
             if (_playerHealth.IsDead)
             {
                 BeginPlayerDeath(blast.Position, ExplosionDamage.Zone, -1, WeaponCategory.Grenade);
@@ -1142,6 +1149,64 @@ internal sealed partial class GameHost
     }
 
     /// <summary>Applies M203 impacts emitted by the native-style projectile task.</summary>
+    /// <summary>What any blast does to the player before its damage is counted — the head of <c>0x412990</c>.</summary>
+    /// <param name="blastPosition">The blast's centre, in units.</param>
+    /// <param name="radiusUnits">The blast radius, in units.</param>
+    /// <param name="falloffUnits">The blast's falloff, in units.</param>
+    /// <remarks>
+    /// <para>
+    /// Explosion0 (<c>0x47F200</c>) hands its message to every human with no range test of its own, and the
+    /// player's handler acts on distance from the eye before, and whatever, the dose: inside one and a half
+    /// times radius plus falloff the body is shoved away from the blast by 758.5 units a tick (into the same
+    /// slide the bullet shove uses), and the view shakes by <c>k</c> of a hit's shake — all of it inside three
+    /// radii, fading to nothing at nine — for the explosion's 90 ticks.
+    /// </para>
+    /// <para>
+    /// The same handler raises <c>Human+3528</c> within 25 m, which plays the <c>earcandy</c> loop; no shipped
+    /// sound set defines it, so the original is silent there too.
+    /// </para>
+    /// </remarks>
+    private void ReachPlayerWithBlast(Vector3d blastPosition, float radiusUnits, float falloffUnits)
+    {
+        if (_player is null || _playerHealth.IsDead || radiusUnits <= 0f)
+        {
+            return;
+        }
+
+        Vector3d away = _player.EyeUnits - blastPosition;
+        double distance = away.Length;
+        if (distance < (radiusUnits + falloffUnits) * 1.5 && distance > 0.0)
+        {
+            _player.Body.AddHitShove(
+                (float)(away.X / distance * BlastShoveUnitsPerTick),
+                (float)(away.Y / distance * BlastShoveUnitsPerTick));
+        }
+
+        double beyond = distance - (radiusUnits * 3.0);
+        double share = beyond < 0.0 ? 1.0 : 1.0 - (beyond / (radiusUnits * 6.0));
+        if (share > 0.0)
+        {
+            _player.InstallViewShake(
+                (float)(HumanViewShake.HitPositionUnits * share),
+                (float)(HumanViewShake.HitAngleRadians * share),
+                ExplosionShakeTicks);
+        }
+    }
+
+    // 0x412990's shove, units a tick into the body's slide -- 758.51849.
+    private const float BlastShoveUnitsPerTick = 758.51849f;
+
+    /// <summary>The flash a damaging blast raises — <c>0x412990</c>'s four independent corner draws.</summary>
+    private void FlashPlayerForBlast() =>
+        _damageFlash.HitEveryCorner(
+            _soundRandom.NextSingle(),
+            _soundRandom.NextSingle(),
+            _soundRandom.NextSingle(),
+            _soundRandom.NextSingle());
+
+    // The explosion message's duration (+20), which 0x47F200 fills with 90 ticks.
+    private const int ExplosionShakeTicks = 90;
+
     private void ResolveM203Detonations()
     {
         if (_player is null)
@@ -1168,6 +1233,7 @@ internal sealed partial class GameHost
                 damageFactor: blast.DamageFactor);
             DamageAlarmSpeakers(blast.Position, blast.RadiusUnits);
 
+            ReachPlayerWithBlast(blast.Position, blast.RadiusUnits, blast.FalloffUnits);
             float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
             float dose = ExplosionDamage.Dose(
                 playerDistance,
@@ -1178,7 +1244,7 @@ internal sealed partial class GameHost
             if (dose > 0f && !_playerHealth.IsDead)
             {
                 _playerHealth.Apply(ExplosionDamage.Zone, dose);
-                _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
+                FlashPlayerForBlast();
                 if (_playerHealth.IsDead)
                 {
                     BeginPlayerDeath(blast.Position, ExplosionDamage.Zone, -1, WeaponCategory.Gun);
@@ -1250,6 +1316,7 @@ internal sealed partial class GameHost
             return;
         }
 
+        ReachPlayerWithBlast(position, parameters.ExplosionRadiusUnits, parameters.ExplosionFalloffUnits);
         float playerDistance = (float)(_player.Body.Position - position).Length;
         float dose = ExplosionDamage.Dose(
             playerDistance,
@@ -1260,7 +1327,7 @@ internal sealed partial class GameHost
         if (dose > 0f && !_playerHealth.IsDead)
         {
             _playerHealth.Apply(ExplosionDamage.Zone, dose);
-            _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
+            FlashPlayerForBlast();
             if (_playerHealth.IsDead)
             {
                 BeginPlayerDeath(position, ExplosionDamage.Zone, -1, WeaponCategory.Grenade);
@@ -1480,11 +1547,12 @@ internal sealed partial class GameHost
             new RetailExplosionShape(radius, (int)item.ExplosionFireballs, item.ExplosionFragments));
         HandleDestructibleBlast(item, item.PositionUnits, radius, falloff, damageFactor);
         _soldiers?.ApplyExplosion(item.PositionUnits, radius, falloff, damageFactor);
-        _soldiers?.NotifyExplosion(item.PositionUnits, radius + falloff);
+        _soldiers?.NotifyExplosion(item.PositionUnits, AiSoldier.LargeExplosionEventRadiusInUnits);
 
         if (_player is not null && !_playerHealth.IsDead)
         {
             float distance = (float)(_player.Body.Position - item.PositionUnits).Length;
+            ReachPlayerWithBlast(item.PositionUnits, radius, falloff);
             float dose = ExplosionDamage.Dose(
                 distance,
                 ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
@@ -1494,7 +1562,7 @@ internal sealed partial class GameHost
             if (dose > 0f)
             {
                 _playerHealth.Apply(ExplosionDamage.Zone, dose);
-                _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
+                FlashPlayerForBlast();
                 if (_playerHealth.IsDead)
                 {
                     BeginPlayerDeath(item.PositionUnits, ExplosionDamage.Zone, -1, WeaponCategory.Grenade);

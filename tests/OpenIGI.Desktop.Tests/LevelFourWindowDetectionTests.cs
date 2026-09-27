@@ -23,7 +23,7 @@ public sealed class LevelFourWindowDetectionTests
     private static readonly Vector3d OutsideWindow = new(
         GunnerFeet.X,
         GunnerFeet.Y + (8.0 * Metre),
-        175462208.0 + AiSoldier.DetectionRaiseStandingInUnits);
+        175462208.0 + AiSoldier.DetectionMarkAboveFeet(crouching: false));
 
     /// <summary>
     /// Soldier 432 looks from the upper floor of Building 459 toward the approaching player. The authored
@@ -39,7 +39,21 @@ public sealed class LevelFourWindowDetectionTests
         string difficultyName)
     {
         using Fixture fixture = Fixture.Load(difficulty);
+
+        // Drawn close up, so the gunner's eye follows its body (see AiPerceptionRetailIntegrationTests).
+        // A few ticks with the player far away: the gunner grounds on its node and its body is placed.
+        for (int tick = 0; tick < 5; tick++)
+        {
+            fixture.Renderer.Tick(new Vector3d(0.0, 0.0, 0.0), enemyAlive: false);
+        }
+
+        fixture.Renderer.ObserveAllForTesting();
         Vector3d liveEye = fixture.Gunner.EyePosition();
+        // Measured on the retail game (probe, mission 4, soldier 432): its eye stands at z 175486207, 0.42 m
+        // under its authored floor plus 1.29 m -- the idle AI stands at its node's height, not the floor's.
+        Assert.True(
+            Math.Abs(liveEye.Z - 175486207.0) < 0.25 * Metre,
+            $"the gunner's eye is at z {liveEye.Z:0}, retail's at 175486207");
 
         Assert.True(
             fixture.Solids.TryTrace(
@@ -48,7 +62,8 @@ public sealed class LevelFourWindowDetectionTests
             "the retail Level 4 window ray did not touch its authored pane");
         Assert.True(
             pane.Material == 14 && pane.Label.Contains("GUNNER_BUILDING_WINDOW", StringComparison.Ordinal),
-            $"expected Level 4 glass pane, got material {pane.Material} '{pane.Label}'");
+            $"expected Level 4 glass pane, got material {pane.Material} '{pane.Label}' at {pane.Position} "
+            + $"from eye {liveEye} (gunner at {fixture.Gunner.Position}) to {OutsideWindow}");
 
         (double _, bool inCone, bool clear, _, _) = fixture.Gunner.ProbeDetection(OutsideWindow);
         Assert.True(inCone, "the player outside the window is not inside the gunner's authored view cone");
@@ -71,6 +86,8 @@ public sealed class LevelFourWindowDetectionTests
         ObjectCollisionIndex solids,
         AiSoldier gunner) : IDisposable
     {
+        public SoldierRenderer Renderer { get; } = renderer;
+
         public ObjectCollisionIndex Solids { get; } = solids;
 
         public AiSoldier Gunner { get; } = gunner;
@@ -113,9 +130,23 @@ public sealed class LevelFourWindowDetectionTests
 
             SoldierRenderer renderer = new(new RecordingGraphicsDevice(), resources, magic: magic);
             Assert.True(renderer.Load(mission, root) > 0);
+            // The level's own nav graphs, as the game hands them over: an idle AI stands at its node's
+            // height (0x462390), which for this gunner is well below its authored floor.
+            Dictionary<int, GraphFile> graphs = [];
+            string graphDirectory = Path.Combine(GameData.RequireRoot(), "missions", "location0", "level4", "graphs");
+            foreach (string file in Directory.EnumerateFiles(graphDirectory, "graph*.dat"))
+            {
+                if (int.TryParse(Path.GetFileNameWithoutExtension(file).AsSpan("graph".Length), out int graphId))
+                {
+                    GraphFile graph = GraphFile.Read(File.ReadAllBytes(file));
+                    graph.ApplyWorldOffset(OpenIGI.Presentation.World.TaskGeometry.FindPosition(root, graphId));
+                    graphs[graphId] = graph;
+                }
+            }
+
             Assert.True(renderer.Animate(
-                new Dictionary<int, GraphFile>(),
-                sight: SoldierRenderer.AiSightCast(world),
+                graphs,
+                sight: world,
                 scripts: resources,
                 natives: loop.Natives,
                 levelRoot: root,
@@ -129,6 +160,6 @@ public sealed class LevelFourWindowDetectionTests
             return new Fixture(renderer, solids, gunner);
         }
 
-        public void Dispose() => renderer.Dispose();
+        public void Dispose() => Renderer.Dispose();
     }
 }

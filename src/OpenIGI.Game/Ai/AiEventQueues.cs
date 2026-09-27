@@ -18,8 +18,9 @@ namespace OpenIGI.Game.Ai;
 /// </para>
 /// <list type="number">
 /// <item>
-/// The queues are visited in <b>priority order</b>, not type order — <c>AIFunction_SetEventPriority</c>
-/// rewrites that order.
+/// The queues are visited in <b>priority order</b>, not type order. The order holds only the types the script
+/// declared, in the order it declared them: <c>AIFunction_SetEventPriority</c> (<c>0x44E0C0</c>) enables a type
+/// and appends it the first time it is named, and a type nobody named is never admitted.
 /// </item>
 /// <item>
 /// <b>At most one event type is dispatched per tick.</b> The first non-empty queue whose position in the
@@ -51,15 +52,14 @@ public sealed class AiEventQueues
 
     /// <summary>Initializes a new instance of the <see cref="AiEventQueues"/> class.</summary>
     /// <remarks>
-    /// Starts with the identity priority order and <b>every type disabled</b>, which is the constructor's
-    /// state: <c>0x44F060</c> zeroes the mask and a script turns on what it wants to hear.
+    /// Starts with an empty order and <b>every type disabled</b>, which is the constructor's state:
+    /// <c>0x44F060</c> zeroes the mask and a script turns on what it wants to hear.
     /// </remarks>
     public AiEventQueues()
     {
         for (int i = 0; i < TypeCount; i++)
         {
             _queues[i] = [];
-            _order.Add((AiEvent)i);
         }
     }
 
@@ -75,7 +75,7 @@ public sealed class AiEventQueues
     /// <remarks><c>HumanAI+15034</c>, the death latch. A dead AI admits nothing at all.</remarks>
     public bool IsDead { get; set; }
 
-    /// <summary>Gets the priority order the queues are visited in.</summary>
+    /// <summary>Gets the priority order the queues are visited in — the declared types, in declaration order.</summary>
     public IReadOnlyList<AiEvent> PriorityOrder => _order;
 
     /// <summary>Gets how many events of a type are queued.</summary>
@@ -137,18 +137,43 @@ public sealed class AiEventQueues
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="type"/> is not a registered event.</exception>
     public bool IsEnabled(AiEvent type) => _enabled[Index(type)];
 
-    /// <summary>Moves an event type to a position in the priority order.</summary>
-    /// <param name="type">The event type.</param>
-    /// <param name="position">Where to put it, 0 being the first to be considered.</param>
-    /// <exception cref="ArgumentOutOfRangeException">The type or the position is out of range.</exception>
-    public void SetPriority(AiEvent type, int position)
+    /// <summary>Declares an event type — <c>AIFunction_SetEventPriority</c> (<c>0x44E0C0</c>).</summary>
+    /// <param name="type">The event type the script wants to hear.</param>
+    /// <remarks>
+    /// The first call for a type sets its enable byte and appends it to the order, so the order is the
+    /// declaration order. Naming a type again changes nothing.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="type"/> is not a registered event.</exception>
+    public void Declare(AiEvent type)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(position);
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(position, TypeCount);
+        int index = Index(type);
+        if (_order.Contains(type))
+        {
+            return;
+        }
 
-        AiEvent value = (AiEvent)Index(type);
-        _order.Remove(value);
-        _order.Insert(position, value);
+        _enabled[index] = true;
+        _order.Add(type);
+    }
+
+    /// <summary>Dispatches the AI's creation — what <c>0x44F410</c> does on its first tick.</summary>
+    /// <param name="dispatch">Runs the AI script for an event type at a priority position.</param>
+    /// <returns>Whether the script produced anything.</returns>
+    /// <remarks>
+    /// Creation does not go through the ordered pump — the order is empty until the creation branch declares
+    /// it. The engine queues one CREATE record, runs the script for it directly with position <c>-1</c>
+    /// (<c>sub_44FC90(ai, 0, -1)</c>), frees it, and marks the AI initialised.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="dispatch"/> is <see langword="null"/>.</exception>
+    public bool DispatchCreate(Func<AiEvent, int, bool> dispatch)
+    {
+        ArgumentNullException.ThrowIfNull(dispatch);
+        List<AiEventRecord> queue = _queues[Index(AiEvent.Create)];
+        queue.Add(AiEventRecord.Simple(AiEvent.Create));
+        bool handled = dispatch(AiEvent.Create, -1);
+        queue.Clear();
+        IsInitialised = true;
+        return handled;
     }
 
     /// <summary>Offers an event to the AI, applying the admission rules that do not need the world.</summary>
@@ -214,21 +239,18 @@ public sealed class AiEventQueues
     {
         ArgumentNullException.ThrowIfNull(dispatch);
 
+        // 0x44FD50 walks the declared order once: the first non-empty queue under the cap whose handler
+        // produces something is dispatched, and every queue is drained as the walk passes it. So an event
+        // posted during the dispatch (SetCombat's COMBAT) survives into the next tick when its queue was
+        // already passed, and is lost when its queue comes later.
         AiEvent? dispatched = null;
-        bool handled = false;
-
         for (int position = 0; position < _order.Count; position++)
         {
             AiEvent type = _order[position];
             int slot = (int)type;
-
-            if (position < priorityCap && _queues[slot].Count != 0 && !handled)
+            if (dispatched is null && position < priorityCap && _queues[slot].Count != 0 && dispatch(type, position))
             {
-                handled = dispatch(type, position);
-                if (handled)
-                {
-                    dispatched = type;
-                }
+                dispatched = type;
             }
 
             // Drained whether or not it was dispatched — an undelivered event is lost, not deferred.

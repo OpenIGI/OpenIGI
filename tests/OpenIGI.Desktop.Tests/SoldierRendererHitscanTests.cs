@@ -441,15 +441,15 @@ public sealed class SoldierRendererHitscanTests
 
         // A killed local target must be retired even when another guard remains alive elsewhere.
         // Reproduce an interrupted patrol for each of the three members of the rescue team.
+        // Each is fighting the dead guard: a dead human is never registered, so the combat record's slot is
+        // gone and the fight ends (0x44F410 releases the record, and the arm ends without a slot).
         SoldierView deadTarget = Assert.Single(brains.Keys, view => view.Soldier.Id == 417);
-        Dictionary<SoldierView, SoldierView> npcTargets = Assert.IsType<Dictionary<SoldierView, SoldierView>>(
-            typeof(SoldierRenderer).GetField("_npcTargetByBrain", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(scenario.Renderer));
         foreach (SoldierView friendly in new[] { harrison, escortOne, escortTwo })
         {
             typeof(AiSoldier).GetMethod("EnterCombat", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .Invoke(brains[friendly], null);
-            npcTargets[friendly] = deadTarget;
+            typeof(AiSoldier).GetField("_targetId", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(brains[friendly], deadTarget.Soldier.Id);
         }
         scenario.Renderer.Tick(enemyAlive: false);
         foreach (SoldierView friendly in new[] { harrison, escortOne, escortTwo })
@@ -506,10 +506,12 @@ public sealed class SoldierRendererHitscanTests
                 + $"waypoints={brains[harrison].DebugWaypoint},{brains[escortOne].DebugWaypoint},{brains[escortTwo].DebugWaypoint} "
                 + $"models={harrison.Soldier.SoldierModel},{escortOne.Soldier.SoldierModel},{escortTwo.Soldier.SoldierModel} "
                 + $"area={rescue}");
-        Assert.Equal(113, brains[harrison].DestinationNode);
+        // Each is walking to its authored node or already on it: arrival clears the goal (0x4518E0 sets
+        // ai+15920 to -1 when the queue runs out) and leaves the node as the current one.
+        Assert.True(HeadingForOrOn(brains[harrison], 113));
         Assert.Equal(3, rescueArrivals.Count);
-        Assert.Equal(112, brains[escortOne].DestinationNode);
-        Assert.Equal(114, brains[escortTwo].DestinationNode);
+        Assert.True(HeadingForOrOn(brains[escortOne], 112));
+        Assert.True(HeadingForOrOn(brains[escortTwo], 114));
 
         // Feed all six live friendlies through the real area/timer/message runtimes while Harrison is
         // physically inside area 154. The authored rescue cannot advance team one's stage before the
@@ -789,6 +791,57 @@ public sealed class SoldierRendererHitscanTests
             out _));
 
         Assert.True(scenario.Renderer.TryShoot(origin, end, damageFactor: 0.5f, WeaponCategory.Gun, out _));
+    }
+
+    /// <summary>
+    /// A headshot is decided by where the round STRUCK: 0x489C60 promotes a front hit to zone 15 only
+    /// when the hit record's point is within 15 cm of bone 4. Measuring the ray's closest approach
+    /// instead made a round that struck a forearm raised in front of the face (every aiming guard) a
+    /// headshot, because its line ran on through the head -- guards died to the second arm hit.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void AHeadshotIsScoredWhereTheRoundStruckNotWhereItsLineRan()
+    {
+        using Scenario scenario = CreateScenario();
+        int heads = 0;
+        foreach ((SoldierView soldier, MefCollisionMesh mesh) in MeshBackedSoldiers(scenario.Renderer))
+        {
+            Vector3d feet = FeetOnGround(scenario.Renderer, soldier);
+            Matrix3f orientation = soldier.Orientation;
+            Vector3f facing = new(orientation.M12, orientation.M22, orientation.M32);
+            BonePose pose = soldier.Pose();
+            Vector3f bone = pose.Positions[HumanDamage.ProximityBoneIndex];
+            Vector3d head = new(feet.X + bone.X, feet.Y + bone.Y, feet.Z + soldier.RootSample.Z + bone.Z);
+
+            for (double height = 1.1; height <= 1.9; height += 0.05)
+            {
+                for (double across = -0.4; across <= 0.4; across += 0.05)
+                {
+                    Vector3d aim = new(
+                        feet.X + (facing.Y * across * Metre),
+                        feet.Y - (facing.X * across * Metre),
+                        feet.Z + (height * Metre));
+                    Vector3d origin = new(
+                        aim.X + (facing.X * 12.0 * Metre), aim.Y + (facing.Y * 12.0 * Metre), aim.Z);
+                    Vector3d end = new(
+                        aim.X - (facing.X * 2.0 * Metre), aim.Y - (facing.Y * 2.0 * Metre), aim.Z);
+                    if (!HumanHitTest.TryCastMesh(
+                            origin, end, feet, facing, mesh, pose, soldier.RootSample.Z, out HumanHit hit)
+                        || hit.Zone != HumanDamage.ProximityZone)
+                    {
+                        continue;
+                    }
+
+                    heads++;
+                    Assert.True(
+                        (hit.Position - head).Length < HumanDamage.HeadProximityUnits,
+                        $"{soldier.Soldier.Name}: a head hit struck bone {hit.Bone} "
+                            + $"{(hit.Position - head).Length / Metre:0.00} m from the head");
+                }
+            }
+        }
+
+        Assert.True(heads > 0, "no ray reached any soldier's head, so the rule was never exercised");
     }
 
     [RequiresGameDataFact]
@@ -1252,7 +1305,7 @@ public sealed class SoldierRendererHitscanTests
         }
         Assert.True(renderer.Animate(
             graphs,
-            solids.Caster(),
+            solids.Tracer(),
             resources,
             loop.Natives,
             root,
@@ -1295,4 +1348,7 @@ public sealed class SoldierRendererHitscanTests
 
         public void Dispose() => GameplayCVars.Ragdoll.Value = _previous;
     }
+
+    private static bool HeadingForOrOn(AiSoldier brain, int node) =>
+        brain.DestinationNode == node || (brain.DestinationNode == -1 && brain.CurrentNode == node);
 }

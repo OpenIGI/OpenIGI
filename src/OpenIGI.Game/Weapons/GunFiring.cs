@@ -1,3 +1,5 @@
+using OpenIGI.Core.Numerics;
+
 namespace OpenIGI.Game.Weapons;
 
 /// <summary>Why a trigger pull did not produce a round.</summary>
@@ -118,6 +120,24 @@ public static class GunFiring
 
         float radians = degrees * DegreesToRadians;
         return radians < 0f ? -radians : radians;
+    }
+
+    /// <summary>Turns a direction by a sampled cone offset — <c>0x478BA0</c>'s rotation about the barrel.</summary>
+    /// <param name="forward">The barrel's direction.</param>
+    /// <param name="right">A unit vector perpendicular to it.</param>
+    /// <param name="up">The third axis.</param>
+    /// <param name="radius">The offset angle from <see cref="SampleCone"/>.</param>
+    /// <param name="bearing">The bearing about the barrel from <see cref="SampleCone"/>.</param>
+    /// <returns>The round's direction, normalised.</returns>
+    /// <remarks>
+    /// The original builds a basis from the direction (<c>0x414A60</c>), makes a rotation from the two angles
+    /// (<c>0x4B38E0</c>) and multiplies the two 3x3s; the product's forward column is what this computes.
+    /// </remarks>
+    public static Vector3f OffsetInCone(Vector3f forward, Vector3f right, Vector3f up, float radius, float bearing)
+    {
+        float sin = MathF.Sin(radius);
+        Vector3f lateral = (right * (MathF.Cos(bearing) * sin)) + (up * (MathF.Sin(bearing) * sin));
+        return ((forward * MathF.Cos(radius)) + lateral).Normalized();
     }
 
     /// <summary>Samples one projectile's offset within the cone.</summary>

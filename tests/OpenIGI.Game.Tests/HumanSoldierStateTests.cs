@@ -29,8 +29,8 @@ public sealed class HumanSoldierStateTests
     [InlineData(17, 48, 1)]
     public void TheTableAgreesWithTheRunningGame(int state, int animation, int mode)
     {
-        Assert.Equal(animation, HumanSoldierStates.AnimationOf(state));
-        Assert.Equal(mode, HumanSoldierStates.ModeOf(state));
+        Assert.Equal(animation, HumanSoldierStates.Table.AnimationOf(state));
+        Assert.Equal(mode, HumanSoldierStates.Table.ModeOf(state));
     }
 
     /// <summary>The three death states name their own clip, which is how the table marks that.</summary>
@@ -43,8 +43,8 @@ public sealed class HumanSoldierStateTests
     {
         foreach (int state in new[] { 32, 33, 34 })
         {
-            Assert.True(HumanSoldierStates.IsSelfDriven(state));
-            Assert.Equal(-1, HumanSoldierStates.AnimationOf(state));
+            Assert.True(HumanSoldierStates.Table.IsSelfDriven(state));
+            Assert.Equal(-1, HumanSoldierStates.Table.AnimationOf(state));
         }
     }
 
@@ -56,9 +56,9 @@ public sealed class HumanSoldierStateTests
     [Fact]
     public void TheCombatStatesReadTheClipsTheGuardWasSeenPlaying()
     {
-        Assert.Equal(56, HumanSoldierStates.AnimationOf(HumanSoldierStates.FiringState));
-        Assert.Equal(55, HumanSoldierStates.AnimationOf(HumanSoldierStates.ReloadState));
-        Assert.Equal(2, HumanSoldierStates.AnimationOf(HumanSoldierStates.StandState));
+        Assert.Equal(56, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.FiringState));
+        Assert.Equal(55, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.ReloadState));
+        Assert.Equal(2, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.StandState));
 
         // And standing is the stance channel's own state for every guard type, from the other table.
         Assert.Equal(
@@ -83,20 +83,20 @@ public sealed class HumanSoldierStateTests
         Assert.Equal(32, HumanSoldierStates.DeathState);
 
         // Both name their own clip, which is what a state that chooses between several has to do.
-        Assert.True(HumanSoldierStates.IsSelfDriven(HumanSoldierStates.FlinchState));
-        Assert.True(HumanSoldierStates.IsSelfDriven(HumanSoldierStates.DeathState));
+        Assert.True(HumanSoldierStates.Table.IsSelfDriven(HumanSoldierStates.FlinchState));
+        Assert.True(HumanSoldierStates.Table.IsSelfDriven(HumanSoldierStates.DeathState));
 
         // And the airborne state is an ordinary table entry.
-        Assert.Equal(2, HumanSoldierStates.AnimationOf(HumanSoldierStates.AirborneState));
+        Assert.Equal(2, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.AirborneState));
     }
 
     /// <summary>A state outside the machine has no clip rather than an arbitrary one.</summary>
     [Fact]
     public void AStateOutsideTheMachineHasNoClip()
     {
-        Assert.Equal(-1, HumanSoldierStates.AnimationOf(-1));
-        Assert.Equal(-1, HumanSoldierStates.AnimationOf(HumanSoldierStates.StateCount));
-        Assert.Equal(-1, HumanSoldierStates.ModeOf(999));
+        Assert.Equal(-1, HumanSoldierStates.Table.AnimationOf(-1));
+        Assert.Equal(-1, HumanSoldierStates.Table.AnimationOf(HumanSoldierStates.Table.StateCount));
+        Assert.Equal(-1, HumanSoldierStates.Table.ModeOf(999));
     }
 
     /// <summary>

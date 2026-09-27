@@ -17,17 +17,26 @@ public static class MissionProgression
             return false;
         }
 
+        // The next mission must itself be on the campaign, after the active one. Unlocking on merely passing
+        // the active mission unlocked a mission the catalogue does not offer (the browser build's
+        // six-mission limit let the sixth unlock the seventh).
+        bool passedActive = false;
         foreach (MissionDescriptor mission in missions.InProgressionOrder())
         {
             if (mission.Id == nextMissionId)
             {
-                break;
+                if (!passedActive)
+                {
+                    return false;
+                }
+
+                profile.ActiveMission = nextMissionId;
+                return true;
             }
 
             if (mission.Id == profile.ActiveMission)
             {
-                profile.ActiveMission = nextMissionId;
-                return true;
+                passedActive = true;
             }
         }
 

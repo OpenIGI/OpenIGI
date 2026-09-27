@@ -582,6 +582,18 @@ public static class GraphicsMenu
         "r_world_occlusion",
         "r_terrain_occlusion",
         "r_terrain_cache",  // how much streamed ground stays resident; the detail row is the player's version
+        "r_gi_far_refresh", // how many frames the far GI cache sweep is spread over; each preset picks its cost
+
+        // The night's calibration. The sky's scatter, the airglow and the moonlight were tuned together
+        // until a night read as dark but legible; moving one alone relights every night mission. The
+        // stars, the moon's disc and the night-vision shift are the Preset row's (off on vanilla, on
+        // above it), not a separate choice.
+        "r_night_sky",
+        "r_night_airglow",
+        "r_moonlight",
+        "r_moon_brightness",
+        "r_stars",
+        "r_night_shift",
 
         // Which fog the picture wears, which the Preset row has already answered: vanilla draws the
         // original's own per-vertex haze into the level's fog colour, and every tier above it marches

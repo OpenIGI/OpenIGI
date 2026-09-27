@@ -256,12 +256,15 @@ public static class HumanHitTest
 
         int zone = HumanDamage.RefineByDirection(HumanDamage.ZoneOfBone(hitBone), localForward, localSide);
 
-        // The head promotion, on the actual posed bone 4 — a front hit within 15 cm of it is lethal.
+        // The head promotion, on the actual posed bone 4 — a front hit whose CONTACT lands within 15 cm of
+        // it is lethal (0x489C60 measures the hit record's point, not the ray). The ray's closest approach
+        // made a forearm raised in front of the face a headshot: the round struck the arm, but its line
+        // ran on through the head.
         if (HumanDamage.ProximityBoneIndex < pose.BoneCount)
         {
             Vector3f head = pose.Positions[HumanDamage.ProximityBoneIndex];
             Vector3d headWorld = new(boneOrigin.X + head.X, boneOrigin.Y + head.Y, boneOrigin.Z + head.Z);
-            double distance = DistanceToSegment(origin, direction, headWorld);
+            double distance = Distance(contact, headWorld);
             if (HumanDamage.TakesProximityZone((float)distance, localForward))
             {
                 zone = HumanDamage.ProximityZone;
@@ -375,7 +378,9 @@ public static class HumanHitTest
                 current.Z + (share * (previous.Z - current.Z)));
             Vector3f turned = orientation.Transposed().Transform(local);
             Vector3d headWorld = new(root.X + turned.X, root.Y + turned.Y, root.Z + turned.Z);
-            double distance = DistanceToSegment(origin, direction, headWorld);
+
+            // From the contact, as 0x489C60 measures it (see TryCastMesh).
+            double distance = Distance(contact, headWorld);
             if (HumanDamage.TakesProximityZone((float)distance, localForward))
             {
                 zone = HumanDamage.ProximityZone;
@@ -596,5 +601,13 @@ public static class HumanHitTest
     {
         float length = MathF.Sqrt((v.X * v.X) + (v.Y * v.Y) + (v.Z * v.Z));
         return length <= 0f ? new Vector3f(0f, 1f, 0f) : new Vector3f(v.X / length, v.Y / length, v.Z / length);
+    }
+
+    private static double Distance(Vector3d a, Vector3d b)
+    {
+        double dx = a.X - b.X;
+        double dy = a.Y - b.Y;
+        double dz = a.Z - b.Z;
+        return Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
     }
 }

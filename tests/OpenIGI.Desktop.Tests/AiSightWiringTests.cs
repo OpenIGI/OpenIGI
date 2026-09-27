@@ -1,32 +1,51 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Desktop;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
-using Xunit;
 using OpenIGI.Presentation.Igi1;
+using Xunit;
 
 namespace OpenIGI.Desktop.Tests;
 
-/// <summary>Locks the desktop's AI sight request to physical world geometry.</summary>
+/// <summary>Locks the AI's sight request to physical world geometry and retail's contact rule.</summary>
 public sealed class AiSightWiringTests
 {
+    private static readonly Vector3d Eye = Vector3d.Zero;
+    private static readonly Vector3d Mark = new(0.0, 10_000.0, 0.0);
+
     [Fact]
     public void AiSightDoesNotTurnAuthoredDoorwayAndWindowPortalsIntoSolidWalls()
     {
         WorldTraceRequest captured = default;
-        bool called = false;
         WorldTraceCast trace = (in WorldTraceRequest request, out WorldTraceHit hit) =>
         {
             captured = request;
-            called = true;
             hit = default;
             return false;
         };
 
-        WorldRayCast sight = SoldierRenderer.AiSightCast(trace);
-        Assert.False(sight(Vector3d.Zero, new Vector3d(0.0, 4096.0, 0.0), out _));
+        Assert.True(SoldierRenderer.HasLineOfSight(trace, Eye, Mark, AiSoldier.SightObstructionTolerance));
 
-        Assert.True(called);
         Assert.Equal(WorldTraceMask.World, captured.Mask);
         Assert.False(captured.TracePortals);
+    }
+
+    [Theory]
+    [InlineData(WorldTraceHitKind.StaticObject, 8_200.0, false)]
+    [InlineData(WorldTraceHitKind.StaticObject, 7_000.0, false)]
+    [InlineData(WorldTraceHitKind.Terrain, 9_500.0, false)]
+    [InlineData(WorldTraceHitKind.DynamicObject, 8_000.0, true)]
+    [InlineData(WorldTraceHitKind.DynamicObject, 7_000.0, false)]
+    public void PlacedGeometryHidesTheTargetWhereverItIsMet(WorldTraceHitKind kind, double distance, bool seen)
+    {
+        // 0x489B20 accepts a returned fraction of 0.79 or more, but for terrain and placed geometry the retail
+        // casts only ever return 0.0 when blocked -- measured with the probe, including a static roof met 82%
+        // along. Only a moving object is still given the tolerance.
+        WorldTraceCast trace = (in WorldTraceRequest request, out WorldTraceHit hit) =>
+        {
+            hit = new WorldTraceHit(default, default, distance, distance / 10_000.0, Material: 0, kind);
+            return true;
+        };
+
+        Assert.Equal(seen, SoldierRenderer.HasLineOfSight(trace, Eye, Mark, AiSoldier.SightObstructionTolerance));
     }
 }

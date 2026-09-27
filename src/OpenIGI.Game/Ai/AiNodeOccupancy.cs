@@ -68,6 +68,72 @@ public sealed class AiNodeOccupancy
     }
 
     /// <summary>
+    /// Claims the cell of a node nearest a point — <c>sub_452D20</c>, which a walk planned with its claim flag
+    /// set (<c>0x4518E0</c>'s fourth argument) makes for its destination, releasing the soldier's old claim.
+    /// </summary>
+    /// <param name="graph">The node's graph.</param>
+    /// <param name="node">The destination node.</param>
+    /// <param name="claimant">The soldier claiming.</param>
+    /// <param name="at">The point the walk ends at — the node's own position when it names none.</param>
+    /// <returns>The claimed cell's position, which retail keeps at <c>HumanAI+16048</c>.</returns>
+    /// <remarks>
+    /// Unlike the free-position search this never refuses: the cell is the point's, clamped into the grid,
+    /// however many already stand there. The patrol walker, WalkToNode, RunToNode and MoveToEvent all plan
+    /// this way, so a patrolling guard always holds a claim on where it is heading -- which is where a fight
+    /// that finds it off its node sends it back to (RePosition, <c>0x48C760</c>).
+    /// </remarks>
+    public Vector3d ClaimAt(GraphFile graph, GraphNode node, object claimant, Vector3d at)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(node);
+        ArgumentNullException.ThrowIfNull(claimant);
+
+        Release(claimant);
+        if (!_records.TryGetValue((graph, node.Id), out Record? record))
+        {
+            record = CreateRecord(graph, node);
+        }
+
+        // The point in the node's own frame, in two-metre cells from the grid's corner, clamped into it.
+        double dx = at.X - node.Position.X;
+        double dy = at.Y - node.Position.Y;
+        double sin = Math.Sin(node.Gamma);
+        double cos = Math.Cos(node.Gamma);
+        double localX = (cos * dx) + (sin * dy);
+        double localY = (-sin * dx) + (cos * dy);
+        int row = (int)Math.Clamp((record.Rows * 0.5) + (localX / CellSizeInUnits), 0.0, record.Rows);
+        int col = (int)Math.Clamp((record.Cols * 0.5) + (localY / CellSizeInUnits), 0.0, record.Cols);
+        Take(claimant, record, row, col);
+
+        double offsetX = (row - (record.Rows * 0.5)) * CellSizeInUnits;
+        double offsetY = (col - (record.Cols * 0.5)) * CellSizeInUnits;
+        return new Vector3d(
+            node.Position.X + ((cos * offsetX) - (sin * offsetY)),
+            node.Position.Y + ((sin * offsetX) + (cos * offsetY)),
+            node.Position.Z);
+    }
+
+    /// <summary>The node a soldier's claim is on — the record at <c>HumanAI+16032</c>'s <c>+12</c>.</summary>
+    /// <param name="claimant">The soldier.</param>
+    /// <returns>The node id, or <see langword="null"/> when it holds no claim.</returns>
+    public int? ClaimedNode(object claimant)
+    {
+        ArgumentNullException.ThrowIfNull(claimant);
+        return _claims.TryGetValue(claimant, out Claim? claim) ? claim.Record.Key.NodeId : null;
+    }
+
+    /// <summary>Whether a soldier's own claim is on this node — <c>0x48B260</c>'s first occupancy test.</summary>
+    /// <param name="graph">The node's graph.</param>
+    /// <param name="nodeId">The node.</param>
+    /// <param name="claimant">The soldier asking.</param>
+    /// <returns><see langword="true"/> when the node's record is the one the soldier holds (<c>HumanAI+16032</c>).</returns>
+    public bool IsClaimedBy(GraphFile graph, int nodeId, object claimant)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        return _claims.TryGetValue(claimant, out Claim? claim) && claim.Record.Key == (graph, nodeId);
+    }
+
+    /// <summary>
     /// Claims a sub-slot on a node for a soldier, releasing whatever it held before, and returns the
     /// slot's world position — the search's accepted outcome.
     /// </summary>

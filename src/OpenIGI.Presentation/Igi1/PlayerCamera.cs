@@ -2,6 +2,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons.Ballistics;
@@ -122,6 +123,7 @@ public sealed class PlayerCamera
     private Vector3d _prevTickEye;
     private Vector3d _tickEye;
     private readonly HumanLandingViewKick _landingKick = new();
+    private readonly HumanViewShake _viewShake = new();
     private double _prevTickWallPullback;
     private double _tickWallPullback;
     private Vector3f _prevTickRootMotion;
@@ -279,6 +281,14 @@ public sealed class PlayerCamera
     /// receives damage instead and does not also manufacture a ground-impact event behind itself.
     /// </remarks>
     public Action<Vector3d>? GroundImpact { get; set; }
+
+    /// <summary>Gets or sets where the player's door, fence and ladder noises are offered to the AI.</summary>
+    /// <remarks>
+    /// Invoked with <see cref="AiEvent.Door"/> whenever the player toggles a door, by hand or at the end of
+    /// a pick (<c>0x40C270</c>); with <see cref="AiEvent.Fence"/> on every tick of a fence climb but the
+    /// first and the last (<c>0x411770</c>); and with <see cref="AiEvent.Ladder"/> at each ladder step.
+    /// </remarks>
+    public Action<AiEvent>? AiNoise { get; set; }
 
     /// <summary>Gets how many of this player's rounds have struck a human.</summary>
     public int HumanHits { get; private set; }
@@ -516,7 +526,8 @@ public sealed class PlayerCamera
         }
 
         _view.Eye = _body.Eye;
-        _view.EyeOrientation = Matrix3f.FromEngineEulerAngles(AimPitch, 0f, -_body.Yaw);
+        _view.EyeOrientation = Matrix3f.FromEngineEulerAngles(
+            AimPitch + _viewShake.Pitch, _viewShake.Roll, -_body.Yaw + _viewShake.Yaw);
 
         // 0x464BD0 composes the object's orientation as the eye's TIMES the weapon sway, dotting the
         // eye's rows with the sway's columns. The sway is the two angles a weapon change tips the rig
@@ -629,7 +640,9 @@ public sealed class PlayerCamera
 
     /// <summary>Gets the eye the scene is drawn from, in the renderer's metres.</summary>
     public Camera3D Camera =>
-        new(ToMetres(_body.Eye + LandingKickOffsetUnits), Camera3D.LookRotation(_body.Yaw, AimPitch));
+        new(
+            ToMetres(_body.Eye + LandingKickOffsetUnits + ViewShakeOffsetUnits),
+            Shaken(_body.Yaw, AimPitch, _viewShake.Pitch, _viewShake.Roll, _viewShake.Yaw));
 
     /// <summary>Gets the dip the last landing installed in the view.</summary>
     /// <remarks>
@@ -640,6 +653,40 @@ public sealed class PlayerCamera
 
     /// <summary>The landing dip as a world-space displacement, in units — <c>0x464BD0</c> adds it to Z.</summary>
     private Vector3d LandingKickOffsetUnits => new(0.0, 0.0, _landingKick.OffsetUnits);
+
+    /// <summary>Gets the shake the last hit put in the view.</summary>
+    public HumanViewShake ViewShake => _viewShake;
+
+    /// <summary>Arms the view shake, as the player's hit handlers do through <c>0x465970</c>.</summary>
+    /// <param name="positionUnits">The full eye displacement, in units.</param>
+    /// <param name="angleRadians">The full angle, in radians.</param>
+    /// <param name="ticks">How many ticks it fades over.</param>
+    public void InstallViewShake(float positionUnits, float angleRadians, int ticks) =>
+        _viewShake.Install(positionUnits, angleRadians, ticks);
+
+    /// <summary>The shake's eye displacement in world units: along the view's horizontal right, and up.</summary>
+    private Vector3d ViewShakeOffsetUnits => new(
+        _viewShake.RightUnits * Math.Cos(_body.Yaw),
+        -_viewShake.RightUnits * Math.Sin(_body.Yaw),
+        _viewShake.UpUnits);
+
+    /// <summary>The camera's look with a shake folded in — the engine's gamma and the roll about forward.</summary>
+    private static Matrix3f Shaken(float yaw, float pitch, float shakePitch, float shakeRoll, float shakeYaw)
+    {
+        // The engine's eye is Z(-yaw) Y(roll) X(pitch); the shake adds to its gamma, which is minus the yaw.
+        Matrix3f look = Camera3D.LookRotation(yaw - shakeYaw, pitch + shakePitch);
+        if (shakeRoll == 0f)
+        {
+            return look;
+        }
+
+        float c = MathF.Cos(shakeRoll);
+        float sn = MathF.Sin(shakeRoll);
+        Vector3f right = new(look.M11, look.M12, look.M13);
+        Vector3f up = new(look.M21, look.M22, look.M23);
+        Vector3f forward = new(look.M31, look.M32, look.M33);
+        return Matrix3f.FromRows((right * c) + (up * sn), (up * c) - (right * sn), forward);
+    }
 
     /// <summary>Arms the landing dip, as <c>0x408460</c> does through <c>0x4659B0</c>.</summary>
     /// <param name="amplitudeUnits">
@@ -795,6 +842,7 @@ public sealed class PlayerCamera
         // landing dip still playing belongs to the ground that was left behind.
         HasViewTickPair = false;
         _landingKick.Reset();
+        _viewShake.Reset();
         return _body.PlaceOnGround(terrain);
     }
 
@@ -1076,6 +1124,7 @@ public sealed class PlayerCamera
         _body.Pitch = 0f;
         HasViewTickPair = false;
         _landingKick.Reset();
+        _viewShake.Reset();
 
         WorldRayCast? liveWalls = _body.Walls;
         if (registrationGround is not null)
@@ -1284,8 +1333,10 @@ public sealed class PlayerCamera
         // Where 0x464BD0 steps it: after the state machines have read it and before the rig is placed.
         _weapons?.Sway.Advance();
 
-        // The landing dip is stepped by the same function, in the same place, and for the same reason:
-        // it displaces the camera this tick places rather than the body the state machines just moved.
+        // The hit shake and the landing dip are stepped by the same function, in the same place, and for
+        // the same reason: they displace the camera this tick places rather than the body the state
+        // machines just moved. The shake comes first (0x464BD0).
+        _viewShake.Advance(_random.NextDouble);
         _landingKick.Advance();
 
         PoseChanged = true;
@@ -1324,6 +1375,7 @@ public sealed class PlayerCamera
 
         // 0x464BD0 runs whatever the locomotion state is, so a dip that began before the computer was
         // opened keeps playing out rather than freezing the view part-way down.
+        _viewShake.Advance(_random.NextDouble);
         _landingKick.Advance();
         PoseChanged = true;
         SyncView();
@@ -1349,6 +1401,7 @@ public sealed class PlayerCamera
                 break;
             case InteractionAction.OpenDoor:
                 interaction.Door?.Toggle();
+                AiNoise?.Invoke(AiEvent.Door);
                 TaskActivated?.Invoke(interaction.Task.Id);
                 break;
             case InteractionAction.MountWire:
@@ -1525,7 +1578,11 @@ public sealed class PlayerCamera
         // State 41 plants the task root at the authored fence mount and lets animation 171 carry the
         // visible body over it. Its own duration accessor returns six seconds (0x440270), not the
         // one-second parabolic placeholder this replaces.
-        if (_interactionTick >= fence.DurationTicks)
+        if (_interactionTick < fence.DurationTicks)
+        {
+            AiNoise?.Invoke(AiEvent.Fence);
+        }
+        else
         {
             _body.Position = _fenceExitPosition;
             EndInteraction(completed: false, terrain);
@@ -1538,6 +1595,12 @@ public sealed class PlayerCamera
         if (completed)
         {
             interaction.CompleteUse();
+            if (interaction.Door is not null)
+            {
+                // A finished pick unlocks and toggles the door, and posts the same noise (0x40C160).
+                AiNoise?.Invoke(AiEvent.Door);
+            }
+
             TaskActivated?.Invoke(interaction.Task.Id);
         }
         else
@@ -1682,9 +1745,13 @@ public sealed class PlayerCamera
         // The dip belongs to the camera the frame is drawn from, so it is folded in here rather than at
         // the eye the body reports: the blend between the two ticks then carries it for free, and the
         // listener and the rig stay on the same head they always were.
-        Vector3d eye = view.Eye + LandingKickOffsetUnits;
+        Vector3d eye = view.Eye + LandingKickOffsetUnits + ViewShakeOffsetUnits;
         _prevTickEye = HasViewTickPair ? _tickEye : eye;
         _tickEye = eye;
+
+        // The shake's angles step on the tick too, and sit in both the camera and the rig.
+        _prevTickShake = HasViewTickPair ? _tickShake : (_viewShake.Pitch, _viewShake.Roll, _viewShake.Yaw);
+        _tickShake = (_viewShake.Pitch, _viewShake.Roll, _viewShake.Yaw);
 
         double wallPullback = view.WallPullbackInUnits;
         _prevTickWallPullback = HasViewTickPair ? _tickWallPullback : wallPullback;
@@ -1750,8 +1817,21 @@ public sealed class PlayerCamera
     /// The rig takes the same blended pitch through <see cref="SmoothedRig"/>, so the weapon never
     /// shears against the view mid-kick.
     /// </remarks>
-    public Matrix3f SmoothedLookRotation(float alpha) =>
-        Camera3D.LookRotation(_body.Yaw, SmoothedAimPitch(alpha));
+    public Matrix3f SmoothedLookRotation(float alpha)
+    {
+        (float pitch, float roll, float yaw) = SmoothedShake(alpha);
+        return Shaken(_body.Yaw, SmoothedAimPitch(alpha), pitch, roll, yaw);
+    }
+
+    private (float Pitch, float Roll, float Yaw) _prevTickShake;
+    private (float Pitch, float Roll, float Yaw) _tickShake;
+
+    // The shake's three angles blended between their last two tick values.
+    private (float Pitch, float Roll, float Yaw) SmoothedShake(float alpha) => HasViewTickPair
+        ? (PresentationBlend.LerpAngle(_prevTickShake.Pitch, _tickShake.Pitch, alpha),
+            PresentationBlend.LerpAngle(_prevTickShake.Roll, _tickShake.Roll, alpha),
+            PresentationBlend.LerpAngle(_prevTickShake.Yaw, _tickShake.Yaw, alpha))
+        : (_viewShake.Pitch, _viewShake.Roll, _viewShake.Yaw);
 
     /// <summary>Where the ear is for a frame between two ticks, in metres.</summary>
     /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
@@ -1890,7 +1970,9 @@ public sealed class PlayerCamera
         // The same composition SyncView commits — eye orientation times sway — with the tick-stepped
         // angles blended: the sway pair (the weapon-change animation) and the recoil kick inside the
         // aim pitch. The mouse-driven part of the pitch and the yaw are this frame's own.
-        Matrix3f eyeLook = Matrix3f.FromEngineEulerAngles(SmoothedAimPitch(alpha), 0f, -_body.Yaw);
+        (float shakePitch, float shakeRoll, float shakeYaw) = SmoothedShake(alpha);
+        Matrix3f eyeLook = Matrix3f.FromEngineEulerAngles(
+            SmoothedAimPitch(alpha) + shakePitch, shakeRoll, -_body.Yaw + shakeYaw);
         Matrix3f look = eyeLook * Matrix3f.FromEngineEulerAngles(
                 PresentationBlend.LerpAngle(_prevTickSwayPitch, _tickSwayPitch, alpha),
                 0f,
@@ -2152,6 +2234,7 @@ public sealed class PlayerCamera
     {
         _climb.CompleteStep();
         _body.Position = _climb.Position;
+        AiNoise?.Invoke(AiEvent.Ladder);
     }
 
     /// <summary>Consumes animation 170's endpoint and resolves the roof when state 39 detaches.</summary>

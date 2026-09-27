@@ -35,6 +35,12 @@ public static class HumanVariantSound
     /// <summary>How many variants a soldier's hit draws between.</summary>
     public const int AiHitVariants = 3;
 
+    /// <summary>The prefix an explosion that makes a soldier react plays — <c>ai_xplhit_</c> (<c>0x45A3D0</c>).</summary>
+    public const string AiExplosionHitPrefix = "ai_xplhit_";
+
+    /// <summary>How many <see cref="AiExplosionHitPrefix"/> variants the retail sound table defines.</summary>
+    public const int AiExplosionHitVariants = 3;
+
     /// <summary>The prefix the player's non-fatal hit passes.</summary>
     public const string PlayerHitPrefix = "player_hit_";
 

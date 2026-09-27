@@ -783,9 +783,10 @@ internal sealed partial class GameHost
         }
 
         // The grunt a soldier makes at a non-fatal hit, rate-limited per human.
-        _soldiers.SetHitSound(position => PlayHitSound(
-            HumanVariantSound.AiHitPrefix, HumanVariantSound.AiHitVariants, position));
+        _soldiers.SetHitSound((prefix, variants, position) => PlayHitSound(prefix, variants, position));
         _soldiers.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(_soundRandom));
+        _soldiers.SetMeleeStrikeSink(StrikePlayer);
+        _soldiers.SetPlayerDeltaTranslationScale(() => _playerDeltaTranslationScale);
 
         // AIAction_PlaySound (0x48DF80) either attaches the definition to the human or starts it at
         // HumanAI's current position. Both begin at the same live position; the backend owns any voice
@@ -879,6 +880,13 @@ internal sealed partial class GameHost
                         Vector3d graphPos = TaskGeometry.FindPosition(levelRoot, graphId);
                         graph.ApplyWorldOffset(graphPos);
 
+                        // The graph task's own "Node cover midoffset" -- where the can-shoot ray starts.
+                        if (TaskGeometry.TryFindValue(levelRoot, graphId, "Node cover midoffset", out object? midOffset)
+                            && midOffset is IConvertible convertible)
+                        {
+                            graph.CoverMidOffsetMetres = convertible.ToDouble(System.Globalization.CultureInfo.InvariantCulture);
+                        }
+
                         graphs[graphId] = graph;
                     }
                     catch (GraphFormatException ex)
@@ -893,7 +901,7 @@ internal sealed partial class GameHost
                 _logger.Information(
                     "Ai",
                     $"Nav graphs: {graphs.Count} — " +
-                    string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n")));
+                    string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n@{p.Value.CoverMidOffsetMetres:0.##}m")));
 
                 // The difficulty every guard reads its combat row at. Faithfully the ACTIVE PLAYER PROFILE's
                 // (sub_406F70 takes it from sub_406220()'s first field), so the difficulty the player picked
@@ -914,11 +922,7 @@ internal sealed partial class GameHost
                 // The sight and bullet rays test placed objects AND the terrain, as the original's
                 // 0x4CDB20 does (both of the sight ray's passes send the -1 mask whose sign bit turns
                 // the terrain arm on -- player.md 7.6). Objects alone let guards see and shoot through
-                // hills. Nearest contact wins.
-                // Movement still skips portal faces (walk through a doorway). Sight must not:
-                // those faces are the room/window openings, and skipping them lets a guard see
-                // through a closed door and into the room on the other side.
-                WorldRayCast levelCast = WorldTrace.AsRayCast(worldTrace, tracePortals: true);
+                // hills.
 
                 // The level's sun has to be known BEFORE the bakes below, not after: the Dirlight was read
                 // some hundreds of lines further down (the `if (!promoted)` block), so every probe field and
@@ -1204,7 +1208,7 @@ internal sealed partial class GameHost
                 EndStage("reading the nav graphs");
 
                 _soldiers.Animate(
-                    graphs, levelCast, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty,
+                    graphs, worldTrace, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty,
                     _loop.Variables);
                 EndStage("animating the soldiers' brains");
 
@@ -1292,6 +1296,15 @@ internal sealed partial class GameHost
                         => _soldiers is not null
                             && _soldiers.TryShootAiRound(
                                 from, to, probability, weapon, shooter, worldBlocked ? worldHit : null, out _);
+
+                    // 0x4606F0 for a round that stops before reaching any soldier's own resolution.
+                    void OfferNearMiss(Vector3d stop)
+                    {
+                        if (shooter is not null)
+                        {
+                            _soldiers?.NotifyRoundPassed(from, stop, shooter, struck: null);
+                        }
+                    }
 
                     // The streak, before the outcome: visual only, along the very ray this handler is
                     // resolving, dying where the world stops it. Whether the round connects is decided
@@ -1385,6 +1398,7 @@ internal sealed partial class GameHost
                     // small margin keeps the player's own contact from re-testing the surface it stands on.
                     if (worldBlocked && worldHit.Distance < hit.Distance - 40.0)
                     {
+                        OfferNearMiss(worldHit.Position);
                         MarkTheImpact();
                         _logger.Debug(
                             "Weapon",
@@ -1393,11 +1407,14 @@ internal sealed partial class GameHost
                         return;
                     }
 
-                    // Only now the probability gate: retail rolls `random > probability -> no hit` inside
-                    // the cast's evaluate when the trace actually MEETS a human (the context carries
-                    // Human+1236, loaded at spawn by sub_474360). A failed roll is a round that flew past
-                    // -- through to whatever stands behind the player, where it marks.
-                    if (_shotRandom.NextDouble() > probability)
+                    // Only now the probability gate, and it is rolled TWICE: the cast offers the player to
+                    // the Human's evaluate (0x45E3E0, `random <= probability` for player 0 only) once as the
+                    // octree visit's gate (0x45F500 -> 0x45F53D) and again for the narrow contact after the
+                    // 0.94 m sphere test (0x45F580, then the per-shape dispatch -> 0x4D76DA). Measured on
+                    // Hard at 16 m: 105 rounds, 74 passed the first roll (p 0.695), 30 hit. One roll made
+                    // the port's guards hit about 1/p times as often. A failed roll is a round that flew
+                    // past -- through to whatever stands behind the player, where it marks.
+                    if (_shotRandom.NextDouble() > probability || _shotRandom.NextDouble() > probability)
                     {
                         // The roll failed against the player -- the round flies past to whoever stands
                         // behind them: an opposing soldier if the shooter is hostile, a guard if the
@@ -1409,6 +1426,9 @@ internal sealed partial class GameHost
                         MarkTheImpact();
                         return;
                     }
+
+                    // The round stops at the player: the soldiers it passed on the way still hear it go by.
+                    OfferNearMiss(hit.Position);
 
                     // The roll connected with the player's body. A friendly's round that meets the
                     // player is consumed there with no damage -- retail's cast collides with a same-team
@@ -1431,17 +1451,15 @@ internal sealed partial class GameHost
                         (float)(to.Y - from.Y),
                         (float)(to.Z - from.Z));
                     Vector3f viewIncoming = _player.Camera.Orientation.Transposed().Transform(incoming);
-                    _damageFlash.Hit(viewIncoming, _soundRandom.NextSingle());
 
-                    // And the grunt. 0x412440 plays it on the same branch and rate-limits it through
-                    // 0x4637C0, so sustained fire staggers the player without stuttering the sound.
-                    // Flat, not positional: the sound belongs to the player, who is the listener.
-                    if (!_playerHealth.IsDead && _loop.Clock.TickCount >= _playerHitQuietUntil)
+                    // 0x412440's order: the grunt, then the shake, then the flash, each on its own draw.
+                    if (!_playerHealth.IsDead)
                     {
-                        _playerHitQuietUntil = _loop.Clock.TickCount + HumanVariantSound.HitCooldownTicks(_soundRandom);
-                        PlayHitSound(
-                            HumanVariantSound.PlayerHitPrefix, HumanVariantSound.PlayerHitVariants, null);
+                        PlayPlayerGrunt();
                     }
+
+                    InstallPlayerHitShake();
+                    _damageFlash.Hit(viewIncoming, _soundRandom.NextSingle());
 
                     // Every connecting round SHOVES the player 5 km/h along its travel -- the hit
                     // handler (0x412440) normalises the round's direction and adds x/y x 189.62962
@@ -1490,9 +1508,8 @@ internal sealed partial class GameHost
                         _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal,
                         (int)AiDifficulty.Easy,
                         (int)AiDifficulty.Hard);
-                WorldRayCast levelCast = WorldTrace.AsRayCast(worldTrace, tracePortals: true);
                 _soldiers.Animate(
-                    graphs, levelCast, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty,
+                    graphs, worldTrace, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty,
                     _loop.Variables);
                 EndStage("registering stationary soldiers' brains");
             }
@@ -1885,6 +1902,9 @@ internal sealed partial class GameHost
                 {
                     candidate.UseParameters(tuning);
 
+                    // Argument 0 scales the animation's delta translation -- the player's, and Ekk's.
+                    _playerDeltaTranslationScale = tuning.DeltaTranslationScale;
+
                     // Argument 7 is the player's maximum health (Human+600, 0x410370's overwrite) --
                     // 3.0 in retail, and the single number that sets the player's time-to-kill.
                     _playerMaximumHealth = tuning.MaximumHealth;
@@ -1995,6 +2015,8 @@ internal sealed partial class GameHost
                         return found;
                     };
                     candidate.GroundImpact = impact => guards.NotifyGroundImpact(impact, candidate.Body.Position);
+                    candidate.AiNoise = noise => guards.NotifyHumanNoise(
+                        noise, candidate.Body.Position, candidate.Body.Position);
 
                     // A glancing round whizzes where it turned, on the ricochet sound's own limit --
                     // 0x47BD7B sounds it there directly rather than through the material's window.
@@ -2737,6 +2759,86 @@ internal sealed partial class GameHost
     private ViewModelPresentationRequest ViewModelRequest() =>
         new(_device, _resources, _magic, _logger);
 
+    /// <summary>The player's grunt — <c>player_hit_</c> through <c>0x4637C0</c>'s per-human rate limit.</summary>
+    /// <remarks>
+    /// Flat, not positional: the sound belongs to the player, who is the listener. The limit is what lets
+    /// sustained fire stagger the player without stuttering the sound.
+    /// </remarks>
+    /// <summary>
+    /// The shake a bullet or a blow puts in the view — <c>0x412440</c> and <c>0x412CE0</c>: a draw clamped
+    /// to <c>[0.25, 1]</c> scales the full 5 cm and 0.75 degrees, for fifteen ticks.
+    /// </summary>
+    private void InstallPlayerHitShake()
+    {
+        float share = Math.Clamp(_soundRandom.NextSingle(), 0.25f, 1f);
+        _player!.InstallViewShake(
+            HumanViewShake.HitPositionUnits * share, HumanViewShake.HitAngleRadians * share, HumanViewShake.HitTicks);
+    }
+
+    private void PlayPlayerGrunt()
+    {
+        if (_loop.Clock.TickCount < _playerHitQuietUntil)
+        {
+            return;
+        }
+
+        _playerHitQuietUntil = _loop.Clock.TickCount + HumanVariantSound.HitCooldownTicks(_soundRandom);
+        PlayHitSound(HumanVariantSound.PlayerHitPrefix, HumanVariantSound.PlayerHitVariants, null);
+    }
+
+    /// <summary>A soldier's close-combat blow landing on the player — the blunt-hit handler <c>0x412CE0</c>.</summary>
+    /// <param name="attacker">The striking soldier's position.</param>
+    /// <param name="damage">The blow's damage, the settings row's close-combat figure.</param>
+    /// <remarks>
+    /// The zone is 13 when the attacker is in front of the player and 14 when behind, the damage is that
+    /// zone's multiplier times the blow (scaled by difficulty, as every player hit is), and a surviving
+    /// player grunts and then hears <c>punched_01</c> or <c>punched_02</c> by the parity of a random draw.
+    /// Each corner of the red flash takes its own draw.
+    /// </remarks>
+    private void StrikePlayer(Vector3d attacker, float damage)
+    {
+        if (_player is null || _playerDead)
+        {
+            return;
+        }
+
+        // The body's forward axis against the direction from the attacker: negative when facing it.
+        Vector3d towardsPlayer = new(
+            _player.Body.Position.X - attacker.X,
+            _player.Body.Position.Y - attacker.Y,
+            _player.Body.Position.Z - attacker.Z);
+        float yaw = _player.Body.Yaw;
+        double facing = (towardsPlayer.X * -Math.Sin(yaw)) + (towardsPlayer.Y * Math.Cos(yaw));
+        int zone = facing < 0.0 ? PlayerBluntFrontZone : PlayerBluntBackZone;
+
+        _playerHealth.Apply(zone, damage);
+        if (!_playerHealth.IsDead)
+        {
+            PlayPlayerGrunt();
+            _sounds?.PlayDefinition(
+                (_soundRandom.NextRaw() & 1) != 0 ? "punched_01" : "punched_02",
+                positionInUnits: null,
+                priority: 250);
+        }
+
+        InstallPlayerHitShake();
+        _damageFlash.HitEveryCorner(
+            _soundRandom.NextSingle(),
+            _soundRandom.NextSingle(),
+            _soundRandom.NextSingle(),
+            _soundRandom.NextSingle());
+
+        if (_playerHealth.IsDead)
+        {
+            // A close-combat blow is melee, not a round.
+            BeginPlayerDeath(attacker, zone, bone: -1, WeaponCategory.Knife);
+        }
+    }
+
+    // 0x412CE0's two zones: 13 for a blow from in front, 14 from behind.
+    private const int PlayerBluntFrontZone = 13;
+    private const int PlayerBluntBackZone = 14;
+
     /// <summary>Puts the player through the whole death sequence, whatever killed them.</summary>
     /// <param name="from">Where the killing thing came from — the shooter's muzzle, or the blast.</param>
     /// <param name="zone">The zone the killing damage landed on.</param>
@@ -2893,7 +2995,14 @@ internal sealed partial class GameHost
             return;
         }
 
-        _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
+        // 0x412F80: the full shake for forty-five ticks, and four separate corner draws.
+        player.InstallViewShake(
+            HumanViewShake.HitPositionUnits, HumanViewShake.HitAngleRadians, HumanViewShake.FenceTicks);
+        _damageFlash.HitEveryCorner(
+            _soundRandom.NextSingle(),
+            _soundRandom.NextSingle(),
+            _soundRandom.NextSingle(),
+            _soundRandom.NextSingle());
         if (!shock.IsLethal)
         {
             // 0x412F80 selects this fence-specific cue after it has added the direct zone-13 dose.

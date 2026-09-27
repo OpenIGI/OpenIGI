@@ -25,6 +25,34 @@ public enum SoldierDeathMode
 }
 
 /// <summary>
+/// The four clips a class's general death state chooses between.
+/// </summary>
+/// <param name="ThrownBackwards">A thrown body struck from the front.</param>
+/// <param name="ThrownForwards">A thrown body struck from behind.</param>
+/// <param name="CrumpleFirst">The crumple clip the coin flip's 0 picks.</param>
+/// <param name="CrumpleSecond">The crumple clip the coin flip's 1 picks.</param>
+/// <remarks>
+/// The soldier's <c>0x45C440</c> and the RPG soldier's <c>0x4567C0</c> are the same function over different
+/// literals. The female soldier's death (<c>0x4546C0</c>) has no families at all, and uses
+/// <see cref="SoldierDeath.ChooseByZone"/> instead.
+/// </remarks>
+public sealed record SoldierDeathClips(int ThrownBackwards, int ThrownForwards, int CrumpleFirst, int CrumpleSecond)
+{
+    /// <summary>Gets the soldier's clips — the literals in <c>0x45C440</c>.</summary>
+    public static SoldierDeathClips Soldier { get; } = new(
+        SoldierDeath.ThrownBackwardsAnimation,
+        SoldierDeath.ThrownForwardsAnimation,
+        SoldierDeath.CrumpleFirstAnimation,
+        SoldierDeath.CrumpleSecondAnimation);
+
+    /// <summary>Gets the RPG soldier's clips — the literals in <c>0x4567C0</c>.</summary>
+    public static SoldierDeathClips RpgSoldier { get; } = new(15, 16, 14, 12);
+
+    /// <summary>Gets the pistol soldier's clips — <c>0x4593C0</c>: <c>28 - (front ? 1 : 0)</c>, and <c>{26, 24}</c>.</summary>
+    public static SoldierDeathClips PistolSoldier { get; } = new(27, 28, 26, 24);
+}
+
+/// <summary>
 /// <c>0x45C440</c> — the soldier death state that <b>chooses</b> its own animation, and the turn
 /// <c>0x45DAA0</c> makes before it.
 /// </summary>
@@ -55,12 +83,18 @@ public static class SoldierDeath
     /// <summary>The clip a body thrown <b>forwards</b> falls in — the literal in <c>0x45C440</c>.</summary>
     public const int ThrownForwardsAnimation = 71;
 
-    /// <summary>The two clips an ordinary kill crumples in, in the order the coin flip indexes them.</summary>
+    /// <summary>The crumple clip the coin flip's 0 picks.</summary>
     /// <remarks>
-    /// The original holds them as a two-element stack array <c>{23, 22}</c> indexed by a call to the
+    /// The original holds the pair as a two-element stack array <c>{23, 22}</c> indexed by a call to the
     /// engine's own <c>rand(2)</c>. Both exist in every set that has any death clip at all.
     /// </remarks>
-    public static IReadOnlyList<int> CrumpleAnimations { get; } = [23, 22];
+    public const int CrumpleFirstAnimation = 23;
+
+    /// <summary>The crumple clip the coin flip's 1 picks.</summary>
+    public const int CrumpleSecondAnimation = 22;
+
+    /// <summary>The two clips an ordinary kill crumples in, in the order the coin flip indexes them.</summary>
+    public static IReadOnlyList<int> CrumpleAnimations { get; } = [CrumpleFirstAnimation, CrumpleSecondAnimation];
 
     /// <summary>The head zone, whose death clips come out of the hit-zone table's own row.</summary>
     public const int HeadZone = 15;
@@ -76,6 +110,7 @@ public static class SoldierDeath
         category == WeaponCategory.Shotgun ? SoldierDeathMode.Thrown : SoldierDeathMode.Crumple;
 
     /// <summary>Picks the death animation.</summary>
+    /// <param name="clips">The class's four clips.</param>
     /// <param name="mode">The mode the damage handler recorded — <c>Human+3356</c>.</param>
     /// <param name="zone">The zone the killing round struck — <c>Human+744</c>.</param>
     /// <param name="zones">The soldier's hit-zone table, whose head and neck rows name their own clips.</param>
@@ -97,6 +132,7 @@ public static class SoldierDeath
     /// and the mechanism is still worth having.
     /// </remarks>
     public static int Choose(
+        SoldierDeathClips clips,
         SoldierDeathMode mode,
         int zone,
         IReadOnlyList<HumanHitZone> zones,
@@ -104,6 +140,7 @@ public static class SoldierDeath
         int coinFlip,
         int scriptOverride = -1)
     {
+        ArgumentNullException.ThrowIfNull(clips);
         ArgumentNullException.ThrowIfNull(zones);
 
         if (scriptOverride != -1)
@@ -115,7 +152,7 @@ public static class SoldierDeath
 
         if (mode <= SoldierDeathMode.Thrown)
         {
-            return shotFromTheFront ? ThrownBackwardsAnimation : ThrownForwardsAnimation;
+            return shotFromTheFront ? clips.ThrownBackwards : clips.ThrownForwards;
         }
 
         if (mode != SoldierDeathMode.Crumple)
@@ -130,8 +167,37 @@ public static class SoldierDeath
             return flip == 0 ? row.ReactionA : row.ReactionB;
         }
 
-        return CrumpleAnimations[flip];
+        return flip == 0 ? clips.CrumpleFirst : clips.CrumpleSecond;
     }
+
+    /// <summary>
+    /// Picks the female soldier's death animation — <c>0x4546C0</c>: the struck zone's first reaction.
+    /// </summary>
+    /// <param name="zone">The zone the killing round struck — <c>Human+744</c>.</param>
+    /// <param name="zones">The class's hit-zone table.</param>
+    /// <param name="scriptOverride"><c>HumanAI+15056</c>, or <c>-1</c>. It wins when set.</param>
+    /// <returns>The animation id, or <c>-1</c> for a zone outside the table.</returns>
+    /// <remarks>No death family, no coin flip and no turn to the shot: she falls where she stands.</remarks>
+    public static int ChooseByZone(int zone, IReadOnlyList<HumanHitZone> zones, int scriptOverride = -1)
+    {
+        ArgumentNullException.ThrowIfNull(zones);
+
+        if (scriptOverride != -1)
+        {
+            return scriptOverride;
+        }
+
+        return zone >= 0 && zone < zones.Count ? zones[zone].ReactionA : -1;
+    }
+
+    /// <summary>Whether the general death turns the body to the round before it falls.</summary>
+    /// <param name="mode">The mode the damage handler recorded.</param>
+    /// <returns><see langword="true"/> for a thrown death.</returns>
+    /// <remarks>
+    /// <c>0x45C440</c> calls <c>0x45DAA0</c> only in its <c>mode &lt;= 1</c> branch, the one that needs to
+    /// know front from back; a crumple keeps the facing the body died with.
+    /// </remarks>
+    public static bool TurnsToTheShot(SoldierDeathMode mode) => mode <= SoldierDeathMode.Thrown;
 
     /// <summary>
     /// <c>0x45DAA0</c> — turns the dying body to the round, and reports which way it was struck.

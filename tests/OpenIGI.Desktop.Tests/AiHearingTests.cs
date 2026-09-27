@@ -22,12 +22,15 @@ public sealed class AiHearingTests
 {
     private const double Metre = 4096.0;
 
+    /// <summary>
+    /// A hit is the struck soldier's own news: <c>0x4553E0</c> posts TAKINGDAMAGE to its own AI only, and the
+    /// squad hears of a fight only through the engaged combat tick's ping (<c>sub_48AB10</c>). A round that
+    /// lands wakes nobody beside the soldier it hit.
+    /// </summary>
     [RequiresGameDataFact]
-    public void BulletDamagePublishesOnlyAcceptedDamageToANearbySquadmate()
+    public void ABulletHitTellsOnlyTheSoldierItHit()
     {
         using PublisherFixture fixture = PublisherFixture.Create();
-        AiSoldier struck = fixture.StruckBrain;
-        AiSoldier recipient = fixture.RecipientBrain;
 
         Assert.True(fixture.Renderer.TryShoot(
             fixture.BulletOrigin,
@@ -35,57 +38,25 @@ public sealed class AiHearingTests
             damageFactor: 0.1f,
             WeaponCategory.Gun,
             out _));
-        Assert.Equal(1, struck.Events.PendingCount(AiEvent.TakingDamage));
-        Assert.Equal(1, recipient.Events.PendingCount(AiEvent.Alert));
-        Assert.False(recipient.Alerted);
-        recipient.Tick(0, default, rootMotionThisTick: 0.0);
-        Assert.True(recipient.Alerted);
 
-        using PublisherFixture rejected = PublisherFixture.Create();
-        rejected.StruckBrain.Events.SetEnabled(AiEvent.TakingDamage, false);
-
-        Assert.True(rejected.Renderer.TryShoot(
-            rejected.BulletOrigin,
-            rejected.BulletEnd,
-            damageFactor: 0.1f,
-            WeaponCategory.Gun,
-            out _));
-        Assert.Equal(0, rejected.StruckBrain.Events.PendingCount(AiEvent.TakingDamage));
-        Assert.Equal(0, rejected.RecipientBrain.Events.PendingCount(AiEvent.Alert));
-        rejected.RecipientBrain.Tick(0, default, rootMotionThisTick: 0.0);
-        Assert.False(rejected.RecipientBrain.Alerted);
+        Assert.Equal(1, fixture.StruckBrain.Events.PendingCount(AiEvent.TakingDamage));
+        Assert.Equal(0, fixture.RecipientBrain.Events.PendingCount(AiEvent.Alert));
     }
 
+    /// <summary>An explosion's damage, likewise, is news only to the soldier it hurt.</summary>
     [RequiresGameDataFact]
-    public void ExplosionDamagePublishesOnlyAcceptedDamageToANearbySquadmate()
+    public void AnExplosionHitTellsOnlyTheSoldierItHit()
     {
         using PublisherFixture fixture = PublisherFixture.Create();
-        AiSoldier struck = fixture.StruckBrain;
-        AiSoldier recipient = fixture.RecipientBrain;
 
         fixture.Renderer.ApplyExplosion(
             fixture.StruckBrain.Position,
             radiusUnits: 5 * (float)Metre,
             falloffUnits: 0f,
             damageFactor: 0.1f);
-        Assert.Equal(1, struck.Events.PendingCount(AiEvent.TakingDamage));
-        Assert.Equal(1, recipient.Events.PendingCount(AiEvent.Alert));
-        Assert.False(recipient.Alerted);
-        recipient.Tick(0, default, rootMotionThisTick: 0.0);
-        Assert.True(recipient.Alerted);
 
-        using PublisherFixture rejected = PublisherFixture.Create();
-        rejected.StruckBrain.Events.SetEnabled(AiEvent.TakingDamage, false);
-
-        rejected.Renderer.ApplyExplosion(
-            rejected.StruckBrain.Position,
-            radiusUnits: 5 * (float)Metre,
-            falloffUnits: 0f,
-            damageFactor: 0.1f);
-        Assert.Equal(0, rejected.StruckBrain.Events.PendingCount(AiEvent.TakingDamage));
-        Assert.Equal(0, rejected.RecipientBrain.Events.PendingCount(AiEvent.Alert));
-        rejected.RecipientBrain.Tick(0, default, rootMotionThisTick: 0.0);
-        Assert.False(rejected.RecipientBrain.Alerted);
+        Assert.Equal(1, fixture.StruckBrain.Events.PendingCount(AiEvent.TakingDamage));
+        Assert.Equal(0, fixture.RecipientBrain.Events.PendingCount(AiEvent.Alert));
     }
 
     private sealed class PublisherFixture : IDisposable
