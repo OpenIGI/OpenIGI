@@ -693,7 +693,8 @@ internal sealed partial class GameHost
         _destructibles = DestructibleObjectRegistry.Build(
             levelRoot,
             scene.Placements,
-            _loop.Variables);
+            _loop.Variables,
+            random: _soundRandom);
         world.Destructibles = _destructibles;
         solids.Destructibles = _destructibles;
         world.Cutscenes = _cutscenes;
@@ -1345,7 +1346,8 @@ internal sealed partial class GameHost
                         ApplyRoundContact(
                             worldHit.Position,
                             blocker.Owner,
-                            blocker.Placement);
+                            blocker.Placement,
+                            weapon.DamageFactor);
 
                         // A guard's round kicks the same burst a player's does -- misses landing
                         // around you are half of what sells incoming fire.

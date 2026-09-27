@@ -76,10 +76,13 @@ public sealed class DestructibleObject
     /// <summary>Gets the authored explosion damage factor.</summary>
     public float ExplosionDamageFactor { get; internal set; }
 
-    /// <summary>Gets the accumulated damage required before this explosive object detonates.</summary>
+    /// <summary>Gets the accumulated damage required before this object detonates or shatters.</summary>
     /// <remarks>
     /// Retail <c>ExplodeObject</c> compares <c>+0x1e8</c> with <c>+0x1ec</c>; attached
-    /// <c>ExplodeMagicObj</c> uses the equivalent <c>+0x13c</c>/<c>+0x140</c> pair.
+    /// <c>ExplodeMagicObj</c> uses the equivalent <c>+0x13c</c>/<c>+0x140</c> pair, and so does a
+    /// <c>Glass</c> pane, which is the same magic-object layout. A pane's threshold is not authored:
+    /// its init (<c>0x4497F0</c>) draws it as <c>0.75 + 0.75 * rand</c>, so every pane takes a
+    /// different number of rounds to break.
     /// </remarks>
     public float ExplosionDamageThreshold { get; internal set; } = 1f;
 
@@ -144,15 +147,27 @@ public sealed class DestructibleObjectRegistry
 
     private DestructibleObjectRegistry(LevelExpressionRuntime expressions) => _expressions = expressions;
 
+    /// <summary>The base of a pane's break threshold, the <c>0.75</c> <c>0x4498F1</c> stores.</summary>
+    public const float GlassThresholdBase = 0.75f;
+
+    /// <summary>The random span added to it: <c>0x449919</c> adds <c>rand * 0.75</c>.</summary>
+    public const float GlassThresholdSpan = 0.75f;
+
     /// <summary>Gets all destructible objects found in the current level.</summary>
     public IReadOnlyList<DestructibleObject> Objects => _objects;
 
     /// <summary>Builds destructible state from declared tasks and expanded magic-object placements.</summary>
+    /// <param name="root">The level's task tree.</param>
+    /// <param name="placements">Every expanded world placement.</param>
+    /// <param name="variables">The script variables the objects export.</param>
+    /// <param name="vehiclePhysics">The CAR definitions, for vehicle wrecks.</param>
+    /// <param name="random">The stream each pane's break threshold is drawn from.</param>
     public static DestructibleObjectRegistry Build(
         GameTask root,
         IEnumerable<WorldPlacement> placements,
         ScriptVarRegistry variables,
-        VehiclePhysicsRegistry? vehiclePhysics = null)
+        VehiclePhysicsRegistry? vehiclePhysics = null,
+        IgiRandom? random = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(placements);
@@ -260,6 +275,14 @@ public sealed class DestructibleObjectRegistry
                     placement,
                     placement.MagicTaskTypeName,
                     placement.Position * WorldScene.UnitsPerMetre));
+
+            if (kind == DestructibleObjectKind.Glass)
+            {
+                // Glass init (0x4497F0): +0x13C = 0, +0x140 = 0.75 + rand * 0.75 from the engine's
+                // global stream (0x416D20 -> 0x4B4770).
+                random ??= new IgiRandom();
+                item.ExplosionDamageThreshold = GlassThresholdBase + (random.NextSingle() * GlassThresholdSpan);
+            }
 
             if (kind == DestructibleObjectKind.Explosive)
             {
@@ -369,7 +392,10 @@ public sealed class DestructibleObjectRegistry
     /// <remarks>
     /// Retail has no search here: the round's trace (<c>0x47B750</c>) hands its damage message to the
     /// struck task's own type handler and nothing else, so a hit that names no destructible destroys
-    /// none. A placement is the stronger identity -- a wall of the Building that owns a pane names the
+    /// none. The damage is the firing weapon's <c>Damage Factor</c> (the round's <c>+56</c>, copied from
+    /// weapon <c>+1620</c>; the knife sends the same field), and a pane only breaks once the sum reaches
+    /// its drawn threshold (<c>0x449B00</c>) -- a Glock round at 0.25 takes three to six.
+    /// A placement is the stronger identity -- a wall of the Building that owns a pane names the
     /// Building, and must not fall back to that pane through the owner.
     /// </remarks>
     public DestructibleObject? TryDestroy(
@@ -381,7 +407,7 @@ public sealed class DestructibleObjectRegistry
         {
             return _byPlacement.TryGetValue(placement, out DestructibleObject? exactPlacement)
                 && (owner is null || ReferenceEquals(exactPlacement.Owner, owner))
-                ? ApplyDamage(exactPlacement, damage)
+                ? ApplyDamage(exactPlacement, damage, explosion: false)
                 : null;
         }
 
@@ -399,7 +425,7 @@ public sealed class DestructibleObjectRegistry
             : items.FirstOrDefault(item => item.Placement is null && !item.IsDestroyed);
         if (exactOwner is not null)
         {
-            return ApplyDamage(exactOwner, damage);
+            return ApplyDamage(exactOwner, damage, explosion: false);
         }
 
         return null;
@@ -423,7 +449,7 @@ public sealed class DestructibleObjectRegistry
         }
 
         return item?.Kind == DestructibleObjectKind.Vehicle
-            ? ApplyDamage(item, 1f)
+            ? ApplyDamage(item, 1f, explosion: false)
             : null;
     }
 
@@ -476,7 +502,7 @@ public sealed class DestructibleObjectRegistry
                 radiusUnits,
                 falloffUnits,
                 damageFactor);
-            if (ApplyDamage(item, dose) is { } destroyed)
+            if (ApplyDamage(item, dose, explosion: true) is { } destroyed)
             {
                 affected.Add(destroyed);
             }
@@ -510,27 +536,33 @@ public sealed class DestructibleObjectRegistry
         return (falloffUnits - d) * damageFactor / falloffUnits;
     }
 
-    private static DestructibleObject? ApplyDamage(DestructibleObject item, float damage)
+    private static DestructibleObject? ApplyDamage(DestructibleObject item, float damage, bool explosion)
     {
         if (item.IsDestroyed || !(damage > 0f))
         {
             return null;
         }
 
-        // Vehicle and glass callbacks are binary state transitions. ExplodeObject and the attached
-        // ExplodeMagicObj family instead accumulate the incoming hit value and compare it with their
-        // authored damage scale (IGI1 0x481e60: +0x1e8 against +0x1ec).
-        if (item.Kind != DestructibleObjectKind.Explosive)
+        // A vehicle's direct-hit callback is a binary state transition.
+        if (item.Kind == DestructibleObjectKind.Vehicle)
         {
             item.IsDestroyed = true;
             return item;
         }
 
+        // ExplodeObject, the attached ExplodeMagicObj family and Glass all accumulate the incoming hit
+        // value into the same pair (IGI1 0x481e60: +0x1e8 against +0x1ec; magic objects +0x13c/+0x140).
         item.ExplosionDamageAccumulated += damage;
         float threshold = item.ExplosionDamageThreshold > 0f
             ? item.ExplosionDamageThreshold
             : ExplosionDamageDefaults.DamageThreshold;
-        if (item.ExplosionDamageAccumulated < threshold)
+
+        // Glass_ExplosionHitHandler (0x449BA0) adds the dose too, but shatters on ANY non-zero contact
+        // (0x449C63 compares the dose with zero, not the sum with the threshold): a blast always breaks
+        // the panes it reaches. Only a round or a blade (0x449B00) has to wear the pane down.
+        bool breaks = (item.Kind == DestructibleObjectKind.Glass && explosion)
+            || item.ExplosionDamageAccumulated >= threshold;
+        if (!breaks)
         {
             return null;
         }

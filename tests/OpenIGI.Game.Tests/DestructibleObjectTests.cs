@@ -81,7 +81,7 @@ public sealed class DestructibleObjectTests
 
         Assert.NotNull(first.Placement);
         Assert.NotNull(sibling.Placement);
-        Assert.Same(first, registry.TryDestroy(first.Owner, first.Placement));
+        Assert.Same(first, registry.TryDestroy(first.Owner, first.Placement, first.ExplosionDamageThreshold));
         Assert.True(registry.IsDestroyed(first.Placement!));
         Assert.False(registry.IsDestroyed(sibling.Placement!));
     }
@@ -138,7 +138,77 @@ public sealed class DestructibleObjectTests
 
         Assert.Null(registry.TryDestroy(stranger, pane.Placement));
         Assert.False(pane.IsDestroyed);
-        Assert.Same(pane, registry.TryDestroy(pane.Owner, pane.Placement));
+        Assert.Same(pane, registry.TryDestroy(pane.Owner, pane.Placement, pane.ExplosionDamageThreshold));
+    }
+
+    [RequiresGameDataFact]
+    public void EveryPaneDrawsItsOwnBreakThreshold()
+    {
+        WorldScene scene = RetailLevelOneGround.Scene();
+        DestructibleObjectRegistry registry = DestructibleObjectRegistry.Build(
+            RetailLevelOneGround.LevelRoot(),
+            scene.Placements,
+            new ScriptVarRegistry(new NativeRegistry()));
+
+        // Glass init (0x4497F0): 0.75 + rand * 0.75, rand in [0, 1).
+        DestructibleObject[] panes = [.. registry.Objects.Where(item => item.Kind == DestructibleObjectKind.Glass)];
+        Assert.All(panes, pane =>
+        {
+            Assert.InRange(pane.ExplosionDamageThreshold, 0.75f, 1.5f);
+            Assert.True(pane.ExplosionDamageThreshold < 1.5f);
+            Assert.Equal(0f, pane.ExplosionDamageAccumulated);
+        });
+        Assert.True(panes.Select(pane => pane.ExplosionDamageThreshold).Distinct().Count() > 1);
+    }
+
+    [RequiresGameDataFact]
+    public void RoundsWearAPaneDownUntilTheSumReachesItsThreshold()
+    {
+        WorldScene scene = RetailLevelOneGround.Scene();
+        DestructibleObjectRegistry registry = DestructibleObjectRegistry.Build(
+            RetailLevelOneGround.LevelRoot(),
+            scene.Placements,
+            new ScriptVarRegistry(new NativeRegistry()));
+
+        // Glass_BulletHitHandler (0x449B00): +0x13C += the round's damage factor, and the pane only
+        // shatters once that reaches +0x140. A Glock round (0.25) therefore takes three to six.
+        const float glock = 0.25f;
+        DestructibleObject pane = registry.Objects.First(item => item.Kind == DestructibleObjectKind.Glass);
+        int hits = (int)MathF.Ceiling(pane.ExplosionDamageThreshold / glock);
+        Assert.InRange(hits, 3, 6);
+
+        for (int hit = 1; hit < hits; hit++)
+        {
+            Assert.Null(registry.TryDestroy(pane.Owner, pane.Placement, glock));
+            Assert.False(pane.IsDestroyed);
+        }
+
+        Assert.Same(pane, registry.TryDestroy(pane.Owner, pane.Placement, glock));
+        Assert.True(pane.IsDestroyed);
+        Assert.Null(registry.TryDestroy(pane.Owner, pane.Placement, glock));
+    }
+
+    [RequiresGameDataFact]
+    public void AnyBlastContactShattersAPaneWhateverItsThreshold()
+    {
+        WorldScene scene = RetailLevelOneGround.Scene();
+        DestructibleObjectRegistry registry = DestructibleObjectRegistry.Build(
+            RetailLevelOneGround.LevelRoot(),
+            scene.Placements,
+            new ScriptVarRegistry(new NativeRegistry()));
+
+        // Glass_ExplosionHitHandler (0x449BA0) tests the dose against zero, not the sum against the
+        // threshold, so even a grazing contact breaks the pane.
+        DestructibleObject pane = registry.Objects.First(item => item.Kind == DestructibleObjectKind.Glass);
+        IReadOnlyList<DestructibleObject> affected = registry.ApplyExplosionHits(
+            source: null,
+            pane.PositionUnits,
+            radiusUnits: 1f,
+            damageFactor: 0.01f,
+            canContact: candidate => ReferenceEquals(candidate, pane));
+
+        Assert.Contains(pane, affected);
+        Assert.True(pane.IsDestroyed);
     }
 
     [RequiresGameDataFact]
