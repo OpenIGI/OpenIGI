@@ -335,6 +335,198 @@ public sealed class AiScenarioHarness : IDisposable
         File.WriteAllText(output, log.ToString());
     }
 
+    /// <summary>
+    /// The probe's spawn shoot-out: the player never moves from the mission's spawn, turns each tick onto the
+    /// nearest living guard it has a clear line to, and taps the trigger only while one is in sight.
+    /// </summary>
+    /// <remarks>
+    /// Runs only when <c>OPENIGI_AI_SPAWN</c> names the trace file. Mirrors the probe script
+    /// <c>god 1 / 5 weapon N / 10 aimat nearest DROP / fire 2 every 12 ticks from 30 / reload 2 every 150
+    /// from 160</c>: <c>OPENIGI_AI_SCENARIO_MISSION</c>, <c>_TICKS</c> (1200), <c>_DIFFICULTY</c>,
+    /// <c>_WEAPONKEY</c> (2) and <c>_AIMDROP</c> (0.3). Sight is the AI's own ray, from the player's eye to
+    /// where the aim line crosses the guard, so nothing behind a wall or a crate is shot at.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void StandAtSpawnAndShoot()
+    {
+        string? output = Environment.GetEnvironmentVariable("OPENIGI_AI_SPAWN");
+        if (string.IsNullOrEmpty(output))
+        {
+            return;
+        }
+
+        int mission = EnvInt("OPENIGI_AI_SCENARIO_MISSION", 2);
+        int ticks = EnvInt("OPENIGI_AI_SCENARIO_TICKS", 1200);
+        int weaponKey = EnvInt("OPENIGI_AI_SCENARIO_WEAPONKEY", 2);
+        double drop = Environment.GetEnvironmentVariable("OPENIGI_AI_SCENARIO_AIMDROP") is { Length: > 0 } dropText
+            ? double.Parse(dropText, CultureInfo.InvariantCulture)
+            : 0.3;
+        // The aim line leaves the player's eye (feet + PlayerBody.StandingEyeHeight, retail's origin + 0.69)
+        // pitched as origin-to-origin less the drop, so at the guard it crosses feet + eye height - drop.
+        double eyeHeight = PlayerBody.StandingEyeHeight / Metre;
+
+        StringBuilder log = new();
+        using RecordingGraphicsDevice device = new();
+        List<string> hostArgs = ["-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000"];
+        if (Environment.GetEnvironmentVariable("OPENIGI_AI_SCENARIO_DIFFICULTY") is { Length: > 0 } difficultyText)
+        {
+            hostArgs.AddRange(["-difficulty", difficultyText]);
+        }
+
+        GameHost host = Host(device, new HeadlessGameWindow(), [.. hostArgs]);
+        host.Start();
+        InputState scripted = new();
+        host.ScriptedViewInput = scripted;
+        FieldInfo playerField = typeof(GameHost).GetField("_player", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo roundsField = typeof(GameHost).GetField("_guardRounds", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo hitsField = typeof(GameHost).GetField("_guardHits", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo tickField = typeof(SoldierRenderer).GetField("_tick", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        PlayerCamera? player = null;
+        SoldierRenderer? soldiers = null;
+        for (int i = 0; i < 20_000 && (player is null || soldiers is null); i++)
+        {
+            Assert.True(host.Step());
+            player = playerField.GetValue(host) as PlayerCamera;
+            soldiers = soldiersField.GetValue(host) as SoldierRenderer;
+        }
+
+        Assert.NotNull(player);
+        Assert.NotNull(soldiers);
+        Vector3d spawn = player.Body.Position;
+        log.AppendLine(CultureInfo.InvariantCulture, $"spawn {Fmt(spawn)} team {soldiers.PlayerTeam}");
+
+        IReadOnlyList<KeyValuePair<SoldierView, AiSoldier>> pairs = soldiers.BrainPairsForTesting;
+        bool IsEnemy(SoldierView view) =>
+            view.Soldier.Team != soldiers.PlayerTeam && ConditionalContainerGate.IsTaskActive(view.Soldier);
+
+        int since = -1;
+        int last = -1;
+        int shots = 0;
+        int lastTarget = int.MinValue;
+        for (int step = 0; step < ticks * 40 && since < ticks; step++)
+        {
+            // Never moves: pinned to the spawn, and never dies (the probe's god 1).
+            player.Body.Position = new Vector3d(spawn.X, spawn.Y, player.Body.Position.Z);
+            player.Body.Health.Reset();
+
+            if (!host.Step())
+            {
+                log.AppendLine(CultureInfo.InvariantCulture, $"the host ended at step {step}");
+                break;
+            }
+
+            int engine = (int)tickField.GetValue(soldiers)!;
+            if (engine == last)
+            {
+                continue;
+            }
+
+            last = engine;
+            since++;
+
+            // aimat nearest: the nearest living guard in clear sight from the eye.
+            Vector3d feet = player.Body.Position;
+            Vector3d eye = feet + new Vector3d(0.0, 0.0, eyeHeight * Metre);
+            SoldierView? target = null;
+            double best = double.MaxValue;
+            foreach ((SoldierView view, AiSoldier _) in pairs)
+            {
+                if (!IsEnemy(view) || view.IsDead)
+                {
+                    continue;
+                }
+
+                double distance = Vector3d.Distance(view.Position, feet);
+                Vector3d point = view.Position + new Vector3d(0.0, 0.0, (eyeHeight - drop) * Metre);
+                if (distance < best && soldiers.ClearSightForTesting(eye, point))
+                {
+                    best = distance;
+                    target = view;
+                }
+            }
+
+            int targetId = target?.Soldier.Id ?? -1;
+            if (targetId != lastTarget)
+            {
+                log.AppendLine(CultureInfo.InvariantCulture, $"t{since} aim target -> {targetId} at {(target is null ? -1.0 : best / Metre):0.0} m");
+                if (target is not null)
+                {
+                    Vector3d point = target.Position + new Vector3d(0.0, 0.0, (eyeHeight - drop) * Metre);
+                    log.AppendLine(CultureInfo.InvariantCulture, $"   LOS eye {eye.X:0.0} {eye.Y:0.0} {eye.Z:0.0} -> {point.X:0.0} {point.Y:0.0} {point.Z:0.0}: {soldiers.DescribeSightForTesting(eye, point)}");
+                }
+                lastTarget = targetId;
+            }
+
+            if (target is not null)
+            {
+                double dx = target.Position.X - feet.X;
+                double dy = target.Position.Y - feet.Y;
+                double dz = target.Position.Z - feet.Z - (drop * Metre);
+                player.Body.Yaw = (float)Math.Atan2(dx, dy);  // the port's player faces (sin, cos)
+                player.Body.Pitch = (float)Math.Atan2(dz, Math.Sqrt((dx * dx) + (dy * dy)));
+            }
+
+            // The probe script's buttons, by tick: weapon category at 5, fire 2 ticks every 12 from 30
+            // (swallowed with nothing in sight), reload 2 ticks every 150 from 160.
+            if (weaponKey > 0)
+            {
+                scripted.Keyboard.SetKey(KeyCode.D1 + (byte)(weaponKey - 1), down: since == 5);
+            }
+
+            bool fireTick = since >= 30 && (since - 30) % 12 < 2;
+            scripted.Mouse.SetButton(MouseButton.Left, down: fireTick && target is not null);
+            scripted.Keyboard.SetKey(KeyCode.R, down: since >= 160 && (since - 160) % 150 < 2);
+
+            if (player.FiredThisTick)
+            {
+                shots++;
+            }
+
+            if (since % 20 == 0)
+            {
+                StringBuilder field = new();
+                foreach ((SoldierView view, AiSoldier brain) in pairs)
+                {
+                    double distance = Vector3d.Distance(view.Position, feet);
+                    if (IsEnemy(view) && distance <= 80.0 * Metre)
+                    {
+                        field.Append(CultureInfo.InvariantCulture, $" {view.Soldier.Id}:{distance / Metre:0.0}m/{soldiers.DamageForTesting(view):0.00}{(view.IsDead ? "X" : string.Empty)}");
+                        if (view.Soldier.Id == EnvInt("OPENIGI_AI_SCENARIO_TRACK", -1))
+                        {
+                            field.Append(CultureInfo.InvariantCulture, $"@{view.Position.X / Metre:0.00},{view.Position.Y / Metre:0.00}[{brain.Activity}]");
+                        }
+                    }
+                }
+
+                log.AppendLine(CultureInfo.InvariantCulture, $"[field] t{since}{field}");
+                foreach ((SoldierView view, AiSoldier brain) in pairs)
+                {
+                    if (IsEnemy(view) && !view.IsDead
+                        && brain.Activity is not (AiSoldierActivity.Idle or AiSoldierActivity.Patrolling))
+                    {
+                        log.AppendLine(CultureInfo.InvariantCulture, $"   s{view.Soldier.Id} {brain.DescribeTick()}");
+                    }
+                }
+            }
+        }
+
+        log.AppendLine(
+            CultureInfo.InvariantCulture,
+            $"player shots={shots} guard rounds={roundsField.GetValue(host)} hits on player={hitsField.GetValue(host)}");
+        foreach ((SoldierView view, AiSoldier brain) in pairs)
+        {
+            if (IsEnemy(view) && Vector3d.Distance(view.Position, spawn) <= 80.0 * Metre)
+            {
+                log.AppendLine(CultureInfo.InvariantCulture, $"  s{view.Soldier.Id} dmg={soldiers.DamageForTesting(view):0.00} dead={view.IsDead} {brain.DescribeTick()}");
+            }
+        }
+
+        host.Stop();
+        File.WriteAllText(output, log.ToString());
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {

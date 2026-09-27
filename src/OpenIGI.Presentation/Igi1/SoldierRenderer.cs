@@ -948,6 +948,15 @@ public sealed class SoldierRenderer : IDisposable
 
     private WorldTraceCast? _sightTraceForTesting;
 
+    /// <summary>Whether an AI sight ray from one point to another is clear, for scenario runs.</summary>
+    internal bool ClearSightForTesting(Vector3d from, Vector3d to) =>
+        _sightTraceForTesting is { } trace
+        && HasLineOfSight(trace, from, to, AiSoldier.SightObstructionTolerance);
+
+    /// <summary>A soldier's accumulated damage, for scenario runs.</summary>
+    internal float DamageForTesting(SoldierView soldier) =>
+        _health.TryGetValue(soldier, out HumanHealth? health) ? health.Damage : 0f;
+
     /// <summary>What an AI sight ray from one point to another meets first, for scenario traces.</summary>
     internal string DescribeSightForTesting(Vector3d from, Vector3d to)
     {

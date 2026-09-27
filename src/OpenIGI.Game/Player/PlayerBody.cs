@@ -48,21 +48,23 @@ public sealed class PlayerBody
     private Vector3f _previousStep;
     private Action<HumanFallImpact>? _fallImpactSink;
 
-    /// <summary>How high the eye sits above the feet while standing, in world units.</summary>
+    /// <summary>How high the eye sits above the feet while standing, in world units — 1.637 m.</summary>
     /// <remarks>
-    /// The wall probe's high sample (<see cref="HumanWallProbe.HighProbeStandingInUnits"/>) is taken at
-    /// head height, which is 1.8 m — so that is where the view goes.
+    /// The view update (<c>sub_464BD0</c>) takes its eye from <c>sub_465820</c>: the Human's origin
+    /// (<c>+32</c>) raised 0.69 m standing / 0.35 m crouched — the same point the AI marks the player at.
+    /// Measured on mission 2's spawn: the origin stands 3877.2 units above the ground under the player
+    /// (<c>Human+1704</c>), so the eye is 6703.4 units up, and every player round leaves from exactly there.
+    /// The 1.8 m this used to be (the wall probe's top sample) put every shot 16 cm high.
     /// </remarks>
-    public const double StandingEyeHeight = HumanWallProbe.HighProbeStandingInUnits;
+    public const double StandingEyeHeight = 3877.2 + 2826.24;
 
-    /// <summary>How high the eye sits while crouched.</summary>
+    /// <summary>How high the eye sits while crouched, in world units — 0.778 m.</summary>
     /// <remarks>
-    /// The crouched head height, exactly as standing uses the standing head height: the wall probe's
-    /// crouched high sample, <see cref="HumanWallProbe.HighProbeCrouchingInUnits"/> — 1.3 m. An earlier
-    /// pass doubled the crouched <i>middle</i> probe instead, which put the eye at 0.4 m — knee height —
-    /// low enough to dip under the drawn terrain on any uneven ground.
+    /// Crouched the origin drops to 1753.8 units above the ground and the eye rides 0.35 m (1433.6) over
+    /// it, measured the same way. The 1.3 m this used to be (the wall probe's crouched top sample) was
+    /// half a metre high.
     /// </remarks>
-    public const double CrouchingEyeHeight = HumanWallProbe.HighProbeCrouchingInUnits;
+    public const double CrouchingEyeHeight = 1753.8 + 1433.6;
 
     /// <summary>How fast the eye moves between standing and crouched, in units per tick.</summary>
     /// <remarks>

@@ -31,7 +31,7 @@ public sealed class PlayerBodyTests
 
         // And the eye is at head height above the feet, not at the feet.
         Assert.Equal(player.Position.Z + PlayerBody.StandingEyeHeight, player.Eye.Z, 1e-6);
-        Assert.Equal(1.8, PlayerBody.StandingEyeHeight / UnitsPerMetre, 0.01);
+        Assert.Equal(1.637, PlayerBody.StandingEyeHeight / UnitsPerMetre, 0.001);
     }
 
     [RequiresGameDataFact]
