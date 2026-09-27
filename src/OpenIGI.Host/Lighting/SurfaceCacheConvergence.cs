@@ -2,6 +2,7 @@ using System.Diagnostics;
 
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
+using OpenIGI.Rendering;
 
 namespace OpenIGI.Host.Lighting;
 
@@ -19,10 +20,19 @@ namespace OpenIGI.Host.Lighting;
 /// answering, a progress bar can move, and a shot that is holding for it keeps drifting.
 /// </para>
 /// <para>
-/// How many slices a frame takes is decided from how long the last frame took, because the only thing
-/// this thread can measure is the wall clock and the only reason a frame here is slow is that the queue
-/// is full of this. A fast frame doubles the step, a slow one halves it, so a small level finishes in a
-/// handful of frames and a large one settles at whatever rate keeps the picture moving.
+/// <b>Paced by the GPU, not by the frame.</b> The slices go out in batches, and a batch is not followed by
+/// another until the GPU has finished it: the work is marked as soon as it is recorded, and the marker
+/// polled from the frames after. How long the batch took to come back sizes the next one against
+/// <see cref="BatchBudgetMilliseconds"/>, so a fast GPU is soon taking the maximum and a slow one settles
+/// at a slice at a time.
+/// </para>
+/// <para>
+/// It used to size the step from how long the host's last frame took, doubling it under twelve
+/// milliseconds. But the host records a frame and moves on; until the frames in flight fill up, nothing it
+/// times includes the work it has queued. So every convergence opened by doubling blind -- two slices, four,
+/// eight, sixteen -- and on a MacBook Air's integrated GPU, a frame's command buffer carrying sixteen slices
+/// of shadowed, distance-field-traced lighting ran for seconds, which macOS answers by killing it and the
+/// device with it.
 /// </para>
 /// </remarks>
 internal sealed class SurfaceCacheConvergence
@@ -35,12 +45,19 @@ internal sealed class SurfaceCacheConvergence
     /// </remarks>
     public const int Slices = 16;
 
-    // Above this a frame is visibly stalling and the step comes down; below the lower bound the queue has
-    // headroom and the step goes up. Between them the step holds.
-    private const double SlowFrameMilliseconds = 30.0;
-    private const double FastFrameMilliseconds = 12.0;
-    private const int MaximumStepsPerFrame = 16;
+    /// <summary>How long a batch may take to come back, recording to completion.</summary>
+    /// <remarks>
+    /// Measured from when the batch is recorded to the first frame that sees it finished, so it includes a
+    /// frame or so of latency besides the batch's own GPU time. That makes it a conservative budget -- a
+    /// batch is judged slower than it is -- and one a batch that has the GPU to itself still fits a frame
+    /// within.
+    /// </remarks>
+    public const double BatchBudgetMilliseconds = 50.0;
 
+    /// <summary>The most slices one batch takes, however fast the GPU.</summary>
+    public const int MaximumStepsPerBatch = 16;
+
+    private readonly IGraphicsDevice _device;
     private readonly SurfaceCacheLighting _cards;
     private readonly GlobalDistanceField _field;
     private readonly Vector3f _sunDirection;
@@ -51,10 +68,18 @@ internal sealed class SurfaceCacheConvergence
     private readonly Stopwatch _clock = Stopwatch.StartNew();
 
     private int _step;
-    private int _stepsPerFrame = 2;
-    private long _lastStepAt = -1;
+
+    // One slice to start with: nothing is known yet about what this GPU makes of one.
+    private int _stepsPerBatch = 1;
+
+    // The batch in flight: how many slices it carried, when they were recorded, and the marker that says
+    // when the GPU has finished them.
+    private int _batchSteps;
+    private long _batchRecordedAt;
+    private IGpuWorkMarker? _batchMarker;
 
     /// <summary>Initializes a new instance of the <see cref="SurfaceCacheConvergence"/> class.</summary>
+    /// <param name="device">The device the work goes to, which says when the GPU has finished it.</param>
     /// <param name="cards">The lit cache to converge.</param>
     /// <param name="field">The distance field shadows and bounces trace against.</param>
     /// <param name="sunDirection">The direction towards the sun, or zero for none.</param>
@@ -63,6 +88,7 @@ internal sealed class SurfaceCacheConvergence
     /// <param name="boost">The albedo boost the bounce applies.</param>
     /// <param name="passes">How many bounces to fold in.</param>
     public SurfaceCacheConvergence(
+        IGraphicsDevice device,
         SurfaceCacheLighting cards,
         GlobalDistanceField field,
         Vector3f sunDirection,
@@ -71,8 +97,10 @@ internal sealed class SurfaceCacheConvergence
         float boost,
         int passes)
     {
+        ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(cards);
         ArgumentNullException.ThrowIfNull(field);
+        _device = device;
         _cards = cards;
         _field = field;
         _sunDirection = sunDirection;
@@ -97,6 +125,9 @@ internal sealed class SurfaceCacheConvergence
     /// <summary>Gets how long the whole convergence has been running, in milliseconds.</summary>
     public long ElapsedMilliseconds => _clock.ElapsedMilliseconds;
 
+    /// <summary>Gets how many slices the next batch will carry.</summary>
+    public int StepsPerBatch => _stepsPerBatch;
+
     /// <summary>Runs every remaining step now, for a capture that has to be deterministic.</summary>
     public void RunAll()
     {
@@ -107,6 +138,11 @@ internal sealed class SurfaceCacheConvergence
     }
 
     /// <summary>Runs this frame's share of the steps. Call once per frame from the render thread.</summary>
+    /// <remarks>
+    /// Records a batch only when the last one has finished on the GPU, so a frame either carries a batch or
+    /// carries none; a GPU that cannot keep up gets frames with no convergence in them rather than a queue
+    /// that grows.
+    /// </remarks>
     public void Step()
     {
         if (IsComplete)
@@ -114,26 +150,55 @@ internal sealed class SurfaceCacheConvergence
             return;
         }
 
-        long now = Stopwatch.GetTimestamp();
-        if (_lastStepAt >= 0)
+        if (_batchSteps > 0 && !BatchFinished())
         {
-            double frameMilliseconds = (now - _lastStepAt) * 1000.0 / Stopwatch.Frequency;
-            if (frameMilliseconds > SlowFrameMilliseconds)
-            {
-                _stepsPerFrame = Math.Max(1, _stepsPerFrame / 2);
-            }
-            else if (frameMilliseconds < FastFrameMilliseconds)
-            {
-                _stepsPerFrame = Math.Min(MaximumStepsPerFrame, _stepsPerFrame * 2);
-            }
+            return;
         }
 
-        _lastStepAt = now;
-
-        for (int i = 0; i < _stepsPerFrame && !IsComplete; i++)
+        int recorded = 0;
+        while (recorded < _stepsPerBatch && !IsComplete)
         {
             Advance();
+            recorded++;
         }
+
+        _batchSteps = recorded;
+        _batchRecordedAt = Stopwatch.GetTimestamp();
+        _batchMarker = _device.MarkRecordedWork();
+    }
+
+    /// <summary>Whether the batch in flight has finished, sizing the next one from how long it took if so.</summary>
+    private bool BatchFinished()
+    {
+        if (_batchMarker is { IsComplete: false })
+        {
+            return false;
+        }
+
+        double milliseconds = (Stopwatch.GetTimestamp() - _batchRecordedAt) * 1000.0 / Stopwatch.Frequency;
+        _stepsPerBatch = NextBatchSize(_batchSteps, milliseconds);
+        _batchSteps = 0;
+        _batchMarker = null;
+        return true;
+    }
+
+    /// <summary>How many slices the next batch takes, given how the last one went.</summary>
+    /// <param name="lastSteps">How many slices the last batch carried.</param>
+    /// <param name="lastMilliseconds">How long it took to come back, recording to completion.</param>
+    /// <returns>As many as the budget affords at the last batch's cost per slice, at least one.</returns>
+    /// <remarks>
+    /// Growth is held to doubling. The cost per slice is measured from the whole batch, and a small batch
+    /// is mostly the latency every batch pays, so it reads as cheaper per slice than a large one will be;
+    /// taking the budget's word for it outright would jump from one slice to sixteen on the strength of a
+    /// frame's worth of waiting. Shrinking is not held back: a batch that ran long is cut straight to what
+    /// the budget affords, because the next one runs at that cost too.
+    /// </remarks>
+    public static int NextBatchSize(int lastSteps, double lastMilliseconds)
+    {
+        int steps = Math.Max(1, lastSteps);
+        double perStep = Math.Max(lastMilliseconds, 0.001) / steps;
+        int affordable = (int)Math.Min(BatchBudgetMilliseconds / perStep, MaximumStepsPerBatch);
+        return Math.Clamp(affordable, 1, Math.Min(MaximumStepsPerBatch, steps * 2));
     }
 
     private void Advance()

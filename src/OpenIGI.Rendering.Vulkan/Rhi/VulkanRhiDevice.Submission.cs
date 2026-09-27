@@ -1,3 +1,4 @@
+using OpenIGI.Rendering.Rhi;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Memory;
 using Silk.NET.Vulkan;
@@ -430,6 +431,39 @@ internal sealed unsafe partial class VulkanRhiDevice
         }
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The timeline value the last submission signals, which every submission advances -- a frame's, a loose
+    /// one's, a flush's. A device without timeline semaphores has nothing to count with, and its markers are
+    /// complete as soon as they are taken, which leaves a caller pacing by them no worse off than it was
+    /// before they existed; Vulkan 1.2 made the feature a requirement, so that is an old driver's case.
+    /// </remarks>
+    public IRhiWorkMarker MarkSubmittedWork()
+    {
+        ThrowIfDisposed();
+        return new VulkanRhiWorkMarker(this, HasTimeline ? _signalled : 0);
+    }
+
     private sealed record LooseSubmission(Fence Fence, List<CommandBuffer> Commands, List<VulkanBuffer> Staging);
 }
 
+/// <summary>A timeline value, complete once the semaphore has reached it.</summary>
+internal sealed class VulkanRhiWorkMarker : IRhiWorkMarker
+{
+    private readonly VulkanRhiDevice _device;
+    private readonly ulong _ticket;
+    private bool _complete;
+
+    /// <summary>Initialises a new instance of the <see cref="VulkanRhiWorkMarker"/> class.</summary>
+    /// <param name="device">The device whose timeline this reads.</param>
+    /// <param name="ticket">The value to wait for; zero is already reached.</param>
+    public VulkanRhiWorkMarker(VulkanRhiDevice device, ulong ticket)
+    {
+        _device = device;
+        _ticket = ticket;
+        _complete = ticket == 0;
+    }
+
+    /// <inheritdoc/>
+    public bool IsComplete => _complete || (_complete = _device.CompletedValue >= _ticket);
+}

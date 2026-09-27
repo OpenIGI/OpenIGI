@@ -606,6 +606,28 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public GpuFrameTiming GpuMeasuredTiming() => MeasuredTiming;
 
+    /// <summary>Gets or sets whether the markers <see cref="MarkRecordedWork"/> hands out are complete.</summary>
+    /// <remarks>
+    /// True unless a test sets it: with no GPU there is nothing outstanding. Read when the marker is, not
+    /// when it was taken, so a test can hold work in flight and then let it finish.
+    /// </remarks>
+    public bool SubmittedWorkComplete { get; set; } = true;
+
+    /// <summary>Gets how many markers have been taken.</summary>
+    public int WorkMarkers { get; private set; }
+
+    /// <inheritdoc/>
+    public IGpuWorkMarker MarkRecordedWork()
+    {
+        WorkMarkers++;
+        return new RecordingWorkMarker(this);
+    }
+
+    private sealed class RecordingWorkMarker(RecordingGraphicsDevice device) : IGpuWorkMarker
+    {
+        public bool IsComplete => device.SubmittedWorkComplete;
+    }
+
     /// <inheritdoc/>
     /// <remarks>
     /// False unless a test says otherwise: this double rasterises nothing, so the cascades are the

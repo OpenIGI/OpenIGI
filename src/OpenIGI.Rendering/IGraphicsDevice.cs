@@ -1214,6 +1214,24 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     GpuFrameTiming GpuMeasuredTiming();
 
+    /// <summary>Marks the work recorded so far, to learn when the GPU has finished it.</summary>
+    /// <returns>A marker that completes once the GPU has finished everything recorded before this call.</returns>
+    /// <remarks>
+    /// <para>
+    /// Including the frame still being recorded. That work has not gone to the GPU yet -- it goes when the
+    /// frame is presented, or flushed -- so a marker taken inside a frame is held until then and only
+    /// begins to be answered once it has.
+    /// </para>
+    /// <para>
+    /// The pacing signal for work spread across frames. The time a frame takes on the host cannot be one:
+    /// the host records a frame and moves on, and until the frames in flight fill up nothing it times
+    /// includes the GPU work it has queued. Sizing work by host frame time buried the GPU in the first few
+    /// frames of a level's lighting convergence, and on a laptop's integrated GPU one frame's command
+    /// buffer ran long enough for the system to kill it.
+    /// </para>
+    /// </remarks>
+    IGpuWorkMarker MarkRecordedWork();
+
     /// <summary>Gets whether this frame's sun shadow will come from a ray trace rather than the cascades.</summary>
     /// <remarks>
     /// When it will, the cascaded shadow map is written and never read -- the deferred lighting samples

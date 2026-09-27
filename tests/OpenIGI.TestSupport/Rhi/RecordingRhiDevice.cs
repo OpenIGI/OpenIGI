@@ -329,6 +329,17 @@ public sealed class RecordingRhiDevice : IRhiDevice
     public void WaitIdle() => WaitIdleCount++;
 
     /// <inheritdoc/>
+    /// <remarks>Nothing here runs on a GPU, so there is never anything outstanding.</remarks>
+    public IRhiWorkMarker MarkSubmittedWork() => CompletedWorkMarker.Instance;
+
+    private sealed class CompletedWorkMarker : IRhiWorkMarker
+    {
+        public static readonly CompletedWorkMarker Instance = new();
+
+        public bool IsComplete => true;
+    }
+
+    /// <inheritdoc/>
     public void Dispose()
     {
         foreach (RecordedResource resource in _resources)

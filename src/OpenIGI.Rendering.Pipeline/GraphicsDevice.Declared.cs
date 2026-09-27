@@ -84,6 +84,55 @@ public sealed partial class GraphicsDevice
     public GpuFrameTiming GpuMeasuredTiming() => _profiler.Ledger.MeasuredTiming();
 
     /// <inheritdoc/>
+    public IGpuWorkMarker MarkRecordedWork()
+    {
+        ThrowIfDisposed();
+
+        RecordedWorkMarker marker = new();
+        if (_inFrame)
+        {
+            _unarmedMarkers.Add(marker);
+        }
+        else
+        {
+            marker.Arm(_device.MarkSubmittedWork());
+        }
+
+        return marker;
+    }
+
+    /// <summary>Arms every marker taken in the frame, once what it recorded has gone to the GPU.</summary>
+    /// <remarks>
+    /// After the RHI's own frame end or flush, not merely after this device's submit: a backend may hold a
+    /// frame's command buffers until then, and a marker the RHI hands out covers only what it has sent.
+    /// </remarks>
+    private void ArmRecordedWorkMarkers()
+    {
+        if (_unarmedMarkers.Count == 0)
+        {
+            return;
+        }
+
+        IRhiWorkMarker submitted = _device.MarkSubmittedWork();
+        foreach (RecordedWorkMarker marker in _unarmedMarkers)
+        {
+            marker.Arm(submitted);
+        }
+
+        _unarmedMarkers.Clear();
+    }
+
+    /// <summary>A marker on recorded work, which the RHI can only answer for once it has been sent.</summary>
+    private sealed class RecordedWorkMarker : IGpuWorkMarker
+    {
+        private IRhiWorkMarker? _submitted;
+
+        public bool IsComplete => _submitted?.IsComplete ?? false;
+
+        public void Arm(IRhiWorkMarker submitted) => _submitted = submitted;
+    }
+
+    /// <inheritdoc/>
     /// <remarks>
     /// <para>
     /// The RHI times a pass rather than an arbitrary range, so a bracket names the stage of the passes

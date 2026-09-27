@@ -188,6 +188,21 @@ public interface IRhiDevice : IDisposable
     /// implementation completes what it can and returns.
     /// </remarks>
     void WaitIdle();
+
+    /// <summary>Marks the queue where it stands, to learn when the GPU has caught up with it.</summary>
+    /// <returns>A marker that completes once every submission made before this call has finished.</returns>
+    /// <remarks>
+    /// <para>
+    /// Only what has been SUBMITTED. Work a backend is holding for the frame's end -- see <see cref="Flush"/>
+    /// -- goes out after the marker and is not covered by it, so a caller asking about the work it recorded
+    /// in a frame takes the marker in the next one.
+    /// </para>
+    /// <para>
+    /// For pacing, not for correctness: it lets a caller that spreads work across frames keep no more than
+    /// the GPU can finish in flight. Nothing waits on it, which is what makes it usable in a browser.
+    /// </para>
+    /// </remarks>
+    IRhiWorkMarker MarkSubmittedWork();
 }
 
 /// <summary>The image a frame draws into, and where it stands in the rotation.</summary>

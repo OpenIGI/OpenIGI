@@ -42,6 +42,7 @@ public sealed partial class GraphicsDevice
         _device.Submit(CollectionsMarshal.AsSpan(_sealed));
         _sealed.Clear();
         _device.Flush();
+        ArmRecordedWorkMarkers();
 
         // Picked up again where it broke off. The frame's own pass opens by itself at the next draw into
         // it, loading what is there, so only a scene pass or a cascade has to be reopened here.

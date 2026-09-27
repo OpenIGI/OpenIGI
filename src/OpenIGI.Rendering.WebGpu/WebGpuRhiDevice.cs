@@ -926,6 +926,13 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
     }
 
     /// <inheritdoc/>
+    public IRhiWorkMarker MarkSubmittedWork()
+    {
+        ThrowIfDisposed();
+        return new WebGpuWorkMarker(_context);
+    }
+
+    /// <inheritdoc/>
     public void Dispose()
     {
         if (_disposed)

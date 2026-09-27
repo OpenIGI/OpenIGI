@@ -418,6 +418,7 @@ internal sealed partial class GameHost
         // The same effective sun the deferred lighting shades with -- colour through both scales -- or
         // the cache converges towards a different key than the screen will show it under.
         _giConvergence = new SurfaceCacheConvergence(
+            _device,
             cards,
             field,
             CacheSunDirection(sun),

@@ -36,6 +36,9 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
     public const int FramesInFlight = 2;
 
     private readonly IRhiDevice _device;
+
+    // Markers taken while a frame was being recorded, armed once it has been sent. See MarkRecordedWork.
+    private readonly List<RecordedWorkMarker> _unarmedMarkers = [];
     private readonly Sprite2DPass _sprites;
     private readonly Mesh3DPass _meshes;
     private readonly Mesh3DPipelineCache _pipelines;
@@ -295,6 +298,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         _device.EndFrame(_frame);
         _inFrame = false;
         _frameCounter++;
+        ArmRecordedWorkMarkers();
 
         _profiler.ReadCompletedFrame(FrameSlot);
         ReleaseStaged();
