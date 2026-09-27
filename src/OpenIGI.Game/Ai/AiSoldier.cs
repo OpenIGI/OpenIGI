@@ -833,9 +833,26 @@ public sealed class AiSoldier
     /// <em>less than</em> 8192 units. This is not ordinary weapon hearing; that remains one
     /// <see cref="AiEvent.Gunshot"/> per fired round at the weapon record's AI detection range.
     /// </remarks>
-    public bool ReceiveGunshotMiss(Vector3d segmentStart, Vector3d segmentEnd, Vector3d shooterPosition)
+    public bool ReceiveGunshotMiss(Vector3d segmentStart, Vector3d segmentEnd, Vector3d shooterPosition) =>
+        ReceiveGunshotMiss(segmentStart, segmentEnd, shooterPosition, PlayerIsEnemy, PlayerSource);
+
+    /// <summary>Delivers a near miss from any shooter — <c>0x4606F0</c>, which asks only whose side fired.</summary>
+    /// <param name="segmentStart">The beginning of the round's live segment.</param>
+    /// <param name="segmentEnd">The end of the round's live segment, where it stopped.</param>
+    /// <param name="shooterPosition">The shooter's position, for the actions that read the event's source.</param>
+    /// <param name="fromOtherSide">Whether the shooter is on the other side from this soldier.</param>
+    /// <param name="source">The shooter's runtime id, or <c>-1</c> for the player.</param>
+    /// <returns><see langword="true"/> when the strict two-metre test passed and the event was posted.</returns>
+    /// <remarks>
+    /// The handler runs for any round, the player's or a soldier's: a human the round passes that is not on
+    /// the shooter's side broadcasts GUNSHOTMISS at each hearable point, with the shooter's side and filter
+    /// <c>0x46</c>, so only the other side hears it — a guard hears a friendly's round going past, and a
+    /// friendly a guard's.
+    /// </remarks>
+    public bool ReceiveGunshotMiss(
+        Vector3d segmentStart, Vector3d segmentEnd, Vector3d shooterPosition, bool fromOtherSide, int source)
     {
-        if (Activity == AiSoldierActivity.Dead || !PlayerIsEnemy)
+        if (Activity == AiSoldierActivity.Dead || !fromOtherSide)
         {
             return false;
         }
@@ -855,11 +872,14 @@ public sealed class AiSoldier
         // -1 is the renderer's player-originator sentinel. The event position is the actual nearest point
         // on the round, while BeginFallFlat resolves the source separately to the player's live position.
         Events.Post(
-            new AiEventRecord(AiEvent.GunshotMiss, -1, AiEventFilter.None, 0.0f, closest, -1, 0),
+            new AiEventRecord(AiEvent.GunshotMiss, -1, AiEventFilter.None, 0.0f, closest, source, 0),
             owner: RuntimeId,
             worldTests: null);
         return true;
     }
+
+    // The source a player-originated record carries -- the renderer's sentinel for "the player".
+    private const int PlayerSource = -1;
 
     /// <summary>The strict near-miss radius: two metres, or 8192 engine units.</summary>
     public const double GunshotMissRadiusInUnits = 2.0 * 4096.0;
@@ -1423,8 +1443,17 @@ public sealed class AiSoldier
     /// </remarks>
     public int TickCombatState(bool animationDone)
     {
+        // The gun was taken this tick: the dispatch seats the body in state 36 and zeroes slot 24 before the
+        // machine reads the frame.
+        bool seated = _seatedOnGunThisTick && Body is HumanSoldierBodyMachine;
+        if (seated)
+        {
+            ((HumanSoldierBodyMachine)Body).EnterUseObject();
+        }
+
+        _seatedOnGunThisTick = false;
         int state = Body.Tick(new HumanBodyInput(
-            WrittenFrame(),
+            WrittenFrame(dropUseObject: seated),
             animationDone,
             Flinch: _flinchZone >= 0,
             Dead: Activity == AiSoldierActivity.Dead,
@@ -1444,13 +1473,20 @@ public sealed class AiSoldier
     // The zone of this tick's flinching hit, or -1: machine+8's 0x10000 bit with Human+744 beside it.
     private int _flinchZone = -1;
 
+    // Whether the gunner took its gun this tick, for the body's object dispatch.
+    private bool _seatedOnGunThisTick;
+
+    // The frame slot the use-object signal reads -- channel 4's.
+    private const int UseObjectSlot = 24;
+
     /// <summary>The input frame this tick's writes put together — <c>Human+432</c>.</summary>
-    private PlayerInputFrame WrittenFrame()
+    /// <param name="dropUseObject">Leave out slot 24, which the object dispatch has just consumed.</param>
+    private PlayerInputFrame WrittenFrame(bool dropUseObject = false)
     {
         PlayerInputFrame frame = default;
         foreach (AiChannelWrite write in _channelWrites)
         {
-            if (write.Slot != AiCombatChannels.None)
+            if (write.Slot != AiCombatChannels.None && !(dropUseObject && write.Slot == UseObjectSlot))
             {
                 frame[write.Slot] = write.Value;
             }
@@ -2474,6 +2510,7 @@ public sealed class AiSoldier
             mountedGun = _gunnerCombat.MountImmediately(gun);
             if (mountedGun)
             {
+                _seatedOnGunThisTick = true;
                 Position = gun.MountPosition;
                 Facing = gun.MountFacing;
             }
@@ -3498,6 +3535,7 @@ public sealed class AiSoldier
                 WriteChannel(AiCombatChannel.PlayAnimationAlternate, mountValue);
                 if (gunner.MountedThisTick && gun is not null)
                 {
+                    _seatedOnGunThisTick = true;
                     Position = gun.MountPosition;
                     Facing = gun.MountFacing;
                 }

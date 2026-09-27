@@ -598,6 +598,10 @@ public sealed class AiSoldierCombatWiringTests
 
         Assert.True(soldier.IsMounted, "the gunner never took the emplacement");
         Assert.Same(gun, soldier.MountedGun);
+
+        // The object dispatch seats the body in the use-object state (36) and consumes the mount's slot 24.
+        soldier.TickCombatState(animationDone: false);
+        Assert.Equal(HumanSoldierStates.UseObjectState, soldier.CombatState);
         Assert.Equal(gun.MountPosition, soldier.Position);
         Assert.True(gun.IsOccupied);
 

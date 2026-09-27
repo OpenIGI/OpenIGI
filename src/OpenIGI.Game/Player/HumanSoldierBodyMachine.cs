@@ -238,6 +238,19 @@ public sealed class HumanSoldierBodyMachine : HumanBodyMachine
     /// </remarks>
     public void UseClips(HumanBodyStateTable table) => UseStateTable(table);
 
+    /// <summary>Takes the use-object state when the object dispatch has seated the body on an emplacement.</summary>
+    /// <remarks>
+    /// <c>0x45CCF0</c>'s slot-24 branch, while the body is not already in state 36, stores the slot's value
+    /// (the object's id), calls the class's object dispatch — which, finding a stationary gun, enters state 36
+    /// — and zeroes the slot. So the tick the gun is taken leaves no press behind, and only a later write of
+    /// the slot stands the body back up.
+    /// </remarks>
+    public void EnterUseObject()
+    {
+        _useObjectHeld = false;
+        Advance(UseObjectState);
+    }
+
     /// <summary>Runs one tick on an already-packed flag word.</summary>
     /// <param name="signals">The flag word.</param>
     /// <returns>The state after the tick.</returns>

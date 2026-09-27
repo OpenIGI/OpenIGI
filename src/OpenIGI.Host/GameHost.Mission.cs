@@ -1289,6 +1289,15 @@ internal sealed partial class GameHost
                             && _soldiers.TryShootAiRound(
                                 from, to, probability, weapon, shooter, worldBlocked ? worldHit : null, out _);
 
+                    // 0x4606F0 for a round that stops before reaching any soldier's own resolution.
+                    void OfferNearMiss(Vector3d stop)
+                    {
+                        if (shooter is not null)
+                        {
+                            _soldiers?.NotifyRoundPassed(from, stop, shooter, struck: null);
+                        }
+                    }
+
                     // The streak, before the outcome: visual only, along the very ray this handler is
                     // resolving, dying where the world stops it. Whether the round connects is decided
                     // below exactly as ever -- from inside the head, a streak that reaches the eye and
@@ -1380,6 +1389,7 @@ internal sealed partial class GameHost
                     // small margin keeps the player's own contact from re-testing the surface it stands on.
                     if (worldBlocked && worldHit.Distance < hit.Distance - 40.0)
                     {
+                        OfferNearMiss(worldHit.Position);
                         MarkTheImpact();
                         _logger.Debug(
                             "Weapon",
@@ -1404,6 +1414,9 @@ internal sealed partial class GameHost
                         MarkTheImpact();
                         return;
                     }
+
+                    // The round stops at the player: the soldiers it passed on the way still hear it go by.
+                    OfferNearMiss(hit.Position);
 
                     // The roll connected with the player's body. A friendly's round that meets the
                     // player is consumed there with no damage -- retail's cast collides with a same-team

@@ -2363,6 +2363,38 @@ public sealed class SoldierRenderer : IDisposable
     }
 
     /// <summary>
+    /// Offers a soldier's round to every other soldier it passes — <c>0x4606F0</c> for rounds the player did
+    /// not fire.
+    /// </summary>
+    /// <param name="origin">The muzzle.</param>
+    /// <param name="liveEnd">Where the round stopped: the surface, the body it met, or the end of its reach.</param>
+    /// <param name="shooter">The soldier that fired.</param>
+    /// <param name="struck">The soldier the round struck, which takes TAKINGDAMAGE rather than a near miss.</param>
+    public void NotifyRoundPassed(Vector3d origin, Vector3d liveEnd, SoldierView shooter, SoldierView? struck)
+    {
+        ArgumentNullException.ThrowIfNull(shooter);
+        int source = _brains.TryGetValue(shooter, out AiSoldier? firer) ? firer.RuntimeId : 0;
+        int heard = 0;
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier)
+                || ReferenceEquals(view, shooter)
+                || ReferenceEquals(view, struck))
+            {
+                continue;
+            }
+
+            bool otherSide = view.Soldier.Team != shooter.Soldier.Team;
+            if (brain.ReceiveGunshotMiss(origin, liveEnd, shooter.Position, otherSide, source))
+            {
+                heard++;
+            }
+        }
+
+        ReportNoise("near-miss", heard, AiSoldier.GunshotMissRadiusInUnits);
+    }
+
+    /// <summary>
     /// Delivers the original's separate near-miss event to every guard whose live eye lies within two
     /// metres of this projectile segment.
     /// </summary>
@@ -3610,16 +3642,16 @@ public sealed class SoldierRenderer : IDisposable
             // was still in rack/ready/recover and skipped state 18 entirely during a running burst.
             // 0x45D080 ticks the body every tick whatever the AI is doing, which is what lets a patrolling
             // guard flinch; its state drives the clip in a fight, and a flinch whatever the activity.
+            // A gunner on its gun is in the use-object state (36), which only a fresh press of slot 24 -- the
+            // dismount -- or death leaves.
             int? combatState = null;
-            if (!brain.IsMounted)
+            bool animationDone = (view.Bones.SourceOf(0)?.EndedThisTick ?? false)
+                || _combatClipMissing.Contains(view);
+            int bodyState = brain.TickCombatState(animationDone);
+            if (!brain.IsMounted
+                && brain.Activity is AiSoldierActivity.Engaging or AiSoldierActivity.FiringAtTask)
             {
-                bool animationDone = (view.Bones.SourceOf(0)?.EndedThisTick ?? false)
-                    || _combatClipMissing.Contains(view);
-                int bodyState = brain.TickCombatState(animationDone);
-                if (brain.Activity is AiSoldierActivity.Engaging or AiSoldierActivity.FiringAtTask)
-                {
-                    combatState = bodyState;
-                }
+                combatState = bodyState;
             }
 
             // The grenade leaves the hand when the throw state ENDS -- the clip has swung. The
@@ -6222,8 +6254,11 @@ public sealed class SoldierRenderer : IDisposable
             }
         }
 
+        // Where the round stops if nobody takes it: the surface in its way, or the end of its reach.
+        Vector3d unstopped = worldHit is { } wall ? wall.Position : end;
         if (candidates.Count == 0)
         {
+            PassedBy(unstopped, null);
             return false;
         }
 
@@ -6270,11 +6305,21 @@ public sealed class SoldierRenderer : IDisposable
                     + $"instDeathDisabled={(brain?.IsInstantDeathDisabled ?? false ? 1 : 0)} "
                     + $"friendly={(friendlyFire ? 1 : 0)} accum={health.Damage:0.000} max={health.MaximumHealth:0.000} "
                     + $"dead={(health.IsDead ? 1 : 0)}");
+            PassedBy(candidate.Position, struckView);
             return true;
         }
 
         // Every candidate rolled a miss -- the round flew past them all and continues beyond.
+        PassedBy(unstopped, null);
         return false;
+
+        void PassedBy(Vector3d stop, SoldierView? struck)
+        {
+            if (shooter is not null)
+            {
+                NotifyRoundPassed(origin, stop, shooter, struck);
+            }
+        }
     }
 
     /// <summary>Gets the player's team, resolved once per level from the declared HumanPlayer task.</summary>
