@@ -62,7 +62,18 @@ public sealed class AiSoldier
 {
     private readonly GraphFile? _graph;
     private readonly AiDetectionSchedule _schedule;
-    private readonly AiDetectionSlot _playerSlot = new();
+    // The detection scan's slots (+5624), one per human it has been offered, and its two lists: living
+    // enemies (+5648) and fallen friends (+5660), each in registration order.
+    private readonly Dictionary<int, TrackedHuman> _tracked = [];
+    private readonly List<TrackedHuman> _enemies = [];
+    private readonly List<TrackedHuman> _fallenFriends = [];
+    private readonly AiDetectionSlot _noSlot = new();
+
+    // The human the soldier's fight -- or, before one, its attention -- is about: the subject of the event
+    // that started the fight (the combat record's target, +15016), or the first enemy in sight.
+    private int _targetId = NoHuman;
+    private bool _registeredOnce;
+    private const int NoHuman = int.MinValue;
     private readonly AiMovementStep _steering = new();
     private readonly IgiRandom _random;
     private readonly List<AiWaypoint> _route = [];
@@ -245,7 +256,6 @@ public sealed class AiSoldier
         // (12 ticks) -- the retail acquisition latency. The earlier 0/0 reading came from the ctor path
         // alone, which really does leave the fields zeroed; the init handler overwrites them.
         _schedule = new AiDetectionSchedule(phase & 3, coneInterval: 1, rayInterval: 2);
-        _playerSlot.Register(0);
 
         Vision = new AiVision();
         // A soldier without a script runs the built-in fallback, which hears every type in type order.
@@ -396,7 +406,7 @@ public sealed class AiSoldier
     public bool Alerted { get; private set; }
 
     /// <summary>Gets a value indicating whether it can currently see its enemy.</summary>
-    public bool SeesEnemy => _playerSlot.IsVisible;
+    public bool SeesEnemy => TargetSlot.IsVisible;
 
     // --- State the behaviour script configures through the AI natives (HumanAI ctor 0x44F060). ---
     // Every default here is the literal the constructor writes; nothing is assumed.
@@ -451,11 +461,6 @@ public sealed class AiSoldier
     // Which event types the running script has declared a priority for, and how many so far, so
     // AIFunction_SetEventPriority can rebuild the dispatch order in call order (0x44E0C0).
 
-    // The current enemy position, captured each tick, so AIFunction_IsEventBehind can answer against it.
-    private Vector3d _enemyPosition;
-    private bool _enemyKnown;
-    private Vector3d _enemyFeet;
-    private bool _enemyCrouching;
 
     // Where combat BELIEVES the target is -- the shared record's position, which sub_48A920 refreshes
     // from the detection slot only while the target is actually seen. Aiming, turning, hunting and the
@@ -478,6 +483,7 @@ public sealed class AiSoldier
     // the queue head (record +16) for AIAction_LookAtEvent / AIAction_MoveToEvent.
     private Vector3d? _currentEventPosition;
     private int _currentEventSource;
+    private int _currentEventSubject;
     private Vector3d? _playerEventSourcePosition;
     private Action<int>? _responseRouter;
 
@@ -523,8 +529,6 @@ public sealed class AiSoldier
     // combat action. The mission-wide 90-tick gate lives in SoldierRenderer, beside all other AIs.
     private bool _detectionShoutDone;
 
-    // Whether this tick's fed enemy is another soldier rather than the player.
-    private bool _enemyIsSoldier;
 
     // The target's node when a running Follow last searched: 0x48A920 flags a re-search when it changes.
     private int _followTargetNode = -1;
@@ -634,7 +638,7 @@ public sealed class AiSoldier
     private bool _scriptedAnimation;
     private int _lastTick;
 
-    /// <summary>Diagnostics: the last tick this brain's <see cref="Tick"/> was entered.</summary>
+    /// <summary>Diagnostics: the last tick this brain's <c>Tick</c> was entered.</summary>
     public int LastTick => _lastTick;
 
     /// <summary>Declares an event type's dispatch priority — <c>AIFunction_SetEventPriority</c> (<c>0x44E0C0</c>).</summary>
@@ -659,7 +663,7 @@ public sealed class AiSoldier
     /// </remarks>
     public bool IsEnemyBehind()
     {
-        Vector3d? point = _currentEventPosition ?? (_enemyKnown ? _enemyPosition : null);
+        Vector3d? point = _currentEventPosition ?? (HasTarget ? TargetMark : null);
         if (point is not { } eventOrEnemy)
         {
             return false;
@@ -718,7 +722,16 @@ public sealed class AiSoldier
     /// bit <c>0x40</c>. So nobody hears their own side firing: a guard does not come running because a
     /// teammate opened up, and a friendly does not react to the player's shots.
     /// </remarks>
-    public bool HearGunshot(Vector3d shotPosition, double range, bool fromSameSide)
+    public bool HearGunshot(Vector3d shotPosition, double range, bool fromSameSide) =>
+        HearGunshot(shotPosition, range, fromSameSide, AiDetectionCandidate.PlayerId);
+
+    /// <summary>Delivers a gunshot, knowing whose side fired it and who fired it.</summary>
+    /// <param name="shotPosition">Where the round was fired.</param>
+    /// <param name="range">The weapon's <c>AI Detection Range</c>, in engine units.</param>
+    /// <param name="fromSameSide">Whether the shooter is on this soldier's own side.</param>
+    /// <param name="shooter">The shooter's id — the record's source and subject (<c>0x479780</c>).</param>
+    /// <returns><see langword="true"/> when a gunshot event was posted.</returns>
+    public bool HearGunshot(Vector3d shotPosition, double range, bool fromSameSide, int shooter)
     {
         if (Activity == AiSoldierActivity.Dead || fromSameSide)
         {
@@ -733,7 +746,7 @@ public sealed class AiSoldier
         }
 
         bool posted = Events.Post(
-            new AiEventRecord(AiEvent.Gunshot, -1, AiEventFilter.None, (float)range, shotPosition, -1, 0),
+            new AiEventRecord(AiEvent.Gunshot, -1, AiEventFilter.None, (float)range, shotPosition, shooter, shooter),
             owner: RuntimeId,
             worldTests: null);
         if (!posted)
@@ -744,7 +757,7 @@ public sealed class AiSoldier
         LastEventDistance = distance;
         _playerEventSourcePosition = shotPosition;
 
-        RefreshBelievedTarget();
+        RefreshBelievedTarget(shooter);
 
         return true;
     }
@@ -756,15 +769,23 @@ public sealed class AiSoldier
     /// even though the target is not in sight. EXPLOSION is not among them. It also has to run for the
     /// first stimulus an idle guard receives, or SetCombat starts it fighting the zero vector.
     /// </remarks>
-    private void RefreshBelievedTarget()
+    /// <param name="subject">The human the stimulus names; the player unless the caller says otherwise.</param>
+    private void RefreshBelievedTarget(int subject = AiDetectionCandidate.PlayerId)
     {
-        if (!_enemyKnown)
+        // Before a fight the stimulus turns the soldier's attention to whoever it names; in one, the record
+        // keeps its human and is only refreshed.
+        if (!_combatInstalled && _tracked.ContainsKey(subject))
+        {
+            _targetId = subject;
+        }
+
+        if (!HasTarget)
         {
             return;
         }
 
-        _lastSeenFeet = _enemyFeet;
-        SetTarget(_defaultTarget);
+        _lastSeenFeet = TargetFeet;
+        SetTarget(TargetRecord);
         Target?.Refresh(_lastSeenFeet);
     }
 
@@ -845,7 +866,7 @@ public sealed class AiSoldier
     /// <param name="segmentEnd">The end of the round's live segment, where it stopped.</param>
     /// <param name="shooterPosition">The shooter's position, for the actions that read the event's source.</param>
     /// <param name="fromOtherSide">Whether the shooter is on the other side from this soldier.</param>
-    /// <param name="source">The shooter's runtime id, or <c>-1</c> for the player.</param>
+    /// <param name="source">The shooter's id — a soldier's task id, or <c>-1</c> for the player.</param>
     /// <returns><see langword="true"/> when the strict two-metre test passed and the event was posted.</returns>
     /// <remarks>
     /// The handler runs for any round, the player's or a soldier's: a human the round passes that is not on
@@ -871,12 +892,12 @@ public sealed class AiSoldier
 
         LastEventDistance = distance;
         _playerEventSourcePosition = shooterPosition;
-        RefreshBelievedTarget();
+        RefreshBelievedTarget(source);
 
         // -1 is the renderer's player-originator sentinel. The event position is the actual nearest point
         // on the round, while BeginFallFlat resolves the source separately to the player's live position.
         Events.Post(
-            new AiEventRecord(AiEvent.GunshotMiss, -1, AiEventFilter.None, 0.0f, closest, source, 0),
+            new AiEventRecord(AiEvent.GunshotMiss, -1, AiEventFilter.None, 0.0f, closest, source, source),
             owner: RuntimeId,
             worldTests: null);
         return true;
@@ -1095,7 +1116,8 @@ public sealed class AiSoldier
     /// <summary>Posts the type-15 event a non-lethal hit delivers to a HumanAI.</summary>
     /// <param name="attackerPosition">The attacking human's position, used by distance/behind natives.</param>
     /// <returns><see langword="true"/> when the <see cref="AiEvent.TakingDamage"/> event was queued.</returns>
-    public bool ReceiveDamage(Vector3d attackerPosition)
+    /// <param name="attacker">The attacker's id — the record's source and subject (<c>0x4553E0</c>).</param>
+    public bool ReceiveDamage(Vector3d attackerPosition, int attacker = AiDetectionCandidate.PlayerId)
     {
         if (Activity == AiSoldierActivity.Dead)
         {
@@ -1109,8 +1131,8 @@ public sealed class AiSoldier
                 AiEventFilter.None,
                 0.0f,
                 attackerPosition,
-                -1,
-                0),
+                attacker,
+                attacker),
             owner: RuntimeId,
             worldTests: null);
 
@@ -1121,7 +1143,7 @@ public sealed class AiSoldier
 
         LastEventDistance = Distance(Position, attackerPosition);
         _playerEventSourcePosition = attackerPosition;
-        RefreshBelievedTarget();
+        RefreshBelievedTarget(attacker);
         return true;
     }
 
@@ -1141,7 +1163,11 @@ public sealed class AiSoldier
     /// gate: an already-alert guard, or one with an alert queued, still takes the record. The side test is
     /// the caller's, which knows both teams; the distance gate is applied here.
     /// </remarks>
-    public bool ReceiveAlert(Vector3d alerterPosition, int source = 0)
+    /// <param name="target">
+    /// The alerting soldier's own target — the record's subject (<c>0x48AB10</c> sends
+    /// <c>{self, target}</c>).
+    /// </param>
+    public bool ReceiveAlert(Vector3d alerterPosition, int source = 0, int target = AiDetectionCandidate.PlayerId)
     {
         if (Activity == AiSoldierActivity.Dead)
         {
@@ -1157,7 +1183,7 @@ public sealed class AiSoldier
         bool posted = Events.Post(
             new AiEventRecord(
                 AiEvent.Alert, -1, AiEventFilter.None, (float)AlertPingRadiusInUnits,
-                alerterPosition, source, 0),
+                alerterPosition, source, target),
             owner: 0,
             worldTests: null);
         if (!posted)
@@ -1170,7 +1196,7 @@ public sealed class AiSoldier
         // The same target refresh arm handles both hearing and squad alert records. A nearby guard that
         // has never seen Jones therefore inherits the fighting guard's target record and turns on the
         // squad's current player position instead of world origin.
-        RefreshBelievedTarget();
+        RefreshBelievedTarget(target);
 
         return true;
     }
@@ -1226,6 +1252,40 @@ public sealed class AiSoldier
     /// </remarks>
     public bool WalksForward { get; private set; }
 
+    /// <summary>Gets the id of the human the soldier's fight is about, or its attention before one.</summary>
+    /// <remarks><see cref="AiDetectionCandidate.PlayerId"/> for the player; a soldier's task id otherwise.</remarks>
+    public int TargetId => _targetId;
+
+    /// <summary>Gets whether the human the soldier is concerned with is the player.</summary>
+    public bool TargetIsPlayer => TargetHuman is { } target ? target.Candidate.IsPlayer : _targetId == AiDetectionCandidate.PlayerId;
+
+    /// <summary>Gets the feet of the human the soldier is concerned with — what it aims at.</summary>
+    public Vector3d TargetFeet => TargetHuman?.Candidate.Feet ?? default;
+
+    /// <summary>Gets whether the human the soldier is concerned with is crouching.</summary>
+    public bool TargetCrouching => TargetHuman?.Candidate.Crouching ?? false;
+
+    private TrackedHuman? TargetHuman => _tracked.TryGetValue(_targetId, out TrackedHuman? human) ? human : null;
+
+    // The target's slot: 0x489BE0 over the combat record's human, or an empty slot for nobody.
+    private AiDetectionSlot TargetSlot => TargetHuman?.Slot ?? _noSlot;
+
+    private bool HasTarget => TargetHuman is not null;
+
+    private bool TargetIsSoldier => TargetHuman is { } target && !target.Candidate.IsPlayer;
+
+    private Vector3d TargetMark => TargetHuman?.Candidate.Mark ?? default;
+
+    private AiCombatTarget? TargetRecord => TargetHuman?.Candidate.Record ?? _defaultTarget;
+
+    /// <summary>One human the scan has been offered, and the slot it keeps for it.</summary>
+    private sealed class TrackedHuman(AiDetectionCandidate candidate)
+    {
+        public AiDetectionCandidate Candidate { get; set; } = candidate;
+
+        public AiDetectionSlot Slot { get; } = new();
+    }
+
     /// <summary>Gets the view's pitch above the horizon, in radians — <c>view+292</c>.</summary>
     /// <remarks>
     /// Steered through float 1 of the frame and turned by the body exactly as the yaw is (<c>0x464800</c>,
@@ -1274,7 +1334,7 @@ public sealed class AiSoldier
     /// Reports every detection gate as it stands this instant for a target eye — for the debug overlay, so a
     /// guard that will not detect the player can be asked <em>which</em> gate is failing.
     /// </summary>
-    /// <param name="enemyEye">The target eye in engine units, the same point <see cref="Tick"/> is fed.</param>
+    /// <param name="enemyEye">The target eye in engine units, the same point <c>Tick</c> is fed.</param>
     /// <returns>The distance in units, and the cone / line-of-sight / alert / currently-visible flags.</returns>
     /// <remarks>
     /// This recomputes the cone against a fresh eye snapshot and runs the stored occlusion test directly, so
@@ -1286,7 +1346,7 @@ public sealed class AiSoldier
         AiEyeSnapshot snapshot = Vision.Capture(EyePosition(), EyeOrientation(), Alerted);
         bool inCone = snapshot.IsVisible(enemyEye);
         bool clear = _sight is null || _sight(EyePosition(), enemyEye);
-        return (Distance(Position, enemyEye), inCone, clear, Alerted, _playerSlot.IsVisible);
+        return (Distance(Position, enemyEye), inCone, clear, Alerted, TargetSlot.IsVisible);
     }
 
     /// <summary>
@@ -1715,9 +1775,9 @@ public sealed class AiSoldier
                         -1,
                         AiEventFilter.None,
                         0.0f,
-                        _currentEventPosition ?? _enemyPosition,
-                        -1,
-                        -1),
+                        _currentEventPosition ?? TargetMark,
+                        _currentEventSource,
+                        _currentEventSubject),
                     owner: RuntimeId,
                     worldTests: null);
                 break;
@@ -2196,6 +2256,48 @@ public sealed class AiSoldier
         bool enemyIsSoldier = false,
         double rootMotionLateral = 0.0)
     {
+        // One human on offer. Without a body position the point given is tested as it is; with one, the
+        // mark is the body's own mid-point.
+        Vector3d feet = enemyFeet ?? enemy;
+        Vector3d mark = enemyFeet is null
+            ? enemy
+            : new Vector3d(
+                feet.X,
+                feet.Y,
+                feet.Z + (enemyCrouching ? DetectionRaiseCrouchedInUnits : DetectionRaiseStandingInUnits));
+        AiDetectionCandidate candidate = new(
+            enemyIsSoldier ? OfferedSoldierId : AiDetectionCandidate.PlayerId,
+            OtherSide: enemyIsSoldier || PlayerIsEnemy,
+            Alive: enemyAlive,
+            mark,
+            feet,
+            enemyCrouching,
+            _defaultTarget);
+        TickAmong(tick, [candidate], rootMotionThisTick, alarmOn, alarmWasOn, rootMotionLateral);
+    }
+
+    // The id the one-candidate form gives an offered soldier.
+    private const int OfferedSoldierId = int.MaxValue;
+
+    /// <summary>Runs one 30 Hz tick against every human the scan offers.</summary>
+    /// <param name="tick">The engine tick counter, which the detection phase gate keys off.</param>
+    /// <param name="candidates">
+    /// Every human the scan offers this tick, in the global human list's order — the player and every
+    /// soldier, each described from this soldier's side.
+    /// </param>
+    /// <param name="rootMotionThisTick">The clip's root motion along the body's forward axis, signed, in units.</param>
+    /// <param name="alarmOn">Whether an alarm the soldier watches is sounding.</param>
+    /// <param name="alarmWasOn">Whether that alarm sounded on the preceding tick, for the falling-edge event.</param>
+    /// <param name="rootMotionLateral">The clip's root motion along the body's own right axis, in engine units.</param>
+    public void TickAmong(
+        int tick,
+        IReadOnlyList<AiDetectionCandidate> candidates,
+        double rootMotionThisTick,
+        bool alarmOn = false,
+        bool alarmWasOn = false,
+        double rootMotionLateral = 0.0)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
         if (Activity == AiSoldierActivity.Dead)
         {
             return;
@@ -2204,7 +2306,8 @@ public sealed class AiSoldier
         _lastTick = tick;
         _rootMotionThisTick = rootMotionThisTick;
         _rootLateralThisTick = rootMotionLateral;
-        _enemyAlive = enemyAlive;
+        OfferCandidates(candidates);
+        _enemyAlive = TargetHuman?.Candidate.Alive ?? true;
 
         // 0x44F410 zeroes the whole input-channel block (+15476, 0xA0 bytes) before anything runs: only the
         // action that runs this tick writes to it, so a suspended one leaves nothing behind.
@@ -2214,7 +2317,6 @@ public sealed class AiSoldier
         Combat = new AiCombatCommand();
         DetectionShoutRequestedThisTick = false;
         AlertPingDueThisTick = false;
-        _enemyIsSoldier = enemyIsSoldier;
 
         // A scripted one-shot clip releases the animation slot the moment the renderer says it ended,
         // so the soldier goes back to whatever its activity plays. Staged cutscene actors are exempt:
@@ -2241,15 +2343,6 @@ public sealed class AiSoldier
                 + NextBounded(_animationRandomTicks);
         }
 
-        _enemyPosition = enemy;
-        _enemyKnown = true;
-
-        // Vision tests the enemy's EYE (what the cones and the sight ray are cast at), but combat aims at
-        // the enemy's POSITION — its feet — because sub_451380 copies the target TASK's position and adds
-        // 0.5 m standing / 0.25 m crouched. Feeding the eye into the aim put the point above the head.
-        _enemyFeet = enemyFeet ?? enemy;
-        _enemyCrouching = enemyCrouching;
-
         // An AI's FIRST event is always its creation: before initialisation only type 0 passes admission, and
         // the mask is not consulted at all (ai.md 3.3). Never posting it left every archetype script's
         // CREATE branch unrun -- which is where guard.qsc sets its view length, alarm length, alpha and
@@ -2269,70 +2362,55 @@ public sealed class AiSoldier
             }
         }
 
-        // The detection cascade in order: the phase gate, then the cone, then the line-of-sight cast behind
-        // it -- the expensive test is never paid for someone outside the cone (ai.md 5.1).
-        //
-        // The cone test is the EYE SNAPSHOT's (0x489960), not 0x4502F0's: probing the retail game showed
-        // 0x4502F0 is never called once in a whole mission, so modelling detection on it modelled the wrong
-        // function (ai.md 8). The snapshot is taken here, before the alert latch is recomputed below, which
-        // is where the original takes it -- hence the one-tick lag in which range applies.
-        // A dead enemy is not a target. The detection scan (0x489750) asks each human to describe itself
-        // and UNREGISTERS one that reports itself invalid -- a corpse -- so the AI loses it. Reproduce the
-        // unregister: the slot goes not-visible and the sweep is skipped, so no detection event fires and
-        // the guard stops seeing a threat where the body fell.
-        // A SAME-TEAM player is equally not a target: the retail guard never engages a human on its own
-        // side, so a friendly patrol must not register or fire on the player. The slot is held unregistered
-        // exactly as a corpse's is, so no detection, alarm or combat ever starts for it. The one exception
-        // is a fed soldier enemy: NPC-vs-NPC combat feeds a soldier of the opposing team into the slot the
-        // same way the player's eye is fed, and team rivalry (not the player relationship) decides it.
-        if (!enemyAlive || (!PlayerIsEnemy && !enemyIsSoldier))
+        // The detection scan (0x489750) runs on the soldier's phase tick: it registers each human by the
+        // mode-6 rule -- other side and alive into the enemy list, own side and dead into the fallen-friend
+        // list -- unregisters the rest, and sweeps every registered slot through the cone and then the
+        // sight ray behind it (0x4898D0), the expensive test paid only for someone inside a cone.
+        if (_schedule.SweepsOn(tick))
         {
-            _playerSlot.IsVisible = false;
-            _playerSlot.IsInCone = false;
-            _playerSlot.Unregister();
+            Scan(tick);
         }
-        else
+        else if (!_registeredOnce)
         {
-            // The global detection sweep classifies/registers a living enemy candidate independently
-            // of visibility. A player becoming alive again therefore recreates its slot before combat.
-            if (!_playerSlot.IsRegistered)
-            {
-                _playerSlot.Register(tick);
-            }
-
-            if (_schedule.SweepsOn(tick))
-            {
-                Eye = Vision.Capture(EyePosition(), EyeOrientation(), Alerted);
-                AiEyeSnapshot snapshot = Eye;
-
-                // The point every vision test takes is the one the candidate DESCRIBES ITSELF with:
-                // its position raised 0.7 m standing / 0.319 m crouched (sub_465820) — mid-body, not
-                // the eye. Only when the caller supplies no body position (tests driving the brain
-                // with a single point) is that point tested as given.
-                Vector3d mark = enemyFeet is null
-                    ? enemy
-                    : new Vector3d(
-                        _enemyFeet.X,
-                        _enemyFeet.Y,
-                        _enemyFeet.Z + (enemyCrouching
-                            ? DetectionRaiseCrouchedInUnits
-                            : DetectionRaiseStandingInUnits));
-
-                _schedule.Sweep(
-                    _playerSlot,
-                    () => snapshot.IsVisible(mark),
-                    () => _sight is null || _sight(EyePosition(), mark),
-                    Distance(EyePosition(), mark));
-            }
+            // A soldier the level has just handed its humans has, in the original, been scanning since the
+            // level began: the humans it would have registered are registered already.
+            Register(tick);
         }
 
-        if (_playerSlot.IsVisible)
+        _registeredOnce = true;
+
+        // Before a fight the soldier's attention goes to the first enemy in sight, in registration order --
+        // the one whose detection event the pump will hand the script first.
+        if (!_combatInstalled && _enemies.Find(human => human.Slot.IsVisible) is { } seen)
         {
-            LastEventDistance = _playerSlot.Distance;
-            _lastSeenFeet = _enemyFeet;
-            SetTarget(_defaultTarget);
+            _targetId = seen.Candidate.Id;
+        }
+
+        if (TargetSlot.IsVisible)
+        {
+            LastEventDistance = TargetSlot.Distance;
+            _lastSeenFeet = TargetFeet;
+            SetTarget(TargetRecord);
             Target?.Refresh(_lastSeenFeet);
-            Events.Post(AiEventRecord.Simple(AiEvent.EnemyDetection), owner: 0, worldTests: null);
+        }
+
+        // 0x44F410 posts ENEMYDETECTION for every enemy in sight and FRIENDLYDETECTION for every fallen
+        // friend in sight, every tick, each naming its human -- which is who a SetCombat it triggers fights.
+        // No shipped script declares FRIENDLYDETECTION, so admission drops those, as in the original.
+        foreach (TrackedHuman enemy in _enemies)
+        {
+            if (enemy.Slot.IsVisible)
+            {
+                PostDetection(AiEvent.EnemyDetection, enemy);
+            }
+        }
+
+        foreach (TrackedHuman friend in _fallenFriends)
+        {
+            if (friend.Slot.IsVisible)
+            {
+                PostDetection(AiEvent.FriendlyDetection, friend);
+            }
         }
 
         if (alarmOn)
@@ -2349,7 +2427,7 @@ public sealed class AiSoldier
         // registered byte, not its visibility). Hearing, damage and alerts do not set it, and a fighting
         // guard that loses sight keeps the alarm view length for as long as its target lives.
         Alerted = alarmOn
-            || (_combatInstalled && Target is not null && _playerSlot.IsRegistered);
+            || (_combatInstalled && Target is not null && TargetSlot.IsRegistered);
 
         // 0x44F410 posts no COMBAT of its own -- that is the SetCombat runner's (0x48E560), which the script
         // reaches from ENEMYDETECTION -- and posts IDLE whenever the action stack is empty (0x450DC0).
@@ -2374,6 +2452,93 @@ public sealed class AiSoldier
 
         StepBody();
     }
+
+    /// <summary>Takes this tick's humans: their descriptions update, and anyone gone from the list is dropped.</summary>
+    private void OfferCandidates(IReadOnlyList<AiDetectionCandidate> candidates)
+    {
+        HashSet<int> offered = [];
+        foreach (AiDetectionCandidate candidate in candidates)
+        {
+            offered.Add(candidate.Id);
+            if (_tracked.TryGetValue(candidate.Id, out TrackedHuman? human))
+            {
+                human.Candidate = candidate;
+            }
+            else
+            {
+                _tracked[candidate.Id] = new TrackedHuman(candidate);
+            }
+        }
+
+        foreach (int gone in _tracked.Keys.Where(id => !offered.Contains(id)).ToArray())
+        {
+            Unregister(_tracked[gone]);
+            _tracked.Remove(gone);
+        }
+
+        // With nobody yet in mind, the soldier's attention rests on the first human on offer.
+        if (!_tracked.ContainsKey(_targetId) && candidates.Count > 0)
+        {
+            _targetId = candidates[0].Id;
+        }
+    }
+
+    /// <summary>One pass of the detection scan — <c>0x489750</c> and <c>0x4898D0</c>.</summary>
+    private void Scan(int tick)
+    {
+        Register(tick);
+
+        Eye = Vision.Capture(EyePosition(), EyeOrientation(), Alerted);
+        AiEyeSnapshot snapshot = Eye;
+        Vector3d eye = EyePosition();
+        foreach (TrackedHuman human in _enemies.Concat(_fallenFriends))
+        {
+            Vector3d mark = human.Candidate.Mark;
+            _schedule.Sweep(
+                human.Slot,
+                () => snapshot.IsVisible(mark),
+                () => _sight is null || _sight(eye, mark),
+                Distance(eye, mark));
+        }
+    }
+
+    // The scan's classification: other side and alive into the enemy list, own side and dead into the
+    // fallen-friend list, anything else out.
+    private void Register(int tick)
+    {
+        foreach (TrackedHuman human in _tracked.Values)
+        {
+            AiDetectionCandidate candidate = human.Candidate;
+            List<TrackedHuman>? list = candidate.OtherSide && candidate.Alive ? _enemies
+                : !candidate.OtherSide && !candidate.Alive ? _fallenFriends
+                : null;
+            if (list is null)
+            {
+                Unregister(human);
+            }
+            else if (!human.Slot.IsRegistered)
+            {
+                human.Slot.Register(tick);
+                list.Add(human);
+            }
+        }
+    }
+
+    private void Unregister(TrackedHuman human)
+    {
+        human.Slot.IsVisible = false;
+        human.Slot.IsInCone = false;
+        human.Slot.Unregister();
+        _enemies.Remove(human);
+        _fallenFriends.Remove(human);
+    }
+
+    private void PostDetection(AiEvent type, TrackedHuman human) =>
+        Events.Post(
+            new AiEventRecord(
+                type, -1, AiEventFilter.None, 0.0f, human.Candidate.Feet, human.Candidate.Id, human.Candidate.Id),
+            owner: 0,
+            worldTests: null);
 
     /// <summary>Runs one tick of an action the stack chose — its <c>+24</c> — and ends it when it is done.</summary>
     private void RunAction(AiPendingAction action)
@@ -2711,7 +2876,7 @@ public sealed class AiSoldier
             // TakingDamage is deliberately not a fallback combat-install trigger: the patrol combat arm
             // consumes its drained count for evasion, and re-installing combat for every hit interrupts
             // persistent prone behavior.
-            if (_playerSlot.IsVisible
+            if (TargetSlot.IsVisible
                 || Events.PendingCount(AiEvent.Combat) > 0
                 || Events.PendingCount(AiEvent.Gunshot) > 0
                 || Events.PendingCount(AiEvent.GunshotMiss) > 0
@@ -2742,6 +2907,7 @@ public sealed class AiSoldier
         AiEventRecord? current = Events.HeadOf(type);
         _currentEventPosition = current?.Position;
         _currentEventSource = current?.Source ?? 0;
+        _currentEventSubject = current?.Subject ?? 0;
 
         // AIFunction_GetEventDistance (0x44E930) measures the CURRENT queue record from the AI at
         // dispatch time. Keeping the value written when an event was posted let a later visibility
@@ -2760,6 +2926,7 @@ public sealed class AiSoldier
 
         _currentEventPosition = null;
         _currentEventSource = 0;
+        _currentEventSubject = 0;
         return handled;
     }
 
@@ -2909,9 +3076,9 @@ public sealed class AiSoldier
     {
         // Player-authored sensed events use -1 because the player is not one of the renderer-local soldier
         // ids. By the time an event is dispatched Tick has supplied the player's current feet position.
-        if (_currentEventSource == -1 && _enemyKnown)
+        if (_tracked.TryGetValue(_currentEventSource, out TrackedHuman? human))
         {
-            return _enemyFeet;
+            return human.Candidate.Feet;
         }
 
         if (_currentEventSource == -1)
@@ -3456,7 +3623,15 @@ public sealed class AiSoldier
         }
 
         _patrolOneShotChild = null;
-        SetTarget(_defaultTarget);
+
+        // The record's human is the subject of the event being handled -- whoever SetCombat's triggering
+        // event named. An event that names nobody the scan knows keeps the soldier's attention.
+        if (_tracked.ContainsKey(_currentEventSubject))
+        {
+            _targetId = _currentEventSubject;
+        }
+
+        SetTarget(TargetRecord);
 
         if (!_combatInstalled || CombatPhase == AiCombatPhase.Ended)
         {
@@ -3503,7 +3678,7 @@ public sealed class AiSoldier
         // the per-action latch -- so a soldier fighting an NPC neither shouts nor spends its one bark, and
         // still challenges the player when it turns on him. The latch is set even when another AI holds
         // the shared 90-tick sound gate, so this engagement never retries.
-        if (_playerSlot.IsVisible && !_enemyIsSoldier && !_detectionShoutDone)
+        if (TargetSlot.IsVisible && !TargetIsSoldier && !_detectionShoutDone)
         {
             DetectionShoutRequestedThisTick = true;
             _detectionShoutDone = true;
@@ -3512,7 +3687,7 @@ public sealed class AiSoldier
         // sub_48A920 pings the squad on the engagement's first tick with a valid target and every 20th
         // after, counting in the combat action's own block -- not on a mission-wide tick -- and only
         // while the detection scan still registers the target.
-        if (_playerSlot.IsRegistered)
+        if (TargetSlot.IsRegistered)
         {
             AlertPingDueThisTick = _alertPingCounter == 0;
             _alertPingCounter = (_alertPingCounter + 1) % AlertPingPeriodTicks;
@@ -3522,7 +3697,7 @@ public sealed class AiSoldier
         // off the detection slot). Hunting and the accuracy distance read the record (+272), so a guard
         // searches where the squad last SAW the player; one that never saw it borrows the squad's record.
         // Turning to an unseen target and aiming a burst do not: see TrueAimPoint.
-        if (_playerSlot.IsVisible)
+        if (TargetSlot.IsVisible)
         {
             Target?.Refresh(lastSeenFeet);
         }
@@ -3543,7 +3718,7 @@ public sealed class AiSoldier
             AiGunnerCommand gunner = _gunnerCombat.Update(
                 gun,
                 enemy,
-                _playerSlot.IsRegistered);
+                TargetSlot.IsRegistered);
 
             if (gunner.Ended)
             {
@@ -3587,9 +3762,9 @@ public sealed class AiSoldier
         AiCombatWeaponState weapon = _weapon();
 
         AiCombatSense sense = new(
-            HasDetectionSlot: _playerSlot.IsRegistered,
-            InCone: _playerSlot.IsInCone,
-            Visible: _playerSlot.IsVisible,
+            HasDetectionSlot: TargetSlot.IsRegistered,
+            InCone: TargetSlot.IsInCone,
+            Visible: TargetSlot.IsVisible,
             TargetPosition: TrueAimPoint(),
             DistanceToTargetInUnits: Distance(Position, enemy),
             LocomotionState: AiCombatChannels.StateOf(_type, AiStanceChannel.Standing),
@@ -3800,7 +3975,7 @@ public sealed class AiSoldier
         {
             _channelWrites.Clear();
             Combat = default;
-            if (_playerSlot.IsVisible)
+            if (TargetSlot.IsVisible)
             {
                 int targetNode = NearestNode(enemy);
                 if (targetNode != _followTargetNode)
@@ -3877,7 +4052,7 @@ public sealed class AiSoldier
         }
 
         double distance = Distance(Position, enemy);
-        bool visible = _playerSlot.IsVisible;
+        bool visible = TargetSlot.IsVisible;
 
         // Only the branch that needs a search runs one, as the original's call sites do.
         int? toward = null;
@@ -3909,7 +4084,7 @@ public sealed class AiSoldier
         Target?.Aim(this, AiAimMode.None);
 
         AiPatrolSense sense = new(
-            HasDetectionSlot: _playerSlot.IsRegistered,
+            HasDetectionSlot: TargetSlot.IsRegistered,
             Visible: visible,
             DistanceToTargetInUnits: distance,
             CurrentNodeId: CurrentNode,
@@ -3995,7 +4170,7 @@ public sealed class AiSoldier
                 }
                 else
                 {
-                    TurnTowards(AimPointOf(enemy, _enemyCrouching), (float)AiGuardCombat.AimToleranceRadians);
+                    TurnTowards(AimPointOf(enemy, TargetCrouching), (float)AiGuardCombat.AimToleranceRadians);
                 }
 
                 return;
@@ -4103,22 +4278,22 @@ public sealed class AiSoldier
             DestinationNode = -1;
             _patrol.ArrivedAtDestination();
             Target?.Aim(this, AiAimMode.None);
-            if (_playerSlot.IsVisible)
+            if (TargetSlot.IsVisible)
             {
-                TurnTowards(AimPointOf(enemy, _enemyCrouching), (float)AiGuardCombat.AimToleranceRadians);
+                TurnTowards(AimPointOf(enemy, TargetCrouching), (float)AiGuardCombat.AimToleranceRadians);
             }
             return;
         }
 
         AdvanceInCombat();
 
-        if (!_playerSlot.IsVisible)
+        if (!TargetSlot.IsVisible)
         {
             Target?.Aim(this, AiAimMode.None);
             return;
         }
 
-        if (IsFacing(AimPointOf(enemy, _enemyCrouching), FollowFireConeRadians))
+        if (IsFacing(AimPointOf(enemy, TargetCrouching), FollowFireConeRadians))
         {
             if ((Target?.Count(AiAimMode.Aiming) ?? 0) >= AiCombatTarget.MaximumAimers
                 && Target?.ModeOf(this) != AiAimMode.Aiming)
@@ -4149,7 +4324,7 @@ public sealed class AiSoldier
     /// (0.5 m up, 0.25 m crouched), not the shared record the rest of combat reads; only the distance, and a
     /// knife guard's turn, use the record.
     /// </remarks>
-    private Vector3d TrueAimPoint() => AimPointOf(_enemyFeet, _enemyCrouching);
+    private Vector3d TrueAimPoint() => AimPointOf(TargetFeet, TargetCrouching);
 
     /// <summary>The fire and reload sub-actions the two arms share.</summary>
     /// <param name="enemy">Where the target is.</param>
@@ -4157,9 +4332,9 @@ public sealed class AiSoldier
     private void RunSharedSubAction(Vector3d enemy, AiCombatWeaponState weapon)
     {
         AiCombatSense sense = new(
-            HasDetectionSlot: _playerSlot.IsRegistered,
-            InCone: _playerSlot.IsInCone,
-            Visible: _playerSlot.IsVisible,
+            HasDetectionSlot: TargetSlot.IsRegistered,
+            InCone: TargetSlot.IsInCone,
+            Visible: TargetSlot.IsVisible,
             TargetPosition: TrueAimPoint(),
             DistanceToTargetInUnits: Distance(Position, enemy),
             LocomotionState: AiCombatChannels.StateOf(_type, AiStanceChannel.Standing),
@@ -4278,7 +4453,7 @@ public sealed class AiSoldier
         }
 
         return $"arm={Arm} act={Activity} pa={PatrolAction} phase={CombatPhase} state={CombatState} " +
-            $"vis={_playerSlot.IsVisible} cone={_playerSlot.IsInCone} lost={_patrol?.NotVisibleTicks ?? -1} " +
+            $"vis={TargetSlot.IsVisible} cone={TargetSlot.IsInCone} lost={_patrol?.NotVisibleTicks ?? -1} " +
             $"cap={_pendingActions.PriorityCap} node={CurrentNode}->{DestinationNode} route={_route.Count} " +
             $"moving={_movingInCombat} trigger={Combat.PullTrigger} " +
             $"believed=({believed.X:F0},{believed.Y:F0},{believed.Z:F0}) " +

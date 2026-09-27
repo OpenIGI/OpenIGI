@@ -441,15 +441,15 @@ public sealed class SoldierRendererHitscanTests
 
         // A killed local target must be retired even when another guard remains alive elsewhere.
         // Reproduce an interrupted patrol for each of the three members of the rescue team.
+        // Each is fighting the dead guard: a dead human is never registered, so the combat record's slot is
+        // gone and the fight ends (0x44F410 releases the record, and the arm ends without a slot).
         SoldierView deadTarget = Assert.Single(brains.Keys, view => view.Soldier.Id == 417);
-        Dictionary<SoldierView, SoldierView> npcTargets = Assert.IsType<Dictionary<SoldierView, SoldierView>>(
-            typeof(SoldierRenderer).GetField("_npcTargetByBrain", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(scenario.Renderer));
         foreach (SoldierView friendly in new[] { harrison, escortOne, escortTwo })
         {
             typeof(AiSoldier).GetMethod("EnterCombat", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .Invoke(brains[friendly], null);
-            npcTargets[friendly] = deadTarget;
+            typeof(AiSoldier).GetField("_targetId", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(brains[friendly], deadTarget.Soldier.Id);
         }
         scenario.Renderer.Tick(enemyAlive: false);
         foreach (SoldierView friendly in new[] { harrison, escortOne, escortTwo })

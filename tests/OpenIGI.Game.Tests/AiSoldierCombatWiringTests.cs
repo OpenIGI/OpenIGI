@@ -963,9 +963,16 @@ public sealed class AiSoldierCombatWiringTests
             }),
             () => new AiCombatWeaponState(30, 30, 30, WeaponCategory.Gun));
 
+        // Dead, the enemy is not registered; alive again, the scan registers it on the soldier's next phase
+        // tick (0x489750 runs on tick % 4 == phase), and a fight started then has its slot.
         soldier.Tick(1, enemy, 0.0, enemyAlive: false);
+        for (int tick = 2; tick <= 4; tick++)
+        {
+            soldier.Tick(tick, enemy, 0.0, enemyAlive: true);
+        }
+
         soldier.ApplyActions([new AiProducedAction("AIAction_SetCombat", [], 0)]);
-        soldier.Tick(2, enemy, 0.0, enemyAlive: true);
+        soldier.Tick(5, enemy, 0.0, enemyAlive: true);
 
         Assert.NotEqual(AiCombatPhase.Ended, soldier.CombatPhase);
     }
