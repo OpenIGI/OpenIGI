@@ -82,10 +82,14 @@ public sealed class AiSoldier
     private double _rootMotionThisTick;
     private bool _enemyAlive = true;
 
-    // Floats 0 and 4 of this tick's input frame: the turn over pi and the walker's forward.
+    // Floats 0 and 1 of this tick's input frame: the turn and the pitch, each over pi.
     private float _turnInput;
-    private bool _forwardInput;
+    private float _pitchInput;
     private readonly HumanBodyTurn _bodyTurn = new();
+    private readonly HumanBodyTurn _viewPitchTurn = new();
+
+    // The clip's sideways root motion this tick, in the body's own frame.
+    private double _rootLateralThisTick;
 
     // Human+2056 / +2080: the leg an AI's feet are interpolated along. 0x462390 casts no ray for an AI.
     private Vector3d _groundLegFrom;
@@ -1215,6 +1219,25 @@ public sealed class AiSoldier
     // HumanAI+2108 - 2076: which entry of the priority order 0x44DBC0 reads.
     private const int AlarmActionsOrderIndex = 8;
 
+    /// <summary>Gets whether the walker wrote forward into this tick's frame — float 4, <c>+15492</c>.</summary>
+    /// <remarks>
+    /// This is what puts the body in a walking state, and so what plays a clip whose root motion moves it.
+    /// A soldier holding at a door, arrived, or turning on the spot writes none and stands.
+    /// </remarks>
+    public bool WalksForward { get; private set; }
+
+    /// <summary>Gets the view's pitch above the horizon, in radians — <c>view+292</c>.</summary>
+    /// <remarks>
+    /// Steered through float 1 of the frame and turned by the body exactly as the yaw is (<c>0x464800</c>,
+    /// clamped to a right angle). A walk and an idle level it; an aim, a look at an event and a patrol's
+    /// LookAtNode point it at their target's own height.
+    /// </remarks>
+    public float ViewPitch { get; private set; }
+
+    /// <summary>Gets the view's orientation — the body's heading tipped by <see cref="ViewPitch"/>.</summary>
+    /// <remarks>What the eye snapshot (<c>0x489960</c>) tests its cones against: the view matrix at <c>+120</c>.</remarks>
+    public Matrix3f ViewOrientation => Matrix3f.FromEngineEulerAngles(ViewPitch, 0f, Facing);
+
     /// <summary>Gets the orientation matrix a renderer should draw it with.</summary>
     public Matrix3f Orientation => Matrix3f.FromEngineEulerAngles(0f, 0f, Facing);
 
@@ -1232,12 +1255,6 @@ public sealed class AiSoldier
 
     /// <summary>Diagnostic: the facing (degrees) when Advance last moved.</summary>
     public double LastFacingDeg { get; private set; }
-
-    /// <summary>Diagnostic: the last separation resolution (refused, from, to, resolved).</summary>
-    public (bool refused, Vector3d from, Vector3d to, Vector3d resolved) LastSeparation { get; set; }
-
-    /// <summary>Diagnostic: the move was allowed after removing same-team bodies from the blocker set.</summary>
-    public bool LastSeparationFallback { get; set; }
 
     /// <summary>Diagnostic: the current route's first waypoint, in engine units.</summary>
     public Vector3d? DebugWaypoint => _route.Count > 0 ? _route[0].Point : null;
@@ -2145,8 +2162,9 @@ public sealed class AiSoldier
     /// <param name="tick">The engine tick counter, which the detection phase gate keys off.</param>
     /// <param name="enemy">The enemy's world position — the player's eye.</param>
     /// <param name="rootMotionThisTick">
-    /// How far the soldier's current animation moves it this tick, in engine units along its own forward axis.
-    /// The engine moves a human by its clip's root motion and nothing else, so this is the only speed source.
+    /// How far the soldier's current animation moves it this tick along its own forward axis, in engine
+    /// units — signed, so a clip that steps back moves the soldier back. The engine moves a human by its
+    /// clip's root motion and nothing else, so this is the only speed source.
     /// </param>
     /// <param name="alarmOn">Whether an alarm the soldier watches is sounding.</param>
     /// <param name="alarmWasOn">Whether that alarm sounded on the preceding tick, for the falling-edge event.</param>
@@ -2160,6 +2178,7 @@ public sealed class AiSoldier
     /// 0.5 m, 0.25 m crouched). Defaults to <paramref name="enemy"/> when the caller has no body.
     /// </param>
     /// <param name="enemyCrouching">Whether the enemy is crouching, which halves the aim raise.</param>
+    /// <param name="rootMotionLateral">The clip's root motion along the body's own right axis, in engine units.</param>
     /// <param name="enemyIsSoldier">
     /// Whether the fed enemy is another soldier rather than the player. The player is only a target to a
     /// hostile team, so a friendly never registers it; another soldier is a target to any soldier whose
@@ -2174,7 +2193,8 @@ public sealed class AiSoldier
         bool enemyAlive = true,
         Vector3d? enemyFeet = null,
         bool enemyCrouching = false,
-        bool enemyIsSoldier = false)
+        bool enemyIsSoldier = false,
+        double rootMotionLateral = 0.0)
     {
         if (Activity == AiSoldierActivity.Dead)
         {
@@ -2183,12 +2203,14 @@ public sealed class AiSoldier
 
         _lastTick = tick;
         _rootMotionThisTick = rootMotionThisTick;
+        _rootLateralThisTick = rootMotionLateral;
         _enemyAlive = enemyAlive;
 
         // 0x44F410 zeroes the whole input-channel block (+15476, 0xA0 bytes) before anything runs: only the
         // action that runs this tick writes to it, so a suspended one leaves nothing behind.
         _rawInputWrites.Clear();
         _channelWrites.Clear();
+        WalksForward = false;
         Combat = new AiCombatCommand();
         DetectionShoutRequestedThisTick = false;
         AlertPingDueThisTick = false;
@@ -2406,9 +2428,10 @@ public sealed class AiSoldier
                 break;
 
             case "AIAction_Idle":
-                // 0x48E520 -> 0x4513F0 only turns the body upright; it never ends, so an idle AI stays
-                // idle until something is pushed over it.
+                // 0x48E520 -> 0x4513F0 only brings the view back to level, at the pitch clamp; it never
+                // ends, so an idle AI stays idle until something is pushed over it.
                 Activity = AiSoldierActivity.Idle;
+                _pitchInput = Math.Clamp(-ViewPitch, -_steering.PitchClamp, _steering.PitchClamp) / MathF.PI;
                 break;
 
             case "AIAction_PlayAnimation":
@@ -2658,6 +2681,7 @@ public sealed class AiSoldier
         }
 
         _steering.YawClamp = LookAtTurnClamp;
+        _steering.PitchClamp = LookAtTurnClamp;
         return SteerTowards(target.Position, AiPatrolRoute.LookAtToleranceRadians);
     }
 
@@ -3243,8 +3267,8 @@ public sealed class AiSoldier
     /// empty queue ends the walk, and that also clears the goal.
     /// </para>
     /// <para>
-    /// The walker only writes the frame: the turn, and forward. The body turns and moves after it, on its
-    /// own clip — see <see cref="StepBody"/>.
+    /// The walker only writes the frame: the turn, a level view and forward. The body turns and moves after
+    /// it, on its own clip — see <see cref="StepBody"/>.
     /// </para>
     /// </remarks>
     private bool Advance()
@@ -3272,8 +3296,8 @@ public sealed class AiSoldier
                 continue;
             }
 
-            TurnTowards(waypoint.Point, 0f);
-            _forwardInput = true;
+            TurnTowards(waypoint.Point, 0f, level: true);
+            WalksForward = true;
             return false;
         }
 
@@ -3316,7 +3340,7 @@ public sealed class AiSoldier
             return false;
         }
 
-        TurnTowards(waypoint, AiMovementStep.DoorFacingTolerance);
+        TurnTowards(waypoint, AiMovementStep.DoorFacingTolerance, level: true);
         return true;
     }
 
@@ -3333,30 +3357,36 @@ public sealed class AiSoldier
     /// </remarks>
     private void StepBody()
     {
-        float input = _turnInput;
+        float turn = _turnInput;
+        float pitch = _pitchInput;
         _turnInput = 0f;
+        _pitchInput = 0f;
+        LastAdvanceRm = _rootMotionThisTick;
         if (IsMounted)
         {
-            // 0x4610C0's attached branch takes the emplacement's frame instead.
+            // 0x4610C0's attached branch takes the emplacement's frame instead, and the body rides the gun.
             _bodyTurn.Reset();
-        }
-        else
-        {
-            Facing = Wrap((float)(Facing + _bodyTurn.Step(input)));
-        }
-
-        bool forward = _forwardInput;
-        _forwardInput = false;
-        LastAdvanceRm = _rootMotionThisTick;
-        if (!forward || _rootMotionThisTick <= 0.0)
-        {
+            _viewPitchTurn.Reset();
             return;
         }
 
-        double x = Position.X + (Math.Sin(-Facing) * _rootMotionThisTick);
-        double y = Position.Y + (Math.Cos(Facing) * _rootMotionThisTick);
-        LastMovedTo = new Vector3d(x, y, Position.Z);
-        LastFacingDeg = Facing * 180.0 / Math.PI;
+        Facing = Wrap((float)(Facing + _bodyTurn.Step(turn)));
+        ViewPitch = Math.Clamp((float)(ViewPitch + _viewPitchTurn.Step(pitch)), -MathF.PI / 2f, MathF.PI / 2f);
+
+        // The clip's delta, rotated by the turned body into the world, every tick and whatever the AI asked
+        // for: the walk moves a walker, a roll carries a rolling soldier sideways, a step back steps back.
+        Vector3d world = SoldierDeathFall.RotateAboutZ(
+            new Vector3d(_rootLateralThisTick, _rootMotionThisTick, 0.0), Facing);
+        double x = Position.X + world.X;
+        double y = Position.Y + world.Y;
+        if (world.X != 0.0 || world.Y != 0.0)
+        {
+            LastMovedTo = new Vector3d(x, y, Position.Z);
+            LastFacingDeg = Facing * 180.0 / Math.PI;
+        }
+
+        // 0x462390 grounds an AI on its graph every tick: along the leg it is walking, or, with nothing to
+        // walk, at its current node's height.
         Position = new Vector3d(x, y, GroundHeight(x, y));
     }
 
@@ -4215,9 +4245,9 @@ public sealed class AiSoldier
     {
         if (_route.Count > 0)
         {
-            // Tell the renderer to play the walk clip this tick so next tick has root motion to move by.
-            _movingInCombat = true;
+            // The walk clip plays while the walker writes forward, so the next tick has root motion to move by.
             Advance();
+            _movingInCombat = WalksForward;
         }
     }
 
@@ -4348,32 +4378,54 @@ public sealed class AiSoldier
         new(target.X, target.Y, target.Z + (crouching ? 1024.0 : 2048.0));
 
     /// <summary>The turn-to-point entry — <c>0x4525B0</c>, which sets the clamps to pi first.</summary>
-    /// <returns>Whether the facing was already within the tolerance before this tick's turn.</returns>
-    private bool TurnTowards(Vector3d target, float tolerance)
+    /// <param name="target">The point to turn to.</param>
+    /// <param name="tolerance">How close counts as facing it.</param>
+    /// <param name="level">
+    /// Keep the view level rather than pitching it at the point's height — the entry's last argument, set
+    /// by the door wait and by the walker, which levels the view as it goes.
+    /// </param>
+    /// <returns>Whether the view was already within the tolerance, in yaw and pitch, before this tick's turn.</returns>
+    private bool TurnTowards(Vector3d target, float tolerance, bool level = false)
     {
         _steering.YawClamp = MathF.PI;
-        return SteerTowards(target, tolerance);
+        _steering.PitchClamp = MathF.PI;
+        return SteerTowards(target, tolerance, level);
     }
 
     /// <summary>
     /// Writes the turn toward a point into the frame — <c>0x4522D0</c>: the yaw error, clamped, over pi.
     /// </summary>
-    /// <returns>Whether the error, measured before this tick's turn, is within the tolerance.</returns>
-    /// <remarks>It writes the frame whether or not the facing is already good enough; the body does the turning.</remarks>
-    private bool SteerTowards(Vector3d target, float tolerance)
+    /// <returns>Whether both errors, measured before this tick's turn, are within the tolerance.</returns>
+    /// <remarks>
+    /// It writes the frame whether or not the view is already good enough; the body does the turning. The
+    /// pitch is the elevation from the eye (float 1), or back to level when <paramref name="level"/> is set.
+    /// </remarks>
+    private bool SteerTowards(Vector3d target, float tolerance, bool level = false)
     {
         double dx = target.X - Position.X;
         double dy = target.Y - Position.Y;
-        if ((dx * dx) + (dy * dy) < 1.0)
+        float yawError = 0f;
+        if ((dx * dx) + (dy * dy) >= 1.0)
         {
-            _turnInput = 0f;
-            return true;
+            yawError = Wrap((float)Math.Atan2(-dx, dy) - Facing);
         }
 
-        float error = Wrap((float)Math.Atan2(-dx, dy) - Facing);
-        float limit = _steering.YawClamp;
-        _turnInput = Math.Clamp(error, -limit, limit) / MathF.PI;
-        return Math.Abs(error) <= tolerance;
+        float yawLimit = _steering.YawClamp;
+        _turnInput = Math.Clamp(yawError, -yawLimit, yawLimit) / MathF.PI;
+
+        float elevation = 0f;
+        if (!level)
+        {
+            Vector3d eye = EyePosition();
+            double ex = target.X - eye.X;
+            double ey = target.Y - eye.Y;
+            elevation = (float)Math.Atan2(target.Z - eye.Z, Math.Sqrt((ex * ex) + (ey * ey)));
+        }
+
+        float pitchError = elevation - ViewPitch;
+        float pitchLimit = _steering.PitchClamp;
+        _pitchInput = Math.Clamp(pitchError, -pitchLimit, pitchLimit) / MathF.PI;
+        return Math.Abs(yawError) <= tolerance && Math.Abs(pitchError) <= tolerance;
     }
 
     private int NearestNode(Vector3d from) =>

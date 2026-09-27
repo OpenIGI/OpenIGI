@@ -671,17 +671,20 @@ public sealed class AiSoldierCombatWiringTests
             start.Position.X + (5000 * Metre), start.Position.Y, start.Position.Z);
         Vector3d before = soldier.Position;
 
-        // First tick: the closed door is opened rather than walked into, and the soldier has not moved.
-        soldier.Tick(1, farEnemy, rootMotionThisTick: 200.0);
+        // First tick: the closed door is opened rather than walked into -- the walker writes no forward, so
+        // the body stands and its clip carries it nowhere.
+        soldier.Tick(1, farEnemy, rootMotionThisTick: 0.0);
         door.Tick();
 
         Assert.Equal(2, door.UseState);
+        Assert.False(soldier.WalksForward);
         Assert.Equal(before, soldier.Position);
 
-        // It holds while the door swings.
+        // It holds while the door swings. The clip, and so its root motion, follows the body: it walks only
+        // on a tick after the walker wrote forward.
         for (int tick = 2; tick <= 30; tick++)
         {
-            soldier.Tick(tick, farEnemy, rootMotionThisTick: 200.0);
+            soldier.Tick(tick, farEnemy, rootMotionThisTick: soldier.WalksForward ? 200.0 : 0.0);
             door.Tick();
             Assert.Equal(before, soldier.Position);
         }
@@ -690,7 +693,7 @@ public sealed class AiSoldierCombatWiringTests
         Assert.True(door.IsFullyOpen);
         for (int tick = 31; tick <= 41; tick++)
         {
-            soldier.Tick(tick, farEnemy, rootMotionThisTick: 200.0);
+            soldier.Tick(tick, farEnemy, rootMotionThisTick: soldier.WalksForward ? 200.0 : 0.0);
             door.Tick();
         }
 

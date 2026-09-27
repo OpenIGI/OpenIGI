@@ -2508,74 +2508,6 @@ public sealed class SoldierRenderer : IDisposable
         return null;
     }
 
-    /// <summary>Refuses a soldier's move that would walk it into another soldier — <c>0x462BA0</c>.</summary>
-    /// <remarks>
-    /// The original runs this inside the movement integrator against the whole human registry; the port
-    /// applies it to each soldier as it is stepped, against every other living soldier's current position.
-    /// It <b>refuses</b> a closing move rather than pushing out, exactly as the original does — so two bodies
-    /// can jam but neither passes through the other, which is what "two soldiers collided" was missing.
-    /// </remarks>
-    private void SeparateFromOtherSoldiers(AiSoldier brain, Vector3d before)
-    {
-        brain.LastSeparationFallback = false;
-        Vector3d postTick = brain.Position;
-        Vector3d resolved = HumanSeparation.Resolve(before, postTick, OtherLivingSoldiers(brain));
-
-        // The retail human registry is evaluated from one movement integrator. Here brains are stepped
-        // sequentially, so a same-team soldier that already advanced this tick can reject the next
-        // squad member's entire move and leave it permanently behind. Re-test only opposing bodies when
-        // that happens: an enemy still blocks the move, while a friendly can no longer deadlock the
-        // authored Harrison advance. This keeps the native collision rule for hostile/player bodies.
-        if (resolved != postTick && FindSoldierView(brain) is { } selfView)
-        {
-            Vector3d opposingResolved = HumanSeparation.Resolve(
-                before,
-                postTick,
-                OtherLivingSoldiers(brain, otherView => otherView.Soldier.Team != selfView.Soldier.Team));
-            if (opposingResolved == postTick)
-            {
-                resolved = postTick;
-                brain.LastSeparationFallback = true;
-            }
-        }
-
-        brain.SeparateTo(resolved);
-        brain.LastSeparation = (refused: resolved != postTick, from: before, to: postTick, resolved: resolved);
-    }
-
-    private SoldierView? FindSoldierView(AiSoldier brain)
-    {
-        foreach ((SoldierView view, AiSoldier other) in _brains)
-        {
-            if (ReferenceEquals(other, brain))
-            {
-                return view;
-            }
-        }
-
-        return null;
-    }
-
-    private IEnumerable<Vector3d> OtherLivingSoldiers(
-        AiSoldier self,
-        Func<SoldierView, bool>? include = null)
-    {
-        foreach ((SoldierView view, AiSoldier other) in _brains)
-        {
-            // A conditional container's children are not registered into the world while its condition is
-            // false: a dormant soldier has no body in retail and must not block a live one. Every other
-            // per-soldier loop in this renderer gates on IsTaskActive; the separation pass must too, or a
-            // dormant sentry posted on a patrol node jams the squad that shares the choke.
-            if (!ReferenceEquals(other, self)
-                && other.Activity != AiSoldierActivity.Dead
-                && ConditionalContainerGate.IsTaskActive(view.Soldier)
-                && (include is null || include(view)))
-            {
-                yield return other.Position;
-            }
-        }
-    }
-
     /// <summary>Gives every soldier the combat row its own <c>AIType</c> names.</summary>
     /// <remarks>
     /// A soldier with no <c>HumanAI</c>, or one naming a type the engine does not register, is left off
@@ -3092,12 +3024,10 @@ public sealed class SoldierRenderer : IDisposable
                     view.Position.Y + eye.Y,
                     view.Position.Z + eye.Z);
             },
-            // The attachment supplies the animated eye POSITION only. Its local rotation differs by
-            // skeleton/clip and made the detector face sideways or backwards in the Level 14 retail
-            // rig. Use the stable Human orientation for the port's perception frame. This is an
-            // empirical port correction; the native snapshot matrix's exact source dataflow still
-            // requires a Windows trace or additional dual-tool field analysis.
-            () => view.Orientation);
+            // The attachment supplies the animated eye POSITION only; its local rotation differs by
+            // skeleton and clip. The snapshot (0x489960) tests against the view matrix: the body's heading
+            // tipped by the view's own pitch.
+            () => brain.ViewOrientation);
     }
 
     private static IEnumerable<GuardGeneratorTask> FindGuardGenerators(GameTask task)
@@ -3214,7 +3144,6 @@ public sealed class SoldierRenderer : IDisposable
                         $"ground={groundZ / WorldScene.UnitsPerMetre:0.00} gap={groundGap:0.000}m " +
                         $"fwd={brain.LastSteeringForward:0.0} rmT={brain.LastAdvanceRm:0.0} st={brain.LastSteeringOutcome} " +
                         $"moved={(brain.LastMovedTo is { } mv ? $"({mv.X / 4096.0:0.0},{mv.Y / 4096.0:0.0})" : "-")} facing={brain.LastFacingDeg:0.0} " +
-                        $"sep={(brain.LastSeparationFallback ? "FRIENDLY-FALLBACK" : brain.LastSeparation.refused ? $"REFUSED {brain.LastSeparation.to.X / 4096.0:0.0},{brain.LastSeparation.to.Y / 4096.0:0.0}" : "ok")} " +
                         $"wp={(brain.DebugWaypoint is { } wpp ? $"{wpp.X / 4096.0:0.000},{wpp.Y / 4096.0:0.000}" : "-")}");
 
                     foreach ((SoldierView otherView, AiSoldier other) in _brains)
@@ -3437,11 +3366,16 @@ public sealed class SoldierRenderer : IDisposable
                 continue;
             }
 
-            double travel = Math.Abs(view.RootMotion().Y);
+            // The clip's own delta in the body's frame: forward and sideways, signed.
+            Vector3f clipDelta = view.RootMotion();
+            double travel = clipDelta.Y;
+            double lateral = clipDelta.X;
             if (brain.SoldierClass.ScalesEkkRootMotion && brain.Type == AiType.Ekk)
             {
                 // 0x4550B0 scales a female soldier's delta translation by flt_56E1E8 when her brain is Ekk.
-                travel *= _playerDeltaTranslationScale?.Invoke() ?? HumanMotion.DefaultDeltaTranslationScale;
+                double scale = _playerDeltaTranslationScale?.Invoke() ?? HumanMotion.DefaultDeltaTranslationScale;
+                travel *= scale;
+                lateral *= scale;
             }
 
             // Retail ground truth, measured by hooking 0x48E920 in the original: a walking guard covers
@@ -3530,7 +3464,6 @@ public sealed class SoldierRenderer : IDisposable
             Vector3d aimFeet = useNpc ? npcFeet : feet;
             bool aimCrouching = useNpc ? npcCrouching : enemyCrouching;
 
-            Vector3d before = brain.Position;
             if (useNpc)
             {
                 _npcTargetByBrain[view] = nearestEnemy!;
@@ -3543,7 +3476,8 @@ public sealed class SoldierRenderer : IDisposable
                     nearestEnemy.Position.Z + AiSoldier.DetectionRaiseStandingInUnits);
                 brain.Tick(
                     _tick, npcEye, travel, alarmOn: alarmOn, alarmWasOn: alarmWasOn, enemyAlive: true,
-                    enemyFeet: npcFeet, enemyCrouching: npcCrouching, enemyIsSoldier: true);
+                    enemyFeet: npcFeet, enemyCrouching: npcCrouching, enemyIsSoldier: true,
+                    rootMotionLateral: lateral);
             }
             else
             {
@@ -3562,9 +3496,9 @@ public sealed class SoldierRenderer : IDisposable
                     // previous NPC target vanished, report that target as dead so AiSoldier leaves
                     // combat and the next idle tick re-runs retail 500.qvm (700 -> 711 -> 725 -> 732).
                     enemyAlive: invalidNpcTarget || (lostNpcTarget && !playerIsEnemyToBrain) ? false : enemyAlive,
-                    enemyFeet: feet, enemyCrouching: enemyCrouching);
+                    enemyFeet: feet, enemyCrouching: enemyCrouching,
+                    rootMotionLateral: lateral);
             }
-            SeparateFromOtherSoldiers(brain, before);
 
             // Fallback for headless environments or missing animation clips: if event 1052 could not
             // be evaluated, deliver any pending strike immediately so damage is not dropped.
@@ -3722,7 +3656,7 @@ public sealed class SoldierRenderer : IDisposable
             {
                 view.PlayStateAnimation(brain.RequestedAnimation, loops: false);
             }
-            else if (brain.IsMovingInCombat || brain.Activity == AiSoldierActivity.Panicking)
+            else if (brain.IsMovingInCombat || (brain.Activity == AiSoldierActivity.Panicking && brain.WalksForward))
             {
                 // The soldier is travelling a combat route this tick -- advancing, repositioning or hunting a
                 // lost target while it watches. A chasing guard RUNS (retail's Combat-Follow runs in state 17
@@ -3788,7 +3722,7 @@ public sealed class SoldierRenderer : IDisposable
                     view.SetMoving(false, walkAnimation);
                 }
             }
-            else if (brain.Activity == AiSoldierActivity.Patrolling && !brain.IsWalking)
+            else if (brain.WalksForward && !brain.IsWalking)
             {
                 // The patrol cursor's gait flag (+21) is applied EVERY tick by the retail walker
                 // (0x48E920): a RunTo leg installs the run gait and it stays until the next movement
@@ -3803,7 +3737,9 @@ public sealed class SoldierRenderer : IDisposable
             }
             else
             {
-                view.SetMoving(brain.Activity == AiSoldierActivity.Patrolling, walkAnimation);
+                // The body walks while the walker writes forward, and stands while it holds -- at a door,
+                // on arrival, or turning on the spot.
+                view.SetMoving(brain.WalksForward, walkAnimation);
             }
 
             view.PlaceAt(brain.Position, brain.Orientation);

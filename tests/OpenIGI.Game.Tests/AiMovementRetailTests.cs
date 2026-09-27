@@ -47,6 +47,22 @@ public sealed class AiMovementRetailTests
         Assert.Equal(0.01 / (2.0 - (0.01 / Math.PI * 16.666666666666668)), second, 6);
     }
 
+    [Theory]
+    [InlineData(100.0, 0.0, 100.0, 0.0)]
+    [InlineData(0.0, -100.0, 0.0, -100.0)]
+    public void TheClipsWholeDeltaMovesTheBodyEveryTick(double lateral, double forward, double dx, double dy)
+    {
+        // 0x45D080 rotates the clip's delta by the body and 0x4614B0 applies it, whatever the AI asked for:
+        // a roll carries a soldier sideways, a step back steps back.
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Vector3d far = new(0, -500 * 4096.0, 0);
+
+        soldier.Tick(1, far, rootMotionThisTick: forward, enemyAlive: false, rootMotionLateral: lateral);
+
+        Assert.Equal(dx, soldier.Position.X, 3);
+        Assert.Equal(dy, soldier.Position.Y, 3);
+    }
+
     [RequiresGameDataFact]
     public void AWalkFromInsideANodeLeavesByTheEdgeOfItsSquare()
     {
