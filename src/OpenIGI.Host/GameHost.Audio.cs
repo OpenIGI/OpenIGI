@@ -1111,22 +1111,16 @@ internal sealed partial class GameHost
         SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
         ScorchSurface(blast.Position, blast.Normal, MissileScorchHalfWidthInUnits);
         _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
-        // Car's native direct-weapon callback (IGI1 0x42FC40) enters destruction immediately. Keep
-        // the exact collision identity from the missile trace so a hull hit cannot be reduced to a
-        // falloff/occlusion sample around the blast centre.
-        if (_destructibles?.TryDestroyDirectVehicle(
-                blast.DirectHitOwner,
-                blast.DirectHitPlacement) is { } directlyHitVehicle)
-        {
-            HandleDestructibleImpact(directlyHitVehicle, blast.Position);
-        }
         // Launcher impacts use Explosion0's full collision envelope, then the speaker pass for alarms.
+        // The blast carries the firing weapon's record (0x428390 hands Explosion0 the missile's +0x894),
+        // which is what lets a LAW rocket -- and nothing else -- blow a car up.
         HandleDestructibleBlast(
             source: null,
             originUnits: blast.Position,
             radiusUnits: blast.RadiusUnits,
             falloffUnits: blast.FalloffUnits,
-            damageFactor: blast.DamageFactor);
+            damageFactor: blast.DamageFactor,
+            sourceWeaponId: blast.SourceWeaponId);
         DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
 
         ReachPlayerWithBlast(blast.Position, blast.RadiusUnits, blast.FalloffUnits);
@@ -1427,12 +1421,17 @@ internal sealed partial class GameHost
     }
 
     /// <summary>Runs the native explosion-hit callbacks for every authored object in a blast.</summary>
+    /// <remarks>
+    /// A car is not traced to: it joins Explosion0's listener list (<c>0x4C1790</c>, from its create
+    /// handler <c>0x42E160</c>) and the fireball messages that list (<c>0x480003</c>) with no line of sight.
+    /// </remarks>
     private void HandleDestructibleBlast(
         DestructibleObject? source,
         Vector3d originUnits,
         float radiusUnits,
         float falloffUnits,
-        float damageFactor = 1f)
+        float damageFactor = 1f,
+        int sourceWeaponId = 0)
     {
         if (_destructibles is not { } registry)
         {
@@ -1446,7 +1445,9 @@ internal sealed partial class GameHost
             falloffUnits,
             damageFactor,
             target => ConditionalContainerGate.IsTaskActive(target.Owner)
-                && ExplosionCanReach(source, originUnits, target)))
+                && (target.Kind == DestructibleObjectKind.Vehicle
+                    || ExplosionCanReach(source, originUnits, target)),
+            sourceWeaponId))
         {
             // Passing the blast origin is deliberate. GlassShatter uses the incoming contact to pick
             // nearby collision faces, just as Glass_ExplosionHitHandler hands the native shatter task
@@ -1528,6 +1529,47 @@ internal sealed partial class GameHost
         }
 
         HandleDestructibleExplosion(item);
+    }
+
+    /// <summary>Sets off one blast of a dying car (<c>0x42E5A0</c>) once its fuse has run.</summary>
+    /// <remarks>
+    /// An ordinary <c>Explosion0</c>: <c>explo_03_l</c>, the 25 m explosion event, and the same message to
+    /// every human, pane, barrel and speaker any other blast sends. It hands over no source record, so it
+    /// sets no other car off.
+    /// </remarks>
+    private void PresentVehicleBlast(VehicleBlast blast)
+    {
+        Vector3d position = blast.PositionUnits;
+        _sounds?.PlayDefinition(VehicleBlast.Sound, position, priority: 90);
+        _impactParticles?.SpawnRetailExplosion(
+            position,
+            new RetailExplosionShape(blast.FullRangeUnits, blast.Fireballs, blast.Fragments));
+        _soldiers?.NotifyExplosion(position, AiSoldier.LargeExplosionEventRadiusInUnits);
+        _soldiers?.ApplyExplosion(position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
+        HandleDestructibleBlast(blast.Source, position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
+        DamageAlarmSpeakers(position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
+
+        if (_player is not null && !_playerHealth.IsDead)
+        {
+            ReachPlayerWithBlast(position, blast.RadiusUnits, blast.FalloffUnits);
+            float dose = ExplosionDamage.Dose(
+                (float)(_player.Body.Position - position).Length,
+                ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
+                blast.RadiusUnits,
+                blast.FalloffUnits,
+                blast.DamageFactor);
+            if (dose > 0f)
+            {
+                _playerHealth.Apply(ExplosionDamage.Zone, dose);
+                FlashPlayerForBlast();
+                if (_playerHealth.IsDead)
+                {
+                    BeginPlayerDeath(position, ExplosionDamage.Zone, -1, WeaponCategory.Grenade);
+                }
+            }
+        }
+
+        _logger.Information("World", $"{blast.Source.Owner.Name} blast at {position}: radius={blast.RadiusUnits}.");
     }
 
     /// <summary>Applies the blast side effects after an authored explosive object's delay expires.</summary>

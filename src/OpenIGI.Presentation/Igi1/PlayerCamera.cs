@@ -2535,7 +2535,8 @@ public sealed class PlayerCamera
                     missileType,
                     MissileFlight.LaunchSpeedMetresPerSecond(missileWeapon),
                     shot.Direction,
-                    string.IsNullOrWhiteSpace(missileWeapon.Projectile.Text) ? "110_02_1" : missileWeapon.Projectile.Text);
+                    string.IsNullOrWhiteSpace(missileWeapon.Projectile.Text) ? "110_02_1" : missileWeapon.Projectile.Text,
+                    sourceWeaponId: missileWeapon.WeaponId);
             }
 
             if (rejected)

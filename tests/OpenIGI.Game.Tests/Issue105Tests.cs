@@ -334,13 +334,27 @@ public sealed class Issue105Tests
         Assert.Equal(DestructibleObjectKind.Vehicle, liveApc.Kind);
         Assert.Equal("601_08_1", liveApc.DestroyedModelName);
 
-        IReadOnlyList<DestructibleObject> hit = destructibles.ApplyExplosionHits(
+        // A blast with no LAW behind it (a grenade's) leaves the APC alone; the LAW's starts it dying.
+        _ = destructibles.ApplyExplosionHits(
             null,
             liveApc.PositionUnits,
             radiusUnits: 1f,
             canContact: item => ConditionalContainerGate.IsTaskActive(item.Owner));
-        Assert.Contains(liveApc, hit);
+        Assert.False(liveApc.IsDying);
+        _ = destructibles.ApplyExplosionHits(
+            null,
+            liveApc.PositionUnits,
+            radiusUnits: 1f,
+            canContact: item => ConditionalContainerGate.IsTaskActive(item.Owner),
+            sourceWeaponId: DestructibleObjectRegistry.CarDestroyingWeaponId);
+        Assert.True(liveApc.IsDying);
+        for (int tick = 0; tick <= DestructibleObjectRegistry.CarPointBlastTicks; tick++)
+        {
+            destructibles.Tick();
+        }
+
         Assert.True(liveApc.IsDestroyed);
+        Assert.False(dormantApc.IsDying);
         Assert.False(dormantApc.IsDestroyed);
 
         GameTask fuelTankOne = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(1600));
@@ -485,7 +499,8 @@ public sealed class Issue105Tests
             hit.Position - new Vector3d(1024d, 0d, 0d),
             hit.Position + new Vector3d(1024d, 0d, 0d),
             MissileType.MissileDirect,
-            muzzleVelocityMetresPerSecond: 40f));
+            muzzleVelocityMetresPerSecond: 40f,
+            sourceWeaponId: DestructibleObjectRegistry.CarDestroyingWeaponId));
         missile.TickWithMissileContext(
             (LiveMissile _, Vector3d _, Vector3d _, out WorldTraceHit directHit) =>
             {
@@ -496,13 +511,27 @@ public sealed class Issue105Tests
         MissileDetonation detonation = Assert.Single(missile.Detonations);
         Assert.Same(apc, detonation.DirectHitOwner);
         Assert.Same(placement, detonation.DirectHitPlacement);
-        Assert.Same(
-            liveApc,
-            destructibles.TryDestroyDirectVehicle(
-                detonation.DirectHitOwner,
-                detonation.DirectHitPlacement));
+        Assert.Equal(DestructibleObjectRegistry.CarDestroyingWeaponId, detonation.SourceWeaponId);
+
+        // The rocket's Explosion0 starts the APC dying (0x42FB40); it is not yet a wreck.
+        Assert.Empty(destructibles.ApplyExplosionHits(
+            null,
+            detonation.Position,
+            detonation.RadiusUnits,
+            detonation.FalloffUnits,
+            detonation.DamageFactor,
+            sourceWeaponId: detonation.SourceWeaponId));
+        Assert.True(liveApc.IsDying);
+        Assert.False(liveApc.IsDestroyed);
+        Assert.False(destructibles.ShouldExplode(liveApc));
+
+        // Five explosion points, so thirty ticks after the tick that set them off.
+        for (int tick = 0; tick <= DestructibleObjectRegistry.CarPointBlastTicks; tick++)
+        {
+            destructibles.Tick();
+        }
+
         Assert.True(liveApc.IsDestroyed);
-        Assert.True(destructibles.ShouldExplode(liveApc));
 
         Assert.True(runtime.TryGetDrawTransform(apc, out Vector3d wreckPosition, out _));
         runtime.ConfigureVehicleCombat(apc, new WeaponType

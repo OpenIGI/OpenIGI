@@ -272,6 +272,22 @@ public sealed class VehiclePhysicsRegistry
                     Single(arguments, field + 5, 0f));
             }
 
+            // After the wheels 0x42DB00 reads one float (+604, scaled by 4096), two bytes (+608,
+            // +609), the engine sound set (+610), then the destruction block: an explosion-point
+            // count (+684) and that many magic-vertex indices (+644, ten slots), and last the wreck
+            // model (+688). The dying car (0x42E5A0) sets one Explosion0 off at each of those
+            // magic vertices -- the Mission 1 truck at 6 and 7, the APC and T80 at 4 to 8.
+            int explosionCountIndex = wheelCountIndex + 1 + (parsedWheels * 6) + 4;
+            int explosionCount = Math.Clamp(
+                Integer(arguments, explosionCountIndex, 0),
+                0,
+                Math.Min(CarPhysicsDefinition.MaximumExplosionPoints, Math.Max(0, call.ArgumentCount - explosionCountIndex - 2)));
+            int[] explosionPoints = new int[explosionCount];
+            for (int point = 0; point < explosionCount; point++)
+            {
+                explosionPoints[point] = Integer(arguments, explosionCountIndex + 1 + point, 0);
+            }
+
             _cars.TryAdd(model, new CarPhysicsDefinition(
                 call.GetSingle(2),
                 new(call.GetSingle(3), call.GetSingle(4), call.GetSingle(5)),
@@ -283,7 +299,10 @@ public sealed class VehiclePhysicsRegistry
                 aerodynamicSurfaces,
                 wheels,
                 call.GetString(call.ArgumentCount - 1),
-                arguments));
+                arguments)
+            {
+                ExplosionPoints = explosionPoints,
+            });
         }
         else if (taskType == _planeType && call.ArgumentCount >= 9)
         {
@@ -361,6 +380,18 @@ public readonly record struct CarPhysicsDefinition(
     string DestroyedModel,
     IReadOnlyList<QvmValue> Arguments)
 {
+    /// <summary>The record's explosion-point slots, <c>+644..+684</c>.</summary>
+    public const int MaximumExplosionPoints = 10;
+
+    /// <summary>
+    /// Gets the magic-vertex indices the dying car explodes at — record <c>+644</c>, counted at <c>+684</c>.
+    /// </summary>
+    /// <remarks>
+    /// Empty means one blast at the car's origin sized from its own bound; <c>0x42E5A0</c> branches on the
+    /// count.
+    /// </remarks>
+    public IReadOnlyList<int> ExplosionPoints { get; init; } = [];
+
     /// <summary>Number of values in the original <c>DefinePhysicsObjType</c> call.</summary>
     public int ArgumentCount => Arguments.Count;
 
