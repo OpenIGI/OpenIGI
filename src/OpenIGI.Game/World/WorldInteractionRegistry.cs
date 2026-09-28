@@ -255,10 +255,7 @@ public sealed class WorldInteraction
                 Pose(new Vector3d(778.24, 2457.6, 0.0), Facing + MathF.PI),
             InteractionActivateType.Terminal =>
                 Pose(new Vector3d(0.0, 2764.8, 0.0), Facing + MathF.PI),
-            InteractionActivateType.StationaryGun when local.X < 0.0 =>
-                Pose(new Vector3d(-2867.2, 0.0, local.Z), Facing),
-            InteractionActivateType.StationaryGun =>
-                Pose(new Vector3d(2867.2, 0.0, local.Z), Facing + MathF.PI),
+            InteractionActivateType.StationaryGun => StationaryGunPose(from),
             InteractionActivateType.Generic =>
                 Pose(new Vector3d(0.0, 3481.6, 0.0), Facing + MathF.PI),
             InteractionActivateType.PlaceExplosive => PlaceExplosivePose(from),
@@ -314,6 +311,22 @@ public sealed class WorldInteraction
     private (Vector3d Position, float Facing) Pose(Vector3d localOffset, float facing) =>
         (Anchor + Orientation.Transposed().Transform(localOffset), facing);
 
+    // State 33's entry, 0x40C970. It takes the gun task's own position and orientation (0x444B30), not
+    // the stand's magic vertex, and stands the body 2867.2 units along the stand's local Y -- the barrel
+    // axis -- on whichever side it came from: the orientation is turned by pi (0x4B3790) when the body is
+    // on the -Y side. The body keeps its own height and faces along the turned stand's heading plus pi,
+    // which from the +Y side is down the barrel. Measured in retail (a probe, mission 4 task 775): the
+    // body lands 2867 units behind the gun at yaw 1.2687, the gun's gamma -1.8729 plus pi.
+    private (Vector3d Position, float Facing) StationaryGunPose(Vector3d from)
+    {
+        Vector3d origin = (StationaryGun?.Position ?? _authoredAnchor) + _offset;
+        bool fromBehind = Orientation.Transform(from - origin).Y >= 0.0;
+        Vector3d along = Orientation.Transposed().Transform(new Vector3d(0.0, fromBehind ? 2867.2 : -2867.2, 0.0));
+        return (
+            new Vector3d(origin.X + along.X, origin.Y + along.Y, from.Z),
+            fromBehind ? Facing + MathF.PI : Facing);
+    }
+
     private double ClampFenceX(double x) => HasLocalBounds
         ? Math.Clamp(x, LocalBoundsMinimum.X, LocalBoundsMaximum.X)
         : x;
@@ -331,6 +344,22 @@ public sealed class WorldInteraction
         if (Type is InteractionActivateType.Wire or InteractionActivateType.Fence)
         {
             return true;
+        }
+
+        if (Type == InteractionActivateType.StationaryGun && StationaryGun is { } gun)
+        {
+            // StationaryGun::GetActivate (0x474E30): only a free gun (+540 clear), and only from behind
+            // it -- the eye on the positive side of the turned stand's local Y (+112's middle column),
+            // measured from magic vertex 0. From the barrel side retail offers nothing (a probe,
+            // mission 4 task 775: Use pressed in front of the gun never enters state 33).
+            if (gun.IsOccupied)
+            {
+                return false;
+            }
+
+            Matrix3f turned = gun.TurnedOrientation;
+            Vector3d toEye = from - Anchor;
+            return (turned.M12 * toEye.X) + (turned.M22 * toEye.Y) + (turned.M32 * toEye.Z) >= 0.0;
         }
 
         if (Type is InteractionActivateType.Terminal or InteractionActivateType.Switch)
@@ -629,6 +658,13 @@ public sealed class WorldInteractionRegistry
         foreach (WorldInteraction item in _items)
         {
             item.EvaluateConditions();
+
+            // An empty gun's aim sinks on its own tick (0x474190). An occupied one is ticked by
+            // whoever is on it, with their look.
+            if (item.StationaryGun is { IsOccupied: false } emptyGun)
+            {
+                emptyGun.TickEmpty();
+            }
         }
 
         // Expression pulses remain visible throughout the whole task update. Clearing each pulse as
@@ -825,6 +861,16 @@ public sealed class WorldInteractionRegistry
                     ReadString(declared, "Weapon ID", "WEAPON_ID_M2HB"),
                     (int)ReadReal(declared, "Ammo", -1f))
                 : null;
+            if (stationaryGun is not null
+                && models.TryGetValue(modelName, out MefModel? standModel)
+                && standModel.MagicVertexCount >= 2
+                && standModel.TryGetMagicVertex(1, out Vector3f mount))
+            {
+                // 0x474420 asks 0x414E20 for magic vertex 1 of a stand that has any, and 0x414E20
+                // answers the origin unless the stand has more than one.
+                stationaryGun.MountVertex = mount;
+            }
+
             (Vector3d localBoundsMinimum, Vector3d localBoundsMaximum, bool hasLocalBounds) =
                 type == InteractionActivateType.Fence
                     && models.TryGetValue(modelName, out MefModel? fenceModel)

@@ -213,6 +213,13 @@ public sealed class PlayerWeapons
     /// <summary>Gets whether a round went off on the last <see cref="ResolveFire"/>.</summary>
     public bool FiredThisTick => _firedThisTick;
 
+    /// <summary>Forgets the last round, when something else takes the trigger — a mounted gun.</summary>
+    /// <remarks>
+    /// The machine does not tick while the player is on a stand, so without this the round fired on
+    /// the tick before mounting would read as fired for the whole of the stay, and again on the way off.
+    /// </remarks>
+    public void ClearFiredThisTick() => _firedThisTick = false;
+
     /// <summary>Gets a serial that advances once for every round that actually fires.</summary>
     /// <remarks>
     /// Presentation uses this to choose one muzzle-flash roll per shot rather than once per uncapped

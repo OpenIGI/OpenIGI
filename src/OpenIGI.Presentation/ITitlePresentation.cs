@@ -127,6 +127,12 @@ public interface IWorldPresenter : IDisposable
     /// <summary>Gets or sets the level's pickups, or null when it has none.</summary>
     GenericPickupRegistry? GenericPickups { get; set; }
 
+    /// <summary>
+    /// Gets or sets the level's direct interactions: GenericTBA destruction and the stationary-gun
+    /// stands that turn with their gun. Null when the level has none.
+    /// </summary>
+    WorldInteractionRegistry? Interactions { get; set; }
+
     /// <summary>Gets or sets the cut-scene runtime that poses animated placements, or null for none.</summary>
     CutsceneRuntime? Cutscenes { get; set; }
 

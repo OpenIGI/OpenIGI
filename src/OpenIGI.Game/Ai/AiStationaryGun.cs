@@ -51,6 +51,85 @@ public sealed class AiStationaryGun
     public WeaponType? Weapon { get; private set; }
     public bool IsOccupied => _occupant is not null;
 
+    /// <summary>Gets or sets the stand model's mount point, in its own frame (<c>0x474420</c>'s <c>0x414E20</c>).</summary>
+    public Vector3f MountVertex { get; set; }
+
+    /// <summary>Gets or sets the gun model's muzzle, magic vertex 2, in its own frame (<c>0x478BA0</c>).</summary>
+    public Vector3f MuzzleVertex { get; set; }
+
+    /// <summary>Gets the barrel's elevation the occupant has steered to, in radians (<c>+504</c>).</summary>
+    public float AimPitch { get; private set; }
+
+    /// <summary>Gets the barrel's traverse the occupant has steered to, in radians (<c>+508</c>).</summary>
+    public float AimYaw { get; private set; }
+
+    /// <summary>Gets the last round's kick in elevation, in radians (<c>+496</c>).</summary>
+    public float KickPitch { get; private set; }
+
+    /// <summary>Gets the last round's kick in traverse, in radians (<c>+500</c>).</summary>
+    public float KickYaw { get; private set; }
+
+    /// <summary>Gets the elevation the barrel is shown and fired at: the aim plus the kick (<c>+512</c>).</summary>
+    public float DisplayPitch { get; private set; }
+
+    /// <summary>Gets the traverse the barrel is shown and fired at: the aim plus the kick (<c>+516</c>).</summary>
+    public float DisplayYaw { get; private set; }
+
+    /// <summary>Gets whether the gun put a round out on its last tick, for the muzzle flame.</summary>
+    public bool FiredThisTick { get; private set; }
+
+    /// <summary>Gets a serial that advances once per round fired, for the muzzle flame's roll.</summary>
+    public int ShotSequence { get; private set; }
+
+    /// <summary>Gets the stand's orientation turned by the traverse: <c>0x474420</c> writes it to <c>+112</c>.</summary>
+    /// <remarks>The authored orientation times <c>Z(traverse)</c> (<c>0x4B3BE0</c>), dotting rows into columns.</remarks>
+    public Matrix3f TurnedOrientation => Orientation * Matrix3f.RotationZ(DisplayYaw);
+
+    /// <summary>Gets the gun's orientation: the turned stand times <c>0x4B38E0(elevation, 0, π)</c>.</summary>
+    /// <remarks>
+    /// The π turns the gun model, whose barrel is authored on local +Y, onto the stand's local -Y. The
+    /// barrel is the result's middle column, which is the direction <c>0x478BA0</c> fires along.
+    /// </remarks>
+    public Matrix3f GunOrientation =>
+        TurnedOrientation * Matrix3f.FromEngineEulerAngles(DisplayPitch, 0f, MathF.PI);
+
+    /// <summary>Gets where the gun sits: the stand's mount point, turned with it, in world units.</summary>
+    public Vector3d GunPosition => Position + ToWorld(TurnedOrientation, MountVertex);
+
+    /// <summary>Gets where rounds leave: the gun model's muzzle, in world units.</summary>
+    public Vector3d MuzzlePosition => GunPosition + ToWorld(GunOrientation, MuzzleVertex);
+
+    /// <summary>Gets the eye an occupant sees from, in world units.</summary>
+    /// <remarks>
+    /// <c>0x474420</c> hands the occupant's view this point with the gun's orientation (<c>0x4658D0</c>),
+    /// which the camera then uses outright (<c>0x45FCD0</c>, mode 4): half a metre back along the barrel
+    /// and a fifth of a metre up from where the gun sits.
+    /// </remarks>
+    public Vector3d SightPosition
+    {
+        get
+        {
+            Matrix3f gun = GunOrientation;
+            Vector3d at = GunPosition;
+            return new Vector3d(
+                at.X + (gun.M13 * SightRiseUnits) - (gun.M12 * SightSetBackUnits),
+                at.Y + (gun.M23 * SightRiseUnits) - (gun.M22 * SightSetBackUnits),
+                at.Z + (gun.M33 * SightRiseUnits) - (gun.M32 * SightSetBackUnits));
+        }
+    }
+
+    /// <summary>How far behind the gun an occupant's eye sits, in world units (<c>0x474420</c>'s 2048).</summary>
+    public const float SightSetBackUnits = 2048f;
+
+    /// <summary>How far above the gun an occupant's eye sits, in world units (<c>0x474420</c>'s 819.2).</summary>
+    public const float SightRiseUnits = 819.2f;
+
+    /// <summary>How far an empty gun's barrel sinks each tick, in radians: five degrees (<c>0x474190</c>).</summary>
+    public const float DroopPerTick = 0.087266468f;
+
+    /// <summary>How much of a kick is left after a tick (<c>0x474190</c>).</summary>
+    public const float KickDecay = 0.89999998f;
+
     /// <summary>The point at which state 36 places the gunner, 0.7 m behind the local -Y barrel.</summary>
     public Vector3d MountPosition =>
         Position + Orientation.Transposed().Transform(new Vector3d(0.0, 2867.2, 0.0));
@@ -101,6 +180,107 @@ public sealed class AiStationaryGun
         _roundSerial++;
         return true;
     }
+
+    /// <summary>Turns the barrel by an occupant's look, then holds it inside the authored limits.</summary>
+    /// <param name="pitch">The change in elevation, in radians; positive raises the barrel.</param>
+    /// <param name="yaw">The change in traverse, in radians; positive swings it anticlockwise.</param>
+    /// <remarks>
+    /// <para>
+    /// <c>0x474190</c> adds the occupant's two look deltas to <c>+504</c>/<c>+508</c> and clamps them
+    /// in <c>0x4748B0</c>.
+    /// </para>
+    /// <para>
+    /// The port steers per frame rather than per tick, so the barrel follows the mouse as smoothly as
+    /// the walking view does. The shown angles move by exactly what the aim moved, which leaves the
+    /// kick they carry where the tick put it.
+    /// </para>
+    /// </remarks>
+    public void Steer(float pitch, float yaw)
+    {
+        float pitchBefore = AimPitch;
+        float yawBefore = AimYaw;
+        AimPitch += pitch;
+        AimYaw += yaw;
+        ClampAim();
+        DisplayPitch += AimPitch - pitchBefore;
+        DisplayYaw += AimYaw - yawBefore;
+    }
+
+    /// <summary>Runs the gun's own tick for an occupant: the kick shown, then decayed.</summary>
+    /// <remarks>
+    /// <c>0x474190</c> with an occupant: the barrel is shown at the aim plus the kick, and the kick
+    /// decays. The round that follows (<see cref="RecordShot"/>) then replaces the kick outright.
+    /// </remarks>
+    public void TickOccupied()
+    {
+        ClampAim();
+        DisplayPitch = AimPitch + KickPitch;
+        DisplayYaw = AimYaw + KickYaw;
+        KickPitch *= KickDecay;
+        KickYaw *= KickDecay;
+        FiredThisTick = false;
+    }
+
+    /// <summary>Runs the gun's own tick with nobody on it: the aim sinks to its lowest elevation.</summary>
+    /// <remarks>
+    /// <c>0x474190</c> with no occupant steps <c>+504</c> five degrees a tick toward <c>+484</c> and
+    /// touches nothing else. The shown angles (<c>+512</c>/<c>+516</c>) are left where the last
+    /// occupant put them, so an abandoned gun stays pointing where it was left, and the next one to
+    /// take it starts from the sunken aim.
+    /// </remarks>
+    public void TickEmpty()
+    {
+        float rest = MinimumAlphaDegrees * DegreesToRadians;
+        AimPitch = AimPitch < rest
+            ? MathF.Min(AimPitch + DroopPerTick, rest)
+            : MathF.Max(AimPitch - DroopPerTick, rest);
+        FiredThisTick = false;
+    }
+
+    /// <summary>Takes one tick's firing result: the kick it left, and whether a round went.</summary>
+    /// <param name="fired">Whether a round went off.</param>
+    /// <param name="kickPitch">The round's kick in elevation, in radians.</param>
+    /// <param name="kickYaw">The round's kick in traverse, in radians.</param>
+    /// <remarks>
+    /// <c>0x474360</c> writes the gun's answer straight into <c>+496</c>/<c>+500</c>: a tick without a
+    /// round leaves no kick at all.
+    /// </remarks>
+    public void RecordShot(bool fired, float kickPitch, float kickYaw)
+    {
+        KickPitch = fired ? kickPitch : 0f;
+        KickYaw = fired ? kickYaw : 0f;
+        FiredThisTick = fired;
+        if (fired)
+        {
+            unchecked
+            {
+                ShotSequence++;
+            }
+        }
+    }
+
+    // 0x4748B0: elevation between +484 and +480; traverse within +-488 unless that is a full turn.
+    private void ClampAim()
+    {
+        AimPitch = Math.Clamp(
+            AimPitch,
+            MinimumAlphaDegrees * DegreesToRadians,
+            MaximumAlphaDegrees * DegreesToRadians);
+        float sideways = MaximumGammaDegrees * DegreesToRadians;
+        if (sideways < 2f * MathF.PI)
+        {
+            AimYaw = Math.Clamp(AimYaw, -sideways, sideways);
+        }
+    }
+
+    // A point in a frame, taken into the world: M*v, the column-vector product.
+    private static Vector3d ToWorld(Matrix3f orientation, Vector3f local)
+    {
+        Vector3f offset = orientation.Transposed().Transform(local);
+        return new Vector3d(offset.X, offset.Y, offset.Z);
+    }
+
+    private const float DegreesToRadians = MathF.PI / 180f;
 
     /// <summary>Reproduces the strict angle comparisons in <c>0x48D5C1</c>.</summary>
     public bool Contains(Vector3d target)

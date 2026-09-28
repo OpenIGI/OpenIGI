@@ -88,6 +88,10 @@ public sealed class PlayerCamera
     private GunPickupRegistry? _gunPickups;
     private WorldInteraction? _nearInteraction;
     private WorldInteraction? _activeInteraction;
+
+    // The gun on the stand the player is on, when they are on one. The emplacement's weapon is its
+    // own task in the original, fired by the stand with the occupant's trigger (0x474360); this is it.
+    private HeldGun? _mountedGun;
     private int _interactionTick;
     private bool _interactionUseArmed;
     private Vector3d _fenceExitPosition;
@@ -328,8 +332,10 @@ public sealed class PlayerCamera
     /// </remarks>
     public float AimPitch => _body.Pitch + (_weapons?.RecoilPitch ?? 0f);
 
-    /// <summary>Gets whether the weapon in hand fired on the last tick.</summary>
-    public bool FiredThisTick => _weapons?.FiredThisTick ?? false;
+    /// <summary>Gets whether the weapon in hand, or the gun the player is on, fired on the last tick.</summary>
+    public bool FiredThisTick => MountedStationaryGun is { } mounted
+        ? mounted.FiredThisTick
+        : _weapons?.FiredThisTick ?? false;
 
     /// <summary>Gets whether the M16A2 launched an M203 round on the last tick.</summary>
     /// <remarks>
@@ -344,8 +350,19 @@ public sealed class PlayerCamera
     /// <summary>Gets the serial of the last round fired.</summary>
     public int ShotSequence => _weapons?.ShotSequence ?? 0;
 
-    /// <summary>Gets the weapon in hand, or <see langword="null"/> when there is none.</summary>
-    public WeaponType? HeldWeaponType => _weapons?.InHand?.Weapon;
+    /// <summary>Gets the weapon being fired: the mounted gun on a stand, else the one in hand, else none.</summary>
+    /// <remarks>The report, the noise the AI hears and the damage factor all belong to the gun that fired.</remarks>
+    public WeaponType? HeldWeaponType => _mountedGun?.Weapon ?? _weapons?.InHand?.Weapon;
+
+    /// <summary>Gets the stationary gun the player is on and firing, or <see langword="null"/>.</summary>
+    public AiStationaryGun? MountedStationaryGun => _mountedGun is null ? null : _activeInteraction?.StationaryGun;
+
+    /// <summary>Gets whether the player is on a stationary gun, looking down its barrel.</summary>
+    /// <remarks>
+    /// State 33 (<c>0x40C970</c>) sets no third-person camera mode, unlike the other interaction states;
+    /// the gun hands the view its own eye instead (<c>0x474420</c> → <c>0x4658D0</c>, mode 4).
+    /// </remarks>
+    public bool IsMountedStationaryGun => MountedStationaryGun is not null;
 
     /// <summary>Gets whether the weapon in hand has changed since the model was last loaded.</summary>
     /// <remarks>
@@ -686,10 +703,25 @@ public sealed class PlayerCamera
     }
 
     /// <summary>Gets the eye the scene is drawn from, in the renderer's metres.</summary>
-    public Camera3D Camera =>
-        new(
+    /// <remarks>On a stationary gun it is the gun's own sight, turned and kicked with the barrel.</remarks>
+    public Camera3D Camera => MountedStationaryGun is { } mounted
+        ? GunSight(mounted)
+        : new(
             ToMetres(_body.Eye + LandingKickOffsetUnits + ViewShakeOffsetUnits),
             Shaken(_body.Yaw, AimPitch, _viewShake.Pitch, _viewShake.Roll, _viewShake.Yaw));
+
+    // The camera 0x45FCD0 builds in mode 4: the gun's point and orientation used outright. The eye's
+    // right, forward and up are the orientation's columns 0, 1 and 2, as they are for the walking eye.
+    private static Camera3D GunSight(AiStationaryGun gun)
+    {
+        Matrix3f m = gun.GunOrientation;
+        return new Camera3D(
+            ToMetres(gun.SightPosition),
+            Matrix3f.FromRows(
+                new Vector3f(m.M11, m.M21, m.M31),
+                new Vector3f(m.M13, m.M23, m.M33),
+                new Vector3f(m.M12, m.M22, m.M32)));
+    }
 
     /// <summary>Gets the dip the last landing installed in the view.</summary>
     /// <remarks>
@@ -1003,6 +1035,9 @@ public sealed class PlayerCamera
     /// <summary>Raised when a task is pressed or a held interaction completes.</summary>
     public event Action<int>? TaskActivated;
 
+    /// <summary>Raised when the player mounts a stationary gun whose weapon was never bound.</summary>
+    public event Action<AiStationaryGun>? UnarmedStationaryGun;
+
     /// <summary>Raised when a powered electric fence contact passes the retail 45-tick guard.</summary>
     public event Action<WorldInteraction>? ElectrifiedFenceTouched;
 
@@ -1230,6 +1265,19 @@ public sealed class PlayerCamera
             // count moves the crosshair across a magnified field, so without this the aim gets harder the
             // more you zoom in. The scale is the zoom ratio and is 1 (no change) whenever the view is not
             // zoomed. See MouseLookSettings.ZoomSensitivityScale.
+            // On a stand the look turns the gun, not the head: 0x474190 adds the occupant's two look
+            // deltas to the gun's own elevation and traverse, and state 33 locks the view's pitch
+            // (0x464700). Mouse right turns right, which is a clockwise traverse.
+            if (MountedStationaryGun is { } mounted)
+            {
+                mounted.Steer(
+                    LookSettings.PitchDelta(mouse.DeltaY),
+                    -LookSettings.YawDelta(mouse.DeltaX));
+                FaceAlongGun(mounted);
+                SyncView();
+                return;
+            }
+
             float zoomLook = _view is { } zoomView
                 ? MouseLookSettings.ZoomSensitivityScale(zoomView.TanX)
                 : 1f;
@@ -1442,7 +1490,16 @@ public sealed class PlayerCamera
     /// Death stops ordinary player ticks immediately, so this cannot wait for the next input frame to
     /// release a held trigger.
     /// </remarks>
-    public void StopWeaponsForDeath() => _weapons?.StopForDeath();
+    public void StopWeaponsForDeath()
+    {
+        // A player killed on a stand lets go of it, or the gun stays occupied and firing.
+        if (_activeInteraction?.Type == InteractionActivateType.StationaryGun)
+        {
+            EndInteraction(completed: false, terrain: null);
+        }
+
+        _weapons?.StopForDeath();
+    }
 
     private void Activate(WorldInteraction interaction, IGroundHeightField? terrain)
     {
@@ -1486,6 +1543,25 @@ public sealed class PlayerCamera
                 if (interaction.Type != InteractionActivateType.StationaryGun)
                 {
                     interaction.BeginUse();
+                }
+                else if (interaction.StationaryGun is { Weapon: null } unarmed)
+                {
+                    // The stand is mounted but has no gun to fire: its WEAPON_ID_* never resolved against
+                    // the roster (SoldierRenderer.Arm binds it). Say so, rather than leave the player in
+                    // the interaction orbit wondering why nothing fires.
+                    UnarmedStationaryGun?.Invoke(unarmed);
+                }
+                else if (interaction.StationaryGun is { Weapon: { } gunWeapon } gun)
+                {
+                    // State 33 puts the carried weapon away (0x4137E0 with none) and the stand's own
+                    // gun takes the trigger. An emplacement gun names no ammunition record, so it
+                    // never spends from a magazine; the stand counts its own rounds.
+                    _weapons?.ClearFiredThisTick();
+                    _mountedGun = new HeldGun(gunWeapon);
+                    gun.TickOccupied();
+                    FaceAlongGun(gun);
+                    HasViewTickPair = false;
+                    SyncView();
                 }
                 if (interaction.Type == InteractionActivateType.Fence && interaction.IsElectrified)
                 {
@@ -1568,10 +1644,14 @@ public sealed class PlayerCamera
 
         if (interaction.Type == InteractionActivateType.StationaryGun)
         {
+            // 0x40CAE0: a fresh Use press leaves the gun.
             if (use && _interactionUseArmed)
             {
                 EndInteraction(completed: false, terrain);
+                return;
             }
+
+            TickMountedGun();
             return;
         }
 
@@ -1644,6 +1724,92 @@ public sealed class PlayerCamera
         }
     }
 
+    /// <summary>One tick of the gun the player is on: its kick, its trigger and its rounds.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>0x474190</c> with an occupant: the barrel is shown at its aim plus the last kick, then the
+    /// stand sends its gun the occupant's fire input (<c>0x474360</c>) and keeps the kick it answers.
+    /// </para>
+    /// <para>
+    /// The message carries <b>no origin and no orientation</b> — both are null, where the carried-gun
+    /// path (<c>0x462E50</c>) passes the eye. So <c>0x478BA0</c> falls back on the gun's own frame: the
+    /// round leaves the gun model's magic vertex 2 along the gun's barrel, not the player's eye.
+    /// </para>
+    /// </remarks>
+    private void TickMountedGun()
+    {
+        _impacts.Clear();
+        if (_mountedGun is null || MountedStationaryGun is not { } gun)
+        {
+            TickBallistics();
+            return;
+        }
+
+        gun.TickOccupied();
+        FaceAlongGun(gun);
+
+        bool trigger = _input.IsSet(PlayerInputSlot.Fire)
+            && (gun.Ammunition < 0 || gun.RemainingAmmunition > 0);
+        _mountedGun.Tick(trigger);
+
+        Matrix3f m = gun.GunOrientation;
+        Vector3f right = new(m.M11, m.M21, m.M31);
+        Vector3f forward = new(m.M12, m.M22, m.M32);
+        Vector3f up = new(m.M13, m.M23, m.M33);
+        GunFireResult result = _mountedGun.Fire(trigger, gun.MuzzlePosition, forward, right, up, _random);
+        if (result.Fired)
+        {
+            gun.ConsumeRound();
+        }
+
+        gun.RecordShot(result.Fired, result.RecoilX, result.RecoilZ);
+        if (result.Fired)
+        {
+            ResolveMountedRounds(result.Projectiles, _mountedGun.Weapon);
+        }
+
+        TickBallistics();
+        SyncView();
+    }
+
+    // The rounds of a mounted gun, down the same fork as a carried one: flown with g_ballistics on and
+    // a weapon a profile accepts, else the retail ray. The muzzle is the gun's own, so a streak needs no
+    // offset to be seen leaving it.
+    private void ResolveMountedRounds(IReadOnlyList<GunProjectile> shots, WeaponType weapon)
+    {
+        bool simulate = GameplayCVars.Ballistics.Value && BallisticProfile.TryCreate(weapon, null) is not null;
+        foreach (GunProjectile shot in shots)
+        {
+            if (simulate)
+            {
+                _ballistics.Spawn(
+                    shot,
+                    weapon,
+                    null,
+                    weapon.DamageFactor,
+                    weapon.Category,
+                    default,
+                    GameplayCVars.BallisticsMinimumFlight.Value);
+            }
+            else
+            {
+                ResolveShot(shot, weapon.DamageFactor, weapon.Category, weapon.PenetrationPower);
+            }
+        }
+    }
+
+    // Keeps the body facing down the barrel, so the compass reads true on the stand and the player
+    // steps off looking where the gun was.
+    private void FaceAlongGun(AiStationaryGun gun)
+    {
+        Matrix3f m = gun.GunOrientation;
+        _body.Yaw = MathF.Atan2(m.M12, m.M22);
+        _body.Pitch = Math.Clamp(
+            MathF.Asin(Math.Clamp(m.M32, -1f, 1f)),
+            -PlayerBody.PitchLimit,
+            PlayerBody.PitchLimit);
+    }
+
     private void EndInteraction(bool completed, IGroundHeightField? terrain)
     {
         WorldInteraction interaction = _activeInteraction!;
@@ -1662,6 +1828,14 @@ public sealed class PlayerCamera
         {
             interaction.CancelUse();
         }
+
+        if (_mountedGun is not null)
+        {
+            // 0x40CAE0 hands the view back (0x464710) and the carried weapon returns with it.
+            _mountedGun = null;
+            HasViewTickPair = false;
+        }
+
         _activeInteraction = null;
         _interactionTick = 0;
         _interactionFacing = -_body.Yaw;

@@ -1829,6 +1829,16 @@ public sealed class SoldierRenderer : IDisposable
                 }
 
                 gun.BindWeapon(weapon);
+
+                // 0x478BA0 fires a mounted gun from its own model's magic vertex 2 -- the origin when
+                // the model has no such vertex -- because the stand passes it no eye to start from.
+                if (mission.TryGetModel(weapon.GunModel, out MefModel? gunModel)
+                    && gunModel is not null
+                    && gunModel.TryGetMagicVertex(2, out Vector3f muzzle))
+                {
+                    gun.MuzzleVertex = muzzle;
+                }
+
                 if (!cache.TryGetValue(weapon.GunModel, out HeldWeapon? held))
                 {
                     held = BuildWeapon(mission, weapon.GunModel);
@@ -4592,8 +4602,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             bool playerUsing = gun.IsOccupied && _interactions?.Items.Any(item =>
                 ReferenceEquals(item.StationaryGun, gun) && item.IsPlayerUsingStationaryGun) == true;
-            if (!ShouldDrawStaticStationaryGun(gun, playerUsing)
-                || visual?.Presentation is not { } presentation)
+            if (!ShouldDrawStaticStationaryGun(gun, playerUsing) || visual is null)
             {
                 continue;
             }
@@ -4606,18 +4615,26 @@ public sealed class SoldierRenderer : IDisposable
                     + $"position=({gun.Position.X:0.##},{gun.Position.Y:0.##},{gun.Position.Z:0.##}) drawn");
             }
 
-            presentation.Draw(
-                // The retail M2HB mesh's barrel is authored on local +Y while StationaryGun's
-                // orientation and cone are defined from the local -Y barrel axis. Rotate the
-                // presentation around the stand pivot so the visible gun points where the task aims.
-                new BoneAttachment(
-                    gun.Position,
-                    gun.Orientation * Matrix3f.RotationZ(MathF.PI)),
-                camera,
-                projection,
-                firedThisTick: false,
-                shotSequence: 0,
-                WeaponDrawParts.BodyOnly);
+            // 0x474420's pose: on the stand's mount point, turned and elevated by the shown aim. The
+            // gun's barrel is authored on local +Y and the stand's on local -Y; the π inside
+            // GunOrientation is what swings one onto the other.
+            if (visual.Presentation is { } presentation)
+            {
+                presentation.Draw(
+                    new BoneAttachment(gun.GunPosition, gun.GunOrientation),
+                    camera,
+                    projection,
+                    firedThisTick: false,
+                    shotSequence: 0,
+                    WeaponDrawParts.BodyOnly);
+            }
+            else
+            {
+                // No multipart presenter is built for the level's weapons, so the gun is drawn the way a
+                // soldier's is: as its one rigid mesh. Requiring the presenter here is what left every
+                // stand empty.
+                DrawRigidWeapon(visual, gun.GunPosition / WorldScene.UnitsPerMetre, gun.GunOrientation, camera);
+            }
         }
     }
 
@@ -5841,6 +5858,23 @@ public sealed class SoldierRenderer : IDisposable
                     WeaponDrawParts.FlameOnly);
             }
         }
+
+        // A gun the player is firing from its stand flames at the same pose DrawStationaryGuns drew.
+        foreach ((AiStationaryGun gun, HeldWeapon? visual) in _stationaryWeaponVisuals)
+        {
+            if (!gun.FiredThisTick || visual?.Presentation is not { } gunPresentation)
+            {
+                continue;
+            }
+
+            gunPresentation.Draw(
+                new BoneAttachment(gun.GunPosition, gun.GunOrientation),
+                camera,
+                projection,
+                firedThisTick: true,
+                gun.ShotSequence,
+                WeaponDrawParts.FlameOnly);
+        }
     }
 
     /// <summary>Draws the weapon a soldier is holding, at its hand bone's own world transform.</summary>
@@ -5889,7 +5923,14 @@ public sealed class SoldierRenderer : IDisposable
             return;
         }
 
-        Matrix4f modelView = camera.CreateModelView(member.DrawnWeaponOrigin, member.DrawnWeaponRotation);
+        DrawRigidWeapon(weapon, member.DrawnWeaponOrigin, member.DrawnWeaponRotation, camera);
+    }
+
+    // A weapon model drawn whole as one rigid mesh, for when no multipart presenter was built for it.
+    // The origin is in metres, as CreateModelView takes it.
+    private void DrawRigidWeapon(HeldWeapon weapon, Vector3d originMetres, Matrix3f rotation, in Camera3D camera)
+    {
+        Matrix4f modelView = camera.CreateModelView(originMetres, rotation);
 
         foreach (MeshSubset subset in weapon.Geometry.Subsets)
         {

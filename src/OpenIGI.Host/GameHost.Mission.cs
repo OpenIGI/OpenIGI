@@ -778,6 +778,10 @@ internal sealed partial class GameHost
         _interactions = WorldInteractionRegistry.Build(levelRoot, loaded, _doors, _loop.Variables, _elevators);
         _genericPickups = GenericPickupRegistry.Build(levelRoot, _loop.Variables);
         world.GenericPickups = _genericPickups;
+
+        // Never handed over after the move to the host, which left the renderer's interaction-driven
+        // transforms dead: a gun's stand did not turn with the gun it holds.
+        world.Interactions = _interactions;
         solids.GenericPickups = _genericPickups;
         _soldiers.SetAiTaskActivator(id => _interactions?.ActivateFromAi(id));
         _soldiers.UseInteractions(_interactions);
@@ -1776,6 +1780,9 @@ internal sealed partial class GameHost
                 candidate.UseInteractions(interactions);
                 candidate.TaskActivated += id => _soldiers?.ActivateTask(id);
                 candidate.ElectrifiedFenceTouched += fence => ResolvePlayerElectricFence(candidate, fence);
+                candidate.UnarmedStationaryGun += gun => _logger.Warning(
+                    "Player",
+                    $"Mounted stationary gun {gun.TaskId}, but its {gun.WeaponId} is not bound to a weapon; it cannot fire.");
                 _logger.Information("Player", $"{interactions.Items.Count} direct world interaction(s).");
             }
             if (_genericPickups is { } genericPickups)

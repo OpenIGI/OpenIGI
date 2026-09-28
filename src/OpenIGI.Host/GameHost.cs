@@ -2772,8 +2772,12 @@ internal sealed partial class GameHost : IDisposable
                     // settling one and the re-lock's re-centring is absorbed rather than aimed with.
                     _player?.ReleaseLook();
                 }
-                else if (_player is { IsOnLadder: true } or { IsInWorldInteraction: true })
+                else if (_player is { IsOnLadder: true }
+                    or { IsInWorldInteraction: true, IsMountedStationaryGun: false })
                 {
+                    // A mounted gun is not among these: its look turns the barrel, so it falls through
+                    // to the ordinary first-person look below.
+                    //
                     // On a ladder the mouse orbits the third-person interaction camera around the climbing
                     // body, as the original's mode-3 camera does -- HumanCamera_ThirdPersonControlInput -- so
                     // you can look around while you climb rather than being locked behind the character.
@@ -3446,7 +3450,13 @@ internal sealed partial class GameHost : IDisposable
                         }
                     }
 
-                    if (_soldiers is not null)
+                    if (interacting.IsMountedStationaryGun)
+                    {
+                        // The gun's sight sits just in front of the gunner's own chest, and retail draws
+                        // no body in that view (captured in mission 4: barrel, stand and scenery only).
+                        _soldiers?.HidePlayerBodyClimbing();
+                    }
+                    else if (_soldiers is not null)
                     {
                         _soldiers.AdvancePlayerLadderAnimation(
                             interacting.InteractionFacing,
@@ -3461,7 +3471,13 @@ internal sealed partial class GameHost : IDisposable
                     Vector3d interactionCameraFeet = _soldiers?.PlayerInteractionCameraFeet(
                         interacting.InteractionFeet) ?? interacting.InteractionFeet;
 
-                    if (!interactionCamera.IsActive)
+                    // State 33 is the one interaction that keeps a first-person camera: the gun hands
+                    // the view its own sight (0x474420), so no orbit is started behind the body.
+                    if (interacting.IsMountedStationaryGun)
+                    {
+                        interactionCamera.Reset();
+                    }
+                    else if (!interactionCamera.IsActive)
                     {
                         WorldRayCast? cameraCast = _worldSolids?.Caster();
                         interactionCamera.Begin(
@@ -3480,7 +3496,11 @@ internal sealed partial class GameHost : IDisposable
                     {
                         interactionCamera.Follow(interactionCameraFeet);
                     }
-                    interactionCamera.Tick();
+
+                    if (interactionCamera.IsActive)
+                    {
+                        interactionCamera.Tick();
+                    }
                 }
 
                 if ((_player is null || (!_player.IsOnLadder && !_player.IsInWorldInteraction))
@@ -4970,7 +4990,10 @@ if (retailFog)
                 bool showPlayerHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
                     && _cutscenes?.IsPlaying != true
                     && !(_playerDead && _deathCamera.IsActive)
-                    && _player is { View: not null };
+                    && _player is { View: not null, IsMountedStationaryGun: false };
+
+                // On a stand retail draws no HUD at all -- captured in mission 4, the stance figure shown
+                // beside the gun is gone the moment its sight takes the view -- hence the last condition.
                 bool showFirstPersonHud = showPlayerHud
                     && _player is { IsOnLadder: false, IsInWorldInteraction: false };
 

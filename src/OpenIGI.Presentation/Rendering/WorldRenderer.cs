@@ -803,6 +803,11 @@ public sealed class WorldRenderer : IWorldPresenter
                 entry.Displayed = entry.Displayed! with { Orientation = spun };
             }
 
+            if (TryGetStandOrientation(authored, out Matrix3f stand))
+            {
+                entry.Displayed = entry.Displayed! with { Orientation = stand };
+            }
+
             ResolveDrawTransform(
                 entry.Displayed!,
                 out entry.Position,
@@ -1163,6 +1168,26 @@ public sealed class WorldRenderer : IWorldPresenter
         TextureHandle Lightmap,
         bool IsLamp = false);
 
+    // A StationaryGun's stand turns with its gun: 0x474420 writes the traverse into the task's own
+    // orientation (+112, the authored one times Z(traverse)), and that is what the stand model is drawn
+    // with. Only the traverse -- the elevation belongs to the gun alone -- so the yoke stays square to
+    // the gun it holds.
+    private bool TryGetStandOrientation(WorldPlacement placement, out Matrix3f orientation)
+    {
+        // The type test first: TryGet walks the level's interactions, and this runs per placement.
+        if (placement.Owner is { } owner
+            && string.Equals(owner.Type.Name, "StationaryGun", StringComparison.Ordinal)
+            && Interactions?.TryGet(owner, out WorldInteraction? interaction) == true
+            && interaction?.StationaryGun is { } gun)
+        {
+            orientation = gun.TurnedOrientation;
+            return true;
+        }
+
+        orientation = default;
+        return false;
+    }
+
     private WorldPlacement DisplayedPlacement(WorldPlacement placement)
     {
         WorldPlacement displayed = placement;
@@ -1196,6 +1221,11 @@ public sealed class WorldRenderer : IWorldPresenter
         if (Spins?.TryGetOrientation(placement, _frameAlpha, out Matrix3f spun) == true)
         {
             displayed = displayed with { Orientation = spun };
+        }
+
+        if (TryGetStandOrientation(placement, out Matrix3f stand))
+        {
+            displayed = displayed with { Orientation = stand };
         }
 
         return displayed;
