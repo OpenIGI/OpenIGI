@@ -66,6 +66,26 @@ public sealed class RetailHumanViewTests
     }
 
     [RequiresGameDataFact]
+    public void TheRigHasNoPoseToDrawUntilAWeaponClipIsPlayed()
+    {
+        // A fresh rig is what the player spawns with: empty-handed, lowering for the first weapon's
+        // change, with nothing played on bone 0. Retail cannot evaluate that rig at all, so it must not
+        // be drawn -- and one weapon clip is all it takes to give it a pose.
+        HumanView view = new(ViewSet());
+
+        Assert.False(view.IsPosed);
+
+        view.Bones.Tick();
+        Assert.False(view.IsPosed);
+
+        view.PlayWeaponAnimation(Knife().StandAnimation, loops: true);
+        Assert.True(view.IsPosed);
+
+        view.Bones.Tick();
+        Assert.True(view.IsPosed);
+    }
+
+    [RequiresGameDataFact]
     public void TheViewExposesTheCurrentWholeRigClipProgress()
     {
         HumanView view = new(ViewSet());

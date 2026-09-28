@@ -197,6 +197,25 @@ public sealed class HumanView
         return clip;
     }
 
+    /// <summary>Gets whether a weapon clip has ever been played on the rig, so it has a pose to draw.</summary>
+    /// <remarks>
+    /// <para>
+    /// Retail has no posture for a rig without one. <c>0x4D2F80</c> zeroes every bone node, and the palette
+    /// build (<c>0x465700</c> → <c>0x4D38C0</c> → <c>0x4D3A90</c> → <c>0x4D3F50</c>) reads the pose through
+    /// bone 0's source slot (<c>node+128</c>), which only <c>0x4D61D0</c> fills — so the arms are never
+    /// evaluated, let alone drawn, before <c>0x4137E0</c> has played something on them. The port's bone
+    /// object instead falls back to identity rotations, which is the rig's raw bind posture: a bare hand.
+    /// </para>
+    /// <para>
+    /// That is what the start of a mission would show. The player spawns empty-handed, and the first
+    /// weapon arrives through an ordinary change (<c>0x40F760</c> from <c>0x4109A0</c>'s first tick, then
+    /// <c>0x40F230</c>/<c>0x40F280</c>): eleven ticks of lowering with nothing in hand, and so no clip,
+    /// before the swap plays the stand pose and raises it. Nothing ever clears bone 0 afterwards —
+    /// <c>0x4137E0</c>'s action 0 releases bone 1 of the body, not this rig — so once posed it stays posed.
+    /// </para>
+    /// </remarks>
+    public bool IsPosed => _bones.SourceOf(0) is not null;
+
     /// <summary>
     /// Gets whether bone 0's clip reached its end on the last tick — the node flag <c>0x100</c>.
     /// </summary>

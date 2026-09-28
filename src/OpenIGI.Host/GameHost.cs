@@ -5754,7 +5754,9 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                         binocularRangeMetres = (float)(rangeHit.Distance / WorldScene.UnitsPerMetre);
                     }
                 }
-                if (showViewModel && _player is { View: { } rig } && !binocularsOpen && !sniperScoped)
+                // Not before the rig has a clip: see HumanView.IsPosed. At spawn that is the whole lowering
+                // half of the first weapon's change, so the weapon rises into an empty frame, as in retail.
+                if (showViewModel && _player is { View: { IsPosed: true } rig } && !binocularsOpen && !sniperScoped)
                 {
                     // Only an advancing clip changes the skin, so the re-skin is keyed to the tick rather
                     // than the frame.
