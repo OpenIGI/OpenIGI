@@ -1,8 +1,10 @@
 using System.Globalization;
+using OpenIGI.Core.Configuration;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
@@ -104,6 +106,22 @@ public sealed class CampaignScreen : ShellScreen
     {
         // Preview the current selection once the rail exists; OnEnter runs before the tree is built.
         Preview();
+    }
+
+    /// <inheritdoc/>
+    protected override void OnEnter()
+    {
+        PlayerCheatCVars.DeveloperMode.Changed += OnUnlockCheatChanged;
+        PlayerCheatCVars.CheatsEnabled.Changed += OnUnlockCheatChanged;
+        PlayerCheatCVars.UnlockAllLevels.Changed += OnUnlockCheatChanged;
+    }
+
+    /// <inheritdoc/>
+    protected override void OnExit()
+    {
+        PlayerCheatCVars.DeveloperMode.Changed -= OnUnlockCheatChanged;
+        PlayerCheatCVars.CheatsEnabled.Changed -= OnUnlockCheatChanged;
+        PlayerCheatCVars.UnlockAllLevels.Changed -= OnUnlockCheatChanged;
     }
 
     /// <inheritdoc/>
@@ -359,6 +377,10 @@ public sealed class CampaignScreen : ShellScreen
             frontier = 0;
         }
 
+        // The unlock-all cheat widens what may be played, not what has been done: the profile's own
+        // progress still decides which missions read as completed.
+        int playable = PlayerCheatOptions.Current.UnlockAllLevels ? Context.Missions.Count - 1 : frontier;
+
         if (_missionNumber is not null)
         {
             _missionNumber.Text = string.Create(
@@ -373,7 +395,7 @@ public sealed class CampaignScreen : ShellScreen
 
         if (_status is not null)
         {
-            _status.Text = StatusOf(_selected, frontier);
+            _status.Text = StatusOf(_selected, frontier, playable);
         }
 
         if (_briefing is not null)
@@ -383,21 +405,24 @@ public sealed class CampaignScreen : ShellScreen
 
         for (int i = 0; i < _cards.Count && i < Context.Missions.Count; i++)
         {
-            _cards[i].Tag = StatusOf(i, frontier);
+            _cards[i].Tag = StatusOf(i, frontier, playable);
             _cards[i].TagColor = i < frontier ? Context.Theme.Accent
-                : i == frontier ? Context.Theme.TextMuted : Context.Theme.TextDisabled;
-            _cards[i].IsEnabled = i <= frontier;
+                : i <= playable ? Context.Theme.TextMuted : Context.Theme.TextDisabled;
+            _cards[i].IsEnabled = i <= playable;
         }
 
         if (_play is not null)
         {
-            _play.IsEnabled = _selected <= frontier;
+            _play.IsEnabled = _selected <= playable;
         }
     }
 
-    private static string StatusOf(int missionIndex, int frontierIndex) =>
+    // Any of the three can change what is playable while the rail is showing -- from Extras or the console.
+    private void OnUnlockCheatChanged(object? sender, CVarChangedEventArgs args) => Refresh();
+
+    private static string StatusOf(int missionIndex, int frontierIndex, int playableIndex) =>
         missionIndex < frontierIndex ? "COMPLETED"
-            : missionIndex == frontierIndex ? "AVAILABLE" : "LOCKED";
+            : missionIndex <= playableIndex ? "AVAILABLE" : "LOCKED";
 
     // Told as it is chosen rather than held until Play: the app puts the chosen hour on the level it is
     // previewing behind this very menu, so the player sees the night they picked before they commit to it.

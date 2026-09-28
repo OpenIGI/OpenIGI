@@ -80,11 +80,15 @@ public sealed class ScreenStack
     public void Reset(Screen screen, bool animate = true)
     {
         // Screens leaving this way get their exit hooks: clearing without them skips e.g.
-        // SettingsScreen's profile save when leaving via the top tabs (issue #230). SettingsScreen
-        // is currently the only OnExit override, so nothing else can observe the difference.
+        // SettingsScreen's profile save when leaving via the top tabs (issue #230), and leaves the
+        // campaign and extras screens subscribed to the cheat variables. One already on its way out
+        // has run its hook and must not run it twice.
         foreach (Screen leaving in _screens)
         {
-            leaving.BeginExit();
+            if (leaving.Phase != ScreenPhase.Exiting)
+            {
+                leaving.BeginExit();
+            }
         }
 
         _screens.Clear();

@@ -35,14 +35,40 @@ public sealed class HumanHealth
     {
         ArgumentNullException.ThrowIfNull(zones);
         Zones = zones;
+        BaseMaximumHealth = maximumHealth;
         MaximumHealth = maximumHealth;
     }
 
     /// <summary>Gets the table this human's zones are read from.</summary>
     public IReadOnlyList<HumanHitZone> Zones { get; }
 
+    /// <summary>Gets the maximum this human was built with, before any cheat scaled it.</summary>
+    public float BaseMaximumHealth { get; }
+
     /// <summary>Gets how much damage kills this human — <c>Human+600</c>.</summary>
-    public float MaximumHealth { get; }
+    /// <remarks>
+    /// <see cref="BaseMaximumHealth"/> unless the player's health-multiplier cheat has rescaled it.
+    /// </remarks>
+    public float MaximumHealth { get; private set; }
+
+    /// <summary>Changes the maximum health, keeping the fraction of health that remains.</summary>
+    /// <param name="maximumHealth">The new maximum, in the same units as the constructor's.</param>
+    /// <remarks>
+    /// The health-multiplier cheat can be moved mid-mission. Keeping the fraction rather than the raw
+    /// damage means a player at two thirds stays at two thirds, and setting the multiplier back to 1
+    /// returns exactly the health they would have had without it.
+    /// </remarks>
+    public void RescaleMaximumHealth(float maximumHealth)
+    {
+        if (maximumHealth <= 0f || MaximumHealth == maximumHealth)
+        {
+            return;
+        }
+
+        float remaining = RemainingFraction;
+        MaximumHealth = maximumHealth;
+        Damage = Math.Clamp(maximumHealth * (1f - remaining), 0f, maximumHealth);
+    }
 
     /// <summary>
     /// Gets the scale every hit on this human is multiplied by — the <b>player's difficulty scale</b>.
@@ -56,6 +82,10 @@ public sealed class HumanHealth
     /// this defaults to 1 and is set only on the player's instance.
     /// </remarks>
     public float DamageScale { get; init; } = 1f;
+
+    /// <summary>Gets or sets whether every hit is ignored — the infinite-health cheat.</summary>
+    /// <remarks>Not the AI's <c>SetInvulnerability</c>, which the soldiers keep on their own brain.</remarks>
+    public bool Invulnerable { get; set; }
 
     /// <summary>The player's difficulty damage scale — <c>0x412440</c>'s three-way branch.</summary>
     /// <param name="difficulty">The active profile's difficulty, 0..2.</param>
@@ -97,6 +127,11 @@ public sealed class HumanHealth
     /// </remarks>
     public float Apply(int zone, float damageFactor, bool instantDeathDisabled = false)
     {
+        if (Invulnerable)
+        {
+            return 0f;
+        }
+
         if (zone < 0 || zone >= Zones.Count)
         {
             return 0f;
@@ -123,6 +158,11 @@ public sealed class HumanHealth
     /// </remarks>
     public float ApplyDirect(int zone, float damage)
     {
+        if (Invulnerable)
+        {
+            return 0f;
+        }
+
         if (zone < 0 || zone >= Zones.Count || damage <= 0f)
         {
             return 0f;

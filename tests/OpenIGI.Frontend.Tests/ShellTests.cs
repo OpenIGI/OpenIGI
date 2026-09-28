@@ -6,6 +6,7 @@ using OpenIGI.Frontend.Screens;
 using OpenIGI.Frontend.Settings;
 using OpenIGI.Frontend;
 using OpenIGI.Game.Config;
+using OpenIGI.Game.Player;
 using OpenIGI.Input;
 using OpenIGI.Rendering.Presets;
 using OpenIGI.Rendering;
@@ -165,7 +166,7 @@ public sealed class ShellTests
         Assert.NotEqual(context.Games[0].Id, context.ActiveTitleId);
     }
 
-    private static (Shell Shell, FakeHost Host) BuildShell(string savesDir)
+    private static (Shell Shell, FakeHost Host) BuildShell(string savesDir, int activeMission = 2)
     {
         string fontPath = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Saira-Regular.ttf");
         UiFont font = OpenIGI.UI.Text.UiFont.ForMeasurement(
@@ -182,7 +183,7 @@ public sealed class ShellTests
         GameConfig config = GameConfig.CreateDefault();
         if (config.Active is { } active)
         {
-            active.ActiveMission = 2;
+            active.ActiveMission = activeMission;
         }
 
         var context = new ShellContext(
@@ -308,6 +309,105 @@ public sealed class ShellTests
         }
         finally
         {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Campaign_refreshes_locked_missions_when_unlock_cheat_changes()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        bool previousDeveloperMode = PlayerCheatCVars.DeveloperMode.Value;
+        bool previousCheatsEnabled = PlayerCheatCVars.CheatsEnabled.Value;
+        bool previousUnlockAllLevels = PlayerCheatCVars.UnlockAllLevels.Value;
+        try
+        {
+            PlayerCheatCVars.DeveloperMode.Value = false;
+            PlayerCheatCVars.CheatsEnabled.Value = false;
+            PlayerCheatCVars.UnlockAllLevels.Value = false;
+
+            (Shell shell, _) = BuildShell(dir, activeMission: 1);
+            Pump(shell, 0.1f);
+            Find<Button>(shell.Stack.Top!, b => b.Text == "Campaign")!.Activate();
+            Pump(shell, 0.6f);
+
+            var rows = shell.Stack.Top!.Root!.Descendants().OfType<ListCard>().ToList();
+            Assert.False(rows[1].IsEnabled);
+
+            // Unlocking alone is not enough: all three availability gates are part of the effective
+            // option, and each change must refresh the active rail.
+            PlayerCheatCVars.UnlockAllLevels.Value = true;
+            Assert.False(rows[1].IsEnabled);
+            PlayerCheatCVars.DeveloperMode.Value = true;
+            Assert.False(rows[1].IsEnabled);
+            PlayerCheatCVars.CheatsEnabled.Value = true;
+            Assert.True(rows[1].IsEnabled);
+
+            PlayerCheatCVars.UnlockAllLevels.Value = false;
+            Assert.False(rows[1].IsEnabled);
+
+            // Shell tab navigation uses Reset; the old campaign must no longer react after it leaves.
+            shell.OpenOn("extras");
+            PlayerCheatCVars.UnlockAllLevels.Value = true;
+            Assert.False(rows[1].IsEnabled);
+        }
+        finally
+        {
+            PlayerCheatCVars.UnlockAllLevels.Value = previousUnlockAllLevels;
+            PlayerCheatCVars.CheatsEnabled.Value = previousCheatsEnabled;
+            PlayerCheatCVars.DeveloperMode.Value = previousDeveloperMode;
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Extras_unsubscribes_cheat_gate_handlers_after_resize_and_reset()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        bool previousDeveloperMode = PlayerCheatCVars.DeveloperMode.Value;
+        bool previousCheatsEnabled = PlayerCheatCVars.CheatsEnabled.Value;
+        try
+        {
+            PlayerCheatCVars.DeveloperMode.Value = false;
+            PlayerCheatCVars.CheatsEnabled.Value = false;
+
+            (Shell shell, _) = BuildShell(dir);
+            shell.OpenOn("extras");
+            Pump(shell, 0.1f);
+            var extras = Assert.IsType<ExtrasScreen>(shell.Stack.Top);
+            Toggle firstDeveloper = Find<Toggle>(extras, toggle => toggle.Label == "Developer mode")
+                ?? throw new Xunit.Sdk.XunitException("The Extras developer toggle was not built.");
+
+            Panel firstGate = Find<Label>(extras, label => label.Text == "Cheats")!.Parent!.Parent as Panel
+                ?? throw new Xunit.Sdk.XunitException("The Extras cheat gate panel was not built.");
+            Assert.Equal(Visibility.Collapsed, firstGate.Visibility);
+
+            // A viewport change rebuilds the retained screen tree. The subscription must not be made by
+            // BuildContent, or reset would leave one duplicate handler behind.
+            shell.Update(new LayoutContext(1280f, 720f), new InputState(), 1f / 60f);
+            Toggle resizedDeveloper = Find<Toggle>(extras, toggle => toggle.Label == "Developer mode")
+                ?? throw new Xunit.Sdk.XunitException("The resized Extras developer toggle was not built.");
+            Panel resizedGate = Find<Label>(extras, label => label.Text == "Cheats")!.Parent!.Parent as Panel
+                ?? throw new Xunit.Sdk.XunitException("The resized Extras cheat gate panel was not built.");
+
+            shell.OpenOn("campaign");
+            PlayerCheatCVars.DeveloperMode.Value = true;
+
+            Assert.Equal(Visibility.Collapsed, firstGate.Visibility);
+            Assert.Equal(Visibility.Collapsed, resizedGate.Visibility);
+            Assert.False(firstDeveloper.Value);
+            Assert.False(resizedDeveloper.Value);
+        }
+        finally
+        {
+            PlayerCheatCVars.CheatsEnabled.Value = previousCheatsEnabled;
+            PlayerCheatCVars.DeveloperMode.Value = previousDeveloperMode;
             if (Directory.Exists(dir))
             {
                 Directory.Delete(dir, recursive: true);

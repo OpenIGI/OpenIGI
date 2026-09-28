@@ -41,30 +41,43 @@ public static class CVarBinding
     /// <param name="theme">The theme the control draws from.</param>
     /// <param name="cvar">The variable to bind.</param>
     /// <param name="label">A caption, or <see langword="null"/> to derive one from the CVar name.</param>
+    /// <param name="lifetime">
+    /// Receives a handle that unhooks the control from the CVar when disposed. Without one the CVar holds
+    /// the control for as long as the CVar lives, which is only right for a screen that lives as long —
+    /// a screen rebuilt on every resize, or one that comes and goes, should pass one and dispose it.
+    /// </param>
     /// <returns>The bound control, or <see langword="null"/>.</returns>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    public static Control? CreateControl(UiTheme theme, ICVar cvar, string? label = null)
+    public static Control? CreateControl(
+        UiTheme theme,
+        ICVar cvar,
+        string? label = null,
+        ICollection<IDisposable>? lifetime = null)
     {
         ArgumentNullException.ThrowIfNull(theme);
         ArgumentNullException.ThrowIfNull(cvar);
 
         string caption = label ?? Humanize(cvar.Name);
+        Binding binding;
         if (cvar.ValueType == typeof(bool))
         {
-            return BindBool(theme, caption, cvar);
+            binding = BindBool(theme, caption, cvar);
         }
-
-        if (cvar.ValueType.IsEnum)
+        else if (cvar.ValueType.IsEnum)
         {
-            return BindEnum(theme, caption, cvar);
+            binding = BindEnum(theme, caption, cvar);
         }
-
-        if (TryParseBounds(cvar.RangeText, out float min, out float max))
+        else if (TryParseBounds(cvar.RangeText, out float min, out float max))
         {
-            return BindNumeric(theme, caption, cvar, min, max);
+            binding = BindNumeric(theme, caption, cvar, min, max);
+        }
+        else
+        {
+            return null;
         }
 
-        return null;
+        lifetime?.Add(binding);
+        return binding.Control;
     }
 
     /// <summary>Turns a CVar name into a caption: drops a known prefix and title-cases the rest.</summary>
@@ -93,22 +106,29 @@ public static class CVarBinding
         return words.Count > 0 ? string.Join(' ', words) : name;
     }
 
-    private static Toggle BindBool(UiTheme theme, string caption, ICVar cvar)
+    private static Binding BindBool(UiTheme theme, string caption, ICVar cvar)
     {
         var gate = new BindingGate();
         var toggle = new Toggle(theme, caption, cvar.ValueText == "1");
-        toggle.ValueChanged += value =>
+        Action<bool> valueChanged = value =>
         {
             if (!gate.Busy)
             {
                 cvar.TrySetText(value ? "1" : "0", out _);
             }
         };
-        cvar.Changed += (_, _) => gate.Run(() => toggle.Value = cvar.ValueText == "1");
-        return toggle;
+        EventHandler<CVarChangedEventArgs> cvarChanged = (_, _) =>
+            gate.Run(() => toggle.Value = cvar.ValueText == "1");
+        toggle.ValueChanged += valueChanged;
+        cvar.Changed += cvarChanged;
+        return new Binding(toggle, () =>
+        {
+            toggle.ValueChanged -= valueChanged;
+            cvar.Changed -= cvarChanged;
+        });
     }
 
-    private static Dropdown BindEnum(UiTheme theme, string caption, ICVar cvar)
+    private static Binding BindEnum(UiTheme theme, string caption, ICVar cvar)
     {
         // The enum's RangeText is its choices joined by " | ", already in the lower-case form ValueText
         // uses, so it is the reliable option list to bind through the ICVar seam.
@@ -116,14 +136,14 @@ public static class CVarBinding
         int current = Math.Max(0, Array.IndexOf(options, cvar.ValueText));
         var gate = new BindingGate();
         var dropdown = new Dropdown(theme, caption, options, current);
-        dropdown.SelectionChanged += index =>
+        Action<int> selectionChanged = index =>
         {
             if (!gate.Busy && index >= 0 && index < options.Length)
             {
                 cvar.TrySetText(options[index], out _);
             }
         };
-        cvar.Changed += (_, _) => gate.Run(() =>
+        EventHandler<CVarChangedEventArgs> cvarChanged = (_, _) => gate.Run(() =>
         {
             int i = Array.IndexOf(options, cvar.ValueText);
             if (i >= 0)
@@ -131,10 +151,16 @@ public static class CVarBinding
                 dropdown.SelectedIndex = i;
             }
         });
-        return dropdown;
+        dropdown.SelectionChanged += selectionChanged;
+        cvar.Changed += cvarChanged;
+        return new Binding(dropdown, () =>
+        {
+            dropdown.SelectionChanged -= selectionChanged;
+            cvar.Changed -= cvarChanged;
+        });
     }
 
-    private static Slider BindNumeric(UiTheme theme, string caption, ICVar cvar, float min, float max)
+    private static Binding BindNumeric(UiTheme theme, string caption, ICVar cvar, float min, float max)
     {
         bool isInteger = cvar.ValueType == typeof(int) || cvar.ValueType == typeof(long)
             || cvar.ValueType == typeof(short) || cvar.ValueType == typeof(byte);
@@ -147,15 +173,22 @@ public static class CVarBinding
                 ? ((long)MathF.Round(v)).ToString(CultureInfo.InvariantCulture)
                 : v.ToString("0.##", CultureInfo.InvariantCulture),
         };
-        slider.ValueChanged += v =>
+        Action<float> valueChanged = v =>
         {
             if (!gate.Busy)
             {
                 cvar.TrySetText(slider.Format(v), out _);
             }
         };
-        cvar.Changed += (_, _) => gate.Run(() => slider.Value = ParseFloat(cvar.ValueText, slider.Value));
-        return slider;
+        EventHandler<CVarChangedEventArgs> cvarChanged = (_, _) =>
+            gate.Run(() => slider.Value = ParseFloat(cvar.ValueText, slider.Value));
+        slider.ValueChanged += valueChanged;
+        cvar.Changed += cvarChanged;
+        return new Binding(slider, () =>
+        {
+            slider.ValueChanged -= valueChanged;
+            cvar.Changed -= cvarChanged;
+        });
     }
 
     private static bool TryParseBounds(string rangeText, out float min, out float max)
@@ -182,4 +215,18 @@ public static class CVarBinding
 
     private static float ParseFloat(string text, float fallback) =>
         float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value) ? value : fallback;
+
+    // A bound control and the two handlers that tie it to its CVar. Disposing unhooks both, once.
+    private sealed class Binding(Control control, Action unhook) : IDisposable
+    {
+        private Action? _unhook = unhook;
+
+        public Control Control { get; } = control;
+
+        public void Dispose()
+        {
+            _unhook?.Invoke();
+            _unhook = null;
+        }
+    }
 }

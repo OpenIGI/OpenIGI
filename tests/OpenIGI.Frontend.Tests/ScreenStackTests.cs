@@ -28,9 +28,13 @@ public sealed class ScreenStackTests
     {
         public int Updates { get; private set; }
 
+        public int Exits { get; private set; }
+
         protected override UiElement BuildRoot(LayoutContext context) => new Panel();
 
         protected override void OnUpdate(float elapsedSeconds) => Updates++;
+
+        protected override void OnExit() => Exits++;
     }
 
     [Fact]
@@ -97,6 +101,22 @@ public sealed class ScreenStackTests
         var stack = new ScreenStack();
         stack.Reset(new ProbeScreen(), animate: false);
         Assert.False(stack.Pop());
+        Assert.Equal(1, stack.Count);
+    }
+
+    [Fact]
+    public void Reset_exits_every_existing_screen_before_replacing_the_stack()
+    {
+        var stack = new ScreenStack();
+        var first = new ProbeScreen();
+        var second = new ProbeScreen();
+
+        stack.Reset(first, animate: false);
+        stack.Push(second, animate: false);
+        stack.Reset(new ProbeScreen(), animate: false);
+
+        Assert.Equal(1, first.Exits);
+        Assert.Equal(1, second.Exits);
         Assert.Equal(1, stack.Count);
     }
 
