@@ -56,6 +56,9 @@ public sealed class AiVehicleCombat
     public const float CapturedMuzzleHeightMetres = 1.39f;
 
     private bool _hasTarget;
+
+    /// <summary>Gets a value indicating whether a target is held -- seen now or still retained.</summary>
+    public bool HasTarget => _hasTarget;
     private int _retentionTicks;
     private int _cooldownTicks;
     private Vector3d _lastTarget;

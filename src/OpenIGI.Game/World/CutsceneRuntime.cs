@@ -512,7 +512,7 @@ public sealed class CutsceneRuntime
 
                 SteerCarAiChase(state, chased);
             }
-            else if (!state.Stopped && !state.Route.HasStopped && state.Route.Current is { } command)
+            else if (!state.Stopped && state.Route.Current is { } command)
             {
                 switch (command.Kind)
                 {
@@ -620,7 +620,10 @@ public sealed class CutsceneRuntime
         Vector3d eye = state.Transform.Position + new Vector3d(0d, 0d, VehicleEyeHeightUnits);
         bool canFire = _expressions.EvaluateCondition(Text(state.Car, "Can fire"), emptyValue: false, state.Car);
         bool visible = VehicleCombatLineOfSight?.Invoke(state.Car, eye, seen) ?? true;
-        return state.Chase.Track(new AiVehicleCombatInput(
+
+        // 0x426000 holds the target OBJECT and CarAI reads its live position (+32) every tick, from the
+        // very tick the vision first holds it -- not the last place it was seen, and with no delay.
+        _ = state.Chase.Track(new AiVehicleCombatInput(
             state.Transform.Position,
             state.Transform.Orientation,
             seen,
@@ -632,17 +635,40 @@ public sealed class CutsceneRuntime
             visible,
             0f,
             0));
+        return state.Chase.HasTarget ? seen : null;
     }
+
+    /// <summary>Retail's "π" (<c>0x533618</c>): three ulps above <see cref="Math.PI"/>.</summary>
+    private static readonly double RetailPi = BitConverter.Int64BitsToDouble(0x400921FB54442D1B);
+
+    /// <summary>Retail's "1/π" (<c>0x533610</c>): three ulps below <c>1 / Math.PI</c>.</summary>
+    private static readonly double RetailInversePi = BitConverter.Int64BitsToDouble(0x3FD45F306DC9C880);
+
+    /// <summary>170° as the chase eases by it (<c>0x533630</c>).</summary>
+    private static readonly double Retail170Degrees = BitConverter.Int64BitsToDouble(0x4007BC89CEEED7C6);
+
+    /// <summary>1/170° (<c>0x533628</c>).</summary>
+    private static readonly double RetailInverse170Degrees = BitConverter.Int64BitsToDouble(0x3FD591F70B6D4D3F);
+
+    /// <summary>10°, the chase's turn threshold (<c>0x533638</c>).</summary>
+    private static readonly double Retail10Degrees = BitConverter.Int64BitsToDouble(0x3FC6571855555555);
+
+    /// <summary>1/(10 m)², the final-stop ramp (<c>0x533600</c>).</summary>
+    private const double CarAiRampScale = 5.960464477539063e-10;
 
     /// <summary>Whether the car is within three metres of a node (<c>0x4260C0</c>: 150994944 squared units).</summary>
     private static bool CarAiArrived(CarAiState state, GraphNode node)
     {
-        Vector3d delta = node.Position - state.Transform.Position;
-        return (delta.X * delta.X) + (delta.Y * delta.Y) + (delta.Z * delta.Z) < CarAiArrivalSquared;
+        Vector3d p = state.Transform.Position;
+        X87 dx = (X87)node.Position.X - p.X, dy = (X87)node.Position.Y - p.Y, dz = (X87)node.Position.Z - p.Z;
+        return (dx * dx + dy * dy + dz * dz).Value < CarAiArrivalSquared;
     }
 
     /// <summary>The next node from a point towards a destination (<c>0x425C10</c>).</summary>
-    /// <remarks>When the route table has no link, retail logs "CarAI: Error in graph" and keeps the nearest node.</remarks>
+    /// <remarks>
+    /// When the route table has no link, retail logs "CarAI: Error in graph" and keeps the nearest node; a
+    /// step to an empty slot is returned as the empty slot.
+    /// </remarks>
     private static GraphNode? CarAiNextHop(CarAiState state, Vector3d from, int destinationId)
     {
         GraphNode? nearest = NearestNode(state.Graph, from);
@@ -652,8 +678,31 @@ public sealed class CutsceneRuntime
         }
 
         return state.Graph.RouteTable?.TryGetStep(nearest.Id, destinationId, out int step, out _) == true
-            ? state.Graph.NodeAt(step) ?? nearest
+            ? state.Graph.NodeAt(step)
             : nearest;
+    }
+
+    /// <summary>
+    /// <c>0x425B80</c>: from a point, the next position toward a destination -- the destination's own when the
+    /// point is nearest it, the route step's otherwise, and the point unchanged when there is no link.
+    /// </summary>
+    private static Vector3d CarAiResolveToward(CarAiState state, Vector3d from, int destinationId)
+    {
+        GraphNode? nearest = NearestNode(state.Graph, from);
+        if (nearest is null)
+        {
+            return from;
+        }
+
+        if (nearest.Id == destinationId)
+        {
+            return nearest.Position;
+        }
+
+        return state.Graph.RouteTable?.TryGetStep(nearest.Id, destinationId, out int step, out _) == true
+            && state.Graph.NodeAt(step) is { } next
+            ? next.Position
+            : from;
     }
 
     private static GraphNode? NearestNode(GraphFile graph, Vector3d at)
@@ -662,25 +711,74 @@ public sealed class CutsceneRuntime
         return nearest;
     }
 
-    /// <summary>The heading error to a point in the car's frame, as <c>0x414950</c> measures it.</summary>
-    private static float CarAiHeadingError(CarAiState state, Vector3d point) =>
-        VehicleGunTurret.Heading(state.Transform.Orientation.Transform(point - state.Transform.Position));
+    /// <summary>
+    /// The heading of a world offset in the car's frame (<c>0x426140</c>'s rotation, then <c>0x414950</c>),
+    /// signed positive to the left, kept at full width as retail keeps it in a register.
+    /// </summary>
+    /// <param name="state">The CarAI.</param>
+    /// <param name="dx">The offset's X, already rounded as the caller's subtraction rounds it.</param>
+    /// <param name="dy">The offset's Y.</param>
+    /// <param name="dz">The offset's Z.</param>
+    private static double CarAiHeading(CarAiState state, double dx, double dy, double dz)
+    {
+        // Mᵀ·d with the z term first (M6, M3, M0 for x; M7, M4, M1 for y), each stored as a double.
+        Matrix3f m = state.Transform.Orientation;
+        double lx = ((X87)m.M31 * dz + (X87)m.M21 * dy + (X87)m.M11 * dx).Value;
+        double ly = ((X87)m.M32 * dz + (X87)m.M22 * dy + (X87)m.M12 * dx).Value;
 
-    /// <summary>Steering from a heading error: proportional within ten degrees, full lock beyond.</summary>
-    private static float CarAiSteering(float error) =>
-        error > 0.17453294f ? -1f
-        : error < -0.17453294f ? 1f
-        : error * -1.9098593f;
+        // 0x414950: z is cleared, the offset normalised by a reciprocal, its cosine to +Y through acos.
+        if (lx == 0d && ly == 0d)
+        {
+            return 0d;
+        }
+
+        X87 inverse = (X87)1.0 / X87.Sqrt((X87)lx * lx + (X87)ly * ly + (X87)0.0 * 0.0);
+        double nx = (inverse * lx).Value;
+        double ny = (inverse * ly).Value;
+        ny = ny < -1d ? -1d : ny > 1d ? 1d : ny;
+        double heading = RetailAcos(ny);
+        return nx > 0d ? -heading : heading;
+    }
+
+    /// <summary>The heading to a point, from the car (<c>d = point − P</c>, rounded toward zero).</summary>
+    private static double CarAiHeadingTo(CarAiState state, Vector3d point)
+    {
+        Vector3d p = state.Transform.Position;
+        return CarAiHeading(
+            state,
+            X87.Add(point.X, -p.X),
+            X87.Add(point.Y, -p.Y),
+            X87.Add(point.Z, -p.Z));
+    }
+
+    /// <summary>
+    /// The CRT's <c>acos</c> (<c>0x516810</c>): it switches to round-to-nearest, takes
+    /// <c>√((1 + c)(1 − c))</c> as a plain double and hands both to <c>fpatan</c>.
+    /// </summary>
+    /// <remarks><c>fpatan</c> keeps a 64-bit significand; <see cref="Math.Atan2(double, double)"/> is within a double ulp of it.</remarks>
+    private static double RetailAcos(double c) =>
+        c >= 1d ? 0d
+        : c <= -1d ? Math.PI
+        : Math.Atan2(Math.Sqrt((1d + c) * (1d - c)), c);
+
+    /// <summary>Steering from a heading (<c>0x426140</c>, <c>0x4262F0</c>): the positive limit tests the full-width value, the rest the float.</summary>
+    private static float CarAiSteering(double heading)
+    {
+        float hf = X87.ToFloat(heading);
+        return heading > 0.17453294f ? -1f
+            : hf < -0.17453294f ? 1f
+            : ((X87)hf * -1.9098593f).F;
+    }
 
     /// <summary>Route steering, throttle and brake (<c>0x426140</c>).</summary>
     private static void SteerCarAiRoute(CarAiState state)
     {
-        state.DesiredSpeedKmh = CarAiRouteSpeed(state);
+        state.DesiredSpeedKmh = X87.ToFloat(CarAiRouteSpeed(state));
         CarAiThrottle(state);
-        float error = state.TargetNode is { } node ? CarAiHeadingError(state, node.Position) : 0f;
+        double heading = state.TargetNode is { } node ? CarAiHeadingTo(state, node.Position) : 0d;
 
         // The wheel eases off as the throttle opens: full lock only at a standstill.
-        state.Steering = CarAiSteering(error) * (((1f - state.Throttle) * 0.95f) + 0.05f);
+        state.Steering = (((((X87)1f - state.Throttle) * 0.95f) + 0.05f) * CarAiSteering(heading)).F;
     }
 
     /// <summary>Chase steering, throttle and brake (<c>0x4262F0</c>).</summary>
@@ -688,12 +786,12 @@ public sealed class CutsceneRuntime
     {
         bool stopped = state.CommandSpeedKmh == 0f;
         Vector3d toward = !stopped && state.TargetNode is { } node ? node.Position : chased;
-        float error = CarAiHeadingError(state, toward);
-        state.Steering = CarAiSteering(error);
-        float magnitude = MathF.Abs(error);
+        double heading = CarAiHeadingTo(state, toward);
+        state.Steering = CarAiSteering(heading);
+        float magnitude = MathF.Abs(X87.ToFloat(heading));
         state.DesiredSpeedKmh = !stopped
-            ? CarAiChaseSpeed(state, chased)
-            : magnitude <= 0.17453294f ? magnitude * 28.647888f : 5f;
+            ? X87.ToFloat(CarAiChaseSpeed(state, chased))
+            : magnitude > 0.17453294f ? 5f : ((X87)magnitude * 28.647888f).F;
         CarAiThrottle(state);
 
         // A stopped car that still has to turn keeps its brake off so it can crawl round.
@@ -702,26 +800,27 @@ public sealed class CutsceneRuntime
 
     /// <summary>Opens or closes the throttle towards the desired speed (<c>0x426260</c>).</summary>
     /// <remarks>
-    /// The car's speed is read in world units a tick and converted to km/h (x 0.026367188). The throttle
-    /// moves one hundredth of the shortfall from the car's own smoothed throttle, and the brake comes on
-    /// when told to halt or when the car is more than 5 km/h too fast.
+    /// The car's speed is read in world units a tick and converted to km/h (× 108/4096). The throttle
+    /// moves one hundredth of the shortfall from the car's own smoothed throttle -- all in one register,
+    /// truncated once -- and the brake comes on when told to halt or when the car is more than 5 km/h too fast.
     /// </remarks>
     private static void CarAiThrottle(CarAiState state)
     {
-        float shortfall = state.DesiredSpeedKmh - (state.Transform.Speed * 0.026367188f);
-        state.Throttle = Math.Clamp(state.Transform.Thrust + (shortfall * 0.0099999998f), 0f, 1f);
-        state.Brake = state.Halt == 0f && shortfall >= -5f ? 0f : 1f;
+        X87 shortfall = (X87)state.DesiredSpeedKmh - ((X87)state.Transform.Speed * 0.0263671875f);
+        X87 throttle = (X87)state.Transform.Thrust + (shortfall * 0.0099999998f);
+        state.Throttle = throttle.Value < 0.0f ? 0f : throttle.Value > 1.0f ? 1f : throttle.F;
+        state.Brake = state.Halt != 0f || shortfall.Value < -5.0 ? 1f : 0f;
     }
 
-    /// <summary>The route speed, eased for the corner ahead and for a final stop (<c>0x4255A0</c>).</summary>
+    /// <summary>The route speed, eased for the heading and for the turn at the node (<c>0x4255A0</c>).</summary>
     /// <remarks>
-    /// Beyond ten metres of the current node the speed falls with the heading error to it, from the
-    /// commanded speed to 5 km/h at a full reversal. Within ten metres it looks one node further and
-    /// eases by the turn there; approaching a route's last node before a Quit or End it runs down with
-    /// the square of the distance. The turn is the deviation from carrying straight on: a straight road
-    /// keeps the commanded speed, which is what the probed APC does through its nodes.
+    /// Beyond ten metres of the current node the speed falls with the heading error to it. Within ten
+    /// metres: mid-leg the look-ahead resolves back to the current node, so there is no turn; at a leg's last
+    /// node the turn is the angle at the node between the way back to the car and the way on to the next
+    /// leg's destination, so carrying straight on slows to about 5 km/h; before a Quit or End the speed runs
+    /// down with the square of the distance. This is what the original computes, dead look-ahead included.
     /// </remarks>
-    private static float CarAiRouteSpeed(CarAiState state)
+    private static double CarAiRouteSpeed(CarAiState state)
     {
         float command = state.CommandSpeedKmh;
         if (state.TargetNode is not { } node)
@@ -729,11 +828,13 @@ public sealed class CutsceneRuntime
             return command;
         }
 
-        Vector3d toNode = node.Position - state.Transform.Position;
-        double distanceSquared = (toNode.X * toNode.X) + (toNode.Y * toNode.Y) + (toNode.Z * toNode.Z);
+        Vector3d p = state.Transform.Position;
+        Vector3d n = node.Position;
+        double ax = X87.Add(p.X, -n.X), ay = X87.Add(p.Y, -n.Y), az = X87.Add(p.Z, -n.Z);
+        double distanceSquared = ((X87)ax * ax + (X87)ay * ay + (X87)az * az).Value;
         if (distanceSquared > CarAiLookAheadSquared)
         {
-            return EaseForTurn(command, MathF.Abs(CarAiHeadingError(state, node.Position)));
+            return CarAiEase(command, Math.Abs(CarAiHeading(state, -ax, -ay, -az)));
         }
 
         if (state.Route?.Current is not { } current || state.Graph.NodeAt(current.Operand) is not { } destination)
@@ -741,30 +842,46 @@ public sealed class CutsceneRuntime
             return command;
         }
 
-        Vector3d? beyond = null;
+        double turn;
         if (destination.Id != node.Id)
         {
-            beyond = CarAiNextHop(state, node.Position, destination.Id)?.Position;
+            GraphNode? hop = NearestNode(state.Graph, destination.Position) is { } nearest
+                ? CarAiNextHop(state, p, nearest.Id)
+                : null;
+            if (hop is null)
+            {
+                return command;
+            }
+
+            turn = CarAiAngleBetween(ax, ay, az, CarAiResolveToward(state, hop.Position, hop.Id), n);
         }
-        else if (state.Route.Next is { } next)
+        else if (state.Route.Next is not { } next)
         {
-            if (next.Kind is AiPatrolCommandKind.WalkTo or AiPatrolCommandKind.RunTo)
+            return command;
+        }
+        else if (next.Kind is AiPatrolCommandKind.WalkTo or AiPatrolCommandKind.RunTo)
+        {
+            if (state.Graph.NodeAt(next.Operand) is not { } following)
             {
-                beyond = CarAiNextHop(state, node.Position, next.Operand)?.Position;
+                return command;
             }
-            else if (next.Kind is AiPatrolCommandKind.Quit or AiPatrolCommandKind.End)
-            {
-                return (float)(command * distanceSquared * (1d / CarAiLookAheadSquared));
-            }
+
+            turn = CarAiAngleBetween(ax, ay, az, CarAiResolveToward(state, following.Position, following.Id), n);
+        }
+        else if (next.Kind is AiPatrolCommandKind.Quit or AiPatrolCommandKind.End)
+        {
+            return (((X87)command * distanceSquared) * CarAiRampScale).Value;
+        }
+        else
+        {
+            return command;
         }
 
-        return beyond is { } after && command >= 5f
-            ? EaseForTurn(command, (float)AngleBetween(toNode, after - node.Position))
-            : command;
+        return command < 5f ? command : CarAiEase(command, turn);
     }
 
     /// <summary>The chase speed towards the node nearest the target (<c>0x425900</c>).</summary>
-    private static float CarAiChaseSpeed(CarAiState state, Vector3d chased)
+    private static double CarAiChaseSpeed(CarAiState state, Vector3d chased)
     {
         float command = state.CommandSpeedKmh;
         if (state.TargetNode is not { } node)
@@ -772,46 +889,66 @@ public sealed class CutsceneRuntime
             return command;
         }
 
-        Vector3d toNode = node.Position - state.Transform.Position;
-        double distanceSquared = (toNode.X * toNode.X) + (toNode.Y * toNode.Y) + (toNode.Z * toNode.Z);
+        Vector3d p = state.Transform.Position;
+        Vector3d n = node.Position;
+        double ax = X87.Add(p.X, -n.X), ay = X87.Add(p.Y, -n.Y), az = X87.Add(p.Z, -n.Z);
+        double distanceSquared = ((X87)ax * ax + (X87)ay * ay + (X87)az * az).Value;
         if (distanceSquared > CarAiChaseLookAheadSquared)
         {
-            return EaseForTurn(command, MathF.Abs(CarAiHeadingError(state, node.Position)));
+            return CarAiEase(command, Math.Abs(CarAiHeading(state, -ax, -ay, -az)));
         }
 
-        GraphNode? goal = NearestNode(state.Graph, chased);
-        if (goal is null || goal.Id == node.Id)
+        if (NearestNode(state.Graph, chased) is not { } goal)
         {
-            return (float)(command * distanceSquared * (1d / CarAiLookAheadSquared));
+            return command;
         }
 
-        Vector3d after = CarAiNextHop(state, node.Position, goal.Id)?.Position ?? goal.Position;
-        double turn = AngleBetween(toNode, after - node.Position);
+        if (goal.Id == node.Id)
+        {
+            return (((X87)command * distanceSquared) * CarAiRampScale).Value;
+        }
+
+        // Straight from +104 to the goal, with no nearest-node step; no link steers at the goal itself.
+        Vector3d after = state.Graph.RouteTable?.TryGetStep(node.Id, goal.Id, out int step, out _) == true
+            && state.Graph.NodeAt(step) is { } stepNode
+            ? stepNode.Position
+            : goal.Position;
+        double turn = CarAiAngleBetween(ax, ay, az, after, n);
         if (command < 5f)
         {
             return command;
         }
 
-        return turn >= 0.1745329300562541
-            ? 5f
-            : (float)(((command - 5f) * (2.967059723533541 - turn) * 0.3370339976874738) + 5f);
+        return turn < Retail10Degrees
+            ? ((((X87)command - 5f) * ((X87)Retail170Degrees - turn)) * RetailInverse170Degrees + 5.0).Value
+            : 5f;
     }
 
-    private static float EaseForTurn(float command, float turn) =>
-        (float)(((command - 5f) * (Math.PI - turn) * (1d / Math.PI)) + 5f);
+    /// <summary>The eased speed: 5 km/h at a full reversal, the command (less an ulp: retail's π) straight on.</summary>
+    private static double CarAiEase(float command, double turn) =>
+        ((((X87)command - 5f) * ((X87)RetailPi - turn)) * RetailInversePi + 5.0).Value;
 
-    /// <summary>The angle between two vectors (<c>0x4B31F0</c>).</summary>
-    private static double AngleBetween(Vector3d a, Vector3d b)
+    /// <summary>
+    /// The angle at a node between the way back to the car (<c>P − N</c>, given) and the way on to
+    /// <paramref name="beyond"/> (<c>0x4B31F0</c>, both vectors rounded toward zero).
+    /// </summary>
+    private static double CarAiAngleBetween(double ax, double ay, double az, Vector3d beyond, Vector3d node)
     {
-        double la = a.Length;
-        double lb = b.Length;
-        if (la <= 0d || lb <= 0d)
+        double bx = X87.Add(beyond.X, -node.X), by = X87.Add(beyond.Y, -node.Y), bz = X87.Add(beyond.Z, -node.Z);
+        if ((ax == 0d && ay == 0d && az == 0d) || (bx == 0d && by == 0d && bz == 0d))
         {
             return 0d;
         }
 
-        double cosine = ((a.X * b.X) + (a.Y * b.Y) + (a.Z * b.Z)) / (la * lb);
-        return cosine >= 1d ? 0d : cosine > -1d ? Math.Acos(cosine) : Math.PI;
+        double dot = ((X87)az * bz + (X87)ay * by + (X87)ax * bx).Value;
+        double la = X87.Sqrt((X87)ax * ax + (X87)ay * ay + (X87)az * az).Value;
+        double c = ((X87)dot / (X87.Sqrt((X87)bx * bx + (X87)by * by + (X87)bz * bz) * la)).Value;
+        if (!(c < 1d))
+        {
+            return 0d;
+        }
+
+        return c <= -1d ? RetailPi : RetailAcos(c);
     }
 
     private void TickVehicleCombat()

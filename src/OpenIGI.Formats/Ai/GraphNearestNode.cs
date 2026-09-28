@@ -83,11 +83,11 @@ public static class GraphNearestNode
                 continue;
             }
 
-            double dx = node.Position.X - target.X;
-            double dy = node.Position.Y - target.Y;
-            double dz = node.Position.Z - target.Z;
-            double score = Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz))
-                - (node.Radius * GraphNode.MetreInUnits);
+            // 0x4B32B0 sums z first; the whole score is x87 arithmetic rounded toward zero.
+            X87 dx = (X87)node.Position.X - target.X;
+            X87 dy = (X87)node.Position.Y - target.Y;
+            X87 dz = (X87)node.Position.Z - target.Z;
+            double score = (X87.Sqrt(dz * dz + dy * dy + dx * dx) - ((X87)node.Radius * 4096.0f)).Value;
 
             Insert(nodes, scores, node, score);
         }

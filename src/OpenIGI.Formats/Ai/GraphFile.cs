@@ -156,10 +156,11 @@ public sealed class GraphFile
     {
         foreach (GraphNode node in Nodes)
         {
+            // 0x4F9770 adds the graph's position to the node's on every read, rounding toward zero.
             node.Position = new Vector3d(
-                node.Position.X + graphPosition.X,
-                node.Position.Y + graphPosition.Y,
-                node.Position.Z + graphPosition.Z);
+                X87.Add(graphPosition.X, node.Position.X),
+                X87.Add(graphPosition.Y, node.Position.Y),
+                X87.Add(graphPosition.Z, node.Position.Z));
         }
     }
 
