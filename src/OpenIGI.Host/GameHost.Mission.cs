@@ -690,13 +690,17 @@ internal sealed partial class GameHost
         // and the tyre torque act at the real axle offsets, and the wheels roll and steer.
         _cutscenes.BindVehicleWheels(scene, name => CutsceneWheelRadius(loaded, name));
 
+        // Every Car exports isExploded and blows up from its own CAR record's explosion points; the
+        // CarAI stops, and follows its body, through the same registry.
         _destructibles = DestructibleObjectRegistry.Build(
             levelRoot,
             scene.Placements,
             _loop.Variables,
+            _vehiclePhysics,
             random: _soundRandom);
         world.Destructibles = _destructibles;
         solids.Destructibles = _destructibles;
+        _cutscenes.Destructibles = _destructibles;
         world.Cutscenes = _cutscenes;
 
         // Rain is a gameplay effect, not part of the backdrop picture: it is configured fresh for every

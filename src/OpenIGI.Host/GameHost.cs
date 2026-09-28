@@ -3093,6 +3093,10 @@ internal sealed partial class GameHost : IDisposable
                         {
                             HandleDestructibleImpact(ready);
                         }
+                        foreach (VehicleBlast blast in destructibles.ConsumeVehicleBlasts())
+                        {
+                            PresentVehicleBlast(blast);
+                        }
                     }
                     TickAlarmSpeakers();
                     TickSecurityCameraSounds();

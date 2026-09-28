@@ -11,6 +11,10 @@ namespace OpenIGI.Game.Weapons;
 /// <see cref="Normal"/> is the struck surface's, for the scorch decal the retail impact projects onto
 /// the object it hits (<c>burn1.tex</c>, <c>dword_5C1164</c>); a body impact faces back along the
 /// missile's own path.
+/// <see cref="SourceWeaponId"/> is the firing weapon's id: the missile keeps its weapon record
+/// (<c>+0x894</c>, from the spawn message's <c>+0x20</c>) and hands it to <c>Explosion0</c> as the blast's
+/// source (<c>+0x84</c>). A car's explosion handler (<c>0x42FB40</c>) reads that record's first field, the
+/// weapon id, and only the LAW 80's destroys it.
 /// </remarks>
 public readonly record struct MissileDetonation(
     Vector3d Position,
@@ -19,7 +23,8 @@ public readonly record struct MissileDetonation(
     float FalloffUnits,
     Vector3f Normal = default,
     GameTask? DirectHitOwner = null,
-    WorldPlacement? DirectHitPlacement = null);
+    WorldPlacement? DirectHitPlacement = null,
+    int SourceWeaponId = 0);
 
 /// <summary>Tests one missile segment and preserves the exact world object struck.</summary>
 public delegate bool MissileWorldTraceCast(
@@ -77,6 +82,8 @@ public sealed class LiveMissile
     public string ModelName { get; }
     /// <summary>Gets the firing task excluded from this missile's own world trace.</summary>
     public GameTask? CollisionOwner { get; }
+    /// <summary>Gets the id of the weapon that fired it — the weapon record the task keeps at <c>+0x894</c>.</summary>
+    public int SourceWeaponId { get; init; }
     /// <summary>Gets or sets the throttle, ramped from launch toward one (<c>0x00428D00</c>).</summary>
     public float Throttle { get; set; }
     /// <summary>Gets or sets how many ticks of motor burn remain (<c>a1+2148</c>).</summary>
@@ -124,6 +131,7 @@ public sealed class MissileSimulation
     /// <param name="modelName">The authored projectile model name.</param>
     /// <param name="config">The flight parameters; the type's retail preset when omitted.</param>
     /// <param name="collisionOwner">The firing task excluded from this missile's world trace.</param>
+    /// <param name="sourceWeaponId">The id of the weapon that fired it, carried to the blast.</param>
     /// <returns><see langword="true"/> when the missile entered the simulation.</returns>
     public bool Spawn(
         Vector3d origin,
@@ -133,7 +141,8 @@ public sealed class MissileSimulation
         Vector3f launcherAxis = default,
         string modelName = "110_02_1",
         MissileConfig? config = null,
-        GameTask? collisionOwner = null)
+        GameTask? collisionOwner = null,
+        int sourceWeaponId = 0)
     {
         if (_missiles.Count >= MaximumLive || muzzleVelocityMetresPerSecond <= 0f)
         {
@@ -152,7 +161,10 @@ public sealed class MissileSimulation
         }
 
         _missiles.Add(new LiveMissile(
-            _nextId++, origin, velocity, target, config, modelName, collisionOwner));
+            _nextId++, origin, velocity, target, config, modelName, collisionOwner)
+        {
+            SourceWeaponId = sourceWeaponId,
+        });
         return true;
     }
 
@@ -214,7 +226,8 @@ public sealed class MissileSimulation
                     MissileExplosion.FalloffUnits,
                     normal,
                     struckHuman ? null : wallHit.Owner,
-                    struckHuman ? null : wallHit.Placement));
+                    struckHuman ? null : wallHit.Placement,
+                    missile.SourceWeaponId));
                 _missiles.RemoveAt(i);
                 continue;
             }

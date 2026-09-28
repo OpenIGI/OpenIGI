@@ -594,7 +594,7 @@ public sealed class CutsceneRuntime
             state.Car,
             grounded / WorldScene.UnitsPerMetre,
             state.Transform.Orientation);
-        _destructibles?.UpdatePosition(state.Car, grounded);
+        _destructibles?.UpdatePosition(state.Car, grounded, state.Transform.Orientation);
     }
 
     /// <summary>Marks an explicitly configured helicopter for terminal terrain landing.</summary>

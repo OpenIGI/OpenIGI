@@ -12,8 +12,34 @@ public enum DestructibleObjectKind
     /// <summary>An authored ExplodeObject task or explosive magic-object attachment.</summary>
     Explosive,
 
-    /// <summary>A physics-object vehicle whose CAR definition authors a wreck model.</summary>
+    /// <summary>A <c>Car</c> task — every one exports <c>isExploded</c>, wreck model or not.</summary>
     Vehicle,
+}
+
+/// <summary>One <c>Explosion0</c> a dying car sets off (<c>0x42E5A0</c>), due once its delay has run.</summary>
+/// <param name="Source">The car that is blowing up.</param>
+/// <param name="PositionUnits">Where it goes off, in engine units.</param>
+/// <param name="DamageFactor">The blast's damage factor.</param>
+/// <param name="RadiusUnits">The full-damage radius.</param>
+/// <param name="FalloffUnits">How far past the radius the damage takes to reach nothing.</param>
+/// <param name="FullRangeUnits">The fireball's full range (the scorch size).</param>
+/// <param name="Fragments">How many fragments it throws.</param>
+/// <param name="Fireballs">How many fireballs it shows.</param>
+public sealed record VehicleBlast(
+    DestructibleObject Source,
+    Vector3d PositionUnits,
+    float DamageFactor,
+    float RadiusUnits,
+    float FalloffUnits,
+    float FullRangeUnits,
+    int Fragments,
+    int Fireballs)
+{
+    /// <summary>Every car explosion's sound, <c>explo_03_l</c>.</summary>
+    public const string Sound = "explo_03_l";
+
+    /// <summary>Gets how many more ticks the blast waits before it goes off.</summary>
+    internal int DelayTicks { get; set; }
 }
 
 /// <summary>One exact destructible object, including an attached magic-object placement when present.</summary>
@@ -119,6 +145,22 @@ public sealed class DestructibleObject
     /// <summary>Gets the previous tick's destroyed state exposed as <c>isLastDestroyed</c>.</summary>
     public bool IsLastDestroyed { get; internal set; }
 
+    /// <summary>Gets the object's current orientation, which places a car's explosion points.</summary>
+    public Matrix3f Orientation { get; internal set; } = Matrix3f.Identity;
+
+    /// <summary>Gets a car's explosion points, as magic-vertex indices of <see cref="Placement"/>'s model.</summary>
+    public IReadOnlyList<int> ExplosionPoints { get; internal set; } = [];
+
+    /// <summary>Gets whether a car has been hit and is blowing up — <c>Car+2332</c>.</summary>
+    /// <remarks>
+    /// It is not yet <see cref="IsDestroyed"/>: the car keeps its model, its collision and its script
+    /// state until the countdown the explosion set (<see cref="DestructionTicks"/>) runs out.
+    /// </remarks>
+    public bool IsDying { get; internal set; }
+
+    /// <summary>Gets a dying car's countdown to its wreck — <c>Car+2336</c>, <c>-1</c> before it starts.</summary>
+    public int DestructionTicks { get; internal set; } = -1;
+
     internal int PendingExplosionTicks { get; set; }
 
     internal bool ExplosionStarted { get; set; }
@@ -135,6 +177,7 @@ public sealed class DestructibleObjectRegistry
     private const string DestroyedModelParameter = "Destroyed model";
     private const string ExplosionDamageScaleParameter = "Damage scale";
     private const string GlassType = "TASKTYPE_GLASS";
+    private const string CarType = "Car";
     private const string ExplodeMagicType = "TASKTYPE_EXPLODEMAGICOBJ";
 
     private readonly List<DestructibleObject> _objects = [];
@@ -144,8 +187,26 @@ public sealed class DestructibleObjectRegistry
         new(ReferenceEqualityComparer.Instance);
     private readonly LevelExpressionRuntime _expressions;
     private readonly List<DestructibleObject> _readyExplosions = [];
+    private readonly List<VehicleBlast> _pendingVehicleBlasts = [];
+    private readonly List<VehicleBlast> _readyVehicleBlasts = [];
+    private IgiRandom _random = new();
 
     private DestructibleObjectRegistry(LevelExpressionRuntime expressions) => _expressions = expressions;
+
+    /// <summary>The weapon id a car's explosion handler (<c>0x42FB40</c>) answers to: 12, the LAW 80.</summary>
+    /// <remarks>
+    /// The handler reads the first field of the blast's source record (<c>Explosion0+0x84</c>) and does
+    /// nothing unless it is 12. A missile hands over the weapon record that fired it, whose first field
+    /// is the weapon id; a grenade, an M203 round, a barrel, a wreck and a vehicle's own gun all hand
+    /// over none — so in the original only a LAW rocket ever blows up a car.
+    /// </remarks>
+    public const int CarDestroyingWeaponId = 12;
+
+    /// <summary>A car with no explosion points: its countdown after the single blast (<c>0x42E76A</c>).</summary>
+    public const int CarSingleBlastTicks = 10;
+
+    /// <summary>A car with explosion points: its countdown after the per-point blasts (<c>0x42E6FF</c>).</summary>
+    public const int CarPointBlastTicks = 30;
 
     /// <summary>The base of a pane's break threshold, the <c>0.75</c> <c>0x4498F1</c> stores.</summary>
     public const float GlassThresholdBase = 0.75f;
@@ -160,8 +221,10 @@ public sealed class DestructibleObjectRegistry
     /// <param name="root">The level's task tree.</param>
     /// <param name="placements">Every expanded world placement.</param>
     /// <param name="variables">The script variables the objects export.</param>
-    /// <param name="vehiclePhysics">The CAR definitions, for vehicle wrecks.</param>
-    /// <param name="random">The stream each pane's break threshold is drawn from.</param>
+    /// <param name="vehiclePhysics">The CAR definitions, for a car's explosion points and wreck.</param>
+    /// <param name="random">
+    /// The engine's global stream: each pane's break threshold and each car explosion point's delay.
+    /// </param>
     public static DestructibleObjectRegistry Build(
         GameTask root,
         IEnumerable<WorldPlacement> placements,
@@ -173,7 +236,10 @@ public sealed class DestructibleObjectRegistry
         ArgumentNullException.ThrowIfNull(placements);
         ArgumentNullException.ThrowIfNull(variables);
 
-        DestructibleObjectRegistry registry = new(new LevelExpressionRuntime(variables));
+        DestructibleObjectRegistry registry = new(new LevelExpressionRuntime(variables))
+        {
+            _random = random ?? new IgiRandom(),
+        };
         WorldPlacement[] resolved = [.. placements];
 
         foreach (DeclaredTask task in Walk(root).OfType<DeclaredTask>())
@@ -215,49 +281,48 @@ public sealed class DestructibleObjectRegistry
             variables.BindBool(task, "isLastExploded", () => item.IsLastDestroyed, _ => { });
         }
 
-        // Vehicle damage is not an ExplodeObject task.  The CAR physics definition owns the
-        // replacement model (e.g. the retail Level 6 APC's 601_08_1), while the vehicle's native
-        // explosion callback exports the same isExploded/isLastExploded state that level gates use.
-        // Register only models that actually publish a wreck binding; ordinary cars remain intact.
-        if (vehiclePhysics is not null)
+        // Every Car exports isExploded, whether or not its CAR record names a wreck: TASKTYPE_CAR
+        // (0x42DCF0) binds "%s.isExploded" to the byte at Car+11989 on activation (0x42FCE0) with
+        // no condition. Mission 1's gates read it off the escape truck (Car_1099, 622_01_1), whose
+        // record has explosion points and no wreck model. There is no isLastExploded on a car.
+        foreach (DeclaredTask task in Walk(root).OfType<DeclaredTask>())
         {
-            foreach (DeclaredTask task in Walk(root).OfType<DeclaredTask>())
+            if (!string.Equals(task.Type.Name, CarType, StringComparison.Ordinal))
             {
-                if (!string.Equals(task.Type.Name, "Car", StringComparison.Ordinal)
-                    || !task.TryGetValue(WorldScene.ModelParameter, out object? rawModel)
-                    || rawModel is not string model
-                    || !vehiclePhysics.TryGetCar(model, out CarPhysicsDefinition car)
-                    || car.DestroyedModel.Length == 0)
-                {
-                    continue;
-                }
-
-                WorldPlacement[] taskPlacements = [.. resolved.Where(candidate =>
-                    ReferenceEquals(candidate.Owner, task))];
-                WorldPlacement? placement = taskPlacements.FirstOrDefault();
-                DestructibleObject item = registry.Add(new DestructibleObject(
-                    DestructibleObjectKind.Vehicle,
-                    task,
-                    placement,
-                    "Car",
-                    PositionOf(task, placement))
-                {
-                    DestroyedModelName = car.DestroyedModel,
-                });
-                foreach (WorldPlacement taskPlacement in taskPlacements)
-                {
-                    registry.RegisterPlacement(item, taskPlacement);
-                }
-
-                variables.BindBool(task, "isExploded", () => item.IsDestroyed, value =>
-                {
-                    if (value)
-                    {
-                        item.IsDestroyed = true;
-                    }
-                });
-                variables.BindBool(task, "isLastExploded", () => item.IsLastDestroyed, _ => { });
+                continue;
             }
+
+            string model = task.TryGetValue(WorldScene.ModelParameter, out object? rawModel) && rawModel is string name
+                ? name
+                : string.Empty;
+            CarPhysicsDefinition car = default;
+            bool hasCar = model.Length > 0 && vehiclePhysics?.TryGetCar(model, out car) == true;
+
+            // The car's own model (Car+108) carries its bound and its explosion points; the wheels
+            // and anything else it owns are its children, which it deletes when it blows up (0x401780).
+            WorldPlacement[] carPlacements = [.. resolved.Where(candidate => IsOwnedBy(candidate.Owner, task))];
+            WorldPlacement? body = carPlacements.FirstOrDefault(candidate =>
+                    ReferenceEquals(candidate.Owner, task)
+                    && string.Equals(candidate.Instance.Name, model, StringComparison.OrdinalIgnoreCase))
+                ?? carPlacements.FirstOrDefault(candidate => ReferenceEquals(candidate.Owner, task));
+            DestructibleObject item = registry.Add(new DestructibleObject(
+                DestructibleObjectKind.Vehicle,
+                task,
+                body,
+                CarType,
+                PositionOf(task, body))
+            {
+                DestroyedModelName = hasCar ? car.DestroyedModel : string.Empty,
+                ExplosionPoints = hasCar ? car.ExplosionPoints : [],
+                Orientation = body?.Orientation ?? Matrix3f.Identity,
+            });
+            foreach (WorldPlacement carPlacement in carPlacements)
+            {
+                registry.RegisterPlacement(item, carPlacement);
+            }
+
+            // sub_4B7EE0 binds the byte itself, so a script can write it either way.
+            variables.BindBool(task, "isExploded", () => item.IsDestroyed, value => item.IsDestroyed = value);
         }
 
         foreach (WorldPlacement placement in resolved)
@@ -280,8 +345,7 @@ public sealed class DestructibleObjectRegistry
             {
                 // Glass init (0x4497F0): +0x13C = 0, +0x140 = 0.75 + rand * 0.75 from the engine's
                 // global stream (0x416D20 -> 0x4B4770).
-                random ??= new IgiRandom();
-                item.ExplosionDamageThreshold = GlassThresholdBase + (random.NextSingle() * GlassThresholdSpan);
+                item.ExplosionDamageThreshold = GlassThresholdBase + (registry._random.NextSingle() * GlassThresholdSpan);
             }
 
             if (kind == DestructibleObjectKind.Explosive)
@@ -322,14 +386,16 @@ public sealed class DestructibleObjectRegistry
     /// <summary>Moves every destructible identity owned by a live task to its current world position.</summary>
     /// <param name="owner">The exact moving task.</param>
     /// <param name="positionUnits">Its current origin in engine units.</param>
+    /// <param name="orientation">Its current orientation, when it turns as well as moves.</param>
     /// <returns><see langword="true"/> when the task owns at least one destructible identity.</returns>
     /// <remarks>
     /// Vehicle destruction is dispatched after the missile has collided with the live world mesh.
     /// The blast envelope must therefore use the same moving origin instead of the authored spawn;
     /// otherwise an APC that has followed its alarm route can be visibly struck while its explosion
-    /// callback remains kilometres of engine units behind it.
+    /// callback remains kilometres of engine units behind it. The orientation places a dying car's
+    /// explosion points the way it is facing now.
     /// </remarks>
-    public bool UpdatePosition(GameTask owner, Vector3d positionUnits)
+    public bool UpdatePosition(GameTask owner, Vector3d positionUnits, Matrix3f? orientation = null)
     {
         ArgumentNullException.ThrowIfNull(owner);
         if (!_byOwner.TryGetValue(owner, out List<DestructibleObject>? items))
@@ -340,17 +406,48 @@ public sealed class DestructibleObjectRegistry
         foreach (DestructibleObject item in items)
         {
             item.PositionUnits = positionUnits;
+            if (orientation is { } turned && item.Kind == DestructibleObjectKind.Vehicle)
+            {
+                item.Orientation = turned;
+            }
         }
 
         return true;
     }
 
+    /// <summary>Returns the blasts dying cars set off that are due this tick.</summary>
+    /// <remarks>
+    /// Each is an <c>Explosion0</c> of its own: the caller applies it to the world exactly as it does any
+    /// other, handing it no source record — so no car blast can set another car off.
+    /// </remarks>
+    public IReadOnlyList<VehicleBlast> ConsumeVehicleBlasts()
+    {
+        if (_readyVehicleBlasts.Count == 0)
+        {
+            return [];
+        }
+
+        VehicleBlast[] ready = [.. _readyVehicleBlasts];
+        _readyVehicleBlasts.Clear();
+        return ready;
+    }
+
     /// <summary>Advances the script-visible previous-state flags by one simulation tick.</summary>
+    /// <remarks>
+    /// Also runs every dying car's destruction (<c>0x42E5A0</c>, from the car's tick <c>0x42E320</c>) and
+    /// the fuses of the blasts it set off (<c>Explosion0</c>'s <c>0x480F40</c>).
+    /// </remarks>
     public void Tick()
     {
         foreach (DestructibleObject item in _objects)
         {
             item.IsLastDestroyed = item.IsDestroyed;
+            if (item.Kind == DestructibleObjectKind.Vehicle)
+            {
+                TickDyingVehicle(item);
+                continue;
+            }
+
             if (!item.IsDestroyed
                 && item.ExplosionExpression.Length > 0
                 && ExplosionEnabled(item))
@@ -366,6 +463,148 @@ public sealed class DestructibleObjectRegistry
             if (item.PendingExplosionTicks > 0 && --item.PendingExplosionTicks == 0)
             {
                 _readyExplosions.Add(item);
+            }
+        }
+
+        TickVehicleBlasts();
+    }
+
+    /// <summary>One tick of a dying car's destruction, <c>0x42E5A0</c>.</summary>
+    /// <remarks>
+    /// The first tick sets the blasts off and starts a countdown — ten ticks after a single blast, thirty
+    /// after one per explosion point. When it runs out the car spawns its wreck (<c>0x4F3390</c>, nothing
+    /// when the record names none), deletes its children (<c>0x401780</c>), gives up its world object
+    /// (<c>0x4F4820</c>), is switched off (<c>0x42FC80</c>) and only then raises <c>isExploded</c>. The car
+    /// tick skips all of it once <c>isExploded</c> is set.
+    /// </remarks>
+    private void TickDyingVehicle(DestructibleObject car)
+    {
+        if (!car.IsDying || car.IsDestroyed)
+        {
+            return;
+        }
+
+        if (car.DestructionTicks == -1)
+        {
+            StartVehicleBlasts(car);
+            car.DestructionTicks = car.ExplosionPoints.Count == 0 ? CarSingleBlastTicks : CarPointBlastTicks;
+            return;
+        }
+
+        int remaining = car.DestructionTicks--;
+        if (remaining != 1)
+        {
+            return;
+        }
+
+        car.IsDestroyed = true;
+
+        // Its children go with it: whatever the model attached (the truck's windows) and the wheels.
+        foreach (DestructibleObject child in _objects)
+        {
+            if (!ReferenceEquals(child, car) && IsOwnedBy(child.Owner, car.Owner))
+            {
+                child.IsDestroyed = true;
+            }
+        }
+    }
+
+    /// <summary>The blasts <c>0x42E5A0</c> sets off on its first tick.</summary>
+    /// <remarks>
+    /// <para>
+    /// With no explosion points, one <c>Explosion0</c> at the car's origin, sized from the car's own
+    /// bound <c>r</c> (its largest scale times <c>MESH+0x78</c>): damage 1, radius <c>r/4</c>, falloff
+    /// <c>r/20</c>, full range <c>r/200</c>, three fragments and one fireball, going off at once.
+    /// </para>
+    /// <para>
+    /// With them, one per point at that magic vertex: damage 1, radius 12288, falloff and full range 3072,
+    /// three fragments and two fireballs, each after its own <c>rand % 30</c> ticks. Every one plays
+    /// <c>explo_03_l</c> and posts the 25 m explosion event, and hands over no source record.
+    /// </para>
+    /// <para>
+    /// <c>0x480FE0</c> draws three values for the fireball's drift and <c>0x4810A0</c> three for its spin
+    /// from the same global stream; they are drawn here too so that each point's delay is the one the
+    /// original rolls.
+    /// </para>
+    /// </remarks>
+    private void StartVehicleBlasts(DestructibleObject car)
+    {
+        if (car.ExplosionPoints.Count == 0)
+        {
+            float bound = car.ExplosionContactRadiusUnits;
+            DrawExplosionSpin();
+            _pendingVehicleBlasts.Add(new VehicleBlast(
+                car,
+                car.PositionUnits,
+                DamageFactor: 1f,
+                RadiusUnits: bound * 0.25f,
+                FalloffUnits: bound * 0.05f,
+                FullRangeUnits: bound * 0.005f,
+                Fragments: 3,
+                Fireballs: 1));
+            return;
+        }
+
+        foreach (int point in car.ExplosionPoints)
+        {
+            int delay = (int)_random.NextBounded(30u);
+            DrawExplosionSpin();
+            _pendingVehicleBlasts.Add(new VehicleBlast(
+                car,
+                ExplosionPointPosition(car, point),
+                DamageFactor: 1f,
+                RadiusUnits: 12288f,
+                FalloffUnits: 3072f,
+                FullRangeUnits: 3072f,
+                Fragments: 3,
+                Fireballs: 2)
+            {
+                DelayTicks = delay,
+            });
+        }
+    }
+
+    private void DrawExplosionSpin()
+    {
+        for (int i = 0; i < 6; i++)
+        {
+            _ = _random.NextSingle();
+        }
+    }
+
+    /// <summary>
+    /// A magic vertex of the car's model in the world, <c>0x414E20</c>: the origin when the model has no
+    /// such vertex.
+    /// </summary>
+    private static Vector3d ExplosionPointPosition(DestructibleObject car, int index)
+    {
+        if (car.Placement?.Model is not { } model || !model.TryGetMagicVertex(index, out Vector3f local))
+        {
+            return car.PositionUnits;
+        }
+
+        Vector3f offset = car.Orientation.Transposed().Transform(local);
+        return car.PositionUnits + new Vector3d(offset.X, offset.Y, offset.Z);
+    }
+
+    /// <summary>
+    /// Runs each pending car blast's fuse, <c>0x480F40</c>: a non-zero delay counts down, and the blast
+    /// goes off on the tick it reaches nought — the tick it was set off, for no delay at all.
+    /// </summary>
+    private void TickVehicleBlasts()
+    {
+        for (int i = 0; i < _pendingVehicleBlasts.Count; i++)
+        {
+            VehicleBlast blast = _pendingVehicleBlasts[i];
+            if (blast.DelayTicks > 0)
+            {
+                blast.DelayTicks--;
+            }
+
+            if (blast.DelayTicks == 0)
+            {
+                _readyVehicleBlasts.Add(blast);
+                _pendingVehicleBlasts.RemoveAt(i--);
             }
         }
     }
@@ -431,28 +670,6 @@ public sealed class DestructibleObjectRegistry
         return null;
     }
 
-    /// <summary>Applies retail's immediate direct-weapon-hit transition to one exact vehicle.</summary>
-    public DestructibleObject? TryDestroyDirectVehicle(GameTask? owner, WorldPlacement? placement = null)
-    {
-        DestructibleObject? item = null;
-        if (placement is not null)
-        {
-            _byPlacement.TryGetValue(placement, out item);
-        }
-
-        if (item is null
-            && owner is not null
-            && _byOwner.TryGetValue(owner, out List<DestructibleObject>? items)
-            && items.Count == 1)
-        {
-            item = items[0];
-        }
-
-        return item?.Kind == DestructibleObjectKind.Vehicle
-            ? ApplyDamage(item, 1f, explosion: false)
-            : null;
-    }
-
     /// <summary>
     /// Applies one native <c>Explosion0</c> contact to every authored destructible in its blast.
     /// </summary>
@@ -462,12 +679,23 @@ public sealed class DestructibleObjectRegistry
     /// <param name="falloffUnits">The outer contact range after the full-damage radius.</param>
     /// <param name="damageFactor">The damage delivered by a full-strength contact.</param>
     /// <param name="canContact">Optional world-visibility gate for the exact target.</param>
+    /// <param name="sourceWeaponId">
+    /// The id of the weapon whose record the blast carries as its source (<c>Explosion0+0x84</c>), or 0
+    /// for a blast that carries none.
+    /// </param>
     /// <returns>The exact glass and explosive objects whose native hit callbacks should run.</returns>
     /// <remarks>
+    /// <para>
     /// Retail does not destroy only the nearest object: <c>Glass_ExplosionHitHandler</c> and
     /// <c>ExplodeMagicObj_ExplosionHitHandler</c> are both registered as Explosion0 collision
     /// callbacks. The fireball therefore visits every authored object in its contact envelope. Marking
     /// the state before returning is important: a chain reaction must not enqueue the same object twice.
+    /// </para>
+    /// <para>
+    /// A car is not returned. Its handler (<c>0x42FB40</c>) only starts it dying — and only for a blast
+    /// the LAW 80 fired (<see cref="CarDestroyingWeaponId"/>) that reaches it at all — and
+    /// <see cref="Tick"/> takes it from there.
+    /// </para>
     /// </remarks>
     public IReadOnlyList<DestructibleObject> ApplyExplosionHits(
         DestructibleObject? source,
@@ -475,7 +703,8 @@ public sealed class DestructibleObjectRegistry
         float radiusUnits,
         float falloffUnits = 0f,
         float damageFactor = 1f,
-        Func<DestructibleObject, bool>? canContact = null)
+        Func<DestructibleObject, bool>? canContact = null,
+        int sourceWeaponId = 0)
     {
         float contactRadius = Math.Max(0f, radiusUnits) + Math.Max(0f, falloffUnits);
         List<DestructibleObject> affected = [];
@@ -486,6 +715,12 @@ public sealed class DestructibleObjectRegistry
                 || ReferenceEquals(item, source)
                 || (item.PositionUnits - originUnits).Length
                     > contactRadius + Math.Max(0f, item.ExplosionContactRadiusUnits))
+            {
+                continue;
+            }
+
+            if (item.Kind == DestructibleObjectKind.Vehicle
+                && (item.IsDying || sourceWeaponId != CarDestroyingWeaponId))
             {
                 continue;
             }
@@ -543,11 +778,17 @@ public sealed class DestructibleObjectRegistry
             return null;
         }
 
-        // A vehicle's direct-hit callback is a binary state transition.
+        // A car has no round handler: neither TASKTYPE_CAR (0x42DCF0) nor the Vehicle type under it
+        // (0x4F4190) registers one for the bullet message (0x416840), so a round never harms it. Its
+        // explosion handler (0x42FB40) has no hit points either -- any contact at all sets Car+2332.
         if (item.Kind == DestructibleObjectKind.Vehicle)
         {
-            item.IsDestroyed = true;
-            return item;
+            if (explosion)
+            {
+                item.IsDying = true;
+            }
+
+            return null;
         }
 
         // ExplodeObject, the attached ExplodeMagicObj family and Glass all accumulate the incoming hit
@@ -651,8 +892,7 @@ public sealed class DestructibleObjectRegistry
     public bool ShouldExplode(DestructibleObject item)
     {
         ArgumentNullException.ThrowIfNull(item);
-        return (item.Kind is DestructibleObjectKind.Explosive or DestructibleObjectKind.Vehicle)
-            && ExplosionEnabled(item);
+        return item.Kind == DestructibleObjectKind.Explosive && ExplosionEnabled(item);
     }
 
     /// <summary>Starts an authored explosion immediately or arms its retail delay.</summary>
@@ -709,6 +949,19 @@ public sealed class DestructibleObjectRegistry
         task.TryGetValue(name, out object? raw) && raw is string value
             ? value.TrimEnd('\r', '\n')
             : string.Empty;
+
+    private static bool IsOwnedBy(GameTask? task, GameTask ancestor)
+    {
+        for (GameTask? current = task; current is not null; current = current.Parent)
+        {
+            if (ReferenceEquals(current, ancestor))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private static IEnumerable<GameTask> Walk(GameTask task)
     {
