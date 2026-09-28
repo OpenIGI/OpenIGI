@@ -86,8 +86,8 @@ public sealed class CarDestructionTests
             sourceWeaponId: DestructibleObjectRegistry.CarDestroyingWeaponId);
         Assert.False(truck.IsDying);
 
-        // A LAW rocket at the truck: it dies, but it has not exploded yet.
-        Assert.Empty(destructibles.ApplyExplosionHits(
+        // A LAW rocket at the truck: it dies, but it has not exploded yet. (Its windows shatter.)
+        Assert.DoesNotContain(truck, destructibles.ApplyExplosionHits(
             null,
             truck.PositionUnits,
             radiusUnits: 10240f,
