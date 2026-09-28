@@ -702,6 +702,18 @@ internal sealed partial class GameHost
         // and the tyre torque act at the real axle offsets, and the wheels roll and steer.
         _cutscenes.BindVehicleWheels(scene, name => CutsceneWheelRadius(loaded, name));
 
+        // Every car runs on the original's rigid body, its wheel rays answered by the exact terrain query.
+        if (loaded.Terrain is { } carTerrain)
+        {
+            RetailTerrainRay carRays = new(
+                carTerrain.Octree,
+                carTerrain.Commands,
+                TerrainDiscardBinding.For(carTerrain).Regions);
+            _cutscenes.ConfigureRetailCars(
+                new RetailCarWorld(carRays),
+                name => loaded.TryGetModel(name, out MefModel? model) ? model : null);
+        }
+
         // Every Car exports isExploded and blows up from its own CAR record's explosion points; the
         // CarAI stops, and follows its body, through the same registry.
         _destructibles = DestructibleObjectRegistry.Build(

@@ -63,6 +63,8 @@ public sealed class CutsceneRuntime
     private readonly Func<string, float>? _modelLength;
     private readonly Func<string, float>? _modelPivot;
     private readonly VehiclePhysicsRegistry? _vehiclePhysics;
+    private IRetailCarWorld? _retailCarWorld;
+    private Func<string, OpenIGI.Formats.World.MefModel?>? _retailCarModels;
     private readonly Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? _vehicleObstacleHit;
     private readonly Func<GameTask, bool>? _vehicleObstacleReleased;
     private readonly TerrainData? _terrain;
@@ -400,6 +402,21 @@ public sealed class CutsceneRuntime
     /// <summary>Supplies live poses for targets owned by another simulation, such as animated humans.</summary>
     public void SetTargetPoseResolver(Func<int, CutsceneTargetPose?>? resolver) => _targetPoseResolver = resolver;
 
+    /// <summary>Runs every car on the original's rigid body, in the world its wheel rays are cast into.</summary>
+    /// <param name="world">The world the cars' rays query.</param>
+    /// <param name="models">Resolves a car's model by name, for its body points and radius.</param>
+    /// <remarks>
+    /// Each car gets a <see cref="RetailCarBody"/> at its controller's set-up packet -- the reset
+    /// <c>0x42EA10</c> performs -- and from then on every physics packet steps it through <c>Car_Tick</c>
+    /// (<c>0x42ECA0</c>) instead of the planar <see cref="CarDynamics"/> model. A car whose model or type is
+    /// missing stays on the planar model.
+    /// </remarks>
+    public void ConfigureRetailCars(IRetailCarWorld world, Func<string, OpenIGI.Formats.World.MefModel?> models)
+    {
+        _retailCarWorld = world ?? throw new ArgumentNullException(nameof(world));
+        _retailCarModels = models ?? throw new ArgumentNullException(nameof(models));
+    }
+
     /// <summary>Supplies the loaded graph corpus to authored vehicle patrol tasks.</summary>
     /// <remarks>
     /// CarAI is a normal level task, not a cutscene animation. Retail's callback at 0x425DE0 starts
@@ -566,6 +583,7 @@ public sealed class CutsceneRuntime
                 state.Transform.Thrust = state.Transform.OriginalThrust;
                 state.Transform.TargetThrust = state.Transform.OriginalThrust;
                 state.Transform.CarMotion.Reset();
+                ResetRetailBody(state.Car, state.Transform);
                 continue;
             }
 
@@ -2351,6 +2369,86 @@ public sealed class CutsceneRuntime
         }
     }
 
+    /// <summary>Creates or resets a car's retail body at its placement -- the set-up packet's reset (<c>0x42EA10</c> mode 0).</summary>
+    private void ResetRetailBody(GameTask? task, TransformState state)
+    {
+        if (_retailCarWorld is null
+            || task is not DeclaredTask declared
+            || state.CarPhysics is not { } physics)
+        {
+            return;
+        }
+
+        int wheelAttachments = _carWheels.TryGetValue(task, out CarWheel[]? wheels) ? wheels.Length : 0;
+        RetailCarPlacement placement = RetailCarSpawn.Placement(declared, wheelAttachments);
+        if (state.RetailBody is { } body)
+        {
+            RetailCarSpawn.Reset(body, placement);
+        }
+        else if (_retailCarModels?.Invoke(Text(declared, WorldScene.ModelParameter)) is { } model)
+        {
+            state.RetailBody = RetailCarSpawn.Create(physics, model, placement);
+        }
+        else
+        {
+            return;
+        }
+
+        CopyRetailPose(state, state.RetailBody);
+        state.PreviousPosition = state.Position;
+        state.PreviousOrientation = state.Orientation;
+    }
+
+    /// <summary>One physics packet on the retail body: the channels as <c>0x42EA10</c> latches them, then <c>Car_Tick</c>.</summary>
+    private void DriveRetailCar(
+        GameTask? target,
+        TransformState transform,
+        RetailCarBody body,
+        IRetailCarWorld world,
+        float channel0,
+        float channel1,
+        float channel3)
+    {
+        body.SteeringTarget = channel0;
+        if (channel1 != -1f)
+        {
+            body.ThrottleTarget = channel1;
+        }
+
+        body.Handbrake = channel3 != -1f;
+        body.Tick(world);
+
+        CopyRetailPose(transform, body);
+        transform.TargetSteering = body.SteeringTarget;
+        transform.TargetThrust = body.ThrottleTarget;
+        transform.Steering = body.Steering;
+        transform.Thrust = body.Throttle;
+        transform.ParkingBrake = body.Handbrake;
+        transform.Speed = body.Speed;
+        transform.Velocity = transform.Position - transform.PreviousPosition;
+        transform.CarMotion.Velocity = new Vector3d(body.Velocity[0], body.Velocity[1], body.Velocity[2]);
+        if (transform.CarPhysics is { } physics)
+        {
+            CarDynamics.AnimateWheels(
+                transform.CarMotion,
+                physics,
+                CarWheelsFor(target, physics),
+                transform.Velocity.Length,
+                body.Steering,
+                body.Handbrake);
+        }
+
+        transform.IsDynamic = true;
+    }
+
+    private static void CopyRetailPose(TransformState state, RetailCarBody body)
+    {
+        float[] m = body.M;
+        state.Position = new Vector3d(body.Position[0], body.Position[1], body.Position[2]);
+        state.Orientation = new Matrix3f(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
+        state.Heading = MathF.Atan2(m[3], m[0]);
+    }
+
     /// <summary>Drives one car for a tick from its three control channels (<c>0x42EA10</c>'s physics branch).</summary>
     /// <param name="target">The Car task, or <see langword="null"/>.</param>
     /// <param name="transform">The car's live transform.</param>
@@ -2368,6 +2466,11 @@ public sealed class CutsceneRuntime
         float channel3)
     {
         SnapshotDynamicPose(transform, simulationOrder);
+        if (transform.RetailBody is { } retailBody && _retailCarWorld is { } retailWorld)
+        {
+            DriveRetailCar(target, transform, retailBody, retailWorld, channel0, channel1, channel3);
+            return;
+        }
 
         // Car::ReadChannels (0x42EA10) copies ch0 to the steering target and latches ch1 as
         // throttle only when it is not -1.  ch3 is the parking-brake pulse.  The former generic
@@ -2605,6 +2708,7 @@ public sealed class CutsceneRuntime
                 transform.VehicleLatchedObstacle = null;
                 transform.VehicleGateReleased = false;
                 transform.CarMotion.Reset();
+                ResetRetailBody(target, transform);
                 program.WriteChannel(1, -1f);
                 program.WriteChannel(2, -2f);
                 transform.IsDynamic = true;
@@ -3991,6 +4095,9 @@ public sealed class CutsceneRuntime
         public float TargetSteering { get; set; }
         public bool ParkingBrake { get; set; }
         public CarPhysicsDefinition? CarPhysics { get; set; }
+
+        /// <summary>The car's retail rigid body, once its controller's set-up packet has created it.</summary>
+        public RetailCarBody? RetailBody { get; set; }
 
         public CarMotionState CarMotion { get; } = new();
         public PlanePhysicsDefinition? PlanePhysics { get; set; }

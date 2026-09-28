@@ -258,12 +258,33 @@ public static class CarDynamics
         motion.Velocity *= LinearRetention;
         motion.YawRate *= AngularRetention;
 
+        AnimateWheels(motion, physics, wheels, translation.Length, steering, handbrake);
+        return (translation, yawDelta);
+    }
+
+    /// <summary>Turns and steers the drawn wheels for one tick of travel.</summary>
+    /// <param name="motion">The car's motion state, whose wheel fields are advanced.</param>
+    /// <param name="physics">The car's parsed physics record.</param>
+    /// <param name="wheels">The car's wheels.</param>
+    /// <param name="travelled">How far the body moved this tick, world units.</param>
+    /// <param name="steering">The smoothed steering control.</param>
+    /// <param name="handbrake">Whether the parking brake is engaged.</param>
+    public static void AnimateWheels(
+        CarMotionState motion,
+        in CarPhysicsDefinition physics,
+        IReadOnlyList<CarWheel> wheels,
+        double travelled,
+        float steering,
+        bool handbrake)
+    {
+        ArgumentNullException.ThrowIfNull(motion);
+        ArgumentNullException.ThrowIfNull(wheels);
         // Wheel::Tick (0x4301C0) drives the drawn wheels: a wheel in contact takes the speed of its
         // body's contact point, ignoring anything under 40.96 units a tick, and folds it into a
         // smoothed spin rate of speed/radius at 0.3 of the new value to 0.7 of the old. The roll
         // accumulates against that rate, and a steered wheel's angle is the NEGATIVE of
         // MaximumSteerDegrees * steering * pi/180 -- the same sign as the drive direction above.
-        double wheelSpeed = translation.Length;
+        double wheelSpeed = travelled;
         if (wheelSpeed < WheelSpeedDeadzoneUnits)
         {
             wheelSpeed = 0d;
@@ -278,7 +299,6 @@ public static class CarDynamics
 
         motion.WheelRoll -= motion.WheelSpinRate;
         motion.WheelSteer = -MaximumSteerRadians(wheels) * steering;
-        return (translation, yawDelta);
     }
 
     /// <summary>Rides the springs, returning how far the body rises this tick.</summary>

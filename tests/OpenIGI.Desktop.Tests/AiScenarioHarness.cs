@@ -948,6 +948,16 @@ public sealed class AiScenarioHarness : IDisposable
                 }
             }
 
+            // OPENIGI_VEH_SCENARIO_BODY=<id>: that car's retail rigid body every tick, bit-exact, for lining the
+            // port's drive up against a probe carstep capture.
+            if (EnvInt("OPENIGI_VEH_SCENARIO_BODY", -1) is int bodyId and >= 0
+                && typeof(CutsceneRuntime).GetField("_transforms", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(runtime) is System.Collections.IDictionary bodyStates
+                && bodyStates.Contains(bodyId)
+                && bodyStates[bodyId]?.GetType().GetProperty("RetailBody")?.GetValue(bodyStates[bodyId]) is RetailCarBody body)
+            {
+                log.AppendLine(CultureInfo.InvariantCulture, $"[body] tick={tick} pos=({body.Position[0]:R},{body.Position[1]:R},{body.Position[2]:R}) thr={body.Throttle:R}/{body.ThrottleTarget:R} steer={body.Steering:R}/{body.SteeringTarget:R} hb={body.Handbrake} speed={body.Speed:R}");
+            }
+
             Vector3d origin = player.Body.Position + new Vector3d(0d, 0d, OriginAboveFeet);
             if (runtime.TryRunOver(origin, out OpenIGI.Engine.Tasks.GameTask? runner) && runner is not null)
             {
