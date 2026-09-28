@@ -44,7 +44,8 @@ public sealed class DestructibleObjectRegistryTests
             loop.Variables);
 
         DestructibleObject item = Assert.Single(registry.Objects);
-        Assert.Same(item, registry.TryDestroy(task, second));
+        Assert.Null(registry.TryDestroy(task, second));
+        Assert.Equal(1, ExplodeObjectCountdown.RunUntilExploded(registry, item));
         Assert.True(registry.IsDestroyed(first));
         Assert.True(registry.IsDestroyed(second));
         Assert.Equal("203_02_1", item.DestroyedModelName);
@@ -87,7 +88,11 @@ public sealed class DestructibleObjectRegistryTests
         Assert.True(item.KeepsModelWhenDestroyed);
         Assert.True(expressions.EvaluateCondition("!Generator_99.isExploded", emptyValue: false));
 
-        Assert.Same(item, registry.TryDestroy(task, model));
+        // A round arms the countdown at 0 (0x481E60); the object explodes on its next update, and only
+        // that explosion (0x481A60) raises isExploded.
+        Assert.Null(registry.TryDestroy(task, model));
+        Assert.False(item.IsDestroyed);
+        Assert.Equal(1, ExplodeObjectCountdown.RunUntilExploded(registry, item));
 
         Assert.True(item.IsDestroyed);
         Assert.True(expressions.EvaluateCondition("Generator_99.isExploded", emptyValue: false));

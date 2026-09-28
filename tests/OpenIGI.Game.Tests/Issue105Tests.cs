@@ -174,10 +174,14 @@ public sealed class Issue105Tests
             Assert.Empty(destructibles.ConsumeReadyExplosions());
         }
 
+        // Tick 600: the Explosion expression holds, both tanks explode (isExploded rises now) and the
+        // Explosion0 each creates goes off on its first update, the tick after.
         runtime.Tick();
         destructibles.Tick();
-        Assert.Equal(tanks, destructibles.ConsumeReadyExplosions().OrderBy(static item => item.Owner.Id));
         Assert.All(tanks, static item => Assert.True(item.IsDestroyed));
+        Assert.Empty(destructibles.ConsumeReadyExplosions());
+        destructibles.Tick();
+        Assert.Equal(tanks, destructibles.ConsumeReadyExplosions().OrderBy(static item => item.Owner.Id));
 
         runtime.Tick();
         GameTask limo = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(801));
@@ -204,16 +208,19 @@ public sealed class Issue105Tests
         {
             Assert.Null(destructibles.TryDestroy(tank.Owner, tank.Placement, damage: 0.3f));
         }
+        destructibles.Tick();
         Assert.False(tank.IsDestroyed);
-        Assert.Same(tank, destructibles.TryDestroy(tank.Owner, tank.Placement, damage: 0.3f));
+        Assert.Null(destructibles.TryDestroy(tank.Owner, tank.Placement, damage: 0.3f));
+        Assert.Equal(1, ExplodeObjectCountdown.RunUntilExploded(destructibles, tank));
 
         for (int shot = 0; shot < 26; shot++)
         {
             Assert.Null(destructibles.TryDestroy(fuelTruck.Owner, fuelTruck.Placement, damage: 0.3f));
         }
+        destructibles.Tick();
         Assert.False(fuelTruck.IsDestroyed);
-        Assert.Same(fuelTruck, destructibles.TryDestroy(
-            fuelTruck.Owner, fuelTruck.Placement, damage: 0.3f));
+        Assert.Null(destructibles.TryDestroy(fuelTruck.Owner, fuelTruck.Placement, damage: 0.3f));
+        Assert.Equal(1, ExplodeObjectCountdown.RunUntilExploded(destructibles, fuelTruck));
     }
 
     [RequiresGameDataFact]
@@ -361,8 +368,9 @@ public sealed class Issue105Tests
         GameTask fuelTankTwo = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(1601));
         GameTask limo = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(801));
         Assert.False(ConditionalContainerGate.IsTaskActive(limo));
-        Assert.NotNull(destructibles.TryDestroy(fuelTankOne, damage: 100f));
-        Assert.NotNull(destructibles.TryDestroy(fuelTankTwo, damage: 100f));
+        Assert.Null(destructibles.TryDestroy(fuelTankOne, damage: 100f));
+        Assert.Null(destructibles.TryDestroy(fuelTankTwo, damage: 100f));
+        destructibles.Tick(); // Both countdowns stand at 0, so both explode on this update.
         runtime.Tick();
         Assert.True(ConditionalContainerGate.IsTaskActive(limo));
         runtime.Tick(); // SetSpeed(50) has advanced; this tick begins WalkTo(1).
@@ -424,10 +432,9 @@ public sealed class Issue105Tests
         Assert.Null(destructibles.TryDestroy(hit.Owner, hit.Placement, damage: 0.3f));
         Assert.Equal(0.3f, Assert.Single(destructibles.Objects, item => ReferenceEquals(item.Owner, tank))
             .ExplosionDamageAccumulated, precision: 3);
-        DestructibleObject? destroyed = destructibles.TryDestroy(
-            hit.Owner, hit.Placement, damage: 99.7f);
-        Assert.NotNull(destroyed);
-        Assert.True(destroyed.IsDestroyed);
+        Assert.Null(destructibles.TryDestroy(hit.Owner, hit.Placement, damage: 99.7f));
+        DestructibleObject destroyed = Assert.Single(destructibles.Objects, item => ReferenceEquals(item.Owner, tank));
+        Assert.Equal(1, ExplodeObjectCountdown.RunUntilExploded(destructibles, destroyed));
     }
 
     [RequiresGameDataFact]

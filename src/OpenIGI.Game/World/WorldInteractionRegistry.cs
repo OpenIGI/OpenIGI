@@ -6,6 +6,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Rendering;
+using OpenIGI.Scripting.Runtime;
 
 #pragma warning disable CS1591 // Public data members are documented by the owning interaction contract.
 
@@ -647,6 +648,15 @@ public sealed class WorldInteractionRegistry
         return registry;
     }
 
+    /// <summary>Settles every generator whose ExplodeObject exploded after this tick's <see cref="Tick"/>.</summary>
+    public void SettleGenerators()
+    {
+        foreach (GeneratorPowerState generator in _generators)
+        {
+            generator.Settle();
+        }
+    }
+
     /// <summary>Advances task pulses and <c>Last</c> script shadows once at 30 Hz.</summary>
     public void Tick()
     {
@@ -955,8 +965,12 @@ public sealed class WorldInteractionRegistry
                 declared,
                 "On expression",
                 ReadString(declared, "On Expression", string.Empty));
+            // Generator::Run (0x43B500) forces isOn off once the ExplodeObject under it has exploded
+            // (+400), before it ever looks at the On expression.
+            string explodedSymbol = $"{declared.Name}.isExploded";
             GeneratorPowerState state = new(
                 () => expressions.EvaluateCondition(onExpression, emptyValue: true, declared),
+                () => variables.TryRead(explodedSymbol, out QvmValue exploded) && exploded.ToInt32() != 0,
                 ReadBool(declared, "Use backup timer"),
                 Math.Max(0, (int)(ReadReal(declared, "Seconds until power backup", 10f) * 30f)));
             registry._generators.Add(state);
@@ -977,9 +991,12 @@ public sealed class WorldInteractionRegistry
 
     private sealed class GeneratorPowerState(
         Func<bool> onCondition,
+        Func<bool> isExploded,
         bool useBackupTimer,
         int backupDelayTicks)
     {
+        private bool _explodedWhenTicked;
+
         public bool IsOn { get; set; }
         public int BackupTimer { get; set; } = -1;
 
@@ -987,7 +1004,28 @@ public sealed class WorldInteractionRegistry
 
         public void Tick()
         {
-            IsOn = onCondition();
+            _explodedWhenTicked = isExploded();
+            Run(_explodedWhenTicked);
+        }
+
+        /// <summary>Runs the tick again for a generator that exploded after it had already ticked.</summary>
+        /// <remarks>
+        /// Retail's Run calls the ExplodeObject update first, so the explosion and the power cut share a
+        /// tick. The port's destructibles tick after the interactions; re-running the whole Run is safe
+        /// because every step of it is settled by the state the first pass left.
+        /// </remarks>
+        public void Settle()
+        {
+            if (!_explodedWhenTicked && isExploded())
+            {
+                _explodedWhenTicked = true;
+                Run(exploded: true);
+            }
+        }
+
+        private void Run(bool exploded)
+        {
+            IsOn = !exploded && onCondition();
             if (!useBackupTimer)
             {
                 return;

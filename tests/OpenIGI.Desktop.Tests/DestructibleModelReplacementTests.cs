@@ -50,10 +50,13 @@ public sealed class DestructibleModelReplacementTests
 
                 if (destroyedModel.Length == 0)
                 {
+                    // Still an ExplodeObject: it blows up and raises isExploded (0x481F90), but 0x481A60
+                    // has no model to swap in, so it keeps the one it has.
                     Assert.Null(placement.DestroyedReplacement);
-                    Assert.DoesNotContain(
+                    DestructibleObject keeps = Assert.Single(
                         scenario.Destructibles.Objects,
-                        candidate => ReferenceEquals(candidate.Placement, placement));
+                        candidate => ReferenceEquals(candidate.Owner, placement.Owner));
+                    Assert.True(keeps.KeepsModelWhenDestroyed);
                 }
             }
         }
@@ -131,8 +134,7 @@ public sealed class DestructibleModelReplacementTests
 
         Assert.Equal("Terminal", terminal.TypeName);
         Assert.Equal("203_02_1", terminal.DestroyedModelName);
-        Assert.Same(terminal, scenario.Destructibles.TryDestroy(
-            terminal.Owner, placement, damage: DestructionDose(terminal)));
+        Destroy(scenario, terminal, placement);
         Assert.True(scenario.Destructibles.IsDestroyed(placement));
     }
 
@@ -158,8 +160,7 @@ public sealed class DestructibleModelReplacementTests
         scenario.Renderer.Draw(scenario.Scene, camera, projection);
         HashSet<uint> intactMeshes = [.. scenario.Device.Meshes.Keys];
 
-        Assert.Same(target, scenario.Destructibles.TryDestroy(
-            target.Owner, placement, damage: DestructionDose(target)));
+        Destroy(scenario, target, placement);
         scenario.Renderer.BeginFrame(tickFraction: 1f, smooth: false);
         Assert.True(scenario.Renderer.MakeResident(scenario.Scene, index));
         uint destroyedMesh = Assert.Single(scenario.Device.Meshes.Keys, id => !intactMeshes.Contains(id));
@@ -206,8 +207,7 @@ public sealed class DestructibleModelReplacementTests
 
             // Hit the last placement deliberately: one declared task may own Model, Model 2, and
             // further instances. All of them must share its state and renderer replacement.
-            Assert.Same(destructible, scenario.Destructibles.TryDestroy(
-                placement.Owner, placement, damage: DestructionDose(destructible)));
+            Destroy(scenario, destructible, placement);
             foreach ((WorldPlacement ownedPlacement, int ownedIndex) in group)
             {
                 Assert.True(
@@ -226,6 +226,25 @@ public sealed class DestructibleModelReplacementTests
         }
 
         return placements.Length;
+    }
+
+    // A round breaks most destructibles on contact; an ExplodeObject's only arms its countdown at 0
+    // (0x481E60) and the object explodes on its next update (0x481970).
+    private static void Destroy(Scenario scenario, DestructibleObject target, WorldPlacement placement)
+    {
+        DestructibleObject? hit = scenario.Destructibles.TryDestroy(
+            target.Owner, placement, damage: DestructionDose(target));
+        if (target.ExplodesOnCountdown)
+        {
+            Assert.Null(hit);
+            scenario.Destructibles.Tick();
+        }
+        else
+        {
+            Assert.Same(target, hit);
+        }
+
+        Assert.True(target.IsDestroyed);
     }
 
     private static float DestructionDose(DestructibleObject item) =>

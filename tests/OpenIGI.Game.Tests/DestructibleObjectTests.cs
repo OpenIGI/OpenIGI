@@ -269,7 +269,17 @@ public sealed class DestructibleObjectTests
             source.PositionUnits,
             distance + 1f);
 
-        Assert.Contains(target, affected);
+        // An ExplodeObject only arms its countdown here; everything else breaks on the contact.
+        if (target.ExplodesOnCountdown)
+        {
+            Assert.DoesNotContain(target, affected);
+            _ = ExplodeObjectCountdown.RunUntilExploded(registry, target);
+        }
+        else
+        {
+            Assert.Contains(target, affected);
+        }
+
         Assert.True(target.IsDestroyed);
         Assert.DoesNotContain(source, affected);
     }

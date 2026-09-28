@@ -3108,6 +3108,10 @@ internal sealed partial class GameHost : IDisposable
                         {
                             ForgetVehicleMarks(destructibles, car);
                         }
+
+                        // A generator that exploded this tick loses its power this tick, as Generator::Run
+                        // (0x43B500) sees its own explosion before it reads the On expression.
+                        _interactions?.SettleGenerators();
                     }
                     TickAlarmSpeakers();
                     TickSecurityCameraSounds();

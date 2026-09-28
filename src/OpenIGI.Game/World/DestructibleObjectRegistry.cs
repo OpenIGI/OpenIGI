@@ -150,6 +150,21 @@ public sealed class DestructibleObject
     /// </remarks>
     public bool KeepsModelWhenDestroyed { get; internal set; }
 
+    /// <summary>Gets whether damage only arms a countdown and the object is destroyed when it runs out.</summary>
+    /// <remarks>
+    /// The <c>ExplodeObject</c> family (see <c>ExplodeObjectFamily</c>): a round (<c>0x481E60</c>) sets the countdown at <c>+500</c>
+    /// to 0 and a blast (<c>0x481EA0</c>) to <c>Explosion delay * 30</c>; the update (<c>0x481970</c>) counts
+    /// it down and explodes at 0, or at once when the Explosion expression holds. Only that explosion
+    /// (<c>0x481A60</c>) swaps the model and raises <c>isExploded</c>.
+    /// </remarks>
+    public bool ExplodesOnCountdown { get; internal set; }
+
+    /// <summary>Gets the explosion countdown, <c>ExplodeObject+500</c>: -1 idle, 0 explode on the next update.</summary>
+    internal int Countdown { get; set; } = -1;
+
+    /// <summary>Gets whether the object exploded this tick and its Explosion0 goes off on the next.</summary>
+    internal bool BlastDue { get; set; }
+
     /// <summary>Gets the previous tick's destroyed state exposed as <c>isLastDestroyed</c>.</summary>
     public bool IsLastDestroyed { get; internal set; }
 
@@ -188,6 +203,9 @@ public sealed class DestructibleObjectRegistry
     private const string CarType = "Car";
     private const string ExplodeObjectType = "ExplodeObject";
     private const string GeneratorType = "Generator";
+    private const string TerminalType = "Terminal";
+    private const string SecurityCameraControlType = "SCameraControl";
+    private const string AlarmControlType = "AlarmControl";
     private const string ExplodeMagicType = "TASKTYPE_EXPLODEMAGICOBJ";
 
     private readonly List<DestructibleObject> _objects = [];
@@ -260,8 +278,8 @@ public sealed class DestructibleObjectRegistry
             // a weapon hit destroys the task.  A Switch also has a field of that name, but has no
             // explosion parameters and is governed by its separate destructable flag.
             //
-            // ExplodeObject itself, and Generator which derives from it, export isExploded whatever
-            // the model (0x481F90), and the blast (0x481A60) only swaps in a Destroyed model that
+            // ExplodeObject and every type derived from it export isExploded whatever the model
+            // (0x481F90), and the blast (0x481A60) only swaps in a Destroyed model that
             // resolves -- with none the object stays as it is. Mission 7's Generator_99 is one: its
             // own On expression is !Generator_99.isExploded, so it must still be able to blow up.
             bool hasDestroyedModel = task.TryGetValue(DestroyedModelParameter, out object? rawDestroyed)
@@ -288,6 +306,7 @@ public sealed class DestructibleObjectRegistry
             }
             ReadExplodeParameters(task, item);
             item.KeepsModelWhenDestroyed = !hasDestroyedModel;
+            item.ExplodesOnCountdown = ExplodesWithoutDestroyedModel(task);
 
             variables.BindBool(task, "isExploded", () => item.IsDestroyed, value =>
             {
@@ -499,6 +518,12 @@ public sealed class DestructibleObjectRegistry
                 continue;
             }
 
+            if (item.ExplodesOnCountdown)
+            {
+                TickCountdown(item);
+                continue;
+            }
+
             if (!item.IsDestroyed
                 && item.ExplosionExpression.Length > 0
                 && ExplosionEnabled(item))
@@ -518,6 +543,59 @@ public sealed class DestructibleObjectRegistry
         }
 
         TickVehicleBlasts();
+    }
+
+    /// <summary>One ExplodeObject update, <c>0x481970</c>.</summary>
+    /// <remarks>
+    /// The object explodes when its Explosion expression holds or its countdown stands at 0, and counts
+    /// down otherwise. The explosion (<c>0x481A60</c>) raises <c>isExploded</c> at once, but the
+    /// Explosion0 it creates only goes off on its own first update, a tick later -- so the blast is
+    /// handed to the host on the next tick.
+    /// </remarks>
+    private void TickCountdown(DestructibleObject item)
+    {
+        if (item.BlastDue)
+        {
+            item.BlastDue = false;
+            _readyExplosions.Add(item);
+            return;
+        }
+
+        if (item.IsDestroyed)
+        {
+            return;
+        }
+
+        bool triggered = item.ExplosionExpression.Length > 0 && ExplosionEnabled(item);
+        if (triggered || item.Countdown == 0)
+        {
+            item.IsDestroyed = true;
+            item.BlastDue = true;
+        }
+        else if (item.Countdown > 0)
+        {
+            item.Countdown--;
+        }
+    }
+
+    // 0x481E60 (a round) and 0x481EA0 (a blast): the damage adds up, and once it has reached the
+    // threshold every further hit arms the countdown again -- to 0 for a round, to the Explosion delay
+    // for a blast. A blast re-arms even when it adds nothing.
+    private static void ArmCountdown(DestructibleObject item, float damage, bool explosion)
+    {
+        if (item.IsDestroyed)
+        {
+            return;
+        }
+
+        item.ExplosionDamageAccumulated += Math.Max(0f, damage);
+        float threshold = item.ExplosionDamageThreshold > 0f
+            ? item.ExplosionDamageThreshold
+            : ExplosionDamageDefaults.DamageThreshold;
+        if (item.ExplosionDamageAccumulated >= threshold)
+        {
+            item.Countdown = explosion ? item.ExplosionDelayTicks : 0;
+        }
     }
 
     /// <summary>One tick of a dying car's destruction, <c>0x42E5A0</c>.</summary>
@@ -763,6 +841,22 @@ public sealed class DestructibleObjectRegistry
 
         foreach (DestructibleObject item in _objects)
         {
+            // Explosion0 messages every listener, near or far (0x480003). An ExplodeObject weighs it by
+            // distance and arms its own countdown; nothing happens here until that countdown runs out.
+            if (item.ExplodesOnCountdown)
+            {
+                if (!ReferenceEquals(item, source) && (canContact is null || canContact(item)))
+                {
+                    float reach = (float)(item.PositionUnits - originUnits).Length;
+                    ArmCountdown(
+                        item,
+                        ContactDose(reach, item.ExplosionContactRadiusUnits, radiusUnits, falloffUnits, damageFactor),
+                        explosion: true);
+                }
+
+                continue;
+            }
+
             if (item.IsDestroyed
                 || ReferenceEquals(item, source)
                 || (item.PositionUnits - originUnits).Length
@@ -825,6 +919,12 @@ public sealed class DestructibleObjectRegistry
 
     private static DestructibleObject? ApplyDamage(DestructibleObject item, float damage, bool explosion)
     {
+        if (item.ExplodesOnCountdown)
+        {
+            ArmCountdown(item, damage, explosion);
+            return null;
+        }
+
         if (item.IsDestroyed || !(damage > 0f))
         {
             return null;
@@ -903,11 +1003,21 @@ public sealed class DestructibleObjectRegistry
         return false;
     }
 
-    // Terminal, Siren, Radio and MineField derive from ExplodeObject too, and SCameraControl and
-    // AlarmControl declare the same parameters, but those are owned by their own registries.
+    // The ExplodeObject family, traced in IGI.exe through each type's parent: Generator (0x43B6E0) and
+    // Terminal (0x443680) call the ExplodeObject base (word_54097C), and SCameraControl (0x440C20) and
+    // AlarmControl (0x440710) are registered under Terminal (word_53C680). Siren, Radio and MineField
+    // declare the same parameters but their bases are not traced, so they keep the older rule.
+    private static readonly HashSet<string> ExplodeObjectFamily = new(StringComparer.Ordinal)
+    {
+        ExplodeObjectType,
+        GeneratorType,
+        TerminalType,
+        SecurityCameraControlType,
+        AlarmControlType,
+    };
+
     private static bool ExplodesWithoutDestroyedModel(DeclaredTask task) =>
-        string.Equals(task.Type.Name, ExplodeObjectType, StringComparison.Ordinal)
-        || string.Equals(task.Type.Name, GeneratorType, StringComparison.Ordinal);
+        ExplodeObjectFamily.Contains(task.Type.Name);
 
     private static Vector3d PositionOf(DeclaredTask task, WorldPlacement? placement)
     {
@@ -958,6 +1068,11 @@ public sealed class DestructibleObjectRegistry
     public bool ScheduleExplosion(DestructibleObject item)
     {
         ArgumentNullException.ThrowIfNull(item);
+        if (item.ExplodesOnCountdown)
+        {
+            return ScheduleCountdownExplosion(item);
+        }
+
         if (!ShouldExplode(item) || item.ExplosionStarted || item.PendingExplosionTicks > 0)
         {
             return false;
@@ -978,6 +1093,19 @@ public sealed class DestructibleObjectRegistry
 
         item.PendingExplosionTicks = item.ExplosionDelayTicks;
         return false;
+    }
+
+    // The countdown object already exploded in TickCountdown; its blast is due once it is ready.
+    private static bool ScheduleCountdownExplosion(DestructibleObject item)
+    {
+        if (!item.ExplosionReady || item.ExplosionStarted)
+        {
+            return false;
+        }
+
+        item.ExplosionReady = false;
+        item.ExplosionStarted = true;
+        return true;
     }
 
     private static float ReadFloat(DeclaredTask task, string name, float fallback = 0f)
