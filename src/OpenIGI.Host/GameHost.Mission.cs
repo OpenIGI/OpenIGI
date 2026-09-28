@@ -923,6 +923,12 @@ internal sealed partial class GameHost
                     $"Nav graphs: {graphs.Count} — " +
                     string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n@{p.Value.CoverMidOffsetMetres:0.##}m")));
 
+                // CarAI is a separate retail task family from HumanAI. Give the runtime the same graph
+                // corpus the soldiers receive so every graph-driven vehicle -- Mission 7's checkpoint APC
+                // and T80, Mission 6's alarm APC, the objective-gated limousines -- follows its authored
+                // PatrolPath route. d843661b dropped this call and left every one of them parked.
+                _cutscenes?.ConfigureCarAi(graphs);
+
                 // The difficulty every guard reads its combat row at. Faithfully the ACTIVE PLAYER PROFILE's
                 // (sub_406F70 takes it from sub_406220()'s first field), so the difficulty the player picked
                 // in the menu actually reaches the AI -- which it did not while this was a hardcoded default,

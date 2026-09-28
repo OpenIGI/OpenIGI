@@ -542,13 +542,12 @@ public sealed class CutsceneRuntime
                 armament.Sight.Track(default);
             }
 
-            // A car's update (0x42E320) runs its guns once, then -- unless its physics tick ran this
-            // frame (+11980, set only when a controller drives it through 0x42EA10's physics branch) --
-            // re-seats them and runs every AIStationaryGun a second time. A parked or AnimTask-posed
-            // vehicle therefore turns its guns and meters their fire at twice the rate of a CarAI-driven
-            // one. Probed on Mission 7's stationary T80 354: T80 rounds 75 ticks apart and the coaxial
-            // M2HB one a tick, where the rows' own cadences are 150 and 2.
-            int runs = controller is not null && active ? 1 : 2;
+            // A car's update (0x42E320) runs its guns once, then re-seats them and runs every
+            // AIStationaryGun a second time unless +11980 says its physics tick already did, so a vehicle
+            // gun turns and meters its fire twice a tick. Probed on Mission 7 for both kinds of car: the
+            // parked T80 354 (T80 rounds 75 ticks apart, the coaxial M2HB one a tick) and the CarAI-driven
+            // APC 352 (APC rounds 75 ticks apart), where the rows' own cadences are 150, 2 and 150.
+            const int runs = 2;
             foreach (VehicleGunState gun in armament.Guns)
             {
                 Vector3d origin = transform.Position + transform.Orientation.Transposed().Transform(gun.Gun.Offset);
