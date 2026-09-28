@@ -8,21 +8,27 @@ namespace OpenIGI.Game.Tests;
 /// Replays retail car ticks through <see cref="RetailCarBody"/> and demands the original's bytes back.
 /// </summary>
 /// <remarks>
-/// The fixture is mission 7's APC 352 driving its CarAI route for 600 ticks, captured by the probe's
-/// <c>carstep</c> hook set: the car object at every <c>Car_Tick</c> entry, every force pushed onto its body,
-/// and the wheel rays with their results. The rays are answered from the capture; everything else is the
-/// port's own arithmetic.
+/// The fixtures are mission 7's APC 352 driving its CarAI route for 600 ticks, and its T80 357 for 900 from
+/// the tick it spawns with its tracks below the road (the bottom-out lift, the fall, the settle), captured by
+/// the probe's <c>carstep</c> hook set: the car object at every <c>Car_Tick</c> entry, every force pushed
+/// onto its body, and the wheel rays with their results. The rays are answered from the capture; everything
+/// else is the port's own arithmetic.
 /// </remarks>
 public sealed class RetailCarBodyReplayTests(ITestOutputHelper output)
 {
-    private const string Fixture = "carstep-m7-apc352.log.gz";
+    private static readonly Dictionary<string, RetailCarStepCapture> Captures = [];
 
-    private static readonly Lazy<RetailCarStepCapture> Capture = new(() => RetailCarStepCapture.Load(Fixture));
-
-    [Fact]
-    public void EveryTickFromItsOwnEntryMatchesRetailBitForBit()
+    public static TheoryData<string> Fixtures => new()
     {
-        RetailCarStepCapture capture = Capture.Value;
+        "carstep-m7-apc352.log.gz",
+        "carstep-m7-t80-357.log.gz",
+    };
+
+    [Theory]
+    [MemberData(nameof(Fixtures))]
+    public void EveryTickFromItsOwnEntryMatchesRetailBitForBit(string fixture)
+    {
+        RetailCarStepCapture capture = Load(fixture);
         RetailCarDefinition definition = RetailCarMemory.Definition(capture.TypeMemory, capture.RecordMemory);
         List<string> failures = [];
         int replayed = 0;
@@ -54,10 +60,11 @@ public sealed class RetailCarBodyReplayTests(ITestOutputHelper output)
         Assert.True(failures.Count == 0, $"{failures.Count} of {replayed} ticks differ; first: {failures.FirstOrDefault()}");
     }
 
-    [Fact]
-    public void TheWholeDriveReplaysFromTheFirstTickAlone()
+    [Theory]
+    [MemberData(nameof(Fixtures))]
+    public void TheWholeDriveReplaysFromTheFirstTickAlone(string fixture)
     {
-        RetailCarStepCapture capture = Capture.Value;
+        RetailCarStepCapture capture = Load(fixture);
         RetailCarBody car = new(RetailCarMemory.Definition(capture.TypeMemory, capture.RecordMemory));
         RetailCarMemory.Load(car, capture.Ticks[0].Entry);
         int t = 0;
@@ -74,6 +81,16 @@ public sealed class RetailCarBodyReplayTests(ITestOutputHelper output)
         }
 
         output.WriteLine($"{t} ticks replayed; final position ({car.Position[0]:R}, {car.Position[1]:R}, {car.Position[2]:R})");
+    }
+
+    private static RetailCarStepCapture Load(string fixture)
+    {
+        lock (Captures)
+        {
+            return Captures.TryGetValue(fixture, out RetailCarStepCapture? capture)
+                ? capture
+                : Captures[fixture] = RetailCarStepCapture.Load(fixture);
+        }
     }
 
     private static List<string> Step(RetailCarBody car, RetailCarStepCapture.Tick tick, RetailCarStepCapture.Tick next)
