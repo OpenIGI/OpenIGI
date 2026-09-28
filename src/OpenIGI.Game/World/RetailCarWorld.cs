@@ -23,7 +23,7 @@ public sealed class RetailCarWorld(
     private readonly RetailTerrainRay _terrain = terrain ?? throw new ArgumentNullException(nameof(terrain));
 
     /// <inheritdoc/>
-    public void CastRays(RetailCarBody car, ReadOnlySpan<Vector3d> starts, ReadOnlySpan<Vector3d> ends, Span<RetailRayResult> results)
+    public void CastRays(RetailRigidBody car, ReadOnlySpan<Vector3d> starts, ReadOnlySpan<Vector3d> ends, Span<RetailRayResult> results)
     {
         for (int k = 0; k < results.Length; k++)
         {
@@ -35,7 +35,7 @@ public sealed class RetailCarWorld(
     }
 
     /// <inheritdoc/>
-    public void ProbeUp(RetailCarBody car, ReadOnlySpan<Vector3d> points, double length, Span<RetailRayResult> results)
+    public void ProbeUp(RetailRigidBody car, ReadOnlySpan<Vector3d> points, double length, Span<RetailRayResult> results)
     {
         for (int k = 0; k < results.Length; k++)
         {
@@ -44,5 +44,5 @@ public sealed class RetailCarWorld(
     }
 
     /// <inheritdoc/>
-    public bool VetoContact(RetailCarBody car, in RetailRayResult result) => false;
+    public bool VetoContact(RetailRigidBody car, in RetailRayResult result) => false;
 }

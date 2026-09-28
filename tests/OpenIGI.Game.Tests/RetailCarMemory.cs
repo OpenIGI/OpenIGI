@@ -241,7 +241,7 @@ internal static class RetailCarMemory
         /// <summary>Gets the mismatches between the port's rays and the captured ones.</summary>
         public List<string> RayErrors { get; } = [];
 
-        public void CastRays(RetailCarBody car, ReadOnlySpan<Vector3d> starts, ReadOnlySpan<Vector3d> ends, Span<RetailRayResult> results)
+        public void CastRays(RetailRigidBody car, ReadOnlySpan<Vector3d> starts, ReadOnlySpan<Vector3d> ends, Span<RetailRayResult> results)
         {
             if (starts.Length != tick.RayCount)
             {
@@ -268,10 +268,10 @@ internal static class RetailCarMemory
             }
         }
 
-        public void ProbeUp(RetailCarBody car, ReadOnlySpan<Vector3d> points, double length, Span<RetailRayResult> results) =>
+        public void ProbeUp(RetailRigidBody car, ReadOnlySpan<Vector3d> points, double length, Span<RetailRayResult> results) =>
             RayErrors.Add("unexpected burial probe");
 
-        public bool VetoContact(RetailCarBody car, in RetailRayResult result)
+        public bool VetoContact(RetailRigidBody car, in RetailRayResult result)
         {
             RayErrors.Add("unexpected struck-object contact");
             return false;

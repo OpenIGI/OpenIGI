@@ -248,7 +248,7 @@ public static class RetailCarSpawn
         RetailSplineSegment.AnglesToMatrix(angles.X, angles.Y, angles.Z).CopyTo(m, 0);
 
     /// <summary><c>Body_SetBox</c> (<c>0x4ECED0</c>) and <c>Body_SetMassInertia</c> (<c>0x4EC5E0</c>).</summary>
-    private static void SetBox(RetailCarBody car, float m, float a, float b, float c)
+    private static void SetBox(RetailRigidBody car, float m, float a, float b, float c)
     {
         float b2 = ((X87)b * b).F;
         float c2 = ((X87)c * c).F;

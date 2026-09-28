@@ -118,7 +118,7 @@ public sealed class RetailTerrainRayReplayTests(ITestOutputHelper output)
 
         public int ObjectHits { get; private set; }
 
-        public void CastRays(RetailCarBody car, ReadOnlySpan<Vector3d> starts, ReadOnlySpan<Vector3d> ends, Span<RetailRayResult> results)
+        public void CastRays(RetailRigidBody car, ReadOnlySpan<Vector3d> starts, ReadOnlySpan<Vector3d> ends, Span<RetailRayResult> results)
         {
             for (int k = 0; k < results.Length; k++)
             {
@@ -163,10 +163,10 @@ public sealed class RetailTerrainRayReplayTests(ITestOutputHelper output)
             }
         }
 
-        public void ProbeUp(RetailCarBody car, ReadOnlySpan<Vector3d> points, double length, Span<RetailRayResult> results) =>
+        public void ProbeUp(RetailRigidBody car, ReadOnlySpan<Vector3d> points, double length, Span<RetailRayResult> results) =>
             Errors.Add("unexpected burial probe");
 
-        public bool VetoContact(RetailCarBody car, in RetailRayResult result) => false;
+        public bool VetoContact(RetailRigidBody car, in RetailRayResult result) => false;
 
         private void Same(string name, double port, double retail)
         {
