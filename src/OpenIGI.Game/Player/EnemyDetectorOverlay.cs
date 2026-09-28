@@ -38,9 +38,9 @@ public readonly record struct EnemyOverlayBox(
     BinocularMarkerColor Marker = BinocularMarkerColor.Hostile)
 {
     /// <summary>
-    /// Clips the projected rectangle to the display viewport, matching the native status-display
-    /// handler's per-scanline bounds clamps. Returns <see langword="false"/> when no visible area
-    /// remains.
+    /// Clips the projected rectangle to the display viewport, for HUDs that anchor their own marker to
+    /// the visible part of the contact. Returns <see langword="false"/> when no visible area remains.
+    /// The retail rectangle is not clipped this way; see <see cref="IntersectsViewport"/>.
     /// </summary>
     public bool TryClipToViewport(int viewportWidth, int viewportHeight, out EnemyOverlayBox clipped)
     {
@@ -64,6 +64,37 @@ public readonly record struct EnemyOverlayBox(
 
         clipped = this with { Left = left, Top = top, Right = right, Bottom = bottom };
         return true;
+    }
+
+    /// <summary>
+    /// Whether any part of the rotated, pulse-scaled rectangle lands on the display viewport.
+    /// </summary>
+    /// <remarks>
+    /// <c>FUN_004B5860</c> rotates and scales the closed unit square around the projected centre and
+    /// submits the segments unclipped, leaving clipping to the device. The rectangle is therefore drawn
+    /// whole, around its true centre, whenever any of it is on screen.
+    /// </remarks>
+    public bool IntersectsViewport(int viewportWidth, int viewportHeight)
+    {
+        if (viewportWidth <= 0 || viewportHeight <= 0
+            || !float.IsFinite(Left) || !float.IsFinite(Top)
+            || !float.IsFinite(Right) || !float.IsFinite(Bottom)
+            || !float.IsFinite(RotationRadians) || !float.IsFinite(PulseScale)
+            || Right <= Left || Bottom <= Top)
+        {
+            return false;
+        }
+
+        float centreX = (Left + Right) * 0.5f;
+        float centreY = (Top + Bottom) * 0.5f;
+        float halfWidth = (Right - Left) * 0.5f * MathF.Max(0f, PulseScale);
+        float halfHeight = (Bottom - Top) * 0.5f * MathF.Max(0f, PulseScale);
+        float cos = MathF.Abs(MathF.Cos(RotationRadians));
+        float sin = MathF.Abs(MathF.Sin(RotationRadians));
+        float extentX = (halfWidth * cos) + (halfHeight * sin);
+        float extentY = (halfWidth * sin) + (halfHeight * cos);
+        return centreX + extentX > 0f && centreX - extentX < viewportWidth
+            && centreY + extentY > 0f && centreY - extentY < viewportHeight;
     }
 }
 
