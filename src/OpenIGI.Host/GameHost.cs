@@ -3097,6 +3097,10 @@ internal sealed partial class GameHost : IDisposable
                         {
                             PresentVehicleBlast(blast);
                         }
+                        foreach (DestructibleObject car in destructibles.ConsumeExplodedVehicles())
+                        {
+                            ForgetVehicleMarks(destructibles, car);
+                        }
                     }
                     TickAlarmSpeakers();
                     TickSecurityCameraSounds();

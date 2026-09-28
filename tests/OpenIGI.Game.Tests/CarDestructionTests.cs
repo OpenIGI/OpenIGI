@@ -125,9 +125,16 @@ public sealed class CarDestructionTests
         Assert.NotEqual(blasts[0].PositionUnits, blasts[1].PositionUnits);
 
         // No wreck model: the body and everything the truck owned leave the world with it.
+        WorldPlacement[] owned = [.. world.Placements.Where(placement => IsOwnedBy(placement.Owner, truckTask))];
         Assert.All(
-            world.Placements.Where(placement => IsOwnedBy(placement.Owner, truckTask)),
+            owned,
             placement => Assert.True(destructibles.IsDestroyed(placement), $"{placement} outlived the truck"));
+
+        // The host takes the marks off exactly these (the LAW's own scorch sits on the body).
+        Assert.Same(truck, Assert.Single(destructibles.ConsumeExplodedVehicles()));
+        WorldPlacement[] reported = [.. destructibles.PlacementsOf(truck)];
+        Assert.Equal(owned.Length, reported.Length);
+        Assert.All(owned, placement => Assert.Contains(placement, reported));
 
         // The objectives the level authors on it: the area gate closes and the failure gate opens.
         Assert.False(expressions.EvaluateCondition("!Car_1099.isExploded", emptyValue: true));

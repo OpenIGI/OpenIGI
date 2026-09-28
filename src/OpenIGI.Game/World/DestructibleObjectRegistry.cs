@@ -189,6 +189,7 @@ public sealed class DestructibleObjectRegistry
     private readonly List<DestructibleObject> _readyExplosions = [];
     private readonly List<VehicleBlast> _pendingVehicleBlasts = [];
     private readonly List<VehicleBlast> _readyVehicleBlasts = [];
+    private readonly List<DestructibleObject> _explodedVehicles = [];
     private IgiRandom _random = new();
 
     private DestructibleObjectRegistry(LevelExpressionRuntime expressions) => _expressions = expressions;
@@ -432,6 +433,33 @@ public sealed class DestructibleObjectRegistry
         return ready;
     }
 
+    /// <summary>Returns the cars whose countdown ran out this tick and left the world.</summary>
+    public IReadOnlyList<DestructibleObject> ConsumeExplodedVehicles()
+    {
+        if (_explodedVehicles.Count == 0)
+        {
+            return [];
+        }
+
+        DestructibleObject[] exploded = [.. _explodedVehicles];
+        _explodedVehicles.Clear();
+        return exploded;
+    }
+
+    /// <summary>Gets every placement a destructible answers for — a car's body, wheels and attachments.</summary>
+    public IEnumerable<WorldPlacement> PlacementsOf(DestructibleObject item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        foreach ((WorldPlacement placement, DestructibleObject owner) in _byPlacement)
+        {
+            if (ReferenceEquals(owner, item)
+                || (item.Kind == DestructibleObjectKind.Vehicle && IsOwnedBy(placement.Owner, item.Owner)))
+            {
+                yield return placement;
+            }
+        }
+    }
+
     /// <summary>Advances the script-visible previous-state flags by one simulation tick.</summary>
     /// <remarks>
     /// Also runs every dying car's destruction (<c>0x42E5A0</c>, from the car's tick <c>0x42E320</c>) and
@@ -498,6 +526,7 @@ public sealed class DestructibleObjectRegistry
         }
 
         car.IsDestroyed = true;
+        _explodedVehicles.Add(car);
 
         // Its children go with it: whatever the model attached (the truck's windows) and the wheels.
         foreach (DestructibleObject child in _objects)

@@ -1531,6 +1531,34 @@ internal sealed partial class GameHost
         HandleDestructibleExplosion(item);
     }
 
+    /// <summary>Takes every mark off a car that has just left the world.</summary>
+    /// <remarks>
+    /// A scorch or bullet hole is a child of the object it was stuck to (<c>0x4811C9</c> sends the decal to
+    /// the struck object), and a car that has blown up deletes its children (<c>0x401780</c>) as it leaves
+    /// the world cube — so the LAW's own burn mark goes with it instead of hanging where the body was.
+    /// </remarks>
+    private void ForgetVehicleMarks(DestructibleObjectRegistry destructibles, DestructibleObject car)
+    {
+        if (_player is null)
+        {
+            return;
+        }
+
+        HashSet<object> surfaces = new(ReferenceEqualityComparer.Instance) { car.Owner };
+        foreach (WorldPlacement placement in destructibles.PlacementsOf(car))
+        {
+            surfaces.Add(placement);
+            surfaces.Add(placement.Owner);
+        }
+
+        foreach (object surface in surfaces)
+        {
+            _player.Marks.Forget(surface);
+        }
+
+        _logger.Information("World", $"{car.Owner.Name} exploded and left the world.");
+    }
+
     /// <summary>Sets off one blast of a dying car (<c>0x42E5A0</c>) once its fuse has run.</summary>
     /// <remarks>
     /// An ordinary <c>Explosion0</c>: <c>explo_03_l</c>, the 25 m explosion event, and the same message to
