@@ -15,6 +15,9 @@ internal sealed class RetailCarStepCapture
     /// <summary>The number of car bytes each entry dump holds.</summary>
     public const int CarBytes = 2400;
 
+    /// <summary>The most bytes an entry dump holds (a helicopter capture dumps more).</summary>
+    public const int DumpBytes = 4000;
+
     public byte[] TypeMemory { get; private set; } = [];
 
     public byte[] RecordMemory { get; private set; } = [];
@@ -80,6 +83,18 @@ internal sealed class RetailCarStepCapture
                 case "RAYOUT":
                     Get().Results.AddRange(Hex(Value(words, "hex=")));
                     break;
+                case "HRAYS":
+                    Get().SkidRayCount = Int(Value(words, "count="));
+                    break;
+                case "HRAYSTART":
+                    Get().SkidStarts.AddRange(Hex(Value(words, "hex=")));
+                    break;
+                case "HRAYEND":
+                    Get().SkidEnds.AddRange(Hex(Value(words, "hex=")));
+                    break;
+                case "HRAYOUT":
+                    Get().SkidResults.AddRange(Hex(Value(words, "hex=")));
+                    break;
             }
         }
 
@@ -113,7 +128,7 @@ internal sealed class RetailCarStepCapture
 
         public int AutoTick { get; set; }
 
-        public byte[] Entry { get; } = new byte[CarBytes];
+        public byte[] Entry { get; } = new byte[DumpBytes];
 
         public List<Force> Forces { get; } = [];
 
@@ -135,6 +150,18 @@ internal sealed class RetailCarStepCapture
         /// and the first result's struck-object pointer, which the wheel rays never set.
         /// </remarks>
         public int UnknownRayPrefix { get; private set; }
+
+        /// <summary>Gets the helicopter skid rays' count (0x432550), or 0.</summary>
+        public int SkidRayCount { get; set; }
+
+        /// <summary>Gets the skid ray starts.</summary>
+        public List<byte> SkidStarts { get; } = [];
+
+        /// <summary>Gets the skid ray ends.</summary>
+        public List<byte> SkidEnds { get; } = [];
+
+        /// <summary>Gets the skid ray results, 112 bytes each.</summary>
+        public List<byte> SkidResults { get; } = [];
 
         internal List<byte> Starts { get; } = [];
 

@@ -16,8 +16,9 @@ internal sealed class RetailMissionData
 {
     private static readonly Dictionary<int, RetailMissionData> Loaded = [];
 
-    private RetailMissionData(LoadedMission mission, LevelTask root, VehiclePhysicsRegistry vehicles)
+    private RetailMissionData(LoadedMission mission, LevelTask root, VehiclePhysicsRegistry vehicles, MagicObjectRegistry magic)
     {
+        Magic = magic;
         Mission = mission;
         Root = root;
         Vehicles = vehicles;
@@ -35,6 +36,8 @@ internal sealed class RetailMissionData
     public LevelTask Root { get; }
 
     public VehiclePhysicsRegistry Vehicles { get; }
+
+    public MagicObjectRegistry Magic { get; }
 
     public RetailTerrainRay TerrainRay { get; }
 
@@ -73,6 +76,6 @@ internal sealed class RetailMissionData
         LoadedMission mission = new MissionLoader(registry, fileSystem, resources, levelLoader, null, terrainLoader).Load(id);
         VehiclePhysicsRegistry vehicles = new();
         vehicles.Load(resources);
-        return new RetailMissionData(mission, levelRoot, vehicles);
+        return new RetailMissionData(mission, levelRoot, vehicles, magic);
     }
 }

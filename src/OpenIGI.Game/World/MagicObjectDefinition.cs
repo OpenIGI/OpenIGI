@@ -48,6 +48,14 @@ public readonly record struct MagicObjectDefinition(
     /// <summary>Gets the gun a <c>TASKTYPE_AISTATIONARYGUN</c> attachment carries, or <see langword="null"/>.</summary>
     public MagicGunMount? Gun { get; init; }
 
+    /// <summary>Gets a helicopter skid's lengths, for a <c>TASKTYPE_HELIWHEEL</c> object.</summary>
+    public MagicHeliWheel? HeliWheel { get; init; }
+
     /// <inheritdoc/>
     public override string ToString() => $"{Name} -> {Model} (type {TaskType})";
 }
+
+/// <summary>A helicopter skid's 8-byte record (<c>0x427240</c>), in world units.</summary>
+/// <param name="Travel">Record <c>+0</c>: how far below the skid the ground can still carry it (L0).</param>
+/// <param name="BottomOut">Record <c>+4</c>: the depth under which the skid has bottomed out (L1).</param>
+public readonly record struct MagicHeliWheel(float Travel, float BottomOut);

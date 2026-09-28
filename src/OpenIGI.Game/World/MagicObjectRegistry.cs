@@ -203,6 +203,13 @@ public sealed class MagicObjectRegistry
                 && call.ArgumentCount > 12
                     ? ReadGunMount(call)
                     : null,
+
+            // 0x427240 reads a HeliWheel's two lengths from argument 3: the bottom-out depth, then the
+            // travel, each (float)(p · 4096.0f) -- exact for a float p, since 4096 is a power of two.
+            HeliWheel = string.Equals(typeName, "TASKTYPE_HELIWHEEL", StringComparison.Ordinal)
+                && call.ArgumentCount > 4
+                    ? new MagicHeliWheel(call.GetSingle(4) * 4096.0f, call.GetSingle(3) * 4096.0f)
+                    : null,
         };
 
         // The original appends unconditionally and its lookup takes the first match, so a repeated name

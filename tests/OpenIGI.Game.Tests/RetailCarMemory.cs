@@ -52,6 +52,28 @@ internal static class RetailCarMemory
     /// <summary>Loads a car's state from an entry dump.</summary>
     public static void Load(RetailCarBody car, byte[] b)
     {
+        LoadBody(car, b);
+        car.Throttle = F(b, 1824);
+        car.Steering = F(b, 1836);
+        LoadControls(car, b);
+        car.DrivenWheels = I(b, 1880);
+        for (int i = 0; i < RetailCarBody.MaxWheels; i++)
+        {
+            int w = 1884 + (28 * i);
+            RetailCarWheel wheel = car.Wheels[i];
+            wheel.Enabled = b[w] != 0;
+            wheel.Contact = b[w + 1] != 0;
+            for (int k = 0; k < 3; k++)
+            {
+                wheel.Normal[k] = F(b, w + 4 + (4 * k));
+                wheel.Point[k] = F(b, w + 16 + (4 * k));
+            }
+        }
+    }
+
+    /// <summary>Loads the shared physics object's state (<c>+0 … +1823</c>) from an entry dump.</summary>
+    public static void LoadBody(RetailRigidBody car, byte[] b)
+    {
         for (int k = 0; k < 3; k++)
         {
             car.Position[k] = D(b, 32 + (8 * k));
@@ -110,23 +132,6 @@ internal static class RetailCarMemory
         car.Wake = b[1680] != 0;
         car.RunCollide = b[1752] != 0;
         car.Planar = b[1753] != 0;
-        car.Throttle = F(b, 1824);
-        car.Steering = F(b, 1836);
-        LoadControls(car, b);
-        car.DrivenWheels = I(b, 1880);
-        for (int i = 0; i < RetailCarBody.MaxWheels; i++)
-        {
-            int w = 1884 + (28 * i);
-            RetailCarWheel wheel = car.Wheels[i];
-            wheel.Enabled = b[w] != 0;
-            wheel.Contact = b[w + 1] != 0;
-            for (int k = 0; k < 3; k++)
-            {
-                wheel.Normal[k] = F(b, w + 4 + (4 * k));
-                wheel.Point[k] = F(b, w + 16 + (4 * k));
-            }
-        }
-
         car.Forces.Clear();
     }
 
@@ -140,6 +145,41 @@ internal static class RetailCarMemory
 
     /// <summary>Lists every field of the car that differs, bit for bit, from an entry dump.</summary>
     public static List<string> Diff(RetailCarBody car, byte[] b)
+    {
+        List<string> diff = DiffBody(car, b);
+        string[] axis = ["x", "y", "z"];
+        SameFloat(diff, "throttle", car.Throttle, F(b, 1824), 1824);
+        SameFloat(diff, "steering", car.Steering, F(b, 1836), 1836);
+        for (int i = 0; i < RetailCarBody.MaxWheels; i++)
+        {
+            int w = 1884 + (28 * i);
+            RetailCarWheel wheel = car.Wheels[i];
+            if (wheel.Contact != (b[w + 1] != 0))
+            {
+                diff.Add($"wheel{i}.contact (+{w + 1}): port {wheel.Contact} retail {b[w + 1]}");
+            }
+
+            for (int k = 0; k < 3; k++)
+            {
+                SameFloat(diff, $"wheel{i}.normal.{axis[k]}", wheel.Normal[k], F(b, w + 4 + (4 * k)), w + 4 + (4 * k));
+                SameFloat(diff, $"wheel{i}.point.{axis[k]}", wheel.Point[k], F(b, w + 16 + (4 * k)), w + 16 + (4 * k));
+            }
+        }
+
+        return diff;
+    }
+
+    /// <summary>Adds a mismatch when two floats differ in any bit.</summary>
+    public static void SameFloat(List<string> diff, string name, float actual, float expected, int offset)
+    {
+        if (BitConverter.SingleToInt32Bits(actual) != BitConverter.SingleToInt32Bits(expected))
+        {
+            diff.Add($"{name} (+{offset}): port {actual:R} (0x{BitConverter.SingleToInt32Bits(actual):X8}) retail {expected:R} (0x{BitConverter.SingleToInt32Bits(expected):X8})");
+        }
+    }
+
+    /// <summary>Lists every shared physics-object field that differs, bit for bit, from an entry dump.</summary>
+    public static List<string> DiffBody(RetailRigidBody car, byte[] b)
     {
         List<string> diff = [];
         void Float(string name, float actual, int offset)
@@ -218,20 +258,6 @@ internal static class RetailCarMemory
         }
 
         Bool("wake", car.Wake, 1680);
-        Float("throttle", car.Throttle, 1824);
-        Float("steering", car.Steering, 1836);
-        for (int i = 0; i < RetailCarBody.MaxWheels; i++)
-        {
-            int w = 1884 + (28 * i);
-            RetailCarWheel wheel = car.Wheels[i];
-            Bool($"wheel{i}.contact", wheel.Contact, w + 1);
-            for (int k = 0; k < 3; k++)
-            {
-                Float($"wheel{i}.normal.{axis[k]}", wheel.Normal[k], w + 4 + (4 * k));
-                Float($"wheel{i}.point.{axis[k]}", wheel.Point[k], w + 16 + (4 * k));
-            }
-        }
-
         return diff;
     }
 
