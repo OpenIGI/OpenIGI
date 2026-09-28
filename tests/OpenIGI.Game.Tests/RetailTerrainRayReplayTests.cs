@@ -1,13 +1,7 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Flow;
-using OpenIGI.Engine.Level;
-using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
-using OpenIGI.Engine.Time;
-using OpenIGI.Engine.Vfs;
-using OpenIGI.Game.Player;
+using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
-using OpenIGI.TestSupport;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -19,9 +13,7 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 public sealed class RetailTerrainRayReplayTests(ITestOutputHelper output)
 {
-    private static readonly Lazy<RetailTerrainRay> MissionSeven = new(() => Load(7));
-
-    public static TheoryData<string> Fixtures => new()
+        public static TheoryData<string> Fixtures => new()
     {
         "carstep-m7-apc352.log.gz",
         "carstep-m7-t80-357.log.gz",
@@ -31,10 +23,31 @@ public sealed class RetailTerrainRayReplayTests(ITestOutputHelper output)
     [MemberData(nameof(Fixtures))]
     public void TheCarDrivesOnThePortsOwnTerrainRaysExactlyAsRetail(string fixture)
     {
-        RetailTerrainRay terrain = MissionSeven.Value;
         RetailCarStepCapture capture = RetailCarStepCapture.Load(fixture);
         RetailCarBody car = new(RetailCarMemory.Definition(capture.TypeMemory, capture.RecordMemory));
         RetailCarMemory.Load(car, capture.Ticks[0].Entry);
+        Drive(car, capture);
+    }
+
+    [Theory]
+    [InlineData(352, "carstep-m7-apc352.log.gz")]
+    [InlineData(357, "carstep-m7-t80-357.log.gz")]
+    public void ACarSpawnedFromTheLevelDrivesTheWholeCaptureExactlyAsRetail(int id, string fixture)
+    {
+        // Nothing from the capture but the controller's packets: the car is built from the level, its type
+        // and its model, and every ray is the port's own.
+        RetailMissionData data = RetailMissionData.Get(7);
+        DeclaredTask task = Assert.IsType<DeclaredTask>(data.Root.Tree.FromId(id));
+        string modelName = Assert.IsType<string>(task.TryGetValue(WorldScene.ModelParameter, out object? value) ? value : null);
+        Assert.True(data.Vehicles.TryGetCar(modelName, out CarPhysicsDefinition physics));
+        Assert.True(data.Mission.TryGetModel(modelName, out MefModel? model));
+        RetailCarBody car = RetailCarSpawn.Create(physics, model!, RetailCarSpawn.Placement(task, wheelAttachments: 16));
+        Drive(car, RetailCarStepCapture.Load(fixture));
+    }
+
+    private void Drive(RetailCarBody car, RetailCarStepCapture capture)
+    {
+        RetailTerrainRay terrain = RetailMissionData.Get(7).TerrainRay;
         int t = 0;
         int objectHits = 0;
         for (; t + 1 < capture.Ticks.Count; t++)
@@ -50,27 +63,6 @@ public sealed class RetailTerrainRayReplayTests(ITestOutputHelper output)
         }
 
         output.WriteLine($"{t} ticks driven on the port's terrain rays ({objectHits} model hits taken from the capture)");
-    }
-
-    private static RetailTerrainRay Load(int id)
-    {
-        VirtualFileSystem fileSystem = new();
-        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
-        ResourceRegistry resources = new(fileSystem);
-        GameLoop loop = new(new ManualTimeSource());
-        MissionRegistry registry = new();
-        registry.Register(loop.Natives);
-        registry.Scan(fileSystem, resources, loop.Natives);
-        MagicObjectRegistry magic = new();
-        magic.Register(loop.Natives);
-        magic.Load(resources, loop.Natives);
-        PlayerTaskTypes.RegisterAll(loop.Types);
-        TerrainLoader terrainLoader = new(resources, loop.Natives);
-        LevelTask levelRoot = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
-        LevelLoader levelLoader = new(levelRoot, loop.TaskCommands, loop.Natives, resources);
-        LoadedMission mission = new MissionLoader(registry, fileSystem, resources, levelLoader, null, terrainLoader).Load(id);
-        TerrainData data = mission.Terrain ?? throw new InvalidOperationException("no terrain");
-        return new RetailTerrainRay(data.Octree, data.Commands, TerrainDiscardBinding.Bind(data, levelRoot).Regions);
     }
 
     /// <summary>Answers the wheel rays with the port's terrain query and checks each answer against the capture.</summary>
