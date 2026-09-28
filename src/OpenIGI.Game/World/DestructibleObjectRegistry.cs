@@ -142,6 +142,14 @@ public sealed class DestructibleObject
     /// <summary>Gets whether the retail object has already been destroyed.</summary>
     public bool IsDestroyed { get; internal set; }
 
+    /// <summary>Gets whether the object stays drawn and solid after it blows up.</summary>
+    /// <remarks>
+    /// An <c>ExplodeObject</c> that authors no <c>Destroyed model</c>: <c>0x481A60</c> only swaps the
+    /// model when the name resolves, so the blast goes off and <c>isExploded</c> rises on an object
+    /// that looks exactly as it did.
+    /// </remarks>
+    public bool KeepsModelWhenDestroyed { get; internal set; }
+
     /// <summary>Gets the previous tick's destroyed state exposed as <c>isLastDestroyed</c>.</summary>
     public bool IsLastDestroyed { get; internal set; }
 
@@ -178,6 +186,8 @@ public sealed class DestructibleObjectRegistry
     private const string ExplosionDamageScaleParameter = "Damage scale";
     private const string GlassType = "TASKTYPE_GLASS";
     private const string CarType = "Car";
+    private const string ExplodeObjectType = "ExplodeObject";
+    private const string GeneratorType = "Generator";
     private const string ExplodeMagicType = "TASKTYPE_EXPLODEMAGICOBJ";
 
     private readonly List<DestructibleObject> _objects = [];
@@ -249,9 +259,15 @@ public sealed class DestructibleObjectRegistry
             // AlarmControl, and SCameraControl: the first model is replaced by Destroyed model once
             // a weapon hit destroys the task.  A Switch also has a field of that name, but has no
             // explosion parameters and is governed by its separate destructable flag.
-            if (!task.TryGetValue(DestroyedModelParameter, out object? rawDestroyed)
-                || rawDestroyed is not string { Length: > 0 }
-                || !task.TryGetValue(ExplosionDamageScaleParameter, out _))
+            //
+            // ExplodeObject itself, and Generator which derives from it, export isExploded whatever
+            // the model (0x481F90), and the blast (0x481A60) only swaps in a Destroyed model that
+            // resolves -- with none the object stays as it is. Mission 7's Generator_99 is one: its
+            // own On expression is !Generator_99.isExploded, so it must still be able to blow up.
+            bool hasDestroyedModel = task.TryGetValue(DestroyedModelParameter, out object? rawDestroyed)
+                && rawDestroyed is string { Length: > 0 };
+            if (!task.TryGetValue(ExplosionDamageScaleParameter, out _)
+                || (!hasDestroyedModel && !ExplodesWithoutDestroyedModel(task)))
             {
                 continue;
             }
@@ -271,6 +287,7 @@ public sealed class DestructibleObjectRegistry
                 registry.RegisterPlacement(item, taskPlacement);
             }
             ReadExplodeParameters(task, item);
+            item.KeepsModelWhenDestroyed = !hasDestroyedModel;
 
             variables.BindBool(task, "isExploded", () => item.IsDestroyed, value =>
             {
@@ -373,10 +390,16 @@ public sealed class DestructibleObjectRegistry
     }
 
     /// <summary>Gets whether one exact placement is already destroyed.</summary>
+    /// <remarks>
+    /// An object that keeps its model when it blows up (<see cref="DestructibleObject.KeepsModelWhenDestroyed"/>)
+    /// is never destroyed here: the placement is still drawn and still collides, only its task state
+    /// has changed.
+    /// </remarks>
     public bool IsDestroyed(WorldPlacement placement) =>
         placement is not null
         && _byPlacement.TryGetValue(placement, out DestructibleObject? item)
-        && item.IsDestroyed;
+        && item.IsDestroyed
+        && !item.KeepsModelWhenDestroyed;
 
     /// <summary>Gets whether a task has any destroyed object registered under it.</summary>
     public bool IsDestroyed(GameTask task) =>
@@ -879,6 +902,12 @@ public sealed class DestructibleObjectRegistry
         kind = default;
         return false;
     }
+
+    // Terminal, Siren, Radio and MineField derive from ExplodeObject too, and SCameraControl and
+    // AlarmControl declare the same parameters, but those are owned by their own registries.
+    private static bool ExplodesWithoutDestroyedModel(DeclaredTask task) =>
+        string.Equals(task.Type.Name, ExplodeObjectType, StringComparison.Ordinal)
+        || string.Equals(task.Type.Name, GeneratorType, StringComparison.Ordinal);
 
     private static Vector3d PositionOf(DeclaredTask task, WorldPlacement? placement)
     {

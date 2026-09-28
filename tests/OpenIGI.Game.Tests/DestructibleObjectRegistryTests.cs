@@ -50,6 +50,50 @@ public sealed class DestructibleObjectRegistryTests
         Assert.Equal("203_02_1", item.DestroyedModelName);
     }
 
+    [Fact]
+    public void AGeneratorWithNoDestroyedModelStillExplodesAndKeepsItsModel()
+    {
+        // Mission 7's Generator_99 authors an empty Destroyed model, and its own On expression is
+        // !Generator_99.isExploded (issue #134).
+        GameLoop loop = new();
+        QvmProgram script = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("Generator"),
+                QvmExpression.Text("Position"), QvmExpression.Text("ObjectPos"),
+                QvmExpression.Text("Model"), QvmExpression.Text("String16"),
+                QvmExpression.Text("Destroyed model"), QvmExpression.Text("String16"),
+                QvmExpression.Text("Damage scale"), QvmExpression.Text("Real32")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(99),
+                QvmExpression.Text("Generator"),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Real(1f), QvmExpression.Real(2f), QvmExpression.Real(3f),
+                QvmExpression.Text("300_01_1"),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Real(1f))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(script, loop.Natives).Run());
+
+        DeclaredTask task = Assert.IsType<DeclaredTask>(loop.Tasks.FromId(99));
+        WorldPlacement model = Placement(task, "Model");
+        DestructibleObjectRegistry registry = DestructibleObjectRegistry.Build(
+            loop.Tasks.Root,
+            [model],
+            loop.Variables);
+        LevelExpressionRuntime expressions = new(loop.Variables);
+
+        DestructibleObject item = Assert.Single(registry.Objects);
+        Assert.True(item.KeepsModelWhenDestroyed);
+        Assert.True(expressions.EvaluateCondition("!Generator_99.isExploded", emptyValue: false));
+
+        Assert.Same(item, registry.TryDestroy(task, model));
+
+        Assert.True(item.IsDestroyed);
+        Assert.True(expressions.EvaluateCondition("Generator_99.isExploded", emptyValue: false));
+        Assert.False(registry.IsDestroyed(model));
+    }
+
     private static WorldPlacement Placement(GameTask owner, string taskName) => new(
         Position: default,
         Orientation: default,
