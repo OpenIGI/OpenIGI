@@ -640,6 +640,14 @@ public sealed class PlayerCamera
             return;
         }
 
+        if (open)
+        {
+            // The Ready state calls 0x4659E0 on the view just before it enters weapon state 11: the
+            // scope latch clears and both tangents go home. Without this a sight, scope or binocular
+            // zoom survives behind the map and comes back narrowed when play resumes.
+            ResetOptics();
+        }
+
         _mapComputerOpen = open;
         _weapons?.SetMapComputerOpen(open);
         _animator?.Enter(open ? 45 : HumanLocomotionStates.Idle);
