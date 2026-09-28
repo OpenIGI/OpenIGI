@@ -1422,8 +1422,11 @@ internal sealed partial class GameHost
 
     /// <summary>Runs the native explosion-hit callbacks for every authored object in a blast.</summary>
     /// <remarks>
-    /// A car is not traced to: it joins Explosion0's listener list (<c>0x4C1790</c>, from its create
-    /// handler <c>0x42E160</c>) and the fireball messages that list (<c>0x480003</c>) with no line of sight.
+    /// Nothing is traced to. Cars (<c>0x42E160</c>), ExplodeObjects (<c>0x481780</c>) and glass
+    /// (<c>0x4497F0</c>) all join Explosion0's listener list (<c>0x4C1790</c> on <c>dword_57BAA8</c>), and
+    /// the fireball messages every entry on it (<c>0x480003</c>). Each handler weighs the blast by distance
+    /// alone (<c>0x416C90</c>), so a wall -- or the ground over Mission 7's buried Generator_99 -- stops
+    /// nothing.
     /// </remarks>
     private void HandleDestructibleBlast(
         DestructibleObject? source,
@@ -1444,9 +1447,7 @@ internal sealed partial class GameHost
             radiusUnits,
             falloffUnits,
             damageFactor,
-            target => ConditionalContainerGate.IsTaskActive(target.Owner)
-                && (target.Kind == DestructibleObjectKind.Vehicle
-                    || ExplosionCanReach(source, originUnits, target)),
+            target => ConditionalContainerGate.IsTaskActive(target.Owner),
             sourceWeaponId))
         {
             // Passing the blast origin is deliberate. GlassShatter uses the incoming contact to pick
@@ -1454,43 +1455,6 @@ internal sealed partial class GameHost
             // the fireball's contact point rather than the pane's origin.
             HandleDestructibleImpact(target, originUnits);
         }
-    }
-
-    /// <summary>Checks the native blast contact envelope against the live world occluders.</summary>
-    /// <remarks>
-    /// Explosion0 dispatches its callbacks from the collision object, so an authored pane or barrel
-    /// behind a solid building is not a contact. The source placement is the one mesh that must be
-    /// ignored; using <c>IgnoredOwner</c> for an attached source would incorrectly remove every sibling
-    /// pane owned by the same building from the trace.
-    /// </remarks>
-    private bool ExplosionCanReach(
-        DestructibleObject? source,
-        Vector3d originUnits,
-        DestructibleObject target)
-    {
-        if (_worldTrace is not { } trace)
-        {
-            return true;
-        }
-
-        WorldTraceRequest request = new(
-            originUnits,
-            target.PositionUnits,
-            WorldTraceMask.World,
-            IgnoredOwner: source?.Placement is null ? source?.Owner : null,
-            IgnoredPlacement: source?.Placement);
-
-        if (!trace(request, out WorldTraceHit hit))
-        {
-            return true;
-        }
-
-        if (target.Placement is { } placement)
-        {
-            return ReferenceEquals(hit.Placement, placement);
-        }
-
-        return target.Owner is { } owner && ReferenceEquals(hit.Owner, owner);
     }
 
     /// <summary>Applies the retail presentation and blast side effects of one destroyed world object.</summary>
