@@ -66,6 +66,7 @@ public sealed class CutsceneRuntime
     private IRetailCarWorld? _retailCarWorld;
     private Func<string, OpenIGI.Formats.World.MefModel?>? _retailCarModels;
     private readonly List<RetailRayModel> _retailVehicleModels = [];
+    private Func<string, MagicObjectDefinition?>? _retailMagic;
     private readonly Dictionary<GameTask, RetailRayModel?> _standingCars = [];
     private readonly Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? _vehicleObstacleHit;
     private readonly Func<GameTask, bool>? _vehicleObstacleReleased;
@@ -413,10 +414,15 @@ public sealed class CutsceneRuntime
     /// (<c>0x42ECA0</c>) instead of the planar <see cref="CarDynamics"/> model. A car whose model or type is
     /// missing stays on the planar model.
     /// </remarks>
-    public void ConfigureRetailCars(IRetailCarWorld world, Func<string, OpenIGI.Formats.World.MefModel?> models)
+    /// <param name="magic">Resolves a magic object by name, for a helicopter's skids and rotors; optional.</param>
+    public void ConfigureRetailCars(
+        IRetailCarWorld world,
+        Func<string, OpenIGI.Formats.World.MefModel?> models,
+        Func<string, MagicObjectDefinition?>? magic = null)
     {
         _retailCarWorld = world ?? throw new ArgumentNullException(nameof(world));
         _retailCarModels = models ?? throw new ArgumentNullException(nameof(models));
+        _retailMagic = magic;
     }
 
     /// <summary>Supplies the loaded graph corpus to authored vehicle patrol tasks.</summary>
@@ -1399,6 +1405,7 @@ public sealed class CutsceneRuntime
             ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
         }
 
+        TickRetailRotors();
         TickCarAi();
         TickVehicleCombat();
         TickDeathZones();
@@ -2646,7 +2653,55 @@ public sealed class CutsceneRuntime
         return model;
     }
 
-    private static void CopyRetailPose(TransformState state, RetailCarBody body)
+    /// <summary>A helicopter's retail body, created from its type and model the first time its AnimTask speaks.</summary>
+    private RetailHeliBody? RetailHeliFor(DeclaredTask task, TransformState state, in HelicopterPhysicsDefinition physics)
+    {
+        if (state.RetailHeli is { } existing)
+        {
+            return existing;
+        }
+
+        if (_retailCarModels?.Invoke(Text(task, WorldScene.ModelParameter)) is not { } model || _retailMagic is null)
+        {
+            return null;
+        }
+
+        VehiclePhysicsRegistry? registry = _vehiclePhysics;
+        RetailHeliBody heli = RetailHeliSpawn.Create(
+            physics,
+            model,
+            RetailHeliSpawn.Placement(task),
+            _retailMagic,
+            name => registry?.TryGetRotor(name, out RotorPhysicsDefinition rotor) == true ? rotor : null);
+        heli.Owner = task;
+        state.RetailHeli = heli;
+
+        // Created as the resets leave it -- which, in retail, is with that frame's rotor records already pushed.
+        heli.RotorTick();
+        state.RetailRotorsQueued = true;
+        return heli;
+    }
+
+    /// <summary>
+    /// Every helicopter's rotors push their lift and yaw records (<c>0x42D440</c>, from the heli's run op each frame),
+    /// for its next tick to integrate. The original's list has room for 32; past that it writes beyond it, which
+    /// the port declines to do.
+    /// </summary>
+    private void TickRetailRotors()
+    {
+        foreach ((GameTask task, TransformState state) in _taskTransforms)
+        {
+            if (state.RetailHeli is { } heli
+                && !state.RetailRotorsQueued
+                && heli.Forces.Count < 32
+                && ConditionalContainerGate.IsTaskActive(task))
+            {
+                heli.RotorTick();
+            }
+        }
+    }
+
+    private static void CopyRetailPose(TransformState state, RetailRigidBody body)
     {
         float[] m = body.M;
         state.Position = new Vector3d(body.Position[0], body.Position[1], body.Position[2]);
@@ -2939,6 +2994,55 @@ public sealed class CutsceneRuntime
                         new(3f, Vector3f.UnitY, Vector3f.Zero),
                         new(50f, Vector3f.UnitZ, Vector3f.Zero),
                     ]);
+            if (_retailCarWorld is { } retailWorld
+                && target is DeclaredTask retailHeliTask
+                && transform.HelicopterPhysics is { } retailHeliPhysics
+                && RetailHeliFor(retailHeliTask, transform, retailHeliPhysics) is { } retailHeli)
+            {
+                // 0x431B70: every packet latches the channels; mode 0 resets, a later packet steps Heli_Tick.
+                retailHeli.Receive(program.Channels);
+                if (program.Tick == 0)
+                {
+                    RetailHeliSpawn.Reset(retailHeli, retailHeliPhysics, RetailHeliSpawn.Placement(retailHeliTask));
+
+                    // Retail's run op follows every reset frame with the rotors' pushes, before any physics
+                    // packet; the port's AnimTask can deliver the last reset and the first step in one frame,
+                    // so push them here and let the frame's rotor pass skip this heli.
+                    retailHeli.RotorTick();
+                    transform.RetailRotorsQueued = true;
+                    program.WriteChannel(0, 0f);
+                    program.WriteChannel(1, 0f);
+                    program.WriteChannel(2, 0f);
+                    program.WriteChannel(3, -1f);
+                    program.WriteChannel(4, -2f);
+                    CopyRetailPose(transform, retailHeli);
+                    transform.PreviousPosition = transform.Position;
+                    transform.PreviousOrientation = transform.Orientation;
+                    transform.Velocity = default;
+                    transform.Thrust = retailHeli.Collective;
+                    transform.TargetThrust = retailHeli.CollectiveTarget;
+                    transform.RotorPhase = 0f;
+                    transform.RotorPhaseTick = SimulationTick;
+                    transform.IsDynamic = true;
+                    return;
+                }
+
+                SnapshotDynamicPose(transform, simulationOrder);
+                retailHeli.Tick(retailWorld);
+                transform.RetailRotorsQueued = false;
+                CopyRetailPose(transform, retailHeli);
+                transform.Thrust = retailHeli.Collective;
+                transform.TargetThrust = retailHeli.CollectiveTarget;
+                transform.Speed = retailHeli.Speed;
+                transform.Velocity = transform.Position - transform.PreviousPosition;
+                transform.RotorPhase += transform.Thrust;
+                transform.RotorPhaseTick = SimulationTick;
+                transform.PhysicsTicks++;
+                transform.IsDynamic = true;
+                LogAirframePath(targetId, "Heli", target, transform);
+                return;
+            }
+
             if (program.Tick == 0)
             {
                 // The retail Heli live callback (0x431B70) is bidirectional: its tick-zero reset restores the
@@ -4303,6 +4407,12 @@ public sealed class CutsceneRuntime
 
         /// <summary>The car's retail rigid body, once its controller's set-up packet has created it.</summary>
         public RetailCarBody? RetailBody { get; set; }
+
+        /// <summary>The helicopter's retail rigid body, once its AnimTask has first spoken.</summary>
+        public RetailHeliBody? RetailHeli { get; set; }
+
+        /// <summary>Whether the rotors have pushed since the heli's last reset, with no step since.</summary>
+        public bool RetailRotorsQueued { get; set; }
 
         public CarMotionState CarMotion { get; } = new();
         public PlanePhysicsDefinition? PlanePhysics { get; set; }

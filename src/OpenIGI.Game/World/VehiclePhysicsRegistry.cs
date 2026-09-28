@@ -205,7 +205,12 @@ public sealed class VehiclePhysicsRegistry
                 call.GetSingle(20),
                 call.GetSingle(21),
                 call.GetSingle(12),
-                surfaces));
+                surfaces)
+            {
+                // With no body points (arg 9 = 0 on both shipped airframes) the sleep thresholds are args 10 and 11.
+                SleepSpeed = call.GetSingle(10),
+                SleepSpin = call.GetSingle(11),
+            });
         }
         else if (taskType == _carType && call.ArgumentCount >= 20)
         {
@@ -345,7 +350,14 @@ public readonly record struct HelicopterPhysicsDefinition(
     float HighCollectiveStep,
     float LowCollectiveStep,
     float MaximumSpeed,
-    IReadOnlyList<AerodynamicSurfaceDefinition> Aerodynamics);
+    IReadOnlyList<AerodynamicSurfaceDefinition> Aerodynamics)
+{
+    /// <summary>Gets the sleep speed threshold (<c>TYPE + 716</c>).</summary>
+    public float SleepSpeed { get; init; }
+
+    /// <summary>Gets the sleep threshold on |ω|² (<c>TYPE + 720</c>).</summary>
+    public float SleepSpin { get; init; }
+}
 
 /// <summary>The CAR physics record, as the retail parsers build it.</summary>
 /// <param name="Mass">The body mass, from the TYPE record's <c>+8</c>.</param>

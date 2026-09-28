@@ -82,6 +82,56 @@ public sealed class RetailHeliBodyReplayTests(ITestOutputHelper output)
         output.WriteLine($"{t - 1} ticks flown; final position ({heli.Position[0]:R}, {heli.Position[1]:R}, {heli.Position[2]:R})");
     }
 
+    [Fact]
+    public void AHelicopterIsCreatedExactlyAsRetailHoldsItAtItsFirstTick()
+    {
+        RetailMissionData data = RetailMissionData.Get(7);
+        RetailCarStepCapture capture = RetailCarStepCapture.Load(Fixture);
+        OpenIGI.Engine.Tasks.DeclaredTask task = Assert.IsType<OpenIGI.Engine.Tasks.DeclaredTask>(data.Root.Tree.FromId(353));
+        string name = Assert.IsType<string>(task.TryGetValue(WorldScene.ModelParameter, out object? value) ? value : null);
+        Assert.True(data.Vehicles.TryGetHelicopter(name, out HelicopterPhysicsDefinition physics));
+        Assert.True(data.Mission.TryGetModel(name, out MefModel? model));
+        RetailHeliBody heli = RetailHeliSpawn.Create(
+            physics,
+            model!,
+            RetailHeliSpawn.Placement(task),
+            n => data.Magic.TryGet(n, out MagicObjectDefinition d) ? d : null,
+            n => data.Vehicles.TryGetRotor(n, out RotorPhysicsDefinition r) ? r : null);
+
+        // The definition against the captured TYPE and record.
+        RetailHeliDefinition expected = Definition(capture);
+        Assert.Equal(expected.Mass, heli.Definition.Mass);
+        Assert.Equal(expected.SleepSpeed, heli.Definition.SleepSpeed);
+        Assert.Equal(expected.SleepSpin, heli.Definition.SleepSpin);
+        for (int k = 0; k < 10; k++)
+        {
+            if (k != 7)
+            {
+                Assert.Equal(expected.Record[k], heli.Definition.Record[k]);
+            }
+        }
+
+        Assert.Equal(expected.Aero, heli.Definition.Aero);
+
+        // Retail's second reset is followed by the rotors' first pushes, then the first tick.
+        heli.RotorTick();
+        List<string> diff = RetailCarMemory.DiffBody(heli, capture.Ticks[0].Entry);
+        byte[] b = capture.Ticks[0].Entry;
+        RetailCarMemory.SameFloat(diff, "collective", heli.Collective, BitConverter.ToSingle(b, 1824), 1824);
+        RetailCarMemory.SameFloat(diff, "collectiveTarget", heli.CollectiveTarget, BitConverter.ToSingle(b, 1840), 1840);
+        RetailCarMemory.SameFloat(diff, "originalThrust", heli.OriginalThrust, BitConverter.ToSingle(b, 1856), 1856);
+        RetailCarMemory.SameFloat(diff, "mass", heli.Mass, BitConverter.ToSingle(b, 240), 240);
+        RetailCarMemory.SameFloat(diff, "inverseMass", heli.InverseMass, BitConverter.ToSingle(b, 244), 244);
+        for (int k = 0; k < 3; k++)
+        {
+            RetailCarMemory.SameFloat(diff, $"inverseInertia{k}", heli.InverseInertia[k], BitConverter.ToSingle(b, 252 + (4 * k)), 252 + (4 * k));
+        }
+
+        // Skid starts on the first tick are the reset's seating plus 2 m.
+        Assert.Equal(capture.Ticks[0].SkidRayCount, heli.Skids.Count);
+        Assert.True(diff.Count == 0, string.Join("; ", diff));
+    }
+
     private static bool IsRotor(RetailCarStepCapture.Force force) => RotorCallers.Contains(force.Caller);
 
     private static RetailForce ToForce(RetailCarStepCapture.Force force) =>

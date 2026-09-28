@@ -953,9 +953,16 @@ public sealed class AiScenarioHarness : IDisposable
             if (EnvInt("OPENIGI_VEH_SCENARIO_BODY", -1) is int bodyId and >= 0
                 && typeof(CutsceneRuntime).GetField("_transforms", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(runtime) is System.Collections.IDictionary bodyStates
                 && bodyStates.Contains(bodyId)
-                && bodyStates[bodyId]?.GetType().GetProperty("RetailBody")?.GetValue(bodyStates[bodyId]) is RetailCarBody body)
+                && bodyStates[bodyId] is { } bodyState)
             {
-                log.AppendLine(CultureInfo.InvariantCulture, $"[body] tick={tick} pos=({body.Position[0]:R},{body.Position[1]:R},{body.Position[2]:R}) thr={body.Throttle:R}/{body.ThrottleTarget:R} steer={body.Steering:R}/{body.SteeringTarget:R} hb={body.Handbrake} speed={body.Speed:R}");
+                if (bodyState.GetType().GetProperty("RetailBody")?.GetValue(bodyState) is RetailCarBody body)
+                {
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[body] tick={tick} pos=({body.Position[0]:R},{body.Position[1]:R},{body.Position[2]:R}) thr={body.Throttle:R}/{body.ThrottleTarget:R} steer={body.Steering:R}/{body.SteeringTarget:R} hb={body.Handbrake} speed={body.Speed:R}");
+                }
+                else if (bodyState.GetType().GetProperty("RetailHeli")?.GetValue(bodyState) is RetailHeliBody heli)
+                {
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[body] tick={tick} pos=({heli.Position[0]:R},{heli.Position[1]:R},{heli.Position[2]:R}) thr={heli.Collective:R}/{heli.CollectiveTarget:R} steer={heli.Controls[0]:R}/{heli.Targets[0]:R} hb=False speed={heli.Speed:R}");
+                }
             }
 
             Vector3d origin = player.Body.Position + new Vector3d(0d, 0d, OriginAboveFeet);

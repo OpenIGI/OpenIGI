@@ -718,7 +718,8 @@ internal sealed partial class GameHost
                     RetailWorldObjects.Build(levelRoot, carModels),
                     cutscenes.RetailVehicleModels,
                     static owner => owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task)),
-                carModels);
+                carModels,
+                name => _magic?.TryGet(name, out MagicObjectDefinition magic) == true ? magic : null);
         }
 
         // Every Car exports isExploded and blows up from its own CAR record's explosion points; the
