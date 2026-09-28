@@ -52,8 +52,11 @@ public sealed class RetailVehicleArmamentTests
         Assert.False(tank[0].IsHitscan);
         Assert.True(tank[1].IsHitscan);
 
-        // The coaxial gun rides on the turret: its offset includes the turret's own.
+        // The coaxial gun rides on the turret: its offset includes the turret's own, turned by the
+        // turret's half-revolution attachment -- which puts it on +X, where the probed retail coaxial
+        // gun aims from (its first traverse at a target dead ahead is +0.064 rad).
         Assert.True(tank[1].Offset.Z > tank[0].Offset.Z);
+        Assert.True(tank[1].Offset.X > 0d, $"coaxial gun at x={tank[1].Offset.X}");
     }
 
     [RequiresGameDataTheory]

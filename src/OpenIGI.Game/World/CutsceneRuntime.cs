@@ -72,6 +72,7 @@ public sealed class CutsceneRuntime
     private Func<int, CutsceneTargetPose?>? _targetPoseResolver;
     private readonly Dictionary<GameTask, VehicleArmament> _armaments = [];
     private readonly Dictionary<GameTask, DeathZoneState> _deathZones = [];
+    private readonly Random _gunRandom = new(0x46F390);
 
     /// <summary>How far above its origin a vehicle's eye stands (<c>0x42E870</c>: 8192 units, two metres).</summary>
     private const double VehicleEyeHeightUnits = 8192d;
@@ -533,53 +534,38 @@ public sealed class CutsceneRuntime
                     Single(declared, "ViewCone Length (meter)", 0f),
                     visible,
                     0f,
-                    0));
+                    0),
+                    retainWhileHidden: false);
             }
             else
             {
                 armament.Sight.Track(default);
             }
 
+            // A car's update (0x42E320) runs its guns once, then -- unless its physics tick ran this
+            // frame (+11980, set only when a controller drives it through 0x42EA10's physics branch) --
+            // re-seats them and runs every AIStationaryGun a second time. A parked or AnimTask-posed
+            // vehicle therefore turns its guns and meters their fire at twice the rate of a CarAI-driven
+            // one. Probed on Mission 7's stationary T80 354: T80 rounds 75 ticks apart and the coaxial
+            // M2HB one a tick, where the rows' own cadences are 150 and 2.
+            int runs = controller is not null && active ? 1 : 2;
             foreach (VehicleGunState gun in armament.Guns)
             {
-                if (gun.Cooldown > 0)
-                {
-                    gun.Cooldown--;
-                }
-
                 Vector3d origin = transform.Position + transform.Orientation.Transposed().Transform(gun.Gun.Offset);
                 Vector3d? local = aim is { } point ? transform.Orientation.Transform(point - origin) : null;
-                bool trigger = gun.Turret.Tick(local);
-                if (!trigger || gun.Cooldown > 0 || gun.Ammunition == 0 || aim is not { } shotTarget)
+                for (int run = 0; run < runs; run++)
                 {
-                    continue;
-                }
+                    if (FireVehicleGun(vehicle, transform, gun, local, aim) is { } shot)
+                    {
+                        VehicleCombatShotFired?.Invoke(shot);
+                    }
 
-                // Gun_Fire (0x478BA0) meters the held trigger by the row's own cadence.
-                gun.Cooldown = Math.Max(1, GunTiming.TicksPerRound(gun.Gun.Weapon.RoundsPerMinute));
-                if (gun.Ammunition > 0)
-                {
-                    gun.Ammunition--;
+                    // The Gun's own update (0x478640) counts its cooldown down after Gun_Fire has run.
+                    if (gun.Cooldown > 0)
+                    {
+                        gun.Cooldown--;
+                    }
                 }
-
-                float cosPitch = MathF.Cos(gun.Turret.Pitch);
-                Vector3f barrel = transform.Orientation.Transposed().Transform(new Vector3f(
-                    -MathF.Sin(gun.Turret.Yaw) * cosPitch,
-                    MathF.Cos(gun.Turret.Yaw) * cosPitch,
-                    MathF.Sin(gun.Turret.Pitch)));
-                WeaponType row = gun.Gun.Weapon;
-                VehicleCombatShotFired?.Invoke(new VehicleCombatShot(
-                    origin,
-                    shotTarget,
-                    barrel,
-                    MissileFlight.TypeForLauncher(row),
-                    MissileFlight.LaunchSpeedMetresPerSecond(row),
-                    string.IsNullOrWhiteSpace(row.Projectile.Text) ? "110_02_1" : row.Projectile.Text)
-                {
-                    Owner = vehicle,
-                    WeaponScriptId = row.ScriptId,
-                    IsHitscan = gun.Gun.IsHitscan,
-                });
             }
         }
     }
@@ -598,6 +584,82 @@ public sealed class CutsceneRuntime
             state.SpeedUnitsPerTick = state.LastPosition is { } last ? (transform.Position - last).Length : 0d;
             state.LastPosition = transform.Position;
         }
+    }
+
+    /// <summary>One run of a vehicle gun: turn (0x46F390), then let Gun_Fire (0x478BA0) take the trigger.</summary>
+    private VehicleCombatShot? FireVehicleGun(
+        GameTask vehicle,
+        TransformState transform,
+        VehicleGunState gun,
+        Vector3d? local,
+        Vector3d? aim)
+    {
+        bool trigger = gun.Turret.Tick(local);
+        if (!trigger)
+        {
+            // Gun_Fire resets the pull's round count (+320) when the trigger drops.
+            gun.RoundsThisPull = 0;
+            return null;
+        }
+
+        // A row that fires a fixed burst per pull (+1612) stops at it until the trigger is released.
+        int burst = gun.Gun.Weapon.MaximumRoundsPerBurst;
+        if ((burst > 0 && gun.RoundsThisPull >= burst)
+            || gun.Cooldown > 0
+            || gun.Ammunition == 0
+            || aim is not { } shotTarget)
+        {
+            return null;
+        }
+
+        // Gun_Fire restarts the cooldown at (60 / rpm) * 30 ticks, truncated.
+        gun.RoundsThisPull++;
+        gun.Cooldown = Math.Max(1, GunTiming.TicksPerRound(gun.Gun.Weapon.RoundsPerMinute));
+        if (gun.Ammunition > 0)
+        {
+            gun.Ammunition--;
+        }
+
+        Vector3d origin = transform.Position + transform.Orientation.Transposed().Transform(gun.Gun.Offset);
+        float cosPitch = MathF.Cos(gun.Turret.Pitch);
+        Vector3f barrel = transform.Orientation.Transposed().Transform(new Vector3f(
+            -MathF.Sin(gun.Turret.Yaw) * cosPitch,
+            MathF.Cos(gun.Turret.Yaw) * cosPitch,
+            MathF.Sin(gun.Turret.Pitch))).Normalized();
+        WeaponType row = gun.Gun.Weapon;
+
+        // Gun_Fire sends the round down the barrel, not at the target, turned inside the row's cone
+        // (0x478BA0: +1636 for a pull's first three rounds, +1640 after; radius three draws deep).
+        float cone = GunFiring.ConeAngle(row, gun.RoundsThisPull);
+        if (cone > 0f)
+        {
+            Span<float> draws = stackalloc float[GunFiring.ConeRadiusSamples + 1];
+            for (int draw = 0; draw < draws.Length; draw++)
+            {
+                draws[draw] = _gunRandom.NextSingle();
+            }
+
+            (float radius, float bearing) = GunFiring.SampleCone(cone, draws);
+            Vector3f side = Vector3f.Cross(barrel, Vector3f.UnitZ);
+            side = side.Length > 1e-6f ? side.Normalized() : Vector3f.UnitX;
+            Vector3f up = Vector3f.Cross(side, barrel).Normalized();
+            barrel = GunFiring.OffsetInCone(barrel, side, up, radius, bearing);
+        }
+
+        double range = (shotTarget - origin).Length;
+        Vector3d along = origin + new Vector3d(barrel.X * range, barrel.Y * range, barrel.Z * range);
+        return new VehicleCombatShot(
+            origin,
+            along,
+            barrel,
+            MissileFlight.TypeForLauncher(row),
+            MissileFlight.LaunchSpeedMetresPerSecond(row),
+            string.IsNullOrWhiteSpace(row.Projectile.Text) ? "110_02_1" : row.Projectile.Text)
+        {
+            Owner = vehicle,
+            WeaponScriptId = row.ScriptId,
+            IsHitscan = gun.Gun.IsHitscan,
+        };
     }
 
     /// <summary>The Level 6 capture's single fixed gun: fire the row's cadence at whatever is retained.</summary>
@@ -3679,6 +3741,7 @@ public sealed class CutsceneRuntime
         public VehicleGunTurret Turret { get; } = new(gun.Mount);
         public int Cooldown { get; set; }
         public int Ammunition { get; set; } = gun.Mount.Ammunition;
+        public int RoundsThisPull { get; set; }
     }
 
     private sealed record TimedShot(EditCameraShot Shot, double Start);

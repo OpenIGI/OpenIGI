@@ -1302,8 +1302,10 @@ internal sealed partial class GameHost
                     // the same mark a player's round does. In retail a miss is visible: the round lands
                     // on the wall or the dirt near you (10.4's decals) -- rounds that silently vanished
                     // are why the guards seemed to hit with every bullet.
+                    // A vehicle's gun casts with the vehicle as its owner (0x413D10 hands Gun_Fire's
+                    // owner through), so its own hull never stops the round.
                     bool worldBlocked = worldTrace(
-                        new WorldTraceRequest(from, to, WorldTraceMask.World),
+                        new WorldTraceRequest(from, to, WorldTraceMask.World, IgnoredOwner: _vehicleRoundOwner),
                         out WorldTraceHit blocker);
                     WorldRayHit worldHit = worldBlocked ? blocker.RayHit : default;
 
@@ -3129,6 +3131,9 @@ internal sealed partial class GameHost
     /// through the soldiers' round cast at probability 1, the value <c>0x46F950</c>'s fire message carries.
     /// </para>
     /// </remarks>
+    /// <summary>The vehicle whose gun's round is being cast, so the cast passes through its own hull.</summary>
+    private GameTask? _vehicleRoundOwner;
+
     private void ArmVehicles(LoadedMission loaded, LevelTask levelRoot, WeaponTypeRegistry roster, PlayerCamera player)
     {
         if (_cutscenes is not { } runtime || _magic is not { } magic)
@@ -3184,7 +3189,14 @@ internal sealed partial class GameHost
             return;
         }
 
-        runtime.VehicleCombatTarget = () => !_playerHealth.IsDead ? player.EyeUnits : null;
+        // A vehicle gun aims at what its vehicle's vision holds: the human's model origin (Human+32),
+        // about a metre over the feet standing and half that crouched -- not the eye.
+        runtime.VehicleCombatTarget = () => !_playerHealth.IsDead
+            ? player.Body.Position + new Vector3d(
+                0d,
+                0d,
+                player.Body.IsCrouched ? AiSoldier.HumanOriginCrouchedInUnits : AiSoldier.HumanOriginStandingInUnits)
+            : null;
         runtime.VehicleCombatLineOfSight = (owner, from, to) =>
             _worldTrace is null
             || !_worldTrace(new WorldTraceRequest(from, to, WorldTraceMask.World, IgnoredOwner: owner), out _);
@@ -3194,7 +3206,15 @@ internal sealed partial class GameHost
             {
                 if (roster.TryGetByScriptId(shot.WeaponScriptId, out WeaponType gunshot))
                 {
-                    _soldiers?.RoundHandler?.Invoke(shot.Origin, shot.Target, 1f, gunshot, null);
+                    _vehicleRoundOwner = shot.Owner;
+                    try
+                    {
+                        _soldiers?.RoundHandler?.Invoke(shot.Origin, shot.Target, 1f, gunshot, null);
+                    }
+                    finally
+                    {
+                        _vehicleRoundOwner = null;
+                    }
                 }
 
                 return;

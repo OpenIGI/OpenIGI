@@ -40,10 +40,14 @@ public sealed record VehicleGun(MagicGunMount Mount, WeaponType Weapon, Vector3d
         ArgumentNullException.ThrowIfNull(roster);
 
         List<VehicleGun> guns = [];
-        Collect(model, Vector3d.Zero, 0);
+        Collect(model, Vector3d.Zero, Matrix3f.Identity, 0);
         return guns;
 
-        void Collect(string name, Vector3d offset, int depth)
+        // Each attachment sits in its parent's frame: a gun on a gun is rotated with the gun it rides on.
+        // Mission 7's T80 turret is attached turned half a revolution, which puts its coaxial gun on the
+        // other side of the barrel from where the coaxial attachment's own offset reads -- the side retail's
+        // gun aims from (probed: the coaxial gun's first traverse is +0.064 rad, the cannon's -0.004).
+        void Collect(string name, Vector3d offset, Matrix3f orientation, int depth)
         {
             if (depth > MaximumNesting || models(name) is not { } mef)
             {
@@ -57,7 +61,9 @@ public sealed record VehicleGun(MagicGunMount Mount, WeaponType Weapon, Vector3d
                     continue;
                 }
 
-                Vector3d at = offset + new Vector3d(attachment.Position.X, attachment.Position.Y, attachment.Position.Z);
+                Vector3f local = orientation.Transposed().Transform(attachment.Position);
+                Vector3d at = offset + new Vector3d(local.X, local.Y, local.Z);
+                Matrix3f nested = orientation * attachment.Orientation;
                 if (roster.TryGetByGunModel(mount.WeaponModel, out WeaponType row))
                 {
                     guns.Add(new VehicleGun(mount, row, at));
@@ -67,7 +73,7 @@ public sealed record VehicleGun(MagicGunMount Mount, WeaponType Weapon, Vector3d
                     unresolved?.Invoke(attachment.Name, mount.WeaponModel);
                 }
 
-                Collect(definition.Model, at, depth + 1);
+                Collect(definition.Model, at, nested, depth + 1);
             }
         }
     }

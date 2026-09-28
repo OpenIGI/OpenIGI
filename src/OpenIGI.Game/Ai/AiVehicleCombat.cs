@@ -106,6 +106,12 @@ public sealed class AiVehicleCombat
 
     /// <summary>Updates what the vehicle sees and returns the target its guns should aim at.</summary>
     /// <param name="input">The vehicle's live and authored state; its gun fields are not read.</param>
+    /// <param name="retainWhileHidden">
+    /// Whether a target that drops out of sight is still returned for <see cref="TargetRetentionTicks"/>.
+    /// The Level 6 capture's fixed gun does; a model gun (<c>0x46F390</c>) takes only a target the
+    /// vehicle sees now and does its own 90-run hold -- probed on Mission 7's T80, which stopped firing
+    /// the tick the player was pushed past its 50-metre view.
+    /// </param>
     /// <returns>
     /// The last observed target while it is retained, or <see langword="null"/> when the vehicle sees
     /// nothing, is inactive, or acquired the target only this tick.
@@ -114,7 +120,7 @@ public sealed class AiVehicleCombat
     /// This is the vehicle's half of the fight: its vision record, which each of its guns asks for
     /// (<c>0x46F390</c> through message <c>0x489630</c>). The guns turn and fire on their own.
     /// </remarks>
-    public Vector3d? Track(in AiVehicleCombatInput input)
+    public Vector3d? Track(in AiVehicleCombatInput input, bool retainWhileHidden = true)
     {
         if (!input.IsVehicleActive || !input.CanFire)
         {
@@ -131,7 +137,7 @@ public sealed class AiVehicleCombat
             _retentionTicks = TargetRetentionTicks;
             _lastTarget = input.TargetPosition;
         }
-        else if (_hasTarget && _retentionTicks > 0)
+        else if (_hasTarget && _retentionTicks > 0 && retainWhileHidden)
         {
             _retentionTicks--;
         }
