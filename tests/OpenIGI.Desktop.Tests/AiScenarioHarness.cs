@@ -838,10 +838,7 @@ public sealed class AiScenarioHarness : IDisposable
         Action<VehicleCombatShot>? fired = runtime.VehicleCombatShotFired;
         runtime.VehicleCombatShotFired = shot =>
         {
-            if (ReferenceEquals(shot.Owner, vehicle))
-            {
-                log.AppendLine(CultureInfo.InvariantCulture, $"[vgun] ROUND tick={tick} weapon={shot.WeaponScriptId} origin=({shot.Origin.X:0},{shot.Origin.Y:0},{shot.Origin.Z:0})");
-            }
+            log.AppendLine(CultureInfo.InvariantCulture, $"[vgun] ROUND tick={tick} owner={shot.Owner?.Id} weapon={shot.WeaponScriptId} origin=({shot.Origin.X:0},{shot.Origin.Y:0},{shot.Origin.Z:0})");
 
             fired?.Invoke(shot);
         };
@@ -853,6 +850,11 @@ public sealed class AiScenarioHarness : IDisposable
             log.AppendLine(CultureInfo.InvariantCulture, $"[vgun] GUN index={index} weapon={turret.Mount.WeaponModel}");
         }
 
+        List<OpenIGI.Engine.Tasks.DeclaredTask> vehicles = [.. Walk(loop.Tasks.Root)
+            .OfType<OpenIGI.Engine.Tasks.DeclaredTask>()
+            .Where(static task => task.Type.Name is "Car" or "Heli")];
+        HumanHealth health = (HumanHealth)healthField.GetValue(host)!;
+        FieldInfo deadField = typeof(GameHost).GetField("_playerDead", BindingFlags.NonPublic | BindingFlags.Instance)!;
         bool[] triggers = new bool[guns.Count];
         bool god = false;
         int last = -1;
@@ -874,8 +876,9 @@ public sealed class AiScenarioHarness : IDisposable
                 // The host keeps the player's damage in its own HumanHealth, not the body's. Retail's god
                 // flag stops the accumulation but not the hit, so the player is still shoved.
                 player.Body.Health.Reset();
-                ((HumanHealth)healthField.GetValue(host)!).Invulnerable = true;
             }
+
+            health.Invulnerable = god;
 
             if (!host.Step())
             {
@@ -906,9 +909,43 @@ public sealed class AiScenarioHarness : IDisposable
                 }
             }
 
+            Vector3d origin = player.Body.Position + new Vector3d(0d, 0d, OriginAboveFeet);
+            if (runtime.TryRunOver(origin, out OpenIGI.Engine.Tasks.GameTask? runner) && runner is not null)
+            {
+                Vector3d at = runtime.TryGetDrawTransform(runner, out Vector3d where, out _) ? where * Metre : default;
+                log.AppendLine(CultureInfo.InvariantCulture, $"[runover] tick={tick} by={runner.Id} vehicle=({at.X:0},{at.Y:0}) player=({origin.X:0},{origin.Y:0}) d={Math.Sqrt(((at.X - origin.X) * (at.X - origin.X)) + ((at.Y - origin.Y) * (at.Y - origin.Y))) / Metre:0.00} m");
+            }
+
             if (tick % 30 == 0)
             {
-                log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] POS tick={tick} pos=({player.Body.Position.X:0}, {player.Body.Position.Y:0}, {player.Body.Position.Z + OriginAboveFeet:0})");
+                log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] POS tick={tick} pos=({player.Body.Position.X:0}, {player.Body.Position.Y:0}, {player.Body.Position.Z + OriginAboveFeet:0}) dmg={health.Damage:0.00} dead={deadField.GetValue(host)}");
+                if (typeof(CutsceneRuntime).GetField("_carAis", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(runtime) is System.Collections.IEnumerable carAis)
+                {
+                    foreach (object state in carAis)
+                    {
+                        Type type = state.GetType();
+                        object? Prop(string name) => type.GetProperty(name)?.GetValue(state);
+                        object? route = Prop("Route");
+                        OpenIGI.Engine.Tasks.GameTask? task = Prop("Task") as OpenIGI.Engine.Tasks.GameTask;
+                        OpenIGI.Engine.Tasks.GameTask? car = Prop("Car") as OpenIGI.Engine.Tasks.GameTask;
+                        log.AppendLine(CultureInfo.InvariantCulture, $"[carai] tick={tick} task={task?.Id} car={car?.Id} active={(task is null ? "?" : ConditionalContainerGate.IsTaskActive(task).ToString())} route={(route is null ? "null" : route.GetType().GetProperty("HasStopped")?.GetValue(route))} stopped={Prop("Stopped")} target={Prop("TargetNodeId")} speed={Prop("SpeedKmh")}");
+                    }
+                }
+
+                foreach (string name in (Environment.GetEnvironmentVariable("OPENIGI_VEH_SCENARIO_VARS") ?? string.Empty)
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    string value = loop.Variables.TryRead(name, out OpenIGI.Scripting.Runtime.QvmValue read) ? read.ToString() : "unbound";
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[var] tick={tick} {name}={value}");
+                }
+
+                foreach (OpenIGI.Engine.Tasks.DeclaredTask car in vehicles)
+                {
+                    Vector3d at = runtime.TryGetDrawTransform(car, out Vector3d metres, out _)
+                        ? metres * Metre
+                        : car.TryGetValue("Position", out object? raw) && raw is Vector3d authored ? authored : default;
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[vpose] tick={tick} id={car.Id} pos=({at.X:0},{at.Y:0},{at.Z:0})");
+                }
             }
 
             foreach ((int _, string op, double[] args) in script.Where(command => command.Tick == tick))
@@ -936,6 +973,18 @@ public sealed class AiScenarioHarness : IDisposable
 
         host.Stop();
         File.WriteAllText(output, log.ToString());
+    }
+
+    private static IEnumerable<OpenIGI.Engine.Tasks.GameTask> Walk(OpenIGI.Engine.Tasks.GameTask task)
+    {
+        foreach (OpenIGI.Engine.Tasks.GameTask child in task.Children)
+        {
+            yield return child;
+            foreach (OpenIGI.Engine.Tasks.GameTask nested in Walk(child))
+            {
+                yield return nested;
+            }
+        }
     }
 
     /// <inheritdoc/>

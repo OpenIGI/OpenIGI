@@ -3159,6 +3159,7 @@ internal sealed partial class GameHost
                     VehicleDeathZone.FromModel(zoneModel, ModelOf, magic));
             }
 
+            // A helicopter's gun runs only while its AnimTask flies it; CutsceneRuntime gates that.
             if (vehicle.Type.Name is not ("Car" or "Heli")
                 || !vehicle.TryGetValue("Can fire", out object? rawCanFire)
                 || rawCanFire is not string canFire

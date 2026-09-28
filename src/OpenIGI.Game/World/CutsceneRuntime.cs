@@ -543,11 +543,18 @@ public sealed class CutsceneRuntime
             }
 
             // A car's update (0x42E320) runs its guns once, then re-seats them and runs every
-            // AIStationaryGun a second time unless +11980 says its physics tick already did, so a vehicle
+            // AIStationaryGun a second time unless +11980 says its physics tick already did, so a car's
             // gun turns and meters its fire twice a tick. Probed on Mission 7 for both kinds of car: the
             // parked T80 354 (T80 rounds 75 ticks apart, the coaxial M2HB one a tick) and the CarAI-driven
             // APC 352 (APC rounds 75 ticks apart), where the rows' own cadences are 150, 2 and 150.
-            const int runs = 2;
+            //
+            // A helicopter's update (0x4316D0) never runs its model's attachments; its gun turns only while
+            // its AnimTask flies it, once a tick. Probed on Mission 7's heli 353: nothing while parked, and
+            // on its flight 55 MIL rounds over 162 ticks -- the row's own three-tick cadence.
+            bool helicopter = string.Equals(vehicle.Type.Name, "Heli", StringComparison.Ordinal);
+            int runs = !helicopter
+                ? 2
+                : _animations.Exists(animation => animation.TargetId == vehicle.Id && animation.RanThisTick) ? 1 : 0;
             foreach (VehicleGunState gun in armament.Guns)
             {
                 Vector3d origin = transform.Position + transform.Orientation.Transposed().Transform(gun.Gun.Offset);
@@ -933,7 +940,8 @@ public sealed class CutsceneRuntime
                 ? animation.InitialRun
                 : _expressions.EvaluateCondition(
                     animation.Run, emptyValue: animation.InitialRun, animation.Task);
-            if (!run || !ConditionalContainerGate.IsTaskActive(animation.Task))
+            animation.RanThisTick = run && ConditionalContainerGate.IsTaskActive(animation.Task);
+            if (!animation.RanThisTick)
             {
                 continue;
             }
@@ -3685,6 +3693,9 @@ public sealed class CutsceneRuntime
     {
         /// <summary>Running-tick counter exported as <c>AnimTask+&lt;id&gt;.nTick</c> (retail AnimTask state var).</summary>
         public int Tick { get; set; }
+
+        /// <summary>Gets or sets whether the task drove its target on the current tick.</summary>
+        public bool RanThisTick { get; set; }
     }
     private sealed record SoundState(
         DeclaredTask Task,
