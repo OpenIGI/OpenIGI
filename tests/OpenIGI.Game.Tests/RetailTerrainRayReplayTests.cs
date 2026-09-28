@@ -13,41 +13,43 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 public sealed class RetailTerrainRayReplayTests(ITestOutputHelper output)
 {
-        public static TheoryData<string> Fixtures => new()
+        public static TheoryData<int, string> Fixtures => new()
     {
-        "carstep-m7-apc352.log.gz",
-        "carstep-m7-t80-357.log.gz",
+        { 7, "carstep-m7-apc352.log.gz" },
+        { 7, "carstep-m7-t80-357.log.gz" },
+        { 6, "carstep-m6-car801.log.gz" },
     };
 
     [Theory]
     [MemberData(nameof(Fixtures))]
-    public void TheCarDrivesOnThePortsOwnTerrainRaysExactlyAsRetail(string fixture)
+    public void TheCarDrivesOnThePortsOwnTerrainRaysExactlyAsRetail(int mission, string fixture)
     {
         RetailCarStepCapture capture = RetailCarStepCapture.Load(fixture);
         RetailCarBody car = new(RetailCarMemory.Definition(capture.TypeMemory, capture.RecordMemory));
         RetailCarMemory.Load(car, capture.Ticks[0].Entry);
-        Drive(car, capture);
+        Drive(car, capture, mission);
     }
 
     [Theory]
-    [InlineData(352, "carstep-m7-apc352.log.gz")]
-    [InlineData(357, "carstep-m7-t80-357.log.gz")]
-    public void ACarSpawnedFromTheLevelDrivesTheWholeCaptureExactlyAsRetail(int id, string fixture)
+    [InlineData(7, 352, "carstep-m7-apc352.log.gz")]
+    [InlineData(7, 357, "carstep-m7-t80-357.log.gz")]
+    [InlineData(6, 801, "carstep-m6-car801.log.gz")]
+    public void ACarSpawnedFromTheLevelDrivesTheWholeCaptureExactlyAsRetail(int mission, int id, string fixture)
     {
         // Nothing from the capture but the controller's packets: the car is built from the level, its type
         // and its model, and every ray is the port's own.
-        RetailMissionData data = RetailMissionData.Get(7);
+        RetailMissionData data = RetailMissionData.Get(mission);
         DeclaredTask task = Assert.IsType<DeclaredTask>(data.Root.Tree.FromId(id));
         string modelName = Assert.IsType<string>(task.TryGetValue(WorldScene.ModelParameter, out object? value) ? value : null);
         Assert.True(data.Vehicles.TryGetCar(modelName, out CarPhysicsDefinition physics));
         Assert.True(data.Mission.TryGetModel(modelName, out MefModel? model));
         RetailCarBody car = RetailCarSpawn.Create(physics, model!, RetailCarSpawn.Placement(task, wheelAttachments: 16));
-        Drive(car, RetailCarStepCapture.Load(fixture));
+        Drive(car, RetailCarStepCapture.Load(fixture), mission);
     }
 
-    private void Drive(RetailCarBody car, RetailCarStepCapture capture)
+    private void Drive(RetailCarBody car, RetailCarStepCapture capture, int mission)
     {
-        RetailTerrainRay terrain = RetailMissionData.Get(7).TerrainRay;
+        RetailTerrainRay terrain = RetailMissionData.Get(mission).TerrainRay;
         int t = 0;
         int objectHits = 0;
         for (; t + 1 < capture.Ticks.Count; t++)

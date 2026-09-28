@@ -22,6 +22,7 @@ public sealed class RetailCarBodyReplayTests(ITestOutputHelper output)
     {
         "carstep-m7-apc352.log.gz",
         "carstep-m7-t80-357.log.gz",
+        "carstep-m6-car801.log.gz",
     };
 
     [Theory]

@@ -21,7 +21,11 @@ internal sealed class RetailMissionData
         Root = root;
         Vehicles = vehicles;
         TerrainData terrain = mission.Terrain ?? throw new InvalidOperationException("no terrain");
-        TerrainRay = new RetailTerrainRay(terrain.Octree, terrain.Commands, TerrainDiscardBinding.Bind(terrain, root).Regions);
+        TerrainRay = new RetailTerrainRay(
+            terrain.Octree,
+            terrain.Commands,
+            TerrainDiscardBinding.For(terrain).Regions,
+            TerrainHeightBindings.Bind(terrain, root));
     }
 
     public LoadedMission Mission { get; }

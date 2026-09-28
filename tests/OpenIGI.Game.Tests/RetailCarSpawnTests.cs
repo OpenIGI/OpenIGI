@@ -6,17 +6,18 @@ using Xunit;
 namespace OpenIGI.Game.Tests;
 
 /// <summary>
-/// Builds mission 7's APC and T80 from the level, the physics type and the model, as the original creates a
+/// Builds mission 7's APC and T80 and mission 6's limousine from the level, the physics type and the model, as the original creates a
 /// car, and demands the state the running game held at the car's first physics tick.
 /// </summary>
 public sealed class RetailCarSpawnTests
 {
     [Theory]
-    [InlineData(352, "carstep-m7-apc352.log.gz")]
-    [InlineData(357, "carstep-m7-t80-357.log.gz")]
-    public void ACarIsCreatedExactlyAsRetailHoldsItAtItsFirstTick(int id, string fixture)
+    [InlineData(7, 352, "carstep-m7-apc352.log.gz")]
+    [InlineData(7, 357, "carstep-m7-t80-357.log.gz")]
+    [InlineData(6, 801, "carstep-m6-car801.log.gz")]
+    public void ACarIsCreatedExactlyAsRetailHoldsItAtItsFirstTick(int mission, int id, string fixture)
     {
-        RetailMissionData data = RetailMissionData.Get(7);
+        RetailMissionData data = RetailMissionData.Get(mission);
         RetailCarStepCapture capture = RetailCarStepCapture.Load(fixture);
         byte[] first = capture.Ticks[0].Entry;
 
@@ -25,7 +26,7 @@ public sealed class RetailCarSpawnTests
         Assert.True(data.Vehicles.TryGetCar(modelName, out CarPhysicsDefinition physics));
         Assert.True(data.Mission.TryGetModel(modelName, out MefModel? model));
 
-        RetailCarBody car = RetailCarSpawn.Create(physics, model!, RetailCarSpawn.Placement(task, wheelAttachments: 16));
+        RetailCarBody car = RetailCarSpawn.Create(physics, model!, RetailCarSpawn.Placement(task, wheelAttachments: RetailCarMemory.Definition(capture.TypeMemory, capture.RecordMemory).Wheels.Length));
 
         // The fixed definition against the captured TYPE and record.
         RetailCarDefinition expected = RetailCarMemory.Definition(capture.TypeMemory, capture.RecordMemory);

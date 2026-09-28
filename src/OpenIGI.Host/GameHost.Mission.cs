@@ -708,7 +708,8 @@ internal sealed partial class GameHost
             RetailTerrainRay carRays = new(
                 carTerrain.Octree,
                 carTerrain.Commands,
-                TerrainDiscardBinding.For(carTerrain).Regions);
+                TerrainDiscardBinding.For(carTerrain).Regions,
+                TerrainHeightBindings.Bind(carTerrain, levelRoot));
             _cutscenes.ConfigureRetailCars(
                 new RetailCarWorld(carRays),
                 name => loaded.TryGetModel(name, out MefModel? model) ? model : null);

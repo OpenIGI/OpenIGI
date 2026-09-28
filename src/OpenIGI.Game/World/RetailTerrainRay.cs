@@ -19,8 +19,8 @@ namespace OpenIGI.Game.World;
 /// <para>
 /// This is deliberately separate from <see cref="TerrainRayTrace"/>, which serves gameplay rays: the two
 /// disagree on which hit wins when leaves overlap, and routing bullets through this one is a separate decision.
-/// The heightmap patch (<c>terrain.hmp</c>, §4.3) is not applied yet; on the levels that ship one this is not
-/// exact.
+/// On the levels that ship a <c>terrain.hmp</c>, a leaf inside a <c>HeightMap</c> task's cube has its vertices
+/// raised by that grid first (§4.3, §4.4), which is how the descent's enter hooks leave it.
 /// </para>
 /// </remarks>
 public sealed class RetailTerrainRay
@@ -33,6 +33,7 @@ public sealed class RetailTerrainRay
     private readonly TerrainOctree _tree;
     private readonly TerrainCommands _commands;
     private readonly IReadOnlyList<TerrainDiscardRegion> _discards;
+    private readonly TerrainHeightBindings? _heights;
     private readonly Entry[] _stack = new Entry[MaxStack];
     private readonly bool[] _firstVisit = new bool[MaxStack];
     private readonly int[] _order = new int[8];
@@ -44,11 +45,17 @@ public sealed class RetailTerrainRay
     /// <param name="tree">The terrain octree (<c>terrain.ctr</c>).</param>
     /// <param name="commands">The triangle blocks (<c>terrain.cmd</c>).</param>
     /// <param name="discards">The level's <c>DiscardTerrain</c> boxes.</param>
-    public RetailTerrainRay(TerrainOctree tree, TerrainCommands commands, IReadOnlyList<TerrainDiscardRegion> discards)
+    /// <param name="heights">The level's heightmap patches, or <see langword="null"/> for none.</param>
+    public RetailTerrainRay(
+        TerrainOctree tree,
+        TerrainCommands commands,
+        IReadOnlyList<TerrainDiscardRegion> discards,
+        TerrainHeightBindings? heights = null)
     {
         _tree = tree ?? throw new ArgumentNullException(nameof(tree));
         _commands = commands ?? throw new ArgumentNullException(nameof(commands));
         _discards = discards ?? throw new ArgumentNullException(nameof(discards));
+        _heights = heights is { IsEmpty: false } ? heights : null;
     }
 
     /// <summary>Casts a batch of segments against the terrain, as <c>0x4CC2A0</c> with terrain lists.</summary>
@@ -386,6 +393,7 @@ public sealed class RetailTerrainRay
         }
 
         double ox = entry.Cx, oy = entry.Cy, oz = entry.Cz;
+        TerrainHeightBinding patch = _heights?.Resolve(new Vector3d(ox, oy, oz)) ?? default;
         for (int j = 0; j < vertices; j++)
         {
             TerrainPackedVertex packed = block.Vertex(j);
@@ -409,6 +417,10 @@ public sealed class RetailTerrainRay
             _vx[j] = X87.Add(x, ox);
             _vy[j] = X87.Add(y, oy);
             _vz[j] = X87.Add(z, oz);
+            if (patch.IsBound)
+            {
+                _vz[j] = Patch(patch, _vx[j], _vy[j], _vz[j]);
+            }
         }
 
         Vector3d best = e;
@@ -495,6 +507,33 @@ public sealed class RetailTerrainRay
         hit = best;
         return true;
     }
+
+    /// <summary>The heightmap patch on one vertex (§4.4): the grid's bilinear sample, less its bias, times 256.</summary>
+    /// <remarks>
+    /// The origin passes through a float and the index conversions truncate. Retail reads the byte grid without
+    /// a bounds check; a vertex outside it (packed vertices reach past their leaf) reads the nearest edge here.
+    /// </remarks>
+    private static double Patch(in TerrainHeightBinding patch, double x, double y, double z)
+    {
+        float oxf = X87.ToFloat(patch.OriginX);
+        float oyf = X87.ToFloat(patch.OriginY);
+        float scale = X87.ToFloat(patch.Scale);
+        X87 u = ((X87)x - oxf) * scale;
+        float vf = (((X87)y - oyf) * scale).F;
+        int iu = Trunc(u.Value);
+        int iv = Trunc(vf);
+        X87 fu = u - iu;
+        X87 fv = (X87)vf - iv;
+        TerrainHeightGrid grid = patch.Grid;
+        double h00 = Corner(grid, iu, iv), h10 = Corner(grid, iu + 1, iv);
+        double h01 = Corner(grid, iu, iv + 1), h11 = Corner(grid, iu + 1, iv + 1);
+        X87 a = (X87)h00 + (X87)(h10 - h00) * fu;
+        X87 b = fu * (h11 - h01) + h01;
+        return (((b - a) * fv + a - 64.0) * 256.0f + z).Value;
+    }
+
+    private static int Corner(in TerrainHeightGrid grid, int x, int y) =>
+        grid.Corner(Math.Clamp(x, 0, grid.Size), Math.Clamp(y, 0, grid.Size));
 
     /// <summary><c>InTriangle</c> -- <c>0x4B2D90</c>: the projected barycentric test, no early return.</summary>
     private static bool InTriangle(
