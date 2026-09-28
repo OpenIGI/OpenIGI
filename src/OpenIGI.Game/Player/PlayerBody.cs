@@ -84,6 +84,9 @@ public sealed class PlayerBody
     /// </remarks>
     public HumanPlayerParameters? Parameters { get; set; }
 
+    /// <summary>Gets the cheats in force on this body's movement and health.</summary>
+    public PlayerCheatOptions Cheats { get; private set; } = PlayerCheatOptions.Retail;
+
     /// <summary>Gets the player's accumulated damage.</summary>
     /// <remarks>
     /// The unconfigured body starts with the base human value. A composed runtime supplies the health
@@ -103,6 +106,28 @@ public sealed class PlayerBody
     {
         ArgumentNullException.ThrowIfNull(health);
         Health = health;
+        ApplyHealthCheats();
+    }
+
+    /// <summary>Puts a set of cheats in force on this body's movement and health.</summary>
+    /// <param name="cheats">The cheats, or <see cref="PlayerCheatOptions.Retail"/> for none.</param>
+    /// <remarks>Cheap to call every tick: an unchanged set does nothing.</remarks>
+    public void ApplyCheats(PlayerCheatOptions cheats)
+    {
+        if (cheats == Cheats)
+        {
+            return;
+        }
+
+        Cheats = cheats;
+        ApplyHealthCheats();
+    }
+
+    // Also run by UseHealth, so a mission's fresh health object takes the cheats already in force.
+    private void ApplyHealthCheats()
+    {
+        Health.RescaleMaximumHealth(Health.BaseMaximumHealth * Cheats.HealthMultiplier);
+        Health.Invulnerable = Cheats.InfiniteHealth;
     }
 
     /// <summary>Gets the red full-screen damage wash raised by a damaging landing.</summary>
@@ -125,7 +150,7 @@ public sealed class PlayerBody
 
     /// <summary>Gets the upward speed a jump starts with, in units per tick.</summary>
     /// <remarks><see cref="HumanPlayerParameters.JumpVerticalSpeed"/>; 27 km/h, exactly 1024, in retail.</remarks>
-    public double JumpSpeed => Parameters?.JumpVerticalSpeed ?? 1024.0;
+    public double JumpSpeed => (Parameters?.JumpVerticalSpeed ?? 1024.0) * Cheats.JumpMultiplier;
 
     /// <summary>Gets how much air control one tick adds, in units per tick.</summary>
     /// <remarks>
@@ -139,7 +164,9 @@ public sealed class PlayerBody
     /// why the original lets you keep pressing keys mid-air without the jump becoming steerable.
     /// </para>
     /// </remarks>
-    public double AirControlSpeed => Parameters?.Speed3 ?? 0.5 * HumanPlayerParameters.UnitsPerTickPerKilometrePerHour;
+    public double AirControlSpeed =>
+        (Parameters?.Speed3 ?? 0.5 * HumanPlayerParameters.UnitsPerTickPerKilometrePerHour)
+        * Cheats.SpeedMultiplier;
 
     /// <summary>Gets the horizontal speed a jump carries, in units per tick.</summary>
     /// <remarks>
@@ -148,12 +175,14 @@ public sealed class PlayerBody
     /// running jump carries the pace you were already going.
     /// </remarks>
     public double JumpHorizontalSpeed =>
-        Parameters?.JumpHorizontalSpeed ?? 17.5 * HumanPlayerParameters.UnitsPerTickPerKilometrePerHour;
+        (Parameters?.JumpHorizontalSpeed ?? 17.5 * HumanPlayerParameters.UnitsPerTickPerKilometrePerHour)
+        * Cheats.SpeedMultiplier;
 
     /// <summary>Gets the factor the animation's delta translation is scaled by.</summary>
     /// <remarks><see cref="HumanPlayerParameters.DeltaTranslationScale"/> — argument 0, 1.75 in retail.</remarks>
     public float DeltaTranslationScale =>
-        Parameters?.DeltaTranslationScale ?? HumanMotion.DefaultDeltaTranslationScale;
+        (Parameters?.DeltaTranslationScale ?? HumanMotion.DefaultDeltaTranslationScale)
+        * Cheats.SpeedMultiplier;
 
     /// <summary>How far the pitch may travel from level, in radians.</summary>
     public const float PitchLimit = 1.5533431f;

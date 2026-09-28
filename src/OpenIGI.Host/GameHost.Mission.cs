@@ -1802,6 +1802,10 @@ internal sealed partial class GameHost
                 // ballistic streak, exactly as it colours the retail tracer.
                 _ammoTypes = ammoTable;
 
+                // Kept beside it for the all-weapons cheat, which can be switched on mid-mission and
+                // then needs the whole roster, not just what the level declared.
+                _weaponTypes = weaponRoster;
+
                 // What every surface in the world is made of, and therefore what a round leaves on it.
                 materialTable.Register(_loop.Natives);
                 if (_fileSystem.Exists(GameMaterialRegistry.ScriptResource))
@@ -1991,11 +1995,14 @@ internal sealed partial class GameHost
             _missileSmoke = null;
             _heldWeapon = null;
 
+            // Set whether or not the level declares a loadout: a weapon the all-weapons cheat grants
+            // later is loaded from this mission's packs like any other.
+            _loadedMissionForWeapon = loaded;
+
             if (PlayerLoadout.TryRead(levelRoot, out PlayerLoadout? loadout) && loadout is not null)
             {
                 _logger.Information("Player", $"Carrying {loadout}.");
                 _heldWeapon = CarryLoadout(candidate, loadout, loaded, weaponRoster, ammoTable);
-                _loadedMissionForWeapon = loaded;
 
                 // The player's rounds are offered to the soldiers, which own their own health.
                 if (_soldiers is { } guards)
@@ -2750,6 +2757,36 @@ internal sealed partial class GameHost
         }
 
         return presenter;
+    }
+
+    // Tops the player's inventory up to the whole roster while the all-weapons cheat is in force. Runs
+    // before every player tick, so it covers both mission start and switching the cheat on mid-mission;
+    // a weapon already carried is left exactly as it is. Switching the cheat off takes nothing away.
+    private void GrantCheatWeapons(PlayerCamera player)
+    {
+        if (!PlayerCheatOptions.Current.AllWeapons
+            || _weaponTypes is not { } roster
+            || _ammoTypes is not { } ammunition)
+        {
+            return;
+        }
+
+        int added = player.EnsureAllWeapons(roster.Weapons, ammunition);
+        if (added == 0)
+        {
+            return;
+        }
+
+        _logger.Information("Player", $"All-weapons cheat added {added} weapon(s).");
+
+        // A level that declared no loadout never built a presenter for the hand, so the first granted
+        // weapon would be carried but never drawn.
+        if (_heldWeapon is null && player.View is not null
+            && _presentation.CreateHeldWeapon(ViewModelRequest()) is { } presenter)
+        {
+            presenter.Materials = _materials;
+            _heldWeapon = presenter;
+        }
     }
 
     /// <summary>The three things the small world-effect presenters are built from.</summary>

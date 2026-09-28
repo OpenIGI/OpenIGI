@@ -606,6 +606,7 @@ internal sealed partial class GameHost : IDisposable
     private IGroundHeightField? _ground;
     private GameMaterialRegistry? _worldMaterials;
     private AmmoTypeRegistry? _ammoTypes;
+    private WeaponTypeRegistry? _weaponTypes;
     private bool _playerMode;
     private ObjectCollisionIndex? _worldSolids;
     private WorldTraceCast? _worldTrace;
@@ -1288,6 +1289,7 @@ internal sealed partial class GameHost : IDisposable
         // same mark a player's does -- retail rounds are physical and decal whatever they meet (10.4).
         _worldMaterials = null;
         _ammoTypes = null;
+        _weaponTypes = null;
         _alarmSpeakers = null;
         _destructibles = null;
         _sirenVoices.Clear();
@@ -2954,6 +2956,7 @@ internal sealed partial class GameHost : IDisposable
                 if (!_playerDead && !_missionFailedMenu)
                 {
                     _player.InputProfile = _configuration.Active;
+                    GrantCheatWeapons(_player);
                     if (_computerOpen)
                     {
                         _player.TickMapComputer();

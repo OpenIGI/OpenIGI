@@ -370,6 +370,18 @@ public sealed class PlayerCamera
         _weapons = new PlayerWeapons(weaponCycle, _random);
     }
 
+    /// <summary>Puts a set of cheats in force on the body and the weapons.</summary>
+    /// <param name="cheats">The cheats, or <see cref="PlayerCheatOptions.Retail"/> for none.</param>
+    /// <remarks>
+    /// <see cref="Tick"/> and <see cref="TickMapComputer"/> already apply <see cref="PlayerCheatOptions.Current"/>
+    /// every tick, so a change from Extras or the console lands on the next one without a restart.
+    /// </remarks>
+    public void ApplyCheats(PlayerCheatOptions cheats)
+    {
+        _body.ApplyCheats(cheats);
+        _weapons?.ApplyCheats(cheats);
+    }
+
     /// <summary>Gives the player its first-person rig.</summary>
     /// <param name="set">The set for skeleton 5, read from <c>common/anims/005.iff</c>.</param>
     /// <exception cref="ArgumentNullException"><paramref name="set"/> is <see langword="null"/>.</exception>
@@ -412,6 +424,41 @@ public sealed class PlayerCamera
 
         _weapons.Carry(weapon, ammo);
         return true;
+    }
+
+    /// <summary>Carries every weapon in the roster that is not carried already — the all-weapons cheat.</summary>
+    /// <param name="roster">The weapons loaded for the current mission.</param>
+    /// <param name="ammunition">The ammunition table each weapon's calibre is resolved against.</param>
+    /// <returns>How many weapons were newly carried; zero once everything is.</returns>
+    /// <remarks>
+    /// Safe to call every tick. A weapon already carried keeps its magazine; a new one joins the end of
+    /// the switch cycle so the cycle keys can reach it.
+    /// </remarks>
+    public int EnsureAllWeapons(IReadOnlyList<WeaponType> roster, AmmoTypeRegistry ammunition)
+    {
+        ArgumentNullException.ThrowIfNull(roster);
+        ArgumentNullException.ThrowIfNull(ammunition);
+
+        if (_weapons is null)
+        {
+            return 0;
+        }
+
+        int added = 0;
+        foreach (WeaponType weapon in roster)
+        {
+            if (_weapons.HasWeapon(weapon.WeaponId))
+            {
+                continue;
+            }
+
+            bool hasAmmo = ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
+            _weapons.Carry(weapon, hasAmmo ? ammo : null);
+            _weapons.EnsureCycleContains(weapon.WeaponId);
+            added++;
+        }
+
+        return added;
     }
 
     /// <summary>Plays a weapon action on the first-person rig.</summary>
@@ -1212,6 +1259,8 @@ public sealed class PlayerCamera
     {
         ArgumentNullException.ThrowIfNull(input);
 
+        ApplyCheats(PlayerCheatOptions.Current);
+
         _input.Accept(SampleFrame(input, InputProfile));
         if (_input.IsRisingEdge(PlayerInputSlot.ToggleWalkRun))
         {
@@ -1364,6 +1413,9 @@ public sealed class PlayerCamera
         {
             return;
         }
+
+        // The console stays usable over the map, so a cheat can change while it is open.
+        ApplyCheats(PlayerCheatOptions.Current);
 
         // Map controls are consumed by ComputerMap, not HumanPlayer. Feeding an empty frame prevents a
         // held movement/fire key from leaking into the dormant weapon machine while preserving its clock.

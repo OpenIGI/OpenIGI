@@ -115,6 +115,7 @@ public sealed class PlayerWeapons
     private WeaponAction _locomotionAction = WeaponAction.Stand;
     private int _categoryPick = -1;
     private bool _swapped;
+    private PlayerCheatOptions _cheats = PlayerCheatOptions.Retail;
     private int _lastNonBinocularWeaponId = -1;
     private bool _binocularTogglePending;
     private bool _binocularOpenPending;
@@ -169,6 +170,9 @@ public sealed class PlayerWeapons
 
     /// <summary>Gets everything the player carries, in the order it was given.</summary>
     public IReadOnlyList<CarriedWeapon> Carried => _carried;
+
+    /// <summary>Gets the cheats in force on this inventory.</summary>
+    public PlayerCheatOptions Cheats => _cheats;
 
     /// <summary>
     /// Consumes a binocular toggle after the requested weapon has reached the hand. The request is
@@ -289,7 +293,50 @@ public sealed class PlayerWeapons
 
         HeldGun gun = new(weapon, ammo);
         _carried.Add(new CarriedWeapon(weapon, gun));
+        ApplyCheatsTo(gun);
         return gun;
+    }
+
+    /// <summary>Gets whether a weapon is carried.</summary>
+    /// <param name="weaponId">The weapon's <see cref="WeaponType.WeaponId"/>.</param>
+    /// <returns><see langword="true"/> when it is carried.</returns>
+    public bool HasWeapon(int weaponId) => IndexOf(weaponId) >= 0;
+
+    /// <summary>Appends a weapon to the switch cycle unless it is already in it.</summary>
+    /// <param name="weaponId">The weapon's <see cref="WeaponType.WeaponId"/>.</param>
+    /// <remarks>
+    /// For weapons the level's <c>DefineHumanPlayerWeaponCycle</c> does not list -- the all-weapons
+    /// cheat's -- which would otherwise be carried and never reachable with the cycle keys.
+    /// </remarks>
+    public void EnsureCycleContains(int weaponId)
+    {
+        if (!_cycle.Contains(weaponId))
+        {
+            _cycle.Add(weaponId);
+        }
+    }
+
+    /// <summary>Puts a set of cheats in force on everything carried, and on anything carried later.</summary>
+    /// <param name="cheats">The cheats, or <see cref="PlayerCheatOptions.Retail"/> for none.</param>
+    /// <remarks>Cheap to call every tick: an unchanged set does nothing.</remarks>
+    public void ApplyCheats(PlayerCheatOptions cheats)
+    {
+        if (cheats == _cheats)
+        {
+            return;
+        }
+
+        _cheats = cheats;
+        foreach (CarriedWeapon carried in _carried)
+        {
+            ApplyCheatsTo(carried.Gun);
+        }
+
+        if (cheats.NoRecoil)
+        {
+            RecoilPitch = 0f;
+            RecoilYaw = 0f;
+        }
     }
 
     /// <summary>Associates the separately declared M203 ammunition with the carried M16A2.</summary>
@@ -381,6 +428,13 @@ public sealed class PlayerWeapons
         WeaponAction locomotionAction = WeaponAction.Stand)
     {
         ArgumentNullException.ThrowIfNull(input);
+
+        // Before the flag word is built, so the empty-magazine auto-reload below never sees an empty
+        // magazine while there is a reserve to refill it from.
+        if (_cheats.NoReload && !_cheats.InfiniteAmmo)
+        {
+            InHand?.Gun.Reload(Ammunition);
+        }
 
         SelectBinoculars(input);
         SelectCategory(input);
@@ -583,7 +637,12 @@ public sealed class PlayerWeapons
                 return false;
             }
 
-            Ammunition.Add(_m203Ammunition.AmmoId, _m203Shots.Count);
+            // Under infinite ammunition the launch took nothing, so there is nothing to give back.
+            if (!_cheats.InfiniteAmmo)
+            {
+                Ammunition.Add(_m203Ammunition.AmmoId, _m203Shots.Count);
+            }
+
             _m203Shots.Clear();
             _firedThisTick = false;
             if (_shotSequence > 0)
@@ -596,7 +655,7 @@ public sealed class PlayerWeapons
 
         if (_shots.Count == 0
             || InHand is not { } held
-            || !held.Gun.ConsumesAmmunition
+            || !held.Gun.DrawsFromMagazine
             || held.Gun.State.RoundsInClip < 0)
         {
             return false;
@@ -658,12 +717,15 @@ public sealed class PlayerWeapons
         // consume a 5.56 round or sample the rifle's bullet spread/recoil.
         if (_wantAlternateFire && IsM16A2(held.Weapon))
         {
-            if (_m203Ammunition is null || Ammunition.Count(_m203Ammunition.AmmoId) <= 0)
+            if (_m203Ammunition is not { } m203 || !HasM203Round())
             {
                 return false;
             }
 
-            Ammunition.Take(_m203Ammunition.AmmoId, 1);
+            if (!_cheats.InfiniteAmmo)
+            {
+                Ammunition.Take(m203.AmmoId, 1);
+            }
 
             WeaponConfigTask? config = held.Weapon.RetailConfig;
             float muzzleVelocity = M203Physics.DefaultMuzzleVelocityKilometresPerHour;
@@ -732,6 +794,11 @@ public sealed class PlayerWeapons
         // The scale is the Dragunov's scoped 0.05, or one. It multiplies the ROUND'S OWN kick and
         // not the accumulated angles, exactly where 0x472E50 applies it -- damping what is already
         // accumulated would make opening the scope mid-burst yank the view back down.
+        if (_cheats.NoRecoil)
+        {
+            recoilScale = 0f;
+        }
+
         RecoilPitch = ((result.RecoilX * recoilScale) + RecoilPitch) * RecoilDamping;
         RecoilYaw = ((result.RecoilZ * recoilScale) + RecoilYaw) * RecoilDamping;
         return result.Fired;
@@ -1522,7 +1589,18 @@ public sealed class PlayerWeapons
 
     private bool HasM203Round() =>
         _m203Ammunition is not null
-        && Ammunition.Count(_m203Ammunition.AmmoId) > 0;
+        && (_cheats.InfiniteAmmo || Ammunition.Count(_m203Ammunition.AmmoId) > 0);
+
+    // Infinite ammunition fills the magazine once and then keeps every fired round in it; the reserve is
+    // never touched, so the HUD goes on showing what the player actually picked up.
+    private void ApplyCheatsTo(HeldGun gun)
+    {
+        gun.PreserveMagazine = _cheats.InfiniteAmmo;
+        if (gun.PreserveMagazine && gun.ConsumesAmmunition)
+        {
+            gun.State.RoundsInClip = gun.Weapon.RoundsPerClip;
+        }
+    }
 
     private static bool IsM16A2(WeaponType weapon) =>
         string.Equals(weapon.ScriptId, M16A2WeaponScriptId, StringComparison.Ordinal);

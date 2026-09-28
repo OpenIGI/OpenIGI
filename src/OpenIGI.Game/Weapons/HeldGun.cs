@@ -85,6 +85,12 @@ public sealed class HeldGun
     /// <summary>Gets whether this weapon draws from a magazine at all.</summary>
     public bool ConsumesAmmunition => Ammo is not null;
 
+    /// <summary>Gets or sets whether a fired round is left in the magazine — the infinite-ammunition cheat.</summary>
+    public bool PreserveMagazine { get; set; }
+
+    /// <summary>Gets whether a fired round actually leaves the magazine.</summary>
+    public bool DrawsFromMagazine => ConsumesAmmunition && !PreserveMagazine;
+
     /// <summary>Gets the mutable half — the magazine, the cooldown and the burst counter.</summary>
     public GunState State { get; } = new();
 
@@ -241,7 +247,7 @@ public sealed class HeldGun
                 speedOverrideMetresPerSecond ?? Weapon.MuzzleVelocity));
         }
 
-        State.OnRoundFired(Weapon, ConsumesAmmunition);
+        State.OnRoundFired(Weapon, DrawsFromMagazine);
 
         (float recoilX, float recoilZ) = SampleRecoil(Weapon, random);
         return new GunFireResult(true, GunFireBlock.None, recoilX, recoilZ, _projectiles.ToArray());

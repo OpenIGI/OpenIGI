@@ -1,6 +1,7 @@
 ﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Game.Player;
 using OpenIGI.Host.DevTools;
 using OpenIGI.Input;
 using OpenIGI.Rendering.Presets;
@@ -58,6 +59,8 @@ public sealed class HostConsole : IDisposable
         string configDirectory = Path.GetDirectoryName(_settingsPath) ?? SettingsPaths.PortableDirectory;
         BuiltInConsoleCommands.Register(System, new DirectoryConsoleFileSystem(configDirectory));
         GraphicsPresetCommands.Register(System);
+        PlayerCheatCVars.CheatsEnabled.Changed += OnCheatsEnabledChanged;
+        System.CheatsEnabled = PlayerCheatCVars.CheatsEnabled.Value;
         RegisterShellCommands();
 
         // Registered here rather than when the view loads, so a settings file or a +command naming a
@@ -114,6 +117,7 @@ public sealed class HostConsole : IDisposable
         // assemblies matter: the console's own con_* variables live here, and without this call a
         // saved layout line would be met with "unknown variable" and silently discarded.
         Rendering.Generated.CVarRegistrations.RegisterAll();
+        Game.Generated.CVarRegistrations.RegisterAll();
         Generated.CVarRegistrations.RegisterAll();
 
         bool settingsLoaded = false;
@@ -384,6 +388,7 @@ public sealed class HostConsole : IDisposable
         _disposed = true;
         System.Variables.AnyChanged -= OnVariableChanged;
         GraphicsPresetRegistry.Default.PresetChanged -= OnPresetChanged;
+        PlayerCheatCVars.CheatsEnabled.Changed -= OnCheatsEnabledChanged;
         _view.Dispose();
     }
 
@@ -429,13 +434,22 @@ public sealed class HostConsole : IDisposable
             {
                 if (context.Count > 0)
                 {
-                    System.CheatsEnabled = context[0] is "1" or "on" or "true" or "yes";
+                    // The console's gate and the player cheats' two session gates move together, so
+                    // `cheats 1` makes the g_cheat_* variables both assignable and in force.
+                    bool enabled = context[0] is "1" or "on" or "true" or "yes";
+                    System.CheatsEnabled = enabled;
+                    PlayerCheatCVars.DeveloperMode.Value = enabled;
+                    PlayerCheatCVars.CheatsEnabled.Value = enabled;
                 }
 
                 context.Print($"cheats {(System.CheatsEnabled ? "enabled" : "disabled")}");
             },
             "[0 | 1]");
     }
+
+    // The Extras screen's "Enable cheats" toggle writes the variable directly; the console follows it.
+    private void OnCheatsEnabledChanged(object? sender, CVarChangedEventArgs e) =>
+        System.CheatsEnabled = PlayerCheatCVars.CheatsEnabled.Value;
 
     /// <summary>Sends log output to the engine's logger and to the console's scrollback.</summary>
     /// <param name="inner">The logger to forward to.</param>
