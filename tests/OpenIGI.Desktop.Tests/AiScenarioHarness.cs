@@ -769,6 +769,175 @@ public sealed class AiScenarioHarness : IDisposable
         File.WriteAllText(output, log.ToString());
     }
 
+    /// <summary>
+    /// The port half of the probe's <c>vehiclegun</c> capture: the same autopilot script, played headless,
+    /// with one vehicle's guns written in the probe's own record format.
+    /// </summary>
+    /// <remarks>
+    /// Runs only when <c>OPENIGI_VEH_SCENARIO</c> names the trace file. <c>OPENIGI_VEH_SCENARIO_SCRIPT</c> is
+    /// the probe script (<c>god</c>, <c>teleport x y z [yaw]</c>, <c>quit</c>; retail units and headings),
+    /// <c>_MISSION</c> the mission (7) and <c>_ID</c> the vehicle (354). Each gun logs its pose every tick it
+    /// changes, a TRIGGER line when its trigger changes, and a ROUND line for each round it fires.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void ScriptedVehicleCapture()
+    {
+        string? output = Environment.GetEnvironmentVariable("OPENIGI_VEH_SCENARIO");
+        string? scriptPath = Environment.GetEnvironmentVariable("OPENIGI_VEH_SCENARIO_SCRIPT");
+        if (string.IsNullOrEmpty(output) || string.IsNullOrEmpty(scriptPath))
+        {
+            return;
+        }
+
+        const double OriginAboveFeet = 3877.2;
+        int mission = EnvInt("OPENIGI_VEH_SCENARIO_MISSION", 7);
+        int vehicleId = EnvInt("OPENIGI_VEH_SCENARIO_ID", 354);
+        List<(int Tick, string Op, double[] Args)> script = [];
+        foreach (string raw in File.ReadAllLines(scriptPath))
+        {
+            string line = raw.Split('#')[0].Trim();
+            string[] words = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length >= 2)
+            {
+                script.Add((
+                    int.Parse(words[0], CultureInfo.InvariantCulture),
+                    words[1].ToLowerInvariant(),
+                    [.. words.Skip(2).Select(word => double.Parse(word, CultureInfo.InvariantCulture))]));
+            }
+        }
+
+        StringBuilder log = new();
+        using RecordingGraphicsDevice device = new();
+        GameHost host = Host(device, new HeadlessGameWindow(), "-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000");
+        host.Start();
+        host.ScriptedViewInput = new InputState();
+        FieldInfo playerField = typeof(GameHost).GetField("_player", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo loopField = typeof(GameHost).GetField("_loop", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo cutscenesField = typeof(GameHost).GetField("_cutscenes", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo healthField = typeof(GameHost).GetField("_playerHealth", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo tickField = typeof(SoldierRenderer).GetField("_tick", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        PlayerCamera? player = null;
+        SoldierRenderer? soldiers = null;
+        for (int i = 0; i < 20_000 && (player is null || soldiers is null); i++)
+        {
+            Assert.True(host.Step());
+            player = playerField.GetValue(host) as PlayerCamera;
+            soldiers = soldiersField.GetValue(host) as SoldierRenderer;
+        }
+
+        Assert.NotNull(player);
+        Assert.NotNull(soldiers);
+        OpenIGI.Engine.Flow.GameLoop loop = (OpenIGI.Engine.Flow.GameLoop)loopField.GetValue(host)!;
+        CutsceneRuntime runtime = (CutsceneRuntime)cutscenesField.GetValue(host)!;
+        OpenIGI.Engine.Tasks.GameTask vehicle = loop.Tasks.FromId(vehicleId)!;
+        Assert.NotNull(vehicle);
+
+        int tick = -1;
+        Action<VehicleCombatShot>? fired = runtime.VehicleCombatShotFired;
+        runtime.VehicleCombatShotFired = shot =>
+        {
+            if (ReferenceEquals(shot.Owner, vehicle))
+            {
+                log.AppendLine(CultureInfo.InvariantCulture, $"[vgun] ROUND tick={tick} weapon={shot.WeaponScriptId} origin=({shot.Origin.X:0},{shot.Origin.Y:0},{shot.Origin.Z:0})");
+            }
+
+            fired?.Invoke(shot);
+        };
+
+        List<VehicleGunTurret> guns = [];
+        for (int index = 0; runtime.GunTurret(vehicle, index) is { } turret; index++)
+        {
+            guns.Add(turret);
+            log.AppendLine(CultureInfo.InvariantCulture, $"[vgun] GUN index={index} weapon={turret.Mount.WeaponModel}");
+        }
+
+        bool[] triggers = new bool[guns.Count];
+        bool god = false;
+        int last = -1;
+        bool quit = false;
+        int maxSteps = EnvInt("OPENIGI_VEH_SCENARIO_STEPS", 200_000);
+        string progress = output + ".progress";
+        File.WriteAllText(progress, string.Empty);
+        for (int step = 0; step < maxSteps && !quit; step++)
+        {
+            if (step % 2000 == 0)
+            {
+                File.AppendAllText(progress, string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"step={step} tick={tick} engine={(int)tickField.GetValue(soldiers)!} memMB={GC.GetTotalMemory(false) / 1048576}{Environment.NewLine}"));
+            }
+
+            if (god)
+            {
+                // The host keeps the player's damage in its own HumanHealth, not the body's. Retail's god
+                // flag stops the accumulation but not the hit, so the player is still shoved.
+                player.Body.Health.Reset();
+                ((HumanHealth)healthField.GetValue(host)!).Invulnerable = true;
+            }
+
+            if (!host.Step())
+            {
+                log.AppendLine(CultureInfo.InvariantCulture, $"the host ended at step {step}");
+                break;
+            }
+
+            int engine = (int)tickField.GetValue(soldiers)!;
+            if (engine == last)
+            {
+                continue;
+            }
+
+            last = engine;
+            tick++;
+            for (int index = 0; index < guns.Count; index++)
+            {
+                VehicleGunTurret gun = guns[index];
+                if (gun.Firing != triggers[index])
+                {
+                    triggers[index] = gun.Firing;
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[vgun] TRIGGER tick={tick} weapon={gun.Mount.WeaponModel} held={(gun.Firing ? 1 : 0)} pitch={gun.Pitch:0.0000} yaw={gun.Yaw:0.0000}");
+                }
+
+                if (tick % 10 == 2)
+                {
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[vgun] POSE tick={tick} weapon={gun.Mount.WeaponModel} pitch={gun.Pitch:0.0000} yaw={gun.Yaw:0.0000}");
+                }
+            }
+
+            if (tick % 30 == 0)
+            {
+                log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] POS tick={tick} pos=({player.Body.Position.X:0}, {player.Body.Position.Y:0}, {player.Body.Position.Z + OriginAboveFeet:0})");
+            }
+
+            foreach ((int _, string op, double[] args) in script.Where(command => command.Tick == tick))
+            {
+                switch (op)
+                {
+                    case "god":
+                        god = args.Length == 0 || args[0] != 0.0;
+                        break;
+                    case "teleport":
+                        player.Body.Position = new Vector3d(args[0], args[1], args[2] - OriginAboveFeet);
+                        if (args.Length >= 4)
+                        {
+                            player.Body.Yaw = (float)(-args[3] * Math.PI / 180.0);
+                        }
+
+                        log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] tick={tick} teleport ({args[0]:0}, {args[1]:0}, {args[2]:0})");
+                        break;
+                    case "quit":
+                        quit = true;
+                        break;
+                }
+            }
+        }
+
+        host.Stop();
+        File.WriteAllText(output, log.ToString());
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {
