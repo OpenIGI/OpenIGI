@@ -3139,6 +3139,15 @@ internal sealed partial class GameHost
         int armed = 0;
         foreach (DeclaredTask vehicle in WalkTasks(levelRoot).OfType<DeclaredTask>())
         {
+            if (vehicle.Type.Name is ("Car" or "Heli")
+                && vehicle.TryGetValue("Model", out object? rawZoneModel)
+                && rawZoneModel is string zoneModel)
+            {
+                runtime.ConfigureDeathZones(
+                    vehicle,
+                    VehicleDeathZone.FromModel(zoneModel, ModelOf, magic));
+            }
+
             if (vehicle.Type.Name is not ("Car" or "Heli")
                 || !vehicle.TryGetValue("Can fire", out object? rawCanFire)
                 || rawCanFire is not string canFire
@@ -3151,9 +3160,7 @@ internal sealed partial class GameHost
 
             IReadOnlyList<VehicleGun> guns = VehicleGun.FromModel(
                 modelName,
-                name => loaded.LevelPack.TryGetModel(name, out MefModel? mef) || loaded.CommonPack.TryGetModel(name, out mef)
-                    ? mef
-                    : null,
+                ModelOf,
                 magic,
                 roster,
                 (attachment, weaponModel) => _logger.Warning(
@@ -3207,6 +3214,36 @@ internal sealed partial class GameHost
             }
         };
         _logger.Information("Ai", $"{armed} armed vehicle(s).");
+
+        MefModel? ModelOf(string name) =>
+            loaded.LevelPack.TryGetModel(name, out MefModel? mef) || loaded.CommonPack.TryGetModel(name, out mef)
+                ? mef
+                : null;
+    }
+
+    /// <summary>Kills the player when a moving vehicle's death zone reaches them (<c>0x45FA80</c>).</summary>
+    private void CheckRunOver()
+    {
+        if (_player is null || _playerDead || _cutscenes is not { } runtime)
+        {
+            return;
+        }
+
+        Vector3d origin = _player.Body.Position + new Vector3d(0d, 0d, AiSoldier.HumanOriginStandingInUnits);
+        if (!runtime.TryRunOver(origin, out GameTask? vehicle) || vehicle is null)
+        {
+            return;
+        }
+
+        _playerHealth.Apply(VehicleDeathZone.Zone, VehicleDeathZone.Damage);
+        _logger.Information("Ai", $"The player was run over by {vehicle.Type.Name} {vehicle.Id}.");
+        if (_playerHealth.IsDead)
+        {
+            Vector3d from = runtime.TryGetDrawTransform(vehicle, out Vector3d metres, out _)
+                ? metres * WorldScene.UnitsPerMetre
+                : origin;
+            BeginPlayerDeath(from, VehicleDeathZone.Zone, bone: -1, WeaponCategory.Knife);
+        }
     }
 
     private static IEnumerable<GameTask> WalkTasks(GameTask task)

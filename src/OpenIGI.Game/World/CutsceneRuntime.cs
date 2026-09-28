@@ -71,6 +71,7 @@ public sealed class CutsceneRuntime
     private DestructibleObjectRegistry? _destructibles;
     private Func<int, CutsceneTargetPose?>? _targetPoseResolver;
     private readonly Dictionary<GameTask, VehicleArmament> _armaments = [];
+    private readonly Dictionary<GameTask, DeathZoneState> _deathZones = [];
 
     /// <summary>How far above its origin a vehicle's eye stands (<c>0x42E870</c>: 8192 units, two metres).</summary>
     private const double VehicleEyeHeightUnits = 8192d;
@@ -147,6 +148,56 @@ public sealed class CutsceneRuntime
         _armaments[vehicle] = new VehicleArmament(
             null,
             [.. guns.Select(static gun => new VehicleGunState(gun))]);
+    }
+
+    /// <summary>Gives one authored vehicle the death zones its model carries.</summary>
+    /// <param name="vehicle">The Car or Heli task.</param>
+    /// <param name="zones">The zones' volumes in the vehicle's frame.</param>
+    public void ConfigureDeathZones(GameTask vehicle, IReadOnlyList<VehicleDeathZone> zones)
+    {
+        ArgumentNullException.ThrowIfNull(vehicle);
+        ArgumentNullException.ThrowIfNull(zones);
+        if (zones.Count == 0)
+        {
+            _deathZones.Remove(vehicle);
+            return;
+        }
+
+        _deathZones[vehicle] = new DeathZoneState(zones);
+    }
+
+    /// <summary>Finds a moving vehicle whose death zone a human stands in (<c>0x45FA80</c>).</summary>
+    /// <param name="humanOrigin">The human's model origin in world units -- about a metre above the feet.</param>
+    /// <param name="vehicle">Receives the vehicle that runs the human over.</param>
+    /// <returns>
+    /// <see langword="true"/> when the human is inside a zone of a live vehicle that moved at least
+    /// <see cref="VehicleDeathZone.LethalSpeedUnitsPerTick"/> on the last tick.
+    /// </returns>
+    public bool TryRunOver(Vector3d humanOrigin, out GameTask? vehicle)
+    {
+        foreach ((GameTask candidate, DeathZoneState state) in _deathZones)
+        {
+            if (state.SpeedUnitsPerTick < VehicleDeathZone.LethalSpeedUnitsPerTick
+                || !ConditionalContainerGate.IsTaskActive(candidate)
+                || _destructibles?.IsDestroyed(candidate) == true
+                || !_taskTransforms.TryGetValue(candidate, out TransformState? transform))
+            {
+                continue;
+            }
+
+            Vector3d local = transform.Orientation.Transform(humanOrigin - transform.Position);
+            foreach (VehicleDeathZone zone in state.Zones)
+            {
+                if (zone.Contains(local))
+                {
+                    vehicle = candidate;
+                    return true;
+                }
+            }
+        }
+
+        vehicle = null;
+        return false;
     }
 
     /// <summary>Gets the turret of one gun a vehicle was armed with, for presentation and tests.</summary>
@@ -530,6 +581,22 @@ public sealed class CutsceneRuntime
                     IsHitscan = gun.Gun.IsHitscan,
                 });
             }
+        }
+    }
+
+    /// <summary>Measures how far each zone-carrying vehicle moved this tick, the speed 0x45FA80 tests.</summary>
+    private void TickDeathZones()
+    {
+        foreach ((GameTask vehicle, DeathZoneState state) in _deathZones)
+        {
+            if (!_taskTransforms.TryGetValue(vehicle, out TransformState? transform))
+            {
+                state.SpeedUnitsPerTick = 0d;
+                continue;
+            }
+
+            state.SpeedUnitsPerTick = state.LastPosition is { } last ? (transform.Position - last).Length : 0d;
+            state.LastPosition = transform.Position;
         }
     }
 
@@ -949,6 +1016,7 @@ public sealed class CutsceneRuntime
 
         TickCarAi();
         TickVehicleCombat();
+        TickDeathZones();
         UpdateFrame();
     }
 
@@ -3586,6 +3654,14 @@ public sealed class CutsceneRuntime
         public int SpeedKmh { get; set; }
         public bool Stopped { get; set; }
         public double SupportOffsetUnits { get; set; } = double.NaN;
+    }
+
+    /// <summary>One vehicle's death zones and how fast it moved on the last tick.</summary>
+    private sealed class DeathZoneState(IReadOnlyList<VehicleDeathZone> zones)
+    {
+        public IReadOnlyList<VehicleDeathZone> Zones { get; } = zones;
+        public Vector3d? LastPosition { get; set; }
+        public double SpeedUnitsPerTick { get; set; }
     }
 
     /// <summary>What one armed vehicle sees, and the guns that aim from it.</summary>

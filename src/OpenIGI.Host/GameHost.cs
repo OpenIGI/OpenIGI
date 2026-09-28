@@ -2973,6 +2973,7 @@ internal sealed partial class GameHost : IDisposable
                         interactionsTickedByPlayer = true;
                     }
                     TickVehicleMissiles();
+                    CheckRunOver();
 
                     // Grenade physics runs inside PlayerCamera.Tick. IGI1 broadcasts the grenade task's
                     // AI events before the HumanAI pass, so deliver the queued records here rather than

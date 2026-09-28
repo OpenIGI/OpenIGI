@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
@@ -53,6 +54,29 @@ public sealed class RetailVehicleArmamentTests
 
         // The coaxial gun rides on the turret: its offset includes the turret's own.
         Assert.True(tank[1].Offset.Z > tank[0].Offset.Z);
+    }
+
+    [RequiresGameDataTheory]
+    [InlineData("614_01_1")] // T80, 614_07_1
+    [InlineData("601_01_1")] // APC, 601_07_1
+    [InlineData("610_01_1")] // truck, 610_04_1
+    public void EveryVehicleModelCarriesADeathZone(string model)
+    {
+        (LoadedMission mission, MagicObjectRegistry magic, _) = Load(7);
+
+        VehicleDeathZone zone = Assert.Single(VehicleDeathZone.FromModel(
+            model,
+            name => mission.LevelPack.TryGetModel(name, out MefModel? mef) || mission.CommonPack.TryGetModel(name, out mef)
+                ? mef
+                : null,
+            magic));
+
+        // A real volume the zone's collision mesh spans, not a point.
+        Assert.True(zone.Maximum.X > zone.Minimum.X && zone.Maximum.Y > zone.Minimum.Y && zone.Maximum.Z > zone.Minimum.Z);
+        Assert.True(zone.Contains(new Vector3d(
+            (zone.Minimum.X + zone.Maximum.X) * 0.5,
+            (zone.Minimum.Y + zone.Maximum.Y) * 0.5,
+            (zone.Minimum.Z + zone.Maximum.Z) * 0.5)));
     }
 
     private static (LoadedMission Mission, MagicObjectRegistry Magic, WeaponTypeRegistry Roster) Load(int id)
