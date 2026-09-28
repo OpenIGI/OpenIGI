@@ -5074,7 +5074,7 @@ if (retailFog)
                 // The marks rounds have left, over the world and under the first-person rig.
                 if (_marks is not null && _player is not null && RenderCVars.BulletMarks.Value)
                 {
-                    _marks.Draw(_player.Marks, eye, projection);
+                    _marks.Draw(_player.Marks, eye, projection, _world.DrawPoses);
                 }
 
                 // L6/L9: the live screen probe gather. Traced here, while the G-buffer the geometry pass just

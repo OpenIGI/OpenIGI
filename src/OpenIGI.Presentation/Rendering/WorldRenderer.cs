@@ -102,6 +102,7 @@ public sealed class WorldRenderer : IWorldPresenter
     private bool _framePrepared;
     private float _frameAlpha = 1f;
     private bool _frameSmooth;
+    private PlacementPose? _drawPoses;
     private bool _disposed;
 
     /// <summary>How often a placement the queries call visible is retested, in frames.</summary>
@@ -1435,6 +1436,19 @@ public sealed class WorldRenderer : IWorldPresenter
             drawPosition = rotatingPosition;
             drawOrientation = rotatingOrientation;
         }
+    }
+
+    /// <inheritdoc/>
+    public PlacementPose DrawPoses => _drawPoses ??= TryGetDrawTransform;
+
+    // The transform a placement is drawn with this frame, through the same precedence the draw loop
+    // and the selection outline use. A rotor has no single orientation mid-blur; nothing on one takes a
+    // mark (0x42D416), so its authored orientation stands.
+    private bool TryGetDrawTransform(WorldPlacement placement, out Vector3d positionMetres, out Matrix3f orientation)
+    {
+        ArgumentNullException.ThrowIfNull(placement);
+        ResolveDrawTransform(DisplayedPlacement(placement), out positionMetres, out orientation, out _, out _);
+        return true;
     }
 
     /// <summary>Draws a selection glow around one placement.</summary>

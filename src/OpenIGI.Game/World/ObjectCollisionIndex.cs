@@ -387,6 +387,32 @@ public sealed class ObjectCollisionIndex
         return true;
     }
 
+    /// <summary>Gets the pose one placement's collision mesh currently sits at.</summary>
+    /// <param name="placement">The exact placement.</param>
+    /// <param name="positionMetres">Receives its origin, in metres.</param>
+    /// <param name="orientation">Receives its local-to-world orientation.</param>
+    /// <returns><see langword="false"/> when the placement has no collision here.</returns>
+    /// <remarks>
+    /// The pose a round actually struck: whatever <see cref="UpdateTransform(GameTask, Vector3d, Matrix3f)"/>
+    /// and the carrier translations last wrote. A mark takes its local frame from this, so it sits on
+    /// the face it hit however far the object has moved since the level was built.
+    /// </remarks>
+    public bool TryGetPose(WorldPlacement placement, out Vector3d positionMetres, out Matrix3f orientation)
+    {
+        ArgumentNullException.ThrowIfNull(placement);
+        if (!_entriesByPlacement.TryGetValue(placement, out Entry[]? entries) || entries.Length == 0)
+        {
+            positionMetres = default;
+            orientation = Matrix3f.Identity;
+            return false;
+        }
+
+        Entry entry = entries[0];
+        positionMetres = entry.PoseOrigin * (1.0 / WorldScene.UnitsPerMetre);
+        orientation = entry.PoseOrientation;
+        return true;
+    }
+
     /// <summary>Gets how many placed objects carry collision geometry.</summary>
     public int Count => _entries.Length;
 
@@ -1500,9 +1526,13 @@ public sealed class ObjectCollisionIndex
             string label,
             string taskName,
             GameTask owner,
-            WorldPlacement placement)
+            WorldPlacement placement,
+            Vector3d origin,
+            Matrix3f orientation)
         {
             Mesh = mesh;
+            PoseOrigin = origin;
+            PoseOrientation = orientation;
             _localVertices = localVertices;
             _vertices = vertices;
             _closedVertices = (Vector3d[])vertices.Clone();
@@ -1537,6 +1567,12 @@ public sealed class ObjectCollisionIndex
         public WorldPlacement Placement { get; }
 
         public bool IsDynamic { get; private set; }
+
+        /// <summary>Gets where the mesh's origin sits now, in world units.</summary>
+        public Vector3d PoseOrigin { get; private set; }
+
+        /// <summary>Gets the mesh's current local-to-world orientation.</summary>
+        public Matrix3f PoseOrientation { get; private set; }
 
         public (Vector3d Min, Vector3d Max) ClosedBounds { get; }
 
@@ -1601,7 +1637,7 @@ public sealed class ObjectCollisionIndex
 
             return new Entry(
                 mesh, localVertices, vertices, centre, radius, rootCentre, instanceName, label, taskName, owner,
-                placement)
+                placement, origin, orientation)
             {
                 IsPlayerSet = isPlayerSet,
             };
@@ -1627,6 +1663,8 @@ public sealed class ObjectCollisionIndex
 
             Vector3f centre = rotation.Transform(_rootCentre);
             Centre = new Vector3d(origin.X + centre.X, origin.Y + centre.Y, origin.Z + centre.Z);
+            PoseOrigin = origin;
+            PoseOrientation = orientation;
             IsDynamic = true;
         }
 
@@ -1640,6 +1678,7 @@ public sealed class ObjectCollisionIndex
 
             Centre += displacementUnits;
             ClosedCentre += displacementUnits;
+            PoseOrigin += displacementUnits;
             IsDynamic = true;
         }
 

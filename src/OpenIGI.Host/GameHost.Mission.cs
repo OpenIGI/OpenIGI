@@ -1362,7 +1362,8 @@ internal sealed partial class GameHost
                                 worldHit,
                                 BulletMarks.SurfaceOf(blocker),
                                 table,
-                                probe: _player.MarkProbe);
+                                probe: _player.MarkProbe,
+                                placement: blocker.Placement);
                         }
 
                         PlayBulletImpactSound(

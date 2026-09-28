@@ -316,5 +316,60 @@ public sealed class BulletMarksTests
         Assert.Null(BulletMarks.SurfaceOf(task, placement: null));
     }
 
+    /// <summary>
+    /// <c>0x47D380</c> hands the decal its parent's live position and orientation, and <c>0x47D920</c>
+    /// keeps the corners in the parent's frame, so a mark on a door swings and slides with the door.
+    /// </summary>
+    [Fact]
+    public void AMarkMovesWithThePlacementItIsOn()
+    {
+        GameMaterialRegistry table = Table();
+        (Vector3d Position, Matrix3f Orientation) door = (default, Matrix3f.Identity);
+        WorldPlacement placement = new(default, default, default, null!, null!, "door", null!);
+        bool Pose(WorldPlacement p, out Vector3d position, out Matrix3f orientation)
+        {
+            Assert.Same(placement, p);
+            (position, orientation) = door;
+            return true;
+        }
+
+        BulletMarks marks = new() { Poses = Pose };
+        WorldRayHit hit = new(new Vector3d(100, 0, 0), new Vector3f(1f, 0f, 0f), 10.0, 1);
+        Assert.True(marks.TryAdd(hit, placement, table));
+        BulletMark mark = Assert.Single(marks.Marks);
+        Assert.Same(placement, mark.Anchor);
+
+        // The door turns a quarter about Z -- its local X now points along world Y -- and slides a
+        // metre along X. Column-vector convention: this matrix takes (1,0,0) to (0,1,0).
+        door = (new Vector3d(1, 0, 0), Matrix3f.FromRows(new(0f, -1f, 0f), new(1f, 0f, 0f), new(0f, 0f, 1f)));
+
+        Assert.True(mark.TryResolve(Pose, out Vector3d position, out Vector3f normal, out _));
+        Assert.Equal(WorldScene.UnitsPerMetre, position.X, 3);
+        Assert.Equal(mark.Position.X, position.Y, 3);
+        Assert.Equal(0.0, position.Z, 3);
+        Assert.Equal(0f, normal.X, 5);
+        Assert.Equal(1f, normal.Y, 5);
+
+        // A second round on the same spot of the moved door lands where the first is in the door's own
+        // frame, so the overlap rule refuses it even though the first mark was made a metre away.
+        WorldRayHit again = new(new Vector3d(WorldScene.UnitsPerMetre, 100, 0), new Vector3f(0f, 1f, 0f), 10.0, 1);
+        Assert.False(marks.TryAdd(again, placement, table));
+    }
+
+    /// <summary>A mark nothing owns, or one made with no pose to hand, stays where it was made.</summary>
+    [Fact]
+    public void AMarkWithNoPoseStaysWhereItWasMade()
+    {
+        GameMaterialRegistry table = Table();
+        WorldPlacement placement = new(default, default, default, null!, null!, "crate", null!);
+        BulletMarks marks = new();
+
+        Assert.True(marks.TryAdd(Hit(1), placement, table));
+        BulletMark mark = Assert.Single(marks.Marks);
+        Assert.Null(mark.Anchor);
+        Assert.False(mark.TryResolve(null, out Vector3d position, out _, out _));
+        Assert.Equal(mark.Position, position);
+    }
+
     private sealed class PlainTask : GameTask;
 }

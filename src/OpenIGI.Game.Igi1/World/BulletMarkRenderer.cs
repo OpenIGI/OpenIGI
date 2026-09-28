@@ -27,10 +27,10 @@ namespace OpenIGI.Game.Igi1.World;
 /// cured of. See <c>TracerTrailRenderer</c>.
 /// </para>
 /// <para>
-/// <b>Divergence.</b> The original hands each mark to the struck <i>object</i>, which owns it and
-/// draws it with its own geometry — so a mark on a moving door moves with the door. Here they are
-/// world-space quads in one buffer, which is right for the static scenery every level is mostly made
-/// of and wrong for anything that moves. Recorded in <c>TODO.md</c>.
+/// The original makes each mark a child of the struck <i>object</i> (<c>0x47D380</c>), drawn against
+/// its live transform — so a mark on a moving door moves with the door. Here a mark is held in the
+/// frame of the placement it landed on and placed each frame by that placement's draw transform, the
+/// same one the world renderer draws the door, elevator or cut-scene vehicle with.
 /// </para>
 /// </remarks>
 internal sealed class BulletMarkRenderer : IBulletMarkPresenter
@@ -55,6 +55,13 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
     private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Vertex3D[] _vertices = new Vertex3D[MaximumVertices];
     private readonly List<(TextureHandle Texture, int FirstQuad, int QuadCount)> _batches = [];
+
+    // One frame's anchor poses. Hundreds of marks share a handful of objects, and resolving a pose walks
+    // the door, elevator and cut-scene runtimes.
+    private readonly Dictionary<WorldPlacement, (bool Known, Vector3d Position, Matrix3f Orientation)> _poses =
+        new(ReferenceEqualityComparer.Instance);
+    private readonly PlacementPose _cachedPose;
+    private PlacementPose? _framePoses;
     private int _used;
     private int _lastUsed;
     private MeshHandle _mesh = MeshHandle.None;
@@ -72,6 +79,7 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
         _device = device;
         _resources = resources;
         _logger = logger ?? NullLogger.Instance;
+        _cachedPose = CachedPose;
     }
 
     /// <summary>Gets how many quads the last <see cref="Draw"/> submitted.</summary>
@@ -81,13 +89,14 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
     /// <param name="marks">The marks to draw.</param>
     /// <param name="camera">The eye.</param>
     /// <param name="projection">The world projection.</param>
+    /// <param name="poses">Where placements are drawn this frame, for marks held in their frames.</param>
     /// <exception cref="ArgumentNullException"><paramref name="marks"/> is <see langword="null"/>.</exception>
     /// <remarks>
     /// Marks are grouped by texture so each distinct one costs a single draw however many holes are in
     /// the wall. They are drawn <b>alpha-blended and depth-tested but not depth-written</b>: a mark is a
     /// film on a surface, and writing depth would let one hide another that is a millimetre behind it.
     /// </remarks>
-    public void Draw(BulletMarks marks, in Camera3D camera, in Matrix4f projection)
+    public void Draw(BulletMarks marks, in Camera3D camera, in Matrix4f projection, PlacementPose? poses = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(marks);
@@ -97,6 +106,9 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
         {
             return;
         }
+
+        _framePoses = poses;
+        _poses.Clear();
 
         // CAMERA-RELATIVE, and it has to be. A level sits tens of kilometres from the world origin --
         // level 1's ground is at 42 km -- and a float there resolves to about five millimetres. A
@@ -231,6 +243,20 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
         return indices;
     }
 
+    private bool CachedPose(WorldPlacement placement, out Vector3d positionMetres, out Matrix3f orientation)
+    {
+        if (!_poses.TryGetValue(placement, out (bool Known, Vector3d Position, Matrix3f Orientation) pose))
+        {
+            bool known = _framePoses!(placement, out Vector3d position, out Matrix3f turned);
+            pose = (known, position, turned);
+            _poses[placement] = pose;
+        }
+
+        positionMetres = pose.Position;
+        orientation = pose.Orientation;
+        return pose.Known;
+    }
+
     private void AddMark(in BulletMark mark, Vector3d eye)
     {
         if (_used + 4 > MaximumVertices)
@@ -238,23 +264,36 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
             return;
         }
 
-        Vector3f normal = Normalise(mark.Normal);
+        bool anchored = mark.TryResolve(
+            _framePoses is null ? null : _cachedPose,
+            out Vector3d position,
+            out _,
+            out Matrix3f orientation);
 
         // Any two axes perpendicular to the normal will do -- a bullet hole has no up. Picking the
-        // world axis the normal leans on least is what keeps the cross product well conditioned.
+        // axis the normal leans on least is what keeps the cross product well conditioned. An anchored
+        // mark picks them in its object's frame and turns them with it, so a hole on a swinging door
+        // turns with the door rather than spinning when the normal crosses the world-axis threshold.
+        Vector3f normal = Normalise(anchored ? mark.LocalNormal : mark.Normal);
         Vector3f reference = MathF.Abs(normal.Z) < 0.9f
             ? new Vector3f(0f, 0f, 1f)
             : new Vector3f(1f, 0f, 0f);
 
         Vector3f right = Normalise(Cross(reference, normal));
         Vector3f up = Normalise(Cross(normal, right));
+        if (anchored)
+        {
+            normal = BulletMarks.ToWorld(orientation, normal);
+            right = BulletMarks.ToWorld(orientation, right);
+            up = BulletMarks.ToWorld(orientation, up);
+        }
 
         // The size is the half-width: 0x47D920 lays the four corners at +-size on both axes.
         float half = (float)(mark.SizeInUnits / WorldScene.UnitsPerMetre);
         Vector3d centre = new(
-            (mark.Position.X / WorldScene.UnitsPerMetre) + (normal.X * DepthBiasInMetres) - eye.X,
-            (mark.Position.Y / WorldScene.UnitsPerMetre) + (normal.Y * DepthBiasInMetres) - eye.Y,
-            (mark.Position.Z / WorldScene.UnitsPerMetre) + (normal.Z * DepthBiasInMetres) - eye.Z);
+            (position.X / WorldScene.UnitsPerMetre) + (normal.X * DepthBiasInMetres) - eye.X,
+            (position.Y / WorldScene.UnitsPerMetre) + (normal.Y * DepthBiasInMetres) - eye.Y,
+            (position.Z / WorldScene.UnitsPerMetre) + (normal.Z * DepthBiasInMetres) - eye.Z);
 
         _vertices[_used] = Corner(centre, right, up, normal, -half, -half, 0f, 1f);
         _vertices[_used + 1] = Corner(centre, right, up, normal, half, -half, 1f, 1f);

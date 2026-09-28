@@ -23,7 +23,11 @@ public interface IBulletMarkPresenter : IDisposable
     /// <param name="marks">The ring of impacts to draw.</param>
     /// <param name="camera">Where they are seen from.</param>
     /// <param name="projection">The projection to draw under.</param>
-    void Draw(BulletMarks marks, in Camera3D camera, in Matrix4f projection);
+    /// <param name="poses">
+    /// Where placements are drawn this frame, so a mark held in one's frame moves with it; null draws
+    /// every mark where it was made.
+    /// </param>
+    void Draw(BulletMarks marks, in Camera3D camera, in Matrix4f projection, PlacementPose? poses = null);
 }
 
 /// <summary>Draws the lamp on each of a level's security cameras that shows what it is doing.</summary>

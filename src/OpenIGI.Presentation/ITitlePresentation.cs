@@ -162,6 +162,10 @@ public interface IWorldPresenter : IDisposable
         float radius,
         bool throughWalls);
 
+    /// <summary>Gets where each placement is drawn this frame: its door, elevator, cut-scene or spin pose.</summary>
+    /// <remarks>What a mark held in a placement's frame is drawn against, so it moves with the object.</remarks>
+    PlacementPose DrawPoses { get; }
+
     /// <summary>Uploads one placement's geometry now rather than on the frame that first needs it.</summary>
     /// <param name="scene">The scene the placement belongs to.</param>
     /// <param name="index">Which placement to make resident.</param>

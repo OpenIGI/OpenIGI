@@ -926,6 +926,9 @@ public sealed class PlayerCamera
         ArgumentNullException.ThrowIfNull(walls);
         _walls = walls;
         _body.Walls = walls.PlayerCaster();
+
+        // A mark is held in the frame of the object it struck, taken from the pose the round met.
+        Marks.Poses = walls.TryGetPose;
     }
 
     /// <summary>Gives the player the tuning <c>humanplayer.qvm</c> publishes.</summary>
@@ -2702,7 +2705,8 @@ public sealed class PlayerCamera
                         materials,
                         isEntry: !impact.Wall.IsExit,
                         exitCrossing: impact.Wall.IsExit,
-                        probe: MarkProbe);
+                        probe: MarkProbe,
+                        placement: impact.Placement);
                 }
             }
 
@@ -2892,7 +2896,7 @@ public sealed class PlayerCamera
         {
             if (_pendingMarks.Count < GunShotBallistics.MaximumRecordedImpacts)
             {
-                _pendingMarks.Add(new PendingMark(surface, BulletMarks.SurfaceOf(contact), exitCrossing));
+                _pendingMarks.Add(new PendingMark(surface, BulletMarks.SurfaceOf(contact), exitCrossing, contact.Placement));
             }
         }
     }
@@ -2915,7 +2919,7 @@ public sealed class PlayerCamera
         {
             PendingMark pending = _pendingMarks[i];
             bool isEntry = !deflected && (i < _pendingMarks.Count - 1 || !pending.Hit.IsExit);
-            Marks.TryAdd(pending.Hit, pending.Surface, table, isEntry, pending.ExitCrossing, MarkProbe);
+            Marks.TryAdd(pending.Hit, pending.Surface, table, isEntry, pending.ExitCrossing, MarkProbe, pending.Placement);
         }
 
         _pendingMarks.Clear();
@@ -3015,7 +3019,11 @@ public sealed class PlayerCamera
             Melee: true));
     }
 
-    private readonly record struct PendingMark(WorldRayHit Hit, object? Surface, bool ExitCrossing);
+    private readonly record struct PendingMark(
+        WorldRayHit Hit,
+        object? Surface,
+        bool ExitCrossing,
+        WorldPlacement? Placement);
 
     /// <summary>Raised where a round glanced off a surface, so the whizz can be sounded there.</summary>
     /// <remarks>

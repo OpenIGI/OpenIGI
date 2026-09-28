@@ -4,9 +4,16 @@ using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.World;
 
+/// <summary>Reports where a placement sits.</summary>
+/// <param name="placement">The exact placement.</param>
+/// <param name="positionMetres">Receives its origin, in metres.</param>
+/// <param name="orientation">Receives its local-to-world orientation.</param>
+/// <returns><see langword="false"/> when the placement's pose is not known.</returns>
+public delegate bool PlacementPose(WorldPlacement placement, out Vector3d positionMetres, out Matrix3f orientation);
+
 /// <summary>One mark left on a surface by a round, a blast or a wound.</summary>
-/// <param name="Position">Where it sits, in world units.</param>
-/// <param name="Normal">The surface's normal, which the mark faces along.</param>
+/// <param name="Position">Where it sat when it was made, in world units.</param>
+/// <param name="Normal">The surface's normal then, which the mark faces along.</param>
 /// <param name="Texture">The texture name for it.</param>
 /// <param name="SizeInUnits">
 /// Its <b>half</b>-width. <c>0x47D920</c> lays the decal's four corners at <c>±size</c> along both of
@@ -16,12 +23,59 @@ namespace OpenIGI.Game.World;
 /// The object it is stuck to — a <see cref="WorldPlacement"/> or a <see cref="GameTask"/> — or
 /// <see langword="null"/> for a mark nothing owns.
 /// </param>
+/// <param name="Anchor">
+/// The placement whose frame the mark is held in, or <see langword="null"/> for a mark that stays
+/// where it was made.
+/// </param>
+/// <param name="LocalPosition">Where it sits in <paramref name="Anchor"/>'s frame, in world units.</param>
+/// <param name="LocalNormal">Its normal in <paramref name="Anchor"/>'s frame.</param>
+/// <remarks>
+/// The original's decal is a child task of the struck object: <c>0x47D380</c> hands its draw object
+/// the parent's live position and orientation (<c>+32</c>, <c>+112</c>), and <c>0x47D920</c> keeps
+/// the corners in the object's own frame. So a mark on a door swings with the door. An anchored mark
+/// does the same by keeping its place in the placement's frame and asking where the placement is
+/// when it is drawn.
+/// </remarks>
 public readonly record struct BulletMark(
     Vector3d Position,
     Vector3f Normal,
     string Texture,
     float SizeInUnits,
-    object? Surface = null);
+    object? Surface = null,
+    WorldPlacement? Anchor = null,
+    Vector3d LocalPosition = default,
+    Vector3f LocalNormal = default)
+{
+    /// <summary>Works out where the mark is now.</summary>
+    /// <param name="poses">Where placements are now, or <see langword="null"/> to use where it was made.</param>
+    /// <param name="position">Receives its position, in world units.</param>
+    /// <param name="normal">Receives its normal.</param>
+    /// <param name="orientation">
+    /// Receives its anchor's orientation, so a caller can carry its own local axes with it; identity
+    /// for a mark that is not anchored.
+    /// </param>
+    /// <returns><see langword="true"/> when the anchor's pose placed it.</returns>
+    public bool TryResolve(
+        PlacementPose? poses,
+        out Vector3d position,
+        out Vector3f normal,
+        out Matrix3f orientation)
+    {
+        if (Anchor is { } anchor
+            && poses is not null
+            && poses(anchor, out Vector3d originMetres, out orientation))
+        {
+            position = BulletMarks.ToWorld(originMetres, orientation, LocalPosition);
+            normal = BulletMarks.ToWorld(orientation, LocalNormal);
+            return true;
+        }
+
+        position = Position;
+        normal = Normal;
+        orientation = Matrix3f.Identity;
+        return false;
+    }
+}
 
 /// <summary>
 /// The marks rounds and blasts have left on the world, and the rules for adding one.
@@ -54,6 +108,13 @@ public sealed class BulletMarks
     private readonly List<(object Key, long Stamp)> _surfaces = [];
     private readonly int _unownedCapacity;
     private long _clock;
+
+    /// <summary>Gets or sets where placements are when a mark is made.</summary>
+    /// <remarks>
+    /// This must be the pose the round <b>struck</b> -- the collision index's -- so that the mark's
+    /// place in the object's frame is the face it hit. Without it marks stay where they were made.
+    /// </remarks>
+    public PlacementPose? Poses { get; set; }
 
     /// <summary>How many objects may carry marks at once.</summary>
     /// <remarks>
@@ -224,6 +285,10 @@ public sealed class BulletMarks
     /// <param name="probe">
     /// The world cast used for the corner test, or <see langword="null"/> to skip it.
     /// </param>
+    /// <param name="placement">
+    /// The placement the round struck, whose frame the mark is held in so it moves with it. A
+    /// <paramref name="surface"/> that is itself a placement is used when this is omitted.
+    /// </param>
     /// <returns><see langword="false"/> when nothing was left.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="materials"/> is <see langword="null"/>.</exception>
     /// <remarks>
@@ -238,7 +303,8 @@ public sealed class BulletMarks
         GameMaterialRegistry materials,
         bool isEntry = true,
         bool exitCrossing = false,
-        WorldRayCast? probe = null)
+        WorldRayCast? probe = null,
+        WorldPlacement? placement = null)
     {
         ArgumentNullException.ThrowIfNull(materials);
 
@@ -264,7 +330,7 @@ public sealed class BulletMarks
             return false;
         }
 
-        return Add(new BulletMark(Lift(hit), hit.Normal, texture, block.SizeInUnits, surface));
+        return Add(Anchored(new BulletMark(Lift(hit), hit.Normal, texture, block.SizeInUnits, surface), placement));
     }
 
     /// <summary>Records a decal that names its own texture rather than a material's.</summary>
@@ -275,6 +341,9 @@ public sealed class BulletMarks
     /// <param name="surface">
     /// The object it is stuck to, which subjects it to the per-object rules; <see langword="null"/>
     /// keeps it in the bounded list of marks nothing owns.
+    /// </param>
+    /// <param name="placement">
+    /// The placement it landed on, whose frame it is held in; see <see cref="TryAdd"/>.
     /// </param>
     /// <returns><see langword="false"/> when nothing was left.</returns>
     /// <remarks>
@@ -287,14 +356,15 @@ public sealed class BulletMarks
         Vector3f normal,
         string texture,
         float sizeInUnits,
-        object? surface = null)
+        object? surface = null,
+        WorldPlacement? placement = null)
     {
         if (string.IsNullOrEmpty(texture))
         {
             return false;
         }
 
-        return Add(new BulletMark(position, normal, texture, sizeInUnits, surface));
+        return Add(Anchored(new BulletMark(position, normal, texture, sizeInUnits, surface), placement));
     }
 
     /// <summary>Tests whether all four corners of a mark have a surface under them.</summary>
@@ -372,12 +442,19 @@ public sealed class BulletMarks
                 oldest = i;
             }
 
+            // 0x47D534 compares the two in the object's own frame, the only frame in which a mark made
+            // before the object moved is still where it was made.
+            bool local = existing.Anchor is not null && ReferenceEquals(existing.Anchor, mark.Anchor);
+            Vector3d a = local ? existing.LocalPosition : existing.Position;
+            Vector3d b = local ? mark.LocalPosition : mark.Position;
             double reach = existing.SizeInUnits * OverlapFactor;
-            double dx = existing.Position.X - mark.Position.X;
-            double dy = existing.Position.Y - mark.Position.Y;
-            double dz = existing.Position.Z - mark.Position.Z;
+            double dx = a.X - b.X;
+            double dy = a.Y - b.Y;
+            double dz = a.Z - b.Z;
             if ((reach * reach) > ((dx * dx) + (dy * dy) + (dz * dz))
-                && Dot(Normalise(existing.Normal), Normalise(mark.Normal)) > OverlapAlignment)
+                && Dot(
+                    Normalise(local ? existing.LocalNormal : existing.Normal),
+                    Normalise(local ? mark.LocalNormal : mark.Normal)) > OverlapAlignment)
             {
                 return false;
             }
@@ -412,6 +489,48 @@ public sealed class BulletMarks
         _marks.Add(mark);
         TotalAdded++;
         return true;
+    }
+
+    /// <summary>Takes a point from a placement's frame into the world.</summary>
+    /// <param name="originMetres">The placement's origin, in metres.</param>
+    /// <param name="orientation">Its local-to-world orientation.</param>
+    /// <param name="local">The point in its frame, in world units.</param>
+    /// <returns>The point in the world, in world units.</returns>
+    /// <remarks>
+    /// The column-vector product <c>M·v</c>, the convention the renderer and the collision index share
+    /// for a placement's <c>Real32x9</c>.
+    /// </remarks>
+    public static Vector3d ToWorld(Vector3d originMetres, Matrix3f orientation, Vector3d local) =>
+        (originMetres * WorldScene.UnitsPerMetre) + orientation.Transposed().Transform(local);
+
+    /// <summary>Turns a direction from a placement's frame into the world.</summary>
+    /// <param name="orientation">The placement's local-to-world orientation.</param>
+    /// <param name="local">The direction in its frame.</param>
+    /// <returns>The direction in the world.</returns>
+    public static Vector3f ToWorld(Matrix3f orientation, Vector3f local) =>
+        orientation.Transposed().Transform(local);
+
+    // Holds an owned mark in the frame of the placement it landed on, where that placement's pose is
+    // known. The inverse of ToWorld: an orientation's transpose is its inverse, and Transform is the
+    // row-vector product, which applies that transpose.
+    private BulletMark Anchored(BulletMark mark, WorldPlacement? placement)
+    {
+        WorldPlacement? anchor = mark.Surface as WorldPlacement ?? placement;
+        if (mark.Surface is null
+            || anchor is null
+            || Poses is not { } poses
+            || !poses(anchor, out Vector3d originMetres, out Matrix3f orientation))
+        {
+            return mark;
+        }
+
+        Vector3d offset = mark.Position - (originMetres * WorldScene.UnitsPerMetre);
+        return mark with
+        {
+            Anchor = anchor,
+            LocalPosition = orientation.Transform(offset),
+            LocalNormal = orientation.Transform(mark.Normal),
+        };
     }
 
     // Lift the mark clear of the surface by the same five millimetres the shot uses to step off a

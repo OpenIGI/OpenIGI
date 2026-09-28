@@ -145,9 +145,10 @@ internal sealed partial class GameHost
 
                 _player?.Marks.TryAdd(
                     hit,
-                    MarkSurfaceAt(hit.Position, hit.Normal),
+                    MarkSurfaceAt(hit.Position, hit.Normal, out WorldPlacement? struck),
                     _worldMaterials,
-                    probe: _player?.MarkProbe);
+                    probe: _player?.MarkProbe,
+                    placement: struck);
                 _impactEffects.SpawnSurfaceImpact(
                     hit.Position, hit.Normal, look, material.Entry, struckHuman: false);
                 string where = FormattableString.Invariant(
@@ -547,7 +548,7 @@ internal sealed partial class GameHost
             positionUnits.Y + (n.Y * liftUnits),
             positionUnits.Z + (n.Z * liftUnits));
 
-        if (MarkSurfaceAt(positionUnits, n) is not { } surface)
+        if (MarkSurfaceAt(positionUnits, n, out WorldPlacement? placement) is not { } surface)
         {
             return;
         }
@@ -555,15 +556,17 @@ internal sealed partial class GameHost
         // The name carries its .tex so the bullet-mark renderer's LOCAL:common/textures/{name}
         // candidate matches the exact entry burn1.tex is registered under (common textures, not the
         // level's).
-        _player.Marks.AddMark(at, n, "burn1.tex", halfWidthInUnits, surface);
+        _player.Marks.AddMark(at, n, "burn1.tex", halfWidthInUnits, surface, placement);
     }
 
     /// <summary>Names the object whose surface lies at a point, for a mark to be stuck to.</summary>
     /// <param name="positionUnits">A point on the surface.</param>
     /// <param name="normal">The surface normal there.</param>
+    /// <param name="placement">Receives the placement there, whose frame the mark is held in.</param>
     /// <returns>The object, or <see langword="null"/> for terrain, nothing, or a type that takes no marks.</returns>
-    private object? MarkSurfaceAt(Vector3d positionUnits, Vector3f normal)
+    private object? MarkSurfaceAt(Vector3d positionUnits, Vector3f normal, out WorldPlacement? placement)
     {
+        placement = null;
         if (_worldTrace is not { } trace)
         {
             return null;
@@ -579,9 +582,13 @@ internal sealed partial class GameHost
             positionUnits.Y - (normal.Y * reach),
             positionUnits.Z - (normal.Z * reach));
 
-        return trace(new WorldTraceRequest(from, to, WorldTraceMask.World), out WorldTraceHit hit)
-            ? BulletMarks.SurfaceOf(hit)
-            : null;
+        if (!trace(new WorldTraceRequest(from, to, WorldTraceMask.World), out WorldTraceHit hit))
+        {
+            return null;
+        }
+
+        placement = hit.Placement;
+        return BulletMarks.SurfaceOf(hit);
     }
 
     /// <summary>Lays the exhaust glow and smoke trail for every launcher rocket still in the air.</summary>
