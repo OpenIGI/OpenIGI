@@ -283,6 +283,43 @@ public sealed class MissionObjectiveRuntime
         }
     }
 
+    /// <summary>Empties every message slot, as the <c>StatusMessageScreen_ClearMessages</c> native does.</summary>
+    /// <remarks>
+    /// <para>
+    /// The native (<c>0x485AD0</c>) walks all twenty-four slots through <c>0x4868D0</c> and releases each
+    /// occupied one with <c>0x485D20</c>, ordinary messages and cutscene subtitles alike. Levels 1-14 run
+    /// it from their gameplay container's <c>Run at start</c>, so the intro's messages do not carry over
+    /// into play.
+    /// </para>
+    /// <para>
+    /// Releasing a slot is not silent: <c>0x485D20</c> marks the owning StatusMessage task as finished
+    /// (<c>isFinishedDisplay</c> = 1, <c>nFinishedDisplay</c> = now, <c>nTicksSinceFinishedDisplay</c> = 0),
+    /// exactly as if its hold had run out. Scripts that wait on a cleared message still see it end.
+    /// Messages without a task, such as weapon pickups, just leave the screen.
+    /// </para>
+    /// </remarks>
+    public void ClearMessages()
+    {
+        for (int i = 0; i < _messageSlots.Length; i++)
+        {
+            if (_messageSlots[i] is not { } message)
+            {
+                continue;
+            }
+
+            _messageSlots[i] = null;
+            message.StopDisplay();
+            if (_transientMessages.Remove(message))
+            {
+                continue;
+            }
+
+            message.IsFinishedDisplay = true;
+            message.FinishedDisplayTick = _tick;
+            message.TicksSinceFinishedDisplay = 0;
+        }
+    }
+
     /// <summary>Removes subtitles that belong to a cutscene which the player skipped.</summary>
     /// <remarks>
     /// Cutscene messages share the same slots as ordinary status messages. Releasing them here prevents

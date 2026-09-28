@@ -422,6 +422,11 @@ internal sealed partial class GameHost
         // Mission text is addressed by its own key, not by the menu table's LOCAL:<language>/<key> —
         // see MissionStringResolver. Everything that resolves mission data goes through this one.
         MissionStringResolver missionText = new(_resources, missionStrings);
+
+        // The objective runtime owns the message slots but is built after the cutscene runtime, which
+        // needs it for StatusMessageScreen_ClearMessages. The native reads this local rather than the
+        // field so a clear during construction cannot reach the previous mission's messages.
+        MissionObjectiveRuntime? objectives = null;
         _cutscenes = new CutsceneRuntime(
             levelRoot,
             _loop.Variables,
@@ -454,6 +459,13 @@ internal sealed partial class GameHost
                         context.IsEnabled = arguments.GetBoolean(0);
                     }
 
+                    return QvmValue.FromInt32(1);
+                }
+
+                if (name == "StatusMessageScreen_ClearMessages")
+                {
+                    // 0x485AD0: clears every slot and returns true.
+                    objectives?.ClearMessages();
                     return QvmValue.FromInt32(1);
                 }
 
@@ -507,7 +519,7 @@ internal sealed partial class GameHost
         }
         // LevelFlow exports eDifficulty straight from the active profile (0x488ED0), unclamped, and the
         // number-row keys as Key0..9.isPressed. -difficulty overrides the profile here as it does for the AI.
-        _missionObjectives = new MissionObjectiveRuntime(
+        _missionObjectives = objectives = new MissionObjectiveRuntime(
             levelRoot,
             _loop.Variables,
             missionText.Get,

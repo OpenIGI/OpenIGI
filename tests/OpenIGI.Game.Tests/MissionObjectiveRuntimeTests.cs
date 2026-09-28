@@ -236,6 +236,72 @@ public sealed class MissionObjectiveRuntimeTests
     }
 
     [Fact]
+    public void ClearMessagesEmptiesEverySlotAndFinishesTheAuthoredMessages()
+    {
+        GameLoop loop = new();
+        QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("StatusMessage"),
+                QvmExpression.Text("Send"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Text"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Is send once"), QvmExpression.Text("bool8"),
+                QvmExpression.Text("Cutscene message"), QvmExpression.Text("bool8"),
+                QvmExpression.Text("Duration"), QvmExpression.Text("Real32")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(300),
+                QvmExpression.Text("StatusMessage"),
+                QvmExpression.Text("Objective"),
+                QvmExpression.Text("1"),
+                QvmExpression.Text("OBJECTIVE"),
+                QvmExpression.Int(1),
+                QvmExpression.Int(0),
+                QvmExpression.Real(10f)),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(301),
+                QvmExpression.Text("StatusMessage"),
+                QvmExpression.Text("Unsent"),
+                QvmExpression.Text("0"),
+                QvmExpression.Text("UNSENT"),
+                QvmExpression.Int(1),
+                QvmExpression.Int(0),
+                QvmExpression.Real(10f))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, loop.Natives).Run());
+
+        MissionObjectiveRuntime runtime = new(loop.Tasks.Root, loop.Variables);
+        Assert.True(loop.Variables.TryWrite("StatusMessage_300.nTickSendt", QvmValue.FromInt32(-211)));
+        runtime.Tick();
+        Assert.True(runtime.ShowTransientMessage("PICKEDUPWEAPONAK-47"));
+        Assert.Equal(2, runtime.DisplayedMessages.Count());
+        Assert.Equal(0, Read("StatusMessage_300.isFinishedDisplay"));
+
+        runtime.ClearMessages();
+
+        // 0x485D20 finishes the owning task as the hold running out would; the unsent one is untouched.
+        Assert.Empty(runtime.DisplayedMessages);
+        Assert.Equal(1, Read("StatusMessage_300.isFinishedDisplay"));
+        Assert.Equal(Read("StatusMessage_300.nTickSendt") + 1, Read("StatusMessage_300.nFinishedDisplay"));
+        Assert.Equal(0, Read("StatusMessage_300.nTicksSinceFinishedDisplay"));
+        Assert.Equal(0, Read("StatusMessage_301.isFinishedDisplay"));
+        Assert.Single(runtime.Log);
+
+        runtime.Tick();
+
+        Assert.Equal(1, Read("StatusMessage_300.nTicksSinceFinishedDisplay"));
+        Assert.Empty(runtime.DisplayedMessages);
+        Assert.True(runtime.ShowTransientMessage("AFTER-CLEAR"));
+        Assert.Equal("AFTER-CLEAR", Assert.Single(runtime.DisplayedMessages).Text);
+
+        int Read(string name)
+        {
+            Assert.True(loop.Variables.TryRead(name, out QvmValue value));
+            return value.ToInt32();
+        }
+    }
+
+    [Fact]
     public void AuthoredInterfaceTimerStartsAtTheRetailMaximumAndStopsAtZero()
     {
         GameLoop loop = new();
