@@ -197,11 +197,30 @@ public sealed class MagicObjectRegistry
             threshold,
             dishSound,
             dishSpeed,
-            dishAccel);
+            dishAccel)
+        {
+            Gun = string.Equals(typeName, "TASKTYPE_AISTATIONARYGUN", StringComparison.Ordinal)
+                && call.ArgumentCount > 12
+                    ? ReadGunMount(call)
+                    : null,
+        };
 
         // The original appends unconditionally and its lookup takes the first match, so a repeated name
         // keeps the earlier definition.
         _byName.TryAdd(definition.Name, definition);
         return QvmValue.FromInt32(1);
     }
+
+    /// <summary>Reads an AIStationaryGun's arguments in the order <c>0x46FA50</c> parses them.</summary>
+    private static MagicGunMount ReadGunMount(QvmCallContext call) => new(
+        call.GetString(3),
+        call.GetSingle(4),
+        call.GetSingle(5),
+        call.GetSingle(6),
+        call.GetInt32(7),
+        call.GetSingle(8),
+        call.GetSingle(9),
+        call.GetString(10),
+        call.GetSingle(11),
+        call.GetSingle(12));
 }

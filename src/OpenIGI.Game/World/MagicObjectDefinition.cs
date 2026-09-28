@@ -45,6 +45,9 @@ public readonly record struct MagicObjectDefinition(
     float Speed = 0f,
     float Acceleration = 0f)
 {
+    /// <summary>Gets the gun a <c>TASKTYPE_AISTATIONARYGUN</c> attachment carries, or <see langword="null"/>.</summary>
+    public MagicGunMount? Gun { get; init; }
+
     /// <inheritdoc/>
     public override string ToString() => $"{Name} -> {Model} (type {TaskType})";
 }
