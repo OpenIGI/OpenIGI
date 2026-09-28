@@ -793,11 +793,16 @@ public sealed class AiScenarioHarness : IDisposable
         int mission = EnvInt("OPENIGI_VEH_SCENARIO_MISSION", 7);
         int vehicleId = EnvInt("OPENIGI_VEH_SCENARIO_ID", 354);
         List<(int Tick, string Op, double[] Args)> script = [];
+        List<(int Tick, string Name, int Value)> setvars = [];
         foreach (string raw in File.ReadAllLines(scriptPath))
         {
             string line = raw.Split('#')[0].Trim();
             string[] words = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            if (words.Length >= 2)
+            if (words.Length >= 2 && words[1].Equals("setvar", StringComparison.OrdinalIgnoreCase) && words.Length >= 4)
+            {
+                setvars.Add((int.Parse(words[0], CultureInfo.InvariantCulture), words[2], int.Parse(words[3], CultureInfo.InvariantCulture)));
+            }
+            else if (words.Length >= 2)
             {
                 script.Add((
                     int.Parse(words[0], CultureInfo.InvariantCulture),
@@ -928,7 +933,7 @@ public sealed class AiScenarioHarness : IDisposable
                         object? route = Prop("Route");
                         OpenIGI.Engine.Tasks.GameTask? task = Prop("Task") as OpenIGI.Engine.Tasks.GameTask;
                         OpenIGI.Engine.Tasks.GameTask? car = Prop("Car") as OpenIGI.Engine.Tasks.GameTask;
-                        log.AppendLine(CultureInfo.InvariantCulture, $"[carai] tick={tick} task={task?.Id} car={car?.Id} active={(task is null ? "?" : ConditionalContainerGate.IsTaskActive(task).ToString())} route={(route is null ? "null" : route.GetType().GetProperty("HasStopped")?.GetValue(route))} stopped={Prop("Stopped")} target={Prop("TargetNodeId")} speed={Prop("SpeedKmh")}");
+                        log.AppendLine(CultureInfo.InvariantCulture, $"[carai] tick={tick} task={task?.Id} car={car?.Id} active={(task is null ? "?" : ConditionalContainerGate.IsTaskActive(task).ToString())} route={(route is null ? "null" : route.GetType().GetProperty("HasStopped")?.GetValue(route))} stopped={Prop("Stopped")} node={(Prop("TargetNode") as OpenIGI.Formats.Ai.GraphNode)?.Id}@{(Prop("TargetNode") as OpenIGI.Formats.Ai.GraphNode)?.Position.X:0},{(Prop("TargetNode") as OpenIGI.Formats.Ai.GraphNode)?.Position.Y:0} car={((Prop("Transform") is { } tr) ? tr.GetType().GetProperty("Position")?.GetValue(tr) : null)} cmd={Prop("CommandSpeedKmh")} throttle={Prop("Throttle")} brake={Prop("Brake")} steer={Prop("Steering")}");
                     }
                 }
 
@@ -946,6 +951,12 @@ public sealed class AiScenarioHarness : IDisposable
                         : car.TryGetValue("Position", out object? raw) && raw is Vector3d authored ? authored : default;
                     log.AppendLine(CultureInfo.InvariantCulture, $"[vpose] tick={tick} id={car.Id} pos=({at.X:0},{at.Y:0},{at.Z:0})");
                 }
+            }
+
+            foreach ((int _, string name, int value) in setvars.Where(command => command.Tick == tick))
+            {
+                bool written = loop.Variables.TryWrite(name, OpenIGI.Scripting.Runtime.QvmValue.FromInt32(value));
+                log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] tick={tick} setvar {name}={value} written={written}");
             }
 
             foreach ((int _, string op, double[] args) in script.Where(command => command.Tick == tick))

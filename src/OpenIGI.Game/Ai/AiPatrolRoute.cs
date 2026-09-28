@@ -83,6 +83,9 @@ public sealed class AiPatrolRoute
     /// </remarks>
     public bool HasStopped { get; private set; }
 
+    /// <summary>Gets the command the cursor would move to next, without moving it — <c>sub_453730</c>.</summary>
+    public AiPatrolCommand? Next => Peek() is var next and >= 0 ? Path.Commands[next] : null;
+
     /// <summary>Gets the current command, or <see langword="null"/> when the cursor is off the end.</summary>
     public AiPatrolCommand? Current =>
         CurrentIndex >= 0 && CurrentIndex < Path.Commands.Count ? Path.Commands[CurrentIndex] : null;

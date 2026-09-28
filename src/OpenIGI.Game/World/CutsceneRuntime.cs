@@ -76,6 +76,15 @@ public sealed class CutsceneRuntime
 
     /// <summary>How far above its origin a vehicle's eye stands (<c>0x42E870</c>: 8192 units, two metres).</summary>
     private const double VehicleEyeHeightUnits = 8192d;
+
+    /// <summary>CarAI's arrival radius squared (<c>dbl_533648</c>: three metres).</summary>
+    private const double CarAiArrivalSquared = 150_994_944d;
+
+    /// <summary>Within ten metres of a node the route speed looks one node further (<c>0x4255A0</c>).</summary>
+    private const double CarAiLookAheadSquared = 1_677_721_600d;
+
+    /// <summary>The chase looks ahead within fourteen metres (<c>0x425900</c>).</summary>
+    private const double CarAiChaseLookAheadSquared = 3_288_334_336d;
     private bool _breakRequested;
     private readonly List<string> _diagnostics = [];
 
@@ -427,6 +436,10 @@ public sealed class CutsceneRuntime
         }
     }
 
+    /// <summary>Gets the graph node a car's CarAI is heading for (<c>+104</c>), for diagnostics and tests.</summary>
+    public int? CarAiTargetNode(GameTask car) =>
+        _carAis.Find(state => ReferenceEquals(state.Car, car))?.TargetNode?.Id;
+
     /// <summary>Gets active graph-driven vehicles at their current world positions.</summary>
     public IReadOnlyList<VehicleOccupant> VehicleOccupants() =>
         _carAis
@@ -434,9 +447,24 @@ public sealed class CutsceneRuntime
             .Select(static state => new VehicleOccupant(state.Car.Id, state.Transform.Position))
             .ToArray();
 
-    /// <summary>Runs the graph/path portion of retail's registered CarAI callback once per game tick.</summary>
+    /// <summary>Runs retail's registered CarAI callback (<c>0x425DE0</c>) once per game tick.</summary>
+    /// <remarks>
+    /// <para>
+    /// CarAI does not move its car. It decides steering, throttle and brake and sends them to the car
+    /// as a channel packet (<c>0x426510</c>: ch0 steering, ch1 throttle, ch3 brake), which the car's own
+    /// receiver (<c>0x42EA10</c>) turns into physics -- the same path an AnimTask-driven car takes. The
+    /// car therefore pulls away as its smoothed throttle rises: probed on Mission 7, the checkpoint APC
+    /// crawls at 1-4 km/h for six seconds and reaches its cruise near 35 km/h after eleven.
+    /// </para>
+    /// <para>
+    /// While the car's vision holds a target (<c>0x426000</c>: retained 600 ticks) CarAI leaves its
+    /// route and drives at 20 km/h towards the graph node nearest the target, stopping within three
+    /// metres of it and turning in place to face the target (<c>0x4262F0</c>).
+    /// </para>
+    /// </remarks>
     private void TickCarAi()
     {
+        Vector3d? target = VehicleCombatTarget?.Invoke();
         foreach (CarAiState state in _carAis)
         {
             if (_destructibles?.IsDestroyed(state.Car) == true)
@@ -445,51 +473,327 @@ public sealed class CutsceneRuntime
                 continue;
             }
 
-            if (!ConditionalContainerGate.IsTaskActive(state.Task) || state.Stopped || state.Route is null || state.Route.HasStopped)
+            if (!ConditionalContainerGate.IsTaskActive(state.Task) || state.Route is null)
             {
                 continue;
             }
 
-            AiPatrolCommand? command = state.Route.Current;
-            if (command is null)
+            if (ChaseTarget(state, target) is { } chased)
             {
-                continue;
+                GraphNode? goal = NearestNode(state.Graph, chased);
+                if (goal is null || CarAiArrived(state, goal))
+                {
+                    state.CommandSpeedKmh = 0f;
+                    state.Halt = 1f;
+                }
+                else
+                {
+                    state.TargetNode = CarAiNextHop(state, state.Transform.Position, goal.Id);
+                    state.CommandSpeedKmh = 20f;
+                    state.Halt = 0f;
+                }
+
+                SteerCarAiChase(state, chased);
             }
-
-            switch (command.Value.Kind)
+            else if (!state.Stopped && !state.Route.HasStopped && state.Route.Current is { } command)
             {
-                case AiPatrolCommandKind.SetSpeed:
-                    state.SpeedKmh = Math.Max(0, command.Value.Operand);
-                    state.Route.Advance();
-                    state.TargetNodeId = -1;
-                    break;
+                switch (command.Kind)
+                {
+                    case AiPatrolCommandKind.WalkTo:
+                    case AiPatrolCommandKind.RunTo:
+                        if (state.Graph.NodeAt(command.Operand) is not { } destination || CarAiArrived(state, destination))
+                        {
+                            state.Route.Advance();
+                        }
+                        else
+                        {
+                            state.TargetNode = CarAiNextHop(state, state.Transform.Position, destination.Id);
+                            state.CommandSpeedKmh = state.RouteSpeedKmh;
+                            state.Halt = 0f;
+                            SteerCarAiRoute(state);
+                        }
 
-                case AiPatrolCommandKind.Delay:
-                    if (state.Route.Begin(SimulationTick))
+                        break;
+
+                    case AiPatrolCommandKind.Delay:
                     {
-                        state.Route.Advance();
+                        // 0x425DE0 counts the wait at +124 and moves on once it has passed the operand.
+                        state.CommandSpeedKmh = 0f;
+                        state.Halt = 1f;
+                        int waited = state.WaitTicks++;
+                        if (waited > command.Operand)
+                        {
+                            state.Route.Advance();
+                            state.WaitTicks = 0;
+                        }
+
+                        break;
                     }
-                    break;
 
-                case AiPatrolCommandKind.WalkTo:
-                case AiPatrolCommandKind.RunTo:
-                    StepCarAiMovement(state, command.Value.Operand);
-                    break;
+                    case AiPatrolCommandKind.Quit:
+                    case AiPatrolCommandKind.End:
+                        // Arms 6 and 7 stop the car and pull its brake; the cursor stays where it is.
+                        state.CommandSpeedKmh = 0f;
+                        state.Halt = 1f;
+                        state.Brake = 1f;
+                        state.DesiredSpeedKmh = 0f;
+                        state.Steering = 0f;
+                        break;
 
-                case AiPatrolCommandKind.Quit:
-                    // CarAI's Quit arm clears its active patrol action; it is not a normal cursor
-                    // advance that could wrap through an End marker into the route again.
-                    state.Stopped = true;
-                    break;
+                    case AiPatrolCommandKind.SetSpeed:
+                        state.RouteSpeedKmh = command.Operand;
+                        state.Halt = 0f;
+                        state.Route.Advance();
+                        break;
 
-                default:
-                    // Retail's default arm logs and advances unsupported command types; it does not
-                    // wedge the vehicle path (the human walker is intentionally different).
-                    state.Route.Advance();
-                    break;
+                    default:
+                        // Retail's default arm logs "Command not supported by CARAI" and advances.
+                        state.Route.Advance();
+                        break;
+                }
+            }
+            else
+            {
+                state.Halt = 1f;
+                state.Brake = 1f;
+                state.Steering = 0f;
+            }
+
+            // 0x426510: the packet goes out every tick; its first word is the call counter, and a
+            // zero there is the receiver's set-up packet rather than a physics step.
+            if (state.Packets++ == 0)
+            {
+                state.Transform.Thrust = state.Transform.OriginalThrust;
+                state.Transform.TargetThrust = state.Transform.OriginalThrust;
+                state.Transform.CarMotion.Reset();
+                continue;
+            }
+
+            DriveCar(
+                state.Car,
+                state.Transform,
+                simulationOrder: 0,
+                state.Steering,
+                state.Throttle,
+                state.Brake == 0f ? -1f : state.Brake);
+
+            // The car missiles, bullets and the player collide with is the same placed body: keep it
+            // where the car is, or shots pass through the visible vehicle and never reach its
+            // direct-hit destruction.
+            _collisionIndex?.UpdateTransform(
+                state.Car,
+                state.Transform.Position / WorldScene.UnitsPerMetre,
+                state.Transform.Orientation);
+            _destructibles?.UpdatePosition(state.Car, state.Transform.Position, state.Transform.Orientation);
+        }
+    }
+
+    /// <summary>What the car's vision holds, retained for 600 ticks (<c>0x426000</c>), or nothing.</summary>
+    private Vector3d? ChaseTarget(CarAiState state, Vector3d? target)
+    {
+        if (target is not { } seen)
+        {
+            state.Chase.Track(default);
+            return null;
+        }
+
+        // The car's eye stands two metres over its origin (0x42E870), and it looks only while its
+        // "Can fire" holds -- a car with no vision never chases.
+        Vector3d eye = state.Transform.Position + new Vector3d(0d, 0d, VehicleEyeHeightUnits);
+        bool canFire = _expressions.EvaluateCondition(Text(state.Car, "Can fire"), emptyValue: false, state.Car);
+        bool visible = VehicleCombatLineOfSight?.Invoke(state.Car, eye, seen) ?? true;
+        return state.Chase.Track(new AiVehicleCombatInput(
+            state.Transform.Position,
+            state.Transform.Orientation,
+            seen,
+            ConditionalContainerGate.IsTaskActive(state.Car),
+            canFire,
+            Single(state.Car, "ViewCone Alpha (degrees)", 180f),
+            Single(state.Car, "ViewCone Gamma (degrees)", 360f),
+            Single(state.Car, "ViewCone Length (meter)", 0f),
+            visible,
+            0f,
+            0));
+    }
+
+    /// <summary>Whether the car is within three metres of a node (<c>0x4260C0</c>: 150994944 squared units).</summary>
+    private static bool CarAiArrived(CarAiState state, GraphNode node)
+    {
+        Vector3d delta = node.Position - state.Transform.Position;
+        return (delta.X * delta.X) + (delta.Y * delta.Y) + (delta.Z * delta.Z) < CarAiArrivalSquared;
+    }
+
+    /// <summary>The next node from a point towards a destination (<c>0x425C10</c>).</summary>
+    /// <remarks>When the route table has no link, retail logs "CarAI: Error in graph" and keeps the nearest node.</remarks>
+    private static GraphNode? CarAiNextHop(CarAiState state, Vector3d from, int destinationId)
+    {
+        GraphNode? nearest = NearestNode(state.Graph, from);
+        if (nearest is null || nearest.Id == destinationId)
+        {
+            return nearest;
+        }
+
+        return state.Graph.RouteTable?.TryGetStep(nearest.Id, destinationId, out int step, out _) == true
+            ? state.Graph.NodeAt(step) ?? nearest
+            : nearest;
+    }
+
+    private static GraphNode? NearestNode(GraphFile graph, Vector3d at)
+    {
+        GraphNearestNode.Find(graph, at, out GraphNode? nearest, out _);
+        return nearest;
+    }
+
+    /// <summary>The heading error to a point in the car's frame, as <c>0x414950</c> measures it.</summary>
+    private static float CarAiHeadingError(CarAiState state, Vector3d point) =>
+        VehicleGunTurret.Heading(state.Transform.Orientation.Transform(point - state.Transform.Position));
+
+    /// <summary>Steering from a heading error: proportional within ten degrees, full lock beyond.</summary>
+    private static float CarAiSteering(float error) =>
+        error > 0.17453294f ? -1f
+        : error < -0.17453294f ? 1f
+        : error * -1.9098593f;
+
+    /// <summary>Route steering, throttle and brake (<c>0x426140</c>).</summary>
+    private static void SteerCarAiRoute(CarAiState state)
+    {
+        state.DesiredSpeedKmh = CarAiRouteSpeed(state);
+        CarAiThrottle(state);
+        float error = state.TargetNode is { } node ? CarAiHeadingError(state, node.Position) : 0f;
+
+        // The wheel eases off as the throttle opens: full lock only at a standstill.
+        state.Steering = CarAiSteering(error) * (((1f - state.Throttle) * 0.95f) + 0.05f);
+    }
+
+    /// <summary>Chase steering, throttle and brake (<c>0x4262F0</c>).</summary>
+    private static void SteerCarAiChase(CarAiState state, Vector3d chased)
+    {
+        bool stopped = state.CommandSpeedKmh == 0f;
+        Vector3d toward = !stopped && state.TargetNode is { } node ? node.Position : chased;
+        float error = CarAiHeadingError(state, toward);
+        state.Steering = CarAiSteering(error);
+        float magnitude = MathF.Abs(error);
+        state.DesiredSpeedKmh = !stopped
+            ? CarAiChaseSpeed(state, chased)
+            : magnitude <= 0.17453294f ? magnitude * 28.647888f : 5f;
+        CarAiThrottle(state);
+
+        // A stopped car that still has to turn keeps its brake off so it can crawl round.
+        state.Brake = stopped && magnitude > 0.17453294f ? 0f : state.Halt;
+    }
+
+    /// <summary>Opens or closes the throttle towards the desired speed (<c>0x426260</c>).</summary>
+    /// <remarks>
+    /// The car's speed is read in world units a tick and converted to km/h (x 0.026367188). The throttle
+    /// moves one hundredth of the shortfall from the car's own smoothed throttle, and the brake comes on
+    /// when told to halt or when the car is more than 5 km/h too fast.
+    /// </remarks>
+    private static void CarAiThrottle(CarAiState state)
+    {
+        float shortfall = state.DesiredSpeedKmh - (state.Transform.Speed * 0.026367188f);
+        state.Throttle = Math.Clamp(state.Transform.Thrust + (shortfall * 0.0099999998f), 0f, 1f);
+        state.Brake = state.Halt == 0f && shortfall >= -5f ? 0f : 1f;
+    }
+
+    /// <summary>The route speed, eased for the corner ahead and for a final stop (<c>0x4255A0</c>).</summary>
+    /// <remarks>
+    /// Beyond ten metres of the current node the speed falls with the heading error to it, from the
+    /// commanded speed to 5 km/h at a full reversal. Within ten metres it looks one node further and
+    /// eases by the turn there; approaching a route's last node before a Quit or End it runs down with
+    /// the square of the distance. The turn is the deviation from carrying straight on: a straight road
+    /// keeps the commanded speed, which is what the probed APC does through its nodes.
+    /// </remarks>
+    private static float CarAiRouteSpeed(CarAiState state)
+    {
+        float command = state.CommandSpeedKmh;
+        if (state.TargetNode is not { } node)
+        {
+            return command;
+        }
+
+        Vector3d toNode = node.Position - state.Transform.Position;
+        double distanceSquared = (toNode.X * toNode.X) + (toNode.Y * toNode.Y) + (toNode.Z * toNode.Z);
+        if (distanceSquared > CarAiLookAheadSquared)
+        {
+            return EaseForTurn(command, MathF.Abs(CarAiHeadingError(state, node.Position)));
+        }
+
+        if (state.Route?.Current is not { } current || state.Graph.NodeAt(current.Operand) is not { } destination)
+        {
+            return command;
+        }
+
+        Vector3d? beyond = null;
+        if (destination.Id != node.Id)
+        {
+            beyond = CarAiNextHop(state, node.Position, destination.Id)?.Position;
+        }
+        else if (state.Route.Next is { } next)
+        {
+            if (next.Kind is AiPatrolCommandKind.WalkTo or AiPatrolCommandKind.RunTo)
+            {
+                beyond = CarAiNextHop(state, node.Position, next.Operand)?.Position;
+            }
+            else if (next.Kind is AiPatrolCommandKind.Quit or AiPatrolCommandKind.End)
+            {
+                return (float)(command * distanceSquared * (1d / CarAiLookAheadSquared));
             }
         }
 
+        return beyond is { } after && command >= 5f
+            ? EaseForTurn(command, (float)AngleBetween(toNode, after - node.Position))
+            : command;
+    }
+
+    /// <summary>The chase speed towards the node nearest the target (<c>0x425900</c>).</summary>
+    private static float CarAiChaseSpeed(CarAiState state, Vector3d chased)
+    {
+        float command = state.CommandSpeedKmh;
+        if (state.TargetNode is not { } node)
+        {
+            return command;
+        }
+
+        Vector3d toNode = node.Position - state.Transform.Position;
+        double distanceSquared = (toNode.X * toNode.X) + (toNode.Y * toNode.Y) + (toNode.Z * toNode.Z);
+        if (distanceSquared > CarAiChaseLookAheadSquared)
+        {
+            return EaseForTurn(command, MathF.Abs(CarAiHeadingError(state, node.Position)));
+        }
+
+        GraphNode? goal = NearestNode(state.Graph, chased);
+        if (goal is null || goal.Id == node.Id)
+        {
+            return (float)(command * distanceSquared * (1d / CarAiLookAheadSquared));
+        }
+
+        Vector3d after = CarAiNextHop(state, node.Position, goal.Id)?.Position ?? goal.Position;
+        double turn = AngleBetween(toNode, after - node.Position);
+        if (command < 5f)
+        {
+            return command;
+        }
+
+        return turn >= 0.1745329300562541
+            ? 5f
+            : (float)(((command - 5f) * (2.967059723533541 - turn) * 0.3370339976874738) + 5f);
+    }
+
+    private static float EaseForTurn(float command, float turn) =>
+        (float)(((command - 5f) * (Math.PI - turn) * (1d / Math.PI)) + 5f);
+
+    /// <summary>The angle between two vectors (<c>0x4B31F0</c>).</summary>
+    private static double AngleBetween(Vector3d a, Vector3d b)
+    {
+        double la = a.Length;
+        double lb = b.Length;
+        if (la <= 0d || lb <= 0d)
+        {
+            return 0d;
+        }
+
+        double cosine = ((a.X * b.X) + (a.Y * b.Y) + (a.Z * b.Z)) / (la * lb);
+        return cosine >= 1d ? 0d : cosine > -1d ? Math.Acos(cosine) : Math.PI;
     }
 
     private void TickVehicleCombat()
@@ -715,151 +1019,6 @@ public sealed class CutsceneRuntime
                     : weapon.Projectile.Text,
             });
         }
-    }
-
-    private void StepCarAiMovement(CarAiState state, int destinationId)
-    {
-        GraphNode? destination = state.Graph.NodeAt(destinationId);
-        if (destination is null)
-        {
-            state.Route!.Advance();
-            state.TargetNodeId = -1;
-            return;
-        }
-
-        if (state.TargetNodeId < 0)
-        {
-            GraphNearestNode.Find(state.Graph, state.Transform.Position, out GraphNode? nearest, out _);
-
-            // IGI1 0x425C10 steps from the nearest node through the route table. When the table has
-            // no link it logs "CarAI: Error in graph %d. No link between nodes %d and %d." and returns
-            // the nearest node itself -- it never substitutes a destination it cannot reach.
-            int next = nearest?.Id ?? destinationId;
-            if (nearest is not null
-                && nearest.Id != destinationId
-                && state.Graph.RouteTable?.TryGetStep(nearest.Id, destinationId, out int routed, out _) == true)
-            {
-                next = routed;
-            }
-
-            state.TargetNodeId = next;
-        }
-
-        GraphNode? target = state.Graph.NodeAt(state.TargetNodeId);
-        if (target is null)
-        {
-            state.TargetNodeId = destinationId;
-            target = destination;
-        }
-
-        // Graph node Z is navigation metadata, not a vehicle-body altitude.  The first CarAI pass
-        // interpolated toward it directly, which pushed the APC and limo halfway through terrain on
-        // slopes.  Preserve the authored body-to-support offset and re-sample the normal car support
-        // path at every horizontal graph step, just as the dynamic CAR tick does.
-        Vector3d delta = new(
-            target.Position.X - state.Transform.Position.X,
-            target.Position.Y - state.Transform.Position.Y,
-            0d);
-        double distance = delta.Length;
-        // The source-like retail task calls this value km/h.  Convert the authored speed to its
-        // fixed 30 Hz engine-unit step; this is a graph follower, while CarDynamics remains the
-        // force/suspension implementation for animated vehicle physics.
-        double step = state.SpeedKmh * (WorldScene.UnitsPerMetre / 3.6d) / Frequency;
-        Vector3d nextPosition = distance <= Math.Max(step, target.Radius * GraphNode.MetreInUnits)
-            ? new Vector3d(target.Position.X, target.Position.Y, state.Transform.Position.Z)
-            : state.Transform.Position + (delta * (step / distance));
-        if (CarAiBlockedByClosedDoor(state, nextPosition))
-        {
-            state.Transform.PreviousPosition = state.Transform.Position;
-            state.Transform.PreviousOrientation = state.Transform.Orientation;
-            state.Transform.Speed = 0f;
-            state.Transform.IsDynamic = true;
-            return;
-        }
-
-        if (distance <= Math.Max(step, target.Radius * GraphNode.MetreInUnits))
-        {
-            PlaceCarAiOnSupport(state, nextPosition);
-            state.TargetNodeId = -1;
-            if (target.Id == destinationId)
-            {
-                state.Route!.Advance();
-            }
-
-            return;
-        }
-
-        if (delta.Length > 1e-6d)
-        {
-            state.Transform.Heading = (float)Math.Atan2(-delta.X, delta.Y);
-            state.Transform.Orientation = Matrix3f.FromEngineEulerAngles(
-                state.Transform.Euler.X,
-                state.Transform.Euler.Y,
-                state.Transform.Heading);
-        }
-
-        PlaceCarAiOnSupport(state, nextPosition);
-    }
-
-    /// <summary>Stops a graph follower at a closed authored door without consuming its route command.</summary>
-    private bool CarAiBlockedByClosedDoor(CarAiState state, Vector3d proposedPosition)
-    {
-        Vector3d translation = proposedPosition - state.Transform.Position;
-        if (_vehicleObstacleHit is null || translation.Length <= 1e-6d)
-        {
-            return false;
-        }
-
-        CarPhysicsDefinition physics = state.Transform.CarPhysics ?? DefaultCarPhysics;
-        Vector3d heading = translation / translation.Length;
-        double halfLengthUnits = physics.Dimensions.Y * 0.5d * WorldScene.UnitsPerMetre;
-        foreach (double probeHeightMetres in CarProbeHeightsMetres)
-        {
-            Vector3d offset = new(0d, 0d, probeHeightMetres * WorldScene.UnitsPerMetre);
-            Vector3d start = state.Transform.Position + (heading * halfLengthUnits) + offset;
-            Vector3d end = proposedPosition + (heading * (halfLengthUnits + CarProbeMarginUnits)) + offset;
-            if (_vehicleObstacleHit(state.Car, start, end) is { Owner: { } obstacle }
-                && string.Equals(obstacle.Type.Name, "Door", StringComparison.Ordinal)
-                && _vehicleObstacleReleased?.Invoke(obstacle) != true)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>Places a graph-driven car on the same terrain/object support used by car physics.</summary>
-    private void PlaceCarAiOnSupport(CarAiState state, Vector3d proposed)
-    {
-        if (double.IsNaN(state.SupportOffsetUnits)
-            && TryFindSupportHeight(state.Transform.Position, state.Car, allowDeepRecovery: true, out double originSupport))
-        {
-            state.SupportOffsetUnits = state.Transform.Position.Z - originSupport;
-        }
-
-        Vector3d grounded = proposed;
-        if (!double.IsNaN(state.SupportOffsetUnits)
-            && TryFindSupportHeight(proposed, state.Car, allowDeepRecovery: true, out double support))
-        {
-            grounded = new Vector3d(proposed.X, proposed.Y, support + state.SupportOffsetUnits);
-        }
-
-        state.Transform.PreviousPosition = state.Transform.Position;
-        state.Transform.PreviousOrientation = state.Transform.Orientation;
-        state.Transform.Position = grounded;
-        state.Transform.Speed = state.SpeedKmh * (float)(WorldScene.UnitsPerMetre / 3.6d / Frequency);
-        state.Transform.IsDynamic = true;
-
-        // Graph-driven CarAI updates the same placed body that missiles, bullets, and the player
-        // query through ObjectCollisionIndex. Keeping only the draw transform current left the
-        // physical APC at its authored spawn after the alarm route began, so shots crossed the
-        // visible vehicle without ever reaching its retail direct-hit destruction callback.
-        _collisionIndex?.UpdateTransform(
-            state.Car,
-            grounded / WorldScene.UnitsPerMetre,
-            state.Transform.Orientation);
-        _destructibles?.UpdatePosition(state.Car, grounded, state.Transform.Orientation);
     }
 
     /// <summary>Marks an explicitly configured helicopter for terminal terrain landing.</summary>
@@ -2192,6 +2351,162 @@ public sealed class CutsceneRuntime
         }
     }
 
+    /// <summary>Drives one car for a tick from its three control channels (<c>0x42EA10</c>'s physics branch).</summary>
+    /// <param name="target">The Car task, or <see langword="null"/>.</param>
+    /// <param name="transform">The car's live transform.</param>
+    /// <param name="simulationOrder">The dispatch order the pose snapshot is keyed by.</param>
+    /// <param name="channel0">The steering target.</param>
+    /// <param name="channel1">The throttle target, or -1 to hold the last one.</param>
+    /// <param name="channel3">The parking brake: anything but -1 pulls it.</param>
+    /// <remarks>An AnimTask's packet and CarAI's own (<c>0x426510</c>) arrive through the same receiver.</remarks>
+    private void DriveCar(
+        GameTask? target,
+        TransformState transform,
+        int simulationOrder,
+        float channel0,
+        float channel1,
+        float channel3)
+    {
+        SnapshotDynamicPose(transform, simulationOrder);
+
+        // Car::ReadChannels (0x42EA10) copies ch0 to the steering target and latches ch1 as
+        // throttle only when it is not -1.  ch3 is the parking-brake pulse.  The former generic
+        // mover had those first two channels reversed and advanced yaw even while stationary,
+        // which sends the mission-one outro truck sideways out of its garage.
+        transform.TargetSteering = channel0;
+        if (channel1 != -1f)
+        {
+            transform.TargetThrust = channel1;
+        }
+        transform.ParkingBrake = channel3 != -1f;
+
+        // Car::Tick (0x42ECA0) blends each live control from the model record's retention:
+        //     current = current * retention + target * (1 - retention)
+        // Retention is record +24 for steering and +32 for throttle; every shipped car publishes
+        // a value between 0.9 and 0.998 there.
+        CarPhysicsDefinition? carPhysics = transform.CarPhysics;
+        float steeringRetention = CarRetention(carPhysics?.SteeringRetention);
+        float throttleRetention = CarRetention(carPhysics?.ThrottleRetention);
+        transform.Steering = (transform.Steering * steeringRetention)
+            + (transform.TargetSteering * (1f - steeringRetention));
+        transform.Thrust = (transform.Thrust * throttleRetention)
+            + (transform.TargetThrust * (1f - throttleRetention));
+        // Car::Tick zeroes a near-zero smoothed throttle at a zero target (0x42ECA0: if
+        // +0x730 == 0 and |+0x720| < 0.01, +0x720 = 0). Without it a commanded stop decays
+        // asymptotically and the truck freezes mid-route holding residual thrust.
+        if (transform.TargetThrust == 0f && MathF.Abs(transform.Thrust) < 0.01f)
+        {
+            transform.Thrust = 0f;
+        }
+
+        float previousHeading = transform.Heading;
+        Matrix3f previousOrientation = transform.Orientation;
+
+        // The orientation's second column is the body's forward axis and the first its across
+        // axis, which is how 0x430D10 reads them when it builds the drive direction.
+        Vector3f forwardAxis = transform.Orientation.Column2;
+        Vector3f lateralAxis = transform.Orientation.Column1;
+        Vector3d forward = FlattenAxis(forwardAxis, new Vector3d(0d, 1d, 0d));
+        Vector3d lateral = FlattenAxis(lateralAxis, new Vector3d(1d, 0d, 0d));
+
+        CarPhysicsDefinition physics = carPhysics ?? DefaultCarPhysics;
+        (Vector3d carTranslation, double carYaw) = CarDynamics.Step(
+            transform.CarMotion,
+            physics,
+            CarWheelsFor(target, physics),
+            transform.Position,
+            forward,
+            lateral,
+            transform.Steering,
+            transform.Thrust,
+            transform.ParkingBrake,
+            at => TryFindSupportHeight(at, target, allowDeepRecovery: false, out double height, out _)
+                ? height
+                : double.NaN);
+
+        transform.Heading += (float)carYaw;
+        transform.Orientation = Matrix3f.FromEngineEulerAngles(
+            transform.Euler.X,
+            transform.Euler.Y,
+            transform.Heading);
+        transform.Speed = (float)transform.CarMotion.Velocity.Length;
+        Vector3d proposedPosition = transform.Position + carTranslation;
+
+        // The obstacle probe is the body's own front, taken from the authored dimensions rather
+        // than from a per-level table: half the length ahead of the origin, swept at the two
+        // heights that bracket a car's bumper.
+        double halfLengthUnits = physics.Dimensions.Y * 0.5d * WorldScene.UnitsPerMetre;
+        bool blocked = false;
+        GameTask? obstacle = null;
+        if (target is not null && _vehicleObstacleHit is not null && carTranslation.Length > 0d)
+        {
+            Vector3d heading3 = carTranslation / carTranslation.Length;
+            for (int heightIndex = 0; heightIndex < CarProbeHeightsMetres.Length && !blocked; heightIndex++)
+            {
+                Vector3d offset = new(
+                    0d,
+                    0d,
+                    CarProbeHeightsMetres[heightIndex] * WorldScene.UnitsPerMetre);
+                Vector3d probeStart = transform.Position + (heading3 * halfLengthUnits) + offset;
+                Vector3d probeEnd = proposedPosition
+                    + (heading3 * (halfLengthUnits + CarProbeMarginUnits))
+                    + offset;
+                if (_vehicleObstacleHit.Invoke(target, probeStart, probeEnd) is { } contact)
+                {
+                    obstacle = contact.Owner;
+                    blocked = true;
+                }
+            }
+        }
+
+        if (_vehicleObstacleReleased is not null
+            && obstacle is not null
+            && string.Equals(obstacle.Type.Name, "Door", StringComparison.Ordinal))
+        {
+            transform.VehicleLatchedObstacle = obstacle;
+        }
+
+        if (transform.VehicleLatchedObstacle is { } latchedDoor)
+        {
+            if (_vehicleObstacleReleased?.Invoke(latchedDoor) == true)
+            {
+                transform.VehicleLatchedObstacle = null;
+                transform.VehicleGateReleased = true;
+                if (ReferenceEquals(obstacle, latchedDoor))
+                {
+                    blocked = false;
+                    obstacle = null;
+                }
+            }
+            else
+            {
+                blocked = true;
+                obstacle ??= latchedDoor;
+            }
+        }
+
+        if (blocked)
+        {
+            // Retail resolves a contact by cancelling the motion into the obstacle and letting
+            // the body keep whatever is left, so a car that clips scenery slides along it and
+            // recovers. Latching the speed to nought instead parks the vehicle for good, which
+            // is what stranded the Mission 1 truck against the perimeter fence. The springs are
+            // not part of that contact, so the body still rides them.
+            transform.Heading = previousHeading;
+            transform.Orientation = previousOrientation;
+            transform.CarMotion.Velocity = default;
+            transform.CarMotion.YawRate = 0d;
+            transform.Speed = 0f;
+            transform.Position += new Vector3d(0d, 0d, carTranslation.Z);
+        }
+        else
+        {
+            transform.Position = proposedPosition;
+            transform.Velocity = transform.Position - transform.PreviousPosition;
+        }
+        transform.IsDynamic = true;
+    }
+
     private void ApplyAnimation(int targetId, int simulationOrder, AnimDataProgram program)
     {
         if (targetId < 0 || !_transforms.TryGetValue(targetId, out TransformState? transform))
@@ -2296,144 +2611,7 @@ public sealed class CutsceneRuntime
                 return;
             }
 
-            SnapshotDynamicPose(transform, simulationOrder);
-
-            // Car::ReadChannels (0x42EA10) copies ch0 to the steering target and latches ch1 as
-            // throttle only when it is not -1.  ch3 is the parking-brake pulse.  The former generic
-            // mover had those first two channels reversed and advanced yaw even while stationary,
-            // which sends the mission-one outro truck sideways out of its garage.
-            transform.TargetSteering = channels[0];
-            if (channels[1] != -1f)
-            {
-                transform.TargetThrust = channels[1];
-            }
-            transform.ParkingBrake = channels[3] != -1f;
-
-            // Car::Tick (0x42ECA0) blends each live control from the model record's retention:
-            //     current = current * retention + target * (1 - retention)
-            // Retention is record +24 for steering and +32 for throttle; every shipped car publishes
-            // a value between 0.9 and 0.998 there.
-            CarPhysicsDefinition? carPhysics = transform.CarPhysics;
-            float steeringRetention = CarRetention(carPhysics?.SteeringRetention);
-            float throttleRetention = CarRetention(carPhysics?.ThrottleRetention);
-            transform.Steering = (transform.Steering * steeringRetention)
-                + (transform.TargetSteering * (1f - steeringRetention));
-            transform.Thrust = (transform.Thrust * throttleRetention)
-                + (transform.TargetThrust * (1f - throttleRetention));
-            // Car::Tick zeroes a near-zero smoothed throttle at a zero target (0x42ECA0: if
-            // +0x730 == 0 and |+0x720| < 0.01, +0x720 = 0). Without it a commanded stop decays
-            // asymptotically and the truck freezes mid-route holding residual thrust.
-            if (transform.TargetThrust == 0f && MathF.Abs(transform.Thrust) < 0.01f)
-            {
-                transform.Thrust = 0f;
-            }
-
-            float previousHeading = transform.Heading;
-            Matrix3f previousOrientation = transform.Orientation;
-
-            // The orientation's second column is the body's forward axis and the first its across
-            // axis, which is how 0x430D10 reads them when it builds the drive direction.
-            Vector3f forwardAxis = transform.Orientation.Column2;
-            Vector3f lateralAxis = transform.Orientation.Column1;
-            Vector3d forward = FlattenAxis(forwardAxis, new Vector3d(0d, 1d, 0d));
-            Vector3d lateral = FlattenAxis(lateralAxis, new Vector3d(1d, 0d, 0d));
-
-            CarPhysicsDefinition physics = carPhysics ?? DefaultCarPhysics;
-            (Vector3d carTranslation, double carYaw) = CarDynamics.Step(
-                transform.CarMotion,
-                physics,
-                CarWheelsFor(target, physics),
-                transform.Position,
-                forward,
-                lateral,
-                transform.Steering,
-                transform.Thrust,
-                transform.ParkingBrake,
-                at => TryFindSupportHeight(at, target, allowDeepRecovery: false, out double height, out _)
-                    ? height
-                    : double.NaN);
-
-            transform.Heading += (float)carYaw;
-            transform.Orientation = Matrix3f.FromEngineEulerAngles(
-                transform.Euler.X,
-                transform.Euler.Y,
-                transform.Heading);
-            transform.Speed = (float)transform.CarMotion.Velocity.Length;
-            Vector3d proposedPosition = transform.Position + carTranslation;
-
-            // The obstacle probe is the body's own front, taken from the authored dimensions rather
-            // than from a per-level table: half the length ahead of the origin, swept at the two
-            // heights that bracket a car's bumper.
-            double halfLengthUnits = physics.Dimensions.Y * 0.5d * WorldScene.UnitsPerMetre;
-            bool blocked = false;
-            GameTask? obstacle = null;
-            if (target is not null && _vehicleObstacleHit is not null && carTranslation.Length > 0d)
-            {
-                Vector3d heading3 = carTranslation / carTranslation.Length;
-                for (int heightIndex = 0; heightIndex < CarProbeHeightsMetres.Length && !blocked; heightIndex++)
-                {
-                    Vector3d offset = new(
-                        0d,
-                        0d,
-                        CarProbeHeightsMetres[heightIndex] * WorldScene.UnitsPerMetre);
-                    Vector3d probeStart = transform.Position + (heading3 * halfLengthUnits) + offset;
-                    Vector3d probeEnd = proposedPosition
-                        + (heading3 * (halfLengthUnits + CarProbeMarginUnits))
-                        + offset;
-                    if (_vehicleObstacleHit.Invoke(target, probeStart, probeEnd) is { } contact)
-                    {
-                        obstacle = contact.Owner;
-                        blocked = true;
-                    }
-                }
-            }
-
-            if (_vehicleObstacleReleased is not null
-                && obstacle is not null
-                && string.Equals(obstacle.Type.Name, "Door", StringComparison.Ordinal))
-            {
-                transform.VehicleLatchedObstacle = obstacle;
-            }
-
-            if (transform.VehicleLatchedObstacle is { } latchedDoor)
-            {
-                if (_vehicleObstacleReleased?.Invoke(latchedDoor) == true)
-                {
-                    transform.VehicleLatchedObstacle = null;
-                    transform.VehicleGateReleased = true;
-                    if (ReferenceEquals(obstacle, latchedDoor))
-                    {
-                        blocked = false;
-                        obstacle = null;
-                    }
-                }
-                else
-                {
-                    blocked = true;
-                    obstacle ??= latchedDoor;
-                }
-            }
-
-            if (blocked)
-            {
-                // Retail resolves a contact by cancelling the motion into the obstacle and letting
-                // the body keep whatever is left, so a car that clips scenery slides along it and
-                // recovers. Latching the speed to nought instead parks the vehicle for good, which
-                // is what stranded the Mission 1 truck against the perimeter fence. The springs are
-                // not part of that contact, so the body still rides them.
-                transform.Heading = previousHeading;
-                transform.Orientation = previousOrientation;
-                transform.CarMotion.Velocity = default;
-                transform.CarMotion.YawRate = 0d;
-                transform.Speed = 0f;
-                transform.Position += new Vector3d(0d, 0d, carTranslation.Z);
-            }
-            else
-            {
-                transform.Position = proposedPosition;
-                transform.Velocity = transform.Position - transform.PreviousPosition;
-            }
-            transform.IsDynamic = true;
+            DriveCar(target, transform, simulationOrder, channels[0], channels[1], channels[3]);
             return;
         }
         else if (string.Equals(type, "Heli", StringComparison.Ordinal))
@@ -3722,10 +3900,20 @@ public sealed class CutsceneRuntime
         public TransformState Transform { get; } = transform;
         public GraphFile Graph { get; } = graph;
         public AiPatrolRoute? Route { get; } = route;
-        public int TargetNodeId { get; set; } = -1;
-        public int SpeedKmh { get; set; }
         public bool Stopped { get; set; }
-        public double SupportOffsetUnits { get; set; } = double.NaN;
+
+        // Retail CarAI's own fields, named by offset from 0x425DE0's object.
+        public GraphNode? TargetNode { get; set; }            // +104
+        public float CommandSpeedKmh { get; set; }            // +108
+        public float Halt { get; set; }                       // +112
+        public float RouteSpeedKmh { get; set; }              // +128
+        public float DesiredSpeedKmh { get; set; }            // +100
+        public float Throttle { get; set; }                   // +88, channel 1
+        public float Steering { get; set; }                   // +92, channel 0
+        public float Brake { get; set; }                      // +96, channel 3
+        public int WaitTicks { get; set; }                    // +124
+        public int Packets { get; set; }                      // +80
+        public AiVehicleCombat Chase { get; } = new();        // +116/+120, 0x426000
     }
 
     /// <summary>One vehicle's death zones and how fast it moved on the last tick.</summary>

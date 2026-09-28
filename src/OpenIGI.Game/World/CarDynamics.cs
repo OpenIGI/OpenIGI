@@ -189,8 +189,13 @@ public static class CarDynamics
 
             if (wheel.Definition.Driven && thrust != 0f && driven > 0)
             {
-                double magnitude =
-                    ((double)physics.EngineForce * thrust * GravityUnitsPerTickSquared / driven) - speed;
+                double engine = (double)physics.EngineForce * thrust * GravityUnitsPerTickSquared / driven;
+                if (physics.SkidSteer)
+                {
+                    engine *= SkidSteerFactor(steering, wheel.OffsetUnits.X);
+                }
+
+                double magnitude = engine - speed;
 
                 // Toward the across axis for a positive input. 0x430D10 hands sub_4B3BE0 the
                 // negated angle, but that builds the rotation the other way round, so the net
@@ -362,6 +367,31 @@ public static class CarDynamics
         double rise = motion.RiseRate + deepest;
         motion.RiseRate *= LinearRetention;
         return rise;
+    }
+
+    /// <summary>A skid-steered wheel's share of its drive (<c>0x4304B0</c>).</summary>
+    /// <param name="steering">The smoothed steering control, -1 to 1.</param>
+    /// <param name="lateralOffset">The wheel's offset along the body's across axis.</param>
+    /// <returns>1, or the eased share of the side the car turns towards.</returns>
+    /// <remarks>
+    /// The wheel's body side is 1 on the right (a positive across offset) and 0 on the left -- probed on
+    /// Mission 7's APC and T80. Beyond half lock the inner side's share goes negative and it drives
+    /// backwards, which is how a tracked vehicle turns on the spot.
+    /// </remarks>
+    public static double SkidSteerFactor(float steering, double lateralOffset)
+    {
+        bool right = lateralOffset > 0d;
+        if (steering > 0.0099999998f)
+        {
+            return right ? 1d - (2d * steering) : 1d;
+        }
+
+        if (steering < -0.0099999998f)
+        {
+            return right ? 1d : 1d + (2d * steering);
+        }
+
+        return 1d;
     }
 
     /// <summary>Gets the largest steering deflection any of the car's wheels can reach.</summary>

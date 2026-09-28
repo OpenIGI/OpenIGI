@@ -465,7 +465,7 @@ public sealed class Issue105Tests
             destructibles.Objects, item => ReferenceEquals(item.Owner, apc));
         Vector3d initialDestructiblePosition = liveApc.PositionUnits;
 
-        CutsceneRuntime runtime = new(root, variables, terrain: mission.Terrain)
+        CutsceneRuntime runtime = new(root, variables, terrain: mission.Terrain, vehiclePhysics: physics)
         {
             CollisionIndex = collision,
             Destructibles = destructibles,
@@ -479,8 +479,13 @@ public sealed class Issue105Tests
         runtime.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph });
 
         Assert.True(variables.TryWrite("ConditionalContainer_350.isRun", QvmValue.FromInt32(1)));
-        runtime.Tick(); // SetSpeed(20).
-        runtime.Tick(); // Begin WalkTo(1).
+        // CarAI drives its car through the car's own physics: the first packet only sets the receiver
+        // up, then the throttle eases in. Give it a few seconds to pull away along WalkTo(1).
+        for (int tick = 0; tick < 150; tick++)
+        {
+            runtime.Tick();
+        }
+
         Assert.True(ConditionalContainerGate.IsTaskActive(apc));
 
         (Vector3d centre, double movedRadius) = collision.Bounds(0);

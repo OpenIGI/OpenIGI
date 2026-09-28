@@ -36,21 +36,15 @@ public sealed class CarAiNavigationTests
         GameTask car = Assert.IsType<DeclaredTask>(loop.Tasks.FromId(10));
         CutsceneRuntime runtime = new(loop.Tasks.Root, loop.Variables);
         runtime.ConfigureCarAi(new Dictionary<int, GraphFile> { [20] = TwoNodeGraph(connected) });
-        for (int tick = 0; tick < 20; tick++)
+        for (int tick = 0; tick < 5; tick++)
         {
             runtime.Tick();
         }
-        Assert.True(runtime.TryGetDrawTransform(car, out Vector3d position, out _));
-        // IGI1 0x425C10 returns the nearest node when no link exists. It never substitutes
-        // the disconnected destination. The reachable control proves movement actually ticks.
-        if (connected)
-        {
-            Assert.True(position.X > 1d);
-        }
-        else
-        {
-            Assert.Equal(Vector3d.Zero, position);
-        }
+
+        // IGI1 0x425C10 steps from the nearest node through the route table. The car stands on node 1:
+        // with a link it heads for node 2; without one retail logs "CarAI: Error in graph" and keeps
+        // node 1 -- it never substitutes the disconnected destination as a direct driving target.
+        Assert.Equal(connected ? 2 : 1, runtime.CarAiTargetNode(car));
     }
 
     private static GraphFile TwoNodeGraph(bool connected)

@@ -302,6 +302,7 @@ public sealed class VehiclePhysicsRegistry
                 arguments)
             {
                 ExplosionPoints = explosionPoints,
+                SkidSteer = Integer(arguments, wheelCountIndex + 1 + (parsedWheels * 6) + 2, 0) != 0,
             });
         }
         else if (taskType == _planeType && call.ArgumentCount >= 9)
@@ -391,6 +392,14 @@ public readonly record struct CarPhysicsDefinition(
     /// count.
     /// </remarks>
     public IReadOnlyList<int> ExplosionPoints { get; init; } = [];
+
+    /// <summary>Gets whether the car steers by easing the drive on one side -- record byte <c>+609</c>.</summary>
+    /// <remarks>
+    /// The APC and T80 have no steerable wheel. With this byte set, <c>0x430D10</c> scales each driven
+    /// wheel's drive by <c>0x4304B0</c>: under positive steering the right-hand wheels (body side 1) drive at
+    /// <c>1 - 2s</c>, under negative steering the left-hand ones at <c>1 + 2s</c>.
+    /// </remarks>
+    public bool SkidSteer { get; init; }
 
     /// <summary>Number of values in the original <c>DefinePhysicsObjType</c> call.</summary>
     public int ArgumentCount => Arguments.Count;
