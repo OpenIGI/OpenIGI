@@ -70,7 +70,10 @@ public sealed class CutsceneRuntime
     private ObjectCollisionIndex? _collisionIndex;
     private DestructibleObjectRegistry? _destructibles;
     private Func<int, CutsceneTargetPose?>? _targetPoseResolver;
-    private readonly Dictionary<GameTask, WeaponType> _vehicleWeapons = [];
+    private readonly Dictionary<GameTask, VehicleArmament> _armaments = [];
+
+    /// <summary>How far above its origin a vehicle's eye stands (<c>0x42E870</c>: 8192 units, two metres).</summary>
+    private const double VehicleEyeHeightUnits = 8192d;
     private bool _breakRequested;
     private readonly List<string> _diagnostics = [];
 
@@ -111,13 +114,46 @@ public sealed class CutsceneRuntime
     /// <summary>Receives a vehicle missile only after sight, retention and gun cadence allow it.</summary>
     public Action<VehicleCombatShot>? VehicleCombatShotFired { get; set; }
 
-    /// <summary>Binds one authored firing vehicle to its retail weapon row.</summary>
+    /// <summary>Binds one authored firing vehicle to a single retail weapon row, fired from its captured muzzle.</summary>
+    /// <remarks>
+    /// The Level 6 APC capture's model: the vehicle fires the row's cadence at whatever it retains,
+    /// from a fixed muzzle, without turning a gun. Vehicles whose model guns are known use
+    /// <see cref="ConfigureVehicleGuns"/> instead.
+    /// </remarks>
     public void ConfigureVehicleCombat(GameTask vehicle, WeaponType weapon)
     {
         ArgumentNullException.ThrowIfNull(vehicle);
         ArgumentNullException.ThrowIfNull(weapon);
-        _vehicleWeapons[vehicle] = weapon;
+        _armaments[vehicle] = new VehicleArmament(weapon, []);
     }
+
+    /// <summary>Arms one authored vehicle with the guns its model carries.</summary>
+    /// <param name="vehicle">The Car or Heli task.</param>
+    /// <param name="guns">Every gun its model's attachments define, each turning and firing on its own.</param>
+    /// <remarks>
+    /// The vehicle sees; each gun asks it what it sees and turns to it (<c>0x46F390</c>). A tank's
+    /// cannon and coaxial gun therefore fire independently at their own rows' cadences.
+    /// </remarks>
+    public void ConfigureVehicleGuns(GameTask vehicle, IReadOnlyList<VehicleGun> guns)
+    {
+        ArgumentNullException.ThrowIfNull(vehicle);
+        ArgumentNullException.ThrowIfNull(guns);
+        if (guns.Count == 0)
+        {
+            _armaments.Remove(vehicle);
+            return;
+        }
+
+        _armaments[vehicle] = new VehicleArmament(
+            null,
+            [.. guns.Select(static gun => new VehicleGunState(gun))]);
+    }
+
+    /// <summary>Gets the turret of one gun a vehicle was armed with, for presentation and tests.</summary>
+    public VehicleGunTurret? GunTurret(GameTask vehicle, int index) =>
+        _armaments.TryGetValue(vehicle, out VehicleArmament? armament) && index >= 0 && index < armament.Guns.Count
+            ? armament.Guns[index].Turret
+            : null;
 
     /// <summary>Settles every collision-enabled helicopter onto whatever is under it.</summary>
     /// <remarks>
@@ -402,57 +438,147 @@ public sealed class CutsceneRuntime
             }
         }
 
-        TickVehicleCombat();
     }
 
     private void TickVehicleCombat()
     {
-        if (VehicleCombatTarget?.Invoke() is not { } target)
+        Vector3d? target = VehicleCombatTarget?.Invoke();
+        foreach ((GameTask vehicle, VehicleArmament armament) in _armaments)
         {
-            return;
-        }
-
-        foreach (CarAiState state in _carAis)
-        {
-            if (state.Combat is null || !_vehicleWeapons.TryGetValue(state.Car, out WeaponType? weapon))
+            if (!_taskTransforms.TryGetValue(vehicle, out TransformState? transform)
+                || vehicle is not DeclaredTask declared)
             {
                 continue;
             }
 
-            Vector3f forward = state.Transform.Orientation.Column2;
-            Vector3d sightOrigin = state.Transform.Position + new Vector3d(
-                forward.X * AiVehicleCombat.CapturedMuzzleForwardMetres * WorldScene.UnitsPerMetre,
-                forward.Y * AiVehicleCombat.CapturedMuzzleForwardMetres * WorldScene.UnitsPerMetre,
-                (forward.Z * AiVehicleCombat.CapturedMuzzleForwardMetres
-                    + AiVehicleCombat.CapturedMuzzleHeightMetres) * WorldScene.UnitsPerMetre);
-            bool visible = VehicleCombatLineOfSight?.Invoke(state.Car, sightOrigin, target) ?? true;
-            VehicleCombatShot? shot = state.Combat.Tick(new AiVehicleCombatInput(
-                state.Transform.Position,
-                state.Transform.Orientation,
-                target,
-                ConditionalContainerGate.IsTaskActive(state.Task)
-                    && ConditionalContainerGate.IsTaskActive(state.Car)
-                    && _destructibles?.IsDestroyed(state.Car) != true,
-                !string.IsNullOrWhiteSpace(Text(state.Car, "Can fire")),
-                Single(state.Car, "ViewCone Alpha (degrees)", 180f),
-                Single(state.Car, "ViewCone Gamma (degrees)", 360f),
-                Single(state.Car, "ViewCone Length (meter)", 0f),
-                visible,
-                weapon.MuzzleVelocity,
-                weapon.RoundsPerMinute));
-            if (shot is { } fired)
+            // A car's "Can fire" is an expression: 0x42E870 evaluates it every tick and registers the
+            // car's vision while it holds, removing it again when it stops.
+            bool canFire = _expressions.EvaluateCondition(Text(declared, "Can fire"), emptyValue: false, vehicle);
+            CarAiState? controller = _carAis.Find(state => ReferenceEquals(state.Car, vehicle));
+            bool active = ConditionalContainerGate.IsTaskActive(vehicle)
+                && (controller is null || ConditionalContainerGate.IsTaskActive(controller.Task))
+                && _destructibles?.IsDestroyed(vehicle) != true;
+
+            if (armament.LegacyWeapon is { } weapon)
             {
-                VehicleCombatShotFired?.Invoke(fired with
+                TickLegacyVehicleGun(declared, transform, armament, weapon, target, active, canFire);
+                continue;
+            }
+
+            // The vehicle's eye stands two metres over its origin (0x42E870 adds 8192 to Z).
+            Vector3d eye = transform.Position + new Vector3d(0d, 0d, VehicleEyeHeightUnits);
+            Vector3d? aim = null;
+            if (target is { } candidate)
+            {
+                bool visible = VehicleCombatLineOfSight?.Invoke(vehicle, eye, candidate) ?? true;
+                aim = armament.Sight.Track(new AiVehicleCombatInput(
+                    transform.Position,
+                    transform.Orientation,
+                    candidate,
+                    active,
+                    canFire,
+                    Single(declared, "ViewCone Alpha (degrees)", 180f),
+                    Single(declared, "ViewCone Gamma (degrees)", 360f),
+                    Single(declared, "ViewCone Length (meter)", 0f),
+                    visible,
+                    0f,
+                    0));
+            }
+            else
+            {
+                armament.Sight.Track(default);
+            }
+
+            foreach (VehicleGunState gun in armament.Guns)
+            {
+                if (gun.Cooldown > 0)
                 {
-                    Owner = state.Car,
-                    WeaponScriptId = weapon.ScriptId,
-                    MissileType = MissileFlight.TypeForLauncher(weapon),
-                    MuzzleVelocityMetresPerSecond = MissileFlight.LaunchSpeedMetresPerSecond(weapon),
-                    ModelName = string.IsNullOrWhiteSpace(weapon.Projectile.Text)
-                        ? fired.ModelName
-                        : weapon.Projectile.Text,
+                    gun.Cooldown--;
+                }
+
+                Vector3d origin = transform.Position + transform.Orientation.Transposed().Transform(gun.Gun.Offset);
+                Vector3d? local = aim is { } point ? transform.Orientation.Transform(point - origin) : null;
+                bool trigger = gun.Turret.Tick(local);
+                if (!trigger || gun.Cooldown > 0 || gun.Ammunition == 0 || aim is not { } shotTarget)
+                {
+                    continue;
+                }
+
+                // Gun_Fire (0x478BA0) meters the held trigger by the row's own cadence.
+                gun.Cooldown = Math.Max(1, GunTiming.TicksPerRound(gun.Gun.Weapon.RoundsPerMinute));
+                if (gun.Ammunition > 0)
+                {
+                    gun.Ammunition--;
+                }
+
+                float cosPitch = MathF.Cos(gun.Turret.Pitch);
+                Vector3f barrel = transform.Orientation.Transposed().Transform(new Vector3f(
+                    -MathF.Sin(gun.Turret.Yaw) * cosPitch,
+                    MathF.Cos(gun.Turret.Yaw) * cosPitch,
+                    MathF.Sin(gun.Turret.Pitch)));
+                WeaponType row = gun.Gun.Weapon;
+                VehicleCombatShotFired?.Invoke(new VehicleCombatShot(
+                    origin,
+                    shotTarget,
+                    barrel,
+                    MissileFlight.TypeForLauncher(row),
+                    MissileFlight.LaunchSpeedMetresPerSecond(row),
+                    string.IsNullOrWhiteSpace(row.Projectile.Text) ? "110_02_1" : row.Projectile.Text)
+                {
+                    Owner = vehicle,
+                    WeaponScriptId = row.ScriptId,
+                    IsHitscan = gun.Gun.IsHitscan,
                 });
             }
+        }
+    }
+
+    /// <summary>The Level 6 capture's single fixed gun: fire the row's cadence at whatever is retained.</summary>
+    private void TickLegacyVehicleGun(
+        DeclaredTask vehicle,
+        TransformState transform,
+        VehicleArmament armament,
+        WeaponType weapon,
+        Vector3d? target,
+        bool active,
+        bool canFire)
+    {
+        if (target is not { } seen)
+        {
+            return;
+        }
+
+        Vector3f forward = transform.Orientation.Column2;
+        Vector3d sightOrigin = transform.Position + new Vector3d(
+            forward.X * AiVehicleCombat.CapturedMuzzleForwardMetres * WorldScene.UnitsPerMetre,
+            forward.Y * AiVehicleCombat.CapturedMuzzleForwardMetres * WorldScene.UnitsPerMetre,
+            (forward.Z * AiVehicleCombat.CapturedMuzzleForwardMetres
+                + AiVehicleCombat.CapturedMuzzleHeightMetres) * WorldScene.UnitsPerMetre);
+        bool visible = VehicleCombatLineOfSight?.Invoke(vehicle, sightOrigin, seen) ?? true;
+        VehicleCombatShot? shot = armament.Sight.Tick(new AiVehicleCombatInput(
+            transform.Position,
+            transform.Orientation,
+            seen,
+            active,
+            canFire,
+            Single(vehicle, "ViewCone Alpha (degrees)", 180f),
+            Single(vehicle, "ViewCone Gamma (degrees)", 360f),
+            Single(vehicle, "ViewCone Length (meter)", 0f),
+            visible,
+            weapon.MuzzleVelocity,
+            weapon.RoundsPerMinute));
+        if (shot is { } fired)
+        {
+            VehicleCombatShotFired?.Invoke(fired with
+            {
+                Owner = vehicle,
+                WeaponScriptId = weapon.ScriptId,
+                MissileType = MissileFlight.TypeForLauncher(weapon),
+                MuzzleVelocityMetresPerSecond = MissileFlight.LaunchSpeedMetresPerSecond(weapon),
+                ModelName = string.IsNullOrWhiteSpace(weapon.Projectile.Text)
+                    ? fired.ModelName
+                    : weapon.Projectile.Text,
+            });
         }
     }
 
@@ -822,6 +948,7 @@ public sealed class CutsceneRuntime
         }
 
         TickCarAi();
+        TickVehicleCombat();
         UpdateFrame();
     }
 
@@ -3459,9 +3586,23 @@ public sealed class CutsceneRuntime
         public int SpeedKmh { get; set; }
         public bool Stopped { get; set; }
         public double SupportOffsetUnits { get; set; } = double.NaN;
-        public AiVehicleCombat? Combat { get; } = string.IsNullOrWhiteSpace(Text(car, "Can fire"))
-            ? null
-            : new AiVehicleCombat();
+    }
+
+    /// <summary>What one armed vehicle sees, and the guns that aim from it.</summary>
+    private sealed class VehicleArmament(WeaponType? legacyWeapon, List<VehicleGunState> guns)
+    {
+        public AiVehicleCombat Sight { get; } = new();
+        public WeaponType? LegacyWeapon { get; } = legacyWeapon;
+        public List<VehicleGunState> Guns { get; } = guns;
+    }
+
+    /// <summary>One model gun's turret, cadence and ammunition.</summary>
+    private sealed class VehicleGunState(VehicleGun gun)
+    {
+        public VehicleGun Gun { get; } = gun;
+        public VehicleGunTurret Turret { get; } = new(gun.Mount);
+        public int Cooldown { get; set; }
+        public int Ammunition { get; set; } = gun.Mount.Ammunition;
     }
 
     private sealed record TimedShot(EditCameraShot Shot, double Start);

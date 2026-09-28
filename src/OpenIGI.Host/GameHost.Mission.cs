@@ -1908,6 +1908,7 @@ internal sealed partial class GameHost
             // The guards' weapons, which have to wait for the roster: a soldier's gun is an authored
             // Gun child task naming a WEAPON_ID_*, and only the table knows which model that draws.
             _soldiers?.Arm(loaded, weaponRoster);
+            ArmVehicles(loaded, levelRoot, weaponRoster, candidate);
             EndStage("the guards' weapon models");
 
             // The player's tuning is not in the executable: humanplayer.qvm is the whole of it, and it
@@ -3114,6 +3115,98 @@ internal sealed partial class GameHost
         }
 
         return null;
+    }
+
+    /// <summary>Gives every authored vehicle that can fire the guns its model carries, and aims them at the player.</summary>
+    /// <remarks>
+    /// <para>
+    /// A vehicle's guns are attachments of its model (<c>0x4F4800</c> spawns them through <c>0x4C4950</c>);
+    /// each <c>TASKTYPE_AISTATIONARYGUN</c> names its weapon by model (<c>0x413C00</c>). A gun mounted on
+    /// another gun -- a T80's coaxial M2HB on its turret -- sits at the sum of both attachment offsets.
+    /// </para>
+    /// <para>
+    /// Missile rows (T80, APC) launch into the vehicle missile simulation; gunshot rows (M2HB, MIL) go
+    /// through the soldiers' round cast at probability 1, the value <c>0x46F950</c>'s fire message carries.
+    /// </para>
+    /// </remarks>
+    private void ArmVehicles(LoadedMission loaded, LevelTask levelRoot, WeaponTypeRegistry roster, PlayerCamera player)
+    {
+        if (_cutscenes is not { } runtime || _magic is not { } magic)
+        {
+            return;
+        }
+
+        int armed = 0;
+        foreach (DeclaredTask vehicle in WalkTasks(levelRoot).OfType<DeclaredTask>())
+        {
+            if (vehicle.Type.Name is not ("Car" or "Heli")
+                || !vehicle.TryGetValue("Can fire", out object? rawCanFire)
+                || rawCanFire is not string canFire
+                || string.IsNullOrWhiteSpace(canFire)
+                || !vehicle.TryGetValue("Model", out object? rawModel)
+                || rawModel is not string modelName)
+            {
+                continue;
+            }
+
+            IReadOnlyList<VehicleGun> guns = VehicleGun.FromModel(
+                modelName,
+                name => loaded.LevelPack.TryGetModel(name, out MefModel? mef) || loaded.CommonPack.TryGetModel(name, out mef)
+                    ? mef
+                    : null,
+                magic,
+                roster,
+                (attachment, weaponModel) => _logger.Warning(
+                    "Ai",
+                    $"Vehicle gun {attachment} names weapon model {weaponModel}, which no weapon row uses."));
+            if (guns.Count == 0)
+            {
+                continue;
+            }
+
+            runtime.ConfigureVehicleGuns(vehicle, guns);
+            armed++;
+            _logger.Information(
+                "Ai",
+                $"{vehicle.Type.Name} {vehicle.Id} ({modelName}) carries "
+                    + string.Join(", ", guns.Select(static gun => gun.Weapon.ScriptId)) + ".");
+        }
+
+        if (armed == 0)
+        {
+            return;
+        }
+
+        runtime.VehicleCombatTarget = () => !_playerHealth.IsDead ? player.EyeUnits : null;
+        runtime.VehicleCombatLineOfSight = (owner, from, to) =>
+            _worldTrace is null
+            || !_worldTrace(new WorldTraceRequest(from, to, WorldTraceMask.World, IgnoredOwner: owner), out _);
+        runtime.VehicleCombatShotFired = shot =>
+        {
+            if (shot.IsHitscan)
+            {
+                if (roster.TryGetByScriptId(shot.WeaponScriptId, out WeaponType gunshot))
+                {
+                    _soldiers?.RoundHandler?.Invoke(shot.Origin, shot.Target, 1f, gunshot, null);
+                }
+
+                return;
+            }
+
+            if (_vehicleMissiles.Spawn(
+                shot.Origin,
+                shot.Target,
+                shot.MissileType,
+                shot.MuzzleVelocityMetresPerSecond,
+                shot.Direction,
+                shot.ModelName,
+                collisionOwner: shot.Owner,
+                sourceWeaponId: roster.TryGetByScriptId(shot.WeaponScriptId, out WeaponType launcher) ? launcher.WeaponId : 0))
+            {
+                _sounds?.PlayDefinition("rpg_launch_1", shot.Origin, priority: 250);
+            }
+        };
+        _logger.Information("Ai", $"{armed} armed vehicle(s).");
     }
 
     private static IEnumerable<GameTask> WalkTasks(GameTask task)

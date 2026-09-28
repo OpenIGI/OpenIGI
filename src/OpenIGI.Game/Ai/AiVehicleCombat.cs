@@ -33,6 +33,9 @@ public readonly record struct VehicleCombatShot(
 
     /// <summary>Gets the exact retail weapon-table row that emitted this shot.</summary>
     public string WeaponScriptId { get; init; } = string.Empty;
+
+    /// <summary>Gets whether the row fires an instant gunshot (<c>TASKTYPE_GUNSHOT</c>) rather than a missile.</summary>
+    public bool IsHitscan { get; init; }
 }
 
 /// <summary>Runs the target-retention and gun gate shared by firing cars.</summary>
@@ -74,6 +77,51 @@ public sealed class AiVehicleCombat
             _cooldownTicks--;
         }
 
+        if (Track(input) is null || _cooldownTicks > 0)
+        {
+            return null;
+        }
+
+        _cooldownTicks = Math.Max(1, GunTiming.TicksPerRound(input.RoundsPerMinute));
+        Vector3f forward = Normalized(input.VehicleOrientation.Column2, Vector3f.UnitY);
+        Vector3d origin = input.VehiclePosition + new Vector3d(
+            forward.X * CapturedMuzzleForwardMetres * WorldScene.UnitsPerMetre,
+            forward.Y * CapturedMuzzleForwardMetres * WorldScene.UnitsPerMetre,
+            (forward.Z * CapturedMuzzleForwardMetres + CapturedMuzzleHeightMetres) * WorldScene.UnitsPerMetre);
+        Vector3f direction = Normalized(new Vector3f(
+            (float)(_lastTarget.X - origin.X),
+            (float)(_lastTarget.Y - origin.Y),
+            (float)(_lastTarget.Z - origin.Z)), forward);
+
+        return new VehicleCombatShot(
+            origin,
+            _lastTarget,
+            direction,
+            MissileType.MissileDirect,
+            input.MuzzleVelocityMetresPerSecond >= 100f
+                ? input.MuzzleVelocityMetresPerSecond
+                : MissileFlight.FallbackLaunchMetresPerSecond,
+            "110_02_1");
+    }
+
+    /// <summary>Updates what the vehicle sees and returns the target its guns should aim at.</summary>
+    /// <param name="input">The vehicle's live and authored state; its gun fields are not read.</param>
+    /// <returns>
+    /// The last observed target while it is retained, or <see langword="null"/> when the vehicle sees
+    /// nothing, is inactive, or acquired the target only this tick.
+    /// </returns>
+    /// <remarks>
+    /// This is the vehicle's half of the fight: its vision record, which each of its guns asks for
+    /// (<c>0x46F390</c> through message <c>0x489630</c>). The guns turn and fire on their own.
+    /// </remarks>
+    public Vector3d? Track(in AiVehicleCombatInput input)
+    {
+        if (!input.IsVehicleActive || !input.CanFire)
+        {
+            Reset();
+            return null;
+        }
+
         bool visible = input.HasLineOfSight && InsideAuthoredView(input);
         bool acquiredThisTick = false;
         if (visible)
@@ -99,31 +147,7 @@ public sealed class AiVehicleCombat
         // counting down, even when the current detection slots are empty. Keep firing at the last
         // observed pose during that interval; visibility is the acquisition/update gate, not a
         // second gun gate.
-        if (!_hasTarget || acquiredThisTick || _cooldownTicks > 0)
-        {
-            return null;
-        }
-
-        _cooldownTicks = Math.Max(1, GunTiming.TicksPerRound(input.RoundsPerMinute));
-        Vector3f forward = Normalized(input.VehicleOrientation.Column2, Vector3f.UnitY);
-        Vector3d origin = input.VehiclePosition + new Vector3d(
-            forward.X * CapturedMuzzleForwardMetres * WorldScene.UnitsPerMetre,
-            forward.Y * CapturedMuzzleForwardMetres * WorldScene.UnitsPerMetre,
-            (forward.Z * CapturedMuzzleForwardMetres + CapturedMuzzleHeightMetres) * WorldScene.UnitsPerMetre);
-        Vector3f direction = Normalized(new Vector3f(
-            (float)(_lastTarget.X - origin.X),
-            (float)(_lastTarget.Y - origin.Y),
-            (float)(_lastTarget.Z - origin.Z)), forward);
-
-        return new VehicleCombatShot(
-            origin,
-            _lastTarget,
-            direction,
-            MissileType.MissileDirect,
-            input.MuzzleVelocityMetresPerSecond >= 100f
-                ? input.MuzzleVelocityMetresPerSecond
-                : MissileFlight.FallbackLaunchMetresPerSecond,
-            "110_02_1");
+        return _hasTarget && !acquiredThisTick ? _lastTarget : null;
     }
 
     private static bool InsideAuthoredView(in AiVehicleCombatInput input)

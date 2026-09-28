@@ -3095,6 +3095,9 @@ public sealed class SoldierRenderer : IDisposable
     /// </remarks>
     public void SetRoundHandler(SoldierRound? handler) => _onRound = handler;
 
+    /// <summary>Gets where soldiers' rounds go, so another AI gun (a vehicle's) can fire through the same cast.</summary>
+    public SoldierRound? RoundHandler => _onRound;
+
     /// <summary>Gets how many rounds the level's soldiers have fired.</summary>
     public int RoundsFired { get; private set; }
 
