@@ -469,7 +469,11 @@ public sealed class CutsceneRuntime
         if (state.TargetNodeId < 0)
         {
             GraphNearestNode.Find(state.Graph, state.Transform.Position, out GraphNode? nearest, out _);
-            int next = destinationId;
+
+            // IGI1 0x425C10 steps from the nearest node through the route table. When the table has
+            // no link it logs "CarAI: Error in graph %d. No link between nodes %d and %d." and returns
+            // the nearest node itself -- it never substitutes a destination it cannot reach.
+            int next = nearest?.Id ?? destinationId;
             if (nearest is not null
                 && nearest.Id != destinationId
                 && state.Graph.RouteTable?.TryGetStep(nearest.Id, destinationId, out int routed, out _) == true)
