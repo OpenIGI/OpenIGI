@@ -60,6 +60,23 @@ public sealed class PlayerBodyShoveAndSlideTests
     }
 
     [Fact]
+    public void TheShoveIsDampedBeforeItMovesTheBody()
+    {
+        PlayerBody body = OnFlatGround();
+        Vector3d start = body.Position;
+        body.AddHitShove(1000f, 0f);
+
+        body.Tick(Still, terrain: null, rootDelta: default);
+        double first = body.Position.X - start.X;
+        body.Tick(Still, terrain: null, rootDelta: default);
+        double second = body.Position.X - start.X - first;
+
+        // 0x4614B0 multiplies +1648 by 0.9 and only then adds it: 900 on the first tick, 810 on the next.
+        Assert.Equal(900.0, first, 0.5);
+        Assert.Equal(810.0, second, 0.5);
+    }
+
+    [Fact]
     public void TheShoveDecaysByNineTenthsATick()
     {
         PlayerBody body = OnFlatGround();

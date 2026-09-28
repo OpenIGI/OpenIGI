@@ -390,6 +390,11 @@ public sealed class PlayerBody
         Matrix3f facing = FacingBasis(Yaw);
         Vector3f step = HumanMotion.ApplyRootMotion(rootDelta, facing, DeltaTranslationScale);
 
+        // 0x4614B0 damps the shove by 0.9 BEFORE adding it to the move (+1648 *= 0.9, then the sum), so a
+        // round's knock is felt at nine tenths from the very first tick. Adding first and damping after
+        // carried the player 11% further per tick than retail -- measured against a T80's coaxial gun.
+        HitShove = HumanSlopeSlide.Damp(HitShove);
+
         // The move is velocity PLUS the animation's step, always - 0x4614B0 adds them rather than
         // choosing between them. On the ground the velocity is zero and the step carries; in the air
         // the falling animation covers no ground and the velocity carries.
@@ -518,9 +523,8 @@ public sealed class PlayerBody
         SlopeSlide = HumanSlopeSlide.Damp(
             HumanSlopeSlide.Accumulate(SlopeSlide, IsGrounded ? GroundNormal : null));
 
-        // The shove is damped by the same 0.9 in the same function, but it is never rebuilt: what a
-        // bullet put in stays there, decaying, until a landing or a ladder clears it.
-        HitShove = HumanSlopeSlide.Damp(HitShove);
+        // The shove was damped above, before the move: it is never rebuilt, so what a bullet put in stays
+        // there, decaying, until a landing or a ladder clears it.
 
         // 0x410B7E overwrites Human+1312 with this tick's step once the state machine has had its look
         // at the previous one. Keep the same one-tick lag so a state entry next tick reads what the
