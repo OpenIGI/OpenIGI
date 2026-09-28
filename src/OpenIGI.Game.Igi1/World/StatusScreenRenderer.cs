@@ -515,9 +515,11 @@ internal sealed class StatusScreenRenderer : IHudPresenter
         {
             foreach (EnemyOverlayBox target in targets)
             {
-                if (target.TryClipToViewport(screenWidth, screenHeight, out EnemyOverlayBox clipped))
+                // FUN_004B5860 submits the rotated, scaled strip unclipped and lets the device clip it.
+                // Clamping the bounds first would move the rotation centre of an edge contact.
+                if (target.IntersectsViewport(screenWidth, screenHeight))
                 {
-                    DrawTargetBox(batch, clipped, MarkerColour(clipped.Marker));
+                    DrawTargetBox(batch, target, MarkerColour(target.Marker));
                 }
             }
         }
@@ -530,15 +532,15 @@ internal sealed class StatusScreenRenderer : IHudPresenter
 
     /// <summary>Maps a native detector marker class to its on-screen rectangle colour.</summary>
     /// <remarks>
-    /// FUN_00471B60 submits <c>(64,0,0)</c>/<c>(0,128,0)</c>/<c>(0,0,128)</c> on the device's own
-    /// 0-128 additive scale. The full-brightness display colours below reproduce the retail red, green
-    /// and blue markers on the back buffer.
+    /// FUN_00471B60 submits <c>(64,0,0)</c>/<c>(0,128,0)</c>/<c>(0,0,128)</c>, and FUN_004B5730
+    /// multiplies every channel by 0.0078125 (1/128) before building the vertex. On the back buffer
+    /// that is a half-bright red and full green and blue.
     /// </remarks>
     private static Bgra32 MarkerColour(BinocularMarkerColor marker) => marker switch
     {
-        BinocularMarkerColor.Team => Bgra32.FromRgb(48, 220, 48).WithAlpha(235),
-        BinocularMarkerColor.Disabled => Bgra32.FromRgb(64, 120, 235).WithAlpha(235),
-        _ => Bgra32.FromRgb(220, 32, 32).WithAlpha(235),
+        BinocularMarkerColor.Team => Bgra32.FromRgb(0, 255, 0),
+        BinocularMarkerColor.Disabled => Bgra32.FromRgb(0, 0, 255),
+        _ => Bgra32.FromRgb(128, 0, 0),
     };
 
     /// <summary>Draws the retail binocular compass strip (<c>FUN_00472050</c>).</summary>
@@ -677,8 +679,10 @@ internal sealed class StatusScreenRenderer : IHudPresenter
         // with four static axis-aligned rectangles.
         float centreX = (target.Left + target.Right) * 0.5f;
         float centreY = (target.Top + target.Bottom) * 0.5f;
-        float halfWidth = MathF.Max(1f, (target.Right - target.Left) * 0.5f * target.PulseScale);
-        float halfHeight = MathF.Max(1f, (target.Bottom - target.Top) * 0.5f * target.PulseScale);
+        // FUN_004B5860 scales the unit square by the projected half-size as is; a distant contact
+        // really does shrink below a pixel.
+        float halfWidth = (target.Right - target.Left) * 0.5f * target.PulseScale;
+        float halfHeight = (target.Bottom - target.Top) * 0.5f * target.PulseScale;
         float cos = MathF.Cos(target.RotationRadians);
         float sin = MathF.Sin(target.RotationRadians);
         Point2 TopLeft() => Rotate(centreX, centreY, -halfWidth, -halfHeight, cos, sin);

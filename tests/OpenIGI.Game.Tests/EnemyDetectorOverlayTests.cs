@@ -98,4 +98,26 @@ public sealed class EnemyDetectorOverlayTests
 
         Assert.False(target.TryClipToViewport(1280, 480, out _));
     }
+
+    [Fact]
+    public void RetailRectangleAtTheScreenEdgeIsDrawnWholeAroundItsTrueCentre()
+    {
+        // FUN_004B5860 submits the strip unclipped; only a rectangle wholly off screen is skipped.
+        EnemyOverlayBox target = new(7, -40f, 120f, 140f, 520f, 18f, 1f);
+
+        Assert.True(target.IntersectsViewport(1280, 480));
+        Assert.False(new EnemyOverlayBox(7, -120f, 20f, -5f, 90f, 18f, 1f).IntersectsViewport(1280, 480));
+    }
+
+    [Fact]
+    public void RetailRectangleCountsItsEntryPulseWhenTestingTheViewport()
+    {
+        // Ten pixels wide and five off the left edge: settled it is off screen, but at the entry
+        // pulse's 11x scale the strip reaches back onto it.
+        EnemyOverlayBox settled = new(7, -15f, 100f, -5f, 110f, 18f, 1f);
+        EnemyOverlayBox pulsing = settled with { PulseScale = 11f };
+
+        Assert.False(settled.IntersectsViewport(640, 480));
+        Assert.True(pulsing.IntersectsViewport(640, 480));
+    }
 }

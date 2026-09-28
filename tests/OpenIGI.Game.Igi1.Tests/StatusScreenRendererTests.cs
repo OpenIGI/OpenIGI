@@ -149,22 +149,23 @@ public sealed class StatusScreenRendererTests
             draw => draw.Texture == TextureHandle.None
                 && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 300f) < 0.01f));
 
-        // The target strip is hostile red. This guards the BGRA/RGBA channel boundary: a raw
-        // Bgra32(220, 32, 32, ...) literal would render the retail marker blue.
+        // The target strip is hostile red: FUN_00471B60's (64,0,0) through FUN_004B5730's 1/128
+        // channel scale is half-bright opaque red. This also guards the BGRA/RGBA channel boundary:
+        // a raw Bgra32(128, 0, 0, ...) literal would render the retail marker blue.
         Assert.Contains(
             device.Draws,
             draw => draw.Texture == TextureHandle.None
-                && draw.Vertices.Count(vertex => vertex.Color.B == 32
-                    && vertex.Color.G == 32
-                    && vertex.Color.R == 220
-                    && vertex.Color.A == 235) >= 16);
+                && draw.Vertices.Count(vertex => vertex.Color.B == 0
+                    && vertex.Color.G == 0
+                    && vertex.Color.R == 128
+                    && vertex.Color.A == 255) >= 16);
 
         var markerVertices = device.Draws
             .SelectMany(draw => draw.Vertices)
-            .Where(vertex => vertex.Color.B == 32
-                && vertex.Color.G == 32
-                && vertex.Color.R == 220
-                && vertex.Color.A == 235)
+            .Where(vertex => vertex.Color.B == 0
+                && vertex.Color.G == 0
+                && vertex.Color.R == 128
+                && vertex.Color.A == 255)
             .ToArray();
         Assert.True(markerVertices.Length >= 16);
         Assert.InRange(markerVertices.Max(vertex => vertex.X) - markerVertices.Min(vertex => vertex.X), 39f, 45f);
