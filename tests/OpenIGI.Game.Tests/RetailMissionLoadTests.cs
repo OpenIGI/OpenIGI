@@ -5,6 +5,7 @@ using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
@@ -109,11 +110,30 @@ public sealed class RetailMissionLoadTests
         Assert.Equal("level1", mission.LevelPack.Name);
         Assert.Empty(mission.CommonPack.MissingModels);
         Assert.Empty(mission.LevelPack.MissingModels);
+        Assert.DoesNotContain("AI navigation graphs", mission.PendingSteps);
         Assert.Equal(415, mission.LevelPack.Instances.Count);
 
         // objects.qvm built a level subtree.
         Assert.NotNull(fixture.LevelLoader.LoadedScriptPath);
         Assert.NotNull(fixture.LevelRoot.FirstChild);
+    }
+
+    [RequiresGameDataFact]
+    public void MissionsOneThroughFiveFindEveryShippedNavGraph()
+    {
+        // Retail ships MISSIONS/location0/LEVELN/GRAPHS/GRAPH*.DAT while the descriptors spell the path
+        // in lowercase; the MISSION: lookup has to find them whatever the host filesystem's casing rules.
+        foreach ((int id, int expected) in new[] { (1, 11), (2, 14), (3, 18), (4, 13), (5, 13) })
+        {
+            Fixture fixture = Fixture.Create();
+            LoadedMission mission = fixture.Loader.Load(id);
+
+            IReadOnlyList<string> graphs = fixture.FileSystem.EnumerateFiles("MISSION:graphs", "graph*.dat");
+
+            Assert.Equal(expected, graphs.Count);
+            Assert.DoesNotContain("AI navigation graphs", mission.PendingSteps);
+            Assert.All(graphs, graph => GraphFile.Read(fixture.FileSystem.ReadAllBytes(graph)));
+        }
     }
 
     [RequiresGameDataFact]
