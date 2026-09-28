@@ -49,7 +49,10 @@ public sealed class PlayerCameraMapComputerOpticsTests
     {
         WeaponTypeRegistry roster = LoadRoster();
         WeaponType binoculars = roster.Weapons.Single(weapon => weapon.Category == WeaponCategory.Binocular);
-        PlayerCamera camera = Arm(binoculars);
+        // The binocular key raises them from another weapon; pressed while they are already in hand it
+        // puts them away again, so the player starts with the knife.
+        WeaponType knife = roster.Weapons.Single(weapon => weapon.ScriptId == "WEAPON_ID_KNIFE");
+        PlayerCamera camera = Arm(knife, binoculars);
         InputState input = new();
         TickUntilReady(camera, input);
 
@@ -74,11 +77,15 @@ public sealed class PlayerCameraMapComputerOpticsTests
         Assert.Equal(HumanView.DefaultViewModelTanX, camera.View.ViewModelTanX);
     }
 
-    private static PlayerCamera Arm(WeaponType weapon)
+    private static PlayerCamera Arm(params WeaponType[] weapons)
     {
         PlayerCamera camera = new();
-        camera.UseWeaponCycle([weapon.WeaponId]);
-        camera.Carry(weapon, new AmmoType { AmmoId = 1, CalibreId = weapon.CalibreId });
+        camera.UseWeaponCycle([.. weapons.Select(weapon => weapon.WeaponId)]);
+        foreach (WeaponType weapon in weapons)
+        {
+            camera.Carry(weapon, new AmmoType { AmmoId = 1, CalibreId = weapon.CalibreId });
+        }
+
         camera.UseViewRig(LoadViewSet());
         camera.UseWalls(ObjectCollisionIndex.Build([]));
         return camera;
