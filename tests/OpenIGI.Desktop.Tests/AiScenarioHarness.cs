@@ -914,6 +914,40 @@ public sealed class AiScenarioHarness : IDisposable
                 }
             }
 
+            if (EnvInt("OPENIGI_VEH_SCENARIO_HELI", -1) is int heliId and >= 0
+                && typeof(CutsceneRuntime).GetField("_animations", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(runtime) is System.Collections.IEnumerable animations)
+            {
+                foreach (object animation in animations)
+                {
+                    Type type = animation.GetType();
+                    if (type.GetProperty("TargetId")?.GetValue(animation) is not int targetId || targetId != heliId
+                        || type.GetProperty("RanThisTick")?.GetValue(animation) is not true)
+                    {
+                        continue;
+                    }
+
+                    object program = type.GetProperty("Program")!.GetValue(animation)!;
+                    float[] channels = (float[])program.GetType().GetField("_channels", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(program)!;
+                    int programTick = (int)program.GetType().GetProperty("Tick")!.GetValue(program)!;
+                    OpenIGI.Engine.Tasks.GameTask heli = loop.Tasks.FromId(heliId)!;
+                    Vector3d at = runtime.TryGetDrawTransform(heli, out Vector3d metres, out _) ? metres * Metre : default;
+                    string extra = string.Empty;
+                    if (typeof(CutsceneRuntime).GetField("_transforms", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(runtime) is System.Collections.IDictionary transforms
+                        && transforms[heliId] is { } state)
+                    {
+                        Type st = state.GetType();
+                        object? S(string name) => st.GetProperty(name)?.GetValue(state);
+                        Matrix3f m = (Matrix3f)S("Orientation")!;
+                        Vector3d v = (Vector3d)S("Velocity")!;
+                        Vector3f l = (Vector3f)S("AngularMomentum")!;
+                        Vector3f c = (Vector3f)S("Control")!;
+                        extra = string.Create(CultureInfo.InvariantCulture, $" vel=({v.X:0.0},{v.Y:0.0},{v.Z:0.0}) angular=({l.X:G4},{l.Y:G4},{l.Z:G4}) control=({c.X:0.####},{c.Y:0.####},{c.Z:0.####}) thrust={S("Thrust")} ground={S("GroundContact")} m=[{m.M11:0.####} {m.M12:0.####} {m.M13:0.####}; {m.M21:0.####} {m.M22:0.####} {m.M23:0.####}; {m.M31:0.####} {m.M32:0.####} {m.M33:0.####}]");
+                    }
+
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[heli] tick={tick} programTick={programTick} pos=({at.X:0.0},{at.Y:0.0},{at.Z:0.0}){extra} channels=({string.Join(",", channels.Select(c => c.ToString("0.#####", CultureInfo.InvariantCulture)))})");
+                }
+            }
+
             Vector3d origin = player.Body.Position + new Vector3d(0d, 0d, OriginAboveFeet);
             if (runtime.TryRunOver(origin, out OpenIGI.Engine.Tasks.GameTask? runner) && runner is not null)
             {
