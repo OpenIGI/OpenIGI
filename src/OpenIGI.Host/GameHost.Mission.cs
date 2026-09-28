@@ -710,9 +710,15 @@ internal sealed partial class GameHost
                 carTerrain.Commands,
                 TerrainDiscardBinding.For(carTerrain).Regions,
                 TerrainHeightBindings.Bind(carTerrain, levelRoot));
+            Func<string, MefModel?> carModels = name => loaded.TryGetModel(name, out MefModel? model) ? model : null;
+            CutsceneRuntime cutscenes = _cutscenes;
             _cutscenes.ConfigureRetailCars(
-                new RetailCarWorld(carRays),
-                name => loaded.TryGetModel(name, out MefModel? model) ? model : null);
+                new RetailCarWorld(
+                    carRays,
+                    RetailWorldObjects.Build(levelRoot, carModels),
+                    cutscenes.RetailVehicleModels,
+                    static owner => owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task)),
+                carModels);
         }
 
         // Every Car exports isExploded and blows up from its own CAR record's explosion points; the

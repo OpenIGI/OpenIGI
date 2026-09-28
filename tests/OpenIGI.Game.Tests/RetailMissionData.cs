@@ -4,6 +4,7 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Formats.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
@@ -26,6 +27,7 @@ internal sealed class RetailMissionData
             terrain.Commands,
             TerrainDiscardBinding.For(terrain).Regions,
             TerrainHeightBindings.Bind(terrain, root));
+        Objects = RetailWorldObjects.Build(root, name => mission.TryGetModel(name, out MefModel? model) ? model : null);
     }
 
     public LoadedMission Mission { get; }
@@ -35,6 +37,8 @@ internal sealed class RetailMissionData
     public VehiclePhysicsRegistry Vehicles { get; }
 
     public RetailTerrainRay TerrainRay { get; }
+
+    public RetailWorldObjects Objects { get; }
 
     public static RetailMissionData Get(int id)
     {

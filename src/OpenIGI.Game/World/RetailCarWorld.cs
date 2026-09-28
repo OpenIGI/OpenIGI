@@ -4,14 +4,21 @@ namespace OpenIGI.Game.World;
 
 /// <summary>The world a <see cref="RetailCarBody"/> steps in during play.</summary>
 /// <remarks>
-/// The wheel and collision rays go to <see cref="RetailTerrainRay"/>, which answers the terrain exactly as
-/// the original does. Two parts of the original query are not ported yet, and a car meets them as nothing:
-/// placed models (the op-9/10 ray handler <c>0x4C1840</c>, so a car does not yet drive onto a bridge or a
-/// ramp), and the upward burial probe (<c>0x4CA010</c>), which only a car with non-wheel collision points
-/// (the buggy) ever casts.
+/// A batch of rays goes first to the level's placed models and spline segments and to the other vehicles at their
+/// live poses (<see cref="RetailWorldObjects"/>), skipping the casting car and anything in a dormant container,
+/// then to the terrain (<see cref="RetailTerrainRay"/>), which replaces an object hit only when strictly nearer --
+/// the order <c>0x4CC2A0</c> runs them in. Not ported: the upward burial probe (<c>0x4CA010</c>, cast only by a car
+/// with non-wheel collision points), rigid spline segments, water, and the struck object's contact handlers.
 /// </remarks>
 /// <param name="terrain">The level's exact terrain query.</param>
-public sealed class RetailCarWorld(RetailTerrainRay terrain) : IRetailCarWorld
+/// <param name="objects">The level's placed models and spline segments, or <see langword="null"/>.</param>
+/// <param name="vehicles">The vehicles other rays can strike, at their live poses, or <see langword="null"/>.</param>
+/// <param name="present">Whether an object's owner is in the world now, or <see langword="null"/> for always.</param>
+public sealed class RetailCarWorld(
+    RetailTerrainRay terrain,
+    RetailWorldObjects? objects = null,
+    Func<IReadOnlyList<RetailRayModel>>? vehicles = null,
+    Func<object, bool>? present = null) : IRetailCarWorld
 {
     private readonly RetailTerrainRay _terrain = terrain ?? throw new ArgumentNullException(nameof(terrain));
 
@@ -23,6 +30,7 @@ public sealed class RetailCarWorld(RetailTerrainRay terrain) : IRetailCarWorld
             results[k] = new RetailRayResult { Point = ends[k] };
         }
 
+        objects?.Cast(starts, ends, results, car?.Owner, vehicles?.Invoke(), present);
         _terrain.Cast(starts, ends, results);
     }
 

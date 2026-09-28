@@ -243,37 +243,9 @@ public static class RetailCarSpawn
             wheelAttachments);
     }
 
-    /// <summary><c>0x4B38E0(α, β, γ)</c> for the orientation every shipped car has: α = β = 0 gives <c>RotZ(γ)</c> exactly.</summary>
-    private static void SpawnMatrix(Vector3f angles, float[] m)
-    {
-        if (angles.X == 0f && angles.Y == 0f)
-        {
-            float s = X87.ToFloat(Math.Sin(angles.Z));
-            float c = X87.ToFloat(Math.Cos(angles.Z));
-            m[0] = c;
-            m[1] = X87.ToFloat(-Math.Sin(angles.Z));
-            m[2] = 0f;
-            m[3] = s;
-            m[4] = c;
-            m[5] = 0f;
-            m[6] = 0f;
-            m[7] = 0f;
-            m[8] = 1f;
-            return;
-        }
-
-        // A tilted spawn: not bit-exact (0x4B3BA0/0x4B3B60 unread); no shipped car has one.
-        Matrix3f r = Matrix3f.FromEngineEulerAngles(angles.X, angles.Y, angles.Z);
-        m[0] = r.M11;
-        m[1] = r.M12;
-        m[2] = r.M13;
-        m[3] = r.M21;
-        m[4] = r.M22;
-        m[5] = r.M23;
-        m[6] = r.M31;
-        m[7] = r.M32;
-        m[8] = r.M33;
-    }
+    /// <summary>The spawn orientation, <c>0x4B38E0(α, β, γ)</c>: <c>RotZ(γ)·RotY(β)·RotX(α)</c> with truncating products.</summary>
+    private static void SpawnMatrix(Vector3f angles, float[] m) =>
+        RetailSplineSegment.AnglesToMatrix(angles.X, angles.Y, angles.Z).CopyTo(m, 0);
 
     /// <summary><c>Body_SetBox</c> (<c>0x4ECED0</c>) and <c>Body_SetMassInertia</c> (<c>0x4EC5E0</c>).</summary>
     private static void SetBox(RetailCarBody car, float m, float a, float b, float c)

@@ -41,6 +41,9 @@ public struct RetailRayResult
     /// <summary>Whether the hit carries a surface record (<c>+80</c> non-null).</summary>
     public bool HasSurface { get; set; }
 
+    /// <summary>The level material row the hit face names (<c>w[0xD3C + 4g]</c>): 1 for terrain and for a face with none.</summary>
+    public int Material { get; set; }
+
     /// <summary>The surface record's <c>+12</c>; non-zero forces a collision contact to be accepted.</summary>
     public float SurfaceForce { get; set; }
 }
@@ -235,6 +238,12 @@ public sealed class RetailCarBody
 
     /// <summary>Gets the car's type and record.</summary>
     public RetailCarDefinition Definition { get; }
+
+    /// <summary>Gets or sets the task the car is, which its own rays skip (the query's exclusion block).</summary>
+    public object? Owner { get; set; }
+
+    /// <summary>Gets or sets the car as other rays see it: its collision model, kept at the body's pose.</summary>
+    public RetailRayModel? RayModel { get; set; }
 
     /// <summary>The position, world (<c>+32</c>).</summary>
     public double[] Position { get; } = new double[3];

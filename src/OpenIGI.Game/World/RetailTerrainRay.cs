@@ -129,6 +129,7 @@ public sealed class RetailTerrainRay
             result.Distance = Dist(hit, starts[i]);
             result.Hit = true;
             result.Struck = null;
+            result.Material = 1;
         }
     }
 

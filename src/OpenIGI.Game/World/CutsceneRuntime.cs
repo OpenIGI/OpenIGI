@@ -65,6 +65,8 @@ public sealed class CutsceneRuntime
     private readonly VehiclePhysicsRegistry? _vehiclePhysics;
     private IRetailCarWorld? _retailCarWorld;
     private Func<string, OpenIGI.Formats.World.MefModel?>? _retailCarModels;
+    private readonly List<RetailRayModel> _retailVehicleModels = [];
+    private readonly Dictionary<GameTask, RetailRayModel?> _standingCars = [];
     private readonly Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? _vehicleObstacleHit;
     private readonly Func<GameTask, bool>? _vehicleObstacleReleased;
     private readonly TerrainData? _terrain;
@@ -2524,7 +2526,15 @@ public sealed class CutsceneRuntime
         }
         else if (_retailCarModels?.Invoke(Text(declared, WorldScene.ModelParameter)) is { } model)
         {
-            state.RetailBody = RetailCarSpawn.Create(physics, model, placement);
+            RetailCarBody created = RetailCarSpawn.Create(physics, model, placement);
+            created.Owner = task;
+            if (OpenIGI.Formats.World.MefCollisionMesh.TryRead(model.Container, meshIndex: 0, out OpenIGI.Formats.World.MefCollisionMesh? mesh)
+                && mesh is { Faces.Length: > 0 })
+            {
+                created.RayModel = new RetailRayModel(task, new RetailRayMesh(mesh), model.NativeMarkerBound);
+            }
+
+            state.RetailBody = created;
         }
         else
         {
@@ -2576,6 +2586,64 @@ public sealed class CutsceneRuntime
         }
 
         transform.IsDynamic = true;
+    }
+
+    /// <summary>
+    /// The vehicles rays can strike, each at its body's current pose: every car whose retail body exists and whose
+    /// task is in the world.
+    /// </summary>
+    /// <returns>The vehicles' ray models.</returns>
+    public IReadOnlyList<RetailRayModel> RetailVehicleModels()
+    {
+        _retailVehicleModels.Clear();
+        foreach ((GameTask task, TransformState state) in _taskTransforms)
+        {
+            if (state.CarPhysics is null || !ConditionalContainerGate.IsTaskActive(task))
+            {
+                continue;
+            }
+
+            if (state.RetailBody is { RayModel: { } model } body)
+            {
+                Array.Copy(body.Position, model.Position, 3);
+                Array.Copy(body.M, model.M, 9);
+                _retailVehicleModels.Add(model);
+            }
+            else if (state.RetailBody is null && StandingCarModel(task) is { } standing)
+            {
+                // A car no controller has reset yet -- or never will, like mission 7's stand-in T80 361 -- stands
+                // in the object tree where the level placed it.
+                _retailVehicleModels.Add(standing);
+            }
+        }
+
+        return _retailVehicleModels;
+    }
+
+    private RetailRayModel? StandingCarModel(GameTask task)
+    {
+        if (_standingCars.TryGetValue(task, out RetailRayModel? cached))
+        {
+            return cached;
+        }
+
+        RetailRayModel? model = null;
+        if (task is DeclaredTask declared
+            && _retailCarModels?.Invoke(Text(declared, WorldScene.ModelParameter)) is { } mef
+            && OpenIGI.Formats.World.MefCollisionMesh.TryRead(mef.Container, meshIndex: 0, out OpenIGI.Formats.World.MefCollisionMesh? mesh)
+            && mesh is { Faces.Length: > 0 })
+        {
+            RetailCarPlacement placement = RetailCarSpawn.Placement(declared, 0);
+            model = new RetailRayModel(task, new RetailRayMesh(mesh), mef.NativeMarkerBound);
+            model.Position[0] = placement.Position.X;
+            model.Position[1] = placement.Position.Y;
+            model.Position[2] = placement.Position.Z;
+            RetailSplineSegment.AnglesToMatrix(placement.Orientation.X, placement.Orientation.Y, placement.Orientation.Z)
+                .CopyTo(model.M, 0);
+        }
+
+        _standingCars[task] = model;
+        return model;
     }
 
     private static void CopyRetailPose(TransformState state, RetailCarBody body)
