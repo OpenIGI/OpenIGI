@@ -17,6 +17,12 @@ public struct RetailRayResult
     /// <summary>The struck object (<c>+0</c>), or <see langword="null"/> for terrain.</summary>
     public object? Struck { get; set; }
 
+    /// <summary>The hit point (<c>+8</c>); the query starts it at the ray's end.</summary>
+    public Vector3d Point { get; set; }
+
+    /// <summary>Whether the front-face material slot is set (<c>+76</c> non-null).</summary>
+    public bool HasFrontMaterial { get; set; }
+
     /// <summary>Whether the ray hit anything (<c>+88</c>).</summary>
     public bool Hit { get; set; }
 
