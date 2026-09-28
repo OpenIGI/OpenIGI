@@ -37,9 +37,10 @@ public readonly record struct MefCollisionSphere(Vector3f Centre, float Radius, 
 /// Four chunk groups, headed by <c>HSMC</c>. Its 64-byte payload holds two 32-byte
 /// <c>MultiMesh_Mesh_t</c> headers, one for each collision mesh level. A non-empty level has its own
 /// <c>ECFC</c>, <c>XTVC</c>, <c>TAMC</c>, and <c>HPSC</c> chunk, in level order. Every stride below was
-/// checked against the retail packs. One shipped human model has a stale smaller vertex count in its
-/// HSMC header; the complete <c>XTVC</c> payload is still record-aligned and is the authoritative row
-/// count for that case.
+/// checked against the retail packs. The complete <c>XTVC</c> payload, not the HSMC header, is the
+/// authoritative vertex row count: a header that undercounts its rows is tolerated. No model in the
+/// fourteen retail missions' packs does (a full scan finds every header equal to its rows); the
+/// tolerance exists for a reported install whose human model declared fewer rows than it stored.
 /// </para>
 /// <list type="table">
 /// <item><term><c>ECFC</c></term><description>faces, <b>8</b> bytes: four <c>u16</c></description></item>
@@ -247,11 +248,11 @@ public sealed class MefCollisionMesh
 
         ReadOnlySpan<byte> faceBytes = Payload(container, MefTags.CollisionFaces, meshIndex, faceCount, rows.FaceStride);
 
-        // A small number of retail collision meshes carry a stale vertex count in HSMC. The XTVC
-        // payload is still a complete sequence of 16-byte records, and ECFC references the records
-        // beyond the stale header value (for example, M11's 000_01_1 declares 502 but stores 1189).
-        // Trust the self-delimiting payload for vertices while retaining exact count checks for the
-        // face, material, and sphere tables below.
+        // A collision mesh whose HSMC vertex count is smaller than its XTVC rows keeps every row: faces
+        // may reference the rows past the header value. The retail missions' packs never do this (every
+        // header matches its rows), but one reported install's human model did. Trust the
+        // self-delimiting payload for vertices while retaining exact count checks for the face,
+        // material, and sphere tables below.
         ReadOnlySpan<byte> vertexBytes = Payload(
             container, MefTags.CollisionVertices, meshIndex, vertexCount, rows.VertexStride,
             allowAdditionalRecords: true);
@@ -368,10 +369,8 @@ public sealed class MefCollisionMesh
         long needed = (long)count * stride;
         if (allowAdditionalRecords)
         {
-            // Keep the full aligned payload. A shipped human model's HSMC header says 502 vertices
-            // although its XTVC chunk carries 1189 complete 16-byte rows, and faces in that model
-            // reference rows beyond the stale header count. Truncated or partially-recorded chunks
-            // remain errors.
+            // Keep the full aligned payload when it holds more rows than the header declares.
+            // Truncated or partially-recorded chunks remain errors.
             if (span.Length >= needed && span.Length % stride == 0)
             {
                 return span;
