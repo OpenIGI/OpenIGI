@@ -57,6 +57,7 @@ public sealed class CutsceneRuntime
     private readonly Dictionary<GameTask, AttachmentState> _attachments = [];
     private readonly Dictionary<GameTask, CarWheel[]> _carWheels = [];
     private readonly Dictionary<WorldPlacement, int> _carWheelIndices = [];
+    private readonly Dictionary<WorldPlacement, (GameTask Vehicle, int Index)> _gunPlacements = [];
     private readonly Dictionary<GameTask, float> _trainTailOffsets = [];
     private readonly Func<string, ScriptArguments, QvmValue?>? _hostNative;
     private readonly Action<CutsceneSoundEvent>? _soundChanged;
@@ -1132,6 +1133,7 @@ public sealed class CutsceneRuntime
                     if (FireVehicleGun(vehicle, transform, gun, local, aim) is { } shot)
                     {
                         gun.RoundsFiredThisTick++;
+                        gun.ShotSequence++;
                         VehicleCombatShotFired?.Invoke(shot);
                     }
 
@@ -1650,6 +1652,7 @@ public sealed class CutsceneRuntime
 
     /// <summary>The magic-object task type retail gives a car's rolling wheels.</summary>
     private const string WheelTaskTypeName = "TASKTYPE_WHEEL";
+    private const string GunMountTaskTypeName = "TASKTYPE_AISTATIONARYGUN";
 
     /// <summary>The two heights the vehicle obstacle probe sweeps, in metres above the body origin.</summary>
     private static readonly double[] CarProbeHeightsMetres = [0.75d, 1.95d];
@@ -1928,6 +1931,14 @@ public sealed class CutsceneRuntime
             return true;
         }
 
+        if (_gunPlacements.TryGetValue(placement, out (GameTask Vehicle, int Index) mount)
+            && _armaments.TryGetValue(mount.Vehicle, out VehicleArmament? armament)
+            && TryGetVehicleGunMount(mount.Vehicle, armament, mount.Index, out Vector3d mountUnits, out orientation))
+        {
+            position = mountUnits / WorldScene.UnitsPerMetre;
+            return true;
+        }
+
         if (!TryGetPlacementDrawTransform(
             placement.Owner,
             placement.Position,
@@ -1941,6 +1952,146 @@ public sealed class CutsceneRuntime
         if (TryGetWheelDraw(placement, out Matrix3f spun))
         {
             orientation *= spun;
+        }
+
+        return true;
+    }
+
+    /// <summary>Binds each armed vehicle's drawn gun mounts to the guns that turn them.</summary>
+    /// <param name="scene">The built world whose placements carry the vehicles' attachments.</param>
+    /// <remarks>
+    /// A vehicle's <c>TASKTYPE_AISTATIONARYGUN</c> attachments arrive in the same depth-first order its guns were
+    /// collected in (<see cref="VehicleGun.FromModel"/>); each placement takes the next gun whose mount model it is.
+    /// Call it after <see cref="ConfigureVehicleGuns"/>.
+    /// </remarks>
+    public void BindVehicleGunPlacements(WorldScene scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        _gunPlacements.Clear();
+        Dictionary<GameTask, int> next = [];
+        foreach (WorldPlacement placement in scene.Placements)
+        {
+            if (!string.Equals(placement.MagicTaskTypeName, GunMountTaskTypeName, StringComparison.Ordinal)
+                || !_armaments.TryGetValue(placement.Owner, out VehicleArmament? armament))
+            {
+                continue;
+            }
+
+            for (int index = next.GetValueOrDefault(placement.Owner); index < armament.Guns.Count; index++)
+            {
+                if (string.Equals(armament.Guns[index].Gun.Model, placement.Instance.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    _gunPlacements[placement] = (placement.Owner, index);
+                    next[placement.Owner] = index + 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    /// <summary>Every armed live vehicle's weapon models, as this tick's updates posed them.</summary>
+    /// <returns>One entry per gun of an active, undestroyed vehicle.</returns>
+    public IEnumerable<VehicleGunVisual> VehicleGunVisuals()
+    {
+        foreach ((GameTask vehicle, VehicleArmament armament) in _armaments)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(vehicle) || _destructibles?.IsDestroyed(vehicle) == true)
+            {
+                continue;
+            }
+
+            for (int index = 0; index < armament.Guns.Count; index++)
+            {
+                if (!TryGetVehicleGunWeapon(vehicle, armament, index, out Vector3d position, out Matrix3f orientation))
+                {
+                    continue;
+                }
+
+                VehicleGunState gun = armament.Guns[index];
+                yield return new VehicleGunVisual(
+                    vehicle,
+                    index,
+                    gun.Gun.Mount.WeaponModel,
+                    position,
+                    orientation,
+                    gun.RoundsFiredThisTick > 0,
+                    gun.ShotSequence);
+            }
+        }
+    }
+
+    /// <summary>Where a vehicle gun's mount stands and faces, re-seated on its parent (<c>0x46FBA0</c>).</summary>
+    /// <remarks>
+    /// The mount sits at its attachment offset in its parent's frame and turns by its traverse about its own up
+    /// axis: parent · attachment · Z(traverse), rows dotted into columns. A gun on a gun (a T80's coaxial M2HB on
+    /// its turret) is re-seated on the turned mount, so it swings round with the turret.
+    /// </remarks>
+    private bool TryGetVehicleGunMount(
+        GameTask vehicle,
+        VehicleArmament armament,
+        int index,
+        out Vector3d position,
+        out Matrix3f orientation)
+    {
+        VehicleGun gun = armament.Guns[index].Gun;
+        Vector3d parentPosition;
+        Matrix3f parentOrientation;
+        if (gun.Parent >= 0 && gun.Parent < index)
+        {
+            if (!TryGetVehicleGunMount(vehicle, armament, gun.Parent, out parentPosition, out parentOrientation))
+            {
+                position = default;
+                orientation = Matrix3f.Identity;
+                return false;
+            }
+        }
+        else if (_taskTransforms.TryGetValue(vehicle, out TransformState? state))
+        {
+            UpdateDerivedPose(state);
+            parentPosition = state.Position;
+            parentOrientation = state.Orientation;
+        }
+        else
+        {
+            position = default;
+            orientation = Matrix3f.Identity;
+            return false;
+        }
+
+        Vector3f local = gun.AttachmentPosition;
+        position = parentPosition + parentOrientation.Transposed().Transform(new Vector3d(local.X, local.Y, local.Z));
+        orientation = parentOrientation * gun.AttachmentOrientation * Matrix3f.RotationZ(armament.Guns[index].Turret.Yaw);
+        return true;
+    }
+
+    /// <summary>Where a vehicle gun's weapon object sits and faces (<c>0x470050</c>).</summary>
+    /// <remarks>
+    /// On the mount's weapon vertex, turned with the mount; faced by the vehicle's own orientation times
+    /// <c>0x4B38E0(elevation, 0, traverse)</c>, then by Y(spin) once the barrels have spun. The traverse and
+    /// elevation are measured in the vehicle's frame, so the mount's own attachment turn plays no part.
+    /// </remarks>
+    private bool TryGetVehicleGunWeapon(
+        GameTask vehicle,
+        VehicleArmament armament,
+        int index,
+        out Vector3d position,
+        out Matrix3f orientation)
+    {
+        if (!TryGetVehicleGunMount(vehicle, armament, index, out Vector3d mountPosition, out Matrix3f mountOrientation)
+            || !_taskTransforms.TryGetValue(vehicle, out TransformState? state))
+        {
+            position = default;
+            orientation = Matrix3f.Identity;
+            return false;
+        }
+
+        VehicleGunState gun = armament.Guns[index];
+        Vector3f vertex = gun.Gun.WeaponVertex;
+        position = mountPosition + mountOrientation.Transposed().Transform(new Vector3d(vertex.X, vertex.Y, vertex.Z));
+        orientation = state.Orientation * Matrix3f.FromEngineEulerAngles(gun.Turret.Pitch, 0f, gun.Turret.Yaw);
+        if (gun.Turret.Spin != 0f)
+        {
+            orientation *= Matrix3f.RotationY(gun.Turret.Spin);
         }
 
         return true;
@@ -4513,6 +4664,9 @@ public sealed class CutsceneRuntime
 
         /// <summary>Gets or sets how many rounds the gun fired this tick.</summary>
         public int RoundsFiredThisTick { get; set; }
+
+        /// <summary>Gets or sets a serial that advances once per round fired, for the gun flame's roll.</summary>
+        public int ShotSequence { get; set; }
     }
 
     private sealed record TimedShot(EditCameraShot Shot, double Start);

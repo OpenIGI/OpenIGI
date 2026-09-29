@@ -3303,6 +3303,7 @@ internal sealed partial class GameHost
         }
 
         int armed = 0;
+        List<string> weaponModels = [];
         foreach (DeclaredTask vehicle in WalkTasks(levelRoot).OfType<DeclaredTask>())
         {
             if (vehicle.Type.Name is ("Car" or "Heli")
@@ -3339,6 +3340,7 @@ internal sealed partial class GameHost
             }
 
             runtime.ConfigureVehicleGuns(vehicle, guns);
+            weaponModels.AddRange(guns.Select(static gun => gun.Mount.WeaponModel));
             armed++;
             _logger.Information(
                 "Ai",
@@ -3350,6 +3352,14 @@ internal sealed partial class GameHost
         {
             return;
         }
+
+        // The guns turn their mounts and carry weapon models of their own, which the mount models do not include.
+        if (_scene is { } armedScene)
+        {
+            runtime.BindVehicleGunPlacements(armedScene);
+        }
+
+        _soldiers?.ArmVehicleGuns(loaded, weaponModels, runtime.VehicleGunVisuals);
 
         // A vehicle gun aims at what its vehicle's vision holds: the human's model origin (Human+32),
         // about a metre over the feet standing and half that crouched -- not the eye.

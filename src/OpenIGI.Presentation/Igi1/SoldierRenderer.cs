@@ -109,6 +109,10 @@ public sealed class SoldierRenderer : IDisposable
     private readonly Dictionary<GuardGeneratorTask, SoldierView> _guardGenerators = [];
     private LevelExpressionRuntime? _guardExpressions;
     private readonly Dictionary<AiStationaryGun, HeldWeapon?> _stationaryWeaponVisuals = [];
+
+    // The weapon models the vehicles' guns carry, by model, and where the runtime poses each gun (0x470050).
+    private readonly Dictionary<string, HeldWeapon?> _vehicleWeaponVisuals = new(StringComparer.OrdinalIgnoreCase);
+    private Func<IEnumerable<VehicleGunVisual>>? _vehicleGuns;
     private readonly Dictionary<int, string> _lastGunnerRuntimeReports = [];
     private readonly HashSet<int> _reportedStationaryVisuals = [];
     private ScriptVarRegistry? _scriptVariables;
@@ -1830,6 +1834,8 @@ public sealed class SoldierRenderer : IDisposable
 
         Dictionary<string, HeldWeapon?> cache = new(StringComparer.OrdinalIgnoreCase);
         _stationaryWeaponVisuals.Clear();
+        _vehicleWeaponVisuals.Clear();
+        _vehicleGuns = null;
         _reportedStationaryVisuals.Clear();
         if (_interactions is { } interactions)
         {
@@ -1934,6 +1940,36 @@ public sealed class SoldierRenderer : IDisposable
             $"{armed} of {Count} soldier(s) hold a weapon model, over {cache.Values.Count(w => w is not null)} " +
             $"distinct model(s).");
         return armed;
+    }
+
+    /// <summary>Loads the weapon models the vehicles' guns carry and takes where the runtime poses them.</summary>
+    /// <param name="mission">The mission whose packs hold the models.</param>
+    /// <param name="weaponModels">Every vehicle gun's weapon model (magic-object argument 1).</param>
+    /// <param name="guns">Each gun's weapon object as this tick posed it.</param>
+    /// <remarks>
+    /// An <c>AIStationaryGun</c> on a vehicle carries its weapon as an object of its own (<c>+452</c>), which the
+    /// mount model does not include: a T80's turret has no barrel until its cannon is drawn on it. The weapon's
+    /// own children come with it, the M2HB's gun flame among them.
+    /// </remarks>
+    public void ArmVehicleGuns(
+        LoadedMission mission,
+        IEnumerable<string> weaponModels,
+        Func<IEnumerable<VehicleGunVisual>> guns)
+    {
+        ArgumentNullException.ThrowIfNull(mission);
+        ArgumentNullException.ThrowIfNull(weaponModels);
+        ArgumentNullException.ThrowIfNull(guns);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _vehicleWeaponVisuals.Clear();
+        foreach (string model in weaponModels)
+        {
+            if (!_vehicleWeaponVisuals.ContainsKey(model))
+            {
+                _vehicleWeaponVisuals[model] = BuildWeapon(mission, model);
+            }
+        }
+
+        _vehicleGuns = _vehicleWeaponVisuals.Count > 0 ? guns : null;
     }
 
     private HeldWeapon? BuildWeapon(LoadedMission mission, string modelName)
@@ -4669,7 +4705,7 @@ public sealed class SoldierRenderer : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (_groups.Count == 0 && _stationaryWeaponVisuals.Count == 0)
+        if (_groups.Count == 0 && _stationaryWeaponVisuals.Count == 0 && _vehicleGuns is null)
         {
             return;
         }
@@ -4682,6 +4718,7 @@ public sealed class SoldierRenderer : IDisposable
         // mounted soldier's hand attachment, but the first-person player has no equivalent world
         // attachment, so the holder stays visible while the player owns the task.
         DrawStationaryGuns(camera, projection);
+        DrawVehicleGuns(camera, projection);
 
         // Motion is a geometry-pass concern: only the G-buffer records it, and the previous pose is
         // built against the scene camera, which the shadow cascades' light cameras are not.
@@ -4792,6 +4829,37 @@ public sealed class SoldierRenderer : IDisposable
                 // soldier's is: as its one rigid mesh. Requiring the presenter here is what left every
                 // stand empty.
                 DrawRigidWeapon(visual, gun.GunPosition / WorldScene.UnitsPerMetre, gun.GunOrientation, camera);
+            }
+        }
+    }
+
+    private void DrawVehicleGuns(in Camera3D camera, in Matrix4f projection)
+    {
+        if (_vehicleGuns is not { } guns)
+        {
+            return;
+        }
+
+        foreach (VehicleGunVisual gun in guns())
+        {
+            if (!_vehicleWeaponVisuals.TryGetValue(gun.WeaponModel, out HeldWeapon? visual) || visual is null)
+            {
+                continue;
+            }
+
+            if (visual.Presentation is { } presentation)
+            {
+                presentation.Draw(
+                    new BoneAttachment(gun.PositionUnits, gun.Orientation),
+                    camera,
+                    projection,
+                    firedThisTick: false,
+                    shotSequence: 0,
+                    WeaponDrawParts.BodyOnly);
+            }
+            else
+            {
+                DrawRigidWeapon(visual, gun.PositionUnits / WorldScene.UnitsPerMetre, gun.Orientation, camera);
             }
         }
     }
@@ -6033,6 +6101,29 @@ public sealed class SoldierRenderer : IDisposable
                 gun.ShotSequence,
                 WeaponDrawParts.FlameOnly);
         }
+
+        // A vehicle's gun flames on the ticks it puts a round out, on the weapon object DrawVehicleGuns drew. Only a
+        // weapon model with a gun-flame child has one: a T80's M2HB does, its cannon does not.
+        if (_vehicleGuns is { } vehicleGuns)
+        {
+            foreach (VehicleGunVisual gun in vehicleGuns())
+            {
+                if (!gun.FiredThisTick
+                    || !_vehicleWeaponVisuals.TryGetValue(gun.WeaponModel, out HeldWeapon? visual)
+                    || visual?.Presentation is not { } vehiclePresentation)
+                {
+                    continue;
+                }
+
+                vehiclePresentation.Draw(
+                    new BoneAttachment(gun.PositionUnits, gun.Orientation),
+                    camera,
+                    projection,
+                    firedThisTick: true,
+                    gun.ShotSequence,
+                    WeaponDrawParts.FlameOnly);
+            }
+        }
     }
 
     /// <summary>Draws the weapon a soldier is holding, at its hand bone's own world transform.</summary>
@@ -7048,6 +7139,8 @@ public sealed class SoldierRenderer : IDisposable
 
         _weapons.Clear();
         _heldWeaponsByModel.Clear();
+        _vehicleWeaponVisuals.Clear();
+        _vehicleGuns = null;
         _groups.Clear();
         _health.Clear();
         _detectorMarkerScaleMetres.Clear();
