@@ -4905,6 +4905,38 @@ public sealed class SoldierRenderer : IDisposable
             origin, end, playerFeetUnits, facing, mesh, view.Pose(), view.RootSample.Z, out hit);
     }
 
+    /// <summary>Every face of the player's own body a round's line crosses, nearest first.</summary>
+    /// <param name="origin">Where the round starts, in world units.</param>
+    /// <param name="end">Where it stops.</param>
+    /// <param name="playerFeetUnits">The player's feet, in world units.</param>
+    /// <param name="playerYaw">Which way the player faces, in radians.</param>
+    /// <param name="crossings">The crossings, entries and exits, in order along the ray.</param>
+    /// <returns><see langword="false"/> when no body is loaded; an empty list when the round misses it.</returns>
+    /// <remarks>
+    /// <see cref="TryHitPlayerBody"/>'s cast, carried on through the body: a round that penetrates it meets its
+    /// exit, and may meet another part behind (<c>0x47B750</c>).
+    /// </remarks>
+    public bool TryCastPlayerBody(
+        Vector3d origin,
+        Vector3d end,
+        Vector3d playerFeetUnits,
+        float playerYaw,
+        out IReadOnlyList<HumanBodyCrossing> crossings)
+    {
+        crossings = [];
+        if (_playerBodyView is not { } view || _playerBodyGroup?.CollisionMesh is not { } mesh)
+        {
+            return false;
+        }
+
+        view.PlaceAt(playerFeetUnits, Matrix3f.FromEngineEulerAngles(0f, 0f, playerYaw));
+        Matrix3f m = view.Orientation;
+        Vector3f facing = new(m.M12, m.M22, m.M32);
+        crossings = HumanHitTest.CastMeshCrossings(
+            origin, end, playerFeetUnits, facing, mesh, view.Pose(), view.RootSample.Z);
+        return true;
+    }
+
     /// <summary>
     /// Loads the player's third-person body — the model the level's <c>HumanPlayer</c> declares, on
     /// skeleton 0's set, standing in clip 2 — so the death camera has a body to reveal.

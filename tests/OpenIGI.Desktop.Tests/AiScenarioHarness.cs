@@ -977,7 +977,7 @@ public sealed class AiScenarioHarness : IDisposable
 
             if (tick % posEvery == 0)
             {
-                log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] POS tick={tick} pos=({player.Body.Position.X:0}, {player.Body.Position.Y:0}, {player.Body.Position.Z + OriginAboveFeet:0}) dmg={health.Damage:0.00} dead={deadField.GetValue(host)}");
+                log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] POS tick={tick} pos=({player.Body.Position.X:0}, {player.Body.Position.Y:0}, {player.Body.Position.Z + OriginAboveFeet:0}) dmg={health.Damage:0.00} dead={deadField.GetValue(host)} shove=({player.Body.HitShove.X:0.00},{player.Body.HitShove.Y:0.00})");
                 if (typeof(CutsceneRuntime).GetField("_carAis", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(runtime) is System.Collections.IEnumerable carAis)
                 {
                     foreach (object state in carAis)

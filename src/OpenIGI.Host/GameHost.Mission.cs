@@ -1429,10 +1429,17 @@ internal sealed partial class GameHost
                     // does it fall back to the cylinder-and-trunk stand-in. Skipped entirely for a corpse.
                     HumanHit hit = default;
                     bool met = false;
+                    IReadOnlyList<HumanBodyCrossing> crossings = [];
                     if (playerInTheRay)
                     {
-                        met = _soldiers is not null
-                            && _soldiers.TryHitPlayerBody(from, to, feet, _player.Body.Yaw, out hit);
+                        if (_soldiers is not null
+                            && _soldiers.TryCastPlayerBody(from, to, feet, _player.Body.Yaw, out crossings)
+                            && crossings.Count > 0)
+                        {
+                            hit = crossings[0].Hit;
+                            met = true;
+                        }
+
                         if (!met)
                         {
                             Vector3f facing = new(-MathF.Sin(_player.Body.Yaw), MathF.Cos(_player.Body.Yaw), 0f);
@@ -1605,59 +1612,137 @@ internal sealed partial class GameHost
                         return;
                     }
 
-                    _playerHealth.Apply(hit.Zone, weapon.DamageFactor);
-                    PlayBulletImpactSound(hit.Position, struckHuman: true, surfaceMaterial: 0);
-                    _guardHits++;
-
-                    // The retail handler transforms the round into camera space before writing the four
-                    // corner alphas. It picks 0.4–0.8 rather than one opaque wash and replaces the prior
-                    // hit, so automatic fire remains a directional cue instead of a full-screen strobe.
-                    Vector3f incoming = new(
-                        (float)(to.X - from.X),
-                        (float)(to.Y - from.Y),
-                        (float)(to.Z - from.Z));
-                    Vector3f viewIncoming = _player.Camera.Orientation.Transposed().Transform(incoming);
-
-                    // 0x412440's order: the grunt, then the shake, then the flash, each on its own draw.
-                    if (!_playerHealth.IsDead)
+                    if (StrikePlayer(hit) || crossings.Count == 0)
                     {
-                        PlayPlayerGrunt();
+                        return;
                     }
 
-                    InstallPlayerHitShake();
-                    _damageFlash.Hit(viewIncoming, _soundRandom.NextSingle());
-
-                    // Every connecting round SHOVES the player 5 km/h along its travel -- the hit
-                    // handler (0x412440) normalises the round's direction and adds x/y x 189.62962
-                    // into the slide accumulator, whose 0.9-a-tick damping then bleeds it off. This is
-                    // what makes sustained fire stagger the player in retail.
-                    if (!_playerHealth.IsDead)
+                    // The round does not stop at the body (0x47B750). The body's entry face is a surface like any
+                    // other: the player's handler takes the hit, and the round goes on only if it beats the face's
+                    // material (power against bullet resistance; the human materials author no ricochet angle).
+                    // A round that goes on leaves through an exit face and stops at the next surface it enters,
+                    // after that surface has taken the hit too -- another part of the body behind, which hits
+                    // the player a second time, or the world beyond. Each cast that meets the body rolls the
+                    // player's evaluate again. Probed on mission 1 (a guard's power-2 rounds) and mission 7 (the
+                    // T80's M2HB): pairs of hits from one round.
+                    if (!Penetrates(crossings[0].Material))
                     {
-                        double shoveX = to.X - from.X;
-                        double shoveY = to.Y - from.Y;
-                        double shoveZ = to.Z - from.Z;
-                        double length = Math.Sqrt((shoveX * shoveX) + (shoveY * shoveY) + (shoveZ * shoveZ));
-                        if (length > 1e-6)
+                        return;
+                    }
+
+                    bool leftBody = false;
+                    double next = hit.Distance + GunShotBallistics.PenetrationStepOffUnits;
+                    for (int index = 1; index < crossings.Count; index++)
+                    {
+                        HumanBodyCrossing crossing = crossings[index];
+                        if (crossing.Hit.Distance < next)
                         {
-                            _player.Body.AddHitShove(
-                                (float)(shoveX / length * PlayerBody.HitShoveUnitsPerTick),
-                                (float)(shoveY / length * PlayerBody.HitShoveUnitsPerTick));
+                            continue;
                         }
+
+                        if ((worldBlocked && worldHit.Distance < crossing.Hit.Distance)
+                            || _shotRandom.NextDouble() > probability
+                            || _shotRandom.NextDouble() > probability)
+                        {
+                            break;
+                        }
+
+                        if (!crossing.Entering)
+                        {
+                            leftBody = true;
+                            next = crossing.Hit.Distance + GunShotBallistics.PenetrationStepOffUnits;
+                            continue;
+                        }
+
+                        if (StrikePlayer(crossing.Hit) || leftBody || !Penetrates(crossing.Material))
+                        {
+                            return;
+                        }
+
+                        next = crossing.Hit.Distance + GunShotBallistics.PenetrationStepOffUnits;
                     }
 
-                    _logger.Information(
-                        "Weapon",
-                        $"A guard's {weapon.ScriptId} hit the player in the {HumanDamage.ZoneName(hit.Zone)} "
-                            + $"({_guardHits} of {_guardRounds} round(s); "
-                            + $"{_playerHealth.RemainingFraction:P0} left).");
-
-                    if (_playerHealth.IsDead)
+                    // Past the body the round meets the world, which takes it.
+                    if (worldBlocked && worldHit.Distance > hit.Distance)
                     {
-                        BeginPlayerDeath(from, hit.Zone, hit.Bone, weapon.Category);
+                        MarkTheImpact();
+                    }
+
+                    return;
+
+                    // Whether the round gets through a face of this material; the equal case draws its sample.
+                    bool Penetrates(int material)
+                    {
+                        if (_worldMaterials is not { } materials || !materials.TryGet(material, out GameMaterial face))
+                        {
+                            return false;
+                        }
+
+                        float margin = weapon.PenetrationPower - face.BulletResistance;
+                        float sample = margin == 0f ? (float)_shotRandom.NextDouble() : 0f;
+                        return GunShotBallistics.Penetrates(weapon.PenetrationPower, face.BulletResistance, sample);
+                    }
+
+                    // One call of the player's hit handler (0x412440): the damage, the grunt, the shake, the flash
+                    // and the shove. Returns whether it killed the player.
+                    bool StrikePlayer(HumanHit struck)
+                    {
+                        _playerHealth.Apply(struck.Zone, weapon.DamageFactor);
+                        PlayBulletImpactSound(struck.Position, struckHuman: true, surfaceMaterial: 0);
+                        _guardHits++;
+
+                        // The retail handler transforms the round into camera space before writing the four
+                        // corner alphas. It picks 0.4–0.8 rather than one opaque wash and replaces the prior
+                        // hit, so automatic fire remains a directional cue instead of a full-screen strobe.
+                        Vector3f incoming = new(
+                            (float)(to.X - from.X),
+                            (float)(to.Y - from.Y),
+                            (float)(to.Z - from.Z));
+                        Vector3f viewIncoming = _player.Camera.Orientation.Transposed().Transform(incoming);
+
+                        // 0x412440's order: the grunt, then the shake, then the flash, each on its own draw.
+                        if (!_playerHealth.IsDead)
+                        {
+                            PlayPlayerGrunt();
+                        }
+
+                        InstallPlayerHitShake();
+                        _damageFlash.Hit(viewIncoming, _soundRandom.NextSingle());
+
+                        // Every connecting round SHOVES the player 5 km/h along its travel -- the hit
+                        // handler (0x412440) normalises the round's direction and adds x/y x 189.62962
+                        // into the slide accumulator, whose 0.9-a-tick damping then bleeds it off. This is
+                        // what makes sustained fire stagger the player in retail.
+                        if (!_playerHealth.IsDead)
+                        {
+                            double shoveX = to.X - from.X;
+                            double shoveY = to.Y - from.Y;
+                            double shoveZ = to.Z - from.Z;
+                            double length = Math.Sqrt((shoveX * shoveX) + (shoveY * shoveY) + (shoveZ * shoveZ));
+                            if (length > 1e-6)
+                            {
+                                _player.Body.AddHitShove(
+                                    (float)(shoveX / length * PlayerBody.HitShoveUnitsPerTick),
+                                    (float)(shoveY / length * PlayerBody.HitShoveUnitsPerTick));
+                            }
+                        }
+
                         _logger.Information(
                             "Weapon",
-                            $"The player is DEAD after {_guardHits} hit(s) from {_guardRounds} round(s), "
-                                + $"struck in zone {hit.Zone}; the death camera has pulled back.");
+                            $"A guard's {weapon.ScriptId} hit the player in the {HumanDamage.ZoneName(struck.Zone)} "
+                                + $"({_guardHits} of {_guardRounds} round(s); "
+                                + $"{_playerHealth.RemainingFraction:P0} left).");
+
+                        if (_playerHealth.IsDead)
+                        {
+                            BeginPlayerDeath(from, struck.Zone, struck.Bone, weapon.Category);
+                            _logger.Information(
+                                "Weapon",
+                                $"The player is DEAD after {_guardHits} hit(s) from {_guardRounds} round(s), "
+                                    + $"struck in zone {struck.Zone}; the death camera has pulled back.");
+                        }
+
+                        return _playerHealth.IsDead;
                     }
                 });
             }

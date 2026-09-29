@@ -25,6 +25,16 @@ public readonly record struct HumanHit(
     float LocalSide,
     int Bone = -1);
 
+/// <summary>One face of a human's collision mesh that a round's line crosses.</summary>
+/// <param name="Entering">
+/// Whether the round passes into the body here (a front face) rather than out of it. The original's cast
+/// reports the two in different slots of its record (<c>+76</c> entry, <c>+80</c> exit), and
+/// <c>0x47B750</c> treats them differently: only an entry is a hit.
+/// </param>
+/// <param name="Material">The face's global game-material row, whose bullet resistance the round must beat.</param>
+/// <param name="Hit">The contact, scored as <see cref="HumanHitTest.TryCastMesh"/> scores one.</param>
+public readonly record struct HumanBodyCrossing(bool Entering, int Material, HumanHit Hit);
+
 /// <summary>
 /// Casts a round at a human and works out which zone it struck.
 /// </summary>
@@ -273,6 +283,125 @@ public static class HumanHitTest
 
         hit = new HumanHit(contact, nearest * length, zone, localForward, localSide, hitBone);
         return true;
+    }
+
+    /// <summary>Every face of a human's skinned collision mesh a round's line crosses, nearest first.</summary>
+    /// <param name="origin">Where the round starts, in world units.</param>
+    /// <param name="end">Where it stops.</param>
+    /// <param name="feet">The human's feet, in world units.</param>
+    /// <param name="facing">The human's forward direction in world space.</param>
+    /// <param name="mesh">The human model's collision mesh.</param>
+    /// <param name="pose">The posed rig, already turned to the human's facing.</param>
+    /// <param name="rootHeight">The pose root's height above the feet.</param>
+    /// <returns>The crossings in order along the ray; empty when the line misses the body.</returns>
+    /// <remarks>
+    /// A round that penetrates the body carries on through it (<c>0x47B750</c>), so the first contact alone
+    /// cannot say what it meets next. The line starts outside the body, so its first crossing is an entry,
+    /// and the entries are the crossings that face the same way; this holds whichever way the mesh is wound.
+    /// </remarks>
+    public static IReadOnlyList<HumanBodyCrossing> CastMeshCrossings(
+        Vector3d origin,
+        Vector3d end,
+        Vector3d feet,
+        Vector3f facing,
+        MefCollisionMesh mesh,
+        BonePose pose,
+        double rootHeight)
+    {
+        ArgumentNullException.ThrowIfNull(mesh);
+        ArgumentNullException.ThrowIfNull(pose);
+        int count = mesh.Vertices.Count;
+        if (count == 0 || mesh.Faces.Length == 0)
+        {
+            return [];
+        }
+
+        Vector3d boneOrigin = new(feet.X, feet.Y, feet.Z + rootHeight);
+        Vector3d[] world = new Vector3d[count];
+        for (int i = 0; i < count; i++)
+        {
+            int bone = mesh.VertexBones[i];
+            if ((uint)bone >= (uint)pose.BoneCount)
+            {
+                bone = 0;
+            }
+
+            Vector3f local = mesh.Vertices[i];
+            Matrix3f r = pose.Rotations[bone];
+            Vector3f t = pose.Positions[bone];
+            world[i] = new Vector3d(
+                boneOrigin.X + (r.M11 * local.X) + (r.M12 * local.Y) + (r.M13 * local.Z) + t.X,
+                boneOrigin.Y + (r.M21 * local.X) + (r.M22 * local.Y) + (r.M23 * local.Z) + t.Y,
+                boneOrigin.Z + (r.M31 * local.X) + (r.M32 * local.Y) + (r.M33 * local.Z) + t.Z);
+        }
+
+        Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
+        double length = Math.Sqrt((direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
+        List<(double T, double Facing, int Bone, int Material)> found = [];
+        foreach (MefCollisionFace face in mesh.Faces)
+        {
+            Vector3d a = world[face.I0], b = world[face.I1], c = world[face.I2];
+            if (!RayTriangle.Intersect(origin, direction, a, b, c, out double t))
+            {
+                continue;
+            }
+
+            Vector3d normal = RayTriangle.Normal(a, b, c);
+            double facingSign = (normal.X * direction.X) + (normal.Y * direction.Y) + (normal.Z * direction.Z);
+            int b0 = mesh.VertexBones[face.I0];
+            int b1 = mesh.VertexBones[face.I1];
+            int bone = b1 != b0 && b1 == mesh.VertexBones[face.I2] ? b1 : b0;
+            found.Add((t, facingSign, bone, mesh.GlobalMaterial(face.Material)));
+        }
+
+        if (found.Count == 0)
+        {
+            return [];
+        }
+
+        found.Sort(static (x, y) => x.T.CompareTo(y.T));
+        bool entrySign = found[0].Facing > 0.0;
+        HumanBodyCrossing[] crossings = new HumanBodyCrossing[found.Count];
+        for (int i = 0; i < found.Count; i++)
+        {
+            (double t, double facingSign, int bone, int material) = found[i];
+            Vector3d contact = new(origin.X + (direction.X * t), origin.Y + (direction.Y * t), origin.Z + (direction.Z * t));
+            crossings[i] = new HumanBodyCrossing(
+                (facingSign > 0.0) == entrySign,
+                material,
+                Score(contact, t * length, bone, direction, facing, pose, boneOrigin));
+        }
+
+        return crossings;
+    }
+
+    // The zone of a mesh contact: the bone's zone, the trunk refined by direction, and a front hit within 15 cm
+    // of bone 4 promoted to the head (0x489C60, measured at the contact).
+    private static HumanHit Score(
+        Vector3d contact,
+        double distance,
+        int bone,
+        Vector3d direction,
+        Vector3f facing,
+        BonePose pose,
+        Vector3d boneOrigin)
+    {
+        Vector3f incoming = Normalise(new Vector3f((float)-direction.X, (float)-direction.Y, (float)-direction.Z));
+        Vector3f forward = Normalise(facing);
+        float localForward = (incoming.X * forward.X) + (incoming.Y * forward.Y);
+        float localSide = (incoming.X * -forward.Y) + (incoming.Y * forward.X);
+        int zone = HumanDamage.RefineByDirection(HumanDamage.ZoneOfBone(bone), localForward, localSide);
+        if (HumanDamage.ProximityBoneIndex < pose.BoneCount)
+        {
+            Vector3f head = pose.Positions[HumanDamage.ProximityBoneIndex];
+            Vector3d headWorld = new(boneOrigin.X + head.X, boneOrigin.Y + head.Y, boneOrigin.Z + head.Z);
+            if (HumanDamage.TakesProximityZone((float)Distance(contact, headWorld), localForward))
+            {
+                zone = HumanDamage.ProximityZone;
+            }
+        }
+
+        return new HumanHit(contact, distance, zone, localForward, localSide, bone);
     }
 
     /// <summary>Traces a round through the linearly blended collision mesh the renderer is presenting.</summary>
