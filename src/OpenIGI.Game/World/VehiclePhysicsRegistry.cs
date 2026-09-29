@@ -308,6 +308,10 @@ public sealed class VehiclePhysicsRegistry
             {
                 ExplosionPoints = explosionPoints,
                 SkidSteer = Integer(arguments, wheelCountIndex + 1 + (parsedWheels * 6) + 2, 0) != 0,
+                EngineSoundSet = wheelCountIndex + 1 + (parsedWheels * 6) + 3 < arguments.Length
+                    && arguments[wheelCountIndex + 1 + (parsedWheels * 6) + 3].Kind == QvmValueKind.String
+                        ? arguments[wheelCountIndex + 1 + (parsedWheels * 6) + 3].Text
+                        : string.Empty,
             });
         }
         else if (taskType == _planeType && call.ArgumentCount >= 9)
@@ -412,6 +416,14 @@ public readonly record struct CarPhysicsDefinition(
     /// <c>1 - 2s</c>, under negative steering the left-hand ones at <c>1 + 2s</c>.
     /// </remarks>
     public bool SkidSteer { get; init; }
+
+    /// <summary>Gets the name of the car's engine sound set -- record <c>+610</c>.</summary>
+    /// <remarks>
+    /// <c>0x42E320</c> instantiates it as a child of the car (<c>0x4E6B00</c>) while the car's "Play sound" holds. The
+    /// APC names <c>apc_sounds</c>, the trucks and limousine <c>truck_sounds</c>; the T80's <c>t80_sounds</c> and the
+    /// buggy's <c>buggy_engine_1</c> are defined by no retail sound script, so those cars are silent.
+    /// </remarks>
+    public string EngineSoundSet { get; init; } = string.Empty;
 
     /// <summary>Number of values in the original <c>DefinePhysicsObjType</c> call.</summary>
     public int ArgumentCount => Arguments.Count;

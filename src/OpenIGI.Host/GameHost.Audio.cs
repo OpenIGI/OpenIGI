@@ -1107,7 +1107,9 @@ internal sealed partial class GameHost
             return;
         }
 
-        _sounds?.PlayDefinition("explo_02_m", blast.Position, priority: 90);
+        // The missile's own impact (0x428390, at 0x42854D) sets off an Explosion0 with explo_03_l -- the launcher's
+        // rocket and a vehicle's alike, since both are the same Missile task.
+        _sounds?.PlayDefinition("explo_03_l", blast.Position, priority: 90);
         SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
         ScorchSurface(blast.Position, blast.Normal, MissileScorchHalfWidthInUnits);
         _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);

@@ -606,6 +606,9 @@ internal sealed partial class GameHost : IDisposable
     private bool _playerTicked;
     private bool _interactionsTickedByPlayer;
     private Func<SoldierEnemy>? _soldierEnemy;
+
+    // The vehicles' engine sets, gun reports and turret traverse (VehicleSoundPlayer).
+    private VehicleSoundPlayer? _vehicleSounds;
     private TerrainData? _playerTerrain;
 
     // What the player's feet stand on, which is not always the terrain the rest of the level traces
@@ -2953,6 +2956,15 @@ internal sealed partial class GameHost : IDisposable
                 }
 
                 _cutscenes?.Tick();
+                if (_cutscenes is { } soundingVehicles && _sounds is { } vehicleSoundSystem)
+                {
+                    _vehicleSounds ??= new VehicleSoundPlayer(vehicleSoundSystem, new Random(0x49474931));
+                    _vehicleSounds.Tick(
+                        soundingVehicles.VehicleSoundSources(),
+                        soundingVehicles.VehicleGunSounds(),
+                        _audio.Listener.Position * OpenIGI.Engine.Audio.SoundSystem.UnitsPerMetre);
+                }
+
                 if (_cutscenes is { } liveCutscenes && _scene is { } cinematicScene && _worldSolids is { } cinematicSolids)
                 {
                     foreach (WorldPlacement placement in cinematicScene.Placements)

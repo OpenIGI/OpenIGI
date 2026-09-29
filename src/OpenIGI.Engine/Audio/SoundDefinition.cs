@@ -23,8 +23,8 @@ namespace OpenIGI.Engine.Audio;
 /// </para>
 /// <para>
 /// <c>DefineGraph</c> and <c>DefineTriggerOnce</c> share arguments 0 to 7 with <c>DefineSound</c>
-/// exactly — same order, same types — and diverge only afterwards, so those fields are read for all
-/// three kinds. What each adds is recorded on <see cref="SoundDefinitionKind"/> and not yet modelled.
+/// exactly — same order, same types — and diverge only afterwards: a graph's two curves and its parameter
+/// indices, a trigger's duration, trigger index and invert flag.
 /// </para>
 /// </remarks>
 public sealed record SoundDefinition
@@ -64,11 +64,14 @@ public sealed record SoundDefinition
     /// <summary>Gets the distance beyond which the sound is silent, <b>in metres</b>. Argument 7.</summary>
     public float MaximumDistanceMetres { get; init; } = 1f;
 
-    /// <summary>Gets the index of the emitter parameter overriding <see cref="Volume"/>, or <c>-1</c>.</summary>
+    /// <summary>Gets the number of samples in a graph's curves: x = 0, 0.1, ..., 1.</summary>
+    public const int CurveSamples = 11;
+
+    /// <summary>Gets the index of the emitter parameter driving the gain, or <c>-1</c>.</summary>
     /// <remarks>
-    /// Arguments 8 to 10 index the parameter array the parent hands back from message <c>0x4E6610</c>,
-    /// overriding volume, pitch and the bank key itself. All three are <c>-1</c> in every retail
-    /// definition, so nothing reads them yet.
+    /// The parameter indices address the array the parent hands back from message <c>0x4E6610</c> -- for a car,
+    /// <c>0x42F850</c>'s throttle, engine-running flag and speed. Argument 8 of <c>DefineSound</c> and
+    /// <c>DefineGraph</c>, 10 of <c>DefineTriggerOnce</c>.
     /// </remarks>
     public int VolumeParameterIndex { get; init; } = -1;
 
@@ -85,6 +88,55 @@ public sealed record SoundDefinition
     /// alone — the other natives have no such argument in that slot.
     /// </remarks>
     public bool Loop { get; init; }
+
+    /// <summary>Gets the index of the parameter added to a graph's pitch (<c>DefineGraph</c> argument 11), or <c>-1</c>.</summary>
+    public int PitchAddParameterIndex { get; init; } = -1;
+
+    /// <summary>Gets the index of the parameter that fires a trigger (<c>DefineTriggerOnce</c> argument 9), or <c>-1</c>.</summary>
+    public int TriggerParameterIndex { get; init; } = -1;
+
+    /// <summary>Gets how long a trigger plays, in seconds, or a negative value for the sample's own length (argument 8).</summary>
+    public float DurationSeconds { get; init; } = -1f;
+
+    /// <summary>Gets whether a trigger fires on its parameter being zero rather than non-zero (argument 14).</summary>
+    public bool Invert { get; init; }
+
+    /// <summary>Gets a graph's gain curve (arguments 12 to 22), sampled at x = 0, 0.1, ..., 1.</summary>
+    public IReadOnlyList<float> GainCurve { get; init; } = [];
+
+    /// <summary>Gets a graph's pitch curve (arguments 23 to 33), sampled at x = 0, 0.1, ..., 1.</summary>
+    public IReadOnlyList<float> PitchCurve { get; init; } = [];
+
+    /// <summary>
+    /// Samples one of a graph's curves (<c>0x4E7030</c>): linear between the eleven samples, the first at or below
+    /// 0 and the last at or above 1.
+    /// </summary>
+    /// <param name="curve">The curve.</param>
+    /// <param name="x">Where to read it.</param>
+    /// <returns>The value.</returns>
+    public static float Sample(IReadOnlyList<float> curve, float x)
+    {
+        ArgumentNullException.ThrowIfNull(curve);
+        if (curve.Count == 0)
+        {
+            return 1f;
+        }
+
+        if (!(x > 0f))
+        {
+            return curve[0];
+        }
+
+        if (x >= 1f)
+        {
+            return curve[^1];
+        }
+
+        float at = x * (curve.Count - 1);
+        int below = (int)at;
+        float blend = at - below;
+        return curve[below] + ((curve[below + 1] - curve[below]) * blend);
+    }
 
     /// <summary>Gets the nested definitions, for a <see cref="SoundDefinitionKind.Group"/>.</summary>
     public IReadOnlyList<SoundDefinition> Children { get; init; } = [];

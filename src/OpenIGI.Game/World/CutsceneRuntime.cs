@@ -167,6 +167,70 @@ public sealed class CutsceneRuntime
             [.. guns.Select(static gun => new VehicleGunState(gun))]);
     }
 
+    /// <summary>Every live vehicle's sound inputs, as its update left them this tick.</summary>
+    /// <returns>One entry per active, undestroyed Car or Heli.</returns>
+    public IEnumerable<VehicleSoundSource> VehicleSoundSources()
+    {
+        foreach ((GameTask task, TransformState state) in _taskTransforms)
+        {
+            if (task is not DeclaredTask vehicle
+                || vehicle.Type.Name is not ("Car" or "Heli")
+                || !ConditionalContainerGate.IsTaskActive(vehicle)
+                || _destructibles?.IsDestroyed(vehicle) == true)
+            {
+                continue;
+            }
+
+            bool helicopter = vehicle.Type.Name == "Heli";
+            string set = helicopter
+                ? "helicopter_1"
+                : _vehiclePhysics?.TryGetCar(Text(vehicle, WorldScene.ModelParameter), out CarPhysicsDefinition car) == true
+                    ? car.EngineSoundSet
+                    : string.Empty;
+            string gate = Text(vehicle, "Play sound");
+            bool on = string.IsNullOrWhiteSpace(gate) || _expressions.EvaluateCondition(gate, emptyValue: true, vehicle);
+            float throttle = helicopter ? state.RetailHeli?.Collective ?? 0f : state.RetailBody?.Throttle ?? 0f;
+            float speed = helicopter ? 0f : Math.Min((state.RetailBody?.Speed ?? 0f) * 0.001f, 1f);
+            yield return new VehicleSoundSource(
+                vehicle,
+                set,
+                state.Position,
+                throttle,
+                throttle > 0.01f ? 1f : 0f,
+                speed,
+                on);
+        }
+    }
+
+    /// <summary>Every armed live vehicle's guns, as this tick's updates left them.</summary>
+    /// <returns>One entry per gun of an active, undestroyed vehicle.</returns>
+    public IEnumerable<VehicleGunSound> VehicleGunSounds()
+    {
+        foreach ((GameTask vehicle, VehicleArmament armament) in _armaments)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(vehicle)
+                || _destructibles?.IsDestroyed(vehicle) == true
+                || !_taskTransforms.TryGetValue(vehicle, out TransformState? transform))
+            {
+                continue;
+            }
+
+            for (int index = 0; index < armament.Guns.Count; index++)
+            {
+                VehicleGunState gun = armament.Guns[index];
+                yield return new VehicleGunSound(
+                    vehicle,
+                    index,
+                    transform.Position + transform.Orientation.Transposed().Transform(gun.Gun.Offset),
+                    gun.Hold,
+                    gun.RoundsFiredThisTick,
+                    gun.Turret.Turning,
+                    gun.Gun.Weapon,
+                    gun.Gun.Mount.TurnSound);
+            }
+        }
+    }
+
     /// <summary>Gives one authored vehicle the death zones its model carries.</summary>
     /// <param name="vehicle">The Car or Heli task.</param>
     /// <param name="zones">The zones' volumes in the vehicle's frame.</param>
@@ -1068,10 +1132,12 @@ public sealed class CutsceneRuntime
             {
                 Vector3d origin = transform.Position + transform.Orientation.Transposed().Transform(gun.Gun.Offset);
                 Vector3d? local = aim is { } point ? transform.Orientation.Transform(point - origin) : null;
+                gun.RoundsFiredThisTick = 0;
                 for (int run = 0; run < runs; run++)
                 {
                     if (FireVehicleGun(vehicle, transform, gun, local, aim) is { } shot)
                     {
+                        gun.RoundsFiredThisTick++;
                         VehicleCombatShotFired?.Invoke(shot);
                     }
 
@@ -1112,6 +1178,11 @@ public sealed class CutsceneRuntime
         Vector3d? aim)
     {
         bool trigger = gun.Turret.Tick(local);
+        int burst = gun.Gun.Weapon.MaximumRoundsPerBurst;
+
+        // The hold of Gun_Fire decides its sounds: the trigger, the pull's burst unspent and the magazine not empty.
+        // The cooldown between rounds is not part of it (0x478BA0).
+        gun.Hold = trigger && !(burst > 0 && gun.RoundsThisPull >= burst) && gun.Ammunition != 0;
         if (!trigger)
         {
             // Gun_Fire resets the pull's round count (+320) when the trigger drops.
@@ -1120,7 +1191,6 @@ public sealed class CutsceneRuntime
         }
 
         // A row that fires a fixed burst per pull (+1612) stops at it until the trigger is released.
-        int burst = gun.Gun.Weapon.MaximumRoundsPerBurst;
         if ((burst > 0 && gun.RoundsThisPull >= burst)
             || gun.Cooldown > 0
             || gun.Ammunition == 0
@@ -4382,6 +4452,12 @@ public sealed class CutsceneRuntime
         public int Cooldown { get; set; }
         public int Ammunition { get; set; } = gun.Mount.Ammunition;
         public int RoundsThisPull { get; set; }
+
+        /// <summary>Gets or sets the hold of Gun_Fire, as its last run this tick left it.</summary>
+        public bool Hold { get; set; }
+
+        /// <summary>Gets or sets how many rounds the gun fired this tick.</summary>
+        public int RoundsFiredThisTick { get; set; }
     }
 
     private sealed record TimedShot(EditCameraShot Shot, double Start);

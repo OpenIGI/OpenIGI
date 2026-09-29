@@ -38,6 +38,44 @@ public sealed class RetailSoundDefinitionTests
     }
 
     [RequiresGameDataFact]
+    public void AVehicleEngineSetReadsItsGraphsAndTriggers()
+    {
+        SoundDefinitionRegistry registry = Load();
+
+        Assert.True(registry.TryResolve("apc_sounds", out SoundDefinition? set));
+        Assert.NotNull(set);
+        Assert.Equal(SoundDefinitionKind.Group, set.Kind);
+        Assert.Equal(
+            [SoundDefinitionKind.TriggerOnce, SoundDefinitionKind.TriggerOnce, SoundDefinitionKind.Graph, SoundDefinitionKind.Graph],
+            set.Children.Select(static child => child.Kind));
+
+        // DefineTriggerOnce("APC_END", "APC_STOP", 0, 0, 0, 1, 0, 100, -1, 1, -1, -1, -1, FALSE, TRUE): the stop fires
+        // while parameter 1 (the engine driving) is zero.
+        SoundDefinition stop = set.Children[1];
+        Assert.Equal("APC_STOP", stop.BankKey);
+        Assert.Equal(100f, stop.MaximumDistanceMetres);
+        Assert.Equal(1, stop.TriggerParameterIndex);
+        Assert.True(stop.Invert);
+        Assert.False(stop.Loop);
+        Assert.True(stop.DurationSeconds < 0f);
+
+        // DefineGraph("apc_engine", "APC_ENGINE", 0, 0, 0, 1, 0, 200, 0, 0, -1, -1, curve A, curve B).
+        SoundDefinition engine = set.Children[2];
+        Assert.Equal("APC_ENGINE", engine.BankKey);
+        Assert.Equal(0, engine.VolumeParameterIndex);
+        Assert.Equal(0, engine.PitchParameterIndex);
+        Assert.Equal(-1, engine.PitchAddParameterIndex);
+        Assert.True(engine.Loop);
+        Assert.Equal([0f, 0f, 0.5375f, 0.6375f, 0.725f, 0.7625f, 0.825f, 0.85f, 0.9f, 0.925f, 0.95f], engine.GainCurve);
+        Assert.Equal(1f, engine.PitchCurve[0]);
+        Assert.Equal(1.25f, engine.PitchCurve[^1]);
+        Assert.Equal(0.26875f, SoundDefinition.Sample(engine.GainCurve, 0.15f), 5);
+
+        // The T80 names a set no script defines: its hull is silent in the original.
+        Assert.False(registry.TryResolve("t80_sounds", out _));
+    }
+
+    [RequiresGameDataFact]
     public void TheDefinitionNameAndTheBankKeyAreDifferentNames()
     {
         // This is the fact the whole layer exists for, and the one that dissolves the "guards die

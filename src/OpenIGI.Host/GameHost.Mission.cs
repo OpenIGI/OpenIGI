@@ -2756,8 +2756,11 @@ internal sealed partial class GameHost
         _genericPickups = null;
         _loadedMissionForWeapon = null;
 
-        // Rockets a vehicle fired in the run being left must not keep flying into the next one.
+        // Rockets a vehicle fired in the run being left must not keep flying into the next one, nor its engines
+        // and guns keep sounding.
         _vehicleMissiles.Clear();
+        _vehicleSounds?.StopAll();
+        _vehicleSounds = null;
 
         if (_activeLevelRoot is not null && !_activeLevelRoot.IsDeleted)
         {
@@ -3379,7 +3382,9 @@ internal sealed partial class GameHost
                 return;
             }
 
-            if (_vehicleMissiles.Spawn(
+            // The report is the gun's, on the hold edges Gun_Fire plays it on (VehicleSoundPlayer); the missile
+            // task makes no launch sound of its own.
+            _vehicleMissiles.Spawn(
                 shot.Origin,
                 shot.Target,
                 shot.MissileType,
@@ -3387,10 +3392,7 @@ internal sealed partial class GameHost
                 shot.Direction,
                 shot.ModelName,
                 collisionOwner: shot.Owner,
-                sourceWeaponId: roster.TryGetByScriptId(shot.WeaponScriptId, out WeaponType launcher) ? launcher.WeaponId : 0))
-            {
-                _sounds?.PlayDefinition("rpg_launch_1", shot.Origin, priority: 250);
-            }
+                sourceWeaponId: roster.TryGetByScriptId(shot.WeaponScriptId, out WeaponType launcher) ? launcher.WeaponId : 0);
         };
         _logger.Information("Ai", $"{armed} armed vehicle(s).");
 
