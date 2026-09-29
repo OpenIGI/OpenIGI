@@ -213,6 +213,17 @@ public sealed class MagicObjectRegistry
                 && call.ArgumentCount > 4
                     ? new MagicHeliWheel(call.GetSingle(4) * 4096.0f, call.GetSingle(3) * 4096.0f)
                     : null,
+
+            // 0x435BD0: a float, a byte, then three floats, from argument 3.
+            Gear = string.Equals(typeName, "TASKTYPE_GEAR", StringComparison.Ordinal)
+                && call.ArgumentCount > 7
+                    ? new MagicGear(
+                        call.GetSingle(3),
+                        call.GetInt32(4) != 0,
+                        call.GetSingle(5),
+                        call.GetSingle(6),
+                        call.GetSingle(7))
+                    : null,
         };
 
         // The original appends unconditionally and its lookup takes the first match, so a repeated name

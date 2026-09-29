@@ -51,6 +51,9 @@ public readonly record struct MagicObjectDefinition(
     /// <summary>Gets a helicopter skid's lengths, for a <c>TASKTYPE_HELIWHEEL</c> object.</summary>
     public MagicHeliWheel? HeliWheel { get; init; }
 
+    /// <summary>Gets a landing gear leg's record, for a <c>TASKTYPE_GEAR</c> object.</summary>
+    public MagicGear? Gear { get; init; }
+
     /// <inheritdoc/>
     public override string ToString() => $"{Name} -> {Model} (type {TaskType})";
 }
@@ -59,3 +62,11 @@ public readonly record struct MagicObjectDefinition(
 /// <param name="Travel">Record <c>+0</c>: how far below the skid the ground can still carry it (L0).</param>
 /// <param name="BottomOut">Record <c>+4</c>: the depth under which the skid has bottomed out (L1).</param>
 public readonly record struct MagicHeliWheel(float Travel, float BottomOut);
+
+/// <summary>A landing gear leg's 20-byte record (<c>0x435BD0</c>), read from argument 3 on.</summary>
+/// <param name="FoldDegrees">Record <c>+0</c>: the angle the leg folds through when the gear comes up.</param>
+/// <param name="Steers">Record <c>+4</c>: the leg turns with the yaw control while the gear is down (<c>0x4355A0</c>).</param>
+/// <param name="Value8">Record <c>+8</c>, which the plane's physics does not read.</param>
+/// <param name="Value12">Record <c>+12</c>, which the plane's physics does not read.</param>
+/// <param name="Value16">Record <c>+16</c>, which the plane's physics does not read.</param>
+public readonly record struct MagicGear(float FoldDegrees, bool Steers, float Value8, float Value12, float Value16);

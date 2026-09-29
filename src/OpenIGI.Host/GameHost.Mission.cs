@@ -835,7 +835,10 @@ internal sealed partial class GameHost
             _cutscenes.ConfigureRetailCars(
                 new RetailCarWorld(
                     carRays,
-                    RetailWorldObjects.Build(levelRoot, carModels),
+                    RetailWorldObjects.Build(
+                        levelRoot,
+                        carModels,
+                        name => _magic?.TryGet(name, out MagicObjectDefinition attached) == true ? attached : null),
                     cutscenes.RetailVehicleModels,
                     static owner => owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task)),
                 carModels,

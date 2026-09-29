@@ -40,8 +40,15 @@ public sealed class RetailWorldObjects
     /// <summary>Builds the set for a level.</summary>
     /// <param name="levelRoot">The level's task tree.</param>
     /// <param name="models">Resolves a model by name (LOD files are <c>name[..^1] + lod</c>).</param>
+    /// <param name="magic">
+    /// Resolves an attachment's magic-object definition, so the objects a placed model attaches -- a hangar's floor, its
+    /// interior -- are placed too; <see langword="null"/> places the level's own tasks only.
+    /// </param>
     /// <returns>The objects.</returns>
-    public static RetailWorldObjects Build(GameTask levelRoot, Func<string, MefModel?> models)
+    public static RetailWorldObjects Build(
+        GameTask levelRoot,
+        Func<string, MefModel?> models,
+        Func<string, MagicObjectDefinition?>? magic = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(models);
@@ -90,9 +97,132 @@ public sealed class RetailWorldObjects
             placed.Position[2] = position.Z;
             RetailSplineSegment.AnglesToMatrix(angles.X, angles.Y, angles.Z).CopyTo(placed.M, 0);
             set.Add(placed, position, ((X87)found.Radius * 1.0f).Value);
+            if (magic is not null && models(name) is { } root)
+            {
+                set.AddAttachments(declared, root, placed.Position, placed.M, models, magic, meshes, depth: 0);
+            }
         }
 
         return set;
+    }
+
+    /// <summary>
+    /// Places the objects a model attaches, and theirs, as <c>0x4DFA50</c> spawns them: each at the parent's orientation
+    /// times its offset plus the parent's position, turned by the parent's orientation times the attachment's rebuilt
+    /// frame, re-orthonormalised. The spawning task owns them all, so its container decides whether rays find them.
+    /// </summary>
+    private void AddAttachments(
+        DeclaredTask owner,
+        MefModel model,
+        double[] position,
+        float[] m,
+        Func<string, MefModel?> models,
+        Func<string, MagicObjectDefinition?> magic,
+        Dictionary<string, (RetailRayMesh Mesh, float Radius)?> meshes,
+        int depth)
+    {
+        // The original has no guard against an attachment naming its own model; its data has no such cycle.
+        if (depth > 16)
+        {
+            return;
+        }
+
+        foreach (MefAttachment attachment in model.Attachments)
+        {
+            if (magic(attachment.Name) is not { } definition
+                || definition.Model.Length == 0
+                || models(definition.Model) is not { } child)
+            {
+                continue;
+            }
+
+            double ax = attachment.Position.X, ay = attachment.Position.Y, az = attachment.Position.Z;
+            double wx = X87.Add(((X87)m[1] * ay + (X87)m[2] * az + (X87)m[0] * ax).Value, position[0]);
+            double wy = X87.Add(((X87)m[4] * ay + (X87)m[5] * az + (X87)m[3] * ax).Value, position[1]);
+            double wz = X87.Add(((X87)m[7] * ay + (X87)m[8] * az + (X87)m[6] * ax).Value, position[2]);
+            float[] n = RetailPlaneSpawn.AttachmentBasis(attachment.Orientation);
+            float[] turned =
+            [
+                ((X87)n[3] * m[1] + (X87)n[6] * m[2] + (X87)n[0] * m[0]).F,
+                ((X87)n[4] * m[1] + (X87)n[7] * m[2] + (X87)n[1] * m[0]).F,
+                ((X87)n[5] * m[1] + (X87)n[8] * m[2] + (X87)n[2] * m[0]).F,
+                ((X87)n[3] * m[4] + (X87)n[6] * m[5] + (X87)n[0] * m[3]).F,
+                ((X87)n[4] * m[4] + (X87)n[7] * m[5] + (X87)n[1] * m[3]).F,
+                ((X87)n[5] * m[4] + (X87)n[8] * m[5] + (X87)n[2] * m[3]).F,
+                ((X87)n[3] * m[7] + (X87)n[6] * m[8] + (X87)n[0] * m[6]).F,
+                ((X87)n[4] * m[7] + (X87)n[7] * m[8] + (X87)n[1] * m[6]).F,
+                ((X87)n[5] * m[7] + (X87)n[8] * m[8] + (X87)n[2] * m[6]).F,
+            ];
+            float[] frame = Orthonormalise(turned);
+
+            if (!meshes.TryGetValue(definition.Model, out (RetailRayMesh Mesh, float Radius)? mesh))
+            {
+                mesh = MefCollisionMesh.TryRead(child.Container, meshIndex: 0, out MefCollisionMesh? level0)
+                    && level0 is { Faces.Length: > 0 }
+                        ? (new RetailRayMesh(level0), child.NativeMarkerBound)
+                        : null;
+                meshes[definition.Model] = mesh;
+            }
+
+            double[] placedPosition = [wx, wy, wz];
+            if (mesh is { } found)
+            {
+                RetailRayModel placed = new(owner, found.Mesh, found.Radius);
+                placed.Position[0] = wx;
+                placed.Position[1] = wy;
+                placed.Position[2] = wz;
+                frame.CopyTo(placed.M, 0);
+                Add(placed, new Vector3d(wx, wy, wz), ((X87)found.Radius * 1.0f).Value);
+            }
+
+            AddAttachments(owner, child, placedPosition, frame, models, magic, meshes, depth + 1);
+        }
+    }
+
+    /// <summary><c>0x4DFA50</c>'s last pass: row 0 normalised, row 1 = row 2 × row 0, row 2 = row 0 × row 1, each normalised.</summary>
+    private static float[] Orthonormalise(float[] v)
+    {
+        float[] n = new float[9];
+        n[0] = v[0];
+        n[1] = v[1];
+        n[2] = v[2];
+        if (!(v[0] == 0f && v[1] == 0f && v[2] == 0f))
+        {
+            X87 inverse = (X87)1.0 / X87.Sqrt((X87)v[0] * v[0] + (X87)v[1] * v[1] + (X87)v[2] * v[2]);
+            n[0] = ((X87)v[0] * inverse).F;
+            n[1] = ((X87)n[1] * inverse).F;
+            n[2] = ((X87)n[2] * inverse).F;
+        }
+
+        float r1x = ((X87)v[2] * v[7] - (X87)v[1] * v[8]).F;
+        float r1y = (-((X87)v[6] * v[2] - (X87)v[0] * v[8])).F;
+        float r1z = ((X87)v[6] * v[1] - (X87)v[0] * v[7]).F;
+        float r2x = ((X87)r1z * n[1] - (X87)r1y * n[2]).F;
+        float r2y = (-((X87)r1z * n[0] - (X87)r1x * n[2])).F;
+        float r2z = ((X87)r1y * n[0] - (X87)r1x * n[1]).F;
+        n[3] = r1x;
+        n[4] = r1y;
+        n[5] = r1z;
+        n[6] = r2x;
+        n[7] = r2y;
+        n[8] = r2z;
+        if (!(r1x == 0f && r1y == 0f && r1z == 0f))
+        {
+            X87 inverse = (X87)1.0 / X87.Sqrt((X87)r1z * r1z + (X87)r1y * r1y + (X87)r1x * r1x);
+            n[3] = ((X87)r1x * inverse).F;
+            n[4] = ((X87)n[4] * inverse).F;
+            n[5] = ((X87)n[5] * inverse).F;
+        }
+
+        if (!(r2x == 0f && r2y == 0f && r2z == 0f))
+        {
+            X87 inverse = (X87)1.0 / X87.Sqrt((X87)r2x * r2x + (X87)r2y * r2y + (X87)r2z * r2z);
+            n[6] = ((X87)r2x * inverse).F;
+            n[7] = ((X87)n[7] * inverse).F;
+            n[8] = ((X87)n[8] * inverse).F;
+        }
+
+        return n;
     }
 
     /// <summary>Casts a batch of rays against every object whose box can reach them, in placement order.</summary>

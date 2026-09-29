@@ -3075,6 +3075,32 @@ public sealed class CutsceneRuntime
         return model;
     }
 
+    /// <summary>A plane's retail body, created from its type and model the first time its AnimTask speaks.</summary>
+    private RetailPlaneBody? RetailPlaneFor(DeclaredTask task, TransformState state, in PlanePhysicsDefinition physics)
+    {
+        if (state.RetailPlane is { } existing)
+        {
+            return existing;
+        }
+
+        if (_retailCarModels is not { } models
+            || models(Text(task, WorldScene.ModelParameter)) is not { } model
+            || _retailMagic is null)
+        {
+            return null;
+        }
+
+        RetailPlaneBody plane = RetailPlaneSpawn.Create(
+            physics,
+            model,
+            RetailPlaneSpawn.Placement(task),
+            _retailMagic,
+            name => models(name));
+        plane.Owner = task;
+        state.RetailPlane = plane;
+        return plane;
+    }
+
     /// <summary>A helicopter's retail body, created from its type and model the first time its AnimTask speaks.</summary>
     private RetailHeliBody? RetailHeliFor(DeclaredTask task, TransformState state, in HelicopterPhysicsDefinition physics)
     {
@@ -3569,6 +3595,40 @@ public sealed class CutsceneRuntime
         }
         else if (string.Equals(type, "Plane", StringComparison.Ordinal))
         {
+            if (_retailCarWorld is { } planeWorld
+                && target is DeclaredTask retailPlaneTask
+                && transform.PlanePhysics is { } retailPlanePhysics
+                && RetailPlaneFor(retailPlaneTask, transform, retailPlanePhysics) is { } retailPlane)
+            {
+                // 0x4337E0: every packet latches the channels; mode 0 resets, a later packet steps Plane_Physics
+                // (0x433B50) and the gear legs (0x4F4660).
+                retailPlane.Receive(program.Channels);
+                if (program.Tick == 0)
+                {
+                    RetailPlaneSpawn.Reset(retailPlane, retailPlanePhysics, RetailPlaneSpawn.Placement(retailPlaneTask));
+                    CopyRetailPose(transform, retailPlane);
+                    transform.PreviousPosition = transform.Position;
+                    transform.PreviousOrientation = transform.Orientation;
+                    transform.Velocity = default;
+                    transform.Thrust = retailPlane.Thrust;
+                    transform.TargetThrust = retailPlane.ThrustTarget;
+                    transform.IsDynamic = true;
+                    return;
+                }
+
+                SnapshotDynamicPose(transform, simulationOrder);
+                retailPlane.Tick(planeWorld);
+                CopyRetailPose(transform, retailPlane);
+                transform.Thrust = retailPlane.Thrust;
+                transform.TargetThrust = retailPlane.ThrustTarget;
+                transform.Speed = retailPlane.Speed;
+                transform.Velocity = transform.Position - transform.PreviousPosition;
+                transform.PhysicsTicks++;
+                transform.IsDynamic = true;
+                LogAirframePath(targetId, "Plane", target, transform);
+                return;
+            }
+
             if (program.Tick == 0)
             {
                 // The receiver's two tick-zero packets restore the authored rigid-body pose and
@@ -4835,6 +4895,9 @@ public sealed class CutsceneRuntime
 
         /// <summary>The helicopter's retail rigid body, once its AnimTask has first spoken.</summary>
         public RetailHeliBody? RetailHeli { get; set; }
+
+        /// <summary>Gets or sets the plane's retail body, once its AnimTask has spoken.</summary>
+        public RetailPlaneBody? RetailPlane { get; set; }
 
 
         public CarMotionState CarMotion { get; } = new();
