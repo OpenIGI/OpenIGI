@@ -1486,6 +1486,22 @@ public sealed class WorldScene
             return Matrix3f.FromEngineEulerAngles(cameraAlpha, 0f, holderGamma + cameraGamma);
         }
 
+        // A door's base orientation (+272) and a fence's turn are built by 0x4B38E0 exactly: the door's pose is
+        // recomputed from it every tick it moves, and must start where the drawn placement stands.
+        if (string.Equals(task.Type.Name, "Door", StringComparison.Ordinal)
+            && task.TryGetValue(OrientationParameter, out object? doorAngles)
+            && doorAngles is Vector3f door)
+        {
+            return RetailOrientation.EulerMatrix(door.X, door.Y, door.Z);
+        }
+
+        if (string.Equals(task.Type.Name, "Fence", StringComparison.Ordinal)
+            && task.TryGetValue("Gamma", out object? fenceGamma)
+            && fenceGamma is float fence)
+        {
+            return RetailOrientation.EulerMatrix(0f, 0f, fence);
+        }
+
         if (task.TryGetValue(OrientationParameter, out object? rawOrientation))
         {
             return rawOrientation switch

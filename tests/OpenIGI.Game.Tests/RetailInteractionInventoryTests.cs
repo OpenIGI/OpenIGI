@@ -511,7 +511,8 @@ public sealed class RetailInteractionInventoryTests
                 Vector3d normal = door.Orientation.Transposed().Transform(new Vector3d(0.0, 2048.0, 0.0));
                 Vector3d standing = door.Anchor + normal;
                 Assert.True(door.CanOfferFrom(standing));
-                Assert.Equal(door.Anchor, door.CandidatePoint(standing));
+                // A round trip through the original's chop-rounded frame closes to an ulp, not exactly.
+                Assert.InRange(Vector3d.Distance(door.Anchor, door.CandidatePoint(standing)), 0.0, 0.001);
 
                 Vector3d outside = door.Anchor
                     + door.Orientation.Transposed().Transform(new Vector3d(2048.0, 0.0, 0.0));
@@ -522,7 +523,8 @@ public sealed class RetailInteractionInventoryTests
                 WorldPlacement placement = Assert.Single(
                     scene.Placements,
                     candidate => ReferenceEquals(candidate.Owner, door.Task));
-                Assert.Equal(placement.Position, door.DrawPosition);
+                // The placement is the authored start; the door draws where its Position slider slid it from there.
+                Assert.Equal(placement.Position, door.ClosedPosition);
                 Assert.Equal(placement.Orientation, door.DrawOrientation);
 
                 door.State.Toggle();
@@ -534,9 +536,11 @@ public sealed class RetailInteractionInventoryTests
                 }
 
                 Assert.True(door.State.IsFullyOpen, $"{door.Task.Name} did not finish opening");
-                bool hasMotion = ReadReal(doorTask, "Position stop X", 0f) != 0f
-                    || ReadReal(doorTask, "Position stop Y", 0f) != 0f
-                    || ReadReal(doorTask, "Position slider", 0f) != 0f
+                // Position slider is where the slide starts (+312), not a travel: a door authored fully slid is open
+                // before it is used, and only a stop or a swing moves it (0x446D10).
+                bool slides = ReadReal(doorTask, "Position stop X", 0f) != 0f
+                    || ReadReal(doorTask, "Position stop Y", 0f) != 0f;
+                bool hasMotion = (slides && ReadReal(doorTask, "Position slider", 0f) != 1f)
                     || ReadReal(doorTask, "Max angle", 0f) != 0f;
                 if (hasMotion)
                 {
@@ -552,7 +556,9 @@ public sealed class RetailInteractionInventoryTests
                 }
 
                 Assert.True(door.State.IsFullyClosed, $"{door.Task.Name} did not close on a second use");
-                Assert.Equal(placement.Position, door.DrawPosition);
+
+                // Closed is the slide at zero: its start, wherever its Position slider first put it.
+                Assert.Equal(door.ClosedPosition, door.DrawPosition);
                 Assert.Equal(placement.Orientation, door.DrawOrientation);
             }
             foreach (WorldInteraction wire in interactions.Items.Where(
@@ -602,9 +608,11 @@ public sealed class RetailInteractionInventoryTests
 
                 Assert.True(fence.CanOfferFrom(positiveSide));
                 Assert.True(fence.CanOfferFrom(negativeSide));
+                // The fence's frame is the original's chop-rounded rotation, a few ulps from orthonormal, so a round
+                // trip through it closes to a few hundredths of a unit (micrometres), not exactly.
                 Vector3d offeredLocal = fence.Orientation.Transform(fence.CandidatePoint(positiveSide) - fence.Anchor);
-                Assert.InRange(Math.Abs(offeredLocal.X - x), 0.0, 0.01);
-                Assert.InRange(Math.Abs(offeredLocal.Y - fence.LocalBoundsMaximum.Y), 0.0, 0.01);
+                Assert.InRange(Math.Abs(offeredLocal.X - x), 0.0, 0.05);
+                Assert.InRange(Math.Abs(offeredLocal.Y - fence.LocalBoundsMaximum.Y), 0.0, 0.05);
 
                 (Vector3d mount, _) = fence.BodyPose(positiveSide);
                 Vector3d mountLocal = fence.Orientation.Transform(mount - fence.Anchor);

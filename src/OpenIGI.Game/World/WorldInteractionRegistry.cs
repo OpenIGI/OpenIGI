@@ -1210,6 +1210,21 @@ public sealed class WorldInteractionRegistry
 
     private static Matrix3f OrientationOf(DeclaredTask task)
     {
+        // A door's and a fence's frame are built by 0x4B38E0 exactly, the same matrix the world scene draws them with.
+        if (string.Equals(task.Type.Name, "Door", StringComparison.Ordinal)
+            && task.TryGetValue("Orientation", out object? doorAngles)
+            && doorAngles is Vector3f door)
+        {
+            return RetailOrientation.EulerMatrix(door.X, door.Y, door.Z);
+        }
+
+        if (string.Equals(task.Type.Name, "Fence", StringComparison.Ordinal)
+            && task.TryGetValue("Gamma", out object? fenceGamma)
+            && fenceGamma is float fence)
+        {
+            return RetailOrientation.EulerMatrix(0f, 0f, fence);
+        }
+
         if (task.TryGetValue("Orientation", out object? orientation))
         {
             return orientation switch
