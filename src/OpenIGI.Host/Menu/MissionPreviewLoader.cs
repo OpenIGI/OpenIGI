@@ -327,7 +327,10 @@ public sealed class MissionPreviewLoader(
         WorldBuildResult built = context.WorldBuilder.Build(
             new WorldBuildRequest(loaded, levelRoot, resources, magic, logger));
         WorldScene scene = built.Scene;
-        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements, context.Formats.Collision);
+        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(
+            scene.Placements,
+            context.Formats.Collision,
+            name => loaded.TryGetModel(name, out OpenIGI.Formats.World.MefModel? model) ? model : null);
 
         TerrainSurface? surface = loaded.Terrain is { IsUsable: true } usable
             ? TerrainSurface.Build(usable, levelRoot, logger)

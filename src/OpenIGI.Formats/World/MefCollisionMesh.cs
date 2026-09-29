@@ -118,6 +118,25 @@ public sealed class MefCollisionMesh
         _materialGlobal = materialGlobal;
     }
 
+    /// <summary>A copy of this mesh level with its vertices and sphere tree moved, its faces and materials unchanged.</summary>
+    /// <param name="vertices">The new vertices, one per original vertex.</param>
+    /// <param name="spheres">The new sphere tree, one node per original node.</param>
+    /// <returns>The moved mesh.</returns>
+    /// <remarks>For geometry the original deforms at load, such as a spline segment bent along its waypoints.</remarks>
+    /// <exception cref="ArgumentException">A count does not match the original's.</exception>
+    public MefCollisionMesh WithVertices(IReadOnlyList<Vector3f> vertices, IReadOnlyList<MefCollisionSphere> spheres)
+    {
+        ArgumentNullException.ThrowIfNull(vertices);
+        ArgumentNullException.ThrowIfNull(spheres);
+        if (vertices.Count != Vertices.Count || spheres.Count != Spheres.Count)
+        {
+            throw new ArgumentException("A moved collision mesh keeps its vertex and sphere counts.");
+        }
+
+        return new MefCollisionMesh(
+            _faces, [.. vertices], [.. VertexBones], [.. spheres], _materialIsPortal, _materialGlobal);
+    }
+
     /// <summary>Resolves a face's per-mesh material to its global game-material row.</summary>
     /// <param name="material">The face's material index — <see cref="MefCollisionFace.Material"/>.</param>
     /// <returns>

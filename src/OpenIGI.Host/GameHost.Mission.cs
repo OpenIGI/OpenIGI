@@ -795,7 +795,10 @@ internal sealed partial class GameHost
             // arrives with its own already walked.
             world.Spins = _spins;
             _world = world;
-            solids = ObjectCollisionIndex.Build(scene.Placements, _titleRuntime.Formats.Collision);
+            solids = ObjectCollisionIndex.Build(
+                scene.Placements,
+                _titleRuntime.Formats.Collision,
+                name => loaded.TryGetModel(name, out MefModel? model) ? model : null);
             _worldSolids = solids;
             EndStage("the scene walk, the world renderer and the collision index");
         }

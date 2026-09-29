@@ -226,66 +226,103 @@ public sealed class RetailWorldObjects
 
         for (int i = 1; i < waypoints.Count; i++)
         {
-            DeclaredTask previous = waypoints[i - 1], waypoint = waypoints[i];
-            if (Value(waypoint, WorldScene.SegmentModelParameter) is not string name
-                || name.Length == 0
-                || models(name) is not { } model
-                || !MefCollisionMesh.TryRead(model.Container, meshIndex: 0, out MefCollisionMesh? level0)
-                || level0 is null
-                || Value(previous, "Position") is not Vector3d p0
-                || Value(waypoint, "Position") is not Vector3d p1
-                || Value(previous, "Orientation") is not Vector3f a0
-                || Value(waypoint, "Orientation") is not Vector3f a1
-                || Value(waypoint, "NumAreas") is not int count
-                || count < 1)
+            if (BuildSegment(waypoints[i - 1], waypoints[i], models, meshIndex: 0, out bool rigid) is { } segment)
             {
-                continue;
+                Add(segment, new Vector3d(segment.Position[0], segment.Position[1], segment.Position[2]), segment.Radius);
             }
-
-            // Align (+0x1A1) lays the segment rigid, 0x4E16E0's path B, which is not transcribed.
-            if (Value(waypoint, "Align") is true)
+            else if (rigid)
             {
                 SkippedRigidSegments++;
-                continue;
             }
-
-            RetailRayMesh mesh = new(level0);
-            List<RetailRayMesh> levels = [mesh];
-            if (MefCollisionMesh.TryRead(model.Container, meshIndex: 1, out MefCollisionMesh? level1) && level1 is not null)
-            {
-                levels.Add(new RetailRayMesh(level1));
-            }
-
-            // The model's x extent over every LOD's render vertices, from 0 (0x4E4530's tail).
-            float x0 = 0f, x1 = 0f;
-            for (int lod = 1; lod <= 9 && models(name[..^1] + lod) is { } level; lod++)
-            {
-                foreach (MefVertex vertex in level.Vertices)
-                {
-                    x0 = vertex.Position.X < x0 ? vertex.Position.X : x0;
-                    x1 = vertex.Position.X > x1 ? vertex.Position.X : x1;
-                }
-            }
-
-            if (!(x1 > x0))
-            {
-                continue;
-            }
-
-            RetailSplineSegment segment = RetailSplineSegment.Build(
-                waypoint,
-                mesh,
-                levels,
-                p0,
-                p1,
-                RetailSplineSegment.AnglesToMatrix(a0.X, a0.Y, a0.Z),
-                RetailSplineSegment.AnglesToMatrix(a1.X, a1.Y, a1.Z),
-                count,
-                x0,
-                x1,
-                reverse: Value(waypoint, "Flip") is true);
-            Add(segment, new Vector3d(segment.Position[0], segment.Position[1], segment.Position[2]), segment.Radius);
         }
+    }
+
+    /// <summary>Builds and bends the segment a waypoint lays from the one before it, on one collision level.</summary>
+    /// <param name="previous">The previous waypoint.</param>
+    /// <param name="waypoint">The waypoint naming the segment model.</param>
+    /// <param name="models">Resolves a model by name (LOD files are <c>name[..^1] + lod</c>).</param>
+    /// <param name="meshIndex">
+    /// The collision level to bend: 0, which rounds and cars' rays meet, or 1, which a human's movement meets
+    /// (<c>0x461A70</c> and <c>0x462390</c> cast with <c>iMesh = 1</c>).
+    /// </param>
+    /// <param name="rigid">Receives whether the waypoint lays the segment rigid (path B, not transcribed).</param>
+    /// <returns>The segment, or <see langword="null"/> when it cannot be built.</returns>
+    public static RetailSplineSegment? BuildSegment(
+        DeclaredTask previous,
+        DeclaredTask waypoint,
+        Func<string, MefModel?> models,
+        int meshIndex,
+        out bool rigid)
+    {
+        ArgumentNullException.ThrowIfNull(previous);
+        ArgumentNullException.ThrowIfNull(waypoint);
+        ArgumentNullException.ThrowIfNull(models);
+        rigid = false;
+        if (Value(waypoint, WorldScene.SegmentModelParameter) is not string name
+            || name.Length == 0
+            || models(name) is not { } model
+            || !MefCollisionMesh.TryRead(model.Container, meshIndex: 0, out MefCollisionMesh? level0)
+            || level0 is null
+            || Value(previous, "Position") is not Vector3d p0
+            || Value(waypoint, "Position") is not Vector3d p1
+            || Value(previous, "Orientation") is not Vector3f a0
+            || Value(waypoint, "Orientation") is not Vector3f a1
+            || Value(waypoint, "NumAreas") is not int count
+            || count < 1)
+        {
+            return null;
+        }
+
+        // Align (+0x1A1) lays the segment rigid, 0x4E16E0's path B, which is not transcribed.
+        if (Value(waypoint, "Align") is true)
+        {
+            rigid = true;
+            return null;
+        }
+
+        RetailRayMesh mesh0 = new(level0);
+        List<RetailRayMesh> levels = [mesh0];
+        RetailRayMesh? mesh1 = null;
+        if (MefCollisionMesh.TryRead(model.Container, meshIndex: 1, out MefCollisionMesh? level1) && level1 is not null)
+        {
+            mesh1 = new RetailRayMesh(level1);
+            levels.Add(mesh1);
+        }
+
+        RetailRayMesh? bent = meshIndex == 0 ? mesh0 : mesh1;
+        if (bent is null)
+        {
+            return null;
+        }
+
+        // The model's x extent over every LOD's render vertices, from 0 (0x4E4530's tail).
+        float x0 = 0f, x1 = 0f;
+        for (int lod = 1; lod <= 9 && models(name[..^1] + lod) is { } level; lod++)
+        {
+            foreach (MefVertex vertex in level.Vertices)
+            {
+                x0 = vertex.Position.X < x0 ? vertex.Position.X : x0;
+                x1 = vertex.Position.X > x1 ? vertex.Position.X : x1;
+            }
+        }
+
+        if (!(x1 > x0))
+        {
+            return null;
+        }
+
+        return RetailSplineSegment.Build(
+            waypoint,
+            bent,
+            levels,
+            p0,
+            p1,
+            RetailSplineSegment.AnglesToMatrix(a0.X, a0.Y, a0.Z),
+            RetailSplineSegment.AnglesToMatrix(a1.X, a1.Y, a1.Z),
+            count,
+            x0,
+            x1,
+            reverse: Value(waypoint, "Flip") is true);
     }
 
     private static object? Value(DeclaredTask task, string name) => task.TryGetValue(name, out object? value) ? value : null;
