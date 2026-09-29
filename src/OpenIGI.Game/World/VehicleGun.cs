@@ -30,6 +30,13 @@ public sealed record VehicleGun(MagicGunMount Mount, WeaponType Weapon, Vector3d
     /// </summary>
     public Vector3f WeaponVertex { get; init; }
 
+    /// <summary>
+    /// Gets where the weapon's rounds leave, in the weapon model's frame: its magic vertex 2, or the origin when the
+    /// model has fewer than three. Gun_Fire starts a round there when its message carries no origin (<c>0x478BA0</c>),
+    /// which an <c>AIStationaryGun</c>'s never does (<c>0x46F950</c>).
+    /// </summary>
+    public Vector3f MuzzleVertex { get; init; }
+
     /// <summary>Gets whether the weapon row's projectile is an instant gunshot rather than a missile.</summary>
     public bool IsHitscan => string.Equals(Weapon.Projectile.TypeName, "TASKTYPE_GUNSHOT", StringComparison.Ordinal);
 
@@ -96,6 +103,12 @@ public sealed record VehicleGun(MagicGunMount Mount, WeaponType Weapon, Vector3d
                         mountModel.TryGetMagicVertex(1, out weaponVertex);
                     }
 
+                    Vector3f muzzleVertex = default;
+                    if (models(mount.WeaponModel) is { MagicVertexCount: > 2 } weaponModel)
+                    {
+                        weaponModel.TryGetMagicVertex(2, out muzzleVertex);
+                    }
+
                     index = guns.Count;
                     guns.Add(new VehicleGun(mount, row, at)
                     {
@@ -104,6 +117,7 @@ public sealed record VehicleGun(MagicGunMount Mount, WeaponType Weapon, Vector3d
                         AttachmentPosition = onGun ? attachment.Position : new Vector3f((float)at.X, (float)at.Y, (float)at.Z),
                         AttachmentOrientation = onGun ? attachment.Orientation : nested,
                         WeaponVertex = weaponVertex,
+                        MuzzleVertex = muzzleVertex,
                     });
                 }
                 else

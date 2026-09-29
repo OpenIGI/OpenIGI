@@ -224,10 +224,14 @@ public sealed class CutsceneRuntime
             for (int index = 0; index < armament.Guns.Count; index++)
             {
                 VehicleGunState gun = armament.Guns[index];
+
+                // Gun_Fire plays its reports at the weapon object (+32), where the seat put it.
                 yield return new VehicleGunSound(
                     vehicle,
                     index,
-                    transform.Position + transform.Orientation.Transposed().Transform(gun.Gun.Offset),
+                    armament.Seated
+                        ? gun.WeaponPosition
+                        : transform.Position + transform.Orientation.Transposed().Transform(gun.Gun.Offset),
                     gun.Hold,
                     gun.RoundsFiredThisTick,
                     gun.Turret.Turning,
@@ -1123,14 +1127,33 @@ public sealed class CutsceneRuntime
             int runs = !helicopter
                 ? 2
                 : _animations.Exists(animation => animation.TargetId == vehicle.Id && animation.RanThisTick) ? 1 : 0;
+
+            // A gun aims from its mount's position (+32) and fires from its weapon object, both as the last re-seat
+            // left them: nothing moves them while the guns run. The spawn seats them first (0x46EC90).
+            if (!armament.Seated)
+            {
+                SeatVehicleGuns(armament, transform);
+            }
+
             foreach (VehicleGunState gun in armament.Guns)
             {
-                Vector3d origin = transform.Position + transform.Orientation.Transposed().Transform(gun.Gun.Offset);
-                Vector3d? local = aim is { } point ? transform.Orientation.Transform(point - origin) : null;
                 gun.RoundsFiredThisTick = 0;
-                for (int run = 0; run < runs; run++)
+            }
+
+            for (int run = 0; run < runs; run++)
+            {
+                // A car re-seats its guns between its two runs (0x46FBA0 through op 46), from where it stands now and
+                // with the traverse the first run left; a helicopter's AnimTask moves it before its one run.
+                if (run == 1 || helicopter)
                 {
-                    if (FireVehicleGun(vehicle, transform, gun, local, aim) is { } shot)
+                    SeatVehicleGuns(armament, transform);
+                }
+
+                // The turret runs before the gun it carries (0x46F390 walks its children last).
+                foreach (VehicleGunState gun in armament.Guns)
+                {
+                    Vector3d? local = aim is { } point ? transform.Orientation.Transform(point - gun.MountPosition) : null;
+                    if (FireVehicleGun(vehicle, gun, local, aim) is { } shot)
                     {
                         gun.RoundsFiredThisTick++;
                         gun.ShotSequence++;
@@ -1168,7 +1191,6 @@ public sealed class CutsceneRuntime
     /// <summary>One run of a vehicle gun: turn (0x46F390), then let Gun_Fire (0x478BA0) take the trigger.</summary>
     private VehicleCombatShot? FireVehicleGun(
         GameTask vehicle,
-        TransformState transform,
         VehicleGunState gun,
         Vector3d? local,
         Vector3d? aim)
@@ -1203,12 +1225,13 @@ public sealed class CutsceneRuntime
             gun.Ammunition--;
         }
 
-        Vector3d origin = transform.Position + transform.Orientation.Transposed().Transform(gun.Gun.Offset);
-        float cosPitch = MathF.Cos(gun.Turret.Pitch);
-        Vector3f barrel = transform.Orientation.Transposed().Transform(new Vector3f(
-            -MathF.Sin(gun.Turret.Yaw) * cosPitch,
-            MathF.Cos(gun.Turret.Yaw) * cosPitch,
-            MathF.Sin(gun.Turret.Pitch))).Normalized();
+        // With no origin in its message, Gun_Fire starts the round at the weapon's magic vertex 2 and sends it down the
+        // weapon's middle column (0x478BA0) -- the weapon object as the last re-seat posed it, which swings a gun on a
+        // gun round with the gun it rides on.
+        Vector3f muzzle = gun.Gun.MuzzleVertex;
+        Vector3d origin = gun.WeaponPosition
+            + gun.WeaponOrientation.Transposed().Transform(new Vector3d(muzzle.X, muzzle.Y, muzzle.Z));
+        Vector3f barrel = gun.WeaponOrientation.Transposed().Transform(Vector3f.UnitY).Normalized();
         WeaponType row = gun.Gun.Weapon;
 
         // Gun_Fire sends the round down the barrel, not at the target, turned inside the row's cone
@@ -2058,10 +2081,57 @@ public sealed class CutsceneRuntime
             return false;
         }
 
-        Vector3f local = gun.AttachmentPosition;
-        position = parentPosition + parentOrientation.Transposed().Transform(new Vector3d(local.X, local.Y, local.Z));
-        orientation = parentOrientation * gun.AttachmentOrientation * Matrix3f.RotationZ(armament.Guns[index].Turret.Yaw);
+        (position, orientation) = PoseVehicleGunMount(armament.Guns[index], parentPosition, parentOrientation);
         return true;
+    }
+
+    /// <summary>Re-seats every gun of a vehicle where it stands now (<c>0x46FBA0</c>, then <c>0x470050</c>).</summary>
+    /// <remarks>A gun's parent comes before it in the list, so each gun is seated on its parent's new pose.</remarks>
+    private static void SeatVehicleGuns(VehicleArmament armament, TransformState transform)
+    {
+        for (int index = 0; index < armament.Guns.Count; index++)
+        {
+            VehicleGunState gun = armament.Guns[index];
+            int parent = gun.Gun.Parent;
+            (Vector3d mountPosition, Matrix3f mountOrientation) = parent >= 0 && parent < index
+                ? PoseVehicleGunMount(gun, armament.Guns[parent].MountPosition, armament.Guns[parent].MountOrientation)
+                : PoseVehicleGunMount(gun, transform.Position, transform.Orientation);
+            gun.MountPosition = mountPosition;
+            gun.MountOrientation = mountOrientation;
+            (gun.WeaponPosition, gun.WeaponOrientation) =
+                PoseVehicleGunWeapon(gun, mountPosition, mountOrientation, transform.Orientation);
+        }
+
+        armament.Seated = true;
+    }
+
+    /// <summary>A mount's pose on its parent: parent · attachment · Z(traverse) (<c>0x46FBA0</c>).</summary>
+    private static (Vector3d Position, Matrix3f Orientation) PoseVehicleGunMount(
+        VehicleGunState gun,
+        Vector3d parentPosition,
+        Matrix3f parentOrientation)
+    {
+        Vector3f local = gun.Gun.AttachmentPosition;
+        return (
+            parentPosition + parentOrientation.Transposed().Transform(new Vector3d(local.X, local.Y, local.Z)),
+            parentOrientation * gun.Gun.AttachmentOrientation * Matrix3f.RotationZ(gun.Turret.Yaw));
+    }
+
+    /// <summary>A weapon object's pose on its mount (<c>0x470050</c>).</summary>
+    private static (Vector3d Position, Matrix3f Orientation) PoseVehicleGunWeapon(
+        VehicleGunState gun,
+        Vector3d mountPosition,
+        Matrix3f mountOrientation,
+        Matrix3f vehicleOrientation)
+    {
+        Vector3f vertex = gun.Gun.WeaponVertex;
+        Matrix3f orientation = vehicleOrientation * Matrix3f.FromEngineEulerAngles(gun.Turret.Pitch, 0f, gun.Turret.Yaw);
+        if (gun.Turret.Spin != 0f)
+        {
+            orientation *= Matrix3f.RotationY(gun.Turret.Spin);
+        }
+
+        return (mountPosition + mountOrientation.Transposed().Transform(new Vector3d(vertex.X, vertex.Y, vertex.Z)), orientation);
     }
 
     /// <summary>Where a vehicle gun's weapon object sits and faces (<c>0x470050</c>).</summary>
@@ -2085,15 +2155,7 @@ public sealed class CutsceneRuntime
             return false;
         }
 
-        VehicleGunState gun = armament.Guns[index];
-        Vector3f vertex = gun.Gun.WeaponVertex;
-        position = mountPosition + mountOrientation.Transposed().Transform(new Vector3d(vertex.X, vertex.Y, vertex.Z));
-        orientation = state.Orientation * Matrix3f.FromEngineEulerAngles(gun.Turret.Pitch, 0f, gun.Turret.Yaw);
-        if (gun.Turret.Spin != 0f)
-        {
-            orientation *= Matrix3f.RotationY(gun.Turret.Spin);
-        }
-
+        (position, orientation) = PoseVehicleGunWeapon(armament.Guns[index], mountPosition, mountOrientation, state.Orientation);
         return true;
     }
 
@@ -4648,6 +4710,9 @@ public sealed class CutsceneRuntime
         public AiVehicleCombat Sight { get; } = new();
         public WeaponType? LegacyWeapon { get; } = legacyWeapon;
         public List<VehicleGunState> Guns { get; } = guns;
+
+        /// <summary>Gets or sets whether the guns have been seated at least once.</summary>
+        public bool Seated { get; set; }
     }
 
     /// <summary>One model gun's turret, cadence and ammunition.</summary>
@@ -4667,6 +4732,18 @@ public sealed class CutsceneRuntime
 
         /// <summary>Gets or sets a serial that advances once per round fired, for the gun flame's roll.</summary>
         public int ShotSequence { get; set; }
+
+        /// <summary>Gets or sets the mount's position as the last seat left it (<c>+32</c>), which the gun aims from.</summary>
+        public Vector3d MountPosition { get; set; }
+
+        /// <summary>Gets or sets the mount's orientation as the last seat left it (<c>+112</c>).</summary>
+        public Matrix3f MountOrientation { get; set; } = Matrix3f.Identity;
+
+        /// <summary>Gets or sets the weapon object's position as the last seat left it (<c>+376</c>).</summary>
+        public Vector3d WeaponPosition { get; set; }
+
+        /// <summary>Gets or sets the weapon object's orientation as the last seat left it (<c>+400</c>).</summary>
+        public Matrix3f WeaponOrientation { get; set; } = Matrix3f.Identity;
     }
 
     private sealed record TimedShot(EditCameraShot Shot, double Start);
