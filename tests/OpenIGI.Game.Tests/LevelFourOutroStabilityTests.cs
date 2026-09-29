@@ -127,15 +127,9 @@ public sealed class LevelFourOutroStabilityTests
             runtime.FinishExpressionTick();
         }
         Assert.NotEqual(1000, runtime.ActiveScene?.Id);
-        Assert.True(loop.Variables.TryWrite(
-            "ConditionalContainer_3900.isRun",
-            OpenIGI.Scripting.Runtime.QvmValue.FromInt32(0)));
-        Assert.True(loop.Variables.TryWrite(
-            "ConditionalContainer_3901.isRun",
-            OpenIGI.Scripting.Runtime.QvmValue.FromInt32(1)));
-        Assert.True(loop.Variables.TryWrite(
-            "ConditionalContainer_300.isRun",
-            OpenIGI.Scripting.Runtime.QvmValue.FromInt32(1)));
+        Force(loop, root, 3900, false);
+        Force(loop, root, 3901, true);
+        Force(loop, root, 300, true);
         HumanSoldierTask harrison = Assert.IsType<HumanSoldierTask>(root.Tree.FromId(400));
         Assert.Equal("022_01_1", harrison.SoldierModel);
         Assert.True(ConditionalContainerGate.IsTaskActive(harrison));
@@ -205,15 +199,9 @@ public sealed class LevelFourOutroStabilityTests
             runtime.FinishExpressionTick();
         }
         Assert.NotEqual(1000, runtime.ActiveScene?.Id);
-        Assert.True(loop.Variables.TryWrite(
-            "ConditionalContainer_3900.isRun",
-            OpenIGI.Scripting.Runtime.QvmValue.FromInt32(0)));
-        Assert.True(loop.Variables.TryWrite(
-            "ConditionalContainer_3901.isRun",
-            OpenIGI.Scripting.Runtime.QvmValue.FromInt32(1)));
-        Assert.True(loop.Variables.TryWrite(
-            "ConditionalContainer_300.isRun",
-            OpenIGI.Scripting.Runtime.QvmValue.FromInt32(1)));
+        Force(loop, root, 3900, false);
+        Force(loop, root, 3901, true);
+        Force(loop, root, 300, true);
         Assert.Equal("022_01_1", Assert.IsType<HumanSoldierTask>(root.Tree.FromId(400)).SoldierModel);
 
         objectives.SetSoldierOccupants([new HumanOccupant(400, 0, inside156, IsDead: false)]);
@@ -230,6 +218,11 @@ public sealed class LevelFourOutroStabilityTests
 
         Assert.True(ReadBool(loop, "ConditionalContainer_3902.isRun", out bool gateStopped));
         Assert.False(gateStopped);
+
+        // The container's falling edge runs the scene once more; it leaves the world on the next walk (0x4874E0).
+        objectives.TickLevelState(playerOutside, 0, extraPlayerPosition: null, playerAlive: false);
+        runtime.Tick();
+        runtime.FinishExpressionTick();
         Assert.True(ReadBool(loop, "CutScene_2222.isRun", out bool sceneStopped));
         Assert.False(sceneStopped);
     }
@@ -293,5 +286,15 @@ public sealed class LevelFourOutroStabilityTests
         CutsceneRuntime runtime = new(root, loop.Variables);
         MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
         return (loop, root, objectives, runtime);
+    }
+
+    // Opens or closes a container the way the mission eventually does: its isRun, and the registration the level
+    // walk's edge brings with it (0x4874E0).
+    private static void Force(GameLoop loop, LevelTask root, int id, bool run)
+    {
+        Assert.True(loop.Variables.TryWrite(
+            $"ConditionalContainer_{id}.isRun",
+            OpenIGI.Scripting.Runtime.QvmValue.FromInt32(run ? 1 : 0)));
+        Assert.IsType<ConditionalContainerTask>(root.Tree.FromId(id)).IsActive = run;
     }
 }

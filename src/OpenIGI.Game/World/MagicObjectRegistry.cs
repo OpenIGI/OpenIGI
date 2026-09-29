@@ -163,19 +163,22 @@ public sealed class MagicObjectRegistry
             StringComparison.Ordinal);
 
         // ExplodeMagicObj extends DefineMagicObj with the native effect recipe. The first three
-        // arguments are shared by every definition. The retail QVM's extra arguments are, in order:
-        // damaged model, sound, FireBalls, Fragments, Delay, damage scale, falloff radius, full radius,
-        // and maximum damage before explosion. Other magic families do not own an explosion recipe,
-        // even when they use a longer call signature for their own data.
+        // arguments are shared by every definition; its own parser (0x43C1F0) reads the rest, in order:
+        // damaged model (+0), sound (+44), damage before it breaks (+16), FireBalls (+40), Fragments
+        // (+36), one value its update never reads (+32), falloff radius (+24), damage (+28) and radius
+        // (+20). The update (0x43C0B0) breaks it the tick the damage reaches the threshold -- there is no
+        // delay -- and hands the explosion that damage, radius and falloff. The wooden windows (422_02_1,
+        // 458_14_1) author a damage of 0 and no FireBalls: they splinter and make no blast. Other magic
+        // families do not own an explosion recipe, even when they use a longer call signature.
         string damagedModel = explosive && call.ArgumentCount > 3 ? call.GetString(3) : string.Empty;
         string sound = explosive && call.ArgumentCount > 4 ? call.GetString(4) : string.Empty;
-        float fireballs = explosive && call.ArgumentCount > 5 ? call.GetSingle(5) : 0f;
-        int fragments = explosive && call.ArgumentCount > 6 ? call.GetInt32(6) : 0;
-        int delayTicks = explosive && call.ArgumentCount > 7 ? call.GetInt32(7) : 0;
-        float damageFactor = explosive && call.ArgumentCount > 8 ? call.GetSingle(8) : 0f;
+        float threshold = explosive && call.ArgumentCount > 5 ? call.GetSingle(5) : 0f;
+        float fireballs = explosive && call.ArgumentCount > 6 ? call.GetInt32(6) : 0f;
+        int fragments = explosive && call.ArgumentCount > 7 ? call.GetInt32(7) : 0;
+        const int delayTicks = 0;
         float falloff = explosive && call.ArgumentCount > 9 ? call.GetSingle(9) : 0f;
-        float radius = explosive && call.ArgumentCount > 10 ? call.GetSingle(10) : 0f;
-        float threshold = explosive && call.ArgumentCount > 11 ? call.GetSingle(11) : 0f;
+        float damageFactor = explosive && call.ArgumentCount > 10 ? call.GetSingle(10) : 0f;
+        float radius = explosive && call.ArgumentCount > 11 ? call.GetSingle(11) : 0f;
 
         // TASKTYPE_RADARDISH (parsed by 0x449220): arg 3 sound name, arg 4 rotation speed (deg/s), arg 5 acceleration (deg/s^2).
         string dishSound = isRadarDish && call.ArgumentCount > 3 ? call.GetString(3) : string.Empty;
@@ -197,11 +200,48 @@ public sealed class MagicObjectRegistry
             threshold,
             dishSound,
             dishSpeed,
-            dishAccel);
+            dishAccel)
+        {
+            Gun = string.Equals(typeName, "TASKTYPE_AISTATIONARYGUN", StringComparison.Ordinal)
+                && call.ArgumentCount > 12
+                    ? ReadGunMount(call)
+                    : null,
+
+            // 0x427240 reads a HeliWheel's two lengths from argument 3: the bottom-out depth, then the
+            // travel, each (float)(p · 4096.0f) -- exact for a float p, since 4096 is a power of two.
+            HeliWheel = string.Equals(typeName, "TASKTYPE_HELIWHEEL", StringComparison.Ordinal)
+                && call.ArgumentCount > 4
+                    ? new MagicHeliWheel(call.GetSingle(4) * 4096.0f, call.GetSingle(3) * 4096.0f)
+                    : null,
+
+            // 0x435BD0: a float, a byte, then three floats, from argument 3.
+            Gear = string.Equals(typeName, "TASKTYPE_GEAR", StringComparison.Ordinal)
+                && call.ArgumentCount > 7
+                    ? new MagicGear(
+                        call.GetSingle(3),
+                        call.GetInt32(4) != 0,
+                        call.GetSingle(5),
+                        call.GetSingle(6),
+                        call.GetSingle(7))
+                    : null,
+        };
 
         // The original appends unconditionally and its lookup takes the first match, so a repeated name
         // keeps the earlier definition.
         _byName.TryAdd(definition.Name, definition);
         return QvmValue.FromInt32(1);
     }
+
+    /// <summary>Reads an AIStationaryGun's arguments in the order <c>0x46FA50</c> parses them.</summary>
+    private static MagicGunMount ReadGunMount(QvmCallContext call) => new(
+        call.GetString(3),
+        call.GetSingle(4),
+        call.GetSingle(5),
+        call.GetSingle(6),
+        call.GetInt32(7),
+        call.GetSingle(8),
+        call.GetSingle(9),
+        call.GetString(10),
+        call.GetSingle(11),
+        call.GetSingle(12));
 }

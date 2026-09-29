@@ -63,6 +63,7 @@ public sealed class RetailPlaneCutsceneTests
             Type t = state.GetType();
             t.GetField("<Run>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(state, "");
             t.GetField("<InitialRun>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(state, true);
+            t.GetProperty("IsRun")?.SetValue(state, true);
         }
 
         // Map task ids to type names so the plane-targeted AnimTasks are identifiable.

@@ -32,6 +32,7 @@ public sealed class MissionObjectiveRuntime
     private readonly List<EditVariable> _editVariables = [];
     private readonly List<StatusMessage> _statusMessages = [];
     private readonly List<StatusMessage> _transientMessages = [];
+    private readonly HashSet<StatusMessage> _walkedMessages = [];
     private readonly List<LevelFlow> _levelFlows = [];
 
     /// <summary>
@@ -55,6 +56,13 @@ public sealed class MissionObjectiveRuntime
     /// <summary>The LevelFlow the original's <c>flt_BC2360</c> points at: the last one initialised.</summary>
     private readonly LevelFlow? _levelFlow;
     private bool _playerAlive = true;
+    private Vector3d? _statePlayer;
+    private int _stateTeam;
+    private Vector3d? _stateExtraPlayer;
+    private Func<IEnumerable<VehicleOccupant>>? _vehicleSource;
+    private Func<IEnumerable<HumanOccupant>>? _soldierSource;
+    private Func<AreaPlayer>? _playerSource;
+    private bool _attached;
     private int _tick;
     private bool _released;
 
@@ -105,6 +113,7 @@ public sealed class MissionObjectiveRuntime
             else if (string.Equals(task.Type.Name, "AreaActivate", StringComparison.Ordinal))
             {
                 AreaActivation area = new(
+                    declared,
                     Vector(declared, "Position"),
                     Orientation(declared),
                     Vector32(declared, "Dimensions"),
@@ -440,59 +449,194 @@ public sealed class MissionObjectiveRuntime
         Vector3d? extraPlayerPosition,
         bool playerAlive = true)
     {
-        _playerAlive = playerAlive;
-        if (_levelRoot.Tree.FromId(0) is HumanPlayerTask player && !playerAlive)
+        SetLevelStateInputs(playerPosition, playerTeam, extraPlayerPosition, playerAlive);
+        if (_attached)
         {
-            player.IsDead = true;
+            // The level walk updates them where the tree places them; running them here too would step each
+            // edit variable twice in one tick.
+            return;
         }
 
         foreach (AreaActivation area in _areaActivations)
         {
-            int count = 0;
-            if (playerAlive
-                && area.AcceptsPlayer(playerTeam)
-                && ((playerPosition is { } point && area.Contains(point))
-                    || (extraPlayerPosition is { } extra && area.Contains(extra))))
+            UpdateArea(area);
+        }
+
+        foreach (EditVariable edit in _editVariables)
+        {
+            UpdateEdit(edit);
+        }
+    }
+
+    /// <summary>
+    /// Puts the areas and edit variables into the level's update walk, so each updates where the tree places it
+    /// (<c>0x5048A0</c> counts, then walks its children; <c>0x4889B0</c>).
+    /// </summary>
+    /// <param name="walker">The level walk.</param>
+    /// <param name="vehicles">Reads the vehicles' live positions when an area counts them.</param>
+    /// <param name="soldiers">Reads the soldiers where they stand when an area counts them.</param>
+    /// <param name="player">Reads the player where it stands when an area counts it.</param>
+    /// <remarks>
+    /// An area scans the registered humans and vehicles at the moment it updates (<c>0x5048A0</c>), so it sees
+    /// what the tasks before it in the tree did this tick and what those after it did last tick. Without a
+    /// source the host's last report stands in (<see cref="SetLevelStateInputs"/>,
+    /// <see cref="SetSoldierOccupants"/>).
+    /// </remarks>
+    public void AttachTo(
+        LevelUpdateWalker walker,
+        Func<IEnumerable<VehicleOccupant>>? vehicles = null,
+        Func<IEnumerable<HumanOccupant>>? soldiers = null,
+        Func<AreaPlayer>? player = null)
+    {
+        ArgumentNullException.ThrowIfNull(walker);
+        _attached = true;
+        _vehicleSource = vehicles;
+        _soldierSource = soldiers;
+        _playerSource = player;
+        foreach (AreaActivation area in _areaActivations)
+        {
+            walker.Register(area.Task, task =>
+            {
+                UpdateArea(area);
+                walker.WalkChildren(task);
+            });
+        }
+
+        foreach (EditVariable edit in _editVariables)
+        {
+            walker.Register(edit.Task, task =>
+            {
+                UpdateEdit(edit);
+                walker.WalkChildren(task);
+            });
+        }
+
+        // StatusMessage::Run (0x4855F0) is the task's update: it runs where the walk reaches it, so a task later in
+        // the tree sees this tick's send, and a message in a closed container does not update.
+        foreach (StatusMessage message in _statusMessages)
+        {
+            if (message.Task is { } owner)
+            {
+                _walkedMessages.Add(message);
+                walker.Register(owner, task =>
+                {
+                    UpdateMessage(message);
+                    walker.WalkChildren(task);
+                });
+            }
+        }
+    }
+
+    /// <summary>
+    /// StatusMessage::Run (<c>0x4855F0</c>): the ticks since its display finished count on, then it sends when its
+    /// expression holds -- a one-shot once, a repeating one no sooner than 210 ticks after its last send.
+    /// </summary>
+    private void UpdateMessage(StatusMessage message)
+    {
+        if (message.IsFinishedDisplay)
+        {
+            message.TicksSinceFinishedDisplay++;
+        }
+
+        if ((!message.SendOnce || !message.IsSent)
+            && _tick > message.SentTick + 210
+            && _expressions.EvaluateCondition(message.SendExpression, emptyValue: false, message.Task))
+        {
+            message.IsSent = true;
+            message.SentTick = _tick;
+
+            // 0x486650 takes the lowest free slot and drops the message outright when there is none. The display
+            // only begins if it got one: a message with nowhere to go is not shown, and the original does not
+            // queue it for later.
+            if (TryTakeMessageSlot(message))
+            {
+                message.BeginDisplay(_resolveText(message.TextResource));
+            }
+
+            if (!message.Cutscene && !string.IsNullOrEmpty(message.TextResource))
+            {
+                if (_log.Count == 50)
+                {
+                    _log.RemoveAt(0);
+                }
+                _log.Add(new MissionComputerLogEntry(message.TextResource));
+            }
+        }
+    }
+
+    /// <summary>Latches the player's projections and liveness for the areas that count them this tick.</summary>
+    /// <param name="playerPosition">The player's primary world projection, when one exists.</param>
+    /// <param name="playerTeam">The player's team.</param>
+    /// <param name="extraPlayerPosition">An alternate projection of the same player.</param>
+    /// <param name="playerAlive">Whether the player can occupy areas.</param>
+    public void SetLevelStateInputs(Vector3d? playerPosition, int playerTeam, Vector3d? extraPlayerPosition, bool playerAlive)
+    {
+        _playerAlive = playerAlive;
+        _statePlayer = playerPosition;
+        _stateTeam = playerTeam;
+        _stateExtraPlayer = extraPlayerPosition;
+        if (_levelRoot.Tree.FromId(0) is HumanPlayerTask player && !playerAlive)
+        {
+            player.IsDead = true;
+        }
+    }
+
+    /// <summary>AreaActivate::Update (<c>0x5048A0</c>): nActive cleared and recounted over every matching occupant.</summary>
+    private void UpdateArea(AreaActivation area)
+    {
+        int count = 0;
+        AreaPlayer player = _playerSource?.Invoke()
+            ?? new AreaPlayer(_statePlayer, _stateTeam, _stateExtraPlayer, _playerAlive);
+        if (player.Alive
+            && area.AcceptsPlayer(player.Team)
+            && ((player.Position is { } point && area.Contains(point))
+                || (player.ExtraPosition is { } extra && area.Contains(extra))))
+        {
+            count++;
+        }
+
+        IEnumerable<HumanOccupant> soldiers = _soldierSource?.Invoke() ?? _soldierOccupants.Values;
+        foreach (HumanOccupant occupant in soldiers)
+        {
+            GameTask? soldier = _levelRoot.Tree.FromId(occupant.TaskId);
+            if (soldier is not null
+                && !occupant.IsDead
+                && ConditionalContainerGate.IsTaskActive(soldier)
+                && area.AcceptsSoldier(occupant.Team)
+                && area.Contains(occupant.Position))
             {
                 count++;
             }
-            foreach (HumanOccupant occupant in _soldierOccupants.Values)
-            {
-                GameTask? soldier = _levelRoot.Tree.FromId(occupant.TaskId);
-                if (soldier is not null
-                    && !occupant.IsDead
-                    && ConditionalContainerGate.IsTaskActive(soldier)
-                    && area.AcceptsSoldier(occupant.Team)
-                    && area.Contains(occupant.Position))
-                {
-                    count++;
-                }
-            }
-            foreach (VehicleOccupant occupant in _vehicleOccupants.Values)
-            {
-                GameTask? vehicle = _levelRoot.Tree.FromId(occupant.TaskId);
-                if (vehicle is not null
-                    && ConditionalContainerGate.IsTaskActive(vehicle)
-                    && area.AcceptsVehicle
-                    && area.Contains(occupant.Position))
-                {
-                    count++;
-                }
-            }
-            area.ActiveCount = count;
         }
 
-        // EditVariable::Update (0x4889B0) evaluates Add first and Sub second on every simulation tick.
-        foreach (EditVariable edit in _editVariables)
+        // CRITERIA_VEHICLE (0x4F4560) counts the whole vehicle list; a vehicle stays listed while its container is
+        // closed, so no active test here.
+        IEnumerable<VehicleOccupant> vehicles = _vehicleSource?.Invoke() ?? _vehicleOccupants.Values;
+        foreach (VehicleOccupant occupant in vehicles)
         {
-            if (!string.IsNullOrEmpty(edit.AddExpression))
+            GameTask? vehicle = _levelRoot.Tree.FromId(occupant.TaskId);
+            if (vehicle is not null
+                && area.AcceptsVehicle
+                && area.Contains(occupant.Position))
             {
-                edit.Value += _expressions.EvaluateInt32(edit.AddExpression, owner: edit.Task);
+                count++;
             }
-            if (!string.IsNullOrEmpty(edit.SubExpression))
-            {
-                edit.Value -= _expressions.EvaluateInt32(edit.SubExpression, owner: edit.Task);
-            }
+        }
+
+        area.ActiveCount = count;
+    }
+
+    /// <summary>EditVariable::Update (<c>0x4889B0</c>): Add first, Sub second, every tick.</summary>
+    private void UpdateEdit(EditVariable edit)
+    {
+        if (!string.IsNullOrEmpty(edit.AddExpression))
+        {
+            edit.Value += _expressions.EvaluateInt32(edit.AddExpression, owner: edit.Task);
+        }
+
+        if (!string.IsNullOrEmpty(edit.SubExpression))
+        {
+            edit.Value -= _expressions.EvaluateInt32(edit.SubExpression, owner: edit.Task);
         }
     }
 
@@ -544,41 +688,21 @@ public sealed class MissionObjectiveRuntime
     {
         PublishObjectives();
 
-        // StatusMessage::Run (0x4855F0) throttles sends by 210 simulation ticks. A one-shot refuses
-        // further sends after isSendt becomes true; repeating messages may send again after the delay.
+        // A message the level walk reaches sends from its own update (UpdateMessage); without a walk they update
+        // here, in list order.
         foreach (StatusMessage message in _statusMessages)
         {
-            if ((!message.SendOnce || !message.IsSent)
-                && _tick > message.SentTick + 210
-                && _expressions.EvaluateCondition(
-                    message.SendExpression, emptyValue: false, message.Task))
+            if (!_walkedMessages.Contains(message))
             {
-                message.IsSent = true;
-                message.SentTick = _tick;
-
-                // 0x486650 takes the lowest free slot and drops the message outright when there is
-                // none. The display only begins if it got one: a message with nowhere to go is not
-                // shown, and the original does not queue it for later.
-                if (TryTakeMessageSlot(message))
-                {
-                    message.BeginDisplay(_resolveText(message.TextResource));
-                }
-
-                if (!message.Cutscene && !string.IsNullOrEmpty(message.TextResource))
-                {
-                    if (_log.Count == 50)
-                    {
-                        _log.RemoveAt(0);
-                    }
-                    _log.Add(new MissionComputerLogEntry(message.TextResource));
-                }
+                UpdateMessage(message);
             }
 
             if (message.IsFinishedDisplay)
             {
-                message.TicksSinceFinishedDisplay++;
+                continue;
             }
-            else if (message.IsDisplaying && message.AdvanceDisplay(ExtraMessageHoldSeconds))
+
+            if (message.IsDisplaying && message.AdvanceDisplay(ExtraMessageHoldSeconds))
             {
                 message.IsFinishedDisplay = true;
                 message.FinishedDisplayTick = _tick;
@@ -901,12 +1025,21 @@ public sealed class MissionObjectiveRuntime
 
     private sealed class AreaActivation
     {
+        public DeclaredTask Task { get; }
+
         private readonly Vector3d _minimum;
         private readonly Vector3d _maximum;
         private readonly OccupantFilter _filter;
+        private readonly Vector3d _position;
+        private readonly Matrix3f _orientation;
+        private readonly Vector3f _half;
 
-        public AreaActivation(Vector3d position, Matrix3f orientation, Vector3f dimensions, string criteria)
+        public AreaActivation(DeclaredTask task, Vector3d position, Matrix3f orientation, Vector3f dimensions, string criteria)
         {
+            Task = task;
+            _position = position;
+            _orientation = orientation;
+            _half = dimensions * 0.5f;
             // AreaActivate::Prepare (0x5045F0) halves Dimensions, rotates all eight corners and
             // publishes their component-wise min/max as the query bounds.
             Vector3f half = dimensions * 0.5f;
@@ -978,10 +1111,31 @@ public sealed class MissionObjectiveRuntime
         public bool AcceptsVehicle => _filter is OccupantFilter.Vehicle or OccupantFilter.All;
 
         public int ActiveCount { get; set; }
-        public bool Contains(Vector3d point) =>
-            point.X >= _minimum.X && point.X <= _maximum.X
-            && point.Y >= _minimum.Y && point.Y <= _maximum.Y
-            && point.Z >= _minimum.Z && point.Z <= _maximum.Z;
+
+        /// <summary>Whether a point lies in the volume: the box test <c>0x5042B0</c>, in the area's own frame.</summary>
+        /// <remarks>
+        /// The rotated corners' min/max (<c>+32</c>/<c>+56</c>) are only the query's bounds; the test itself takes the
+        /// offset into the area's axes (<c>Mᵀ·(p − pos)</c>, single precision) and compares each against the half
+        /// extent. For an area turned off the world axes -- mission 7's gate volumes are turned 126° -- the bounds
+        /// hold far more ground than the box does.
+        /// </remarks>
+        public bool Contains(Vector3d point)
+        {
+            if (point.X < _minimum.X || point.X > _maximum.X
+                || point.Y < _minimum.Y || point.Y > _maximum.Y
+                || point.Z < _minimum.Z || point.Z > _maximum.Z)
+            {
+                return false;
+            }
+
+            double dx = point.X - _position.X, dy = point.Y - _position.Y, dz = point.Z - _position.Z;
+            Matrix3f m = _orientation;
+            float x = (float)((dz * m.M31) + (dy * m.M21) + (dx * m.M11));
+            float y = (float)((dz * m.M32) + (dy * m.M22) + (dx * m.M12));
+            float z = (float)((dz * m.M33) + (dy * m.M23) + (dx * m.M13));
+            return !(x > _half.X) && !(y > _half.Y) && !(z > _half.Z)
+                && !(-_half.X > x) && -_half.Y <= y && -_half.Z <= z;
+        }
     }
 
     private enum OccupantFilter

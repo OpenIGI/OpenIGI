@@ -391,9 +391,9 @@ public sealed class DestructibleObjectRegistry
                     ? ExplosionDamageDefaults.ToUnits(placement.MagicExplosionRadiusMetres)
                     : ExplosionDamageDefaults.RadiusUnits;
                 item.ExplosionFalloffUnits = ExplosionDamageDefaults.ToUnits(placement.MagicExplosionFalloffMetres);
-                item.ExplosionDamageFactor = placement.MagicExplosionDamageFactor > 0f
-                    ? placement.MagicExplosionDamageFactor
-                    : ExplosionDamageDefaults.DamageFactor;
+                // The authored damage, zero included: Explosion0 (0x47F200) sends its message to nobody when
+                // its damage is 0, so an object authored that way breaks without hurting anyone.
+                item.ExplosionDamageFactor = Math.Max(0f, placement.MagicExplosionDamageFactor);
                 item.ExplosionDamageThreshold = placement.MagicExplosionDamageThreshold > 0f
                     ? placement.MagicExplosionDamageThreshold
                     : ExplosionDamageDefaults.DamageThreshold;

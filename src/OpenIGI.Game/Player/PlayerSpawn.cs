@@ -71,6 +71,15 @@ public static class PlayerSpawn
         return true;
     }
 
+    /// <summary>Finds the mission's gameplay player task: script id zero, or the first player the level declares.</summary>
+    /// <param name="root">The level's task tree.</param>
+    /// <returns>The task, or <see langword="null"/> when the level declares no player.</returns>
+    public static HumanPlayerTask? FindGameplayTask(GameTask root)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        return FindById(root, 0) ?? FindAny(root);
+    }
+
     private static HumanPlayerTask? FindFirst(GameTask task)
     {
         foreach (GameTask child in task.Children)

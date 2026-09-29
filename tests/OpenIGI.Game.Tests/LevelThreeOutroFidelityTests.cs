@@ -48,6 +48,11 @@ public sealed class LevelThreeOutroFidelityTests
 
         Vector3d extractionCentre = Position(Assert.IsType<DeclaredTask>(root.Tree.FromId(739)));
         Step(objectives, runtime, extractionCentre);
+        Assert.Equal(0, projectileCleanupCalls);
+        // ConditionalContainer_3445 (CutScene_700.isRun, whose start runs Game_CutsceneDelete) precedes 3334, the
+        // scene's own container, in Dynamic's child list; the level walk reaches it before the scene starts, so it
+        // rises -- and deletes the projectiles -- on the following tick.
+        Step(objectives, runtime, extractionCentre);
 
         Assert.True(loop.Variables.TryRead("EditVariable_3068.nValue", out QvmValue objective3));
         Assert.Equal(1, objective3.ToInt32());
@@ -77,6 +82,10 @@ public sealed class LevelThreeOutroFidelityTests
         natives.Clear();
         Assert.True(loop.Variables.TryWrite("EditVariable_3068.nValue", QvmValue.FromInt32(1)));
 
+        Step(objectives, runtime);
+        // ConditionalContainer_3445 (CutScene_700.isRun, whose start runs Game_CutsceneDelete) precedes 3334, the
+        // scene's own container, in Dynamic's child list; the level walk reaches it before the scene starts, so it
+        // rises -- and deletes the projectiles -- on the following tick.
         Step(objectives, runtime);
 
         CutSceneTask scene = Assert.IsType<CutSceneTask>(root.Tree.FromId(700));
@@ -113,6 +122,10 @@ public sealed class LevelThreeOutroFidelityTests
         }
 
         Assert.True(moved, "AnimTask 3333 must first move plane 601 strictly after scene tick 240");
+        // ConditionalSound_3052 (CutScene_700.nTick > 12*GAME_FREQUENCY) precedes the scene in container 3334, so
+        // it reads the tick the scene reached on the previous walk.
+        Step(objectives, runtime);
+        Assert.DoesNotContain(sounds, sound => sound.Name == "m3o_pl_behind" && sound.Playing);
         Step(objectives, runtime);
         Assert.Contains(sounds, sound => sound.Name == "m3o_pl_behind" && sound.Playing);
         Assert.False(objectives.IsComplete);
@@ -157,6 +170,10 @@ public sealed class LevelThreeOutroFidelityTests
         runtime.FinishExpressionTick();
         Assert.True(loop.Variables.TryWrite("EditVariable_3068.nValue", QvmValue.FromInt32(1)));
 
+        Step(objectives, runtime);
+        // ConditionalContainer_3445 (CutScene_700.isRun, whose start runs Game_CutsceneDelete) precedes 3334, the
+        // scene's own container, in Dynamic's child list; the level walk reaches it before the scene starts, so it
+        // rises -- and deletes the projectiles -- on the following tick.
         Step(objectives, runtime);
 
         CutSceneTask scene = Assert.IsType<CutSceneTask>(root.Tree.FromId(700));

@@ -283,6 +283,10 @@ public sealed class PlayerBody
     /// <summary>Gets the eye's world position — where the view is taken from.</summary>
     public Vector3d Eye => new(Position.X, Position.Y, Position.Z + EyeHeight);
 
+    /// <summary>Gets the Human's origin (<c>+32</c>): 3877.2 units above the feet standing, 1753.8 crouched.</summary>
+    /// <remarks>The point AreaActivate's CRITERIA_HUMAN callback (<c>0x460A10</c>) tests against a volume.</remarks>
+    public Vector3d Origin => new(Position.X, Position.Y, Position.Z + (IsCrouched ? 1753.8 : 3877.2));
+
     /// <summary>Detaches the ordinary ground mover before a ladder mount is committed.</summary>
     /// <remarks>
     /// <c>sub_4113E0</c> zeroes all six velocity accumulators and snaps the human off its ground task.
@@ -389,6 +393,11 @@ public sealed class PlayerBody
         // speed constant - see HumanMotion.ApplyRootMotion.
         Matrix3f facing = FacingBasis(Yaw);
         Vector3f step = HumanMotion.ApplyRootMotion(rootDelta, facing, DeltaTranslationScale);
+
+        // 0x4614B0 damps the shove by 0.9 BEFORE adding it to the move (+1648 *= 0.9, then the sum), so a
+        // round's knock is felt at nine tenths from the very first tick. Adding first and damping after
+        // carried the player 11% further per tick than retail -- measured against a T80's coaxial gun.
+        HitShove = HumanSlopeSlide.Damp(HitShove);
 
         // The move is velocity PLUS the animation's step, always - 0x4614B0 adds them rather than
         // choosing between them. On the ground the velocity is zero and the step carries; in the air
@@ -518,9 +527,8 @@ public sealed class PlayerBody
         SlopeSlide = HumanSlopeSlide.Damp(
             HumanSlopeSlide.Accumulate(SlopeSlide, IsGrounded ? GroundNormal : null));
 
-        // The shove is damped by the same 0.9 in the same function, but it is never rebuilt: what a
-        // bullet put in stays there, decaying, until a landing or a ladder clears it.
-        HitShove = HumanSlopeSlide.Damp(HitShove);
+        // The shove was damped above, before the move: it is never rebuilt, so what a bullet put in stays
+        // there, decaying, until a landing or a ladder clears it.
 
         // 0x410B7E overwrites Human+1312 with this tick's step once the state machine has had its look
         // at the previous one. Keep the same one-tick lag so a state entry next tick reads what the

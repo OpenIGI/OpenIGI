@@ -458,6 +458,10 @@ public sealed class SoldierView
         ReleaseUpperBody();
 
         IsDead = true;
+
+        // The task's own death latch (Human+3317) is set by the death path itself, so everything later in the
+        // level walk this tick -- areas, conditions, the level flow -- already reads the soldier as dead.
+        Soldier.IsDead = true;
         if (deathAnimation >= 0 && _bones.Set.TryGet(deathAnimation, out _))
         {
             CurrentAnimation = deathAnimation;

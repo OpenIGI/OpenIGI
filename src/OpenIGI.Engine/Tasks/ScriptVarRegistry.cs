@@ -222,6 +222,27 @@ public sealed class ScriptVarRegistry
         return true;
     }
 
+    /// <summary>Unexports a task and everything beneath it, and removes every binding any of them owns.</summary>
+    /// <param name="root">The subtree's root.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="root"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <see cref="TaskTree.Delete"/> leaves a task's names bound. A level about to be replaced on the same loop
+    /// must drop them first, or its successor reads the old values until its own runtimes rebind them.
+    /// </remarks>
+    public void UnexportTree(GameTask root)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        foreach (GameTask child in root.Children)
+        {
+            UnexportTree(child);
+        }
+
+        if (!Unexport(root))
+        {
+            UnbindAll(root);
+        }
+    }
+
     /// <summary>Removes every binding a task owns.</summary>
     /// <param name="task">The task.</param>
     /// <exception cref="ArgumentNullException"><paramref name="task"/> is <see langword="null"/>.</exception>

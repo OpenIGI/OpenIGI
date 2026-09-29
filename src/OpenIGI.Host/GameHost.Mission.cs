@@ -318,6 +318,116 @@ internal sealed partial class GameHost
         _player?.M203.Clear();
     }
     /// <summary>Advances missiles fired by authored vehicles against the player's own body.</summary>
+    /// <summary>Puts the soldiers (with their doors and alarms) and the player into the level's walk.</summary>
+    /// <remarks>
+    /// Retail updates <c>HumanPlayer_0</c> where the walk reaches it inside <c>ConditionalContainer_560</c>, late in
+    /// <c>Dynamic</c>: its HumanView, Shadow, then HumanPlayerInput, whose CHANNELS packet moves it, then the
+    /// binoculars and the gun. A level without a player task keeps
+    /// updating the player after the walk.
+    /// </remarks>
+    private void AttachActorsToLevelWalk(GameTask levelRoot)
+    {
+        _soldiersInWalk = false;
+        _playerInWalk = false;
+        if (_cutscenes is not { } cutscenes)
+        {
+            return;
+        }
+
+        LevelUpdateWalker walker = cutscenes.Walker;
+        if (_soldiers is { } soldiers)
+        {
+            soldiers.AttachTo(walker);
+            _soldiersInWalk = true;
+        }
+
+        if (PlayerSpawn.FindGameplayTask(levelRoot) is { } playerTask)
+        {
+            walker.Register(playerTask, task =>
+            {
+                UpdatePlayerTask();
+                walker.WalkChildren(task);
+            });
+            _playerInWalk = true;
+        }
+    }
+
+    /// <summary>The player's update: input, movement and the weapon, once per tick.</summary>
+    /// <remarks>
+    /// A dead player is in locomotion state 47, whose per-tick is not the walking one -- so the body stops being
+    /// stepped rather than being stepped with no input. Without this a corpse walks around. What the update set
+    /// in motion -- sounds, effects, detonations -- is resolved after the walk while <see cref="_playerTicked"/>.
+    /// </remarks>
+    private void UpdatePlayerTask()
+    {
+        if (_playerTicked
+            || _cutscenes?.IsPlaying == true
+            || !_playerMode
+            || _player is not { } player
+            || _playerDead
+            || _missionFailedMenu)
+        {
+            return;
+        }
+
+        _playerTicked = true;
+
+        // The soldiers ahead of the player in the tree have moved this tick; the wall sweep meets them there.
+        _soldiers?.PublishCollisionBodies();
+        player.InputProfile = _configuration.Active;
+        GrantCheatWeapons(player);
+        if (_computerOpen)
+        {
+            player.TickMapComputer();
+        }
+        else
+        {
+            player.Tick(ViewInput, _ground);
+
+            // PlayerCamera advances its interaction registry before it resolves this tick's activate target.
+            // Do not advance the same registry again after the walk.
+            _interactionsTickedByPlayer = true;
+        }
+
+        TickVehicleMissiles();
+        CheckRunOver();
+
+        // Grenade physics runs inside PlayerCamera.Tick. The grenade's AI events reach the soldiers' next
+        // update, as retail's grenade task -- a runtime task at the end of Dynamic, after every soldier -- does.
+        NotifyGrenadeAiEvents();
+    }
+
+    /// <summary>The player as a soldier sees it at the moment the soldier updates.</summary>
+    /// <remarks>
+    /// In the fly-through the eye is the CAMERA's: guards otherwise watch an immobile body at the spawn. The feet
+    /// are what combat aims at (sub_451380). A dead player is no longer a target (the detection scan
+    /// 0x489750 unregisters it), and neither is one hidden behind a cinematic.
+    /// </remarks>
+    private SoldierEnemy SoldierEnemyNow()
+    {
+        bool body = _playerMode && _player is not null;
+        Vector3d eye = body ? _player!.Body.Eye : _camera?.Position ?? _player?.Body.Eye ?? default;
+        Vector3d feet = body ? _player!.Body.Position : eye;
+        return new SoldierEnemy(eye, !_playerDead && _cutscenes?.IsPlaying != true, feet, body && _player!.IsCrouched);
+    }
+
+    /// <summary>The player as an area counts it at the moment the area updates.</summary>
+    /// <remarks>
+    /// During an authored cinematic the occupant is the cutscene camera rather than the stationary player body; a
+    /// diagnostic free camera must not impersonate a player that exists (Mission 4's AreaActivate_156 would start
+    /// the outro as the camera follows Bell 800).
+    /// </remarks>
+    private AreaPlayer AreaPlayerNow()
+    {
+        Vector3d? cutsceneView = _cutscenes?.Frame?.Camera.Position;
+        Vector3d? freeView = !_playerMode ? _camera?.Position : null;
+        return new AreaPlayer(
+            AreaActivationOccupant(_player?.Body.Origin, cutsceneView, freeView),
+            _soldiers?.PlayerTeam ?? 0,
+            AreaActivationExtraOccupant(_player?.Body.Origin, cutsceneView),
+            !_playerDead);
+    }
+
     private void TickVehicleMissiles()
     {
         if (_player is not { } player)
@@ -527,6 +637,13 @@ internal sealed partial class GameHost
             difficulty: (int?)_options.Difficulty ?? _configuration.Active?.Difficulty ?? 1,
             isKeyDown: key => _window.Input.Keyboard.IsDown(key));
 
+        // The areas and edit variables update inside the level's one walk, where the tree places them.
+        objectives.AttachTo(
+            _cutscenes.Walker,
+            _cutscenes.VehicleOccupants,
+            () => _soldiers?.LiveOccupants() ?? [],
+            AreaPlayerNow);
+
         // Cinematics are opt-in while their retail parity work is in progress. Do not tear the runtime
         // out: the level expressions still use its native surface, and mission outros may activate it
         // later. Instead take the exact path Escape takes in retail. The objective flow observes the
@@ -678,7 +795,10 @@ internal sealed partial class GameHost
             // arrives with its own already walked.
             world.Spins = _spins;
             _world = world;
-            solids = ObjectCollisionIndex.Build(scene.Placements, _titleRuntime.Formats.Collision);
+            solids = ObjectCollisionIndex.Build(
+                scene.Placements,
+                _titleRuntime.Formats.Collision,
+                name => loaded.TryGetModel(name, out MefModel? model) ? model : null);
             _worldSolids = solids;
             EndStage("the scene walk, the world renderer and the collision index");
         }
@@ -701,6 +821,29 @@ internal sealed partial class GameHost
         // Bind each car's drawn TASKTYPE_WHEEL attachments to its physics record so the drive force
         // and the tyre torque act at the real axle offsets, and the wheels roll and steer.
         _cutscenes.BindVehicleWheels(scene, name => CutsceneWheelRadius(loaded, name));
+
+        // Every car runs on the original's rigid body, its wheel rays answered by the exact terrain query.
+        if (loaded.Terrain is { } carTerrain)
+        {
+            RetailTerrainRay carRays = new(
+                carTerrain.Octree,
+                carTerrain.Commands,
+                TerrainDiscardBinding.For(carTerrain).Regions,
+                TerrainHeightBindings.Bind(carTerrain, levelRoot));
+            Func<string, MefModel?> carModels = name => loaded.TryGetModel(name, out MefModel? model) ? model : null;
+            CutsceneRuntime cutscenes = _cutscenes;
+            _cutscenes.ConfigureRetailCars(
+                new RetailCarWorld(
+                    carRays,
+                    RetailWorldObjects.Build(
+                        levelRoot,
+                        carModels,
+                        name => _magic?.TryGet(name, out MagicObjectDefinition attached) == true ? attached : null),
+                    cutscenes.RetailVehicleModels,
+                    static owner => owner is not GameTask task || ConditionalContainerGate.IsTaskActive(task)),
+                carModels,
+                name => _magic?.TryGet(name, out MagicObjectDefinition magic) == true ? magic : null);
+        }
 
         // Every Car exports isExploded and blows up from its own CAR record's explosion points; the
         // CarAI stops, and follows its body, through the same registry.
@@ -728,7 +871,7 @@ internal sealed partial class GameHost
         _snow.ReadParams(levelRoot);
         _storm?.Dispose();
         _storm = new StormRenderer(_device, _logger);
-        BuildShelterField(scene);
+        BuildShelterField(scene, loaded);
 
         // The storm falls where the level says rain falls -- it is the same weather, drawn better -- so
         // it inherits the vanilla renderer's reading of the RainEffect task rather than parsing it a
@@ -922,6 +1065,12 @@ internal sealed partial class GameHost
                     "Ai",
                     $"Nav graphs: {graphs.Count} — " +
                     string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n@{p.Value.CoverMidOffsetMetres:0.##}m")));
+
+                // CarAI is a separate retail task family from HumanAI. Give the runtime the same graph
+                // corpus the soldiers receive so every graph-driven vehicle -- Mission 7's checkpoint APC
+                // and T80, Mission 6's alarm APC, the objective-gated limousines -- follows its authored
+                // PatrolPath route. d843661b dropped this call and left every one of them parked.
+                _cutscenes?.ConfigureCarAi(graphs);
 
                 // The difficulty every guard reads its combat row at. Faithfully the ACTIVE PLAYER PROFILE's
                 // (sub_406F70 takes it from sub_406220()'s first field), so the difficulty the player picked
@@ -1286,10 +1435,17 @@ internal sealed partial class GameHost
                     // does it fall back to the cylinder-and-trunk stand-in. Skipped entirely for a corpse.
                     HumanHit hit = default;
                     bool met = false;
+                    IReadOnlyList<HumanBodyCrossing> crossings = [];
                     if (playerInTheRay)
                     {
-                        met = _soldiers is not null
-                            && _soldiers.TryHitPlayerBody(from, to, feet, _player.Body.Yaw, out hit);
+                        if (_soldiers is not null
+                            && _soldiers.TryCastPlayerBody(from, to, feet, _player.Body.Yaw, out crossings)
+                            && crossings.Count > 0)
+                        {
+                            hit = crossings[0].Hit;
+                            met = true;
+                        }
+
                         if (!met)
                         {
                             Vector3f facing = new(-MathF.Sin(_player.Body.Yaw), MathF.Cos(_player.Body.Yaw), 0f);
@@ -1302,8 +1458,10 @@ internal sealed partial class GameHost
                     // the same mark a player's round does. In retail a miss is visible: the round lands
                     // on the wall or the dirt near you (10.4's decals) -- rounds that silently vanished
                     // are why the guards seemed to hit with every bullet.
+                    // A vehicle's gun casts with the vehicle as its owner (0x413D10 hands Gun_Fire's
+                    // owner through), so its own hull never stops the round.
                     bool worldBlocked = worldTrace(
-                        new WorldTraceRequest(from, to, WorldTraceMask.World),
+                        new WorldTraceRequest(from, to, WorldTraceMask.World, IgnoredOwner: _vehicleRoundOwner),
                         out WorldTraceHit blocker);
                     WorldRayHit worldHit = worldBlocked ? blocker.RayHit : default;
 
@@ -1460,59 +1618,137 @@ internal sealed partial class GameHost
                         return;
                     }
 
-                    _playerHealth.Apply(hit.Zone, weapon.DamageFactor);
-                    PlayBulletImpactSound(hit.Position, struckHuman: true, surfaceMaterial: 0);
-                    _guardHits++;
-
-                    // The retail handler transforms the round into camera space before writing the four
-                    // corner alphas. It picks 0.4–0.8 rather than one opaque wash and replaces the prior
-                    // hit, so automatic fire remains a directional cue instead of a full-screen strobe.
-                    Vector3f incoming = new(
-                        (float)(to.X - from.X),
-                        (float)(to.Y - from.Y),
-                        (float)(to.Z - from.Z));
-                    Vector3f viewIncoming = _player.Camera.Orientation.Transposed().Transform(incoming);
-
-                    // 0x412440's order: the grunt, then the shake, then the flash, each on its own draw.
-                    if (!_playerHealth.IsDead)
+                    if (StrikePlayer(hit) || crossings.Count == 0)
                     {
-                        PlayPlayerGrunt();
+                        return;
                     }
 
-                    InstallPlayerHitShake();
-                    _damageFlash.Hit(viewIncoming, _soundRandom.NextSingle());
-
-                    // Every connecting round SHOVES the player 5 km/h along its travel -- the hit
-                    // handler (0x412440) normalises the round's direction and adds x/y x 189.62962
-                    // into the slide accumulator, whose 0.9-a-tick damping then bleeds it off. This is
-                    // what makes sustained fire stagger the player in retail.
-                    if (!_playerHealth.IsDead)
+                    // The round does not stop at the body (0x47B750). The body's entry face is a surface like any
+                    // other: the player's handler takes the hit, and the round goes on only if it beats the face's
+                    // material (power against bullet resistance; the human materials author no ricochet angle).
+                    // A round that goes on leaves through an exit face and stops at the next surface it enters,
+                    // after that surface has taken the hit too -- another part of the body behind, which hits
+                    // the player a second time, or the world beyond. Each cast that meets the body rolls the
+                    // player's evaluate again. Probed on mission 1 (a guard's power-2 rounds) and mission 7 (the
+                    // T80's M2HB): pairs of hits from one round.
+                    if (!Penetrates(crossings[0].Material))
                     {
-                        double shoveX = to.X - from.X;
-                        double shoveY = to.Y - from.Y;
-                        double shoveZ = to.Z - from.Z;
-                        double length = Math.Sqrt((shoveX * shoveX) + (shoveY * shoveY) + (shoveZ * shoveZ));
-                        if (length > 1e-6)
+                        return;
+                    }
+
+                    bool leftBody = false;
+                    double next = hit.Distance + GunShotBallistics.PenetrationStepOffUnits;
+                    for (int index = 1; index < crossings.Count; index++)
+                    {
+                        HumanBodyCrossing crossing = crossings[index];
+                        if (crossing.Hit.Distance < next)
                         {
-                            _player.Body.AddHitShove(
-                                (float)(shoveX / length * PlayerBody.HitShoveUnitsPerTick),
-                                (float)(shoveY / length * PlayerBody.HitShoveUnitsPerTick));
+                            continue;
                         }
+
+                        if ((worldBlocked && worldHit.Distance < crossing.Hit.Distance)
+                            || _shotRandom.NextDouble() > probability
+                            || _shotRandom.NextDouble() > probability)
+                        {
+                            break;
+                        }
+
+                        if (!crossing.Entering)
+                        {
+                            leftBody = true;
+                            next = crossing.Hit.Distance + GunShotBallistics.PenetrationStepOffUnits;
+                            continue;
+                        }
+
+                        if (StrikePlayer(crossing.Hit) || leftBody || !Penetrates(crossing.Material))
+                        {
+                            return;
+                        }
+
+                        next = crossing.Hit.Distance + GunShotBallistics.PenetrationStepOffUnits;
                     }
 
-                    _logger.Information(
-                        "Weapon",
-                        $"A guard's {weapon.ScriptId} hit the player in the {HumanDamage.ZoneName(hit.Zone)} "
-                            + $"({_guardHits} of {_guardRounds} round(s); "
-                            + $"{_playerHealth.RemainingFraction:P0} left).");
-
-                    if (_playerHealth.IsDead)
+                    // Past the body the round meets the world, which takes it.
+                    if (worldBlocked && worldHit.Distance > hit.Distance)
                     {
-                        BeginPlayerDeath(from, hit.Zone, hit.Bone, weapon.Category);
+                        MarkTheImpact();
+                    }
+
+                    return;
+
+                    // Whether the round gets through a face of this material; the equal case draws its sample.
+                    bool Penetrates(int material)
+                    {
+                        if (_worldMaterials is not { } materials || !materials.TryGet(material, out GameMaterial face))
+                        {
+                            return false;
+                        }
+
+                        float margin = weapon.PenetrationPower - face.BulletResistance;
+                        float sample = margin == 0f ? (float)_shotRandom.NextDouble() : 0f;
+                        return GunShotBallistics.Penetrates(weapon.PenetrationPower, face.BulletResistance, sample);
+                    }
+
+                    // One call of the player's hit handler (0x412440): the damage, the grunt, the shake, the flash
+                    // and the shove. Returns whether it killed the player.
+                    bool StrikePlayer(HumanHit struck)
+                    {
+                        _playerHealth.Apply(struck.Zone, weapon.DamageFactor);
+                        PlayBulletImpactSound(struck.Position, struckHuman: true, surfaceMaterial: 0);
+                        _guardHits++;
+
+                        // The retail handler transforms the round into camera space before writing the four
+                        // corner alphas. It picks 0.4–0.8 rather than one opaque wash and replaces the prior
+                        // hit, so automatic fire remains a directional cue instead of a full-screen strobe.
+                        Vector3f incoming = new(
+                            (float)(to.X - from.X),
+                            (float)(to.Y - from.Y),
+                            (float)(to.Z - from.Z));
+                        Vector3f viewIncoming = _player.Camera.Orientation.Transposed().Transform(incoming);
+
+                        // 0x412440's order: the grunt, then the shake, then the flash, each on its own draw.
+                        if (!_playerHealth.IsDead)
+                        {
+                            PlayPlayerGrunt();
+                        }
+
+                        InstallPlayerHitShake();
+                        _damageFlash.Hit(viewIncoming, _soundRandom.NextSingle());
+
+                        // Every connecting round SHOVES the player 5 km/h along its travel -- the hit
+                        // handler (0x412440) normalises the round's direction and adds x/y x 189.62962
+                        // into the slide accumulator, whose 0.9-a-tick damping then bleeds it off. This is
+                        // what makes sustained fire stagger the player in retail.
+                        if (!_playerHealth.IsDead)
+                        {
+                            double shoveX = to.X - from.X;
+                            double shoveY = to.Y - from.Y;
+                            double shoveZ = to.Z - from.Z;
+                            double length = Math.Sqrt((shoveX * shoveX) + (shoveY * shoveY) + (shoveZ * shoveZ));
+                            if (length > 1e-6)
+                            {
+                                _player.Body.AddHitShove(
+                                    (float)(shoveX / length * PlayerBody.HitShoveUnitsPerTick),
+                                    (float)(shoveY / length * PlayerBody.HitShoveUnitsPerTick));
+                            }
+                        }
+
                         _logger.Information(
                             "Weapon",
-                            $"The player is DEAD after {_guardHits} hit(s) from {_guardRounds} round(s), "
-                                + $"struck in zone {hit.Zone}; the death camera has pulled back.");
+                            $"A guard's {weapon.ScriptId} hit the player in the {HumanDamage.ZoneName(struck.Zone)} "
+                                + $"({_guardHits} of {_guardRounds} round(s); "
+                                + $"{_playerHealth.RemainingFraction:P0} left).");
+
+                        if (_playerHealth.IsDead)
+                        {
+                            BeginPlayerDeath(from, struck.Zone, struck.Bone, weapon.Category);
+                            _logger.Information(
+                                "Weapon",
+                                $"The player is DEAD after {_guardHits} hit(s) from {_guardRounds} round(s), "
+                                    + $"struck in zone {struck.Zone}; the death camera has pulled back.");
+                        }
+
+                        return _playerHealth.IsDead;
                     }
                 });
             }
@@ -1539,6 +1775,9 @@ internal sealed partial class GameHost
         {
             _logger.Warning("Ai", $"The nav graph could not be read: {ex.Message}");
         }
+
+        // The soldiers, the doors, the alarm controls and the player update inside the level's walk.
+        AttachActorsToLevelWalk(levelRoot);
 
         // Everything from here to the free camera is what makes the level a PICTURE, and a promoted
         // backdrop is already that picture -- AdoptPreview built the terrain (with its ground detail
@@ -1908,6 +2147,7 @@ internal sealed partial class GameHost
             // The guards' weapons, which have to wait for the roster: a soldier's gun is an authored
             // Gun child task naming a WEAPON_ID_*, and only the table knows which model that draws.
             _soldiers?.Arm(loaded, weaponRoster);
+            ArmVehicles(loaded, levelRoot, weaponRoster, candidate);
             EndStage("the guards' weapon models");
 
             // The player's tuning is not in the executable: humanplayer.qvm is the whole of it, and it
@@ -2410,6 +2650,7 @@ internal sealed partial class GameHost
 
     /// <summary>Builds the level's top-down map of what the solid world stands over, and binds it.</summary>
     /// <param name="scene">The mission's placed objects.</param>
+    /// <param name="loaded">The mission whose models bend its spline segments, as the collision index bends them.</param>
     /// <remarks>
     /// <para>
     /// The one answer to "can the sky reach this point", for the fog, the falling rain, its splashes and
@@ -2424,12 +2665,15 @@ internal sealed partial class GameHost
     /// a pixel draws and the drop the storm culls are decided by the same numbers.
     /// </para>
     /// </remarks>
-    private void BuildShelterField(WorldScene scene)
+    private void BuildShelterField(WorldScene scene, LoadedMission loaded)
     {
         ReleaseShelterField();
 
         long started = _loop.TimeSource.Milliseconds;
-        _shelterField = ShelterHeightField.Build(scene.Placements, collision: _titleRuntime.Formats.Collision);
+        _shelterField = ShelterHeightField.Build(
+            scene.Placements,
+            collision: _titleRuntime.Formats.Collision,
+            models: name => loaded.TryGetModel(name, out MefModel? model) ? model : null);
         if (_shelterField.IsEmpty)
         {
             _logger.Information("Shelter", "the level places nothing solid; nothing is sheltered");
@@ -2508,6 +2752,8 @@ internal sealed partial class GameHost
         _missionObjectives?.Release();
         _missionObjectives = null;
         _cutscenes = null;
+        _soldiersInWalk = false;
+        _playerInWalk = false;
         _securityCameras = null;
         _cameraBeepVoices.Clear();
         _cameraMoveVoices.Clear();
@@ -2605,8 +2851,21 @@ internal sealed partial class GameHost
         _genericPickups = null;
         _loadedMissionForWeapon = null;
 
+        // Rockets a vehicle fired in the run being left must not keep flying into the next one, nor its engines
+        // and guns keep sounding.
+        _vehicleMissiles.Clear();
+        _vehicleSounds?.StopAll();
+        _vehicleSounds = null;
+
         if (_activeLevelRoot is not null && !_activeLevelRoot.IsDeleted)
         {
+            // Deleting a task does not unexport its names (TaskTree.Delete), and a restart reuses this loop's
+            // variables. Left bound, AreaActivate_175.nActive, Car_361.isExploded and the rest answered for the
+            // run being left until the new level's runtimes rebound them -- after the conditional containers had
+            // already been decided. Mission 7's real T80 (ConditionalContainer_700, which latches itself through
+            // this.isRun) came up live at tick 0 whenever the player restarted from inside its trigger area.
+            // Unbound, the new level starts from the same zeros a first load does.
+            _loop.Variables.UnexportTree(_activeLevelRoot);
             _loop.Tasks.Delete(_activeLevelRoot);
         }
         _activeLevelRoot = null;
@@ -3114,6 +3373,168 @@ internal sealed partial class GameHost
         }
 
         return null;
+    }
+
+    /// <summary>Gives every authored vehicle that can fire the guns its model carries, and aims them at the player.</summary>
+    /// <remarks>
+    /// <para>
+    /// A vehicle's guns are attachments of its model (<c>0x4F4800</c> spawns them through <c>0x4C4950</c>);
+    /// each <c>TASKTYPE_AISTATIONARYGUN</c> names its weapon by model (<c>0x413C00</c>). A gun mounted on
+    /// another gun -- a T80's coaxial M2HB on its turret -- sits at the sum of both attachment offsets.
+    /// </para>
+    /// <para>
+    /// Missile rows (T80, APC) launch into the vehicle missile simulation; gunshot rows (M2HB, MIL) go
+    /// through the soldiers' round cast at probability 1, the value <c>0x46F950</c>'s fire message carries.
+    /// </para>
+    /// </remarks>
+    /// <summary>The vehicle whose gun's round is being cast, so the cast passes through its own hull.</summary>
+    private GameTask? _vehicleRoundOwner;
+
+    private void ArmVehicles(LoadedMission loaded, LevelTask levelRoot, WeaponTypeRegistry roster, PlayerCamera player)
+    {
+        if (_cutscenes is not { } runtime || _magic is not { } magic)
+        {
+            return;
+        }
+
+        int armed = 0;
+        List<string> weaponModels = [];
+        foreach (DeclaredTask vehicle in WalkTasks(levelRoot).OfType<DeclaredTask>())
+        {
+            if (vehicle.Type.Name is ("Car" or "Heli")
+                && vehicle.TryGetValue("Model", out object? rawZoneModel)
+                && rawZoneModel is string zoneModel)
+            {
+                runtime.ConfigureDeathZones(
+                    vehicle,
+                    VehicleDeathZone.FromModel(zoneModel, ModelOf, magic));
+            }
+
+            // A helicopter's gun runs only while its AnimTask flies it; CutsceneRuntime gates that.
+            if (vehicle.Type.Name is not ("Car" or "Heli")
+                || !vehicle.TryGetValue("Can fire", out object? rawCanFire)
+                || rawCanFire is not string canFire
+                || string.IsNullOrWhiteSpace(canFire)
+                || !vehicle.TryGetValue("Model", out object? rawModel)
+                || rawModel is not string modelName)
+            {
+                continue;
+            }
+
+            IReadOnlyList<VehicleGun> guns = VehicleGun.FromModel(
+                modelName,
+                ModelOf,
+                magic,
+                roster,
+                (attachment, weaponModel) => _logger.Warning(
+                    "Ai",
+                    $"Vehicle gun {attachment} names weapon model {weaponModel}, which no weapon row uses."));
+            if (guns.Count == 0)
+            {
+                continue;
+            }
+
+            runtime.ConfigureVehicleGuns(vehicle, guns);
+            weaponModels.AddRange(guns.Select(static gun => gun.Mount.WeaponModel));
+            armed++;
+            _logger.Information(
+                "Ai",
+                $"{vehicle.Type.Name} {vehicle.Id} ({modelName}) carries "
+                    + string.Join(", ", guns.Select(static gun => gun.Weapon.ScriptId)) + ".");
+        }
+
+        if (armed == 0)
+        {
+            return;
+        }
+
+        // The guns turn their mounts and carry weapon models of their own, which the mount models do not include.
+        if (_scene is { } armedScene)
+        {
+            runtime.BindVehicleGunPlacements(armedScene);
+        }
+
+        _soldiers?.ArmVehicleGuns(loaded, weaponModels, runtime.VehicleGunVisuals);
+
+        // A vehicle gun aims at what its vehicle's vision holds: the human's model origin (Human+32),
+        // about a metre over the feet standing and half that crouched -- not the eye.
+        runtime.VehicleCombatTarget = () => !_playerHealth.IsDead
+            ? player.Body.Position + new Vector3d(
+                0d,
+                0d,
+                player.Body.IsCrouched ? AiSoldier.HumanOriginCrouchedInUnits : AiSoldier.HumanOriginStandingInUnits)
+            : null;
+        // A vehicle's detection sweep tests the point the human reports to every viewer -- the soldiers' mark over
+        // the feet -- along the soldiers' sight ray (0x489B20), which passes its own body.
+        runtime.VehicleSightTarget = () => !_playerHealth.IsDead
+            ? player.Body.Position + new Vector3d(0d, 0d, AiSoldier.DetectionMarkAboveFeet(player.Body.IsCrouched))
+            : null;
+        runtime.VehicleCombatLineOfSight = (owner, from, to) =>
+            _worldTrace is null
+            || SoldierRenderer.HasLineOfSight(_worldTrace, from, to, AiSoldier.SightObstructionTolerance, owner);
+        runtime.VehicleCombatShotFired = shot =>
+        {
+            if (shot.IsHitscan)
+            {
+                if (roster.TryGetByScriptId(shot.WeaponScriptId, out WeaponType gunshot))
+                {
+                    _vehicleRoundOwner = shot.Owner;
+                    try
+                    {
+                        _soldiers?.RoundHandler?.Invoke(shot.Origin, shot.Target, 1f, gunshot, null);
+                    }
+                    finally
+                    {
+                        _vehicleRoundOwner = null;
+                    }
+                }
+
+                return;
+            }
+
+            // The report is the gun's, on the hold edges Gun_Fire plays it on (VehicleSoundPlayer); the missile
+            // task makes no launch sound of its own.
+            _vehicleMissiles.Spawn(
+                shot.Origin,
+                shot.Target,
+                shot.MissileType,
+                shot.MuzzleVelocityMetresPerSecond,
+                shot.Direction,
+                shot.ModelName,
+                collisionOwner: shot.Owner,
+                sourceWeaponId: roster.TryGetByScriptId(shot.WeaponScriptId, out WeaponType launcher) ? launcher.WeaponId : 0);
+        };
+        _logger.Information("Ai", $"{armed} armed vehicle(s).");
+
+        MefModel? ModelOf(string name) =>
+            loaded.LevelPack.TryGetModel(name, out MefModel? mef) || loaded.CommonPack.TryGetModel(name, out mef)
+                ? mef
+                : null;
+    }
+
+    /// <summary>Kills the player when a moving vehicle's death zone reaches them (<c>0x45FA80</c>).</summary>
+    private void CheckRunOver()
+    {
+        if (_player is null || _playerDead || _cutscenes is not { } runtime)
+        {
+            return;
+        }
+
+        Vector3d origin = _player.Body.Position + new Vector3d(0d, 0d, AiSoldier.HumanOriginStandingInUnits);
+        if (!runtime.TryRunOver(origin, out GameTask? vehicle) || vehicle is null)
+        {
+            return;
+        }
+
+        _playerHealth.Apply(VehicleDeathZone.Zone, VehicleDeathZone.Damage);
+        _logger.Information("Ai", $"The player was run over by {vehicle.Type.Name} {vehicle.Id}.");
+        if (_playerHealth.IsDead)
+        {
+            Vector3d from = runtime.TryGetDrawTransform(vehicle, out Vector3d metres, out _)
+                ? metres * WorldScene.UnitsPerMetre
+                : origin;
+            BeginPlayerDeath(from, VehicleDeathZone.Zone, bone: -1, WeaponCategory.Knife);
+        }
     }
 
     private static IEnumerable<GameTask> WalkTasks(GameTask task)

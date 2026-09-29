@@ -102,6 +102,7 @@ public sealed class SoldierDeathBindingsTests
             if (task is ConditionalContainerTask container)
             {
                 Assert.True(loop.Variables.TryWrite($"{container.Name}.isRun", QvmValue.FromInt32(1)));
+                container.IsActive = true; // registered as the level walk's rising edge would (0x4874E0)
             }
         }
         Assert.True(ConditionalContainerGate.IsTaskActive(root.Tree.FromId(400)));

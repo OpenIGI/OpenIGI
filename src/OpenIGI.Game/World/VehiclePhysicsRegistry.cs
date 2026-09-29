@@ -205,7 +205,12 @@ public sealed class VehiclePhysicsRegistry
                 call.GetSingle(20),
                 call.GetSingle(21),
                 call.GetSingle(12),
-                surfaces));
+                surfaces)
+            {
+                // With no body points (arg 9 = 0 on both shipped airframes) the sleep thresholds are args 10 and 11.
+                SleepSpeed = call.GetSingle(10),
+                SleepSpin = call.GetSingle(11),
+            });
         }
         else if (taskType == _carType && call.ArgumentCount >= 20)
         {
@@ -302,6 +307,11 @@ public sealed class VehiclePhysicsRegistry
                 arguments)
             {
                 ExplosionPoints = explosionPoints,
+                SkidSteer = Integer(arguments, wheelCountIndex + 1 + (parsedWheels * 6) + 2, 0) != 0,
+                EngineSoundSet = wheelCountIndex + 1 + (parsedWheels * 6) + 3 < arguments.Length
+                    && arguments[wheelCountIndex + 1 + (parsedWheels * 6) + 3].Kind == QvmValueKind.String
+                        ? arguments[wheelCountIndex + 1 + (parsedWheels * 6) + 3].Text
+                        : string.Empty,
             });
         }
         else if (taskType == _planeType && call.ArgumentCount >= 9)
@@ -344,7 +354,14 @@ public readonly record struct HelicopterPhysicsDefinition(
     float HighCollectiveStep,
     float LowCollectiveStep,
     float MaximumSpeed,
-    IReadOnlyList<AerodynamicSurfaceDefinition> Aerodynamics);
+    IReadOnlyList<AerodynamicSurfaceDefinition> Aerodynamics)
+{
+    /// <summary>Gets the sleep speed threshold (<c>TYPE + 716</c>).</summary>
+    public float SleepSpeed { get; init; }
+
+    /// <summary>Gets the sleep threshold on |ω|² (<c>TYPE + 720</c>).</summary>
+    public float SleepSpin { get; init; }
+}
 
 /// <summary>The CAR physics record, as the retail parsers build it.</summary>
 /// <param name="Mass">The body mass, from the TYPE record's <c>+8</c>.</param>
@@ -391,6 +408,22 @@ public readonly record struct CarPhysicsDefinition(
     /// count.
     /// </remarks>
     public IReadOnlyList<int> ExplosionPoints { get; init; } = [];
+
+    /// <summary>Gets whether the car steers by easing the drive on one side -- record byte <c>+609</c>.</summary>
+    /// <remarks>
+    /// The APC and T80 have no steerable wheel. With this byte set, <c>0x430D10</c> scales each driven
+    /// wheel's drive by <c>0x4304B0</c>: under positive steering the right-hand wheels (body side 1) drive at
+    /// <c>1 - 2s</c>, under negative steering the left-hand ones at <c>1 + 2s</c>.
+    /// </remarks>
+    public bool SkidSteer { get; init; }
+
+    /// <summary>Gets the name of the car's engine sound set -- record <c>+610</c>.</summary>
+    /// <remarks>
+    /// <c>0x42E320</c> instantiates it as a child of the car (<c>0x4E6B00</c>) while the car's "Play sound" holds. The
+    /// APC names <c>apc_sounds</c>, the trucks and limousine <c>truck_sounds</c>; the T80's <c>t80_sounds</c> and the
+    /// buggy's <c>buggy_engine_1</c> are defined by no retail sound script, so those cars are silent.
+    /// </remarks>
+    public string EngineSoundSet { get; init; } = string.Empty;
 
     /// <summary>Number of values in the original <c>DefinePhysicsObjType</c> call.</summary>
     public int ArgumentCount => Arguments.Count;

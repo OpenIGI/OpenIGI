@@ -769,6 +769,323 @@ public sealed class AiScenarioHarness : IDisposable
         File.WriteAllText(output, log.ToString());
     }
 
+    /// <summary>
+    /// The port half of the probe's <c>vehiclegun</c> capture: the same autopilot script, played headless,
+    /// with one vehicle's guns written in the probe's own record format.
+    /// </summary>
+    /// <remarks>
+    /// Runs only when <c>OPENIGI_VEH_SCENARIO</c> names the trace file. <c>OPENIGI_VEH_SCENARIO_SCRIPT</c> is
+    /// the probe script (<c>god</c>, <c>teleport x y z [yaw]</c>, <c>quit</c>; retail units and headings),
+    /// <c>_MISSION</c> the mission (7) and <c>_ID</c> the vehicle (354). Each gun logs its pose every tick it
+    /// changes, a TRIGGER line when its trigger changes, and a ROUND line for each round it fires.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void ScriptedVehicleCapture()
+    {
+        string? output = Environment.GetEnvironmentVariable("OPENIGI_VEH_SCENARIO");
+        string? scriptPath = Environment.GetEnvironmentVariable("OPENIGI_VEH_SCENARIO_SCRIPT");
+        if (string.IsNullOrEmpty(output) || string.IsNullOrEmpty(scriptPath))
+        {
+            return;
+        }
+
+        const double OriginAboveFeet = 3877.2;
+        int mission = EnvInt("OPENIGI_VEH_SCENARIO_MISSION", 7);
+        int vehicleId = EnvInt("OPENIGI_VEH_SCENARIO_ID", 354);
+        List<(int Tick, string Op, double[] Args)> script = [];
+        List<(int Tick, string Name, int Value)> setvars = [];
+        foreach (string raw in File.ReadAllLines(scriptPath))
+        {
+            string line = raw.Split('#')[0].Trim();
+            string[] words = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length >= 2 && words[1].Equals("setvar", StringComparison.OrdinalIgnoreCase) && words.Length >= 4)
+            {
+                setvars.Add((int.Parse(words[0], CultureInfo.InvariantCulture), words[2], int.Parse(words[3], CultureInfo.InvariantCulture)));
+            }
+            else if (words.Length >= 2)
+            {
+                script.Add((
+                    int.Parse(words[0], CultureInfo.InvariantCulture),
+                    words[1].ToLowerInvariant(),
+                    [.. words.Skip(2).Select(word => double.Parse(word, CultureInfo.InvariantCulture))]));
+            }
+        }
+
+        StringBuilder log = new();
+        using RecordingGraphicsDevice device = new();
+        GameHost host = Host(device, new HeadlessGameWindow(), "-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000");
+        host.Start();
+        host.ScriptedViewInput = new InputState();
+        FieldInfo playerField = typeof(GameHost).GetField("_player", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo soldiersField = typeof(GameHost).GetField("_soldiers", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo loopField = typeof(GameHost).GetField("_loop", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo cutscenesField = typeof(GameHost).GetField("_cutscenes", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo healthField = typeof(GameHost).GetField("_playerHealth", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        FieldInfo tickField = typeof(SoldierRenderer).GetField("_tick", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        PlayerCamera? player = null;
+        SoldierRenderer? soldiers = null;
+        for (int i = 0; i < 20_000 && (player is null || soldiers is null); i++)
+        {
+            Assert.True(host.Step());
+            player = playerField.GetValue(host) as PlayerCamera;
+            soldiers = soldiersField.GetValue(host) as SoldierRenderer;
+        }
+
+        Assert.NotNull(player);
+        Assert.NotNull(soldiers);
+        OpenIGI.Engine.Flow.GameLoop loop = (OpenIGI.Engine.Flow.GameLoop)loopField.GetValue(host)!;
+        CutsceneRuntime runtime = (CutsceneRuntime)cutscenesField.GetValue(host)!;
+        OpenIGI.Engine.Tasks.GameTask vehicle = loop.Tasks.FromId(vehicleId)!;
+        Assert.NotNull(vehicle);
+
+        int tick = -1;
+        Action<VehicleCombatShot>? fired = runtime.VehicleCombatShotFired;
+        runtime.VehicleCombatShotFired = shot =>
+        {
+            log.AppendLine(CultureInfo.InvariantCulture, $"[vgun] ROUND tick={tick} owner={shot.Owner?.Id} weapon={shot.WeaponScriptId} origin=({shot.Origin.X:0},{shot.Origin.Y:0},{shot.Origin.Z:0})");
+
+            fired?.Invoke(shot);
+        };
+
+        List<VehicleGunTurret> guns = [];
+        for (int index = 0; runtime.GunTurret(vehicle, index) is { } turret; index++)
+        {
+            guns.Add(turret);
+            log.AppendLine(CultureInfo.InvariantCulture, $"[vgun] GUN index={index} weapon={turret.Mount.WeaponModel}");
+        }
+
+        List<OpenIGI.Engine.Tasks.DeclaredTask> vehicles = [.. Walk(loop.Tasks.Root)
+            .OfType<OpenIGI.Engine.Tasks.DeclaredTask>()
+            .Where(static task => task.Type.Name is "Car" or "Heli")];
+        HumanHealth health = (HumanHealth)healthField.GetValue(host)!;
+        FieldInfo deadField = typeof(GameHost).GetField("_playerDead", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        bool[] triggers = new bool[guns.Count];
+        bool god = false;
+        int last = -1;
+        bool quit = false;
+        int maxSteps = EnvInt("OPENIGI_VEH_SCENARIO_STEPS", 200_000);
+        int lastPlaneSteps = -1;
+        Dictionary<PlacedDoor, string> doorLines = [];
+
+        // OPENIGI_VEH_SCENARIO_POSLOG=<n>: the player's position every n ticks, as the probe's IGI_PROBE_POSLOG.
+        int posEvery = Math.Max(1, EnvInt("OPENIGI_VEH_SCENARIO_POSLOG", 30));
+        string progress = output + ".progress";
+        File.WriteAllText(progress, string.Empty);
+        for (int step = 0; step < maxSteps && !quit; step++)
+        {
+            if (step % 2000 == 0)
+            {
+                File.AppendAllText(progress, string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"step={step} tick={tick} engine={(int)tickField.GetValue(soldiers)!} memMB={GC.GetTotalMemory(false) / 1048576}{Environment.NewLine}"));
+            }
+
+            if (god)
+            {
+                // The host keeps the player's damage in its own HumanHealth, not the body's. Retail's god
+                // flag stops the accumulation but not the hit, so the player is still shoved.
+                player.Body.Health.Reset();
+            }
+
+            health.Invulnerable = god;
+
+            if (!host.Step())
+            {
+                log.AppendLine(CultureInfo.InvariantCulture, $"the host ended at step {step}");
+                break;
+            }
+
+            int engine = (int)tickField.GetValue(soldiers)!;
+            if (engine == last)
+            {
+                continue;
+            }
+
+            last = engine;
+            tick++;
+            for (int index = 0; index < guns.Count; index++)
+            {
+                VehicleGunTurret gun = guns[index];
+                if (gun.Firing != triggers[index])
+                {
+                    triggers[index] = gun.Firing;
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[vgun] TRIGGER tick={tick} weapon={gun.Mount.WeaponModel} held={(gun.Firing ? 1 : 0)} pitch={gun.Pitch:0.0000} yaw={gun.Yaw:0.0000}");
+                }
+
+                if (tick % 10 == 2)
+                {
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[vgun] POSE tick={tick} weapon={gun.Mount.WeaponModel} pitch={gun.Pitch:0.0000} yaw={gun.Yaw:0.0000}");
+                }
+            }
+
+            if (EnvInt("OPENIGI_VEH_SCENARIO_HELI", -1) is int heliId and >= 0
+                && typeof(CutsceneRuntime).GetField("_animations", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(runtime) is System.Collections.IEnumerable animations)
+            {
+                foreach (object animation in animations)
+                {
+                    Type type = animation.GetType();
+                    if (type.GetProperty("TargetId")?.GetValue(animation) is not int targetId || targetId != heliId
+                        || type.GetProperty("RanThisTick")?.GetValue(animation) is not true)
+                    {
+                        continue;
+                    }
+
+                    object program = type.GetProperty("Program")!.GetValue(animation)!;
+                    float[] channels = (float[])program.GetType().GetField("_channels", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(program)!;
+                    int programTick = (int)program.GetType().GetProperty("Tick")!.GetValue(program)!;
+                    OpenIGI.Engine.Tasks.GameTask heli = loop.Tasks.FromId(heliId)!;
+                    Vector3d at = runtime.TryGetDrawTransform(heli, out Vector3d metres, out _) ? metres * Metre : default;
+                    string extra = string.Empty;
+                    if (typeof(CutsceneRuntime).GetField("_transforms", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(runtime) is System.Collections.IDictionary transforms
+                        && transforms[heliId] is { } state)
+                    {
+                        Type st = state.GetType();
+                        object? S(string name) => st.GetProperty(name)?.GetValue(state);
+                        Matrix3f m = (Matrix3f)S("Orientation")!;
+                        Vector3d v = (Vector3d)S("Velocity")!;
+                        Vector3f l = (Vector3f)S("AngularMomentum")!;
+                        Vector3f c = (Vector3f)S("Control")!;
+                        extra = string.Create(CultureInfo.InvariantCulture, $" vel=({v.X:0.0},{v.Y:0.0},{v.Z:0.0}) angular=({l.X:G4},{l.Y:G4},{l.Z:G4}) control=({c.X:0.####},{c.Y:0.####},{c.Z:0.####}) thrust={S("Thrust")} ground={S("GroundContact")} m=[{m.M11:0.####} {m.M12:0.####} {m.M13:0.####}; {m.M21:0.####} {m.M22:0.####} {m.M23:0.####}; {m.M31:0.####} {m.M32:0.####} {m.M33:0.####}]");
+                    }
+
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[heli] tick={tick} programTick={programTick} pos=({at.X:0.0},{at.Y:0.0},{at.Z:0.0}){extra} channels=({string.Join(",", channels.Select(c => c.ToString("0.#####", CultureInfo.InvariantCulture)))})");
+                }
+            }
+
+            // OPENIGI_VEH_SCENARIO_BODY=<id>: that car's retail rigid body every tick, bit-exact, for lining the
+            // port's drive up against a probe carstep capture.
+            if (EnvInt("OPENIGI_VEH_SCENARIO_BODY", -1) is int bodyId and >= 0
+                && typeof(CutsceneRuntime).GetField("_transforms", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(runtime) is System.Collections.IDictionary bodyStates
+                && bodyStates.Contains(bodyId)
+                && bodyStates[bodyId] is { } bodyState)
+            {
+                if (bodyState.GetType().GetProperty("RetailBody")?.GetValue(bodyState) is RetailCarBody body)
+                {
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[body] tick={tick} pos=({body.Position[0]:R},{body.Position[1]:R},{body.Position[2]:R}) thr={body.Throttle:R}/{body.ThrottleTarget:R} steer={body.Steering:R}/{body.SteeringTarget:R} hb={body.Handbrake} speed={body.Speed:R}");
+                }
+                else if (bodyState.GetType().GetProperty("RetailPlane")?.GetValue(bodyState) is RetailPlaneBody plane
+                    && bodyState.GetType().GetProperty("PhysicsTicks")?.GetValue(bodyState) is int planeSteps
+                    && planeSteps != lastPlaneSteps)
+                {
+                    // The probe's planeflight format: each force as pushed, then the state after the step.
+                    lastPlaneSteps = planeSteps;
+                    foreach (RetailForce f in plane.PushedForces)
+                    {
+                        log.AppendLine(CultureInfo.InvariantCulture, $"[pforce] f=({f.Fx:G9},{f.Fy:G9},{f.Fz:G9}) p=({f.Px:G9},{f.Py:G9},{f.Pz:G9})");
+                    }
+
+                    float[] pm = plane.M;
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[pf] tick={tick} step={planeSteps} pos=({plane.Position[0]:R},{plane.Position[1]:R},{plane.Position[2]:R}) m=[{pm[0]:G9} {pm[1]:G9} {pm[2]:G9} {pm[3]:G9} {pm[4]:G9} {pm[5]:G9} {pm[6]:G9} {pm[7]:G9} {pm[8]:G9}] vel=({plane.Velocity[0]:G9},{plane.Velocity[1]:G9},{plane.Velocity[2]:G9}) mom=({plane.Momentum[0]:G9},{plane.Momentum[1]:G9},{plane.Momentum[2]:G9}) speed={plane.Speed:G9} thrust={plane.Thrust:G9}/{plane.ThrustTarget:G9} ctl=({plane.Controls[0]:G9},{plane.Controls[1]:G9},{plane.Controls[2]:G9})");
+                }
+                else if (bodyState.GetType().GetProperty("RetailHeli")?.GetValue(bodyState) is RetailHeliBody heli)
+                {
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[body] tick={tick} pos=({heli.Position[0]:R},{heli.Position[1]:R},{heli.Position[2]:R}) thr={heli.Collective:R}/{heli.CollectiveTarget:R} steer={heli.Controls[0]:R}/{heli.Targets[0]:R} hb=False speed={heli.Speed:R}");
+                }
+            }
+
+            // OPENIGI_VEH_SCENARIO_DOORS=1: every door's pose whenever it changes, in the probe's [door] format.
+            if (EnvInt("OPENIGI_VEH_SCENARIO_DOORS", 0) == 1
+                && typeof(GameHost).GetField("_doors", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(host) is DoorRegistry doorRegistry)
+            {
+                for (int doorIndex = 0; doorIndex < doorRegistry.Doors.Count; doorIndex++)
+                {
+                    PlacedDoor door = doorRegistry.Doors[doorIndex];
+                    Vector3d du = door.PoseUnits;
+                    Matrix3f dm = door.PoseOrientation;
+                    string line = string.Create(CultureInfo.InvariantCulture, $"pos=({du.X:R},{du.Y:R},{du.Z:R}) m=[{dm.M11:G9} {dm.M12:G9} {dm.M13:G9} {dm.M21:G9} {dm.M22:G9} {dm.M23:G9} {dm.M31:G9} {dm.M32:G9} {dm.M33:G9}] slide={door.State.SlideFraction:G9} angle={door.State.AngleDegrees:G9}");
+                    if (!doorLines.TryGetValue(door, out string? previous) || previous != line)
+                    {
+                        doorLines[door] = line;
+                        log.AppendLine(CultureInfo.InvariantCulture, $"[door] tick={tick} door=port{doorIndex} id={door.Task.Id} {line}");
+                    }
+                }
+            }
+
+            Vector3d origin = player.Body.Position + new Vector3d(0d, 0d, OriginAboveFeet);
+            if (runtime.TryRunOver(origin, out OpenIGI.Engine.Tasks.GameTask? runner) && runner is not null)
+            {
+                Vector3d at = runtime.TryGetDrawTransform(runner, out Vector3d where, out _) ? where * Metre : default;
+                log.AppendLine(CultureInfo.InvariantCulture, $"[runover] tick={tick} by={runner.Id} vehicle=({at.X:0},{at.Y:0}) player=({origin.X:0},{origin.Y:0}) d={Math.Sqrt(((at.X - origin.X) * (at.X - origin.X)) + ((at.Y - origin.Y) * (at.Y - origin.Y))) / Metre:0.00} m");
+            }
+
+            if (tick % posEvery == 0)
+            {
+                log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] POS tick={tick} pos=({player.Body.Position.X:0}, {player.Body.Position.Y:0}, {player.Body.Position.Z + OriginAboveFeet:0}) dmg={health.Damage:0.00} dead={deadField.GetValue(host)} shove=({player.Body.HitShove.X:0.00},{player.Body.HitShove.Y:0.00})");
+                if (typeof(CutsceneRuntime).GetField("_carAis", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(runtime) is System.Collections.IEnumerable carAis)
+                {
+                    foreach (object state in carAis)
+                    {
+                        Type type = state.GetType();
+                        object? Prop(string name) => type.GetProperty(name)?.GetValue(state);
+                        object? route = Prop("Route");
+                        OpenIGI.Engine.Tasks.GameTask? task = Prop("Task") as OpenIGI.Engine.Tasks.GameTask;
+                        OpenIGI.Engine.Tasks.GameTask? car = Prop("Car") as OpenIGI.Engine.Tasks.GameTask;
+                        log.AppendLine(CultureInfo.InvariantCulture, $"[carai] tick={tick} task={task?.Id} car={car?.Id} active={(task is null ? "?" : ConditionalContainerGate.IsTaskActive(task).ToString())} route={(route is null ? "null" : route.GetType().GetProperty("HasStopped")?.GetValue(route))} stopped={Prop("Stopped")} node={(Prop("TargetNode") as OpenIGI.Formats.Ai.GraphNode)?.Id}@{(Prop("TargetNode") as OpenIGI.Formats.Ai.GraphNode)?.Position.X:0},{(Prop("TargetNode") as OpenIGI.Formats.Ai.GraphNode)?.Position.Y:0} car={((Prop("Transform") is { } tr) ? tr.GetType().GetProperty("Position")?.GetValue(tr) : null)} cmd={Prop("CommandSpeedKmh")} throttle={Prop("Throttle")} brake={Prop("Brake")} steer={Prop("Steering")}");
+                    }
+                }
+
+                foreach (string name in (Environment.GetEnvironmentVariable("OPENIGI_VEH_SCENARIO_VARS") ?? string.Empty)
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    string value = loop.Variables.TryRead(name, out OpenIGI.Scripting.Runtime.QvmValue read) ? read.ToString() : "unbound";
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[var] tick={tick} {name}={value}");
+                }
+
+                foreach (OpenIGI.Engine.Tasks.DeclaredTask car in vehicles)
+                {
+                    Vector3d at = runtime.TryGetDrawTransform(car, out Vector3d metres, out _)
+                        ? metres * Metre
+                        : car.TryGetValue("Position", out object? raw) && raw is Vector3d authored ? authored : default;
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[vpose] tick={tick} id={car.Id} pos=({at.X:0},{at.Y:0},{at.Z:0})");
+                }
+            }
+
+            foreach ((int _, string name, int value) in setvars.Where(command => command.Tick == tick))
+            {
+                bool written = loop.Variables.TryWrite(name, OpenIGI.Scripting.Runtime.QvmValue.FromInt32(value));
+                log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] tick={tick} setvar {name}={value} written={written}");
+            }
+
+            foreach ((int _, string op, double[] args) in script.Where(command => command.Tick == tick))
+            {
+                switch (op)
+                {
+                    case "god":
+                        god = args.Length == 0 || args[0] != 0.0;
+                        break;
+                    case "teleport":
+                        player.Body.Position = new Vector3d(args[0], args[1], args[2] - OriginAboveFeet);
+                        if (args.Length >= 4)
+                        {
+                            player.Body.Yaw = (float)(-args[3] * Math.PI / 180.0);
+                        }
+
+                        log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] tick={tick} teleport ({args[0]:0}, {args[1]:0}, {args[2]:0})");
+                        break;
+                    case "quit":
+                        quit = true;
+                        break;
+                }
+            }
+        }
+
+        host.Stop();
+        File.WriteAllText(output, log.ToString());
+    }
+
+    private static IEnumerable<OpenIGI.Engine.Tasks.GameTask> Walk(OpenIGI.Engine.Tasks.GameTask task)
+    {
+        foreach (OpenIGI.Engine.Tasks.GameTask child in task.Children)
+        {
+            yield return child;
+            foreach (OpenIGI.Engine.Tasks.GameTask nested in Walk(child))
+            {
+                yield return nested;
+            }
+        }
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {

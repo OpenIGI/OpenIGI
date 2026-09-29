@@ -1,3 +1,5 @@
+using OpenIGI.Core.Numerics;
+
 namespace OpenIGI.Game.World;
 
 /// <summary>
@@ -8,10 +10,10 @@ namespace OpenIGI.Game.World;
 /// A door carries an <b>open-command latch</b> (<c>+656</c>, toggled by a use — <c>sub_447DA0</c> is a
 /// plain XOR) and two motion channels driven toward the latch's targets every tick: the <b>swing</b>
 /// (current angle <c>+396</c> toward <c>Max angle</c> <c>+320</c> or zero, stepping
-/// <c>maxAngle / (openTime × 30)</c> degrees a tick) and the <b>slide</b> (fraction <c>+312</c> toward
-/// one or zero, stepping <c>1 / (openTime × 30)</c>). When both channels sit at their targets the door
-/// is <b>fully closed</b> (<c>+410</c>, targets zero) or <b>fully open</b> (<c>+409</c>); while either
-/// moves, both flags are clear.
+/// <c>|maxAngle| / (openTime × 30)</c> degrees a tick) and the <b>slide</b> (fraction <c>+312</c> toward
+/// one or zero, stepping <c>(L / (openTime × 30)) / L</c>, L the slide's length). When both channels sit at
+/// their targets the door is <b>fully closed</b> (<c>+410</c>, targets zero) or <b>fully open</b>
+/// (<c>+409</c>); while either moves, both flags are clear.
 /// </para>
 /// <para>
 /// The use state the interactions read (<c>sub_447D70</c>): <b>0</b> fully open, <b>1</b> fully
@@ -30,23 +32,40 @@ namespace OpenIGI.Game.World;
 /// </remarks>
 public sealed class DoorState
 {
+    /// <summary>The ticks per second the steps divide by (<c>flt_5333BC</c>).</summary>
+    private const float TicksPerSecond = 30.0f;
+
     private readonly float _maxAngleDegrees;
     private readonly float _openTimeSeconds;
     private readonly bool _slides;
+    private readonly float _slideLength;
 
     private float _angleDegrees;
     private float _slide;
     private bool _latch;
 
     /// <summary>Initializes a new instance of the <see cref="DoorState"/> class, fully closed.</summary>
-    /// <param name="maxAngleDegrees">The task's <c>Max angle</c> — zero for a purely sliding door.</param>
-    /// <param name="openTimeSeconds">The task's <c>Open time</c>, in seconds.</param>
+    /// <param name="maxAngleDegrees">The task's <c>Max angle</c> (<c>+320</c>) — zero for a purely sliding door.</param>
+    /// <param name="openTimeSeconds">The task's <c>Open time</c> (<c>+324</c>), in seconds.</param>
     /// <param name="slides">Whether the task declares a slide (<c>Position stop X/Y</c> non-zero).</param>
-    public DoorState(float maxAngleDegrees, float openTimeSeconds, bool slides = false)
+    /// <param name="initialSlide">The task's <c>Position slider</c> (<c>+312</c>): the slide fraction it starts at.</param>
+    /// <param name="slideLength">
+    /// The slide's length (<c>+404</c>, <c>|√(stopX² + stopY²)|</c>, set by the post-load <c>0x447830</c>), which the
+    /// slide step multiplies and divides by.
+    /// </param>
+    public DoorState(
+        float maxAngleDegrees,
+        float openTimeSeconds,
+        bool slides = false,
+        float initialSlide = 0f,
+        float slideLength = 1f)
     {
         _maxAngleDegrees = maxAngleDegrees;
         _openTimeSeconds = openTimeSeconds;
         _slides = slides;
+        _slide = initialSlide;
+        _slideLength = slideLength;
+        PreviousSlideFraction = initialSlide;
         IsFullyClosed = true;
     }
 
@@ -62,9 +81,14 @@ public sealed class DoorState
     /// <summary>Gets the slide fraction at the end of the previous simulation tick.</summary>
     public float PreviousSlideFraction { get; private set; }
 
+    /// <summary>Gets whether the last tick stepped the swing: the original rebuilt the orientation then.</summary>
+    public bool SwungThisTick { get; private set; }
+
+    /// <summary>Gets whether the last tick stepped the slide: the original re-placed the door then.</summary>
+    public bool SlidThisTick { get; private set; }
+
     /// <summary>Gets whether the last tick changed the door's collision/draw transform.</summary>
-    public bool TransformChangedThisTick =>
-        _angleDegrees != PreviousAngleDegrees || _slide != PreviousSlideFraction;
+    public bool TransformChangedThisTick => SwungThisTick || SlidThisTick;
 
     /// <summary>Gets whether the door sits fully open — <c>+409</c>.</summary>
     public bool IsFullyOpen { get; private set; }
@@ -115,53 +139,74 @@ public sealed class DoorState
     /// <summary>Commands the door closed, however it stands.</summary>
     public void CommandClosed() => _latch = false;
 
-    /// <summary>Advances one 30 Hz tick — the channel-stepping half of <c>0x446D10</c>.</summary>
+    /// <summary>Advances one 30 Hz tick — the channel-stepping half of <c>0x446D10</c>, with its x87 arithmetic.</summary>
     public void Tick()
     {
         PreviousAngleDegrees = _angleDegrees;
         PreviousSlideFraction = _slide;
         WasFullyOpen = IsFullyOpen;
         WasFullyClosed = IsFullyClosed;
-        float ticks = _openTimeSeconds * 30f;
+        SwungThisTick = false;
+        SlidThisTick = false;
 
-        // The swing: target = latch ? maxAngle : 0, stepped |maxAngle|/(time x 30) a tick and clamped
-        // onto the target. A door with no angle has nothing to swing and sits at its target.
+        // The swing (+396) toward latch ? Max angle : 0. The stored float is the new angle; the clamp compares the
+        // register's value, which fst leaves unrounded.
         float angleTarget = _latch ? _maxAngleDegrees : 0f;
-        if (_angleDegrees != angleTarget && ticks > 0f && _maxAngleDegrees != 0f)
+        if (angleTarget != _angleDegrees)
         {
-            float step = Math.Abs(_maxAngleDegrees) / ticks;
+            X87 step = X87.Abs(_maxAngleDegrees) / ((X87)_openTimeSeconds * TicksPerSecond);
             if (_angleDegrees < angleTarget)
             {
-                _angleDegrees = Math.Min(_angleDegrees + step, angleTarget);
+                X87 next = step + _angleDegrees;
+                _angleDegrees = next.F;
+                if (next.Value > angleTarget)
+                {
+                    _angleDegrees = angleTarget;
+                }
             }
-            else
+            else if (_angleDegrees > angleTarget)
             {
-                _angleDegrees = Math.Max(_angleDegrees - step, angleTarget);
+                X87 next = (X87)_angleDegrees - step;
+                _angleDegrees = next.F;
+                if (next.Value < angleTarget)
+                {
+                    _angleDegrees = angleTarget;
+                }
             }
-        }
-        else
-        {
-            _angleDegrees = angleTarget;
+
+            SwungThisTick = true;
         }
 
-        // The slide: target = latch ? 1 : 0, stepped 1/(time x 30) a tick. A door that does not slide
-        // snaps its fraction straight onto the target, exactly as the original's no-stop branch does.
+        // The slide (+312) toward latch ? 1 : 0. A door with no stop, or already at its target, takes the target
+        // without moving.
         float slideTarget = _latch ? 1f : 0f;
-        if (_slides && _slide != slideTarget && ticks > 0f)
+        if (!_slides || _slide == slideTarget)
         {
-            float step = 1f / ticks;
-            if (_slide < slideTarget)
-            {
-                _slide = Math.Min(_slide + step, slideTarget);
-            }
-            else
-            {
-                _slide = Math.Max(_slide - step, slideTarget);
-            }
+            _slide = slideTarget;
         }
         else
         {
-            _slide = slideTarget;
+            X87 step = (X87)_slideLength / ((X87)_openTimeSeconds * TicksPerSecond) / _slideLength;
+            if (_slide < slideTarget)
+            {
+                X87 next = step + _slide;
+                _slide = next.F;
+                if (next.Value > slideTarget)
+                {
+                    _slide = slideTarget;
+                }
+            }
+            else if (_slide > slideTarget)
+            {
+                X87 next = (X87)_slide - step;
+                _slide = next.F;
+                if (next.Value < slideTarget)
+                {
+                    _slide = slideTarget;
+                }
+            }
+
+            SlidThisTick = true;
         }
 
         // Fully open / fully closed are recomputed from "both channels at target": closed when the

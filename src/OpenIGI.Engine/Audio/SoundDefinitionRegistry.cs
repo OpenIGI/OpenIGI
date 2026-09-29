@@ -201,9 +201,10 @@ public sealed class SoundDefinitionRegistry
     private QvmValue Define(QvmCallContext call, SoundDefinitionKind kind)
     {
         // Arguments 0 to 7 are identical across DefineSound (0x4E8C60), DefineGraph (0x4EAD20) and
-        // DefineTriggerOnce (0x4E9EC0) -- same order, same types -- so they are read for all three.
-        // What each adds after that differs and is not modelled: DefineGraph carries two eleven-point
-        // curves, DefineTriggerOnce four more integers and two flags.
+        // DefineTriggerOnce (0x4E9EC0) -- same order, same types -- so they are read for all three. What
+        // follows differs by kind (see SoundDefinition).
+        bool graph = kind == SoundDefinitionKind.Graph;
+        bool trigger = kind == SoundDefinitionKind.TriggerOnce;
         SoundDefinition definition = new()
         {
             Name = call.GetString(0),
@@ -214,15 +215,45 @@ public sealed class SoundDefinitionRegistry
             MinimumDistanceMetres = call.GetSingle(6),
             MaximumDistanceMetres = call.GetSingle(7),
 
-            // Only DefineSound has these in these slots, and only it has a loop flag at all.
-            VolumeParameterIndex = kind == SoundDefinitionKind.Sound ? call.GetInt32(8) : -1,
-            PitchParameterIndex = kind == SoundDefinitionKind.Sound ? call.GetInt32(9) : -1,
-            BankKeyParameterIndex = kind == SoundDefinitionKind.Sound ? call.GetInt32(10) : -1,
-            Loop = kind == SoundDefinitionKind.Sound && call.ArgumentCount > 12 && call.GetInt32(12) != 0,
+            // DefineSound: 8 gain, 9 pitch, 10 bank key, 12 loop. DefineGraph: 8 gain, 9 pitch, 10 bank key,
+            // 11 pitch added. DefineTriggerOnce: 8 duration, 9 trigger, 10 gain, 11 pitch, 12 bank key, 13 loop,
+            // 14 invert.
+            VolumeParameterIndex = Index(call, trigger ? 10 : 8),
+            PitchParameterIndex = Index(call, trigger ? 11 : 9),
+            BankKeyParameterIndex = Index(call, trigger ? 12 : 10),
+            PitchAddParameterIndex = graph ? Index(call, 11) : -1,
+            TriggerParameterIndex = trigger ? Index(call, 9) : -1,
+            DurationSeconds = trigger && call.ArgumentCount > 8 ? call.GetSingle(8) : -1f,
+            Invert = trigger && call.ArgumentCount > 14 && call.GetInt32(14) != 0,
+            Loop = kind switch
+            {
+                SoundDefinitionKind.Sound => call.ArgumentCount > 12 && call.GetInt32(12) != 0,
+                SoundDefinitionKind.TriggerOnce => call.ArgumentCount > 13 && call.GetInt32(13) != 0,
+
+                // 0x4EA560 issues a graph's voice with the loop flag (0x10) always set.
+                SoundDefinitionKind.Graph => true,
+                _ => false,
+            },
+            GainCurve = graph ? Curve(call, 12) : [],
+            PitchCurve = graph ? Curve(call, 23) : [],
         };
 
         Add(definition);
         return QvmValue.FromInt32(1);
+    }
+
+    private static int Index(QvmCallContext call, int argument) =>
+        call.ArgumentCount > argument ? call.GetInt32(argument) : -1;
+
+    private static float[] Curve(QvmCallContext call, int first)
+    {
+        float[] samples = new float[SoundDefinition.CurveSamples];
+        for (int i = 0; i < samples.Length; i++)
+        {
+            samples[i] = call.ArgumentCount > first + i ? call.GetSingle(first + i) : 0f;
+        }
+
+        return samples;
     }
 
     private void Add(SoundDefinition definition)

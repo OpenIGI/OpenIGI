@@ -69,7 +69,9 @@ public sealed class WorldInteractionTests
             state);
 
         state.CommandOpen();
-        for (int i = 0; i < 30; i++)
+
+        // One step past time × 30: the chop-rounded slide step lands a hair short of one after thirty (see DoorStateTests).
+        for (int i = 0; i < 31; i++)
         {
             state.Tick();
         }

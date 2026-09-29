@@ -32,8 +32,9 @@ namespace OpenIGI.Game.World;
 /// <c>!4001.isRun &amp;&amp; !4007.isRun</c> is true during play, so they are unaffected.
 /// </para>
 /// <para>
-/// <see cref="ConditionalContainerGate"/> prepares the evaluator and <see cref="CutsceneRuntime"/>
-/// refreshes it each fixed tick. Render, spawn, AI and collision paths read the live <see cref="IsRun"/>.
+/// <see cref="ConditionalContainerGate"/> prepares the evaluator, and the level walk
+/// (<see cref="LevelUpdateWalker"/>) runs <see cref="Update"/> when it reaches the container. Render, spawn, AI and
+/// collision paths read the registration, <see cref="IsActive"/>; script conditions read <see cref="IsRun"/>.
 /// </para>
 /// </remarks>
 public partial class ConditionalContainerTask : ContainerTask
@@ -110,6 +111,56 @@ public partial class ConditionalContainerTask : ContainerTask
             }
 
             return _isRun.Value;
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets whether the container's children are registered in the world -- the original's <c>active</c>
+    /// byte (<c>+274</c>), distinct from <see cref="IsRun"/>.
+    /// </summary>
+    /// <remarks>
+    /// A container activates its subtree in the same update its condition first holds, but on the tick the
+    /// condition fails it still runs its children once more and only deactivates them the tick after -- so
+    /// <c>active</c> drops a tick after <c>run</c>. The mission loader
+    /// starts it equal to <see cref="IsRun"/>.
+    /// </remarks>
+    public bool IsActive { get; set; } = true;
+
+    /// <summary>The container's update in the level walk -- <c>0x4874E0</c>.</summary>
+    /// <param name="walker">The walk.</param>
+    /// <remarks>
+    /// The condition is read when the walk reaches the container. On a rising edge the children are brought
+    /// into the world and run in the same call; while the condition held last tick they run once more; a
+    /// container false this tick and last takes its children out of the world and runs none of them. The start
+    /// and stop expressions run after the children.
+    /// </remarks>
+    public void Update(LevelUpdateWalker walker)
+    {
+        ArgumentNullException.ThrowIfNull(walker);
+        bool old = _isRun ?? false;
+        bool run = walker.HoldContainer?.Invoke(this) == true
+            ? old
+            : ConditionResolver?.Invoke(this) ?? true;
+        _isRun = run;
+        if (run || old)
+        {
+            if (!IsActive)
+            {
+                IsActive = true;
+                LevelUpdateWalker.Activate(this);
+            }
+
+            walker.WalkChildren(this);
+        }
+        else if (IsActive)
+        {
+            IsActive = false;
+            walker.Deactivate(this);
+        }
+
+        if (run != old)
+        {
+            walker.ContainerTransition?.Invoke(this, run);
         }
     }
 

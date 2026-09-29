@@ -309,6 +309,7 @@ public sealed class RetailMissionFourPlaneRideTests
             Type t = state.GetType();
             t.GetField("<Run>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(state, "");
             t.GetField("<InitialRun>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(state, true);
+            t.GetProperty("IsRun")?.SetValue(state, true);
         }
     }
 

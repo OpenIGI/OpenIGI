@@ -140,14 +140,19 @@ public sealed class ShelterHeightField
     /// hundred metres of that.
     /// </remarks>
     /// <param name="collision">How this title lays a collision mesh out, or null for the first game's.</param>
+    /// <param name="models">
+    /// Resolves a model by name, for a spline segment's bend; the collision index takes the same one, so the two
+    /// lay a road in the same place.
+    /// </param>
     public static ShelterHeightField Build(
         IEnumerable<WorldPlacement> placements,
         double cellMetres = DefaultCellMetres,
-        CollisionLayout? collision = null)
+        CollisionLayout? collision = null,
+        Func<string, MefModel?>? models = null)
     {
         ArgumentNullException.ThrowIfNull(placements);
 
-        List<(WorldPlacement Placement, MefCollisionMesh Mesh)> solids = CollectSolids(placements, collision);
+        List<Solid> solids = CollectSolids(placements, collision, models);
         if (solids.Count == 0)
         {
             return Empty;
@@ -157,9 +162,10 @@ public sealed class ShelterHeightField
         double maxX = double.MinValue, maxY = double.MinValue, maxZ = double.MinValue;
         Vector3d[] world = [];
 
-        foreach ((WorldPlacement placement, MefCollisionMesh mesh) in solids)
+        foreach (Solid solid in solids)
         {
-            world = Transform(placement, mesh, world);
+            MefCollisionMesh mesh = solid.Mesh;
+            world = Transform(solid, world);
             for (int i = 0; i < mesh.Vertices.Count; i++)
             {
                 Vector3d vertex = world[i];
@@ -191,9 +197,10 @@ public sealed class ShelterHeightField
 
         ShelterHeightField field = new(height, width, depth, minX, minY, cell, (float)minZ, (float)maxZ);
 
-        foreach ((WorldPlacement placement, MefCollisionMesh mesh) in solids)
+        foreach (Solid solid in solids)
         {
-            world = Transform(placement, mesh, world);
+            MefCollisionMesh mesh = solid.Mesh;
+            world = Transform(solid, world);
             int vertices = mesh.Vertices.Count;
             foreach (MefCollisionFace face in mesh.Faces)
             {
@@ -226,7 +233,7 @@ public sealed class ShelterHeightField
     /// <exception cref="ArgumentException"><paramref name="height"/> is not <c>width * depth</c> long.</exception>
     /// <exception cref="ArgumentOutOfRangeException">A dimension is negative, or the cell size is not positive.</exception>
     /// <remarks>
-    /// <see cref="Build(IEnumerable{WorldPlacement}, double, CollisionLayout?)"/> is how a level gets one of these. This
+    /// <see cref="Build(IEnumerable{WorldPlacement}, double, CollisionLayout?, Func{string, MefModel?})"/> is how a level gets one of these. This
     /// is for the callers that already hold the answer: a test posing a shed with a door in it, and a
     /// tool that has read a raster back from disk. It exists because the alternative for both is to
     /// assemble a placement, a pack and a model whose container parses into a collision mesh, which
@@ -416,17 +423,34 @@ public sealed class ShelterHeightField
         return packed == 0 ? OpenSky : lowestZ + ((packed - 1) * scale);
     }
 
-    private static List<(WorldPlacement Placement, MefCollisionMesh Mesh)> CollectSolids(
+    // One placement's collision as the world lays it: its mesh, where the mesh's origin stands in metres, and its turn.
+    private readonly record struct Solid(MefCollisionMesh Mesh, Vector3d OriginMetres, Matrix3f Orientation);
+
+    private static List<Solid> CollectSolids(
         IEnumerable<WorldPlacement> placements,
-        CollisionLayout? collision)
+        CollisionLayout? collision,
+        Func<string, MefModel?>? models)
     {
         Dictionary<MefModel, MefCollisionMesh?> cache = [];
-        List<(WorldPlacement Placement, MefCollisionMesh Mesh)> solids = [];
+        List<Solid> solids = [];
 
         foreach (WorldPlacement placement in placements)
         {
             if (placement.Model.IsEmpty || IsCharacter(placement))
             {
+                continue;
+            }
+
+            // A spline segment is bent between its waypoints and laid about their midpoint, exactly as the collision
+            // index lays it (0x4E4530, 0x49A050); its placement carries only the first waypoint.
+            if (ObjectCollisionIndex.TryBendSegment(
+                    placement, models, collision, out MefCollisionMesh? bent, out Vector3d bentOrigin, out _, out _))
+            {
+                if (bent is { Faces.Length: > 0, Vertices.Count: > 0 })
+                {
+                    solids.Add(new Solid(bent, bentOrigin / WorldScene.UnitsPerMetre, Matrix3f.Identity));
+                }
+
                 continue;
             }
 
@@ -440,7 +464,7 @@ public sealed class ShelterHeightField
 
             if (mesh is { Faces.Length: > 0, Vertices.Count: > 0 })
             {
-                solids.Add((placement, mesh));
+                solids.Add(new Solid(mesh, placement.Position, placement.Orientation));
             }
         }
 
@@ -455,22 +479,23 @@ public sealed class ShelterHeightField
     // The placement's collision vertices in world metres. The rotation is the transposed stored basis --
     // the column-vector product the collision index builds its own triangles with -- and the engine-unit
     // offset is divided to metres before the placement's own metre position is added.
-    private static Vector3d[] Transform(WorldPlacement placement, MefCollisionMesh mesh, Vector3d[] scratch)
+    private static Vector3d[] Transform(Solid solid, Vector3d[] scratch)
     {
+        MefCollisionMesh mesh = solid.Mesh;
         int count = mesh.Vertices.Count;
         if (scratch.Length < count)
         {
             scratch = new Vector3d[Math.Max(count, scratch.Length * 2)];
         }
 
-        Matrix3f rotation = placement.Orientation.Transposed();
+        Matrix3f rotation = solid.Orientation.Transposed();
         for (int i = 0; i < count; i++)
         {
             Vector3f placed = rotation.Transform(mesh.Vertices[i]);
             scratch[i] = new Vector3d(
-                (placed.X / WorldScene.UnitsPerMetre) + placement.Position.X,
-                (placed.Y / WorldScene.UnitsPerMetre) + placement.Position.Y,
-                (placed.Z / WorldScene.UnitsPerMetre) + placement.Position.Z);
+                (placed.X / WorldScene.UnitsPerMetre) + solid.OriginMetres.X,
+                (placed.Y / WorldScene.UnitsPerMetre) + solid.OriginMetres.Y,
+                (placed.Z / WorldScene.UnitsPerMetre) + solid.OriginMetres.Z);
         }
 
         return scratch;

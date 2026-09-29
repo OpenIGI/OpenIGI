@@ -102,7 +102,10 @@ public sealed class DoorStateTests
         Assert.Equal(2, door.UseState);
         Assert.Equal(0f, door.AngleDegrees);
 
-        for (int tick = 0; tick < 29; tick++)
+        // The step is (L / (time × 30)) / L under the original's chop rounding, so the fraction lands a hair short
+        // of one after time × 30 steps and takes one more: mission 8's 3.5-second gates move for 106 ticks in the
+        // original, not 105.
+        for (int tick = 0; tick < 30; tick++)
         {
             door.Tick();
         }

@@ -324,9 +324,12 @@ public sealed class Issue105Tests
         // Set it through the same exported variable rather than treating the inactive object as solid.
         Assert.True(variables.TryWrite("ConditionalContainer_350.isRun", QvmValue.FromInt32(1)));
         runtime.Tick();
-        Assert.False(ConditionalContainerGate.IsTaskActive(fakeApc));
+        // The alarm APC's container rises and registers it in the same walk; the fake APC's container falls, runs
+        // its subtree once more and takes it out of the world on the next walk (0x4874E0).
+        Assert.True(ConditionalContainerGate.IsTaskActive(fakeApc));
         Assert.True(ConditionalContainerGate.IsTaskActive(alarmApc));
         runtime.Tick(); // SetSpeed(20) has advanced; this tick begins the graph-routed WalkTo(1).
+        Assert.False(ConditionalContainerGate.IsTaskActive(fakeApc));
         Assert.True(runtime.TryGetDrawTransform(alarmApc, out Vector3d movedApc, out _));
         Assert.NotEqual(new Vector3d(25047706d, 87471776d, 174684608d), movedApc * WorldScene.UnitsPerMetre);
 
@@ -465,7 +468,7 @@ public sealed class Issue105Tests
             destructibles.Objects, item => ReferenceEquals(item.Owner, apc));
         Vector3d initialDestructiblePosition = liveApc.PositionUnits;
 
-        CutsceneRuntime runtime = new(root, variables, terrain: mission.Terrain)
+        CutsceneRuntime runtime = new(root, variables, terrain: mission.Terrain, vehiclePhysics: physics)
         {
             CollisionIndex = collision,
             Destructibles = destructibles,
@@ -479,8 +482,13 @@ public sealed class Issue105Tests
         runtime.ConfigureCarAi(new Dictionary<int, GraphFile> { [1] = graph });
 
         Assert.True(variables.TryWrite("ConditionalContainer_350.isRun", QvmValue.FromInt32(1)));
-        runtime.Tick(); // SetSpeed(20).
-        runtime.Tick(); // Begin WalkTo(1).
+        // CarAI drives its car through the car's own physics: the first packet only sets the receiver
+        // up, then the throttle eases in. Give it a few seconds to pull away along WalkTo(1).
+        for (int tick = 0; tick < 150; tick++)
+        {
+            runtime.Tick();
+        }
+
         Assert.True(ConditionalContainerGate.IsTaskActive(apc));
 
         (Vector3d centre, double movedRadius) = collision.Bounds(0);

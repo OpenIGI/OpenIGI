@@ -111,7 +111,7 @@ public sealed class WorldInteraction
     public bool IsElectrified { get; private set; }
     public bool IsCompleted { get; private set; }
     public bool CompletedThisTick { get; private set; }
-    public bool IsSearched { get; private set; }
+    public bool IsSearched { get; internal set; }
     public bool IsPicked { get; private set; }
     public bool IsLocked { get; private set; }
     public bool IsDestroyed { get; private set; }
@@ -1073,7 +1073,8 @@ public sealed class WorldInteractionRegistry
                 break;
             case InteractionActivateType.Cabinet:
                 variables.BindFlag(item.Task, "isInUse", item.InUse);
-                variables.BindBool(item.Task, "isSearched", () => item.IsSearched, _ => { });
+                // The export is the object's own byte, so a script or probe write sticks.
+                variables.BindBool(item.Task, "isSearched", () => item.IsSearched, value => item.IsSearched = value);
                 break;
             case InteractionActivateType.Terminal:
                 variables.BindFlag(item.Task, "isInUse", item.InUse);
@@ -1209,6 +1210,21 @@ public sealed class WorldInteractionRegistry
 
     private static Matrix3f OrientationOf(DeclaredTask task)
     {
+        // A door's and a fence's frame are built by 0x4B38E0 exactly, the same matrix the world scene draws them with.
+        if (string.Equals(task.Type.Name, "Door", StringComparison.Ordinal)
+            && task.TryGetValue("Orientation", out object? doorAngles)
+            && doorAngles is Vector3f door)
+        {
+            return RetailOrientation.EulerMatrix(door.X, door.Y, door.Z);
+        }
+
+        if (string.Equals(task.Type.Name, "Fence", StringComparison.Ordinal)
+            && task.TryGetValue("Gamma", out object? fenceGamma)
+            && fenceGamma is float fence)
+        {
+            return RetailOrientation.EulerMatrix(0f, 0f, fence);
+        }
+
         if (task.TryGetValue("Orientation", out object? orientation))
         {
             return orientation switch

@@ -33,6 +33,9 @@ public readonly record struct VehicleCombatShot(
 
     /// <summary>Gets the exact retail weapon-table row that emitted this shot.</summary>
     public string WeaponScriptId { get; init; } = string.Empty;
+
+    /// <summary>Gets whether the row fires an instant gunshot (<c>TASKTYPE_GUNSHOT</c>) rather than a missile.</summary>
+    public bool IsHitscan { get; init; }
 }
 
 /// <summary>Runs the target-retention and gun gate shared by firing cars.</summary>
@@ -53,6 +56,9 @@ public sealed class AiVehicleCombat
     public const float CapturedMuzzleHeightMetres = 1.39f;
 
     private bool _hasTarget;
+
+    /// <summary>Gets a value indicating whether a target is held -- seen now or still retained.</summary>
+    public bool HasTarget => _hasTarget;
     private int _retentionTicks;
     private int _cooldownTicks;
     private Vector3d _lastTarget;
@@ -74,32 +80,7 @@ public sealed class AiVehicleCombat
             _cooldownTicks--;
         }
 
-        bool visible = input.HasLineOfSight && InsideAuthoredView(input);
-        bool acquiredThisTick = false;
-        if (visible)
-        {
-            acquiredThisTick = !_hasTarget;
-            _hasTarget = true;
-            _retentionTicks = TargetRetentionTicks;
-            _lastTarget = input.TargetPosition;
-        }
-        else if (_hasTarget && _retentionTicks > 0)
-        {
-            _retentionTicks--;
-        }
-        else
-        {
-            _hasTarget = false;
-            _retentionTicks = 0;
-        }
-
-        // The retail trace has one complete AI update between VISION's first visible result and
-        // Gun_Fire's first request. Retaining the target here but firing next tick reproduces it.
-        // CarAI's target scan (IGI1 0x00426000) returns active while its retained task pointer is
-        // counting down, even when the current detection slots are empty. Keep firing at the last
-        // observed pose during that interval; visibility is the acquisition/update gate, not a
-        // second gun gate.
-        if (!_hasTarget || acquiredThisTick || _cooldownTicks > 0)
+        if (Track(input) is null || _cooldownTicks > 0)
         {
             return null;
         }
@@ -124,6 +105,58 @@ public sealed class AiVehicleCombat
                 ? input.MuzzleVelocityMetresPerSecond
                 : MissileFlight.FallbackLaunchMetresPerSecond,
             "110_02_1");
+    }
+
+    /// <summary>Updates what the vehicle sees and returns the target its guns should aim at.</summary>
+    /// <param name="input">The vehicle's live and authored state; its gun fields are not read.</param>
+    /// <param name="retainWhileHidden">
+    /// Whether a target that drops out of sight is still returned for <see cref="TargetRetentionTicks"/>.
+    /// The Level 6 capture's fixed gun does; a model gun (<c>0x46F390</c>) takes only a target the
+    /// vehicle sees now and does its own 90-run hold -- probed on Mission 7's T80, which stopped firing
+    /// the tick the player was pushed past its 50-metre view.
+    /// </param>
+    /// <returns>
+    /// The last observed target while it is retained, or <see langword="null"/> when the vehicle sees
+    /// nothing, is inactive, or acquired the target only this tick.
+    /// </returns>
+    /// <remarks>
+    /// This is the vehicle's half of the fight: its vision record, which each of its guns asks for
+    /// (<c>0x46F390</c> through message <c>0x489630</c>). The guns turn and fire on their own.
+    /// </remarks>
+    public Vector3d? Track(in AiVehicleCombatInput input, bool retainWhileHidden = true)
+    {
+        if (!input.IsVehicleActive || !input.CanFire)
+        {
+            Reset();
+            return null;
+        }
+
+        bool visible = input.HasLineOfSight && InsideAuthoredView(input);
+        bool acquiredThisTick = false;
+        if (visible)
+        {
+            acquiredThisTick = !_hasTarget;
+            _hasTarget = true;
+            _retentionTicks = TargetRetentionTicks;
+            _lastTarget = input.TargetPosition;
+        }
+        else if (_hasTarget && _retentionTicks > 0 && retainWhileHidden)
+        {
+            _retentionTicks--;
+        }
+        else
+        {
+            _hasTarget = false;
+            _retentionTicks = 0;
+        }
+
+        // The retail trace has one complete AI update between VISION's first visible result and
+        // Gun_Fire's first request. Retaining the target here but firing next tick reproduces it.
+        // CarAI's target scan (IGI1 0x00426000) returns active while its retained task pointer is
+        // counting down, even when the current detection slots are empty. Keep firing at the last
+        // observed pose during that interval; visibility is the acquisition/update gate, not a
+        // second gun gate.
+        return _hasTarget && !acquiredThisTick ? _lastTarget : null;
     }
 
     private static bool InsideAuthoredView(in AiVehicleCombatInput input)

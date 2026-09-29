@@ -211,6 +211,24 @@ public sealed class DestructibleObjectTests
         Assert.True(pane.IsDestroyed);
     }
 
+    [RequiresGameDataTheory]
+    [InlineData("422_02_1")]
+    [InlineData("458_14_1")]
+    public void AWoodenWindowSplintersWithoutABlast(string window)
+    {
+        // magicobj.qvm authors both wooden windows (woodcrash_01) with a damage of 0 and no FireBalls, only
+        // five Fragments (0x43C1F0's order). Explosion0 (0x47F200) hands a 0-damage blast to nobody.
+        RetailMissionData data = RetailMissionData.Get(7);
+        Assert.True(data.Magic.TryGet(window, out MagicObjectDefinition definition));
+
+        Assert.Equal("woodcrash_01", definition.ExplosionSound);
+        Assert.Equal(1f, definition.ExplosionDamageThreshold);
+        Assert.Equal(0f, definition.ExplosionFireballs);
+        Assert.Equal(5, definition.ExplosionFragments);
+        Assert.Equal(0f, definition.ExplosionDamageFactor);
+        Assert.Equal(0, definition.ExplosionDelayTicks);
+    }
+
     [RequiresGameDataFact]
     public void ExplodeObjectKeepsRetailFireballFragmentAndSmokeAuthorship()
     {
@@ -233,16 +251,19 @@ public sealed class DestructibleObjectTests
         Assert.Contains(
             scene.Placements,
             placement => placement.MagicExplosionFireballs > 0 && placement.MagicExplosionFragments > 0);
+        // 300_01_1's arguments (1, 2, 5, 0, 5, 3, 2) as ExplodeMagicObj's parser reads them (0x43C1F0):
+        // damage before it breaks, FireBalls, Fragments, an unread value, falloff, damage and radius.
         Assert.Contains(
             scene.Placements,
             placement => placement.MagicTaskTypeName == "TASKTYPE_EXPLODEMAGICOBJ"
                 && placement.MagicExplosionSound == "explo_02_m"
-                && placement.MagicExplosionFireballs == 1f
-                && placement.MagicExplosionFragments == 2
-                && placement.MagicExplosionDelayTicks == 5
+                && placement.MagicExplosionDamageThreshold == 1f
+                && placement.MagicExplosionFireballs == 2f
+                && placement.MagicExplosionFragments == 5
+                && placement.MagicExplosionDelayTicks == 0
                 && placement.MagicExplosionFalloffMetres == 5f
-                && placement.MagicExplosionRadiusMetres == 3f
-                && placement.MagicExplosionDamageThreshold == 2f
+                && placement.MagicExplosionDamageFactor == 3f
+                && placement.MagicExplosionRadiusMetres == 2f
                 && placement.MagicDestroyedModel == "300_02_1"
                 && placement.DestroyedReplacement is not null);
     }
@@ -293,28 +314,26 @@ public sealed class DestructibleObjectTests
             scene.Placements,
             new ScriptVarRegistry(new NativeRegistry()));
 
+        // Level 1's barrels (300_01_1) break at 1 (0x43C1F0's first argument after the sound): two half-doses reach it.
         DestructibleObject target = registry.Objects.First(
-            item => item.TypeName == "TASKTYPE_EXPLODEMAGICOBJ" && item.ExplosionDamageThreshold > 1f);
+            item => item.TypeName == "TASKTYPE_EXPLODEMAGICOBJ" && item.ExplosionDamageThreshold > 0f);
         float threshold = target.ExplosionDamageThreshold;
-        int hitsRequired = (int)MathF.Ceiling(threshold);
+        float half = threshold * 0.5f;
 
-        for (int hit = 0; hit < hitsRequired - 1; hit++)
-        {
-            IReadOnlyList<DestructibleObject> affected = registry.ApplyExplosionHits(
-                source: null,
-                target.PositionUnits,
-                radiusUnits: 1f,
-                damageFactor: 1f);
+        IReadOnlyList<DestructibleObject> affected = registry.ApplyExplosionHits(
+            source: null,
+            target.PositionUnits,
+            radiusUnits: 1f,
+            damageFactor: half);
 
-            Assert.DoesNotContain(target, affected);
-            Assert.False(target.IsDestroyed);
-        }
+        Assert.DoesNotContain(target, affected);
+        Assert.False(target.IsDestroyed);
 
         IReadOnlyList<DestructibleObject> finalAffected = registry.ApplyExplosionHits(
             source: null,
             target.PositionUnits,
             radiusUnits: 1f,
-            damageFactor: 1f);
+            damageFactor: half);
 
         Assert.Contains(target, finalAffected);
         Assert.True(target.IsDestroyed);

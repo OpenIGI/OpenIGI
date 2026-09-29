@@ -57,12 +57,20 @@ public sealed class CutsceneRuntime
     private readonly Dictionary<GameTask, AttachmentState> _attachments = [];
     private readonly Dictionary<GameTask, CarWheel[]> _carWheels = [];
     private readonly Dictionary<WorldPlacement, int> _carWheelIndices = [];
+    private readonly Dictionary<WorldPlacement, (GameTask Vehicle, int Index)> _gunPlacements = [];
     private readonly Dictionary<GameTask, float> _trainTailOffsets = [];
     private readonly Func<string, ScriptArguments, QvmValue?>? _hostNative;
     private readonly Action<CutsceneSoundEvent>? _soundChanged;
     private readonly Func<string, float>? _modelLength;
     private readonly Func<string, float>? _modelPivot;
     private readonly VehiclePhysicsRegistry? _vehiclePhysics;
+    private IRetailCarWorld? _retailCarWorld;
+    private Func<string, OpenIGI.Formats.World.MefModel?>? _retailCarModels;
+    private readonly List<RetailRayModel> _retailVehicleModels = [];
+    private readonly LevelUpdateWalker _walker = new();
+    private readonly Dictionary<GameTask, int> _lastVehicleTick = [];
+    private Func<string, MagicObjectDefinition?>? _retailMagic;
+    private readonly Dictionary<GameTask, RetailRayModel?> _standingCars = [];
     private readonly Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? _vehicleObstacleHit;
     private readonly Func<GameTask, bool>? _vehicleObstacleReleased;
     private readonly TerrainData? _terrain;
@@ -70,7 +78,20 @@ public sealed class CutsceneRuntime
     private ObjectCollisionIndex? _collisionIndex;
     private DestructibleObjectRegistry? _destructibles;
     private Func<int, CutsceneTargetPose?>? _targetPoseResolver;
-    private readonly Dictionary<GameTask, WeaponType> _vehicleWeapons = [];
+    private readonly Dictionary<GameTask, VehicleArmament> _armaments = [];
+    private readonly Dictionary<GameTask, VehicleVision> _visions = new(ReferenceEqualityComparer.Instance);
+    private int _visionCounter;
+    private readonly Dictionary<GameTask, DeathZoneState> _deathZones = [];
+    private readonly Random _gunRandom = new(0x46F390);
+
+    /// <summary>CarAI's arrival radius squared (<c>dbl_533648</c>: three metres).</summary>
+    private const double CarAiArrivalSquared = 150_994_944d;
+
+    /// <summary>Within ten metres of a node the route speed looks one node further (<c>0x4255A0</c>).</summary>
+    private const double CarAiLookAheadSquared = 1_677_721_600d;
+
+    /// <summary>The chase looks ahead within fourteen metres (<c>0x425900</c>).</summary>
+    private const double CarAiChaseLookAheadSquared = 3_288_334_336d;
     private bool _breakRequested;
     private readonly List<string> _diagnostics = [];
 
@@ -105,19 +126,176 @@ public sealed class CutsceneRuntime
     /// <summary>Supplies the living player eye used by firing vehicles.</summary>
     public Func<Vector3d?>? VehicleCombatTarget { get; set; }
 
+    /// <summary>
+    /// Gets or sets where a vehicle's eye tests the same target: the point the human reports to a detection sweep
+    /// (message <c>0x489620</c>), which the soldiers' sweep uses too. Falls back to <see cref="VehicleCombatTarget"/>.
+    /// </summary>
+    public Func<Vector3d?>? VehicleSightTarget { get; set; }
+
     /// <summary>Tests the firing vehicle's muzzle-to-player sight segment.</summary>
     public Func<GameTask, Vector3d, Vector3d, bool>? VehicleCombatLineOfSight { get; set; }
 
     /// <summary>Receives a vehicle missile only after sight, retention and gun cadence allow it.</summary>
     public Action<VehicleCombatShot>? VehicleCombatShotFired { get; set; }
 
-    /// <summary>Binds one authored firing vehicle to its retail weapon row.</summary>
+    /// <summary>Binds one authored firing vehicle to a single retail weapon row, fired from its captured muzzle.</summary>
+    /// <remarks>
+    /// The Level 6 APC capture's model: the vehicle fires the row's cadence at whatever it retains,
+    /// from a fixed muzzle, without turning a gun. Vehicles whose model guns are known use
+    /// <see cref="ConfigureVehicleGuns"/> instead.
+    /// </remarks>
     public void ConfigureVehicleCombat(GameTask vehicle, WeaponType weapon)
     {
         ArgumentNullException.ThrowIfNull(vehicle);
         ArgumentNullException.ThrowIfNull(weapon);
-        _vehicleWeapons[vehicle] = weapon;
+        _armaments[vehicle] = new VehicleArmament(weapon, []);
     }
+
+    /// <summary>Arms one authored vehicle with the guns its model carries.</summary>
+    /// <param name="vehicle">The Car or Heli task.</param>
+    /// <param name="guns">Every gun its model's attachments define, each turning and firing on its own.</param>
+    /// <remarks>
+    /// The vehicle sees; each gun asks it what it sees and turns to it (<c>0x46F390</c>). A tank's
+    /// cannon and coaxial gun therefore fire independently at their own rows' cadences.
+    /// </remarks>
+    public void ConfigureVehicleGuns(GameTask vehicle, IReadOnlyList<VehicleGun> guns)
+    {
+        ArgumentNullException.ThrowIfNull(vehicle);
+        ArgumentNullException.ThrowIfNull(guns);
+        if (guns.Count == 0)
+        {
+            _armaments.Remove(vehicle);
+            return;
+        }
+
+        _armaments[vehicle] = new VehicleArmament(
+            null,
+            [.. guns.Select(static gun => new VehicleGunState(gun))]);
+    }
+
+    /// <summary>Every live vehicle's sound inputs, as its update left them this tick.</summary>
+    /// <returns>One entry per active, undestroyed Car or Heli.</returns>
+    public IEnumerable<VehicleSoundSource> VehicleSoundSources()
+    {
+        foreach ((GameTask task, TransformState state) in _taskTransforms)
+        {
+            if (task is not DeclaredTask vehicle
+                || vehicle.Type.Name is not ("Car" or "Heli")
+                || !ConditionalContainerGate.IsTaskActive(vehicle)
+                || _destructibles?.IsDestroyed(vehicle) == true)
+            {
+                continue;
+            }
+
+            bool helicopter = vehicle.Type.Name == "Heli";
+            string set = helicopter
+                ? "helicopter_1"
+                : _vehiclePhysics?.TryGetCar(Text(vehicle, WorldScene.ModelParameter), out CarPhysicsDefinition car) == true
+                    ? car.EngineSoundSet
+                    : string.Empty;
+            string gate = Text(vehicle, "Play sound");
+            bool on = string.IsNullOrWhiteSpace(gate) || _expressions.EvaluateCondition(gate, emptyValue: true, vehicle);
+            float throttle = helicopter ? state.RetailHeli?.Collective ?? 0f : state.RetailBody?.Throttle ?? 0f;
+            float speed = helicopter ? 0f : Math.Min((state.RetailBody?.Speed ?? 0f) * 0.001f, 1f);
+            yield return new VehicleSoundSource(
+                vehicle,
+                set,
+                state.Position,
+                throttle,
+                throttle > 0.01f ? 1f : 0f,
+                speed,
+                on);
+        }
+    }
+
+    /// <summary>Every armed live vehicle's guns, as this tick's updates left them.</summary>
+    /// <returns>One entry per gun of an active, undestroyed vehicle.</returns>
+    public IEnumerable<VehicleGunSound> VehicleGunSounds()
+    {
+        foreach ((GameTask vehicle, VehicleArmament armament) in _armaments)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(vehicle)
+                || _destructibles?.IsDestroyed(vehicle) == true
+                || !_taskTransforms.TryGetValue(vehicle, out TransformState? transform))
+            {
+                continue;
+            }
+
+            for (int index = 0; index < armament.Guns.Count; index++)
+            {
+                VehicleGunState gun = armament.Guns[index];
+
+                // Gun_Fire plays its reports at the weapon object (+32), where the seat put it.
+                yield return new VehicleGunSound(
+                    vehicle,
+                    index,
+                    armament.Seated
+                        ? gun.WeaponPosition
+                        : transform.Position + transform.Orientation.Transposed().Transform(gun.Gun.Offset),
+                    gun.Hold,
+                    gun.RoundsFiredThisTick,
+                    gun.Turret.Turning,
+                    gun.Gun.Weapon,
+                    gun.Gun.Mount.TurnSound);
+            }
+        }
+    }
+
+    /// <summary>Gives one authored vehicle the death zones its model carries.</summary>
+    /// <param name="vehicle">The Car or Heli task.</param>
+    /// <param name="zones">The zones' volumes in the vehicle's frame.</param>
+    public void ConfigureDeathZones(GameTask vehicle, IReadOnlyList<VehicleDeathZone> zones)
+    {
+        ArgumentNullException.ThrowIfNull(vehicle);
+        ArgumentNullException.ThrowIfNull(zones);
+        if (zones.Count == 0)
+        {
+            _deathZones.Remove(vehicle);
+            return;
+        }
+
+        _deathZones[vehicle] = new DeathZoneState(zones);
+    }
+
+    /// <summary>Finds a moving vehicle whose death zone a human stands in (<c>0x45FA80</c>).</summary>
+    /// <param name="humanOrigin">The human's model origin in world units -- about a metre above the feet.</param>
+    /// <param name="vehicle">Receives the vehicle that runs the human over.</param>
+    /// <returns>
+    /// <see langword="true"/> when the human is inside a zone of a live vehicle that moved at least
+    /// <see cref="VehicleDeathZone.LethalSpeedUnitsPerTick"/> on the last tick.
+    /// </returns>
+    public bool TryRunOver(Vector3d humanOrigin, out GameTask? vehicle)
+    {
+        foreach ((GameTask candidate, DeathZoneState state) in _deathZones)
+        {
+            if (state.SpeedUnitsPerTick < VehicleDeathZone.LethalSpeedUnitsPerTick
+                || !ConditionalContainerGate.IsTaskActive(candidate)
+                || _destructibles?.IsDestroyed(candidate) == true
+                || !_taskTransforms.TryGetValue(candidate, out TransformState? transform))
+            {
+                continue;
+            }
+
+            Vector3d local = transform.Orientation.Transform(humanOrigin - transform.Position);
+            foreach (VehicleDeathZone zone in state.Zones)
+            {
+                if (zone.Contains(local))
+                {
+                    vehicle = candidate;
+                    return true;
+                }
+            }
+        }
+
+        vehicle = null;
+        return false;
+    }
+
+    /// <summary>Gets the turret of one gun a vehicle was armed with, for presentation and tests.</summary>
+    public VehicleGunTurret? GunTurret(GameTask vehicle, int index) =>
+        _armaments.TryGetValue(vehicle, out VehicleArmament? armament) && index >= 0 && index < armament.Guns.Count
+            ? armament.Guns[index].Turret
+            : null;
 
     /// <summary>Settles every collision-enabled helicopter onto whatever is under it.</summary>
     /// <remarks>
@@ -157,11 +335,18 @@ public sealed class CutsceneRuntime
         _expressions = new LevelExpressionRuntime(variables, InvokeNative);
         List<CutSceneTask> cutscenes = [];
 
+        // Every detection record takes the next value of the global round-robin counter as it initialises: the camera
+        // lenses at construction, then the vehicles in tree order at post-load (VehicleVision).
+        _visionCounter = Walk(levelRoot).Count(static task => string.Equals(task.Type.Name, "SCamera", StringComparison.Ordinal));
         int taskOrder = 0;
         foreach (GameTask task in Walk(levelRoot))
         {
             int order = taskOrder++;
             _taskOrder[task] = order;
+            if (task.Type.Name is "Car" or "Heli")
+            {
+                _visions[task] = new VehicleVision(NextVisionPhase());
+            }
             if (task is ConditionalContainerTask container)
             {
                 _containers.Add(container);
@@ -209,6 +394,12 @@ public sealed class CutsceneRuntime
                     // AnimTask_850.nTick > 66 * GAME_FREQUENCY) can time off it. Without this export
                     // those conditions never resolve and the gated tasks stay dormant forever.
                     variables.BindInt(declared, "nTick", () => animation.Tick, value => animation.Tick = value);
+
+                    // And its run byte (+131316, 0x4F3BA0), which its update rewrites from Run each tick. Level
+                    // timers count on it -- mission 7's LevelTimer_2500 runs while AnimTask_300.isRun, and the
+                    // escape truck's own Run stops it at that timer's 2650 and 4330 -- and a helicopter's Run
+                    // latches itself with "|| this.isRun".
+                    variables.BindBool(declared, "isRun", () => animation.IsRun, value => animation.IsRun = value);
                 }
                 else if (string.Equals(task.Type.Name, "ConditionalSound", StringComparison.Ordinal))
                 {
@@ -228,6 +419,38 @@ public sealed class CutsceneRuntime
             }
         }
 
+        foreach (TimerState timer in _timers)
+        {
+            _walker.Register(timer.Task, _ => TickTimer(timer));
+        }
+
+        foreach (AnimationState animation in _animations)
+        {
+            _walker.Register(animation.Task, _ => TickAnimation(animation));
+        }
+
+        foreach (SoundState sound in _sounds)
+        {
+            _walker.Register(sound.Task, _ => TickSound(sound));
+            _walker.RegisterDeactivation(sound.Task, _ => SetSoundRun(sound, run: false));
+        }
+
+        foreach (GameTask task in Walk(levelRoot))
+        {
+            if (string.Equals(task.Type.Name, "Car", StringComparison.Ordinal))
+            {
+                _walker.Register(task, TickCar);
+            }
+            else if (string.Equals(task.Type.Name, "Heli", StringComparison.Ordinal))
+            {
+                _walker.Register(task, TickHeli);
+            }
+        }
+
+        _walker.ContainerTransition = (container, started) =>
+            _expressions.Execute(started ? container.RunAtStart : container.RunAtStop, container);
+        _walker.HoldContainer = RetainsLevelFourOutro;
+
         // Capture the whole authored hierarchy before parking a vehicle. Moving a
         // parent first makes its still-authored child positions acquire the parking
         // displacement as a permanent local offset (Level 3's pilot floats above it).
@@ -239,7 +462,10 @@ public sealed class CutsceneRuntime
         // railroad.  Reading the keys inline above silently cached (0,0,0)/identity for linked cars.
         foreach (CutSceneTask cutscene in cutscenes)
         {
-            _scenes.Add(new SceneState(cutscene, ReadShots(cutscene)));
+            SceneState scene = new(cutscene, ReadShots(cutscene));
+            _scenes.Add(scene);
+            _walker.Register(cutscene, _ => TickScene(scene));
+            _walker.RegisterDeactivation(cutscene, _ => DeactivateScene(scene));
         }
 
         // Sibling humans acquire a moving parent from their live collision contact.
@@ -303,6 +529,26 @@ public sealed class CutsceneRuntime
     /// <summary>Supplies live poses for targets owned by another simulation, such as animated humans.</summary>
     public void SetTargetPoseResolver(Func<int, CutsceneTargetPose?>? resolver) => _targetPoseResolver = resolver;
 
+    /// <summary>Runs every car on the original's rigid body, in the world its wheel rays are cast into.</summary>
+    /// <param name="world">The world the cars' rays query.</param>
+    /// <param name="models">Resolves a car's model by name, for its body points and radius.</param>
+    /// <remarks>
+    /// Each car gets a <see cref="RetailCarBody"/> at its controller's set-up packet -- the reset
+    /// <c>0x42EA10</c> performs -- and from then on every physics packet steps it through <c>Car_Tick</c>
+    /// (<c>0x42ECA0</c>) instead of the planar <see cref="CarDynamics"/> model. A car whose model or type is
+    /// missing stays on the planar model.
+    /// </remarks>
+    /// <param name="magic">Resolves a magic object by name, for a helicopter's skids and rotors; optional.</param>
+    public void ConfigureRetailCars(
+        IRetailCarWorld world,
+        Func<string, OpenIGI.Formats.World.MefModel?> models,
+        Func<string, MagicObjectDefinition?>? magic = null)
+    {
+        _retailCarWorld = world ?? throw new ArgumentNullException(nameof(world));
+        _retailCarModels = models ?? throw new ArgumentNullException(nameof(models));
+        _retailMagic = magic;
+    }
+
     /// <summary>Supplies the loaded graph corpus to authored vehicle patrol tasks.</summary>
     /// <remarks>
     /// CarAI is a normal level task, not a cutscene animation. Retail's callback at 0x425DE0 starts
@@ -335,266 +581,766 @@ public sealed class CutsceneRuntime
                 continue;
             }
 
-            _carAis.Add(new CarAiState(declared, car, transform, graph, AiPatrolRoute.Start(path)));
+            CarAiState state = new(declared, car, transform, graph, AiPatrolRoute.Start(path));
+            _carAis.Add(state);
+            _walker.Register(declared, _ => TickCarAi(state));
         }
     }
 
-    /// <summary>Gets active graph-driven vehicles at their current world positions.</summary>
-    public IReadOnlyList<VehicleOccupant> VehicleOccupants() =>
-        _carAis
-            .Where(static state => ConditionalContainerGate.IsTaskActive(state.Car))
-            .Select(static state => new VehicleOccupant(state.Car.Id, state.Transform.Position))
-            .ToArray();
+    /// <summary>Gets the graph node a car's CarAI is heading for (<c>+104</c>), for diagnostics and tests.</summary>
+    public int? CarAiTargetNode(GameTask car) =>
+        _carAis.Find(state => ReferenceEquals(state.Car, car))?.TargetNode?.Id;
 
-    /// <summary>Runs the graph/path portion of retail's registered CarAI callback once per game tick.</summary>
-    private void TickCarAi()
+    /// <summary>Gets every vehicle in the world at its current origin, as CRITERIA_VEHICLE counts them.</summary>
+    /// <remarks>
+    /// <c>0x4F4560</c> walks the global vehicle list (<c>dword_A76C40</c>) and tests each vehicle's origin (<c>+32</c>):
+    /// every Car and Heli, whatever drives it. Mission 7's escape truck is an AnimTask's, and the areas it drives
+    /// through -- the timer that releases it past the checkpoint and the two gates that open for it -- only ever
+    /// counted the CarAI cars.
+    /// <para>
+    /// A vehicle joins the list when it is created (<c>0x42E180</c>) and leaves it only when it is destroyed
+    /// (<c>0x42E940</c>); deactivation (<c>0x4F44A0</c>) clears its active flag and leaves it listed. So a vehicle
+    /// behind a closed ConditionalContainer still counts where it stands: mission 7's ending hides the truck under
+    /// CutScene 1200, and the truck in AreaActivate 177 is what keeps that scene's container open.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<VehicleOccupant> VehicleOccupants()
     {
-        foreach (CarAiState state in _carAis)
+        List<VehicleOccupant> occupants = [];
+        foreach ((GameTask task, TransformState state) in _taskTransforms)
+        {
+            if (task.Type.Name is "Car" or "Heli")
+            {
+                occupants.Add(new VehicleOccupant(task.Id, state.Position));
+            }
+        }
+
+        return occupants;
+    }
+
+    /// <summary>Runs retail's registered CarAI callback (<c>0x425DE0</c>) once per game tick.</summary>
+    /// <remarks>
+    /// <para>
+    /// CarAI does not move its car. It decides steering, throttle and brake and sends them to the car
+    /// as a channel packet (<c>0x426510</c>: ch0 steering, ch1 throttle, ch3 brake), which the car's own
+    /// receiver (<c>0x42EA10</c>) turns into physics -- the same path an AnimTask-driven car takes. The
+    /// car therefore pulls away as its smoothed throttle rises: probed on Mission 7, the checkpoint APC
+    /// crawls at 1-4 km/h for six seconds and reaches its cruise near 35 km/h after eleven.
+    /// </para>
+    /// <para>
+    /// While the car's vision holds a target (<c>0x426000</c>: retained 600 ticks) CarAI leaves its
+    /// route and drives at 20 km/h towards the graph node nearest the target, stopping within three
+    /// metres of it and turning in place to face the target (<c>0x4262F0</c>).
+    /// </para>
+    /// </remarks>
+    private void TickCarAi(CarAiState state)
+    {
+        Vector3d? target = VehicleCombatTarget?.Invoke();
         {
             if (_destructibles?.IsDestroyed(state.Car) == true)
             {
                 state.Stopped = true;
-                continue;
+                return;
             }
 
-            if (!ConditionalContainerGate.IsTaskActive(state.Task) || state.Stopped || state.Route is null || state.Route.HasStopped)
+            if (!ConditionalContainerGate.IsTaskActive(state.Task) || state.Route is null)
             {
-                continue;
+                return;
             }
 
-            AiPatrolCommand? command = state.Route.Current;
-            if (command is null)
+            if (ChaseTarget(state, target) is { } chased)
             {
-                continue;
-            }
-
-            switch (command.Value.Kind)
-            {
-                case AiPatrolCommandKind.SetSpeed:
-                    state.SpeedKmh = Math.Max(0, command.Value.Operand);
-                    state.Route.Advance();
-                    state.TargetNodeId = -1;
-                    break;
-
-                case AiPatrolCommandKind.Delay:
-                    if (state.Route.Begin(SimulationTick))
-                    {
-                        state.Route.Advance();
-                    }
-                    break;
-
-                case AiPatrolCommandKind.WalkTo:
-                case AiPatrolCommandKind.RunTo:
-                    StepCarAiMovement(state, command.Value.Operand);
-                    break;
-
-                case AiPatrolCommandKind.Quit:
-                    // CarAI's Quit arm clears its active patrol action; it is not a normal cursor
-                    // advance that could wrap through an End marker into the route again.
-                    state.Stopped = true;
-                    break;
-
-                default:
-                    // Retail's default arm logs and advances unsupported command types; it does not
-                    // wedge the vehicle path (the human walker is intentionally different).
-                    state.Route.Advance();
-                    break;
-            }
-        }
-
-        TickVehicleCombat();
-    }
-
-    private void TickVehicleCombat()
-    {
-        if (VehicleCombatTarget?.Invoke() is not { } target)
-        {
-            return;
-        }
-
-        foreach (CarAiState state in _carAis)
-        {
-            if (state.Combat is null || !_vehicleWeapons.TryGetValue(state.Car, out WeaponType? weapon))
-            {
-                continue;
-            }
-
-            Vector3f forward = state.Transform.Orientation.Column2;
-            Vector3d sightOrigin = state.Transform.Position + new Vector3d(
-                forward.X * AiVehicleCombat.CapturedMuzzleForwardMetres * WorldScene.UnitsPerMetre,
-                forward.Y * AiVehicleCombat.CapturedMuzzleForwardMetres * WorldScene.UnitsPerMetre,
-                (forward.Z * AiVehicleCombat.CapturedMuzzleForwardMetres
-                    + AiVehicleCombat.CapturedMuzzleHeightMetres) * WorldScene.UnitsPerMetre);
-            bool visible = VehicleCombatLineOfSight?.Invoke(state.Car, sightOrigin, target) ?? true;
-            VehicleCombatShot? shot = state.Combat.Tick(new AiVehicleCombatInput(
-                state.Transform.Position,
-                state.Transform.Orientation,
-                target,
-                ConditionalContainerGate.IsTaskActive(state.Task)
-                    && ConditionalContainerGate.IsTaskActive(state.Car)
-                    && _destructibles?.IsDestroyed(state.Car) != true,
-                !string.IsNullOrWhiteSpace(Text(state.Car, "Can fire")),
-                Single(state.Car, "ViewCone Alpha (degrees)", 180f),
-                Single(state.Car, "ViewCone Gamma (degrees)", 360f),
-                Single(state.Car, "ViewCone Length (meter)", 0f),
-                visible,
-                weapon.MuzzleVelocity,
-                weapon.RoundsPerMinute));
-            if (shot is { } fired)
-            {
-                VehicleCombatShotFired?.Invoke(fired with
+                GraphNode? goal = NearestNode(state.Graph, chased);
+                if (goal is null || CarAiArrived(state, goal))
                 {
-                    Owner = state.Car,
-                    WeaponScriptId = weapon.ScriptId,
-                    MissileType = MissileFlight.TypeForLauncher(weapon),
-                    MuzzleVelocityMetresPerSecond = MissileFlight.LaunchSpeedMetresPerSecond(weapon),
-                    ModelName = string.IsNullOrWhiteSpace(weapon.Projectile.Text)
-                        ? fired.ModelName
-                        : weapon.Projectile.Text,
-                });
+                    state.CommandSpeedKmh = 0f;
+                    state.Halt = 1f;
+                }
+                else
+                {
+                    state.TargetNode = CarAiNextHop(state, state.Transform.Position, goal.Id);
+                    state.CommandSpeedKmh = 20f;
+                    state.Halt = 0f;
+                }
+
+                SteerCarAiChase(state, chased);
+            }
+            else if (!state.Stopped && state.Route.Current is { } command)
+            {
+                switch (command.Kind)
+                {
+                    case AiPatrolCommandKind.WalkTo:
+                    case AiPatrolCommandKind.RunTo:
+                        if (state.Graph.NodeAt(command.Operand) is not { } destination || CarAiArrived(state, destination))
+                        {
+                            state.Route.Advance();
+                        }
+                        else
+                        {
+                            state.TargetNode = CarAiNextHop(state, state.Transform.Position, destination.Id);
+                            state.CommandSpeedKmh = state.RouteSpeedKmh;
+                            state.Halt = 0f;
+                            SteerCarAiRoute(state);
+                        }
+
+                        break;
+
+                    case AiPatrolCommandKind.Delay:
+                    {
+                        // 0x425DE0 counts the wait at +124 and moves on once it has passed the operand.
+                        state.CommandSpeedKmh = 0f;
+                        state.Halt = 1f;
+                        int waited = state.WaitTicks++;
+                        if (waited > command.Operand)
+                        {
+                            state.Route.Advance();
+                            state.WaitTicks = 0;
+                        }
+
+                        break;
+                    }
+
+                    case AiPatrolCommandKind.Quit:
+                    case AiPatrolCommandKind.End:
+                        // Arms 6 and 7 stop the car and pull its brake; the cursor stays where it is.
+                        state.CommandSpeedKmh = 0f;
+                        state.Halt = 1f;
+                        state.Brake = 1f;
+                        state.DesiredSpeedKmh = 0f;
+                        state.Steering = 0f;
+                        break;
+
+                    case AiPatrolCommandKind.SetSpeed:
+                        state.RouteSpeedKmh = command.Operand;
+                        state.Halt = 0f;
+                        state.Route.Advance();
+                        break;
+
+                    default:
+                        // Retail's default arm logs "Command not supported by CARAI" and advances.
+                        state.Route.Advance();
+                        break;
+                }
+            }
+            else
+            {
+                state.Halt = 1f;
+                state.Brake = 1f;
+                state.Steering = 0f;
+            }
+
+            // 0x426510: the packet goes out every tick; its first word is the call counter, and a
+            // zero there is the receiver's set-up packet rather than a physics step.
+            if (state.Packets++ == 0)
+            {
+                state.Transform.Thrust = state.Transform.OriginalThrust;
+                state.Transform.TargetThrust = state.Transform.OriginalThrust;
+                state.Transform.CarMotion.Reset();
+                ResetRetailBody(state.Car, state.Transform);
+                return;
+            }
+
+            DriveCar(
+                state.Car,
+                state.Transform,
+                simulationOrder: 0,
+                state.Steering,
+                state.Throttle,
+                state.Brake == 0f ? -1f : state.Brake);
+
+            // The car missiles, bullets and the player collide with is the same placed body: keep it
+            // where the car is, or shots pass through the visible vehicle and never reach its
+            // direct-hit destruction.
+            _collisionIndex?.UpdateTransform(
+                state.Car,
+                state.Transform.Position / WorldScene.UnitsPerMetre,
+                state.Transform.Orientation);
+            _destructibles?.UpdatePosition(state.Car, state.Transform.Position, state.Transform.Orientation);
+        }
+    }
+
+    /// <summary>What the car's vision holds, retained for 600 ticks (<c>0x426000</c>), or nothing.</summary>
+    private Vector3d? ChaseTarget(CarAiState state, Vector3d? target)
+    {
+        // A car whose "Can fire" is off has no vision and chases nothing; a retained target that died is dropped.
+        if (!_visions.TryGetValue(state.Car, out VehicleVision? vision) || !vision.CanFire || target is not { } seen)
+        {
+            state.ChaseHeld = false;
+            state.ChaseRetention = 0;
+            return null;
+        }
+
+        // 0x426000 takes the first slot the vision marks visible and holds it for 600 ticks, counting down while
+        // nothing is visible; CarAI reads the held human's live position (+32) every tick.
+        if (vision.Sees)
+        {
+            state.ChaseHeld = true;
+            state.ChaseRetention = AiVehicleCombat.TargetRetentionTicks;
+        }
+        else if (state.ChaseRetention > 0)
+        {
+            state.ChaseRetention--;
+        }
+        else
+        {
+            state.ChaseHeld = false;
+        }
+
+        return state.ChaseHeld ? seen : null;
+    }
+
+    /// <summary>Retail's "π" (<c>0x533618</c>): three ulps above <see cref="Math.PI"/>.</summary>
+    private static readonly double RetailPi = BitConverter.Int64BitsToDouble(0x400921FB54442D1B);
+
+    /// <summary>Retail's "1/π" (<c>0x533610</c>): three ulps below <c>1 / Math.PI</c>.</summary>
+    private static readonly double RetailInversePi = BitConverter.Int64BitsToDouble(0x3FD45F306DC9C880);
+
+    /// <summary>170° as the chase eases by it (<c>0x533630</c>).</summary>
+    private static readonly double Retail170Degrees = BitConverter.Int64BitsToDouble(0x4007BC89CEEED7C6);
+
+    /// <summary>1/170° (<c>0x533628</c>).</summary>
+    private static readonly double RetailInverse170Degrees = BitConverter.Int64BitsToDouble(0x3FD591F70B6D4D3F);
+
+    /// <summary>10°, the chase's turn threshold (<c>0x533638</c>).</summary>
+    private static readonly double Retail10Degrees = BitConverter.Int64BitsToDouble(0x3FC6571855555555);
+
+    /// <summary>1/(10 m)², the final-stop ramp (<c>0x533600</c>).</summary>
+    private const double CarAiRampScale = 5.960464477539063e-10;
+
+    /// <summary>Whether the car is within three metres of a node (<c>0x4260C0</c>: 150994944 squared units).</summary>
+    private static bool CarAiArrived(CarAiState state, GraphNode node)
+    {
+        Vector3d p = state.Transform.Position;
+        X87 dx = (X87)node.Position.X - p.X, dy = (X87)node.Position.Y - p.Y, dz = (X87)node.Position.Z - p.Z;
+        return (dx * dx + dy * dy + dz * dz).Value < CarAiArrivalSquared;
+    }
+
+    /// <summary>The next node from a point towards a destination (<c>0x425C10</c>).</summary>
+    /// <remarks>
+    /// When the route table has no link, retail logs "CarAI: Error in graph" and keeps the nearest node; a
+    /// step to an empty slot is returned as the empty slot.
+    /// </remarks>
+    private static GraphNode? CarAiNextHop(CarAiState state, Vector3d from, int destinationId)
+    {
+        GraphNode? nearest = NearestNode(state.Graph, from);
+        if (nearest is null || nearest.Id == destinationId)
+        {
+            return nearest;
+        }
+
+        return state.Graph.RouteTable?.TryGetStep(nearest.Id, destinationId, out int step, out _) == true
+            ? state.Graph.NodeAt(step)
+            : nearest;
+    }
+
+    /// <summary>
+    /// <c>0x425B80</c>: from a point, the next position toward a destination -- the destination's own when the
+    /// point is nearest it, the route step's otherwise, and the point unchanged when there is no link.
+    /// </summary>
+    private static Vector3d CarAiResolveToward(CarAiState state, Vector3d from, int destinationId)
+    {
+        GraphNode? nearest = NearestNode(state.Graph, from);
+        if (nearest is null)
+        {
+            return from;
+        }
+
+        if (nearest.Id == destinationId)
+        {
+            return nearest.Position;
+        }
+
+        return state.Graph.RouteTable?.TryGetStep(nearest.Id, destinationId, out int step, out _) == true
+            && state.Graph.NodeAt(step) is { } next
+            ? next.Position
+            : from;
+    }
+
+    private static GraphNode? NearestNode(GraphFile graph, Vector3d at)
+    {
+        GraphNearestNode.Find(graph, at, out GraphNode? nearest, out _);
+        return nearest;
+    }
+
+    /// <summary>
+    /// The heading of a world offset in the car's frame (<c>0x426140</c>'s rotation, then <c>0x414950</c>),
+    /// signed positive to the left, kept at full width as retail keeps it in a register.
+    /// </summary>
+    /// <param name="state">The CarAI.</param>
+    /// <param name="dx">The offset's X, already rounded as the caller's subtraction rounds it.</param>
+    /// <param name="dy">The offset's Y.</param>
+    /// <param name="dz">The offset's Z.</param>
+    private static double CarAiHeading(CarAiState state, double dx, double dy, double dz)
+    {
+        // Mᵀ·d with the z term first (M6, M3, M0 for x; M7, M4, M1 for y), each stored as a double.
+        Matrix3f m = state.Transform.Orientation;
+        double lx = ((X87)m.M31 * dz + (X87)m.M21 * dy + (X87)m.M11 * dx).Value;
+        double ly = ((X87)m.M32 * dz + (X87)m.M22 * dy + (X87)m.M12 * dx).Value;
+
+        // 0x414950: z is cleared, the offset normalised by a reciprocal, its cosine to +Y through acos.
+        if (lx == 0d && ly == 0d)
+        {
+            return 0d;
+        }
+
+        X87 inverse = (X87)1.0 / X87.Sqrt((X87)lx * lx + (X87)ly * ly + (X87)0.0 * 0.0);
+        double nx = (inverse * lx).Value;
+        double ny = (inverse * ly).Value;
+        ny = ny < -1d ? -1d : ny > 1d ? 1d : ny;
+        double heading = RetailAcos(ny);
+        return nx > 0d ? -heading : heading;
+    }
+
+    /// <summary>The heading to a point, from the car (<c>d = point − P</c>, rounded toward zero).</summary>
+    private static double CarAiHeadingTo(CarAiState state, Vector3d point)
+    {
+        Vector3d p = state.Transform.Position;
+        return CarAiHeading(
+            state,
+            X87.Add(point.X, -p.X),
+            X87.Add(point.Y, -p.Y),
+            X87.Add(point.Z, -p.Z));
+    }
+
+    /// <summary>
+    /// The CRT's <c>acos</c> (<c>0x516810</c>): it switches to round-to-nearest, takes
+    /// <c>√((1 + c)(1 − c))</c> as a plain double and hands both to <c>fpatan</c>.
+    /// </summary>
+    /// <remarks><c>fpatan</c> keeps a 64-bit significand; <see cref="Math.Atan2(double, double)"/> is within a double ulp of it.</remarks>
+    private static double RetailAcos(double c) =>
+        c >= 1d ? 0d
+        : c <= -1d ? Math.PI
+        : Math.Atan2(Math.Sqrt((1d + c) * (1d - c)), c);
+
+    /// <summary>Steering from a heading (<c>0x426140</c>, <c>0x4262F0</c>): the positive limit tests the full-width value, the rest the float.</summary>
+    private static float CarAiSteering(double heading)
+    {
+        float hf = X87.ToFloat(heading);
+        return heading > 0.17453294f ? -1f
+            : hf < -0.17453294f ? 1f
+            : ((X87)hf * -1.9098593f).F;
+    }
+
+    /// <summary>Route steering, throttle and brake (<c>0x426140</c>).</summary>
+    private static void SteerCarAiRoute(CarAiState state)
+    {
+        state.DesiredSpeedKmh = X87.ToFloat(CarAiRouteSpeed(state));
+        CarAiThrottle(state);
+        double heading = state.TargetNode is { } node ? CarAiHeadingTo(state, node.Position) : 0d;
+
+        // The wheel eases off as the throttle opens: full lock only at a standstill.
+        state.Steering = (((((X87)1f - state.Throttle) * 0.95f) + 0.05f) * CarAiSteering(heading)).F;
+    }
+
+    /// <summary>Chase steering, throttle and brake (<c>0x4262F0</c>).</summary>
+    private static void SteerCarAiChase(CarAiState state, Vector3d chased)
+    {
+        bool stopped = state.CommandSpeedKmh == 0f;
+        Vector3d toward = !stopped && state.TargetNode is { } node ? node.Position : chased;
+        double heading = CarAiHeadingTo(state, toward);
+        state.Steering = CarAiSteering(heading);
+        float magnitude = MathF.Abs(X87.ToFloat(heading));
+        state.DesiredSpeedKmh = !stopped
+            ? X87.ToFloat(CarAiChaseSpeed(state, chased))
+            : magnitude > 0.17453294f ? 5f : ((X87)magnitude * 28.647888f).F;
+        CarAiThrottle(state);
+
+        // A stopped car that still has to turn keeps its brake off so it can crawl round.
+        state.Brake = stopped && magnitude > 0.17453294f ? 0f : state.Halt;
+    }
+
+    /// <summary>Opens or closes the throttle towards the desired speed (<c>0x426260</c>).</summary>
+    /// <remarks>
+    /// The car's speed is read in world units a tick and converted to km/h (× 108/4096). The throttle
+    /// moves one hundredth of the shortfall from the car's own smoothed throttle -- all in one register,
+    /// truncated once -- and the brake comes on when told to halt or when the car is more than 5 km/h too fast.
+    /// </remarks>
+    private static void CarAiThrottle(CarAiState state)
+    {
+        X87 shortfall = (X87)state.DesiredSpeedKmh - ((X87)state.Transform.Speed * 0.0263671875f);
+        X87 throttle = (X87)state.Transform.Thrust + (shortfall * 0.0099999998f);
+        state.Throttle = throttle.Value < 0.0f ? 0f : throttle.Value > 1.0f ? 1f : throttle.F;
+        state.Brake = state.Halt != 0f || shortfall.Value < -5.0 ? 1f : 0f;
+    }
+
+    /// <summary>The route speed, eased for the heading and for the turn at the node (<c>0x4255A0</c>).</summary>
+    /// <remarks>
+    /// Beyond ten metres of the current node the speed falls with the heading error to it. Within ten
+    /// metres: mid-leg the look-ahead resolves back to the current node, so there is no turn; at a leg's last
+    /// node the turn is the angle at the node between the way back to the car and the way on to the next
+    /// leg's destination, so carrying straight on slows to about 5 km/h; before a Quit or End the speed runs
+    /// down with the square of the distance. This is what the original computes, dead look-ahead included.
+    /// </remarks>
+    private static double CarAiRouteSpeed(CarAiState state)
+    {
+        float command = state.CommandSpeedKmh;
+        if (state.TargetNode is not { } node)
+        {
+            return command;
+        }
+
+        Vector3d p = state.Transform.Position;
+        Vector3d n = node.Position;
+        double ax = X87.Add(p.X, -n.X), ay = X87.Add(p.Y, -n.Y), az = X87.Add(p.Z, -n.Z);
+        double distanceSquared = ((X87)ax * ax + (X87)ay * ay + (X87)az * az).Value;
+        if (distanceSquared > CarAiLookAheadSquared)
+        {
+            return CarAiEase(command, Math.Abs(CarAiHeading(state, -ax, -ay, -az)));
+        }
+
+        if (state.Route?.Current is not { } current || state.Graph.NodeAt(current.Operand) is not { } destination)
+        {
+            return command;
+        }
+
+        double turn;
+        if (destination.Id != node.Id)
+        {
+            GraphNode? hop = NearestNode(state.Graph, destination.Position) is { } nearest
+                ? CarAiNextHop(state, p, nearest.Id)
+                : null;
+            if (hop is null)
+            {
+                return command;
+            }
+
+            turn = CarAiAngleBetween(ax, ay, az, CarAiResolveToward(state, hop.Position, hop.Id), n);
+        }
+        else if (state.Route.Next is not { } next)
+        {
+            return command;
+        }
+        else if (next.Kind is AiPatrolCommandKind.WalkTo or AiPatrolCommandKind.RunTo)
+        {
+            if (state.Graph.NodeAt(next.Operand) is not { } following)
+            {
+                return command;
+            }
+
+            turn = CarAiAngleBetween(ax, ay, az, CarAiResolveToward(state, following.Position, following.Id), n);
+        }
+        else if (next.Kind is AiPatrolCommandKind.Quit or AiPatrolCommandKind.End)
+        {
+            return (((X87)command * distanceSquared) * CarAiRampScale).Value;
+        }
+        else
+        {
+            return command;
+        }
+
+        return command < 5f ? command : CarAiEase(command, turn);
+    }
+
+    /// <summary>The chase speed towards the node nearest the target (<c>0x425900</c>).</summary>
+    private static double CarAiChaseSpeed(CarAiState state, Vector3d chased)
+    {
+        float command = state.CommandSpeedKmh;
+        if (state.TargetNode is not { } node)
+        {
+            return command;
+        }
+
+        Vector3d p = state.Transform.Position;
+        Vector3d n = node.Position;
+        double ax = X87.Add(p.X, -n.X), ay = X87.Add(p.Y, -n.Y), az = X87.Add(p.Z, -n.Z);
+        double distanceSquared = ((X87)ax * ax + (X87)ay * ay + (X87)az * az).Value;
+        if (distanceSquared > CarAiChaseLookAheadSquared)
+        {
+            return CarAiEase(command, Math.Abs(CarAiHeading(state, -ax, -ay, -az)));
+        }
+
+        if (NearestNode(state.Graph, chased) is not { } goal)
+        {
+            return command;
+        }
+
+        if (goal.Id == node.Id)
+        {
+            return (((X87)command * distanceSquared) * CarAiRampScale).Value;
+        }
+
+        // Straight from +104 to the goal, with no nearest-node step; no link steers at the goal itself.
+        Vector3d after = state.Graph.RouteTable?.TryGetStep(node.Id, goal.Id, out int step, out _) == true
+            && state.Graph.NodeAt(step) is { } stepNode
+            ? stepNode.Position
+            : goal.Position;
+        double turn = CarAiAngleBetween(ax, ay, az, after, n);
+        if (command < 5f)
+        {
+            return command;
+        }
+
+        return turn < Retail10Degrees
+            ? ((((X87)command - 5f) * ((X87)Retail170Degrees - turn)) * RetailInverse170Degrees + 5.0).Value
+            : 5f;
+    }
+
+    /// <summary>The eased speed: 5 km/h at a full reversal, the command (less an ulp: retail's π) straight on.</summary>
+    private static double CarAiEase(float command, double turn) =>
+        ((((X87)command - 5f) * ((X87)RetailPi - turn)) * RetailInversePi + 5.0).Value;
+
+    /// <summary>
+    /// The angle at a node between the way back to the car (<c>P − N</c>, given) and the way on to
+    /// <paramref name="beyond"/> (<c>0x4B31F0</c>, both vectors rounded toward zero).
+    /// </summary>
+    private static double CarAiAngleBetween(double ax, double ay, double az, Vector3d beyond, Vector3d node)
+    {
+        double bx = X87.Add(beyond.X, -node.X), by = X87.Add(beyond.Y, -node.Y), bz = X87.Add(beyond.Z, -node.Z);
+        if ((ax == 0d && ay == 0d && az == 0d) || (bx == 0d && by == 0d && bz == 0d))
+        {
+            return 0d;
+        }
+
+        double dot = ((X87)az * bz + (X87)ay * by + (X87)ax * bx).Value;
+        double la = X87.Sqrt((X87)ax * ax + (X87)ay * ay + (X87)az * az).Value;
+        double c = ((X87)dot / (X87.Sqrt((X87)bx * bx + (X87)by * by + (X87)bz * bz) * la)).Value;
+        if (!(c < 1d))
+        {
+            return 0d;
+        }
+
+        return c <= -1d ? RetailPi : RetailAcos(c);
+    }
+
+    private void TickVehicleCombat(GameTask vehicle)
+    {
+        Vector3d? target = VehicleCombatTarget?.Invoke();
+        if (!_armaments.TryGetValue(vehicle, out VehicleArmament? armament))
+        {
+            return;
+        }
+
+        {
+            if (!_taskTransforms.TryGetValue(vehicle, out TransformState? transform)
+                || vehicle is not DeclaredTask declared)
+            {
+                return;
+            }
+
+            // A car's "Can fire" is an expression: 0x42E870 evaluates it every tick and registers the
+            // car's vision while it holds, removing it again when it stops.
+            bool canFire = _expressions.EvaluateCondition(Text(declared, "Can fire"), emptyValue: false, vehicle);
+            CarAiState? controller = _carAis.Find(state => ReferenceEquals(state.Car, vehicle));
+            bool active = ConditionalContainerGate.IsTaskActive(vehicle)
+                && (controller is null || ConditionalContainerGate.IsTaskActive(controller.Task))
+                && _destructibles?.IsDestroyed(vehicle) != true;
+
+            if (armament.LegacyWeapon is { } weapon)
+            {
+                TickLegacyVehicleGun(declared, transform, armament, weapon, target, active, canFire);
+                return;
+            }
+
+            // Each gun walks its vehicle's record for the first slot marked visible and aims at that human's
+            // position (0x46F390); its own 90-run hold covers a target it loses.
+            Vector3d? aim = active
+                && _visions.TryGetValue(vehicle, out VehicleVision? vision)
+                && vision.Sees
+                && target is { } candidate
+                    ? candidate
+                    : null;
+
+            // A car's update (0x42E320) runs its guns once, then re-seats them and runs every
+            // AIStationaryGun a second time unless +11980 says its physics tick already did, so a car's
+            // gun turns and meters its fire twice a tick. Probed on Mission 7 for both kinds of car: the
+            // parked T80 354 (T80 rounds 75 ticks apart, the coaxial M2HB one a tick) and the CarAI-driven
+            // APC 352 (APC rounds 75 ticks apart), where the rows' own cadences are 150, 2 and 150.
+            //
+            // A helicopter's update (0x4316D0) never runs its model's attachments; its gun turns only while
+            // its AnimTask flies it, once a tick. Probed on Mission 7's heli 353: nothing while parked, and
+            // on its flight 55 MIL rounds over 162 ticks -- the row's own three-tick cadence.
+            bool helicopter = string.Equals(vehicle.Type.Name, "Heli", StringComparison.Ordinal);
+            int runs = !helicopter
+                ? 2
+                : _animations.Exists(animation => animation.TargetId == vehicle.Id && animation.RanThisTick) ? 1 : 0;
+
+            // A gun aims from its mount's position (+32) and fires from its weapon object, both as the last re-seat
+            // left them: nothing moves them while the guns run. The spawn seats them first (0x46EC90).
+            if (!armament.Seated)
+            {
+                SeatVehicleGuns(armament, transform);
+            }
+
+            foreach (VehicleGunState gun in armament.Guns)
+            {
+                gun.RoundsFiredThisTick = 0;
+            }
+
+            for (int run = 0; run < runs; run++)
+            {
+                // A car re-seats its guns between its two runs (0x46FBA0 through op 46), from where it stands now and
+                // with the traverse the first run left; a helicopter's AnimTask moves it before its one run.
+                if (run == 1 || helicopter)
+                {
+                    SeatVehicleGuns(armament, transform);
+                }
+
+                // The turret runs before the gun it carries (0x46F390 walks its children last).
+                foreach (VehicleGunState gun in armament.Guns)
+                {
+                    Vector3d? local = aim is { } point ? transform.Orientation.Transform(point - gun.MountPosition) : null;
+                    if (FireVehicleGun(vehicle, gun, local, aim) is { } shot)
+                    {
+                        gun.RoundsFiredThisTick++;
+                        gun.ShotSequence++;
+                        VehicleCombatShotFired?.Invoke(shot);
+                    }
+
+                    // The Gun's own update (0x478640) counts its cooldown down after Gun_Fire has run.
+                    if (gun.Cooldown > 0)
+                    {
+                        gun.Cooldown--;
+                    }
+                }
             }
         }
     }
 
-    private void StepCarAiMovement(CarAiState state, int destinationId)
+    /// <summary>Measures how far each zone-carrying vehicle moved this tick, the speed 0x45FA80 tests.</summary>
+    private void TickDeathZones(GameTask vehicle)
     {
-        GraphNode? destination = state.Graph.NodeAt(destinationId);
-        if (destination is null)
+        if (!_deathZones.TryGetValue(vehicle, out DeathZoneState? state))
         {
-            state.Route!.Advance();
-            state.TargetNodeId = -1;
             return;
         }
 
-        if (state.TargetNodeId < 0)
+        if (!_taskTransforms.TryGetValue(vehicle, out TransformState? transform))
         {
-            GraphNearestNode.Find(state.Graph, state.Transform.Position, out GraphNode? nearest, out _);
-            int next = destinationId;
-            if (nearest is not null
-                && nearest.Id != destinationId
-                && state.Graph.RouteTable?.TryGetStep(nearest.Id, destinationId, out int routed, out _) == true)
-            {
-                next = routed;
-            }
-
-            state.TargetNodeId = next;
-        }
-
-        GraphNode? target = state.Graph.NodeAt(state.TargetNodeId);
-        if (target is null)
-        {
-            state.TargetNodeId = destinationId;
-            target = destination;
-        }
-
-        // Graph node Z is navigation metadata, not a vehicle-body altitude.  The first CarAI pass
-        // interpolated toward it directly, which pushed the APC and limo halfway through terrain on
-        // slopes.  Preserve the authored body-to-support offset and re-sample the normal car support
-        // path at every horizontal graph step, just as the dynamic CAR tick does.
-        Vector3d delta = new(
-            target.Position.X - state.Transform.Position.X,
-            target.Position.Y - state.Transform.Position.Y,
-            0d);
-        double distance = delta.Length;
-        // The source-like retail task calls this value km/h.  Convert the authored speed to its
-        // fixed 30 Hz engine-unit step; this is a graph follower, while CarDynamics remains the
-        // force/suspension implementation for animated vehicle physics.
-        double step = state.SpeedKmh * (WorldScene.UnitsPerMetre / 3.6d) / Frequency;
-        Vector3d nextPosition = distance <= Math.Max(step, target.Radius * GraphNode.MetreInUnits)
-            ? new Vector3d(target.Position.X, target.Position.Y, state.Transform.Position.Z)
-            : state.Transform.Position + (delta * (step / distance));
-        if (CarAiBlockedByClosedDoor(state, nextPosition))
-        {
-            state.Transform.PreviousPosition = state.Transform.Position;
-            state.Transform.PreviousOrientation = state.Transform.Orientation;
-            state.Transform.Speed = 0f;
-            state.Transform.IsDynamic = true;
+            state.SpeedUnitsPerTick = 0d;
             return;
         }
 
-        if (distance <= Math.Max(step, target.Radius * GraphNode.MetreInUnits))
-        {
-            PlaceCarAiOnSupport(state, nextPosition);
-            state.TargetNodeId = -1;
-            if (target.Id == destinationId)
-            {
-                state.Route!.Advance();
-            }
-
-            return;
-        }
-
-        if (delta.Length > 1e-6d)
-        {
-            state.Transform.Heading = (float)Math.Atan2(-delta.X, delta.Y);
-            state.Transform.Orientation = Matrix3f.FromEngineEulerAngles(
-                state.Transform.Euler.X,
-                state.Transform.Euler.Y,
-                state.Transform.Heading);
-        }
-
-        PlaceCarAiOnSupport(state, nextPosition);
+        state.SpeedUnitsPerTick = state.LastPosition is { } last ? (transform.Position - last).Length : 0d;
+        state.LastPosition = transform.Position;
     }
 
-    /// <summary>Stops a graph follower at a closed authored door without consuming its route command.</summary>
-    private bool CarAiBlockedByClosedDoor(CarAiState state, Vector3d proposedPosition)
+    /// <summary>One run of a vehicle gun: turn (0x46F390), then let Gun_Fire (0x478BA0) take the trigger.</summary>
+    private VehicleCombatShot? FireVehicleGun(
+        GameTask vehicle,
+        VehicleGunState gun,
+        Vector3d? local,
+        Vector3d? aim)
     {
-        Vector3d translation = proposedPosition - state.Transform.Position;
-        if (_vehicleObstacleHit is null || translation.Length <= 1e-6d)
+        bool trigger = gun.Turret.Tick(local);
+        int burst = gun.Gun.Weapon.MaximumRoundsPerBurst;
+
+        // The hold of Gun_Fire decides its sounds: the trigger, the pull's burst unspent and the magazine not empty.
+        // The cooldown between rounds is not part of it (0x478BA0).
+        gun.Hold = trigger && !(burst > 0 && gun.RoundsThisPull >= burst) && gun.Ammunition != 0;
+        if (!trigger)
         {
-            return false;
+            // Gun_Fire resets the pull's round count (+320) when the trigger drops.
+            gun.RoundsThisPull = 0;
+            return null;
         }
 
-        CarPhysicsDefinition physics = state.Transform.CarPhysics ?? DefaultCarPhysics;
-        Vector3d heading = translation / translation.Length;
-        double halfLengthUnits = physics.Dimensions.Y * 0.5d * WorldScene.UnitsPerMetre;
-        foreach (double probeHeightMetres in CarProbeHeightsMetres)
+        // A row that fires a fixed burst per pull (+1612) stops at it until the trigger is released.
+        if ((burst > 0 && gun.RoundsThisPull >= burst)
+            || gun.Cooldown > 0
+            || gun.Ammunition == 0
+            || aim is not { } shotTarget)
         {
-            Vector3d offset = new(0d, 0d, probeHeightMetres * WorldScene.UnitsPerMetre);
-            Vector3d start = state.Transform.Position + (heading * halfLengthUnits) + offset;
-            Vector3d end = proposedPosition + (heading * (halfLengthUnits + CarProbeMarginUnits)) + offset;
-            if (_vehicleObstacleHit(state.Car, start, end) is { Owner: { } obstacle }
-                && string.Equals(obstacle.Type.Name, "Door", StringComparison.Ordinal)
-                && _vehicleObstacleReleased?.Invoke(obstacle) != true)
+            return null;
+        }
+
+        // Gun_Fire restarts the cooldown at (60 / rpm) * 30 ticks, truncated.
+        gun.RoundsThisPull++;
+        gun.Cooldown = Math.Max(1, GunTiming.TicksPerRound(gun.Gun.Weapon.RoundsPerMinute));
+        if (gun.Ammunition > 0)
+        {
+            gun.Ammunition--;
+        }
+
+        // With no origin in its message, Gun_Fire starts the round at the weapon's magic vertex 2 and sends it down the
+        // weapon's middle column (0x478BA0) -- the weapon object as the last re-seat posed it, which swings a gun on a
+        // gun round with the gun it rides on.
+        Vector3f muzzle = gun.Gun.MuzzleVertex;
+        Vector3d origin = gun.WeaponPosition
+            + gun.WeaponOrientation.Transposed().Transform(new Vector3d(muzzle.X, muzzle.Y, muzzle.Z));
+        Vector3f barrel = gun.WeaponOrientation.Transposed().Transform(Vector3f.UnitY).Normalized();
+        WeaponType row = gun.Gun.Weapon;
+
+        // Gun_Fire sends the round down the barrel, not at the target, turned inside the row's cone
+        // (0x478BA0: +1636 for a pull's first three rounds, +1640 after; radius three draws deep).
+        float cone = GunFiring.ConeAngle(row, gun.RoundsThisPull);
+        if (cone > 0f)
+        {
+            Span<float> draws = stackalloc float[GunFiring.ConeRadiusSamples + 1];
+            for (int draw = 0; draw < draws.Length; draw++)
             {
-                return true;
+                draws[draw] = _gunRandom.NextSingle();
             }
+
+            (float radius, float bearing) = GunFiring.SampleCone(cone, draws);
+            Vector3f side = Vector3f.Cross(barrel, Vector3f.UnitZ);
+            side = side.Length > 1e-6f ? side.Normalized() : Vector3f.UnitX;
+            Vector3f up = Vector3f.Cross(side, barrel).Normalized();
+            barrel = GunFiring.OffsetInCone(barrel, side, up, radius, bearing);
         }
 
-        return false;
+        double range = (shotTarget - origin).Length;
+        Vector3d along = origin + new Vector3d(barrel.X * range, barrel.Y * range, barrel.Z * range);
+        return new VehicleCombatShot(
+            origin,
+            along,
+            barrel,
+            MissileFlight.TypeForLauncher(row),
+            MissileFlight.LaunchSpeedMetresPerSecond(row),
+            string.IsNullOrWhiteSpace(row.Projectile.Text) ? "110_02_1" : row.Projectile.Text)
+        {
+            Owner = vehicle,
+            WeaponScriptId = row.ScriptId,
+            IsHitscan = gun.Gun.IsHitscan,
+        };
     }
 
-    /// <summary>Places a graph-driven car on the same terrain/object support used by car physics.</summary>
-    private void PlaceCarAiOnSupport(CarAiState state, Vector3d proposed)
+    /// <summary>The Level 6 capture's single fixed gun: fire the row's cadence at whatever is retained.</summary>
+    private void TickLegacyVehicleGun(
+        DeclaredTask vehicle,
+        TransformState transform,
+        VehicleArmament armament,
+        WeaponType weapon,
+        Vector3d? target,
+        bool active,
+        bool canFire)
     {
-        if (double.IsNaN(state.SupportOffsetUnits)
-            && TryFindSupportHeight(state.Transform.Position, state.Car, allowDeepRecovery: true, out double originSupport))
+        if (target is not { } seen)
         {
-            state.SupportOffsetUnits = state.Transform.Position.Z - originSupport;
+            return;
         }
 
-        Vector3d grounded = proposed;
-        if (!double.IsNaN(state.SupportOffsetUnits)
-            && TryFindSupportHeight(proposed, state.Car, allowDeepRecovery: true, out double support))
+        Vector3f forward = transform.Orientation.Column2;
+        Vector3d sightOrigin = transform.Position + new Vector3d(
+            forward.X * AiVehicleCombat.CapturedMuzzleForwardMetres * WorldScene.UnitsPerMetre,
+            forward.Y * AiVehicleCombat.CapturedMuzzleForwardMetres * WorldScene.UnitsPerMetre,
+            (forward.Z * AiVehicleCombat.CapturedMuzzleForwardMetres
+                + AiVehicleCombat.CapturedMuzzleHeightMetres) * WorldScene.UnitsPerMetre);
+        bool visible = VehicleCombatLineOfSight?.Invoke(vehicle, sightOrigin, seen) ?? true;
+        VehicleCombatShot? shot = armament.Sight.Tick(new AiVehicleCombatInput(
+            transform.Position,
+            transform.Orientation,
+            seen,
+            active,
+            canFire,
+            Single(vehicle, "ViewCone Alpha (degrees)", 180f),
+            Single(vehicle, "ViewCone Gamma (degrees)", 360f),
+            Single(vehicle, "ViewCone Length (meter)", 0f),
+            visible,
+            weapon.MuzzleVelocity,
+            weapon.RoundsPerMinute));
+        if (shot is { } fired)
         {
-            grounded = new Vector3d(proposed.X, proposed.Y, support + state.SupportOffsetUnits);
+            VehicleCombatShotFired?.Invoke(fired with
+            {
+                Owner = vehicle,
+                WeaponScriptId = weapon.ScriptId,
+                MissileType = MissileFlight.TypeForLauncher(weapon),
+                MuzzleVelocityMetresPerSecond = MissileFlight.LaunchSpeedMetresPerSecond(weapon),
+                ModelName = string.IsNullOrWhiteSpace(weapon.Projectile.Text)
+                    ? fired.ModelName
+                    : weapon.Projectile.Text,
+            });
         }
-
-        state.Transform.PreviousPosition = state.Transform.Position;
-        state.Transform.PreviousOrientation = state.Transform.Orientation;
-        state.Transform.Position = grounded;
-        state.Transform.Speed = state.SpeedKmh * (float)(WorldScene.UnitsPerMetre / 3.6d / Frequency);
-        state.Transform.IsDynamic = true;
-
-        // Graph-driven CarAI updates the same placed body that missiles, bullets, and the player
-        // query through ObjectCollisionIndex. Keeping only the draw transform current left the
-        // physical APC at its authored spawn after the alarm route began, so shots crossed the
-        // visible vehicle without ever reaching its retail direct-hit destruction callback.
-        _collisionIndex?.UpdateTransform(
-            state.Car,
-            grounded / WorldScene.UnitsPerMetre,
-            state.Transform.Orientation);
-        _destructibles?.UpdatePosition(state.Car, grounded, state.Transform.Orientation);
     }
 
     /// <summary>Marks an explicitly configured helicopter for terminal terrain landing.</summary>
@@ -651,174 +1397,251 @@ public sealed class CutsceneRuntime
     public void Tick()
     {
         SimulationTick++;
-        RefreshContainers(executeTransitions: true);
-
-        foreach (TimerState timer in _timers)
-        {
-            if (_expressions.EvaluateCondition(timer.Reset, emptyValue: false, timer.Task))
-            {
-                timer.Tick = 0;
-            }
-
-            timer.IsRun = string.IsNullOrWhiteSpace(timer.Run)
-                ? timer.InitialRun
-                : _expressions.EvaluateCondition(timer.Run, emptyValue: timer.InitialRun, timer.Task);
-            if (timer.IsRun)
-            {
-                timer.Tick++;
-            }
-        }
-
         foreach (AnimationState animation in _animations)
         {
-            bool run = string.IsNullOrWhiteSpace(animation.Run)
-                ? animation.InitialRun
-                : _expressions.EvaluateCondition(
-                    animation.Run, emptyValue: animation.InitialRun, animation.Task);
-            if (!run || !ConditionalContainerGate.IsTaskActive(animation.Task))
-            {
-                continue;
-            }
-
-            int previousTick = animation.Program.Tick;
-            animation.Tick++;
-            animation.Program.SeekTo(previousTick + 1);
-            ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
-            if (previousTick < 0)
-            {
-                // Containers can defer an AnimTask's first run until after construction. Its first
-                // active scheduler slot still has the same two tick-zero dispatches as a task that
-                // was active during runtime initialization.
-                animation.Program.Step();
-                ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
-            }
+            animation.RanThisTick = false;
         }
 
-        foreach (SceneState state in _scenes)
+        // One walk of the level tree in authored order: each task runs its own update where the tree puts it
+        //, not grouped by type.
+        _walker.Walk(_root);
+        UpdateFrame();
+    }
+
+    /// <summary>
+    /// Gets the level's update walk. Other level systems register the tasks they own into it, so that one walk
+    /// in authored order ticks them all.
+    /// </summary>
+    public LevelUpdateWalker Walker => _walker;
+
+    /// <summary>A LevelTimer's update (<c>0x51BE10</c>): children first, then On, Reset and the tick count.</summary>
+    private void TickTimer(TimerState timer)
+    {
+        _walker.WalkChildren(timer.Task);
+        if (_expressions.EvaluateCondition(timer.Reset, emptyValue: false, timer.Task))
         {
-            CutSceneTask scene = state.Task;
-            bool wasRun = scene.IsRun;
-
-            if (!ConditionalContainerGate.IsTaskActive(scene))
-            {
-                scene.IsRun = false;
-                if (wasRun)
-                {
-                    ExecuteSceneExpression(scene, scene.StopExpression);
-                }
-                continue;
-            }
-
-            if (_expressions.EvaluateCondition(scene.Reset, emptyValue: false, scene))
-            {
-                scene.Ticks = 0;
-                scene.IsFinished = false;
-            }
-
-            scene.IsRun = string.IsNullOrWhiteSpace(scene.Run)
-                ? scene.InitialRun && !scene.IsFinished
-                : _expressions.EvaluateCondition(scene.Run, emptyValue: false, scene);
-
-            if (!wasRun && scene.IsRun)
-            {
-                ExecuteSceneExpression(scene, scene.StartExpression);
-            }
-
-            if (scene.IsRun)
-            {
-                // The cutscene run callback runs child AnimTasks before the scene,
-                // evaluates Run, and then calls CutScene_SetCamera with the *current* nTick. The
-                // camera marks isFinished only when that old tick is beyond the authored duration;
-                // Run stays latched for this frame and nTick is incremented afterwards. The Run
-                // expression observes isFinished on the following frame. Keeping those two boundary
-                // frames is essential: Mission 1's 2.2-second landing scene publishes train ticks
-                // 0..67, exactly as the retail probe records.
-                double total = state.TotalTime(scene.TimeScale);
-                if ((scene.Ticks / (double)Frequency) > total)
-                {
-                    scene.Ticks = Math.Max(0, (int)(Frequency * total));
-                    scene.IsFinished = true;
-                }
-
-                int delta = string.IsNullOrWhiteSpace(scene.TimeDelta)
-                    ? 1
-                    : (int)(_expressions.EvaluateSingle(scene.TimeDelta, owner: scene) * Frequency);
-                // Expressions returning a float are evaluated through the script union. Most retail
-                // scenes leave TimeDelta empty; the minimum retains forward progress for malformed data.
-                scene.Ticks = Math.Max(0, scene.Ticks + delta);
-            }
-
-            if (wasRun && !scene.IsRun)
-            {
-                ExecuteSceneExpression(scene, scene.StopExpression);
-            }
+            timer.Tick = 0;
         }
 
-        foreach (SoundState sound in _sounds)
+        timer.IsRun = string.IsNullOrWhiteSpace(timer.Run)
+            ? timer.InitialRun
+            : _expressions.EvaluateCondition(timer.Run, emptyValue: timer.InitialRun, timer.Task);
+        if (timer.IsRun)
         {
-            bool run = ConditionalContainerGate.IsTaskActive(sound.Task)
-                && _expressions.EvaluateCondition(sound.Condition, emptyValue: false, sound.Task);
-            if (run != sound.IsRun)
-            {
-                sound.IsRun = run;
-                if (run)
-                {
-                    if (!sound.OneShot || !sound.HasPlayed)
-                    {
-                        sound.HasPlayed = true;
-                        _soundChanged?.Invoke(new CutsceneSoundEvent(
-                            sound.Task,
-                            sound.Sound,
-                            sound.Simple || sound.RelativeToMicrophone ? null : sound.Position,
-                            Playing: true,
-                            Simple: sound.Simple));
-                    }
-                }
-                else if (!sound.Simple && sound.HasPlayed)
-                {
-                    // A non-simple ConditionalSound owns its voice for the condition's lifetime. A
-                    // simple sound is fire-and-forget and deliberately receives no falling-edge stop.
-                    _soundChanged?.Invoke(new CutsceneSoundEvent(
-                        sound.Task,
-                        sound.Sound,
-                        sound.RelativeToMicrophone ? null : sound.Position,
-                        Playing: false,
-                        Simple: false));
-                }
-            }
+            timer.Tick++;
+        }
+    }
+
+    /// <summary>An AnimTask's update (<c>0x4F3B40</c>): the run expression, then the next record step's packet.</summary>
+    private void TickAnimation(AnimationState animation)
+    {
+        // 0x4F3B40: a Run expression rewrites the run byte every tick; without one the byte keeps whatever it holds
+        // -- its Initial run, or what a script wrote to isRun. The task steps while the byte is set.
+        if (!string.IsNullOrWhiteSpace(animation.Run))
+        {
+            animation.IsRun = _expressions.EvaluateCondition(animation.Run, emptyValue: animation.IsRun, animation.Task);
         }
 
-        RefreshContainers(executeTransitions: true);
-
-        // Retail walks the authored task tree. A CutScene can therefore become active before a later
-        // sibling ConditionalContainer is visited; registering that container immediately runs a
-        // newly exposed AnimTask in the same frame. Our grouped passes discover that registration in
-        // the refresh above, so publish the deferred task's two tick-zero packets here instead of
-        // waiting a frame. Mission 1 scene 1201/container 4003 is the source-of-truth case.
-        foreach (AnimationState animation in _animations)
+        bool run = animation.IsRun;
+        animation.RanThisTick = run;
+        if (!run)
         {
-            if (animation.Program.Tick >= 0 || !ConditionalContainerGate.IsTaskActive(animation.Task))
-            {
-                continue;
-            }
+            return;
+        }
 
-            bool run = string.IsNullOrWhiteSpace(animation.Run)
-                ? animation.InitialRun
-                : _expressions.EvaluateCondition(
-                    animation.Run, emptyValue: animation.InitialRun, animation.Task);
-            if (!run)
-            {
-                continue;
-            }
-
-            animation.Program.SeekTo(0);
-            ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
+        int previousTick = animation.Program.Tick;
+        animation.Tick++;
+        animation.Program.SeekTo(previousTick + 1);
+        ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
+        if (previousTick < 0)
+        {
+            // A task that was out of the world at load has its two tick-zero dispatches on its first run.
             animation.Program.Step();
             ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
         }
+    }
 
-        TickCarAi();
-        UpdateFrame();
+    /// <summary>A CutScene's update (<c>0x4F51D0</c>): its children (its AnimTasks) first, then its own run.</summary>
+    private void TickScene(SceneState state)
+    {
+        CutSceneTask scene = state.Task;
+        _walker.WalkChildren(scene);
+        bool wasRun = scene.IsRun;
+        if (_expressions.EvaluateCondition(scene.Reset, emptyValue: false, scene))
+        {
+            scene.Ticks = 0;
+            scene.IsFinished = false;
+        }
+
+        scene.IsRun = string.IsNullOrWhiteSpace(scene.Run)
+            ? scene.InitialRun && !scene.IsFinished
+            : _expressions.EvaluateCondition(scene.Run, emptyValue: false, scene);
+
+        if (!wasRun && scene.IsRun)
+        {
+            ExecuteSceneExpression(scene, scene.StartExpression);
+        }
+
+        if (scene.IsRun)
+        {
+            // CutScene_SetCamera runs with the *current* nTick and marks isFinished only when that old tick is
+            // beyond the authored duration; Run stays latched this frame and nTick is incremented afterwards.
+            // The Run expression observes isFinished on the following frame -- Mission 1's 2.2-second landing
+            // scene publishes train ticks 0..67, exactly as the retail probe records.
+            double total = state.TotalTime(scene.TimeScale);
+            if ((scene.Ticks / (double)Frequency) > total)
+            {
+                scene.Ticks = Math.Max(0, (int)(Frequency * total));
+                scene.IsFinished = true;
+            }
+
+            int delta = string.IsNullOrWhiteSpace(scene.TimeDelta)
+                ? 1
+                : (int)(_expressions.EvaluateSingle(scene.TimeDelta, owner: scene) * Frequency);
+            scene.Ticks = Math.Max(0, scene.Ticks + delta);
+        }
+
+        if (wasRun && !scene.IsRun)
+        {
+            ExecuteSceneExpression(scene, scene.StopExpression);
+        }
+    }
+
+    /// <summary>A scene taken out of the world stops.</summary>
+    private void DeactivateScene(SceneState state)
+    {
+        if (state.Task.IsRun)
+        {
+            state.Task.IsRun = false;
+            ExecuteSceneExpression(state.Task, state.Task.StopExpression);
+        }
+    }
+
+    /// <summary>A ConditionalSound's update (<c>0x4250D0</c>): its condition's edges, then its children.</summary>
+    private void TickSound(SoundState sound)
+    {
+        bool run = _expressions.EvaluateCondition(sound.Condition, emptyValue: false, sound.Task);
+        SetSoundRun(sound, run);
+        _walker.WalkChildren(sound.Task);
+    }
+
+    private void SetSoundRun(SoundState sound, bool run)
+    {
+        if (run == sound.IsRun)
+        {
+            return;
+        }
+
+        sound.IsRun = run;
+        if (run)
+        {
+            if (!sound.OneShot || !sound.HasPlayed)
+            {
+                sound.HasPlayed = true;
+                _soundChanged?.Invoke(new CutsceneSoundEvent(
+                    sound.Task,
+                    sound.Sound,
+                    sound.Simple || sound.RelativeToMicrophone ? null : sound.Position,
+                    Playing: true,
+                    Simple: sound.Simple));
+            }
+        }
+        else if (!sound.Simple && sound.HasPlayed)
+        {
+            // A non-simple ConditionalSound owns its voice for the condition's lifetime. A simple sound is
+            // fire-and-forget and deliberately receives no falling-edge stop.
+            _soundChanged?.Invoke(new CutsceneSoundEvent(
+                sound.Task,
+                sound.Sound,
+                sound.RelativeToMicrophone ? null : sound.Position,
+                Playing: false,
+                Simple: false));
+        }
+    }
+
+    /// <summary>
+    /// A Car's update (<c>0x42E320</c>): at most once a tick, its children -- the CarAI or AnimTask whose packet
+    /// steps its physics -- then its guns and its death zones.
+    /// </summary>
+    private void TickCar(GameTask car)
+    {
+        if (_lastVehicleTick.TryGetValue(car, out int last) && last == SimulationTick)
+        {
+            return;
+        }
+
+        _lastVehicleTick[car] = SimulationTick;
+        TickVehicleVision(car);
+        _walker.WalkChildren(car);
+        TickVehicleCombat(car);
+        TickDeathZones(car);
+    }
+
+    /// <summary>A Heli's update (<c>0x4316D0</c>): its children -- its AnimTask flies it -- then its gun.</summary>
+    private void TickHeli(GameTask heli)
+    {
+        TickVehicleVision(heli);
+        _walker.WalkChildren(heli);
+        TickVehicleCombat(heli);
+        TickDeathZones(heli);
+    }
+
+    /// <summary>
+    /// The vehicle's eye: a car's <c>0x42E870</c> (eye 8192 units over its origin, its own orientation), a helicopter's
+    /// <c>+1960</c> block of <c>0x4316D0</c> (eye at its origin, looking down: its orientation times RotX(-90°)).
+    /// </summary>
+    private void TickVehicleVision(GameTask vehicle)
+    {
+        if (!_visions.TryGetValue(vehicle, out VehicleVision? vision)
+            || vehicle is not DeclaredTask declared
+            || !_taskTransforms.TryGetValue(vehicle, out TransformState? transform)
+            || _destructibles?.IsDestroyed(vehicle) == true)
+        {
+            return;
+        }
+
+        bool helicopter = string.Equals(vehicle.Type.Name, "Heli", StringComparison.Ordinal);
+        bool canFire = _expressions.EvaluateCondition(Text(declared, "Can fire"), emptyValue: false, vehicle);
+        Vector3d eyePosition = helicopter
+            ? transform.Position
+            : transform.Position + new Vector3d(0d, 0d, VehicleVision.CarEyeHeightUnits);
+        Matrix3f orientation = helicopter ? transform.Orientation * HeliEyeTilt : transform.Orientation;
+        AiEyeSnapshot eye = new(
+            eyePosition,
+            orientation,
+            new AiSnapshotCone(
+                Single(declared, "ViewCone Alpha (degrees)", 180f) * 0.017453292,
+                Single(declared, "ViewCone Gamma (degrees)", 360f) * 0.017453292,
+                Single(declared, "ViewCone Length (meter)", 0f) * 4096.0),
+            default,
+            secondaryEnabled: false);
+        Vector3d? target = VehicleSightTarget?.Invoke() ?? VehicleCombatTarget?.Invoke();
+        // The sweep compares its phase against the flow tick count (0x4028B0), which the walk increments after it runs:
+        // the level's first walk is flow tick 0. Probed on mission 7: the T80's sweeps fall on flow ticks 3, 7, 11, ...
+        vision.Tick(
+            SimulationTick - 1,
+            canFire,
+            eye,
+            target,
+            point => VehicleCombatLineOfSight?.Invoke(vehicle, eyePosition, point) ?? true,
+            NextVisionPhase);
+    }
+
+    /// <summary>RotX(-1.5707964) as <c>0x4B3B60</c> builds it, which <c>0x4316D0</c> turns a helicopter's eye by.</summary>
+    private static readonly Matrix3f HeliEyeTilt = HeliTilt();
+
+    private static Matrix3f HeliTilt()
+    {
+        float angle = -1.5707964f;
+        float sine = (float)Math.Sin(angle), cosine = (float)Math.Cos(angle);
+        return new Matrix3f(1f, 0f, 0f, 0f, cosine, -sine, 0f, sine, cosine);
+    }
+
+    private int NextVisionPhase()
+    {
+        int phase = _visionCounter & 3;
+        _visionCounter = (_visionCounter + 1) & 3;
+        return phase;
     }
 
     /// <summary>Serves cutscene-specific level-expression natives to sibling mission runtimes.</summary>
@@ -883,6 +1706,7 @@ public sealed class CutsceneRuntime
 
     /// <summary>The magic-object task type retail gives a car's rolling wheels.</summary>
     private const string WheelTaskTypeName = "TASKTYPE_WHEEL";
+    private const string GunMountTaskTypeName = "TASKTYPE_AISTATIONARYGUN";
 
     /// <summary>The two heights the vehicle obstacle probe sweeps, in metres above the body origin.</summary>
     private static readonly double[] CarProbeHeightsMetres = [0.75d, 1.95d];
@@ -1161,6 +1985,14 @@ public sealed class CutsceneRuntime
             return true;
         }
 
+        if (_gunPlacements.TryGetValue(placement, out (GameTask Vehicle, int Index) mount)
+            && _armaments.TryGetValue(mount.Vehicle, out VehicleArmament? armament)
+            && TryGetVehicleGunMount(mount.Vehicle, armament, mount.Index, out Vector3d mountUnits, out orientation))
+        {
+            position = mountUnits / WorldScene.UnitsPerMetre;
+            return true;
+        }
+
         if (!TryGetPlacementDrawTransform(
             placement.Owner,
             placement.Position,
@@ -1176,6 +2008,185 @@ public sealed class CutsceneRuntime
             orientation *= spun;
         }
 
+        return true;
+    }
+
+    /// <summary>Binds each armed vehicle's drawn gun mounts to the guns that turn them.</summary>
+    /// <param name="scene">The built world whose placements carry the vehicles' attachments.</param>
+    /// <remarks>
+    /// A vehicle's <c>TASKTYPE_AISTATIONARYGUN</c> attachments arrive in the same depth-first order its guns were
+    /// collected in (<see cref="VehicleGun.FromModel"/>); each placement takes the next gun whose mount model it is.
+    /// Call it after <see cref="ConfigureVehicleGuns"/>.
+    /// </remarks>
+    public void BindVehicleGunPlacements(WorldScene scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        _gunPlacements.Clear();
+        Dictionary<GameTask, int> next = [];
+        foreach (WorldPlacement placement in scene.Placements)
+        {
+            if (!string.Equals(placement.MagicTaskTypeName, GunMountTaskTypeName, StringComparison.Ordinal)
+                || !_armaments.TryGetValue(placement.Owner, out VehicleArmament? armament))
+            {
+                continue;
+            }
+
+            for (int index = next.GetValueOrDefault(placement.Owner); index < armament.Guns.Count; index++)
+            {
+                if (string.Equals(armament.Guns[index].Gun.Model, placement.Instance.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    _gunPlacements[placement] = (placement.Owner, index);
+                    next[placement.Owner] = index + 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    /// <summary>Every armed live vehicle's weapon models, as this tick's updates posed them.</summary>
+    /// <returns>One entry per gun of an active, undestroyed vehicle.</returns>
+    public IEnumerable<VehicleGunVisual> VehicleGunVisuals()
+    {
+        foreach ((GameTask vehicle, VehicleArmament armament) in _armaments)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(vehicle) || _destructibles?.IsDestroyed(vehicle) == true)
+            {
+                continue;
+            }
+
+            for (int index = 0; index < armament.Guns.Count; index++)
+            {
+                if (!TryGetVehicleGunWeapon(vehicle, armament, index, out Vector3d position, out Matrix3f orientation))
+                {
+                    continue;
+                }
+
+                VehicleGunState gun = armament.Guns[index];
+                yield return new VehicleGunVisual(
+                    vehicle,
+                    index,
+                    gun.Gun.Mount.WeaponModel,
+                    position,
+                    orientation,
+                    gun.RoundsFiredThisTick > 0,
+                    gun.ShotSequence);
+            }
+        }
+    }
+
+    /// <summary>Where a vehicle gun's mount stands and faces, re-seated on its parent (<c>0x46FBA0</c>).</summary>
+    /// <remarks>
+    /// The mount sits at its attachment offset in its parent's frame and turns by its traverse about its own up
+    /// axis: parent · attachment · Z(traverse), rows dotted into columns. A gun on a gun (a T80's coaxial M2HB on
+    /// its turret) is re-seated on the turned mount, so it swings round with the turret.
+    /// </remarks>
+    private bool TryGetVehicleGunMount(
+        GameTask vehicle,
+        VehicleArmament armament,
+        int index,
+        out Vector3d position,
+        out Matrix3f orientation)
+    {
+        VehicleGun gun = armament.Guns[index].Gun;
+        Vector3d parentPosition;
+        Matrix3f parentOrientation;
+        if (gun.Parent >= 0 && gun.Parent < index)
+        {
+            if (!TryGetVehicleGunMount(vehicle, armament, gun.Parent, out parentPosition, out parentOrientation))
+            {
+                position = default;
+                orientation = Matrix3f.Identity;
+                return false;
+            }
+        }
+        else if (_taskTransforms.TryGetValue(vehicle, out TransformState? state))
+        {
+            UpdateDerivedPose(state);
+            parentPosition = state.Position;
+            parentOrientation = state.Orientation;
+        }
+        else
+        {
+            position = default;
+            orientation = Matrix3f.Identity;
+            return false;
+        }
+
+        (position, orientation) = PoseVehicleGunMount(armament.Guns[index], parentPosition, parentOrientation);
+        return true;
+    }
+
+    /// <summary>Re-seats every gun of a vehicle where it stands now (<c>0x46FBA0</c>, then <c>0x470050</c>).</summary>
+    /// <remarks>A gun's parent comes before it in the list, so each gun is seated on its parent's new pose.</remarks>
+    private static void SeatVehicleGuns(VehicleArmament armament, TransformState transform)
+    {
+        for (int index = 0; index < armament.Guns.Count; index++)
+        {
+            VehicleGunState gun = armament.Guns[index];
+            int parent = gun.Gun.Parent;
+            (Vector3d mountPosition, Matrix3f mountOrientation) = parent >= 0 && parent < index
+                ? PoseVehicleGunMount(gun, armament.Guns[parent].MountPosition, armament.Guns[parent].MountOrientation)
+                : PoseVehicleGunMount(gun, transform.Position, transform.Orientation);
+            gun.MountPosition = mountPosition;
+            gun.MountOrientation = mountOrientation;
+            (gun.WeaponPosition, gun.WeaponOrientation) =
+                PoseVehicleGunWeapon(gun, mountPosition, mountOrientation, transform.Orientation);
+        }
+
+        armament.Seated = true;
+    }
+
+    /// <summary>A mount's pose on its parent: parent · attachment · Z(traverse) (<c>0x46FBA0</c>).</summary>
+    private static (Vector3d Position, Matrix3f Orientation) PoseVehicleGunMount(
+        VehicleGunState gun,
+        Vector3d parentPosition,
+        Matrix3f parentOrientation)
+    {
+        Vector3f local = gun.Gun.AttachmentPosition;
+        return (
+            parentPosition + parentOrientation.Transposed().Transform(new Vector3d(local.X, local.Y, local.Z)),
+            parentOrientation * gun.Gun.AttachmentOrientation * Matrix3f.RotationZ(gun.Turret.Yaw));
+    }
+
+    /// <summary>A weapon object's pose on its mount (<c>0x470050</c>).</summary>
+    private static (Vector3d Position, Matrix3f Orientation) PoseVehicleGunWeapon(
+        VehicleGunState gun,
+        Vector3d mountPosition,
+        Matrix3f mountOrientation,
+        Matrix3f vehicleOrientation)
+    {
+        Vector3f vertex = gun.Gun.WeaponVertex;
+        Matrix3f orientation = vehicleOrientation * Matrix3f.FromEngineEulerAngles(gun.Turret.Pitch, 0f, gun.Turret.Yaw);
+        if (gun.Turret.Spin != 0f)
+        {
+            orientation *= Matrix3f.RotationY(gun.Turret.Spin);
+        }
+
+        return (mountPosition + mountOrientation.Transposed().Transform(new Vector3d(vertex.X, vertex.Y, vertex.Z)), orientation);
+    }
+
+    /// <summary>Where a vehicle gun's weapon object sits and faces (<c>0x470050</c>).</summary>
+    /// <remarks>
+    /// On the mount's weapon vertex, turned with the mount; faced by the vehicle's own orientation times
+    /// <c>0x4B38E0(elevation, 0, traverse)</c>, then by Y(spin) once the barrels have spun. The traverse and
+    /// elevation are measured in the vehicle's frame, so the mount's own attachment turn plays no part.
+    /// </remarks>
+    private bool TryGetVehicleGunWeapon(
+        GameTask vehicle,
+        VehicleArmament armament,
+        int index,
+        out Vector3d position,
+        out Matrix3f orientation)
+    {
+        if (!TryGetVehicleGunMount(vehicle, armament, index, out Vector3d mountPosition, out Matrix3f mountOrientation)
+            || !_taskTransforms.TryGetValue(vehicle, out TransformState? state))
+        {
+            position = default;
+            orientation = Matrix3f.Identity;
+            return false;
+        }
+
+        (position, orientation) = PoseVehicleGunWeapon(armament.Guns[index], mountPosition, mountOrientation, state.Orientation);
         return true;
     }
 
@@ -1504,7 +2515,9 @@ public sealed class CutsceneRuntime
                 continue;
             }
 
-            if (!container.Refresh(out bool started) || !executeTransitions)
+            bool changed = container.Refresh(out bool started);
+            container.IsActive = container.IsRun;
+            if (!changed || !executeTransitions)
             {
                 continue;
             }
@@ -1924,6 +2937,364 @@ public sealed class CutsceneRuntime
         }
     }
 
+    /// <summary>Creates or resets a car's retail body at its placement -- the set-up packet's reset (<c>0x42EA10</c> mode 0).</summary>
+    private void ResetRetailBody(GameTask? task, TransformState state)
+    {
+        if (_retailCarWorld is null
+            || task is not DeclaredTask declared
+            || state.CarPhysics is not { } physics)
+        {
+            return;
+        }
+
+        int wheelAttachments = _carWheels.TryGetValue(task, out CarWheel[]? wheels) ? wheels.Length : 0;
+        RetailCarPlacement placement = RetailCarSpawn.Placement(declared, wheelAttachments);
+        if (state.RetailBody is { } body)
+        {
+            RetailCarSpawn.Reset(body, placement);
+        }
+        else if (_retailCarModels?.Invoke(Text(declared, WorldScene.ModelParameter)) is { } model)
+        {
+            RetailCarBody created = RetailCarSpawn.Create(physics, model, placement);
+            created.Owner = task;
+            if (OpenIGI.Formats.World.MefCollisionMesh.TryRead(model.Container, meshIndex: 0, out OpenIGI.Formats.World.MefCollisionMesh? mesh)
+                && mesh is { Faces.Length: > 0 })
+            {
+                created.RayModel = new RetailRayModel(task, new RetailRayMesh(mesh), model.NativeMarkerBound);
+            }
+
+            state.RetailBody = created;
+        }
+        else
+        {
+            return;
+        }
+
+        CopyRetailPose(state, state.RetailBody);
+        state.PreviousPosition = state.Position;
+        state.PreviousOrientation = state.Orientation;
+    }
+
+    /// <summary>One physics packet on the retail body: the channels as <c>0x42EA10</c> latches them, then <c>Car_Tick</c>.</summary>
+    private void DriveRetailCar(
+        GameTask? target,
+        TransformState transform,
+        RetailCarBody body,
+        IRetailCarWorld world,
+        float channel0,
+        float channel1,
+        float channel3)
+    {
+        body.SteeringTarget = channel0;
+        if (channel1 != -1f)
+        {
+            body.ThrottleTarget = channel1;
+        }
+
+        body.Handbrake = channel3 != -1f;
+        body.Tick(world);
+
+        CopyRetailPose(transform, body);
+        transform.TargetSteering = body.SteeringTarget;
+        transform.TargetThrust = body.ThrottleTarget;
+        transform.Steering = body.Steering;
+        transform.Thrust = body.Throttle;
+        transform.ParkingBrake = body.Handbrake;
+        transform.Speed = body.Speed;
+        transform.Velocity = transform.Position - transform.PreviousPosition;
+        transform.CarMotion.Velocity = new Vector3d(body.Velocity[0], body.Velocity[1], body.Velocity[2]);
+        if (transform.CarPhysics is { } physics)
+        {
+            CarDynamics.AnimateWheels(
+                transform.CarMotion,
+                physics,
+                CarWheelsFor(target, physics),
+                transform.Velocity.Length,
+                body.Steering,
+                body.Handbrake);
+        }
+
+        transform.IsDynamic = true;
+    }
+
+    /// <summary>
+    /// The vehicles rays can strike, each at its body's current pose: every car whose retail body exists and whose
+    /// task is in the world.
+    /// </summary>
+    /// <returns>The vehicles' ray models.</returns>
+    public IReadOnlyList<RetailRayModel> RetailVehicleModels()
+    {
+        _retailVehicleModels.Clear();
+        foreach ((GameTask task, TransformState state) in _taskTransforms)
+        {
+            if (state.CarPhysics is null || !ConditionalContainerGate.IsTaskActive(task))
+            {
+                continue;
+            }
+
+            if (state.RetailBody is { RayModel: { } model } body)
+            {
+                Array.Copy(body.Position, model.Position, 3);
+                Array.Copy(body.M, model.M, 9);
+                _retailVehicleModels.Add(model);
+            }
+            else if (state.RetailBody is null && StandingCarModel(task) is { } standing)
+            {
+                // A car no controller has reset yet -- or never will, like mission 7's stand-in T80 361 -- stands
+                // in the object tree where the level placed it.
+                _retailVehicleModels.Add(standing);
+            }
+        }
+
+        return _retailVehicleModels;
+    }
+
+    private RetailRayModel? StandingCarModel(GameTask task)
+    {
+        if (_standingCars.TryGetValue(task, out RetailRayModel? cached))
+        {
+            return cached;
+        }
+
+        RetailRayModel? model = null;
+        if (task is DeclaredTask declared
+            && _retailCarModels?.Invoke(Text(declared, WorldScene.ModelParameter)) is { } mef
+            && OpenIGI.Formats.World.MefCollisionMesh.TryRead(mef.Container, meshIndex: 0, out OpenIGI.Formats.World.MefCollisionMesh? mesh)
+            && mesh is { Faces.Length: > 0 })
+        {
+            RetailCarPlacement placement = RetailCarSpawn.Placement(declared, 0);
+            model = new RetailRayModel(task, new RetailRayMesh(mesh), mef.NativeMarkerBound);
+            model.Position[0] = placement.Position.X;
+            model.Position[1] = placement.Position.Y;
+            model.Position[2] = placement.Position.Z;
+            RetailSplineSegment.AnglesToMatrix(placement.Orientation.X, placement.Orientation.Y, placement.Orientation.Z)
+                .CopyTo(model.M, 0);
+        }
+
+        _standingCars[task] = model;
+        return model;
+    }
+
+    /// <summary>A plane's retail body, created from its type and model the first time its AnimTask speaks.</summary>
+    private RetailPlaneBody? RetailPlaneFor(DeclaredTask task, TransformState state, in PlanePhysicsDefinition physics)
+    {
+        if (state.RetailPlane is { } existing)
+        {
+            return existing;
+        }
+
+        if (_retailCarModels is not { } models
+            || models(Text(task, WorldScene.ModelParameter)) is not { } model
+            || _retailMagic is null)
+        {
+            return null;
+        }
+
+        RetailPlaneBody plane = RetailPlaneSpawn.Create(
+            physics,
+            model,
+            RetailPlaneSpawn.Placement(task),
+            _retailMagic,
+            name => models(name));
+        plane.Owner = task;
+        state.RetailPlane = plane;
+        return plane;
+    }
+
+    /// <summary>A helicopter's retail body, created from its type and model the first time its AnimTask speaks.</summary>
+    private RetailHeliBody? RetailHeliFor(DeclaredTask task, TransformState state, in HelicopterPhysicsDefinition physics)
+    {
+        if (state.RetailHeli is { } existing)
+        {
+            return existing;
+        }
+
+        if (_retailCarModels?.Invoke(Text(task, WorldScene.ModelParameter)) is not { } model || _retailMagic is null)
+        {
+            return null;
+        }
+
+        VehiclePhysicsRegistry? registry = _vehiclePhysics;
+        RetailHeliBody heli = RetailHeliSpawn.Create(
+            physics,
+            model,
+            RetailHeliSpawn.Placement(task),
+            _retailMagic,
+            name => registry?.TryGetRotor(name, out RotorPhysicsDefinition rotor) == true ? rotor : null);
+        heli.Owner = task;
+        state.RetailHeli = heli;
+        return heli;
+    }
+
+    private static void CopyRetailPose(TransformState state, RetailRigidBody body)
+    {
+        float[] m = body.M;
+        state.Position = new Vector3d(body.Position[0], body.Position[1], body.Position[2]);
+        state.Orientation = new Matrix3f(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
+        state.Heading = MathF.Atan2(m[3], m[0]);
+    }
+
+    /// <summary>Drives one car for a tick from its three control channels (<c>0x42EA10</c>'s physics branch).</summary>
+    /// <param name="target">The Car task, or <see langword="null"/>.</param>
+    /// <param name="transform">The car's live transform.</param>
+    /// <param name="simulationOrder">The dispatch order the pose snapshot is keyed by.</param>
+    /// <param name="channel0">The steering target.</param>
+    /// <param name="channel1">The throttle target, or -1 to hold the last one.</param>
+    /// <param name="channel3">The parking brake: anything but -1 pulls it.</param>
+    /// <remarks>An AnimTask's packet and CarAI's own (<c>0x426510</c>) arrive through the same receiver.</remarks>
+    private void DriveCar(
+        GameTask? target,
+        TransformState transform,
+        int simulationOrder,
+        float channel0,
+        float channel1,
+        float channel3)
+    {
+        SnapshotDynamicPose(transform, simulationOrder);
+        if (transform.RetailBody is { } retailBody && _retailCarWorld is { } retailWorld)
+        {
+            DriveRetailCar(target, transform, retailBody, retailWorld, channel0, channel1, channel3);
+            return;
+        }
+
+        // Car::ReadChannels (0x42EA10) copies ch0 to the steering target and latches ch1 as
+        // throttle only when it is not -1.  ch3 is the parking-brake pulse.  The former generic
+        // mover had those first two channels reversed and advanced yaw even while stationary,
+        // which sends the mission-one outro truck sideways out of its garage.
+        transform.TargetSteering = channel0;
+        if (channel1 != -1f)
+        {
+            transform.TargetThrust = channel1;
+        }
+        transform.ParkingBrake = channel3 != -1f;
+
+        // Car::Tick (0x42ECA0) blends each live control from the model record's retention:
+        //     current = current * retention + target * (1 - retention)
+        // Retention is record +24 for steering and +32 for throttle; every shipped car publishes
+        // a value between 0.9 and 0.998 there.
+        CarPhysicsDefinition? carPhysics = transform.CarPhysics;
+        float steeringRetention = CarRetention(carPhysics?.SteeringRetention);
+        float throttleRetention = CarRetention(carPhysics?.ThrottleRetention);
+        transform.Steering = (transform.Steering * steeringRetention)
+            + (transform.TargetSteering * (1f - steeringRetention));
+        transform.Thrust = (transform.Thrust * throttleRetention)
+            + (transform.TargetThrust * (1f - throttleRetention));
+        // Car::Tick zeroes a near-zero smoothed throttle at a zero target (0x42ECA0: if
+        // +0x730 == 0 and |+0x720| < 0.01, +0x720 = 0). Without it a commanded stop decays
+        // asymptotically and the truck freezes mid-route holding residual thrust.
+        if (transform.TargetThrust == 0f && MathF.Abs(transform.Thrust) < 0.01f)
+        {
+            transform.Thrust = 0f;
+        }
+
+        float previousHeading = transform.Heading;
+        Matrix3f previousOrientation = transform.Orientation;
+
+        // The orientation's second column is the body's forward axis and the first its across
+        // axis, which is how 0x430D10 reads them when it builds the drive direction.
+        Vector3f forwardAxis = transform.Orientation.Column2;
+        Vector3f lateralAxis = transform.Orientation.Column1;
+        Vector3d forward = FlattenAxis(forwardAxis, new Vector3d(0d, 1d, 0d));
+        Vector3d lateral = FlattenAxis(lateralAxis, new Vector3d(1d, 0d, 0d));
+
+        CarPhysicsDefinition physics = carPhysics ?? DefaultCarPhysics;
+        (Vector3d carTranslation, double carYaw) = CarDynamics.Step(
+            transform.CarMotion,
+            physics,
+            CarWheelsFor(target, physics),
+            transform.Position,
+            forward,
+            lateral,
+            transform.Steering,
+            transform.Thrust,
+            transform.ParkingBrake,
+            at => TryFindSupportHeight(at, target, allowDeepRecovery: false, out double height, out _)
+                ? height
+                : double.NaN);
+
+        transform.Heading += (float)carYaw;
+        transform.Orientation = Matrix3f.FromEngineEulerAngles(
+            transform.Euler.X,
+            transform.Euler.Y,
+            transform.Heading);
+        transform.Speed = (float)transform.CarMotion.Velocity.Length;
+        Vector3d proposedPosition = transform.Position + carTranslation;
+
+        // The obstacle probe is the body's own front, taken from the authored dimensions rather
+        // than from a per-level table: half the length ahead of the origin, swept at the two
+        // heights that bracket a car's bumper.
+        double halfLengthUnits = physics.Dimensions.Y * 0.5d * WorldScene.UnitsPerMetre;
+        bool blocked = false;
+        GameTask? obstacle = null;
+        if (target is not null && _vehicleObstacleHit is not null && carTranslation.Length > 0d)
+        {
+            Vector3d heading3 = carTranslation / carTranslation.Length;
+            for (int heightIndex = 0; heightIndex < CarProbeHeightsMetres.Length && !blocked; heightIndex++)
+            {
+                Vector3d offset = new(
+                    0d,
+                    0d,
+                    CarProbeHeightsMetres[heightIndex] * WorldScene.UnitsPerMetre);
+                Vector3d probeStart = transform.Position + (heading3 * halfLengthUnits) + offset;
+                Vector3d probeEnd = proposedPosition
+                    + (heading3 * (halfLengthUnits + CarProbeMarginUnits))
+                    + offset;
+                if (_vehicleObstacleHit.Invoke(target, probeStart, probeEnd) is { } contact)
+                {
+                    obstacle = contact.Owner;
+                    blocked = true;
+                }
+            }
+        }
+
+        if (_vehicleObstacleReleased is not null
+            && obstacle is not null
+            && string.Equals(obstacle.Type.Name, "Door", StringComparison.Ordinal))
+        {
+            transform.VehicleLatchedObstacle = obstacle;
+        }
+
+        if (transform.VehicleLatchedObstacle is { } latchedDoor)
+        {
+            if (_vehicleObstacleReleased?.Invoke(latchedDoor) == true)
+            {
+                transform.VehicleLatchedObstacle = null;
+                transform.VehicleGateReleased = true;
+                if (ReferenceEquals(obstacle, latchedDoor))
+                {
+                    blocked = false;
+                    obstacle = null;
+                }
+            }
+            else
+            {
+                blocked = true;
+                obstacle ??= latchedDoor;
+            }
+        }
+
+        if (blocked)
+        {
+            // Retail resolves a contact by cancelling the motion into the obstacle and letting
+            // the body keep whatever is left, so a car that clips scenery slides along it and
+            // recovers. Latching the speed to nought instead parks the vehicle for good, which
+            // is what stranded the Mission 1 truck against the perimeter fence. The springs are
+            // not part of that contact, so the body still rides them.
+            transform.Heading = previousHeading;
+            transform.Orientation = previousOrientation;
+            transform.CarMotion.Velocity = default;
+            transform.CarMotion.YawRate = 0d;
+            transform.Speed = 0f;
+            transform.Position += new Vector3d(0d, 0d, carTranslation.Z);
+        }
+        else
+        {
+            transform.Position = proposedPosition;
+            transform.Velocity = transform.Position - transform.PreviousPosition;
+        }
+        transform.IsDynamic = true;
+    }
+
     private void ApplyAnimation(int targetId, int simulationOrder, AnimDataProgram program)
     {
         if (targetId < 0 || !_transforms.TryGetValue(targetId, out TransformState? transform))
@@ -2022,150 +3393,14 @@ public sealed class CutsceneRuntime
                 transform.VehicleLatchedObstacle = null;
                 transform.VehicleGateReleased = false;
                 transform.CarMotion.Reset();
+                ResetRetailBody(target, transform);
                 program.WriteChannel(1, -1f);
                 program.WriteChannel(2, -2f);
                 transform.IsDynamic = true;
                 return;
             }
 
-            SnapshotDynamicPose(transform, simulationOrder);
-
-            // Car::ReadChannels (0x42EA10) copies ch0 to the steering target and latches ch1 as
-            // throttle only when it is not -1.  ch3 is the parking-brake pulse.  The former generic
-            // mover had those first two channels reversed and advanced yaw even while stationary,
-            // which sends the mission-one outro truck sideways out of its garage.
-            transform.TargetSteering = channels[0];
-            if (channels[1] != -1f)
-            {
-                transform.TargetThrust = channels[1];
-            }
-            transform.ParkingBrake = channels[3] != -1f;
-
-            // Car::Tick (0x42ECA0) blends each live control from the model record's retention:
-            //     current = current * retention + target * (1 - retention)
-            // Retention is record +24 for steering and +32 for throttle; every shipped car publishes
-            // a value between 0.9 and 0.998 there.
-            CarPhysicsDefinition? carPhysics = transform.CarPhysics;
-            float steeringRetention = CarRetention(carPhysics?.SteeringRetention);
-            float throttleRetention = CarRetention(carPhysics?.ThrottleRetention);
-            transform.Steering = (transform.Steering * steeringRetention)
-                + (transform.TargetSteering * (1f - steeringRetention));
-            transform.Thrust = (transform.Thrust * throttleRetention)
-                + (transform.TargetThrust * (1f - throttleRetention));
-            // Car::Tick zeroes a near-zero smoothed throttle at a zero target (0x42ECA0: if
-            // +0x730 == 0 and |+0x720| < 0.01, +0x720 = 0). Without it a commanded stop decays
-            // asymptotically and the truck freezes mid-route holding residual thrust.
-            if (transform.TargetThrust == 0f && MathF.Abs(transform.Thrust) < 0.01f)
-            {
-                transform.Thrust = 0f;
-            }
-
-            float previousHeading = transform.Heading;
-            Matrix3f previousOrientation = transform.Orientation;
-
-            // The orientation's second column is the body's forward axis and the first its across
-            // axis, which is how 0x430D10 reads them when it builds the drive direction.
-            Vector3f forwardAxis = transform.Orientation.Column2;
-            Vector3f lateralAxis = transform.Orientation.Column1;
-            Vector3d forward = FlattenAxis(forwardAxis, new Vector3d(0d, 1d, 0d));
-            Vector3d lateral = FlattenAxis(lateralAxis, new Vector3d(1d, 0d, 0d));
-
-            CarPhysicsDefinition physics = carPhysics ?? DefaultCarPhysics;
-            (Vector3d carTranslation, double carYaw) = CarDynamics.Step(
-                transform.CarMotion,
-                physics,
-                CarWheelsFor(target, physics),
-                transform.Position,
-                forward,
-                lateral,
-                transform.Steering,
-                transform.Thrust,
-                transform.ParkingBrake,
-                at => TryFindSupportHeight(at, target, allowDeepRecovery: false, out double height, out _)
-                    ? height
-                    : double.NaN);
-
-            transform.Heading += (float)carYaw;
-            transform.Orientation = Matrix3f.FromEngineEulerAngles(
-                transform.Euler.X,
-                transform.Euler.Y,
-                transform.Heading);
-            transform.Speed = (float)transform.CarMotion.Velocity.Length;
-            Vector3d proposedPosition = transform.Position + carTranslation;
-
-            // The obstacle probe is the body's own front, taken from the authored dimensions rather
-            // than from a per-level table: half the length ahead of the origin, swept at the two
-            // heights that bracket a car's bumper.
-            double halfLengthUnits = physics.Dimensions.Y * 0.5d * WorldScene.UnitsPerMetre;
-            bool blocked = false;
-            GameTask? obstacle = null;
-            if (target is not null && _vehicleObstacleHit is not null && carTranslation.Length > 0d)
-            {
-                Vector3d heading3 = carTranslation / carTranslation.Length;
-                for (int heightIndex = 0; heightIndex < CarProbeHeightsMetres.Length && !blocked; heightIndex++)
-                {
-                    Vector3d offset = new(
-                        0d,
-                        0d,
-                        CarProbeHeightsMetres[heightIndex] * WorldScene.UnitsPerMetre);
-                    Vector3d probeStart = transform.Position + (heading3 * halfLengthUnits) + offset;
-                    Vector3d probeEnd = proposedPosition
-                        + (heading3 * (halfLengthUnits + CarProbeMarginUnits))
-                        + offset;
-                    if (_vehicleObstacleHit.Invoke(target, probeStart, probeEnd) is { } contact)
-                    {
-                        obstacle = contact.Owner;
-                        blocked = true;
-                    }
-                }
-            }
-
-            if (_vehicleObstacleReleased is not null
-                && obstacle is not null
-                && string.Equals(obstacle.Type.Name, "Door", StringComparison.Ordinal))
-            {
-                transform.VehicleLatchedObstacle = obstacle;
-            }
-
-            if (transform.VehicleLatchedObstacle is { } latchedDoor)
-            {
-                if (_vehicleObstacleReleased?.Invoke(latchedDoor) == true)
-                {
-                    transform.VehicleLatchedObstacle = null;
-                    transform.VehicleGateReleased = true;
-                    if (ReferenceEquals(obstacle, latchedDoor))
-                    {
-                        blocked = false;
-                        obstacle = null;
-                    }
-                }
-                else
-                {
-                    blocked = true;
-                    obstacle ??= latchedDoor;
-                }
-            }
-
-            if (blocked)
-            {
-                // Retail resolves a contact by cancelling the motion into the obstacle and letting
-                // the body keep whatever is left, so a car that clips scenery slides along it and
-                // recovers. Latching the speed to nought instead parks the vehicle for good, which
-                // is what stranded the Mission 1 truck against the perimeter fence. The springs are
-                // not part of that contact, so the body still rides them.
-                transform.Heading = previousHeading;
-                transform.Orientation = previousOrientation;
-                transform.CarMotion.Velocity = default;
-                transform.CarMotion.YawRate = 0d;
-                transform.Speed = 0f;
-                transform.Position += new Vector3d(0d, 0d, carTranslation.Z);
-            }
-            else
-            {
-                transform.Position = proposedPosition;
-                transform.Velocity = transform.Position - transform.PreviousPosition;
-            }
-            transform.IsDynamic = true;
+            DriveCar(target, transform, simulationOrder, channels[0], channels[1], channels[3]);
             return;
         }
         else if (string.Equals(type, "Heli", StringComparison.Ordinal))
@@ -2184,6 +3419,53 @@ public sealed class CutsceneRuntime
                         new(3f, Vector3f.UnitY, Vector3f.Zero),
                         new(50f, Vector3f.UnitZ, Vector3f.Zero),
                     ]);
+            if (_retailCarWorld is { } retailWorld
+                && target is DeclaredTask retailHeliTask
+                && transform.HelicopterPhysics is { } retailHeliPhysics
+                && RetailHeliFor(retailHeliTask, transform, retailHeliPhysics) is { } retailHeli)
+            {
+                // 0x431B70: every packet latches the channels; mode 0 resets, a later packet steps Heli_Tick.
+                retailHeli.Receive(program.Channels);
+                if (program.Tick == 0)
+                {
+                    RetailHeliSpawn.Reset(retailHeli, retailHeliPhysics, RetailHeliSpawn.Placement(retailHeliTask));
+
+
+                    program.WriteChannel(0, 0f);
+                    program.WriteChannel(1, 0f);
+                    program.WriteChannel(2, 0f);
+                    program.WriteChannel(3, -1f);
+                    program.WriteChannel(4, -2f);
+                    CopyRetailPose(transform, retailHeli);
+                    transform.PreviousPosition = transform.Position;
+                    transform.PreviousOrientation = transform.Orientation;
+                    transform.Velocity = default;
+                    transform.Thrust = retailHeli.Collective;
+                    transform.TargetThrust = retailHeli.CollectiveTarget;
+                    transform.RotorPhase = 0f;
+                    transform.RotorPhaseTick = SimulationTick;
+                    transform.IsDynamic = true;
+                    return;
+                }
+
+                SnapshotDynamicPose(transform, simulationOrder);
+
+                // 0x4F4660 ticks the attachments -- the rotors push their lift and yaw -- right before Heli_Tick.
+                retailHeli.RotorTick();
+                retailHeli.Tick(retailWorld);
+                CopyRetailPose(transform, retailHeli);
+                transform.Thrust = retailHeli.Collective;
+                transform.TargetThrust = retailHeli.CollectiveTarget;
+                transform.Speed = retailHeli.Speed;
+                transform.Velocity = transform.Position - transform.PreviousPosition;
+                transform.RotorPhase += transform.Thrust;
+                transform.RotorPhaseTick = SimulationTick;
+                transform.PhysicsTicks++;
+                transform.IsDynamic = true;
+                LogAirframePath(targetId, "Heli", target, transform);
+                return;
+            }
+
             if (program.Tick == 0)
             {
                 // The retail Heli live callback (0x431B70) is bidirectional: its tick-zero reset restores the
@@ -2313,6 +3595,40 @@ public sealed class CutsceneRuntime
         }
         else if (string.Equals(type, "Plane", StringComparison.Ordinal))
         {
+            if (_retailCarWorld is { } planeWorld
+                && target is DeclaredTask retailPlaneTask
+                && transform.PlanePhysics is { } retailPlanePhysics
+                && RetailPlaneFor(retailPlaneTask, transform, retailPlanePhysics) is { } retailPlane)
+            {
+                // 0x4337E0: every packet latches the channels; mode 0 resets, a later packet steps Plane_Physics
+                // (0x433B50) and the gear legs (0x4F4660).
+                retailPlane.Receive(program.Channels);
+                if (program.Tick == 0)
+                {
+                    RetailPlaneSpawn.Reset(retailPlane, retailPlanePhysics, RetailPlaneSpawn.Placement(retailPlaneTask));
+                    CopyRetailPose(transform, retailPlane);
+                    transform.PreviousPosition = transform.Position;
+                    transform.PreviousOrientation = transform.Orientation;
+                    transform.Velocity = default;
+                    transform.Thrust = retailPlane.Thrust;
+                    transform.TargetThrust = retailPlane.ThrustTarget;
+                    transform.IsDynamic = true;
+                    return;
+                }
+
+                SnapshotDynamicPose(transform, simulationOrder);
+                retailPlane.Tick(planeWorld);
+                CopyRetailPose(transform, retailPlane);
+                transform.Thrust = retailPlane.Thrust;
+                transform.TargetThrust = retailPlane.ThrustTarget;
+                transform.Speed = retailPlane.Speed;
+                transform.Velocity = transform.Position - transform.PreviousPosition;
+                transform.PhysicsTicks++;
+                transform.IsDynamic = true;
+                LogAirframePath(targetId, "Plane", target, transform);
+                return;
+            }
+
             if (program.Tick == 0)
             {
                 // The receiver's two tick-zero packets restore the authored rigid-body pose and
@@ -3425,6 +4741,12 @@ public sealed class CutsceneRuntime
     {
         /// <summary>Running-tick counter exported as <c>AnimTask+&lt;id&gt;.nTick</c> (retail AnimTask state var).</summary>
         public int Tick { get; set; }
+
+        /// <summary>Gets or sets whether the task drove its target on the current tick.</summary>
+        public bool RanThisTick { get; set; }
+
+        /// <summary>Gets or sets the run byte (<c>+131316</c>), exported as <c>isRun</c>; it starts at Initial run.</summary>
+        public bool IsRun { get; set; } = InitialRun;
     }
     private sealed record SoundState(
         DeclaredTask Task,
@@ -3451,13 +4773,71 @@ public sealed class CutsceneRuntime
         public TransformState Transform { get; } = transform;
         public GraphFile Graph { get; } = graph;
         public AiPatrolRoute? Route { get; } = route;
-        public int TargetNodeId { get; set; } = -1;
-        public int SpeedKmh { get; set; }
         public bool Stopped { get; set; }
-        public double SupportOffsetUnits { get; set; } = double.NaN;
-        public AiVehicleCombat? Combat { get; } = string.IsNullOrWhiteSpace(Text(car, "Can fire"))
-            ? null
-            : new AiVehicleCombat();
+
+        // Retail CarAI's own fields, named by offset from 0x425DE0's object.
+        public GraphNode? TargetNode { get; set; }            // +104
+        public float CommandSpeedKmh { get; set; }            // +108
+        public float Halt { get; set; }                       // +112
+        public float RouteSpeedKmh { get; set; }              // +128
+        public float DesiredSpeedKmh { get; set; }            // +100
+        public float Throttle { get; set; }                   // +88, channel 1
+        public float Steering { get; set; }                   // +92, channel 0
+        public float Brake { get; set; }                      // +96, channel 3
+        public int WaitTicks { get; set; }                    // +124
+        public int Packets { get; set; }                      // +80
+        public bool ChaseHeld { get; set; }                   // +116, the held target (0x426000)
+        public int ChaseRetention { get; set; }               // +120, counted down from 600
+    }
+
+    /// <summary>One vehicle's death zones and how fast it moved on the last tick.</summary>
+    private sealed class DeathZoneState(IReadOnlyList<VehicleDeathZone> zones)
+    {
+        public IReadOnlyList<VehicleDeathZone> Zones { get; } = zones;
+        public Vector3d? LastPosition { get; set; }
+        public double SpeedUnitsPerTick { get; set; }
+    }
+
+    /// <summary>What one armed vehicle sees, and the guns that aim from it.</summary>
+    private sealed class VehicleArmament(WeaponType? legacyWeapon, List<VehicleGunState> guns)
+    {
+        public AiVehicleCombat Sight { get; } = new();
+        public WeaponType? LegacyWeapon { get; } = legacyWeapon;
+        public List<VehicleGunState> Guns { get; } = guns;
+
+        /// <summary>Gets or sets whether the guns have been seated at least once.</summary>
+        public bool Seated { get; set; }
+    }
+
+    /// <summary>One model gun's turret, cadence and ammunition.</summary>
+    private sealed class VehicleGunState(VehicleGun gun)
+    {
+        public VehicleGun Gun { get; } = gun;
+        public VehicleGunTurret Turret { get; } = new(gun.Mount);
+        public int Cooldown { get; set; }
+        public int Ammunition { get; set; } = gun.Mount.Ammunition;
+        public int RoundsThisPull { get; set; }
+
+        /// <summary>Gets or sets the hold of Gun_Fire, as its last run this tick left it.</summary>
+        public bool Hold { get; set; }
+
+        /// <summary>Gets or sets how many rounds the gun fired this tick.</summary>
+        public int RoundsFiredThisTick { get; set; }
+
+        /// <summary>Gets or sets a serial that advances once per round fired, for the gun flame's roll.</summary>
+        public int ShotSequence { get; set; }
+
+        /// <summary>Gets or sets the mount's position as the last seat left it (<c>+32</c>), which the gun aims from.</summary>
+        public Vector3d MountPosition { get; set; }
+
+        /// <summary>Gets or sets the mount's orientation as the last seat left it (<c>+112</c>).</summary>
+        public Matrix3f MountOrientation { get; set; } = Matrix3f.Identity;
+
+        /// <summary>Gets or sets the weapon object's position as the last seat left it (<c>+376</c>).</summary>
+        public Vector3d WeaponPosition { get; set; }
+
+        /// <summary>Gets or sets the weapon object's orientation as the last seat left it (<c>+400</c>).</summary>
+        public Matrix3f WeaponOrientation { get; set; } = Matrix3f.Identity;
     }
 
     private sealed record TimedShot(EditCameraShot Shot, double Start);
@@ -3509,6 +4889,16 @@ public sealed class CutsceneRuntime
         public float TargetSteering { get; set; }
         public bool ParkingBrake { get; set; }
         public CarPhysicsDefinition? CarPhysics { get; set; }
+
+        /// <summary>The car's retail rigid body, once its controller's set-up packet has created it.</summary>
+        public RetailCarBody? RetailBody { get; set; }
+
+        /// <summary>The helicopter's retail rigid body, once its AnimTask has first spoken.</summary>
+        public RetailHeliBody? RetailHeli { get; set; }
+
+        /// <summary>Gets or sets the plane's retail body, once its AnimTask has spoken.</summary>
+        public RetailPlaneBody? RetailPlane { get; set; }
+
 
         public CarMotionState CarMotion { get; } = new();
         public PlanePhysicsDefinition? PlanePhysics { get; set; }
