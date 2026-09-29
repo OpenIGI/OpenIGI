@@ -10,11 +10,12 @@ public static class DeferredLightingBlocks
 {
     /// <summary>The size in bytes of the lighting pass's GI parameter block.</summary>
     /// <remarks>
-    /// The probe field's grid and how it is read, the depth unprojection, the sun and the weather:
-    /// thirty-six vectors, which is well inside the sixteen kilobytes every implementation guarantees a
-    /// uniform buffer, so no device has to be asked.
+    /// The probe field's grid and how it is read, the depth unprojection, the sun, the weather and the fog:
+    /// thirty-five vectors, then the flashlight's six (<see cref="FlashlightBlock"/>) -- forty-one, which is
+    /// well inside the sixteen kilobytes every implementation guarantees a uniform buffer, so no device has
+    /// to be asked.
     /// </remarks>
-    public const int GiBytes = 576;
+    public const int GiBytes = 656;
 
     /// <summary>The size in bytes of the lighting pass's local-light block.</summary>
     /// <remarks>

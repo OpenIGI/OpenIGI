@@ -385,6 +385,7 @@ public sealed partial class GraphicsDevice
 
         // Read by the shading, the fog and the rig's forward draws, all done now.
         _localLightCount = 0;
+        _flashlight = FlashlightLight.Off;
 
         // The next frame draws its own cascades, or has none.
         _shadowsDrawn = false;
@@ -504,6 +505,7 @@ public sealed partial class GraphicsDevice
         RecordOcclusion(scene);
         RecordSunShadow(scene);
         RecordLampShadow(scene);
+        RecordFlashlightShadow(scene);
         RecordFog(scene);
 
         Span<float> gi = stackalloc float[DeferredLightingParameters.GiFloats];
@@ -512,7 +514,7 @@ public sealed partial class GraphicsDevice
 
         DeferredLightingParameters.WriteGi(
             gi,
-            WithFog(WithWetness(WithGlobalIllumination(WithTracedSun(WithShadows(LightingState()))))),
+            WithFlashlight(WithFog(WithWetness(WithGlobalIllumination(WithTracedSun(WithShadows(LightingState())))))),
             CascadeSplits,
             CascadeMatrices);
         DeferredLampBlock.Write(lamps, LampState(), LocalLights);
@@ -534,6 +536,7 @@ public sealed partial class GraphicsDevice
         BindFog();
         BindSunShadow();
         BindLampShadow();
+        BindFlashlightShadow();
         BindShelterMap();
 
         using IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
@@ -885,6 +888,7 @@ public sealed partial class GraphicsDevice
         _autoExposure = null;
         DisposeSunShadow();
         DisposeLampShadow();
+        DisposeFlashlightShadow();
         DisposeGrade();
 
         _scenePass?.Dispose();

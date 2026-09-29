@@ -277,6 +277,12 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         }
     }
 
+    /// <summary>Gets every flashlight the frames have set, in order.</summary>
+    public List<FlashlightLight> Flashlights { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetFlashlight(in FlashlightLight light) => Flashlights.Add(light);
+
     /// <summary>The volume textures allocated, as name, dimensions and format.</summary>
     /// <remarks>Not to be confused with <see cref="Volumes"/>, which is the probe field.</remarks>
     public List<(string Name, int Width, int Height, int Depth, VolumeFormat Format)> VolumeTextures { get; } = [];

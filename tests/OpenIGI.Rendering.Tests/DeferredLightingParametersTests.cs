@@ -229,6 +229,22 @@ public sealed class DeferredLightingParametersTests
         Assert.Equal(0f, block[20]);
     }
 
+    [Fact]
+    public void The_flashlight_follows_the_fog_and_is_all_zero_when_off()
+    {
+        Assert.Equal(DeferredLightingParameters.FlashlightOffset + FlashlightBlock.Floats, DeferredLightingParameters.GiFloats);
+
+        float[] off = Gi(new DeferredLightingState(Unprojection()));
+        Assert.All(off.AsSpan(DeferredLightingParameters.FlashlightOffset).ToArray(), value => Assert.Equal(0f, value));
+
+        FlashlightLight light = FlashlightBlockTests.Torch();
+        float[] on = Gi(new DeferredLightingState(Unprojection(), Flashlight: light, FlashlightShadowed: true));
+
+        float[] expected = new float[FlashlightBlock.Floats];
+        FlashlightBlock.Write(expected, light, shadowMask: true, frameIndex: 0);
+        Assert.Equal(expected, on.AsSpan(DeferredLightingParameters.FlashlightOffset, FlashlightBlock.Floats).ToArray());
+    }
+
     private static DepthUnprojection Unprojection() => new(1f, 1f, 0.1f, 1000f);
 
     private static float[] Gi(

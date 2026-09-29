@@ -417,6 +417,28 @@
     {
       "id": "CopyDepth",
       "source": "Deferred/CopyDepth.slang"
+    },
+    {
+      "id": "FlashlightShadow",
+      "source": "Deferred/FlashlightShadow.slang",
+      "variants": [
+        {
+          "name": "default",
+          "targets": [
+            "Spirv"
+          ]
+        },
+        {
+          "name": "software",
+          "defines": {
+            "OPENIGI_FLASHLIGHT_MARCH": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FlashlightShadowFilter",
+      "source": "Deferred/FlashlightShadowFilter.slang"
     }
   ]
 }

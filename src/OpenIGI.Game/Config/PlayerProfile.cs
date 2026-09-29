@@ -22,8 +22,22 @@ namespace OpenIGI.Game.Config;
 public sealed class PlayerProfile
 {
     /// <summary>The number of key bindings a profile carries.</summary>
+    /// <remarks>
+    /// The <see cref="RetailBindingCount"/> the original writes, plus the remaster's flashlight — the one
+    /// action the original does not have.
+    /// </remarks>
+    public const int BindingCount = RetailBindingCount + 1;
+
+    /// <summary>The number of key bindings the original's profile carries.</summary>
     /// <remarks><c>Config_ResetToDefaults</c> (<c>0x405300</c>) writes 27 and copies them from <c>0x536410</c>.</remarks>
-    public const int BindingCount = 27;
+    public const int RetailBindingCount = 27;
+
+    /// <summary>The key name a row carries when its action is deliberately left without a key.</summary>
+    /// <remarks>
+    /// Parses as no key at all, so the action can never fire; written rather than an empty string because
+    /// the config script has no empty symbol.
+    /// </remarks>
+    public const string UnboundKey = "KEY_NONE";
 
     /// <summary>The bindings a fresh profile starts with.</summary>
     /// <remarks>
@@ -60,6 +74,7 @@ public sealed class PlayerProfile
         new("WeaponCategory7", "INPUTPORT_DEVICE_KEYBOARD", "KEY_7"),
         new("WeaponCategory8", "INPUTPORT_DEVICE_KEYBOARD", "KEY_8"),
         new("WeaponCategory9", "INPUTPORT_DEVICE_KEYBOARD", "KEY_9"),
+        new("Flashlight", "INPUTPORT_DEVICE_KEYBOARD", "KEY_F"),
     ];
 
     /// <summary>The bindings the original's own fresh profile starts with.</summary>
@@ -242,19 +257,31 @@ public sealed class PlayerProfile
 
     /// <summary>Restores retail bindings missing from an older OpenIGI profile.</summary>
     /// <remarks>
+    /// <para>
     /// Early shell builds could serialize an incomplete binding list. A retail profile always carries one
     /// row for every supported action, so missing actions are repaired while existing and extension rows
     /// are left exactly as the player saved them.
+    /// </para>
+    /// <para>
+    /// A restored default whose control the player has already given to another action arrives
+    /// <see cref="UnboundKey">unbound</see> instead: a new action (the flashlight, for a profile saved
+    /// before it existed) must never make one key drive two actions behind the player's back.
+    /// </para>
     /// </remarks>
     public void RestoreMissingDefaultBindings()
     {
         var actions = new HashSet<string>(Bindings.Select(binding => binding.Action), StringComparer.OrdinalIgnoreCase);
         foreach (InputBinding binding in DefaultBindings)
         {
-            if (actions.Add(binding.Action))
+            if (!actions.Add(binding.Action))
             {
-                Bindings.Add(binding);
+                continue;
             }
+
+            bool taken = Bindings.Exists(existing =>
+                string.Equals(existing.Device, binding.Device, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(existing.Key, binding.Key, StringComparison.OrdinalIgnoreCase));
+            Bindings.Add(taken ? binding with { Key = UnboundKey } : binding);
         }
     }
 
@@ -630,6 +657,11 @@ public static class InputBindingKeyNames
             && binding.Key.StartsWith("MOUSE_BUTTON_", StringComparison.OrdinalIgnoreCase))
         {
             return $"Mouse Button {binding.Key["MOUSE_BUTTON_".Length..]}";
+        }
+
+        if (string.Equals(binding.Key, PlayerProfile.UnboundKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return "Unbound";
         }
 
         return TryParseKeyboardKey(binding.Key, out KeyCode key) ? key.ToString() : binding.Key;

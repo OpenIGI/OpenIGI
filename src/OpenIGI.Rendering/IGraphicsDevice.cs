@@ -868,6 +868,17 @@ public interface IGraphicsDevice : IDisposable
     {
     }
 
+    /// <summary>Sets the player's flashlight for the next deferred lighting pass.</summary>
+    /// <param name="light">The flashlight, in VIEW space as the lamps are, or <see cref="FlashlightLight.Off"/>.</param>
+    /// <remarks>
+    /// A no-op by default: a renderer with no deferred lighting -- the original's direct path, which vanilla
+    /// draws -- has nothing to light it with. Held like <see cref="SetLocalLights"/> and cleared as the
+    /// capture ends, so it is called every frame the light is on.
+    /// </remarks>
+    void SetFlashlight(in FlashlightLight light)
+    {
+    }
+
     /// <summary>Reads a two-dimensional texture back into memory.</summary>
     /// <param name="texture">The texture to read.</param>
     /// <param name="destination">Receives the texels, row-major and top row first.</param>

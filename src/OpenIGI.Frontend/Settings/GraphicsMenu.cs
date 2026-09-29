@@ -558,6 +558,13 @@ public static class GraphicsMenu
         "r_local_light_range",
         "r_ssr_max_roughness",
         "r_binocular_range",
+
+        // The flashlight follows the preset and has its own key; a menu row would be a second switch for
+        // the same light. Its shadow and its beam in the air are details of a light the player turns on
+        // and off themselves.
+        "r_flashlight",
+        "r_flashlight_shadows",
+        "r_flashlight_fog",
         "r_binocular_range_zoomed",
 
         // Superseded paths, kept working and kept reachable, but not offered: the real-time stack carries

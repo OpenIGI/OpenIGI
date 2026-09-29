@@ -210,4 +210,15 @@ public enum DebugView
     /// which look the same once shaded.
     /// </remarks>
     LampShadow = 26,
+
+    /// <summary>The player's flashlight alone: what its beam puts on each surface, shadowed, and nothing else.</summary>
+    /// <remarks>
+    /// The beam's shape on the world -- its hot core, its rim and its spill -- with the rest of the frame's
+    /// light taken away, for tuning the cookie without the room's own light in the way.
+    /// </remarks>
+    FlashlightLight = 27,
+
+    /// <summary>How much of the flashlight reaches each surface: white where it all arrives, black in shadow.</summary>
+    /// <remarks>The mask the shading multiplies the beam by, after its filter; white everywhere without one.</remarks>
+    FlashlightShadow = 28,
 }

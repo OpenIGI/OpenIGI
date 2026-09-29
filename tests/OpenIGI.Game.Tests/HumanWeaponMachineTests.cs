@@ -115,16 +115,35 @@ public sealed class HumanWeaponMachineTests
     {
         PlayerAction[] declared = Enum.GetValues<PlayerAction>();
 
-        // Twenty-seven rows in the binding table, twenty-seven bound slots.
-        Assert.Equal(27, declared.Length);
-        Assert.Equal(27, PlayerInputBindings.All.Count);
+        // Twenty-seven rows in the binding table and the remaster's flashlight: twenty-eight bound slots.
+        Assert.Equal(28, declared.Length);
+        Assert.Equal(28, PlayerInputBindings.All.Count);
 
         foreach (PlayerAction action in declared)
         {
             Assert.True(PlayerInputBindings.TryGetSlot(action, out _), $"{action} is sampled into no slot.");
         }
 
-        Assert.Equal(27, PlayerInputBindings.All.Select(b => b.Slot).Distinct().Count());
+        Assert.Equal(28, PlayerInputBindings.All.Select(b => b.Slot).Distinct().Count());
+    }
+
+    [Fact]
+    public void TheFlashlightTakesABitAndASlotTheOriginalLeavesFree()
+    {
+        // Not retail: the binding table jumps from the movement nibble to 0x100, and the sampler never
+        // writes slot 35, so nothing the original reads can collide with the remaster's one extension.
+        Assert.Equal(0x10, (int)PlayerAction.Flashlight);
+        Assert.True(PlayerInputBindings.TryGetSlot(PlayerAction.Flashlight, out PlayerInputSlot slot));
+        Assert.Equal(PlayerInputSlot.Flashlight, slot);
+        Assert.Equal(35, (int)slot);
+
+        foreach (PlayerAction action in Enum.GetValues<PlayerAction>())
+        {
+            if (action != PlayerAction.Flashlight)
+            {
+                Assert.Equal(0, (int)action & 0x10);
+            }
+        }
     }
 
     [Fact]

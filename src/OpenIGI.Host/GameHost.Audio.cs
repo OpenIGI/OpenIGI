@@ -337,6 +337,9 @@ internal sealed partial class GameHost
         _soundBank = new SoundBank(_fileSystem, _logger);
         _sounds?.Dispose();
         _sounds = new SoundSystem(_audio, _soundBank, _fileSystem, _logger);
+
+        // The remaster's flashlight switch, which the game's banks have no sound for.
+        _sounds.RegisterExternal(FlashlightClick.SoundName, FlashlightClick.Format, FlashlightClick.Pcm);
         _soldierWeaponSounds.Clear();
         MountMenuSounds();
         LoadRainAmbience();

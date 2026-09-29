@@ -244,6 +244,14 @@ public sealed class DeferredLighting : IDisposable
     /// </remarks>
     public void BindSunShadow(IRhiTextureView? mask) => BindOrStandIn("uSunShadow", mask);
 
+    /// <summary>Points the shading at this frame's flashlight shadow, or at nothing.</summary>
+    /// <param name="mask">How much of the flashlight reaches each pixel, or null for a frame that made none.</param>
+    /// <remarks>
+    /// With none, a stand-in fills the slot and the lighting block says there is no mask, so the beam lights
+    /// unshadowed -- which is what a flashlight with its shadows switched off asks for.
+    /// </remarks>
+    public void BindFlashlightShadow(IRhiTextureView? mask) => BindOrStandIn("uFlashlightShadow", mask);
+
     private void BindOrStandIn(string name, IRhiTextureView? view)
     {
         ShaderBinding binding = Reflection.Bindings.First(slot => string.Equals(slot.Name, name, StringComparison.Ordinal));

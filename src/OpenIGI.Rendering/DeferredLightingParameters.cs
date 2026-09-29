@@ -45,6 +45,9 @@ public readonly record struct FogSliceDistribution(float B, float O, float Scale
 /// <param name="HasShelterMap">Whether the level has a top-down roof raster.</param>
 /// <param name="Shelter">Where that raster sits in the world and how a texel decodes.</param>
 /// <param name="Fog">How the fog volume's slices are distributed.</param>
+/// <param name="Flashlight">The player's flashlight, or <see cref="FlashlightLight.Off"/>.</param>
+/// <param name="FlashlightShadowed">Whether this frame made the flashlight a shadow mask to be read through.</param>
+/// <param name="FrameIndex">Which frame this is, for anything that jitters.</param>
 /// <remarks>
 /// One record rather than a method of twenty arguments, and in this project rather than in a backend,
 /// because both paths fill the same block for the same shader: a second copy of this layout is a second
@@ -75,7 +78,10 @@ public readonly record struct DeferredLightingState(
     WetnessSettings Wetness = default,
     bool HasShelterMap = false,
     ShelterMapTransform Shelter = default,
-    FogSliceDistribution Fog = default);
+    FogSliceDistribution Fog = default,
+    FlashlightLight Flashlight = default,
+    bool FlashlightShadowed = false,
+    long FrameIndex = 0);
 
 /// <summary>The blocks the deferred shading reads, written from what a frame holds.</summary>
 /// <remarks>
@@ -223,7 +229,17 @@ public static class DeferredLightingParameters
         block[137] = state.Fog.O;
         block[138] = state.Fog.Scale;
         block[139] = state.Fog.InverseSlices;
+
+        // flashlight: the player's beam, laid out as the fog's block lays it out.
+        FlashlightBlock.Write(
+            block.Slice(FlashlightOffset, FlashlightBlock.Floats),
+            state.Flashlight,
+            state.FlashlightShadowed,
+            state.FrameIndex);
     }
+
+    /// <summary>Where in the GI block the flashlight starts, in floats.</summary>
+    public const int FlashlightOffset = 140;
 
     /// <summary>Writes the block the shading is handed per draw.</summary>
     /// <param name="block">Room for <see cref="LightFloats"/> floats.</param>
