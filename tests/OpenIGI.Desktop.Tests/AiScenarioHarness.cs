@@ -865,6 +865,9 @@ public sealed class AiScenarioHarness : IDisposable
         int last = -1;
         bool quit = false;
         int maxSteps = EnvInt("OPENIGI_VEH_SCENARIO_STEPS", 200_000);
+
+        // OPENIGI_VEH_SCENARIO_POSLOG=<n>: the player's position every n ticks, as the probe's IGI_PROBE_POSLOG.
+        int posEvery = Math.Max(1, EnvInt("OPENIGI_VEH_SCENARIO_POSLOG", 30));
         string progress = output + ".progress";
         File.WriteAllText(progress, string.Empty);
         for (int step = 0; step < maxSteps && !quit; step++)
@@ -972,7 +975,7 @@ public sealed class AiScenarioHarness : IDisposable
                 log.AppendLine(CultureInfo.InvariantCulture, $"[runover] tick={tick} by={runner.Id} vehicle=({at.X:0},{at.Y:0}) player=({origin.X:0},{origin.Y:0}) d={Math.Sqrt(((at.X - origin.X) * (at.X - origin.X)) + ((at.Y - origin.Y) * (at.Y - origin.Y))) / Metre:0.00} m");
             }
 
-            if (tick % 30 == 0)
+            if (tick % posEvery == 0)
             {
                 log.AppendLine(CultureInfo.InvariantCulture, $"[autopilot] POS tick={tick} pos=({player.Body.Position.X:0}, {player.Body.Position.Y:0}, {player.Body.Position.Z + OriginAboveFeet:0}) dmg={health.Damage:0.00} dead={deadField.GetValue(host)}");
                 if (typeof(CutsceneRuntime).GetField("_carAis", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(runtime) is System.Collections.IEnumerable carAis)

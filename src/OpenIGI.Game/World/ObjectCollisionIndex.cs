@@ -779,7 +779,7 @@ public sealed class ObjectCollisionIndex
     /// </remarks>
     public bool TryCastForPlayer(Vector3d origin, Vector3d end, out WorldRayHit hit)
     {
-        bool found = CastIndexed(_playerEntries, _playerGrid, _dynamicPlayer, origin, end, out hit);
+        bool found = CastIndexed(_playerEntries, _playerGrid, _dynamicPlayer, origin, end, out hit, retailArithmetic: true);
         if (CastHumanBodies(origin, end, out WorldRayHit body) && (!found || body.Distance < hit.Distance))
         {
             hit = body;
@@ -902,9 +902,10 @@ public sealed class ObjectCollisionIndex
         List<Entry> dynamics,
         Vector3d origin,
         Vector3d end,
-        out WorldRayHit hit)
+        out WorldRayHit hit,
+        bool retailArithmetic = false)
     {
-        RayTest test = new(this);
+        RayTest test = new(this) { RetailArithmetic = retailArithmetic, End = end };
         bool found = WalkIndexed(set, grid, dynamics, origin, end, ref test);
         hit = test.Hit;
         return found;
@@ -1038,8 +1039,14 @@ public sealed class ObjectCollisionIndex
     {
         public WorldRayHit Hit;
 
+        /// <summary>Whether each model is tested with the original's own arithmetic (<see cref="RetailModelRay"/>).</summary>
+        public bool RetailArithmetic;
+
+        /// <summary>The ray's end, which the original's test takes rather than a direction.</summary>
+        public Vector3d End;
+
         public bool Test(Entry entry, Vector3d origin, Vector3d direction, ref double nearest) =>
-            index.TestEntry(entry, origin, direction, ref nearest, ref Hit);
+            index.TestEntry(entry, origin, direction, ref nearest, ref Hit, RetailArithmetic ? End : null);
     }
 
     /// <summary>The rich request's test: its ignore list and mask on top of the live filter.</summary>
@@ -1092,7 +1099,8 @@ public sealed class ObjectCollisionIndex
         Vector3d origin,
         Vector3d direction,
         ref double nearest,
-        ref WorldRayHit hit)
+        ref WorldRayHit hit,
+        Vector3d? retailEnd = null)
     {
         if (GenericPickups?.IsCollected(entry.Owner) == true
             || Destructibles?.IsDestroyed(entry.Placement) == true
@@ -1107,14 +1115,22 @@ public sealed class ObjectCollisionIndex
             return false;
         }
 
-        if (!entry.TryCast(
+        WorldRayHit candidate;
+        if (retailEnd is { } end && entry.SupportsRetailRay)
+        {
+            if (!entry.TryCastRetail(origin, end, ref nearest, out candidate))
+            {
+                return false;
+            }
+        }
+        else if (!entry.TryCast(
             origin,
             direction,
             ref nearest,
             useClosedTransform: false,
             includePortals: false,
             portalIsOpening: null,
-            out WorldRayHit candidate))
+            out candidate))
         {
             return false;
         }
@@ -1581,6 +1597,81 @@ public sealed class ObjectCollisionIndex
 
         /// <summary>Gets or sets whether the entry has been moved to its set's dynamic list.</summary>
         public bool InDynamicList { get; set; }
+
+        /// <summary>
+        /// Gets whether the original's placed-model ray (<c>0x4C1840</c>) tests this entry: every model but a bent
+        /// spline segment, which the original tests with a routine of its own (<c>0x4E16E0</c>).
+        /// </summary>
+        public bool SupportsRetailRay => Placement.BentGeometry is null && Mesh.Faces.Length > 0;
+
+        private RetailRayModel? _retailRay;
+
+        /// <summary>Casts a ray at this model with the original's own arithmetic (<see cref="RetailModelRay"/>).</summary>
+        /// <param name="origin">The ray start, in world units.</param>
+        /// <param name="end">The ray end.</param>
+        /// <param name="nearest">The nearest hit so far as a fraction of the ray; a hit must be nearer to count.</param>
+        /// <param name="hit">Receives the contact, reported as <see cref="TryCast"/> reports one.</param>
+        /// <returns>Whether this model was struck nearer than <paramref name="nearest"/>.</returns>
+        /// <remarks>
+        /// The original transforms the ray into the model's frame, rounds it to single precision and accepts a face
+        /// up to and including the ray's end (<c>t ≤ 1</c> as a float). A human's wall sweep ends its re-cast
+        /// exactly on the wall it has just slid off, so that boundary decides whether a slide into a corner is
+        /// accepted or refused: the original's test meets the wall, the sweep slides again and again, and after
+        /// ten casts it refuses the move (<c>0x461A70</c>). The double-precision test here stopped a hair short.
+        /// </remarks>
+        public bool TryCastRetail(Vector3d origin, Vector3d end, ref double nearest, out WorldRayHit hit)
+        {
+            hit = default;
+            Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
+            double length = Math.Sqrt((direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
+            if (length <= 0.0)
+            {
+                return false;
+            }
+
+            _retailRay ??= new RetailRayModel(Owner, new RetailRayMesh(Mesh), Placement.Model.NativeMarkerBound);
+            _retailRay.Position[0] = PoseOrigin.X;
+            _retailRay.Position[1] = PoseOrigin.Y;
+            _retailRay.Position[2] = PoseOrigin.Z;
+            PoseOrientation.CopyTo(_retailRay.M);
+
+            RetailRayResult result = new() { Point = end };
+            RetailModelRay.Cast(_retailRay, origin, end, ref result);
+            if (!result.Hit)
+            {
+                return false;
+            }
+
+            double t = result.Distance / length;
+            if (t >= nearest)
+            {
+                return false;
+            }
+
+            nearest = t;
+
+            // The original's face normal is the opposite of RayTriangle's, and it is not unit length. Reported as
+            // TryCast reports one: unit, turned to face the ray, with the back face that a probe leaves by marked.
+            Vector3d normal = new(result.NormalX, result.NormalY, result.NormalZ);
+            double normalLength = Math.Sqrt((normal.X * normal.X) + (normal.Y * normal.Y) + (normal.Z * normal.Z));
+            if (normalLength > 0.0)
+            {
+                normal /= normalLength;
+            }
+
+            if ((normal.X * direction.X) + (normal.Y * direction.Y) + (normal.Z * direction.Z) > 0.0)
+            {
+                normal = new Vector3d(-normal.X, -normal.Y, -normal.Z);
+            }
+
+            hit = new WorldRayHit(
+                result.Point,
+                new Vector3f((float)normal.X, (float)normal.Y, (float)normal.Z),
+                result.Distance,
+                result.Material,
+                !result.HasFrontMaterial);
+            return true;
+        }
 
         public static Entry Create(
             MefCollisionMesh mesh,
