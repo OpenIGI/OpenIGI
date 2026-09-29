@@ -865,6 +865,7 @@ public sealed class AiScenarioHarness : IDisposable
         int last = -1;
         bool quit = false;
         int maxSteps = EnvInt("OPENIGI_VEH_SCENARIO_STEPS", 200_000);
+        int lastPlaneSteps = -1;
 
         // OPENIGI_VEH_SCENARIO_POSLOG=<n>: the player's position every n ticks, as the probe's IGI_PROBE_POSLOG.
         int posEvery = Math.Max(1, EnvInt("OPENIGI_VEH_SCENARIO_POSLOG", 30));
@@ -961,6 +962,20 @@ public sealed class AiScenarioHarness : IDisposable
                 if (bodyState.GetType().GetProperty("RetailBody")?.GetValue(bodyState) is RetailCarBody body)
                 {
                     log.AppendLine(CultureInfo.InvariantCulture, $"[body] tick={tick} pos=({body.Position[0]:R},{body.Position[1]:R},{body.Position[2]:R}) thr={body.Throttle:R}/{body.ThrottleTarget:R} steer={body.Steering:R}/{body.SteeringTarget:R} hb={body.Handbrake} speed={body.Speed:R}");
+                }
+                else if (bodyState.GetType().GetProperty("RetailPlane")?.GetValue(bodyState) is RetailPlaneBody plane
+                    && bodyState.GetType().GetProperty("PhysicsTicks")?.GetValue(bodyState) is int planeSteps
+                    && planeSteps != lastPlaneSteps)
+                {
+                    // The probe's planeflight format: each force as pushed, then the state after the step.
+                    lastPlaneSteps = planeSteps;
+                    foreach (RetailForce f in plane.PushedForces)
+                    {
+                        log.AppendLine(CultureInfo.InvariantCulture, $"[pforce] f=({f.Fx:G9},{f.Fy:G9},{f.Fz:G9}) p=({f.Px:G9},{f.Py:G9},{f.Pz:G9})");
+                    }
+
+                    float[] pm = plane.M;
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[pf] tick={tick} step={planeSteps} pos=({plane.Position[0]:R},{plane.Position[1]:R},{plane.Position[2]:R}) m=[{pm[0]:G9} {pm[1]:G9} {pm[2]:G9} {pm[3]:G9} {pm[4]:G9} {pm[5]:G9} {pm[6]:G9} {pm[7]:G9} {pm[8]:G9}] vel=({plane.Velocity[0]:G9},{plane.Velocity[1]:G9},{plane.Velocity[2]:G9}) mom=({plane.Momentum[0]:G9},{plane.Momentum[1]:G9},{plane.Momentum[2]:G9}) speed={plane.Speed:G9} thrust={plane.Thrust:G9}/{plane.ThrustTarget:G9} ctl=({plane.Controls[0]:G9},{plane.Controls[1]:G9},{plane.Controls[2]:G9})");
                 }
                 else if (bodyState.GetType().GetProperty("RetailHeli")?.GetValue(bodyState) is RetailHeliBody heli)
                 {
