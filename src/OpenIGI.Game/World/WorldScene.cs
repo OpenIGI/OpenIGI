@@ -1306,7 +1306,10 @@ public sealed class WorldScene
             // A child draws only if its model is also a pack instance, because the textures a sub-mesh
             // uses are named by the instance, not by the model. Its subtree is walked either way: the
             // lightmap numbering already counted it, and its own children may well be instances.
-            if (byName.TryGetValue(child.Name, out (MtpInstance Instance, LoadedPack Pack, MefModel Model) bound))
+            // An Afterburner (0x42BEB0) draws through its own primitive instead of its model, and that primitive's
+            // draw callback (0x42C4B0) is an empty stub: the original never shows it. Its children still follow.
+            bool neverDrawn = string.Equals(magicTaskTypeName, "TASKTYPE_AFTERBURNER", StringComparison.Ordinal);
+            if (!neverDrawn && byName.TryGetValue(child.Name, out (MtpInstance Instance, LoadedPack Pack, MefModel Model) bound))
             {
                 // The attachment draws in the rebuilt right-handed frame sub_4DFA50 builds, which after the
                 // model-to-world axis conversion is the ATTA orientation's transpose — the same childTaskOrientation
