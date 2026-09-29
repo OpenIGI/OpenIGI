@@ -212,7 +212,7 @@ public sealed class DoorRegistry
         declared.TryGetValue(parameter, out object? value) && value is string name ? name : string.Empty;
 
     /// <summary>Sets where a door's sounds are reported, or <see langword="null"/> to make them silent.</summary>
-    /// <param name="sink">Called during <see cref="Tick"/> for each moment a door makes a noise.</param>
+    /// <param name="sink">Called during <see cref="Tick(PlacedDoor)"/> for each moment a door makes a noise.</param>
     /// <remarks>
     /// A callback because <c>OpenIGI.Game</c> may not reach an audio backend. Whoever takes it owns the
     /// travelling voice: <see cref="DoorSoundEvent.StartedMoving"/> and
@@ -243,50 +243,77 @@ public sealed class DoorRegistry
     {
         foreach (PlacedDoor door in _doors)
         {
-            door.State.Tick();
-
-            // The mid-swing doorway ray: a door that is closing (state 3, moving with the latch clear)
-            // and finds a human in its opening is forced back open instead of sealing — the retail
-            // re-open at 0x447323. This keeps a blocked elevator door from ever reaching isClosed.
-            if (_doorwayBlocked is not null && door.State.UseState == 3)
-            {
-                (Vector3d a, Vector3d b) = door.DoorwaySegment;
-                if (_doorwayBlocked(a, b))
-                {
-                    door.State.CommandOpen();
-                }
-            }
-
-            if (_sounds is null)
-            {
-                continue;
-            }
-
-            DoorState state = door.State;
-
-            // The two rising edges the original tests, in its order: fully open first, then fully
-            // closed (0x446D10 at 0x4473F5 and 0x447422).
-            if (state.IsFullyOpen && !state.WasFullyOpen)
-            {
-                _sounds(door, DoorSoundEvent.Opened);
-            }
-
-            if (state.IsFullyClosed && !state.WasFullyClosed)
-            {
-                _sounds(door, DoorSoundEvent.Closed);
-            }
-
-            // And the travelling sound, which is a level rather than an edge: the original starts it
-            // whenever the door is at neither end and its handle slot is empty.
-            bool moving = !state.IsFullyOpen && !state.IsFullyClosed;
-            if (moving == door.IsSounding)
-            {
-                continue;
-            }
-
-            door.IsSounding = moving;
-            _sounds(door, moving ? DoorSoundEvent.StartedMoving : DoorSoundEvent.StoppedMoving);
+            Tick(door);
         }
+    }
+
+    /// <summary>Puts every door into the level's update walk, each where the tree places it.</summary>
+    /// <param name="walker">The level walk.</param>
+    /// <param name="ticked">Runs after a door has advanced, for the owner's collision and sight updates.</param>
+    /// <remarks>The door's update (<c>0x446D10</c>) walks its children first, then runs its own state machine.</remarks>
+    public void AttachTo(LevelUpdateWalker walker, Action<PlacedDoor>? ticked = null)
+    {
+        ArgumentNullException.ThrowIfNull(walker);
+        foreach (PlacedDoor door in _doors)
+        {
+            walker.Register(door.Task, task =>
+            {
+                walker.WalkChildren(task);
+                Tick(door);
+                ticked?.Invoke(door);
+            });
+        }
+    }
+
+    /// <summary>Advances one door one tick.</summary>
+    /// <param name="door">The door.</param>
+    public void Tick(PlacedDoor door)
+    {
+        ArgumentNullException.ThrowIfNull(door);
+
+        door.State.Tick();
+
+        // The mid-swing doorway ray: a door that is closing (state 3, moving with the latch clear)
+        // and finds a human in its opening is forced back open instead of sealing — the retail
+        // re-open at 0x447323. This keeps a blocked elevator door from ever reaching isClosed.
+        if (_doorwayBlocked is not null && door.State.UseState == 3)
+        {
+            (Vector3d a, Vector3d b) = door.DoorwaySegment;
+            if (_doorwayBlocked(a, b))
+            {
+                door.State.CommandOpen();
+            }
+        }
+
+        if (_sounds is null)
+        {
+            return;
+        }
+
+        DoorState state = door.State;
+
+        // The two rising edges the original tests, in its order: fully open first, then fully
+        // closed (0x446D10 at 0x4473F5 and 0x447422).
+        if (state.IsFullyOpen && !state.WasFullyOpen)
+        {
+            _sounds(door, DoorSoundEvent.Opened);
+        }
+
+        if (state.IsFullyClosed && !state.WasFullyClosed)
+        {
+            _sounds(door, DoorSoundEvent.Closed);
+        }
+
+        // And the travelling sound, which is a level rather than an edge: the original starts it
+        // whenever the door is at neither end and its handle slot is empty.
+        bool moving = !state.IsFullyOpen && !state.IsFullyClosed;
+        if (moving == door.IsSounding)
+        {
+            return;
+        }
+
+        door.IsSounding = moving;
+        _sounds(door, moving ? DoorSoundEvent.StartedMoving : DoorSoundEvent.StoppedMoving);
     }
 
     /// <summary>The door nearest a point — the walker's query, with no radius cap.</summary>

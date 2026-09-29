@@ -59,6 +59,8 @@ public sealed class MissionObjectiveRuntime
     private int _stateTeam;
     private Vector3d? _stateExtraPlayer;
     private Func<IEnumerable<VehicleOccupant>>? _vehicleSource;
+    private Func<IEnumerable<HumanOccupant>>? _soldierSource;
+    private Func<AreaPlayer>? _playerSource;
     private bool _attached;
     private int _tick;
     private bool _released;
@@ -471,12 +473,25 @@ public sealed class MissionObjectiveRuntime
     /// </summary>
     /// <param name="walker">The level walk.</param>
     /// <param name="vehicles">Reads the vehicles' live positions when an area counts them.</param>
-    /// <remarks>The host then feeds the player through <see cref="SetLevelStateInputs"/> before the walk.</remarks>
-    public void AttachTo(LevelUpdateWalker walker, Func<IEnumerable<VehicleOccupant>>? vehicles = null)
+    /// <param name="soldiers">Reads the soldiers where they stand when an area counts them.</param>
+    /// <param name="player">Reads the player where it stands when an area counts it.</param>
+    /// <remarks>
+    /// An area scans the registered humans and vehicles at the moment it updates (<c>0x5048A0</c>), so it sees
+    /// what the tasks before it in the tree did this tick and what those after it did last tick. Without a
+    /// source the host's last report stands in (<see cref="SetLevelStateInputs"/>,
+    /// <see cref="SetSoldierOccupants"/>).
+    /// </remarks>
+    public void AttachTo(
+        LevelUpdateWalker walker,
+        Func<IEnumerable<VehicleOccupant>>? vehicles = null,
+        Func<IEnumerable<HumanOccupant>>? soldiers = null,
+        Func<AreaPlayer>? player = null)
     {
         ArgumentNullException.ThrowIfNull(walker);
         _attached = true;
         _vehicleSource = vehicles;
+        _soldierSource = soldiers;
+        _playerSource = player;
         foreach (AreaActivation area in _areaActivations)
         {
             walker.Register(area.Task, task =>
@@ -517,15 +532,18 @@ public sealed class MissionObjectiveRuntime
     private void UpdateArea(AreaActivation area)
     {
         int count = 0;
-        if (_playerAlive
-            && area.AcceptsPlayer(_stateTeam)
-            && ((_statePlayer is { } point && area.Contains(point))
-                || (_stateExtraPlayer is { } extra && area.Contains(extra))))
+        AreaPlayer player = _playerSource?.Invoke()
+            ?? new AreaPlayer(_statePlayer, _stateTeam, _stateExtraPlayer, _playerAlive);
+        if (player.Alive
+            && area.AcceptsPlayer(player.Team)
+            && ((player.Position is { } point && area.Contains(point))
+                || (player.ExtraPosition is { } extra && area.Contains(extra))))
         {
             count++;
         }
 
-        foreach (HumanOccupant occupant in _soldierOccupants.Values)
+        IEnumerable<HumanOccupant> soldiers = _soldierSource?.Invoke() ?? _soldierOccupants.Values;
+        foreach (HumanOccupant occupant in soldiers)
         {
             GameTask? soldier = _levelRoot.Tree.FromId(occupant.TaskId);
             if (soldier is not null

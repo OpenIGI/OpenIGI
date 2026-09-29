@@ -318,6 +318,116 @@ internal sealed partial class GameHost
         _player?.M203.Clear();
     }
     /// <summary>Advances missiles fired by authored vehicles against the player's own body.</summary>
+    /// <summary>Puts the soldiers (with their doors and alarms) and the player into the level's walk.</summary>
+    /// <remarks>
+    /// Retail updates <c>HumanPlayer_0</c> where the walk reaches it inside <c>ConditionalContainer_560</c>, late in
+    /// <c>Dynamic</c>: its HumanView, Shadow, then HumanPlayerInput, whose CHANNELS packet moves it, then the
+    /// binoculars and the gun. A level without a player task keeps
+    /// updating the player after the walk.
+    /// </remarks>
+    private void AttachActorsToLevelWalk(GameTask levelRoot)
+    {
+        _soldiersInWalk = false;
+        _playerInWalk = false;
+        if (_cutscenes is not { } cutscenes)
+        {
+            return;
+        }
+
+        LevelUpdateWalker walker = cutscenes.Walker;
+        if (_soldiers is { } soldiers)
+        {
+            soldiers.AttachTo(walker);
+            _soldiersInWalk = true;
+        }
+
+        if (PlayerSpawn.FindGameplayTask(levelRoot) is { } playerTask)
+        {
+            walker.Register(playerTask, task =>
+            {
+                UpdatePlayerTask();
+                walker.WalkChildren(task);
+            });
+            _playerInWalk = true;
+        }
+    }
+
+    /// <summary>The player's update: input, movement and the weapon, once per tick.</summary>
+    /// <remarks>
+    /// A dead player is in locomotion state 47, whose per-tick is not the walking one -- so the body stops being
+    /// stepped rather than being stepped with no input. Without this a corpse walks around. What the update set
+    /// in motion -- sounds, effects, detonations -- is resolved after the walk while <see cref="_playerTicked"/>.
+    /// </remarks>
+    private void UpdatePlayerTask()
+    {
+        if (_playerTicked
+            || _cutscenes?.IsPlaying == true
+            || !_playerMode
+            || _player is not { } player
+            || _playerDead
+            || _missionFailedMenu)
+        {
+            return;
+        }
+
+        _playerTicked = true;
+
+        // The soldiers ahead of the player in the tree have moved this tick; the wall sweep meets them there.
+        _soldiers?.PublishCollisionBodies();
+        player.InputProfile = _configuration.Active;
+        GrantCheatWeapons(player);
+        if (_computerOpen)
+        {
+            player.TickMapComputer();
+        }
+        else
+        {
+            player.Tick(ViewInput, _ground);
+
+            // PlayerCamera advances its interaction registry before it resolves this tick's activate target.
+            // Do not advance the same registry again after the walk.
+            _interactionsTickedByPlayer = true;
+        }
+
+        TickVehicleMissiles();
+        CheckRunOver();
+
+        // Grenade physics runs inside PlayerCamera.Tick. The grenade's AI events reach the soldiers' next
+        // update, as retail's grenade task -- a runtime task at the end of Dynamic, after every soldier -- does.
+        NotifyGrenadeAiEvents();
+    }
+
+    /// <summary>The player as a soldier sees it at the moment the soldier updates.</summary>
+    /// <remarks>
+    /// In the fly-through the eye is the CAMERA's: guards otherwise watch an immobile body at the spawn. The feet
+    /// are what combat aims at (sub_451380). A dead player is no longer a target (the detection scan
+    /// 0x489750 unregisters it), and neither is one hidden behind a cinematic.
+    /// </remarks>
+    private SoldierEnemy SoldierEnemyNow()
+    {
+        bool body = _playerMode && _player is not null;
+        Vector3d eye = body ? _player!.Body.Eye : _camera?.Position ?? _player?.Body.Eye ?? default;
+        Vector3d feet = body ? _player!.Body.Position : eye;
+        return new SoldierEnemy(eye, !_playerDead && _cutscenes?.IsPlaying != true, feet, body && _player!.IsCrouched);
+    }
+
+    /// <summary>The player as an area counts it at the moment the area updates.</summary>
+    /// <remarks>
+    /// During an authored cinematic the occupant is the cutscene camera rather than the stationary player body; a
+    /// diagnostic free camera must not impersonate a player that exists (Mission 4's AreaActivate_156 would start
+    /// the outro as the camera follows Bell 800).
+    /// </remarks>
+    private AreaPlayer AreaPlayerNow()
+    {
+        Vector3d? cutsceneView = _cutscenes?.Frame?.Camera.Position;
+        Vector3d? freeView = !_playerMode ? _camera?.Position : null;
+        return new AreaPlayer(
+            AreaActivationOccupant(_player?.Body.Position, cutsceneView, freeView),
+            _soldiers?.PlayerTeam ?? 0,
+            AreaActivationExtraOccupant(_player?.Body.Position, cutsceneView),
+            !_playerDead);
+    }
+
     private void TickVehicleMissiles()
     {
         if (_player is not { } player)
@@ -528,7 +638,11 @@ internal sealed partial class GameHost
             isKeyDown: key => _window.Input.Keyboard.IsDown(key));
 
         // The areas and edit variables update inside the level's one walk, where the tree places them.
-        objectives.AttachTo(_cutscenes.Walker, _cutscenes.VehicleOccupants);
+        objectives.AttachTo(
+            _cutscenes.Walker,
+            _cutscenes.VehicleOccupants,
+            () => _soldiers?.LiveOccupants() ?? [],
+            AreaPlayerNow);
 
         // Cinematics are opt-in while their retail parity work is in progress. Do not tear the runtime
         // out: the level expressions still use its native surface, and mission outros may activate it
@@ -1571,6 +1685,9 @@ internal sealed partial class GameHost
             _logger.Warning("Ai", $"The nav graph could not be read: {ex.Message}");
         }
 
+        // The soldiers, the doors, the alarm controls and the player update inside the level's walk.
+        AttachActorsToLevelWalk(levelRoot);
+
         // Everything from here to the free camera is what makes the level a PICTURE, and a promoted
         // backdrop is already that picture -- AdoptPreview built the terrain (with its ground detail
         // derived on the worker, which is most of the cost), the sky, the shadow pass, the clear colour,
@@ -2540,6 +2657,8 @@ internal sealed partial class GameHost
         _missionObjectives?.Release();
         _missionObjectives = null;
         _cutscenes = null;
+        _soldiersInWalk = false;
+        _playerInWalk = false;
         _securityCameras = null;
         _cameraBeepVoices.Clear();
         _cameraMoveVoices.Clear();

@@ -598,6 +598,14 @@ internal sealed partial class GameHost : IDisposable
     private LoadedMission? _loadedMissionForWeapon;
     private IViewModelPresenter? _arms;
     private SoldierRenderer? _soldiers;
+
+    // Whether the soldiers and the player update inside the level walk (AttachActorsToLevelWalk), whether the
+    // player's update has run this tick, and whether it advanced the interaction registry itself.
+    private bool _soldiersInWalk;
+    private bool _playerInWalk;
+    private bool _playerTicked;
+    private bool _interactionsTickedByPlayer;
+    private Func<SoldierEnemy>? _soldierEnemy;
     private TerrainData? _playerTerrain;
 
     // What the player's feet stand on, which is not always the terrain the rest of the level traces
@@ -1280,6 +1288,8 @@ internal sealed partial class GameHost : IDisposable
         _loadedMissionForWeapon = null;
         _arms = null;
         _soldiers = null;
+        _soldiersInWalk = false;
+        _playerInWalk = false;
         _playerTerrain = null;
         _effectWalls = null;
         _effectTerrainRow = null;
@@ -2898,9 +2908,32 @@ internal sealed partial class GameHost : IDisposable
                 // metres across, and the tick has no camera of its own.
                 _storm?.Tick(_stormEyeMetres);
 
-                // The level's one walk (the retail task tree, in authored order). Everything in it that reads
-                // the player or the soldiers sees them as they ended last tick: in the original the player's
-                // update comes late in the tree, and the areas that count soldiers read the last report.
+                // The lifts step ahead of the walk, so they still move before the doors that ride them and before
+                // the player they carry; they do not yet update at their own place in the tree.
+                if (_elevators is { } elevators)
+                {
+                    // Feed the player's current position to the elevators so their start gate can refuse
+                    // to move an empty car or one with an open door. Provider is read every tick.
+                    elevators.SetPlayerPositionProvider(_player is { } p ? () => p.Body.Position : null);
+                    elevators.Tick();
+                    UpdateElevatorSoundPositions();
+                    if (_worldSolids is { } elevatorSolids)
+                    {
+                        elevators.ApplyCollision(elevatorSolids);
+                    }
+
+                    if (_playerMode && _player is { } passenger
+                        && elevators.TryGetPassengerDisplacement(
+                            passenger.Body.Position, _worldSolids, out Vector3d displacement))
+                    {
+                        passenger.Body.Position += displacement;
+                    }
+                }
+
+                // The level's one walk (the retail task tree, in authored order). Soldiers, doors, alarms, areas and
+                // the player all update inside it where the tree places them: a task reads this tick's state from
+                // everything before it and last tick's from everything after, so the soldiers -- all ahead of
+                // ConditionalContainer_560 -- see the player where it stood last tick.
                 // During an authored cinematic the area occupant is the cutscene camera rather than the
                 // stationary player body; a diagnostic free camera must not impersonate a player that exists
                 // (Mission 4's AreaActivate_156 would start the outro as the camera follows Bell 800).
@@ -2912,6 +2945,13 @@ internal sealed partial class GameHost : IDisposable
                     _soldiers?.PlayerTeam ?? 0,
                     AreaActivationExtraOccupant(_player?.Body.Position, areaCutsceneView),
                     playerAlive: !_playerDead);
+                _playerTicked = false;
+                _interactionsTickedByPlayer = false;
+                if (_soldiersInWalk)
+                {
+                    _soldiers?.BeginTick(_soldierEnemy ??= SoldierEnemyNow);
+                }
+
                 _cutscenes?.Tick();
                 if (_cutscenes is { } liveCutscenes && _scene is { } cinematicScene && _worldSolids is { } cinematicSolids)
                 {
@@ -2930,30 +2970,6 @@ internal sealed partial class GameHost : IDisposable
                 }
             }
 
-            // The body advances on the simulation tick and ONLY on it. Tick and Render are mutually
-            // exclusive outcomes - a render is not a tick - so including Render here stepped the player
-            // once per drawn frame as well, and at an uncapped frame rate that is several times 30 Hz.
-            // The player then moved as fast as the display was quick, which is exactly what it looked like.
-            if (outcome is FrameOutcome.Tick && _elevators is { } elevators)
-            {
-                // Feed the player's current position to the elevators so their start gate can refuse
-                // to move an empty car or one with an open door. Provider is read every tick.
-                elevators.SetPlayerPositionProvider(_player is { } p ? () => p.Body.Position : null);
-                elevators.Tick();
-                UpdateElevatorSoundPositions();
-                if (_worldSolids is { } elevatorSolids)
-                {
-                    elevators.ApplyCollision(elevatorSolids);
-                }
-
-                if (_playerMode && _player is { } passenger
-                    && elevators.TryGetPassengerDisplacement(
-                        passenger.Body.Position, _worldSolids, out Vector3d displacement))
-                {
-                    passenger.Body.Position += displacement;
-                }
-            }
-
             // The player cannot jump while standing inside an elevator cab. The elevator registry knows
             // the player's position (fed above), so it can report whether they're inside.
             if (_player is { } playerWithJump)
@@ -2964,38 +2980,19 @@ internal sealed partial class GameHost : IDisposable
                     : null;
             }
 
-            bool interactionsTickedByPlayer = false;
+            // A level with no player task in its walk updates the player after the walk instead.
+            if (outcome is FrameOutcome.Tick && !_playerInWalk)
+            {
+                UpdatePlayerTask();
+            }
+
             if (outcome is FrameOutcome.Tick
                 && _cutscenes?.IsPlaying != true
                 && _playerMode && _player is not null)
             {
-                // A dead player is in locomotion state 47, whose per-tick is not the walking one -- so the
-                // body stops being stepped rather than being stepped with no input. Without this a corpse
-                // walks around.
-                if (!_playerDead && !_missionFailedMenu)
+                // What the player's update set in motion this tick -- its sounds, effects and detonations.
+                if (_playerTicked)
                 {
-                    _player.InputProfile = _configuration.Active;
-                    GrantCheatWeapons(_player);
-                    if (_computerOpen)
-                    {
-                        _player.TickMapComputer();
-                    }
-                    else
-                    {
-                        _player.Tick(ViewInput, _ground);
-                        // PlayerCamera advances its interaction registry before it resolves this
-                        // tick's activate target. Do not advance the same registry again below.
-                        interactionsTickedByPlayer = true;
-                    }
-                    TickVehicleMissiles();
-                    CheckRunOver();
-
-                    // Grenade physics runs inside PlayerCamera.Tick. IGI1 broadcasts the grenade task's
-                    // AI events before the HumanAI pass, so deliver the queued records here rather than
-                    // after SoldierRenderer.Tick (where they would be delayed and a guard could fire
-                    // one extra burst). Effects and sounds are still resolved below, after the AI pass.
-                    NotifyGrenadeAiEvents();
-
                     PlayBinocularTransitionSound();
                     PlayMedipackSound();
 
@@ -3188,7 +3185,7 @@ internal sealed partial class GameHost : IDisposable
             // PlayerCamera owns the normal player tick, including interaction pulses. Other fixed-tick
             // modes (free camera, cutscenes, map computer and a dead player) still need their level
             // interactions to advance, but never more than once per simulation tick.
-            if (outcome is FrameOutcome.Tick && !interactionsTickedByPlayer)
+            if (outcome is FrameOutcome.Tick && !_interactionsTickedByPlayer)
             {
                 _interactions?.Tick();
             }
@@ -3283,11 +3280,19 @@ internal sealed partial class GameHost : IDisposable
                     }
                 }
 
-                _soldiers?.Tick(
-                    watched,
-                    enemyAlive: !_playerDead && _cutscenes?.IsPlaying != true,
-                    enemyFeet: watchedFeet,
-                    enemyCrouching: _playerMode && _player is not null && _player.IsCrouched);
+                if (_soldiersInWalk)
+                {
+                    // The soldiers updated inside the level walk; this closes their tick (corpses, skinning).
+                    _soldiers?.EndTick();
+                }
+                else
+                {
+                    _soldiers?.Tick(
+                        watched,
+                        enemyAlive: !_playerDead && _cutscenes?.IsPlaying != true,
+                        enemyFeet: watchedFeet,
+                        enemyCrouching: _playerMode && _player is not null && _player.IsCrouched);
+                }
 
                 // The player's own body advances its death fall on the tick, the same as a soldier's corpse --
                 // it does nothing until the player has died and the body was posed.

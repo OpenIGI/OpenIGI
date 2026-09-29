@@ -167,6 +167,18 @@ public sealed class SoldierRenderer : IDisposable
     // The level's doors: ticked here (their update runs on the task pass, before the AIs), queried by
     // each walker's door hop, and switched out of the collision index while they stand open.
     private DoorRegistry? _doors;
+
+    // The level walk this renderer's tasks update from, once AttachTo has put them in it; null when standalone.
+    private LevelUpdateWalker? _walker;
+
+    // Where the player is, read by each soldier as it updates (BeginTick).
+    private Func<SoldierEnemy>? _enemy;
+
+    // The bodies that have updated this tick, so none updates twice and EndTick can find any the walk missed.
+    private readonly HashSet<SoldierView> _ticked = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<GameTask> _unwalkedSoldiers = new(ReferenceEqualityComparer.Instance);
+    private bool _collectDiagnostics;
+    private bool _alarmWasOn;
     private ElevatorRegistry? _elevators;
     private ObjectCollisionIndex? _solids;
 
@@ -3136,33 +3148,28 @@ public sealed class SoldierRenderer : IDisposable
     }
 
     /// <summary>Runs the native generator decision before any live soldier is advanced this tick.</summary>
-    private void TickGuardGenerators()
+    /// <summary>A GuardGenerator's update (<c>0x487EE0</c>): its expression, and a replacement for a dead guard.</summary>
+    private void TickGuardGenerator(GuardGeneratorTask generator)
     {
-        List<(GuardGeneratorTask Generator, SoldierView Dead)> respawns = [];
-        foreach ((GuardGeneratorTask generator, SoldierView view) in _guardGenerators)
+        if (!_guardGenerators.TryGetValue(generator, out SoldierView? view))
         {
-            bool isOn = _guardExpressions?.EvaluateCondition(generator.GenerateGuards, emptyValue: false, generator)
-                ?? generator.GenerateGuards.Trim() is "1" or "TRUE" or "true";
-            // Publish the first authored life immediately, but do not consume a bounded replacement
-            // until its mesh and runtime subtree have actually been created. A transient upload failure
-            // must leave the generator eligible to retry on the next tick.
-            GuardSpawnDecision decision = generator.Advance(isOn, childIsDead: false);
-            if (decision != GuardSpawnDecision.FirstSpawn
-                && isOn
-                && view.IsDead
-                && generator.SpawnCount < generator.MaxSpawns)
-            {
-                respawns.Add((generator, view));
-            }
+            return;
         }
 
-        foreach ((GuardGeneratorTask generator, SoldierView dead) in respawns)
+        bool isOn = _guardExpressions?.EvaluateCondition(generator.GenerateGuards, emptyValue: false, generator)
+            ?? generator.GenerateGuards.Trim() is "1" or "TRUE" or "true";
+        // Publish the first authored life immediately, but do not consume a bounded replacement
+        // until its mesh and runtime subtree have actually been created. A transient upload failure
+        // must leave the generator eligible to retry on the next tick.
+        GuardSpawnDecision decision = generator.Advance(isOn, childIsDead: false);
+        if (decision != GuardSpawnDecision.FirstSpawn
+            && isOn
+            && view.IsDead
+            && generator.SpawnCount < generator.MaxSpawns
+            && SpawnGeneratedGuard(generator, view) is { } fresh)
         {
-            if (SpawnGeneratedGuard(generator, dead) is { } fresh)
-            {
-                _ = generator.Advance(isOn: true, childIsDead: true);
-                _guardGenerators[generator] = fresh;
-            }
+            _ = generator.Advance(isOn: true, childIsDead: true);
+            _guardGenerators[generator] = fresh;
         }
     }
 
@@ -3428,9 +3435,99 @@ public sealed class SoldierRenderer : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        // Standalone (a renderer outside a level walk: the menu backdrop, tests): the same per-task updates, run
+        // in one pass. Inside a mission the level walk runs each where the tree places it (AttachTo).
+        SoldierEnemy fixedEnemy = new(enemy, enemyAlive, enemyFeet, enemyCrouching);
+        BeginTick(() => fixedEnemy);
+        foreach (GuardGeneratorTask generator in _guardGenerators.Keys.ToArray())
+        {
+            TickGuardGenerator(generator);
+        }
+
+        if (_doors is { } doors)
+        {
+            foreach (PlacedDoor door in doors.Doors)
+            {
+                doors.Tick(door);
+                DoorTicked(door);
+            }
+        }
+
+        if (_alarmControls is { } alarmControls)
+        {
+            alarmControls.Tick(_tick);
+            AlarmControlTicked();
+        }
+
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
+        {
+            TickSoldier(view, brain);
+        }
+
+        EndTick();
+    }
+
+    /// <summary>Puts the soldiers, their guard generators, the doors and the alarm controls into the level's walk.</summary>
+    /// <param name="walker">The level walk.</param>
+    /// <remarks>
+    /// <para>
+    /// The original has no soldier pass: each <c>HumanSoldier</c> updates where the walk reaches it
+    ///, its children -- HumanView, Shadow, the gun, then the HumanAI
+    /// whose CHANNELS packet moves it -- before the next soldier starts. A soldier therefore sees the soldiers
+    /// before it in the tree where they are this tick, and those after it (and the player, late in
+    /// <c>ConditionalContainer_560</c>) where they were last tick.
+    /// </para>
+    /// <para>
+    /// A <c>GuardGenerator</c> (<c>0x487EE0</c>) decides and clones first, then walks its soldier; a <c>Door</c>
+    /// (<c>0x446D10</c>) and an <c>AlarmControl</c> (<c>0x4408A0</c>) walk their children first, then update.
+    /// Call <see cref="BeginTick"/> before the walk and <see cref="EndTick"/> after it.
+    /// </para>
+    /// </remarks>
+    public void AttachTo(LevelUpdateWalker walker)
+    {
+        ArgumentNullException.ThrowIfNull(walker);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _walker = walker;
+        HashSet<GameTask> soldiers = new(ReferenceEqualityComparer.Instance);
+        foreach (SoldierView view in _brains.Keys)
+        {
+            if (soldiers.Add(view.Soldier))
+            {
+                walker.Register(view.Soldier, task =>
+                {
+                    TickSoldierTask(task);
+                    walker.WalkChildren(task);
+                });
+            }
+        }
+
+        foreach (GuardGeneratorTask generator in _guardGenerators.Keys)
+        {
+            walker.Register(generator, task =>
+            {
+                TickGuardGenerator((GuardGeneratorTask)task);
+                walker.WalkChildren(task);
+            });
+        }
+
+        _doors?.AttachTo(walker, DoorTicked);
+        _alarmControls?.AttachTo(walker, () => _tick, _ => AlarmControlTicked());
+    }
+
+    /// <summary>Opens a tick: the tick count, and where the enemy (the player) is read from.</summary>
+    /// <param name="enemy">
+    /// Reads the player as a soldier sees it at the moment the soldier updates -- live, so a soldier ahead of the
+    /// player in the tree sees last tick's pose.
+    /// </param>
+    public void BeginTick(Func<SoldierEnemy> enemy)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(enemy);
         _tick++;
-        TickGuardGenerators();
-        bool collectDiagnostics = _logger.IsEnabled(LogLevel.Information);
+        _enemy = enemy;
+        _ticked.Clear();
+        _collectDiagnostics = _logger.IsEnabled(LogLevel.Information);
+        bool collectDiagnostics = _collectDiagnostics;
 
         // The liveness half of the [aiflow] diff: proof the AI tick is running at all, ten seconds apart.
         // The patrol/activity counts ride the same line so a capture can show WHEN patrols engage after
@@ -3514,505 +3611,48 @@ public sealed class SoldierRenderer : IDisposable
                 }
             }
         }
+    }
 
-        // Vision watches the mark; combat aims at the feet + 0.5 m (sub_451380). With no body to speak of,
-        // the point given is the mark itself.
-        Vector3d feet = enemyFeet ?? enemy;
-        Vector3d playerMark = enemyFeet is null
-            ? enemy
-            : new Vector3d(
-                feet.X,
-                feet.Y,
-                feet.Z + AiSoldier.DetectionMarkAboveFeet(enemyCrouching));
+    /// <summary>Publishes the living soldiers' collision bodies where they stand now.</summary>
+    /// <remarks>
+    /// The player's wall sweep is their only reader, and the player updates after every soldier, so publishing
+    /// here before the player moves is what re-registering each soldier as it moves would give.
+    /// </remarks>
+    public void PublishCollisionBodies()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        SyncCollisionBodies();
+    }
 
-        // EVERY soldier's rig is advanced, not just each group's representative. Ticking only the
-        // representative left every other soldier's BoneObject frozen, so its RootMotion() was zero and the
-        // AI never moved it -- while the shared group mesh, posed from the representative, showed it walking
-        // on the spot. Exactly one soldier per group actually moved: that group's representative.
-        foreach ((SoldierView view, AiSoldier brain) in _brains)
+    /// <summary>Closes a tick: the soldiers' collision, corpses, dropped weapons and skinning.</summary>
+    public void EndTick()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        bool collectDiagnostics = _collectDiagnostics;
+        if (_walker is not null)
         {
-            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            // A registered, live soldier the walk never reached sits under a task the port does not walk the way
+            // the original does; tick it so it cannot freeze, and say so once.
+            foreach ((SoldierView view, AiSoldier brain) in _brains)
             {
-                continue;
-            }
-
-            view.Tick();
-
-            // Read here, not after the clip selection below: the event belongs to the interval this
-            // Tick just advanced, and SetMoving may replace the clip further down. A fresh BoneClip has
-            // no interval yet, so asking afterwards would quietly swallow the step.
-            if (!view.IsDead && view.Bones.SourceOf(0) is { } bone0)
-            {
-                if (bone0.CrossedEvent(FootstepSounds.EventId))
+                if (_ticked.Contains(view) || !ConditionalContainerGate.IsTaskActive(view.Soldier))
                 {
-                    ReportFootstep(view);
+                    continue;
                 }
 
-                // Authored animation triggers: event 1052 plays "gunpunch_01" (animation 70 swing),
-                // event 1040 plays "bodyfall_9", etc.
-                if (_animationTriggers is not null)
+                if (_unwalkedSoldiers.Add(view.Soldier))
                 {
-                    foreach (AnimTriggerDefinition trigger in _animationTriggers.Definitions.Values)
-                    {
-                        if (bone0.CrossedEvent(trigger.EventId))
-                        {
-                            _scriptSound?.Invoke(trigger.Resource, view.Position, false);
-                        }
-                    }
-                }
-                else if (bone0.CrossedEvent(1052))
-                {
-                    _scriptSound?.Invoke("gunpunch_01", view.Position, false);
-                }
-
-                // Melee strike connects at the swing's impact frame (event 1052, time 1280.0 in 001.iff).
-                // If a strike is pending against the player, deliver it at this exact moment.
-                if (bone0.CrossedEvent(1052)
-                    && brain.ConsumeMeleeStrike(out float strikeDamage)
-                    && brain.PlayerIsEnemy
-                    && brain.TargetIsPlayer)
-                {
-                    _meleeStrikeSink?.Invoke(brain.Position, strikeDamage);
-                }
-            }
-        }
-
-        // The doors advance with the task pass, before the AIs read their state. Their collision child
-        // follows the same live transform as the drawn door: a half-open door remains a blocker at its
-        // half-open angle instead of disappearing from sight, bullets and movement.
-        if (_doors is { } doors)
-        {
-            doors.Tick();
-            if (_solids is { } solids)
-            {
-                foreach (PlacedDoor door in doors.Doors)
-                {
-                    // A fully-open door is passable regardless of how its leaf is authored to clear the
-                    // opening. Sliding leaves (nonzero Stop*) are moved out of the way by UpdateTransform
-                    // below, but cab doors that animate inside their model (Stop* == 0, e.g. Elevator_330's
-                    // leaves) never change placement, so their static mesh would keep the doorway solid for
-                    // ever; toggling passability on the open state makes both kinds behave like retail.
-                    solids.SetPassable(door.Task, door.State.IsFullyOpen);
-
-                    // Closed/open doors spend nearly all their life stationary, unless they ride a
-                    // moving elevator: keep collision synchronized with the rendered displacement.
-                    Vector3d elevatorOffset = _elevators?.GetCurrentDisplacement(door.Task) ?? default;
-                    if (door.State.TransformChangedThisTick || elevatorOffset != default)
-                    {
-                        solids.UpdateTransform(
-                            door.Task, door.DrawPosition + elevatorOffset, door.DrawOrientation);
-                    }
-
-                    // Sight treats building portals as solid. Once this leaf is off its shut pose,
-                    // open the portal it filled so a guard in the doorway can see through.
-                    solids.SetSightOpening(door.Task, !door.State.IsFullyClosed, elevatorOffset);
-                }
-            }
-        }
-
-        // Elevator and non-door child collision is applied in GameHost immediately after
-        // elevators.Tick(), before passenger carry and Settle. Re-applying descendant translation
-        // here wrote elevator-owned doors twice.
-
-        // Child Train collision starts at its authored placeholder and receives its derived consist
-        // transform from GameHost immediately before this tick. Retry registration here so the
-        // first live mesh pose can reproduce retail's pre-scene Human_SetParent call. This pass is
-        // deliberately before animation root motion: the authored Human position is the parent origin.
-        AttachStagedActorsToVehicles();
-
-        // The alarm controls advance first, so this tick's AIEVENT_ALARMON reflects this tick's state
-        // -- 0x4408A0's update runs on the task pass, before the AIs. The on condition stands in for
-        // the control's authored expression: any named trigger pressed turns it on, and it stays on.
-        if (_alarmControls is { } alarmControls)
-        {
-            bool alarmWasOn = alarmControls.AnyOn;
-            alarmControls.Tick(_tick);
-            bool alarmIsOn = alarmControls.AnyOn;
-            if (alarmWasOn != alarmIsOn)
-            {
-                _logger.Information(
-                    LogCategory,
-                    $"[alarm] mission alarm {(alarmIsOn ? "ON" : "OFF")} at tick {_tick}.");
-            }
-        }
-
-        // The AI runs second, so the root motion it is handed is this tick's, not last tick's.
-        foreach ((SoldierView view, AiSoldier brain) in _brains)
-        {
-            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
-            {
-                continue;
-            }
-
-            if (brain.RequestedAnimation >= 0
-                && view.Bones.SourceOf(0)?.EndedThisTick == true)
-            {
-                brain.ReportAnimationFinished();
-            }
-
-            Member? member = FindMember(view);
-            if (member is { IsCutsceneActor: true })
-            {
-                // Staged actors hold finished one-shots like the native animation channel instead
-                // of releasing them to an activity fallback they do not have.
-                brain.RetainScriptedAnimation = true;
-                AiPatrolCommandKind? patrolCommand = brain.Route?.Current?.Kind;
-                bool authoredAnimation = brain.RequestedAnimation >= 0
-                    || patrolCommand == AiPatrolCommandKind.Animation;
-                if (authoredAnimation)
-                {
-                    AttachCutsceneActorToMovingGround(
-                        view,
-                        brain.Position,
-                        member.Position * WorldScene.UnitsPerMetre);
-                    Vector3f rootDelta = view.RootMotion();
-                    if (Cutscenes?.AdvanceAttachedActor(view.Soldier, rootDelta) == true)
-                    {
-                        // Native attached movement carries Human+32 with the parent while the local
-                        // frame keeps the relative pose. Track the ride on the brain so a later
-                        // detach (Level 1's 1201 consist unregisters at the scene boundary) continues
-                        // from the wagon instead of the stale pre-attach spawn 10 m behind it.
-                        if (Cutscenes.TryGetAttachedDrawTransform(
-                            view.Soldier, out Vector3d attachedNow, out _))
-                        {
-                            brain.SeparateTo(attachedNow * WorldScene.UnitsPerMetre);
-                        }
-                    }
-                    else if (rootDelta.X != 0f || rootDelta.Y != 0f || rootDelta.Z != 0f)
-                    {
-                        // The ordinary Human mover consumes the clip's root delta into Human+32 even
-                        // when the AI action itself is a non-locomotion PlayAnimation. Cutscene jumps
-                        // use exactly that path; keeping the task's authored spawn here froze Jones in
-                        // mid-air while EditCamera continued targeting the moving Human.
-                        Vector3d moved = view.Orientation.Transposed().Transform(new Vector3d(
-                            rootDelta.X,
-                            rootDelta.Y,
-                            rootDelta.Z));
-                        brain.SeparateTo(brain.Position + moved);
-                        member.HasCutsceneRootMotion = true;
-                    }
-
-                }
-
-                if (patrolCommand is { } command && command.IsMovement())
-                {
-                    member.HasCutsceneGameplayMovement = true;
-                }
-            }
-
-            if (view.IsDead)
-            {
-                // A corpse is still stepped. The death state's per-tick (0x45C700) adds the fall solver's
-                // corrective velocity, the soldier update moves the body by the death clip's own root
-                // motion, and the ground query catches it. Freezing the body here is what left it standing.
-                if (brain.Activity != AiSoldierActivity.Dead)
-                {
-                    brain.Kill();
-                }
-
-                brain.TickDeadBody(view.RootMotion(), view.Bones.SourceOf(0)?.EndedThisTick ?? false);
-                view.PlaceAt(brain.Position, view.Orientation);
-                Member? corpse = FindMember(view);
-                if (corpse is not null)
-                {
-                    corpse.FiredThisTick = false;
-                }
-                _weaponSound?.Invoke(brain.RuntimeId, false, corpse?.WeaponType, brain.Position);
-                continue;
-            }
-
-            // The clip's own delta in the body's frame: forward and sideways, signed.
-            Vector3f clipDelta = view.RootMotion();
-            double travel = clipDelta.Y;
-            double lateral = clipDelta.X;
-            if (brain.SoldierClass.ScalesEkkRootMotion && brain.Type == AiType.Ekk)
-            {
-                // 0x4550B0 scales a female soldier's delta translation by flt_56E1E8 when her brain is Ekk.
-                double scale = _playerDeltaTranslationScale?.Invoke() ?? HumanMotion.DefaultDeltaTranslationScale;
-                travel *= scale;
-                lateral *= scale;
-            }
-
-            // Retail ground truth, measured by hooking 0x48E920 in the original: a walking guard covers
-            // 160-185 units a tick, about 1.28 m/s, varying through the gait cycle. Recorded here so the
-            // port's own figure can be compared without another instrumented run.
-            if (collectDiagnostics && brain.Activity == AiSoldierActivity.Patrolling && travel > 0.0)
-            {
-                _travelSamples++;
-                _travelTotal += travel;
-                _travelMax = Math.Max(_travelMax, travel);
-            }
-
-            // The alarm the soldier watches is the one ITS OWN +15044 names -- resolved per AI, as the
-            // retail per-tick resolves the control task each tick. First sight of an id lazily makes
-            // the state, since the ids arrive only once the CREATE dispatch has run the script.
-            bool alarmOn = false;
-            bool alarmWasOn = false;
-            if (brain.AlarmControlId != -1)
-            {
-                if (_alarmControls?.TryGet(brain.AlarmControlId, out AiAlarmControlState? watched) == true)
-                {
-                    alarmOn = watched!.IsOn;
-                    alarmWasOn = watched.WasOn;
-                }
-            }
-
-            // The detection scan is offered every human -- the player and every soldier -- and the brain
-            // fights whoever the event that started its fight named; it aims at that human.
-            brain.TickAmong(
-                _tick,
-                CandidatesFor(view, brain, feet, playerMark, enemyAlive, enemyCrouching),
-                travel,
-                alarmOn,
-                alarmWasOn,
-                lateral);
-            Vector3d aimFeet = brain.TargetFeet;
-            bool aimCrouching = brain.TargetCrouching;
-
-            // Fallback for headless environments or missing animation clips: if event 1052 could not
-            // be evaluated, deliver any pending strike immediately so damage is not dropped.
-            if (_combatClipMissing.Contains(view) || view.Bones.SourceOf(0) is null)
-            {
-                if (brain.ConsumeMeleeStrike(out float meleeDamage) && brain.TargetIsPlayer && brain.PlayerIsEnemy)
-                {
-                    _scriptSound?.Invoke("gunpunch_01", brain.Position, false);
-                    _meleeStrikeSink?.Invoke(brain.Position, meleeDamage);
-                }
-            }
-
-            if (member is not null)
-            {
-                UpdateMountedWeapon(member, brain);
-                if (collectDiagnostics && brain.Arm == AiCombatArm.Gunner)
-                {
-                    string report = $"runtime={brain.RuntimeId} gunnerId={brain.GunnerId} "
-                        + $"mounted={(brain.IsMounted ? "true" : "false")} "
-                        + $"task={(brain.MountedGun is null ? "-" : brain.MountedGun.TaskId.ToString(System.Globalization.CultureInfo.InvariantCulture))} "
-                        + $"activity={brain.Activity}";
-                    if (_lastGunnerRuntimeReports.GetValueOrDefault(brain.RuntimeId) != report)
-                    {
-                        _lastGunnerRuntimeReports[brain.RuntimeId] = report;
-                        _logger.Information(LogCategory, $"[gunner] {report}");
-                    }
-
-                    if (_tick % 300 == 1)
-                    {
-                        string timer = _scriptVariables?.TryRead("LevelTimer_1608.nTick", out QvmValue timerValue) == true
-                            ? timerValue.ToString()
-                            : "missing";
-                        string dispatched = brain.LastDispatchedEvent?.ToString() ?? "-";
-                        _logger.Information(
-                            LogCategory,
-                            $"[gunner] diagnostic runtime={brain.RuntimeId} lastEvent={dispatched} "
-                            + $"timer1608={timer}");
-                    }
-                }
-            }
-
-            // The pump half of the [aiflow] diff: an event that was QUEUED shows up here the tick it is
-            // drained, whether or not any script acted on it. Noise delivered but never drained points at
-            // the pump; drained but never acted on points at the script/actions.
-            if (collectDiagnostics && _tick - _lastDrainLogTick >= 30)
-            {
-                int gunshot = brain.Events.DrainedCount(AiEvent.Gunshot);
-                int miss = brain.Events.DrainedCount(AiEvent.GunshotMiss);
-                int impact = brain.Events.DrainedCount(AiEvent.GroundImpact);
-                int explosion = brain.Events.DrainedCount(AiEvent.Explosion);
-                int grenadeThrown = brain.Events.DrainedCount(AiEvent.GrenadeThrown);
-                int grenadeLand = brain.Events.DrainedCount(AiEvent.GrenadeLand);
-                int flashbang = brain.Events.DrainedCount(AiEvent.Flashbang);
-                int walk = brain.Events.DrainedCount(AiEvent.Walk);
-                int damage = brain.Events.DrainedCount(AiEvent.TakingDamage);
-                if (gunshot + miss + impact + explosion + grenadeThrown + grenadeLand + flashbang + walk + damage > 0)
-                {
-                    _lastDrainLogTick = _tick;
-                    _logger.Information(
+                    _logger.Warning(
                         LogCategory,
-                        $"[aiflow] #{brain.RuntimeId} drained gunshot={gunshot} miss={miss} "
-                            + $"explosion={explosion} grenadeThrown={grenadeThrown} "
-                            + $"grenadeLand={grenadeLand} flashbang={flashbang} "
-                            + $"impact={impact} walk={walk} dmg={damage} act={brain.Activity}");
+                        $"{view.Soldier.Name} is live but the level walk did not reach it; ticking it after the walk.");
                 }
-            }
 
-            if (member is not null)
-            {
-                member.FiredThisTick = false;
+                TickSoldier(view, brain);
             }
-
-            // The body machine consumes this tick's AI channel writes before the weapon consumes the
-            // body's forwarded trigger. Running it after FireIfAsked let a round leave while the body
-            // was still in rack/ready/recover and skipped state 18 entirely during a running burst.
-            // 0x45D080 ticks the body every tick whatever the AI is doing, which is what lets a patrolling
-            // guard flinch; its state drives the clip in a fight, and a flinch whatever the activity.
-            // A gunner on its gun is in the use-object state (36), which only a fresh press of slot 24 -- the
-            // dismount -- or death leaves.
-            int? combatState = null;
-            bool animationDone = (view.Bones.SourceOf(0)?.EndedThisTick ?? false)
-                || _combatClipMissing.Contains(view);
-            int bodyState = brain.TickCombatState(animationDone);
-            if (!brain.IsMounted
-                && brain.Activity is AiSoldierActivity.Engaging or AiSoldierActivity.FiringAtTask)
-            {
-                combatState = bodyState;
-            }
-
-            // The grenade leaves the hand when the throw state ENDS -- the clip has swung. The
-            // decision to throw was the combat arm's own (the retail probability, distance band and
-            // has-grenade tests in AiPatrolCombat); this is only the release.
-            int previousCombatState = _lastCombatState.TryGetValue(view, out int rememberedState)
-                ? rememberedState
-                : -1;
-            _lastCombatState[view] = combatState ?? -1;
-            if (brain.SoldierClass.GrenadeThrowState is { } grenadeState
-                && previousCombatState == grenadeState
-                && (combatState ?? -1) != grenadeState
-                && _grenades is { } lobbed)
-            {
-                ThrowAiGrenade(brain, feet, lobbed);
-            }
-
-            bool fired = FireIfAsked(view, brain, aimFeet, aimCrouching);
-            WeaponType? soundingWeapon = brain.MountedGun?.Weapon ?? member?.WeaponType;
-            Vector3d soundPosition = brain.MountedGun?.Position ?? brain.EyePosition();
-            _weaponSound?.Invoke(brain.RuntimeId, fired, soundingWeapon, soundPosition);
-
-            // sub_48A920, IGI.exe: detected_01..06, once per combat-action argument block. The
-            // dword_5416CC cooldown is process/mission-wide and requires strictly more than 90 ticks.
-            if (brain.DetectionShoutRequestedThisTick
-                && (_lastDetectionShoutTick == -1 || _tick - _lastDetectionShoutTick > 90))
-            {
-                int variant = checked((int)_aiRandom.NextBounded(6) + 1);
-                _scriptSound?.Invoke($"detected_{variant:00}", brain.Position, true);
-                _lastDetectionShoutTick = _tick;
-            }
-
-            // An engaged guard pulls in the guards beside it: AIEVENT_ALERT with a 7 m reach and filter
-            // 0x26, so only its own side admits it (sub_48A920 -> sub_48AB10). This is how one guard's
-            // fight wakes the room even before anybody fires.
-            if (brain.AlertPingDueThisTick)
-            {
-                foreach ((SoldierView neighbourView, AiSoldier neighbour) in _brains)
-                {
-                    if (!ReferenceEquals(neighbour, brain)
-                        && neighbourView.Soldier.Team == view.Soldier.Team
-                        && ConditionalContainerGate.IsTaskActive(neighbourView.Soldier))
-                    {
-                        neighbour.ReceiveAlert(brain.Position, brain.RuntimeId, brain.TargetId);
-                    }
-                }
-            }
-            if (collectDiagnostics)
-            {
-                ReportChannels(brain);
-            }
-
-            // A patrol ANIMATION command names a clip outright; a soldier in a fight plays its WEAPON's
-            // own clips; otherwise the gait picks between the walk cycle and the soldier's stand
-            // animation.
-            HumanSoldierClass soldierClass = brain.SoldierClass;
-            int walkAnimation = soldierClass.WalkAnimation;
-            int runAnimation = brain.Body.StateTable.AnimationOf(soldierClass.RunState);
-            if (brain.Body.IsFlinching)
-            {
-                // A flinch owns the body over any other clip: every per-tick leaves for it on the pulse.
-                if (!view.PlayStateAnimation(brain.Body.CurrentAnimation, soldierClass.States.Loops(brain.Body.State)))
-                {
-                    _combatClipMissing.Add(view);
-                }
-            }
-            else if (brain.RequestedAnimation >= 0)
-            {
-                view.PlayStateAnimation(brain.RequestedAnimation, loops: false);
-            }
-            else if (brain.IsMovingInCombat || (brain.Activity == AiSoldierActivity.Panicking && brain.WalksForward))
-            {
-                // The soldier is travelling a combat route this tick -- advancing, repositioning or hunting a
-                // lost target while it watches. A chasing guard RUNS (retail's Combat-Follow runs in state 17
-                // = anim 48 at ~4.4 m/s), and the run clip's own root motion is what carries it at that speed
-                // (AiSoldier.AdvanceInCombat reads it). Fall back to the walk if the set has no run clip.
-                //
-                // This test MUST come before the combat-state branch: an engaged hunter otherwise plays
-                // the fire pose, whose zero root motion feeds AdvanceInCombat a zero step -- the exact
-                // "engaging, never moving" stall. Retail's Follow is a full-body run state (17), not the
-                // stand cycle with feet glued down.
-                if (runAnimation < 0 || !view.SetMoving(true, runAnimation))
-                {
-                    view.SetMoving(true, walkAnimation);
-                }
-            }
-            else if (brain.IsMounted)
-            {
-                // HumanSoldier state 36 is the attached emplacement pose. It keeps ownership while
-                // the StationaryGun task reads slot 6 and fires; it does not enter the ordinary
-                // 0/12/10/6 carried-weapon body cycle. It is the body's, not the brain's: a gunner the
-                // Activate action put on the gun stays on it between fights.
-                int mountedState = AiCombatChannels.StateOf(brain.Type, AiStanceChannel.Mounted);
-                int animation = brain.Body.StateTable.AnimationOf(mountedState);
-                if (animation < 0
-                    || !view.PlayStateAnimation(animation, soldierClass.States.Loops(mountedState)))
-                {
-                    view.SetMoving(false, walkAnimation);
-                }
-            }
-            else if (combatState is { } combatBodyState)
-            {
-                int anim = brain.Body.CurrentAnimation;
-                bool placed = anim >= 0
-                    && view.PlayStateAnimation(anim, soldierClass.States.Loops(combatBodyState));
-                if (placed)
-                {
-                    _combatClipMissing.Remove(view);
-                }
-                else
-                {
-                    view.SetMoving(false, walkAnimation);
-                    _combatClipMissing.Add(view);
-                }
-            }
-            else if (brain.Activity == AiSoldierActivity.FallenFlat)
-            {
-                int state = AiCombatChannels.StateOf(brain.Type, AiStanceChannel.Prone);
-                int animation = brain.Body.StateTable.AnimationOf(state);
-                if (animation < 0
-                    || !view.PlayStateAnimation(animation, soldierClass.States.Loops(state)))
-                {
-                    view.SetMoving(false, walkAnimation);
-                }
-            }
-            else if (brain.IsCrouching)
-            {
-                // A patrol's Crouch command holds the kneel channel every tick (0x48E920): the body goes
-                // down (state 13) and holds the kneel (19) until a walk releases it.
-                int state = brain.CombatState;
-                int animation = brain.Body.CurrentAnimation;
-                if (animation < 0 || !view.PlayStateAnimation(animation, brain.Body.StateTable.Loops(state)))
-                {
-                    view.SetMoving(false, walkAnimation);
-                }
-            }
-            else if (brain.WalksForward && !brain.IsWalking)
-            {
-                // The patrol cursor's gait flag (+21) is applied EVERY tick by the retail walker
-                // (0x48E920): a RunTo leg installs the run gait and it stays until the next movement
-                // command changes it. The alarm-response routes (level 1's 2600/2605-2616) are authored
-                // as RunTo, so an alarmed guard RUNS between its posts -- playing the walk clip here is
-                // what made them amble out of the barracks at 1.28 m/s. The run clip's own root motion
-                // carries the brain at run speed; sets without one fall back to the walk.
-                if (runAnimation < 0 || !view.SetMoving(true, runAnimation))
-                {
-                    view.SetMoving(true, walkAnimation);
-                }
-            }
-            else
-            {
-                // The body walks while the walker writes forward, and stands while it holds -- at a door,
-                // on arrival, or turning on the spot.
-                view.SetMoving(brain.WalksForward, walkAnimation);
-            }
-
-            view.PlaceAt(brain.Position, brain.Orientation);
         }
+
+        // Un-brained cutscene actors ride their vehicles the same way; the brained ones did as they updated.
+        AttachStagedActorsToVehicles();
 
         // Every soldier has moved; re-publish their bodies so the player's wall sweep treats each
         // living, active soldier as solid.
@@ -4161,6 +3801,507 @@ public sealed class SoldierRenderer : IDisposable
         }
     }
 
+    /// <summary>Updates every body a soldier task owns -- a generator's dead guard and its replacement share one.</summary>
+    private void TickSoldierTask(GameTask task)
+    {
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
+        {
+            if (ReferenceEquals(view.Soldier, task))
+            {
+                TickSoldier(view, brain);
+            }
+        }
+    }
+
+    /// <summary>One soldier's update: its rig, then its AI and movement.</summary>
+    private void TickSoldier(SoldierView view, AiSoldier brain)
+    {
+        if (!ConditionalContainerGate.IsTaskActive(view.Soldier) || !_ticked.Add(view))
+        {
+            return;
+        }
+
+        bool collectDiagnostics = _collectDiagnostics;
+        SoldierEnemy enemy = _enemy?.Invoke() ?? default;
+        bool enemyAlive = enemy.Alive;
+        bool enemyCrouching = enemy.Crouching;
+
+        // Vision watches the mark; combat aims at the feet + 0.5 m (sub_451380). With no body to speak of,
+        // the point given is the mark itself.
+        Vector3d feet = enemy.Feet ?? enemy.Eye;
+        Vector3d playerMark = enemy.Feet is null
+            ? enemy.Eye
+            : new Vector3d(
+                feet.X,
+                feet.Y,
+                feet.Z + AiSoldier.DetectionMarkAboveFeet(enemyCrouching));
+
+        // Every soldier's own rig advances (a group's shared mesh is only the model).
+        view.Tick();
+
+        // Read here, not after the clip selection below: the event belongs to the interval this
+        // Tick just advanced, and SetMoving may replace the clip further down. A fresh BoneClip has
+        // no interval yet, so asking afterwards would quietly swallow the step.
+        if (!view.IsDead && view.Bones.SourceOf(0) is { } bone0)
+        {
+            if (bone0.CrossedEvent(FootstepSounds.EventId))
+            {
+                ReportFootstep(view);
+            }
+
+            // Authored animation triggers: event 1052 plays "gunpunch_01" (animation 70 swing),
+            // event 1040 plays "bodyfall_9", etc.
+            if (_animationTriggers is not null)
+            {
+                foreach (AnimTriggerDefinition trigger in _animationTriggers.Definitions.Values)
+                {
+                    if (bone0.CrossedEvent(trigger.EventId))
+                    {
+                        _scriptSound?.Invoke(trigger.Resource, view.Position, false);
+                    }
+                }
+            }
+            else if (bone0.CrossedEvent(1052))
+            {
+                _scriptSound?.Invoke("gunpunch_01", view.Position, false);
+            }
+
+            // Melee strike connects at the swing's impact frame (event 1052, time 1280.0 in 001.iff).
+            // If a strike is pending against the player, deliver it at this exact moment.
+            if (bone0.CrossedEvent(1052)
+                && brain.ConsumeMeleeStrike(out float strikeDamage)
+                && brain.PlayerIsEnemy
+                && brain.TargetIsPlayer)
+            {
+                _meleeStrikeSink?.Invoke(brain.Position, strikeDamage);
+            }
+        }
+
+        // Child Train collision starts at its authored placeholder and receives its derived consist
+        // transform before this update. Retry registration here so the first live mesh pose can reproduce
+        // retail's pre-scene Human_SetParent call. This is deliberately before animation root motion: the
+        // authored Human position is the parent origin.
+        Member? member = FindMember(view);
+        if (member is { IsCutsceneActor: true })
+        {
+            AttachStagedActor(member);
+        }
+
+        // The AI runs second, so the root motion it is handed is this tick's, not last tick's.
+        if (brain.RequestedAnimation >= 0
+            && view.Bones.SourceOf(0)?.EndedThisTick == true)
+        {
+            brain.ReportAnimationFinished();
+        }
+
+        if (member is { IsCutsceneActor: true })
+        {
+            // Staged actors hold finished one-shots like the native animation channel instead
+            // of releasing them to an activity fallback they do not have.
+            brain.RetainScriptedAnimation = true;
+            AiPatrolCommandKind? patrolCommand = brain.Route?.Current?.Kind;
+            bool authoredAnimation = brain.RequestedAnimation >= 0
+                || patrolCommand == AiPatrolCommandKind.Animation;
+            if (authoredAnimation)
+            {
+                AttachCutsceneActorToMovingGround(
+                    view,
+                    brain.Position,
+                    member.Position * WorldScene.UnitsPerMetre);
+                Vector3f rootDelta = view.RootMotion();
+                if (Cutscenes?.AdvanceAttachedActor(view.Soldier, rootDelta) == true)
+                {
+                    // Native attached movement carries Human+32 with the parent while the local
+                    // frame keeps the relative pose. Track the ride on the brain so a later
+                    // detach (Level 1's 1201 consist unregisters at the scene boundary) continues
+                    // from the wagon instead of the stale pre-attach spawn 10 m behind it.
+                    if (Cutscenes.TryGetAttachedDrawTransform(
+                        view.Soldier, out Vector3d attachedNow, out _))
+                    {
+                        brain.SeparateTo(attachedNow * WorldScene.UnitsPerMetre);
+                    }
+                }
+                else if (rootDelta.X != 0f || rootDelta.Y != 0f || rootDelta.Z != 0f)
+                {
+                    // The ordinary Human mover consumes the clip's root delta into Human+32 even
+                    // when the AI action itself is a non-locomotion PlayAnimation. Cutscene jumps
+                    // use exactly that path; keeping the task's authored spawn here froze Jones in
+                    // mid-air while EditCamera continued targeting the moving Human.
+                    Vector3d moved = view.Orientation.Transposed().Transform(new Vector3d(
+                        rootDelta.X,
+                        rootDelta.Y,
+                        rootDelta.Z));
+                    brain.SeparateTo(brain.Position + moved);
+                    member.HasCutsceneRootMotion = true;
+                }
+
+            }
+
+            if (patrolCommand is { } command && command.IsMovement())
+            {
+                member.HasCutsceneGameplayMovement = true;
+            }
+        }
+
+        if (view.IsDead)
+        {
+            // A corpse is still stepped. The death state's per-tick (0x45C700) adds the fall solver's
+            // corrective velocity, the soldier update moves the body by the death clip's own root
+            // motion, and the ground query catches it. Freezing the body here is what left it standing.
+            if (brain.Activity != AiSoldierActivity.Dead)
+            {
+                brain.Kill();
+            }
+
+            brain.TickDeadBody(view.RootMotion(), view.Bones.SourceOf(0)?.EndedThisTick ?? false);
+            view.PlaceAt(brain.Position, view.Orientation);
+            Member? corpse = FindMember(view);
+            if (corpse is not null)
+            {
+                corpse.FiredThisTick = false;
+            }
+            _weaponSound?.Invoke(brain.RuntimeId, false, corpse?.WeaponType, brain.Position);
+            return;
+        }
+
+        // The clip's own delta in the body's frame: forward and sideways, signed.
+        Vector3f clipDelta = view.RootMotion();
+        double travel = clipDelta.Y;
+        double lateral = clipDelta.X;
+        if (brain.SoldierClass.ScalesEkkRootMotion && brain.Type == AiType.Ekk)
+        {
+            // 0x4550B0 scales a female soldier's delta translation by flt_56E1E8 when her brain is Ekk.
+            double scale = _playerDeltaTranslationScale?.Invoke() ?? HumanMotion.DefaultDeltaTranslationScale;
+            travel *= scale;
+            lateral *= scale;
+        }
+
+        // Retail ground truth, measured by hooking 0x48E920 in the original: a walking guard covers
+        // 160-185 units a tick, about 1.28 m/s, varying through the gait cycle. Recorded here so the
+        // port's own figure can be compared without another instrumented run.
+        if (collectDiagnostics && brain.Activity == AiSoldierActivity.Patrolling && travel > 0.0)
+        {
+            _travelSamples++;
+            _travelTotal += travel;
+            _travelMax = Math.Max(_travelMax, travel);
+        }
+
+        // The alarm the soldier watches is the one ITS OWN +15044 names -- resolved per AI, as the
+        // retail per-tick resolves the control task each tick. First sight of an id lazily makes
+        // the state, since the ids arrive only once the CREATE dispatch has run the script.
+        bool alarmOn = false;
+        bool alarmWasOn = false;
+        if (brain.AlarmControlId != -1)
+        {
+            if (_alarmControls?.TryGet(brain.AlarmControlId, out AiAlarmControlState? watched) == true)
+            {
+                alarmOn = watched!.IsOn;
+                alarmWasOn = watched.WasOn;
+            }
+        }
+
+        // The detection scan is offered every human -- the player and every soldier -- and the brain
+        // fights whoever the event that started its fight named; it aims at that human.
+        brain.TickAmong(
+            _tick,
+            CandidatesFor(view, brain, feet, playerMark, enemyAlive, enemyCrouching),
+            travel,
+            alarmOn,
+            alarmWasOn,
+            lateral);
+        Vector3d aimFeet = brain.TargetFeet;
+        bool aimCrouching = brain.TargetCrouching;
+
+        // Fallback for headless environments or missing animation clips: if event 1052 could not
+        // be evaluated, deliver any pending strike immediately so damage is not dropped.
+        if (_combatClipMissing.Contains(view) || view.Bones.SourceOf(0) is null)
+        {
+            if (brain.ConsumeMeleeStrike(out float meleeDamage) && brain.TargetIsPlayer && brain.PlayerIsEnemy)
+            {
+                _scriptSound?.Invoke("gunpunch_01", brain.Position, false);
+                _meleeStrikeSink?.Invoke(brain.Position, meleeDamage);
+            }
+        }
+
+        if (member is not null)
+        {
+            UpdateMountedWeapon(member, brain);
+            if (collectDiagnostics && brain.Arm == AiCombatArm.Gunner)
+            {
+                string report = $"runtime={brain.RuntimeId} gunnerId={brain.GunnerId} "
+                    + $"mounted={(brain.IsMounted ? "true" : "false")} "
+                    + $"task={(brain.MountedGun is null ? "-" : brain.MountedGun.TaskId.ToString(System.Globalization.CultureInfo.InvariantCulture))} "
+                    + $"activity={brain.Activity}";
+                if (_lastGunnerRuntimeReports.GetValueOrDefault(brain.RuntimeId) != report)
+                {
+                    _lastGunnerRuntimeReports[brain.RuntimeId] = report;
+                    _logger.Information(LogCategory, $"[gunner] {report}");
+                }
+
+                if (_tick % 300 == 1)
+                {
+                    string timer = _scriptVariables?.TryRead("LevelTimer_1608.nTick", out QvmValue timerValue) == true
+                        ? timerValue.ToString()
+                        : "missing";
+                    string dispatched = brain.LastDispatchedEvent?.ToString() ?? "-";
+                    _logger.Information(
+                        LogCategory,
+                        $"[gunner] diagnostic runtime={brain.RuntimeId} lastEvent={dispatched} "
+                        + $"timer1608={timer}");
+                }
+            }
+        }
+
+        // The pump half of the [aiflow] diff: an event that was QUEUED shows up here the tick it is
+        // drained, whether or not any script acted on it. Noise delivered but never drained points at
+        // the pump; drained but never acted on points at the script/actions.
+        if (collectDiagnostics && _tick - _lastDrainLogTick >= 30)
+        {
+            int gunshot = brain.Events.DrainedCount(AiEvent.Gunshot);
+            int miss = brain.Events.DrainedCount(AiEvent.GunshotMiss);
+            int impact = brain.Events.DrainedCount(AiEvent.GroundImpact);
+            int explosion = brain.Events.DrainedCount(AiEvent.Explosion);
+            int grenadeThrown = brain.Events.DrainedCount(AiEvent.GrenadeThrown);
+            int grenadeLand = brain.Events.DrainedCount(AiEvent.GrenadeLand);
+            int flashbang = brain.Events.DrainedCount(AiEvent.Flashbang);
+            int walk = brain.Events.DrainedCount(AiEvent.Walk);
+            int damage = brain.Events.DrainedCount(AiEvent.TakingDamage);
+            if (gunshot + miss + impact + explosion + grenadeThrown + grenadeLand + flashbang + walk + damage > 0)
+            {
+                _lastDrainLogTick = _tick;
+                _logger.Information(
+                    LogCategory,
+                    $"[aiflow] #{brain.RuntimeId} drained gunshot={gunshot} miss={miss} "
+                        + $"explosion={explosion} grenadeThrown={grenadeThrown} "
+                        + $"grenadeLand={grenadeLand} flashbang={flashbang} "
+                        + $"impact={impact} walk={walk} dmg={damage} act={brain.Activity}");
+            }
+        }
+
+        if (member is not null)
+        {
+            member.FiredThisTick = false;
+        }
+
+        // The body machine consumes this tick's AI channel writes before the weapon consumes the
+        // body's forwarded trigger. Running it after FireIfAsked let a round leave while the body
+        // was still in rack/ready/recover and skipped state 18 entirely during a running burst.
+        // 0x45D080 ticks the body every tick whatever the AI is doing, which is what lets a patrolling
+        // guard flinch; its state drives the clip in a fight, and a flinch whatever the activity.
+        // A gunner on its gun is in the use-object state (36), which only a fresh press of slot 24 -- the
+        // dismount -- or death leaves.
+        int? combatState = null;
+        bool animationDone = (view.Bones.SourceOf(0)?.EndedThisTick ?? false)
+            || _combatClipMissing.Contains(view);
+        int bodyState = brain.TickCombatState(animationDone);
+        if (!brain.IsMounted
+            && brain.Activity is AiSoldierActivity.Engaging or AiSoldierActivity.FiringAtTask)
+        {
+            combatState = bodyState;
+        }
+
+        // The grenade leaves the hand when the throw state ENDS -- the clip has swung. The
+        // decision to throw was the combat arm's own (the retail probability, distance band and
+        // has-grenade tests in AiPatrolCombat); this is only the release.
+        int previousCombatState = _lastCombatState.TryGetValue(view, out int rememberedState)
+            ? rememberedState
+            : -1;
+        _lastCombatState[view] = combatState ?? -1;
+        if (brain.SoldierClass.GrenadeThrowState is { } grenadeState
+            && previousCombatState == grenadeState
+            && (combatState ?? -1) != grenadeState
+            && _grenades is { } lobbed)
+        {
+            ThrowAiGrenade(brain, feet, lobbed);
+        }
+
+        bool fired = FireIfAsked(view, brain, aimFeet, aimCrouching);
+        WeaponType? soundingWeapon = brain.MountedGun?.Weapon ?? member?.WeaponType;
+        Vector3d soundPosition = brain.MountedGun?.Position ?? brain.EyePosition();
+        _weaponSound?.Invoke(brain.RuntimeId, fired, soundingWeapon, soundPosition);
+
+        // sub_48A920, IGI.exe: detected_01..06, once per combat-action argument block. The
+        // dword_5416CC cooldown is process/mission-wide and requires strictly more than 90 ticks.
+        if (brain.DetectionShoutRequestedThisTick
+            && (_lastDetectionShoutTick == -1 || _tick - _lastDetectionShoutTick > 90))
+        {
+            int variant = checked((int)_aiRandom.NextBounded(6) + 1);
+            _scriptSound?.Invoke($"detected_{variant:00}", brain.Position, true);
+            _lastDetectionShoutTick = _tick;
+        }
+
+        // An engaged guard pulls in the guards beside it: AIEVENT_ALERT with a 7 m reach and filter
+        // 0x26, so only its own side admits it (sub_48A920 -> sub_48AB10). This is how one guard's
+        // fight wakes the room even before anybody fires.
+        if (brain.AlertPingDueThisTick)
+        {
+            foreach ((SoldierView neighbourView, AiSoldier neighbour) in _brains)
+            {
+                if (!ReferenceEquals(neighbour, brain)
+                    && neighbourView.Soldier.Team == view.Soldier.Team
+                    && ConditionalContainerGate.IsTaskActive(neighbourView.Soldier))
+                {
+                    neighbour.ReceiveAlert(brain.Position, brain.RuntimeId, brain.TargetId);
+                }
+            }
+        }
+        if (collectDiagnostics)
+        {
+            ReportChannels(brain);
+        }
+
+        // A patrol ANIMATION command names a clip outright; a soldier in a fight plays its WEAPON's
+        // own clips; otherwise the gait picks between the walk cycle and the soldier's stand
+        // animation.
+        HumanSoldierClass soldierClass = brain.SoldierClass;
+        int walkAnimation = soldierClass.WalkAnimation;
+        int runAnimation = brain.Body.StateTable.AnimationOf(soldierClass.RunState);
+        if (brain.Body.IsFlinching)
+        {
+            // A flinch owns the body over any other clip: every per-tick leaves for it on the pulse.
+            if (!view.PlayStateAnimation(brain.Body.CurrentAnimation, soldierClass.States.Loops(brain.Body.State)))
+            {
+                _combatClipMissing.Add(view);
+            }
+        }
+        else if (brain.RequestedAnimation >= 0)
+        {
+            view.PlayStateAnimation(brain.RequestedAnimation, loops: false);
+        }
+        else if (brain.IsMovingInCombat || (brain.Activity == AiSoldierActivity.Panicking && brain.WalksForward))
+        {
+            // The soldier is travelling a combat route this tick -- advancing, repositioning or hunting a
+            // lost target while it watches. A chasing guard RUNS (retail's Combat-Follow runs in state 17
+            // = anim 48 at ~4.4 m/s), and the run clip's own root motion is what carries it at that speed
+            // (AiSoldier.AdvanceInCombat reads it). Fall back to the walk if the set has no run clip.
+            //
+            // This test MUST come before the combat-state branch: an engaged hunter otherwise plays
+            // the fire pose, whose zero root motion feeds AdvanceInCombat a zero step -- the exact
+            // "engaging, never moving" stall. Retail's Follow is a full-body run state (17), not the
+            // stand cycle with feet glued down.
+            if (runAnimation < 0 || !view.SetMoving(true, runAnimation))
+            {
+                view.SetMoving(true, walkAnimation);
+            }
+        }
+        else if (brain.IsMounted)
+        {
+            // HumanSoldier state 36 is the attached emplacement pose. It keeps ownership while
+            // the StationaryGun task reads slot 6 and fires; it does not enter the ordinary
+            // 0/12/10/6 carried-weapon body cycle. It is the body's, not the brain's: a gunner the
+            // Activate action put on the gun stays on it between fights.
+            int mountedState = AiCombatChannels.StateOf(brain.Type, AiStanceChannel.Mounted);
+            int animation = brain.Body.StateTable.AnimationOf(mountedState);
+            if (animation < 0
+                || !view.PlayStateAnimation(animation, soldierClass.States.Loops(mountedState)))
+            {
+                view.SetMoving(false, walkAnimation);
+            }
+        }
+        else if (combatState is { } combatBodyState)
+        {
+            int anim = brain.Body.CurrentAnimation;
+            bool placed = anim >= 0
+                && view.PlayStateAnimation(anim, soldierClass.States.Loops(combatBodyState));
+            if (placed)
+            {
+                _combatClipMissing.Remove(view);
+            }
+            else
+            {
+                view.SetMoving(false, walkAnimation);
+                _combatClipMissing.Add(view);
+            }
+        }
+        else if (brain.Activity == AiSoldierActivity.FallenFlat)
+        {
+            int state = AiCombatChannels.StateOf(brain.Type, AiStanceChannel.Prone);
+            int animation = brain.Body.StateTable.AnimationOf(state);
+            if (animation < 0
+                || !view.PlayStateAnimation(animation, soldierClass.States.Loops(state)))
+            {
+                view.SetMoving(false, walkAnimation);
+            }
+        }
+        else if (brain.IsCrouching)
+        {
+            // A patrol's Crouch command holds the kneel channel every tick (0x48E920): the body goes
+            // down (state 13) and holds the kneel (19) until a walk releases it.
+            int state = brain.CombatState;
+            int animation = brain.Body.CurrentAnimation;
+            if (animation < 0 || !view.PlayStateAnimation(animation, brain.Body.StateTable.Loops(state)))
+            {
+                view.SetMoving(false, walkAnimation);
+            }
+        }
+        else if (brain.WalksForward && !brain.IsWalking)
+        {
+            // The patrol cursor's gait flag (+21) is applied EVERY tick by the retail walker
+            // (0x48E920): a RunTo leg installs the run gait and it stays until the next movement
+            // command changes it. The alarm-response routes (level 1's 2600/2605-2616) are authored
+            // as RunTo, so an alarmed guard RUNS between its posts -- playing the walk clip here is
+            // what made them amble out of the barracks at 1.28 m/s. The run clip's own root motion
+            // carries the brain at run speed; sets without one fall back to the walk.
+            if (runAnimation < 0 || !view.SetMoving(true, runAnimation))
+            {
+                view.SetMoving(true, walkAnimation);
+            }
+        }
+        else
+        {
+            // The body walks while the walker writes forward, and stands while it holds -- at a door,
+            // on arrival, or turning on the spot.
+            view.SetMoving(brain.WalksForward, walkAnimation);
+        }
+
+        view.PlaceAt(brain.Position, brain.Orientation);
+    }
+
+    /// <summary>A door's collision child follows the same live transform as the drawn door.</summary>
+    /// <remarks>
+    /// A half-open door remains a blocker at its half-open angle instead of disappearing from sight, bullets and
+    /// movement.
+    /// </remarks>
+    private void DoorTicked(PlacedDoor door)
+    {
+        if (_solids is not { } solids)
+        {
+            return;
+        }
+
+            // A fully-open door is passable regardless of how its leaf is authored to clear the
+            // opening. Sliding leaves (nonzero Stop*) are moved out of the way by UpdateTransform
+            // below, but cab doors that animate inside their model (Stop* == 0, e.g. Elevator_330's
+            // leaves) never change placement, so their static mesh would keep the doorway solid for
+            // ever; toggling passability on the open state makes both kinds behave like retail.
+            solids.SetPassable(door.Task, door.State.IsFullyOpen);
+
+            // Closed/open doors spend nearly all their life stationary, unless they ride a
+            // moving elevator: keep collision synchronized with the rendered displacement.
+            Vector3d elevatorOffset = _elevators?.GetCurrentDisplacement(door.Task) ?? default;
+            if (door.State.TransformChangedThisTick || elevatorOffset != default)
+            {
+                solids.UpdateTransform(
+                    door.Task, door.DrawPosition + elevatorOffset, door.DrawOrientation);
+            }
+
+            // Sight treats building portals as solid. Once this leaf is off its shut pose,
+            // open the portal it filled so a guard in the doorway can see through.
+            solids.SetSightOpening(door.Task, !door.State.IsFullyClosed, elevatorOffset);
+    }
+
+    private void AlarmControlTicked()
+    {
+        bool alarmIsOn = _alarmControls?.AnyOn ?? false;
+        if (alarmIsOn != _alarmWasOn)
+        {
+            _alarmWasOn = alarmIsOn;
+            _logger.Information(
+                LogCategory,
+                $"[alarm] mission alarm {(alarmIsOn ? "ON" : "OFF")} at tick {_tick}.");
+        }
+    }
+
     private void AttachCutsceneActorToMovingGround(
         SoldierView view,
         Vector3d probePosition,
@@ -4221,27 +4362,34 @@ public sealed class SoldierRenderer : IDisposable
 
     private void AttachStagedActorsToVehicles()
     {
-        if (_solids is null || Cutscenes is null)
-        {
-            return;
-        }
-
         foreach (Group group in _groups)
         {
             foreach (Member member in group.Soldiers)
             {
-                if (member.IsCutsceneActor
-                    && ConditionalContainerGate.IsTaskActive(member.View.Soldier))
+                if (member.IsCutsceneActor && !_brains.ContainsKey(member.View))
                 {
-                    AttachCutsceneActorToMovingGround(
-                        member.View,
-                        member.Position * WorldScene.UnitsPerMetre,
-                        attachmentPosition: null,
-                        mask: WorldTraceMask.DynamicObjects,
-                        includeInactiveOwners: false);
+                    AttachStagedActor(member);
                 }
             }
         }
+    }
+
+    /// <summary>Retries a live cutscene actor's attachment to the moving ground under it.</summary>
+    private void AttachStagedActor(Member member)
+    {
+        if (_solids is null
+            || Cutscenes is null
+            || !ConditionalContainerGate.IsTaskActive(member.View.Soldier))
+        {
+            return;
+        }
+
+        AttachCutsceneActorToMovingGround(
+            member.View,
+            member.Position * WorldScene.UnitsPerMetre,
+            attachmentPosition: null,
+            mask: WorldTraceMask.DynamicObjects,
+            includeInactiveOwners: false);
     }
 
     /// <summary>Records a soldier's drawn placement for this tick, keeping the tick before.</summary>
@@ -6616,6 +6764,15 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         solids.SetHumanBodies(bodies);
+    }
+
+    /// <summary>Every soldier where it stands at this moment, for an area counting as the level walk reaches it.</summary>
+    public IEnumerable<HumanOccupant> LiveOccupants()
+    {
+        foreach (SoldierView view in _brains.Keys)
+        {
+            yield return new HumanOccupant(view.Soldier.Id, view.Soldier.Team, view.Position, view.IsDead);
+        }
     }
 
     /// <summary>Reports every soldier's current presence for mission queries.</summary>

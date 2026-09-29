@@ -42,18 +42,46 @@ public sealed class AiAlarmControlRegistry
     {
         foreach (Entry entry in _controls.Values)
         {
-            bool? trigger = string.IsNullOrWhiteSpace(entry.TriggerExpression)
-                ? null
-                : _expressions.EvaluateCondition(entry.TriggerExpression, emptyValue: false, entry.Task);
-            entry.State.UpdateWithAlarmExpression(
-                tick,
-                disabled: false,
-                enabled: true,
-                trigger,
-                () => string.IsNullOrWhiteSpace(entry.AlarmExpression)
-                    ? null
-                    : _expressions.EvaluateCondition(entry.AlarmExpression, emptyValue: false, entry.Task));
+            Tick(entry, tick);
         }
+    }
+
+    /// <summary>Puts every control into the level's update walk, each where the tree places it.</summary>
+    /// <param name="walker">The level walk.</param>
+    /// <param name="tick">Reads the tick a control stamps when it triggers.</param>
+    /// <param name="ticked">Runs after a control has updated.</param>
+    /// <remarks>
+    /// The control's update (<c>0x4408A0</c>) runs its base type's update -- the walk of its children -- first,
+    /// then latches the previous alarm and evaluates its two expressions.
+    /// </remarks>
+    public void AttachTo(LevelUpdateWalker walker, Func<int> tick, Action<int>? ticked = null)
+    {
+        ArgumentNullException.ThrowIfNull(walker);
+        ArgumentNullException.ThrowIfNull(tick);
+        foreach (Entry entry in _controls.Values)
+        {
+            walker.Register(entry.Task, task =>
+            {
+                walker.WalkChildren(task);
+                Tick(entry, tick());
+                ticked?.Invoke(task.Id);
+            });
+        }
+    }
+
+    private void Tick(Entry entry, int tick)
+    {
+        bool? trigger = string.IsNullOrWhiteSpace(entry.TriggerExpression)
+            ? null
+            : _expressions.EvaluateCondition(entry.TriggerExpression, emptyValue: false, entry.Task);
+        entry.State.UpdateWithAlarmExpression(
+            tick,
+            disabled: false,
+            enabled: true,
+            trigger,
+            () => string.IsNullOrWhiteSpace(entry.AlarmExpression)
+                ? null
+                : _expressions.EvaluateCondition(entry.AlarmExpression, emptyValue: false, entry.Task));
     }
 
     /// <summary>Gets whether a task id names a control that is sounding now.</summary>

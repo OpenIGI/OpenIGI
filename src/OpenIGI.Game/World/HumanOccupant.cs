@@ -18,3 +18,10 @@ public readonly record struct HumanOccupant(int TaskId, int Team, Vector3d Posit
 /// <param name="TaskId">The owning vehicle task id.</param>
 /// <param name="Position">The current world position in engine units.</param>
 public readonly record struct VehicleOccupant(int TaskId, Vector3d Position);
+
+/// <summary>The player as an area sees it when the level walk reaches the area.</summary>
+/// <param name="Position">The player's primary world projection, when one exists.</param>
+/// <param name="Team">The player's team.</param>
+/// <param name="ExtraPosition">An alternate projection of the same player, counted at most once with the first.</param>
+/// <param name="Alive">Whether the player can occupy areas.</param>
+public readonly record struct AreaPlayer(Vector3d? Position, int Team, Vector3d? ExtraPosition, bool Alive);
