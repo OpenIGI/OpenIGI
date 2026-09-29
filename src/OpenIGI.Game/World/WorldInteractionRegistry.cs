@@ -111,7 +111,7 @@ public sealed class WorldInteraction
     public bool IsElectrified { get; private set; }
     public bool IsCompleted { get; private set; }
     public bool CompletedThisTick { get; private set; }
-    public bool IsSearched { get; private set; }
+    public bool IsSearched { get; internal set; }
     public bool IsPicked { get; private set; }
     public bool IsLocked { get; private set; }
     public bool IsDestroyed { get; private set; }
@@ -1073,7 +1073,8 @@ public sealed class WorldInteractionRegistry
                 break;
             case InteractionActivateType.Cabinet:
                 variables.BindFlag(item.Task, "isInUse", item.InUse);
-                variables.BindBool(item.Task, "isSearched", () => item.IsSearched, _ => { });
+                // The export is the object's own byte, so a script or probe write sticks.
+                variables.BindBool(item.Task, "isSearched", () => item.IsSearched, value => item.IsSearched = value);
                 break;
             case InteractionActivateType.Terminal:
                 variables.BindFlag(item.Task, "isInUse", item.InUse);

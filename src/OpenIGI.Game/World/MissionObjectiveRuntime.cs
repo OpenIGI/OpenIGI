@@ -32,6 +32,7 @@ public sealed class MissionObjectiveRuntime
     private readonly List<EditVariable> _editVariables = [];
     private readonly List<StatusMessage> _statusMessages = [];
     private readonly List<StatusMessage> _transientMessages = [];
+    private readonly HashSet<StatusMessage> _walkedMessages = [];
     private readonly List<LevelFlow> _levelFlows = [];
 
     /// <summary>
@@ -509,6 +510,58 @@ public sealed class MissionObjectiveRuntime
                 walker.WalkChildren(task);
             });
         }
+
+        // StatusMessage::Run (0x4855F0) is the task's update: it runs where the walk reaches it, so a task later in
+        // the tree sees this tick's send, and a message in a closed container does not update.
+        foreach (StatusMessage message in _statusMessages)
+        {
+            if (message.Task is { } owner)
+            {
+                _walkedMessages.Add(message);
+                walker.Register(owner, task =>
+                {
+                    UpdateMessage(message);
+                    walker.WalkChildren(task);
+                });
+            }
+        }
+    }
+
+    /// <summary>
+    /// StatusMessage::Run (<c>0x4855F0</c>): the ticks since its display finished count on, then it sends when its
+    /// expression holds -- a one-shot once, a repeating one no sooner than 210 ticks after its last send.
+    /// </summary>
+    private void UpdateMessage(StatusMessage message)
+    {
+        if (message.IsFinishedDisplay)
+        {
+            message.TicksSinceFinishedDisplay++;
+        }
+
+        if ((!message.SendOnce || !message.IsSent)
+            && _tick > message.SentTick + 210
+            && _expressions.EvaluateCondition(message.SendExpression, emptyValue: false, message.Task))
+        {
+            message.IsSent = true;
+            message.SentTick = _tick;
+
+            // 0x486650 takes the lowest free slot and drops the message outright when there is none. The display
+            // only begins if it got one: a message with nowhere to go is not shown, and the original does not
+            // queue it for later.
+            if (TryTakeMessageSlot(message))
+            {
+                message.BeginDisplay(_resolveText(message.TextResource));
+            }
+
+            if (!message.Cutscene && !string.IsNullOrEmpty(message.TextResource))
+            {
+                if (_log.Count == 50)
+                {
+                    _log.RemoveAt(0);
+                }
+                _log.Add(new MissionComputerLogEntry(message.TextResource));
+            }
+        }
     }
 
     /// <summary>Latches the player's projections and liveness for the areas that count them this tick.</summary>
@@ -635,41 +688,21 @@ public sealed class MissionObjectiveRuntime
     {
         PublishObjectives();
 
-        // StatusMessage::Run (0x4855F0) throttles sends by 210 simulation ticks. A one-shot refuses
-        // further sends after isSendt becomes true; repeating messages may send again after the delay.
+        // A message the level walk reaches sends from its own update (UpdateMessage); without a walk they update
+        // here, in list order.
         foreach (StatusMessage message in _statusMessages)
         {
-            if ((!message.SendOnce || !message.IsSent)
-                && _tick > message.SentTick + 210
-                && _expressions.EvaluateCondition(
-                    message.SendExpression, emptyValue: false, message.Task))
+            if (!_walkedMessages.Contains(message))
             {
-                message.IsSent = true;
-                message.SentTick = _tick;
-
-                // 0x486650 takes the lowest free slot and drops the message outright when there is
-                // none. The display only begins if it got one: a message with nowhere to go is not
-                // shown, and the original does not queue it for later.
-                if (TryTakeMessageSlot(message))
-                {
-                    message.BeginDisplay(_resolveText(message.TextResource));
-                }
-
-                if (!message.Cutscene && !string.IsNullOrEmpty(message.TextResource))
-                {
-                    if (_log.Count == 50)
-                    {
-                        _log.RemoveAt(0);
-                    }
-                    _log.Add(new MissionComputerLogEntry(message.TextResource));
-                }
+                UpdateMessage(message);
             }
 
             if (message.IsFinishedDisplay)
             {
-                message.TicksSinceFinishedDisplay++;
+                continue;
             }
-            else if (message.IsDisplaying && message.AdvanceDisplay(ExtraMessageHoldSeconds))
+
+            if (message.IsDisplaying && message.AdvanceDisplay(ExtraMessageHoldSeconds))
             {
                 message.IsFinishedDisplay = true;
                 message.FinishedDisplayTick = _tick;

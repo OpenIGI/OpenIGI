@@ -2944,9 +2944,9 @@ internal sealed partial class GameHost : IDisposable
                 Vector3d? areaCutsceneView = _cutscenes?.Frame?.Camera.Position;
                 Vector3d? areaFreeView = !_playerMode ? _camera?.Position : null;
                 _missionObjectives?.SetLevelStateInputs(
-                    AreaActivationOccupant(_player?.Body.Position, areaCutsceneView, areaFreeView),
+                    AreaActivationOccupant(_player?.Body.Origin, areaCutsceneView, areaFreeView),
                     _soldiers?.PlayerTeam ?? 0,
-                    AreaActivationExtraOccupant(_player?.Body.Position, areaCutsceneView),
+                    AreaActivationExtraOccupant(_player?.Body.Origin, areaCutsceneView),
                     playerAlive: !_playerDead);
                 _playerTicked = false;
                 _interactionsTickedByPlayer = false;

@@ -422,9 +422,9 @@ internal sealed partial class GameHost
         Vector3d? cutsceneView = _cutscenes?.Frame?.Camera.Position;
         Vector3d? freeView = !_playerMode ? _camera?.Position : null;
         return new AreaPlayer(
-            AreaActivationOccupant(_player?.Body.Position, cutsceneView, freeView),
+            AreaActivationOccupant(_player?.Body.Origin, cutsceneView, freeView),
             _soldiers?.PlayerTeam ?? 0,
-            AreaActivationExtraOccupant(_player?.Body.Position, cutsceneView),
+            AreaActivationExtraOccupant(_player?.Body.Origin, cutsceneView),
             !_playerDead);
     }
 

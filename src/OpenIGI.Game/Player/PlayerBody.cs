@@ -283,6 +283,10 @@ public sealed class PlayerBody
     /// <summary>Gets the eye's world position — where the view is taken from.</summary>
     public Vector3d Eye => new(Position.X, Position.Y, Position.Z + EyeHeight);
 
+    /// <summary>Gets the Human's origin (<c>+32</c>): 3877.2 units above the feet standing, 1753.8 crouched.</summary>
+    /// <remarks>The point AreaActivate's CRITERIA_HUMAN callback (<c>0x460A10</c>) tests against a volume.</remarks>
+    public Vector3d Origin => new(Position.X, Position.Y, Position.Z + (IsCrouched ? 1753.8 : 3877.2));
+
     /// <summary>Detaches the ordinary ground mover before a ladder mount is committed.</summary>
     /// <remarks>
     /// <c>sub_4113E0</c> zeroes all six velocity accumulators and snaps the human off its ground task.
