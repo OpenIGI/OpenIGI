@@ -314,28 +314,26 @@ public sealed class DestructibleObjectTests
             scene.Placements,
             new ScriptVarRegistry(new NativeRegistry()));
 
+        // Level 1's barrels (300_01_1) break at 1 (0x43C1F0's first argument after the sound): two half-doses reach it.
         DestructibleObject target = registry.Objects.First(
-            item => item.TypeName == "TASKTYPE_EXPLODEMAGICOBJ" && item.ExplosionDamageThreshold > 1f);
+            item => item.TypeName == "TASKTYPE_EXPLODEMAGICOBJ" && item.ExplosionDamageThreshold > 0f);
         float threshold = target.ExplosionDamageThreshold;
-        int hitsRequired = (int)MathF.Ceiling(threshold);
+        float half = threshold * 0.5f;
 
-        for (int hit = 0; hit < hitsRequired - 1; hit++)
-        {
-            IReadOnlyList<DestructibleObject> affected = registry.ApplyExplosionHits(
-                source: null,
-                target.PositionUnits,
-                radiusUnits: 1f,
-                damageFactor: 1f);
+        IReadOnlyList<DestructibleObject> affected = registry.ApplyExplosionHits(
+            source: null,
+            target.PositionUnits,
+            radiusUnits: 1f,
+            damageFactor: half);
 
-            Assert.DoesNotContain(target, affected);
-            Assert.False(target.IsDestroyed);
-        }
+        Assert.DoesNotContain(target, affected);
+        Assert.False(target.IsDestroyed);
 
         IReadOnlyList<DestructibleObject> finalAffected = registry.ApplyExplosionHits(
             source: null,
             target.PositionUnits,
             radiusUnits: 1f,
-            damageFactor: 1f);
+            damageFactor: half);
 
         Assert.Contains(target, finalAffected);
         Assert.True(target.IsDestroyed);

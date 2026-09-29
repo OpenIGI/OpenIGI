@@ -868,7 +868,7 @@ internal sealed partial class GameHost
         _snow.ReadParams(levelRoot);
         _storm?.Dispose();
         _storm = new StormRenderer(_device, _logger);
-        BuildShelterField(scene);
+        BuildShelterField(scene, loaded);
 
         // The storm falls where the level says rain falls -- it is the same weather, drawn better -- so
         // it inherits the vanilla renderer's reading of the RainEffect task rather than parsing it a
@@ -2647,6 +2647,7 @@ internal sealed partial class GameHost
 
     /// <summary>Builds the level's top-down map of what the solid world stands over, and binds it.</summary>
     /// <param name="scene">The mission's placed objects.</param>
+    /// <param name="loaded">The mission whose models bend its spline segments, as the collision index bends them.</param>
     /// <remarks>
     /// <para>
     /// The one answer to "can the sky reach this point", for the fog, the falling rain, its splashes and
@@ -2661,12 +2662,15 @@ internal sealed partial class GameHost
     /// a pixel draws and the drop the storm culls are decided by the same numbers.
     /// </para>
     /// </remarks>
-    private void BuildShelterField(WorldScene scene)
+    private void BuildShelterField(WorldScene scene, LoadedMission loaded)
     {
         ReleaseShelterField();
 
         long started = _loop.TimeSource.Milliseconds;
-        _shelterField = ShelterHeightField.Build(scene.Placements, collision: _titleRuntime.Formats.Collision);
+        _shelterField = ShelterHeightField.Build(
+            scene.Placements,
+            collision: _titleRuntime.Formats.Collision,
+            models: name => loaded.TryGetModel(name, out MefModel? model) ? model : null);
         if (_shelterField.IsEmpty)
         {
             _logger.Information("Shelter", "the level places nothing solid; nothing is sheltered");

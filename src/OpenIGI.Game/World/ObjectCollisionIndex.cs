@@ -635,7 +635,7 @@ public sealed class ObjectCollisionIndex
 
     // A spline segment placement's two collision levels, bent between its waypoints, each with the origin its bent
     // vertices are measured from. False for anything else, and for a rigid segment (path B, not transcribed).
-    private static bool TryBendSegment(
+    internal static bool TryBendSegment(
         WorldPlacement placement,
         Func<string, MefModel?>? models,
         CollisionLayout? collision,
