@@ -178,10 +178,10 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.True(runtime.TryGetAttachedDrawTransform(passenger, out _, out _));
 
         // ConditionalContainer_RunHandler unregisters the moving subtree before the next Human ground
-        // pass. The native 0x463550 helper clears the parent only for this inactive-owner case.
-        Assert.True(loop.Variables.TryWrite(
-            "ConditionalContainer_4002.isRun",
-            QvmValue.Zero));
+        // pass (the tick after its condition fails, 0x4874E0). The native 0x463550 helper clears the parent
+        // only for this inactive-owner case.
+        Assert.True(loop.Variables.TryWrite("ConditionalContainer_4002.isRun", QvmValue.Zero));
+        ((ConditionalContainerTask)root.Tree.FromId(4002)!).IsActive = false;
         Assert.False(ConditionalContainerGate.IsTaskActive(helicopter));
         Assert.True(runtime.TryDetachInactiveAttachment(passenger));
         Assert.False(runtime.TryGetAttachedDrawTransform(passenger, out _, out _));
@@ -764,7 +764,11 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.True((freightPosition - retailFreight).Length <= 0.01d,
             $"retail freight={retailFreight}, runtime={freightPosition}, delta={(freightPosition - retailFreight).Length:R}");
 
-        while (runtime.ActiveScene?.Ticks < 121)
+        // The retail sample is taken when CutScene_1202's update begins with clock 121 -- after the trains ahead
+        // of it in the tree (ConditionalContainer_4005) have already moved that frame. The same state here is
+        // the end of the tick that brings the scene to 122 (the original; the walk runs the
+        // containers before their scenes, so the train's first step comes a tick after the scene starts).
+        while (runtime.ActiveScene?.Ticks < 122)
         {
             runtime.Tick();
         }
@@ -1055,8 +1059,13 @@ public sealed class RetailCutsceneRuntimeTests
         objectives.TickLevelState();
         runtime.Tick();
         runtime.FinishExpressionTick();
-
         Assert.False(intro.IsRun);
+
+        // The intro container's falling edge still runs its children once (0x4874E0); its scenes leave the
+        // world on the next tick.
+        objectives.TickLevelState();
+        runtime.Tick();
+        runtime.FinishExpressionTick();
         Assert.False(runtime.IsPlaying);
     }
 
@@ -1082,6 +1091,7 @@ public sealed class RetailCutsceneRuntimeTests
         // Leave the intro through the same native edge the Escape key uses, then trigger the authored
         // mission-success variable that registers ConditionalContainer 4007.
         runtime.RequestBreak();
+        Step(objectives, runtime);
         Step(objectives, runtime);
         Assert.False(runtime.IsPlaying);
         Assert.True(loop.Variables.TryWrite("EditVariable_199.nValue", QvmValue.FromInt32(1)));
@@ -1649,6 +1659,7 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.True(farthest > 20d,
             $"parked Bell must leave the pad along its path after cyclic: slide={farthest:R}");
     }
+
 
 
     private static void RegisterCutsceneTypes(TaskTypeRegistry types)

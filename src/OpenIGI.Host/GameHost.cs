@@ -2897,6 +2897,21 @@ internal sealed partial class GameHost : IDisposable
                 // position the last frame drew from -- one frame stale is nothing to a column forty
                 // metres across, and the tick has no camera of its own.
                 _storm?.Tick(_stormEyeMetres);
+
+                // The level's one walk (the retail task tree, in authored order). Everything in it that reads
+                // the player or the soldiers sees them as they ended last tick: in the original the player's
+                // update comes late in the tree, and the areas that count soldiers read the last report.
+                // During an authored cinematic the area occupant is the cutscene camera rather than the
+                // stationary player body; a diagnostic free camera must not impersonate a player that exists
+                // (Mission 4's AreaActivate_156 would start the outro as the camera follows Bell 800).
+                _missionObjectives?.SetSoldierOccupants(_soldiers?.Occupants() ?? []);
+                Vector3d? areaCutsceneView = _cutscenes?.Frame?.Camera.Position;
+                Vector3d? areaFreeView = !_playerMode ? _camera?.Position : null;
+                _missionObjectives?.SetLevelStateInputs(
+                    AreaActivationOccupant(_player?.Body.Position, areaCutsceneView, areaFreeView),
+                    _soldiers?.PlayerTeam ?? 0,
+                    AreaActivationExtraOccupant(_player?.Body.Position, areaCutsceneView),
+                    playerAlive: !_playerDead);
                 _cutscenes?.Tick();
                 if (_cutscenes is { } liveCutscenes && _scene is { } cinematicScene && _worldSolids is { } cinematicSolids)
                 {
@@ -3214,26 +3229,8 @@ internal sealed partial class GameHost : IDisposable
                     ? _player.Body.Position
                     : watched;
 
-                // Retail's EditVariable tasks run before the AlarmControls that consume them. Mission 1's
-                // alarm latch depends on that order: reversing it sets and clears the latch during the
-                // same multi-tick switch pulse, cutting the siren off almost as soon as it starts.
-                // Mission 14 streams 108 of its 120 building tasks through AreaActivate volumes. During
-                // an authored cinematic the visible occupant is the cutscene camera rather than the
-                // stationary player body at the gameplay spawn. A diagnostic free camera is different:
-                // when a player body exists it must not impersonate that player and satisfy gameplay
-                // gates. Mission 4 AreaActivate_156 otherwise starts the extraction/outro merely because
-                // the free camera follows Bell 800 onto the warehouse landing.
-                Vector3d? cutsceneViewMetres = _cutscenes?.Frame?.Camera.Position;
-                Vector3d? freeViewMetres = !_playerMode ? _camera?.Position : null;
-                _missionObjectives?.SetSoldierOccupants(_soldiers?.Occupants() ?? []);
-                _missionObjectives?.SetVehicleOccupants(_cutscenes?.VehicleOccupants() ?? []);
-                TickAreaActivations(
-                    _missionObjectives,
-                    _player?.Body.Position,
-                    _soldiers?.PlayerTeam ?? 0,
-                    cutsceneViewMetres,
-                    freeViewMetres,
-                    playerAlive: !_playerDead);
+                // The areas and edit variables ran inside the level walk above, before the AlarmControls that
+                // consume them (Mission 1's alarm latch depends on that order).
 
                 // Test-only outro forcing: re-apply the env-specified gate writes every tick so gates
                 // whose variables the level scripts reset stay satisfied while the scene plays.

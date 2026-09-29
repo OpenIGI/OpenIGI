@@ -122,9 +122,14 @@ public sealed class MissionObjectiveRuntimeTests
         // so this is the artificial case, not the live one.
         Assert.False(ReadDead(loop, 904));
 
+        // The write alone registers nothing: the container brings its subtree into the world when the level's
+        // walk next reaches it (0x4874E0), and only then does the area count the soldier.
         Assert.True(loop.Variables.TryWrite("ConditionalContainer_901.isRun", QvmValue.FromInt32(1)));
         runtime.TickLevelState();
+        Assert.Equal(1, ReadActive(loop));
 
+        new LevelUpdateWalker().Walk(loop.Tasks.Root);
+        runtime.TickLevelState();
         Assert.Equal(2, ReadActive(loop));
 
         // Declared the way the level's own script declares one: Task_New binds the id and then exports

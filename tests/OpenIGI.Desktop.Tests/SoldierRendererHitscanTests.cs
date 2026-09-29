@@ -269,12 +269,8 @@ public sealed class SoldierRendererHitscanTests
         Assert.True(scenario.Loop.Variables.TryWrite(
             "StatusMessage_977.isSendt",
             OpenIGI.Scripting.Runtime.QvmValue.FromInt32(1)));
-        Assert.True(scenario.Loop.Variables.TryWrite(
-            "ConditionalContainer_307.isRun",
-            OpenIGI.Scripting.Runtime.QvmValue.FromInt32(1)));
-        Assert.True(scenario.Loop.Variables.TryWrite(
-            "ConditionalContainer_3901.isRun",
-            OpenIGI.Scripting.Runtime.QvmValue.FromInt32(1)));
+        ForceContainer(scenario, 307, run: true);
+        ForceContainer(scenario, 3901, run: true);
         scenario.Renderer.Tick(enemyAlive: false);
         Assert.True(
             ConditionalContainerGate.IsTaskActive(firstLife.Soldier),
@@ -414,10 +410,10 @@ public sealed class SoldierRendererHitscanTests
             cutscenes.FinishExpressionTick();
         }
         Assert.NotEqual(1000, cutscenes.ActiveScene?.Id);
-        WriteInt(scenario, "ConditionalContainer_3900.isRun", 0);
-        WriteInt(scenario, "ConditionalContainer_3901.isRun", 1);
-        WriteInt(scenario, "ConditionalContainer_3902.isRun", 0);
-        WriteInt(scenario, "ConditionalContainer_300.isRun", 1);
+        ForceContainer(scenario, 3900, run: false);
+        ForceContainer(scenario, 3901, run: true);
+        ForceContainer(scenario, 3902, run: false);
+        ForceContainer(scenario, 300, run: true);
         WriteInt(scenario, "AnimTask_850.nTick", (66 * 30) + 1);
         WriteInt(scenario, "EditVariable_752.nValue", 2);
 
@@ -552,6 +548,14 @@ public sealed class SoldierRendererHitscanTests
         Assert.True(scenario.Loop.Variables.TryWrite(
             name,
             OpenIGI.Scripting.Runtime.QvmValue.FromInt32(value)));
+
+    // Opens or closes a container the way the mission eventually does: its isRun, and the registration the level
+    // walk's edge brings with it (0x4874E0).
+    private static void ForceContainer(Scenario scenario, int id, bool run)
+    {
+        WriteInt(scenario, $"ConditionalContainer_{id}.isRun", run ? 1 : 0);
+        Assert.IsType<ConditionalContainerTask>(scenario.Root.Tree.FromId(id)).IsActive = run;
+    }
 
     private static int ReadInt(Scenario scenario, string name)
     {

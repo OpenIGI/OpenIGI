@@ -38,6 +38,7 @@ public sealed class Level4WatchOutTests
         foreach (ConditionalContainerTask container in Ancestors(guard).OfType<ConditionalContainerTask>())
         {
             Assert.True(loop.Variables.TryWrite($"{container.Name}.isRun", QvmValue.FromInt32(1)));
+            container.IsActive = true; // registered as the level walk's rising edge would (0x4874E0)
         }
         Assert.True(ConditionalContainerGate.IsTaskActive(guard));
 

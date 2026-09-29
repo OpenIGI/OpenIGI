@@ -527,6 +527,9 @@ internal sealed partial class GameHost
             difficulty: (int?)_options.Difficulty ?? _configuration.Active?.Difficulty ?? 1,
             isKeyDown: key => _window.Input.Keyboard.IsDown(key));
 
+        // The areas and edit variables update inside the level's one walk, where the tree places them.
+        objectives.AttachTo(_cutscenes.Walker, _cutscenes.VehicleOccupants);
+
         // Cinematics are opt-in while their retail parity work is in progress. Do not tear the runtime
         // out: the level expressions still use its native surface, and mission outros may activate it
         // later. Instead take the exact path Escape takes in retail. The objective flow observes the

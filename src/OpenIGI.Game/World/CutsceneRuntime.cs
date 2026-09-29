@@ -66,6 +66,8 @@ public sealed class CutsceneRuntime
     private IRetailCarWorld? _retailCarWorld;
     private Func<string, OpenIGI.Formats.World.MefModel?>? _retailCarModels;
     private readonly List<RetailRayModel> _retailVehicleModels = [];
+    private readonly LevelUpdateWalker _walker = new();
+    private readonly Dictionary<GameTask, int> _lastVehicleTick = [];
     private Func<string, MagicObjectDefinition?>? _retailMagic;
     private readonly Dictionary<GameTask, RetailRayModel?> _standingCars = [];
     private readonly Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? _vehicleObstacleHit;
@@ -330,6 +332,38 @@ public sealed class CutsceneRuntime
             }
         }
 
+        foreach (TimerState timer in _timers)
+        {
+            _walker.Register(timer.Task, _ => TickTimer(timer));
+        }
+
+        foreach (AnimationState animation in _animations)
+        {
+            _walker.Register(animation.Task, _ => TickAnimation(animation));
+        }
+
+        foreach (SoundState sound in _sounds)
+        {
+            _walker.Register(sound.Task, _ => TickSound(sound));
+            _walker.RegisterDeactivation(sound.Task, _ => SetSoundRun(sound, run: false));
+        }
+
+        foreach (GameTask task in Walk(levelRoot))
+        {
+            if (string.Equals(task.Type.Name, "Car", StringComparison.Ordinal))
+            {
+                _walker.Register(task, TickCar);
+            }
+            else if (string.Equals(task.Type.Name, "Heli", StringComparison.Ordinal))
+            {
+                _walker.Register(task, TickHeli);
+            }
+        }
+
+        _walker.ContainerTransition = (container, started) =>
+            _expressions.Execute(started ? container.RunAtStart : container.RunAtStop, container);
+        _walker.HoldContainer = RetainsLevelFourOutro;
+
         // Capture the whole authored hierarchy before parking a vehicle. Moving a
         // parent first makes its still-authored child positions acquire the parking
         // displacement as a permanent local offset (Level 3's pilot floats above it).
@@ -341,7 +375,10 @@ public sealed class CutsceneRuntime
         // railroad.  Reading the keys inline above silently cached (0,0,0)/identity for linked cars.
         foreach (CutSceneTask cutscene in cutscenes)
         {
-            _scenes.Add(new SceneState(cutscene, ReadShots(cutscene)));
+            SceneState scene = new(cutscene, ReadShots(cutscene));
+            _scenes.Add(scene);
+            _walker.Register(cutscene, _ => TickScene(scene));
+            _walker.RegisterDeactivation(cutscene, _ => DeactivateScene(scene));
         }
 
         // Sibling humans acquire a moving parent from their live collision contact.
@@ -457,7 +494,9 @@ public sealed class CutsceneRuntime
                 continue;
             }
 
-            _carAis.Add(new CarAiState(declared, car, transform, graph, AiPatrolRoute.Start(path)));
+            CarAiState state = new(declared, car, transform, graph, AiPatrolRoute.Start(path));
+            _carAis.Add(state);
+            _walker.Register(declared, _ => TickCarAi(state));
         }
     }
 
@@ -487,20 +526,19 @@ public sealed class CutsceneRuntime
     /// metres of it and turning in place to face the target (<c>0x4262F0</c>).
     /// </para>
     /// </remarks>
-    private void TickCarAi()
+    private void TickCarAi(CarAiState state)
     {
         Vector3d? target = VehicleCombatTarget?.Invoke();
-        foreach (CarAiState state in _carAis)
         {
             if (_destructibles?.IsDestroyed(state.Car) == true)
             {
                 state.Stopped = true;
-                continue;
+                return;
             }
 
             if (!ConditionalContainerGate.IsTaskActive(state.Task) || state.Route is null)
             {
-                continue;
+                return;
             }
 
             if (ChaseTarget(state, target) is { } chased)
@@ -592,7 +630,7 @@ public sealed class CutsceneRuntime
                 state.Transform.TargetThrust = state.Transform.OriginalThrust;
                 state.Transform.CarMotion.Reset();
                 ResetRetailBody(state.Car, state.Transform);
-                continue;
+                return;
             }
 
             DriveCar(
@@ -959,15 +997,19 @@ public sealed class CutsceneRuntime
         return c <= -1d ? RetailPi : RetailAcos(c);
     }
 
-    private void TickVehicleCombat()
+    private void TickVehicleCombat(GameTask vehicle)
     {
         Vector3d? target = VehicleCombatTarget?.Invoke();
-        foreach ((GameTask vehicle, VehicleArmament armament) in _armaments)
+        if (!_armaments.TryGetValue(vehicle, out VehicleArmament? armament))
+        {
+            return;
+        }
+
         {
             if (!_taskTransforms.TryGetValue(vehicle, out TransformState? transform)
                 || vehicle is not DeclaredTask declared)
             {
-                continue;
+                return;
             }
 
             // A car's "Can fire" is an expression: 0x42E870 evaluates it every tick and registers the
@@ -981,7 +1023,7 @@ public sealed class CutsceneRuntime
             if (armament.LegacyWeapon is { } weapon)
             {
                 TickLegacyVehicleGun(declared, transform, armament, weapon, target, active, canFire);
-                continue;
+                return;
             }
 
             // The vehicle's eye stands two metres over its origin (0x42E870 adds 8192 to Z).
@@ -1044,19 +1086,21 @@ public sealed class CutsceneRuntime
     }
 
     /// <summary>Measures how far each zone-carrying vehicle moved this tick, the speed 0x45FA80 tests.</summary>
-    private void TickDeathZones()
+    private void TickDeathZones(GameTask vehicle)
     {
-        foreach ((GameTask vehicle, DeathZoneState state) in _deathZones)
+        if (!_deathZones.TryGetValue(vehicle, out DeathZoneState? state))
         {
-            if (!_taskTransforms.TryGetValue(vehicle, out TransformState? transform))
-            {
-                state.SpeedUnitsPerTick = 0d;
-                continue;
-            }
-
-            state.SpeedUnitsPerTick = state.LastPosition is { } last ? (transform.Position - last).Length : 0d;
-            state.LastPosition = transform.Position;
+            return;
         }
+
+        if (!_taskTransforms.TryGetValue(vehicle, out TransformState? transform))
+        {
+            state.SpeedUnitsPerTick = 0d;
+            return;
+        }
+
+        state.SpeedUnitsPerTick = state.LastPosition is { } last ? (transform.Position - last).Length : 0d;
+        state.LastPosition = transform.Position;
     }
 
     /// <summary>One run of a vehicle gun: turn (0x46F390), then let Gun_Fire (0x478BA0) take the trigger.</summary>
@@ -1238,178 +1282,186 @@ public sealed class CutsceneRuntime
     public void Tick()
     {
         SimulationTick++;
-        RefreshContainers(executeTransitions: true);
-
-        foreach (TimerState timer in _timers)
-        {
-            if (_expressions.EvaluateCondition(timer.Reset, emptyValue: false, timer.Task))
-            {
-                timer.Tick = 0;
-            }
-
-            timer.IsRun = string.IsNullOrWhiteSpace(timer.Run)
-                ? timer.InitialRun
-                : _expressions.EvaluateCondition(timer.Run, emptyValue: timer.InitialRun, timer.Task);
-            if (timer.IsRun)
-            {
-                timer.Tick++;
-            }
-        }
-
         foreach (AnimationState animation in _animations)
         {
-            bool run = string.IsNullOrWhiteSpace(animation.Run)
-                ? animation.InitialRun
-                : _expressions.EvaluateCondition(
-                    animation.Run, emptyValue: animation.InitialRun, animation.Task);
-            animation.RanThisTick = run && ConditionalContainerGate.IsTaskActive(animation.Task);
-            if (!animation.RanThisTick)
-            {
-                continue;
-            }
-
-            int previousTick = animation.Program.Tick;
-            animation.Tick++;
-            animation.Program.SeekTo(previousTick + 1);
-            ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
-            if (previousTick < 0)
-            {
-                // Containers can defer an AnimTask's first run until after construction. Its first
-                // active scheduler slot still has the same two tick-zero dispatches as a task that
-                // was active during runtime initialization.
-                animation.Program.Step();
-                ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
-            }
+            animation.RanThisTick = false;
         }
 
-        foreach (SceneState state in _scenes)
+        // One walk of the level tree in authored order: each task runs its own update where the tree puts it
+        //, not grouped by type.
+        _walker.Walk(_root);
+        UpdateFrame();
+    }
+
+    /// <summary>
+    /// Gets the level's update walk. Other level systems register the tasks they own into it, so that one walk
+    /// in authored order ticks them all.
+    /// </summary>
+    public LevelUpdateWalker Walker => _walker;
+
+    /// <summary>A LevelTimer's update (<c>0x51BE10</c>): children first, then On, Reset and the tick count.</summary>
+    private void TickTimer(TimerState timer)
+    {
+        _walker.WalkChildren(timer.Task);
+        if (_expressions.EvaluateCondition(timer.Reset, emptyValue: false, timer.Task))
         {
-            CutSceneTask scene = state.Task;
-            bool wasRun = scene.IsRun;
-
-            if (!ConditionalContainerGate.IsTaskActive(scene))
-            {
-                scene.IsRun = false;
-                if (wasRun)
-                {
-                    ExecuteSceneExpression(scene, scene.StopExpression);
-                }
-                continue;
-            }
-
-            if (_expressions.EvaluateCondition(scene.Reset, emptyValue: false, scene))
-            {
-                scene.Ticks = 0;
-                scene.IsFinished = false;
-            }
-
-            scene.IsRun = string.IsNullOrWhiteSpace(scene.Run)
-                ? scene.InitialRun && !scene.IsFinished
-                : _expressions.EvaluateCondition(scene.Run, emptyValue: false, scene);
-
-            if (!wasRun && scene.IsRun)
-            {
-                ExecuteSceneExpression(scene, scene.StartExpression);
-            }
-
-            if (scene.IsRun)
-            {
-                // The cutscene run callback runs child AnimTasks before the scene,
-                // evaluates Run, and then calls CutScene_SetCamera with the *current* nTick. The
-                // camera marks isFinished only when that old tick is beyond the authored duration;
-                // Run stays latched for this frame and nTick is incremented afterwards. The Run
-                // expression observes isFinished on the following frame. Keeping those two boundary
-                // frames is essential: Mission 1's 2.2-second landing scene publishes train ticks
-                // 0..67, exactly as the retail probe records.
-                double total = state.TotalTime(scene.TimeScale);
-                if ((scene.Ticks / (double)Frequency) > total)
-                {
-                    scene.Ticks = Math.Max(0, (int)(Frequency * total));
-                    scene.IsFinished = true;
-                }
-
-                int delta = string.IsNullOrWhiteSpace(scene.TimeDelta)
-                    ? 1
-                    : (int)(_expressions.EvaluateSingle(scene.TimeDelta, owner: scene) * Frequency);
-                // Expressions returning a float are evaluated through the script union. Most retail
-                // scenes leave TimeDelta empty; the minimum retains forward progress for malformed data.
-                scene.Ticks = Math.Max(0, scene.Ticks + delta);
-            }
-
-            if (wasRun && !scene.IsRun)
-            {
-                ExecuteSceneExpression(scene, scene.StopExpression);
-            }
+            timer.Tick = 0;
         }
 
-        foreach (SoundState sound in _sounds)
+        timer.IsRun = string.IsNullOrWhiteSpace(timer.Run)
+            ? timer.InitialRun
+            : _expressions.EvaluateCondition(timer.Run, emptyValue: timer.InitialRun, timer.Task);
+        if (timer.IsRun)
         {
-            bool run = ConditionalContainerGate.IsTaskActive(sound.Task)
-                && _expressions.EvaluateCondition(sound.Condition, emptyValue: false, sound.Task);
-            if (run != sound.IsRun)
-            {
-                sound.IsRun = run;
-                if (run)
-                {
-                    if (!sound.OneShot || !sound.HasPlayed)
-                    {
-                        sound.HasPlayed = true;
-                        _soundChanged?.Invoke(new CutsceneSoundEvent(
-                            sound.Task,
-                            sound.Sound,
-                            sound.Simple || sound.RelativeToMicrophone ? null : sound.Position,
-                            Playing: true,
-                            Simple: sound.Simple));
-                    }
-                }
-                else if (!sound.Simple && sound.HasPlayed)
-                {
-                    // A non-simple ConditionalSound owns its voice for the condition's lifetime. A
-                    // simple sound is fire-and-forget and deliberately receives no falling-edge stop.
-                    _soundChanged?.Invoke(new CutsceneSoundEvent(
-                        sound.Task,
-                        sound.Sound,
-                        sound.RelativeToMicrophone ? null : sound.Position,
-                        Playing: false,
-                        Simple: false));
-                }
-            }
+            timer.Tick++;
+        }
+    }
+
+    /// <summary>An AnimTask's update (<c>0x4F3B40</c>): the run expression, then the next record step's packet.</summary>
+    private void TickAnimation(AnimationState animation)
+    {
+        bool run = string.IsNullOrWhiteSpace(animation.Run)
+            ? animation.InitialRun
+            : _expressions.EvaluateCondition(animation.Run, emptyValue: animation.InitialRun, animation.Task);
+        animation.RanThisTick = run;
+        if (!run)
+        {
+            return;
         }
 
-        RefreshContainers(executeTransitions: true);
-
-        // Retail walks the authored task tree. A CutScene can therefore become active before a later
-        // sibling ConditionalContainer is visited; registering that container immediately runs a
-        // newly exposed AnimTask in the same frame. Our grouped passes discover that registration in
-        // the refresh above, so publish the deferred task's two tick-zero packets here instead of
-        // waiting a frame. Mission 1 scene 1201/container 4003 is the source-of-truth case.
-        foreach (AnimationState animation in _animations)
+        int previousTick = animation.Program.Tick;
+        animation.Tick++;
+        animation.Program.SeekTo(previousTick + 1);
+        ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
+        if (previousTick < 0)
         {
-            if (animation.Program.Tick >= 0 || !ConditionalContainerGate.IsTaskActive(animation.Task))
-            {
-                continue;
-            }
-
-            bool run = string.IsNullOrWhiteSpace(animation.Run)
-                ? animation.InitialRun
-                : _expressions.EvaluateCondition(
-                    animation.Run, emptyValue: animation.InitialRun, animation.Task);
-            if (!run)
-            {
-                continue;
-            }
-
-            animation.Program.SeekTo(0);
-            ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
+            // A task that was out of the world at load has its two tick-zero dispatches on its first run.
             animation.Program.Step();
             ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
         }
+    }
 
-        TickRetailRotors();
-        TickCarAi();
-        TickVehicleCombat();
-        TickDeathZones();
-        UpdateFrame();
+    /// <summary>A CutScene's update (<c>0x4F51D0</c>): its children (its AnimTasks) first, then its own run.</summary>
+    private void TickScene(SceneState state)
+    {
+        CutSceneTask scene = state.Task;
+        _walker.WalkChildren(scene);
+        bool wasRun = scene.IsRun;
+        if (_expressions.EvaluateCondition(scene.Reset, emptyValue: false, scene))
+        {
+            scene.Ticks = 0;
+            scene.IsFinished = false;
+        }
+
+        scene.IsRun = string.IsNullOrWhiteSpace(scene.Run)
+            ? scene.InitialRun && !scene.IsFinished
+            : _expressions.EvaluateCondition(scene.Run, emptyValue: false, scene);
+
+        if (!wasRun && scene.IsRun)
+        {
+            ExecuteSceneExpression(scene, scene.StartExpression);
+        }
+
+        if (scene.IsRun)
+        {
+            // CutScene_SetCamera runs with the *current* nTick and marks isFinished only when that old tick is
+            // beyond the authored duration; Run stays latched this frame and nTick is incremented afterwards.
+            // The Run expression observes isFinished on the following frame -- Mission 1's 2.2-second landing
+            // scene publishes train ticks 0..67, exactly as the retail probe records.
+            double total = state.TotalTime(scene.TimeScale);
+            if ((scene.Ticks / (double)Frequency) > total)
+            {
+                scene.Ticks = Math.Max(0, (int)(Frequency * total));
+                scene.IsFinished = true;
+            }
+
+            int delta = string.IsNullOrWhiteSpace(scene.TimeDelta)
+                ? 1
+                : (int)(_expressions.EvaluateSingle(scene.TimeDelta, owner: scene) * Frequency);
+            scene.Ticks = Math.Max(0, scene.Ticks + delta);
+        }
+
+        if (wasRun && !scene.IsRun)
+        {
+            ExecuteSceneExpression(scene, scene.StopExpression);
+        }
+    }
+
+    /// <summary>A scene taken out of the world stops.</summary>
+    private void DeactivateScene(SceneState state)
+    {
+        if (state.Task.IsRun)
+        {
+            state.Task.IsRun = false;
+            ExecuteSceneExpression(state.Task, state.Task.StopExpression);
+        }
+    }
+
+    /// <summary>A ConditionalSound's update (<c>0x4250D0</c>): its condition's edges, then its children.</summary>
+    private void TickSound(SoundState sound)
+    {
+        bool run = _expressions.EvaluateCondition(sound.Condition, emptyValue: false, sound.Task);
+        SetSoundRun(sound, run);
+        _walker.WalkChildren(sound.Task);
+    }
+
+    private void SetSoundRun(SoundState sound, bool run)
+    {
+        if (run == sound.IsRun)
+        {
+            return;
+        }
+
+        sound.IsRun = run;
+        if (run)
+        {
+            if (!sound.OneShot || !sound.HasPlayed)
+            {
+                sound.HasPlayed = true;
+                _soundChanged?.Invoke(new CutsceneSoundEvent(
+                    sound.Task,
+                    sound.Sound,
+                    sound.Simple || sound.RelativeToMicrophone ? null : sound.Position,
+                    Playing: true,
+                    Simple: sound.Simple));
+            }
+        }
+        else if (!sound.Simple && sound.HasPlayed)
+        {
+            // A non-simple ConditionalSound owns its voice for the condition's lifetime. A simple sound is
+            // fire-and-forget and deliberately receives no falling-edge stop.
+            _soundChanged?.Invoke(new CutsceneSoundEvent(
+                sound.Task,
+                sound.Sound,
+                sound.RelativeToMicrophone ? null : sound.Position,
+                Playing: false,
+                Simple: false));
+        }
+    }
+
+    /// <summary>
+    /// A Car's update (<c>0x42E320</c>): at most once a tick, its children -- the CarAI or AnimTask whose packet
+    /// steps its physics -- then its guns and its death zones.
+    /// </summary>
+    private void TickCar(GameTask car)
+    {
+        if (_lastVehicleTick.TryGetValue(car, out int last) && last == SimulationTick)
+        {
+            return;
+        }
+
+        _lastVehicleTick[car] = SimulationTick;
+        _walker.WalkChildren(car);
+        TickVehicleCombat(car);
+        TickDeathZones(car);
+    }
+
+    /// <summary>A Heli's update (<c>0x4316D0</c>): its children -- its AnimTask flies it -- then its gun.</summary>
+    private void TickHeli(GameTask heli)
+    {
+        _walker.WalkChildren(heli);
+        TickVehicleCombat(heli);
+        TickDeathZones(heli);
     }
 
     /// <summary>Serves cutscene-specific level-expression natives to sibling mission runtimes.</summary>
@@ -2095,7 +2147,9 @@ public sealed class CutsceneRuntime
                 continue;
             }
 
-            if (!container.Refresh(out bool started) || !executeTransitions)
+            bool changed = container.Refresh(out bool started);
+            container.IsActive = container.IsRun;
+            if (!changed || !executeTransitions)
             {
                 continue;
             }
@@ -2675,30 +2729,7 @@ public sealed class CutsceneRuntime
             name => registry?.TryGetRotor(name, out RotorPhysicsDefinition rotor) == true ? rotor : null);
         heli.Owner = task;
         state.RetailHeli = heli;
-
-        // Created as the resets leave it -- which, in retail, is with that frame's rotor records already pushed.
-        heli.RotorTick();
-        state.RetailRotorsQueued = true;
         return heli;
-    }
-
-    /// <summary>
-    /// Every helicopter's rotors push their lift and yaw records (<c>0x42D440</c>, from the heli's run op each frame),
-    /// for its next tick to integrate. The original's list has room for 32; past that it writes beyond it, which
-    /// the port declines to do.
-    /// </summary>
-    private void TickRetailRotors()
-    {
-        foreach ((GameTask task, TransformState state) in _taskTransforms)
-        {
-            if (state.RetailHeli is { } heli
-                && !state.RetailRotorsQueued
-                && heli.Forces.Count < 32
-                && ConditionalContainerGate.IsTaskActive(task))
-            {
-                heli.RotorTick();
-            }
-        }
     }
 
     private static void CopyRetailPose(TransformState state, RetailRigidBody body)
@@ -3005,11 +3036,7 @@ public sealed class CutsceneRuntime
                 {
                     RetailHeliSpawn.Reset(retailHeli, retailHeliPhysics, RetailHeliSpawn.Placement(retailHeliTask));
 
-                    // Retail's run op follows every reset frame with the rotors' pushes, before any physics
-                    // packet; the port's AnimTask can deliver the last reset and the first step in one frame,
-                    // so push them here and let the frame's rotor pass skip this heli.
-                    retailHeli.RotorTick();
-                    transform.RetailRotorsQueued = true;
+
                     program.WriteChannel(0, 0f);
                     program.WriteChannel(1, 0f);
                     program.WriteChannel(2, 0f);
@@ -3028,8 +3055,10 @@ public sealed class CutsceneRuntime
                 }
 
                 SnapshotDynamicPose(transform, simulationOrder);
+
+                // 0x4F4660 ticks the attachments -- the rotors push their lift and yaw -- right before Heli_Tick.
+                retailHeli.RotorTick();
                 retailHeli.Tick(retailWorld);
-                transform.RetailRotorsQueued = false;
                 CopyRetailPose(transform, retailHeli);
                 transform.Thrust = retailHeli.Collective;
                 transform.TargetThrust = retailHeli.CollectiveTarget;
@@ -4411,8 +4440,6 @@ public sealed class CutsceneRuntime
         /// <summary>The helicopter's retail rigid body, once its AnimTask has first spoken.</summary>
         public RetailHeliBody? RetailHeli { get; set; }
 
-        /// <summary>Whether the rotors have pushed since the heli's last reset, with no step since.</summary>
-        public bool RetailRotorsQueued { get; set; }
 
         public CarMotionState CarMotion { get; } = new();
         public PlanePhysicsDefinition? PlanePhysics { get; set; }

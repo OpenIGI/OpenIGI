@@ -67,14 +67,14 @@ public sealed class ConditionalContainerGate
     /// <param name="task">The task to test.</param>
     /// <returns><see langword="true"/> when the task's subtree is not registered into the world.</returns>
     public static bool IsDormant(GameTask? task) =>
-        task is ConditionalContainerTask container && !container.IsRun;
+        task is ConditionalContainerTask container && !container.IsActive;
 
     /// <summary>Gets whether a task and every conditional ancestor are registered in the live world.</summary>
     public static bool IsTaskActive(GameTask? task)
     {
         for (GameTask? current = task; current is not null; current = current.Parent)
         {
-            if (current is ConditionalContainerTask container && !container.IsRun)
+            if (current is ConditionalContainerTask container && !container.IsActive)
             {
                 return false;
             }
@@ -116,6 +116,13 @@ public sealed class ConditionalContainerGate
             {
                 dormant++;
             }
+        }
+
+        // Registration starts equal to the first result. (The original constructs every container active
+        // and its first tick deactivates the false ones before they run; nothing reads the difference.)
+        foreach (ConditionalContainerTask container in containers)
+        {
+            container.IsActive = container.IsRun;
         }
 
         if (containers.Count > 0)

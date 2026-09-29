@@ -55,6 +55,11 @@ public sealed class MissionObjectiveRuntime
     /// <summary>The LevelFlow the original's <c>flt_BC2360</c> points at: the last one initialised.</summary>
     private readonly LevelFlow? _levelFlow;
     private bool _playerAlive = true;
+    private Vector3d? _statePlayer;
+    private int _stateTeam;
+    private Vector3d? _stateExtraPlayer;
+    private Func<IEnumerable<VehicleOccupant>>? _vehicleSource;
+    private bool _attached;
     private int _tick;
     private bool _released;
 
@@ -105,6 +110,7 @@ public sealed class MissionObjectiveRuntime
             else if (string.Equals(task.Type.Name, "AreaActivate", StringComparison.Ordinal))
             {
                 AreaActivation area = new(
+                    declared,
                     Vector(declared, "Position"),
                     Orientation(declared),
                     Vector32(declared, "Dimensions"),
@@ -440,59 +446,125 @@ public sealed class MissionObjectiveRuntime
         Vector3d? extraPlayerPosition,
         bool playerAlive = true)
     {
-        _playerAlive = playerAlive;
-        if (_levelRoot.Tree.FromId(0) is HumanPlayerTask player && !playerAlive)
+        SetLevelStateInputs(playerPosition, playerTeam, extraPlayerPosition, playerAlive);
+        if (_attached)
         {
-            player.IsDead = true;
+            // The level walk updates them where the tree places them; running them here too would step each
+            // edit variable twice in one tick.
+            return;
         }
 
         foreach (AreaActivation area in _areaActivations)
         {
-            int count = 0;
-            if (playerAlive
-                && area.AcceptsPlayer(playerTeam)
-                && ((playerPosition is { } point && area.Contains(point))
-                    || (extraPlayerPosition is { } extra && area.Contains(extra))))
+            UpdateArea(area);
+        }
+
+        foreach (EditVariable edit in _editVariables)
+        {
+            UpdateEdit(edit);
+        }
+    }
+
+    /// <summary>
+    /// Puts the areas and edit variables into the level's update walk, so each updates where the tree places it
+    /// (<c>0x5048A0</c> counts, then walks its children; <c>0x4889B0</c>).
+    /// </summary>
+    /// <param name="walker">The level walk.</param>
+    /// <param name="vehicles">Reads the vehicles' live positions when an area counts them.</param>
+    /// <remarks>The host then feeds the player through <see cref="SetLevelStateInputs"/> before the walk.</remarks>
+    public void AttachTo(LevelUpdateWalker walker, Func<IEnumerable<VehicleOccupant>>? vehicles = null)
+    {
+        ArgumentNullException.ThrowIfNull(walker);
+        _attached = true;
+        _vehicleSource = vehicles;
+        foreach (AreaActivation area in _areaActivations)
+        {
+            walker.Register(area.Task, task =>
+            {
+                UpdateArea(area);
+                walker.WalkChildren(task);
+            });
+        }
+
+        foreach (EditVariable edit in _editVariables)
+        {
+            walker.Register(edit.Task, task =>
+            {
+                UpdateEdit(edit);
+                walker.WalkChildren(task);
+            });
+        }
+    }
+
+    /// <summary>Latches the player's projections and liveness for the areas that count them this tick.</summary>
+    /// <param name="playerPosition">The player's primary world projection, when one exists.</param>
+    /// <param name="playerTeam">The player's team.</param>
+    /// <param name="extraPlayerPosition">An alternate projection of the same player.</param>
+    /// <param name="playerAlive">Whether the player can occupy areas.</param>
+    public void SetLevelStateInputs(Vector3d? playerPosition, int playerTeam, Vector3d? extraPlayerPosition, bool playerAlive)
+    {
+        _playerAlive = playerAlive;
+        _statePlayer = playerPosition;
+        _stateTeam = playerTeam;
+        _stateExtraPlayer = extraPlayerPosition;
+        if (_levelRoot.Tree.FromId(0) is HumanPlayerTask player && !playerAlive)
+        {
+            player.IsDead = true;
+        }
+    }
+
+    /// <summary>AreaActivate::Update (<c>0x5048A0</c>): nActive cleared and recounted over every matching occupant.</summary>
+    private void UpdateArea(AreaActivation area)
+    {
+        int count = 0;
+        if (_playerAlive
+            && area.AcceptsPlayer(_stateTeam)
+            && ((_statePlayer is { } point && area.Contains(point))
+                || (_stateExtraPlayer is { } extra && area.Contains(extra))))
+        {
+            count++;
+        }
+
+        foreach (HumanOccupant occupant in _soldierOccupants.Values)
+        {
+            GameTask? soldier = _levelRoot.Tree.FromId(occupant.TaskId);
+            if (soldier is not null
+                && !occupant.IsDead
+                && ConditionalContainerGate.IsTaskActive(soldier)
+                && area.AcceptsSoldier(occupant.Team)
+                && area.Contains(occupant.Position))
             {
                 count++;
             }
-            foreach (HumanOccupant occupant in _soldierOccupants.Values)
-            {
-                GameTask? soldier = _levelRoot.Tree.FromId(occupant.TaskId);
-                if (soldier is not null
-                    && !occupant.IsDead
-                    && ConditionalContainerGate.IsTaskActive(soldier)
-                    && area.AcceptsSoldier(occupant.Team)
-                    && area.Contains(occupant.Position))
-                {
-                    count++;
-                }
-            }
-            foreach (VehicleOccupant occupant in _vehicleOccupants.Values)
-            {
-                GameTask? vehicle = _levelRoot.Tree.FromId(occupant.TaskId);
-                if (vehicle is not null
-                    && ConditionalContainerGate.IsTaskActive(vehicle)
-                    && area.AcceptsVehicle
-                    && area.Contains(occupant.Position))
-                {
-                    count++;
-                }
-            }
-            area.ActiveCount = count;
         }
 
-        // EditVariable::Update (0x4889B0) evaluates Add first and Sub second on every simulation tick.
-        foreach (EditVariable edit in _editVariables)
+        IEnumerable<VehicleOccupant> vehicles = _vehicleSource?.Invoke() ?? _vehicleOccupants.Values;
+        foreach (VehicleOccupant occupant in vehicles)
         {
-            if (!string.IsNullOrEmpty(edit.AddExpression))
+            GameTask? vehicle = _levelRoot.Tree.FromId(occupant.TaskId);
+            if (vehicle is not null
+                && ConditionalContainerGate.IsTaskActive(vehicle)
+                && area.AcceptsVehicle
+                && area.Contains(occupant.Position))
             {
-                edit.Value += _expressions.EvaluateInt32(edit.AddExpression, owner: edit.Task);
+                count++;
             }
-            if (!string.IsNullOrEmpty(edit.SubExpression))
-            {
-                edit.Value -= _expressions.EvaluateInt32(edit.SubExpression, owner: edit.Task);
-            }
+        }
+
+        area.ActiveCount = count;
+    }
+
+    /// <summary>EditVariable::Update (<c>0x4889B0</c>): Add first, Sub second, every tick.</summary>
+    private void UpdateEdit(EditVariable edit)
+    {
+        if (!string.IsNullOrEmpty(edit.AddExpression))
+        {
+            edit.Value += _expressions.EvaluateInt32(edit.AddExpression, owner: edit.Task);
+        }
+
+        if (!string.IsNullOrEmpty(edit.SubExpression))
+        {
+            edit.Value -= _expressions.EvaluateInt32(edit.SubExpression, owner: edit.Task);
         }
     }
 
@@ -901,12 +973,15 @@ public sealed class MissionObjectiveRuntime
 
     private sealed class AreaActivation
     {
+        public DeclaredTask Task { get; }
+
         private readonly Vector3d _minimum;
         private readonly Vector3d _maximum;
         private readonly OccupantFilter _filter;
 
-        public AreaActivation(Vector3d position, Matrix3f orientation, Vector3f dimensions, string criteria)
+        public AreaActivation(DeclaredTask task, Vector3d position, Matrix3f orientation, Vector3f dimensions, string criteria)
         {
+            Task = task;
             // AreaActivate::Prepare (0x5045F0) halves Dimensions, rotates all eight corners and
             // publishes their component-wise min/max as the query bounds.
             Vector3f half = dimensions * 0.5f;
