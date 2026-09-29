@@ -2637,8 +2637,18 @@ internal sealed partial class GameHost
         _genericPickups = null;
         _loadedMissionForWeapon = null;
 
+        // Rockets a vehicle fired in the run being left must not keep flying into the next one.
+        _vehicleMissiles.Clear();
+
         if (_activeLevelRoot is not null && !_activeLevelRoot.IsDeleted)
         {
+            // Deleting a task does not unexport its names (TaskTree.Delete), and a restart reuses this loop's
+            // variables. Left bound, AreaActivate_175.nActive, Car_361.isExploded and the rest answered for the
+            // run being left until the new level's runtimes rebound them -- after the conditional containers had
+            // already been decided. Mission 7's real T80 (ConditionalContainer_700, which latches itself through
+            // this.isRun) came up live at tick 0 whenever the player restarted from inside its trigger area.
+            // Unbound, the new level starts from the same zeros a first load does.
+            _loop.Variables.UnexportTree(_activeLevelRoot);
             _loop.Tasks.Delete(_activeLevelRoot);
         }
         _activeLevelRoot = null;
