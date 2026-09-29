@@ -394,6 +394,12 @@ public sealed class CutsceneRuntime
                     // AnimTask_850.nTick > 66 * GAME_FREQUENCY) can time off it. Without this export
                     // those conditions never resolve and the gated tasks stay dormant forever.
                     variables.BindInt(declared, "nTick", () => animation.Tick, value => animation.Tick = value);
+
+                    // And its run byte (+131316, 0x4F3BA0), which its update rewrites from Run each tick. Level
+                    // timers count on it -- mission 7's LevelTimer_2500 runs while AnimTask_300.isRun, and the
+                    // escape truck's own Run stops it at that timer's 2650 and 4330 -- and a helicopter's Run
+                    // latches itself with "|| this.isRun".
+                    variables.BindBool(declared, "isRun", () => animation.IsRun, value => animation.IsRun = value);
                 }
                 else if (string.Equals(task.Type.Name, "ConditionalSound", StringComparison.Ordinal))
                 {
@@ -585,12 +591,32 @@ public sealed class CutsceneRuntime
     public int? CarAiTargetNode(GameTask car) =>
         _carAis.Find(state => ReferenceEquals(state.Car, car))?.TargetNode?.Id;
 
-    /// <summary>Gets active graph-driven vehicles at their current world positions.</summary>
-    public IReadOnlyList<VehicleOccupant> VehicleOccupants() =>
-        _carAis
-            .Where(static state => ConditionalContainerGate.IsTaskActive(state.Car))
-            .Select(static state => new VehicleOccupant(state.Car.Id, state.Transform.Position))
-            .ToArray();
+    /// <summary>Gets every vehicle in the world at its current origin, as CRITERIA_VEHICLE counts them.</summary>
+    /// <remarks>
+    /// <c>0x4F4560</c> walks the global vehicle list (<c>dword_A76C40</c>) and tests each vehicle's origin (<c>+32</c>):
+    /// every Car and Heli, whatever drives it. Mission 7's escape truck is an AnimTask's, and the areas it drives
+    /// through -- the timer that releases it past the checkpoint and the two gates that open for it -- only ever
+    /// counted the CarAI cars.
+    /// <para>
+    /// A vehicle joins the list when it is created (<c>0x42E180</c>) and leaves it only when it is destroyed
+    /// (<c>0x42E940</c>); deactivation (<c>0x4F44A0</c>) clears its active flag and leaves it listed. So a vehicle
+    /// behind a closed ConditionalContainer still counts where it stands: mission 7's ending hides the truck under
+    /// CutScene 1200, and the truck in AreaActivate 177 is what keeps that scene's container open.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<VehicleOccupant> VehicleOccupants()
+    {
+        List<VehicleOccupant> occupants = [];
+        foreach ((GameTask task, TransformState state) in _taskTransforms)
+        {
+            if (task.Type.Name is "Car" or "Heli")
+            {
+                occupants.Add(new VehicleOccupant(task.Id, state.Position));
+            }
+        }
+
+        return occupants;
+    }
 
     /// <summary>Runs retail's registered CarAI callback (<c>0x425DE0</c>) once per game tick.</summary>
     /// <remarks>
@@ -1409,9 +1435,14 @@ public sealed class CutsceneRuntime
     /// <summary>An AnimTask's update (<c>0x4F3B40</c>): the run expression, then the next record step's packet.</summary>
     private void TickAnimation(AnimationState animation)
     {
-        bool run = string.IsNullOrWhiteSpace(animation.Run)
-            ? animation.InitialRun
-            : _expressions.EvaluateCondition(animation.Run, emptyValue: animation.InitialRun, animation.Task);
+        // 0x4F3B40: a Run expression rewrites the run byte every tick; without one the byte keeps whatever it holds
+        // -- its Initial run, or what a script wrote to isRun. The task steps while the byte is set.
+        if (!string.IsNullOrWhiteSpace(animation.Run))
+        {
+            animation.IsRun = _expressions.EvaluateCondition(animation.Run, emptyValue: animation.IsRun, animation.Task);
+        }
+
+        bool run = animation.IsRun;
         animation.RanThisTick = run;
         if (!run)
         {
@@ -4653,6 +4684,9 @@ public sealed class CutsceneRuntime
 
         /// <summary>Gets or sets whether the task drove its target on the current tick.</summary>
         public bool RanThisTick { get; set; }
+
+        /// <summary>Gets or sets the run byte (<c>+131316</c>), exported as <c>isRun</c>; it starts at Initial run.</summary>
+        public bool IsRun { get; set; } = InitialRun;
     }
     private sealed record SoundState(
         DeclaredTask Task,

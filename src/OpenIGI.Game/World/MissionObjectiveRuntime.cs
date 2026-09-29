@@ -556,12 +556,13 @@ public sealed class MissionObjectiveRuntime
             }
         }
 
+        // CRITERIA_VEHICLE (0x4F4560) counts the whole vehicle list; a vehicle stays listed while its container is
+        // closed, so no active test here.
         IEnumerable<VehicleOccupant> vehicles = _vehicleSource?.Invoke() ?? _vehicleOccupants.Values;
         foreach (VehicleOccupant occupant in vehicles)
         {
             GameTask? vehicle = _levelRoot.Tree.FromId(occupant.TaskId);
             if (vehicle is not null
-                && ConditionalContainerGate.IsTaskActive(vehicle)
                 && area.AcceptsVehicle
                 && area.Contains(occupant.Position))
             {
@@ -996,10 +997,16 @@ public sealed class MissionObjectiveRuntime
         private readonly Vector3d _minimum;
         private readonly Vector3d _maximum;
         private readonly OccupantFilter _filter;
+        private readonly Vector3d _position;
+        private readonly Matrix3f _orientation;
+        private readonly Vector3f _half;
 
         public AreaActivation(DeclaredTask task, Vector3d position, Matrix3f orientation, Vector3f dimensions, string criteria)
         {
             Task = task;
+            _position = position;
+            _orientation = orientation;
+            _half = dimensions * 0.5f;
             // AreaActivate::Prepare (0x5045F0) halves Dimensions, rotates all eight corners and
             // publishes their component-wise min/max as the query bounds.
             Vector3f half = dimensions * 0.5f;
@@ -1071,10 +1078,31 @@ public sealed class MissionObjectiveRuntime
         public bool AcceptsVehicle => _filter is OccupantFilter.Vehicle or OccupantFilter.All;
 
         public int ActiveCount { get; set; }
-        public bool Contains(Vector3d point) =>
-            point.X >= _minimum.X && point.X <= _maximum.X
-            && point.Y >= _minimum.Y && point.Y <= _maximum.Y
-            && point.Z >= _minimum.Z && point.Z <= _maximum.Z;
+
+        /// <summary>Whether a point lies in the volume: the box test <c>0x5042B0</c>, in the area's own frame.</summary>
+        /// <remarks>
+        /// The rotated corners' min/max (<c>+32</c>/<c>+56</c>) are only the query's bounds; the test itself takes the
+        /// offset into the area's axes (<c>Mᵀ·(p − pos)</c>, single precision) and compares each against the half
+        /// extent. For an area turned off the world axes -- mission 7's gate volumes are turned 126° -- the bounds
+        /// hold far more ground than the box does.
+        /// </remarks>
+        public bool Contains(Vector3d point)
+        {
+            if (point.X < _minimum.X || point.X > _maximum.X
+                || point.Y < _minimum.Y || point.Y > _maximum.Y
+                || point.Z < _minimum.Z || point.Z > _maximum.Z)
+            {
+                return false;
+            }
+
+            double dx = point.X - _position.X, dy = point.Y - _position.Y, dz = point.Z - _position.Z;
+            Matrix3f m = _orientation;
+            float x = (float)((dz * m.M31) + (dy * m.M21) + (dx * m.M11));
+            float y = (float)((dz * m.M32) + (dy * m.M22) + (dx * m.M12));
+            float z = (float)((dz * m.M33) + (dy * m.M23) + (dx * m.M13));
+            return !(x > _half.X) && !(y > _half.Y) && !(z > _half.Z)
+                && !(-_half.X > x) && -_half.Y <= y && -_half.Z <= z;
+        }
     }
 
     private enum OccupantFilter
