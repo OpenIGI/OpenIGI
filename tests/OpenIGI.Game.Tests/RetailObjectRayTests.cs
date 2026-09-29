@@ -13,17 +13,47 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 public sealed class RetailObjectRayTests(ITestOutputHelper output)
 {
-    [Fact]
-    public void EveryCapturedModelHitIsReproducedBitForBit()
+    [Theory]
+    [InlineData("carstep-m7-t80-357.log.gz", 571)]
+    [InlineData("carstep-m7-t80-357-safe.log.gz", 2284)]
+    public void EveryCapturedModelHitIsReproducedBitForBit(string fixture, int rays)
     {
         RetailMissionData data = RetailMissionData.Get(7);
         List<object> objects = [.. Objects(data)];
-        RetailCarStepCapture capture = RetailCarStepCapture.Load("carstep-m7-t80-357.log.gz");
+        RetailCarStepCapture capture = RetailCarStepCapture.Load(fixture);
         int checkedRays = 0;
         List<string> failures = [];
         foreach (RetailCarStepCapture.Tick tick in capture.Ticks)
         {
             byte[] o = tick.RayResults;
+            Vector3d[] starts = new Vector3d[tick.RayCount], ends = new Vector3d[tick.RayCount];
+            RetailRayResult[] results = new RetailRayResult[tick.RayCount];
+            for (int k = 0; k < tick.RayCount; k++)
+            {
+                starts[k] = Vec(tick.RayStarts, 24 * k);
+                ends[k] = Vec(tick.RayEnds, 24 * k);
+                results[k] = new RetailRayResult { Point = ends[k] };
+            }
+
+            // As the world casts: a model ray by ray, a segment over the whole batch (it stops at the first ray
+            // outside its box).
+            foreach (object candidate in objects)
+            {
+                if (candidate is RetailSplineSegment segment)
+                {
+                    segment.Cast(starts, ends, results);
+                    continue;
+                }
+
+                for (int k = 0; k < tick.RayCount; k++)
+                {
+                    if (candidate is RetailRayModel model)
+                    {
+                        RetailModelRay.Cast(model, starts[k], ends[k], ref results[k]);
+                    }
+                }
+            }
+
             for (int k = 0; k < tick.RayCount; k++)
             {
                 int r = 112 * k;
@@ -32,20 +62,7 @@ public sealed class RetailObjectRayTests(ITestOutputHelper output)
                     continue;
                 }
 
-                Vector3d s = Vec(tick.RayStarts, 24 * k), e = Vec(tick.RayEnds, 24 * k);
-                RetailRayResult result = new() { Point = e };
-                foreach (object candidate in objects)
-                {
-                    if (candidate is RetailRayModel model)
-                    {
-                        RetailModelRay.Cast(model, s, e, ref result);
-                    }
-                    else if (candidate is RetailSplineSegment segment)
-                    {
-                        segment.Cast(s, e, ref result);
-                    }
-                }
-
+                RetailRayResult result = results[k];
                 checkedRays++;
                 List<string> diff = [];
                 Same(diff, "hit", result.Hit ? 1 : 0, BitConverter.ToInt32(o, r + 88));
@@ -70,7 +87,7 @@ public sealed class RetailObjectRayTests(ITestOutputHelper output)
             output.WriteLine(failure);
         }
 
-        Assert.Equal(571, checkedRays);
+        Assert.Equal(rays, checkedRays);
         Assert.True(failures.Count == 0, $"{failures.Count} of {checkedRays} differ; first: {failures.FirstOrDefault()}");
     }
 
@@ -97,8 +114,6 @@ public sealed class RetailObjectRayTests(ITestOutputHelper output)
                     yield return segment;
                 }
             }
-
-            break;
         }
     }
 

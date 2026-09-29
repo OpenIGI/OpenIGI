@@ -17,6 +17,7 @@ public sealed class RetailTerrainRayReplayTests(ITestOutputHelper output)
     {
         { 7, "carstep-m7-apc352.log.gz" },
         { 7, "carstep-m7-t80-357.log.gz" },
+        { 7, "carstep-m7-t80-357-safe.log.gz" },
         { 6, "carstep-m6-car801.log.gz" },
     };
 
@@ -33,6 +34,7 @@ public sealed class RetailTerrainRayReplayTests(ITestOutputHelper output)
     [Theory]
     [InlineData(7, 352, "carstep-m7-apc352.log.gz")]
     [InlineData(7, 357, "carstep-m7-t80-357.log.gz")]
+    [InlineData(7, 357, "carstep-m7-t80-357-safe.log.gz")]
     [InlineData(6, 801, "carstep-m6-car801.log.gz")]
     public void ACarSpawnedFromTheLevelDrivesTheWholeCaptureExactlyAsRetail(int mission, int id, string fixture)
     {

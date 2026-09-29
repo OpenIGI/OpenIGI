@@ -173,15 +173,18 @@ public sealed class RetailWorldObjects
 
         foreach (object candidate in _candidates)
         {
+            if (candidate is RetailSplineSegment segment)
+            {
+                // The segment handler runs the batch itself and leaves it at the first ray outside its box.
+                segment.Cast(starts, ends, results);
+                continue;
+            }
+
             for (int i = 0; i < starts.Length; i++)
             {
                 if (candidate is RetailRayModel model)
                 {
                     RetailModelRay.Cast(model, starts[i], ends[i], ref results[i]);
-                }
-                else if (candidate is RetailSplineSegment segment)
-                {
-                    segment.Cast(starts[i], ends[i], ref results[i]);
                 }
             }
         }

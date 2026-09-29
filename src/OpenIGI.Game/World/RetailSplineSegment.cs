@@ -19,12 +19,20 @@ public sealed class RetailSplineSegment
     private static readonly float PiF = BitConverter.Int32BitsToSingle(0x40490FDB);
     private static readonly float TwoPiF = BitConverter.Int32BitsToSingle(0x40C90FDB);
 
-    private RetailSplineSegment(object owner, RetailRayMesh mesh, double[] position, float[] vertices, float radius, bool reverse)
+    private RetailSplineSegment(
+        object owner,
+        RetailRayMesh mesh,
+        double[] position,
+        float[] vertices,
+        float[] spheres,
+        float radius,
+        bool reverse)
     {
         Owner = owner;
         Mesh = mesh;
         Position = position;
         Vertices = vertices;
+        Spheres = spheres;
         Radius = radius;
         Reverse = reverse;
     }
@@ -40,6 +48,12 @@ public sealed class RetailSplineSegment
 
     /// <summary>Gets the bent collision vertices, three floats each, relative to <see cref="Position"/>.</summary>
     public float[] Vertices { get; }
+
+    /// <summary>
+    /// Gets the segment's own sphere tree (<c>+0x5A0</c>), four floats a node: the model's tree with every centre bent
+    /// like the vertices (<c>0x4E1440</c>) and every radius rebuilt around its subtree's bent faces (<c>0x4E51C0</c>).
+    /// </summary>
+    public float[] Spheres { get; }
 
     /// <summary>Gets the broad-phase radius (<c>+0xF4</c>).</summary>
     public float Radius { get; }
@@ -149,7 +163,89 @@ public sealed class RetailSplineSegment
             }
         }
 
-        return new RetailSplineSegment(owner, mesh, mid, vertices, radius, reverse);
+        return new RetailSplineSegment(owner, mesh, mid, vertices, BentSpheres(mesh, vertices, points, frames, count, x0, x1, reverse), radius, reverse);
+    }
+
+    /// <summary>
+    /// <c>Segment_Build</c>'s tree for a bent segment: the model's sphere tree copied, its centres bent by <c>0x4E1440</c>
+    /// (the vertex bend over 24-byte records), then every radius rebuilt by <c>0x4E51C0</c> -- zeroed on entry, the
+    /// children first, then each vertex of the node's own faces widening the node and every node above it.
+    /// </summary>
+    private static float[] BentSpheres(
+        RetailRayMesh mesh,
+        float[] vertices,
+        float[] points,
+        float[][] frames,
+        int count,
+        float x0,
+        float x1,
+        bool reverse)
+    {
+        int nodes = mesh.SphereCount;
+        float[] centres = new float[3 * nodes];
+        for (int n = 0; n < nodes; n++)
+        {
+            centres[3 * n] = mesh.Spheres[4 * n];
+            centres[(3 * n) + 1] = mesh.Spheres[(4 * n) + 1];
+            centres[(3 * n) + 2] = mesh.Spheres[(4 * n) + 2];
+        }
+
+        float[] bent = Bend(centres, points, frames, count, x0, x1, reverse);
+        float[] spheres = new float[4 * nodes];
+        for (int n = 0; n < nodes; n++)
+        {
+            spheres[4 * n] = bent[3 * n];
+            spheres[(4 * n) + 1] = bent[(3 * n) + 1];
+            spheres[(4 * n) + 2] = bent[(3 * n) + 2];
+            spheres[(4 * n) + 3] = mesh.Spheres[(4 * n) + 3];
+        }
+
+        if (nodes > 0)
+        {
+            List<int> stack = [];
+            Rebuild(0);
+
+            void Rebuild(int node)
+            {
+                spheres[(4 * node) + 3] = 0f;
+                stack.Add(node);
+                int child = mesh.Links[(4 * node) + 2];
+                if (child != 0)
+                {
+                    Rebuild(child);
+                    for (int sibling = mesh.Links[(4 * child) + 3]; sibling != 0; sibling = mesh.Links[(4 * sibling) + 3])
+                    {
+                        Rebuild(sibling);
+                    }
+                }
+
+                int first = mesh.Links[4 * node], faces = mesh.Links[(4 * node) + 1];
+                for (int f = first; f < first + faces; f++)
+                {
+                    foreach (int held in stack)
+                    {
+                        for (int corner = 0; corner < 3; corner++)
+                        {
+                            int v = 3 * mesh.Faces[(4 * f) + corner];
+                            X87 dx = (X87)vertices[v] - spheres[4 * held];
+                            X87 dy = (X87)vertices[v + 1] - spheres[(4 * held) + 1];
+                            X87 dz = (X87)vertices[v + 2] - spheres[(4 * held) + 2];
+                            X87 distance = X87.Sqrt(dx * dx + dy * dy + dz * dz);
+                            if (spheres[(4 * held) + 3] > distance.Value)
+                            {
+                                distance = spheres[(4 * held) + 3];
+                            }
+
+                            spheres[(4 * held) + 3] = distance.F;
+                        }
+                    }
+                }
+
+                stack.RemoveAt(stack.Count - 1);
+            }
+        }
+
+        return spheres;
     }
 
     /// <summary>The waypoint orientation for a level's <c>(α, β, γ)</c>: <c>0x4B38E0</c>, <c>RotZ(γ)·RotY(β)·RotX(α)</c>.</summary>
@@ -166,14 +262,47 @@ public sealed class RetailSplineSegment
     /// <param name="result">The ray's running result.</param>
     public void Cast(Vector3d s, Vector3d e, ref RetailRayResult result)
     {
+        if (Broad(s, e))
+        {
+            Narrow(s, e, ref result);
+        }
+    }
+
+    /// <summary>A batch of rays, in order, against this segment -- <c>0x4E16E0</c>'s own loop.</summary>
+    /// <param name="starts">The rays' starts.</param>
+    /// <param name="ends">The rays' ends.</param>
+    /// <param name="results">The running results, one per ray.</param>
+    /// <remarks>
+    /// A ray outside the segment's box does not just skip itself: the handler jumps to its epilogue
+    /// (<c>0x4E3F76</c>), so no later ray of the batch is tested against this segment at all. The placed-model
+    /// handler <c>0x4C1840</c> moves on to the next ray instead (<c>0x4C2F3D</c>). Probed on Mission 7's T80: at
+    /// tick 1459 its ray 2 lies below the road piece's box and its ray 3, over the road's far end, is never tested.
+    /// </remarks>
+    public void Cast(ReadOnlySpan<Vector3d> starts, ReadOnlySpan<Vector3d> ends, Span<RetailRayResult> results)
+    {
+        for (int i = 0; i < results.Length; i++)
+        {
+            if (!Broad(starts[i], ends[i]))
+            {
+                return;
+            }
+
+            Narrow(starts[i], ends[i], ref results[i]);
+        }
+    }
+
+    private bool Broad(Vector3d s, Vector3d e)
+    {
         double px = Position[0], py = Position[1], pz = Position[2];
         X87 r = Radius;
-        if (!Straddles((X87)px - r, r + px, s.X, e.X)
-            || !Straddles((X87)py - r, r + py, s.Y, e.Y)
-            || !Straddles((X87)pz - r, r + pz, s.Z, e.Z))
-        {
-            return;
-        }
+        return Straddles((X87)px - r, r + px, s.X, e.X)
+            && Straddles((X87)py - r, r + py, s.Y, e.Y)
+            && Straddles((X87)pz - r, r + pz, s.Z, e.Z);
+    }
+
+    private void Narrow(Vector3d s, Vector3d e, ref RetailRayResult result)
+    {
+        double px = Position[0], py = Position[1], pz = Position[2];
 
         float[] ls = [((X87)s.X - px).F, ((X87)s.Y - py).F, ((X87)s.Z - pz).F];
         float[] le = [((X87)e.X - px).F, ((X87)e.Y - py).F, ((X87)e.Z - pz).F];
@@ -201,9 +330,10 @@ public sealed class RetailSplineSegment
             Hi = hi,
         };
 
-        // The rebuilt sphere tree (0x4E1440) is not transcribed; an unculled walk tests every face in leaf order,
-        // which is what the capture's 567 segment hits need.
-        RetailModelRay.Walk(Mesh, ls, d, 0d, lenf, portals: true, search, mirror: Reverse, Vertices, cullSpheres: false);
+        // The walk culls by the segment's own rebuilt tree; inv = 1 / |Le - Ls|² over register differences of floats.
+        X87 lx = (X87)le[0] - ls[0], ly = (X87)le[1] - ls[1], lz = (X87)le[2] - ls[2];
+        double inverse = ((X87)1.0 / (lz * lz + lx * lx + ly * ly)).Value;
+        RetailModelRay.Walk(Mesh, ls, d, inverse, lenf, portals: true, search, mirror: Reverse, Vertices, cullSpheres: true, Spheres);
         if (!search.Found || (result.Hit && !(search.Best < result.Distance)))
         {
             return;

@@ -315,9 +315,11 @@ public static class RetailModelRay
         Search search,
         bool mirror,
         float[]? vertices = null,
-        bool cullSpheres = true)
+        bool cullSpheres = true,
+        float[]? spheres = null)
     {
         int[] links = mesh.Links;
+        float[] sp = spheres ?? mesh.Spheres;
         Span<int> stack = stackalloc int[100];
         int top = 0;
         stack[0] = 0;
@@ -336,7 +338,7 @@ public static class RetailModelRay
                 {
                     node = sibling;
                     stack[top] = node;
-                    if (!SphereOk(mesh, node, ls, d, inverse, search, cullSpheres))
+                    if (!SphereOk(sp, node, ls, d, inverse, search, cullSpheres))
                     {
                         continue;
                     }
@@ -369,7 +371,7 @@ public static class RetailModelRay
                 }
 
                 stack[top] = node;
-                if (!SphereOk(mesh, node, ls, d, inverse, search, cullSpheres))
+                if (!SphereOk(sp, node, ls, d, inverse, search, cullSpheres))
                 {
                     break;
                 }
@@ -387,14 +389,14 @@ public static class RetailModelRay
         }
     }
 
-    private static bool SphereOk(RetailRayMesh mesh, int n, float[] ls, float[] d, double inverse, Search search, bool cull)
+    private static bool SphereOk(float[] sp, int n, float[] ls, float[] d, double inverse, Search search, bool cull)
     {
         if (!cull)
         {
             return true;
         }
 
-        float[] sp = mesh.Spheres;
+
         float cx = sp[4 * n], cy = sp[(4 * n) + 1], cz = sp[(4 * n) + 2], rr = sp[(4 * n) + 3];
         X87 ex = (X87)cx - ls[0], ey = (X87)cy - ls[1], ez = (X87)cz - ls[2];
         X87 proj = ez * d[2] + ey * d[1] + ex * d[0];
