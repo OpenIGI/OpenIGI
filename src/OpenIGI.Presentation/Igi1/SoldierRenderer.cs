@@ -806,7 +806,7 @@ public sealed class SoldierRenderer : IDisposable
     /// <summary>Whether the eye can see a point along a plain cast, any contact blocking.</summary>
     /// <remarks>
     /// The binocular overlay's rule: the retail detector culls by sector/portal visibility, which
-    /// see-through surfaces do not bound. See <see cref="HasLineOfSight(WorldTraceCast, Vector3d, Vector3d, double)"/>.
+    /// see-through surfaces do not bound. See <see cref="HasLineOfSight(WorldTraceCast, Vector3d, Vector3d, double, GameTask)"/>.
     /// </remarks>
     internal static bool HasLineOfSight(WorldRayCast cast, Vector3d from, Vector3d to)
     {
@@ -846,7 +846,14 @@ public sealed class SoldierRenderer : IDisposable
     /// fraction is at least 0.79, and <c>0x4CE410</c> forces the fraction to zero for a terrain hit.
     /// </para>
     /// </remarks>
-    internal static bool HasLineOfSight(WorldTraceCast trace, Vector3d from, Vector3d to, double objectTolerance)
+    /// <param name="ignoredOwner">The viewer itself, when it has a body the ray would otherwise meet -- a vehicle.</param>
+    /// <returns><see langword="true"/> when the line is clear.</returns>
+    public static bool HasLineOfSight(
+        WorldTraceCast trace,
+        Vector3d from,
+        Vector3d to,
+        double objectTolerance,
+        GameTask? ignoredOwner = null)
     {
         ArgumentNullException.ThrowIfNull(trace);
 
@@ -859,7 +866,7 @@ public sealed class SoldierRenderer : IDisposable
             // Portal faces are not traced. They describe the doorway and window openings for the renderer's
             // sector visibility, not collision, so 0x4CE410's object handlers never meet them; a closed
             // door leaf is its own collision geometry and still blocks.
-            if (!trace(new WorldTraceRequest(origin, to, WorldTraceMask.World), out WorldTraceHit hit))
+            if (!trace(new WorldTraceRequest(origin, to, WorldTraceMask.World, IgnoredOwner: ignoredOwner), out WorldTraceHit hit))
             {
                 return true;
             }

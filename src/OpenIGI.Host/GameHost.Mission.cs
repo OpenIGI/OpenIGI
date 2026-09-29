@@ -3359,9 +3359,14 @@ internal sealed partial class GameHost
                 0d,
                 player.Body.IsCrouched ? AiSoldier.HumanOriginCrouchedInUnits : AiSoldier.HumanOriginStandingInUnits)
             : null;
+        // A vehicle's detection sweep tests the point the human reports to every viewer -- the soldiers' mark over
+        // the feet -- along the soldiers' sight ray (0x489B20), which passes its own body.
+        runtime.VehicleSightTarget = () => !_playerHealth.IsDead
+            ? player.Body.Position + new Vector3d(0d, 0d, AiSoldier.DetectionMarkAboveFeet(player.Body.IsCrouched))
+            : null;
         runtime.VehicleCombatLineOfSight = (owner, from, to) =>
             _worldTrace is null
-            || !_worldTrace(new WorldTraceRequest(from, to, WorldTraceMask.World, IgnoredOwner: owner), out _);
+            || SoldierRenderer.HasLineOfSight(_worldTrace, from, to, AiSoldier.SightObstructionTolerance, owner);
         runtime.VehicleCombatShotFired = shot =>
         {
             if (shot.IsHitscan)

@@ -78,11 +78,10 @@ public sealed class CutsceneRuntime
     private DestructibleObjectRegistry? _destructibles;
     private Func<int, CutsceneTargetPose?>? _targetPoseResolver;
     private readonly Dictionary<GameTask, VehicleArmament> _armaments = [];
+    private readonly Dictionary<GameTask, VehicleVision> _visions = new(ReferenceEqualityComparer.Instance);
+    private int _visionCounter;
     private readonly Dictionary<GameTask, DeathZoneState> _deathZones = [];
     private readonly Random _gunRandom = new(0x46F390);
-
-    /// <summary>How far above its origin a vehicle's eye stands (<c>0x42E870</c>: 8192 units, two metres).</summary>
-    private const double VehicleEyeHeightUnits = 8192d;
 
     /// <summary>CarAI's arrival radius squared (<c>dbl_533648</c>: three metres).</summary>
     private const double CarAiArrivalSquared = 150_994_944d;
@@ -125,6 +124,12 @@ public sealed class CutsceneRuntime
 
     /// <summary>Supplies the living player eye used by firing vehicles.</summary>
     public Func<Vector3d?>? VehicleCombatTarget { get; set; }
+
+    /// <summary>
+    /// Gets or sets where a vehicle's eye tests the same target: the point the human reports to a detection sweep
+    /// (message <c>0x489620</c>), which the soldiers' sweep uses too. Falls back to <see cref="VehicleCombatTarget"/>.
+    /// </summary>
+    public Func<Vector3d?>? VehicleSightTarget { get; set; }
 
     /// <summary>Tests the firing vehicle's muzzle-to-player sight segment.</summary>
     public Func<GameTask, Vector3d, Vector3d, bool>? VehicleCombatLineOfSight { get; set; }
@@ -325,11 +330,18 @@ public sealed class CutsceneRuntime
         _expressions = new LevelExpressionRuntime(variables, InvokeNative);
         List<CutSceneTask> cutscenes = [];
 
+        // Every detection record takes the next value of the global round-robin counter as it initialises: the camera
+        // lenses at construction, then the vehicles in tree order at post-load (VehicleVision).
+        _visionCounter = Walk(levelRoot).Count(static task => string.Equals(task.Type.Name, "SCamera", StringComparison.Ordinal));
         int taskOrder = 0;
         foreach (GameTask task in Walk(levelRoot))
         {
             int order = taskOrder++;
             _taskOrder[task] = order;
+            if (task.Type.Name is "Car" or "Heli")
+            {
+                _visions[task] = new VehicleVision(NextVisionPhase());
+            }
             if (task is ConditionalContainerTask container)
             {
                 _containers.Add(container);
@@ -719,33 +731,31 @@ public sealed class CutsceneRuntime
     /// <summary>What the car's vision holds, retained for 600 ticks (<c>0x426000</c>), or nothing.</summary>
     private Vector3d? ChaseTarget(CarAiState state, Vector3d? target)
     {
-        if (target is not { } seen)
+        // A car whose "Can fire" is off has no vision and chases nothing; a retained target that died is dropped.
+        if (!_visions.TryGetValue(state.Car, out VehicleVision? vision) || !vision.CanFire || target is not { } seen)
         {
-            state.Chase.Track(default);
+            state.ChaseHeld = false;
+            state.ChaseRetention = 0;
             return null;
         }
 
-        // The car's eye stands two metres over its origin (0x42E870), and it looks only while its
-        // "Can fire" holds -- a car with no vision never chases.
-        Vector3d eye = state.Transform.Position + new Vector3d(0d, 0d, VehicleEyeHeightUnits);
-        bool canFire = _expressions.EvaluateCondition(Text(state.Car, "Can fire"), emptyValue: false, state.Car);
-        bool visible = VehicleCombatLineOfSight?.Invoke(state.Car, eye, seen) ?? true;
+        // 0x426000 takes the first slot the vision marks visible and holds it for 600 ticks, counting down while
+        // nothing is visible; CarAI reads the held human's live position (+32) every tick.
+        if (vision.Sees)
+        {
+            state.ChaseHeld = true;
+            state.ChaseRetention = AiVehicleCombat.TargetRetentionTicks;
+        }
+        else if (state.ChaseRetention > 0)
+        {
+            state.ChaseRetention--;
+        }
+        else
+        {
+            state.ChaseHeld = false;
+        }
 
-        // 0x426000 holds the target OBJECT and CarAI reads its live position (+32) every tick, from the
-        // very tick the vision first holds it -- not the last place it was seen, and with no delay.
-        _ = state.Chase.Track(new AiVehicleCombatInput(
-            state.Transform.Position,
-            state.Transform.Orientation,
-            seen,
-            ConditionalContainerGate.IsTaskActive(state.Car),
-            canFire,
-            Single(state.Car, "ViewCone Alpha (degrees)", 180f),
-            Single(state.Car, "ViewCone Gamma (degrees)", 360f),
-            Single(state.Car, "ViewCone Length (meter)", 0f),
-            visible,
-            0f,
-            0));
-        return state.Chase.HasTarget ? seen : null;
+        return state.ChaseHeld ? seen : null;
     }
 
     /// <summary>Retail's "π" (<c>0x533618</c>): three ulps above <see cref="Math.PI"/>.</summary>
@@ -1090,30 +1100,14 @@ public sealed class CutsceneRuntime
                 return;
             }
 
-            // The vehicle's eye stands two metres over its origin (0x42E870 adds 8192 to Z).
-            Vector3d eye = transform.Position + new Vector3d(0d, 0d, VehicleEyeHeightUnits);
-            Vector3d? aim = null;
-            if (target is { } candidate)
-            {
-                bool visible = VehicleCombatLineOfSight?.Invoke(vehicle, eye, candidate) ?? true;
-                aim = armament.Sight.Track(new AiVehicleCombatInput(
-                    transform.Position,
-                    transform.Orientation,
-                    candidate,
-                    active,
-                    canFire,
-                    Single(declared, "ViewCone Alpha (degrees)", 180f),
-                    Single(declared, "ViewCone Gamma (degrees)", 360f),
-                    Single(declared, "ViewCone Length (meter)", 0f),
-                    visible,
-                    0f,
-                    0),
-                    retainWhileHidden: false);
-            }
-            else
-            {
-                armament.Sight.Track(default);
-            }
+            // Each gun walks its vehicle's record for the first slot marked visible and aims at that human's
+            // position (0x46F390); its own 90-run hold covers a target it loses.
+            Vector3d? aim = active
+                && _visions.TryGetValue(vehicle, out VehicleVision? vision)
+                && vision.Sees
+                && target is { } candidate
+                    ? candidate
+                    : null;
 
             // A car's update (0x42E320) runs its guns once, then re-seats them and runs every
             // AIStationaryGun a second time unless +11980 says its physics tick already did, so a car's
@@ -1521,6 +1515,7 @@ public sealed class CutsceneRuntime
         }
 
         _lastVehicleTick[car] = SimulationTick;
+        TickVehicleVision(car);
         _walker.WalkChildren(car);
         TickVehicleCombat(car);
         TickDeathZones(car);
@@ -1529,9 +1524,68 @@ public sealed class CutsceneRuntime
     /// <summary>A Heli's update (<c>0x4316D0</c>): its children -- its AnimTask flies it -- then its gun.</summary>
     private void TickHeli(GameTask heli)
     {
+        TickVehicleVision(heli);
         _walker.WalkChildren(heli);
         TickVehicleCombat(heli);
         TickDeathZones(heli);
+    }
+
+    /// <summary>
+    /// The vehicle's eye: a car's <c>0x42E870</c> (eye 8192 units over its origin, its own orientation), a helicopter's
+    /// <c>+1960</c> block of <c>0x4316D0</c> (eye at its origin, looking down: its orientation times RotX(-90°)).
+    /// </summary>
+    private void TickVehicleVision(GameTask vehicle)
+    {
+        if (!_visions.TryGetValue(vehicle, out VehicleVision? vision)
+            || vehicle is not DeclaredTask declared
+            || !_taskTransforms.TryGetValue(vehicle, out TransformState? transform)
+            || _destructibles?.IsDestroyed(vehicle) == true)
+        {
+            return;
+        }
+
+        bool helicopter = string.Equals(vehicle.Type.Name, "Heli", StringComparison.Ordinal);
+        bool canFire = _expressions.EvaluateCondition(Text(declared, "Can fire"), emptyValue: false, vehicle);
+        Vector3d eyePosition = helicopter
+            ? transform.Position
+            : transform.Position + new Vector3d(0d, 0d, VehicleVision.CarEyeHeightUnits);
+        Matrix3f orientation = helicopter ? transform.Orientation * HeliEyeTilt : transform.Orientation;
+        AiEyeSnapshot eye = new(
+            eyePosition,
+            orientation,
+            new AiSnapshotCone(
+                Single(declared, "ViewCone Alpha (degrees)", 180f) * 0.017453292,
+                Single(declared, "ViewCone Gamma (degrees)", 360f) * 0.017453292,
+                Single(declared, "ViewCone Length (meter)", 0f) * 4096.0),
+            default,
+            secondaryEnabled: false);
+        Vector3d? target = VehicleSightTarget?.Invoke() ?? VehicleCombatTarget?.Invoke();
+        // The sweep compares its phase against the flow tick count (0x4028B0), which the walk increments after it runs:
+        // the level's first walk is flow tick 0. Probed on mission 7: the T80's sweeps fall on flow ticks 3, 7, 11, ...
+        vision.Tick(
+            SimulationTick - 1,
+            canFire,
+            eye,
+            target,
+            point => VehicleCombatLineOfSight?.Invoke(vehicle, eyePosition, point) ?? true,
+            NextVisionPhase);
+    }
+
+    /// <summary>RotX(-1.5707964) as <c>0x4B3B60</c> builds it, which <c>0x4316D0</c> turns a helicopter's eye by.</summary>
+    private static readonly Matrix3f HeliEyeTilt = HeliTilt();
+
+    private static Matrix3f HeliTilt()
+    {
+        float angle = -1.5707964f;
+        float sine = (float)Math.Sin(angle), cosine = (float)Math.Cos(angle);
+        return new Matrix3f(1f, 0f, 0f, 0f, cosine, -sine, 0f, sine, cosine);
+    }
+
+    private int NextVisionPhase()
+    {
+        int phase = _visionCounter & 3;
+        _visionCounter = (_visionCounter + 1) & 3;
+        return phase;
     }
 
     /// <summary>Serves cutscene-specific level-expression natives to sibling mission runtimes.</summary>
@@ -4425,7 +4479,8 @@ public sealed class CutsceneRuntime
         public float Brake { get; set; }                      // +96, channel 3
         public int WaitTicks { get; set; }                    // +124
         public int Packets { get; set; }                      // +80
-        public AiVehicleCombat Chase { get; } = new();        // +116/+120, 0x426000
+        public bool ChaseHeld { get; set; }                   // +116, the held target (0x426000)
+        public int ChaseRetention { get; set; }               // +120, counted down from 600
     }
 
     /// <summary>One vehicle's death zones and how fast it moved on the last tick.</summary>
