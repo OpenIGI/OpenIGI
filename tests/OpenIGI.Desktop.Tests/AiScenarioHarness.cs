@@ -866,6 +866,7 @@ public sealed class AiScenarioHarness : IDisposable
         bool quit = false;
         int maxSteps = EnvInt("OPENIGI_VEH_SCENARIO_STEPS", 200_000);
         int lastPlaneSteps = -1;
+        Dictionary<PlacedDoor, string> doorLines = [];
 
         // OPENIGI_VEH_SCENARIO_POSLOG=<n>: the player's position every n ticks, as the probe's IGI_PROBE_POSLOG.
         int posEvery = Math.Max(1, EnvInt("OPENIGI_VEH_SCENARIO_POSLOG", 30));
@@ -980,6 +981,24 @@ public sealed class AiScenarioHarness : IDisposable
                 else if (bodyState.GetType().GetProperty("RetailHeli")?.GetValue(bodyState) is RetailHeliBody heli)
                 {
                     log.AppendLine(CultureInfo.InvariantCulture, $"[body] tick={tick} pos=({heli.Position[0]:R},{heli.Position[1]:R},{heli.Position[2]:R}) thr={heli.Collective:R}/{heli.CollectiveTarget:R} steer={heli.Controls[0]:R}/{heli.Targets[0]:R} hb=False speed={heli.Speed:R}");
+                }
+            }
+
+            // OPENIGI_VEH_SCENARIO_DOORS=1: every door's pose whenever it changes, in the probe's [door] format.
+            if (EnvInt("OPENIGI_VEH_SCENARIO_DOORS", 0) == 1
+                && typeof(GameHost).GetField("_doors", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(host) is DoorRegistry doorRegistry)
+            {
+                for (int doorIndex = 0; doorIndex < doorRegistry.Doors.Count; doorIndex++)
+                {
+                    PlacedDoor door = doorRegistry.Doors[doorIndex];
+                    Vector3d du = door.PoseUnits;
+                    Matrix3f dm = door.PoseOrientation;
+                    string line = string.Create(CultureInfo.InvariantCulture, $"pos=({du.X:R},{du.Y:R},{du.Z:R}) m=[{dm.M11:G9} {dm.M12:G9} {dm.M13:G9} {dm.M21:G9} {dm.M22:G9} {dm.M23:G9} {dm.M31:G9} {dm.M32:G9} {dm.M33:G9}] slide={door.State.SlideFraction:G9} angle={door.State.AngleDegrees:G9}");
+                    if (!doorLines.TryGetValue(door, out string? previous) || previous != line)
+                    {
+                        doorLines[door] = line;
+                        log.AppendLine(CultureInfo.InvariantCulture, $"[door] tick={tick} door=port{doorIndex} id={door.Task.Id} {line}");
+                    }
                 }
             }
 
