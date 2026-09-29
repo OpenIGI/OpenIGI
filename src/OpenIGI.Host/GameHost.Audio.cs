@@ -1574,9 +1574,7 @@ internal sealed partial class GameHost
             ? item.ExplosionRadiusUnits
             : ExplosionDamage.ToUnits(ExplosionDamage.DefaultGrenadeRadiusMetres);
         float falloff = Math.Max(0f, item.ExplosionFalloffUnits);
-        float damageFactor = item.ExplosionDamageFactor > 0f
-            ? item.ExplosionDamageFactor
-            : ExplosionDamage.DefaultGrenadeDamageFactor;
+        float damageFactor = Math.Max(0f, item.ExplosionDamageFactor);
 
         if (item.ExplosionSound.Length > 0)
         {
@@ -1588,9 +1586,18 @@ internal sealed partial class GameHost
         _impactParticles?.SpawnRetailExplosion(
             item.PositionUnits,
             new RetailExplosionShape(radius, (int)item.ExplosionFireballs, item.ExplosionFragments));
+        _soldiers?.NotifyExplosion(item.PositionUnits, AiSoldier.LargeExplosionEventRadiusInUnits);
+
+        // Explosion0 (0x47F200) hands its message -- the damage, the shove and the shake -- to every human
+        // only when its damage is not 0. A wooden window authors 0: it splinters, and nobody is hurt.
+        if (damageFactor == 0f)
+        {
+            _logger.Information("World", $"{item.TypeName} at {item.PositionUnits} broke without a blast.");
+            return;
+        }
+
         HandleDestructibleBlast(item, item.PositionUnits, radius, falloff, damageFactor);
         _soldiers?.ApplyExplosion(item.PositionUnits, radius, falloff, damageFactor);
-        _soldiers?.NotifyExplosion(item.PositionUnits, AiSoldier.LargeExplosionEventRadiusInUnits);
 
         if (_player is not null && !_playerHealth.IsDead)
         {

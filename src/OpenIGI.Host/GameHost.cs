@@ -3161,6 +3161,16 @@ internal sealed partial class GameHost : IDisposable
                     TickAmbience(_player.EyeUnits);
 
                 }
+                else if (_playerDead)
+                {
+                    // The player's update has stopped, but the world's has not: a blast that killed the player
+                    // burns out, and its debris and smoke settle, under the death camera as they do in the
+                    // original. Stepping them only from the player's update froze them on screen.
+                    _impactParticles?.Tick();
+                    _explosions?.Tick();
+                    _missileSmoke?.Tick();
+                    TickRetailImpactEffects();
+                }
 
                 // The first round of a mission, reported once — the same one-shot diagnostic the world
                 // draw uses. It is what says the whole chain arrived: the trigger reached the state
