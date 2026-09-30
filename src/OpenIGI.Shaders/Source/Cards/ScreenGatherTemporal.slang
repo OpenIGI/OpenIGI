@@ -22,6 +22,11 @@ OPENIGI_COMPUTE_SAMPLER(10) SamplerState uPositionHistorySampler;
 OPENIGI_COMPUTE_TEXTURE(12) Texture2D<float4> uRaw;
 OPENIGI_COMPUTE_SAMPLER(12) SamplerState uRawSampler;
 
+// The frame's motion field, moving objects' own stamped over the camera's: unjittered current UV less previous.
+// Read only when uHasVelocity says it was made this frame.
+OPENIGI_COMPUTE_TEXTURE(13) Texture2D<float4> uVelocity;
+OPENIGI_COMPUTE_SAMPLER(13) SamplerState uVelocitySampler;
+
 OPENIGI_COMPUTE_GLOBALS cbuffer Globals
 {
 #if OPENIGI_RAY_QUERY
@@ -87,6 +92,9 @@ OPENIGI_COMPUTE_GLOBALS cbuffer Globals
     int uHasHistory;
     int uFrameIndex;
     int uMaxAccumulated;
+
+    // Whether uVelocity holds this frame's motion field.
+    int uHasVelocity;
 
     // 0 traces each probe and stores its raw estimate; 1 pools every probe's full neighbourhood of raw
     // estimates and folds the result into the history. Split so that a probe on the edge of a workgroup
@@ -267,6 +275,25 @@ void computeMain(uint3 id : SV_DispatchThreadID, uint3 localId : SV_GroupThreadI
                 prevYSign * (prevView.y * uUnproject.y) / prevView.z);
             float2 prevUv = (prevNdc * 0.5) + 0.5;
 
+            // A car or a door moved on its own as well as with the camera. Where the motion field disagrees
+            // with the camera by more than the jitter could explain, the surface came from where the field
+            // says; the plane test below would only find the road it left, so it is not asked.
+            bool ownMotion = false;
+            if (uHasVelocity != 0)
+            {
+                int2 probePixel = min(
+                    (probe * uProbeStep) + (uProbeStep / 2), int2(uScreenWidth, uScreenHeight) - 1);
+                float2 screen = float2(float(uScreenWidth), float(uScreenHeight));
+                float2 probeUv = (float2(probePixel) + 0.5) / screen;
+                float2 motion = uVelocity.SampleLevel(uVelocitySampler, probeUv, 0.0).xy;
+                float2 apart = (motion - (probeUv - prevUv)) * screen;
+                if (dot(apart, apart) > 2.25)
+                {
+                    prevUv = probeUv - motion;
+                    ownMotion = true;
+                }
+            }
+
             if (all(prevUv >= float2(0.0, 0.0)) && all(prevUv <= float2(1.0, 1.0)))
             {
                 float2 gridF = float2(grid);
@@ -306,7 +333,7 @@ void computeMain(uint3 id : SV_DispatchThreadID, uint3 localId : SV_GroupThreadI
                     float3 tapWorld = tapPos.xyz + uPrevCameraToCache;
                     float3 offsetFromSurface = tapWorld - world;
                     float planeDistance = abs(dot(offsetFromSurface, worldNormal));
-                    if (planeDistance > max(0.05, 0.5 * cellSpan))
+                    if (!ownMotion && planeDistance > max(0.05, 0.5 * cellSpan))
                     {
                         continue;
                     }

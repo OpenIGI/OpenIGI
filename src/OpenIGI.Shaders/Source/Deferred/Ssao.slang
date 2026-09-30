@@ -15,6 +15,10 @@
 [[vk::binding(5, 0)]] Texture2D<float4> uPreviousDepth;
 [[vk::binding(6, 0)]] SamplerState uPreviousDepthSampler;
 
+// The frame's motion field at full resolution, moving objects' own stamped over the camera's: unjittered current
+// UV less previous. Read only when temporal.y says it was made this frame.
+[[vk::binding(8, 0)]] Texture2D<float4> uVelocity;
+
 struct Params
 {
     // this frame's view rotation, camera-relative.
@@ -38,7 +42,7 @@ struct Params
     // this camera minus the previous, w: frame index for the noise.
     float4 cameraDelta;
 
-    // x: whether a history exists, yzw unused.
+    // x: whether a history exists, y: whether uVelocity is this frame's, zw unused.
     float4 temporal;
 };
 
@@ -62,14 +66,19 @@ float Hash(float2 v)
     return frac(sin(dot(v, float2(12.9898, 78.233))) * 43758.5453);
 }
 
-[shader("compute")]
-[numthreads(8, 8, 1)]
-void computeMain(uint3 id : SV_DispatchThreadID)
+// This frame's fresh estimate, per thread of the group, for the history clamp at the end.
+groupshared float gFresh[8][8];
+
+// The fresh occlusion of one pixel: the gather alone, before any history. False for the sky and for a
+// thread past the image, which have no surface to reproject.
+bool FreshOcclusion(int2 px, out float ao, out float3 position, out float3 normal)
 {
-    int2 px = int2(id.xy);
+    ao = 1.0;
+    position = float3(0.0, 0.0, 0.0);
+    normal = float3(0.0, 0.0, 1.0);
     if (px.x >= int(p.resolution.x) || px.y >= int(p.resolution.y))
     {
-        return;
+        return false;
     }
 
     // Snapped to a full-resolution texel centre, so the half-resolution gather never reads a depth
@@ -81,18 +90,17 @@ void computeMain(uint3 id : SV_DispatchThreadID)
     // The sky (reverse-Z far is zero) is not a surface and is never occluded.
     if (depth <= 0.0)
     {
-        uOcclusion.Store(px, float4(1.0, 1.0, 1.0, 1.0));
-        return;
+        return false;
     }
 
-    float3 position = ViewPositionAt(uv, depth, p.unproject);
+    position = ViewPositionAt(uv, depth, p.unproject);
 
     // A face normal from the neighbouring depths -- a compute shader has no screen-space derivatives.
     // Turned to face the camera: the reconstruction's cross product can come out either way, and a
     // back-facing normal would send the whole hemisphere into the geometry.
     float3 dx = ViewPosition(uv + float2(p.fullResolution.z, 0.0)) - position;
     float3 dy = ViewPosition(uv + float2(0.0, p.fullResolution.w)) - position;
-    float3 normal = normalize(cross(dx, dy));
+    normal = normalize(cross(dx, dy));
     if (dot(normal, position) > 0.0)
     {
         normal = -normal;
@@ -147,8 +155,55 @@ void computeMain(uint3 id : SV_DispatchThreadID)
         occlusion += (sceneZ <= samplePos.z - bias ? 1.0 : 0.0) * rangeCheck;
     }
 
-    float ao = 1.0 - ((occlusion / float(kCount)) * p.params.y);
+    ao = 1.0 - ((occlusion / float(kCount)) * p.params.y);
     ao = pow(clamp(ao, 0.0, 1.0), max(p.params.w, 0.01));
+    return true;
+}
+
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void computeMain(uint3 id : SV_DispatchThreadID, uint3 local : SV_GroupThreadID)
+{
+    int2 px = int2(id.xy);
+    float ao;
+    float3 position;
+    float3 normal;
+    bool surface = FreshOcclusion(px, ao, position, normal);
+
+    // Every thread reaches the barrier, the sky and the image's ragged edge included.
+    gFresh[local.y][local.x] = ao;
+    GroupMemoryBarrierWithGroupSync();
+
+    if (px.x >= int(p.resolution.x) || px.y >= int(p.resolution.y))
+    {
+        return;
+    }
+
+    if (!surface)
+    {
+        uOcclusion.Store(px, float4(1.0, 1.0, 1.0, 1.0));
+        return;
+    }
+
+    // The range this frame's own estimates span around the pixel, from the group's threads alone so the
+    // result never depends on which group ran first. The history is held inside it: where an occluder has
+    // moved away -- the ground a car has just driven off -- every fresh estimate is open and the darkness
+    // it left in the history is cut at once instead of fading out over a dozen frames as a trail.
+    float freshMin = ao;
+    float freshMax = ao;
+    for (int ny = -1; ny <= 1; ny++)
+    {
+        for (int nx = -1; nx <= 1; nx++)
+        {
+            int2 n = int2(local.xy) + int2(nx, ny);
+            if (all(n >= int2(0, 0)) && all(n < int2(8, 8)))
+            {
+                float v = gFresh[n.y][n.x];
+                freshMin = min(freshMin, v);
+                freshMax = max(freshMax, v);
+            }
+        }
+    }
 
     // The temporal blend: find where this surface sat on the previous frame's screen, check the previous
     // depth agrees it was this surface, and ease the fresh estimate onto the history.
@@ -165,7 +220,29 @@ void computeMain(uint3 id : SV_DispatchThreadID)
                 -prevView.y * p.unproject.y / prevView.z);
             float2 prevUv = (prevNdc * 0.5) + 0.5;
 
-            if (all(prevUv >= float2(0.0, 0.0)) && all(prevUv <= float2(1.0, 1.0)))
+            // A car or a door moved on its own as well as with the camera. Where the motion field disagrees
+            // with the camera by more than the jitter could explain, the surface came from where the field
+            // says, and its own history is there -- the plane test would only see the road it drove off.
+            bool ownMotion = false;
+            if (p.temporal.y > 0.5)
+            {
+                float2 fullUv = ((float2(px) * 2.0) + 0.5) * p.fullResolution.zw;
+                float2 motion = uVelocity.Load(int3(px * 2, 0)).xy;
+                float2 apart = (motion - (fullUv - prevUv)) * p.fullResolution.xy;
+                if (dot(apart, apart) > 2.25)
+                {
+                    prevUv = fullUv - motion;
+                    ownMotion = true;
+                }
+            }
+
+            if (ownMotion && all(prevUv >= float2(0.0, 0.0)) && all(prevUv <= float2(1.0, 1.0)))
+            {
+                // The fresh range around the pixel is what keeps this history honest; see the clamp above.
+                float history = uPreviousOcclusion.SampleLevel(uPreviousOcclusionSampler, prevUv, 0.0).r;
+                ao = lerp(clamp(history, freshMin, freshMax), ao, 0.125);
+            }
+            else if (!ownMotion && all(prevUv >= float2(0.0, 0.0)) && all(prevUv <= float2(1.0, 1.0)))
             {
                 // Validated along the surface normal rather than by a depth ratio: reconstruct where the
                 // previous frame actually saw a surface at that pixel, and measure how far off this
@@ -187,7 +264,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
                     {
                         float history = uPreviousOcclusion.SampleLevel(
                             uPreviousOcclusionSampler, prevUv, 0.0).r;
-                        ao = lerp(history, ao, 0.125);
+                        ao = lerp(clamp(history, freshMin, freshMax), ao, 0.125);
                     }
                 }
             }

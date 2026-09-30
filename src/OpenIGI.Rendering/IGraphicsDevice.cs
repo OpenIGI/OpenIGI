@@ -470,6 +470,22 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetFirstPersonGeometry(bool firstPerson);
 
+    /// <summary>Marks the draws that follow as moving under their own power.</summary>
+    /// <param name="moving">Whether the object being drawn has its own motion this frame.</param>
+    /// <remarks>
+    /// <para>
+    /// The velocity the temporal passes read is derived from depth and the two cameras, so it describes only
+    /// what the camera did. A car, a jet, a train or a swinging door drawn without this is reprojected as if it
+    /// were the scenery behind it, and its history trails behind it as a ghost. With it set, each geometry draw
+    /// is paired with its own transform from the frame before and stamps its true motion.
+    /// </para>
+    /// <para>
+    /// Device state, like <see cref="SetFirstPersonGeometry"/>: set it around a run of draws and clear it after.
+    /// A backend without per-object motion may ignore it.
+    /// </para>
+    /// </remarks>
+    void SetObjectMotion(bool moving);
+
     /// <summary>Says that the title draws a sky of its own, which the frame should keep.</summary>
     /// <param name="painted">Whether the sky about to be drawn is the game's own painted one.</param>
     /// <remarks>
@@ -800,6 +816,15 @@ public interface IGraphicsDevice : IDisposable
     /// in world space has to lift them through the view-to-world rotation itself.
     /// </remarks>
     TextureHandle SceneNormal { get; }
+
+    /// <summary>Gets the frame's motion field, or <see cref="TextureHandle.None"/> where there is none yet.</summary>
+    /// <remarks>
+    /// Per pixel, the unjittered screen position now less the one the same surface had last frame, in UV: the
+    /// camera's motion, with every moving object's own stamped over it. Asked for once the G-buffer is drawn, the
+    /// device derives it on the spot, so a temporal pass in the game layer can find where a moving car's surface
+    /// really came from instead of where the camera alone would put it.
+    /// </remarks>
+    TextureHandle SceneVelocity { get; }
 
     /// <summary>Gets the current scene target's lit colour, or <see cref="TextureHandle.None"/>.</summary>
     /// <remarks>

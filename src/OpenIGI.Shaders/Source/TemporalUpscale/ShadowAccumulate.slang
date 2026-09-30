@@ -17,6 +17,10 @@
 // The accumulation carried forward: the mean, the view depth it was measured at, and the count.
 [[vk::binding(5, 0)]] [[vk::image_format("rgba16f")]] WTexture2D<float4> uHistory;
 
+// The frame's motion field, moving objects' own stamped over the camera's: unjittered current UV less previous.
+// Read only when control.w says it was made this frame.
+[[vk::binding(7, 0)]] Texture2D<float4> uVelocity;
+
 struct Params
 {
     // this frame's view rotation, camera-relative.
@@ -37,7 +41,7 @@ struct Params
     // xScale, yScale, near, far of the previous unjittered projection.
     float4 prevProjection;
 
-    // frames to average over, hasHistory, depth tolerance, unused.
+    // frames to average over, hasHistory, depth tolerance, whether uVelocity is this frame's.
     float4 control;
 
     // this frame's jitter in pixels, then the previous frame's.
@@ -99,18 +103,48 @@ float4 SampleHistoryCatmullRom(float2 uv)
     return result;
 }
 
+// This frame's traced mask, per thread of the group, for the history clamp below.
+groupshared float gCurrent[8][8];
+
 [shader("compute")]
 [numthreads(8, 8, 1)]
-void computeMain(uint3 id : SV_DispatchThreadID)
+void computeMain(uint3 id : SV_DispatchThreadID, uint3 local : SV_GroupThreadID)
 {
     int2 px = int2(id.xy);
     int2 size = int2(p.resolution.xy);
-    if (px.x >= size.x || px.y >= size.y)
+    bool inside = px.x < size.x && px.y < size.y;
+
+    // Read before any thread of the group replaces its own texel, and shared so every thread reaches the
+    // barrier -- the image's ragged edge included, standing in as lit.
+    float current = inside ? uShadow[px] : 1.0;
+    gCurrent[local.y][local.x] = current;
+    GroupMemoryBarrierWithGroupSync();
+
+    if (!inside)
     {
         return;
     }
 
-    float current = uShadow[px];
+    // The range this frame's mask spans around the pixel, from the group's own threads so the answer never
+    // depends on which group ran first. A mean held inside it forgets a shadow the moment its caster has
+    // gone: the ground a moving car has left is lit all round, and its old shadow no longer fades out over
+    // the whole window as a trail behind it. Inside a penumbra the range is wide and the mean is untouched.
+    float currentMin = current;
+    float currentMax = current;
+    for (int ny = -1; ny <= 1; ny++)
+    {
+        for (int nx = -1; nx <= 1; nx++)
+        {
+            int2 n = int2(local.xy) + int2(nx, ny);
+            if (all(n >= int2(0, 0)) && all(n < int2(8, 8)))
+            {
+                float v = gCurrent[n.y][n.x];
+                currentMin = min(currentMin, v);
+                currentMax = max(currentMax, v);
+            }
+        }
+    }
+
     float depth = uDepth.Load(int3(px, 0)).r;
 
     // Where this pixel's sample actually is, which is NOT its centre. The frame was rasterised through
@@ -147,10 +181,26 @@ void computeMain(uint3 id : SV_DispatchThreadID)
             prevView.x * p.prevProjection.x / prevView.z,
             -prevView.y * p.prevProjection.y / prevView.z);
 
+        // Where the camera alone says this point was. A car, a train, a door moved on its own as well: the
+        // motion field carries that, and where it disagrees with the camera by more than the jitter could
+        // explain, the surface came from where the field says -- not from the road the camera would point at.
+        float2 prevUnjittered = (prevNdc * 0.5) + 0.5;
+        bool ownMotion = false;
+        if (p.control.w > 0.5)
+        {
+            float2 motion = uVelocity.Load(int3(px, 0)).xy;
+            float2 apart = (motion - (uv - prevUnjittered)) * p.resolution.xy;
+            if (dot(apart, apart) > 2.25)
+            {
+                prevUnjittered = uv - motion;
+                ownMotion = true;
+            }
+        }
+
         // And back the other way for the fetch: the previous frame stored its answer at the pixel whose
         // own displaced sample was this point, so the position to read is the unjittered one carried
         // forward by THAT frame's jitter rather than this one's.
-        float2 prevUv = ((prevNdc * 0.5) + 0.5) + (p.jitter.zw * p.resolution.zw);
+        float2 prevUv = prevUnjittered + (p.jitter.zw * p.resolution.zw);
 
         if (all(prevUv >= float2(0.0, 0.0)) && all(prevUv <= float2(1.0, 1.0)))
         {
@@ -158,7 +208,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
             // than signal, and a filter with negative lobes can overshoot a count past its cap or drag
             // a depth across a silhouette into a value neither surface has.
             float4 history = uPrevHistory.SampleLevel(uPrevHistorySampler, prevUv, 0.0);
-            history.x = clamp(SampleHistoryCatmullRom(prevUv).x, 0.0, 1.0);
+            history.x = clamp(SampleHistoryCatmullRom(prevUv).x, currentMin, currentMax);
 
             // The test that separates "this is the same surface I averaged last frame" from "this is
             // something else that happens to reproject here". Relative rather than absolute: a tolerance
@@ -176,7 +226,9 @@ void computeMain(uint3 id : SV_DispatchThreadID)
             float depthDisagreement = min(
                 min(abs(tapDepths.x - expected), abs(tapDepths.y - expected)),
                 min(abs(tapDepths.z - expected), abs(tapDepths.w - expected)));
-            bool sameSurface = depthDisagreement <= (expected * p.control.z);
+            // A surface that moved on its own is not where the camera expected it, so the depth it is judged
+            // against is meaningless there; the clamp below is what keeps its history honest.
+            bool sameSurface = ownMotion || depthDisagreement <= (expected * p.control.z);
 
             if (sameSurface && history.z > 0.0)
             {

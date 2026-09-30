@@ -126,7 +126,8 @@ public sealed partial class GraphicsDevice
                         0UL,
                         _textures.Resolve(_lampField!.Value.Clipmaps).View,
                         WriteLampField(_lampField.Value)),
-                state);
+                state,
+                _velocityRecorded ? scene.View(SceneTargetId.Velocity) : null);
         }
 
         _lampsTraced = true;

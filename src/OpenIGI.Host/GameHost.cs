@@ -5005,6 +5005,10 @@ if (retailFog)
                 // With the world and the terrain both in the depth buffer, the world's occlusion
                 // queries can be answered honestly: walls hide the outdoors, and hills hide buildings.
                 _world.IssueOcclusionQueries(eye);
+
+                // Dropped guns, grenades and rockets move on their own: their draws stamp their motion,
+                // or the temporal resolve trails them as it trailed every vehicle.
+                _device.SetObjectMotion(true);
                 _gunPickupRenderer?.Draw(eye, projection);
 
                 // The grenades in the air, solid geometry among the world's own.
@@ -5022,6 +5026,8 @@ if (retailFog)
                     _missileRenderer.Draw(_vehicleMissiles, eye, projection, smoothPresentation ? tickBlend : 1f);
                     _missileRenderer.Draw(_player.M203, eye, projection, smoothPresentation ? tickBlend : 1f);
                 }
+
+                _device.SetObjectMotion(false);
 
                 // The remastered-optics decisions and the binocular detector are resolved here, before
                 // the soldiers are drawn, for two reasons: the detector is stateful and must be scanned
@@ -5340,7 +5346,11 @@ if (retailFog)
                             // which only moves on a frame that traced.
                             giResolvePrevWorldToView,
                             giResolvePrevCameraToCache,
-                            giRaw);
+                            giRaw,
+
+                            // Where a moving car's surface really came from, not where the camera alone
+                            // would put it. Asking derives it: every G-buffer draw is in by now.
+                            _device.SceneVelocity);
 
                         // The spatial denoise (L6c), if on: smooths the accumulation into a separate atlas that
                         // the deferred fill reads, leaving the history the next frame reprojects onto unfiltered.
@@ -5424,7 +5434,8 @@ if (retailFog)
                         giPosition[giLastWrite],
                         giPrevWorldToView,
                         giPrevCameraToCache,
-                        giStep);
+                        giStep,
+                        _device.SceneVelocity);
                     giResolveHasHistory = true;
 
                     // Recorded for the deferred lighting to fold in when the pass closes. Full-resolution, so

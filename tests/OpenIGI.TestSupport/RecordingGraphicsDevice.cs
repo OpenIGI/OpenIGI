@@ -138,6 +138,18 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public void SetFirstPersonGeometry(bool firstPerson) => FirstPersonGeometry = firstPerson;
 
+    /// <summary>Gets whether draws are currently marked as moving on their own.</summary>
+    public bool ObjectMotion { get; private set; }
+
+    /// <summary>The meshes drawn while <see cref="ObjectMotion"/> was set, in draw order.</summary>
+    public List<MeshHandle> MovingDraws { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetObjectMotion(bool moving) => ObjectMotion = moving;
+
+    /// <inheritdoc/>
+    public TextureHandle SceneVelocity => TextureHandle.None;
+
     /// <summary>The detail map attached to each diffuse texture, in the order they were attached.</summary>
     public List<(TextureHandle Diffuse, TextureHandle Detail)> TextureDetails { get; } = [];
 
@@ -980,7 +992,13 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         in Matrix4f modelView,
         TextureHandle diffuse,
         TextureHandle lightmap,
-        BlendMode blend) =>
+        BlendMode blend)
+    {
+        if (ObjectMotion)
+        {
+            MovingDraws.Add(mesh);
+        }
+
         MeshDraws.Add(new MeshDrawCall(
             mesh,
             indexOffset,
@@ -996,6 +1014,7 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
             LightmapScale,
             VertexSun,
             FogTarget));
+    }
 
     public void DrawMeshRanges(
         MeshHandle mesh,

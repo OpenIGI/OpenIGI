@@ -502,6 +502,7 @@ public sealed partial class GraphicsDevice
         CloseScenePass();
 
         RecordSky();
+        RecordVelocityBeforeShading(scene);
         RecordOcclusion(scene);
         RecordSunShadow(scene);
         RecordLampShadow(scene);

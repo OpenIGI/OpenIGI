@@ -93,6 +93,7 @@ public sealed class ScreenSpacePasses : IDisposable
     /// Whether the previous frame's occlusion is worth reading. False on the first frame after a load or
     /// a resize, where what is in that texture belongs to a different scene.
     /// </param>
+    /// <param name="velocityValid">Whether the frame's motion field was made before this, moving objects included.</param>
     public void RecordOcclusion(
         IRhiComputePassEncoder pass,
         SceneTargetSet targets,
@@ -100,7 +101,8 @@ public sealed class ScreenSpacePasses : IDisposable
         in AmbientOcclusionSettings settings,
         long frameIndex,
         int frameInFlight,
-        bool hasHistory = true)
+        bool hasHistory = true,
+        bool velocityValid = false)
     {
         ArgumentNullException.ThrowIfNull(pass);
         ArgumentNullException.ThrowIfNull(targets);
@@ -117,9 +119,11 @@ public sealed class ScreenSpacePasses : IDisposable
             occlusion.Width,
             occlusion.Height,
             frameIndex,
-            hasHistory);
+            hasHistory,
+            velocityValid);
 
         _occlusion.Bind("uDepth", targets.View(SceneTargetId.Depth), _sampler);
+        _occlusion.Bind("uVelocity", targets.View(SceneTargetId.Velocity));
         _occlusion.Bind("uOcclusion", occlusion.View);
         _occlusion.Bind("uPreviousOcclusion", targets.PreviousView(SceneTargetId.Occlusion), _sampler);
         _occlusion.Bind("uPreviousDepth", targets.PreviousView(SceneTargetId.PreviousDepth), _sampler);
@@ -177,6 +181,7 @@ public static class AmbientOcclusionParameters
     /// <param name="occlusionHeight">Its height.</param>
     /// <param name="frameIndex">Which frame this is.</param>
     /// <param name="hasHistory">Whether the previous frame's occlusion is worth reading.</param>
+    /// <param name="velocityValid">Whether the frame's motion field is ready to read.</param>
     /// <exception cref="ArgumentException">The block is the wrong length.</exception>
     public static void Write(
         Span<float> block,
@@ -185,7 +190,8 @@ public static class AmbientOcclusionParameters
         int occlusionWidth,
         int occlusionHeight,
         long frameIndex,
-        bool hasHistory)
+        bool hasHistory,
+        bool velocityValid = false)
     {
         if (block.Length != Floats)
         {
@@ -217,5 +223,6 @@ public static class AmbientOcclusionParameters
         block[51] = frameIndex % NoiseCycle;
 
         block[52] = hasHistory ? 1f : 0f;
+        block[53] = velocityValid ? 1f : 0f;
     }
 }

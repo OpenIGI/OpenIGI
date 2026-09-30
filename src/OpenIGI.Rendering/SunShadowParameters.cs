@@ -127,11 +127,13 @@ public static class SunShadowParameters
     /// <param name="state">This frame and the last, as the temporal passes measure them, at the render size.</param>
     /// <param name="frames">How many frames the accumulation counts to.</param>
     /// <param name="hasHistory">Whether the previous frame's accumulation is worth reading.</param>
+    /// <param name="velocityValid">Whether this frame's motion field, moving objects included, is ready to read.</param>
     public static void WriteAccumulate(
         Span<float> data,
         in TemporalFrameState state,
         float frames,
-        bool hasHistory)
+        bool hasHistory,
+        bool velocityValid = false)
     {
         Require(data, AccumulateFloats);
         data.Clear();
@@ -161,6 +163,9 @@ public static class SunShadowParameters
         data[48] = Math.Max(1f, frames);
         data[49] = hasHistory ? 1f : 0f;
         data[50] = DepthTolerance;
+
+        // Whether the frame's motion field -- moving objects' own motion included -- is ready to read.
+        data[51] = velocityValid ? 1f : 0f;
 
         data[52] = state.JitterX;
         data[53] = state.JitterY;

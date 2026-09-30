@@ -382,6 +382,7 @@ public sealed class WorldRenderer : IWorldPresenter
         ObjectShading shading = Shading;
         float appliedScale = _lightmapScale;
         Vector3f appliedSun = Vector3f.Zero;
+        bool appliedMotion = false;
 
         int draws = 0;
         int triangles = 0;
@@ -541,6 +542,12 @@ public sealed class WorldRenderer : IWorldPresenter
 
             SubsetDraw[] subsets = model.Subsets ?? ResolveSubsets(scene, model, entry.Displayed!);
 
+            if (entry.Moving != appliedMotion)
+            {
+                _device.SetObjectMotion(entry.Moving);
+                appliedMotion = entry.Moving;
+            }
+
             // How much of its rated output the lamp this placement IS is currently giving out. One for
             // everything that is not a lamp, and for every lamp nobody has touched, so the common case
             // is a comparison against a constant.
@@ -639,6 +646,11 @@ public sealed class WorldRenderer : IWorldPresenter
         {
             _device.SetVertexSun(Vector3f.Zero);
         }
+
+        if (appliedMotion)
+        {
+            _device.SetObjectMotion(false);
+        }
     }
 
     /// <summary>Issues the queries the last occlusion-culled <see cref="Draw"/> queued.</summary>
@@ -729,6 +741,7 @@ public sealed class WorldRenderer : IWorldPresenter
         {
             _frameScene = scene;
             _frame = new FrameEntry[scene.Placements.Count];
+            _movers.Clear();
             _drawOrder = BuildDrawOrder(scene);
 
             // A new scene means new placement objects; entries keyed by the old ones would never be
@@ -814,6 +827,15 @@ public sealed class WorldRenderer : IWorldPresenter
                 out entry.Orientation,
                 out entry.Rotor,
                 out entry.HasRotor);
+
+            // Anything drawn away from where it was placed is a mover -- a vehicle, a door, a fan, a camera
+            // head -- and stays one, so the frame it comes to rest on is paired against the one before.
+            if (entry.HasRotor || entry.Position != authored.Position || entry.Orientation != authored.Orientation)
+            {
+                _movers.Add(authored);
+            }
+
+            entry.Moving = _movers.Contains(authored);
         }
 
         _framePrepared = true;
@@ -1104,12 +1126,18 @@ public sealed class WorldRenderer : IWorldPresenter
     }
 
     /// <summary>One placement's camera-independent state for the current frame.</summary>
+    // Placements that have ever been drawn away from their authored transform: see PrepareFrame.
+    private readonly HashSet<WorldPlacement> _movers = new(ReferenceEqualityComparer.Instance);
+
     private struct FrameEntry
     {
         public bool Skip;
         public bool WasDestroyed;
         public bool HasRotor;
         public bool IsRotor;
+
+        /// <summary>Whether the placement moves on its own, so its draws stamp their own motion.</summary>
+        public bool Moving;
         public ResolvedModel? Model;
         public WorldPlacement? Displayed;
         public Vector3d Position;

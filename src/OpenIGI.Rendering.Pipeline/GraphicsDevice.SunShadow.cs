@@ -218,7 +218,8 @@ public sealed partial class GraphicsDevice
                     // and a float as large as a frame count has lost the low bits that vary it.
                     _frameCounter % 64UL,
                     RenderCVars.ShadowAccumulate.Value),
-                state);
+                state,
+                _velocityRecorded ? scene.View(SceneTargetId.Velocity) : null);
         }
 
         _sunTraced = true;

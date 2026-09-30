@@ -44,6 +44,7 @@ public sealed partial class GraphicsDevice
     private bool _hasPreviousFrame;
     private bool _temporalResolved;
     private bool _occlusionRan;
+    private bool _velocityRecorded;
     private AmbientOcclusionSettings _occlusionSettings = AmbientOcclusionSettings.Off;
 
     /// <summary>Builds the temporal passes, once, with the rest of the deferred frame.</summary>
@@ -88,10 +89,52 @@ public sealed partial class GraphicsDevice
                 _occlusionSettings,
                 (long)_frameCounter,
                 FrameSlot,
-                _hasPreviousFrame);
+                _hasPreviousFrame,
+                _velocityRecorded);
         }
 
         _occlusionRan = true;
+    }
+
+    /// <summary>Records the motion field over the finished G-buffer, before anything reprojects against it.</summary>
+    /// <remarks>
+    /// <para>
+    /// The occlusion, the sun and lamp shadows and the screen GI each carry a history, and each ran before the
+    /// motion existed: they could only follow the camera, and a moving car's own surfaces found their history
+    /// wherever the camera said the car had been -- which is the road behind it. Derived here, with every
+    /// G-buffer draw's own motion stamped over it, they can read where a surface really came from.
+    /// </para>
+    /// <para>
+    /// The depth is final for everything the G-buffer holds. What the forward pass draws later -- the
+    /// first-person rig -- stamps in the temporal stage, over this.
+    /// </para>
+    /// </remarks>
+    private void RecordVelocityBeforeShading(SceneTargetSet scene)
+    {
+        if (_screenPasses is not { } screen)
+        {
+            return;
+        }
+
+        // A compute pass cannot open inside a render pass; whichever draw comes next reopens its own.
+        ClosePass();
+        CloseScenePass();
+
+        // Once a frame: the first asker -- the screen GI, or the shading -- derives it, and any later asker only
+        // stamps what has been drawn since.
+        if (!_velocityRecorded)
+        {
+            using IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
+                _profiler.Time(RenderStage.TemporalResolve),
+                "velocity"));
+            screen.RecordVelocity(pass, scene, TemporalState(scene), FrameSlot);
+        }
+
+        RecordObjectVelocity(scene);
+
+        // Stamped: the temporal stage stamps only what is drawn from here on. The transforms stay, for pairing.
+        _objectVelocityDraws.Clear();
+        _velocityRecorded = true;
     }
 
     /// <summary>This frame and the one before it, as the temporal passes measure them.</summary>
@@ -138,6 +181,7 @@ public sealed partial class GraphicsDevice
 
         if (_scene is not { } scene || _screenPasses is not { } screen || _copyDepth is not { } copy)
         {
+            _velocityRecorded = false;
             RollObjectMotion();
             return;
         }
@@ -153,15 +197,20 @@ public sealed partial class GraphicsDevice
         CloseScenePass();
 
         // The camera's motion from the depth, then each moving object's own over it: a raster pass, so
-        // the two sit either side of a compute pass boundary.
-        using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
-            _profiler.Time(RenderStage.TemporalResolve),
-            "velocity")))
+        // the two sit either side of a compute pass boundary. Normally derived before the shading already
+        // (RecordVelocityBeforeShading), leaving only the forward pass's draws to stamp here.
+        if (!_velocityRecorded)
         {
-            screen.RecordVelocity(pass, scene, state, FrameSlot);
+            using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
+                _profiler.Time(RenderStage.TemporalResolve),
+                "velocity")))
+            {
+                screen.RecordVelocity(pass, scene, state, FrameSlot);
+            }
         }
 
         RecordObjectVelocity(scene);
+        _velocityRecorded = false;
 
         if (settings.Enabled && _temporal is { } temporal)
         {

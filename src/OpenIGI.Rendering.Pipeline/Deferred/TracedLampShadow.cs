@@ -176,13 +176,15 @@ public sealed class TracedLampShadow : IDisposable
     /// <param name="normal">The G-buffer normal, at full resolution.</param>
     /// <param name="frame">What to trace against, and the lamps.</param>
     /// <param name="state">This frame and the last at FULL resolution; halved here, jitter included.</param>
+    /// <param name="velocity">The frame's motion field, or <see langword="null"/> when none was made before the shading.</param>
     public void Record(
         IRhiComputePassEncoder pass,
         int frameInFlight,
         IRhiTextureView depth,
         IRhiTextureView normal,
         in TracedLampFrame frame,
-        in TemporalFrameState state)
+        in TemporalFrameState state,
+        IRhiTextureView? velocity = null)
     {
         ArgumentNullException.ThrowIfNull(pass);
         ArgumentNullException.ThrowIfNull(depth);
@@ -260,9 +262,13 @@ public sealed class TracedLampShadow : IDisposable
         // Both halves run with the filter off -- the accumulation carries the frame count and the filter the
         // depth the shading's upsample reads -- and only the filtering itself stops.
         Span<float> temporal = stackalloc float[LampShadowParameters.TemporalFloats];
-        LampShadowParameters.WriteTemporal(temporal, half, _hasHistory, frame.Filter);
+        LampShadowParameters.WriteTemporal(temporal, half, _hasHistory, frame.Filter, velocityValid: velocity is not null);
 
         _temporal.Bind("uRaw", raw.View, _sampler);
+
+        // Where a moving object's surface came from; without a field the flag is off and the normals, never
+        // read, fill the slot the module declares either way.
+        _temporal.Bind("uVelocity", velocity ?? normal, _sampler);
         _temporal.Bind("uDepth", depth, _sampler);
         _temporal.Bind("uHistory", history.View, _sampler);
         _temporal.Bind("uOutput", current.View);

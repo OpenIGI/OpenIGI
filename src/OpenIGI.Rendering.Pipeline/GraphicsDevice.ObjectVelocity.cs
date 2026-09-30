@@ -32,6 +32,10 @@ public sealed partial class GraphicsDevice
     private ObjectVelocityPass? _objectVelocity;
     private Matrix4f _temporalProjection = Matrix4f.Identity;
     private float _previousPoseBlend;
+    private bool _objectMotion;
+
+    /// <inheritdoc/>
+    public void SetObjectMotion(bool moving) => _objectMotion = moving;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -90,7 +94,9 @@ public sealed partial class GraphicsDevice
         }
 
         bool firstPerson = CurrentPass is ScenePass.Forward && _firstPerson && blend == BlendMode.Opaque;
-        bool animated = CurrentPass is ScenePass.Geometry && resource.Animated;
+        // A rigid body moving on its own -- a vehicle, a door, a spinning head -- is paired exactly as a skinned
+        // one is: its own transform last frame against this one.
+        bool animated = CurrentPass is ScenePass.Geometry && (resource.Animated || _objectMotion);
 
         if (!firstPerson && !animated)
         {

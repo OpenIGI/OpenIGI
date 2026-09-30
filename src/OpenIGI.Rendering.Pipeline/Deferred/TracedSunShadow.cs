@@ -160,6 +160,7 @@ public sealed class TracedSunShadow : IDisposable
     /// <param name="normal">The G-buffer normal, to offset each ray off its surface.</param>
     /// <param name="frame">What to trace against, and from where.</param>
     /// <param name="state">This frame and the last, at the render size.</param>
+    /// <param name="velocity">The frame's motion field, or <see langword="null"/> when none was made before the shading.</param>
     /// <remarks>
     /// The three dispatches go in one compute pass: the Vulkan backend places the barrier between them,
     /// and nothing but the Vulkan backend traces.
@@ -170,7 +171,8 @@ public sealed class TracedSunShadow : IDisposable
         IRhiTextureView depth,
         IRhiTextureView normal,
         in TracedSunShadowFrame frame,
-        in TemporalFrameState state)
+        in TemporalFrameState state,
+        IRhiTextureView? velocity = null)
     {
         ArgumentNullException.ThrowIfNull(pass);
         ArgumentNullException.ThrowIfNull(depth);
@@ -230,9 +232,14 @@ public sealed class TracedSunShadow : IDisposable
         }
 
         Span<float> accumulate = stackalloc float[SunShadowParameters.AccumulateFloats];
-        SunShadowParameters.WriteAccumulate(accumulate, state, frame.AccumulationFrames, _hasHistory);
+        SunShadowParameters.WriteAccumulate(
+            accumulate, state, frame.AccumulationFrames, _hasHistory, velocityValid: velocity is not null);
 
         _accumulate.Bind("uDepth", depth);
+
+        // Where a moving object's surface really came from. Without one the flag is off and the normals stand
+        // in, never read, because the module declares the slot either way.
+        _accumulate.Bind("uVelocity", velocity ?? normal);
         _accumulate.Bind("uPrevHistory", previous.View, _sampler);
         _accumulate.Bind("uShadow", mask.View);
         _accumulate.Bind("uHistory", current.View);

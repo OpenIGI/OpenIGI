@@ -44,6 +44,7 @@ public sealed partial class GraphicsDevice
     private readonly Dictionary<uint, Func<IRhiTextureView?>> _aliases = [];
     private TextureHandle _sceneDepthAlias = TextureHandle.None;
     private TextureHandle _sceneNormalAlias = TextureHandle.None;
+    private TextureHandle _sceneVelocityAlias = TextureHandle.None;
     private TextureHandle _sceneColourAlias = TextureHandle.None;
     private TextureHandle _cardAlbedoAlias = TextureHandle.None;
     private TextureHandle _cardNormalAlias = TextureHandle.None;
@@ -79,6 +80,25 @@ public sealed partial class GraphicsDevice
 
     /// <inheritdoc/>
     public TextureHandle SceneNormal => Alias(ref _sceneNormalAlias, () => _scene?.View(SceneTargetId.Normal));
+
+    /// <inheritdoc/>
+    /// <remarks>Derived here on first asking in a captured frame; see RecordVelocityBeforeShading.</remarks>
+    public TextureHandle SceneVelocity
+    {
+        get
+        {
+            ThrowIfDisposed();
+            if (!_capturing || _scene is not { } scene)
+            {
+                return TextureHandle.None;
+            }
+
+            RecordVelocityBeforeShading(scene);
+            return _velocityRecorded
+                ? Alias(ref _sceneVelocityAlias, () => _scene?.View(SceneTargetId.Velocity))
+                : TextureHandle.None;
+        }
+    }
 
     /// <inheritdoc/>
     /// <remarks>The lit image, which at the point the gather reads it still holds the frame before.</remarks>
