@@ -121,6 +121,13 @@ public enum SceneTargetId
 
     /// <summary>What each pane pixel reflects, before it is added to the lit scene.</summary>
     Reflection,
+
+    /// <summary>The lit scene as it stood before the rain, which every drop refracts.</summary>
+    /// <remarks>
+    /// Copied from the lit image once a frame, just before the first drop draws: the drops are drawn INTO the
+    /// lit image, and a pass cannot read the image it is writing.
+    /// </remarks>
+    RainBackdrop,
 }
 
 /// <summary>How a target's size follows the frame's.</summary>

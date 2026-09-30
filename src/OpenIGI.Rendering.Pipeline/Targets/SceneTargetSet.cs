@@ -73,6 +73,9 @@ public sealed class SceneTargetSet : IDisposable
         new(SceneTargetId.GlassLayer, RhiTextureFormat.Rgba16Float, SceneTargetScale.Full, Attachment),
         new(SceneTargetId.GlassDepth, RhiTextureFormat.Depth32Float, SceneTargetScale.Full, DepthAttachment),
         new(SceneTargetId.Reflection, RhiTextureFormat.Rgba16Float, SceneTargetScale.Full, Compute),
+
+        // The scene behind the rain, copied from the lit image for the drops to refract.
+        new(SceneTargetId.RainBackdrop, RhiTextureFormat.Rgba16Float, SceneTargetScale.Full, RhiTextureUsage.Sampled | RhiTextureUsage.CopyDestination),
     ];
 
     private const RhiTextureUsage Attachment =

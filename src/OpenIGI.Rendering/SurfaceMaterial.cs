@@ -95,6 +95,15 @@ namespace OpenIGI.Rendering;
 /// reflection passes being told to leave them alone.
 /// </para>
 /// </param>
+/// <param name="Rain">
+/// Whether the surface is a falling raindrop, drawn as the lens it is rather than as a light.
+/// <para>
+/// A drop is clear water: what the eye sees in it is the scene behind, bent across the streak and a little
+/// concentrated along its rims, with a glint only where a lamp or the sun stands behind it. Drawn as an added
+/// light instead, every drop was a white line. A draw marked here goes to the rain pipeline, which refracts a
+/// copy of the lit scene through the streak; a backend without it draws the drop's glint alone.
+/// </para>
+/// </param>
 public readonly record struct SurfaceMaterial(
     float Roughness = 0.6f,
     float Metallic = 0.0f,
@@ -102,7 +111,8 @@ public readonly record struct SurfaceMaterial(
     bool CastsOcclusion = true,
     bool NoHistory = false,
     bool Glass = false,
-    bool Matte = false)
+    bool Matte = false,
+    bool Rain = false)
 {
     /// <summary>The emissive channel's value for a surface excluded from ambient occlusion.</summary>
     /// <remarks>

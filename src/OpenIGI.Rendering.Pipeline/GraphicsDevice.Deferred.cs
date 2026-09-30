@@ -726,6 +726,13 @@ public sealed partial class GraphicsDevice
 
         NoteViewModelLens();
 
+        // A raindrop is clear water: its own pipeline refracts the scene behind it.
+        if (_material.Rain)
+        {
+            DrawRain(call, ranges, modelView);
+            return;
+        }
+
         if (_material.Glass)
         {
             DrawGlass(pass, call, ranges, modelView);
@@ -825,6 +832,7 @@ public sealed partial class GraphicsDevice
         // were, it read the stand-ins: a sky of flat white and an ambient of nothing.
         EnsureTemporal();
         EnsureGlazing();
+        EnsureRain();
         _bloom = new BloomPass(_device, FramesInFlight, _retired);
 
         // A map made before the first capture -- the game states its cascades first -- is handed over
@@ -880,6 +888,7 @@ public sealed partial class GraphicsDevice
         DisposeTemporal();
         DisposeShadows();
         DisposeGlazing();
+        DisposeRain();
         DisposeGlazingReflection();
         DisposeFog();
         _motionBlur?.Dispose();

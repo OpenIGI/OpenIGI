@@ -34,6 +34,10 @@
       "source": "World/Glass.slang"
     },
     {
+      "id": "Rain",
+      "source": "World/Rain.slang"
+    },
+    {
       "id": "GlassLayer",
       "source": "World/GlassLayer.slang"
     },

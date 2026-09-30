@@ -43,6 +43,9 @@ public enum ShaderModuleId
     /// <summary>The glazing transmission draw: what a pane lets through.</summary>
     Glass,
 
+    /// <summary>A falling raindrop: the scene behind it refracted through the streak.</summary>
+    Rain,
+
     /// <summary>The glazing front-layer draw: which pane is nearest, and which way it faces.</summary>
     GlassLayer,
 
