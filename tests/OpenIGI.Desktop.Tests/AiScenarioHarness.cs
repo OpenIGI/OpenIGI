@@ -1116,6 +1116,11 @@ public sealed class AiScenarioHarness : IDisposable
             }
         }
 
+        foreach (string note in runtime.Diagnostics)
+        {
+            log.AppendLine(CultureInfo.InvariantCulture, $"[cutscene-note] {note}");
+        }
+
         host.Stop();
         File.WriteAllText(output, log.ToString());
     }
