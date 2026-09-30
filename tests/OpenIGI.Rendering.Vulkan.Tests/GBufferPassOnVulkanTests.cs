@@ -4,6 +4,7 @@ using OpenIGI.Rendering.Pipeline.Mesh3D;
 using OpenIGI.Rendering.Pipeline.Meshes;
 using OpenIGI.Rendering.Pipeline.Targets;
 using OpenIGI.Rendering.Rhi;
+using OpenIGI.Rendering.Vulkan.Rhi;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -55,7 +56,7 @@ public sealed class GBufferPassOnVulkanTests(ITestOutputHelper output)
         return pixels[(y * row) + (x * 4) + 3];
     }
 
-    private static byte[] DrawIntoGBuffer(IRhiDevice device)
+    private static byte[] DrawIntoGBuffer(VulkanRhiDevice device)
     {
         using SceneTargetSet targets = new(device, Size, Size);
         using WhiteTextures textures = new(device);

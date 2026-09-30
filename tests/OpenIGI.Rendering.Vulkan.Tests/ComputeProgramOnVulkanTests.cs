@@ -1,5 +1,6 @@
 using OpenIGI.Rendering.Pipeline.Compute;
 using OpenIGI.Rendering.Rhi;
+using OpenIGI.Rendering.Vulkan.Rhi;
 using OpenIGI.Shaders;
 using Xunit;
 using Xunit.Abstractions;
@@ -89,7 +90,7 @@ public sealed class ComputeProgramOnVulkanTests(ITestOutputHelper output)
     /// Nothing here states a binding index or a workgroup count: every resource is asked for by the name
     /// the shader gave it, and the dispatch is sized from what the module declared.
     /// </remarks>
-    private static byte[] Dilate(IRhiDevice device, byte[] rejection)
+    private static byte[] Dilate(VulkanRhiDevice device, byte[] rejection)
     {
         using ComputePass dilate = new(device, ShaderModuleId.UpscaleRejectionDilate, "upscale.dilate");
 

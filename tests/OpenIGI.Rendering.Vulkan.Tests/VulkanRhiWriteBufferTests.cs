@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using OpenIGI.Rendering.Rhi;
+using OpenIGI.Rendering.Vulkan.Rhi;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -17,7 +18,7 @@ public sealed class VulkanRhiWriteBufferTests(ITestOutputHelper output)
     public void Each_write_is_seen_by_the_work_submitted_after_it_and_not_by_the_work_before()
     {
         using HeadlessVulkan vulkan = Open(output);
-        IRhiDevice device = vulkan.Rhi;
+        VulkanRhiDevice device = vulkan.Rhi;
 
         using IRhiBuffer source = device.CreateBuffer(new RhiBufferDescriptor(
             Values * sizeof(uint), RhiBufferUsage.Storage | RhiBufferUsage.CopySource | RhiBufferUsage.CopyDestination, "source"));
@@ -38,7 +39,7 @@ public sealed class VulkanRhiWriteBufferTests(ITestOutputHelper output)
     public void Many_small_writes_to_one_buffer_all_arrive()
     {
         using HeadlessVulkan vulkan = Open(output);
-        IRhiDevice device = vulkan.Rhi;
+        VulkanRhiDevice device = vulkan.Rhi;
 
         const int Count = 4096;
         using IRhiBuffer source = device.CreateBuffer(new RhiBufferDescriptor(
@@ -60,17 +61,17 @@ public sealed class VulkanRhiWriteBufferTests(ITestOutputHelper output)
         }
     }
 
-    private static IRhiBuffer Readback(IRhiDevice device, string label) => device.CreateBuffer(new RhiBufferDescriptor(
+    private static IRhiBuffer Readback(VulkanRhiDevice device, string label) => device.CreateBuffer(new RhiBufferDescriptor(
         Values * sizeof(uint), RhiBufferUsage.CopyDestination | RhiBufferUsage.MapRead, label));
 
-    private static void Copy(IRhiDevice device, IRhiBuffer source, IRhiBuffer destination, int values = Values)
+    private static void Copy(VulkanRhiDevice device, IRhiBuffer source, IRhiBuffer destination, int values = Values)
     {
         using IRhiCommandEncoder encoder = device.CreateCommandEncoder("copy");
         encoder.CopyBufferToBuffer(source, 0, destination, 0, (ulong)(values * sizeof(uint)));
         device.Submit([encoder.Finish("copy")]);
     }
 
-    private static uint[] Read(IRhiDevice device, IRhiBuffer buffer, int values = Values)
+    private static uint[] Read(VulkanRhiDevice device, IRhiBuffer buffer, int values = Values)
     {
         using IRhiReadback data = device.ReadBuffer(buffer, 0, (ulong)(values * sizeof(uint)));
         Assert.True(data.Wait(TimeSpan.FromSeconds(10)), "The readback never finished.");

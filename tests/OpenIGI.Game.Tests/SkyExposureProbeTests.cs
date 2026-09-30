@@ -261,105 +261,108 @@ public sealed class SkyExposureProbeTests
     /// <returns>A caster over the shed, working in world units as the game's own casters do.</returns>
     private static WorldRayCast Shed(bool open)
     {
-        return (Vector3d originUnits, Vector3d endUnits, out WorldRayHit hit) =>
+        return (Vector3d originUnits, Vector3d endUnits, out WorldRayHit hit) => CastShed(open, originUnits, endUnits, out hit);
+    }
+
+    /// <summary>One ray against the shed described by <see cref="Shed"/>.</summary>
+    private static bool CastShed(bool open, Vector3d originUnits, Vector3d endUnits, out WorldRayHit hit)
+    {
+        Vector3d origin = originUnits / Units;
+        Vector3d end = endUnits / Units;
+        Vector3d ray = end - origin;
+
+        double nearest = double.PositiveInfinity;
+        Vector3f normal = Vector3f.UnitZ;
+
+        // The ground, and the shed's floor with it: one plane under the whole world.
+        Hit(2, 0.0, double.MaxValue, double.MaxValue, new Vector3f(0f, 0f, 1f));
+
+        // The roof, and the four walls standing under it.
+        Hit(2, RoofZ, Half, Half, new Vector3f(0f, 0f, 1f));
+        Hit(0, Half, Half, RoofZ, new Vector3f(1f, 0f, 0f));
+        Hit(1, Half, Half, RoofZ, new Vector3f(0f, 1f, 0f));
+        Hit(1, -Half, Half, RoofZ, new Vector3f(0f, -1f, 0f));
+        HitDoorWall();
+
+        if (double.IsPositiveInfinity(nearest))
         {
-            Vector3d origin = originUnits / Units;
-            Vector3d end = endUnits / Units;
-            Vector3d ray = end - origin;
+            hit = default;
+            return false;
+        }
 
-            double nearest = double.PositiveInfinity;
-            Vector3f normal = Vector3f.UnitZ;
+        Vector3d contact = origin + (ray * nearest);
+        hit = new WorldRayHit(contact * Units, normal, (contact - origin).Length * Units);
+        return true;
 
-            // The ground, and the shed's floor with it: one plane under the whole world.
-            Hit(2, 0.0, double.MaxValue, double.MaxValue, new Vector3f(0f, 0f, 1f));
-
-            // The roof, and the four walls standing under it.
-            Hit(2, RoofZ, Half, Half, new Vector3f(0f, 0f, 1f));
-            Hit(0, Half, Half, RoofZ, new Vector3f(1f, 0f, 0f));
-            Hit(1, Half, Half, RoofZ, new Vector3f(0f, 1f, 0f));
-            Hit(1, -Half, Half, RoofZ, new Vector3f(0f, -1f, 0f));
-            HitDoorWall();
-
-            if (double.IsPositiveInfinity(nearest))
+        // One axis-aligned plane, bounded on the other two axes. `axis` names the constant one.
+        void Hit(int axis, double at, double boundA, double boundB, Vector3f planeNormal)
+        {
+            if (!Crosses(axis, at, boundA, boundB, out double t))
             {
-                hit = default;
+                return;
+            }
+
+            if (t < nearest)
+            {
+                nearest = t;
+                normal = planeNormal;
+            }
+        }
+
+        // The −X wall, with the doorway cut out of it when the shed is open.
+        void HitDoorWall()
+        {
+            if (!Crosses(0, -Half, Half, RoofZ, out double t))
+            {
+                return;
+            }
+
+            Vector3d contact = origin + (ray * t);
+            if (open && Math.Abs(contact.Y) <= DoorHalfWidth && contact.Z is >= 0.0 and <= DoorHeight)
+            {
+                return;
+            }
+
+            if (t < nearest)
+            {
+                nearest = t;
+                normal = new Vector3f(-1f, 0f, 0f);
+            }
+        }
+
+        // Where the ray crosses one plane, if it does so ahead of its start, before its end, and
+        // inside the plane's extent on the two axes it spans.
+        bool Crosses(int axis, double at, double boundA, double boundB, out double t)
+        {
+            t = 0.0;
+            double from = Component(origin, axis);
+            double along = Component(ray, axis);
+            if (Math.Abs(along) < 1e-9)
+            {
                 return false;
             }
 
-            Vector3d contact = origin + (ray * nearest);
-            hit = new WorldRayHit(contact * Units, normal, (contact - origin).Length * Units);
-            return true;
-
-            // One axis-aligned plane, bounded on the other two axes. `axis` names the constant one.
-            void Hit(int axis, double at, double boundA, double boundB, Vector3f planeNormal)
+            t = (at - from) / along;
+            if (t is <= 1e-6 or > 1.0)
             {
-                if (!Crosses(axis, at, boundA, boundB, out double t))
-                {
-                    return;
-                }
-
-                if (t < nearest)
-                {
-                    nearest = t;
-                    normal = planeNormal;
-                }
+                return false;
             }
 
-            // The −X wall, with the doorway cut out of it when the shed is open.
-            void HitDoorWall()
+            Vector3d contact = origin + (ray * t);
+            (int a, int b) = axis switch
             {
-                if (!Crosses(0, -Half, Half, RoofZ, out double t))
-                {
-                    return;
-                }
+                0 => (1, 2),
+                1 => (0, 2),
+                _ => (0, 1),
+            };
 
-                Vector3d contact = origin + (ray * t);
-                if (open && Math.Abs(contact.Y) <= DoorHalfWidth && contact.Z is >= 0.0 and <= DoorHeight)
-                {
-                    return;
-                }
-
-                if (t < nearest)
-                {
-                    nearest = t;
-                    normal = new Vector3f(-1f, 0f, 0f);
-                }
-            }
-
-            // Where the ray crosses one plane, if it does so ahead of its start, before its end, and
-            // inside the plane's extent on the two axes it spans.
-            bool Crosses(int axis, double at, double boundA, double boundB, out double t)
-            {
-                t = 0.0;
-                double from = Component(origin, axis);
-                double along = Component(ray, axis);
-                if (Math.Abs(along) < 1e-9)
-                {
-                    return false;
-                }
-
-                t = (at - from) / along;
-                if (t is <= 1e-6 or > 1.0)
-                {
-                    return false;
-                }
-
-                Vector3d contact = origin + (ray * t);
-                (int a, int b) = axis switch
-                {
-                    0 => (1, 2),
-                    1 => (0, 2),
-                    _ => (0, 1),
-                };
-
-                // The floor and the ground are one unbounded plane; a bound of MaxValue says so.
-                bool insideA = boundA >= double.MaxValue || Math.Abs(Component(contact, a)) <= boundA;
-                bool insideB = boundB >= double.MaxValue
-                    || (b == 2 ? Component(contact, b) is >= 0.0 && Component(contact, b) <= boundB
-                               : Math.Abs(Component(contact, b)) <= boundB);
-                return insideA && insideB;
-            }
-        };
+            // The floor and the ground are one unbounded plane; a bound of MaxValue says so.
+            bool insideA = boundA >= double.MaxValue || Math.Abs(Component(contact, a)) <= boundA;
+            bool insideB = boundB >= double.MaxValue
+                || (b == 2 ? Component(contact, b) is >= 0.0 && Component(contact, b) <= boundB
+                           : Math.Abs(Component(contact, b)) <= boundB);
+            return insideA && insideB;
+        }
 
         static double Component(Vector3d value, int axis) => axis switch
         {

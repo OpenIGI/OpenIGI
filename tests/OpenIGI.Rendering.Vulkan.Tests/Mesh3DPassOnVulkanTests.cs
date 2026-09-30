@@ -4,6 +4,7 @@ using OpenIGI.Rendering.Pipeline.Draw2D;
 using OpenIGI.Rendering.Pipeline.Mesh3D;
 using OpenIGI.Rendering.Pipeline.Meshes;
 using OpenIGI.Rendering.Rhi;
+using OpenIGI.Rendering.Vulkan.Rhi;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -54,7 +55,7 @@ public sealed class Mesh3DPassOnVulkanTests(ITestOutputHelper output)
         return pixels[(y * row) + (x * 4) + 3];
     }
 
-    private static byte[] DrawTriangle(IRhiDevice device)
+    private static byte[] DrawTriangle(VulkanRhiDevice device)
     {
         using WhiteTextures textures = new(device);
         using IRhiBindGroupLayout material = Mesh3DPipelineCache.CreateMaterialLayout(device);

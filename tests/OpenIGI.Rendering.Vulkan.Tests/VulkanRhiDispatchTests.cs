@@ -1,4 +1,5 @@
 using OpenIGI.Rendering.Rhi;
+using OpenIGI.Rendering.Vulkan.Rhi;
 using OpenIGI.Shaders;
 using Xunit;
 using Xunit.Abstractions;
@@ -107,7 +108,7 @@ public sealed class VulkanRhiDispatchTests(ITestOutputHelper output)
     /// storage texture here is the r8 the shader declares, because SPIR-V keeps the narrow format that
     /// WGSL has to widen. So the texels are bytes rather than sets of four floats.
     /// </remarks>
-    private static float[] Dilate(IRhiDevice device, float[] rejection)
+    private static float[] Dilate(VulkanRhiDevice device, float[] rejection)
     {
         const RhiTextureFormat Storage = RhiTextureFormat.R8Unorm;
 

@@ -1,4 +1,5 @@
 using OpenIGI.Rendering.Rhi;
+using OpenIGI.Rendering.Vulkan.Rhi;
 using OpenIGI.Shaders;
 using Xunit;
 using Xunit.Abstractions;
@@ -65,7 +66,7 @@ public sealed class VulkanRhiDrawTests(ITestOutputHelper output)
         return vulkan!;
     }
 
-    private static ulong Occlude(IRhiDevice device, float offsetX)
+    private static ulong Occlude(VulkanRhiDevice device, float offsetX)
     {
         using IRhiShaderModule module = device.CreateShaderModule(
             new RhiShaderModuleDescriptor(ShaderModuleId.Occlusion, Label: "occlusion"));

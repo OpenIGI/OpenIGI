@@ -1,6 +1,7 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering.Pipeline.Draw2D;
 using OpenIGI.Rendering.Rhi;
+using OpenIGI.Rendering.Vulkan.Rhi;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -60,7 +61,7 @@ public sealed class Sprite2DPassOnVulkanTests(ITestOutputHelper output)
     }
 
     /// <summary>Draws one green quad over the top-left quarter and brings the target back.</summary>
-    private static byte[] DrawQuad(IRhiDevice device)
+    private static byte[] DrawQuad(VulkanRhiDevice device)
     {
         using WhiteTextureSource textures = new(device);
         using Sprite2DPass sprites = new(device, textures, RhiTextureFormat.Rgba8Unorm, framesInFlight: 1);
