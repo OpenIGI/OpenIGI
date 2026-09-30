@@ -210,4 +210,15 @@ public sealed class ScriptExpressionParserTests
         // Menu action strings are written as statements and some carry their terminator.
         Assert.NotNull(ScriptExpressionParser.Parse("MenuManager_PopScreen(0);"));
     }
+
+    [Fact]
+    public void ACharacterTheOriginalCannotReadEndsTheExpression()
+    {
+        // Mission 10 ships a container condition ending in two stray backticks. The original's word
+        // reader takes nothing from them, so its lexer reports no token and the parser stops there with
+        // the expression complete; rejecting it made the container run from the first tick.
+        ScriptExpression expression = ScriptExpressionParser.Parse("(a && b)\n|| this.isRun\n``\n");
+
+        Assert.Equal("(((a && b)) || this.isRun)", expression.ToString());
+    }
 }

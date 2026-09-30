@@ -81,7 +81,8 @@ public sealed class ScriptExpressionEvaluatorTests
     {
         // The tokenizer has no '%' case at all, so it falls through to the word scanner. Whatever the
         // result, it is not arithmetic — worth pinning so nobody "restores" a modulo that never existed.
-        Assert.Throws<ScriptExpressionException>(() => ScriptExpressionParser.Parse("7 % 2"));
+        // The word scanner takes nothing from it and the expression simply ends there (0x517260 / 0x4BFC70).
+        Assert.Equal("7", ScriptExpressionParser.Parse("7 % 2").ToString());
     }
 
     [Fact]

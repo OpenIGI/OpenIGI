@@ -249,16 +249,13 @@ public sealed class ScriptLexer
 
         if (!IsWordStart(_source[_position]))
         {
-            // Not an operator, not a number, not a name. The original scans it as a word anyway and
-            // the parser rejects it; consuming one character keeps that behaviour without looping.
+            // Not an operator, not a number, not a name: the END of the expression, not an error. The
+            // original's word reader (0x517260) takes nothing from such a character, so its lexer
+            // (0x4BFC70) steps over it and reports no token, and the parser (0x4B9CD0) takes that as
+            // the expression finished -- whatever follows is never read. Mission 10 depends on it: one
+            // conditional container's condition ends "|| this.isRun" and then two stray backticks.
             _position++;
-            return new ScriptToken(
-                ScriptTokenKind.Identifier,
-                ScriptOperator.None,
-                _source.Substring(start, 1),
-                0.0,
-                0,
-                line);
+            return ScriptToken.End;
         }
 
         while (_position < _source.Length && IsWordPart(_source[_position]))
