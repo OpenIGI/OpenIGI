@@ -79,6 +79,7 @@ internal sealed partial class GameHost
 
                 if (on != _flashlightRig.IsOn)
                 {
+                    _flashlightRig.ContactWear = RenderCVars.FlashlightWear.Value;
                     _flashlightRig.Toggle();
                 }
 
@@ -120,8 +121,9 @@ internal sealed partial class GameHost
             return;
         }
 
+        _flashlightRig.ContactWear = RenderCVars.FlashlightWear.Value;
         bool on = _flashlightRig.Toggle();
-        _sounds?.PlayExternal(FlashlightClick.SoundName, gain: 0.8f, priority: 180, pitch: on ? 1f : 0.92f);
+        _sounds?.PlayExternal(on ? FlashlightClick.OnSoundName : FlashlightClick.OffSoundName, gain: 0.8f, priority: 180);
     }
 
     /// <summary>Puts the flashlight out and forgets its aim: a mission starting, restarting or ending.</summary>
@@ -262,7 +264,8 @@ internal sealed partial class GameHost
             Shadows: RenderCVars.FlashlightShadows.Value != 0,
             Volumetric: RenderCVars.FlashlightFog.Value,
             Dust: RenderCVars.FlashlightDust.Value,
-            RigFill: thirdPerson ? Vector3f.Zero : rigFill));
+            RigFill: thirdPerson ? Vector3f.Zero : rigFill,
+            Throw: RenderCVars.FlashlightThrow.Value));
     }
 
     private static Vector3d ToDouble(Vector3f v) => new(v.X, v.Y, v.Z);

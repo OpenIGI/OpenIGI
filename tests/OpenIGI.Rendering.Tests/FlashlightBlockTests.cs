@@ -25,7 +25,7 @@ public sealed class FlashlightBlockTests
     public void The_six_vectors_land_where_the_shader_reads_them()
     {
         FlashlightLight light = Torch();
-        float[] block = Write(light, shadowMask: true, frameIndex: 70);
+        float[] block = Write(light with { Throw = 0.75f }, shadowMask: true);
 
         Expect(block, 0, 0.16f, -0.14f, 0.1f, 40f);
         Expect(block, 4, 0f, 0f, 1f);
@@ -40,7 +40,7 @@ public sealed class FlashlightBlockTests
         Assert.Equal(MathF.Tan(40f * MathF.PI / 180f) / tanOuter, block[18], 5);
         Assert.Equal(0.06f, block[19], 5);
 
-        Expect(block, 20, 1f, 1f, 6f, 0.015f);
+        Expect(block, 20, 1f, 1f, 0.75f, 0.015f);
     }
 
     [Fact]
@@ -88,7 +88,7 @@ public sealed class FlashlightBlockTests
             hasHistory: false);
 
         float[] expected = new float[FlashlightBlock.Floats];
-        FlashlightBlock.Write(expected, light, shadowMask: false, frameIndex: 3);
+        FlashlightBlock.Write(expected, light, shadowMask: false);
 
         Assert.Equal(expected, fog[^FlashlightBlock.Floats..]);
     }
@@ -113,10 +113,10 @@ public sealed class FlashlightBlockTests
         Dust: 0.015f,
         RigFill: Vector3f.Zero);
 
-    private static float[] Write(in FlashlightLight light, bool shadowMask = false, long frameIndex = 0)
+    private static float[] Write(in FlashlightLight light, bool shadowMask = false)
     {
         float[] block = new float[FlashlightBlock.Floats];
-        FlashlightBlock.Write(block, light, shadowMask, frameIndex);
+        FlashlightBlock.Write(block, light, shadowMask);
         return block;
     }
 

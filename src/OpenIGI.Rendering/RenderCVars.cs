@@ -1422,11 +1422,29 @@ public static class RenderCVars
     /// <summary>How far the flashlight reaches, in metres.</summary>
     public static readonly NumericCVar<float> FlashlightRange = CVar.Float(
         "r_flashlight_range",
-        40f,
+        300f,
         1f,
-        200f,
+        400f,
         CVarOptions.None,
         "How far the flashlight reaches, in metres.");
+
+    /// <summary>How well the flashlight's beam carries to its range.</summary>
+    /// <remarks>
+    /// Past five metres a surface's falloff is eased by the distance raised to this: 0 keeps the inverse square,
+    /// 1 leaves one over the distance, 2 holds the beam level out to its range. The inverse square alone
+    /// leaves a wall at a hundred metres a five-hundredth of the near spot, which one exposure for the whole
+    /// frame cannot show; an eye adapts to each part of the view and sees it lit. Captured on mission 3 at
+    /// night from the hill over the base, 1 still left the compound unlit under the beam's own glow in the
+    /// rain, 1.75 lit it grey, and 2 lit the tower and the walls. Only surfaces are thrown -- the beam in the
+    /// air keeps the inverse square, or it hangs a column of haze down the whole range.
+    /// </remarks>
+    public static readonly NumericCVar<float> FlashlightThrow = CVar.Float(
+        "r_flashlight_throw",
+        2f,
+        0f,
+        2f,
+        CVarOptions.None,
+        "How well the flashlight carries to its range past 5 m: 0 the inverse square, 1 one over the distance, 2 level to the range.");
 
     /// <summary>The half-angle of the flashlight's hot core, in degrees.</summary>
     public static readonly NumericCVar<float> FlashlightInner = CVar.Float(
@@ -1510,6 +1528,20 @@ public static class RenderCVars
         0.5f,
         CVarOptions.None,
         "Dust density only the flashlight's beam lights, per metre.");
+
+    /// <summary>How worn the flashlight's switch is: the chance it chatters before it catches.</summary>
+    /// <remarks>
+    /// A worn clicky switch's contact touches and springs apart once or twice before it holds, and the light
+    /// blips before it comes on. Rolled per switch-on, so it is sometimes and never the same twice; 0 is a new
+    /// torch that always comes straight on, 1 one that chatters every time.
+    /// </remarks>
+    public static readonly NumericCVar<float> FlashlightWear = CVar.Float(
+        "r_flashlight_wear",
+        0.3f,
+        0f,
+        1f,
+        CVarOptions.Archive,
+        "How often the flashlight's worn switch chatters before it catches: 0 never, 1 every time.");
 
     /// <summary>How much of the flashlight falls back on the player's own hands and gun.</summary>
     public static readonly NumericCVar<float> FlashlightRig = CVar.Float(

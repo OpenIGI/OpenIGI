@@ -241,7 +241,7 @@ public sealed class DeferredLightingParametersTests
         float[] on = Gi(new DeferredLightingState(Unprojection(), Flashlight: light, FlashlightShadowed: true));
 
         float[] expected = new float[FlashlightBlock.Floats];
-        FlashlightBlock.Write(expected, light, shadowMask: true, frameIndex: 0);
+        FlashlightBlock.Write(expected, light, shadowMask: true);
         Assert.Equal(expected, on.AsSpan(DeferredLightingParameters.FlashlightOffset, FlashlightBlock.Floats).ToArray());
     }
 

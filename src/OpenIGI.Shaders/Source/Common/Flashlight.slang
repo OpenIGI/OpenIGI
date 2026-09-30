@@ -25,7 +25,7 @@ struct FlashlightParams
     // tan of the outer half-angle; the inner's, then the spill's tangent over it; the spill's level.
     float4 cone;
 
-    // shadow mask made, volumetric scale, frame, dust per metre.
+    // shadow mask made, volumetric scale, throw, dust per metre.
     float4 control;
 };
 
@@ -77,9 +77,21 @@ float FlashlightCookie(FlashlightParams f, float3 direction)
     return max((beam * flaw) + spill, 0.0);
 }
 
-// The light the beam puts on a point, before its surface or its shadow: the cookie, the windowed inverse
-// square and the colour. View-space in and out; toLight is the unit direction from the point to the lens.
-float3 FlashlightIrradiance(FlashlightParams f, float3 viewPos, out float3 toLight, out float distance)
+// Where the throw takes over from the inverse square, in metres: about a room's depth, so everything the
+// beam lights up close is lit exactly as the inverse square says.
+static const float kFlashlightThrowKnee = 5.0;
+
+// The light the beam puts on a point, before its surface or its shadow: the cookie, the windowed falloff and
+// the colour. View-space in and out; toLight is the unit direction from the point to the lens.
+//
+// thrown says whether the throw applies. Past the knee a surface's inverse square is multiplied by the
+// distance over the knee raised to control.z -- one leaves one over the distance, two holds the beam level to
+// its range. The inverse square alone leaves a wall at a hundred metres
+// with a five-hundredth of what one at five gets, which one exposure for the whole frame cannot show beside
+// the near spot -- where an eye, adapting to each part of the view on its own, sees the far wall lit. The air
+// is not thrown: its glow is summed over every metre of the beam, and lifting the far metres hung a grey
+// column of haze down the whole range.
+float3 FlashlightIrradiance(FlashlightParams f, float3 viewPos, bool thrown, out float3 toLight, out float distance)
 {
     float3 fromLens = viewPos - f.position.xyz;
     float distanceSq = dot(fromLens, fromLens);
@@ -103,7 +115,11 @@ float3 FlashlightIrradiance(FlashlightParams f, float3 viewPos, out float3 toLig
     float window = saturate(1.0 - (ratio * ratio));
     window *= window;
 
-    return f.colour.rgb * (cookie * window / max(distanceSq, f.colour.w));
+    float carry = thrown && distance > kFlashlightThrowKnee
+        ? pow(distance / kFlashlightThrowKnee, f.control.z)
+        : 1.0;
+
+    return f.colour.rgb * (cookie * window * carry / max(distanceSq, f.colour.w));
 }
 
 #endif

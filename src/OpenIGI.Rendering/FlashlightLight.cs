@@ -40,6 +40,11 @@ namespace OpenIGI.Rendering;
 /// <param name="Volumetric">How strongly the beam lights the air it passes through; nought for not at all.</param>
 /// <param name="Dust">A thin haze only the beam sees, per metre, so it shows indoors where the fog is clear.</param>
 /// <param name="RigFill">What the beam puts on the hands and the gun, in the units the rig's lamp fill is in.</param>
+/// <param name="Throw">
+/// How far past a few metres a surface's falloff is eased: the distance past the knee raised to this multiplies
+/// the inverse square, so nought is the inverse square alone, one leaves one over the distance and two holds the
+/// beam level out to its range. The air it lights is never thrown.
+/// </param>
 public readonly record struct FlashlightLight(
     Vector3f ViewPosition,
     Vector3f ViewAxis,
@@ -57,7 +62,8 @@ public readonly record struct FlashlightLight(
     bool Shadows,
     float Volumetric,
     float Dust,
-    Vector3f RigFill)
+    Vector3f RigFill,
+    float Throw = 0f)
 {
     /// <summary>Gets a flashlight that is switched off.</summary>
     public static FlashlightLight Off => default;

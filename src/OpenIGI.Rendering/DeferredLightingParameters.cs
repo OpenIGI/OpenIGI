@@ -234,8 +234,7 @@ public static class DeferredLightingParameters
         FlashlightBlock.Write(
             block.Slice(FlashlightOffset, FlashlightBlock.Floats),
             state.Flashlight,
-            state.FlashlightShadowed,
-            state.FrameIndex);
+            state.FlashlightShadowed);
     }
 
     /// <summary>Where in the GI block the flashlight starts, in floats.</summary>

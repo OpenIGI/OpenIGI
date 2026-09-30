@@ -13,7 +13,7 @@ namespace OpenIGI.Rendering;
 /// <item><term>up</term><description>view xyz, the lens radius.</description></item>
 /// <item><term>colour</term><description>linear rgb times the intensity, the near core squared.</description></item>
 /// <item><term>cone</term><description>tan of the outer half-angle, then the inner's and the spill's tangents over it, and the spill's level.</description></item>
-/// <item><term>control</term><description>whether a shadow mask was made, the volumetric scale, the frame, the dust.</description></item>
+/// <item><term>control</term><description>whether a shadow mask was made, the volumetric scale, the throw, the dust.</description></item>
 /// </list>
 /// <para>
 /// A flashlight that is off writes zeros, and a range of nought is what every shader tests.
@@ -31,9 +31,8 @@ public static class FlashlightBlock
     /// <param name="block">Room for <see cref="Floats"/> floats.</param>
     /// <param name="light">The flashlight.</param>
     /// <param name="shadowMask">Whether this frame made a shadow mask for it to be read through.</param>
-    /// <param name="frameIndex">Which frame this is, for anything that jitters.</param>
     /// <exception cref="ArgumentException">The block is the wrong length.</exception>
-    public static void Write(Span<float> block, in FlashlightLight light, bool shadowMask, long frameIndex)
+    public static void Write(Span<float> block, in FlashlightLight light, bool shadowMask)
     {
         if (block.Length != Floats)
         {
@@ -86,7 +85,7 @@ public static class FlashlightBlock
 
         block[20] = shadowMask ? 1f : 0f;
         block[21] = MathF.Max(light.Volumetric, 0f);
-        block[22] = frameIndex % 64;
+        block[22] = Math.Clamp(light.Throw, 0f, 2f);
         block[23] = MathF.Max(light.Dust, 0f);
     }
 
