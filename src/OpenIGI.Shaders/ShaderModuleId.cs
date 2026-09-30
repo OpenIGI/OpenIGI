@@ -184,4 +184,10 @@ public enum ShaderModuleId
     /// <summary>Deferred: this frame's depth copied into a colour target, for the next frame to read.</summary>
     CopyDepth,
 
+    /// <summary>The flashlight's shadow: one ray a pixel to a point on its lens, traced or marched.</summary>
+    FlashlightShadow,
+
+    /// <summary>The flashlight's shadow spread over the penumbra its occluders imply.</summary>
+    FlashlightShadowFilter,
+
 }

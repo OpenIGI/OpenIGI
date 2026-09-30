@@ -892,6 +892,7 @@ internal sealed partial class GameHost : IDisposable
         // Before Start, so a +lamp_switch on the command line and a settings.cfg that binds one both find
         // the command already there.
         RegisterLampCommands(console.System);
+        RegisterFlashlightCommands(console.System);
         RegisterImpactCommands(console.System);
         RegisterCameraCommands(console.System);
         RegisterRendererSwitchCommand(console.System);
@@ -1052,6 +1053,7 @@ internal sealed partial class GameHost : IDisposable
             DamageScale = HumanHealth.DifficultyDamageScale(_playerDifficulty),
         };
         _playerDead = false;
+        ResetFlashlight();
 
         // The red wash the screen takes on a hit -- four corner alphas that decay a forty-fifth a tick
         // (sub_411300) and paint a screen-filling red quad (HumanPlayer_DrawDamageFlash). It survives the
@@ -2330,6 +2332,10 @@ internal sealed partial class GameHost : IDisposable
                     console.System.Execute(statement, echo: true);
                 }
             }
+
+            // The remaster's flashlight, before the map computer's key: it is read only while the player's
+            // own view is on screen, which the computer opening this frame has not yet changed.
+            UpdateFlashlightSwitch(menuMode, console.IsOpen);
 
             // IGI1's handheld is a game mode, entered by the retail C binding. It owns the pointer and
             // freezes player/camera input while the world continues its fixed-tick simulation.
@@ -4021,6 +4027,19 @@ internal sealed partial class GameHost : IDisposable
                     eye = _player.SmoothedCamera(tickBlend);
                 }
 
+                // The body's own eye, before the over-the-shoulder view moves the camera off it: the
+                // flashlight hangs off the body, wherever the camera is.
+                Camera3D flashlightBody = eye;
+                bool flashlightShown = _playerMode
+                    && !_playerDead
+                    && !_missionFailedMenu
+                    && !_computerOpen
+                    && !_entry.IsCameraActive
+                    && _cutscenes?.IsPlaying != true
+                    && mapScene is null
+                    && (!menuMode || pauseMenu)
+                    && _player is not null;
+
                 // The over-the-shoulder view, built off whatever camera the player would have had. It is
                 // applied HERE, on the finished first-person eye and before anything reads the eye back,
                 // so the capture log, the aim projection below and every pass of the frame all agree on
@@ -5532,6 +5551,15 @@ if (retailFog)
                     // LampOcclusionField.
                     _device.SetLampOcclusionField(LampFieldFor(_sdfClipmaps));
                 }
+
+                // The player's flashlight, outside the lamps' gate: it lights under every lighting model the
+                // deferred path has, the GI's warm-up included, and needs no fixture in the level to exist.
+                SubmitFlashlight(
+                    captured && flashlightShown,
+                    menuMode && pauseMenu,
+                    flashlightBody,
+                    eye,
+                    _thirdPerson.IsEngaged);
 
                 if (mapScene is not null)
                 {

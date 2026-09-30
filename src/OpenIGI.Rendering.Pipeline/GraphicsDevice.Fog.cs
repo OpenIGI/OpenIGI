@@ -75,7 +75,8 @@ public sealed partial class GraphicsDevice
             _lighting.SunColour * _lighting.Scale,
             _lighting.AmbientColour,
             SkyValid: _lighting.Model != LightingModel.Baked,
-            _fogSettings.BaseHeight - _cameraPosition.Z);
+            _fogSettings.BaseHeight - _cameraPosition.Z,
+            _flashlight);
 
         bool cascades = _cascadeCount > 0 && _shadowsDrawn;
 

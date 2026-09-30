@@ -391,6 +391,32 @@ public sealed class ConfigTests
         Assert.Equal(PlayerProfile.BindingCount, loaded.Active!.Bindings.Count);
         Assert.Equal("KEY_F", loaded.Active.Bindings.Single(binding => binding.Action == "MoveLeft").Key);
         Assert.Contains(loaded.Active.Bindings, binding => binding.Action == "Binoculars");
+
+        // The flashlight's own default is F, which this player gave to MoveLeft: it comes back without a key
+        // rather than making one key drive two actions.
+        InputBinding flashlight = loaded.Active.Bindings.Single(binding => binding.Action == "Flashlight");
+        Assert.Equal(PlayerProfile.UnboundKey, flashlight.Key);
+        Assert.Equal("Unbound", InputBindingKeyNames.DisplayName(flashlight));
+    }
+
+    [Fact]
+    public void A_profile_saved_before_the_flashlight_gains_it_on_F()
+    {
+        GameConfig partial = new();
+        PlayerProfile joe = new() { Name = "Joe" };
+        joe.Bindings.AddRange(PlayerProfile.DefaultBindings.Where(binding => binding.Action != "Flashlight"));
+        partial.Add(joe);
+
+        GameConfig loaded = ConfigScript.Load(ConfigScriptWriter.Write(partial));
+
+        Assert.Equal(PlayerProfile.BindingCount, loaded.Active!.Bindings.Count);
+        Assert.Equal("KEY_F", loaded.Active.Bindings.Single(binding => binding.Action == "Flashlight").Key);
+    }
+
+    [Fact]
+    public void An_unbound_action_is_never_pressed()
+    {
+        Assert.False(InputBindingKeyNames.TryParseKeyboardKey(PlayerProfile.UnboundKey, out _));
     }
 
     [Fact]

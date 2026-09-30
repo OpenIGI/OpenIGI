@@ -56,6 +56,29 @@ public sealed class GraphicsPresetRegistryTests
     }
 
     /// <summary>
+    /// Only vanilla has no flashlight: the original has none, and a vanilla run is the original.
+    /// </summary>
+    [Fact]
+    public void OnlyVanillaHasNoFlashlight()
+    {
+        _ = RenderCVars.Flashlight;
+
+        GraphicsPresetRegistry.Default.Apply(GraphicsPreset.Vanilla);
+        Assert.False(RenderCVars.Flashlight.Value, "vanilla must not have a flashlight");
+        Assert.Equal(0, RenderCVars.FlashlightShadows.Value);
+
+        foreach (GraphicsPreset preset in (ReadOnlySpan<GraphicsPreset>)
+            [GraphicsPreset.Enhanced, GraphicsPreset.High, GraphicsPreset.Ultra])
+        {
+            GraphicsPresetRegistry.Default.Apply(preset);
+
+            Assert.True(RenderCVars.Flashlight.Value, $"{preset} has no flashlight");
+            Assert.Equal(1, RenderCVars.FlashlightShadows.Value);
+            Assert.True(RenderCVars.FlashlightFog.Value > 0f, $"{preset} has no flashlight beam in the air");
+        }
+    }
+
+    /// <summary>
     /// Only vanilla is drawn the original's rain; every preset above it gets the remastered storm.
     /// </summary>
     /// <remarks>

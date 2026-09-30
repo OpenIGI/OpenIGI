@@ -33,6 +33,14 @@ public enum PlayerAction
     /// <summary>Move backward — down the screen.</summary>
     MoveDown = 0x8,
 
+    /// <summary>Switch the flashlight on or off.</summary>
+    /// <remarks>
+    /// <b>Not retail.</b> The original binds nothing to <c>0x10</c> — its table jumps from the movement
+    /// nibble to <c>0x100</c> — so the remaster's one extension action takes the first bit the binding
+    /// table leaves free, and no retail row can ever collide with it.
+    /// </remarks>
+    Flashlight = 0x10,
+
     /// <summary>Fire the held weapon.</summary>
     Fire = 0x100,
 

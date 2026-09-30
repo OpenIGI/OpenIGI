@@ -1963,6 +1963,7 @@ internal sealed partial class GameHost
         _damageFlash = new();
         _flashbangScreenFlash = new();
         _deathCamera.Reset();
+        ResetFlashlight();
 
         EndStage("the terrain, sky, sun, grade and camera");
 

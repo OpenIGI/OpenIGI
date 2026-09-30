@@ -450,9 +450,11 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
 
             exposure,
 
-            // Only the lit rig reads it, so the lamps are summed only for its draws.
+            // Only the lit rig reads it, so the lamps are summed only for its draws. The flashlight's share
+            // is the host's: the reflector's leak onto the hand holding it and the beam thrown back off
+            // whatever it is pointed at, which only the host knows the distance to.
             LampLight: ForwardDrawMarker.IsStudioRig(ForwardDrawMarker.For(blend, _firstPerson, _lighting.Model))
-                ? LampFill.AtEye(LocalLights)
+                ? LampFill.AtEye(LocalLights) + (_flashlight.IsOn ? _flashlight.RigFill : Vector3f.Zero)
                 : Vector3f.Zero,
             _firstPerson);
 
