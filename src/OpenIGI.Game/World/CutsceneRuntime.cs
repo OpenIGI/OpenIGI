@@ -493,11 +493,12 @@ public sealed class CutsceneRuntime
             }
         }
 
-        // Retail dispatches every registered AnimTask twice at tick zero before the first positive
-        // 30 Hz update. The first packet initializes the receiver and lets vehicle handlers install
-        // hold sentinels into the aliased channel block. The scheduler then spends one tick of the
-        // programme's first wait and dispatches tick zero again. Mission 1's captured helicopter trace
-        // is the useful proof: its initial Wait(10) produces the first cyclic edge at tick 9, not 10.
+        // An AnimTask's PostLoad (0x4F3940) seeks its programme to zero (0x4F3EF0(anim, 0)), which sends one
+        // packet with counter 0: the receiver's set-up, which also lets vehicle handlers install hold
+        // sentinels into the aliased channel block. Its first RUNNING walk sends counter 0 again (see
+        // TickAnimation), so the first physics packet comes on the walk after. Sending both here made every
+        // vehicle an AnimTask drives start a walk early: mission 8's intro truck 1501 took 750 steps where
+        // the original takes 749, the last one past the scene's nTick < 750 cut-off.
         foreach (AnimationState animation in _animations)
         {
             if (!ConditionalContainerGate.IsTaskActive(animation.Task))
@@ -505,8 +506,6 @@ public sealed class CutsceneRuntime
                 continue;
             }
             animation.Program.SeekTo(0);
-            ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
-            animation.Program.Step();
             ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
         }
         UpdateFrame();
@@ -547,6 +546,16 @@ public sealed class CutsceneRuntime
         _retailCarWorld = world ?? throw new ArgumentNullException(nameof(world));
         _retailCarModels = models ?? throw new ArgumentNullException(nameof(models));
         _retailMagic = magic;
+
+        // Mission 8's intro truck is reset by its AnimTask while the runtime is constructed; without this
+        // it never gets a body and drives the planar model through the whole scene.
+        foreach ((GameTask task, TransformState state) in _taskTransforms)
+        {
+            if (state.RetailResetPending)
+            {
+                ResetRetailBody(task, state);
+            }
+        }
     }
 
     /// <summary>Supplies the loaded graph corpus to authored vehicle patrol tasks.</summary>
@@ -1449,16 +1458,19 @@ public sealed class CutsceneRuntime
             return;
         }
 
-        int previousTick = animation.Program.Tick;
         animation.Tick++;
-        animation.Program.SeekTo(previousTick + 1);
-        ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
-        if (previousTick < 0)
+        if (animation.Program.Tick < 0)
         {
-            // A task that was out of the world at load has its two tick-zero dispatches on its first run.
-            animation.Program.Step();
+            // A task that was out of the world at load has its PostLoad seek on its first run.
+            animation.Program.SeekTo(0);
             ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
         }
+
+        // 0x4F3EF0(anim, cur + 1): one step, whose packet carries the counter before it moves on -- so the first
+        // running walk sends counter 0 (a set-up) and physics starts on the next.
+        animation.Program.Step();
+        ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
+        animation.Program.CountTick();
     }
 
     /// <summary>A CutScene's update (<c>0x4F51D0</c>): its children (its AnimTasks) first, then its own run.</summary>
@@ -2940,8 +2952,16 @@ public sealed class CutsceneRuntime
     /// <summary>Creates or resets a car's retail body at its placement -- the set-up packet's reset (<c>0x42EA10</c> mode 0).</summary>
     private void ResetRetailBody(GameTask? task, TransformState state)
     {
-        if (_retailCarWorld is null
-            || task is not DeclaredTask declared
+        if (_retailCarWorld is null)
+        {
+            // An AnimTask the level starts running sends its set-up packets while this runtime is being
+            // built, before the host has the world its rays are cast into. The reset is only deferred.
+            state.RetailResetPending = true;
+            return;
+        }
+
+        state.RetailResetPending = false;
+        if (task is not DeclaredTask declared
             || state.CarPhysics is not { } physics)
         {
             return;
@@ -4892,6 +4912,9 @@ public sealed class CutsceneRuntime
 
         /// <summary>The car's retail rigid body, once its controller's set-up packet has created it.</summary>
         public RetailCarBody? RetailBody { get; set; }
+
+        /// <summary>Whether a set-up packet arrived before <see cref="ConfigureRetailCars"/> supplied the world.</summary>
+        public bool RetailResetPending { get; set; }
 
         /// <summary>The helicopter's retail rigid body, once its AnimTask has first spoken.</summary>
         public RetailHeliBody? RetailHeli { get; set; }

@@ -130,6 +130,14 @@ public sealed class AnimDataProgram
         }
     }
 
+    /// <summary>Moves the tick counter on once a step's packet has gone out.</summary>
+    /// <remarks>
+    /// <c>0x4F3EF0</c> calls the step <c>0x4F3F60</c>, whose packet (<c>0x4F4060</c>) carries the counter
+    /// <c>+131412</c> as it stands, and only then increments it. A running AnimTask therefore steps,
+    /// sends, and counts, in that order.
+    /// </remarks>
+    public void CountTick() => Tick++;
+
     /// <summary>Advances the programme to a tick.</summary>
     /// <param name="tick">The tick to reach.</param>
     /// <remarks>
