@@ -1052,6 +1052,15 @@ public sealed class SoldierRenderer : IDisposable
 
                     if (member.IsCutsceneActor)
                     {
+                        // Grounded on its graph, as TickPlacementOf draws it.
+                        if (!member.HasCutsceneGameplayMovement
+                            && _brains.TryGetValue(member.View, out AiSoldier? stagedBrain) && stagedBrain.HasGraph && stagedBrain.HasGroundQuery)
+                        {
+                            return new CutsceneTargetPose(
+                                member.View.Position + new Vector3d(0d, 0d, member.View.RootSample.Z),
+                                member.View.Orientation);
+                        }
+
                         if (member.HasCutsceneGameplayMovement)
                         {
                             double groundedZ = SnapToGround(
@@ -3939,9 +3948,6 @@ public sealed class SoldierRenderer : IDisposable
 
         if (member is { IsCutsceneActor: true })
         {
-            // Staged actors hold finished one-shots like the native animation channel instead
-            // of releasing them to an activity fallback they do not have.
-            brain.RetainScriptedAnimation = true;
             AiPatrolCommandKind? patrolCommand = brain.Route?.Current?.Kind;
             bool authoredAnimation = brain.RequestedAnimation >= 0
                 || patrolCommand == AiPatrolCommandKind.Animation;
@@ -3970,11 +3976,11 @@ public sealed class SoldierRenderer : IDisposable
                     // when the AI action itself is a non-locomotion PlayAnimation. Cutscene jumps
                     // use exactly that path; keeping the task's authored spawn here froze Jones in
                     // mid-air while EditCamera continued targeting the moving Human.
-                    Vector3d moved = view.Orientation.Transposed().Transform(new Vector3d(
-                        rootDelta.X,
-                        rootDelta.Y,
-                        rootDelta.Z));
-                    brain.SeparateTo(brain.Position + moved);
+                    // The brain's own body step (0x45D080 -> 0x4614B0) already carries the horizontal
+                    // part this tick, so only the vertical part is added here. Adding both doubled
+                    // every staged actor's sway: mission 8's guard 3336 drifted 61 cm where the
+                    // original's drifts 30.
+                    brain.SeparateTo(brain.Position + new Vector3d(0d, 0d, rootDelta.Z));
                     member.HasCutsceneRootMotion = true;
                 }
 
@@ -4523,6 +4529,20 @@ public sealed class SoldierRenderer : IDisposable
                 // offset. Adding the absolute Human+1300 sample here commits it a second time, lifting
                 // Jones into the cabin roof until only his legs survive the depth test.
                 return (attached, attachedOrientation);
+            }
+
+            // An actor with an AI graph is grounded on it every tick like any soldier, and 0x462390 then
+            // sets Human+32 to that ground plus the clip's root-bone height (0x48A340). Mission 8's intro
+            // guards were drawn at their authored origin or, once their idle clip moved them, at their
+            // feet -- 3336 stood waist-deep in the ground beside the second truck.
+            if (!member.HasCutsceneGameplayMovement
+                && _brains.TryGetValue(soldier, out AiSoldier? stagedBrain) && stagedBrain.HasGraph && stagedBrain.HasGroundQuery)
+            {
+                // The graph branch takes its height from the graph, which the brain has already applied.
+                return (new Vector3d(
+                    soldier.Position.X / WorldScene.UnitsPerMetre,
+                    soldier.Position.Y / WorldScene.UnitsPerMetre,
+                    (soldier.Position.Z + soldier.RootSample.Z) / WorldScene.UnitsPerMetre), soldier.Orientation);
             }
 
             if (member.HasCutsceneGameplayMovement)

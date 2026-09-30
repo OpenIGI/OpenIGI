@@ -237,6 +237,9 @@ public sealed class AiSoldier
     /// <summary>Gets a value indicating whether a ground query is wired up.</summary>
     public bool HasGroundQuery => _ground is not null;
 
+    /// <summary>Gets a value indicating whether an AI graph grounds this soldier every tick (<c>0x462390</c>'s graph branch).</summary>
+    public bool HasGraph => _graph is not null;
+
     /// <summary>Gets the distance to whatever the last dispatched event was about, in engine units.</summary>
     /// <remarks>What <c>AIFunction_GetEventDistance</c> hands the archetype script.</remarks>
     public double LastEventDistance { get; private set; }
@@ -374,17 +377,6 @@ public sealed class AiSoldier
     public int RequestedAnimation { get; private set; } = -1;
 
     private bool _animationFinished;
-
-    /// <summary>Whether a finished scripted one-shot stays retained instead of releasing.</summary>
-    /// <remarks>
-    /// Retail's <c>AIAction_PlayAnimation</c> runner (<c>IGI.EXE 0x48DEC0</c>) retains the action
-    /// while animation channel 3 holds the requested clip (<c>"In progress"</c>) and completes it
-    /// only through the <c>0x450FF0</c> finisher once the channel advances. A staged cutscene actor
-    /// has no activity fallback, so its channel holds the ended clip: retaining keeps re-requests
-    /// on the renderer's same-clip preserve path instead of restarting from zero. Gameplay actors
-    /// keep clear-on-end so combat re-arms exactly as before. Set by the renderer for staged members.
-    /// </remarks>
-    public bool RetainScriptedAnimation { get; set; }
 
     private AiPatrolPathRegistry? _paths;
 
@@ -2362,21 +2354,16 @@ public sealed class AiSoldier
         DetectionShoutRequestedThisTick = false;
         AlertPingDueThisTick = false;
 
-        // A scripted one-shot clip releases the animation slot the moment the renderer says it ended,
-        // so the soldier goes back to whatever its activity plays. Staged cutscene actors are exempt:
-        // clearing here let Level 1's still-true idle condition (CutScene_1200.nTick > 547, frozen past
-        // scene 1200) reinstall clip 242 from zero every cycle, re-applying its root motion each time
-        // (about 50 m of drift plus a 21 m sink through scene 1202). Retaining holds the ended clip's
-        // last frame like the native channel; the finished edge is still consumed so patrol Animation
-        // commands observe it exactly once.
+        // A scripted one-shot clip releases the animation slot the moment the renderer says it ended, so the
+        // soldier goes idle and its script's IDLE branch may request the clip again. That holds for staged
+        // cutscene actors too: 0x48DEC0 completes PlayAnimation once channel 3 leaves the clip, and the
+        // original replays mission 8's guard 3336 (clip 49) and mission 1's 1666 (clip 242) every cycle,
+        // each replay adding the clip's root motion again.
         if (_scriptedAnimation && _animationFinished)
         {
             _animationFinished = false;
-            if (!RetainScriptedAnimation)
-            {
-                RequestedAnimation = -1;
-                _scriptedAnimation = false;
-            }
+            RequestedAnimation = -1;
+            _scriptedAnimation = false;
         }
 
         // The idle-animation deadline (ai+15200): passing it posts AIEVENT_ANIMATION and re-arms.
