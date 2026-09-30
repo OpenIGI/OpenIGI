@@ -62,7 +62,7 @@ public sealed class GraphNode
 
     /// <summary>Gets the node's world position, in engine units.</summary>
     /// <remarks>
-    /// The file stores positions in the graph's own frame. <see cref="GraphFile.ApplyWorldOffset"/>
+    /// The file stores positions in the graph's own frame. <see cref="GraphFile.ApplyWorldOffset(Vector3d)"/>
     /// transforms them into world space by adding the graph task's declared position — which is what
     /// <c>0x4F9770</c> does every time a caller asks for a node's position.
     /// </remarks>

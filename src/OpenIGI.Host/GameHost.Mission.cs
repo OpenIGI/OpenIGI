@@ -1041,7 +1041,27 @@ internal sealed partial class GameHost
                         // The graph file stores node positions in the graph's own frame. The world
                         // position is node + graphTask.Position — what 0x4F9770 adds every time.
                         Vector3d graphPos = TaskGeometry.FindPosition(levelRoot, graphId);
-                        graph.ApplyWorldOffset(graphPos);
+
+                        // A graph under a placed model is in that model's frame (0x4F9770's other branch).
+                        // Mission 9's intro office is a Building whose graphs sit at a few metres: added to
+                        // nothing, they put Anya's feet 42 km under the level.
+                        if (levelRoot.Tree.FromId(graphId)?.Parent is DeclaredTask graphParent
+                            && graphParent.TryGetValue(WorldScene.ModelParameter, out object? parentModel)
+                            && parentModel is string { Length: > 0 }
+                            && graphParent.TryGetValue("Position", out object? parentPlace)
+                            && parentPlace is Vector3d parentPosition
+                            && graphParent.TryGetValue("Orientation", out object? parentTurn)
+                            && parentTurn is Vector3f parentAngles)
+                        {
+                            graph.ApplyWorldOffset(
+                                graphPos,
+                                parentPosition,
+                                RetailOrientation.Euler(parentAngles.X, parentAngles.Y, parentAngles.Z));
+                        }
+                        else
+                        {
+                            graph.ApplyWorldOffset(graphPos);
+                        }
 
                         // The graph task's own "Node cover midoffset" -- where the can-shoot ray starts.
                         if (TaskGeometry.TryFindValue(levelRoot, graphId, "Node cover midoffset", out object? midOffset)

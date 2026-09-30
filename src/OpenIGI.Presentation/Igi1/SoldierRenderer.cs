@@ -1054,7 +1054,7 @@ public sealed class SoldierRenderer : IDisposable
                     {
                         // Grounded on its graph, as TickPlacementOf draws it.
                         if (!member.HasCutsceneGameplayMovement
-                            && _brains.TryGetValue(member.View, out AiSoldier? stagedBrain) && stagedBrain.HasGraph && stagedBrain.HasGroundQuery)
+                            && _brains.TryGetValue(member.View, out AiSoldier? stagedBrain) && stagedBrain.HasGraph && stagedBrain.HasGroundQuery && !stagedBrain.GraphInParentFrame)
                         {
                             return new CutsceneTargetPose(
                                 member.View.Position + new Vector3d(0d, 0d, member.View.RootSample.Z),
@@ -4531,12 +4531,14 @@ public sealed class SoldierRenderer : IDisposable
                 return (attached, attachedOrientation);
             }
 
+            // A graph inside a placed model parents the actor to that model instead (0x462390 -> 0x463310): mission 9's
+            // intro office holds Anya where she was placed, so she keeps the staging below.
             // An actor with an AI graph is grounded on it every tick like any soldier, and 0x462390 then
             // sets Human+32 to that ground plus the clip's root-bone height (0x48A340). Mission 8's intro
             // guards were drawn at their authored origin or, once their idle clip moved them, at their
             // feet -- 3336 stood waist-deep in the ground beside the second truck.
             if (!member.HasCutsceneGameplayMovement
-                && _brains.TryGetValue(soldier, out AiSoldier? stagedBrain) && stagedBrain.HasGraph && stagedBrain.HasGroundQuery)
+                && _brains.TryGetValue(soldier, out AiSoldier? stagedBrain) && stagedBrain.HasGraph && stagedBrain.HasGroundQuery && !stagedBrain.GraphInParentFrame)
             {
                 // The graph branch takes its height from the graph, which the brain has already applied.
                 return (new Vector3d(

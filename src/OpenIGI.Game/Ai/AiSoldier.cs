@@ -240,6 +240,9 @@ public sealed class AiSoldier
     /// <summary>Gets a value indicating whether an AI graph grounds this soldier every tick (<c>0x462390</c>'s graph branch).</summary>
     public bool HasGraph => _graph is not null;
 
+    /// <summary>Gets whether that graph is in a placed model's frame, which parents the soldier to the model instead.</summary>
+    public bool GraphInParentFrame => _graph?.InParentFrame == true;
+
     /// <summary>Gets the distance to whatever the last dispatched event was about, in engine units.</summary>
     /// <remarks>What <c>AIFunction_GetEventDistance</c> hands the archetype script.</remarks>
     public double LastEventDistance { get; private set; }

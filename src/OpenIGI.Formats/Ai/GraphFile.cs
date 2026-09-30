@@ -164,6 +164,43 @@ public sealed class GraphFile
         }
     }
 
+    /// <summary>Moves every node into the world through the graph's parent object's frame.</summary>
+    /// <param name="graphPosition">The AIGraph task's own "Graph position".</param>
+    /// <param name="parentPosition">The parent object's position.</param>
+    /// <param name="parentMatrix">The parent object's 3x3, row-major, as the original stores it.</param>
+    /// <remarks>
+    /// <c>0x4F9770</c>'s other branch. An AIGraph whose parent is a placed model (<c>0x4F90B0</c> sets <c>+100</c> when
+    /// the parent's type derives from <c>RigidDynCubeObj</c>, <c>0x4C3450</c>) is authored in that model's frame: the node
+    /// plus the graph position, turned by the parent's 3x3, plus the parent's position.
+    /// </remarks>
+    public void ApplyWorldOffset(Vector3d graphPosition, Vector3d parentPosition, ReadOnlySpan<float> parentMatrix)
+    {
+        if (parentMatrix.Length < 9)
+        {
+            throw new ArgumentException("A 3x3 needs nine entries.", nameof(parentMatrix));
+        }
+
+        InParentFrame = true;
+        foreach (GraphNode node in Nodes)
+        {
+            double x = X87.Add(graphPosition.X, node.Position.X);
+            double y = X87.Add(graphPosition.Y, node.Position.Y);
+            double z = X87.Add(graphPosition.Z, node.Position.Z);
+            node.Position = new Vector3d(
+                X87.Add(parentPosition.X, Row(parentMatrix, 0, x, y, z)),
+                X87.Add(parentPosition.Y, Row(parentMatrix, 3, x, y, z)),
+                X87.Add(parentPosition.Z, Row(parentMatrix, 6, x, y, z)));
+        }
+
+        // m[2]*z + m[1]*y + m[0]*x, in that order, as the decompiled expression evaluates it.
+        static double Row(ReadOnlySpan<float> m, int row, double x, double y, double z) =>
+            X87.Add(X87.Add(X87.Multiply(m[row + 2], z), X87.Multiply(m[row + 1], y)), X87.Multiply(m[row], x));
+    }
+
+    /// <summary>Gets whether the graph lives in a placed model's frame (the AIGraph's <c>+100</c>).</summary>
+    /// <remarks>A human grounded on such a graph is parented to that model (<c>0x462390</c> calls <c>0x463310</c>).</remarks>
+    public bool InParentFrame { get; private set; }
+
     /// <summary>Gets how many bytes the walk consumed.</summary>
     public int BytesConsumed { get; }
 
