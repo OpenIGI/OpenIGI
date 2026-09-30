@@ -164,6 +164,11 @@ internal sealed class ViewModelRenderer : IViewModelPresenter
         _device.SetProjection(projection);
         _device.SetCullMode(CullMode.None);
         _device.SetDepthState(DepthState.TestAndWrite);
+        // The rig brings its own surface, as retail's rig draw brings its own state block (0x49D480). The world
+        // leaves its last sub-mesh's material in force, so the arms wore whatever the last object in view
+        // wore: turning away from the spawn heading made the glove vanish while the knife, which sets its
+        // own material, stayed.
+        _device.SetMaterialOverride(SurfaceMaterial.Default);
 
         Matrix4f modelView = camera.CreateModelView(metres, orientation ?? view.Orientation);
 
@@ -198,6 +203,7 @@ internal sealed class ViewModelRenderer : IViewModelPresenter
         }
 
         _device.ClearPoseInterpolation();
+        _device.SetMaterialOverride(SurfaceMaterial.Default);
     }
 
     /// <inheritdoc/>
