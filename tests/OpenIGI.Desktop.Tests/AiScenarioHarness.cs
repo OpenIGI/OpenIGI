@@ -17,6 +17,7 @@ using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Infrastructure;
 using OpenIGI.Input;
 using OpenIGI.Presentation.Igi1;
+using OpenIGI.Presentation.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -569,7 +570,11 @@ public sealed class AiScenarioHarness : IDisposable
 
         StringBuilder log = new();
         using RecordingGraphicsDevice device = new();
-        GameHost host = Host(device, new HeadlessGameWindow(), "-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000");
+        // OPENIGI_VEH_SCENARIO_CUTSCENE=1 plays the opening cutscene instead of skipping it.
+        string[] hostArguments = EnvInt("OPENIGI_VEH_SCENARIO_CUTSCENE", 0) == 1
+            ? ["-mission", mission.ToString(CultureInfo.InvariantCulture), "-lockstep", "-frames", "1000000"]
+            : ["-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000"];
+        GameHost host = Host(device, new HeadlessGameWindow(), hostArguments);
         host.Start();
         InputState scripted = new();
         host.ScriptedViewInput = scripted;
@@ -778,6 +783,10 @@ public sealed class AiScenarioHarness : IDisposable
     /// the probe script (<c>god</c>, <c>teleport x y z [yaw]</c>, <c>quit</c>; retail units and headings),
     /// <c>_MISSION</c> the mission (7) and <c>_ID</c> the vehicle (354). Each gun logs its pose every tick it
     /// changes, a TRIGGER line when its trigger changes, and a ROUND line for each round it fires.
+    /// <c>_CUTSCENE=1</c> plays the opening cutscene instead of skipping it, <c>_SCENEVAR</c> names a script
+    /// variable (a scene's <c>nTick</c>) stamped on each <c>[body]</c> line, and <c>_SOLDIERS=n</c> logs every
+    /// soldier's feet and drawn origin every n ticks, with each staged actor's brain state -- the port half of
+    /// the probe's <c>cutscene</c> hook set.
     /// </remarks>
     [RequiresGameDataFact]
     public void ScriptedVehicleCapture()
@@ -813,7 +822,11 @@ public sealed class AiScenarioHarness : IDisposable
 
         StringBuilder log = new();
         using RecordingGraphicsDevice device = new();
-        GameHost host = Host(device, new HeadlessGameWindow(), "-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000");
+        // OPENIGI_VEH_SCENARIO_CUTSCENE=1 plays the opening cutscene instead of skipping it.
+        string[] hostArguments = EnvInt("OPENIGI_VEH_SCENARIO_CUTSCENE", 0) == 1
+            ? ["-mission", mission.ToString(CultureInfo.InvariantCulture), "-lockstep", "-frames", "1000000"]
+            : ["-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000"];
+        GameHost host = Host(device, new HeadlessGameWindow(), hostArguments);
         host.Start();
         host.ScriptedViewInput = new InputState();
         FieldInfo playerField = typeof(GameHost).GetField("_player", BindingFlags.NonPublic | BindingFlags.Instance)!;
@@ -867,6 +880,7 @@ public sealed class AiScenarioHarness : IDisposable
         int maxSteps = EnvInt("OPENIGI_VEH_SCENARIO_STEPS", 200_000);
         int lastPlaneSteps = -1;
         Dictionary<PlacedDoor, string> doorLines = [];
+        List<SoldierSnapshot> soldierSnapshots = [];
 
         // OPENIGI_VEH_SCENARIO_POSLOG=<n>: the player's position every n ticks, as the probe's IGI_PROBE_POSLOG.
         int posEvery = Math.Max(1, EnvInt("OPENIGI_VEH_SCENARIO_POSLOG", 30));
@@ -962,7 +976,9 @@ public sealed class AiScenarioHarness : IDisposable
             {
                 if (bodyState.GetType().GetProperty("RetailBody")?.GetValue(bodyState) is RetailCarBody body)
                 {
-                    log.AppendLine(CultureInfo.InvariantCulture, $"[body] tick={tick} pos=({body.Position[0]:R},{body.Position[1]:R},{body.Position[2]:R}) thr={body.Throttle:R}/{body.ThrottleTarget:R} steer={body.Steering:R}/{body.SteeringTarget:R} hb={body.Handbrake} speed={body.Speed:R}");
+                    string scene = Environment.GetEnvironmentVariable("OPENIGI_VEH_SCENARIO_SCENEVAR") is { Length: > 0 } sceneVar
+                        && loop.Variables.TryRead(sceneVar, out OpenIGI.Scripting.Runtime.QvmValue sceneTick) ? $" scene={sceneTick}" : string.Empty;
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[body] tick={tick}{scene} pos=({body.Position[0]:R},{body.Position[1]:R},{body.Position[2]:R}) thr={body.Throttle:R}/{body.ThrottleTarget:R} steer={body.Steering:R}/{body.SteeringTarget:R} hb={body.Handbrake} speed={body.Speed:R}");
                 }
                 else if (bodyState.GetType().GetProperty("RetailPlane")?.GetValue(bodyState) is RetailPlaneBody plane
                     && bodyState.GetType().GetProperty("PhysicsTicks")?.GetValue(bodyState) is int planeSteps
@@ -999,6 +1015,36 @@ public sealed class AiScenarioHarness : IDisposable
                         doorLines[door] = line;
                         log.AppendLine(CultureInfo.InvariantCulture, $"[door] tick={tick} door=port{doorIndex} id={door.Task.Id} {line}");
                     }
+                }
+            }
+
+            // OPENIGI_VEH_SCENARIO_SOLDIERS=<n>: every soldier's feet every n ticks.
+            if (EnvInt("OPENIGI_VEH_SCENARIO_SOLDIERS", 0) is int soldierEvery and > 0 && tick % soldierEvery == 0)
+            {
+                soldiers.Snapshot(soldierSnapshots);
+                List<Vector3d> drawn = [];
+                foreach (object group in (System.Collections.IEnumerable)typeof(SoldierRenderer).GetField("_groups", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(soldiers)!)
+                {
+                    foreach (object member in (System.Collections.IEnumerable)group.GetType().GetProperty("Soldiers")!.GetValue(group)!)
+                    {
+                        drawn.Add((Vector3d)member.GetType().GetProperty("TickWhere")!.GetValue(member)! * Metre);
+                        if (member.GetType().GetProperty("IsCutsceneActor")!.GetValue(member) is true)
+                        {
+                            SoldierView view = (SoldierView)member.GetType().GetProperty("View")!.GetValue(member)!;
+                            System.Collections.IDictionary brains = (System.Collections.IDictionary)typeof(SoldierRenderer).GetField("_brains", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(soldiers)!;
+                            AiSoldier? brain = brains.Contains(view) ? (AiSoldier?)brains[view] : null;
+                            object? P(string name) => member.GetType().GetProperty(name)?.GetValue(member);
+                            log.AppendLine(CultureInfo.InvariantCulture, $"[actor] tick={tick} view=({view.Position.X:0.0},{view.Position.Y:0.0},{view.Position.Z:0.0}) brain=({brain?.Position.X:0.0},{brain?.Position.Y:0.0},{brain?.Position.Z:0.0}) act={brain?.Activity} req={brain?.RequestedAnimation} route={brain?.Route?.Current?.Kind} root={P("HasCutsceneRootMotion")} move={P("HasCutsceneGameplayMovement")} sample=({view.RootSample.X:0.0},{view.RootSample.Y:0.0},{view.RootSample.Z:0.0}) anim={view.CurrentAnimation}");
+                        }
+                    }
+                }
+
+                for (int index = 0; index < soldierSnapshots.Count; index++)
+                {
+                    SoldierSnapshot snapshot = soldierSnapshots[index];
+                    Vector3d feet = snapshot.Position * Metre;
+                    Vector3d at = index < drawn.Count ? drawn[index] : default;
+                    log.AppendLine(CultureInfo.InvariantCulture, $"[soldier] tick={tick} name={snapshot.Name} feet=({feet.X:0},{feet.Y:0},{feet.Z:0}) drawn=({at.X:0.0},{at.Y:0.0},{at.Z:0.0}) anim={snapshot.Animation} actor={snapshot.IsCutsceneActor}");
                 }
             }
 
