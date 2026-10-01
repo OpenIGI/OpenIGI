@@ -243,6 +243,14 @@ public sealed class AiSoldier
     /// <summary>Gets whether that graph is in a placed model's frame, which parents the soldier to the model instead.</summary>
     public bool GraphInParentFrame => _graph?.InParentFrame == true;
 
+    /// <summary>Gets a value indicating whether the body has been stood on its graph's height at least once.</summary>
+    /// <remarks>
+    /// Until then <see cref="Position"/> is still where the level placed the soldier, which is the model origin
+    /// (<c>Human+32</c>) rather than its feet: retail's first AI tick is what replaces it with the graph height
+    /// plus the clip's root height (<c>0x462390</c>), and nothing may add the root height before that.
+    /// </remarks>
+    public bool StoodOnGraph { get; private set; }
+
     /// <summary>Gets the distance to whatever the last dispatched event was about, in engine units.</summary>
     /// <remarks>What <c>AIFunction_GetEventDistance</c> hands the archetype script.</remarks>
     public double LastEventDistance { get; private set; }
@@ -3594,6 +3602,7 @@ public sealed class AiSoldier
         // 0x462390 grounds an AI on its graph every tick: along the leg it is walking, or, with nothing to
         // walk, at its current node's height.
         Position = new Vector3d(x, y, GroundHeight(x, y));
+        StoodOnGraph = _graph is not null;
     }
 
     /// <summary>An AI's feet height — <c>0x462390</c>'s graph branch.</summary>

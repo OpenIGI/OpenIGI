@@ -1054,7 +1054,8 @@ public sealed class SoldierRenderer : IDisposable
                     {
                         // Grounded on its graph, as TickPlacementOf draws it.
                         if (!member.HasCutsceneGameplayMovement
-                            && _brains.TryGetValue(member.View, out AiSoldier? stagedBrain) && stagedBrain.HasGraph && stagedBrain.HasGroundQuery && !stagedBrain.GraphInParentFrame)
+                            && _brains.TryGetValue(member.View, out AiSoldier? stagedBrain) && stagedBrain.HasGraph && stagedBrain.HasGroundQuery
+                            && !stagedBrain.GraphInParentFrame && stagedBrain.StoodOnGraph)
                         {
                             return new CutsceneTargetPose(
                                 member.View.Position + new Vector3d(0d, 0d, member.View.RootSample.Z),
@@ -4537,8 +4538,12 @@ public sealed class SoldierRenderer : IDisposable
             // sets Human+32 to that ground plus the clip's root-bone height (0x48A340). Mission 8's intro
             // guards were drawn at their authored origin or, once their idle clip moved them, at their
             // feet -- 3336 stood waist-deep in the ground beside the second truck.
+            // Only once the brain HAS stood it there: before its first tick the position is still the authored
+            // model origin, which for a set-dressed actor already sits a root height above the floor -- mission
+            // 4's Anya at 1.98 m -- and adding the root height again stood her a whole hip-height up.
             if (!member.HasCutsceneGameplayMovement
-                && _brains.TryGetValue(soldier, out AiSoldier? stagedBrain) && stagedBrain.HasGraph && stagedBrain.HasGroundQuery && !stagedBrain.GraphInParentFrame)
+                && _brains.TryGetValue(soldier, out AiSoldier? stagedBrain) && stagedBrain.HasGraph && stagedBrain.HasGroundQuery
+                && !stagedBrain.GraphInParentFrame && stagedBrain.StoodOnGraph)
             {
                 // The graph branch takes its height from the graph, which the brain has already applied.
                 return (new Vector3d(
