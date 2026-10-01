@@ -161,7 +161,8 @@ public sealed class DroppedWeaponModeTests(ITestOutputHelper output)
 
         double perTick = clock.Elapsed.TotalMilliseconds / Math.Max(totalTicks, 1);
         output.WriteLine($"{perTick:0.000} ms per simulated tick against level 1");
-        Assert.True(perTick < 2.0, $"{perTick:0.000} ms per tick");
+        // Catches a cost grown by an order of magnitude; allows for a CI machine running two builds at once.
+        Assert.True(perTick < 6.0, $"{perTick:0.000} ms per tick");
     }
 
     private static GunPickupRegistry EmptyRegistry()

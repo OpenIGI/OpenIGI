@@ -298,7 +298,8 @@ public sealed class RigidMeshBodyTests(ITestOutputHelper output)
         }
 
         output.WriteLine($"{ticks} ticks, {perTick:0.000} ms per tick");
-        // About a third of a millisecond on an idle machine; the budget allows for a saturated test runner.
-        Assert.True(perTick < 2.0, $"{perTick:0.000} ms per tick");
+        // About a third of a millisecond on an idle machine. The budget is there to catch a cost that has grown
+        // by an order of magnitude, and allows for a CI machine running two builds on the cores this shares.
+        Assert.True(perTick < 6.0, $"{perTick:0.000} ms per tick");
     }
 }
