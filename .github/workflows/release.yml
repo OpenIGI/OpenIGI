@@ -34,6 +34,11 @@ env:
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
   RUNTIMES: win-x64 linux-x64 osx-arm64
 
+# Steps run in bash everywhere: a job container's default shell is sh, which has no arrays or ${x::n}.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   publish:
     name: publish ${{ inputs.tag || github.ref_name }}

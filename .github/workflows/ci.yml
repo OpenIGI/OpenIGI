@@ -23,6 +23,11 @@ env:
 # Where the jobs run is one repository variable, CI_RUNS_ON (a JSON runs-on value). Unset, it is the
 # self-hosted runner; set it to "ubuntu-latest" once the repository is public and GitHub's runners are free.
 # A pull request from a fork never runs on the self-hosted machine: it is arbitrary code from outside.
+# Steps run in bash everywhere: a job container's default shell is sh, which has no arrays or ${x::n}.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build:
     name: build-and-test

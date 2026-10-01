@@ -16,6 +16,11 @@ concurrency:
   group: ci-image
   cancel-in-progress: false
 
+# Steps run in bash everywhere: a job container's default shell is sh, which has no arrays or ${x::n}.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   image:
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sh-de"]') }}
