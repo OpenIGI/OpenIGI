@@ -73,19 +73,19 @@ public sealed class TitleContentTests
     /// <summary>The files that already break rule 3, and are allowed to until phase 1 moves them.</summary>
     private static readonly string[] Baseline =
     [
-        "src/OpenIGI.Host/GameHost.Audio.cs",
-        "src/OpenIGI.Host/GameHost.Effects.cs",
-        "src/OpenIGI.Host/GameHost.Menu.cs",
-        "src/OpenIGI.Host/GameHost.Mission.cs",
-        "src/OpenIGI.Host/GameHost.cs",
-        "src/OpenIGI.Host/Infrastructure/MissionStringResolver.cs",
-        "src/OpenIGI.Host/Menu/MissionPreview.cs",
-        "src/OpenIGI.Host/Menu/MissionPreviewLoader.cs",
-        "src/OpenIGI.Presentation/Rendering/ExplosionEffectRenderer.cs",
-        "src/OpenIGI.Presentation/Rendering/ImpactParticleRenderer.cs",
-        "src/OpenIGI.Presentation/Rendering/SkyRenderer.cs",
-        "src/OpenIGI.Presentation/Rendering/SmokeSpriteRenderer.cs",
-        "src/OpenIGI.Presentation/Rendering/TextureDecodeCache.cs",
+        "src/Engine/OpenIGI.Host/GameHost.Audio.cs",
+        "src/Engine/OpenIGI.Host/GameHost.Effects.cs",
+        "src/Engine/OpenIGI.Host/GameHost.Menu.cs",
+        "src/Engine/OpenIGI.Host/GameHost.Mission.cs",
+        "src/Engine/OpenIGI.Host/GameHost.cs",
+        "src/Engine/OpenIGI.Host/Infrastructure/MissionStringResolver.cs",
+        "src/Engine/OpenIGI.Host/Menu/MissionPreview.cs",
+        "src/Engine/OpenIGI.Host/Menu/MissionPreviewLoader.cs",
+        "src/Game/OpenIGI.Presentation/Rendering/ExplosionEffectRenderer.cs",
+        "src/Game/OpenIGI.Presentation/Rendering/ImpactParticleRenderer.cs",
+        "src/Game/OpenIGI.Presentation/Rendering/SkyRenderer.cs",
+        "src/Game/OpenIGI.Presentation/Rendering/SmokeSpriteRenderer.cs",
+        "src/Game/OpenIGI.Presentation/Rendering/TextureDecodeCache.cs",
     ];
 
     /// <summary>No file outside the baseline may name content belonging to one game.</summary>

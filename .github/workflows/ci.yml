@@ -33,7 +33,7 @@ jobs:
       - name: Install slangc
         shell: pwsh
         run: |
-          $pinned = (Get-Content src/OpenIGI.Shaders/ShaderModules.json -Raw | ConvertFrom-Json).slangVersion
+          $pinned = (Get-Content src/Rendering/OpenIGI.Shaders/ShaderModules.json -Raw | ConvertFrom-Json).slangVersion
           $release = $pinned.Split('-')[0]
           Write-Host "Pinned slang release: $release (from $pinned)"
           $url = "https://github.com/shader-slang/slang/releases/download/v$release/slang-$release-windows-x86_64.zip"

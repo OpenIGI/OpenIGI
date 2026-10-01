@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Emits the [CVarContainer] registrations. Build-time only: nothing of it ships. -->
+    <ProjectReference Include="..\..\Core\OpenIGI.Generators\OpenIGI.Generators.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false"
+                      GlobalPropertiesToRemove="PublishTrimmed;TrimMode;PublishReadyToRun;PublishSingleFile;IncludeNativeLibrariesForSelfExtract;SelfContained;RuntimeIdentifier" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenIGI.Shaders\OpenIGI.Shaders.csproj" />
+  </ItemGroup>
+
+</Project>

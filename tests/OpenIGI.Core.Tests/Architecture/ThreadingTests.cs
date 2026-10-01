@@ -19,10 +19,10 @@ public sealed partial class ThreadingTests
     // browser never loads.
     private static readonly string[] Allowed =
     [
-        Path.Combine("src", "OpenIGI.Core", "Threading", "ThreadPoolWorkScheduler.cs"),
-        Path.Combine("src", "OpenIGI.Rendering.Vulkan") + Path.DirectorySeparatorChar,
-        Path.Combine("src", "OpenIGI.Platform.Desktop") + Path.DirectorySeparatorChar,
-        Path.Combine("src", "OpenIGI.Audio.OpenAL") + Path.DirectorySeparatorChar,
+        Path.Combine("src", "Core", "OpenIGI.Core", "Threading", "ThreadPoolWorkScheduler.cs"),
+        Path.Combine("src", "Rendering", "OpenIGI.Rendering.Vulkan") + Path.DirectorySeparatorChar,
+        Path.Combine("src", "Platform", "OpenIGI.Platform.Desktop") + Path.DirectorySeparatorChar,
+        Path.Combine("src", "Audio", "OpenIGI.Audio.OpenAL") + Path.DirectorySeparatorChar,
     ];
 
     [Fact]

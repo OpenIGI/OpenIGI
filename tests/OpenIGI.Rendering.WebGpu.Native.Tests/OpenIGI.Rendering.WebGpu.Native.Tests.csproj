@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\OpenIGI.Rendering.WebGpu.Native\OpenIGI.Rendering.WebGpu.Native.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.WebGpu.Native\OpenIGI.Rendering.WebGpu.Native.csproj" />
   </ItemGroup>
 
   <ItemGroup>

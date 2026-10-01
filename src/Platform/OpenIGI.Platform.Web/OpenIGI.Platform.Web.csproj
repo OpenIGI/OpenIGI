@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The browser's window: a canvas, the page's input events, pointer lock and fullscreen. The C#
+       half reads the page through IBrowserPage, so everything but the JavaScript interop runs (and is
+       tested) off the browser too. -->
+  <PropertyGroup>
+    <!-- The JavaScript interop's generated marshalling is unsafe code. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\OpenIGI.Platform\OpenIGI.Platform.csproj" />
+    <ProjectReference Include="..\OpenIGI.Input\OpenIGI.Input.csproj" />
+  </ItemGroup>
+
+</Project>

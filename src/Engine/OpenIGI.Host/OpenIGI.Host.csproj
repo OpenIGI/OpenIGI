@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- The game host: the frame loop, the mission and cutscene wiring, the developer console, the
+         menu host and the bake orchestration. Everything here is portable — a desktop, mobile or web
+         app supplies the window, the graphics device and the audio backend through the abstraction
+         interfaces and gets the same host. It names no backend and no game title. -->
+    <ProjectReference Include="..\..\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\OpenIGI.Engine\OpenIGI.Engine.csproj" />
+    <ProjectReference Include="..\..\Core\OpenIGI.Formats\OpenIGI.Formats.csproj" />
+    <ProjectReference Include="..\..\Core\OpenIGI.Scripting\OpenIGI.Scripting.csproj" />
+    <ProjectReference Include="..\..\Game\OpenIGI.Game\OpenIGI.Game.csproj" />
+    <ProjectReference Include="..\OpenIGI.Modding\OpenIGI.Modding.csproj" />
+    <ProjectReference Include="..\..\Game\OpenIGI.Presentation\OpenIGI.Presentation.csproj" />
+    <ProjectReference Include="..\..\Game\OpenIGI.Frontend\OpenIGI.Frontend.csproj" />
+    <ProjectReference Include="..\..\UI\OpenIGI.UI\OpenIGI.UI.csproj" />
+    <ProjectReference Include="..\..\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\..\Audio\OpenIGI.Audio\OpenIGI.Audio.csproj" />
+    <ProjectReference Include="..\..\Platform\OpenIGI.Input\OpenIGI.Input.csproj" />
+    <ProjectReference Include="..\..\Platform\OpenIGI.Platform\OpenIGI.Platform.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Emits the [CVarContainer] registrations. Build-time only: nothing of it ships. -->
+    <ProjectReference Include="..\..\Core\OpenIGI.Generators\OpenIGI.Generators.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

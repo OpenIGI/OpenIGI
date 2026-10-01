@@ -12,7 +12,7 @@ reviews:
   path_filters:
     - "!**/bin/**"
     - "!**/obj/**"
-    - "!src/OpenIGI.Game/Resources/IGIModels.json"
+    - "!src/Game/OpenIGI.Game/Resources/IGIModels.json"
     - "!scratch/**"
   auto_review:
     enabled: true

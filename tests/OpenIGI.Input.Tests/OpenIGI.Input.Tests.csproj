@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\OpenIGI.Core\OpenIGI.Core.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Input\OpenIGI.Input.csproj" />
+    <ProjectReference Include="..\..\src\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\..\src\Platform\OpenIGI.Input\OpenIGI.Input.csproj" />
   </ItemGroup>
 
   <ItemGroup>

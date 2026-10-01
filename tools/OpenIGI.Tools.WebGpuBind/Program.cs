@@ -1,7 +1,7 @@
 using System.Text;
 using OpenIGI.Tools.WebGpuBind;
 
-// Generates src/OpenIGI.Rendering.WebGpu.Native/Generated/ from the headers committed beside it.
+// Generates src/Rendering/OpenIGI.Rendering.WebGpu.Native/Generated/ from the headers committed beside it.
 //
 //   dotnet run --project tools/OpenIGI.Tools.WebGpuBind            rewrite the committed bindings
 //   dotnet run --project tools/OpenIGI.Tools.WebGpuBind -- --check fail if they are stale
@@ -15,7 +15,7 @@ bool checkOnly = args.Contains("--check", StringComparer.Ordinal);
 try
 {
     string root = Locate();
-    string project = Path.Combine(root, "src", "OpenIGI.Rendering.WebGpu.Native");
+    string project = Path.Combine(root, "src", "Rendering", "OpenIGI.Rendering.WebGpu.Native");
     string native = Path.Combine(project, "native");
     string generated = Path.Combine(project, "Generated");
 
@@ -34,7 +34,7 @@ try
 
     IReadOnlyList<GeneratedFile> files = new BindingEmitter(model, version).Emit();
 
-    string browser = Path.Combine(root, "src", "OpenIGI.Rendering.WebGpu.Browser");
+    string browser = Path.Combine(root, "src", "Rendering", "OpenIGI.Rendering.WebGpu.Browser");
 
     if (!checkOnly)
     {

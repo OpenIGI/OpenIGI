@@ -1,0 +1,42 @@
+﻿<Project>
+
+  <!-- Puts the fetched wgpu-native binary beside whatever is being built.
+
+       WgpuLibrary looks beside the application first, because the release the bindings were generated
+       against is the release that has to load. The fetch script puts it in the gitignored third-party/
+       at the repository root, which is beside nothing, so it is copied into the output here.
+
+       Conditional throughout: a checkout that has never run tools/fetch-wgpu-native.ps1 builds and
+       tests exactly as before, and the tests that need a device skip with a reason that says so. -->
+
+  <PropertyGroup>
+    <!-- The folder the fetch script writes, named for the runtime this build targets. -->
+    <WgpuRuntimeIdentifier Condition="'$(WgpuRuntimeIdentifier)' == '' and '$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</WgpuRuntimeIdentifier>
+    <WgpuRuntimeIdentifier Condition="'$(WgpuRuntimeIdentifier)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</WgpuRuntimeIdentifier>
+    <WgpuNativeDirectory>$(MSBuildThisFileDirectory)..\..\..\third-party\wgpu-native\$(WgpuRuntimeIdentifier)\</WgpuNativeDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="$(WgpuNativeDirectory)wgpu_native.dll"
+             Condition="Exists('$(WgpuNativeDirectory)wgpu_native.dll')"
+             Link="wgpu_native.dll"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest"
+             Visible="false" />
+
+    <Content Include="$(WgpuNativeDirectory)libwgpu_native.so"
+             Condition="Exists('$(WgpuNativeDirectory)libwgpu_native.so')"
+             Link="libwgpu_native.so"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest"
+             Visible="false" />
+
+    <Content Include="$(WgpuNativeDirectory)libwgpu_native.dylib"
+             Condition="Exists('$(WgpuNativeDirectory)libwgpu_native.dylib')"
+             Link="libwgpu_native.dylib"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest"
+             Visible="false" />
+  </ItemGroup>
+
+</Project>

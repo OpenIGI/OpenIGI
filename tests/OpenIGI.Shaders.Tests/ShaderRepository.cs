@@ -8,8 +8,8 @@ namespace OpenIGI.Shaders.Tests;
 /// </remarks>
 internal static class ShaderRepository
 {
-    /// <summary>Gets the <c>src/OpenIGI.Shaders</c> directory.</summary>
-    public static string ProjectDirectory { get; } = Path.Combine(Root(), "src", "OpenIGI.Shaders");
+    /// <summary>Gets the <c>src/Rendering/OpenIGI.Shaders</c> directory.</summary>
+    public static string ProjectDirectory { get; } = Path.Combine(Root(), "src", "Rendering", "OpenIGI.Shaders");
 
     /// <summary>Reads one Slang source, for the invariants stated as text rather than as reflection.</summary>
     /// <param name="relativePath">The source's path under <c>Source/</c>, with forward slashes.</param>

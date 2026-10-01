@@ -5,9 +5,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\OpenIGI.Rendering.WebGpu\OpenIGI.Rendering.WebGpu.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Rendering.Pipeline\OpenIGI.Rendering.Pipeline.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Shaders\OpenIGI.Shaders.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.WebGpu\OpenIGI.Rendering.WebGpu.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.Pipeline\OpenIGI.Rendering.Pipeline.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\OpenIGI.Shaders\OpenIGI.Shaders.csproj" />
   </ItemGroup>
 
   <ItemGroup>
