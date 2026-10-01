@@ -94,8 +94,11 @@ public sealed class LauncherServicesTests
             Assert.Equal("D:/IGI", read.GameFolders["igi1"]);
             Assert.Contains("\"beta\"", File.ReadAllText(path), StringComparison.Ordinal);
 
+            // A damaged file falls back to the defaults, whose channel is the launcher's own (beta for a beta
+            // build), so the expectation is the default rather than a fixed channel.
             File.WriteAllText(path, "{ broken");
-            Assert.Equal(ReleaseChannel.Stable, LauncherSettings.Load(path).Channel);
+            Assert.Equal(new LauncherSettings().Channel, LauncherSettings.Load(path).Channel);
+            Assert.Empty(LauncherSettings.Load(path).GameFolders);
         }
         finally
         {
