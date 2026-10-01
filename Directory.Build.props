@@ -14,6 +14,11 @@
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
 
+    <!-- A release build is given its version by the release workflow (-p:Version=0.2.0-beta.3), taken from
+         the tag it was cut as; anything built without one says so. The SDK appends +<commit> to the
+         informational version, which is what the game and the launcher display. -->
+    <Version Condition="'$(Version)' == ''">0.0.0-dev</Version>
+
     <Product>OpenIGI</Product>
     <Authors>OpenIGI Contributors</Authors>
     <Copyright>Copyright (c) OpenIGI Contributors</Copyright>

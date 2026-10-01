@@ -11,6 +11,7 @@
     <Project Path="src/Core/OpenIGI.Core/OpenIGI.Core.csproj" />
     <Project Path="src/Core/OpenIGI.Formats/OpenIGI.Formats.csproj" />
     <Project Path="src/Core/OpenIGI.Generators/OpenIGI.Generators.csproj" />
+    <Project Path="src/Core/OpenIGI.Releases/OpenIGI.Releases.csproj" />
     <Project Path="src/Core/OpenIGI.Scripting/OpenIGI.Scripting.csproj" />
   </Folder>
   <Folder Name="/src/Engine/">
@@ -66,6 +67,7 @@
     <Project Path="tests/OpenIGI.Input.Tests/OpenIGI.Input.Tests.csproj" />
     <Project Path="tests/OpenIGI.Platform.Web.Tests/OpenIGI.Platform.Web.Tests.csproj" />
     <Project Path="tests/OpenIGI.Presentation.Tests/OpenIGI.Presentation.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Releases.Tests/OpenIGI.Releases.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.Pipeline.Tests/OpenIGI.Rendering.Pipeline.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.Rhi.Tests/OpenIGI.Rendering.Rhi.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.Tests/OpenIGI.Rendering.Tests.csproj" />
@@ -79,6 +81,7 @@
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/OpenIGI.Tools.QvmDisasm/OpenIGI.Tools.QvmDisasm.csproj" />
+    <Project Path="tools/OpenIGI.Tools.Release/OpenIGI.Tools.Release.csproj" />
     <Project Path="tools/OpenIGI.Tools.ResExtract/OpenIGI.Tools.ResExtract.csproj" />
     <Project Path="tools/OpenIGI.Tools.ShaderBuild/OpenIGI.Tools.ShaderBuild.csproj" />
     <Project Path="tools/OpenIGI.Tools.TaskCensus/OpenIGI.Tools.TaskCensus.csproj" />
