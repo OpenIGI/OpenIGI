@@ -1,74 +1,47 @@
 name: CI
 
+# Every pull request into develop or master, and every push that lands on them.
 on:
-  push:
-    branches: [ master, develop ]
   pull_request:
-    branches: [ master, develop ]
+    branches: [develop, master]
+  push:
+    branches: [develop, master]
+  workflow_dispatch:
 
+# A new push to a pull request supersedes the run in flight; runs on develop and master always finish.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+# Where the jobs run is one repository variable, CI_RUNS_ON (a JSON runs-on value). Unset, it is the
+# self-hosted runner; set it to "ubuntu-latest" once the repository is public and GitHub's runners are free.
+# A pull request from a fork never runs on the self-hosted machine: it is arbitrary code from outside.
 jobs:
-  # Two things in this repository are generated and committed: the compiled shaders, and the WebGPU
-  # bindings. Both are committed so that a contributor without slangc -- or without any interest in the
-  # web backend -- can still build and run the game. This is what stops either going stale: a source
-  # edited without its generated form following is a game that draws last week's shader, or a binding
-  # that no longer matches the header it is called through.
-  #
-  # Windows, and the tagged Windows download, because that is the pairing that was actually measured
-  # against the committed output: it and the Vulkan SDK's own build of the same release produce
-  # byte-identical SPIR-V for every artefact. Another platform's build of it very likely does too and has
-  # not been checked, so it is not what the gate runs on.
-  generated:
-    name: generated-artefacts
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      # The release is read out of the manifest, so the compiler installed here and the one the output
-      # was produced with cannot drift apart without the check saying so.
-      - name: Install slangc
-        shell: pwsh
-        run: |
-          $pinned = (Get-Content src/Rendering/OpenIGI.Shaders/ShaderModules.json -Raw | ConvertFrom-Json).slangVersion
-          $release = $pinned.Split('-')[0]
-          Write-Host "Pinned slang release: $release (from $pinned)"
-          $url = "https://github.com/shader-slang/slang/releases/download/v$release/slang-$release-windows-x86_64.zip"
-          Invoke-WebRequest -Uri $url -OutFile slang.zip
-          Expand-Archive -Path slang.zip -DestinationPath "$env:RUNNER_TEMP/slang" -Force
-          "OPENIGI_SLANGC=$env:RUNNER_TEMP/slang/bin/slangc.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Check the committed shaders
-        run: dotnet run --project tools/OpenIGI.Tools.ShaderBuild --configuration Release -- --check
-
-      # The WebGPU bindings are generated from the headers committed beside them, so this needs no
-      # native toolchain at all -- only the same dotnet the step above already set up.
-      - name: Check the committed WebGPU bindings
-        run: dotnet run --project tools/OpenIGI.Tools.WebGpuBind --configuration Release -- --check
-
   build:
-    name: build-and-test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ windows-latest, ubuntu-latest, macos-latest ]
+    name: build-and-test
+    if: vars.CI_RUNS_ON != '' || github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sh-de"]') }}
+    timeout-minutes: 45
+    container:
+      image: ghcr.io/openigi/ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/cache@v4
         with:
-          dotnet-version: '10.0.x'
-
-      - name: Install OpenAL (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libopenal-dev
+          path: .nuget/packages
+          key: nuget-${{ hashFiles('Directory.Packages.props', 'global.json', '**/*.csproj') }}
+          restore-keys: nuget-
 
       - name: Restore
         run: dotnet restore OpenIGI.slnx
@@ -76,13 +49,83 @@ jobs:
       - name: Build
         run: dotnet build OpenIGI.slnx --configuration Release --no-restore
 
+      # No retail data and no GPU here: the tests that need either skip themselves and say why.
       - name: Test
-        run: dotnet test OpenIGI.slnx --configuration Release --no-build --verbosity normal
+        run: >
+          dotnet test OpenIGI.slnx --configuration Release --no-build
+          --logger "trx;LogFilePrefix=results" --results-directory test-results
 
-      # Vulkan on macOS is MoltenVK, which arrives through a NuGet package rather than a system loader.
-      # Building proves the C# compiles; only a publish for the real runtime identifier proves the dylib
-      # is actually restored and lands beside the executable, which is the difference between an app that
-      # starts and one that fails at vkCreateInstance with nothing to explain why.
-      - name: Package (macOS)
-        if: runner.os == 'macOS'
-        run: tools/package-macos.sh osx-arm64 Release
+      - name: Summarise the tests
+        if: always()
+        run: python3 tools/ci/test-summary.py test-results >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the results of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/*.trx
+          retention-days: 7
+
+  # The compiled shaders and the WebGPU bindings are generated and committed, so a contributor without
+  # slangc can still build; this is what stops either going stale against its source.
+  generated:
+    name: generated-artefacts
+    if: vars.CI_RUNS_ON != '' || github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sh-de"]') }}
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/openigi/ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: .nuget/packages
+          key: nuget-${{ hashFiles('Directory.Packages.props', 'global.json', '**/*.csproj') }}
+          restore-keys: nuget-
+
+      # The release is read out of the manifest, so the compiler installed here and the one the output was
+      # produced with cannot drift apart without the check saying so.
+      - name: Install slangc
+        run: |
+          pinned=$(jq -r .slangVersion src/Rendering/OpenIGI.Shaders/ShaderModules.json)
+          release=${pinned%%-*}
+          echo "Pinned slang release: $release (from $pinned)"
+          mkdir -p "$RUNNER_TEMP/slang"
+          curl -fsSL "https://github.com/shader-slang/slang/releases/download/v$release/slang-$release-linux-x86_64.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP/slang"
+          echo "OPENIGI_SLANGC=$RUNNER_TEMP/slang/bin/slangc" >> "$GITHUB_ENV"
+
+      - name: Check the committed shaders
+        run: dotnet run --project tools/OpenIGI.Tools.ShaderBuild --configuration Release -- --check
+
+      - name: Check the committed WebGPU bindings
+        run: dotnet run --project tools/OpenIGI.Tools.WebGpuBind --configuration Release -- --check
+
+  # The browser build is published, never built by the solution; this proves it still publishes. Without
+  # ahead-of-time compilation, which only a release pays for.
+  web:
+    name: web-publish
+    if: vars.CI_RUNS_ON != '' || github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sh-de"]') }}
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/openigi/ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: .nuget/packages
+          key: nuget-web-${{ hashFiles('Directory.Packages.props', 'global.json', '**/*.csproj') }}
+          restore-keys: nuget-
+
+      - name: Publish
+        run: dotnet publish apps/OpenIGI.Web --configuration Release -p:RunAOTCompilation=false --output "$RUNNER_TEMP/web"
