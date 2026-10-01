@@ -195,6 +195,10 @@ internal sealed class VulkanRayTracingScene : IDisposable
         // Before anything is written: the structures about to be rebuilt are the ones the frames already
         // in flight are tracing rays against, and a build is a write over what those rays are reading.
         _barriers.AddAccelerationStructureReadToBuild();
+
+        // And the geometry the builds read was written this same frame -- a terrain page refilled, a body
+        // re-skinned -- by a copy or a compute pass recorded earlier in the frame the update now runs in.
+        _barriers.AddGeometryWriteToBuild();
         _barriers.Flush(commandBuffer);
 
         RecordGeometryBuilds(commandBuffer, submissionValue);

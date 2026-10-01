@@ -116,8 +116,12 @@ public sealed partial class GraphicsDevice
             description.PresentHeight);
         WriteSurfaceBlock();
 
-        // Outside any pass, because a structure cannot be built inside one.
-        RecordWorldUpdate();
+        // The traced world is NOT updated here. What it is built from is what the G-buffer draws, and here
+        // that is still last frame's: every ray of this frame traced a world one frame old -- a truck's
+        // back face starting its shadow ray inside the truck as it stood a frame ago, a far hillside
+        // starting under the level of detail it had before. See SettleTracedWorld.
+        _sunTraced = false;
+        _worldSettled = false;
 
         // The scene's passes draw at the render size whatever the window's viewport says, and a viewport
         // set during the capture — the map inset — is already in render coordinates.
@@ -500,6 +504,9 @@ public sealed partial class GraphicsDevice
         // and the encoder that ends the outer one afterwards ends something that is no longer there.
         ClosePass();
         CloseScenePass();
+
+        // The traced world as this frame drew it, before the first ray -- if the screen GI has not already asked.
+        SettleTracedWorld();
 
         RecordSky();
         RecordVelocityBeforeShading(scene);

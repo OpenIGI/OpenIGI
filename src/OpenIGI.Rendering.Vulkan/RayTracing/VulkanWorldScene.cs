@@ -508,7 +508,12 @@ internal sealed class VulkanWorldScene : IDisposable
             && version == mesh.ContentVersion
             && geometry.IndexCount == indexCount;
 
-        if (!current && (!built || !_scene.IsCompacting(geometry.Structure)))
+        // Rebuilt whenever its contents changed, compacting or not. It used to wait out the compaction and
+        // place the OLD structure meanwhile -- the page's previous ground, metres off the surface the frame
+        // drew -- so every ray off a far hillside struck it and the hill went into shadow for a frame each
+        // time its level of detail moved (a moving camera: every few frames). Retiring a structure the
+        // compactor still holds is safe since RetireStructure takes it out of the handshake.
+        if (!current)
         {
             if (built)
             {
@@ -576,10 +581,10 @@ internal sealed class VulkanWorldScene : IDisposable
         _scene.BeforeTopLevelBuild = PublishInstances;
         _scene.RecordUpdate(commandBuffer, queue);
 
-        // This runs before the frame's geometry pass, so the moving tail published just now is the one
-        // the LAST pass observed. Empty it and the pass about to run refills it from where its objects
-        // are this frame -- the same one-frame-behind pairing the object-velocity stamp works on, and
-        // the reason a moving object's traced shadow tracks it instead of being left behind.
+        // This runs once the frame's geometry pass is complete, so the moving tail published just now is
+        // where this frame drew its objects -- the rays the frame fires next meet them there, not a frame
+        // behind, which put the back of a moving truck inside its old self. Empty it, and the next frame's
+        // pass refills it from where its objects are then.
         if (_instances.Count > _staticCount)
         {
             _instances.RemoveRange(_staticCount, _instances.Count - _staticCount);

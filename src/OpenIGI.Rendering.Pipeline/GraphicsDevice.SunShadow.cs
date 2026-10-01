@@ -135,16 +135,38 @@ public sealed partial class GraphicsDevice
             firstPerson ? RhiRayMask.ViewModel : RhiRayMask.All);
     }
 
-    /// <summary>Updates the traced world's structure as the capture opens, from what has been observed.</summary>
-    private void RecordWorldUpdate()
+    /// <summary>Updates the traced world from this frame's G-buffer draws, once, before anything this frame traces.</summary>
+    /// <remarks>
+    /// <para>
+    /// Called where the geometry ends -- the first of the screen GI's motion request or the shading -- so every
+    /// ray the frame fires meets the world the frame drew. It used to run as the capture opened, from the
+    /// previous frame's sightings: anything that moved or changed its level of detail was traced where it had
+    /// been, and a surface just in front of its old self shadowed itself. With the shadow history clamped to
+    /// the current frame that was a flicker -- the back of a moving truck, a far mountainside at every level
+    /// of detail change.
+    /// </para>
+    /// <para>
+    /// What is observed after this -- the first-person rig in the forward pass -- reaches the next frame's
+    /// update, as everything did before.
+    /// </para>
+    /// </remarks>
+    private void SettleTracedWorld()
     {
-        _sunTraced = false;
+        if (_worldSettled || !_capturing)
+        {
+            return;
+        }
+
+        _worldSettled = true;
 
         if (TracedWorld is not { } world)
         {
             return;
         }
 
+        // Outside any pass, because a structure cannot be built inside one.
+        ClosePass();
+        CloseScenePass();
         world.RecordSceneUpdate(Encoder(), _profiler.Time(RenderStage.AccelerationStructure));
     }
 
@@ -244,6 +266,8 @@ public sealed partial class GraphicsDevice
         mesh.Animated,
         mesh.Storage,
         mesh.ContentVersion);
+
+    private bool _worldSettled;
 
     private void DisposeSunShadow()
     {

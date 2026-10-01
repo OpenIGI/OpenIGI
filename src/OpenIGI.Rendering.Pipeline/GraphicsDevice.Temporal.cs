@@ -120,6 +120,9 @@ public sealed partial class GraphicsDevice
         ClosePass();
         CloseScenePass();
 
+        // The geometry is complete by the time anything asks for its motion, and everything after traces.
+        SettleTracedWorld();
+
         // Once a frame: the first asker -- the screen GI, or the shading -- derives it, and any later asker only
         // stamps what has been drawn since.
         if (!_velocityRecorded)

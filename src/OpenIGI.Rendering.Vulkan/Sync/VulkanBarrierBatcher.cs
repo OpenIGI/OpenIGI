@@ -85,6 +85,13 @@ internal sealed unsafe class VulkanBarrierBatcher
         PipelineStageFlags2.AccelerationStructureBuildBitKhr,
         AccessFlags2.AccelerationStructureWriteBitKhr);
 
+    /// <summary>Makes vertex and index data written by a copy or a compute pass visible to a build that reads it.</summary>
+    public void AddGeometryWriteToBuild() => AddMemory(
+        PipelineStageFlags2.CopyBit | PipelineStageFlags2.TransferBit | PipelineStageFlags2.ComputeShaderBit,
+        AccessFlags2.TransferWriteBit | AccessFlags2.ShaderWriteBit,
+        PipelineStageFlags2.AccelerationStructureBuildBitKhr,
+        AccessFlags2.ShaderReadBit);
+
     /// <summary>Makes everything a build wrote visible to whatever traverses or builds on it next.</summary>
     /// <remarks>
     /// Deliberately coarse: a build that feeds another build -- bottom level into top level -- and a
