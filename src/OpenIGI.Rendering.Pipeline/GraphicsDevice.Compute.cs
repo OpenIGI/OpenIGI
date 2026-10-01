@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+﻿using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Pipeline.Compute;
@@ -108,6 +109,15 @@ public sealed partial class GraphicsDevice
     {
         ThrowIfDisposed();
         _device.WriteBuffer(StorageBuffer(buffer), 0, data);
+    }
+
+    /// <inheritdoc/>
+    public void UpdateStorageBuffer<T>(StorageBufferHandle buffer, int elementOffset, ReadOnlySpan<T> data)
+        where T : unmanaged
+    {
+        ThrowIfDisposed();
+        ArgumentOutOfRangeException.ThrowIfNegative(elementOffset);
+        _device.WriteBuffer(StorageBuffer(buffer), (ulong)elementOffset * (ulong)Unsafe.SizeOf<T>(), data);
     }
 
     /// <inheritdoc/>

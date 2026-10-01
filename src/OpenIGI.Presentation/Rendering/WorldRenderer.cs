@@ -1506,6 +1506,9 @@ public sealed class WorldRenderer : IWorldPresenter
     /// <inheritdoc/>
     public PlacementPose DrawPoses => _drawPoses ??= TryGetDrawTransform;
 
+    /// <inheritdoc/>
+    public IReadOnlyCollection<WorldPlacement> Movers => _movers;
+
     // The transform a placement is drawn with this frame, through the same precedence the draw loop
     // and the selection outline use. A rotor has no single orientation mid-blur; nothing on one takes a
     // mark (0x42D416), so its authored orientation stands.

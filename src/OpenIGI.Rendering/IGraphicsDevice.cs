@@ -1100,6 +1100,15 @@ public interface IGraphicsDevice : IDisposable
     void UpdateStorageBuffer<T>(StorageBufferHandle buffer, ReadOnlySpan<T> data)
         where T : unmanaged;
 
+    /// <summary>Replaces part of a storage buffer's contents.</summary>
+    /// <typeparam name="T">The element type. Must be blittable.</typeparam>
+    /// <param name="buffer">The buffer to write.</param>
+    /// <param name="elementOffset">Where to start writing, in elements of <typeparamref name="T"/>.</param>
+    /// <param name="data">The data to write there.</param>
+    /// <exception cref="GraphicsDeviceException"><paramref name="buffer"/> is not a buffer of this device.</exception>
+    void UpdateStorageBuffer<T>(StorageBufferHandle buffer, int elementOffset, ReadOnlySpan<T> data)
+        where T : unmanaged;
+
     /// <summary>Reads a storage buffer back into memory.</summary>
     /// <typeparam name="T">The element type. Must be blittable.</typeparam>
     /// <param name="buffer">The buffer to read.</param>

@@ -364,6 +364,11 @@ internal sealed partial class GameHost : IDisposable
     // histories. Metres; a sprint covers a fraction of this in a frame, a cut or a teleport covers more.
     private const double GiCutDistance = 2.0;
 
+    // How far the projection's scale may change between two frames and still count as the same shot: a tenth.
+    // A cinematic zoom moves it a ten-thousandth a frame and is reprojected through; a scope snaps it by far
+    // more than this in one, and its history is the unzoomed view's.
+    private const float GiCutZoom = 0.1f;
+
     // Frames left in the exposure warm-up: for a moment after a level's GI starts converging, the adapted
     // exposure eases fast so it tracks the light filling in rather than over-lifting the dark first frames
     // and then walking visibly back down. Reset when the surface cache is (re)built, counted down per frame.
@@ -1165,6 +1170,7 @@ internal sealed partial class GameHost : IDisposable
         bool giHasHistory = false;
         Matrix3f giPrevWorldToView = Matrix3f.Identity;
         Vector3f giPrevCameraToCache = default;
+        DepthUnprojection? giPrevUnprojection = null;
 
         // The full-resolution resolve runs EVERY frame even where the gather is amortised, so it keeps its
         // own ping-pong cursor and its own previous camera. Sharing the gather's was the trap: on a frame
@@ -1173,6 +1179,7 @@ internal sealed partial class GameHost : IDisposable
         int giResolveFrame = 0;
         Matrix3f giResolvePrevWorldToView = Matrix3f.Identity;
         Vector3f giResolvePrevCameraToCache = default;
+        DepthUnprojection? giResolvePrevUnprojection = null;
 
         // Which accumulation slot the last gather wrote, and the atlas the resolve should read. On a frame
         // the gather skips, both simply stand.
@@ -5219,6 +5226,23 @@ if (retailFog)
                     && _cardLighting is not null
                     && RenderCVars.SurfaceCacheProbe.Value == 0;
 
+                // Every placement that moves, carried in the surface cache to where it was drawn this frame,
+                // before anything below looks a surface up -- a truck the camera rides in reads its own
+                // interior rather than the yard it drove out of. See SurfaceCacheLighting.MovePlacement.
+                if (_cardLighting is { } movingCards && _world is { } movingWorld && movingWorld.Movers.Count > 0)
+                {
+                    PlacementPose pose = movingWorld.DrawPoses;
+                    foreach (WorldPlacement mover in movingWorld.Movers)
+                    {
+                        if (pose(mover, out Vector3d moverPosition, out Matrix3f moverOrientation))
+                        {
+                            movingCards.MovePlacement(mover, moverPosition, moverOrientation);
+                        }
+                    }
+
+                    movingCards.CommitMoves();
+                }
+
                 if (giActive && _sdfClipmaps is { } liveGiField && _cardLighting is { } liveGiCards)
                 {
                     // Timed, at last. This gather is the most expensive thing in a real-time-GI frame and
@@ -5285,15 +5309,20 @@ if (retailFog)
                     }
 
                     // Both histories describe the scene as the last frames saw it. A camera cut (a cutscene, a
-                    // respawn, the death camera, the map taking the eye), a change of projection (a scope's
-                    // zoom -- the reprojection assumes last frame's projection is this frame's) or a surface
-                    // cache rebuilt from dark all make that description wrong, and the plane tests only catch
-                    // part of it: a cut still read one frame of the old view's light.
+                    // respawn, the death camera, the map taking the eye), a scope snapping its zoom in, or a
+                    // surface cache rebuilt from dark all make that description wrong, and the plane tests only
+                    // catch part of it: a cut still read one frame of the old view's light.
+                    //
+                    // A projection that merely MOVES is not a cut. Both passes reproject through the projection
+                    // their history was drawn with, so a cinematic zoom is just more camera motion. Any change at
+                    // all used to count: the intro's slow zoom inside the truck moved the scale a ten-thousandth
+                    // a tick, and the GI threw its whole history away thirty times a second -- the interior went
+                    // dark, noisy and flickering for the length of the shot.
                     DepthUnprojection giUnprojection = DepthUnprojection.From(unjitteredProjection, NearPlane, FarPlane);
                     bool giContinuous = giContinuityValid
                         && ReferenceEquals(giLastCards, liveGiCards)
-                        && MathF.Abs(giUnprojection.XScale - giLastUnprojection.XScale) < 1e-4f * giLastUnprojection.XScale
-                        && MathF.Abs(giUnprojection.YScale - giLastUnprojection.YScale) < 1e-4f * giLastUnprojection.YScale
+                        && MathF.Abs(giUnprojection.XScale - giLastUnprojection.XScale) < GiCutZoom * giLastUnprojection.XScale
+                        && MathF.Abs(giUnprojection.YScale - giLastUnprojection.YScale) < GiCutZoom * giLastUnprojection.YScale
                         && (eye.Position - giLastEye).LengthSquared < GiCutDistance * GiCutDistance;
                     if (!giContinuous)
                     {
@@ -5365,7 +5394,8 @@ if (retailFog)
 
                             // Where a moving car's surface really came from, not where the camera alone
                             // would put it. Asking derives it: every G-buffer draw is in by now.
-                            _device.SceneVelocity);
+                            _device.SceneVelocity,
+                            giPrevUnprojection);
 
                         // The spatial denoise (L6c), if on: smooths the accumulation into a separate atlas that
                         // the deferred fill reads, leaving the history the next frame reprojects onto unfiltered.
@@ -5386,6 +5416,7 @@ if (retailFog)
                         giLastWrite = write;
                         giPrevWorldToView = eye.Orientation;
                         giPrevCameraToCache = giCameraToCache;
+                        giPrevUnprojection = giUnprojection;
                         giHasHistory = true;
                         giFrame++;
                     }
@@ -5450,7 +5481,8 @@ if (retailFog)
                         giPrevWorldToView,
                         giPrevCameraToCache,
                         giStep,
-                        _device.SceneVelocity);
+                        _device.SceneVelocity,
+                        giResolvePrevUnprojection);
                     giResolveHasHistory = true;
 
                     // Recorded for the deferred lighting to fold in when the pass closes. Full-resolution, so
@@ -5462,6 +5494,7 @@ if (retailFog)
                     // above, inside the branch, because only a frame that traced may move it.
                     giResolvePrevWorldToView = eye.Orientation;
                     giResolvePrevCameraToCache = giCameraToCache;
+                    giResolvePrevUnprojection = giUnprojection;
                     giResolveFrame++;
 
                     _device.EndStageTiming();

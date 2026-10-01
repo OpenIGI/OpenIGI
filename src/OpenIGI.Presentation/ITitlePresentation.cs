@@ -172,6 +172,10 @@ public interface IWorldPresenter : IDisposable
     /// <remarks>What a mark held in a placement's frame is drawn against, so it moves with the object.</remarks>
     PlacementPose DrawPoses { get; }
 
+    /// <summary>Gets every placement that has been drawn away from where it was placed since the scene loaded.</summary>
+    /// <remarks>Sticky, so the frame one comes to rest on still counts it. What the surface cache carries.</remarks>
+    IReadOnlyCollection<WorldPlacement> Movers { get; }
+
     /// <summary>Uploads one placement's geometry now rather than on the frame that first needs it.</summary>
     /// <param name="scene">The scene the placement belongs to.</param>
     /// <param name="index">Which placement to make resident.</param>

@@ -105,7 +105,7 @@ public sealed class SurfaceCacheInstances
                 continue;
             }
 
-            instances.Add(new Placed(model, placement.Position, placement.Orientation, pages.Count, cards.Count));
+            instances.Add(new Placed(model, placement.Position, placement.Orientation, pages.Count, cards.Count, placement));
 
             foreach (int card in cards)
             {
@@ -141,6 +141,14 @@ public sealed class SurfaceCacheInstances
     /// </param>
     /// <param name="FirstPage">The first of this placement's lighting pages.</param>
     /// <param name="PageCount">How many pages follow it, one per card of the model.</param>
+    /// <param name="Placement">
+    /// The placement it was built from, so one that moves can be found again and its pages carried with it.
+    /// </param>
     public readonly record struct Placed(
-        int ModelIndex, Vector3d Position, Matrix3f Orientation, int FirstPage, int PageCount);
+        int ModelIndex,
+        Vector3d Position,
+        Matrix3f Orientation,
+        int FirstPage,
+        int PageCount,
+        WorldPlacement? Placement = null);
 }

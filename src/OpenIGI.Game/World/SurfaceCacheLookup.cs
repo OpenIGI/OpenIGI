@@ -86,7 +86,18 @@ public sealed class SurfaceCacheLookup : IDisposable
     /// </remarks>
     private const long MaximumCellsPerPage = 64L * 1024L;
 
+    /// <summary>How many pages of moving placements the lookup can list.</summary>
+    /// <remarks>
+    /// The movers' list is one more bucket after the hashed ones -- index <see cref="Buckets"/> -- which
+    /// every lookup walks as well as its own cell. A page that moves cannot be filed by where it is: the
+    /// grid is built once. A truck is a few dozen pages; this is room for a level's worth of vehicles,
+    /// doors and lifts, and the buffer is sized for it up front so its handle never changes.
+    /// </remarks>
+    public const int MaximumMoverPages = 4096;
+
     private readonly IGraphicsDevice _device;
+    private readonly int[] _ranges;
+    private readonly int[] _references;
     private bool _disposed;
 
     private SurfaceCacheLookup(
@@ -94,13 +105,16 @@ public sealed class SurfaceCacheLookup : IDisposable
         StorageBufferHandle cells,
         StorageBufferHandle pages,
         Vector3f minimum,
-        int references)
+        int[] ranges,
+        int[] references)
     {
         _device = device;
         Cells = cells;
         Pages = pages;
         Minimum = minimum;
-        References = references;
+        References = references.Length;
+        _ranges = ranges;
+        _references = references;
     }
 
     /// <summary>Gets the buffer holding each cell's range into <see cref="Pages"/>.</summary>
@@ -284,6 +298,29 @@ public sealed class SurfaceCacheLookup : IDisposable
         return null;
     }
 
+    /// <summary>Lists the pages of placements that move, for every lookup to walk beside its own cell.</summary>
+    /// <param name="pages">The moving pages; beyond <see cref="MaximumMoverPages"/> the rest are left out.</param>
+    /// <remarks>Rare -- once each time something starts moving for the first time -- so it re-uploads both.</remarks>
+    public void SetMovers(IReadOnlyList<int> pages)
+    {
+        ArgumentNullException.ThrowIfNull(pages);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        int count = Math.Min(pages.Count, MaximumMoverPages);
+        int[] all = new int[_references.Length + MaximumMoverPages];
+        _references.CopyTo(all, 0);
+        for (int i = 0; i < count; i++)
+        {
+            all[_references.Length + i] = pages[i];
+        }
+
+        _ranges[Buckets * 2] = _references.Length;
+        _ranges[(Buckets * 2) + 1] = count;
+
+        _device.UpdateStorageBuffer<int>(Pages, all);
+        _device.UpdateStorageBuffer<int>(Cells, _ranges);
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {
@@ -306,7 +343,10 @@ public sealed class SurfaceCacheLookup : IDisposable
         Vector3f minimum)
     {
         int cells = counts.Length;
-        int[] ranges = new int[cells * 2];
+
+        // One range past the hashed buckets: the movers' list, empty until something moves. See SetMovers.
+        int[] ranges = new int[(cells + 1) * 2];
+        ranges[cells * 2] = references.Length;
         int occupied = 0;
         int busiest = 0;
 
@@ -329,7 +369,7 @@ public sealed class SurfaceCacheLookup : IDisposable
             device.UpdateStorageBuffer<int>(cellBuffer, ranges);
 
             StorageBufferHandle pageBuffer = device.CreateStorageBuffer(
-                Math.Max(references.Length, 1) * sizeof(int), "cards.lookup.pages");
+                (references.Length + MaximumMoverPages) * sizeof(int), "cards.lookup.pages");
 
             if (references.Length > 0)
             {
@@ -342,7 +382,7 @@ public sealed class SurfaceCacheLookup : IDisposable
                 + $"{cells}, busiest {busiest}, cell {CellMetres:0.##} m.");
 
             return new SurfaceCacheLookup(
-                device, cellBuffer, pageBuffer, minimum, references.Length);
+                device, cellBuffer, pageBuffer, minimum, ranges, references);
         }
         catch (GraphicsDeviceException error)
         {

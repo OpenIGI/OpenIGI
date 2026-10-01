@@ -421,6 +421,12 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void UpdateStorageBuffer<T>(StorageBufferHandle buffer, int elementOffset, ReadOnlySpan<T> data)
+        where T : unmanaged
+    {
+    }
+
+    /// <inheritdoc/>
     public void ReadStorageBuffer<T>(StorageBufferHandle buffer, Span<T> destination)
         where T : unmanaged
     {

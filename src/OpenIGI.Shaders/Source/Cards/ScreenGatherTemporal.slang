@@ -39,6 +39,9 @@ OPENIGI_COMPUTE_GLOBALS cbuffer Globals
     // x scale, y scale, near, far.
     float4 uUnproject;
 
+    // The same for the frame the history was drawn in. A cinematic zoom moves it every frame.
+    float4 uPrevUnproject;
+
     // the view-to-world rotation, as its three columns.
     float3 uViewToWorld0;
     float3 uViewToWorld1;
@@ -271,8 +274,8 @@ void computeMain(uint3 id : SV_DispatchThreadID, uint3 localId : SV_GroupThreadI
         {
             float prevYSign = -1.0;
             float2 prevNdc = float2(
-                (prevView.x * uUnproject.x) / prevView.z,
-                prevYSign * (prevView.y * uUnproject.y) / prevView.z);
+                (prevView.x * uPrevUnproject.x) / prevView.z,
+                prevYSign * (prevView.y * uPrevUnproject.y) / prevView.z);
             float2 prevUv = (prevNdc * 0.5) + 0.5;
 
             // A car or a door moved on its own as well as with the camera. Where the motion field disagrees
