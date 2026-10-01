@@ -201,7 +201,9 @@ public sealed class TracedSunShadow : IDisposable
             state.Unprojection,
             frame.SunAngleDegrees,
             frame.FrameIndex,
-            frame.RecordAddress);
+            frame.RecordAddress,
+            state.JitterX,
+            state.JitterY);
 
         _trace.Bind("uDepth", depth, _sampler);
         _trace.Bind("uNormal", normal, _sampler);

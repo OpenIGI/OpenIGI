@@ -43,6 +43,8 @@ public static class SunShadowParameters
     /// <param name="sunAngleDegrees">How wide the sun's disc is, which gives a shadow its penumbra.</param>
     /// <param name="frameIndex">A number that changes every frame, so the one ray lands somewhere new.</param>
     /// <param name="recordAddress">Where the hit records live, or zero to take every hit at face value.</param>
+    /// <param name="jitterX">This frame's horizontal sub-pixel jitter, in pixels.</param>
+    /// <param name="jitterY">This frame's vertical sub-pixel jitter, in pixels.</param>
     public static void WriteTrace(
         Span<float> data,
         int width,
@@ -53,7 +55,9 @@ public static class SunShadowParameters
         in DepthUnprojection unprojection,
         float sunAngleDegrees,
         float frameIndex,
-        ulong recordAddress)
+        ulong recordAddress,
+        float jitterX = 0f,
+        float jitterY = 0f)
     {
         Require(data, TraceFloats);
         data.Clear();
@@ -81,6 +85,10 @@ public static class SunShadowParameters
         data[31] = MathF.Sin(0.5f * float.DegreesToRadians(Math.Max(sunAngleDegrees, 0f)));
 
         data[32] = frameIndex;
+
+        // The frame's sub-pixel jitter, so the trace rebuilds each position where its depth was measured.
+        data[33] = jitterX;
+        data[34] = jitterY;
 
         // The record buffer's address, as the two words the shader reassembles it from: the block is
         // declared uint4 there, so the bits are what matter and not the type they travel in.
