@@ -21,7 +21,7 @@ jobs:
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sh-de"]') }}
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build and push
         env:
@@ -31,6 +31,12 @@ jobs:
           echo "$TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           docker build --pull -t "$IMAGE:latest" -t "$IMAGE:${GITHUB_SHA::12}" deploy/ci
           docker run --rm "$IMAGE:latest" sh -c 'dotnet --version && dotnet workload list | grep wasm-tools && git-cliff --version && rcodesign --version && gh --version | head -1 && zip -v | head -2 | tail -1'
-          docker push "$IMAGE:latest"
-          docker push "$IMAGE:${GITHUB_SHA::12}"
+          # ghcr.io sometimes times out starting a large layer's upload; a push resumes where it stopped.
+          for tag in latest "${GITHUB_SHA::12}"; do
+            for attempt in 1 2 3 4; do
+              docker push "$IMAGE:$tag" && break
+              [ "$attempt" = 4 ] && exit 1
+              sleep $((attempt * 15))
+            done
+          done
           docker logout ghcr.io
