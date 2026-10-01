@@ -30,7 +30,7 @@ public sealed class CardCaptureAgreementTests(ITestOutputHelper output)
 {
     private const int Size = 32;
 
-    [Fact]
+    [BothBackendsFact]
     public void Both_backends_capture_the_same_page()
     {
         byte[]? vulkan = TryOnVulkan(out string? vulkanReason);

@@ -23,7 +23,7 @@ public sealed class ComputeSeamAgreementTests(ITestOutputHelper output)
 {
     private const int Size = 16;
 
-    [Fact]
+    [BothBackendsFact]
     public void Both_backends_run_the_screen_filter_through_the_seam_alike()
     {
         Half[]? vulkan = TryOn(out string? vulkanReason, webgpu: false);

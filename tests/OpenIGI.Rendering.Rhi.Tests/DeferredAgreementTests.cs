@@ -36,11 +36,11 @@ public sealed class DeferredAgreementTests(ITestOutputHelper output)
     /// <summary>The format the resolve draws the frame in, which is what a swapchain holds.</summary>
     private const RhiTextureFormat FrameFormat = RhiTextureFormat.Rgba8UnormSrgb;
 
-    [Fact]
+    [BothBackendsFact]
     public void Both_backends_shade_the_same_g_buffer_the_same_way() =>
         Compare(throughResolve: false, tolerance: 0.002f);
 
-    [Fact]
+    [BothBackendsFact]
     public void Both_backends_resolve_the_lit_scene_into_the_same_frame() =>
         Compare(throughResolve: true, tolerance: 1f / 255f);
 

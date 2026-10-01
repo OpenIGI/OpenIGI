@@ -30,7 +30,7 @@ public sealed class BackendFrameAgreementTests(ITestOutputHelper output)
 {
     private const int Size = 64;
 
-    [Fact]
+    [BothBackendsFact]
     public void Both_backends_draw_the_same_frame()
     {
         byte[]? vulkan = TryDrawOnVulkan(out string? vulkanReason);
@@ -38,8 +38,8 @@ public sealed class BackendFrameAgreementTests(ITestOutputHelper output)
 
         if (vulkan is null || webgpu is null)
         {
-            // Reported rather than asserted: a machine with only one of the two still runs every other
-            // test in the suite, and a failure here would say nothing about the code.
+            // A machine without both backends never gets here ([BothBackendsFact] skips it), so a backend
+            // that probed fine and then could not draw this frame is a real failure.
             Assert.Fail(
                 "Both backends are needed to compare them, and one was missing: "
                 + (vulkan is null ? vulkanReason : webgpuReason));

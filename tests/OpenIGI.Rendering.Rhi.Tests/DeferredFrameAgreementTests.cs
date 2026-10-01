@@ -28,7 +28,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
 {
     private const int Size = 64;
 
-    [Fact]
+    [BothBackendsFact]
     public void Both_backends_draw_the_same_deferred_frame()
     {
         byte[]? vulkan = TryOnVulkan(out string? vulkanReason);
@@ -109,7 +109,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
             "The upper left of the frame is the triangle, so the frame is upside down.");
     }
 
-    [Theory]
+    [BothBackendsTheory]
     [InlineData(false)]
     [InlineData(true)]
     public void The_albedo_view_shows_the_colour_that_was_drawn(bool textured)
@@ -142,7 +142,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         }
     }
 
-    [Fact]
+    [BothBackendsFact]
     public void The_temporal_resolve_runs_in_the_frame_and_starts_from_it()
     {
         // Vulkan alone: two of the chain's modules have no WGSL form, so WebGPU stands the chain down and
@@ -170,7 +170,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         Assert.True(differing < plain.Length / 20, $"{differing} channels moved: the resolve is not starting from the frame.");
     }
 
-    [Fact]
+    [BothBackendsFact]
     public void Both_backends_spill_the_same_bloom()
     {
         // Nineteen compute passes -- six halvings, a separable blur at each, and the sum -- bound on both
@@ -205,7 +205,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
             "The sky beside the quad is no redder with the bloom than without it.");
     }
 
-    [Fact]
+    [BothBackendsFact]
     public void Both_backends_occlude_alike()
     {
         // The gather over the depth the triangle wrote, shown as the code values it produced: it has to
@@ -229,7 +229,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         Assert.True(vulkan[Centre + 1] > 128, $"The triangle's occlusion is {Describe(vulkan)}: nothing was gathered.");
     }
 
-    [Fact]
+    [BothBackendsFact]
     public void Both_backends_shadow_alike()
     {
         // A cascade drawn and compared against, shown as the sun's visibility: a depth array rendered
@@ -252,7 +252,7 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         Assert.True(worst <= 1, $"The two backends disagree about the shadow by {worst}.");
     }
 
-    [Fact]
+    [BothBackendsFact]
     public void Both_backends_see_through_a_pane_alike()
     {
         // The glazing's transmission: its own pipeline and its own group, laid premultiplied over the
