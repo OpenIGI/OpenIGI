@@ -157,6 +157,7 @@
     }
     .note span:first-child { color: var(--text); }
     .note span:last-child { color: var(--dim); }
+    .note a { color: var(--text); text-underline-offset: 3px; }
 
     footer {
       display: flex;
@@ -206,7 +207,12 @@
         </main>
 
         <aside class="note">
-          <span>Screenshot from the desktop build. Download link coming soon.</span>
+          <span>Screenshot from the desktop build, which the launcher installs and keeps up to date:</span>
+          <span class="downloads" id="downloads">
+            <a href="https://api.openigi.com/download/win-x64" data-rid="win-x64">Windows</a> ·
+            <a href="https://api.openigi.com/download/linux-x64" data-rid="linux-x64">Linux</a> ·
+            <a href="https://api.openigi.com/download/osx-arm64" data-rid="osx-arm64">macOS</a>
+          </span>
           <span>In the browser, only the vanilla graphics preset is available.</span>
         </aside>
       </div>
@@ -221,5 +227,11 @@
   <!-- Filled in by the publish: where the fingerprinted runtime scripts under _framework are. -->
   <script type="importmap"></script>
   <script type="module" src="main.js"></script>
+  <!-- The beta site offers the beta launcher, which follows the beta channel from its first start. -->
+  <script>
+    if (location.hostname.startsWith("beta.")) {
+      for (const link of document.querySelectorAll("#downloads a")) link.href += "?channel=beta";
+    }
+  </script>
 </body>
 </html>
