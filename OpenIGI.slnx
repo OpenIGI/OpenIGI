@@ -7,6 +7,9 @@
       <Build Project="false" />
     </Project>
   </Folder>
+  <Folder Name="/services/">
+    <Project Path="services/OpenIGI.Services/OpenIGI.Services.csproj" />
+  </Folder>
   <Folder Name="/src/Core/">
     <Project Path="src/Core/OpenIGI.Core/OpenIGI.Core.csproj" />
     <Project Path="src/Core/OpenIGI.Formats/OpenIGI.Formats.csproj" />
@@ -75,6 +78,7 @@
     <Project Path="tests/OpenIGI.Rendering.WebGpu.Native.Tests/OpenIGI.Rendering.WebGpu.Native.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.WebGpu.Tests/OpenIGI.Rendering.WebGpu.Tests.csproj" />
     <Project Path="tests/OpenIGI.Scripting.Tests/OpenIGI.Scripting.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Services.Tests/OpenIGI.Services.Tests.csproj" />
     <Project Path="tests/OpenIGI.Shaders.Tests/OpenIGI.Shaders.Tests.csproj" />
     <Project Path="tests/OpenIGI.TestSupport/OpenIGI.TestSupport.csproj" />
     <Project Path="tests/OpenIGI.UI.Tests/OpenIGI.UI.Tests.csproj" />
