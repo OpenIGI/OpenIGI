@@ -1074,7 +1074,9 @@ internal sealed partial class GameHost : IDisposable
         // OPENIGI_CUTSCENE_CAPTURE_SCENE selects one scene id (unset/0 captures whichever scene is
         // active), OPENIGI_CUTSCENE_CAPTURE_START_TICK is the first scene tick written and
         // OPENIGI_CUTSCENE_CAPTURE_COUNT the still budget (default 5). One still is written every
-        // 90 logic ticks (3 s) while the scene runs, named mission-NN-scene-ID-tick-NNNNNN.bmp.
+        // 90 logic ticks (3 s) while the scene runs, named mission-NN-scene-ID-tick-NNNNNN.bmp;
+        // OPENIGI_CUTSCENE_CAPTURE_EVERY changes the interval, and 0 writes every rendered frame (the
+        // name then carries the frame too), for flicker that changes between frames of one tick.
         string? cutsceneCaptureDirectory = Environment.GetEnvironmentVariable("OPENIGI_CUTSCENE_CAPTURE_DIR");
         int cutsceneCaptureScene = 0;
         bool captureCutscene = cutsceneCaptureDirectory is not null;
@@ -1083,6 +1085,11 @@ internal sealed partial class GameHost : IDisposable
             Environment.GetEnvironmentVariable("OPENIGI_CUTSCENE_CAPTURE_START_TICK"),
             out int configuredCaptureTick)
             ? Math.Max(0, configuredCaptureTick)
+            : 90;
+        int cutsceneCaptureEvery = int.TryParse(
+            Environment.GetEnvironmentVariable("OPENIGI_CUTSCENE_CAPTURE_EVERY"),
+            out int configuredCaptureEvery)
+            ? Math.Max(0, configuredCaptureEvery)
             : 90;
         int cutsceneCaptureCount = 0;
         int cutsceneCaptureStartTick = cutsceneCaptureTick;
@@ -1642,6 +1649,14 @@ internal sealed partial class GameHost : IDisposable
                     }
 
                     int wanted = id ?? ShowcaseMissionId;
+
+                    // -entrycam holds its own mission: the campaign opens on its first row and previews
+                    // it, which would replace the backdrop the flag is waiting to press Play over.
+                    if (_options.EntryCamMission > 0)
+                    {
+                        wanted = _options.EntryCamMission;
+                    }
+
                     if (wanted != currentShowcaseMissionId)
                     {
                         // Warm the level's files on a worker now, and note the moment: once the selection
@@ -6808,11 +6823,12 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 int missionId = _activeMission?.Id ?? 0;
                 string path = Path.Combine(
                     cutsceneCaptureDirectory!,
-                    FormattableString.Invariant(
-                        $"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{activeCutscene.Ticks:000000}.bmp"));
+                    cutsceneCaptureEvery > 0
+                        ? FormattableString.Invariant($"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{activeCutscene.Ticks:000000}.bmp")
+                        : FormattableString.Invariant($"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{activeCutscene.Ticks:000000}-frame-{_loop.Clock.FrameCount:000000}.bmp"));
                 BitmapWriter.Write(path, _window.Width, _window.Height, capture);
                 _logger.Information("CutsceneCapture", $"Wrote {path}.");
-                cutsceneCaptureTick += 90;
+                cutsceneCaptureTick += cutsceneCaptureEvery;
                 cutsceneCaptureCount++;
             }
 
