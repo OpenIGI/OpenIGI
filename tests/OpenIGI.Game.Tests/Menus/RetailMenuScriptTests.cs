@@ -98,8 +98,9 @@ public sealed class RetailMenuScriptTests
         List<string> failures = [];
         int parsed = 0;
 
-        // An unset VarString parameter is an empty string, which is not an expression.
-        foreach (string source in menu.Tasks.SelectMany(CollectExpressions).Where(s => s.Trim().Length > 0))
+        // An unset VarString parameter is an empty string, which is not an expression -- nor, to the original, is
+        // one holding only characters its lexer stops at (the menu carries a lone backtick).
+        foreach (string source in menu.Tasks.SelectMany(CollectExpressions).Where(s => !ScriptExpressionParser.IsBlank(s)))
         {
             try
             {

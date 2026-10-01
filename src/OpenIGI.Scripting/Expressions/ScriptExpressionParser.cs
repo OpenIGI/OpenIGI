@@ -49,6 +49,17 @@ public sealed class ScriptExpressionParser
         _lexer = lexer;
     }
 
+    /// <summary>Whether a source holds nothing the original's lexer can read: blank, or only characters it stops at.</summary>
+    /// <param name="source">The expression source.</param>
+    /// <returns><see langword="true"/> when there is no expression to parse.</returns>
+    /// <remarks>
+    /// The original's parser (0x4B9CD0) given no token returns no expression and no error, so a string of
+    /// nothing but such characters -- the retail main menu carries one action that is a lone backtick -- is an
+    /// empty string as far as it is concerned, and is skipped the way an empty one is.
+    /// </remarks>
+    public static bool IsBlank(string? source) =>
+        string.IsNullOrWhiteSpace(source) || new ScriptLexer(source).Next().Kind == ScriptTokenKind.End;
+
     /// <summary>Parses a complete expression from source.</summary>
     /// <param name="source">The expression source.</param>
     /// <param name="resolveConstant">Resolves an identifier to a registered constant, or <see langword="null"/> when it is not one.</param>

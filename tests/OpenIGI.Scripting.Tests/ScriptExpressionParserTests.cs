@@ -221,4 +221,18 @@ public sealed class ScriptExpressionParserTests
 
         Assert.Equal("(((a && b)) || this.isRun)", expression.ToString());
     }
+
+    [Theory]
+    [InlineData("", true)]
+    [InlineData("   ", true)]
+    [InlineData("`", true)]
+    [InlineData(" `` ", true)]
+    [InlineData("a", false)]
+    [InlineData("MenuManager_PopScreen(0)", false)]
+    public void ASourceTheOriginalCannotReadAnyOfIsBlank(string source, bool blank)
+    {
+        // A lone backtick is the original's empty string: its lexer reads nothing and its parser returns no
+        // expression and no error. The retail main menu carries one.
+        Assert.Equal(blank, ScriptExpressionParser.IsBlank(source));
+    }
 }

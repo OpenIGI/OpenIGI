@@ -188,7 +188,7 @@ public partial class MenuManagerTask
     /// <remarks>Reports a failure to the log and carries on, as the original does.</remarks>
     public void RunAction(string source, GameTask? self = null)
     {
-        if (_evaluator is null || ScriptContext is null || string.IsNullOrWhiteSpace(source))
+        if (_evaluator is null || ScriptContext is null || ScriptExpressionParser.IsBlank(source))
         {
             return;
         }
@@ -282,7 +282,7 @@ public partial class MenuManagerTask
     /// </remarks>
     public double EvaluateReal(string source, GameTask? self = null)
     {
-        if (_evaluator is null || ScriptContext is null || string.IsNullOrWhiteSpace(source))
+        if (_evaluator is null || ScriptContext is null || ScriptExpressionParser.IsBlank(source))
         {
             return 0.0;
         }
