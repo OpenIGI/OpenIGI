@@ -24,6 +24,15 @@ usermod -aG docker deploy
 install -d -o deploy -g deploy -m 0755 \
   "$SRV" "$SRV/web" "$SRV/web/stable" "$SRV/web/beta" "$SRV/dl" "$SRV/dl/releases" "$SRV/api" "$SRV/config"
 
+# An sshd that names who may log in (AllowUsers) must name the deploy user too, or every deploy is refused
+# before its key is even looked at.
+for conf in /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf; do
+  if [ -f "$conf" ] && grep -qE '^AllowUsers ' "$conf" && ! grep -qE '^AllowUsers .*\bdeploy\b' "$conf"; then
+    sed -i -E 's/^(AllowUsers .*)$/\1 deploy/' "$conf"
+    sshd -t && systemctl reload ssh
+  fi
+done
+
 # Deploy jobs run in containers on this machine and reach SSH through the docker bridges (172.16.0.0/12),
 # several connections per release. Exempt them from ufw's SSH rate limit and from fail2ban, so a deploy
 # never locks itself out; everyone else keeps both.
