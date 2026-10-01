@@ -17,11 +17,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The interface font, because the HUD renderers that moved here load it on Load() and a test
-         that cannot load it is testing nothing. The shipped file rather than a copy, for the reason
-         the desktop tests give: a copy is free to drift away from what the game draws with. -->
-    <None Include="..\..\apps\OpenIGI.Composition\Assets\fonts\Barlow-Regular.ttf"
-          Link="Assets\fonts\Barlow-Regular.ttf"
+    <!-- The interface faces, because the HUD renderers that moved here load the whole typography on
+         Load() and a test that cannot load it is testing nothing. The shipped files rather than copies,
+         for the reason the desktop tests give: a copy is free to drift away from what the game draws with. -->
+    <None Include="..\..\apps\OpenIGI.Composition\Assets\fonts\*.ttf"
+          Link="Assets\fonts\%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

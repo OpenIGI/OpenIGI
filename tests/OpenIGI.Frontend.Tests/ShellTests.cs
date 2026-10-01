@@ -272,8 +272,8 @@ public sealed class ShellTests
             // Every row carries its progress, which is what tells a locked mission from an available one.
             Assert.All(rows, row => Assert.NotEmpty(row.Tag));
 
-            // Entering the campaign previews the first mission behind the menu.
-            Assert.Equal(1, host.Previewed);
+            // Entering the campaign previews the mission the profile is up to behind the menu.
+            Assert.Equal(2, host.Previewed);
         }
         finally
         {
@@ -482,7 +482,7 @@ public sealed class ShellTests
             var campaign = (CampaignScreen)shell.Stack.Top!;
             Find<PrimaryAction>(campaign, p => p.Title == "PLAY")!.Activate();
 
-            Assert.Equal(1, host.StartedMission); // first mission selected by default
+            Assert.Equal(2, host.StartedMission); // the profile's frontier is selected by default
             Assert.True(host.StartedDifficulty >= 0);
         }
         finally
@@ -710,7 +710,7 @@ public sealed class ShellTests
             Pump(shell, 0.6f);
 
             Assert.IsType<CampaignScreen>(shell.Stack.Top);
-            Assert.Equal(1, host.Previewed);
+            Assert.Equal(2, host.Previewed);
         }
         finally
         {

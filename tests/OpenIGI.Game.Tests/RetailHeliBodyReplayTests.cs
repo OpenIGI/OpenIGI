@@ -3,6 +3,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using Xunit;
 using Xunit.Abstractions;
+using OpenIGI.TestSupport;
 
 namespace OpenIGI.Game.Tests;
 
@@ -20,7 +21,7 @@ public sealed class RetailHeliBodyReplayTests(ITestOutputHelper output)
     private const string Fixture = "carstep-m7-heli353.log.gz";
     private static readonly int[] RotorCallers = [0x42D548, 0x42D5F8];
 
-    [Fact]
+    [RequiresGameDataFact]
     public void EveryTickFromItsOwnEntryMatchesRetailBitForBit()
     {
         RetailCarStepCapture capture = RetailCarStepCapture.Load(Fixture);
@@ -59,7 +60,7 @@ public sealed class RetailHeliBodyReplayTests(ITestOutputHelper output)
         Assert.True(failures.Count == 0, $"{failures.Count} of {replayed} ticks differ; first: {failures.FirstOrDefault()}");
     }
 
-    [Fact]
+    [RequiresGameDataFact]
     public void TheWholeFlightReplaysFromItsSecondTickAlone()
     {
         RetailCarStepCapture capture = RetailCarStepCapture.Load(Fixture);
@@ -82,7 +83,7 @@ public sealed class RetailHeliBodyReplayTests(ITestOutputHelper output)
         output.WriteLine($"{t - 1} ticks flown; final position ({heli.Position[0]:R}, {heli.Position[1]:R}, {heli.Position[2]:R})");
     }
 
-    [Fact]
+    [RequiresGameDataFact]
     public void AHelicopterIsCreatedExactlyAsRetailHoldsItAtItsFirstTick()
     {
         RetailMissionData data = RetailMissionData.Get(7);

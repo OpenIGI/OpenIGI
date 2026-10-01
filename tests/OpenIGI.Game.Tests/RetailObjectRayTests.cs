@@ -4,6 +4,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using Xunit;
 using Xunit.Abstractions;
+using OpenIGI.TestSupport;
 
 namespace OpenIGI.Game.Tests;
 
@@ -13,7 +14,7 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 public sealed class RetailObjectRayTests(ITestOutputHelper output)
 {
-    [Theory]
+    [RequiresGameDataTheory]
     [InlineData("carstep-m7-t80-357.log.gz", 571)]
     [InlineData("carstep-m7-t80-357-safe.log.gz", 2284)]
     public void EveryCapturedModelHitIsReproducedBitForBit(string fixture, int rays)

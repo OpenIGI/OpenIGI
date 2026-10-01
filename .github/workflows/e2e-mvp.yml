@@ -1,8 +1,8 @@
 name: MVP retail E2E
+# Dispatch only: it needs the retail macOS machine (igi-retail), and a push trigger left every run queued
+# for as long as that machine is offline.
 on:
   workflow_dispatch:
-  push:
-    branches: [develop, master]
 jobs:
   live-mvp:
     runs-on: [self-hosted, macOS, igi-retail]
