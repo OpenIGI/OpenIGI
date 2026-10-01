@@ -82,10 +82,11 @@ a probe of the running original
 
 
 # Working notes, design docs and reverse-engineering write-ups are kept locally rather than
-# carried in the repository. The two documents that address people reading it are the exception.
+# carried in the repository. The documents that address people reading it are the exception.
 *.md
 !/README.md
 !/CONTRIBUTING.md
+!/RELEASING.md
 !/GPU-PERFORMANCE.md
 !src/Core/OpenIGI.Generators/AnalyzerReleases.*.md
 !.github/**/*.md
