@@ -196,7 +196,7 @@ static void attach(void) {
 // ---------------------------------------------------------------------------------------------------
 // Callbacks, kept here until the bridge reports the work they wait for is done.
 
-typedef enum { OP_ADAPTER = 1, OP_DEVICE = 2, OP_MAP = 3 } op_kind;
+typedef enum { OP_ADAPTER = 1, OP_DEVICE = 2, OP_MAP = 3, OP_WORK_DONE = 4 } op_kind;
 
 typedef struct {
   op_kind kind;
@@ -240,6 +240,9 @@ void wgpuInstanceProcessEvents(WGPUInstance instance) {
         break;
       case OP_MAP:
         ((WGPUBufferMapCallback)op.callback)((WGPUMapAsyncStatus)out[1], EMPTY, op.userdata1, op.userdata2);
+        break;
+      case OP_WORK_DONE:
+        ((WGPUQueueWorkDoneCallback)op.callback)((WGPUQueueWorkDoneStatus)out[1], EMPTY, op.userdata1, op.userdata2);
         break;
     }
   }
@@ -439,6 +442,14 @@ void wgpuBufferUnmap(WGPUBuffer buffer) {
 
 void wgpuQueueSubmit(WGPUQueue queue, size_t count, WGPUCommandBuffer const* commands) {
   CALL("submit", H(queue), (uint32_t)count, H(commands), 0, 0, 0);
+}
+
+// The queue's own promise for "everything submitted so far has finished", reported like a map: the
+// callback is kept here and fired from the next ProcessEvents after the promise settles.
+WGPUFuture wgpuQueueOnSubmittedWorkDone(WGPUQueue queue, WGPUQueueWorkDoneCallbackInfo info) {
+  uint32_t op = keep(OP_WORK_DONE, (void*)info.callback, info.userdata1, info.userdata2);
+  CALL("onSubmittedWorkDone", H(queue), op, 0, 0, 0, 0);
+  return future();
 }
 
 void wgpuQueueWriteBuffer(WGPUQueue queue, WGPUBuffer buffer, uint64_t offset, void const* data, size_t size) {

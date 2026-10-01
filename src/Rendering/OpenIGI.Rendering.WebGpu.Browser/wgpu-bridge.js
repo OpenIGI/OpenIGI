@@ -530,6 +530,13 @@ const calls = {
 
   unmap: buffer => { get(buffer).unmap(); return 0; },
   submit: (queue, count, list) => { get(queue).submit(array(list, count, 4, q => get(ptr(q)))); return 0; },
+  // 1 = WGPUQueueWorkDoneStatus_Success, 3 = _Error.
+  onSubmittedWorkDone: (queue, op) => {
+    get(queue).onSubmittedWorkDone().then(
+      () => completions.push([op, 1, 0]),
+      () => completions.push([op, 3, 0]));
+    return 0;
+  },
   writeTexture: (queue, dst, data, size, layout, size3) => {
     get(queue).writeTexture(textureCopy(dst), heap().subarray(data, data + size), bufferLayout(layout), extent(size3));
     return 0;
