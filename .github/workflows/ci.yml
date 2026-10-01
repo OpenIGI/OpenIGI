@@ -51,6 +51,9 @@ jobs:
 
       # No retail data and no GPU here: the tests that need either skip themselves and say why.
       - name: Test
+        env:
+          # No sound device on a runner: OpenAL's silent backend, so audio start-up cannot take the host down.
+          ALSOFT_DRIVERS: "null"
         run: >
           dotnet test OpenIGI.slnx --configuration Release --no-build
           --logger "trx;LogFilePrefix=results" --results-directory test-results

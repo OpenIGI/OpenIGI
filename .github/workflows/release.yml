@@ -78,6 +78,9 @@ jobs:
           restore-keys: nuget-
 
       - name: Test
+        env:
+          # No sound device on a runner: OpenAL's silent backend, so audio start-up cannot take the host down.
+          ALSOFT_DRIVERS: "null"
         run: |
           dotnet restore OpenIGI.slnx
           dotnet build OpenIGI.slnx --configuration Release --no-restore -p:Version=${{ steps.tag.outputs.version }}
