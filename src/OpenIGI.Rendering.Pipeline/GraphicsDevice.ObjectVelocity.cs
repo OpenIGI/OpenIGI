@@ -21,21 +21,29 @@ namespace OpenIGI.Rendering.Pipeline;
 /// </remarks>
 public sealed partial class GraphicsDevice
 {
-    // A draw whose view-space position jumped further than this since the draw it was paired with is a
-    // mispairing, not motion: nothing this pass serves moves two metres in a frame. Squared, in metres.
+    // A draw whose position jumped further than this since the draw it was paired with is a mispairing, not
+    // motion: nothing this pass serves moves two metres in a frame. Squared, in metres. Measured in the WORLD
+    // (camera-relative axes, absolute origin), never in view space: there a camera that turned -- a shaken
+    // cutscene camera, a quick look round -- swings everything a few metres off by more than this, and every
+    // draw in the frame was refused its pairing.
     private const float MaxPairedJumpSquared = 4f;
 
     private readonly List<ObjectVelocityDraw> _objectVelocityDraws = [];
-    private readonly Dictionary<long, ObjectMotion> _objectMotionPrevious = [];
-    private readonly Dictionary<long, ObjectMotion> _objectMotionCurrent = [];
-    private readonly Dictionary<uint, int> _objectOccurrence = [];
+    private readonly Dictionary<MotionKey, ObjectMotion> _objectMotionPrevious = [];
+    private readonly Dictionary<MotionKey, ObjectMotion> _objectMotionCurrent = [];
+    private readonly Dictionary<(long Identity, uint Mesh), int> _objectOccurrence = [];
     private ObjectVelocityPass? _objectVelocity;
     private Matrix4f _temporalProjection = Matrix4f.Identity;
     private float _previousPoseBlend;
     private bool _objectMotion;
+    private long _objectIdentity;
 
     /// <inheritdoc/>
-    public void SetObjectMotion(bool moving) => _objectMotion = moving;
+    public void SetObjectMotion(bool moving, long identity = 0)
+    {
+        _objectMotion = moving;
+        _objectIdentity = moving ? identity : 0;
+    }
 
     /// <inheritdoc/>
     /// <remarks>
@@ -109,19 +117,26 @@ public sealed partial class GraphicsDevice
         // coverage and cancels the jitter out of the vector. The rig is drawn without a jitter at all.
         Matrix4f rasterNow = _projection * modelView;
         Matrix4f motionNow = (firstPerson ? _projection : _temporalProjection) * modelView;
-        Vector3f translation = new(modelView.M14, modelView.M24, modelView.M34);
+        Vector3f viewTranslation = new(modelView.M14, modelView.M24, modelView.M34);
 
-        _objectOccurrence.TryGetValue(mesh.Id, out int occurrence);
-        _objectOccurrence[mesh.Id] = occurrence + 1;
-        long key = ((long)mesh.Id << 16) | (uint)(occurrence & 0xFFFF);
+        // The rig's own position is meaningful only relative to the eye it moves with.
+        Vector3f translation = firstPerson ? viewTranslation : WorldPosition(viewTranslation);
 
-        // With nothing to pair against, the draw reports no motion of its own -- and no pose motion
-        // either, or the two halves would disagree about which frame they measure from.
+        // Paired within the object the renderer named, when it named one: the n-th draw of a mesh is then
+        // the n-th draw of it within that object, whatever else was skipped this frame.
+        long identity = _objectMotion ? _objectIdentity : 0;
+        _objectOccurrence.TryGetValue((identity, mesh.Id), out int occurrence);
+        _objectOccurrence[(identity, mesh.Id)] = occurrence + 1;
+        MotionKey key = new(identity, mesh.Id, occurrence);
+
+        // The first-person rig with nothing to pair against reports no motion of its own -- and no pose motion
+        // either, or the two halves would disagree about which frame they measure from -- which is right for a
+        // rig that moves with the camera.
         Matrix4f previous = rasterNow;
         float previousPoseBlend = _poseBlend;
 
         if (_objectMotionPrevious.TryGetValue(key, out ObjectMotion before)
-            && (translation - before.ViewTranslation).LengthSquared <= MaxPairedJumpSquared
+            && (translation - before.GuardPosition).LengthSquared <= MaxPairedJumpSquared
             && _scene is { } scene)
         {
             Matrix4f currentJitter = firstPerson
@@ -132,6 +147,14 @@ public sealed partial class GraphicsDevice
                     0f);
             previous = currentJitter * before.MotionTransform;
             previousPoseBlend = _previousPoseBlend;
+        }
+        else if (!firstPerson)
+        {
+            // Anything else is left to the camera's reprojection. A stamp of "no motion of its own" says the
+            // surface moved WITH the camera, and the temporal passes then fetched every unpaired draw's history
+            // from the wrong place -- a whole frame of it whenever the camera moved and the draw order shifted.
+            _objectMotionCurrent[key] = new ObjectMotion(motionNow, translation);
+            return;
         }
 
         _objectMotionCurrent[key] = new ObjectMotion(motionNow, translation);
@@ -147,6 +170,12 @@ public sealed partial class GraphicsDevice
             _poseBlend,
             previousPoseBlend));
     }
+
+    /// <summary>A view-space point in the world, relative to the world origin rather than the camera.</summary>
+    private Vector3f WorldPosition(Vector3f view) => new(
+        (_viewToWorld.M11 * view.X) + (_viewToWorld.M12 * view.Y) + (_viewToWorld.M13 * view.Z) + _cameraPosition.X,
+        (_viewToWorld.M21 * view.X) + (_viewToWorld.M22 * view.Y) + (_viewToWorld.M23 * view.Z) + _cameraPosition.Y,
+        (_viewToWorld.M31 * view.X) + (_viewToWorld.M32 * view.Y) + (_viewToWorld.M33 * view.Z) + _cameraPosition.Z);
 
     /// <summary>Stamps the frame's moving draws over the camera-derived velocity.</summary>
     /// <param name="scene">The frame's targets, whose depth is final.</param>
@@ -166,7 +195,7 @@ public sealed partial class GraphicsDevice
     {
         _objectMotionPrevious.Clear();
 
-        foreach (KeyValuePair<long, ObjectMotion> entry in _objectMotionCurrent)
+        foreach (KeyValuePair<MotionKey, ObjectMotion> entry in _objectMotionCurrent)
         {
             _objectMotionPrevious[entry.Key] = entry.Value;
         }
@@ -184,6 +213,12 @@ public sealed partial class GraphicsDevice
 
     /// <summary>One draw's transform as the next frame measures from it.</summary>
     /// <param name="MotionTransform">Its unjittered model-view-projection.</param>
-    /// <param name="ViewTranslation">Where it stood in view space, for the pairing's plausibility guard.</param>
-    private readonly record struct ObjectMotion(Matrix4f MotionTransform, Vector3f ViewTranslation);
+    /// <param name="GuardPosition">Where it stood in the world (in view space for the rig), for the pairing's plausibility guard.</param>
+    private readonly record struct ObjectMotion(Matrix4f MotionTransform, Vector3f GuardPosition);
+
+    /// <summary>What pairs a draw with its own from the frame before.</summary>
+    /// <param name="Identity">The object the renderer named, or nought.</param>
+    /// <param name="Mesh">The mesh drawn.</param>
+    /// <param name="Occurrence">Which draw of that mesh it is, within the object.</param>
+    private readonly record struct MotionKey(long Identity, uint Mesh, int Occurrence);
 }

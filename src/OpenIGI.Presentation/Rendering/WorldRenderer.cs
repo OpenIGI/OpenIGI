@@ -542,10 +542,17 @@ public sealed class WorldRenderer : IWorldPresenter
 
             SubsetDraw[] subsets = model.Subsets ?? ResolveSubsets(scene, model, entry.Displayed!);
 
-            if (entry.Moving != appliedMotion)
+            // Named by its place in the scene, so its draws pair with its own from the frame before whatever
+            // the occlusion and the frustum dropped ahead of it this time.
+            if (entry.Moving)
             {
-                _device.SetObjectMotion(entry.Moving);
-                appliedMotion = entry.Moving;
+                _device.SetObjectMotion(true, index + 1L);
+                appliedMotion = true;
+            }
+            else if (appliedMotion)
+            {
+                _device.SetObjectMotion(false);
+                appliedMotion = false;
             }
 
             // How much of its rated output the lamp this placement IS is currently giving out. One for

@@ -472,6 +472,12 @@ public interface IGraphicsDevice : IDisposable
 
     /// <summary>Marks the draws that follow as moving under their own power.</summary>
     /// <param name="moving">Whether the object being drawn has its own motion this frame.</param>
+    /// <param name="identity">
+    /// Which object this is, the same number every frame, or nought to pair by the mesh alone. A renderer that
+    /// skips some of its objects on some frames -- occlusion, a frustum -- changes which draw of a shared mesh
+    /// comes n-th, and paired by the mesh alone the n-th draw of a crate is a different crate from one frame
+    /// to the next.
+    /// </param>
     /// <remarks>
     /// <para>
     /// The velocity the temporal passes read is derived from depth and the two cameras, so it describes only
@@ -484,7 +490,7 @@ public interface IGraphicsDevice : IDisposable
     /// A backend without per-object motion may ignore it.
     /// </para>
     /// </remarks>
-    void SetObjectMotion(bool moving);
+    void SetObjectMotion(bool moving, long identity = 0);
 
     /// <summary>Says that the title draws a sky of its own, which the frame should keep.</summary>
     /// <param name="painted">Whether the sky about to be drawn is the game's own painted one.</param>

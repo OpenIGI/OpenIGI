@@ -145,7 +145,7 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     public List<MeshHandle> MovingDraws { get; } = [];
 
     /// <inheritdoc/>
-    public void SetObjectMotion(bool moving) => ObjectMotion = moving;
+    public void SetObjectMotion(bool moving, long identity = 0) => ObjectMotion = moving;
 
     /// <inheritdoc/>
     public TextureHandle SceneVelocity => TextureHandle.None;
