@@ -129,42 +129,47 @@ jobs:
               --title "OpenIGI $VERSION" --notes-file "$RUNNER_TEMP/notes/release.md"
           fi
 
+      # ssh reads ~/.ssh from the account's home in the password database, not from $HOME, and inside a job
+      # container the two differ; so everything lives in the job's temp folder and every call passes -F.
       - name: Connect to the release VM
         env:
           KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          dir="$RUNNER_TEMP/ssh"
+          mkdir -p "$dir" && chmod 700 "$dir"
+          printf '%s\n' "$KEY" > "$dir/deploy" && chmod 600 "$dir/deploy"
+          printf '%s\n' "$KNOWN_HOSTS" > "$dir/known_hosts"
           # One multiplexed connection for every command: the VM rate-limits new SSH connections.
-          cat > ~/.ssh/config <<EOF
+          cat > "$dir/config" <<EOF
           Host release-vm
             HostName ${{ vars.DEPLOY_HOST }}
             User deploy
-            IdentityFile ~/.ssh/deploy
+            IdentityFile $dir/deploy
             IdentitiesOnly yes
+            UserKnownHostsFile $dir/known_hosts
             StrictHostKeyChecking yes
             ControlMaster auto
-            ControlPath ~/.ssh/cm-%C
+            ControlPath $dir/cm-%C
             ControlPersist 10m
             ServerAliveInterval 30
           EOF
-          ssh release-vm status
+          echo "VM_SSH=ssh -F $dir/config" >> "$GITHUB_ENV"
+          ssh -F "$dir/config" release-vm status
 
       - name: Publish the downloads
         run: |
           tar -C artifacts/release --exclude CHANGELOG.md -czf - . \
-            | ssh release-vm release "${{ steps.tag.outputs.version }}"
+            | $VM_SSH release-vm release "${{ steps.tag.outputs.version }}"
 
       - name: Deploy the web build
         run: |
-          ssh release-vm web "${{ steps.tag.outputs.channel }}" "${{ steps.tag.outputs.version }}" \
+          $VM_SSH release-vm web "${{ steps.tag.outputs.channel }}" "${{ steps.tag.outputs.version }}" \
             < "artifacts/release/openigi-web-${{ steps.tag.outputs.version }}-browser-wasm.tar.gz"
 
       - name: Drop old betas
         if: steps.tag.outputs.channel == 'beta'
-        run: ssh release-vm prune
+        run: $VM_SSH release-vm prune
 
       # The point of all this: the launcher sees it. The service rescans every 15 s.
       - name: Check the update service offers it

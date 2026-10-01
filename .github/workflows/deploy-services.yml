@@ -49,34 +49,42 @@ jobs:
       - name: Publish
         run: dotnet publish services/OpenIGI.Services --configuration Release -p:DebugType=none --output "$RUNNER_TEMP/api"
 
+      # ssh reads ~/.ssh from the account's home in the password database, not from $HOME, and inside a job
+      # container the two differ; so everything lives in the job's temp folder and every call passes -F.
       - name: Connect to the release VM
         env:
           KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-          cat > ~/.ssh/config <<EOF
+          dir="$RUNNER_TEMP/ssh"
+          mkdir -p "$dir" && chmod 700 "$dir"
+          printf '%s\n' "$KEY" > "$dir/deploy" && chmod 600 "$dir/deploy"
+          printf '%s\n' "$KNOWN_HOSTS" > "$dir/known_hosts"
+          # One multiplexed connection for every command: the VM rate-limits new SSH connections.
+          cat > "$dir/config" <<EOF
           Host release-vm
             HostName ${{ vars.DEPLOY_HOST }}
             User deploy
-            IdentityFile ~/.ssh/deploy
+            IdentityFile $dir/deploy
             IdentitiesOnly yes
+            UserKnownHostsFile $dir/known_hosts
             StrictHostKeyChecking yes
             ControlMaster auto
-            ControlPath ~/.ssh/cm-%C
+            ControlPath $dir/cm-%C
             ControlPersist 10m
+            ServerAliveInterval 30
           EOF
+          echo "VM_SSH=ssh -F $dir/config" >> "$GITHUB_ENV"
+          ssh -F "$dir/config" release-vm status
 
       - name: Apply the configuration
-        run: tar -C deploy/vm -czf - compose.yml Caddyfile | ssh release-vm config
+        run: tar -C deploy/vm -czf - compose.yml Caddyfile | $VM_SSH release-vm config
 
       - name: Deploy the update service
-        run: tar -C "$RUNNER_TEMP/api" -czf - . | ssh release-vm api "${GITHUB_SHA::12}"
+        run: tar -C "$RUNNER_TEMP/api" -czf - . | $VM_SSH release-vm api "${GITHUB_SHA::12}"
 
       - name: Check it answers
         run: |
           sleep 5
           curl -fsS https://api.openigi.com/healthz
-          ssh release-vm status
+          $VM_SSH release-vm status
