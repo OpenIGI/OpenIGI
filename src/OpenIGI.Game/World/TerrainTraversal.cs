@@ -182,22 +182,25 @@ public static class TerrainTraversal
             // picture: whole octants on one side were rejected while their mirror images were kept.
             (double x, double y, double z) = ToView(state.View.Camera.Orientation, childWorld);
 
-            // The near plane rejects the most and costs the least.
-            if (TerrainView.NearPlane - slackY >= z)
+            // The near plane rejects the most and costs the least. A panoramic view keeps every direction.
+            if (!state.View.Panoramic)
             {
-                continue;
-            }
+                if (TerrainView.NearPlane - slackY >= z)
+                {
+                    continue;
+                }
 
-            double limitX = (z * state.View.TangentX) + slackX;
-            if (x >= limitX || x <= -limitX)
-            {
-                continue;
-            }
+                double limitX = (z * state.View.TangentX) + slackX;
+                if (x >= limitX || x <= -limitX)
+                {
+                    continue;
+                }
 
-            double limitY = (z * state.View.TangentY) + slackY;
-            if (y >= limitY || y <= -limitY)
-            {
-                continue;
+                double limitY = (z * state.View.TangentY) + slackY;
+                if (y >= limitY || y <= -limitY)
+                {
+                    continue;
+                }
             }
 
             if (state.Camera.Z + childWorld.Z + extent < state.View.FloorZ)

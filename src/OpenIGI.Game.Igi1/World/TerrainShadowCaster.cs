@@ -20,12 +20,12 @@ namespace OpenIGI.Game.Igi1.World;
 /// chunk-shaped patches wherever a copy stood above the drawn surface.
 /// </para>
 /// <para>
-/// So the caster is rebuilt from what was drawn. Every chunk the traversal emitted contributes its base
-/// layer, each vertex moved by the same morph the shader applies — the ramp on the target position, the
-/// Chebyshev distance from the camera, the offset and slope the terrain's fade window gives — so the
-/// caster is the drawn surface to the precision of a float. The chunks the frustum culled are not in
-/// it, which means a hill behind the camera does not shadow the ground in front of it at a low sun; the
-/// frustum's slack keeps a margin of them, and that is the limit accepted here.
+/// So the caster is rebuilt from the descent. Every chunk it emits contributes its base layer, each vertex
+/// moved by the same morph the shader applies — the ramp on the target position, the Chebyshev distance
+/// from the camera, the offset and slope the terrain's fade window gives — so where it is on screen the
+/// caster is the drawn surface to the precision of a float. The descent is run without the frustum (see
+/// <c>TerrainView.Panoramic</c>): built from what was drawn, a hill behind the camera cast no shadow on
+/// the valley in front of it, and the valley went in and out of shadow as the player turned.
 /// </para>
 /// <para>
 /// The mesh is a storage mesh whose buffers are written directly by the host, so it cannot be rewritten

@@ -110,6 +110,9 @@ public sealed class TerrainRenderer : ITerrainPresenter
     private readonly IIgiLogger _logger;
     private readonly List<TerrainChunk> _chunks = [];
 
+    // The ground the traced sun is shadowed by: the same descent with no frustum. See SubmitShadowCaster.
+    private readonly List<TerrainChunk> _casterChunks = [];
+
     // What the ray-traced world traces instead of the pages: this frame's chunks, morphed as drawn.
     private readonly TerrainShadowCaster _caster;
     private readonly Dictionary<ChunkKey, Entry> _cache = [];
@@ -574,7 +577,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
         }
         _device.ClearDetailFade();
         _device.SetAlphaReference(IGraphicsDevice.DefaultAlphaReference);
-        SubmitShadowCaster(camera, fadeOffset, fadeSlope);
+        SubmitShadowCaster(camera, view, fadeOffset, fadeSlope);
 
         LastChunkCount = result.Emitted - occludedChunks;
         LastPassCount = passes;
@@ -1074,10 +1077,23 @@ public sealed class TerrainRenderer : ITerrainPresenter
     /// Every chunk the traversal emitted, whether or not the occlusion queries let it be drawn: an
     /// occluded chunk still shadows the ground in front of whatever hides it.
     /// </remarks>
-    private void SubmitShadowCaster(in Camera3D camera, float fadeOffset, float fadeSlope)
+    /// <remarks>
+    /// From every direction, not the frustum: a hill behind the camera shadows the valley in front of it at
+    /// a low sun, and built from what was drawn the caster lost the hill whenever the player looked away --
+    /// the valley flicked between shadow and sunlight as the view turned. The same distance rule decides
+    /// the level of detail, so the part of it on screen is still exactly the drawn surface.
+    /// </remarks>
+    private void SubmitShadowCaster(in Camera3D camera, in TerrainView view, float fadeOffset, float fadeSlope)
     {
+        TerrainTraversal.Collect(
+            _terrain.Octree,
+            view with { Panoramic = true },
+            _casterChunks,
+            _surface.Discards,
+            CacheLimit);
+
         _caster.Begin(camera.Position, fadeOffset, fadeSlope);
-        foreach (TerrainChunk chunk in _chunks)
+        foreach (TerrainChunk chunk in _casterChunks)
         {
             if (TryGetEntry(chunk, out Entry? entry))
             {

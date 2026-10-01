@@ -228,6 +228,53 @@ public sealed class RetailTerrainTests
     }
 
     [RequiresGameDataFact]
+    public void APanoramicDescentKeepsTheGroundBehindTheCameraAtTheSameDetail()
+    {
+        // The ground the traced sun is shadowed by. Built from the frustum alone, a hill behind the camera
+        // left the traced world whenever the player looked away from it, and the valley in front of them
+        // flicked between its shadow and sunlight as they turned.
+        Harness harness = Harness.Create();
+        (TerrainData terrain, _, WorldScene scene) = harness.LoadMission(1);
+        (double centreX, double centreY, double ground) = Medians(scene);
+
+        Vector3d eye = new(
+            centreX * WorldScene.UnitsPerMetre,
+            centreY * WorldScene.UnitsPerMetre,
+            (ground + 30.0) * WorldScene.UnitsPerMetre);
+        TerrainView view = new(
+            new Camera3D(eye, Camera3D.LookRotation(0f, -0.3f)),
+            1f,
+            0.6f,
+            TerrainView.DefaultViewDistance,
+            TerrainView.DefaultFloorZ);
+
+        List<TerrainChunk> facing = [];
+        List<TerrainChunk> turnedAway = [];
+        List<TerrainChunk> panoramic = [];
+        TerrainTraversal.Collect(terrain.Octree, view, facing, maximumChunks: 1 << 16);
+        TerrainTraversal.Collect(
+            terrain.Octree,
+            view with { Camera = new Camera3D(eye, Camera3D.LookRotation(MathF.PI, -0.3f)) },
+            turnedAway,
+            maximumChunks: 1 << 16);
+        TerrainTraversal.Collect(terrain.Octree, view with { Panoramic = true }, panoramic, maximumChunks: 1 << 16);
+
+        HashSet<(Vector3d, int)> all = [.. panoramic.Select(chunk => (chunk.Position, chunk.LodExponent))];
+        Assert.All(facing, chunk => Assert.Contains((chunk.Position, chunk.LodExponent), all));
+        Assert.All(turnedAway, chunk => Assert.Contains((chunk.Position, chunk.LodExponent), all));
+        Assert.True(panoramic.Count > facing.Count, $"{panoramic.Count} all round, {facing.Count} in view");
+
+        // And the same no matter which way the camera faces: it is a set of ground, not of what is seen.
+        List<TerrainChunk> panoramicTurned = [];
+        TerrainTraversal.Collect(
+            terrain.Octree,
+            view with { Camera = new Camera3D(eye, Camera3D.LookRotation(MathF.PI, -0.3f)), Panoramic = true },
+            panoramicTurned,
+            maximumChunks: 1 << 16);
+        Assert.Equal(all, [.. panoramicTurned.Select(chunk => (chunk.Position, chunk.LodExponent))]);
+    }
+
+    [RequiresGameDataFact]
     public void TheGroundIsTexturedFromTheLevelsOwnTextureModifiers()
     {
         Harness harness = Harness.Create();

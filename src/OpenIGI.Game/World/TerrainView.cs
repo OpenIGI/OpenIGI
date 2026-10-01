@@ -36,6 +36,15 @@ public readonly record struct TerrainView(
     int ViewDistance,
     long FloorZ)
 {
+    /// <summary>Gets a value indicating whether the descent keeps the ground all round the camera, not only what it faces.</summary>
+    /// <remarks>
+    /// Not the original's -- it only ever draws what it faces. For a consumer that is not the screen: the
+    /// ground the ray-traced sun is shadowed by. Built from the frustum alone, a hill behind the camera cast
+    /// no shadow on the valley in front of it, and the valley went in and out of shadow as the player turned.
+    /// The level of detail is the same distance rule either way.
+    /// </remarks>
+    public bool Panoramic { get; init; }
+
     /// <summary>The lowest view distance the original will use.</summary>
     public const int MinimumViewDistance = 70;
 
