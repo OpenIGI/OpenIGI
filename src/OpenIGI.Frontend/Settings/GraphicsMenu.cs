@@ -565,6 +565,7 @@ public static class GraphicsMenu
         "r_flashlight",
         "r_flashlight_shadows",
         "r_flashlight_fog",
+        "r_flashlight_wear", // how worn the torch's switch is: the character of the prop, not a quality
         "r_binocular_range_zoomed",
 
         // Superseded paths, kept working and kept reachable, but not offered: the real-time stack carries

@@ -312,8 +312,13 @@ public sealed class DeferredFrameAgreementTests(ITestOutputHelper output)
         // rather than assumed.
         // One cascade where the frame is to be shadowed: the light looking straight down the view, its
         // projection the identity, so what the triangle writes into the map is what the shading finds.
+        //
+        // The CASCADE, explicitly: an adapter that can trace rays traces the sun instead by default, and
+        // under this frame's identity projection the traced positions do not lie on the triangle, which
+        // then shadowed itself everywhere on Vulkan while WebGPU, which cannot trace, read the map. The
+        // comparison is about the map -- the depth array, the depth binding and the comparison sampler.
         device.SetShadows(
-            shadows ? new ShadowSettings(CascadeCount: 1, Resolution: Size) : ShadowSettings.Off,
+            shadows ? new ShadowSettings(CascadeCount: 1, Resolution: Size) { TracedSun = false } : ShadowSettings.Off,
             shadows ? [new ShadowCascade(Matrix3f.Identity, Matrix4f.Identity, Vector3f.Zero, 1000f, 1000f, 0.1f)] : [],
             new DepthUnprojection(1f, 1f, 0.1f, 1000f),
             Matrix3f.Identity);

@@ -146,24 +146,50 @@ public sealed class ConfigTests
         Assert.InRange(moveIndex, 0, profile.Bindings.Count - 1);
         Assert.True(
             InputBindingKeyNames.TryParseKeyboardKey(profile.Bindings[moveIndex].Key, out KeyCode previous));
-        Assert.NotEqual(KeyCode.F, previous); // F is unbound in the defaults, so no swap interferes.
 
-        Assert.Equal(-1, profile.RebindKeyboard(moveIndex, KeyCode.F));
+        // A key nothing in the defaults is bound to, so no swap interferes. Found rather than named: the
+        // defaults gain bindings (the flashlight took F), and a hard-coded key quietly became a swap test.
+        KeyCode free = FirstUnboundLetter(profile);
+        Assert.NotEqual(free, previous);
+
+        Assert.Equal(-1, profile.RebindKeyboard(moveIndex, free));
 
         GameConfig reloaded = ConfigScript.Load(ConfigScriptWriter.Write(config));
         PlayerProfile restored = reloaded.Profiles[config.ActiveIndex];
 
-        Assert.Equal(InputBindingKeyNames.ToRetailKeyboardKey(KeyCode.F), restored.Bindings[moveIndex].Key);
+        Assert.Equal(InputBindingKeyNames.ToRetailKeyboardKey(free), restored.Bindings[moveIndex].Key);
 
         var fresh = new InputState();
         fresh.BeginFrame();
-        fresh.Keyboard.SetKey(KeyCode.F, down: true);
+        fresh.Keyboard.SetKey(free, down: true);
         Assert.True(PlayerProfileInputBindings.IsDown(restored, fresh, "MoveLeft"));
 
         var stale = new InputState();
         stale.BeginFrame();
         stale.Keyboard.SetKey(previous, down: true);
         Assert.False(PlayerProfileInputBindings.IsDown(restored, stale, "MoveLeft"));
+    }
+
+    private static KeyCode FirstUnboundLetter(PlayerProfile profile)
+    {
+        // Spelled out: the codes are scan codes, so the letters are not one contiguous range.
+        KeyCode[] letters =
+        [
+            KeyCode.A, KeyCode.B, KeyCode.C, KeyCode.D, KeyCode.E, KeyCode.F, KeyCode.G, KeyCode.H, KeyCode.I,
+            KeyCode.J, KeyCode.K, KeyCode.L, KeyCode.M, KeyCode.N, KeyCode.O, KeyCode.P, KeyCode.Q, KeyCode.R,
+            KeyCode.S, KeyCode.T, KeyCode.U, KeyCode.V, KeyCode.W, KeyCode.X, KeyCode.Y, KeyCode.Z,
+        ];
+
+        foreach (KeyCode key in letters)
+        {
+            string name = InputBindingKeyNames.ToRetailKeyboardKey(key);
+            if (!profile.Bindings.Exists(binding => string.Equals(binding.Key, name, StringComparison.OrdinalIgnoreCase)))
+            {
+                return key;
+            }
+        }
+
+        throw new InvalidOperationException("Every letter is bound in the default profile.");
     }
 
     [Fact]
