@@ -106,13 +106,14 @@ jobs:
       - name: Check the committed WebGPU bindings
         run: dotnet run --project tools/OpenIGI.Tools.WebGpuBind --configuration Release -- --check
 
-  # The browser build is published, never built by the solution; this proves it still publishes. Without
-  # ahead-of-time compilation, which only a release pays for.
+  # The browser build is published, never built by the solution; this proves it still publishes, exactly as
+  # a release publishes it. Ahead-of-time compilation is not optional here: interpreted, every P/Invoke in
+  # the assemblies enters the native table, including ones the browser's WebGPU shim does not provide.
   web:
     name: web-publish
     if: vars.CI_RUNS_ON != '' || github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sh-de"]') }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     container:
       image: ghcr.io/openigi/ci:latest
       credentials:
@@ -128,4 +129,4 @@ jobs:
           restore-keys: nuget-
 
       - name: Publish
-        run: dotnet publish apps/OpenIGI.Web --configuration Release -p:RunAOTCompilation=false --output "$RUNNER_TEMP/web"
+        run: dotnet publish apps/OpenIGI.Web --configuration Release --output "$RUNNER_TEMP/web"

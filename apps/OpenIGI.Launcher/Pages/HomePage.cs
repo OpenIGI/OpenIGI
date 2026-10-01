@@ -34,18 +34,20 @@ internal sealed class HomePage
         _main = new PrimaryAction(theme, "PLAY") { Width = 380f, Height = 88f, TitleSize = 38f, SubtitleSize = 13f, CutCorner = 20f };
         _main.Activated += _ =>
         {
-            if (_model.Job is { } job)
+            if (_model.Job is not null)
             {
-                job.Paused = !job.Paused;
+                _model.TogglePause();
             }
             else
             {
-                _model.StartMainAction();
+                _model.StartMainAction(openSettings);
             }
         };
 
         var verify = new IconButton(theme, KitIcon.Check, "Verify") { Style = IconButtonStyle.Tile, Size = new UiVec2(104f, 88f) };
+        verify.Activated += _ => _model.Verify();
         var folder = new IconButton(theme, KitIcon.Folder, "Folder") { Style = IconButtonStyle.Tile, Size = new UiVec2(104f, 88f) };
+        folder.Activated += _ => _model.OpenFolder();
         var options = new IconButton(theme, KitIcon.Gear, "Options") { Style = IconButtonStyle.Tile, Size = new UiVec2(104f, 88f) };
         options.Activated += _ => openSettings();
 
@@ -60,7 +62,7 @@ internal sealed class HomePage
         left.AddChild(_chips);
         left.AddChild(actions);
 
-        _notes = new PatchNotesCard(theme);
+        _notes = new PatchNotesCard(theme, model.OpenNotes);
         _content = new ContentCard(theme);
         _content.Activated += _ => openContent();
 
@@ -87,20 +89,27 @@ internal sealed class HomePage
         _heading.Title = game.Title;
 
         _chips.ClearChildren();
-        if (game.State == GameState.NotInstalled)
+        if (game.State == GameState.Unavailable)
         {
-            _chips.Add(new Chip(_theme, "Download size", LauncherModel.FormatSize(game.SizeMegabytes)));
+            _chips.Add(new Chip(_theme, "Status", "In development"));
+        }
+        else if (game.State == GameState.NotInstalled)
+        {
+            _chips.Add(new Chip(_theme, "Download size", game.SizeMegabytes > 0 ? LauncherModel.FormatSize(game.SizeMegabytes) : "—"));
+            _chips.Add(new Chip(_theme, "Channel", _model.Settings.Channel == OpenIGI.Releases.ReleaseChannel.Beta ? "Beta" : "Stable"));
         }
         else
         {
             _chips.Add(new Chip(_theme, "Version", game.Version));
             _chips.Add(new Chip(_theme, "On disk", LauncherModel.FormatSize(game.SizeMegabytes)));
+            _chips.Add(new Chip(_theme, "Channel", _model.Settings.Channel == OpenIGI.Releases.ReleaseChannel.Beta ? "Beta" : "Stable"));
         }
 
-        _chips.Add(new Chip(_theme, "Mods", game.ModsEnabled > 0 ? $"{game.ModsEnabled} enabled" : "None"));
-
         _notes.Notes = game.Notes;
+        _notes.Tag = game.State is GameState.UpdateAvailable or GameState.NotInstalled ? "NEW UPDATE" : "LATEST RELEASE";
+        _notes.Visibility = game.Notes is null ? Visibility.Collapsed : Visibility.Visible;
         _content.Game = game;
+        _content.Visibility = game.OptionalPacks.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         Update();
     }
 
@@ -108,11 +117,17 @@ internal sealed class HomePage
     public void Update()
     {
         LauncherGame game = _model.Current;
-        DownloadJob? job = _model.Job is { } j && ReferenceEquals(j.Game, game) ? j : null;
+        DownloadJob? job = _model.Job is { } j && j.Covers(game) ? j : null;
 
+        _main.IsEnabled = game.State is not (GameState.Unavailable or GameState.Playing);
         if (job is not null)
         {
-            _heading.State = job.Paused ? "PAUSED" : "DOWNLOADING";
+            _heading.State = job.Paused ? "PAUSED" : job.Stage switch
+            {
+                Services.InstallStage.Verifying => "VERIFYING",
+                Services.InstallStage.Installing => "INSTALLING",
+                _ => "DOWNLOADING",
+            };
             _heading.StateColor = _theme.Accent;
             _main.Progress = job.Progress;
             _main.Subtitle = job.Paused ? "CLICK TO RESUME" : "CLICK TO PAUSE";
@@ -122,12 +137,42 @@ internal sealed class HomePage
         _main.Progress = null;
         switch (game.State)
         {
+            case GameState.Unavailable:
+                _heading.State = "COMING LATER";
+                _heading.StateColor = _theme.TextMuted;
+                _main.Title = "SOON";
+                _main.Icon = PrimaryActionIcon.Arrow;
+                _main.Subtitle = "NOT RELEASED YET";
+                break;
+            case GameState.Playing:
+                _heading.State = "RUNNING";
+                _heading.StateColor = _theme.Success;
+                _main.Title = "PLAYING";
+                _main.Icon = PrimaryActionIcon.Arrow;
+                _main.Subtitle = $"VERSION {game.Version}";
+                break;
+            case GameState.NeedsGameFolder:
+                _heading.State = "GAME FILES NEEDED";
+                _heading.StateColor = _theme.Accent;
+                _main.Title = "SET FOLDER";
+                _main.Icon = PrimaryActionIcon.Arrow;
+                _main.Subtitle = $"POINT TO YOUR {game.Title.ToUpperInvariant()} INSTALL";
+                break;
+            case GameState.Damaged:
+                _heading.State = "FILES DAMAGED";
+                _heading.StateColor = _theme.Danger;
+                _main.Title = "REPAIR";
+                _main.Icon = PrimaryActionIcon.Download;
+                _main.Subtitle = $"DOWNLOAD {game.LatestVersion} AGAIN · {LauncherModel.FormatSize(game.UpdateMegabytes)}";
+                break;
             case GameState.NotInstalled:
                 _heading.State = "NOT INSTALLED";
                 _heading.StateColor = _theme.TextMuted;
                 _main.Title = "INSTALL";
                 _main.Icon = PrimaryActionIcon.Download;
-                _main.Subtitle = $"{LauncherModel.FormatSize(game.SizeMegabytes)} · VERSION {game.LatestVersion}";
+                _main.Subtitle = game.LatestVersion.Length == 0
+                    ? "CHECKING FOR THE LATEST RELEASE"
+                    : $"{LauncherModel.FormatSize(game.SizeMegabytes)} · VERSION {game.LatestVersion}";
                 break;
             case GameState.UpdateAvailable:
                 _heading.State = "UPDATE AVAILABLE";
@@ -141,9 +186,7 @@ internal sealed class HomePage
                 _heading.StateColor = _theme.Success;
                 _main.Title = "PLAY";
                 _main.Icon = PrimaryActionIcon.Arrow;
-                _main.Subtitle = game.ModsEnabled > 0
-                    ? string.Create(CultureInfo.InvariantCulture, $"VERSION {game.Version} · {game.ModsEnabled} MODS")
-                    : $"VERSION {game.Version}";
+                _main.Subtitle = string.Create(CultureInfo.InvariantCulture, $"VERSION {game.Version}");
                 break;
         }
     }
@@ -187,7 +230,7 @@ internal sealed class HomePage
         }
     }
 
-    /// <summary>The latest release's notes on glass, under a banner with a NEW UPDATE tag.</summary>
+    /// <summary>The latest release's notes on glass, under a banner tagged with whether it is new to the player.</summary>
     private sealed class PatchNotesCard : UiElement
     {
         /// <summary>The release banner's height; short enough that the card and the content strip fit a 720-high window.</summary>
@@ -196,14 +239,18 @@ internal sealed class HomePage
         private readonly UiTheme _theme;
         private readonly Button _more;
 
-        public PatchNotesCard(UiTheme theme)
+        public PatchNotesCard(UiTheme theme, Action openNotes)
         {
             _theme = theme;
             _more = new Button(theme, "Full patch notes ›") { Accent = ButtonAccent.Link, TextSize = 16f, Tracking = 0.2f, Padding = new Thickness(0f, 4f) };
+            _more.Activated += _ => openNotes();
             AddChild(_more);
         }
 
         public PatchNotes? Notes { get; set; }
+
+        /// <summary>Gets or sets the banner's tag: NEW UPDATE when there is something to get, LATEST RELEASE otherwise.</summary>
+        public string Tag { get; set; } = "LATEST RELEASE";
 
         protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
         {
@@ -230,10 +277,10 @@ internal sealed class HomePage
 
             // NEW UPDATE: an amber tag with its corner cut.
             float tagSize = context.Px(12f);
-            float tagWidth = UiPainter.MeasureLabel(_theme.Mono, "NEW UPDATE", tagSize, 0.2f) + context.Px(20f);
+            float tagWidth = UiPainter.MeasureLabel(_theme.Mono, Tag, tagSize, 0.2f) + context.Px(20f);
             var tag = new UiRect(banner.X + context.Px(24f), banner.Y + context.Px(18f), tagWidth, context.Px(24f));
             painter.FillCutRect(tag, context.Px(6f), UiCorners.BottomRight, _theme.Accent);
-            painter.DrawLabel(_theme.Mono, "NEW UPDATE", new UiVec2(tag.X + context.Px(10f), UiRowStyle.CenterY(_theme.Mono, tagSize, tag)), tagSize, _theme.OnAccent, 0.2f);
+            painter.DrawLabel(_theme.Mono, Tag, new UiVec2(tag.X + context.Px(10f), UiRowStyle.CenterY(_theme.Mono, tagSize, tag)), tagSize, _theme.OnAccent, 0.2f);
 
             if (Notes is not { } notes)
             {

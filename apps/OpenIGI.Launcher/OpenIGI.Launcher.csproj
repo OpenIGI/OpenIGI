@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenIGI.Launcher.Tests" />
+  </ItemGroup>
+
   <PropertyGroup>
     <!-- A windowed app with no console behind it. The launcher draws the same interface the game's menus
          draw, through Skia onto a plain OpenGL window, and references none of the game itself. -->
@@ -12,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\..\src\Core\OpenIGI.Releases\OpenIGI.Releases.csproj" />
     <ProjectReference Include="..\..\src\Platform\OpenIGI.Input\OpenIGI.Input.csproj" />
     <ProjectReference Include="..\..\src\Platform\OpenIGI.Platform.Desktop\OpenIGI.Platform.Desktop.csproj" />
     <ProjectReference Include="..\..\src\UI\OpenIGI.UI\OpenIGI.UI.csproj" />

@@ -114,6 +114,15 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         _window.Render += OnRender;
         _window.FramebufferResize += _ => ReleaseSurface();
         _window.Closing += ReleaseGraphics;
+
+        // Coming back to the window is when a player expects to see a release that came out meanwhile.
+        _window.FocusChanged += focused =>
+        {
+            if (focused)
+            {
+                _model.CheckSoon();
+            }
+        };
     }
 
     public void Run() => _window.Run();
@@ -125,9 +134,12 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
 
     public void Close() => _window.Close();
 
+    public string ClipboardText => _inputContext?.Keyboards.Count > 0 ? _inputContext.Keyboards[0].ClipboardText ?? string.Empty : string.Empty;
+
     public void Dispose()
     {
         ReleaseGraphics();
+        _model.Dispose();
         _typography?.Dispose();
         _fonts.Dispose();
         _images.Dispose();
