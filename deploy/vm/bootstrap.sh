@@ -24,6 +24,18 @@ usermod -aG docker deploy
 install -d -o deploy -g deploy -m 0755 \
   "$SRV" "$SRV/web" "$SRV/web/stable" "$SRV/web/beta" "$SRV/dl" "$SRV/dl/releases" "$SRV/api" "$SRV/config"
 
+# Deploy jobs run in containers on this machine and reach SSH through the docker bridges (172.16.0.0/12),
+# several connections per release. Exempt them from ufw's SSH rate limit and from fail2ban, so a deploy
+# never locks itself out; everyone else keeps both.
+if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
+  ufw status | grep -q "172.16.0.0/12.*ssh trusted" \
+    || ufw insert 1 allow proto tcp from 172.16.0.0/12 to any port 22 comment "ssh trusted (no rate limit)"
+fi
+if [ -d /etc/fail2ban/jail.d ] && [ ! -f /etc/fail2ban/jail.d/zz-trusted.local ]; then
+  printf '[DEFAULT]\nignoreip = 127.0.0.1/8 ::1 172.16.0.0/12\n' > /etc/fail2ban/jail.d/zz-trusted.local
+  fail2ban-client reload >/dev/null 2>&1 || true
+fi
+
 # The dispatcher is root-owned: CI can run it but never replace it.
 install -o root -g root -m 0755 "$HERE/deploy.sh" /usr/local/bin/openigi-deploy
 
