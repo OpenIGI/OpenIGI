@@ -10,7 +10,9 @@ using OpenIGI.Game.Player;
 using OpenIGI.Input;
 using OpenIGI.Rendering.Presets;
 using OpenIGI.Rendering;
+using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
+using OpenIGI.UI.Screens;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 using OpenIGI.UI;
@@ -150,7 +152,7 @@ public sealed class ShellTests
 
         var context = new ShellContext(
             new UiTheme(UiFont.ForMeasurement(FontAtlasBuilder.Build(
-                File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Saira-Regular.ttf")),
+                File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Barlow-Regular.ttf")),
                 48f))),
             new FakeHost(),
             new ScreenStack(),
@@ -168,7 +170,7 @@ public sealed class ShellTests
 
     private static (Shell Shell, FakeHost Host) BuildShell(string savesDir, int activeMission = 2)
     {
-        string fontPath = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Saira-Regular.ttf");
+        string fontPath = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Barlow-Regular.ttf");
         UiFont font = OpenIGI.UI.Text.UiFont.ForMeasurement(
             OpenIGI.UI.Text.FontAtlasBuilder.Build(File.ReadAllBytes(fontPath), 48f));
         var theme = new UiTheme(font);
@@ -384,7 +386,7 @@ public sealed class ShellTests
             Toggle firstDeveloper = Find<Toggle>(extras, toggle => toggle.Label == "Developer mode")
                 ?? throw new Xunit.Sdk.XunitException("The Extras developer toggle was not built.");
 
-            Panel firstGate = Find<Label>(extras, label => label.Text == "Cheats")!.Parent!.Parent as Panel
+            Panel firstGate = Find<GroupHeader>(extras, header => header.Title == "CHEATS")!.Parent!.Parent as Panel
                 ?? throw new Xunit.Sdk.XunitException("The Extras cheat gate panel was not built.");
             Assert.Equal(Visibility.Collapsed, firstGate.Visibility);
 
@@ -393,7 +395,7 @@ public sealed class ShellTests
             shell.Update(new LayoutContext(1280f, 720f), new InputState(), 1f / 60f);
             Toggle resizedDeveloper = Find<Toggle>(extras, toggle => toggle.Label == "Developer mode")
                 ?? throw new Xunit.Sdk.XunitException("The resized Extras developer toggle was not built.");
-            Panel resizedGate = Find<Label>(extras, label => label.Text == "Cheats")!.Parent!.Parent as Panel
+            Panel resizedGate = Find<GroupHeader>(extras, header => header.Title == "CHEATS")!.Parent!.Parent as Panel
                 ?? throw new Xunit.Sdk.XunitException("The resized Extras cheat gate panel was not built.");
 
             shell.OpenOn("campaign");
@@ -478,7 +480,7 @@ public sealed class ShellTests
             Pump(shell, 0.6f);
 
             var campaign = (CampaignScreen)shell.Stack.Top!;
-            Find<Button>(campaign, b => b.Text == "PLAY")!.Activate();
+            Find<PrimaryAction>(campaign, p => p.Title == "PLAY")!.Activate();
 
             Assert.Equal(1, host.StartedMission); // first mission selected by default
             Assert.True(host.StartedDifficulty >= 0);
@@ -514,8 +516,8 @@ public sealed class ShellTests
             Pump(shell, 0.6f);
 
             var campaign = (CampaignScreen)shell.Stack.Top!;
-            Dropdown time = Find<Dropdown>(campaign, d => d.Label == "Time of day")!;
-            Dropdown weather = Find<Dropdown>(campaign, d => d.Label == "Weather")!;
+            OptionCycler time = Find<OptionCycler>(campaign, o => o.Label == "TIME")!;
+            OptionCycler weather = Find<OptionCycler>(campaign, o => o.Label == "WEATHER")!;
 
             Assert.Equal(MissionTimeOfDay.Default, (MissionTimeOfDay)time.SelectedIndex);
             Assert.Equal(MissionWeather.Default, (MissionWeather)weather.SelectedIndex);
@@ -534,10 +536,10 @@ public sealed class ShellTests
             var reopened = (CampaignScreen)shell.Stack.Top!;
             Assert.Equal(
                 MissionTimeOfDay.Night,
-                (MissionTimeOfDay)Find<Dropdown>(reopened, d => d.Label == "Time of day")!.SelectedIndex);
+                (MissionTimeOfDay)Find<OptionCycler>(reopened, o => o.Label == "TIME")!.SelectedIndex);
             Assert.Equal(
                 MissionWeather.Rain,
-                (MissionWeather)Find<Dropdown>(reopened, d => d.Label == "Weather")!.SelectedIndex);
+                (MissionWeather)Find<OptionCycler>(reopened, o => o.Label == "WEATHER")!.SelectedIndex);
         }
         finally
         {
@@ -651,7 +653,7 @@ public sealed class ShellTests
             Assert.Equal(1, host.ResumeCalls);
 
             // And so does the button, for a pointer that never reaches for Escape.
-            Find<Button>(shell.Stack.Top!, b => b.Text == "RESUME")!.Activate();
+            Find<PrimaryAction>(shell.Stack.Top!, p => p.Title == "RESUME")!.Activate();
             Assert.Equal(2, host.ResumeCalls);
         }
         finally
@@ -1044,7 +1046,7 @@ public sealed class ShellTests
             List<ProfileCard> visible = [.. screen.Root!.Descendants().OfType<ProfileCard>().Where(card => card.Visibility == Visibility.Visible)];
             Assert.Single(visible);
             Assert.Equal("Joe", visible[0].Name);
-            Assert.All(Find<ListView>(screen, list => list.Id == "profile-saves")!.Items, item => Assert.Contains("EMPTY", item));
+            Assert.All(screen.Root!.Descendants().OfType<SlotTile>(), slot => Assert.True(slot.IsEmpty));
             Assert.Equal(2, host.SaveProfilesCalls);
             Assert.False(Find<Button>(screen, button => button.Text == "DELETE PROFILE")!.IsEnabled);
         }

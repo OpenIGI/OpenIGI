@@ -42,7 +42,7 @@ public sealed class VirtualListViewTests
         list.Arrange(new UiRect(0f, 0f, 1000f, viewportHeight));
 
         var batch = new SpriteBatch(device);
-        var painter = new UiPainter(batch, context);
+        var painter = UiPainter.Create(batch, context);
         batch.Begin();
         list.Draw(painter);
         batch.End();
@@ -165,7 +165,7 @@ public sealed class VirtualListViewTests
 
         var context = new LayoutContext(1000f, list.Bounds.Height, reference: new UiVec2(1000f, list.Bounds.Height));
         var batch = new SpriteBatch(device);
-        var painter = new UiPainter(batch, context);
+        var painter = UiPainter.Create(batch, context);
         batch.Begin();
         list.Draw(painter);
         batch.End();

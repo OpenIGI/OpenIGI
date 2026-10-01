@@ -352,6 +352,7 @@ internal sealed partial class GameHost
     // The shell's own faces, so the shot's title is set in the same type the menu is. Borrowed, not
     // owned: the composition root builds and disposes them.
     private UiFont? _shellBodyFont;
+    private UI.Kit.IgiTypography? _shellType;
     private UiFont? _shellHeadingFont;
 
     /// <summary>Draws the shot's own chrome: the cinematic bars.</summary>

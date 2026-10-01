@@ -14,6 +14,7 @@ using OpenIGI.Rendering;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI;
+using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Host;
 
@@ -94,10 +95,10 @@ internal sealed partial class GameHost
     /// </remarks>
     private const int LoadingPresentIntervalMilliseconds = 40;
 
-    private static readonly Bgra32 CardWhite = Bgra32.FromRgb(238, 242, 246);
-    private static readonly Bgra32 CardAccent = Bgra32.FromRgb(168, 204, 236);
-    private static readonly Bgra32 CardMuted = Bgra32.FromRgb(150, 162, 174);
-    private static readonly Bgra32 CardDim = Bgra32.FromRgb(96, 108, 120);
+    private static readonly Bgra32 CardWhite = UiPalette.Text;
+    private static readonly Bgra32 CardAccent = UiPalette.Accent;
+    private static readonly Bgra32 CardMuted = UiPalette.TextSecondary;
+    private static readonly Bgra32 CardDim = UiPalette.TextMuted;
 
     /// <summary>Whether the level is still being held and must not be revealed yet.</summary>
     private bool IsWarmingUp => _warmUp.IsHolding;
@@ -798,7 +799,7 @@ internal sealed partial class GameHost
         {
             _device.Set2DProjection(_window.Width, _window.Height);
             batch.Begin();
-            var painter = new UiPainter(batch, new LayoutContext(_window.Width, _window.Height));
+            var painter = UiPainter.Create(batch, new LayoutContext(_window.Width, _window.Height));
             painter.PushOpacity(card * _loadSequence.Opacity);
             PaintLoadingCard(painter, width, height, seconds);
             painter.PopOpacity();
@@ -809,13 +810,18 @@ internal sealed partial class GameHost
     }
 
     /// <summary>Paints the card: the mission's number, name and briefing, and what the load is doing.</summary>
+    /// <remarks>
+    /// Set the way the campaign page sets its mission: a monospaced eyebrow and a rule over the name in the
+    /// title face, the briefing under it, and the design's thin amber bar for the progress.
+    /// </remarks>
     private void PaintLoadingCard(UiPainter painter, float width, float height, float seconds)
     {
-        if (_shellHeadingFont is not { } heading || _shellBodyFont is not { } body)
+        if (_shellType is not { } type)
         {
             return;
         }
 
+        UiFont body = type.Body;
         float scale = UiScale.Resolve(_options.UiScale, _window.Width, _window.Height);
         float slide = _loadSequence.CardSlide * scale;
         float left = width * 0.085f;
@@ -823,18 +829,23 @@ internal sealed partial class GameHost
 
         // The title block sits in the lower third, above the bar, the way a title does over a place: a
         // caption, not a dialog.
-        float titleSize = 76f * scale;
-        float kickerSize = 17f * scale;
-        float bodySize = 18f * scale;
+        float titleSize = 112f * scale;
+        float kickerSize = 13f * scale;
+        float bodySize = 20f * scale;
         float baseline = height * 0.60f + slide;
+        float titleTop = baseline - (titleSize * 0.85f);
 
-        // "MISSION 08", letterspaced, in the accent -- on the card, where the card carries the name.
+        // "MISSION 08 —— DEPLOYING", letterspaced, in the accent -- on the card, where the card carries the name.
         if (!_loadSequence.LiveScene)
         {
             string kicker = _loadingInfo is { } info
                 ? FormattableString.Invariant($"MISSION {info.Number:00}")
                 : "MISSION";
-            DrawSpacedText(painter, body, kicker, left, baseline - titleSize - (14f * scale), kickerSize, CardAccent, 0.22f);
+            float kickerTop = titleTop - (28f * scale) - type.Mono.LineHeight(kickerSize);
+            UiVec2 pen = painter.DrawLabel(type.Mono, kicker, new UiVec2(left, kickerTop), kickerSize, CardAccent, 0.28f);
+            float ruleX = pen.X + (16f * scale);
+            painter.FillRect(new UiRect(ruleX, kickerTop + (type.Mono.LineHeight(kickerSize) * 0.5f), 48f * scale, MathF.Max(1f, scale)), UiPalette.AccentAt(0.6f));
+            painter.DrawLabel(type.Mono, "DEPLOYING", new UiVec2(ruleX + (64f * scale), kickerTop), kickerSize, CardMuted, 0.28f);
         }
 
         // The name and the briefing are on the card only until the level is up; from then on they stand
@@ -844,21 +855,24 @@ internal sealed partial class GameHost
             string title = (_loadingInfo?.Name
                 ?? (_loadingMission is { } mission ? _menuStrings?.Get(mission.Name) ?? mission.Name : string.Empty))
                 .ToUpperInvariant();
-            painter.DrawText(heading, title, new UiVec2(left, baseline - titleSize), titleSize, CardWhite);
+            float fit = MathF.Min(1f, (width - (left * 2f)) / MathF.Max(1f, UiPainter.MeasureLabel(type.Display, title, titleSize, 0.01f)));
+            float size = titleSize * fit;
+            var titleBox = new UiRect(left, titleTop, width, titleSize * 0.85f);
+            painter.DrawLabel(type.Display, title, new UiVec2(left, UiRowStyle.CapsCenterY(type.Display, size, titleBox)), size, CardWhite, 0.01f);
 
             // A hairline that draws itself under the name as the card comes in.
             float ruleWidth = MathF.Min(width * 0.18f, 300f * scale) * _loadSequence.Card;
-            float ruleTop = baseline + (10f * scale);
+            float ruleTop = baseline + (18f * scale);
             painter.FillRect(new UiRect(left, ruleTop, ruleWidth, 2f * scale), CardAccent);
 
             // The briefing, a few lines of it, under the rule.
             if (_loadingInfo is { Description.Length: > 0 } briefed)
             {
                 float lineHeight = body.LineHeight(bodySize) * 1.15f;
-                float y = ruleTop + (22f * scale);
+                float y = ruleTop + (24f * scale);
                 foreach (string line in WrapLines(body, briefed.Description, bodySize, width * 0.36f, maxLines: 3))
                 {
-                    painter.DrawText(body, line, new UiVec2(left, y), bodySize, CardMuted);
+                    painter.DrawText(body, line, new UiVec2(left, y), bodySize, UiPalette.TextBody);
                     y += lineHeight;
                 }
             }
@@ -867,26 +881,29 @@ internal sealed partial class GameHost
         // Bottom left: what is happening, with a slow pulse of dots.
         float footer = height - bars - (52f * scale);
         int dots = (int)(seconds * 2.5f) % 4;
-        DrawSpacedText(painter, body, "LOADING" + new string('.', dots), left, footer, 14f * scale, CardMuted, 0.2f);
+        float captionSize = 12f * scale;
+        painter.FillDiamond(new UiVec2(left + (3f * scale), footer + (type.Mono.LineHeight(captionSize) * 0.5f)), 6f * scale, CardAccent);
+        painter.DrawLabel(type.Mono, LoadingCaptions[dots], new UiVec2(left + (16f * scale), footer), captionSize, CardMuted, 0.28f);
 
         // Bottom right: the stage, the percentage and the bar.
         float barWidth = MathF.Min(width * 0.26f, 460f * scale);
         float barRight = width - left;
         float barLeft = barRight - barWidth;
-        float barHeight = 2f * scale;
-        float barTop = footer + (12f * scale);
+        float barHeight = 4f * scale;
+        float barTop = footer + (14f * scale);
         float progress = Math.Clamp(_warmUp.Progress, 0f, 1f);
 
         string stage = _warmUp.IsActive ? _warmUp.Stage : "Preparing";
-        float captionSize = 13f * scale;
-        DrawSpacedText(painter, body, stage.ToUpperInvariant(), barLeft, footer - (6f * scale), captionSize, CardDim, 0.18f);
+        float stageSize = 11f * scale;
+        painter.DrawLabel(type.Mono, stage.ToUpperInvariant(), new UiVec2(barLeft, footer - (8f * scale)), stageSize, CardDim, 0.22f);
 
         string percent = FormattableString.Invariant($"{(int)(progress * 100f)}%");
-        float percentWidth = body.MeasureWidth(percent, captionSize);
-        painter.DrawText(body, percent, new UiVec2(barRight - percentWidth, footer - (6f * scale)), captionSize, CardMuted);
+        float percentSize = 14f * scale;
+        float percentWidth = type.Mono.MeasureWidth(percent, percentSize);
+        painter.DrawText(type.Mono, percent, new UiVec2(barRight - percentWidth, footer - (10f * scale)), percentSize, CardWhite);
 
-        painter.FillRect(new UiRect(barLeft, barTop, barWidth, barHeight), Bgra32.FromRgb(58, 66, 76));
-        painter.FillRect(new UiRect(barLeft, barTop, barWidth * progress, barHeight), CardWhite);
+        painter.FillRect(new UiRect(barLeft, barTop, barWidth, barHeight), UiPalette.White(0.1f));
+        painter.FillRect(new UiRect(barLeft, barTop, barWidth * progress, barHeight), CardAccent);
 
         // A highlight that sweeps the bar, so the card reads as alive even while a stage is long.
         float sweep = (seconds * 0.45f) % 1.35f;
@@ -896,23 +913,18 @@ internal sealed partial class GameHost
         glowLeft = MathF.Max(glowLeft, barLeft);
         if (glowRight > glowLeft)
         {
-            painter.FillRect(new UiRect(glowLeft, barTop, glowRight - glowLeft, barHeight), CardAccent.WithAlpha(120));
+            Span<UI.Drawing.UiGradientStop> glow =
+            [
+                new(0f, UiPalette.White(0f)),
+                new(0.5f, UiPalette.White(0.55f)),
+                new(1f, UiPalette.White(0f)),
+            ];
+            painter.FillGradient(new UiRect(glowLeft, barTop, glowRight - glowLeft, barHeight), glow, UI.Drawing.UiGradientDirection.Horizontal);
         }
     }
 
-    /// <summary>Draws a line of text with extra space between the letters, for a small caption set wide.</summary>
-    private static void DrawSpacedText(
-        UiPainter painter, UiFont font, string text, float x, float y, float size, Bgra32 colour, float spacingEm)
-    {
-        float spacing = size * spacingEm;
-        Span<char> one = stackalloc char[1];
-        foreach (char c in text)
-        {
-            one[0] = c;
-            painter.DrawText(font, one.ToString(), new UiVec2(x, y), size, colour);
-            x += font.MeasureWidth(one, size) + spacing;
-        }
-    }
+    /// <summary>The loading caption with its pulse of dots, made once rather than every frame.</summary>
+    private static readonly string[] LoadingCaptions = ["LOADING", "LOADING.", "LOADING..", "LOADING..."];
 
     /// <summary>Breaks a paragraph into lines that fit a width, greedily, to at most a few lines.</summary>
     private static List<string> WrapLines(UiFont font, string text, float size, float maxWidth, int maxLines)

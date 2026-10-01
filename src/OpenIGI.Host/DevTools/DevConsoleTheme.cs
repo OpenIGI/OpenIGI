@@ -107,23 +107,23 @@ public sealed class DevConsoleTheme
     public static float CornerRadius => 0f;
 
     /// <summary>Gets or sets the colour of a token that resolved to a command.</summary>
-    public Bgra32 SyntaxCommand { get; set; } = Bgra32.FromRgb(121, 192, 255);
+    public Bgra32 SyntaxCommand { get; set; } = UiPalette.Info;
 
     /// <summary>Gets or sets the colour of a token that resolved to a console variable.</summary>
-    public Bgra32 SyntaxVariable { get; set; } = Bgra32.FromRgb(126, 231, 135);
+    public Bgra32 SyntaxVariable { get; set; } = UiPalette.Success;
 
     /// <summary>Gets or sets the colour of a token that resolved to an alias.</summary>
     public Bgra32 SyntaxAlias { get; set; } = Bgra32.FromRgb(210, 168, 255);
 
     /// <summary>Gets or sets the colour of a numeric argument.</summary>
-    public Bgra32 SyntaxNumber { get; set; } = Bgra32.FromRgb(255, 166, 87);
+    public Bgra32 SyntaxNumber { get; set; } = UiPalette.AccentLight;
 
     /// <summary>Gets or sets the colour of a quoted argument.</summary>
     public Bgra32 SyntaxString { get; set; } = Bgra32.FromRgb(165, 214, 255);
 
     /// <summary>Gets or sets the colour of the inline completion shown ahead of the caret.</summary>
     /// <remarks>Must read as a suggestion rather than as typed text, or the reader cannot tell what they have actually written.</remarks>
-    public Bgra32 SyntaxGhost { get; set; } = Bgra32.FromRgb(86, 96, 107);
+    public Bgra32 SyntaxGhost { get; set; } = UiPalette.TextDisabled;
 
     /// <summary>Gets the colour a line of the given severity is drawn in.</summary>
     /// <param name="severity">The line's severity.</param>
@@ -192,23 +192,27 @@ public sealed class DevConsoleTheme
 
             case ConsolePalette.Dark:
             default:
-                Ui.Panel = Bgra32.FromRgb(16, 18, 22);
-                Ui.Surface = Bgra32.FromRgb(30, 34, 40);
-                Ui.SurfaceRaised = Bgra32.FromRgb(38, 43, 50);
-                Ui.Border = Bgra32.FromRgb(96, 104, 114);
-                Ui.Text = Bgra32.FromRgb(224, 228, 233);
-                Ui.TextMuted = Bgra32.FromRgb(150, 158, 168);
-                Ui.TextDisabled = Bgra32.FromRgb(104, 112, 122);
+                // The design's ink and warm greys, made solid: the design's white hairlines at .08 to .12
+                // over its ink come out at these values, without picking up the scene behind them.
+                Ui.Panel = UiPalette.Ink;
+                Ui.Surface = Bgra32.FromRgb(19, 21, 23);
+                Ui.SurfaceRaised = Bgra32.FromRgb(27, 29, 31);
+                Ui.Border = Bgra32.FromRgb(42, 44, 46);
+                Ui.Text = UiPalette.Text;
+                Ui.TextMuted = UiPalette.TextMuted;
+                Ui.TextDisabled = UiPalette.TextDisabled;
                 break;
         }
 
-        Ui.Accent = Bgra32.FromRgb(240, 176, 84);
-        Ui.Selection = Bgra32.FromRgba(58, 110, 190, 190);
-        Ui.FocusFill = Ui.Accent.WithAlpha(28);
-        Ui.Info = Bgra32.FromRgb(121, 192, 255);
-        Ui.Success = Bgra32.FromRgb(126, 231, 135);
-        Ui.Warning = Bgra32.FromRgb(240, 176, 84);
-        Ui.Danger = Bgra32.FromRgb(248, 113, 113);
+        // The design's status colours, as the launcher's log uses them: INFO blue, WARN amber, ERROR red.
+        Ui.Accent = UiPalette.Accent;
+        Ui.AccentHover = UiPalette.AccentHover;
+        Ui.Selection = UiPalette.AccentAt(0.32f);
+        Ui.FocusFill = UiPalette.AccentAt(0.1f);
+        Ui.Info = UiPalette.Info;
+        Ui.Success = UiPalette.Success;
+        Ui.Warning = UiPalette.Accent;
+        Ui.Danger = UiPalette.Danger;
         Ui.Shadow = Bgra32.FromRgba(0, 0, 0, 160);
     }
 }

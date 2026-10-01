@@ -8,11 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- The abstraction projects only. OpenIGI.UI draws through IGraphicsDevice / SpriteBatch and
-         reads devices through OpenIGI.Input; it never references a concrete backend
-         (OpenIGI.Rendering.Vulkan), which is wired in the app composition root. See README.md. -->
+    <!-- No graphics project at all. OpenIGI.UI draws through its own IUiRenderer seam and reads devices
+         through OpenIGI.Input, so the same widgets run in the game (OpenIGI.UI.Rhi, over the sprite
+         batch) and in the launcher (OpenIGI.UI.Skia, over a Skia canvas). See README.md. -->
     <ProjectReference Include="..\OpenIGI.Core\OpenIGI.Core.csproj" />
-    <ProjectReference Include="..\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
     <ProjectReference Include="..\OpenIGI.Input\OpenIGI.Input.csproj" />
   </ItemGroup>
 

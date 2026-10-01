@@ -1,4 +1,4 @@
-using OpenIGI.Rendering;
+using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Layout;
 
 namespace OpenIGI.UI;
@@ -6,7 +6,7 @@ namespace OpenIGI.UI;
 /// <summary>One quad of a rounded figure: where it goes, and what it samples.</summary>
 /// <param name="Destination">The piece's rectangle in the caller's own coordinates.</param>
 /// <param name="Source">The piece's rectangle in the atlas, mirrored where the piece is.</param>
-public readonly record struct NineSlicePiece(UiRect Destination, RectF Source);
+public readonly record struct NineSlicePiece(UiRect Destination, UiRect Source);
 
 /// <summary>
 /// One stretchable sprite in a surface atlas: a square corner, described once and drawn into all four
@@ -26,7 +26,7 @@ public readonly record struct NineSlicePiece(UiRect Destination, RectF Source);
 /// <param name="Texture">The atlas the corner lives in.</param>
 /// <param name="Source">The top-left corner's rectangle within the atlas, in texture coordinates.</param>
 /// <param name="CornerPixels">The corner's size in texels, which is also the radius it draws at 1:1.</param>
-public readonly record struct NineSlice(TextureHandle Texture, RectF Source, float CornerPixels)
+public readonly record struct NineSlice(UiImage Texture, UiRect Source, float CornerPixels)
 {
     /// <summary>Gets a value indicating whether the slice refers to a real texture.</summary>
     public bool IsValid => Texture.IsValid && CornerPixels > 0f;
@@ -98,11 +98,11 @@ public readonly record struct NineSlice(TextureHandle Texture, RectF Source, flo
     }
 
     /// <summary>The single solid texel at the corner's inside, which the middle is filled from.</summary>
-    private RectF Inside()
+    private UiRect Inside()
     {
         float texelX = Source.Width <= 0f ? 0f : Source.Width / MathF.Max(1f, CornerPixels);
         float texelY = Source.Height <= 0f ? 0f : Source.Height / MathF.Max(1f, CornerPixels);
-        return new RectF(
+        return new UiRect(
             Source.X + Source.Width - (texelX * 0.5f),
             Source.Y + Source.Height - (texelY * 0.5f),
             0f,
@@ -117,7 +117,7 @@ public readonly record struct NineSlice(TextureHandle Texture, RectF Source, flo
     /// Mirroring is expressed by moving the origin to the far edge and negating the extent, so the
     /// sprite batch interpolates the texture coordinates backwards without needing a flip flag.
     /// </remarks>
-    public RectF Corner(bool right, bool bottom) => new(
+    public UiRect Corner(bool right, bool bottom) => new(
         right ? Source.X + Source.Width : Source.X,
         bottom ? Source.Y + Source.Height : Source.Y,
         right ? -Source.Width : Source.Width,
@@ -138,10 +138,10 @@ public readonly record struct NineSlice(TextureHandle Texture, RectF Source, flo
     /// dark fill over a light background that shows as a seam.
     /// </para>
     /// </remarks>
-    public RectF HorizontalEdge(bool bottom)
+    public UiRect HorizontalEdge(bool bottom)
     {
         float texel = Source.Width <= 0f ? 0f : Source.Width / MathF.Max(1f, CornerPixels);
-        return new RectF(
+        return new UiRect(
             Source.X + Source.Width - (texel * 0.5f),
             bottom ? Source.Y + Source.Height : Source.Y,
             0f,
@@ -152,10 +152,10 @@ public readonly record struct NineSlice(TextureHandle Texture, RectF Source, flo
     /// <param name="right">Whether this is the right edge.</param>
     /// <returns>The rectangle covering the corner's inner row.</returns>
     /// <remarks>Sampled through the middle of the row, for the reason <see cref="HorizontalEdge"/> gives.</remarks>
-    public RectF VerticalEdge(bool right)
+    public UiRect VerticalEdge(bool right)
     {
         float texel = Source.Height <= 0f ? 0f : Source.Height / MathF.Max(1f, CornerPixels);
-        return new RectF(
+        return new UiRect(
             right ? Source.X + Source.Width : Source.X,
             Source.Y + Source.Height - (texel * 0.5f),
             right ? -Source.Width : Source.Width,

@@ -260,7 +260,7 @@ public sealed class DeveloperConsole : IDisposable
         SyncViewport(context);
         SyncPanels();
 
-        var painter = new UiPainter(batch, context);
+        var painter = UiPainter.Create(batch, context);
         painter.PushOpacity(DevConsoleCVars.Opacity.Value);
 
         _layer.Measure(context, context.Viewport);

@@ -78,7 +78,7 @@ public sealed class DebugOverlayRendererTests
 
     private static UiFont TestFont()
     {
-        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Saira-Regular.ttf");
+        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Barlow-Regular.ttf");
         return UiFont.ForMeasurement(FontAtlasBuilder.Build(File.ReadAllBytes(path), pixelHeight: 48f));
     }
 }

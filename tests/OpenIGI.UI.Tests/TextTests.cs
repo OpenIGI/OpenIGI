@@ -6,14 +6,14 @@ namespace OpenIGI.UI.Tests;
 
 /// <summary>
 /// Covers atlas packing and text measurement without a GL context. The atlas is built from the exact
-/// Saira faces the game ships, so a font that fails to parse or pack in the build fails here too.
+/// Barlow faces the game ships, so a font that fails to parse or pack in the build fails here too.
 /// </summary>
 public sealed class TextTests
 {
     private static string FontPath(string file) =>
         Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", file);
 
-    private static byte[] Saira() => File.ReadAllBytes(FontPath("Saira-Regular.ttf"));
+    private static byte[] Barlow() => File.ReadAllBytes(FontPath("Barlow-Regular.ttf"));
 
     private static byte[] Mono() => File.ReadAllBytes(FontPath("JetBrainsMono-Regular.ttf"));
 
@@ -107,7 +107,7 @@ public sealed class TextTests
     [Fact]
     public void Coverage_atlas_covers_printable_ascii()
     {
-        FontAtlasData atlas = FontAtlasBuilder.Build(Saira(), pixelHeight: 48f);
+        FontAtlasData atlas = FontAtlasBuilder.Build(Barlow(), pixelHeight: 48f);
         Assert.Equal(FontAtlasKind.Coverage, atlas.Kind);
         Assert.Equal(FontAtlasBuilder.AsciiPrintable.Count, atlas.Glyphs.Count);
         Assert.True(atlas.Height > 0);
@@ -118,7 +118,7 @@ public sealed class TextTests
     [Fact]
     public void Sdf_atlas_carries_its_distance_parameters()
     {
-        FontAtlasData atlas = FontAtlasBuilder.Build(Saira(), 48f, FontAtlasKind.SignedDistanceField);
+        FontAtlasData atlas = FontAtlasBuilder.Build(Barlow(), 48f, FontAtlasKind.SignedDistanceField);
         Assert.Equal(FontAtlasKind.SignedDistanceField, atlas.Kind);
         Assert.True(atlas.SdfPadding > 0);
         Assert.True(atlas.SdfPixelDistScale > 0f);
@@ -127,7 +127,7 @@ public sealed class TextTests
     [Fact]
     public void Letter_glyphs_have_ink_and_space_does_not()
     {
-        var font = UiFont.ForMeasurement(FontAtlasBuilder.Build(Saira(), 48f));
+        var font = UiFont.ForMeasurement(FontAtlasBuilder.Build(Barlow(), 48f));
         Assert.True(font.GetGlyph('A').HasBitmap);
         Assert.False(font.GetGlyph(' ').HasBitmap);
         Assert.True(font.GetGlyph(' ').Advance > 0f);
@@ -136,7 +136,7 @@ public sealed class TextTests
     [Fact]
     public void Measurement_grows_with_length_and_scales_with_size()
     {
-        var font = UiFont.ForMeasurement(FontAtlasBuilder.Build(Saira(), 48f));
+        var font = UiFont.ForMeasurement(FontAtlasBuilder.Build(Barlow(), 48f));
 
         float shortWidth = font.MeasureWidth("AB", 32f);
         float longWidth = font.MeasureWidth("ABCDEF", 32f);
@@ -151,7 +151,7 @@ public sealed class TextTests
     [Fact]
     public void Measurement_counts_lines_for_height()
     {
-        var font = UiFont.ForMeasurement(FontAtlasBuilder.Build(Saira(), 48f));
+        var font = UiFont.ForMeasurement(FontAtlasBuilder.Build(Barlow(), 48f));
 
         // Identical lines so the widest line is unambiguous and the width is expected to match.
         UiVec2 oneLine = font.Measure("abc", 32f);
@@ -163,7 +163,7 @@ public sealed class TextTests
     [Fact]
     public void Unknown_codepoint_falls_back_rather_than_throwing()
     {
-        var font = UiFont.ForMeasurement(FontAtlasBuilder.Build(Saira(), 48f));
+        var font = UiFont.ForMeasurement(FontAtlasBuilder.Build(Barlow(), 48f));
         GlyphInfo fallback = font.GetGlyph('☃'); // snowman, not in the ASCII atlas
         Assert.Equal('?', fallback.Codepoint);
     }
@@ -176,11 +176,11 @@ public sealed class TextTests
         string dir = Path.Combine(Path.GetTempPath(), "openigi-ui-tests", Guid.NewGuid().ToString("N"));
         try
         {
-            FontAtlasData built = FontAtlasCache.LoadOrBuild(dir, Saira(), 48f);
-            string key = FontAtlasCache.ComputeKey(Saira(), 48f, FontAtlasKind.Coverage, FontAtlasBuilder.AsciiPrintable, 512, 4, 128);
+            FontAtlasData built = FontAtlasCache.LoadOrBuild(dir, Barlow(), 48f);
+            string key = FontAtlasCache.ComputeKey(Barlow(), 48f, FontAtlasKind.Coverage, FontAtlasBuilder.AsciiPrintable, 512, 4, 128);
             Assert.True(File.Exists(Path.Combine(dir, $"font-{key}.atlas")));
 
-            FontAtlasData reloaded = FontAtlasCache.LoadOrBuild(dir, Saira(), 48f);
+            FontAtlasData reloaded = FontAtlasCache.LoadOrBuild(dir, Barlow(), 48f);
             Assert.Equal(built.Width, reloaded.Width);
             Assert.Equal(built.Height, reloaded.Height);
             Assert.Equal(built.Glyphs.Count, reloaded.Glyphs.Count);
@@ -198,8 +198,8 @@ public sealed class TextTests
     [Fact]
     public void Cache_key_changes_with_pixel_height()
     {
-        string a = FontAtlasCache.ComputeKey(Saira(), 32f, FontAtlasKind.Coverage, FontAtlasBuilder.AsciiPrintable, 512, 4, 128);
-        string b = FontAtlasCache.ComputeKey(Saira(), 48f, FontAtlasKind.Coverage, FontAtlasBuilder.AsciiPrintable, 512, 4, 128);
+        string a = FontAtlasCache.ComputeKey(Barlow(), 32f, FontAtlasKind.Coverage, FontAtlasBuilder.AsciiPrintable, 512, 4, 128);
+        string b = FontAtlasCache.ComputeKey(Barlow(), 48f, FontAtlasKind.Coverage, FontAtlasBuilder.AsciiPrintable, 512, 4, 128);
         Assert.NotEqual(a, b);
     }
 }

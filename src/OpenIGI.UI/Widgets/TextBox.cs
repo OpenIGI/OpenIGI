@@ -1,5 +1,5 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Rendering;
+using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Layout;
 
@@ -97,8 +97,8 @@ public sealed class TextBox : Control
         string drawn = _text.Length == 0 ? Placeholder : _text;
         Bgra32 color = _text.Length == 0 ? Theme.TextMuted : text;
 
-        painter.FillRect(Bounds, Theme.Panel.WithAlpha((byte)(175 + (45 * focus))), BlendMode.AlphaBlend);
-        painter.StrokeRect(Bounds, painter.Context.Px(1f), border, BlendMode.AlphaBlend);
+        painter.FillRect(Bounds, Theme.Panel.WithAlpha((byte)(175 + (45 * focus))), UiBlend.AlphaBlend);
+        painter.StrokeRect(Bounds, painter.Context.Px(1f), border, UiBlend.AlphaBlend);
         painter.DrawText(
             Theme.Body,
             drawn,
@@ -114,7 +114,7 @@ public sealed class TextBox : Control
             painter.FillRect(
                 new UiRect(caretX, Bounds.Y + ((Bounds.Height - caretHeight) * 0.5f), painter.Context.Px(2f), caretHeight),
                 Theme.Accent,
-                BlendMode.AlphaBlend);
+                UiBlend.AlphaBlend);
         }
     }
 }

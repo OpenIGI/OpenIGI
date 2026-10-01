@@ -12,6 +12,8 @@
     <ProjectReference Include="..\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
     <ProjectReference Include="..\OpenIGI.Input\OpenIGI.Input.csproj" />
     <ProjectReference Include="..\OpenIGI.UI\OpenIGI.UI.csproj" />
+    <ProjectReference Include="..\OpenIGI.UI.Rhi\OpenIGI.UI.Rhi.csproj" />
+    <ProjectReference Include="..\OpenIGI.UI.Kit\OpenIGI.UI.Kit.csproj" />
   </ItemGroup>
 
 </Project>

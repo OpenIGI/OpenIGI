@@ -4,7 +4,6 @@
     <ProjectReference Include="..\OpenIGI.Core\OpenIGI.Core.csproj" />
     <ProjectReference Include="..\OpenIGI.Platform\OpenIGI.Platform.csproj" />
     <ProjectReference Include="..\OpenIGI.Input\OpenIGI.Input.csproj" />
-    <ProjectReference Include="..\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
   </ItemGroup>
 
   <ItemGroup>

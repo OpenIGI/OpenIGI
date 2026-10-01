@@ -13,10 +13,10 @@ namespace OpenIGI.Desktop.Tests;
 public sealed class RemasteredHudPresentationTests
 {
     [Theory]
-    [InlineData(1f, 91, 210, 141)]
-    [InlineData(0.55f, 240, 176, 84)]
-    [InlineData(0.28f, 235, 92, 82)]
-    [InlineData(0f, 235, 92, 82)]
+    [InlineData(1f, 127, 212, 154)]
+    [InlineData(0.55f, 232, 163, 61)]
+    [InlineData(0.28f, 255, 122, 102)]
+    [InlineData(0f, 255, 122, 102)]
     public void HealthColourUsesClearHealthBands(float fraction, byte red, byte green, byte blue)
     {
         Bgra32 colour = RemasteredHudPresentation.HealthColour(fraction);

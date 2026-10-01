@@ -4,19 +4,22 @@ namespace OpenIGI.UI.Layout;
 /// An axis-aligned rectangle in the interface's pixel space, held as a position and a size.
 /// </summary>
 /// <remarks>
-/// Distinct from <see cref="OpenIGI.Rendering.RectF"/> only in which project it lives in: the layout
-/// solver is in <c>OpenIGI.UI</c> and works before anything is handed to the renderer, so it uses this
-/// type and converts to <see cref="OpenIGI.Rendering.RectF"/> at the draw boundary. Position-and-size,
-/// origin top-left, Y growing downwards, matching <see cref="OpenIGI.Rendering.Vertex2D"/>.
+/// The framework's only rectangle: layout boxes, clip rectangles and texture-coordinate windows alike,
+/// so nothing here names a graphics backend's type. Position-and-size, origin top-left, Y growing
+/// downwards, matching every renderer's 2D convention. A texture window may carry a negative size to
+/// mirror the image.
 /// </remarks>
 /// <param name="X">The left edge.</param>
 /// <param name="Y">The top edge.</param>
-/// <param name="Width">The width. Never negative once a layout pass has run.</param>
-/// <param name="Height">The height. Never negative once a layout pass has run.</param>
+/// <param name="Width">The width. Never negative for a laid-out box.</param>
+/// <param name="Height">The height. Never negative for a laid-out box.</param>
 public readonly record struct UiRect(float X, float Y, float Width, float Height)
 {
     /// <summary>Gets the empty rectangle at the origin.</summary>
     public static UiRect Empty => default;
+
+    /// <summary>Gets the unit rectangle (0,0)–(1,1): a whole image in texture coordinates.</summary>
+    public static UiRect Unit => new(0f, 0f, 1f, 1f);
 
     /// <summary>Gets the right edge.</summary>
     public float Right => X + Width;
@@ -91,8 +94,4 @@ public readonly record struct UiRect(float X, float Y, float Width, float Height
         float bottom = MathF.Min(Bottom, other.Bottom);
         return right <= left || bottom <= top ? Empty : FromEdges(left, top, right, bottom);
     }
-
-    /// <summary>Converts to the renderer's rectangle type for a draw call.</summary>
-    /// <returns>The equivalent <see cref="OpenIGI.Rendering.RectF"/>.</returns>
-    public OpenIGI.Rendering.RectF ToRectF() => new(X, Y, Width, Height);
 }

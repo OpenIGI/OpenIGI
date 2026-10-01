@@ -20,8 +20,8 @@
     <!-- The interface font, because the HUD renderers that moved here load it on Load() and a test
          that cannot load it is testing nothing. The shipped file rather than a copy, for the reason
          the desktop tests give: a copy is free to drift away from what the game draws with. -->
-    <None Include="..\..\apps\OpenIGI.Composition\Assets\fonts\Saira-Regular.ttf"
-          Link="Assets\fonts\Saira-Regular.ttf"
+    <None Include="..\..\apps\OpenIGI.Composition\Assets\fonts\Barlow-Regular.ttf"
+          Link="Assets\fonts\Barlow-Regular.ttf"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

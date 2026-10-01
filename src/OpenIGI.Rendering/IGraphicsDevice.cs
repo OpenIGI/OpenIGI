@@ -118,6 +118,21 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void DrawLoadingBackdrop(TextureHandle texture, in LoadingBackdropSettings settings);
 
+    /// <summary>Blurs the frame drawn so far into a few levels of increasing blur, for the interface's frosted glass.</summary>
+    /// <returns>The levels, valid until the next call or the end of the frame; empty on a device that cannot.</returns>
+    /// <remarks>
+    /// <para>
+    /// Called once a frame, after the scene and before the interface: the menu shell draws its backdrop and
+    /// every glass panel by sampling these in screen space. Like <see cref="CopyFrameToTexture"/> it closes
+    /// the pass in flight and the next draw reopens it on top, so nothing drawn is lost.
+    /// </para>
+    /// <para>
+    /// The levels hold linear light, the form an sRGB image's sampler hands the 2D pass, so they draw
+    /// through the ordinary sprite path with no special shading.
+    /// </para>
+    /// </remarks>
+    BackdropBlur BlurFrameForBackdrop() => BackdropBlur.None;
+
     /// <summary>Allocates a texture and uploads its pixels. Mirrors <c>AllocTexture</c> + <c>DownloadTexture</c>.</summary>
     /// <param name="description">The texture's size, mip count and sampling.</param>
     /// <param name="pixels">The whole mip chain, largest level first, each level tightly packed.</param>

@@ -1,15 +1,15 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Rendering;
+using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Focus;
 using OpenIGI.UI.Layout;
 
 namespace OpenIGI.UI.Widgets;
 
-/// <summary>A horizontal row of tabs with an underline that slides to the selected one.</summary>
+/// <summary>A segmented control: a row of tabs in a glass tray, with an amber block that slides to the selected one.</summary>
 /// <remarks>
 /// One focusable control for the whole row: left and right move between tabs while it holds focus, and
-/// the accent underline springs across to the selection rather than jumping. Each tab additionally owns a
+/// the accent block springs across to the selection rather than jumping. Each tab additionally owns a
 /// rectangle of the strip, resolved at layout time, so a pointer can hover and click <em>a</em> tab rather
 /// than the strip as a whole — without that, clicking Graphics or Audio only ever re-activated whichever
 /// tab was already current. The screen listens to <see cref="SelectionChanged"/> and swaps the panel
@@ -19,7 +19,9 @@ namespace OpenIGI.UI.Widgets;
 public class TabStrip : Control
 {
     private readonly List<string> _tabs;
-    private readonly Spring _indicator = new(0f, smoothTime: 0.12f);
+    private readonly Spring _indicator = new(0f, smoothTime: 0.08f);
+    private readonly Spring _indicatorWidth = new(0f, smoothTime: 0.08f);
+    private readonly Dictionary<string, string> _upper = new(StringComparer.Ordinal);
     private int _selected;
     private int _hovered = -1;
 
@@ -42,11 +44,17 @@ public class TabStrip : Control
     /// <summary>Raised when the selected tab changes, with the new index.</summary>
     public event Action<int>? SelectionChanged;
 
-    /// <summary>Gets or sets the gap between tabs, in design units.</summary>
-    public float Spacing { get; set; } = 28f;
+    /// <summary>Gets or sets the gap between segments, and between the segments and the tray, in design units.</summary>
+    public float Spacing { get; set; } = 4f;
 
-    /// <summary>Gets or sets the padding added around each tab's caption to make its hit target, in design units.</summary>
-    public float TabPadding { get; set; } = 14f;
+    /// <summary>Gets or sets the horizontal padding either side of each segment's caption, in design units.</summary>
+    public float TabPadding { get; set; } = 28f;
+
+    /// <summary>Gets or sets a segment's height, in design units.</summary>
+    public float SegmentHeight { get; set; } = 44f;
+
+    /// <summary>Gets or sets the captions' size, in design units; zero for the theme's label size.</summary>
+    public float TextSize { get; set; }
 
     /// <summary>Gets the tab captions.</summary>
     public IReadOnlyList<string> Tabs => _tabs;
@@ -141,48 +149,56 @@ public class TabStrip : Control
         base.OnUpdate(elapsedSeconds);
         if (_selected < _tabCenters.Length)
         {
-            _indicator.Target = _tabCenters[_selected];
+            // The first frame there is a layout, the block starts where it belongs instead of sliding in.
+            if (_indicatorWidth.Value <= 0f)
+            {
+                _indicator.SnapTo(_tabRects[_selected].X);
+                _indicatorWidth.SnapTo(_tabRects[_selected].Width);
+            }
+
+            _indicator.Target = _tabRects[_selected].X;
+            _indicatorWidth.Target = _tabRects[_selected].Width;
         }
 
         _indicator.Update(elapsedSeconds);
+        _indicatorWidth.Update(elapsedSeconds);
     }
 
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
     {
-        float sizePx = context.Px(Theme.HeadingTextSize * 0.5f);
-        float spacing = context.Px(Spacing);
-        float width = 0f;
-        for (int i = 0; i < _tabs.Count; i++)
+        float sizePx = context.Px(CaptionSize);
+        float gap = context.Px(Spacing);
+        float pad = context.Px(TabPadding);
+        float width = gap;
+        foreach (string tab in _tabs)
         {
-            width += Theme.Body.MeasureWidth(_tabs[i], sizePx) + (i > 0 ? spacing : 0f);
+            width += UiPainter.MeasureLabel(Theme.Heading, Upper(tab), sizePx, Theme.LabelTracking) + (pad * 2f) + gap;
         }
 
-        return new UiVec2(width + context.Px(TabPadding), Theme.Body.LineHeight(sizePx) + context.Px(18f));
+        return new UiVec2(width, context.Px(SegmentHeight) + (gap * 2f));
     }
 
     /// <inheritdoc/>
     protected override void ArrangeContent(LayoutContext context, UiRect contentRect)
     {
-        float sizePx = context.Px(Theme.HeadingTextSize * 0.5f);
-        float spacing = context.Px(Spacing);
+        float sizePx = context.Px(CaptionSize);
+        float gap = context.Px(Spacing);
         float pad = context.Px(TabPadding);
+        float height = context.Px(SegmentHeight);
 
         _tabRects = new UiRect[_tabs.Count];
         _tabCenters = new float[_tabs.Count];
         _tabWidths = new float[_tabs.Count];
 
-        float x = contentRect.X + (pad * 0.5f);
+        float x = contentRect.X + gap;
         for (int i = 0; i < _tabs.Count; i++)
         {
-            float w = Theme.Body.MeasureWidth(_tabs[i], sizePx);
+            float w = UiPainter.MeasureLabel(Theme.Heading, Upper(_tabs[i]), sizePx, Theme.LabelTracking);
             _tabWidths[i] = w;
-            _tabCenters[i] = x + (w * 0.5f);
-
-            // The hit target reaches half the padding either side of the caption and the strip's full
-            // height, so the gap between two tabs belongs to the nearer of them rather than to nothing.
-            _tabRects[i] = new UiRect(x - (pad * 0.5f), contentRect.Y, w + pad, contentRect.Height);
-            x += w + spacing;
+            _tabRects[i] = new UiRect(x, contentRect.Y + gap, w + (pad * 2f), height);
+            _tabCenters[i] = _tabRects[i].Center.X;
+            x += _tabRects[i].Width + gap;
         }
     }
 
@@ -194,42 +210,59 @@ public class TabStrip : Control
             return;
         }
 
-        float sizePx = painter.Context.Px(Theme.HeadingTextSize * 0.5f);
+        LayoutContext context = painter.Context;
+        float appear = Visual.Appear;
         float focus = Visual.Focus;
-        float underlineY = Bounds.Bottom - painter.Context.Px(5f);
 
-        // The rail the indicator runs along, so the row still reads as a set of tabs before anything moves.
+        // The tray: dark glass with a hairline, the segments set inside it.
+        painter.FillRect(Bounds, UiPalette.Fade(UiPalette.Ink.WithAlpha(153), appear));
+        painter.StrokeRect(Bounds, context.Px(1f), UiPalette.Fade(Interpolate.Lerp(Theme.Border, UiPalette.AccentAt(0.45f), focus), appear));
+
+        // The sliding block; before its first update it is drawn where the selection is.
+        UiRect selected = _tabRects[_selected];
+        if (_indicatorWidth.Value <= 0f)
+        {
+            _indicator.SnapTo(selected.X);
+            _indicatorWidth.SnapTo(selected.Width);
+        }
+
         painter.FillRect(
-            new UiRect(Bounds.X, underlineY, Bounds.Width, painter.Context.Px(1f)),
-            Theme.Border.WithAlpha(70),
-            BlendMode.AlphaBlend);
+            new UiRect(_indicator.Value, selected.Y, _indicatorWidth.Value, selected.Height),
+            UiPalette.Fade(_hovered == _selected ? Theme.AccentHover : Theme.Accent, appear));
 
-        // The pointer answers in the CAPTION, not in a block behind it: a filled rectangle under a tab is
-        // as loud as the selection itself and turns a quiet row of words into a row of buttons. Lifting the
-        // hovered caption out of the muted colour says the same thing and says it in the tab's own terms —
-        // muted for the rest, bright for the one under the pointer, accent for the one you are on.
+        float sizePx = context.Px(CaptionSize);
         for (int i = 0; i < _tabs.Count; i++)
         {
-            bool isSelected = i == _selected;
-            Bgra32 color = isSelected
-                ? Interpolate.Lerp(Theme.Text, Theme.Accent, MathF.Max(0.4f, focus))
-                : _hovered == i ? Theme.Text
-                : Theme.TextMuted;
+            UiRect rect = _tabRects[i];
 
-            float textY = Bounds.Y + ((Bounds.Height - painter.Context.Px(6f) - Theme.Body.LineHeight(sizePx)) * 0.5f);
-            painter.DrawText(Theme.Body, _tabs[i], new UiVec2(_tabRects[i].X + (painter.Context.Px(TabPadding) * 0.5f), textY), sizePx, color);
+            // How much of the block is under this segment decides its caption's colour, so the dark text
+            // follows the amber across rather than flipping when the selection lands.
+            float overlap = MathF.Max(0f, MathF.Min(rect.Right, _indicator.Value + _indicatorWidth.Value) - MathF.Max(rect.X, _indicator.Value));
+            float covered = rect.Width <= 0f ? 0f : Math.Clamp(overlap / rect.Width, 0f, 1f);
+            Bgra32 rest = _hovered == i ? Theme.TextBright : UiPalette.TextTertiary;
+            Bgra32 color = Interpolate.Lerp(rest, Theme.OnAccent, covered);
+
+            string caption = Upper(_tabs[i]);
+            painter.DrawLabel(
+                Theme.Heading,
+                caption,
+                new UiVec2(rect.X + ((rect.Width - _tabWidths[i]) * 0.5f), UiRowStyle.CapsCenterY(Theme.Heading, sizePx, rect)),
+                sizePx,
+                UiPalette.Fade(color, appear),
+                Theme.LabelTracking);
         }
+    }
 
-        // The sliding underline. Snap it into place the first frame before it has a target.
-        if (_indicator.Value <= 0f && _selected < _tabCenters.Length)
+    private float CaptionSize => TextSize > 0f ? TextSize : Theme.LabelTextSize;
+
+    private string Upper(string caption)
+    {
+        if (!_upper.TryGetValue(caption, out string? upper))
         {
-            _indicator.SnapTo(_tabCenters[_selected]);
+            upper = caption.ToUpperInvariant();
+            _upper[caption] = upper;
         }
 
-        float indicatorWidth = _tabWidths[_selected];
-        painter.FillRect(
-            new UiRect(_indicator.Value - (indicatorWidth * 0.5f), underlineY, indicatorWidth, painter.Context.Px(3f)),
-            Theme.Accent,
-            BlendMode.AlphaBlend);
+        return upper;
     }
 }

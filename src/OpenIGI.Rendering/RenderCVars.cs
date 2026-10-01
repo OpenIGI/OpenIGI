@@ -3867,7 +3867,7 @@ public static class RenderCVars
     /// <para>
     /// Two entirely separate presentations of the same data. Off is the original's: a low-resolution
     /// <c>mapcomputer.mef</c> panel held up in front of the camera, its aperture filled by a 4:3 screen
-    /// set in the game's own bitmap faces. On is a full-screen interface set in the shell's Saira,
+    /// set in the game's own bitmap faces. On is a full-screen interface set in the shell's Barlow,
     /// reached through a camera move and a phosphor display transform, with no device model at all.
     /// </para>
     /// <para>
@@ -3965,7 +3965,7 @@ public static class RenderCVars
     /// <para>
     /// Presentation only. Both paths draw the same messages at the same moments, in the same order, with
     /// the same typewriter: when a message arrives is decided by the simulation, and neither renderer can
-    /// reach that. Off is the original's placement and bitmap face; on is a card set in the shell's Saira.
+    /// reach that. Off is the original's placement and bitmap face; on is a card set in the shell's Barlow.
     /// </para>
     /// <para>
     /// This preference only applies while <see cref="RemasteredHud"/> is on. The retail HUD always uses

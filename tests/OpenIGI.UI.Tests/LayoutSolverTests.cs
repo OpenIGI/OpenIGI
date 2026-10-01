@@ -281,7 +281,7 @@ public sealed class LayoutSolverTests
         // reports one line, so an auto row sized from that pass is one line tall however narrow the column
         // it actually lands in turns out to be.
         LayoutContext context = Reference();
-        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Saira-Regular.ttf");
+        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Barlow-Regular.ttf");
         UiFont font = UiFont.ForMeasurement(FontAtlasBuilder.Build(File.ReadAllBytes(path), 48f));
 
         var outer = new Grid();

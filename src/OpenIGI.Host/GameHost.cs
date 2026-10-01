@@ -38,6 +38,7 @@ using OpenIGI.Rendering.Presets;
 using OpenIGI.Rendering;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.UI.Animation;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
@@ -1377,8 +1378,7 @@ internal sealed partial class GameHost : IDisposable
         MissionWarmer? missionWarmer = null;
         MissionPreviewLoader? previewLoader = null;
         _menuCameras = MenuCameraLibrary.Empty;
-        UiFont? shellBodyFont = null;
-        UiFont? shellHeadingFont = null;
+        IgiTypography? shellTypography = null;
 
         // Hoisted so a title switch can rebuild the shell around them. Neither belongs to a game: the
         // host seam calls back into this class, and the save store is the player's, one directory for
@@ -1464,14 +1464,15 @@ internal sealed partial class GameHost : IDisposable
             previewLoader = new MissionPreviewLoader(
                 _gamePath, _missions, _magic, _giCache, _menuCameras, _previewContext, _logger, _work);
 
-            // Saira for body, Saira Condensed as a distance field for the headings the shell sets large.
-            shellBodyFont = UiFontLibrary.Load(_device, UiFontLibrary.Body, 48f);
-            shellHeadingFont = UiFontLibrary.Load(_device, UiFontLibrary.Heading, 64f, FontAtlasKind.SignedDistanceField);
-            var shellTheme = new UiTheme(shellBodyFont, shellHeadingFont);
+            // The design's four faces — Barlow, Barlow Condensed in two weights, JetBrains Mono — the same
+            // set the launcher draws with, uploaded once and shared by every page of the shell.
+            shellTypography = UiFontLibrary.Typography(_device);
+            UiTheme shellTheme = shellTypography.CreateTheme();
 
             // Held so the mission-entry shot can typeset its title with the same faces the shell uses.
-            _shellBodyFont = shellBodyFont;
-            _shellHeadingFont = shellHeadingFont;
+            _shellBodyFont = shellTypography.Body;
+            _shellHeadingFont = shellTypography.Display;
+            _shellType = shellTypography;
 
             // The real DefineMission data, resolved to display strings through the language table, in the
             // order the CAMPAIGN CHAIN gives — each descriptor names its successor. The registry's own
@@ -1885,9 +1886,9 @@ internal sealed partial class GameHost : IDisposable
                 previewLoader = new MissionPreviewLoader(
                     _gamePath, _missions, _magic, _giCache, _menuCameras, _previewContext, _logger, _work);
 
-                if (shellHost is not null && shellBodyFont is not null && shellHeadingFont is not null && saves is not null)
+                if (shellHost is not null && shellTypography is not null && saves is not null)
                 {
-                    shell = new Shell(BuildShellContext(shellHost, new UiTheme(shellBodyFont, shellHeadingFont), saves));
+                    shell = new Shell(BuildShellContext(shellHost, shellTypography.CreateTheme(), saves));
                     shell.OpenOn("campaign");
                 }
 
@@ -6721,7 +6722,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
 
                 _device.BeginStageTiming(RenderStage.UserInterface);
                 _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                var shellPainter = new UiPainter(batch, new LayoutContext(_window.Width, _window.Height));
+                var shellPainter = UiPainter.Create(batch, new LayoutContext(_window.Width, _window.Height));
                 batch.Begin();
 
                 // The going-in sequence's picture: the level exactly as it is drawn, before any of the
@@ -6766,15 +6767,23 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                 }
 
                 // The whole interface behind one opacity. It has to be pushed HERE rather than left to
-                // each screen's own transition, because a screen deliberately draws its top bar outside
-                // that fade and the stack draws the pointer outside every screen — so only a push around
-                // the whole draw takes all of it, chrome and cursor included.
+                // each screen's own transition, because a screen deliberately draws its header and footer
+                // outside that fade and the stack draws the pointer outside every screen — so only a push
+                // around the whole draw takes all of it, chrome and cursor included.
                 float shellOpacity = MathF.Min(
                     _entry.IsRunning ? _entry.ShellOpacity : 1f,
                     _loadSequence.ShellOpacity);
                 if (shellOpacity > 0.001f)
                 {
+                    // The frame so far — the level, the dissolve over it — blurred into the levels the
+                    // shell's backdrop and every glass panel sample. The blur closes the 2D pass, so the
+                    // batch is flushed around it and the shell draws on a painter that knows the levels.
+                    batch.End();
+                    shellPainter = UiPainter.Create(batch, shellPainter.Context, BackdropFor(_device.BlurFrameForBackdrop()));
+                    batch.Begin();
+
                     shellPainter.PushOpacity(shellOpacity);
+                    shell.DrawBackdrop(shellPainter);
                     shell.Draw(shellPainter);
                     shellPainter.PopOpacity();
                 }
@@ -7005,8 +7014,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
             _device.DestroyTexture(_dissolveTexture);
         }
 
-        shellBodyFont?.Dispose();
-        shellHeadingFont?.Dispose();
+        // The shell's faces are the device's shared set; the device's teardown takes their textures.
         _logger.Information(
             "Desktop",
             $"Shutting down after {_loop.Clock.TickCount} ticks and {_loop.Clock.FrameCount} frames.");

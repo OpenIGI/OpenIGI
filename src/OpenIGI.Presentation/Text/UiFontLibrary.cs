@@ -1,11 +1,13 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Rendering;
+using OpenIGI.UI;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI.Text;
 
 namespace OpenIGI.Presentation.Text;
 
 /// <summary>
-/// Loads the shell's Saira faces into GPU-resident <see cref="UiFont"/>s, cached to disk so the
+/// Loads the design's faces into GPU-resident <see cref="UiFont"/>s, cached to disk so the
 /// <c>stb_truetype</c> rasterisation is paid once.
 /// </summary>
 /// <remarks>
@@ -16,18 +18,18 @@ namespace OpenIGI.Presentation.Text;
 /// </remarks>
 public static class UiFontLibrary
 {
-    /// <summary>The Saira regular face used for body text.</summary>
-    public const string Body = "Saira-Regular.ttf";
+    /// <summary>The Barlow regular face used for body text.</summary>
+    public const string Body = IgiTypography.BodyFile;
 
-    /// <summary>The Saira condensed face used for headings and titles.</summary>
-    public const string Heading = "SairaCondensed-SemiBold.ttf";
+    /// <summary>The Barlow Condensed bold face used for headings and titles.</summary>
+    public const string Heading = IgiTypography.DisplayFile;
 
-    /// <summary>The Saira semibold face used for labels and letterspaced capitals.</summary>
+    /// <summary>The Barlow Condensed semibold face used for labels and letterspaced capitals.</summary>
     /// <remarks>
-    /// A heavier weight of the body face rather than a different family, so a label reads as emphasis
-    /// rather than as a second voice. The tactical computer sets nearly all of its chrome in it.
+    /// The design sets every tab, button, value and HUD label in it, uppercase and tracked. The tactical
+    /// computer sets nearly all of its chrome in it.
     /// </remarks>
-    public const string Emphasis = "Saira-SemiBold.ttf";
+    public const string Emphasis = IgiTypography.HeadingFile;
 
     /// <summary>The JetBrains Mono regular face the developer tools are set in.</summary>
     /// <remarks>
@@ -39,8 +41,8 @@ public static class UiFontLibrary
     /// their digits change, which is the difference between reading a value and chasing it.
     /// </para>
     /// <para>
-    /// Deliberately a different family from the shell's Saira: the developer tools are a separate
-    /// voice from the game's own interface, and should not be mistaken for it.
+    /// The same face the design uses for its eyebrows and key caps, so the developer tools read as part of
+    /// the same product while keeping the fixed pitch their columns depend on.
     /// </para>
     /// </remarks>
     public const string Mono = "JetBrainsMono-Regular.ttf";
@@ -72,6 +74,27 @@ public static class UiFontLibrary
     /// <param name="fileName">The font file name.</param>
     /// <returns><see langword="true"/> when the file exists.</returns>
     public static bool Exists(string fileName) => File.Exists(Path.Combine(FontsDirectory, fileName));
+
+    /// <summary>Gets a value indicating whether every face the design asks for is present to load.</summary>
+    public static bool TypographyAvailable => IgiTypography.Requests.All(request => Exists(request.FileName));
+
+    /// <summary>Gets the design's four faces on a device, loaded on first use and shared by every surface after that.</summary>
+    /// <param name="device">The device the atlases are uploaded to.</param>
+    /// <returns>The typography. Callers share it and must not dispose it; it lives as long as the device.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="device"/> is <see langword="null"/>.</exception>
+    /// <exception cref="FileNotFoundException">A font file is missing.</exception>
+    /// <remarks>
+    /// The menus, the HUD, the tactical computer, the message feed and the diagnostics overlay all set text
+    /// in the same faces, so they take them from here rather than each uploading its own copy of every
+    /// atlas. Keyed on the device, so a switch to another graphics backend uploads afresh for the new one.
+    /// </remarks>
+    public static IgiTypography Typography(IGraphicsDevice device)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        return SharedTypography.GetValue(device, d => IgiTypography.Load(request => Load(d, request.FileName, request.PixelHeight, request.Kind)));
+    }
+
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<IGraphicsDevice, IgiTypography> SharedTypography = [];
 
     /// <summary>Loads and uploads a font, rasterising and caching its atlas as needed.</summary>
     /// <param name="device">The device to upload the atlas to.</param>

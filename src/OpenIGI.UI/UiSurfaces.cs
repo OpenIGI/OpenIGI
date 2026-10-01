@@ -1,5 +1,6 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Rendering;
+using OpenIGI.UI.Drawing;
+using OpenIGI.UI.Layout;
 
 namespace OpenIGI.UI;
 
@@ -40,23 +41,23 @@ public sealed class UiSurfaces : IDisposable
     /// <summary>The atlas height.</summary>
     private const int AtlasHeight = 64;
 
-    private readonly IGraphicsDevice _device;
+    private readonly IUiImageFactory _images;
     private bool _disposed;
 
-    private UiSurfaces(IGraphicsDevice device, TextureHandle texture)
+    private UiSurfaces(IUiImageFactory images, UiImage texture)
     {
-        _device = device;
+        _images = images;
         Texture = texture;
 
-        Rounded = new NineSlice(texture, new RectF(0f, 0f, Quadrant / (float)AtlasWidth, Quadrant / (float)AtlasHeight), Quadrant);
+        Rounded = new NineSlice(texture, new UiRect(0f, 0f, Quadrant / (float)AtlasWidth, Quadrant / (float)AtlasHeight), Quadrant);
         Shadow = new NineSlice(
             texture,
-            new RectF(Quadrant * 2 / (float)AtlasWidth, 0f, Quadrant / (float)AtlasWidth, Quadrant / (float)AtlasHeight),
+            new UiRect(Quadrant * 2 / (float)AtlasWidth, 0f, Quadrant / (float)AtlasWidth, Quadrant / (float)AtlasHeight),
             Quadrant);
     }
 
     /// <summary>Gets the generated atlas.</summary>
-    public TextureHandle Texture { get; }
+    public UiImage Texture { get; }
 
     /// <summary>Gets the anti-aliased rounded-corner quadrant.</summary>
     public NineSlice Rounded { get; }
@@ -65,12 +66,12 @@ public sealed class UiSurfaces : IDisposable
     public NineSlice Shadow { get; }
 
     /// <summary>Generates the atlas and uploads it.</summary>
-    /// <param name="device">The device to upload to.</param>
+    /// <param name="images">The factory that makes the atlas image and later releases it.</param>
     /// <returns>The uploaded surfaces.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="device"/> is <see langword="null"/>.</exception>
-    public static UiSurfaces Create(IGraphicsDevice device)
+    /// <exception cref="ArgumentNullException"><paramref name="images"/> is <see langword="null"/>.</exception>
+    public static UiSurfaces Generate(IUiImageFactory images)
     {
-        ArgumentNullException.ThrowIfNull(device);
+        ArgumentNullException.ThrowIfNull(images);
 
         Bgra32[] pixels = new Bgra32[AtlasWidth * AtlasHeight];
         WriteRoundedCorner(pixels, originX: 0);
@@ -78,8 +79,8 @@ public sealed class UiSurfaces : IDisposable
         WriteInsideGuard(pixels, originX: 0);
         WriteInsideGuard(pixels, originX: Quadrant * 2);
 
-        TextureHandle texture = device.CreateTexture(new TextureDescription(AtlasWidth, AtlasHeight), pixels);
-        return new UiSurfaces(device, texture);
+        UiImage texture = images.CreateImage(AtlasWidth, AtlasHeight, pixels);
+        return new UiSurfaces(images, texture);
     }
 
     /// <summary>Releases the atlas.</summary>
@@ -91,7 +92,7 @@ public sealed class UiSurfaces : IDisposable
         }
 
         _disposed = true;
-        _device.DestroyTexture(Texture);
+        _images.DestroyImage(Texture);
     }
 
     /// <summary>

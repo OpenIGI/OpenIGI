@@ -1,7 +1,11 @@
+using OpenIGI.Frontend.Screens;
 using OpenIGI.Input;
 using OpenIGI.UI;
+using OpenIGI.UI.Animation;
+using OpenIGI.UI.Drawing;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
-using OpenIGI.Frontend.Screens;
+using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Frontend;
 
@@ -17,6 +21,8 @@ namespace OpenIGI.Frontend;
 public sealed class Shell
 {
     private readonly ShellContext _context;
+    private readonly Spring _blur = new(0f, smoothTime: 0.18f);
+    private float _scale = 1f;
 
     /// <summary>Initializes a new instance of the <see cref="Shell"/> class rooted at the main menu.</summary>
     /// <param name="context">The shared context: theme, host and game data.</param>
@@ -98,8 +104,39 @@ public sealed class Shell
     /// <param name="context">The layout context for this frame.</param>
     /// <param name="input">The frame's input.</param>
     /// <param name="elapsedSeconds">The real seconds since the last update.</param>
-    public void Update(LayoutContext context, InputState input, float elapsedSeconds) =>
+    public void Update(LayoutContext context, InputState input, float elapsedSeconds)
+    {
         Stack.Update(context, input, elapsedSeconds);
+
+        // The backdrop eases between pages rather than snapping: the home page's sharp level blurs as a
+        // section opens over it, and the campaign's push-in on a new mission settles over a second.
+        ShellScreen? page = Stack.Top as ShellScreen;
+        _blur.Target = page?.BackdropBlur ?? 6f;
+        _blur.Update(elapsedSeconds);
+        _scale = page?.BackdropScale ?? 1f;
+    }
+
+    /// <summary>Draws what goes behind every page: the level, blurred and pushed in as the page asks, under the design's vignette.</summary>
+    /// <param name="painter">The painter, whose renderer samples the blurred frame for the level.</param>
+    /// <remarks>
+    /// The host calls this after the 3D scene and before <see cref="Draw"/>. It is drawn here rather than
+    /// by a page so it does not fade with a page's transition: switching tabs swaps the page over a backdrop
+    /// that holds still.
+    /// </remarks>
+    public void DrawBackdrop(UiPainter painter)
+    {
+        ArgumentNullException.ThrowIfNull(painter);
+        var screen = new UiRect(0f, 0f, painter.Context.Viewport.X, painter.Context.Viewport.Y);
+        float blur = _blur.Value;
+        if (blur > 0.05f)
+        {
+            // brightness(0.62) on the picture: a dark wash over the blurred level, deepening with the blur.
+            float settle = Math.Clamp(blur / 6f, 0f, 1f);
+            painter.DrawBackdrop(screen, painter.Context.Px(blur), UiPalette.InkAt(0.38f * settle), _scale);
+        }
+
+        KitDraw.Vignette(painter, screen, VignetteStyle.Menu, glow: blur > 0.05f);
+    }
 
     /// <summary>Draws the shell.</summary>
     /// <param name="painter">The painter to draw into.</param>

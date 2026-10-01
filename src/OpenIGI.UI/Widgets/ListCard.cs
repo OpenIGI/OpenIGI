@@ -1,5 +1,5 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Rendering;
+using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Layout;
 
@@ -19,7 +19,9 @@ namespace OpenIGI.UI.Widgets;
 /// </remarks>
 public class ListCard : Control
 {
-    private readonly Spring _slide = new(0f, smoothTime: 0.14f);
+    private readonly Spring _slide = new(0f, smoothTime: 0.08f);
+    private string? _titleSource;
+    private string _titleUpper = string.Empty;
 
     /// <summary>Initializes a new instance of the <see cref="ListCard"/> class.</summary>
     /// <param name="theme">The theme to draw from.</param>
@@ -49,7 +51,10 @@ public class ListCard : Control
     public bool Selected { get; set; }
 
     /// <summary>Gets or sets the row's height in design units.</summary>
-    public float RowHeight { get; set; } = 54f;
+    public float RowHeight { get; set; } = 84f;
+
+    /// <summary>Gets or sets the size of the row's name, in design units.</summary>
+    public float TitleSize { get; set; } = 28f;
 
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) =>
@@ -59,76 +64,65 @@ public class ListCard : Control
     protected override void OnUpdate(float elapsedSeconds)
     {
         base.OnUpdate(elapsedSeconds);
-
-        // The row eases a little to the right as it becomes the current one, so the selection reads as a
-        // physical movement down the list rather than a colour that jumps.
-        _slide.Target = MathF.Max(Visual.Focus, Selected ? 1f : 0f);
+        _slide.Target = Selected ? 1f : 0f;
         _slide.Update(elapsedSeconds);
     }
 
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
     {
-        float emphasis = MathF.Max(_slide.Value, IsPointerOver ? 0.45f : 0f);
+        LayoutContext context = painter.Context;
         float appear = Visual.Appear;
-        float pad = painter.Context.Px(16f);
-        float slide = painter.Context.Px(8f) * _slide.Value;
+        float selected = _slide.Value;
+        float hot = MathF.Max(Visual.Focus, IsPointerOver ? 1f : 0f) * (1f - selected);
+        UiRect bounds = Bounds;
 
-        if (emphasis > 0.001f)
+        // Current: an amber wash fading to the right and a bar down the leading edge. Under the pointer: a
+        // faint white wash. A hairline under every row, so the list reads as ruled.
+        if (selected > 0.001f)
         {
-            // A dark scrim plus an accent edge, not an accent wash. A row sits over whatever the level
-            // behind the menu happens to be, and a translucent amber fill under amber text disappears the
-            // moment that happens to be a sunlit hillside; darkening under the text works over anything.
-            painter.FillRect(
-                Bounds,
-                Theme.Panel.WithAlpha((byte)(190 * emphasis * appear)),
-                BlendMode.AlphaBlend);
-            painter.FillRect(
-                new UiRect(Bounds.X, Bounds.Y, painter.Context.Px(3f), Bounds.Height),
-                Theme.Accent.WithAlpha((byte)(255 * emphasis * appear)),
-                BlendMode.AlphaBlend);
+            Span<UiGradientStop> wash =
+            [
+                new(0f, UiPalette.AccentAt(0.16f * selected * appear)),
+                new(1f, UiPalette.AccentAt(0.02f * selected * appear)),
+            ];
+            painter.FillGradient(bounds, wash, UiGradientDirection.Horizontal);
+            painter.FillRect(new UiRect(bounds.X, bounds.Y, context.Px(3f), bounds.Height), UiPalette.Fade(Theme.Accent, selected * appear));
         }
 
-        float badgeSize = painter.Context.Px(Theme.BodyTextSize * 0.95f);
-        float titleSize = painter.Context.Px(Theme.BodyTextSize * 1.1f);
-        float tagSize = painter.Context.Px(Theme.BodyTextSize * 0.72f);
+        if (hot > 0.001f)
+        {
+            painter.FillRect(bounds, UiPalette.White(0.05f * hot * appear));
+        }
 
-        Bgra32 titleColor = IsEnabled
-            ? Interpolate.Lerp(Theme.Text, Theme.Accent, emphasis)
-            : Theme.TextDisabled;
-        Bgra32 badgeColor = IsEnabled
-            ? Interpolate.Lerp(Theme.TextMuted, Theme.Accent, emphasis)
-            : Theme.TextDisabled;
+        painter.FillRect(new UiRect(bounds.X, bounds.Bottom - context.Px(1f), bounds.Width, context.Px(1f)), UiPalette.White(0.06f * appear));
 
-        titleColor = titleColor.WithAlpha((byte)(titleColor.A * appear));
-        badgeColor = badgeColor.WithAlpha((byte)(badgeColor.A * appear));
+        float numberSize = context.Px(14f);
+        float titleSize = context.Px(TitleSize);
+        float tagSize = context.Px(11f);
+        float x = bounds.X + context.Px(28f);
 
-        float badgeWidth = Theme.Heading.MeasureWidth(Badge, badgeSize);
-        float x = Bounds.X + pad + slide;
-        painter.DrawText(
-            Theme.Heading,
-            Badge,
-            new UiVec2(x, Bounds.Y + ((Bounds.Height - Theme.Heading.LineHeight(badgeSize)) * 0.5f)),
-            badgeSize,
-            badgeColor);
+        Bgra32 numberColor = !IsEnabled ? Theme.TextDisabled : Interpolate.Lerp(Theme.TextDim, Theme.Accent, selected);
+        Bgra32 titleColor = !IsEnabled ? Theme.TextDisabled : Interpolate.Lerp(Interpolate.Lerp(Theme.TextSecondary, Theme.TextBright, hot), Theme.TextBright, selected);
 
-        painter.DrawText(
-            Theme.Body,
-            Title,
-            new UiVec2(x + badgeWidth + painter.Context.Px(18f), Bounds.Y + ((Bounds.Height - Theme.Body.LineHeight(titleSize)) * 0.5f)),
-            titleSize,
-            titleColor);
+        painter.DrawText(Theme.Mono, Badge, new UiVec2(x, UiRowStyle.CenterY(Theme.Mono, numberSize, bounds)), numberSize, UiPalette.Fade(numberColor, appear));
+        x += context.Px(24f + 24f);
+
+        if (!ReferenceEquals(_titleSource, Title))
+        {
+            _titleSource = Title;
+            _titleUpper = Title.ToUpperInvariant();
+        }
+
+        painter.DrawLabel(Theme.Heading, _titleUpper, new UiVec2(x, UiRowStyle.CapsCenterY(Theme.Heading, titleSize, bounds)), titleSize, UiPalette.Fade(titleColor, appear), 0.06f);
 
         if (Tag.Length > 0)
         {
-            float tagWidth = Theme.Body.MeasureWidth(Tag, tagSize);
-            Bgra32 tag = TagColor.WithAlpha((byte)(TagColor.A * appear));
-            painter.DrawText(
-                Theme.Body,
-                Tag,
-                new UiVec2(Bounds.Right - pad - tagWidth, Bounds.Y + ((Bounds.Height - Theme.Body.LineHeight(tagSize)) * 0.5f)),
-                tagSize,
-                tag);
+            float right = bounds.Right - context.Px(24f);
+            float tagWidth = UiPainter.MeasureLabel(Theme.Mono, Tag, tagSize, 0.18f);
+            Bgra32 tag = UiPalette.Fade(IsEnabled ? TagColor : Theme.TextDisabled, appear);
+            painter.DrawLabel(Theme.Mono, Tag, new UiVec2(right - tagWidth, UiRowStyle.CenterY(Theme.Mono, tagSize, bounds)), tagSize, tag, 0.18f);
+            painter.FillDiamond(new UiVec2(right - tagWidth - context.Px(8f + 3f), bounds.Center.Y), context.Px(6f), tag);
         }
     }
 }

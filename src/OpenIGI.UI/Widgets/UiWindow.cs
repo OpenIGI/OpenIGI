@@ -1,5 +1,4 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Rendering;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
@@ -84,7 +83,7 @@ public class UiWindow : UiElement
     public float GripSize { get; set; } = 6f;
 
     /// <summary>Gets or sets the corner radius in pixels.</summary>
-    public float CornerRadius { get; set; } = 8f;
+    public float CornerRadius { get; set; }
 
     /// <summary>Gets or sets the generated sprites used for the rounded corners and the shadow.</summary>
     /// <remarks>Left unset the window still draws, with square corners and no shadow — see <see cref="UiPainter.FillRoundedRect"/>.</remarks>

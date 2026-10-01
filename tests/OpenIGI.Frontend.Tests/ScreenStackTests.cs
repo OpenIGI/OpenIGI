@@ -1,5 +1,6 @@
 using OpenIGI.Frontend;
 using OpenIGI.Input;
+using OpenIGI.UI.Screens;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
@@ -167,7 +168,7 @@ public sealed class ScreenStackTests
 
     private static UiTheme Theme()
     {
-        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Saira-Regular.ttf");
+        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Barlow-Regular.ttf");
         return new UiTheme(UiFont.ForMeasurement(FontAtlasBuilder.Build(File.ReadAllBytes(path), 48f)));
     }
 

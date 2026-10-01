@@ -40,6 +40,16 @@
          stb_truetype, so it adds no native dependency and runs the same on every platform the port
          targets. -->
     <PackageVersion Include="StbTrueTypeSharp" Version="1.26.12" />
+
+    <!-- The launcher's renderer for the shared interface (OpenIGI.UI.Skia). Skia draws the same widgets
+         the game draws through its sprite batch, with real vector text from the same TrueType files. The
+         Windows and macOS natives ship inside SkiaSharp; Linux takes the no-dependencies build so the
+         launcher runs on a bare distribution without fontconfig. -->
+    <PackageVersion Include="SkiaSharp" Version="3.119.0" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.0" />
+
+    <!-- The launcher's window is a plain OpenGL surface Skia renders into. -->
+    <PackageVersion Include="Silk.NET.OpenGL" Version="2.22.0" />
   </ItemGroup>
 
   <ItemGroup Label="Sound">

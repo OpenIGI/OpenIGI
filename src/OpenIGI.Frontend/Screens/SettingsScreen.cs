@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Frontend.Settings;
 using OpenIGI.Game.Config;
@@ -7,55 +7,52 @@ using OpenIGI.Input;
 using OpenIGI.Rendering.Presets;
 using OpenIGI.UI;
 using OpenIGI.UI.Focus;
+using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Frontend.Screens;
 
 /// <summary>
-/// The settings section: a category tab strip, every row a CVar bound to its control, with a live
-/// preview, per-row help, restart notes, and a graphics-preset selector.
+/// The settings section: a segmented category bar, and under it the category's rows grouped into glass
+/// panels across three columns — every row a CVar bound to its control, with a live preview, per-row help,
+/// restart notes, and a graphics-preset selector.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Categories are grouped by CVar name prefix — <c>r_</c> is graphics/display, <c>snd_</c> audio,
-/// <c>g_</c>/<c>ui_</c> gameplay — because that is the only grouping the CVar system carries. Controls are
-/// the <see cref="CVarBinding"/> rows, so every change previews the instant it is made through the CVar's
-/// own change event. A row whose CVar requires a restart is flagged in the footer while it is focused.
+/// <c>g_</c>/<c>ui_</c> gameplay — and, inside a category, by the next word of the name, so
+/// <c>g_ragdoll_force</c> and <c>g_ragdoll_gravity</c> share a Ragdoll panel. Controls are the
+/// <see cref="CVarBinding"/> rows, so every change previews the instant it is made.
 /// </para>
 /// <para>
 /// The Controls tab rebinds keyboard keys and mouse buttons against the active profile and persists their
-/// retail input symbols, so the same assignments the player sees are the ones gameplay resolves.
+/// retail input symbols, so the same assignments the player sees are the ones gameplay resolves. R resets
+/// the category on screen to its defaults.
 /// </para>
 /// </remarks>
 public sealed class SettingsScreen : ShellScreen
 {
-    /// <summary>The design-unit width a settings column wants before a second one is worth having.</summary>
-    /// <remarks>
-    /// A row is a caption at one end and its control at the other, so past about this width the two stop
-    /// reading as one row. Rather than narrow the page to suit, the rows are dealt into as many columns of
-    /// roughly this width as the page will hold — which is what lets the panel use the whole screen.
-    /// </remarks>
-    private const float ColumnWidth = 560f;
-
-    /// <summary>What the page's own margins and padding take off the width before it is divided up.</summary>
-    private const float PageChrome = 200f;
-
-    /// <summary>The most columns the rows are ever dealt into, however wide the display is.</summary>
+    /// <summary>The most columns the panels are ever dealt into, however wide the display is.</summary>
     private const int MaxColumns = 3;
 
-    /// <summary>How many rows a category needs before it is dealt into another column.</summary>
-    private const int MinRowsPerColumn = 10;
+    /// <summary>The design-unit width a column wants before another one is worth having.</summary>
+    private const float ColumnWidth = 520f;
+
+    /// <summary>The most rows one panel holds before a long group continues in another.</summary>
+    private const int MaxRowsPerPanel = 12;
 
     private readonly Dictionary<Control, ICVar> _boundCvars = [];
     private readonly List<UiElement> _tabPanels = [];
+    private readonly List<List<ICVar>> _tabCvars = [];
     private KeyBindingRow? _armingBindingRow;
+    private Action? _resetBindings;
 
     /// <summary>
-    /// Whether a wheel scroll may bind right now. Scrolling the list to reach a row leaves
-    /// inertial motion (trackpad momentum especially) that is still non-zero when the prompt arms;
-    /// capturing it would rebind without intent. The gate opens on the first quiet frame after
-    /// arming, so only motion that starts after the prompt does.
+    /// Whether a wheel scroll may bind right now. Scrolling the list to reach a row leaves inertial motion
+    /// (trackpad momentum especially) that is still non-zero when the prompt arms; capturing it would rebind
+    /// without intent. The gate opens on the first quiet frame after arming, so only motion that starts after
+    /// the prompt does.
     /// </summary>
     private bool _wheelGateOpen = true;
 
@@ -65,8 +62,9 @@ public sealed class SettingsScreen : ShellScreen
     private readonly List<List<Control>> _tabRows = [];
 
     private Label? _help;
-    private int _columns = 1;
+    private int _columns = MaxColumns;
     private int _activeTab;
+    private int _controlsTab = -1;
 
     /// <summary>Initializes a new instance of the <see cref="SettingsScreen"/> class.</summary>
     /// <param name="context">The shared shell context.</param>
@@ -76,7 +74,14 @@ public sealed class SettingsScreen : ShellScreen
     }
 
     /// <inheritdoc/>
+    public override bool CapturesQueuedNavigation =>
+        Focus?.Focused is KeyBindingRow { IsListening: true };
+
+    /// <inheritdoc/>
     protected override ShellTab Tab => ShellTab.Settings;
+
+    /// <inheritdoc/>
+    protected override IReadOnlyList<KeyHint> Hints => [new("CLICK", "Adjust"), new("R", "Reset defaults"), new("ESC", "Back")];
 
     /// <inheritdoc/>
     protected override UiElement? BuildContent(LayoutContext context)
@@ -84,45 +89,31 @@ public sealed class SettingsScreen : ShellScreen
         _boundCvars.Clear();
         _tabPanels.Clear();
         _tabRows.Clear();
+        _tabCvars.Clear();
         _activeTab = 0;
+        _controlsTab = -1;
+        _resetBindings = null;
 
         UiTheme theme = Context.Theme;
 
-        // How many columns the page will hold. Measured in DESIGN units, so it follows the display's shape
-        // rather than its resolution — every 16:9 display is 1920 units wide whatever its pixel count, and
-        // it is the aspect ratio that decides whether a third column fits. 4:3 gets two, 16:9 three.
-        float usable = (context.SafeRect.Width / context.Scale) - PageChrome;
+        // How many columns the page will hold, in DESIGN units so it follows the display's shape rather
+        // than its resolution: 16:9 takes the design's three, 4:3 two.
+        float usable = (context.SafeRect.Width / context.Scale) - (SideMargin * 2f);
         _columns = Math.Clamp((int)(usable / ColumnWidth), 1, MaxColumns);
 
-        // A grid rather than a stack: the panel row is a star track, so the categories fill everything
-        // between the tab strip and the footer whatever the display is. A fixed height left the bottom of
-        // a 1440p screen empty and cut the list short on a small one.
-        var layout = new Grid { RowSpacing = 10f };
-        layout.ColumnDefinitions.Add(GridLength.Star);
-        layout.RowDefinitions.Add(GridLength.Auto); // the category tabs
-        layout.RowDefinitions.Add(GridLength.Star); // the current category, filling the rest
-        layout.RowDefinitions.Add(GridLength.Auto); // the per-row help footer
-
-        // Five categories and no sixth. There used to be an Advanced half of Graphics, behind a switch,
-        // listing every r_ variable the renderer has as its own row. It is gone: a menu that offers
-        // "surface-cache relight amortisation" as a slider has not given the player more control, it has
-        // given them a decision they cannot make. The console reaches all of it, by name and with help,
-        // which is what an advanced interface should be. See GraphicsMenu.
-        //
-        // A build locked to one preset has no Graphics category at all: every row on it is either the
-        // preset or a step of one, and offering them would only move the settings off the preset the
-        // build is held on.
-        List<(string Title, Func<Panel> Build)> categories =
+        // Five categories and no sixth: the console reaches every variable by name, which is what an
+        // advanced interface should be. A build locked to one preset has no Graphics category at all.
+        List<(string Title, Func<List<SettingsGroup>> Build)> categories =
         [
-            ("Display", () => BuildSettingsPanel(GraphicsMenu.DisplaySettings)),
-            ("Audio", () => BuildCvarPanel(NamesWithPrefix("snd_"), includePresets: false)),
-            ("Controls", BuildControlsPanel),
-            ("Gameplay", BuildGameplayPanel),
+            ("Display", () => [SettingsGroup.Of("Display", SettingRows(theme, GraphicsMenu.DisplaySettings))]),
+            ("Audio", () => CvarGroups(theme, NamesWithPrefix("snd_"), "Audio")),
+            ("Controls", () => BuildControls(theme)),
+            ("Gameplay", () => BuildGameplay(theme)),
         ];
 
         if (Context.Presets.LockedPreset is null)
         {
-            categories.Insert(0, ("Graphics", BuildGraphicsPanel));
+            categories.Insert(0, ("Graphics", () => BuildGraphics(theme)));
         }
 
         string[] tabTitles = new string[categories.Count];
@@ -131,43 +122,58 @@ public sealed class SettingsScreen : ShellScreen
             tabTitles[i] = categories[i].Title;
         }
 
-        var tabs = new TabStrip(theme, tabTitles) { HorizontalAlignment = HorizontalAlignment.Left };
+        var tabs = new TabStrip(theme, tabTitles) { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom };
         tabs.SelectionChanged += ShowTab;
-        layout.Add(tabs, 0, 0);
+
+        var header = new Grid { ColumnSpacing = 24f };
+        header.ColumnDefinitions.Add(GridLength.Star);
+        header.ColumnDefinitions.Add(GridLength.Auto);
+        header.RowDefinitions.Add(GridLength.Auto);
+        header.Add(new SectionTitle(theme, "Configuration", "Settings") { HorizontalAlignment = HorizontalAlignment.Left }, 0, 0);
+        header.Add(tabs, 0, 1);
 
         var content = new Panel();
         for (int i = 0; i < categories.Count; i++)
         {
-            Panel panel = categories[i].Build();
+            // The variables this category's rows bind, which R puts back to their defaults.
+            _tabCvars.Add([]);
+            if (categories[i].Title == "Controls")
+            {
+                _controlsTab = i;
+            }
+
+            UiElement panel = BuildColumns(theme, categories[i].Build(), i);
             panel.Visibility = i == 0 ? Visibility.Visible : Visibility.Collapsed;
             _tabPanels.Add(panel);
             content.AddChild(panel);
         }
 
-        layout.Add(content, 1, 0);
+        _help = new Label(theme.Body, string.Empty, 16f, theme.TextMuted) { Margin = new Thickness(0f, 12f, 0f, 0f) };
 
-        _help = new Label(theme.Body, string.Empty, theme.BodyTextSize * 0.95f, theme.TextMuted)
-        {
-            Margin = new Thickness(0f, 6f, 0f, 0f),
-        };
+        var layout = new Grid { RowSpacing = 36f, Padding = new Thickness(SideMargin, 48f, SideMargin, 0f) };
+        layout.ColumnDefinitions.Add(GridLength.Star);
+        layout.RowDefinitions.Add(GridLength.Auto); // the title and the categories
+        layout.RowDefinitions.Add(GridLength.Star); // the current category, filling the rest
+        layout.RowDefinitions.Add(GridLength.Auto); // the per-row help line
+        layout.Add(header, 0, 0);
+        layout.Add(content, 1, 0);
         layout.Add(_help, 2, 0);
         return layout;
     }
 
     /// <inheritdoc/>
-    public override bool CapturesQueuedNavigation =>
-        Focus?.Focused is KeyBindingRow { IsListening: true };
-
-    /// <inheritdoc/>
     protected override bool HandleInput(UiNavigation nav, InputState input)
     {
+        ArgumentNullException.ThrowIfNull(nav);
+        ArgumentNullException.ThrowIfNull(input);
+
         // A key-binding row that is listening swallows the keyboard until it captures a key.
         if (Focus?.Focused is KeyBindingRow { IsListening: true } row)
         {
             // Activation through Enter is itself queued as a key press, and navigation presses can have
-            // been waiting in that queue since before the row was selected. Establish a fresh boundary
-            // on the first update after activation: none of those presses is the new binding the player
-            // was prompted to choose. Without this, the row immediately binds Return or an old arrow key.
+            // been waiting in that queue since before the row was selected. Establish a fresh boundary on
+            // the first update after activation: none of those presses is the binding the player was
+            // prompted to choose.
             if (!ReferenceEquals(_armingBindingRow, row))
             {
                 while (input.Keyboard.TryDequeuePress(out _))
@@ -175,8 +181,9 @@ public sealed class SettingsScreen : ShellScreen
                 }
 
                 _armingBindingRow = row;
-                // Quiet at arming means nothing is in motion, so the gate starts open; momentum
-                // keeps it shut until a still frame (see _wheelGateOpen).
+
+                // Quiet at arming means nothing is in motion, so the gate starts open; momentum keeps it
+                // shut until a still frame (see _wheelGateOpen).
                 _wheelGateOpen = input.Mouse.WheelDelta == 0f;
                 return false;
             }
@@ -202,9 +209,8 @@ public sealed class SettingsScreen : ShellScreen
                 }
             }
 
-            // A scrolled wheel is a control like a pressed button; the scroll view stays still
-            // because the listening branch returns before the base input scrolls it. Motion already
-            // underway when the prompt armed waits for a quiet frame first (see _wheelGateOpen).
+            // A scrolled wheel is a control like a pressed button; the scroll view stays still because the
+            // listening branch returns before the base input scrolls it.
             if (row.IsListening)
             {
                 if (input.Mouse.WheelDelta == 0f)
@@ -227,16 +233,19 @@ public sealed class SettingsScreen : ShellScreen
 
         _armingBindingRow = null;
 
+        if (input.Keyboard.WasPressed(KeyCode.R))
+        {
+            ResetCurrentTab();
+        }
+
         return base.HandleInput(nav, input);
     }
 
     /// <inheritdoc/>
     /// <remarks>
     /// Up and down walk the category's rows in the order they were dealt into columns, so the foot of one
-    /// column leads to the head of the next. Spatial traversal cannot do it: there is nothing below the
-    /// last row of a column, and left and right — which is where the next column is — belong to the
-    /// controls themselves. At either end it falls through, so up from the first row still reaches the
-    /// category tabs.
+    /// column leads to the head of the next. At either end it falls through, so up from the first row still
+    /// reaches the category bar.
     /// </remarks>
     protected override bool MoveFocus(NavDirection direction)
     {
@@ -260,9 +269,8 @@ public sealed class SettingsScreen : ShellScreen
     /// <inheritdoc/>
     protected override void OnExit()
     {
-        // The Controls tab mutates the live profile (rebinds, sensitivity, invert). Settings alone
-        // only persist engine CVars, so the profile — including GOInRemap bindings — must be saved
-        // here too, or every remap is silently lost on the next launch (issue #230).
+        // The Controls tab mutates the live profile (rebinds, sensitivity, invert). Settings alone only
+        // persist engine CVars, so the profile must be saved here too, or every remap is lost (issue #230).
         Context.Host.SaveSettings();
         Context.Host.SaveProfiles();
     }
@@ -283,7 +291,7 @@ public sealed class SettingsScreen : ShellScreen
         else if (Focus?.Focused is Control { Tooltip.Length: > 0 } explained)
         {
             // A row that is not one variable — a quality group, the preset — says the same thing the
-            // pointer would be told, cut to the footer's one line. The rest is in the tooltip.
+            // pointer would be told, cut to the line's length. The rest is in the tooltip.
             _help.Text = FirstLine(explained.Tooltip);
         }
         else
@@ -301,35 +309,46 @@ public sealed class SettingsScreen : ShellScreen
         }
 
         // The focused row belongs to the category that has just been collapsed, so it can no longer hold
-        // focus; dropping it and taking the first row of the new panel is what keeps the keyboard working
-        // after a tab change.
+        // focus; taking the first row of the new panel is what keeps the keyboard working.
         Focus?.Validate();
         Focus?.FocusFirst();
     }
 
-    /// <summary>The graphics category: one page, the preset first and then a section per subject.</summary>
-    /// <remarks>
-    /// <para>
-    /// The preset leads because it is the one control that answers the whole question at once. Under it,
-    /// each section heading introduces a run of rows, every row a name for an idea rather than for a
-    /// variable — see <see cref="GraphicsMenu"/>, which is where the rows and their words live.
-    /// </para>
-    /// <para>
-    /// There is no second half any more. A row's tooltip still names the variables it drives, because
-    /// that is the handle somebody needs to go further with it from the console, and the console is now
-    /// the only advanced interface there is.
-    /// </para>
-    /// </remarks>
-    private Panel BuildGraphicsPanel()
+    /// <summary>Puts every variable on the current category back to its default.</summary>
+    private void ResetCurrentTab()
     {
-        UiTheme theme = Context.Theme;
+        if (_activeTab == _controlsTab)
+        {
+            _resetBindings?.Invoke();
+            return;
+        }
 
-        var rows = new List<UiElement> { BuildPresetControl(theme) };
+        if (_activeTab < 0 || _activeTab >= _tabCvars.Count)
+        {
+            return;
+        }
+
+        foreach (ICVar cvar in _tabCvars[_activeTab])
+        {
+            if (!cvar.IsDefault)
+            {
+                cvar.TrySetText(cvar.DefaultText, out _);
+            }
+        }
+    }
+
+    /// <summary>The graphics category: the preset first, then a group per subject.</summary>
+    /// <remarks>
+    /// A row's tooltip still names the variables it drives, because that is the handle somebody needs to go
+    /// further with it from the console, and the console is the only advanced interface there is.
+    /// </remarks>
+    private List<SettingsGroup> BuildGraphics(UiTheme theme)
+    {
+        List<SettingsGroup> groups = [SettingsGroup.Of("General", [BuildPresetControl(theme)])];
 
         foreach (GraphicsSection section in GraphicsMenu.Sections)
         {
-            rows.Add(BuildSectionHeading(theme, section.Title));
-
+            var rows = new List<Control>();
             foreach (QualityGroup group in section.Groups)
             {
                 if (QualityBinding.CreateControl(theme, Context.Cvars, group) is not { } control)
@@ -337,27 +356,30 @@ public sealed class SettingsScreen : ShellScreen
                     continue;
                 }
 
-                // A group can write a variable that only takes effect on the next level load. The player
-                // has to be told which, and the footer shows only the tooltip's first line, so the note
-                // goes there rather than at the end.
+                // A group can write a variable that only takes effect on the next level load. The player has
+                // to be told which, and the help line shows only the tooltip's first line, so the note goes
+                // there rather than at the end.
                 string restart = NamesRequiringRestart(group.Variables) ? "   [takes effect on the next level]" : string.Empty;
                 control.Tooltip =
                     $"{group.Help}{restart}\n\nSets: {string.Join(", ", group.Variables)}\n\nReachable from the console by name.";
                 rows.Add(control);
+                TrackForReset(group.Variables);
             }
 
-            AddSettingRows(theme, rows, section.Settings);
+            rows.AddRange(SettingRows(theme, section.Settings));
+            groups.Add(SettingsGroup.Of(section.Title, rows));
         }
 
-        return BuildColumns(theme, rows);
+        return groups;
     }
 
-    /// <summary>A section heading: a label, not a row, so the focus walk steps straight over it.</summary>
-    private static Label BuildSectionHeading(UiTheme theme, string title) =>
-        new(theme.Heading, title.ToUpperInvariant(), theme.BodyTextSize * 0.85f, theme.TextMuted)
-        {
-            Margin = new Thickness(0f, 14f, 0f, 2f),
-        };
+    /// <summary>The gameplay category, with the interface and effect options that are not quality levels.</summary>
+    private List<SettingsGroup> BuildGameplay(UiTheme theme)
+    {
+        List<SettingsGroup> groups = CvarGroups(theme, GameplayNames(), "General");
+        groups.Add(SettingsGroup.Of("Interface and effects", SettingRows(theme, GraphicsMenu.InterfaceSettings)));
+        return groups;
+    }
 
     /// <summary>Whether any of these variables only takes effect on the next level load.</summary>
     private bool NamesRequiringRestart(IReadOnlyList<string> names)
@@ -375,38 +397,15 @@ public sealed class SettingsScreen : ShellScreen
         return false;
     }
 
-    /// <summary>The gameplay category, with the interface and effect options that are not quality levels.</summary>
-    private Panel BuildGameplayPanel()
-    {
-        UiTheme theme = Context.Theme;
-        var rows = new List<UiElement>();
-
-        AddCvarRows(theme, rows, GameplayNames());
-
-        rows.Add(BuildSectionHeading(theme, "Interface and Effects"));
-        AddSettingRows(theme, rows, GraphicsMenu.InterfaceSettings);
-
-        return BuildColumns(theme, rows);
-    }
-
-    /// <summary>A page of single-variable rows carrying captions and help written for a player.</summary>
-    private Panel BuildSettingsPanel(IReadOnlyList<GraphicsSetting> settings)
-    {
-        UiTheme theme = Context.Theme;
-        var rows = new List<UiElement>();
-        AddSettingRows(theme, rows, settings);
-        return BuildColumns(theme, rows);
-    }
-
-    /// <summary>Adds a row per setting, captioned and explained in the page's own words.</summary>
+    /// <summary>A row per setting, captioned and explained in the page's own words.</summary>
     /// <remarks>
-    /// Deliberately NOT <see cref="AddCvarRows"/>, which captions from the variable name and explains from
-    /// the variable's own help. That text is written for the console and says things like "windowed inverse
-    /// square"; the whole point of <see cref="GraphicsSetting"/> is that a player reads something else. The
-    /// variable name still ends the tooltip, as the handle for going further from the console.
+    /// Deliberately not <see cref="CvarRows"/>, which captions from the variable name and explains from the
+    /// variable's own help — text written for the console. The variable name still ends the tooltip, as the
+    /// handle for going further from the console.
     /// </remarks>
-    private void AddSettingRows(UiTheme theme, List<UiElement> rows, IReadOnlyList<GraphicsSetting> settings)
+    private List<Control> SettingRows(UiTheme theme, IReadOnlyList<GraphicsSetting> settings)
     {
+        var rows = new List<Control>();
         foreach (GraphicsSetting setting in settings)
         {
             if (!Context.Cvars.TryGet(setting.Variable, out ICVar? cvar)
@@ -427,21 +426,73 @@ public sealed class SettingsScreen : ShellScreen
 
             control.Tooltip = $"{setting.Help}{restart}\n\n{setting.Variable}";
             rows.Add(control);
+            CurrentTabCvars.Add(cvar);
         }
+
+        return rows;
     }
 
-    private Panel BuildCvarPanel(IReadOnlyList<string> names, bool includePresets)
+    /// <summary>The variables a list of names binds to, grouped by the word after their prefix.</summary>
+    /// <param name="theme">The theme.</param>
+    /// <param name="names">The variable names, in the order the rows are wanted.</param>
+    /// <param name="fallback">The group a variable goes in when no other shares its word.</param>
+    private List<SettingsGroup> CvarGroups(UiTheme theme, IReadOnlyList<string> names, string fallback)
     {
-        UiTheme theme = Context.Theme;
-        var rows = new List<UiElement>();
-
-        if (includePresets)
+        var byWord = new Dictionary<string, List<Control>>(StringComparer.Ordinal);
+        var order = new List<string>();
+        var words = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (string name in names)
         {
-            rows.Add(BuildPresetControl(theme));
+            string word = GroupWord(name);
+            words[word] = words.GetValueOrDefault(word) + 1;
         }
 
-        AddCvarRows(theme, rows, names);
-        return BuildColumns(theme, rows);
+        foreach ((ICVar cvar, Control control) in CvarRows(theme, names))
+        {
+            string word = GroupWord(cvar.Name);
+            string title = words.GetValueOrDefault(word) >= 2 ? Humanize(word) : fallback;
+            if (!byWord.TryGetValue(title, out List<Control>? rows))
+            {
+                rows = [];
+                byWord[title] = rows;
+                order.Add(title);
+            }
+
+            rows.Add(control);
+        }
+
+        // The catch-all leads, as General does in the design; the named groups follow in the order they met.
+        order.Sort((a, b) => (a == fallback ? 0 : 1).CompareTo(b == fallback ? 0 : 1));
+        var groups = new List<SettingsGroup>(order.Count);
+        foreach (string title in order)
+        {
+            groups.Add(SettingsGroup.Of(title, byWord[title]));
+        }
+
+        return groups;
+    }
+
+    private List<(ICVar Cvar, Control Control)> CvarRows(UiTheme theme, IReadOnlyList<string> names)
+    {
+        var rows = new List<(ICVar, Control)>();
+        foreach (string name in names)
+        {
+            if (Context.Cvars.TryGet(name, out ICVar? cvar) && cvar is not null && CVarBinding.CanBind(cvar)
+                && CVarBinding.CreateControl(theme, cvar) is { } control)
+            {
+                // The variable already carries the sentence that explains it — the same one the console
+                // prints — so the tooltip is the help text the CVar was declared with.
+                control.Tooltip = cvar.Flags.HasFlag(CVarOptions.RequiresRestart)
+                    ? $"{cvar.Help}\n\nTakes effect after a restart.\n\n{name}"
+                    : $"{cvar.Help}\n\n{name}";
+
+                _boundCvars[control] = cvar;
+                CurrentTabCvars.Add(cvar);
+                rows.Add((cvar, control));
+            }
+        }
+
+        return rows;
     }
 
     private Dropdown BuildPresetControl(UiTheme theme)
@@ -474,179 +525,61 @@ public sealed class SettingsScreen : ShellScreen
         return presets;
     }
 
-    private void AddCvarRows(UiTheme theme, List<UiElement> rows, IReadOnlyList<string> names)
+    private List<SettingsGroup> BuildControls(UiTheme theme)
     {
-        foreach (string name in names)
-        {
-            if (Context.Cvars.TryGet(name, out ICVar? cvar) && cvar is not null && CVarBinding.CanBind(cvar))
-            {
-                Control? control = CVarBinding.CreateControl(theme, cvar);
-                if (control is not null)
-                {
-                    // The variable already carries the sentence that explains it — the same one the console
-                    // prints — so the tooltip is the help text the CVar was declared with rather than a
-                    // second description kept beside it and left to drift.
-                    control.Tooltip = cvar.Flags.HasFlag(CVarOptions.RequiresRestart)
-                        ? $"{cvar.Help}\n\nTakes effect after a restart.\n\n{name}"
-                        : $"{cvar.Help}\n\n{name}";
-
-                    _boundCvars[control] = cvar;
-                    rows.Add(control);
-                }
-            }
-        }
-    }
-
-    /// <summary>Deals a category's rows into columns across the page and returns the panel holding them.</summary>
-    /// <remarks>
-    /// Column-major, so a column is read top to bottom and then the next one starts — the order the rows
-    /// were declared in, just folded. The split is by count rather than by measured height: rows differ a
-    /// little in height (a slider is taller than a toggle) but not enough for an even count to look uneven,
-    /// and folding on a number is predictable where folding on a measurement moves as the display changes.
-    /// </remarks>
-    /// <param name="theme">The theme the rows draw from.</param>
-    /// <param name="rows">The elements to deal. Headings are elements rather than controls, so the focus
-    /// walk registered here steps over them.</param>
-    private Panel BuildColumns(UiTheme theme, List<UiElement> rows)
-    {
-        var focusable = new List<Control>(rows.Count);
-        foreach (UiElement row in rows)
-        {
-            if (row is Control control)
-            {
-                focusable.Add(control);
-            }
-        }
-
-        _tabRows.Add(focusable);
-
-        ScrollView scroll = BuildScrollHost(theme);
-
-        // A column has to be worth having. The page is dealt into as many as the display will hold, which
-        // is right for the advanced tab's fifty rows and wrong for the basic tab's dozen: three columns of
-        // four filled the top fifth of the screen and left the rest blank, which reads as a page that
-        // failed to load rather than as a short one.
-        int wanted = (int)MathF.Ceiling(rows.Count / (float)MinRowsPerColumn);
-        int columns = Math.Clamp(Math.Min(_columns, wanted), 1, Math.Max(1, rows.Count));
-        int perColumn = (int)MathF.Ceiling(rows.Count / (float)columns);
-
-        // The right margin is the scrollbar's lane: the thumb is drawn down the viewport's right edge, and
-        // without it the last column's sliders run underneath it.
-        var grid = new Grid { ColumnSpacing = 40f, Margin = new Thickness(0f, 0f, 22f, 0f) };
-        grid.RowDefinitions.Add(GridLength.Auto);
-        for (int column = 0; column < columns; column++)
-        {
-            grid.ColumnDefinitions.Add(GridLength.Star);
-
-            var stack = new StackPanel
-            {
-                Orientation = Orientation.Vertical,
-                Spacing = 4f,
-                VerticalAlignment = VerticalAlignment.Top,
-            };
-
-            for (int i = column * perColumn; i < Math.Min((column + 1) * perColumn, rows.Count); i++)
-            {
-                stack.AddChild(rows[i]);
-            }
-
-            grid.Add(stack, 0, column);
-        }
-
-        scroll.SetContent(grid);
-        return new Panel().WithChild(scroll);
-    }
-
-    private Panel BuildControlsPanel()
-    {
-        UiTheme theme = Context.Theme;
-        var profile = Context.Config.Active;
+        PlayerProfile? profile = Context.Config.Active;
         if (profile is null)
         {
-            _tabRows.Add([]); // kept parallel to _tabPanels even when a category has no rows at all
-            ScrollView empty = BuildScrollHost(theme);
-            empty.SetContent(
-                new Label(theme.Body, "No active profile.", theme.BodyTextSize, theme.TextMuted));
-            return new Panel().WithChild(empty);
+            return [];
         }
 
-        var rows = new List<UiElement>(profile.Bindings.Count + 3);
-
-        var resetBindings = new Button(theme, "RESET BINDINGS TO DEFAULTS")
+        // The mouse comes first: it is the setting a player reaches for on the way into their first mission,
+        // and unlike a binding it has no default anyone is happy with.
+        var sensitivity = new Slider(theme, "Mouse sensitivity", 0f, 1f, profile.MouseSensitivity, 0.05f)
         {
-            Padding = new Thickness(18f, 8f),
-            Tooltip = "Restore the standard WASD keyboard and mouse assignments.",
-        };
-        rows.Add(resetBindings);
-
-        // The mouse comes first, above the bindings: it is the setting a player reaches for on the way
-        // into their first mission, and unlike a binding it has no default anyone is happy with.
-        var sensitivity = new Slider(theme, "Mouse Sensitivity", 0f, 1f, profile.MouseSensitivity, 0.05f)
-        {
-            // The slider position means nothing on its own. What a player is actually choosing is how far
-            // the mouse travels for a full turn, so that is what the readout says — in centimetres at a
-            // stated DPI, which is the number every sensitivity guide and every friend's config is in.
+            // What a player is actually choosing is how far the mouse travels for a full turn, so that is
+            // what the readout says — in centimetres at a stated DPI.
             Format = v => string.Create(
                 CultureInfo.InvariantCulture,
-                $"{MouseLookSettings.FromSensitivity(v, invertPitch: false).TurnDistanceCentimetres():0} cm/360° @ 800 DPI"),
-            Tooltip = "How far the mouse turns the view.\n\nThe readout is how much desk a full turn "
-                + "takes on an 800 DPI mouse — halve it for 1600 DPI. Lower is slower and more precise.",
+                $"{MouseLookSettings.FromSensitivity(v, invertPitch: false).TurnDistanceCentimetres():0} cm/360°"),
+            Tooltip = "How far the mouse turns the view.\n\nThe readout is how much desk a full turn takes on "
+                + "an 800 DPI mouse — halve it for 1600 DPI. Lower is slower and more precise.",
         };
-
         sensitivity.ValueChanged += value => profile.MouseSensitivity = value;
-        rows.Add(sensitivity);
 
-        var invert = new Toggle(theme, "Invert Mouse", profile.InvertMouse)
+        var invert = new Toggle(theme, "Invert mouse", profile.InvertMouse)
         {
             Tooltip = "Pushing the mouse forward looks down instead of up.",
         };
-
         invert.ValueChanged += value => profile.InvertMouse = value;
-        rows.Add(invert);
 
         var bindingRows = new List<KeyBindingRow>(profile.Bindings.Count);
         for (int i = 0; i < profile.Bindings.Count; i++)
         {
             int index = i;
-            var binding = profile.Bindings[index];
+            InputBinding binding = profile.Bindings[index];
             KeyCode current = InputBindingKeyNames.TryParseKeyboardKey(binding.Key, out KeyCode parsed) ? parsed : KeyCode.None;
             var row = new KeyBindingRow(theme, binding.Action, current, InputBindingKeyNames.DisplayName(binding))
             {
                 Tooltip = $"Press this row, then a key, mouse button or wheel scroll, to rebind {binding.Action}.",
             };
 
-            row.BindingChanged += key =>
-            {
-                int conflict = profile.RebindKeyboard(index, key);
-                RefreshBindingRow(bindingRows[index], profile.Bindings[index]);
-                if (conflict >= 0)
-                {
-                    RefreshBindingRow(bindingRows[conflict], profile.Bindings[conflict]);
-                }
-            };
-            row.MouseBindingChanged += button =>
-            {
-                int conflict = profile.RebindMouseButton(index, button);
-                RefreshBindingRow(bindingRows[index], profile.Bindings[index]);
-                if (conflict >= 0)
-                {
-                    RefreshBindingRow(bindingRows[conflict], profile.Bindings[conflict]);
-                }
-            };
-            row.MouseWheelBindingChanged += direction =>
-            {
-                int conflict = profile.RebindMouseWheel(index, direction);
-                RefreshBindingRow(bindingRows[index], profile.Bindings[index]);
-                if (conflict >= 0)
-                {
-                    RefreshBindingRow(bindingRows[conflict], profile.Bindings[conflict]);
-                }
-            };
+            row.BindingChanged += key => Rebound(profile.RebindKeyboard(index, key));
+            row.MouseBindingChanged += button => Rebound(profile.RebindMouseButton(index, button));
+            row.MouseWheelBindingChanged += direction => Rebound(profile.RebindMouseWheel(index, direction));
             bindingRows.Add(row);
-            rows.Add(row);
+
+            void Rebound(int conflict)
+            {
+                RefreshBindingRow(bindingRows[index], profile.Bindings[index]);
+                if (conflict >= 0)
+                {
+                    RefreshBindingRow(bindingRows[conflict], profile.Bindings[conflict]);
+                }
+            }
         }
 
-        resetBindings.Activated += _ =>
+        _resetBindings = () =>
         {
             profile.ResetBindingsToDefaults();
             for (int i = 0; i < bindingRows.Count; i++)
@@ -655,7 +588,20 @@ public sealed class SettingsScreen : ShellScreen
             }
         };
 
-        return BuildColumns(theme, rows);
+        // R does the same from the keyboard; the button is there for the pointer, and says what R would.
+        var resetBindings = new Button(theme, "RESET BINDINGS TO DEFAULTS")
+        {
+            Accent = ButtonAccent.Ghost,
+            TextSize = 16f,
+            Padding = new Thickness(18f, 10f),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Tooltip = "Restore the standard WASD keyboard and mouse assignments.",
+        };
+        resetBindings.Activated += _ => _resetBindings?.Invoke();
+
+        List<SettingsGroup> groups = [SettingsGroup.Of("Mouse", [sensitivity, invert, resetBindings])];
+        groups.Add(SettingsGroup.Of("Key bindings", [.. bindingRows]));
+        return groups;
     }
 
     private static void RefreshBindingRow(KeyBindingRow row, InputBinding binding)
@@ -666,8 +612,115 @@ public sealed class SettingsScreen : ShellScreen
         row.SetBinding(key, InputBindingKeyNames.DisplayName(binding));
     }
 
-    /// <summary>The viewport a category's rows scroll inside: the full page, top to bottom and edge to edge.</summary>
-    private static ScrollView BuildScrollHost(UiTheme theme) => new(theme);
+    /// <summary>Deals a category's groups into columns of glass panels and returns the scrolling page holding them.</summary>
+    /// <remarks>
+    /// A group longer than a panel should be continues in the next one under the same heading, and each
+    /// panel goes to whichever column is shortest so far, so the columns end near the same height. The focus
+    /// walk registered here runs down each column and then on to the next.
+    /// </remarks>
+    private ScrollView BuildColumns(UiTheme theme, List<SettingsGroup> groups, int tab)
+    {
+        var panels = new List<SettingsGroup>();
+        foreach (SettingsGroup group in groups)
+        {
+            for (int start = 0; start < group.Rows.Count; start += MaxRowsPerPanel)
+            {
+                panels.Add(new SettingsGroup(group.Title, group.Rows.GetRange(start, Math.Min(MaxRowsPerPanel, group.Rows.Count - start))));
+            }
+        }
+
+        int columns = Math.Clamp(Math.Min(_columns, panels.Count), 1, MaxColumns);
+        var stacks = new StackPanel[columns];
+        var heights = new int[columns];
+        var columnRows = new List<Control>[columns];
+        var grid = new Grid { ColumnSpacing = 24f, Margin = new Thickness(0f, 0f, 22f, 0f), VerticalAlignment = VerticalAlignment.Top };
+        grid.RowDefinitions.Add(GridLength.Auto);
+        for (int c = 0; c < columns; c++)
+        {
+            grid.ColumnDefinitions.Add(GridLength.Star);
+            stacks[c] = new StackPanel { Orientation = Orientation.Vertical, Spacing = 24f, VerticalAlignment = VerticalAlignment.Top };
+            columnRows[c] = [];
+            grid.Add(stacks[c], 0, c);
+        }
+
+        foreach (SettingsGroup panel in panels)
+        {
+            int shortest = 0;
+            for (int c = 1; c < columns; c++)
+            {
+                if (heights[c] < heights[shortest])
+                {
+                    shortest = c;
+                }
+            }
+
+            stacks[shortest].AddChild(Panel(theme, panel));
+            heights[shortest] += panel.Rows.Count + 2;
+            columnRows[shortest].AddRange(panel.Rows);
+        }
+
+        var focusable = new List<Control>();
+        foreach (List<Control> rows in columnRows)
+        {
+            focusable.AddRange(rows);
+        }
+
+        while (_tabRows.Count <= tab)
+        {
+            _tabRows.Add([]);
+        }
+
+        _tabRows[tab] = focusable;
+
+        var scroll = new ScrollView(theme);
+        if (panels.Count == 0)
+        {
+            scroll.SetContent(new Label(theme.Body, "No active profile.", 17f, theme.TextMuted));
+            return scroll;
+        }
+
+        scroll.SetContent(grid);
+        return scroll;
+    }
+
+    private static GlassPanel Panel(UiTheme theme, SettingsGroup group)
+    {
+        var stack = new StackPanel { Orientation = Orientation.Vertical };
+        stack.AddChild(new GroupHeader(theme, group.Title));
+        foreach (Control row in group.Rows)
+        {
+            // Widened into the panel's padding, so the hover wash reaches the panel's edges as the design's does.
+            row.Margin = new Thickness(-10f, 0f);
+            stack.AddChild(row);
+        }
+
+        var panel = new GlassPanel(theme) { Padding = new Thickness(28f, 28f, 28f, 20f), VerticalAlignment = VerticalAlignment.Top };
+        panel.AddChild(stack);
+        return panel;
+    }
+
+    private List<ICVar> CurrentTabCvars => _tabCvars.Count > 0 ? _tabCvars[^1] : [];
+
+    private void TrackForReset(IReadOnlyList<string> names)
+    {
+        foreach (string name in names)
+        {
+            if (Context.Cvars.TryGet(name, out ICVar? cvar) && cvar is not null)
+            {
+                CurrentTabCvars.Add(cvar);
+            }
+        }
+    }
+
+    /// <summary>The word that groups a variable: <c>g_ragdoll_force</c> groups under <c>ragdoll</c>.</summary>
+    private static string GroupWord(string name)
+    {
+        string[] parts = name.Split('_', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 3 ? parts[1] : string.Empty;
+    }
+
+    private static string Humanize(string word) =>
+        word.Length == 0 ? word : char.ToUpperInvariant(word[0]) + word[1..];
 
     /// <summary>The first line of a tooltip, which is the sentence that says what the row is.</summary>
     private static string FirstLine(string text)
@@ -706,6 +759,11 @@ public sealed class SettingsScreen : ShellScreen
         return names;
     }
 
+    /// <summary>A titled run of rows: one glass panel's worth, or the start of one that continues.</summary>
+    private sealed record SettingsGroup(string Title, List<Control> Rows)
+    {
+        public static SettingsGroup Of(string title, IEnumerable<Control> rows) => new(title, [.. rows]);
+    }
 }
 
 /// <summary>Small fluent helper for one-line child wiring.</summary>

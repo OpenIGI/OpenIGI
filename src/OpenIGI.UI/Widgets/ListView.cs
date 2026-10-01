@@ -1,5 +1,5 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Rendering;
+using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Focus;
 using OpenIGI.UI.Layout;
@@ -195,9 +195,9 @@ public class ListView : Control
         if (_items.Count > 0 && CanFocus)
         {
             float highlightY = Bounds.Y + _highlight.Value - scroll;
-            byte fillAlpha = (byte)(Theme.FocusFill.A * MathF.Max(0.5f, Visual.Focus));
-            painter.FillRect(new UiRect(Bounds.X, highlightY, Bounds.Width, rowHeight), Theme.FocusFill.WithAlpha(fillAlpha), BlendMode.AlphaBlend);
-            painter.FillRect(new UiRect(Bounds.X, highlightY, painter.Context.Px(3f), rowHeight), Theme.Accent.WithAlpha((byte)(255 * MathF.Max(0.5f, Visual.Focus))), BlendMode.AlphaBlend);
+            byte fillAlpha = (byte)(Theme.Selection.A * MathF.Max(0.5f, Visual.Focus));
+            painter.FillRect(new UiRect(Bounds.X, highlightY, Bounds.Width, rowHeight), Theme.Selection.WithAlpha(fillAlpha), UiBlend.AlphaBlend);
+            painter.FillRect(new UiRect(Bounds.X, highlightY, painter.Context.Px(3f), rowHeight), Theme.Accent.WithAlpha((byte)(255 * MathF.Max(0.5f, Visual.Focus))), UiBlend.AlphaBlend);
         }
 
         float pad = painter.Context.Px(10f);
@@ -215,7 +215,7 @@ public class ListView : Control
                 painter.FillRect(
                     new UiRect(Bounds.X, y, Bounds.Width, rowHeight),
                     Theme.FocusFill.WithAlpha((byte)(Theme.FocusFill.A * 0.5f)),
-                    BlendMode.AlphaBlend);
+                    UiBlend.AlphaBlend);
             }
 
             Bgra32 color = !IsEnabled ? Theme.TextDisabled

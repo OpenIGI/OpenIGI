@@ -1,9 +1,10 @@
-﻿using OpenIGI.Core.Titles;
 using OpenIGI.Input;
+using OpenIGI.UI;
 using OpenIGI.UI.Focus;
+using OpenIGI.UI.Kit;
+using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
-using OpenIGI.UI;
 
 namespace OpenIGI.Frontend.Screens;
 
@@ -27,33 +28,41 @@ public enum ShellTab
 }
 
 /// <summary>
-/// The common frame every shell page shares: a persistent horizontal tab bar across the top — the title,
-/// the section tabs and Quit — with the page's own content below it.
+/// The common frame every shell page shares: a header across the top — the game switcher, the section tabs
+/// between their Q and E keys, the operative and Quit — a footer of key hints across the bottom, and the
+/// page's own content between them.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Navigation is by <em>replacement</em>, not a stack: selecting a tab resets the shell to that section,
-/// so there is only ever one page on screen and never two drawing over each other. The bar is part of
-/// every page, so it is always there and always interactive — a tab can be clicked or steered to from
-/// anywhere — and the current section's tab is drawn selected. Back returns to the home page.
+/// so there is only ever one page on screen. The header and footer are the page's chrome: drawn outside the
+/// page's fade, so they hold still while one page gives way to the next. Back returns to the home page.
 /// </para>
 /// <para>
-/// The title doubles as the game selector, opening a list of the titles the shell knows about. There is no
-/// second picker at the other end of the bar: the name at the top left <em>is</em> the statement of which
-/// game is running, and having both said the same thing twice.
+/// The title doubles as the game selector, opening a list of the titles the shell knows about: the name at
+/// the top left <em>is</em> the statement of which game is running.
 /// </para>
 /// <para>
-/// The content is laid out below the bar's height, so the two never overlap; a page with no content is
-/// the home page, just the bar over the orbiting showcase.
+/// Behind it all is the level, blurred (<see cref="BackdropBlur"/>) and vignetted by
+/// <see cref="Shell.DrawBackdrop"/>; the home page leaves it sharp, because there the level is the point.
 /// </para>
 /// </remarks>
 public abstract class ShellScreen : Screen
 {
-    /// <summary>The fraction of the screen height the top bar occupies.</summary>
-    protected const float BarHeightFraction = 0.095f;
+    /// <summary>The header's height, in design units.</summary>
+    protected const float HeaderHeight = 96f;
 
-    private Panel? _bar;
-    private DropdownButton? _title;
+    /// <summary>The footer's height, in design units.</summary>
+    protected const float FooterHeight = 72f;
+
+    /// <summary>The margin either side of the header, footer and pages, in design units.</summary>
+    protected const float SideMargin = 64f;
+
+    private static readonly ShellTab[] Order = [ShellTab.Campaign, ShellTab.Settings, ShellTab.Profile, ShellTab.Extras];
+
+    private Canvas? _chrome;
+    private GameSwitcher? _title;
+    private KeyHintBar? _hints;
 
     /// <summary>Initializes a new instance of the <see cref="ShellScreen"/> class.</summary>
     /// <param name="context">The shared shell context.</param>
@@ -65,61 +74,58 @@ public abstract class ShellScreen : Screen
         Name = GetType().Name;
     }
 
+    /// <summary>Gets how blurred the level behind the page is, in design units; zero leaves it sharp.</summary>
+    public virtual float BackdropBlur => 6f;
+
+    /// <summary>Gets the scale the level behind the page is drawn at, for a page that animates it.</summary>
+    public virtual float BackdropScale => 1f;
+
     /// <summary>Gets the shared shell context.</summary>
     protected ShellContext Context { get; }
 
     /// <summary>Gets which section this page is, for the selected tab.</summary>
     protected abstract ShellTab Tab { get; }
 
-    /// <summary>Builds the page's content, shown below the bar, or <see langword="null"/> for none.</summary>
+    /// <summary>Gets the key hints the footer shows on this page.</summary>
+    protected virtual IReadOnlyList<KeyHint> Hints => [new("ESC", "Back")];
+
+    /// <inheritdoc/>
+    protected override UiElement? Chrome => _chrome;
+
+    /// <summary>Builds the page's content, laid out between the header and the footer, or <see langword="null"/> for none.</summary>
     /// <param name="context">The layout context.</param>
     /// <returns>The content element, or <see langword="null"/>.</returns>
     protected abstract UiElement? BuildContent(LayoutContext context);
 
-    /// <summary>Gets a value indicating whether the page's content is laid on a translucent backdrop.</summary>
-    /// <remarks>
-    /// A form — settings rows, profiles, credits — is dense text that has to be readable over whatever the
-    /// showcase happens to be looking at, and over a sunlit hillside muted grey on nothing is not. The
-    /// backdrop is translucent, so the level still reads behind it and around it. A page whose content
-    /// <em>is</em> the level, like the campaign's, turns it off and carries its own legibility instead.
-    /// </remarks>
-    protected virtual bool ContentOnBackdrop => true;
-
-    /// <inheritdoc/>
-    protected override UiElement? Chrome => _bar;
+    /// <summary>Replaces the footer's hints, for a page whose keys change as it is used.</summary>
+    protected void RefreshHints() => _hints?.SetHints(Hints);
 
     /// <inheritdoc/>
     protected override UiElement BuildRoot(LayoutContext context)
     {
         var canvas = new Canvas();
 
-        // Content first in tree order so focus starts on it rather than on a tab; the two do not overlap,
-        // so draw order does not matter.
+        // Content first in tree order so focus starts on it rather than on a tab.
         if (BuildContent(context) is { } content)
         {
-            // The backdrop fills the whole page area rather than sitting in the middle of it: a form that
-            // has been given the screen should use it. What keeps that from turning a settings row into a
-            // caption at one edge and a value at the other is the page laying its content out in columns,
-            // not the panel being narrowed.
-            UiElement page = ContentOnBackdrop
-                ? new Panel
-                {
-                    Background = Context.Theme.Panel.WithAlpha(205),
-                    Padding = new Thickness(40f, 28f),
-                }.WithChild(content)
-                : content;
-
-            canvas.Add(page, new Anchor(new UiVec2(0f, BarHeightFraction), UiVec2.One, new Thickness(56f, 26f, 56f, 34f)));
+            canvas.Add(content, new Anchor(UiVec2.Zero, UiVec2.One, new Thickness(0f, HeaderHeight, 0f, FooterHeight)));
         }
 
-        _bar = BuildTopBar();
-        canvas.Add(_bar, new Anchor(UiVec2.Zero, new UiVec2(1f, BarHeightFraction)));
+        // The chrome spans the screen but only draws at its edges, so it lets the pointer through to the
+        // page between them.
+        _chrome = new Canvas { IsHitTestTransparent = true };
+        _chrome.Add(BuildFooter(), new Anchor(new UiVec2(0f, 1f), UiVec2.One, new Thickness(0f, -FooterHeight, 0f, 0f)));
+        _chrome.Add(BuildHeader(), new Anchor(UiVec2.Zero, new UiVec2(1f, 0f), new Thickness(0f, 0f, 0f, -HeaderHeight)));
+        canvas.Add(_chrome);
         return canvas;
     }
 
     /// <inheritdoc/>
     protected override bool HandleInput(UiNavigation nav, InputState input)
     {
+        ArgumentNullException.ThrowIfNull(nav);
+        ArgumentNullException.ThrowIfNull(input);
+
         // An open menu takes back for itself: shutting it is what the player meant, not leaving the page.
         if (nav.Back && _title is { IsOpen: true } openTitle)
         {
@@ -133,115 +139,135 @@ public abstract class ShellScreen : Screen
             return false;
         }
 
+        // Q and E step through the sections, as the keys either side of the tabs say. Not while a text
+        // field has focus: there the letters are being typed.
+        if (Focus?.Focused is not TextBox)
+        {
+            if (input.Keyboard.WasPressed(KeyCode.Q))
+            {
+                StepTab(-1);
+                return false;
+            }
+
+            if (input.Keyboard.WasPressed(KeyCode.E))
+            {
+                StepTab(1);
+                return false;
+            }
+        }
+
         return base.HandleInput(nav, input);
     }
 
-    private Panel BuildTopBar()
+    /// <summary>Switches to another section.</summary>
+    /// <param name="tab">The section.</param>
+    protected void GoTo(ShellTab tab)
+    {
+        if (tab == Tab)
+        {
+            return;
+        }
+
+        Context.Stack.Reset(CreateScreen(tab, Context));
+    }
+
+    private void StepTab(int direction)
+    {
+        int index = Array.IndexOf(Order, Tab);
+        int next = index < 0
+            ? (direction > 0 ? 0 : Order.Length - 1)
+            : (index + direction + Order.Length) % Order.Length;
+        GoTo(Order[next]);
+    }
+
+    private EdgePanel BuildHeader()
     {
         UiTheme theme = Context.Theme;
-        var bar = new Panel { Background = theme.Panel };
-
-        // A canvas rather than the row alone, so a hairline can be laid over the bar's bottom edge and
-        // give the content below it something to sit under.
-        var layers = new Canvas();
+        var bar = new EdgePanel(lineAtBottom: true);
 
         var row = new FlexPanel
         {
             Orientation = Orientation.Horizontal,
-            Gap = 2f,
-            Padding = new Thickness(48f, 0f),
-            Justify = FlexJustify.Start,
+            Gap = 64f,
+            Padding = new Thickness(SideMargin, 0f),
         };
 
-        // The bar's controls carry a vertical margin so their highlight is a band around the caption
-        // rather than a block the full height of the bar, and the underline lands just under the text
-        // instead of merging into the bar's own hairline.
-        //
-        // The title is also the game selector: it looks exactly like the button it was, and opens a list
-        // of the titles this shell can run. That is where the choice belongs — the game being played is
-        // what the name at the top left of a screen is announcing — rather than in a second picker at the
-        // far end of the bar saying the same thing twice.
         row.Add(BuildTitle(theme));
 
-        AddTab(row, "Campaign", ShellTab.Campaign);
-        AddTab(row, "Settings", ShellTab.Settings);
-        AddTab(row, "Profile", ShellTab.Profile);
-        AddTab(row, "Extras", ShellTab.Extras);
+        var nav = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 8f };
+        nav.Add(new KeyCapLabel(theme, "Q") { Margin = new Thickness(0f, 0f, 12f, 0f) });
+        foreach (ShellTab tab in Order)
+        {
+            var button = new HeaderTab(theme, tab.ToString()) { Selected = tab == Tab };
+            ShellTab target = tab;
+            button.Activated += _ => GoTo(target);
+            nav.Add(button);
+        }
 
+        nav.Add(new KeyCapLabel(theme, "E") { Margin = new Thickness(12f, 0f, 0f, 0f) });
+        row.Add(nav);
         row.Add(new Panel(), grow: 1f); // pushes what follows to the right edge
+
+        var right = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 36f };
+        var operative = new OperativeBadge(theme, Context.Config.Active?.Name ?? "No profile") { VerticalAlignment = VerticalAlignment.Center };
+        operative.Activated += _ => GoTo(ShellTab.Profile);
+        right.Add(operative);
+        right.Add(new Rule { VerticalAlignment = VerticalAlignment.Center });
 
         var quit = new Button(theme, "Quit")
         {
-            TextSize = theme.BodyTextSize * 1.1f,
-            Padding = new Thickness(20f, 8f),
-            Margin = new Thickness(24f, 20f, 0f, 20f),
+            Accent = ButtonAccent.Text,
+            TextSize = 19f,
+            Padding = new Thickness(0f, 8f),
+            VerticalAlignment = VerticalAlignment.Center,
         };
         quit.Activated += _ => Context.Host.Quit();
-        row.Add(quit);
+        right.Add(quit);
+        row.Add(right);
 
-        // The hairline goes in BEFORE the row, so the row draws over it. It is background chrome — the
-        // edge the page below hangs off — and a canvas draws its children in order, so adding it last put
-        // it over everything the bar contains, including the list the title drops below itself.
-        layers.Add(
-            new Panel
-            {
-                Background = theme.Accent.WithAlpha(110),
-                Height = 2f,
-                VerticalAlignment = VerticalAlignment.Bottom,
-            },
-            new Anchor(new UiVec2(0f, 0.8f), UiVec2.One));
-
-        layers.Add(row);
-        bar.AddChild(layers);
+        bar.AddChild(row);
         return bar;
     }
 
-    private void AddTab(FlexPanel row, string text, ShellTab tab)
+    private EdgePanel BuildFooter()
     {
-        var button = new Button(Context.Theme, text)
+        var bar = new EdgePanel(lineAtBottom: false);
+        _hints = new KeyHintBar(Context.Theme)
         {
-            TextSize = Context.Theme.BodyTextSize * 1.15f,
-            Padding = new Thickness(22f, 8f),
-            Margin = new Thickness(0f, 20f),
-            Selected = tab == Tab,
-
-            // A bar down the left edge reads as "this row" in a column and as noise in a horizontal nav;
-            // an underline is what a tab in a bar wants.
-            Accent = ButtonAccent.Underline,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(SideMargin, 0f),
         };
-        button.Activated += _ => GoTo(tab);
-        row.Add(button);
+        _hints.SetHints(Hints);
+        bar.AddChild(_hints);
+        return bar;
     }
 
-    private DropdownButton BuildTitle(UiTheme theme)
+    private GameSwitcher BuildTitle(UiTheme theme)
     {
         string[] games = new string[Context.Games.Count];
         int current = 0;
         for (int i = 0; i < games.Length; i++)
         {
-            games[i] = Context.Games[i].DisplayName;
+            games[i] = ShortName(Context.Games[i].DisplayName);
             if (Context.Games[i].Id == Context.ActiveTitleId)
             {
                 current = i;
             }
         }
 
-        var title = new DropdownButton(theme, games.Length > 0 ? games[current] : string.Empty, games)
+        var title = new GameSwitcher(theme, games.Length > 0 ? games[current] : string.Empty, games)
         {
-            Font = theme.Heading,
-            TextSize = theme.HeadingTextSize * 0.62f,
-            Padding = new Thickness(14f, 8f),
-            Margin = new Thickness(0f, 20f, 40f, 20f),
-            Accent = ButtonAccent.Underline,
+            Subtitle = games.Length > 0 ? Tagline(Context.Games[current].Id, Context.Games[current].DisplayName) : string.Empty,
+            VerticalAlignment = VerticalAlignment.Center,
 
-            // The one running, not the first listed. They were the same while only one game could be
-            // taken; picking the second and then opening the list would otherwise show the first as
-            // current, which reads as the switch having failed.
+            // The one running, not the first listed: opening the list after a switch must show the switch.
             CurrentIndex = current,
+            ItemDetail = index => index >= 0 && index < Context.Games.Count
+                ? Tagline(Context.Games[index].Id, Context.Games[index].DisplayName)
+                : null,
 
             // A title is takeable when this build supports it AND the player has it installed. An entry
-            // greyed out for the second reason is worth showing rather than hiding: a list with one
-            // entry says nothing about the game you own and have not pointed the port at.
+            // greyed out for the second reason is worth showing rather than hiding.
             ItemEnabled = index => index >= 0 && index < Context.Games.Count && Context.Games[index].IsPlayable,
         };
 
@@ -259,9 +285,8 @@ public abstract class ShellScreen : Screen
                 return;
             }
 
-            // The app takes the swap up at a frame boundary and rebuilds this shell around the new
-            // game, so there is nothing to do here afterwards -- this screen does not survive it. False
-            // means it will not happen at all, and the selector goes back to what is actually running.
+            // The app takes the swap up at a frame boundary and rebuilds this shell around the new game;
+            // false means it will not happen, and the selector goes back to what is actually running.
             if (!Context.Host.SwitchTitle(Context.Games[index].Id))
             {
                 title.CurrentIndex = current;
@@ -272,14 +297,28 @@ public abstract class ShellScreen : Screen
         return title;
     }
 
-    private void GoTo(ShellTab tab)
+    /// <summary>A game's name without its subtitle: <c>I.G.I. 2: Covert Strike</c> is <c>I.G.I. 2</c>.</summary>
+    private static string ShortName(string displayName)
     {
-        if (tab == Tab)
+        int colon = displayName.IndexOf(':', StringComparison.Ordinal);
+        return colon < 0 ? displayName : displayName[..colon].Trim();
+    }
+
+    /// <summary>A game's tagline, set under its name in the switcher.</summary>
+    private static string Tagline(string id, string displayName)
+    {
+        int colon = displayName.IndexOf(':', StringComparison.Ordinal);
+        if (colon >= 0)
         {
-            return;
+            return displayName[(colon + 1)..].Trim().ToUpperInvariant();
         }
 
-        Context.Stack.Reset(CreateScreen(tab, Context));
+        return id switch
+        {
+            "igi1" => "I'M GOING IN",
+            "igi2" => "COVERT STRIKE",
+            _ => string.Empty,
+        };
     }
 
     // Home is the landing page out of game and the pause menu in it: the tabs, the title and Back all lead
@@ -292,4 +331,14 @@ public abstract class ShellScreen : Screen
         ShellTab.Extras => new ExtrasScreen(context),
         _ => context.InGame ? new PauseScreen(context) : new MainMenuScreen(context),
     };
+
+    /// <summary>A transparent bar with a hairline along one edge: the header's bottom, the footer's top.</summary>
+    private sealed class EdgePanel(bool lineAtBottom) : Panel
+    {
+        protected override void OnDraw(UiPainter painter)
+        {
+            float t = painter.Context.Px(1f);
+            painter.FillRect(new UiRect(Bounds.X, lineAtBottom ? Bounds.Bottom - t : Bounds.Y, Bounds.Width, t), UiPalette.Rule);
+        }
+    }
 }

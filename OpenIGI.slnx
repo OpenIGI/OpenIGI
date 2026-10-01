@@ -2,6 +2,7 @@
   <Folder Name="/apps/">
     <Project Path="apps/OpenIGI.Composition/OpenIGI.Composition.csproj" />
     <Project Path="apps/OpenIGI.Desktop/OpenIGI.Desktop.csproj" />
+    <Project Path="apps/OpenIGI.Launcher/OpenIGI.Launcher.csproj" />
     <Project Path="src/OpenIGI.Audio.OpenAL/OpenIGI.Audio.OpenAL.csproj" />
     <Project Path="src/OpenIGI.Audio.Web/OpenIGI.Audio.Web.csproj" />
     <Project Path="src/OpenIGI.Audio/OpenIGI.Audio.csproj" />
@@ -28,7 +29,11 @@
     <Project Path="src/OpenIGI.Scripting/OpenIGI.Scripting.csproj" />
     <Project Path="src/OpenIGI.Shaders/OpenIGI.Shaders.csproj" />
     <Project Path="src/OpenIGI.UI/OpenIGI.UI.csproj" />
+    <Project Path="src/OpenIGI.UI.Rhi/OpenIGI.UI.Rhi.csproj" />
+    <Project Path="src/OpenIGI.UI.Kit/OpenIGI.UI.Kit.csproj" />
+    <Project Path="src/OpenIGI.UI.Skia/OpenIGI.UI.Skia.csproj" />
     <Project Path="src/OpenIGI.Frontend/OpenIGI.Frontend.csproj" />
+    <Project Path="src/OpenIGI.Frontend.Settings/OpenIGI.Frontend.Settings.csproj" />
   </Folder>
   <Folder Name="/src/" />
   <Folder Name="/tests/">

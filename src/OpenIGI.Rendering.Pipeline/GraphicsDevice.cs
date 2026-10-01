@@ -337,6 +337,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         DisposeCapture();
 
         DisposeCardAtlas();
+        DisposeBackdrop();
         DisposeDeferred();
         DisposeCompute();
         _profiler.Dispose();

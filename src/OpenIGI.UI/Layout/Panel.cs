@@ -1,5 +1,5 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Rendering;
+using OpenIGI.UI.Drawing;
 
 namespace OpenIGI.UI.Layout;
 
@@ -22,7 +22,7 @@ public class Panel : UiElement
     public Bgra32? Background { get; set; }
 
     /// <summary>Gets or sets how the background combines with what is behind it.</summary>
-    public BlendMode BackgroundBlend { get; set; } = BlendMode.AlphaBlend;
+    public UiBlend BackgroundBlend { get; set; } = UiBlend.AlphaBlend;
 
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)

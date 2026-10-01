@@ -1,4 +1,4 @@
-using OpenIGI.Rendering;
+using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Layout;
 
@@ -167,8 +167,8 @@ public class ScrollView : UiElement
         float offset = Math.Clamp(_offset.Value, 0f, MaxScroll);
         float thumbY = Bounds.Y + ((Bounds.Height - thumbHeight) * (offset / MaxScroll));
 
-        painter.FillRect(new UiRect(x, Bounds.Y, trackW, Bounds.Height), _theme.Border.WithAlpha(40), BlendMode.AlphaBlend);
-        painter.FillRect(new UiRect(x, thumbY, trackW, thumbHeight), _theme.Accent.WithAlpha(160), BlendMode.AlphaBlend);
+        painter.FillRect(new UiRect(x, Bounds.Y, trackW, Bounds.Height), _theme.Border.WithAlpha(40), UiBlend.AlphaBlend);
+        painter.FillRect(new UiRect(x, thumbY, trackW, thumbHeight), _theme.Accent.WithAlpha(160), UiBlend.AlphaBlend);
     }
 
     // Design units to pixels, falling back to the raw number before the first measure has run.

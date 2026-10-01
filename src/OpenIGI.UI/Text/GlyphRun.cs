@@ -1,4 +1,3 @@
-using OpenIGI.Rendering;
 using OpenIGI.UI.Layout;
 
 namespace OpenIGI.UI.Text;
@@ -6,7 +5,10 @@ namespace OpenIGI.UI.Text;
 /// <summary>Where one glyph goes, and what it samples.</summary>
 /// <param name="Destination">The glyph's box, in the coordinates the run was started in.</param>
 /// <param name="Source">The glyph's rectangle in the font's atlas.</param>
-public readonly record struct GlyphPlacement(UiRect Destination, RectF Source);
+/// <param name="Character">The character the glyph draws.</param>
+/// <param name="PenX">The pen position at the glyph's origin.</param>
+/// <param name="BaselineY">The baseline the glyph sits on.</param>
+public readonly record struct GlyphPlacement(UiRect Destination, UiRect Source, char Character, float PenX, float BaselineY);
 
 /// <summary>
 /// Walks a run of text, giving each drawable glyph its box.
@@ -88,7 +90,10 @@ public ref struct GlyphRun
                     _baseline + (glyph.OffsetY * _scale),
                     glyph.Width * _scale,
                     glyph.Height * _scale),
-                glyph.SourceRect(_font.Atlas.Width, _font.Atlas.Height));
+                glyph.SourceRect(_font.Atlas.Width, _font.Atlas.Height),
+                character,
+                _penX,
+                _baseline);
             _penX += advance;
             return true;
         }

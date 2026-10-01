@@ -1,12 +1,12 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Rendering;
+using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Layout;
 
 namespace OpenIGI.UI.Text;
 
 /// <summary>
 /// A font ready to lay out and draw: a rasterised atlas, its glyph table indexed for lookup, and the
-/// GPU texture the glyphs are sampled from.
+/// image the glyphs are sampled from.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -15,23 +15,29 @@ namespace OpenIGI.UI.Text;
 /// shape in alpha without any special colour handling.
 /// </para>
 /// <para>
-/// Measurement never touches the GPU. A font built with <see cref="ForMeasurement"/> has no texture and
-/// is what the layout tests use; one built with <see cref="Upload"/> can also draw. Both measure
-/// identically, because measurement reads only the glyph table.
+/// Measurement never touches a renderer. A font built with <see cref="ForMeasurement"/> has no texture and
+/// is what the layout tests use; one built with <see cref="Create"/> can also draw from its atlas. Both
+/// measure identically, because measurement reads only the glyph table.
+/// </para>
+/// <para>
+/// A renderer that draws vector glyphs (the launcher's Skia canvas) needs no atlas image at all: it
+/// reads <see cref="FontData"/>, the TrueType file the atlas was built from, and draws each glyph at the
+/// pen position the atlas metrics computed, so its layout is the game's to the pixel.
 /// </para>
 /// </remarks>
 public sealed class UiFont : IDisposable
 {
     private readonly Dictionary<int, GlyphInfo> _glyphs;
-    private readonly IGraphicsDevice? _device;
+    private readonly IUiImageFactory? _owner;
     private readonly int _fallbackCodepoint;
     private bool _disposed;
 
-    private UiFont(FontAtlasData atlas, IGraphicsDevice? device, TextureHandle texture)
+    private UiFont(FontAtlasData atlas, IUiImageFactory? owner, UiImage texture, byte[]? fontData)
     {
         Atlas = atlas;
-        _device = device;
+        _owner = owner;
         Texture = texture;
+        FontData = fontData;
 
         _glyphs = new Dictionary<int, GlyphInfo>(atlas.Glyphs.Count);
         foreach (GlyphInfo glyph in atlas.Glyphs)
@@ -49,8 +55,12 @@ public sealed class UiFont : IDisposable
     /// <summary>Gets the rasterised atlas backing this font.</summary>
     public FontAtlasData Atlas { get; }
 
-    /// <summary>Gets the atlas texture, or <see cref="TextureHandle.None"/> for a measurement-only font.</summary>
-    public TextureHandle Texture { get; }
+    /// <summary>Gets the atlas image, or <see cref="UiImage.None"/> for a measurement-only font.</summary>
+    public UiImage Texture { get; }
+
+    /// <summary>Gets the TrueType file the atlas was built from, or <see langword="null"/> when it was not kept.</summary>
+    /// <remarks>What a vector renderer draws from; an atlas renderer never reads it.</remarks>
+    public byte[]? FontData { get; }
 
     /// <summary>Gets what one atlas texel means.</summary>
     public FontAtlasKind Kind => Atlas.Kind;
@@ -58,24 +68,26 @@ public sealed class UiFont : IDisposable
     /// <summary>Gets the pixel height the atlas was rasterised at.</summary>
     public float BasePixelHeight => Atlas.BasePixelHeight;
 
-    /// <summary>Creates a font that can measure but not draw, uploading nothing to the GPU.</summary>
+    /// <summary>Creates a font that can measure, uploading nothing.</summary>
     /// <param name="atlas">The rasterised atlas.</param>
-    /// <returns>A measurement-only font.</returns>
+    /// <param name="fontData">The TrueType file the atlas was built from, for a renderer that draws vector glyphs.</param>
+    /// <returns>A font with no atlas image: it measures, and draws only through a vector renderer.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="atlas"/> is <see langword="null"/>.</exception>
-    public static UiFont ForMeasurement(FontAtlasData atlas)
+    public static UiFont ForMeasurement(FontAtlasData atlas, byte[]? fontData = null)
     {
         ArgumentNullException.ThrowIfNull(atlas);
-        return new UiFont(atlas, null, TextureHandle.None);
+        return new UiFont(atlas, null, UiImage.None, fontData);
     }
 
-    /// <summary>Uploads an atlas to a device and returns a font that can measure and draw.</summary>
-    /// <param name="device">The device to upload to.</param>
+    /// <summary>Uploads an atlas through an image factory and returns a font that can measure and draw.</summary>
+    /// <param name="images">The factory that makes the atlas image and later releases it.</param>
     /// <param name="atlas">The rasterised atlas.</param>
+    /// <param name="fontData">The TrueType file the atlas was built from, kept for vector renderers.</param>
     /// <returns>A drawable font.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="device"/> or <paramref name="atlas"/> is <see langword="null"/>.</exception>
-    public static UiFont Upload(IGraphicsDevice device, FontAtlasData atlas)
+    /// <exception cref="ArgumentNullException"><paramref name="images"/> or <paramref name="atlas"/> is <see langword="null"/>.</exception>
+    public static UiFont Create(IUiImageFactory images, FontAtlasData atlas, byte[]? fontData = null)
     {
-        ArgumentNullException.ThrowIfNull(device);
+        ArgumentNullException.ThrowIfNull(images);
         ArgumentNullException.ThrowIfNull(atlas);
 
         Bgra32[] pixels = new Bgra32[atlas.Pixels.Length];
@@ -85,8 +97,8 @@ public sealed class UiFont : IDisposable
             pixels[i] = new Bgra32(255, 255, 255, atlas.Pixels[i]);
         }
 
-        TextureHandle texture = device.CreateTexture(new TextureDescription(atlas.Width, atlas.Height), pixels);
-        return new UiFont(atlas, device, texture);
+        UiImage texture = images.CreateImage(atlas.Width, atlas.Height, pixels);
+        return new UiFont(atlas, images, texture, fontData);
     }
 
     /// <summary>Gets the scale from atlas pixels to a requested pixel size.</summary>
@@ -232,7 +244,7 @@ public sealed class UiFont : IDisposable
         _disposed = true;
         if (Texture.IsValid)
         {
-            _device?.DestroyTexture(Texture);
+            _owner?.DestroyImage(Texture);
         }
     }
 }

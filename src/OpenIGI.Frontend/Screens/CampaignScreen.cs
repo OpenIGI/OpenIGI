@@ -1,59 +1,55 @@
 using System.Globalization;
 using OpenIGI.Core.Configuration;
-using OpenIGI.UI;
-using OpenIGI.UI.Layout;
-using OpenIGI.UI.Widgets;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
+using OpenIGI.UI;
+using OpenIGI.UI.Kit;
+using OpenIGI.UI.Kit.Widgets;
+using OpenIGI.UI.Layout;
+using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Frontend.Screens;
 
 /// <summary>
-/// The campaign section: a narrow mission rail down the left, and the selected mission's briefing floating
-/// over the level itself, which is previewed live behind the menu.
+/// The campaign section: the mission list down the left, and the selected mission's name set large over the
+/// level, which is previewed live behind the menu, with its conditions and the PLAY button under it.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The level is the picture.</b> The whole reason the shell streams the hovered mission in behind the
-/// menu is so the player sees where they are about to go, so the section is laid out around keeping it
-/// visible: one translucent rail holding the list, and the briefing set directly on the scene as
-/// shadowed text with no panel behind it. Filling the screen with two opaque cards — which is what a
-/// conventional two-pane dossier does — hides the one thing worth showing.
+/// <b>The level is the picture.</b> The shell streams the selected mission in behind the menu so the
+/// player sees where they are about to go; the page keeps it visible, with one column of glass-free rows
+/// on the left and the briefing set directly on the scene.
 /// </para>
 /// <para>
-/// A rail rather than a carousel. A carousel shows one title at a time and hides where you are in a
-/// fourteen-mission campaign; the rail shows the whole campaign at once, in the order the game itself
-/// chains the missions, with each one's progress beside it — and it is what a pointer expects to be able
-/// to click and scroll. Each row is its own focusable <see cref="ListCard"/>, so the mouse, the keyboard
-/// and the pad all reach it through the one focus model.
-/// </para>
-/// <para>
-/// Selection follows focus: moving to a row is choosing it, which is what makes a single press of down
-/// change the briefing and the level behind it. That preview goes through
-/// <see cref="IShellHost.PreviewMission"/>, which the app debounces and cross-fades — scrubbing the list
-/// does not load fourteen levels.
+/// Selection follows focus: moving to a row is choosing it, so one press of down changes the briefing and
+/// the level behind it. The name changes with the design's reveal — the old one wipes out, the new one
+/// wipes in from below out of a blur, a light sweeps across, the level pushes in and settles — and the
+/// preview goes through <see cref="IShellHost.PreviewMission"/>, which the app debounces, so scrubbing
+/// the list does not load fourteen levels.
 /// </para>
 /// </remarks>
 public sealed class CampaignScreen : ShellScreen
 {
     private static readonly string[] Difficulties = AiDifficultyNames.All;
 
-    // Indexed by MissionTimeOfDay and MissionWeather, whose Default is deliberately zero -- so a row's
+    // Indexed by MissionTimeOfDay and MissionWeather, whose Default is deliberately zero -- so a cycler's
     // selected index IS the enumeration value and no lookup table can fall out of step with it.
     private static readonly string[] TimesOfDay = ["Default", "Day", "Night"];
 
     private static readonly string[] Weathers = ["Default", "Rain", "Snow"];
 
     private readonly List<ListCard> _cards = [];
+    private readonly TitleReveal _reveal = new();
 
-    private Label? _missionNumber;
-    private Label? _missionName;
-    private Label? _status;
-    private Label? _briefing;
-    private Button? _play;
-    private int _selected;
+    private CampaignHeader? _header;
+    private MissionHero? _hero;
+    private PrimaryAction? _play;
+    private OptionCycler? _difficulty;
+    private int _selected = -1;
+    private int _shown;
 
     /// <summary>Initializes a new instance of the <see cref="CampaignScreen"/> class.</summary>
     /// <param name="context">The shared shell context.</param>
@@ -62,15 +58,21 @@ public sealed class CampaignScreen : ShellScreen
     {
     }
 
-    /// <summary>Gets the index of the mission the rail currently has selected.</summary>
-    public int SelectedMission => _selected;
+    /// <summary>Gets the index of the mission the list currently has selected.</summary>
+    public int SelectedMission => Math.Max(0, _selected);
+
+    /// <inheritdoc/>
+    public override float BackdropScale => _reveal.BackgroundScale;
 
     /// <inheritdoc/>
     protected override ShellTab Tab => ShellTab.Campaign;
 
     /// <inheritdoc/>
-    /// <remarks>The level behind the menu is the picture here; a backdrop over it would be covering the point.</remarks>
-    protected override bool ContentOnBackdrop => false;
+    protected override IReadOnlyList<KeyHint> Hints => [new("↑↓", "Select mission"), new("ENTER", "Play"), new("ESC", "Back")];
+
+    /// <inheritdoc/>
+    protected override Control? InitialFocus =>
+        _selected >= 0 && _selected < _cards.Count ? _cards[_selected] : null;
 
     /// <inheritdoc/>
     protected override UiElement? BuildContent(LayoutContext context)
@@ -80,33 +82,31 @@ public sealed class CampaignScreen : ShellScreen
 
         if (Context.Missions.Count == 0)
         {
-            return new Label(theme.Body, "No missions were found in this installation.", theme.BodyTextSize, theme.TextMuted)
+            return new Label(theme.Body, "No missions were found in this installation.", 22f, theme.TextMuted)
             {
-                Shadow = theme.Shadow,
+                Margin = new Thickness(SideMargin, 56f),
                 VerticalAlignment = VerticalAlignment.Top,
             };
         }
 
-        _selected = Math.Clamp(_selected, 0, Context.Missions.Count - 1);
+        // The first time the page opens it lands on the mission the profile is up to, not on the first.
+        if (_selected < 0)
+        {
+            _selected = Math.Clamp(Frontier(), 0, Context.Missions.Count - 1);
+            _shown = _selected;
+        }
 
-        var columns = new Grid { ColumnSpacing = 44f };
-        columns.ColumnDefinitions.Add(GridLength.Stars(0.31f));
-        columns.ColumnDefinitions.Add(GridLength.Stars(0.69f));
-        columns.RowDefinitions.Add(GridLength.Star);
-
-        columns.Add(BuildMissionRail(theme), 0, 0);
-        columns.Add(BuildBriefing(theme), 0, 1);
+        var page = new Canvas();
+        page.Add(BuildMissionList(theme), new Anchor(UiVec2.Zero, new UiVec2(0f, 1f), new Thickness(SideMargin, 56f, -(SideMargin + 560f), 48f)));
+        page.Add(BuildDetail(theme), new Anchor(UiVec2.Zero, UiVec2.One, new Thickness(720f, 0f, SideMargin, 48f)));
 
         Refresh();
-        return columns;
+        _reveal.Enter();
+        return page;
     }
 
     /// <inheritdoc/>
-    protected override void OnBuilt()
-    {
-        // Preview the current selection once the rail exists; OnEnter runs before the tree is built.
-        Preview();
-    }
+    protected override void OnBuilt() => Preview();
 
     /// <inheritdoc/>
     protected override void OnEnter()
@@ -127,9 +127,10 @@ public sealed class CampaignScreen : ShellScreen
     /// <inheritdoc/>
     protected override void OnUpdate(float elapsedSeconds)
     {
+        _reveal.Update(elapsedSeconds);
+
         // Selection follows focus, so one press of down changes the briefing and the level behind it. The
-        // rows are focusable in their own right, which means this covers the pointer, the keyboard and the
-        // pad without any of them needing their own path.
+        // rows are focusable in their own right, which covers the pointer, the keyboard and the pad alike.
         if (Focus?.Focused is ListCard focused)
         {
             int index = _cards.IndexOf(focused);
@@ -140,35 +141,25 @@ public sealed class CampaignScreen : ShellScreen
         }
     }
 
-    private Panel BuildMissionRail(UiTheme theme)
+    /// <inheritdoc/>
+    protected override void OnDrawBackground(UiPainter painter)
     {
-        // Translucent, so the level reads through the rail rather than being walled off by it.
-        var panel = new Panel { Background = theme.Panel.WithAlpha(150) };
+        ArgumentNullException.ThrowIfNull(painter);
+        var screen = new UiRect(0f, 0f, painter.Context.Viewport.X, painter.Context.Viewport.Y);
+        KitDraw.Sweep(painter, screen, _reveal.SweepProgress, _reveal.SweepOpacity);
+    }
 
-        var layout = new Grid { Padding = new Thickness(0f, 20f, 0f, 16f), RowSpacing = 12f };
+    private Grid BuildMissionList(UiTheme theme)
+    {
+        var layout = new Grid();
         layout.ColumnDefinitions.Add(GridLength.Star);
         layout.RowDefinitions.Add(GridLength.Auto);
         layout.RowDefinitions.Add(GridLength.Star);
 
-        var header = new StackPanel
-        {
-            Orientation = Orientation.Vertical,
-            Spacing = 1f,
-            Padding = new Thickness(20f, 0f),
-        };
-        header.AddChild(new Label(theme.Heading, "CAMPAIGN", theme.HeadingTextSize * 0.55f, theme.Text)
-        {
-            Shadow = theme.Shadow,
-        });
-        header.AddChild(new Label(
-            theme.Body,
-            string.Create(CultureInfo.InvariantCulture, $"{Context.Missions.Count} missions"),
-            theme.BodyTextSize * 0.78f,
-            theme.TextMuted));
-        layout.Add(header, 0, 0);
+        _header = new CampaignHeader(theme, Context.Missions.Count);
+        layout.Add(_header, 0, 0);
 
-        var scroll = new ScrollView(theme);
-        var rows = new StackPanel { Orientation = Orientation.Vertical, Spacing = 1f };
+        var rows = new StackPanel { Orientation = Orientation.Vertical };
         for (int i = 0; i < Context.Missions.Count; i++)
         {
             int index = i;
@@ -182,169 +173,92 @@ public sealed class CampaignScreen : ShellScreen
             rows.AddChild(card);
         }
 
+        var scroll = new ScrollView(theme);
         scroll.SetContent(rows);
         layout.Add(scroll, 1, 0);
-
-        panel.AddChild(layout);
-        return panel;
+        return layout;
     }
 
-    private Grid BuildBriefing(UiTheme theme)
+    private StackPanel BuildDetail(UiTheme theme)
     {
-        // No panel: the briefing sits on the level, and its legibility comes from shadowed text rather than
-        // from a block laid over the picture. The upper part of the column is deliberately left empty.
-        var column = new Grid { RowSpacing = 10f };
-        column.ColumnDefinitions.Add(GridLength.Star);
-        column.RowDefinitions.Add(GridLength.Star);  // the level shows through here
-        column.RowDefinitions.Add(GridLength.Auto);  // the mission number
-        column.RowDefinitions.Add(GridLength.Auto);  // the mission name
-        column.RowDefinitions.Add(GridLength.Auto);  // the accent rule
-        column.RowDefinitions.Add(GridLength.Auto);  // the progress line
-        column.RowDefinitions.Add(GridLength.Auto);  // the briefing text
-        column.RowDefinitions.Add(GridLength.Auto);  // difficulty and Play
-
-        _missionNumber = new Label(theme.Body, string.Empty, theme.BodyTextSize * 0.8f, theme.Accent)
+        var column = new StackPanel
         {
-            Shadow = theme.Shadow,
+            Orientation = Orientation.Vertical,
+            Spacing = 28f,
+            VerticalAlignment = VerticalAlignment.Bottom,
         };
-        column.Add(_missionNumber, 1, 0);
 
-        _missionName = new Label(theme.Heading, string.Empty, theme.HeadingTextSize * 1.25f, theme.Text)
+        _hero = new MissionHero(theme, _reveal);
+        column.AddChild(_hero);
+
+        // The conditions sit in one strip of glass beside PLAY: how the mission is played, chosen right
+        // where it is started. Seeded from the context rather than a fresh default, so a player three
+        // missions into a night run is shown the run they are on.
+        var strip = new GlassPanel(theme)
         {
-            Shadow = theme.Shadow,
+            Tint = Bgra32.FromRgba(18, 20, 22, 184),
+            TintBottom = Bgra32.FromRgba(10, 12, 13, 184),
+            Blur = 20f,
+            BorderEdges = UiEdges.Top | UiEdges.Left | UiEdges.Bottom,
         };
-        column.Add(_missionName, 2, 0);
+        var cells = new FlexPanel { Orientation = Orientation.Horizontal };
+        _difficulty = new OptionCycler(theme, "Difficulty", Difficulties, DefaultDifficultyIndex());
+        var time = new OptionCycler(theme, "Time", TimesOfDay, (int)Context.Conditions.TimeOfDay);
+        time.SelectionChanged += index => ChooseConditions(Context.Conditions with { TimeOfDay = (MissionTimeOfDay)index });
+        var weather = new OptionCycler(theme, "Weather", Weathers, (int)Context.Conditions.Weather);
+        weather.SelectionChanged += index => ChooseConditions(Context.Conditions with { Weather = (MissionWeather)index });
+        cells.Add(_difficulty);
+        cells.Add(time);
+        cells.Add(weather);
+        strip.AddChild(cells);
 
-        column.Add(
-            new Panel
-            {
-                Background = theme.Accent,
-                Height = 3f,
-                Width = 110f,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(0f, 4f, 0f, 4f),
-            },
-            3,
-            0);
-
-        _status = new Label(theme.Body, string.Empty, theme.BodyTextSize * 0.85f, theme.TextMuted)
+        _play = new PrimaryAction(theme, "Play") { Width = 380f };
+        _play.Activated += _ =>
         {
-            Shadow = theme.Shadow,
+            MissionInfo mission = Context.Missions[SelectedMission];
+            Context.Host.StartMission(mission.Id, _difficulty.SelectedIndex);
         };
-        column.Add(_status, 4, 0);
 
-        _briefing = new Label(theme.Body, string.Empty, theme.BodyTextSize, theme.Text)
-        {
-            Wrap = true,
-            Shadow = theme.Shadow,
-            MaxWidth = 720f,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0f, 6f, 0f, 14f),
-        };
-        column.Add(_briefing, 5, 0);
-
-        // A tighter gap than the row had, because the row now holds three label-and-dropdown pairs rather
-        // than one: at an even eighteen everywhere, "WEATHER" sat as far from its own dropdown as from the
-        // one before it, and the three pairs read as six unrelated controls. The gap is the WITHIN-pair
-        // spacing; each pair after the first is pushed off the one before it by the label's own margin.
         var actions = new FlexPanel
         {
             Orientation = Orientation.Horizontal,
-            Gap = 10f,
-            Justify = FlexJustify.Start,
+            Height = 96f,
             HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0f, 28f, 0f, 0f),
         };
-
-        actions.Add(new Label(theme.Body, "DIFFICULTY", theme.BodyTextSize * 0.78f, theme.TextMuted)
-        {
-            CenterTextVertically = true,
-            Shadow = theme.Shadow,
-        });
-
-        var difficulty = new Dropdown(theme, "Difficulty", Difficulties, DefaultDifficultyIndex())
-        {
-            Style = DropdownStyle.Compact,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        actions.Add(difficulty);
-
-        // The hour and the weather sit beside the difficulty because they are the same kind of choice:
-        // how the campaign is played rather than how it is drawn. Both are seeded from the context and
-        // not from a fresh default, so a player three missions into a night run is shown the run they are
-        // on -- this panel is rebuilt every time the section is opened.
-        actions.Add(new Label(theme.Body, "TIME", theme.BodyTextSize * 0.78f, theme.TextMuted)
-        {
-            CenterTextVertically = true,
-            Shadow = theme.Shadow,
-            Margin = new Thickness(20f, 0f, 0f, 0f),
-        });
-
-        var timeOfDay = new Dropdown(theme, "Time of day", TimesOfDay, (int)Context.Conditions.TimeOfDay)
-        {
-            Style = DropdownStyle.Compact,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        timeOfDay.SelectionChanged += index => ChooseConditions(
-            Context.Conditions with { TimeOfDay = (MissionTimeOfDay)index });
-        actions.Add(timeOfDay);
-
-        actions.Add(new Label(theme.Body, "WEATHER", theme.BodyTextSize * 0.78f, theme.TextMuted)
-        {
-            CenterTextVertically = true,
-            Shadow = theme.Shadow,
-            Margin = new Thickness(20f, 0f, 0f, 0f),
-        });
-
-        var weather = new Dropdown(theme, "Weather", Weathers, (int)Context.Conditions.Weather)
-        {
-            Style = DropdownStyle.Compact,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        weather.SelectionChanged += index => ChooseConditions(
-            Context.Conditions with { Weather = (MissionWeather)index });
-        actions.Add(weather);
-
-        _play = new Button(theme, "PLAY")
-        {
-            TextSize = theme.BodyTextSize * 1.2f,
-            Padding = new Thickness(56f, 14f),
-            Margin = new Thickness(14f, 0f, 0f, 0f),
-            Accent = ButtonAccent.Solid,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        _play.Activated += _ =>
-        {
-            MissionInfo mission = Context.Missions[_selected];
-            Context.Host.StartMission(mission.Id, difficulty.SelectedIndex);
-        };
+        actions.Add(strip);
         actions.Add(_play);
-
-        column.Add(actions, 6, 0);
+        column.AddChild(actions);
         return column;
     }
 
     private void Select(int index)
     {
-        if (index < 0 || index >= Context.Missions.Count)
+        if (index < 0 || index >= Context.Missions.Count || index == _selected)
         {
             return;
         }
 
+        int direction = index > _selected ? 1 : -1;
         _selected = index;
         for (int i = 0; i < _cards.Count; i++)
         {
             _cards[i].Selected = i == index;
         }
 
+        // The briefing changes in the middle of the reveal, once the old name has wiped away.
+        _reveal.Start(direction, () =>
+        {
+            _shown = _selected;
+            Refresh();
+        });
+
         Refresh();
         Preview();
     }
 
     // Reached from the pause menu the campaign is a mission list and nothing else: the level behind it is
-    // the one being played, and streaming the hovered mission over it would tear down the running mission's
-    // scene. The briefing still follows the selection, which is the part that was worth having here.
+    // the one being played, and streaming the hovered mission over it would tear down the running mission.
     private void Preview()
     {
         if (Context.InGame || Context.Missions.Count == 0)
@@ -352,72 +266,63 @@ public sealed class CampaignScreen : ShellScreen
             return;
         }
 
-        Context.Host.PreviewMission(Context.Missions[_selected].Id);
+        Context.Host.PreviewMission(Context.Missions[SelectedMission].Id);
     }
 
-    private void Refresh()
+    private int Frontier()
     {
-        if (_selected < 0 || _selected >= Context.Missions.Count)
-        {
-            return;
-        }
-
-        MissionInfo mission = Context.Missions[_selected];
         int activeMission = Context.Config.Active?.ActiveMission ?? MissionRegistry.FirstMissionId;
-        int frontier = -1;
         for (int i = 0; i < Context.Missions.Count; i++)
         {
             if (Context.Missions[i].Id == activeMission)
             {
-                frontier = i;
+                return i;
             }
         }
-        if (frontier < 0)
+
+        return 0;
+    }
+
+    private void Refresh()
+    {
+        if (Context.Missions.Count == 0)
         {
-            frontier = 0;
+            return;
         }
+
+        int frontier = Frontier();
 
         // The unlock-all cheat widens what may be played, not what has been done: the profile's own
         // progress still decides which missions read as completed.
         int playable = PlayerCheatOptions.Current.UnlockAllLevels ? Context.Missions.Count - 1 : frontier;
 
-        if (_missionNumber is not null)
-        {
-            _missionNumber.Text = string.Create(
-                CultureInfo.InvariantCulture,
-                $"MISSION {mission.Number:00}  /  {Context.Missions.Count:00}");
-        }
-
-        if (_missionName is not null)
-        {
-            _missionName.Text = mission.Name;
-        }
-
-        if (_status is not null)
-        {
-            _status.Text = StatusOf(_selected, frontier, playable);
-        }
-
-        if (_briefing is not null)
-        {
-            _briefing.Text = mission.Description;
-        }
-
         for (int i = 0; i < _cards.Count && i < Context.Missions.Count; i++)
         {
             _cards[i].Tag = StatusOf(i, frontier, playable);
-            _cards[i].TagColor = i < frontier ? Context.Theme.Accent
-                : i <= playable ? Context.Theme.TextMuted : Context.Theme.TextDisabled;
+            _cards[i].TagColor = i < frontier ? Context.Theme.TextMuted
+                : i <= playable ? Context.Theme.Accent : Context.Theme.TextDisabled;
             _cards[i].IsEnabled = i <= playable;
         }
 
+        _header?.Update(frontier);
+
+        int shown = Math.Clamp(_shown, 0, Context.Missions.Count - 1);
+        MissionInfo mission = Context.Missions[shown];
+        _hero?.Show(
+            string.Create(CultureInfo.InvariantCulture, $"MISSION {mission.Number:00} / {Context.Missions.Count:00}"),
+            StatusOf(shown, frontier, playable),
+            mission.Name,
+            mission.Description);
+
         if (_play is not null)
         {
-            _play.IsEnabled = _selected <= playable;
+            MissionInfo selected = Context.Missions[SelectedMission];
+            _play.IsEnabled = SelectedMission <= playable;
+            _play.Subtitle = string.Create(CultureInfo.InvariantCulture, $"MISSION {selected.Number:00} · DEPLOY");
         }
     }
 
-    // Any of the three can change what is playable while the rail is showing -- from Extras or the console.
+    // Any of the three can change what is playable while the list is showing -- from Extras or the console.
     private void OnUnlockCheatChanged(object? sender, CVarChangedEventArgs args) => Refresh();
 
     private static string StatusOf(int missionIndex, int frontierIndex, int playableIndex) =>
@@ -433,4 +338,137 @@ public sealed class CampaignScreen : ShellScreen
     }
 
     private int DefaultDifficultyIndex() => Math.Clamp(Context.Config.Active?.Difficulty ?? 1, 0, Difficulties.Length - 1);
+
+    /// <summary>The list's heading: OPERATIONS over CAMPAIGN, with how much of it is done and a segment per mission.</summary>
+    private sealed class CampaignHeader(UiTheme theme, int total) : UiElement
+    {
+        private string _count = string.Empty;
+        private int _done;
+
+        public void Update(int completed)
+        {
+            _done = Math.Clamp(completed, 0, total);
+            _count = string.Create(CultureInfo.InvariantCulture, $"{_done} / {total} COMPLETE");
+        }
+
+        protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) =>
+            new(available.X, theme.Mono.LineHeight(context.Px(12f)) + context.Px(6f + 44f + 20f));
+
+        protected override void OnDraw(UiPainter painter)
+        {
+            LayoutContext context = painter.Context;
+            KitDraw.Eyebrow(painter, theme, "OPERATIONS", Bounds.TopLeft);
+            float titleSize = context.Px(44f);
+            var titleBox = new UiRect(Bounds.X, Bounds.Bottom - context.Px(20f) - titleSize, Bounds.Width, titleSize);
+            painter.DrawLabel(theme.Display, "CAMPAIGN", new UiVec2(Bounds.X, UiRowStyle.CapsCenterY(theme.Display, titleSize, titleBox)), titleSize, theme.Text, 0.06f);
+
+            // Right-aligned: the count over the segments, the segments sitting on the title's baseline.
+            float segments = KitDraw.SegmentsWidth(context, total, total > 10 ? 14f : 24f, 4f);
+            float right = Bounds.Right;
+            float segmentsTop = titleBox.Bottom - context.Px(10f);
+            KitDraw.Segments(painter, new UiVec2(right - segments, segmentsTop), _done, total, total > 10 ? 14f : 24f, 4f, 4f, theme.Accent);
+            float countSize = context.Px(13f);
+            float countWidth = theme.Mono.MeasureWidth(_count, countSize);
+            painter.DrawText(theme.Mono, _count, new UiVec2(right - countWidth, segmentsTop - context.Px(8f) - theme.Mono.LineHeight(countSize)), countSize, theme.TextSecondary);
+
+            painter.FillRect(new UiRect(Bounds.X, Bounds.Bottom - context.Px(1f), Bounds.Width, context.Px(1f)), UiPalette.White(0.1f));
+        }
+    }
+
+    /// <summary>The selected mission set large: its number and status, its name, and its briefing, revealed together.</summary>
+    private sealed class MissionHero(UiTheme theme, TitleReveal reveal) : UiElement
+    {
+        private const float TitleUnits = 168f;
+        private const float DescriptionUnits = 22f;
+        private const float DescriptionWidthUnits = 640f;
+
+        private string _meta = string.Empty;
+        private string _status = string.Empty;
+        private string _title = string.Empty;
+        private string _description = string.Empty;
+        private string _wrapped = string.Empty;
+        private float _wrappedAt = -1f;
+
+        public void Show(string meta, string status, string title, string description)
+        {
+            _meta = meta;
+            _status = status;
+            _title = title.ToUpperInvariant();
+            _description = description ?? string.Empty;
+            _wrappedAt = -1f;
+        }
+
+        protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
+        {
+            float height = theme.Mono.LineHeight(context.Px(13f)) + context.Px(28f) + (context.Px(TitleUnits) * 0.85f);
+            string wrapped = Wrapped(context, available.X);
+            if (wrapped.Length > 0)
+            {
+                height += context.Px(28f) + theme.Body.Measure(wrapped, context.Px(DescriptionUnits)).Y;
+            }
+
+            return new UiVec2(available.X, height);
+        }
+
+        protected override void OnDraw(UiPainter painter)
+        {
+            LayoutContext context = painter.Context;
+            float y = Bounds.Y;
+
+            // The caption line: MISSION 01 / 14, a rule, the status.
+            float metaSize = context.Px(13f);
+            painter.PushOpacity(reveal.MetaOpacity);
+            float metaX = Bounds.X + context.Px(reveal.MetaOffset);
+            UiVec2 pen = painter.DrawLabel(theme.Mono, _meta, new UiVec2(metaX, y), metaSize, theme.Accent, 0.28f);
+            float ruleX = pen.X + context.Px(16f);
+            painter.FillRect(new UiRect(ruleX, y + (theme.Mono.LineHeight(metaSize) * 0.5f), context.Px(48f), context.Px(1f)), UiPalette.AccentAt(0.6f));
+            painter.DrawLabel(theme.Mono, _status, new UiVec2(ruleX + context.Px(64f), y), metaSize, theme.TextSecondary, 0.28f);
+            painter.PopOpacity();
+            y += theme.Mono.LineHeight(metaSize) + context.Px(28f);
+
+            // The name, as large as will fit: 168 units, smaller for a name too long for the column.
+            float size = context.Px(TitleUnits);
+            float natural = UiPainter.MeasureLabel(theme.Display, _title, size, reveal.LetterSpacing);
+            if (natural > Bounds.Width && natural > 0f)
+            {
+                size *= Bounds.Width / natural;
+            }
+
+            var titleBox = new UiRect(Bounds.X, y, Bounds.Width, context.Px(TitleUnits) * 0.85f);
+            var at = new UiVec2(Bounds.X, UiRowStyle.CapsCenterY(theme.Display, size, titleBox) + context.Px(reveal.TitleOffset));
+            float clipLeft = Bounds.X + (Bounds.Width * reveal.ClipLeft);
+            float clipRight = Bounds.Right - (Bounds.Width * reveal.ClipRight);
+            if (clipRight > clipLeft && reveal.TitleOpacity > 0.002f)
+            {
+                painter.PushClip(UiRect.FromEdges(clipLeft, titleBox.Y - context.Px(60f), clipRight, titleBox.Bottom + context.Px(60f)));
+                painter.PushOpacity(reveal.TitleOpacity);
+                KitDraw.BlurredText(painter, theme.Display, _title, at + new UiVec2(0f, context.Px(4f)), size, UiPalette.InkAt(0.32f), reveal.LetterSpacing, context.Px(14f));
+                KitDraw.BlurredText(painter, theme.Display, _title, at, size, theme.Text, reveal.LetterSpacing, context.Px(reveal.TitleBlur));
+                painter.PopOpacity();
+                painter.PopClip();
+            }
+
+            y = titleBox.Bottom + context.Px(28f);
+
+            string wrapped = Wrapped(context, Bounds.Width);
+            if (wrapped.Length > 0)
+            {
+                painter.PushOpacity(reveal.DescriptionOpacity);
+                painter.DrawText(theme.Body, wrapped, new UiVec2(Bounds.X + context.Px(reveal.DescriptionOffset), y), context.Px(DescriptionUnits), UiPalette.TextBody);
+                painter.PopOpacity();
+            }
+        }
+
+        private string Wrapped(LayoutContext context, float available)
+        {
+            float width = MathF.Min(available, context.Px(DescriptionWidthUnits));
+            if (_wrappedAt != width)
+            {
+                _wrappedAt = width;
+                _wrapped = _description.Length == 0 ? string.Empty : theme.Body.WrapText(_description, context.Px(DescriptionUnits), width);
+            }
+
+            return _wrapped;
+        }
+    }
 }

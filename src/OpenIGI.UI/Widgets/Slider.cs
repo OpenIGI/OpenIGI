@@ -1,5 +1,5 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Rendering;
+using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Focus;
 using OpenIGI.UI.Layout;
@@ -15,19 +15,24 @@ namespace OpenIGI.UI.Widgets;
 /// </remarks>
 public class Slider : Control
 {
-    // The row's metrics, in design units, in one place. They used to be spelled out separately in the
-    // measure, the arrange and the draw, and the three did not agree: the height was measured for the
-    // TRACK, while what is drawn on the track is a KNOB more than twice as tall and centred on it. The
-    // half that reaches upwards was space nobody had asked for, so it came out of the caption's line and
-    // the knob sat in the letters. Everything below is derived from these, so they cannot drift again.
-    private const float PaddingUnits = 8f;
-    private const float CaptionGapUnits = 5f;
-    private const float TrackHeightUnits = 6f;
-    private const float KnobUnits = 14f;
+    // The design's metrics, in design units: a 180-unit track box, a 3-unit rail and fill, a 4×16 thumb,
+    // and a monospaced readout at least 44 units wide, 14 units off the track.
+    private const float TrackUnits = 180f;
+    private const float RailUnits = 3f;
+    private const float ThumbWidthUnits = 4f;
+    private const float ThumbHeightUnits = 16f;
+    private const float ReadoutGapUnits = 14f;
+    private const float ReadoutMinUnits = 44f;
+    private const float ReadoutSizeUnits = 14f;
 
     private readonly Spring _display;
     private float _value;
     private UiRect _track;
+    private string? _readout;
+    private float _readoutValue;
+    private float _readoutWidth;
+    private float _readoutWidthScale = -1f;
+    private float _readoutWidthValue;
 
     /// <summary>Initializes a new instance of the <see cref="Slider"/> class.</summary>
     /// <param name="theme">The theme to draw from.</param>
@@ -117,6 +122,13 @@ public class Slider : Control
             return;
         }
 
+        // Only a click on the track moves the value; one on the caption just focuses the row.
+        float slack = track.Height;
+        if (point.X < track.X - slack || point.X > track.Right + slack)
+        {
+            return;
+        }
+
         float t = Math.Clamp((point.X - track.X) / track.Width, 0f, 1f);
         float raw = Minimum + (t * (Maximum - Minimum));
         Value = Step > 0f ? Minimum + (MathF.Round((raw - Minimum) / Step) * Step) : raw;
@@ -127,25 +139,12 @@ public class Slider : Control
     protected override void ArrangeContent(LayoutContext context, UiRect contentRect)
     {
         // The track is resolved here rather than in the draw so a click can be mapped onto it whether or
-        // not the widget has been drawn yet.
-        float pad = context.Px(PaddingUnits);
-        float knob = context.Px(KnobUnits);
-        float trackH = context.Px(TrackHeightUnits);
-
-        // The knob's band is the bottom of the row and the track is centred inside it, so the knob's reach
-        // above the track is room the measure has already claimed rather than room borrowed from the
-        // caption above.
-        float knobTop = contentRect.Bottom - pad - knob;
-
-        // Inset by half a knob at each end, so a value at either extreme puts the knob against the row's
-        // padding instead of hanging out past it — at 0 it used to overlap the left margin and at the
-        // maximum it reached into the gap to the next column.
-        float inset = pad + (knob * 0.5f);
-        _track = new UiRect(
-            contentRect.X + inset,
-            knobTop + ((knob - trackH) * 0.5f),
-            MathF.Max(0f, contentRect.Width - (inset * 2f)),
-            trackH);
+        // not the widget has been drawn yet. It sits at the right of the row, left of the readout.
+        float readout = ReadoutWidth(context);
+        float width = context.Px(TrackUnits);
+        float right = contentRect.Right - context.Px(UiRowStyle.Inset) - readout - context.Px(ReadoutGapUnits);
+        float height = context.Px(ThumbHeightUnits);
+        _track = new UiRect(right - width, contentRect.Y + ((contentRect.Height - height) * 0.5f), width, height);
     }
 
     /// <inheritdoc/>
@@ -156,49 +155,76 @@ public class Slider : Control
     }
 
     /// <inheritdoc/>
-    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
-    {
-        float sizePx = context.Px(Theme.BodyTextSize);
-
-        // Padding, the caption's line, the gap under it, the knob's band, padding. The knob rather than
-        // the track, because the knob is what the row has to be tall enough to hold.
-        float height = context.Px(PaddingUnits)
-            + Theme.Body.LineHeight(sizePx)
-            + context.Px(CaptionGapUnits)
-            + context.Px(KnobUnits)
-            + context.Px(PaddingUnits);
-
-        return new UiVec2(available.X, height);
-    }
+    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) =>
+        UiRowStyle.Measure(this, context, available);
 
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
     {
-        float focus = MathF.Max(Visual.Focus, IsPointerOver ? 0.35f : 0f);
-        if (focus > 0.001f)
+        float highlight = UiRowStyle.Highlight(this);
+        UiRowStyle.DrawFrame(painter, this, Label, highlight);
+
+        LayoutContext context = painter.Context;
+        float appear = Visual.Appear;
+        UiRect track = _track;
+        float rail = context.Px(RailUnits);
+        float railY = track.Y + ((track.Height - rail) * 0.5f);
+        float t = Math.Clamp(_display.Value, 0f, 1f);
+        Bgra32 fill = IsEnabled ? Theme.Accent : Theme.TextDisabled;
+
+        painter.FillRect(new UiRect(track.X, railY, track.Width, rail), UiPalette.Fade(Theme.Track, appear));
+        painter.FillRect(new UiRect(track.X, railY, track.Width * t, rail), UiPalette.Fade(fill, appear));
+
+        float thumbW = context.Px(ThumbWidthUnits);
+        float thumbX = track.X + (track.Width * t) - (thumbW * 0.5f);
+        Bgra32 thumb = IsEnabled ? Interpolate.Lerp(Theme.TextBright, Theme.AccentHover, highlight * 0.35f) : Theme.TextDisabled;
+        painter.FillRect(new UiRect(thumbX, track.Y, thumbW, track.Height), UiPalette.Fade(thumb, appear));
+
+        float sizePx = context.Px(ReadoutSizeUnits);
+        string readout = Readout();
+        float readoutWidth = Theme.Mono.MeasureWidth(readout, sizePx);
+        float right = Bounds.Right - context.Px(UiRowStyle.Inset);
+        var box = new UiRect(right - ReadoutWidth(context), Bounds.Y, ReadoutWidth(context), Bounds.Height);
+        painter.DrawText(
+            Theme.Mono,
+            readout,
+            new UiVec2(right - readoutWidth, UiRowStyle.CenterY(Theme.Mono, sizePx, box)),
+            sizePx,
+            UiPalette.Fade(IsEnabled ? Theme.Text : Theme.TextDisabled, appear));
+    }
+
+    // Formatted once per value rather than once per frame: the readout is drawn every frame the menu is
+    // up, and a formatter that builds a sentence would otherwise allocate it each time.
+    private string Readout()
+    {
+        if (_readout is null || _readoutValue != _value)
         {
-            painter.FillRect(Bounds, Theme.FocusFill.WithAlpha((byte)(Theme.FocusFill.A * focus)), BlendMode.AlphaBlend);
+            _readoutValue = _value;
+            _readout = Format?.Invoke(_value) ?? _value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
         }
 
-        float sizePx = painter.Context.Px(Theme.BodyTextSize);
-        Bgra32 textColor = IsEnabled ? Interpolate.Lerp(Theme.Text, Theme.Accent, focus) : Theme.TextDisabled;
-        float pad = painter.Context.Px(PaddingUnits);
+        return _readout;
+    }
 
-        painter.DrawText(Theme.Body, Label, new UiVec2(Bounds.X + pad, Bounds.Y + pad), sizePx, textColor);
+    // Wide enough for either end of the range as well as the current value, so the track does not shift
+    // sideways as a formatted readout grows a digit.
+    private float ReadoutWidth(LayoutContext context)
+    {
+        if (_readoutWidthScale == context.Scale && _readoutWidthValue == _value)
+        {
+            return _readoutWidth;
+        }
 
-        string readout = Format?.Invoke(_value) ?? _value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
-        float readoutWidth = Theme.Body.MeasureWidth(readout, sizePx);
-        painter.DrawText(Theme.Body, readout, new UiVec2(Bounds.Right - pad - readoutWidth, Bounds.Y + pad), sizePx, textColor);
+        float size = context.Px(ReadoutSizeUnits);
+        float widest = MathF.Max(Theme.Mono.MeasureWidth(Readout(), size), Theme.Mono.MeasureWidth(Format(Minimum), size));
+        widest = MathF.Max(widest, Theme.Mono.MeasureWidth(Format(Maximum), size));
 
-        // The track sits below the caption row, where Arrange put it.
-        UiRect track = _track;
-        painter.FillRect(track, Theme.Border, BlendMode.AlphaBlend);
+        _readoutWidthScale = context.Scale;
+        _readoutWidthValue = _value;
+        _readoutWidth = MathF.Max(context.Px(ReadoutMinUnits), widest);
+        return _readoutWidth;
 
-        float t = Math.Clamp(_display.Value, 0f, 1f);
-        painter.FillRect(new UiRect(track.X, track.Y, track.Width * t, track.Height), Theme.Accent, BlendMode.AlphaBlend);
-
-        float knob = painter.Context.Px(KnobUnits);
-        float knobX = track.X + (track.Width * t) - (knob * 0.5f);
-        painter.FillRect(new UiRect(knobX, track.Y + (track.Height * 0.5f) - (knob * 0.5f), knob, knob), Theme.Text, BlendMode.AlphaBlend);
+        string Format(float value) =>
+            this.Format?.Invoke(value) ?? value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
     }
 }

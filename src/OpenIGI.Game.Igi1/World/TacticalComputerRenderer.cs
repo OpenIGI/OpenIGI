@@ -11,6 +11,8 @@ using OpenIGI.Rendering;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI;
+using OpenIGI.UI.Kit;
+using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Game.Igi1.World;
 
@@ -134,7 +136,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (!UiFontLibrary.Exists(UiFontLibrary.Body))
+        if (!UiFontLibrary.TypographyAvailable)
         {
             _logger.Warning(LogCategory, $"No interface font at {UiFontLibrary.FontsDirectory}; the tactical computer cannot draw.");
             return false;
@@ -142,20 +144,13 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
 
         try
         {
-            _body = UiFontLibrary.Load(_device, UiFontLibrary.Body, pixelHeight: 48f);
-
-            // Semibold for the letterspaced capitals the interface labels everything in, so a heading is
-            // a different weight rather than the body face shouted. Falls back to the body face rather
-            // than failing: a missing optional weight is a worse-looking screen, not a broken one.
-            _label = UiFontLibrary.Exists(UiFontLibrary.Emphasis)
-                ? UiFontLibrary.Load(_device, UiFontLibrary.Emphasis, pixelHeight: 48f)
-                : null;
-
-            // The wordmark is distance-field so it can carry the outline and the phosphor glow that make
-            // it read as emitted by the screen rather than printed on it.
-            _display = UiFontLibrary.Exists(UiFontLibrary.Heading)
-                ? UiFontLibrary.Load(_device, UiFontLibrary.Heading, pixelHeight: 64f, FontAtlasKind.SignedDistanceField)
-                : null;
+            // The design's faces, shared with the menus and the HUD: Barlow for prose, the condensed
+            // semibold for the letterspaced capitals the interface labels everything in, and the
+            // distance-field title face for the wordmark, so it can carry an outline and a glow.
+            IgiTypography typography = UiFontLibrary.Typography(_device);
+            _body = typography.Body;
+            _label = typography.Heading;
+            _display = typography.Display;
 
             return true;
         }
@@ -351,7 +346,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         }
 
         var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
-        var painter = new UiPainter(batch, context);
+        var painter = UiPainter.Create(batch, context);
         Chrome chrome = Measure(context, _page != Page.Map);
         Viewport map = MapViewport(screenWidth, screenHeight);
         float fieldOfView = FieldOfViewFor(_zoom);
@@ -396,17 +391,17 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         }
 
         var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
-        var painter = new UiPainter(batch, context);
+        var painter = UiPainter.Create(batch, context);
         UiFont label = _label ?? body;
 
-        painter.FillRect(new UiRect(0f, 0f, screenWidth, screenHeight), Bgra32.FromRgba(2, 5, 4, 214));
+        painter.FillRect(new UiRect(0f, 0f, screenWidth, screenHeight), UiPalette.InkAt(0.84f));
 
         float width = context.Px(620f);
         float height = context.Px(240f);
         var card = new UiRect((screenWidth - width) * 0.5f, (screenHeight - height) * 0.5f, width, height);
 
         painter.FillRect(card, PanelSolid);
-        painter.StrokeRect(card, context.Px(1f), Bgra32.FromRgba(255, 96, 96, 110));
+        painter.StrokeRect(card, context.Px(1f), UiPalette.Danger.WithAlpha(110));
         painter.FillRect(new UiRect(card.X, card.Y, card.Width, context.Px(3f)), Hostile);
 
         float pad = context.Px(40f);
@@ -432,11 +427,10 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         }
 
         _disposed = true;
-        _body?.Dispose();
+
+        // The faces are the device's shared set, not this renderer's to free.
         _body = null;
-        _label?.Dispose();
         _label = null;
-        _display?.Dispose();
         _display = null;
     }
 
@@ -471,7 +465,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
             }
 
             DrawDiamond(painter, new UiVec2(hx, hy), context.Px(6f), Signal.WithAlpha(210));
-            DrawDiamond(painter, new UiVec2(hx, hy), context.Px(2.5f), Bgra32.FromRgb(230, 255, 242));
+            DrawDiamond(painter, new UiVec2(hx, hy), context.Px(2.5f), UiPalette.TextBright);
 
             bool clear = taken.All(point =>
                 MathF.Abs(point.X - hx) > labelGuardX || MathF.Abs(point.Y - hy) > labelGuardY);
@@ -533,8 +527,8 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         }
 
         float thin = MathF.Max(1f, context.Px(1f));
-        Bgra32 minor = Bgra32.FromRgba(120, 235, 180, 26);
-        Bgra32 major = Bgra32.FromRgba(140, 245, 195, 52);
+        Bgra32 minor = UiPalette.White(0.05f);
+        Bgra32 major = UiPalette.White(0.11f);
 
         (double unitsPerPixelX, double unitsPerPixelY) = UnitsPerPixel(fieldOfView, map);
         double leftUnits = _centreUnits.X - (unitsPerPixelX * map.Width * 0.5);
@@ -589,7 +583,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         StrokeRing(painter, at, radius + (context.Px(7f) * pulse), context.Px(1.5f),
             Accent.WithAlpha((byte)(90 * (1f - pulse))));
         StrokeRing(painter, at, radius, context.Px(2f), Accent);
-        FillDisc(painter, at, context.Px(4f), Bgra32.FromRgb(255, 232, 190));
+        FillDisc(painter, at, context.Px(4f), UiPalette.AccentLight);
 
         // Four brackets rather than a full ring, so the marker reads as a fix on a position instead of as
         // one more circle among the objective markers.
@@ -604,9 +598,9 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
 
     private static void DrawHostileMarker(UiPainter painter, LayoutContext context, UiVec2 at)
     {
-        DrawDiamond(painter, at, context.Px(8f), Bgra32.FromRgba(40, 4, 6, 220));
+        DrawDiamond(painter, at, context.Px(8f), Bgra32.FromRgba(40, 10, 8, 220));
         DrawDiamond(painter, at, context.Px(6f), Hostile);
-        DrawDiamond(painter, at, context.Px(2f), Bgra32.FromRgb(255, 226, 226));
+        DrawDiamond(painter, at, context.Px(2f), UiPalette.Danger);
     }
 
     private static void DrawObjectiveMarker(UiPainter painter, LayoutContext context, UiVec2 at, bool complete)
@@ -649,10 +643,10 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         float height = font.LineHeight(size) + (padY * 2f);
 
         var chip = new UiRect(at.X, at.Y - (height * 0.5f), width + (padX * 2f) + context.Px(3f), height);
-        painter.FillRect(chip, Bgra32.FromRgba(3, 12, 9, 190));
+        painter.FillRect(chip, UiPalette.Ink.WithAlpha(190));
         painter.FillRect(new UiRect(chip.X, chip.Y, context.Px(2f), chip.Height), Signal.WithAlpha(200));
         DrawTracked(painter, font, text, new UiVec2(chip.X + padX + context.Px(3f), chip.Y + padY), size,
-            Bgra32.FromRgb(206, 246, 226), tracking);
+            UiPalette.Text, tracking);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -691,13 +685,13 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
                 .WithOutline(Bgra32.FromRgba(0, 0, 0, 170), 0.16f)
                 .WithGlow(Signal, 0.4f, 0.55f);
             painter.DrawText(display, "SIMOTECH", new UiVec2(x, mid - (display.LineHeight(markSize) * 0.5f)),
-                markSize, Bgra32.FromRgb(228, 255, 240), effects);
+                markSize, UiPalette.TextBright, effects);
             x += display.MeasureWidth("SIMOTECH", markSize) + context.Px(16f);
         }
         else
         {
             x += DrawTracked(painter, label, "SIMOTECH", new UiVec2(x, mid - (label.LineHeight(markSize) * 0.5f)),
-                markSize, Bgra32.FromRgb(228, 255, 240), context.Px(2f)) + context.Px(16f);
+                markSize, UiPalette.TextBright, context.Px(2f)) + context.Px(16f);
         }
 
         painter.FillRect(new UiRect(x, mid - context.Px(10f), MathF.Max(1f, context.Px(1f)), context.Px(20f)), Border);
@@ -766,15 +760,15 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
 
             if (selected)
             {
-                painter.FillRect(row, Bgra32.FromRgba(240, 176, 84, 34));
+                painter.FillRect(row, UiPalette.AccentAt(0.13f));
                 painter.FillRect(new UiRect(row.X, row.Y, context.Px(3f), row.Height), Accent);
             }
             else if (hovered)
             {
-                painter.FillRect(row, Bgra32.FromRgba(140, 245, 200, 22));
+                painter.FillRect(row, UiPalette.White(0.06f));
             }
 
-            Bgra32 colour = selected ? Bgra32.FromRgb(255, 226, 176) : hovered ? Text : TextMuted;
+            Bgra32 colour = selected ? UiPalette.AccentLight : hovered ? Text : TextMuted;
             float indexSize = context.Px(11f);
             float nameSize = context.Px(16f);
             float textX = row.X + context.Px(20f);
@@ -917,7 +911,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         float capHeight = context.Px(20f);
 
         var cap = new UiRect(x, middle - (capHeight * 0.5f), keyWidth + (padX * 2f), capHeight);
-        painter.FillRect(cap, Bgra32.FromRgba(140, 245, 200, 26));
+        painter.FillRect(cap, UiPalette.White(0.1f));
         painter.StrokeRect(cap, MathF.Max(1f, context.Px(1f)), Border);
         DrawTracked(painter, label, key, new UiVec2(cap.X + padX, cap.Y + context.Px(3f)), keySize, Text, tracking);
 
@@ -933,7 +927,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
         float size = context.Px(15f);
         float width = font.MeasureWidth(key, size);
         painter.FillRect(new UiRect(at.X, at.Y - context.Px(3f), width + context.Px(16f), context.Px(26f)),
-            Bgra32.FromRgba(140, 245, 200, 26));
+            UiPalette.White(0.1f));
         painter.DrawText(font, key, new UiVec2(at.X + context.Px(8f), at.Y), size, Text);
         painter.DrawText(font, action, new UiVec2(at.X + width + context.Px(32f), at.Y), size, TextMuted);
     }
@@ -1017,7 +1011,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
                 _ => (Accent, "ACTIVE"),
             };
 
-            painter.FillRect(row, Bgra32.FromRgba(140, 245, 200, 14));
+            painter.FillRect(row, UiPalette.White(0.05f));
             painter.FillRect(new UiRect(row.X, row.Y, context.Px(3f), row.Height), accent);
 
             DrawTracked(painter, label, $"0{i + 1}", new UiVec2(row.X + context.Px(20f), row.Y + rowPad),
@@ -1134,7 +1128,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
                 at,
                 new UiVec2(at.X, at.Y + size),
                 new UiVec2(at.X + (size * 0.66f), at.Y + (size * 0.72f)),
-                Bgra32.FromRgb(232, 255, 244));
+                UiPalette.TextBright);
             return;
         }
 
@@ -1153,7 +1147,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
             painter.FillRect(new UiRect(x, y, w, h), Signal);
         }
 
-        FillDisc(painter, at, context.Px(1.6f), Bgra32.FromRgb(232, 255, 244), 8);
+        FillDisc(painter, at, context.Px(1.6f), UiPalette.TextBright, 8);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -1376,20 +1370,21 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     }
 
     // ---------------------------------------------------------------------------------------------
-    // The palette. Cool mint over the map's phosphor, with the shell's own amber reserved for the two
-    // things that are about the player rather than about the level: where they are, and what is selected.
+    // The palette: the shell's own tokens, so the computer reads as the same product as the menus. The
+    // design's amber carries the chrome, its lighter hover tone the two things that are about the player
+    // rather than about the level — where they are, and what is selected — over warm greys and dark glass.
     // ---------------------------------------------------------------------------------------------
 
-    private static Bgra32 Signal => Bgra32.FromRgb(126, 250, 190);
-    private static Bgra32 SignalDim => Bgra32.FromRgb(74, 156, 118);
-    private static Bgra32 Accent => Bgra32.FromRgb(240, 176, 84);
-    private static Bgra32 Hostile => Bgra32.FromRgb(255, 96, 96);
-    private static Bgra32 Complete => Bgra32.FromRgb(122, 236, 154);
-    private static Bgra32 Text => Bgra32.FromRgb(214, 248, 230);
-    private static Bgra32 TextMuted => Bgra32.FromRgba(146, 196, 172, 230);
-    private static Bgra32 Panel => Bgra32.FromRgba(4, 12, 9, 206);
-    private static Bgra32 PanelSolid => Bgra32.FromRgba(3, 9, 7, 238);
-    private static Bgra32 Border => Bgra32.FromRgba(126, 250, 190, 46);
+    private static Bgra32 Signal => UiPalette.Accent;
+    private static Bgra32 SignalDim => UiPalette.AccentAt(0.6f);
+    private static Bgra32 Accent => UiPalette.AccentLight;
+    private static Bgra32 Hostile => UiPalette.Danger;
+    private static Bgra32 Complete => UiPalette.Success;
+    private static Bgra32 Text => UiPalette.Text;
+    private static Bgra32 TextMuted => UiPalette.TextMuted;
+    private static Bgra32 Panel => UiPalette.GlassDense;
+    private static Bgra32 PanelSolid => UiPalette.GlassMenu;
+    private static Bgra32 Border => UiPalette.Hairline;
 
     private enum Page
     {

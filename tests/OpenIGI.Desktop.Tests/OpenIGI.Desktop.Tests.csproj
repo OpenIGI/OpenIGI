@@ -8,8 +8,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\..\apps\OpenIGI.Composition\Assets\fonts\Saira-Regular.ttf"
-          Link="Assets\fonts\Saira-Regular.ttf"
+    <None Include="..\..\apps\OpenIGI.Composition\Assets\fonts\Barlow-Regular.ttf"
+          Link="Assets\fonts\Barlow-Regular.ttf"
           CopyToOutputDirectory="PreserveNewest" />
 
     <!-- The storm's drop sheet, so the tests that read its layout read the shipped images rather than a

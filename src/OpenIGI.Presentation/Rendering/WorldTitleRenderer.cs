@@ -2,6 +2,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Presentation.Cameras;
 using OpenIGI.Rendering;
+using OpenIGI.UI;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Text;
 
@@ -212,7 +213,7 @@ internal sealed class WorldTitleRenderer
                         At(x1, y0),
                         At(x1, y1),
                         At(x0, y1),
-                        glyph.SourceRect(_font.Atlas.Width, _font.Atlas.Height),
+                        glyph.SourceRect(_font.Atlas.Width, _font.Atlas.Height).ToRectF(),
                         line.Colour,
                         index,
                         new Vector3d(-up.X * lineHeight * 0.4, -up.Y * lineHeight * 0.4, -up.Z * lineHeight * 0.4),
@@ -368,7 +369,7 @@ internal sealed class WorldTitleRenderer
                 }
 
                 batch.DrawTextQuad(
-                    _font.Texture,
+                    _font.Texture.ToTextureHandle(),
                     new Vertex2D(a.X, a.Y, glyph.Source.X, glyph.Source.Y, colour),
                     new Vertex2D(b.X, b.Y, glyph.Source.Right, glyph.Source.Y, colour),
                     new Vertex2D(c.X, c.Y, glyph.Source.Right, glyph.Source.Bottom, colour),

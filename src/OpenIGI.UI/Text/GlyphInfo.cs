@@ -1,4 +1,4 @@
-using OpenIGI.Rendering;
+using OpenIGI.UI.Layout;
 
 namespace OpenIGI.UI.Text;
 
@@ -38,7 +38,7 @@ public readonly record struct GlyphInfo(
     /// <param name="atlasWidth">The atlas width in texels.</param>
     /// <param name="atlasHeight">The atlas height in texels.</param>
     /// <returns>The source rectangle in normalised texture coordinates.</returns>
-    public RectF SourceRect(int atlasWidth, int atlasHeight) => new(
+    public UiRect SourceRect(int atlasWidth, int atlasHeight) => new(
         (float)AtlasX / atlasWidth,
         (float)AtlasY / atlasHeight,
         (float)Width / atlasWidth,

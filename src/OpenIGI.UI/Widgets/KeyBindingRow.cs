@@ -1,5 +1,5 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Rendering;
+using OpenIGI.UI.Drawing;
 using OpenIGI.Input;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Focus;
@@ -20,6 +20,8 @@ namespace OpenIGI.UI.Widgets;
 public class KeyBindingRow : Control
 {
     private readonly Tween _pulse = new(0f, duration: 0.6f, Ease.InOutQuad);
+    private string? _shownName;
+    private string _shownCap = string.Empty;
 
     /// <summary>Initializes a new instance of the <see cref="KeyBindingRow"/> class.</summary>
     /// <param name="theme">The theme to draw from.</param>
@@ -154,33 +156,50 @@ public class KeyBindingRow : Control
     }
 
     /// <inheritdoc/>
-    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
-    {
-        float sizePx = context.Px(Theme.BodyTextSize);
-        return new UiVec2(available.X, Theme.Body.LineHeight(sizePx) + context.Px(12f));
-    }
+    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) =>
+        UiRowStyle.Measure(this, context, available);
 
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
     {
-        float focus = MathF.Max(Visual.Focus, IsPointerOver ? 0.35f : 0f);
-        if (focus > 0.001f)
+        float highlight = UiRowStyle.Highlight(this);
+        UiRowStyle.DrawFrame(painter, this, Action, highlight);
+
+        // The binding is a key cap, the same one the footer's hints use, so a binding reads as the key it
+        // is rather than as a word.
+        LayoutContext context = painter.Context;
+        float appear = Visual.Appear;
+        float sizePx = context.Px(13f);
+        if (!ReferenceEquals(_shownName, BoundKeyName))
         {
-            painter.FillRect(Bounds, Theme.FocusFill.WithAlpha((byte)(Theme.FocusFill.A * focus)), BlendMode.AlphaBlend);
+            _shownName = BoundKeyName;
+            _shownCap = BoundKeyName.ToUpperInvariant();
         }
 
-        float sizePx = painter.Context.Px(Theme.BodyTextSize);
-        float pad = painter.Context.Px(8f);
-        float textY = Bounds.Y + ((Bounds.Height - Theme.Body.LineHeight(sizePx)) * 0.5f);
-        Bgra32 labelColor = IsEnabled ? Interpolate.Lerp(Theme.Text, Theme.Accent, focus) : Theme.TextDisabled;
-        painter.DrawText(Theme.Body, Action, new UiVec2(Bounds.X + pad, textY), sizePx, labelColor);
+        string value = IsListening ? "PRESS A KEY…" : _shownCap;
+        float textWidth = UiPainter.MeasureLabel(Theme.Mono, value, sizePx, 0.08f);
+        float padX = context.Px(10f);
+        float height = context.Px(28f);
+        float right = Bounds.Right - context.Px(UiRowStyle.Inset);
+        var cap = new UiRect(right - textWidth - (padX * 2f), Bounds.Y + ((Bounds.Height - height) * 0.5f), textWidth + (padX * 2f), height);
 
-        string value = IsListening ? "Press a key..." : BoundKeyName;
-        Bgra32 valueColor = IsListening
-            ? Interpolate.Lerp(Theme.TextMuted, Theme.Accent, _pulse.Value)
-            : Theme.Text;
-        float valueWidth = Theme.Body.MeasureWidth(value, sizePx);
-        painter.DrawText(Theme.Body, value, new UiVec2(Bounds.Right - pad - valueWidth, textY), sizePx, valueColor);
+        Bgra32 border = IsListening
+            ? Interpolate.Lerp(UiPalette.AccentAt(0.35f), Theme.Accent, _pulse.Value)
+            : Interpolate.Lerp(UiPalette.KeyBorder, UiPalette.AccentAt(0.45f), highlight);
+        if (IsListening)
+        {
+            painter.FillRect(cap, UiPalette.Fade(UiPalette.AccentAt(0.08f), appear));
+        }
+
+        painter.StrokeRect(cap, context.Px(1f), UiPalette.Fade(border, appear));
+        Bgra32 text = !IsEnabled ? Theme.TextDisabled : IsListening ? Theme.Accent : Theme.Text;
+        painter.DrawLabel(
+            Theme.Mono,
+            value,
+            new UiVec2(cap.X + padX, UiRowStyle.CenterY(Theme.Mono, sizePx, cap)),
+            sizePx,
+            UiPalette.Fade(text, appear),
+            0.08f);
     }
 
     private static string KeyName(KeyCode key) => key.ToString();

@@ -13,7 +13,7 @@ public sealed class FocusTests
     private static UiTheme Theme()
     {
         // A measurement-only font is enough: focus and control logic never draw.
-        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Saira-Regular.ttf");
+        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Barlow-Regular.ttf");
         return new UiTheme(UiFont.ForMeasurement(FontAtlasBuilder.Build(File.ReadAllBytes(path), 48f)));
     }
 

@@ -32,9 +32,9 @@ public sealed class UiSurfacesTests
         var device = new RecordingGraphicsDevice();
         using var surfaces = UiSurfaces.Create(device);
 
-        RectF topLeft = surfaces.Rounded.Corner(false, false);
-        RectF topRight = surfaces.Rounded.Corner(true, false);
-        RectF bottomRight = surfaces.Rounded.Corner(true, true);
+        UiRect topLeft = surfaces.Rounded.Corner(false, false);
+        UiRect topRight = surfaces.Rounded.Corner(true, false);
+        UiRect bottomRight = surfaces.Rounded.Corner(true, true);
 
         Assert.True(topLeft.Width > 0f);
         Assert.True(topRight.Width < 0f);
@@ -50,7 +50,7 @@ public sealed class UiSurfacesTests
 
         var context = new LayoutContext(1000f, 600f, reference: new UiVec2(1000f, 600f));
         var batch = new SpriteBatch(device);
-        var painter = new UiPainter(batch, context);
+        var painter = UiPainter.Create(batch, context);
 
         batch.Begin();
         painter.FillRoundedRect(new UiRect(10f, 10f, 400f, 300f), surfaces.Rounded, Bgra32.White, 12f);
@@ -69,7 +69,7 @@ public sealed class UiSurfacesTests
         var device = new RecordingGraphicsDevice();
         var context = new LayoutContext(1000f, 600f, reference: new UiVec2(1000f, 600f));
         var batch = new SpriteBatch(device);
-        var painter = new UiPainter(batch, context);
+        var painter = UiPainter.Create(batch, context);
 
         batch.Begin();
         painter.FillRoundedRect(new UiRect(10f, 10f, 400f, 300f), default, Bgra32.White, 12f);
@@ -86,7 +86,7 @@ public sealed class UiSurfacesTests
 
         var context = new LayoutContext(1000f, 600f, reference: new UiVec2(1000f, 600f));
         var batch = new SpriteBatch(device);
-        var painter = new UiPainter(batch, context);
+        var painter = UiPainter.Create(batch, context);
 
         // A 40-pixel radius on a 20-pixel-tall bar would otherwise produce inverted edge rectangles.
         batch.Begin();
@@ -104,7 +104,7 @@ public sealed class UiSurfacesTests
 
         var context = new LayoutContext(1000f, 600f, reference: new UiVec2(1000f, 600f));
         var batch = new SpriteBatch(device);
-        var painter = new UiPainter(batch, context);
+        var painter = UiPainter.Create(batch, context);
 
         batch.Begin();
         painter.DrawShadow(new UiRect(50f, 50f, 200f, 100f), surfaces.Shadow, Bgra32.Black, spread: 0f);

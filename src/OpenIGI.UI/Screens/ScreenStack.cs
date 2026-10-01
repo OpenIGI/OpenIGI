@@ -3,7 +3,7 @@ using OpenIGI.UI;
 using OpenIGI.UI.Focus;
 using OpenIGI.UI.Layout;
 
-namespace OpenIGI.Frontend;
+namespace OpenIGI.UI.Screens;
 
 /// <summary>
 /// The shell's navigation spine: a stack of <see cref="Screen"/>s with animated push and pop, where the

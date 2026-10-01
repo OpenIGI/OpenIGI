@@ -1,5 +1,5 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Rendering;
+using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Focus;
 using OpenIGI.UI.Layout;
@@ -28,8 +28,19 @@ public class Dropdown : Control
 {
     private readonly List<string> _options;
     private int _selected;
+    private const float ChevronBoxUnits = 30f;
+    private const float ValueSizeUnits = 19f;
+    private const float ValueMinUnits = 110f;
+    private const float ValueTracking = 0.12f;
+
     private UiRect _previousRect;
     private UiRect _nextRect;
+    private UiRect _valueRect;
+    private UiVec2 _pointer;
+    private float _valueWidth;
+    private float _valueWidthScale = -1f;
+    private string? _shown;
+    private int _shownIndex = -1;
 
     /// <summary>Initializes a new instance of the <see cref="Dropdown"/> class.</summary>
     /// <param name="theme">The theme to draw from.</param>
@@ -153,94 +164,97 @@ public class Dropdown : Control
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
     {
-        float sizePx = context.Px(Theme.BodyTextSize);
-        float height = Theme.Body.LineHeight(sizePx) + context.Px(Style == DropdownStyle.Compact ? 14f : 12f);
         if (Style != DropdownStyle.Compact)
         {
-            return new UiVec2(available.X, height);
+            return UiRowStyle.Measure(this, context, available);
         }
 
-        // A compact picker sizes to its widest option so the pill does not resize as the value changes.
-        float widest = 0f;
-        foreach (string option in _options)
-        {
-            widest = MathF.Max(widest, Theme.Body.MeasureWidth(option, sizePx));
-        }
-
-        float chevron = context.Px(16f);
-        return new UiVec2(widest + (chevron * 2f) + context.Px(44f), height);
+        // A compact picker sizes to its widest option so it does not resize as the value changes.
+        float chevron = context.Px(ChevronBoxUnits);
+        return new UiVec2(ValueWidth(context) + (chevron * 2f) + context.Px(16f), context.Px(44f));
     }
 
     /// <inheritdoc/>
     protected override void ArrangeContent(LayoutContext context, UiRect contentRect)
     {
-        float chevron = context.Px(18f);
-        float pad = context.Px(8f);
-
-        if (Style == DropdownStyle.Compact)
-        {
-            _previousRect = new UiRect(contentRect.X, contentRect.Y, chevron + pad, contentRect.Height);
-            _nextRect = new UiRect(contentRect.Right - chevron - pad, contentRect.Y, chevron + pad, contentRect.Height);
-            return;
-        }
-
-        float sizePx = context.Px(Theme.BodyTextSize);
-        float valueWidth = Theme.Body.MeasureWidth(SelectedOption, sizePx);
-        float right = contentRect.Right - pad;
-        _nextRect = new UiRect(right - chevron, contentRect.Y, chevron + pad, contentRect.Height);
-        _previousRect = new UiRect(
-            right - chevron - context.Px(12f) - valueWidth - chevron,
-            contentRect.Y,
-            chevron + pad,
-            contentRect.Height);
+        float chevron = context.Px(ChevronBoxUnits);
+        float valueWidth = ValueWidth(context);
+        float right = Style == DropdownStyle.Compact ? contentRect.Right - context.Px(8f) : contentRect.Right - context.Px(UiRowStyle.Inset);
+        _nextRect = new UiRect(right - chevron, contentRect.Y, chevron, contentRect.Height);
+        _valueRect = new UiRect(_nextRect.X - valueWidth, contentRect.Y, valueWidth, contentRect.Height);
+        _previousRect = new UiRect(_valueRect.X - chevron, contentRect.Y, chevron, contentRect.Height);
     }
+
+    /// <inheritdoc/>
+    public override void PointerMoved(UiVec2 point) => _pointer = point;
 
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
     {
-        float focus = MathF.Max(Visual.Focus, IsPointerOver ? 0.35f : 0f);
-        float sizePx = painter.Context.Px(Theme.BodyTextSize);
-        Bgra32 textColor = IsEnabled ? Interpolate.Lerp(Theme.Text, Theme.Accent, focus) : Theme.TextDisabled;
-        float pad = painter.Context.Px(8f);
-        float textY = Bounds.Y + ((Bounds.Height - Theme.Body.LineHeight(sizePx)) * 0.5f);
-        string value = SelectedOption;
-        float valueWidth = Theme.Body.MeasureWidth(value, sizePx);
-        float chevron = painter.Context.Px(18f);
-        Bgra32 chevronColor = Theme.Accent.WithAlpha((byte)(255 * MathF.Max(0.35f, focus)));
+        float highlight = UiRowStyle.Highlight(this);
+        float appear = Visual.Appear;
+        LayoutContext context = painter.Context;
 
         if (Style == DropdownStyle.Compact)
         {
-            // A bordered pill: nothing but the value between two chevrons, which is what a picker sitting
-            // in a bar should be. The caption belongs to whatever labels the bar, not to the control.
-            painter.FillRect(Bounds, Theme.Panel.WithAlpha((byte)(120 + (80 * focus))), BlendMode.AlphaBlend);
-            painter.StrokeRect(
-                Bounds,
-                painter.Context.Px(1f),
-                Interpolate.Lerp(Theme.Border, Theme.Accent, focus),
-                BlendMode.AlphaBlend);
-
-            painter.DrawText(Theme.Body, "<", new UiVec2(Bounds.X + pad, textY), sizePx, chevronColor);
-            painter.DrawText(Theme.Body, ">", new UiVec2(Bounds.Right - pad - chevron, textY), sizePx, chevronColor);
-            painter.DrawText(
-                Theme.Body,
-                value,
-                new UiVec2(Bounds.X + ((Bounds.Width - valueWidth) * 0.5f), textY),
-                sizePx,
-                textColor);
-            return;
+            // A glass cell: nothing but the value between two chevrons, which is what a picker sitting in a
+            // bar should be. The caption belongs to whatever labels the bar, not to the control.
+            painter.FillRect(Bounds, UiPalette.Fade(Theme.Panel, appear));
+            painter.StrokeRect(Bounds, context.Px(1f), UiPalette.Fade(Interpolate.Lerp(Theme.Border, UiPalette.AccentAt(0.45f), highlight), appear));
         }
-
-        if (focus > 0.001f)
+        else
         {
-            painter.FillRect(Bounds, Theme.FocusFill.WithAlpha((byte)(Theme.FocusFill.A * focus)));
+            UiRowStyle.DrawFrame(painter, this, Label, highlight);
         }
 
-        painter.DrawText(Theme.Body, Label, new UiVec2(Bounds.X + pad, textY), sizePx, textColor);
+        DrawChevron(painter, _previousRect, UiDirection.Left, appear);
+        DrawChevron(painter, _nextRect, UiDirection.Right, appear);
 
-        // The value sits at the right between two chevrons.
-        float right = Bounds.Right - pad;
-        painter.DrawText(Theme.Body, ">", new UiVec2(right - chevron, textY), sizePx, chevronColor);
-        painter.DrawText(Theme.Body, value, new UiVec2(right - chevron - painter.Context.Px(6f) - valueWidth, textY), sizePx, textColor);
-        painter.DrawText(Theme.Body, "<", new UiVec2(right - chevron - painter.Context.Px(12f) - valueWidth - chevron, textY), sizePx, chevronColor);
+        float sizePx = context.Px(ValueSizeUnits);
+        if (_shownIndex != _selected || _shown is null)
+        {
+            _shownIndex = _selected;
+            _shown = SelectedOption.ToUpperInvariant();
+        }
+
+        string value = _shown;
+        float width = UiPainter.MeasureLabel(Theme.Heading, value, sizePx, ValueTracking);
+        Bgra32 color = IsEnabled ? Theme.TextBright : Theme.TextDisabled;
+        painter.DrawLabel(
+            Theme.Heading,
+            value,
+            new UiVec2(_valueRect.X + ((_valueRect.Width - width) * 0.5f), UiRowStyle.CapsCenterY(Theme.Heading, sizePx, _valueRect)),
+            sizePx,
+            UiPalette.Fade(color, appear),
+            ValueTracking);
+    }
+
+    private void DrawChevron(UiPainter painter, UiRect box, UiDirection direction, float appear)
+    {
+        bool hot = IsEnabled && IsPointerOver && box.Contains(_pointer);
+        Bgra32 color = !IsEnabled ? Theme.TextDisabled
+            : hot || Visual.Focus > 0.5f ? Theme.Accent
+            : Theme.TextMuted;
+        float size = painter.Context.Px(12f);
+        painter.DrawChevron(box.Center, size, direction, painter.Context.Px(1.6f), UiPalette.Fade(color, appear));
+    }
+
+    private float ValueWidth(LayoutContext context)
+    {
+        if (_valueWidthScale == context.Scale)
+        {
+            return _valueWidth;
+        }
+
+        float sizePx = context.Px(ValueSizeUnits);
+        float widest = context.Px(ValueMinUnits);
+        foreach (string option in _options)
+        {
+            widest = MathF.Max(widest, UiPainter.MeasureLabel(Theme.Heading, option.ToUpperInvariant(), sizePx, ValueTracking) + context.Px(8f));
+        }
+
+        _valueWidthScale = context.Scale;
+        _valueWidth = widest;
+        return widest;
     }
 }

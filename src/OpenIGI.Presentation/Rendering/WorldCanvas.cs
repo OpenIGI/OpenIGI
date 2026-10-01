@@ -288,11 +288,11 @@ internal readonly struct WorldCanvas
             UiRect box = run.Current.Destination;
             if (signedDistanceField)
             {
-                DrawText(batch, font.Texture, box.X, box.Y, box.Width, box.Height, run.Current.Source, colour, shading);
+                DrawText(batch, font.Texture.ToTextureHandle(), box.X, box.Y, box.Width, box.Height, run.Current.Source.ToRectF(), colour, shading);
             }
             else
             {
-                Draw(batch, font.Texture, box.X, box.Y, box.Width, box.Height, run.Current.Source, colour);
+                Draw(batch, font.Texture.ToTextureHandle(), box.X, box.Y, box.Width, box.Height, run.Current.Source.ToRectF(), colour);
             }
         }
     }
@@ -335,8 +335,8 @@ internal readonly struct WorldCanvas
         {
             UiRect destination = pieces[piece].Destination;
             Draw(
-                batch, slice.Texture, destination.X, destination.Y, destination.Width, destination.Height,
-                pieces[piece].Source, colour, blend);
+                batch, slice.Texture.ToTextureHandle(), destination.X, destination.Y, destination.Width, destination.Height,
+                pieces[piece].Source.ToRectF(), colour, blend);
         }
     }
 

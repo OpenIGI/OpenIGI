@@ -14,8 +14,8 @@
           Link="Assets\weather\%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />
 
-    <None Include="..\..\apps\OpenIGI.Composition\Assets\fonts\Saira-Regular.ttf"
-          Link="Assets\fonts\Saira-Regular.ttf"
+    <None Include="..\..\apps\OpenIGI.Composition\Assets\fonts\Barlow-Regular.ttf"
+          Link="Assets\fonts\Barlow-Regular.ttf"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

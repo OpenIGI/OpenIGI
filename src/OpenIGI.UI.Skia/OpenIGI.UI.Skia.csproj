@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- The launcher's renderer for OpenIGI.UI: the painter's quads go to an SKCanvas as vertex meshes,
+         its glyphs as vector text from the same TrueType files the game rasterises, and frosted glass
+         as a backdrop-filtered layer. The game never references this project. -->
+    <ProjectReference Include="..\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\OpenIGI.UI\OpenIGI.UI.csproj" />
+    <PackageReference Include="SkiaSharp" />
+  </ItemGroup>
+
+</Project>

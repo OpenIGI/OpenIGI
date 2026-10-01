@@ -41,7 +41,7 @@ public sealed class ConsoleBodyTests
         body.Arrange(new UiRect(0f, 0f, width, height));
 
         var batch = new SpriteBatch(device);
-        return new Harness(system, model, body, batch, new UiPainter(batch, context));
+        return new Harness(system, model, body, batch, UiPainter.Create(batch, context));
     }
 
     private static void Render(Harness h)

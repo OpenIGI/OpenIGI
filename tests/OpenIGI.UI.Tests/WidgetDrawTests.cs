@@ -19,7 +19,7 @@ public sealed class WidgetDrawTests
     private static (RecordingGraphicsDevice Device, UiTheme Theme) Setup()
     {
         var device = new RecordingGraphicsDevice();
-        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Saira-Regular.ttf");
+        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Barlow-Regular.ttf");
         UiFont font = UiFont.Upload(device, FontAtlasBuilder.Build(File.ReadAllBytes(path), 48f));
         return (device, new UiTheme(font));
     }
@@ -31,7 +31,7 @@ public sealed class WidgetDrawTests
         root.Arrange(context.SafeRect);
 
         var batch = new SpriteBatch(device);
-        var painter = new UiPainter(batch, context);
+        var painter = UiPainter.Create(batch, context);
         batch.Begin();
         root.Draw(painter);
         batch.End();
@@ -75,7 +75,7 @@ public sealed class WidgetDrawTests
         }
 
         var batch = new SpriteBatch(focusedDevice);
-        var painter = new UiPainter(batch, context);
+        var painter = UiPainter.Create(batch, context);
         batch.Begin();
         focused.Draw(painter);
         batch.End();
@@ -97,12 +97,12 @@ public sealed class WidgetDrawTests
     public void Sdf_text_falls_back_to_a_textured_draw_on_a_device_without_the_capability()
     {
         var device = new RecordingGraphicsDevice(); // not an ISdfTextDevice
-        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Saira-Regular.ttf");
+        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Barlow-Regular.ttf");
         UiFont sdf = UiFont.Upload(device, FontAtlasBuilder.Build(File.ReadAllBytes(path), 48f, FontAtlasKind.SignedDistanceField));
 
         var context = new LayoutContext(1920f, 1080f);
         var batch = new SpriteBatch(device);
-        var painter = new UiPainter(batch, context);
+        var painter = UiPainter.Create(batch, context);
         batch.Begin();
         painter.DrawText(
             sdf,
@@ -116,7 +116,7 @@ public sealed class WidgetDrawTests
         // The recording device cannot shade a distance field, so the glyphs are still drawn — as ordinary
         // textured quads sampling the atlas — rather than dropped.
         Assert.NotEmpty(device.Draws);
-        Assert.Equal(sdf.Texture, device.Draws[0].Texture);
+        Assert.Equal(sdf.Texture.ToTextureHandle(), device.Draws[0].Texture);
     }
 
     private static int TotalQuads(RecordingGraphicsDevice device)

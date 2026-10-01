@@ -10,9 +10,12 @@ using OpenIGI.Presentation.Cameras;
 using OpenIGI.Presentation.Rendering;
 using OpenIGI.Presentation.Text;
 using OpenIGI.Rendering;
+using OpenIGI.UI.Drawing;
+using OpenIGI.UI.Kit;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Text;
 using OpenIGI.UI;
+using OpenIGI.UI.Widgets;
 using System.Globalization;
 
 namespace OpenIGI.Game.Igi1.World;
@@ -51,6 +54,7 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
     private readonly IIgiLogger _logger;
     private UiFont? _body;
     private UiFont? _display;
+    private UiTheme? _theme;
     private UiSurfaces? _surfaces;
     private InteractionBadgeSprite? _badge;
     private bool _disposed;
@@ -68,7 +72,7 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
     public bool Load()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!UiFontLibrary.Exists(UiFontLibrary.Body))
+        if (!UiFontLibrary.TypographyAvailable)
         {
             _logger.Warning("Hud", $"No interface font at {UiFontLibrary.FontsDirectory}; remaster HUD cannot draw.");
             return false;
@@ -76,14 +80,13 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
 
         try
         {
-            _body = UiFontLibrary.Load(_device, UiFontLibrary.Body, pixelHeight: 48f);
-
-            // A distance-field face for the binocular's marker labels, so a range digit can carry the
-            // outline and glow that make it read as projected onto the optics rather than printed on
-            // them. Optional: a missing heading face falls back to the plain body font on the markers.
-            _display = UiFontLibrary.Exists(UiFontLibrary.Heading)
-                ? UiFontLibrary.Load(_device, UiFontLibrary.Heading, pixelHeight: 64f, FontAtlasKind.SignedDistanceField)
-                : null;
+            // The design's faces, shared with the menus: the HUD labels in monospace, its values in the
+            // condensed faces, and the binocular's marker labels in the distance-field title face so a
+            // range digit can carry the outline and glow that make it read as projected onto the optics.
+            IgiTypography typography = UiFontLibrary.Typography(_device);
+            _theme = typography.CreateTheme();
+            _body = typography.Body;
+            _display = typography.Display;
 
             // The interface's antialiased corner atlas. Every curve this HUD draws over the world -- the
             // interaction badge and its dial -- is a filled rounded rectangle sampled from it, because
@@ -106,21 +109,21 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
     public void Draw(SpriteBatch batch, in RemasteredHudSnapshot snapshot, int screenWidth, int screenHeight)
     {
         ArgumentNullException.ThrowIfNull(batch);
-        if (_body is not { } body)
+        if (_theme is not { } theme)
         {
             return;
         }
 
         var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
-        var painter = new UiPainter(batch, context);
-        DrawCompass(painter, context, body, snapshot.HeadingRadians);
-        DrawObjectives(painter, context, body, snapshot.Objectives);
-        DrawVitals(painter, context, body, snapshot.HealthFraction);
-        DrawWeapon(painter, context, body, snapshot);
+        var painter = UiPainter.Create(batch, context);
+        DrawCompass(painter, context, theme, snapshot.HeadingRadians);
+        DrawObjectives(painter, context, theme, snapshot.Objectives);
+        DrawVitals(painter, context, theme, snapshot.HealthFraction);
+        DrawWeapon(painter, context, theme, snapshot);
         DrawCrosshair(painter, context, snapshot.Weapon, snapshot.SniperScoped);
         if (!snapshot.WorldInteractionPrompt)
         {
-            DrawInteraction(painter, context, body, snapshot.ActionSprite);
+            DrawInteraction(painter, context, theme, snapshot.ActionSprite);
         }
     }
 
@@ -148,7 +151,7 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
         }
 
         var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
-        var painter = new UiPainter(batch, context);
+        var painter = UiPainter.Create(batch, context);
 
         // No full-screen wash and no opaque frame: the lens post-process owns the glass now, so the HUD
         // stays crisp chrome over it. Thin rails and corner ticks read as an optics frame without
@@ -159,7 +162,10 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
         painter.FillRect(new UiRect(frame.X, frame.Bottom - context.Px(2f), frame.Width, context.Px(2f)), Signal.WithAlpha(120));
         DrawCornerTicks(painter, context, frame, Signal.WithAlpha(170));
 
-        DrawCompass(painter, context, body, headingRadians);
+        if (_theme is { } theme)
+        {
+            DrawCompass(painter, context, theme, headingRadians);
+        }
 
         float centreX = context.SafeRect.X + (context.SafeRect.Width * 0.5f);
         float centreY = context.SafeRect.Y + (context.SafeRect.Height * 0.5f);
@@ -614,17 +620,17 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
     public void DrawInteractionProgress(SpriteBatch batch, float progress, int screenWidth, int screenHeight)
     {
         ArgumentNullException.ThrowIfNull(batch);
-        if (_body is not { } body)
+        if (_theme is not { } theme)
         {
             return;
         }
 
         var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
-        var painter = new UiPainter(batch, context);
+        var painter = UiPainter.Create(batch, context);
         float width = MathF.Min(context.Px(430f), context.SafeRect.Width * 0.52f);
         float x = context.SafeRect.X + ((context.SafeRect.Width - width) * 0.5f);
         float y = context.SafeRect.Bottom - context.Px(118f);
-        painter.DrawText(body, "INTERACTING", new UiVec2(x, y), context.Px(15f), Muted);
+        painter.DrawLabel(theme.Mono, "INTERACTING", new UiVec2(x, y), context.Px(11f), Accent, 0.28f);
         DrawMeter(
             painter,
             new UiRect(x, y + context.Px(25f), width, context.Px(6f)),
@@ -640,10 +646,11 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
         }
 
         _disposed = true;
-        _body?.Dispose();
+
+        // The faces are the device's shared set, not this renderer's to free.
         _body = null;
-        _display?.Dispose();
         _display = null;
+        _theme = null;
         _surfaces?.Dispose();
         _surfaces = null;
         _badge?.Dispose();
@@ -653,7 +660,7 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
     private static void DrawObjectives(
         UiPainter painter,
         LayoutContext context,
-        UiFont body,
+        UiTheme type,
         IReadOnlyList<MissionObjective> objectives)
     {
         MissionObjective? primary = RemasteredHudPresentation.PrimaryObjective(objectives);
@@ -666,19 +673,25 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
         float y = context.SafeRect.Y + context.Px(30f);
         float width = MathF.Min(context.Px(470f), context.SafeRect.Width * 0.36f);
         float accentWidth = context.Px(3f);
-        float textX = x + context.Px(15f);
-        float labelSize = context.Px(15f);
-        float textSize = context.Px(24f);
+        float textX = x + context.Px(18f);
+        float labelSize = context.Px(11f);
+        float textSize = context.Px(22f);
         string text = primary?.Text.Length > 0 ? primary.Text : primary?.TextResource ?? "OBJECTIVES COMPLETE";
-        string wrapped = body.WrapText(text, textSize, width - (textX - x));
-        float height = body.Measure(wrapped, textSize).Y + context.Px(35f);
+        string wrapped = type.Body.WrapText(text, textSize, width - (textX - x));
+        float labelHeight = type.Mono.LineHeight(labelSize);
+        float height = labelHeight + context.Px(8f) + type.Body.Measure(wrapped, textSize).Y + context.Px(6f);
 
-        painter.FillRect(new UiRect(x, y + context.Px(2f), accentWidth, height), Accent);
-        painter.DrawText(body, "MISSION OBJECTIVE", new UiVec2(textX, y), labelSize, Muted);
-        painter.DrawText(body, wrapped, new UiVec2(textX, y + context.Px(22f)), textSize, Text);
+        // The design's selected-row treatment: an accent bar down the leading edge over a wash that fades
+        // out to the right, which keeps the text legible over any sky without boxing it in.
+        var block = new UiRect(x, y - context.Px(8f), width + context.Px(40f), height + context.Px(16f));
+        Span<UiGradientStop> wash = [new(0f, UiPalette.InkAt(0.55f)), new(1f, UiPalette.InkAt(0f))];
+        painter.FillGradient(block, wash, UiGradientDirection.Horizontal);
+        painter.FillRect(new UiRect(x, block.Y, accentWidth, block.Height), Accent);
+        painter.DrawLabel(type.Mono, "MISSION OBJECTIVE", new UiVec2(textX, y), labelSize, Accent, 0.28f);
+        painter.DrawText(type.Body, wrapped, new UiVec2(textX, y + labelHeight + context.Px(8f)), textSize, Text);
     }
 
-    private static void DrawCompass(UiPainter painter, LayoutContext context, UiFont body, float headingRadians)
+    private static void DrawCompass(UiPainter painter, LayoutContext context, UiTheme type, float headingRadians)
     {
         float width = MathF.Min(context.Px(320f), context.SafeRect.Width * 0.26f);
         float centreX = context.SafeRect.X + (context.SafeRect.Width * 0.5f);
@@ -690,7 +703,15 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
         const float halfVisible = visibleDegrees * 0.5f;
         int centreDegrees = ((int)MathF.Round(heading) + 360) % 360;
 
-        painter.FillRect(new UiRect(x, lineY, width, context.Px(1f)), Bgra32.FromRgba(255, 255, 255, 42));
+        // The rule fades out at both ends rather than stopping, so the dial reads as a window onto a ring.
+        Span<UiGradientStop> rule =
+        [
+            new(0f, UiPalette.White(0f)),
+            new(0.2f, UiPalette.White(0.18f)),
+            new(0.8f, UiPalette.White(0.18f)),
+            new(1f, UiPalette.White(0f)),
+        ];
+        painter.FillGradient(new UiRect(x, lineY, width, context.Px(1f)), rule, UiGradientDirection.Horizontal);
 
         float firstTick = MathF.Ceiling((heading - halfVisible) / 10f) * 10f;
         for (float degrees = firstTick; degrees <= heading + halfVisible; degrees += 10f)
@@ -699,22 +720,18 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
             float tickX = centreX + (((degrees - heading) / visibleDegrees) * width);
             bool major = normalized % 30 == 0;
             float tickHeight = context.Px(major ? 7f : 3f);
+            float edge = 1f - MathF.Abs((degrees - heading) / halfVisible);
             painter.FillRect(
                 new UiRect(tickX - context.Px(0.5f), lineY, context.Px(1f), tickHeight),
-                major ? Muted.WithAlpha(200) : Muted.WithAlpha(100));
+                UiPalette.Fade(Muted, (major ? 0.8f : 0.4f) * Math.Clamp(edge * 2f, 0f, 1f)));
         }
 
-        painter.FillRect(
-            new UiRect(centreX - context.Px(1.5f), lineY - context.Px(7f), context.Px(3f), context.Px(16f)),
-            Accent);
-        string readout = $"{centreDegrees:000}°";
-        UiVec2 readoutBounds = body.Measure(readout, context.Px(16f));
-        painter.DrawText(
-            body,
-            readout,
-            new UiVec2(centreX - (readoutBounds.X * 0.5f), y),
-            context.Px(16f),
-            Text);
+        // The heading marker: an accent diamond on the rule, the bearing in monospace over it.
+        painter.FillDiamond(new UiVec2(centreX, lineY), context.Px(7f), Accent);
+        string readout = $"{centreDegrees:000}";
+        float readoutSize = context.Px(14f);
+        float readoutWidth = UiPainter.MeasureLabel(type.Mono, readout, readoutSize, 0.12f);
+        painter.DrawLabel(type.Mono, readout, new UiVec2(centreX - (readoutWidth * 0.5f), y + context.Px(4f)), readoutSize, Text, 0.12f);
 
         for (int cardinal = 0; cardinal < 360; cardinal += 45)
         {
@@ -734,14 +751,17 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
             }
 
             string label = CompassCardinal(cardinal);
-            float labelSize = cardinal % 90 == 0 ? context.Px(14f) : context.Px(12f);
-            UiVec2 labelBounds = body.Measure(label, labelSize);
-            painter.DrawText(
-                body,
+            bool major = cardinal % 90 == 0;
+            float labelSize = context.Px(major ? 16f : 13f);
+            float labelWidth = UiPainter.MeasureLabel(type.Heading, label, labelSize, 0.12f);
+            float edge = Math.Clamp((1f - (MathF.Abs(relative) / halfVisible)) * 2f, 0f, 1f);
+            painter.DrawLabel(
+                type.Heading,
                 label,
-                new UiVec2(centreX + ((relative / visibleDegrees) * width) - (labelBounds.X * 0.5f), lineY + context.Px(12f)),
+                new UiVec2(centreX + ((relative / visibleDegrees) * width) - (labelWidth * 0.5f), lineY + context.Px(12f)),
                 labelSize,
-                cardinal % 90 == 0 ? Text : Muted);
+                UiPalette.Fade(major ? Text : Muted, edge),
+                0.12f);
         }
     }
 
@@ -758,35 +778,39 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
         _ => string.Empty,
     };
 
-    private static void DrawVitals(UiPainter painter, LayoutContext context, UiFont body, float health)
+    private static void DrawVitals(UiPainter painter, LayoutContext context, UiTheme type, float health)
     {
         float width = context.Px(326f);
-        float height = context.Px(70f);
+        float height = context.Px(74f);
         float x = context.SafeRect.X + context.Px(34f);
         float y = context.SafeRect.Bottom - context.Px(38f) - height;
         float fraction = Math.Clamp(health, 0f, 1f);
         Bgra32 healthColour = RemasteredHudPresentation.HealthColour(fraction);
 
-        painter.DrawText(body, "HEALTH", new UiVec2(x, y), context.Px(18f), Muted);
-        painter.DrawText(
-            body,
+        painter.DrawLabel(type.Mono, "HEALTH", new UiVec2(x, y), context.Px(11f), Muted, 0.28f);
+        float valueSize = context.Px(52f);
+        var valueBox = new UiRect(x, y + context.Px(18f), context.Px(92f), valueSize * 0.85f);
+        painter.DrawLabel(
+            type.Display,
             $"{(int)MathF.Round(fraction * 100f):00}",
-            new UiVec2(x, y + context.Px(21f)),
-            context.Px(44f),
-            healthColour);
+            new UiVec2(x, UiRowStyle.CapsCenterY(type.Display, valueSize, valueBox)),
+            valueSize,
+            healthColour,
+            0.02f);
 
         float barX = x + context.Px(92f);
-        float barY = y + context.Px(54f);
+        float barY = y + context.Px(56f);
         float barWidth = width - context.Px(92f);
-        float barHeight = context.Px(5f);
-        DrawMeter(painter, new UiRect(barX, barY, barWidth, barHeight), fraction, healthColour);
+        DrawMeter(painter, new UiRect(barX, barY, barWidth, context.Px(4f)), fraction, healthColour);
 
+        // One segment per tenth, the design's progress marks, under the bar.
+        KitDraw.Segments(painter, new UiVec2(barX, barY + context.Px(9f)), (int)MathF.Ceiling(fraction * 10f), 10, (326f - 92f - 36f) / 10f, 2f, 4f, UiPalette.Fade(healthColour, 0.7f));
     }
 
     private static void DrawWeapon(
         UiPainter painter,
         LayoutContext context,
-        UiFont body,
+        UiTheme type,
         in RemasteredHudSnapshot snapshot)
     {
         if (snapshot.Weapon is not { } weapon)
@@ -795,15 +819,17 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
         }
 
         float right = context.SafeRect.Right - context.Px(34f);
-        float y = context.SafeRect.Bottom - context.Px(114f);
-        float left = right - context.Px(360f);
+        float y = context.SafeRect.Bottom - context.Px(118f);
+        float left = right - context.Px(380f);
         float ammoGap = context.Px(26f);
         float ammoAreaWidth = context.Px(176f);
         float weaponRight = right - ammoAreaWidth - ammoGap;
-        float labelSize = context.Px(17f);
+        float labelSize = context.Px(11f);
 
-        painter.DrawText(body, RemasteredHudPresentation.WeaponClass(weapon), new UiVec2(left, y), labelSize, Muted);
-        painter.DrawText(body, weapon.DisplayName.ToUpperInvariant(), new UiVec2(left, y + context.Px(17f)), context.Px(30f), Text);
+        painter.DrawLabel(type.Mono, RemasteredHudPresentation.WeaponClass(weapon).ToUpperInvariant(), new UiVec2(left, y), labelSize, Muted, 0.28f);
+        float nameSize = context.Px(30f);
+        var nameBox = new UiRect(left, y + context.Px(20f), weaponRight - left, nameSize * 0.85f);
+        painter.DrawLabel(type.Heading, weapon.DisplayName.ToUpperInvariant(), new UiVec2(left, UiRowStyle.CapsCenterY(type.Heading, nameSize, nameBox)), nameSize, Text, 0.06f);
         painter.FillRect(
             new UiRect(left, y + context.Px(55f), Math.Max(context.Px(42f), weaponRight - left), context.Px(2f)),
             Accent.WithAlpha(185));
@@ -811,28 +837,31 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
         string state = RemasteredHudPresentation.WeaponStateLabel(snapshot.WeaponState);
         if (state.Length > 0)
         {
-            painter.DrawText(body, state, new UiVec2(left, y + context.Px(65f)), context.Px(14f), Accent);
+            painter.FillDiamond(new UiVec2(left + context.Px(3f), y + context.Px(71f)), context.Px(6f), Accent);
+            painter.DrawLabel(type.Mono, state.ToUpperInvariant(), new UiVec2(left + context.Px(14f), y + context.Px(64f)), labelSize, Accent, 0.18f);
         }
 
         (string magazine, string reserve) =
             RemasteredHudPresentation.AmmoColumns(weapon, snapshot.RoundsInClip, snapshot.ReserveAmmo);
-        float ammoSize = context.Px(42f);
-        UiVec2 reserveSize = body.Measure(reserve, ammoSize);
-        float reserveX = right - reserveSize.X;
-        string reserveLabel = "RESERVE";
-        UiVec2 reserveLabelSize = body.Measure(reserveLabel, labelSize);
-        painter.DrawText(body, reserveLabel, new UiVec2(right - reserveLabelSize.X, y), labelSize, Muted);
-        painter.DrawText(body, reserve, new UiVec2(reserveX, y + context.Px(18f)), ammoSize, Muted);
+        float ammoSize = context.Px(48f);
+        float reserveWidth = UiPainter.MeasureLabel(type.Display, reserve, ammoSize, 0.02f);
+        float reserveX = right - reserveWidth;
+        float ammoTop = y + context.Px(18f);
+        var ammoBox = new UiRect(0f, ammoTop, 0f, ammoSize * 0.85f);
+        const string ReserveLabel = "RESERVE";
+        float reserveLabelWidth = UiPainter.MeasureLabel(type.Mono, ReserveLabel, labelSize, 0.28f);
+        painter.DrawLabel(type.Mono, ReserveLabel, new UiVec2(right - reserveLabelWidth, y), labelSize, Muted, 0.28f);
+        painter.DrawLabel(type.Display, reserve, new UiVec2(reserveX, UiRowStyle.CapsCenterY(type.Display, ammoSize, ammoBox)), ammoSize, Muted, 0.02f);
 
-        UiVec2 magazineSize = body.Measure(magazine, ammoSize);
+        float magazineWidth = UiPainter.MeasureLabel(type.Display, magazine, ammoSize, 0.02f);
         float magazineRight = reserveX - context.Px(30f);
-        string magazineLabel = "MAG";
-        UiVec2 magazineLabelSize = body.Measure(magazineLabel, labelSize);
-        painter.DrawText(body, magazineLabel, new UiVec2(magazineRight - magazineLabelSize.X, y), labelSize, Muted);
-        painter.DrawText(body, magazine, new UiVec2(magazineRight - magazineSize.X, y + context.Px(18f)), ammoSize, Text);
+        const string MagazineLabel = "MAG";
+        float magazineLabelWidth = UiPainter.MeasureLabel(type.Mono, MagazineLabel, labelSize, 0.28f);
+        painter.DrawLabel(type.Mono, MagazineLabel, new UiVec2(magazineRight - magazineLabelWidth, y), labelSize, Accent, 0.28f);
+        painter.DrawLabel(type.Display, magazine, new UiVec2(magazineRight - magazineWidth, UiRowStyle.CapsCenterY(type.Display, ammoSize, ammoBox)), ammoSize, Text, 0.02f);
         painter.FillRect(
-            new UiRect(reserveX - context.Px(15f), y + context.Px(20f), context.Px(1f), context.Px(36f)),
-            Muted.WithAlpha(115));
+            new UiRect(reserveX - context.Px(15f), ammoTop + context.Px(4f), context.Px(1f), context.Px(34f)),
+            UiPalette.White(0.18f));
     }
 
     private static void DrawCrosshair(
@@ -862,7 +891,7 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
         painter.FillRect(new UiRect(centreX - (thickness * 0.5f), centreY - (thickness * 0.5f), thickness, thickness), Accent);
     }
 
-    private static void DrawInteraction(UiPainter painter, LayoutContext context, UiFont body, string? actionSprite)
+    private static void DrawInteraction(UiPainter painter, LayoutContext context, UiTheme type, string? actionSprite)
     {
         string label = RemasteredHudPresentation.InteractionLabel(actionSprite);
         if (label.Length == 0)
@@ -870,17 +899,22 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
             return;
         }
 
-        float textSize = context.Px(17f);
-        string prompt = $"INTERACT  ·  {label}";
-        UiVec2 size = body.Measure(prompt, textSize);
-        float x = context.SafeRect.X + ((context.SafeRect.Width - size.X) * 0.5f);
+        // The design's key hint: the key in a cap, then what it does, centred under the crosshair.
+        const string Key = "E";
+        float textSize = context.Px(16f);
+        string action = label.ToUpperInvariant();
+        UiVec2 cap = KitDraw.MeasureKeyCap(context, type, Key);
+        float actionWidth = UiPainter.MeasureLabel(type.Heading, action, textSize, 0.16f);
+        float total = cap.X + context.Px(10f) + actionWidth;
+        float x = context.SafeRect.X + ((context.SafeRect.Width - total) * 0.5f);
         float y = context.SafeRect.Y + (context.SafeRect.Height * 0.5f) + context.Px(47f);
-        painter.DrawText(body, prompt, new UiVec2(x, y), textSize, Text);
+        UiRect box = KitDraw.KeyCap(painter, type, Key, new UiVec2(x, y));
+        painter.DrawLabel(type.Heading, action, new UiVec2(box.Right + context.Px(10f), UiRowStyle.CapsCenterY(type.Heading, textSize, box)), textSize, Text, 0.16f);
     }
 
     private static void DrawMeter(UiPainter painter, UiRect rect, float value, Bgra32 colour)
     {
-        painter.FillRect(rect, Bgra32.FromRgba(255, 255, 255, 42));
+        painter.FillRect(rect, UiPalette.White(0.1f));
         float fill = rect.Width * Math.Clamp(value, 0f, 1f);
         if (fill > 0f)
         {
@@ -891,8 +925,8 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
     /// <summary>The badge's face. Opaque, so each layer drawn over it composites predictably.</summary>
     private static Bgra32 BadgeFace => Bgra32.FromRgb(13, 16, 21);
 
-    private static Bgra32 Text => Bgra32.FromRgb(245, 248, 250);
-    private static Bgra32 Muted => Bgra32.FromRgb(202, 213, 220);
-    private static Bgra32 Accent => Bgra32.FromRgb(240, 176, 84);
-    private static Bgra32 Signal => Bgra32.FromRgb(140, 245, 200);
+    private static Bgra32 Text => UiPalette.Text;
+    private static Bgra32 Muted => UiPalette.TextSecondary;
+    private static Bgra32 Accent => UiPalette.Accent;
+    private static Bgra32 Signal => UiPalette.Success;
 }

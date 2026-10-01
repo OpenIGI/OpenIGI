@@ -50,6 +50,9 @@ public abstract class Control : UiElement, IFocusable
     /// </remarks>
     public string Tooltip { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets a short line of explanation a row shows under its caption, or an empty string for none.</summary>
+    public string Hint { get; set; } = string.Empty;
+
     /// <summary>Gets the visual state machine driving the control's animation.</summary>
     public WidgetVisualStateMachine Visual { get; } = new();
 

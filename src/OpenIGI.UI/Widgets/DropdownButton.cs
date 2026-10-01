@@ -1,5 +1,5 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Rendering;
+using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Focus;
 using OpenIGI.UI.Layout;
@@ -36,6 +36,8 @@ public class DropdownButton : Button
 
     private UiRect _listBounds;
     private float _rowHeight;
+    private float _rowGap;
+    private float _listPad;
     private int _highlighted;
 
     /// <summary>Initializes a new instance of the <see cref="DropdownButton"/> class.</summary>
@@ -66,7 +68,16 @@ public class DropdownButton : Button
     public bool IsOpen { get; private set; }
 
     /// <summary>Gets or sets the width of the list, in design units; zero follows the caption's width.</summary>
-    public float ListWidth { get; set; } = 260f;
+    public float ListWidth { get; set; } = 360f;
+
+    /// <summary>Gets or sets where the list opens relative to the button's bottom-left, in design units.</summary>
+    public UiVec2 ListOffset { get; set; } = new(-12f, 18f);
+
+    /// <summary>Gets or sets a second line shown under each item's name, or <see langword="null"/> for none.</summary>
+    public Func<int, string?>? ItemDetail { get; set; }
+
+    /// <summary>Gets or sets the soft shadow sprite cast under the open list, normally <see cref="UiSurfaces.Shadow"/>.</summary>
+    public NineSlice? Shadow { get; set; }
 
     /// <summary>Shuts the list.</summary>
     public void Close()
@@ -170,15 +181,21 @@ public class DropdownButton : Button
     {
         // Resolved at layout time so a click can be mapped onto the list whether or not it has been drawn,
         // and so the rectangle this answers for is never a frame out of date.
-        float sizePx = context.Px(Theme.BodyTextSize);
-        _rowHeight = Theme.Body.LineHeight(sizePx) + context.Px(16f);
+        _rowHeight = context.Px(ItemDetail is null ? 48f : 64f);
+        _rowGap = context.Px(4f);
+        _listPad = context.Px(8f);
+        float pad = _listPad;
 
         float width = ListWidth > 0f ? context.Px(ListWidth) : contentRect.Width;
         width = MathF.Max(width, contentRect.Width);
 
         _listBounds = _items.Count == 0
             ? UiRect.Empty
-            : new UiRect(contentRect.X, contentRect.Bottom, width, _rowHeight * _items.Count);
+            : new UiRect(
+                contentRect.X + context.Px(ListOffset.X),
+                contentRect.Bottom + context.Px(ListOffset.Y),
+                width,
+                (_rowHeight * _items.Count) + (context.Px(4f) * (_items.Count - 1)) + (pad * 2f));
     }
 
     /// <inheritdoc/>
@@ -190,59 +207,89 @@ public class DropdownButton : Button
             return;
         }
 
-        // The list drops down as it opens rather than appearing whole.
-        var box = new UiRect(_listBounds.X, _listBounds.Y, _listBounds.Width, _listBounds.Height * amount);
-        byte alpha = (byte)(255 * amount);
+        LayoutContext context = painter.Context;
 
-        painter.FillRect(box, Theme.Panel.WithAlpha((byte)(240 * amount)), BlendMode.AlphaBlend);
-        painter.StrokeRect(box, painter.Context.Px(1f), Theme.Border.WithAlpha(alpha), BlendMode.AlphaBlend);
+        // The menu drops a few units as it opens and fades in, the way the design's does.
+        float drop = context.Px(8f) * (1f - amount);
+        var box = new UiRect(_listBounds.X, _listBounds.Y - drop, _listBounds.Width, _listBounds.Height);
+        painter.PushOpacity(amount);
 
-        painter.PushClip(box);
+        if (Shadow is { } shadow && shadow.IsValid)
+        {
+            painter.DrawShadow(box, shadow, UiPalette.InkAt(0.6f), context.Px(40f), new UiVec2(0f, context.Px(20f)));
+        }
 
-        float sizePx = painter.Context.Px(Theme.BodyTextSize);
-        float pad = painter.Context.Px(16f);
+        painter.DrawBackdrop(box, context.Px(Theme.GlassBlur), Theme.SurfaceRaised);
+        painter.StrokeRect(box, context.Px(1f), UiPalette.White(0.1f));
+
+        float pad = context.Px(8f);
+        float gap = context.Px(4f);
+        float titleSize = context.Px(22f);
+        float detailSize = context.Px(11f);
 
         for (int i = 0; i < _items.Count; i++)
         {
-            var row = new UiRect(_listBounds.X, _listBounds.Y + (i * _rowHeight), _listBounds.Width, _rowHeight);
+            var row = new UiRect(box.X + pad, box.Y + pad + (i * (_rowHeight + gap)), box.Width - (pad * 2f), _rowHeight);
             bool enabled = ItemEnabled?.Invoke(i) ?? true;
+            bool current = i == CurrentIndex;
 
-            if (enabled && i == _highlighted)
+            if (current)
             {
-                painter.FillRect(row, Theme.FocusFill.WithAlpha((byte)(Theme.FocusFill.A * amount)), BlendMode.AlphaBlend);
-                painter.FillRect(
-                    new UiRect(row.X, row.Y, painter.Context.Px(3f), row.Height),
-                    Theme.Accent.WithAlpha(alpha),
-                    BlendMode.AlphaBlend);
+                painter.FillRect(row, Theme.Selection);
+                painter.FillRect(new UiRect(row.X, row.Y, context.Px(3f), row.Height), Theme.Accent);
+            }
+            else if (enabled && i == _highlighted)
+            {
+                painter.FillRect(row, UiPalette.White(0.06f));
             }
 
-            Bgra32 colour = !enabled ? Theme.TextDisabled
-                : i == CurrentIndex ? Theme.Accent
-                : Theme.Text;
+            Bgra32 title = !enabled ? Theme.TextDisabled : current || i == _highlighted ? Theme.TextBright : Theme.TextSecondary;
+            string caption = _items[i].ToUpperInvariant();
+            string? detail = ItemDetail?.Invoke(i);
+            float textX = row.X + context.Px(16f);
 
-            painter.DrawText(
-                Theme.Body,
-                _items[i],
-                new UiVec2(row.X + pad, row.Y + ((row.Height - Theme.Body.LineHeight(sizePx)) * 0.5f)),
-                sizePx,
-                colour.WithAlpha((byte)(colour.A * amount)));
-
-            // An option that exists but cannot be taken says so, rather than looking like a dead click.
-            if (!enabled)
+            if (detail is null)
             {
-                const string note = "unavailable";
-                float noteSize = sizePx * 0.78f;
-                float noteWidth = Theme.Body.MeasureWidth(note, noteSize);
-                painter.DrawText(
-                    Theme.Body,
-                    note,
-                    new UiVec2(row.Right - pad - noteWidth, row.Y + ((row.Height - Theme.Body.LineHeight(noteSize)) * 0.5f)),
-                    noteSize,
-                    Theme.TextDisabled.WithAlpha((byte)(Theme.TextDisabled.A * amount)));
+                painter.DrawLabel(Theme.Display, caption, new UiVec2(textX, UiRowStyle.CapsCenterY(Theme.Display, titleSize, row)), titleSize, title, 0.14f);
+            }
+            else
+            {
+                float lineGap = context.Px(4f);
+                float block = (titleSize * 0.7f) + lineGap + Theme.Mono.LineHeight(detailSize);
+                float top = row.Y + ((row.Height - block) * 0.5f);
+                painter.DrawLabel(Theme.Display, caption, new UiVec2(textX, top - (Theme.Display.Ascent(titleSize) - (titleSize * 0.7f))), titleSize, title, 0.14f);
+                painter.DrawLabel(Theme.Mono, detail, new UiVec2(textX, top + (titleSize * 0.7f) + lineGap), detailSize, enabled ? Theme.TextMuted : Theme.TextDisabled, 0.2f);
+            }
+
+            // The running one is named as such, and one that exists but cannot be taken says why, rather
+            // than looking like a dead click.
+            string? pill = current ? "ACTIVE" : !enabled ? "UNAVAILABLE" : null;
+            if (pill is not null)
+            {
+                float pillSize = context.Px(10f);
+                float pillWidth = UiPainter.MeasureLabel(Theme.Mono, pill, pillSize, 0.2f) + context.Px(14f);
+                float pillHeight = Theme.Mono.LineHeight(pillSize) + context.Px(6f);
+                var pillBox = new UiRect(row.Right - context.Px(16f) - pillWidth, row.Y + ((row.Height - pillHeight) * 0.5f), pillWidth, pillHeight);
+                if (current)
+                {
+                    painter.FillRect(pillBox, Theme.Accent);
+                }
+                else
+                {
+                    painter.StrokeRect(pillBox, context.Px(1f), UiPalette.White(0.12f));
+                }
+
+                painter.DrawLabel(
+                    Theme.Mono,
+                    pill,
+                    new UiVec2(pillBox.X + context.Px(7f), UiRowStyle.CenterY(Theme.Mono, pillSize, pillBox)),
+                    pillSize,
+                    current ? Theme.OnAccent : Theme.TextDisabled,
+                    0.2f);
             }
         }
 
-        painter.PopClip();
+        painter.PopOpacity();
     }
 
     private void Open()
@@ -284,7 +331,10 @@ public class DropdownButton : Button
             return -1;
         }
 
-        int index = (int)((point.Y - _listBounds.Y) / _rowHeight);
+        // Rows are separated by a small gap and inset by the menu's padding; a point in a gap belongs to
+        // the row above it, which is what keeps a slow sweep down the list from flickering.
+        float local = point.Y - _listBounds.Y - _listPad;
+        int index = local < 0f ? -1 : (int)(local / (_rowHeight + _rowGap));
         return index >= 0 && index < _items.Count ? index : -1;
     }
 

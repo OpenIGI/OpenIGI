@@ -93,6 +93,13 @@ public abstract class UiElement
     /// <summary>Gets or sets a value indicating whether the element and its subtree can be hit by a pointer.</summary>
     public bool IsHitTestVisible { get; set; } = true;
 
+    /// <summary>Gets or sets a value indicating whether the element itself lets the pointer through, so only its children can be hit.</summary>
+    /// <remarks>
+    /// For a layer that spans the screen but draws only at its edges — a header and a footer laid over the
+    /// page — which would otherwise answer for every point the page's own controls are under.
+    /// </remarks>
+    public bool IsHitTestTransparent { get; set; }
+
     /// <summary>Gets the parent element, or <see langword="null"/> for the root.</summary>
     public UiElement? Parent { get; private set; }
 
@@ -418,7 +425,7 @@ public abstract class UiElement
             }
         }
 
-        return this;
+        return IsHitTestTransparent ? null : this;
     }
 
     /// <summary>Measures the element's content, excluding its margin, in pixels.</summary>

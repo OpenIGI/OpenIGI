@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- The settings rows both front ends offer: a CVar bound to the widget that edits it, the graphics
+         quality groups and the page of them the game's menu shows. Core and the interface framework only,
+         so the launcher can offer the game's own options before the game is running. -->
+    <ProjectReference Include="..\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\OpenIGI.UI\OpenIGI.UI.csproj" />
+  </ItemGroup>
+
+</Project>

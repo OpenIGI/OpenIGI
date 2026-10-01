@@ -33,7 +33,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// </para>
 /// <para>
 /// <b>What is deliberately dropped.</b> The 235-pixel panel width and the 42-pixel step are authored
-/// against 640x480 and are far too tight for a card set in Saira at a modern size, so this measures its
+/// against 640x480 and are far too tight for a card set in Barlow at a modern size, so this measures its
 /// own: the card is as wide as it needs to be up to a limit, and the column steps by the height each card
 /// actually took. A message that wraps to three lines therefore pushes the ones below it down instead of
 /// overlapping them, which the fixed step cannot do.
@@ -78,7 +78,7 @@ internal sealed class StatusMessageRenderer : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (!UiFontLibrary.Exists(UiFontLibrary.Body))
+        if (!UiFontLibrary.TypographyAvailable)
         {
             _logger.Warning(LogCategory, $"No interface font at {UiFontLibrary.FontsDirectory}; messages cannot draw.");
             return false;
@@ -86,10 +86,11 @@ internal sealed class StatusMessageRenderer : IDisposable
 
         try
         {
-            _body = UiFontLibrary.Load(_device, UiFontLibrary.Body, pixelHeight: 48f);
-            _label = UiFontLibrary.Exists(UiFontLibrary.Emphasis)
-                ? UiFontLibrary.Load(_device, UiFontLibrary.Emphasis, pixelHeight: 48f)
-                : null;
+            // The design's faces, shared with the rest of the interface: Barlow for what was said, the
+            // condensed semibold for who said it.
+            UI.Kit.IgiTypography typography = UiFontLibrary.Typography(_device);
+            _body = typography.Body;
+            _label = typography.Heading;
             return true;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException)
@@ -122,7 +123,7 @@ internal sealed class StatusMessageRenderer : IDisposable
         }
 
         var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
-        var painter = new UiPainter(batch, context);
+        var painter = UiPainter.Create(batch, context);
 
         List<FeedItem> currentFeed = BuildFeed(messages, out List<StatusMessageDisplay> subtitles);
         BeginRetiring(currentFeed);
@@ -177,9 +178,9 @@ internal sealed class StatusMessageRenderer : IDisposable
         }
 
         _disposed = true;
-        _body?.Dispose();
+
+        // The faces are the device's shared set, not this renderer's to free.
         _body = null;
-        _label?.Dispose();
         _label = null;
         _retiring.Clear();
         _previousFeed.Clear();
@@ -323,7 +324,7 @@ internal sealed class StatusMessageRenderer : IDisposable
             wrapped,
             new UiVec2(x, y),
             textSize,
-            Bgra32.FromRgb(248, 250, 252),
+            UI.Widgets.UiPalette.TextBright,
             Bgra32.FromRgba(0, 0, 0, 200),
             new UiVec2(context.Px(1.5f), context.Px(1.5f)));
     }
@@ -382,9 +383,9 @@ internal sealed class StatusMessageRenderer : IDisposable
     }
 
     // Mission objectives reserve amber; the comms feed uses a quieter signal-blue accent of its own.
-    private static Bgra32 Signal => Bgra32.FromRgb(117, 202, 216);
-    private static Bgra32 Text => Bgra32.FromRgb(245, 248, 250);
-    private static Bgra32 Muted => Bgra32.FromRgb(202, 213, 220);
+    private static Bgra32 Signal => UI.Widgets.UiPalette.Accent;
+    private static Bgra32 Text => UI.Widgets.UiPalette.Text;
+    private static Bgra32 Muted => UI.Widgets.UiPalette.TextSecondary;
 
     private readonly record struct FeedKey(string Text, int Occurrence);
 

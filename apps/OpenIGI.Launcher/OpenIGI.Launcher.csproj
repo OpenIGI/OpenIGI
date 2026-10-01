@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- A windowed app with no console behind it. The launcher draws the same interface the game's menus
+         draw, through Skia onto a plain OpenGL window, and references none of the game itself. -->
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>OpenIGI.Launcher</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- The window is sized to the screen through GLFW directly, whose calls take native pointers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Input\OpenIGI.Input.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Platform.Desktop\OpenIGI.Platform.Desktop.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.UI\OpenIGI.UI.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.UI.Kit\OpenIGI.UI.Kit.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.UI.Skia\OpenIGI.UI.Skia.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Silk.NET.Windowing" />
+    <PackageReference Include="Silk.NET.Input" />
+    <PackageReference Include="Silk.NET.OpenGL" />
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The design's faces, linked from the game's own asset folder rather than copied, so the launcher
+         and the game can never ship different fonts. The launcher does not reference the game's
+         composition project, which would pull the whole engine in behind the files. -->
+    <None Include="..\OpenIGI.Composition\Assets\fonts\Barlow-Regular.ttf;..\OpenIGI.Composition\Assets\fonts\BarlowCondensed-SemiBold.ttf;..\OpenIGI.Composition\Assets\fonts\BarlowCondensed-Bold.ttf;..\OpenIGI.Composition\Assets\fonts\JetBrainsMono-Regular.ttf;..\OpenIGI.Composition\Assets\fonts\OFL-Barlow.txt;..\OpenIGI.Composition\Assets\fonts\OFL-JetBrainsMono.txt"
+          Link="Assets\fonts\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+
+    <!-- The background picture: the same night shot the web landing page uses, linked so there is one copy. -->
+    <None Include="..\OpenIGI.Web\wwwroot\landing\bg.webp"
+          Link="Assets\backdrop.webp"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

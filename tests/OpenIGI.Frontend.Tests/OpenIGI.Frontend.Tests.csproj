@@ -5,12 +5,13 @@
     <ProjectReference Include="..\..\src\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Input\OpenIGI.Input.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.UI\OpenIGI.UI.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.UI.Rhi\OpenIGI.UI.Rhi.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Game\OpenIGI.Game.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Frontend\OpenIGI.Frontend.csproj" />
     <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
   </ItemGroup>
 
-  <!-- The shipped Saira faces, so screens measure and bind against the fonts the game rasterises. -->
+  <!-- The shipped Barlow faces, so screens measure and bind against the fonts the game rasterises. -->
   <ItemGroup>
     <None Include="..\..\apps\OpenIGI.Composition\Assets\fonts\*.ttf"
           Link="Assets\fonts\%(Filename)%(Extension)"

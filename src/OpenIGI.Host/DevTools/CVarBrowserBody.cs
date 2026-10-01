@@ -429,7 +429,7 @@ public sealed class CVarBrowserBody : UiElement
 
     private void DrawValueEditor(UiPainter painter, UiRect box, float textY)
     {
-        painter.FillRoundedRect(box, Surfaces?.Rounded ?? default, _theme.Ui.SurfaceRaised, _theme.Unit);
+        painter.FillRect(box, _theme.Ui.SurfaceRaised);
         painter.StrokeRect(box, 1f, _theme.Ui.Accent);
 
         float textX = MathF.Round(box.X + _theme.Unit);

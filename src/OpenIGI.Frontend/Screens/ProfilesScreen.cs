@@ -4,6 +4,7 @@ using OpenIGI.Frontend.Saves;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
 using OpenIGI.UI;
+using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Focus;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
@@ -25,21 +26,25 @@ public sealed class ProfilesScreen : ShellScreen
     private readonly List<ProfileCard> _cards = [];
     private DetailMode _mode;
 
-    private Panel? _profileDetails;
-    private Panel? _createDetails;
-    private Panel? _deleteDetails;
+    private const int SlotCount = 8;
+    private const int SlotColumns = 4;
+
+    private readonly List<SlotTile> _slots = [];
+    private GlassPanel? _profileDetails;
+    private GlassPanel? _createDetails;
+    private GlassPanel? _deleteDetails;
+    private int _selectedSlot;
     private TextBox? _name;
     private Dropdown? _difficulty;
     private Toggle? _unlockAllMissions;
     private Label? _profileName;
-    private Label? _profileDifficulty;
-    private Label? _profileProgress;
-    private Label? _profileMission;
+    private Stat? _profileDifficulty;
+    private Stat? _profileProgress;
+    private Stat? _profileMission;
     private Label? _detailsMessage;
     private Label? _formError;
     private Label? _deletePrompt;
     private Button? _deleteProfile;
-    private ListView? _slots;
     private Control? _pendingFocus;
 
     /// <summary>Initializes the screen.</summary>
@@ -52,12 +57,15 @@ public sealed class ProfilesScreen : ShellScreen
     protected override ShellTab Tab => ShellTab.Profile;
 
     /// <inheritdoc/>
+    protected override IReadOnlyList<KeyHint> Hints => [new("CLICK", "Set active"), new("ENTER", "Load save"), new("ESC", "Back")];
+
+    /// <inheritdoc/>
     protected override UiElement? BuildContent(LayoutContext context)
     {
         UiTheme theme = Context.Theme;
-        var columns = new Grid { ColumnSpacing = 28f };
-        columns.ColumnDefinitions.Add(GridLength.Stars(0.42f));
-        columns.ColumnDefinitions.Add(GridLength.Stars(0.58f));
+        var columns = new Grid { ColumnSpacing = 32f, Padding = new Thickness(SideMargin, 48f, SideMargin, 40f) };
+        columns.ColumnDefinitions.Add(GridLength.Absolute(600f));
+        columns.ColumnDefinitions.Add(GridLength.Star);
         columns.RowDefinitions.Add(GridLength.Star);
 
         columns.Add(BuildProfileRail(theme), 0, 0);
@@ -89,27 +97,23 @@ public sealed class ProfilesScreen : ShellScreen
         }
     }
 
-    private Panel BuildProfileRail(UiTheme theme)
+    private Grid BuildProfileRail(UiTheme theme)
     {
-        var panel = new Panel { Background = theme.Panel.WithAlpha(165), Padding = new Thickness(20f) };
-        var layout = new Grid { RowSpacing = 14f };
+        var layout = new Grid { RowSpacing = 20f };
         layout.ColumnDefinitions.Add(GridLength.Star);
         layout.RowDefinitions.Add(GridLength.Auto);
         layout.RowDefinitions.Add(GridLength.Auto);
         layout.RowDefinitions.Add(GridLength.Star);
         layout.RowDefinitions.Add(GridLength.Auto);
 
-        layout.Add(new Label(theme.Heading, "PLAYER PROFILES", theme.HeadingTextSize * 0.53f, theme.Text)
-        {
-            Shadow = theme.Shadow,
-        }, 0, 0);
-        layout.Add(new Label(theme.Body, "Choose the operative whose progress and difficulty you want to use.", theme.BodyTextSize * 0.78f, theme.TextMuted)
+        layout.Add(new SectionTitle(theme, "Operatives", "Player profiles") { HorizontalAlignment = HorizontalAlignment.Left }, 0, 0);
+        layout.Add(new Label(theme.Body, "Choose the operative whose progress and difficulty you want to use.", 16f, UiPalette.TextTertiary)
         {
             Wrap = true,
         }, 1, 0);
 
         var scroll = new ScrollView(theme);
-        var cards = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f };
+        var cards = new StackPanel { Orientation = Orientation.Vertical, Spacing = 8f };
         _cards.Clear();
         for (int i = 0; i < GameConfig.MaxProfiles; i++)
         {
@@ -126,79 +130,86 @@ public sealed class ProfilesScreen : ShellScreen
         var create = new Button(theme, "NEW PROFILE")
         {
             Accent = ButtonAccent.Solid,
-            TextSize = theme.BodyTextSize * 1.02f,
-            Padding = new Thickness(24f, 12f),
+            Font = theme.Display,
+            TextSize = 22f,
+            Tracking = 0.2f,
+            Padding = new Thickness(24f, 20f),
             Tooltip = "Create a new player profile with its own campaign difficulty.",
         };
         create.Activated += _ => ShowCreateDetails();
         layout.Add(create, 3, 0);
-
-        panel.AddChild(layout);
-        return panel;
+        return layout;
     }
 
     private Grid BuildWorkspace(UiTheme theme)
     {
-        var workspace = new Grid { RowSpacing = 20f };
+        var workspace = new Grid { RowSpacing = 24f };
         workspace.ColumnDefinitions.Add(GridLength.Star);
-        workspace.RowDefinitions.Add(GridLength.Stars(0.44f));
-        workspace.RowDefinitions.Add(GridLength.Stars(0.56f));
+        workspace.RowDefinitions.Add(GridLength.Auto);
+        workspace.RowDefinitions.Add(GridLength.Star);
 
-        var details = new Canvas();
+        var details = new Panel();
         _profileDetails = BuildProfileDetails(theme);
         _createDetails = BuildCreateDetails(theme);
         _deleteDetails = BuildDeleteDetails(theme);
         _createDetails.Visibility = Visibility.Collapsed;
         _deleteDetails.Visibility = Visibility.Collapsed;
-        details.Add(_profileDetails);
-        details.Add(_createDetails);
-        details.Add(_deleteDetails);
+        details.AddChild(_profileDetails);
+        details.AddChild(_createDetails);
+        details.AddChild(_deleteDetails);
         workspace.Add(details, 0, 0);
         workspace.Add(BuildSaves(theme), 1, 0);
         return workspace;
     }
 
-    private Panel BuildProfileDetails(UiTheme theme)
+    private GlassPanel BuildProfileDetails(UiTheme theme)
     {
-        var panel = DetailPanel(theme);
-        var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = 9f };
-        column.AddChild(new Label(theme.Body, "ACTIVE PROFILE", theme.BodyTextSize * 0.72f, theme.Accent));
-        _profileName = new Label(theme.Heading, string.Empty, theme.HeadingTextSize * 0.9f, theme.Text) { Shadow = theme.Shadow };
-        column.AddChild(_profileName);
-        column.AddChild(AccentRule(theme));
-        _profileDifficulty = new Label(theme.Body, string.Empty, theme.BodyTextSize * 0.9f, theme.Accent);
-        _profileProgress = new Label(theme.Body, string.Empty, theme.BodyTextSize * 0.82f, theme.TextMuted);
-        _profileMission = new Label(theme.Body, string.Empty, theme.BodyTextSize * 0.82f, theme.Text);
-        column.AddChild(_profileDifficulty);
-        column.AddChild(_profileProgress);
-        column.AddChild(_profileMission);
+        GlassPanel panel = DetailPanel(theme);
+        var row = new Grid { ColumnSpacing = 24f };
+        row.ColumnDefinitions.Add(GridLength.Star);
+        row.ColumnDefinitions.Add(GridLength.Auto);
+        row.RowDefinitions.Add(GridLength.Auto);
 
-        var actions = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 12f, Margin = new Thickness(0f, 8f, 0f, 0f) };
-        var newProfile = new Button(theme, "NEW") { Padding = new Thickness(22f, 9f), Accent = ButtonAccent.Solid };
-        newProfile.Activated += _ => ShowCreateDetails();
+        var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = 18f };
+        column.AddChild(new Eyebrow(theme, "Active profile"));
+        _profileName = new Label(theme.Display, string.Empty, 112f, theme.Text);
+        column.AddChild(_profileName);
+
+        var stats = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 40f, Margin = new Thickness(0f, 8f, 0f, 0f) };
+        _profileDifficulty = new Stat(theme, "Difficulty") { ValueColor = theme.Accent };
+        _profileProgress = new Stat(theme, "Campaign progress");
+        _profileMission = new Stat(theme, "Current mission");
+        stats.Add(_profileDifficulty);
+        stats.Add(_profileProgress);
+        stats.Add(_profileMission);
+        column.AddChild(stats);
+
+        _detailsMessage = new Label(theme.Body, string.Empty, 16f, theme.TextMuted);
+        column.AddChild(_detailsMessage);
+        row.Add(column, 0, 0);
+
         _deleteProfile = new Button(theme, "DELETE PROFILE")
         {
-            Padding = new Thickness(18f, 9f),
+            Accent = ButtonAccent.Destructive,
+            TextSize = 17f,
+            Tracking = 0.18f,
+            Padding = new Thickness(24f, 16f),
+            VerticalAlignment = VerticalAlignment.Bottom,
             Tooltip = "Permanently delete this profile and every save slot belonging to it.",
         };
         _deleteProfile.Activated += _ => ShowDeleteDetails();
-        actions.Add(newProfile);
-        actions.Add(_deleteProfile);
-        column.AddChild(actions);
+        row.Add(_deleteProfile, 0, 1);
 
-        _detailsMessage = new Label(theme.Body, string.Empty, theme.BodyTextSize * 0.72f, theme.TextMuted);
-        column.AddChild(_detailsMessage);
-        panel.AddChild(column);
+        panel.AddChild(row);
         return panel;
     }
 
-    private Panel BuildCreateDetails(UiTheme theme)
+    private GlassPanel BuildCreateDetails(UiTheme theme)
     {
-        var panel = DetailPanel(theme);
+        GlassPanel panel = DetailPanel(theme);
         var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f };
-        column.AddChild(new Label(theme.Body, "NEW OPERATIVE", theme.BodyTextSize * 0.72f, theme.Accent));
-        column.AddChild(new Label(theme.Heading, "Create profile", theme.HeadingTextSize * 0.72f, theme.Text));
-        column.AddChild(new Label(theme.Body, "Campaign difficulty belongs to the profile and applies whenever it is active.", theme.BodyTextSize * 0.76f, theme.TextMuted)
+        column.AddChild(new SectionTitle(theme, "New operative", "Create profile") { HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0f, 0f, 0f, 6f) });
+        column.AddChild(new Label(theme.Body, "Campaign difficulty belongs to the profile and applies whenever it is active.", 16f, theme.TextMuted)
         {
             Wrap = true,
         });
@@ -224,13 +235,13 @@ public sealed class ProfilesScreen : ShellScreen
         };
         column.AddChild(_unlockAllMissions);
 
-        _formError = new Label(theme.Body, string.Empty, theme.BodyTextSize * 0.72f, theme.Accent);
+        _formError = new Label(theme.Body, string.Empty, 16f, theme.Danger);
         column.AddChild(_formError);
 
         var actions = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 12f };
-        var create = new Button(theme, "CREATE PROFILE") { Accent = ButtonAccent.Solid, Padding = new Thickness(22f, 9f) };
+        var create = new Button(theme, "CREATE PROFILE") { Accent = ButtonAccent.Solid, CutCorner = 10f, TextSize = 17f, Tracking = 0.18f, Padding = new Thickness(26f, 14f) };
         create.Activated += _ => CreateProfile();
-        var cancel = new Button(theme, "CANCEL") { Padding = new Thickness(18f, 9f) };
+        var cancel = new Button(theme, "CANCEL") { Accent = ButtonAccent.Ghost, TextSize = 17f, Tracking = 0.18f, Padding = new Thickness(26f, 14f) };
         cancel.Activated += _ => ShowProfileDetails();
         actions.Add(create);
         actions.Add(cancel);
@@ -239,20 +250,19 @@ public sealed class ProfilesScreen : ShellScreen
         return panel;
     }
 
-    private Panel BuildDeleteDetails(UiTheme theme)
+    private GlassPanel BuildDeleteDetails(UiTheme theme)
     {
-        var panel = DetailPanel(theme);
+        GlassPanel panel = DetailPanel(theme);
         var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = 12f };
-        column.AddChild(new Label(theme.Body, "DELETE PROFILE", theme.BodyTextSize * 0.72f, theme.Accent));
-        column.AddChild(new Label(theme.Heading, "Remove this operative?", theme.HeadingTextSize * 0.68f, theme.Text));
-        _deletePrompt = new Label(theme.Body, string.Empty, theme.BodyTextSize * 0.82f, theme.TextMuted) { Wrap = true };
+        column.AddChild(new SectionTitle(theme, "Delete profile", "Remove this operative?") { EyebrowColor = theme.Destructive, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0f, 0f, 0f, 6f) });
+        _deletePrompt = new Label(theme.Body, string.Empty, 17f, UiPalette.TextBody) { Wrap = true };
         column.AddChild(_deletePrompt);
-        column.AddChild(new Label(theme.Body, "This cannot be undone.", theme.BodyTextSize * 0.76f, theme.Accent));
+        column.AddChild(new Label(theme.Body, "This cannot be undone.", 16f, theme.Destructive));
 
-        var actions = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 12f };
-        var confirm = new Button(theme, "DELETE PERMANENTLY") { Padding = new Thickness(22f, 9f), Accent = ButtonAccent.Solid };
+        var actions = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 12f, Margin = new Thickness(0f, 8f, 0f, 0f) };
+        var confirm = new Button(theme, "DELETE PERMANENTLY") { Accent = ButtonAccent.Destructive, TextSize = 17f, Tracking = 0.18f, Padding = new Thickness(26f, 14f) };
         confirm.Activated += _ => DeleteProfile();
-        var cancel = new Button(theme, "CANCEL") { Padding = new Thickness(18f, 9f) };
+        var cancel = new Button(theme, "CANCEL") { Accent = ButtonAccent.Ghost, TextSize = 17f, Tracking = 0.18f, Padding = new Thickness(26f, 14f) };
         cancel.Activated += _ => ShowProfileDetails();
         actions.Add(confirm);
         actions.Add(cancel);
@@ -261,49 +271,70 @@ public sealed class ProfilesScreen : ShellScreen
         return panel;
     }
 
-    private Panel BuildSaves(UiTheme theme)
+    private GlassPanel BuildSaves(UiTheme theme)
     {
-        var panel = new Panel { Background = theme.Panel.WithAlpha(165), Padding = new Thickness(22f) };
-        var layout = new Grid { RowSpacing = 10f };
+        var panel = new GlassPanel(theme) { Padding = new Thickness(44f, 32f) };
+        var layout = new Grid { RowSpacing = 20f };
         layout.ColumnDefinitions.Add(GridLength.Star);
+        layout.ColumnDefinitions.Add(GridLength.Auto);
         layout.RowDefinitions.Add(GridLength.Auto);
         layout.RowDefinitions.Add(GridLength.Star);
-        layout.RowDefinitions.Add(GridLength.Auto);
 
-        layout.Add(new Label(theme.Heading, "PROFILE SAVES", theme.HeadingTextSize * 0.43f, theme.Text), 0, 0);
-        _slots = new ListView(theme, SlotSummaries()) { Id = "profile-saves", VisibleRows = 5, RowHeight = 38f };
-        layout.Add(_slots, 1, 0);
+        layout.Add(new Eyebrow(theme, "Profile saves") { VerticalAlignment = VerticalAlignment.Center }, 0, 0);
 
         var actions = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 10f };
-        var save = new Button(theme, "SAVE") { Padding = new Thickness(17f, 8f) };
+        var save = new Button(theme, "SAVE") { Accent = ButtonAccent.Solid, TextSize = 17f, Tracking = 0.18f, Padding = new Thickness(26f, 12f) };
         save.Activated += _ => SaveToSelectedSlot();
-        var load = new Button(theme, "LOAD") { Padding = new Thickness(17f, 8f) };
+        var load = new Button(theme, "LOAD") { Accent = ButtonAccent.Ghost, TextSize = 17f, Tracking = 0.18f, Padding = new Thickness(26f, 12f) };
         load.Activated += _ => LoadSelectedSlot();
-        var delete = new Button(theme, "DELETE SAVE") { Padding = new Thickness(17f, 8f) };
+        var delete = new Button(theme, "DELETE SAVE") { Accent = ButtonAccent.Destructive, TextSize = 17f, Tracking = 0.18f, Padding = new Thickness(26f, 12f) };
         delete.Activated += _ => DeleteSelectedSlot();
         actions.Add(save);
         actions.Add(load);
         actions.Add(delete);
-        layout.Add(actions, 2, 0);
+        layout.Add(actions, 0, 1);
 
+        // Eight slots, four by two, the way the design lays them out.
+        var grid = new Grid { RowSpacing = 12f, ColumnSpacing = 12f, Id = "profile-saves" };
+        grid.RowDefinitions.Add(GridLength.Star);
+        grid.RowDefinitions.Add(GridLength.Star);
+        for (int column = 0; column < SlotColumns; column++)
+        {
+            grid.ColumnDefinitions.Add(GridLength.Star);
+        }
+
+        _slots.Clear();
+        for (int i = 0; i < SlotCount; i++)
+        {
+            int index = i;
+            var tile = new SlotTile(theme, string.Create(CultureInfo.InvariantCulture, $"Slot {i + 1:00}")) { Selected = i == _selectedSlot };
+            tile.Activated += _ => SelectSlot(index);
+            _slots.Add(tile);
+            grid.Add(tile, i / SlotColumns, i % SlotColumns);
+        }
+
+        layout.Add(grid, 1, 0, columnSpan: 2);
         panel.AddChild(layout);
         return panel;
     }
 
-    private static Panel DetailPanel(UiTheme theme) => new()
-    {
-        Background = theme.Panel.WithAlpha(220),
-        Padding = new Thickness(26f, 22f),
-    };
+    private static GlassPanel DetailPanel(UiTheme theme) => new(theme) { Padding = new Thickness(44f, 40f) };
 
-    private static Panel AccentRule(UiTheme theme) => new()
+    private void SelectSlot(int index)
     {
-        Background = theme.Accent,
-        Height = 3f,
-        Width = 98f,
-        HorizontalAlignment = HorizontalAlignment.Left,
-        Margin = new Thickness(0f, 2f, 0f, 5f),
-    };
+        // A second press on the selected slot loads it, which is what ENTER on a slot means in the footer.
+        if (index == _selectedSlot && _slots[index].Content is not null)
+        {
+            LoadSelectedSlot();
+            return;
+        }
+
+        _selectedSlot = index;
+        for (int i = 0; i < _slots.Count; i++)
+        {
+            _slots[i].Selected = i == index;
+        }
+    }
 
     private void SelectProfile(int index)
     {
@@ -457,12 +488,12 @@ public sealed class ProfilesScreen : ShellScreen
 
     private void SaveToSelectedSlot()
     {
-        if (_slots is null || Context.Config.Active is not { } profile)
+        if (Context.Config.Active is not { } profile)
         {
             return;
         }
 
-        int slot = _slots.SelectedIndex;
+        int slot = _selectedSlot;
         int missionId = profile.ActiveMission;
         Bgra32[] thumb = Context.Host.CaptureThumbnail(out int width, out int height);
         Context.Saves.Save(
@@ -479,12 +510,12 @@ public sealed class ProfilesScreen : ShellScreen
 
     private void LoadSelectedSlot()
     {
-        if (_slots is null || Context.Config.Active is not { } profile)
+        if (Context.Config.Active is not { } profile)
         {
             return;
         }
 
-        if (Context.Saves.Find(profile.Name, _slots.SelectedIndex) is { } save)
+        if (Context.Saves.Find(profile.Name, _selectedSlot) is { } save)
         {
             Context.Host.StartMission(save.MissionId, profile.Difficulty);
         }
@@ -492,8 +523,8 @@ public sealed class ProfilesScreen : ShellScreen
 
     private void DeleteSelectedSlot()
     {
-        if (_slots is not null && Context.Config.Active is { } profile
-            && Context.Saves.Delete(profile.Name, _slots.SelectedIndex))
+        if (Context.Config.Active is { } profile
+            && Context.Saves.Delete(profile.Name, _selectedSlot))
         {
             RefreshSlots();
         }
@@ -517,6 +548,8 @@ public sealed class ProfilesScreen : ShellScreen
             card.Active = i == Context.Config.ActiveIndex;
             card.Difficulty = $"{AiDifficultyNames.Of(profile.Difficulty)} difficulty";
             card.Progress = ProgressOf(profile);
+            card.Unlocked = UnlockedOf(profile);
+            card.Total = Context.Missions.Count;
             card.Mission = $"CURRENT  ·  {MissionName(profile.ActiveMission)}";
         }
 
@@ -529,17 +562,17 @@ public sealed class ProfilesScreen : ShellScreen
 
             if (_profileDifficulty is not null)
             {
-                _profileDifficulty.Text = $"{AiDifficultyNames.Of(active.Difficulty).ToUpperInvariant()} DIFFICULTY";
+                _profileDifficulty.Value = AiDifficultyNames.Of(active.Difficulty);
             }
 
             if (_profileProgress is not null)
             {
-                _profileProgress.Text = ProgressOf(active);
+                _profileProgress.Value = string.Create(CultureInfo.InvariantCulture, $"{UnlockedOf(active)}/{Context.Missions.Count} unlocked");
             }
 
             if (_profileMission is not null)
             {
-                _profileMission.Text = $"CURRENT MISSION  ·  {MissionName(active.ActiveMission)}";
+                _profileMission.Value = MissionName(active.ActiveMission);
             }
         }
 
@@ -554,22 +587,28 @@ public sealed class ProfilesScreen : ShellScreen
         RefreshSlots();
     }
 
-    private void RefreshSlots() => _slots?.SetItems(SlotSummaries());
-
-    private string[] SlotSummaries()
+    private void RefreshSlots()
     {
-        const int slotCount = 8;
-        var summaries = new string[slotCount];
         string? profileName = Context.Config.Active?.Name;
-        for (int i = 0; i < slotCount; i++)
+        for (int i = 0; i < _slots.Count; i++)
         {
             SaveSlot? slot = profileName is null ? null : Context.Saves.Find(profileName, i);
-            summaries[i] = slot is null
-                ? $"SLOT {i + 1:00}  —  EMPTY"
-                : $"SLOT {i + 1:00}  —  {slot.MissionName}  ·  {slot.SavedAt.LocalDateTime.ToString("g", CultureInfo.CurrentCulture)}";
+            _slots[i].Content = slot?.MissionName;
+            _slots[i].Detail = slot is null ? string.Empty : slot.SavedAt.LocalDateTime.ToString("g", CultureInfo.CurrentCulture);
+        }
+    }
+
+    private int UnlockedOf(PlayerProfile profile)
+    {
+        for (int i = 0; i < Context.Missions.Count; i++)
+        {
+            if (Context.Missions[i].Id == profile.ActiveMission)
+            {
+                return i + 1;
+            }
         }
 
-        return summaries;
+        return Context.Missions.Count == 0 ? 0 : 1;
     }
 
     private string ProgressOf(PlayerProfile profile)

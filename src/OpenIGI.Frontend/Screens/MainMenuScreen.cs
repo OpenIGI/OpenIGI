@@ -20,6 +20,13 @@ public sealed class MainMenuScreen : ShellScreen
     protected override ShellTab Tab => ShellTab.Home;
 
     /// <inheritdoc/>
+    /// <remarks>The landing page is the level and the bar over it: here the picture stays sharp.</remarks>
+    public override float BackdropBlur => 0f;
+
+    /// <inheritdoc/>
+    protected override IReadOnlyList<UI.Kit.Widgets.KeyHint> Hints => [new("Q E", "Sections"), new("ENTER", "Select")];
+
+    /// <inheritdoc/>
     protected override UiElement? BuildContent(LayoutContext context) => null;
 
     /// <inheritdoc/>

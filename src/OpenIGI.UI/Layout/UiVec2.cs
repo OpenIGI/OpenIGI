@@ -5,8 +5,8 @@ namespace OpenIGI.UI.Layout;
 /// </summary>
 /// <remarks>
 /// The interface works entirely in <see cref="float"/> pixels with the origin at the top-left and Y
-/// growing downwards, the same convention <see cref="OpenIGI.Rendering.Vertex2D"/> uses, so a laid-out
-/// rectangle can be handed to the sprite batch without a flip. A dedicated two-component type is worth
+/// growing downwards, the same convention every renderer's 2D path uses, so a laid-out rectangle can be
+/// handed to a renderer without a flip. A dedicated two-component type is worth
 /// its keep because <c>OpenIGI.Core.Numerics</c> has only three- and four-component vectors — layout
 /// never needs a Z.
 /// </remarks>

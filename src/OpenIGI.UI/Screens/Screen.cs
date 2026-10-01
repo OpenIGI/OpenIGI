@@ -5,7 +5,7 @@ using OpenIGI.UI.Focus;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
 
-namespace OpenIGI.Frontend;
+namespace OpenIGI.UI.Screens;
 
 /// <summary>Where a screen is in its enter/exit transition.</summary>
 public enum ScreenPhase
@@ -128,7 +128,14 @@ public abstract class Screen
 
         if (rebuilt)
         {
-            Focus!.FocusFirst();
+            if (InitialFocus is { CanFocus: true } initial)
+            {
+                Focus!.Focus(initial);
+            }
+            else
+            {
+                Focus!.FocusFirst();
+            }
 
             // Animate the controls in only on a real entrance; a rebuild from a resize while the screen
             // is already up snaps them present so the layout does not replay its animation.
@@ -137,6 +144,10 @@ public abstract class Screen
 
         Focus!.Validate();
     }
+
+    /// <summary>Asks for the tree to be rebuilt on the next <see cref="Prepare"/>, for a page whose content has changed shape.</summary>
+    /// <remarks>Focus returns to the first control, and nothing replays its entrance.</remarks>
+    protected void Invalidate() => _builtViewport = new UiVec2(-1f, -1f);
 
     /// <summary>Begins the entrance transition.</summary>
     public void BeginEnter()
@@ -347,11 +358,15 @@ public abstract class Screen
         painter.PopOpacity();
     }
 
+    /// <summary>Gets the control focus starts on when the tree is built, or <see langword="null"/> for the first one.</summary>
+    /// <remarks>Read after <see cref="OnBuilt"/>, so a page can point it at a control it has just made.</remarks>
+    protected virtual Control? InitialFocus => null;
+
     /// <summary>Gets the part of the tree that is shell chrome rather than page content.</summary>
     /// <remarks>
     /// Chrome is drawn outside the enter/exit fade and never plays the staggered entrance, because it is
-    /// the same object on the page being left and the page being arrived at. The shell's top bar is the
-    /// only chrome there is; a screen with none returns <see langword="null"/> and fades as a whole.
+    /// the same object on the page being left and the page being arrived at. The shell's header and footer
+    /// are the chrome; a screen with none returns <see langword="null"/> and fades as a whole.
     /// </remarks>
     protected virtual UiElement? Chrome => null;
 

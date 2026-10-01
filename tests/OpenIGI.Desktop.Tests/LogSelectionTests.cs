@@ -144,7 +144,7 @@ public sealed class LogSelectionTests
         body.Arrange(new UiRect(0f, 0f, width, height));
 
         var batch = new SpriteBatch(device);
-        var painter = new UiPainter(batch, context);
+        var painter = UiPainter.Create(batch, context);
         batch.Begin();
         body.Draw(painter);
         batch.End();

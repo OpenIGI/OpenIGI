@@ -15,7 +15,7 @@ namespace OpenIGI.Presentation.Rendering;
 /// This renderer is deliberately separate from <c>StatusScreenRenderer</c>. The retail HUD uses
 /// the game's bitmap status face, which is the right choice for faithful gameplay presentation but made
 /// the F12 diagnostics inherit its green colour and pixel font. Diagnostics are a developer surface, so
-/// they use the same Saira widgets as the rest of the modern interface and never read a graphics preset
+/// they use the same Barlow widgets as the rest of the modern interface and never read a graphics preset
 /// or menu renderer setting.
 /// </remarks>
 internal sealed class DebugOverlayRenderer : IDisposable
@@ -50,7 +50,7 @@ internal sealed class DebugOverlayRenderer : IDisposable
     public bool Load()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!UiFontLibrary.Exists(UiFontLibrary.Body))
+        if (!UiFontLibrary.TypographyAvailable)
         {
             _logger.Warning(
                 "DebugOverlay",
@@ -60,27 +60,21 @@ internal sealed class DebugOverlayRenderer : IDisposable
 
         try
         {
-            // This is an owned diagnostics font, rather than a borrowed menu or HUD font. That keeps
-            // F12 available and visually stable when the player selects the vanilla menu or changes
-            // the render preset.
-            _body = UiFontLibrary.Load(_device, UiFontLibrary.Body, pixelHeight: 48f);
-            _theme = new UiTheme(_body)
-            {
-                BodyTextSize = BodySizeDesign,
-                HeadingTextSize = HeadingSizeDesign,
-                Text = Bgra32.FromRgb(232, 238, 242),
-                TextMuted = Bgra32.FromRgb(150, 162, 172),
-                Accent = Bgra32.FromRgb(240, 176, 84),
-                Panel = Bgra32.FromRgba(8, 12, 16, 226),
-                Border = Bgra32.FromRgba(154, 168, 180, 110),
-                Shadow = Bgra32.FromRgba(0, 0, 0, 190),
-            };
+            // The design's shared faces and palette, so F12 reads as part of the same interface. It does
+            // not depend on the menus having loaded: the shared set is made on first use, so diagnostics
+            // stay available under the vanilla menu or any render preset.
+            UI.Kit.IgiTypography typography = UiFontLibrary.Typography(_device);
+            _body = typography.Body;
+            _theme = typography.CreateTheme();
+            _theme.BodyTextSize = BodySizeDesign;
+            _theme.HeadingTextSize = HeadingSizeDesign;
+            _theme.Panel = UI.Widgets.UiPalette.GlassMenu;
+            _theme.Shadow = Bgra32.FromRgba(0, 0, 0, 190);
             return true;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException)
         {
             _logger.Warning("DebugOverlay", $"Could not load the diagnostics font: {ex.Message}");
-            _body?.Dispose();
             _body = null;
             _theme = null;
             return false;
@@ -123,7 +117,8 @@ internal sealed class DebugOverlayRenderer : IDisposable
         }
 
         _disposed = true;
-        _body?.Dispose();
+
+        // The face is the device's shared set, not this renderer's to free.
         _body = null;
         _theme = null;
     }
@@ -155,7 +150,7 @@ internal sealed class DebugOverlayRenderer : IDisposable
             topInset: topInset,
             topRight: true));
 
-        var painter = new UiPainter(batch, context);
+        var painter = UiPainter.Create(batch, context);
         panel.Draw(painter);
         painter.StrokeRect(panel.Bounds, MathF.Max(1f, context.Px(1f)), theme.Border);
         return panel.Bounds.Height;

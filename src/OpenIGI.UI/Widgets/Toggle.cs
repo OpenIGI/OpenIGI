@@ -1,26 +1,39 @@
 using OpenIGI.Core.Graphics;
-using OpenIGI.Rendering;
 using OpenIGI.UI.Animation;
+using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Focus;
 using OpenIGI.UI.Layout;
 
 namespace OpenIGI.UI.Widgets;
 
-/// <summary>A caption with an on/off switch, toggled by accept or by pressing left/right.</summary>
+/// <summary>An on/off row: a caption on the left and a two-segment OFF / ON switch on the right.</summary>
 /// <remarks>
-/// The knob slides between the two ends on the state machine's own timing, so the switch animates rather
-/// than jumping. Left forces off and right forces on so a definite value can be dialled in, while accept
-/// flips it — the behaviour a settings screen wants.
+/// <para>
+/// The switch is the design's: a 112×30 track with two opposite corners cut, and a knob that slides
+/// across to cover whichever side is current — grey over OFF, amber over ON — with the words set in the
+/// condensed face so the state is read, not inferred from a position.
+/// </para>
+/// <para>
+/// Left and right set the value directly rather than toggling, so a pad player can never flip it the
+/// wrong way by pressing twice; accept or a click toggles.
+/// </para>
 /// </remarks>
 public class Toggle : Control
 {
-    private readonly Tween _knob = new(0f, duration: 0.12f, Ease.OutCubic);
+    private const float TrackWidthUnits = 112f;
+    private const float TrackHeightUnits = 30f;
+    private const float CutUnits = 8f;
+
+    private static readonly string Off = "OFF";
+    private static readonly string On = "ON";
+
+    private readonly Tween _knob = new(0f, duration: 0.22f, Ease.Snappy);
+    private bool _value;
 
     /// <summary>Initializes a new instance of the <see cref="Toggle"/> class.</summary>
-    /// <param name="theme">The theme to draw from.</param>
+    /// <param name="theme">The theme.</param>
     /// <param name="label">The caption.</param>
-    /// <param name="value">The initial state.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="theme"/> is <see langword="null"/>.</exception>
+    /// <param name="value">The initial value.</param>
     public Toggle(UiTheme theme, string label, bool value = false)
         : base(theme)
     {
@@ -35,7 +48,7 @@ public class Toggle : Control
     /// <summary>Gets or sets the caption.</summary>
     public string Label { get; set; }
 
-    /// <summary>Gets or sets whether the switch is on.</summary>
+    /// <summary>Gets or sets the value.</summary>
     public bool Value
     {
         get => _value;
@@ -51,8 +64,6 @@ public class Toggle : Control
             ValueChanged?.Invoke(value);
         }
     }
-
-    private bool _value;
 
     /// <inheritdoc/>
     public override bool HandleNavigate(NavDirection direction)
@@ -81,38 +92,64 @@ public class Toggle : Control
     }
 
     /// <inheritdoc/>
-    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
-    {
-        float sizePx = context.Px(Theme.BodyTextSize);
-        float height = Theme.Body.LineHeight(sizePx) + context.Px(12f);
-        return new UiVec2(available.X, height);
-    }
+    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) =>
+        UiRowStyle.Measure(this, context, available);
 
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
     {
-        float focus = MathF.Max(Visual.Focus, IsPointerOver ? 0.35f : 0f);
-        if (focus > 0.001f)
+        float highlight = UiRowStyle.Highlight(this);
+        UiRowStyle.DrawFrame(painter, this, Label, highlight);
+        DrawSwitch(painter, SwitchRect(painter.Context), Theme, _knob.Value, highlight, IsEnabled, Visual.Appear);
+    }
+
+    /// <summary>Draws the OFF / ON switch on its own, for a widget that wants it outside a row.</summary>
+    /// <param name="painter">The painter.</param>
+    /// <param name="track">The switch's box, normally 112×30 design units.</param>
+    /// <param name="theme">The theme.</param>
+    /// <param name="on">Where the knob is, 0 over OFF to 1 over ON.</param>
+    /// <param name="highlight">How lit the switch is under the pointer, 0 to 1.</param>
+    /// <param name="enabled">Whether the switch can be used.</param>
+    /// <param name="appear">The owner's entrance opacity.</param>
+    public static void DrawSwitch(UiPainter painter, UiRect track, UiTheme theme, float on, float highlight, bool enabled, float appear)
+    {
+        ArgumentNullException.ThrowIfNull(painter);
+        ArgumentNullException.ThrowIfNull(theme);
+
+        float cut = painter.Context.Px(CutUnits);
+        const UiCorners Corners = UiCorners.TopLeft | UiCorners.BottomRight;
+
+        painter.FillCutRect(track, cut, Corners, UiPalette.White(Interpolate.Lerp(0.05f, 0.09f, highlight) * appear));
+
+        // The knob is the cut shape seen through its own box, so it keeps the track's corners wherever it is.
+        float half = track.Width * 0.5f;
+        var knob = new UiRect(track.X + (half * on), track.Y, half, track.Height);
+        Bgra32 knobColor = Interpolate.Lerp(UiPalette.White(0.16f), enabled ? theme.Accent : theme.TextDisabled, on);
+        painter.PushClip(knob);
+        painter.FillCutRect(track, cut, Corners, UiPalette.Fade(knobColor, appear));
+        painter.PopClip();
+
+        float sizePx = painter.Context.Px(14f);
+        float tracking = 0.2f;
+        DrawWord(Off, new UiRect(track.X, track.Y, half, track.Height), Interpolate.Lerp(theme.TextBright, theme.TextDim, on));
+        DrawWord(On, new UiRect(track.X + half, track.Y, half, track.Height), Interpolate.Lerp(theme.TextDim, theme.OnAccent, on));
+
+        void DrawWord(string word, UiRect box, Bgra32 color)
         {
-            painter.FillRect(Bounds, Theme.FocusFill.WithAlpha((byte)(Theme.FocusFill.A * focus)), BlendMode.AlphaBlend);
+            float width = UiPainter.MeasureLabel(theme.Heading, word, sizePx, tracking);
+            var at = new UiVec2(box.X + ((box.Width - width) * 0.5f), UiRowStyle.CapsCenterY(theme.Heading, sizePx, box));
+            painter.DrawLabel(theme.Heading, word, at, sizePx, UiPalette.Fade(enabled ? color : theme.TextDisabled, appear), tracking);
         }
+    }
 
-        float sizePx = painter.Context.Px(Theme.BodyTextSize);
-        Bgra32 text = IsEnabled ? Interpolate.Lerp(Theme.Text, Theme.Accent, focus) : Theme.TextDisabled;
-        float textY = Bounds.Y + ((Bounds.Height - Theme.Body.LineHeight(sizePx)) * 0.5f);
-        painter.DrawText(Theme.Body, Label, new UiVec2(Bounds.X + painter.Context.Px(8f), textY), sizePx, text);
-
-        // The switch on the right: a track with a knob sliding between the ends.
-        float trackW = painter.Context.Px(52f);
-        float trackH = painter.Context.Px(24f);
-        float trackX = Bounds.Right - trackW - painter.Context.Px(8f);
-        float trackY = Bounds.Y + ((Bounds.Height - trackH) * 0.5f);
-        float t = _knob.Value;
-        Bgra32 trackColor = Interpolate.Lerp(Theme.Border, Theme.Accent, t);
-        painter.FillRect(new UiRect(trackX, trackY, trackW, trackH), trackColor, BlendMode.AlphaBlend);
-
-        float knob = trackH - painter.Context.Px(6f);
-        float knobX = trackX + painter.Context.Px(3f) + (t * (trackW - knob - painter.Context.Px(6f)));
-        painter.FillRect(new UiRect(knobX, trackY + painter.Context.Px(3f), knob, knob), Theme.Text, BlendMode.AlphaBlend);
+    private UiRect SwitchRect(LayoutContext context)
+    {
+        float width = context.Px(TrackWidthUnits);
+        float height = context.Px(TrackHeightUnits);
+        return new UiRect(
+            Bounds.Right - context.Px(UiRowStyle.Inset) - width,
+            Bounds.Y + ((Bounds.Height - height) * 0.5f),
+            width,
+            height);
     }
 }

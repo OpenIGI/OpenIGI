@@ -120,6 +120,31 @@ public sealed class LayeringTests
             + string.Join(", ", core.References));
     }
 
+    /// <summary>
+    /// The interface the game and the launcher share stays free of the game's renderer, so the launcher
+    /// can draw it without carrying the engine's graphics stack and shaders.
+    /// </summary>
+    [Fact]
+    public void The_shared_interface_names_no_graphics_project()
+    {
+        string[] shared = ["OpenIGI.UI", "OpenIGI.UI.Kit", "OpenIGI.UI.Skia", "OpenIGI.Frontend.Settings", "OpenIGI.Launcher"];
+        string[] graphics = ["OpenIGI.Rendering", "OpenIGI.Rendering.Pipeline", "OpenIGI.Rendering.Rhi", "OpenIGI.Shaders", "OpenIGI.UI.Rhi"];
+        List<string> broken = [];
+
+        foreach (string name in shared)
+        {
+            Assert.True(RepositoryLayout.Projects.ContainsKey(name), $"'{name}' is named by the shared-interface rule but is not a project.");
+            foreach (string reference in RepositoryLayout.Projects[name].References.Intersect(graphics, StringComparer.Ordinal))
+            {
+                broken.Add($"{name} -> {reference}");
+            }
+        }
+
+        Assert.True(
+            broken.Count == 0,
+            "A project the launcher draws with names the game's renderer:\n  " + string.Join("\n  ", broken));
+    }
+
     /// <summary>Every project the rules name still exists, so a rename cannot quietly disarm a rule.</summary>
     [Fact]
     public void The_rules_name_projects_that_exist()

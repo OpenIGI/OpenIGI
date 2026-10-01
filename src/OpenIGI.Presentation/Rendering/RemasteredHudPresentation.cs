@@ -2,6 +2,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using OpenIGI.UI.Widgets;
 using System.Globalization;
 
 namespace OpenIGI.Presentation.Rendering;
@@ -75,9 +76,9 @@ public static class RemasteredHudPresentation
     /// <summary>Chooses the health colour with deliberately broad warning bands.</summary>
     public static Bgra32 HealthColour(float fraction) => Math.Clamp(fraction, 0f, 1f) switch
     {
-        > 0.55f => Bgra32.FromRgb(91, 210, 141),
-        > 0.28f => Bgra32.FromRgb(240, 176, 84),
-        _ => Bgra32.FromRgb(235, 92, 82),
+        > 0.55f => UiPalette.Success,
+        > 0.28f => UiPalette.Accent,
+        _ => UiPalette.Danger,
     };
 
     /// <summary>Returns the first objective the player can still complete.</summary>
