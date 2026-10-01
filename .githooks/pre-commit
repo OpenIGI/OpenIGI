@@ -16,8 +16,8 @@ if printf '%s\n' "$paths" | grep -Eq '\.(cs|csproj|props|targets|slnx)$|^(src|ap
   full_suite=0
   while IFS= read -r path; do
     case "$path" in
-      src/OpenIGI.*/*)
-        name=${path#src/}; name=${name%%/*}
+      src/*/OpenIGI.*/*)
+        name=${path#src/*/}; name=${name%%/*}
         candidate="$root/tests/${name}.Tests/${name}.Tests.csproj"
         [ -f "$candidate" ] && projects+=("$candidate") || full_suite=1
         ;;

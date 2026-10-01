@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The release contract shared by the three programs that must agree on it: the release tool that
+       writes a release's manifest, the update service that serves it, and the launcher that reads it.
+       It references nothing of the game, so the service and the launcher stay free of the engine. -->
+
+</Project>

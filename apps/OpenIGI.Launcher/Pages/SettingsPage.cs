@@ -1,4 +1,6 @@
-using System.Globalization;
+using OpenIGI.Core.Titles;
+using OpenIGI.Launcher.Services;
+using OpenIGI.Releases;
 using OpenIGI.UI;
 using OpenIGI.UI.Kit.Widgets;
 using OpenIGI.UI.Layout;
@@ -8,54 +10,47 @@ namespace OpenIGI.Launcher.Pages;
 
 /// <summary>
 /// The launcher's settings: two columns of glass panels, each a group of rows — the same toggle, slider and
-/// select rows the game's own settings use, in the launcher's taller ruled style.
+/// select rows the game's own settings use, in the launcher's taller ruled style. Every row is saved the
+/// moment it changes.
 /// </summary>
 internal static class SettingsPage
 {
-    public static UiElement Build(UiTheme theme)
+    public static UiElement Build(UiTheme theme, LauncherModel model)
     {
+        ArgumentNullException.ThrowIfNull(model);
+        LauncherSettings settings = model.Settings;
+
         var columns = new Grid { ColumnSpacing = 20f, VerticalAlignment = VerticalAlignment.Top };
         columns.ColumnDefinitions.Add(GridLength.Star);
         columns.ColumnDefinitions.Add(GridLength.Star);
         columns.RowDefinitions.Add(GridLength.Auto);
 
-        var bandwidth = new Slider(theme, "Bandwidth limit", 0f, 200f, 0f, 5f)
+        var channel = new Dropdown(theme, "Update channel", ["Stable", "Beta"], settings.Channel == ReleaseChannel.Beta ? 1 : 0)
         {
-            Hint = "Applies to game and content downloads",
-            Format = v => v <= 0f ? "UNLIMITED" : string.Create(CultureInfo.InvariantCulture, $"{v:0} MB/s"),
+            Hint = "Beta gets every build from develop first, and may be unstable",
         };
+        channel.SelectionChanged += index => model.ChangeSettings(s => s.Channel = index == 1 ? ReleaseChannel.Beta : ReleaseChannel.Stable);
+
+        var automatic = new Toggle(theme, "Automatic updates", settings.AutomaticUpdates) { Hint = "Download updates as soon as they are released" };
+        automatic.ValueChanged += on => model.ChangeSettings(s => s.AutomaticUpdates = on);
+
+        var library = new TextRow(theme, "Library folder", settings.Library) { Hint = "Where OpenIGI's builds are installed" };
+        library.TextChanged += text => model.ChangeSettings(s => s.Library = text);
+
+        var repair = new ActionRow(theme, "Repair installation", "Verify now") { Hint = "Re-checks every installed file against the release" };
+        repair.Activated += _ => model.Verify();
 
         columns.Add(
             Column(
-                Group(
-                    theme,
-                    "Downloads",
-                    bandwidth,
-                    new Toggle(theme, "Automatic updates", true) { Hint = "Download updates as soon as they are released" },
-                    new Toggle(theme, "Download while playing"),
-                    new Dropdown(theme, "Update channel", ["Stable", "Beta"]) { Hint = "Beta builds may be unstable" }),
-                Group(
-                    theme,
-                    "Installation",
-                    new ActionRow(theme, "Library folder", "Change") { Value = DefaultLibrary() },
-                    new Toggle(theme, "Verify files after update", true),
-                    new ActionRow(theme, "Repair installation", "Verify now") { Hint = "Re-checks every file and redownloads damaged ones" })),
+                Group(theme, "Updates", channel, automatic),
+                Group(theme, "Installation", library, repair)),
             0,
             0);
 
         columns.Add(
             Column(
-                Group(
-                    theme,
-                    "Game launch",
-                    new ActionRow(theme, "Launch arguments", "Edit") { Value = "-windowed -skipintro", FieldWidth = 300f },
-                    new Toggle(theme, "Close launcher when game starts")),
-                Group(
-                    theme,
-                    "Launcher",
-                    new Toggle(theme, "Start with system"),
-                    new Toggle(theme, "Minimise to tray on close", true),
-                    new Dropdown(theme, "Language", ["English", "Deutsch", "Français", "Italiano", "Español"]))),
+                Group(theme, "Game files", GameFolder(theme, model, GameTitle.Igi1, "Project I.G.I. folder"), GameFolder(theme, model, GameTitle.Igi2, "I.G.I. 2 folder")),
+                Group(theme, "Game launch", LaunchArguments(theme, model), CloseOnLaunch(theme, model))),
             0,
             1);
 
@@ -69,6 +64,39 @@ internal static class SettingsPage
         page.Add(new SectionTitle(theme, "Launcher", "Settings") { HorizontalAlignment = HorizontalAlignment.Left }, 0, 0);
         page.Add(scroll, 1, 0);
         return page;
+    }
+
+    // OpenIGI ships none of the original game; this is where the player's own copy is. The hint says at once
+    // whether the folder typed is one, by the same file the game itself checks for.
+    private static TextRow GameFolder(UiTheme theme, LauncherModel model, GameTitle title, string caption)
+    {
+        string chosen = model.Settings.GameFolders.GetValueOrDefault(title.Id) ?? GameStarter.Locate(title, null) ?? string.Empty;
+        var row = new TextRow(theme, caption, chosen, "Paste the folder holding " + title.SignatureFile);
+        void Describe(string text) => row.Hint = text.Length == 0
+            ? $"Your own copy of the game: the folder holding {title.SignatureFile}"
+            : GameStarter.IsInstallation(title, text) ? "Found" : $"No {title.SignatureFile} in that folder";
+
+        Describe(chosen);
+        row.TextChanged += text =>
+        {
+            Describe(text);
+            model.ChangeSettings(s => s.GameFolders[title.Id] = text.Trim().Trim('"'));
+        };
+        return row;
+    }
+
+    private static TextRow LaunchArguments(UiTheme theme, LauncherModel model)
+    {
+        var row = new TextRow(theme, "Launch arguments", model.Settings.LaunchArguments, "-windowed") { FieldWidth = 300f };
+        row.TextChanged += text => model.ChangeSettings(s => s.LaunchArguments = text);
+        return row;
+    }
+
+    private static Toggle CloseOnLaunch(UiTheme theme, LauncherModel model)
+    {
+        var toggle = new Toggle(theme, "Close launcher when game starts", model.Settings.CloseOnLaunch);
+        toggle.ValueChanged += on => model.ChangeSettings(s => s.CloseOnLaunch = on);
+        return toggle;
     }
 
     private static StackPanel Column(params UiElement[] groups)
@@ -96,7 +124,4 @@ internal static class SettingsPage
         panel.AddChild(stack);
         return panel;
     }
-
-    private static string DefaultLibrary() =>
-        OperatingSystem.IsWindows() ? @"C:\Games\OpenIGI\Library" : "~/Games/OpenIGI/Library";
 }

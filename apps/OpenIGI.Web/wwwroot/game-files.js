@@ -24,7 +24,7 @@ const key = path => path.toLowerCase();
 
 /**
  * What proves a folder is a Project I.G.I. installation: the signature file and the asset folders of
- * GameTitle.Igi1 (src/OpenIGI.Core/Titles/GameTitle.cs). Keep the two in step.
+ * GameTitle.Igi1 (src/Core/OpenIGI.Core/Titles/GameTitle.cs). Keep the two in step.
  */
 const SIGNATURE_FILE = 'config.qvm';
 const ASSET_ROOTS = ['missions', 'common', 'language', 'menusystem'];

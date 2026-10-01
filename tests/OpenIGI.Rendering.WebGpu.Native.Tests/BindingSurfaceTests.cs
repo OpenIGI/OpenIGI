@@ -117,7 +117,7 @@ public sealed partial class BindingSurfaceTests
             }
 
             Assert.NotNull(directory);
-            return Path.Combine(directory.FullName, "src", "OpenIGI.Rendering.WebGpu.Native", "native");
+            return Path.Combine(directory.FullName, "src", "Rendering", "OpenIGI.Rendering.WebGpu.Native", "native");
         }
     }
 

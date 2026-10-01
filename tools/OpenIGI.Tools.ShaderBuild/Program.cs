@@ -1,6 +1,6 @@
 using OpenIGI.Tools.ShaderBuild;
 
-// Compiles src/OpenIGI.Shaders from Slang to SPIR-V and WGSL.
+// Compiles src/Rendering/OpenIGI.Shaders from Slang to SPIR-V and WGSL.
 //
 //   dotnet run --project tools/OpenIGI.Tools.ShaderBuild            regenerate the committed output
 //   dotnet run --project tools/OpenIGI.Tools.ShaderBuild -- --check fail if the committed output is stale

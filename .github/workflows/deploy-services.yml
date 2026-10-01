@@ -1,0 +1,82 @@
+name: Deploy services
+
+# Deploys what runs on the release VM: the update service (services/OpenIGI.Services) and the Caddy and
+# compose configuration beside it (deploy/vm). There is one instance and it serves both channels, so it
+# follows master; Run workflow deploys any branch's build on purpose.
+on:
+  push:
+    branches: [master]
+    paths:
+      - services/**
+      - src/Core/OpenIGI.Releases/**
+      - deploy/vm/compose.yml
+      - deploy/vm/Caddyfile
+      - .github/workflows/deploy-services.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: deploy-services
+  cancel-in-progress: false
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  deploy:
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sh-de"]') }}
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/openigi/ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache@v6
+        with:
+          path: .nuget/packages
+          key: nuget-services-${{ hashFiles('Directory.Packages.props', 'global.json', '**/*.csproj') }}
+          restore-keys: nuget-
+
+      - name: Test
+        run: dotnet test tests/OpenIGI.Services.Tests --configuration Release
+
+      - name: Publish
+        run: dotnet publish services/OpenIGI.Services --configuration Release -p:DebugType=none --output "$RUNNER_TEMP/api"
+
+      - name: Connect to the release VM
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host release-vm
+            HostName ${{ vars.DEPLOY_HOST }}
+            User deploy
+            IdentityFile ~/.ssh/deploy
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            ControlMaster auto
+            ControlPath ~/.ssh/cm-%C
+            ControlPersist 10m
+          EOF
+
+      - name: Apply the configuration
+        run: tar -C deploy/vm -czf - compose.yml Caddyfile | ssh release-vm config
+
+      - name: Deploy the update service
+        run: tar -C "$RUNNER_TEMP/api" -czf - . | ssh release-vm api "${GITHUB_SHA::12}"
+
+      - name: Check it answers
+        run: |
+          sleep 5
+          curl -fsS https://api.openigi.com/healthz
+          ssh release-vm status

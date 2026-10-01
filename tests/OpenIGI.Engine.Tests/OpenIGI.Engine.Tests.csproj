@@ -1,12 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\OpenIGI.Engine\OpenIGI.Engine.csproj" />
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Engine\OpenIGI.Engine.csproj" />
     <!-- A real backend, so the sound path can be tested to the speakers rather than to a fake. The
          "keep the core backend-free" rule is about src/; a test may reach for the real thing. -->
-    <ProjectReference Include="..\..\src\OpenIGI.Audio.OpenAL\OpenIGI.Audio.OpenAL.csproj" />
+    <ProjectReference Include="..\..\src\Audio\OpenIGI.Audio.OpenAL\OpenIGI.Audio.OpenAL.csproj" />
     <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Generators\OpenIGI.Generators.csproj"
+    <ProjectReference Include="..\..\src\Core\OpenIGI.Generators\OpenIGI.Generators.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 

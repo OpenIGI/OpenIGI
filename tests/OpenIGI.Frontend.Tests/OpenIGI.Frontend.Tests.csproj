@@ -1,13 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\OpenIGI.Core\OpenIGI.Core.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Input\OpenIGI.Input.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.UI\OpenIGI.UI.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.UI.Rhi\OpenIGI.UI.Rhi.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Game\OpenIGI.Game.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Frontend\OpenIGI.Frontend.csproj" />
+    <ProjectReference Include="..\..\src\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\..\src\Platform\OpenIGI.Input\OpenIGI.Input.csproj" />
+    <ProjectReference Include="..\..\src\UI\OpenIGI.UI\OpenIGI.UI.csproj" />
+    <ProjectReference Include="..\..\src\UI\OpenIGI.UI.Rhi\OpenIGI.UI.Rhi.csproj" />
+    <ProjectReference Include="..\..\src\Game\OpenIGI.Game\OpenIGI.Game.csproj" />
+    <ProjectReference Include="..\..\src\Game\OpenIGI.Frontend\OpenIGI.Frontend.csproj" />
     <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
   </ItemGroup>
 

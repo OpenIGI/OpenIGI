@@ -4,6 +4,7 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using Xunit;
 using Xunit.Abstractions;
+using OpenIGI.TestSupport;
 
 namespace OpenIGI.Game.Tests;
 
@@ -21,7 +22,7 @@ public sealed class RetailTerrainRayReplayTests(ITestOutputHelper output)
         { 6, "carstep-m6-car801.log.gz" },
     };
 
-    [Theory]
+    [RequiresGameDataTheory]
     [MemberData(nameof(Fixtures))]
     public void TheCarDrivesOnThePortsOwnTerrainRaysExactlyAsRetail(int mission, string fixture)
     {
@@ -31,7 +32,7 @@ public sealed class RetailTerrainRayReplayTests(ITestOutputHelper output)
         Drive(car, capture, mission);
     }
 
-    [Theory]
+    [RequiresGameDataTheory]
     [InlineData(7, 352, "carstep-m7-apc352.log.gz")]
     [InlineData(7, 357, "carstep-m7-t80-357.log.gz")]
     [InlineData(7, 357, "carstep-m7-t80-357-safe.log.gz")]

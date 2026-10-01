@@ -3,10 +3,10 @@
   <ItemGroup>
     <!-- Both titles, because the tests that matter most here are the ones that compare them: what the
          two layouts agree on is what the shared engine is allowed to assume. -->
-    <ProjectReference Include="..\..\src\OpenIGI.Game.Igi1\OpenIGI.Game.Igi1.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Game.Igi2\OpenIGI.Game.Igi2.csproj" />
+    <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi1\OpenIGI.Game.Igi1.csproj" />
+    <ProjectReference Include="..\..\src\Game\OpenIGI.Game.Igi2\OpenIGI.Game.Igi2.csproj" />
     <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -17,11 +17,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The interface font, because the HUD renderers that moved here load it on Load() and a test
-         that cannot load it is testing nothing. The shipped file rather than a copy, for the reason
-         the desktop tests give: a copy is free to drift away from what the game draws with. -->
-    <None Include="..\..\apps\OpenIGI.Composition\Assets\fonts\Barlow-Regular.ttf"
-          Link="Assets\fonts\Barlow-Regular.ttf"
+    <!-- The interface faces, because the HUD renderers that moved here load the whole typography on
+         Load() and a test that cannot load it is testing nothing. The shipped files rather than copies,
+         for the reason the desktop tests give: a copy is free to drift away from what the game draws with. -->
+    <None Include="..\..\apps\OpenIGI.Composition\Assets\fonts\*.ttf"
+          Link="Assets\fonts\%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

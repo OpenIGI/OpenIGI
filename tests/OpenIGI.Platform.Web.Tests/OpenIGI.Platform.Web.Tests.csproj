@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\OpenIGI.Platform.Web\OpenIGI.Platform.Web.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Platform.Desktop\OpenIGI.Platform.Desktop.csproj" />
+    <ProjectReference Include="..\..\src\Platform\OpenIGI.Platform.Web\OpenIGI.Platform.Web.csproj" />
+    <ProjectReference Include="..\..\src\Platform\OpenIGI.Platform.Desktop\OpenIGI.Platform.Desktop.csproj" />
   </ItemGroup>
 
   <ItemGroup>

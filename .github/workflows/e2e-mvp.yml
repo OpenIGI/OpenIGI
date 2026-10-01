@@ -1,8 +1,8 @@
 name: MVP retail E2E
+# Dispatch only: it needs the retail macOS machine (igi-retail), and a push trigger left every run queued
+# for as long as that machine is offline.
 on:
   workflow_dispatch:
-  push:
-    branches: [develop, master]
 jobs:
   live-mvp:
     runs-on: [self-hosted, macOS, igi-retail]
@@ -10,8 +10,8 @@ jobs:
     # Pushes to protected branches and explicit maintainer dispatches are trusted entry points.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
       - name: Validate retail data
@@ -31,7 +31,7 @@ jobs:
         run: tools/test/verify-e2e-mvp.sh
       - name: Upload evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mvp-e2e-captures
           path: scratch/mvp-e2e/

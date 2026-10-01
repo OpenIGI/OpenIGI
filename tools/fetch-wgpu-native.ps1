@@ -20,7 +20,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
-$native = Join-Path $root 'src/OpenIGI.Rendering.WebGpu.Native/native'
+$native = Join-Path $root 'src/Rendering/OpenIGI.Rendering.WebGpu.Native/native'
 $destination = Join-Path $root 'third-party/wgpu-native'
 
 $version = (Get-Content (Join-Path $native 'VERSION') -Raw).Trim()

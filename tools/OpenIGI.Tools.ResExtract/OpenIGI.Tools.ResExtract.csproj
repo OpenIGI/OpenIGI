@@ -5,8 +5,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\OpenIGI.Core\OpenIGI.Core.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Formats\OpenIGI.Formats.csproj" />
+    <ProjectReference Include="..\..\src\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\..\src\Core\OpenIGI.Formats\OpenIGI.Formats.csproj" />
   </ItemGroup>
 
 </Project>

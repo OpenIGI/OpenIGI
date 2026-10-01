@@ -19,6 +19,9 @@ internal interface ILauncherWindow
     void ToggleMaximize();
 
     void Close();
+
+    /// <summary>Gets the system clipboard's text, for pasting a folder into a field.</summary>
+    string ClipboardText { get; }
 }
 
 /// <summary>
@@ -52,6 +55,7 @@ internal sealed class LauncherScreen : Screen
     private UiElement? _chrome;
     private FooterBar? _footer;
     private int _section;
+    private int _revision = -1;
 
     public LauncherScreen(UiTheme theme, UiTheme rowTheme, LauncherModel model, ILauncherWindow window, BackdropPicture? picture)
     {
@@ -94,14 +98,14 @@ internal sealed class LauncherScreen : Screen
         AddPage(main, PlaceholderPage.Build(_theme, _model.Current.Title, "Content", "Content packs arrive with the update service"));
         AddPage(main, PlaceholderPage.Build(_theme, "Mods & plugins", "Mods", "Mod management arrives with the mod loader"));
         AddPage(main, PlaceholderPage.Build(_theme, "Launcher · session", "Logs", "No log output yet"));
-        AddPage(main, SettingsPage.Build(_rowTheme));
+        AddPage(main, SettingsPage.Build(_rowTheme, _model));
         layout.Add(main, 2, 0);
 
         _chrome = BuildChrome();
         layout.Add(_chrome, 0, 0);
         layout.Add(BuildHeader(), 1, 0);
 
-        _footer = new FooterBar(_theme, _model);
+        _footer = new FooterBar(_theme, _model, RestartIntoUpdate);
         layout.Add(_footer, 3, 0);
 
         root.Add(layout);
@@ -121,12 +125,22 @@ internal sealed class LauncherScreen : Screen
             return false;
         }
 
-        // Q and E step through the sections from anywhere, the same keys the game's menus use.
-        if (input.Keyboard.WasPressed(KeyCode.Q))
+        // Ctrl+V into a text field: a folder path is far easier pasted than typed.
+        bool control = input.Keyboard.IsDown(KeyCode.LeftControl) || input.Keyboard.IsDown(KeyCode.RightControl);
+        if (control && input.Keyboard.WasPressed(KeyCode.V) && Focus?.Focused is TextBox field)
+        {
+            field.Text += _window.ClipboardText.ReplaceLineEndings(string.Empty);
+            return false;
+        }
+
+        // Q and E step through the sections from anywhere, the same keys the game's menus use — except
+        // while a text field has the keyboard, where they are letters.
+        bool typing = Focus?.Focused is TextBox;
+        if (!typing && input.Keyboard.WasPressed(KeyCode.Q))
         {
             ShowSection((_section + Sections.Length - 1) % Sections.Length);
         }
-        else if (input.Keyboard.WasPressed(KeyCode.E))
+        else if (!typing && input.Keyboard.WasPressed(KeyCode.E))
         {
             ShowSection((_section + 1) % Sections.Length);
         }
@@ -145,6 +159,22 @@ internal sealed class LauncherScreen : Screen
     protected override void OnUpdate(float elapsedSeconds)
     {
         _model.Tick(elapsedSeconds);
+        if (_model.Revision != _revision)
+        {
+            _revision = _model.Revision;
+            _home?.Refresh();
+            if (_switcher is not null)
+            {
+                _switcher.Text = _model.Current.Title;
+            }
+        }
+
+        if (_model.CloseRequested)
+        {
+            _window.Close();
+            return;
+        }
+
         _home?.Update();
         if (_backdrop is not null)
         {
@@ -182,6 +212,14 @@ internal sealed class LauncherScreen : Screen
         {
             Focus?.Validate();
             Focus?.FocusFirst();
+        }
+    }
+
+    private void RestartIntoUpdate()
+    {
+        if (_model.RestartIntoUpdate())
+        {
+            _window.Close();
         }
     }
 
@@ -261,6 +299,10 @@ internal sealed class LauncherScreen : Screen
     {
         GameState.NotInstalled => "NOT INSTALLED",
         GameState.UpdateAvailable => "UPDATE AVAILABLE",
+        GameState.NeedsGameFolder => "GAME FILES NEEDED",
+        GameState.Damaged => "REPAIR NEEDED",
+        GameState.Playing => "RUNNING",
+        GameState.Unavailable => "COMING LATER",
         _ => "READY · " + game.Version,
     };
 
@@ -272,20 +314,17 @@ internal sealed class LauncherScreen : Screen
         private readonly Button _pause;
         private readonly Button _cancel;
         private readonly ProgressBar _bar;
+        private readonly Button _restart;
 
-        public FooterBar(UiTheme theme, LauncherModel model)
+        public FooterBar(UiTheme theme, LauncherModel model, Action restart)
         {
             _theme = theme;
             _model = model;
+            _restart = new Button(theme, "Restart to update") { Accent = ButtonAccent.Ghost, TextSize = 16f, Padding = new Thickness(16f, 8f), VerticalAlignment = VerticalAlignment.Center };
+            _restart.Activated += _ => restart();
             _bar = new ProgressBar(theme) { VerticalAlignment = VerticalAlignment.Center };
             _pause = new Button(theme, "Pause") { Accent = ButtonAccent.Ghost, TextSize = 16f, Padding = new Thickness(16f, 8f), VerticalAlignment = VerticalAlignment.Center };
-            _pause.Activated += _ =>
-            {
-                if (_model.Job is { } job)
-                {
-                    job.Paused = !job.Paused;
-                }
-            };
+            _pause.Activated += _ => _model.TogglePause();
             _cancel = new Button(theme, "Cancel") { Accent = ButtonAccent.Text, TextSize = 16f, Padding = new Thickness(12f, 8f), VerticalAlignment = VerticalAlignment.Center };
             _cancel.Activated += _ => _model.Cancel();
 
@@ -294,6 +333,7 @@ internal sealed class LauncherScreen : Screen
             row.Add(new Panel { Width = 230f });
             row.Add(_pause);
             row.Add(_cancel);
+            row.Add(_restart);
             AddChild(row);
         }
 
@@ -302,6 +342,7 @@ internal sealed class LauncherScreen : Screen
             bool busy = _model.Job is not null;
             Visibility shown = busy ? Visibility.Visible : Visibility.Hidden;
             _bar.Visibility = _pause.Visibility = _cancel.Visibility = shown;
+            _restart.Visibility = _model.LauncherUpdateReady is null ? Visibility.Collapsed : Visibility.Visible;
             if (_model.Job is { } job)
             {
                 _bar.Value = job.Progress;
@@ -340,8 +381,10 @@ internal sealed class LauncherScreen : Screen
             }
             else
             {
-                int updates = _model.UpdatesAvailable;
-                string idle = updates > 0 ? $"{updates} UPDATE AVAILABLE" : "ALL GAMES UP TO DATE";
+                string idle = _model.Problem is { } problem ? problem.ToUpperInvariant()
+                    : _model.LauncherUpdateReady is { } ready ? $"LAUNCHER {ready} IS READY"
+                    : _model.UpdatesAvailable > 0 ? "UPDATE AVAILABLE"
+                    : "UP TO DATE";
                 painter.FillDiamond(new UiVec2(x + context.Px(3f), Bounds.Center.Y), context.Px(6f), _theme.TextMuted);
                 painter.DrawLabel(_theme.Mono, idle, new UiVec2(x + context.Px(16f), UiRowStyle.CenterY(_theme.Mono, mono, Bounds)), mono, _theme.TextMuted, 0.2f);
             }
@@ -351,9 +394,6 @@ internal sealed class LauncherScreen : Screen
             painter.DrawLabel(_theme.Mono, version, new UiVec2(Bounds.Right - context.Px(48f) - versionWidth, UiRowStyle.CenterY(_theme.Mono, mono, Bounds)), mono, _theme.TextDim, 0.16f);
         }
 
-        private static string LauncherVersion =>
-            typeof(LauncherScreen).Assembly.GetName().Version is { } v
-                ? string.Create(CultureInfo.InvariantCulture, $"{v.Major}.{v.Minor}.{v.Build}")
-                : "0.1.0";
+        private static string LauncherVersion => Services.LauncherUpdater.OwnVersion.ToString().ToUpperInvariant();
     }
 }

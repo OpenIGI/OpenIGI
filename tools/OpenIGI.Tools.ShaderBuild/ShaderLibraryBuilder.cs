@@ -33,7 +33,7 @@ public sealed class ShaderLibraryBuilder
 
     /// <summary>Initialises a new instance of the <see cref="ShaderLibraryBuilder"/> class.</summary>
     /// <param name="compiler">The Slang compiler to use.</param>
-    /// <param name="projectDirectory">The <c>src/OpenIGI.Shaders</c> directory.</param>
+    /// <param name="projectDirectory">The <c>src/Rendering/OpenIGI.Shaders</c> directory.</param>
     public ShaderLibraryBuilder(SlangCompiler compiler, string projectDirectory)
     {
         ArgumentNullException.ThrowIfNull(compiler);

@@ -21,7 +21,7 @@ namespace OpenIGI.Rendering.Rhi.Tests;
 /// </remarks>
 public sealed class SkyAgreementTests(ITestOutputHelper output)
 {
-    [Fact]
+    [BothBackendsFact]
     public void Both_backends_march_the_same_atmosphere()
     {
         float[]? vulkan = TryOnVulkan(out string? vulkanReason);

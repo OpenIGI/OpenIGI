@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Writes a release's manifest (release.json) from the archives the release workflow built and the
+       changelog git-cliff worked out. It references only the release contract, which the update service
+       and the launcher read the manifest through. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Core\OpenIGI.Releases\OpenIGI.Releases.csproj" />
+  </ItemGroup>
+
+</Project>

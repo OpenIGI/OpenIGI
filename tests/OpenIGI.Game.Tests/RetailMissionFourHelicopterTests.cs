@@ -860,7 +860,7 @@ public sealed class RetailMissionFourHelicopterTests
     public void ParkedHeliRestDoesNotHardCodeTaskEightHundred()
     {
         string source = File.ReadAllText(
-            Path.Combine(RepoSrc(), "OpenIGI.Game", "World", "CutsceneRuntime.cs"));
+            Path.Combine(RepoSrc(), "Game", "OpenIGI.Game", "World", "CutsceneRuntime.cs"));
         Assert.False(
             System.Text.RegularExpressions.Regex.IsMatch(source, @"\b800\b"),
             "generic CutsceneRuntime must not contain Mission 4's task-800 identifier");
@@ -880,7 +880,7 @@ public sealed class RetailMissionFourHelicopterTests
         while (!string.IsNullOrEmpty(dir))
         {
             string src = Path.Combine(dir, "src");
-            if (Directory.Exists(Path.Combine(src, "OpenIGI.Game")))
+            if (Directory.Exists(Path.Combine(src, "Game", "OpenIGI.Game")))
             {
                 return src;
             }

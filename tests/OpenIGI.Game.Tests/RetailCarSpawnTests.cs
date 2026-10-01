@@ -1,6 +1,7 @@
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
+using OpenIGI.TestSupport;
 using Xunit;
 
 namespace OpenIGI.Game.Tests;
@@ -11,7 +12,7 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 public sealed class RetailCarSpawnTests
 {
-    [Theory]
+    [RequiresGameDataTheory]
     [InlineData(7, 352, "carstep-m7-apc352.log.gz")]
     [InlineData(7, 357, "carstep-m7-t80-357.log.gz")]
     [InlineData(6, 801, "carstep-m6-car801.log.gz")]

@@ -1,9 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\..\src\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
     <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
   </ItemGroup>
 
   <!--

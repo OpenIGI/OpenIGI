@@ -1,0 +1,46 @@
+# Release notes and version bumps, generated from the Conventional Commit history by git-cliff.
+#
+# The release workflows (.github/workflows/release-*.yml) call this with an explicit commit range, so the
+# tag pattern below only decides one thing: which tags count as the last *stable* release when the next
+# version is worked out. Beta tags (v0.2.0-beta.3) and the backup/* tags never move the base version.
+#
+# Groups are what the launcher's patch notes show: the number in the comment orders them and is stripped
+# from the heading. Housekeeping types (chore, test, ci, docs, build) are left out of player-facing notes.
+
+[changelog]
+header = ""
+body = """
+{%- if not version %}{% set version = "Unreleased" %}{% endif -%}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim }}
+{% for commit in commits %}
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | split(pat="\n") | first | trim | upper_first }}\
+{% endfor %}
+{% endfor -%}
+"""
+footer = ""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+protect_breaking_commits = true
+filter_commits = false
+sort_commits = "oldest"
+commit_parsers = [
+  { message = "^Merge", skip = true },
+  { message = "^feat", group = "<!-- 0 -->New" },
+  { message = "^fix", group = "<!-- 1 -->Fixes" },
+  { message = "^perf", group = "<!-- 2 -->Performance" },
+  { message = "^(refactor|style|revert)", group = "<!-- 3 -->Changes" },
+  { message = "^(chore|test|ci|docs|build)", skip = true },
+  { body = ".*security", group = "<!-- 1 -->Fixes" },
+]
+tag_pattern = "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+
+[bump]
+# Pre-1.0: a feature is a minor bump and a breaking change does not jump to 1.0 on its own.
+features_always_bump_minor = true
+breaking_always_bump_major = false
+initial_tag = "v0.1.0"

@@ -1,0 +1,88 @@
+name: Release
+
+# The button. Actions > Release > Run workflow, on develop for a beta or on master for a stable release.
+# It works out the version from the commits, tags the branch head with the release notes, and runs the
+# release (release.yml) for that tag. Nothing else needs doing by hand.
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: beta (from develop) or stable (from master)
+        type: choice
+        options: [beta, stable]
+        required: true
+
+permissions:
+  contents: write
+  packages: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  cut:
+    name: cut ${{ inputs.channel }}
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sh-de"]') }}
+    timeout-minutes: 10
+    container:
+      image: ghcr.io/openigi/ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check the branch
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          case "$CHANNEL:$BRANCH" in
+            beta:develop|stable:master) ;;
+            *) echo "::error::A $CHANNEL release is cut from $( [ "$CHANNEL" = beta ] && echo develop || echo master ), not $BRANCH."; exit 1 ;;
+          esac
+
+      - name: Work out the version
+        id: version
+        run: |
+          version=$(tools/release/next-version.sh "${{ inputs.channel }}")
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "Next ${{ inputs.channel }} release: **v$version**" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$TAG"
+          tools/release/notes.sh "$TAG" "$RUNNER_TEMP/notes"
+          git tag -d "$TAG"
+          git tag -a "$TAG" -F "$RUNNER_TEMP/notes/notes.md" --cleanup=verbatim
+          git push origin "refs/tags/$TAG"
+
+      # A stable tag sits on master's merge of develop, which develop does not contain. Bringing it back
+      # keeps the next beta's version and notes counted from this release rather than from the last one.
+      - name: Bring master back into develop
+        if: inputs.channel == 'stable'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git fetch origin develop
+          git checkout -B develop origin/develop
+          git merge --no-edit -m "chore: merge $TAG back into develop" "$TAG" || {
+            echo "::warning::develop does not merge $TAG cleanly; merge master into develop by hand."
+            git merge --abort; exit 0; }
+          git push origin develop
+
+  release:
+    needs: cut
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.cut.outputs.tag }}
+    secrets: inherit

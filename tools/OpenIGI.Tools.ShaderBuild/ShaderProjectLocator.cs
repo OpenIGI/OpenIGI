@@ -1,16 +1,16 @@
 namespace OpenIGI.Tools.ShaderBuild;
 
-/// <summary>Finds <c>src/OpenIGI.Shaders</c> from wherever the tool was started.</summary>
+/// <summary>Finds <c>src/Rendering/OpenIGI.Shaders</c> from wherever the tool was started.</summary>
 /// <remarks>
 /// The tool is run through <c>dotnet run</c>, whose working directory is the caller's, so the
 /// library is found by walking up to the repository root rather than by assuming one.
 /// </remarks>
 public static class ShaderProjectLocator
 {
-    private const string RelativePath = "src/OpenIGI.Shaders";
+    private const string RelativePath = "src/Rendering/OpenIGI.Shaders";
 
     /// <summary>Finds the shader library's project directory.</summary>
-    /// <returns>The full path to <c>src/OpenIGI.Shaders</c>.</returns>
+    /// <returns>The full path to <c>src/Rendering/OpenIGI.Shaders</c>.</returns>
     /// <exception cref="ShaderBuildException">The directory could not be found.</exception>
     public static string Locate()
     {

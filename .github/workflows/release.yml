@@ -1,0 +1,186 @@
+name: Publish release
+
+# Builds, tests, packages and publishes one tagged release:
+#   - every archive (game and launcher for Windows, Linux and macOS, plus the web build) on the GitHub
+#     release, with the changelog as its notes;
+#   - the same archives and their manifest on the download store, which the update service indexes, so the
+#     launcher offers the release within a minute;
+#   - the web build on openigi.com (stable) or beta.openigi.com (beta).
+#
+# Run by the Release button (release-cut.yml), or by pushing a vX.Y.Z / vX.Y.Z-beta.N tag by hand. One job,
+# because everything happens on one machine and the archives would otherwise be stored as workflow
+# artefacts in between, which a private repository's storage cannot hold.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+
+permissions:
+  contents: write
+  packages: read
+
+concurrency:
+  group: publish-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  RUNTIMES: win-x64 linux-x64 osx-arm64
+
+jobs:
+  publish:
+    name: publish ${{ inputs.tag || github.ref_name }}
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["self-hosted","sh-de"]') }}
+    timeout-minutes: 120
+    container:
+      image: ghcr.io/openigi/ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0
+
+      - name: Read the tag
+        id: tag
+        run: |
+          version="${TAG#v}"
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then channel=beta; branch=develop
+          elif [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then channel=stable; branch=master
+          else echo "::error::$TAG is not a release tag (vX.Y.Z or vX.Y.Z-beta.N)"; exit 1; fi
+
+          # A beta is built from develop and a stable release from master, never from a feature branch.
+          git fetch --no-tags origin "$branch"
+          if ! git merge-base --is-ancestor "$TAG^{commit}" "origin/$branch"; then
+            echo "::error::$TAG is not on $branch, so it cannot be a $channel release."; exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse "$TAG^{commit}")" >> "$GITHUB_OUTPUT"
+
+      - name: Write the notes
+        run: tools/release/notes.sh "$TAG" "$RUNNER_TEMP/notes"
+
+      - uses: actions/cache@v6
+        with:
+          path: .nuget/packages
+          key: nuget-release-${{ hashFiles('Directory.Packages.props', 'global.json', '**/*.csproj') }}
+          restore-keys: nuget-
+
+      - name: Test
+        run: |
+          dotnet restore OpenIGI.slnx
+          dotnet build OpenIGI.slnx --configuration Release --no-restore -p:Version=${{ steps.tag.outputs.version }}
+          dotnet test OpenIGI.slnx --configuration Release --no-build
+
+      - name: Package
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          rm -rf artifacts/release
+          for rid in $RUNTIMES; do
+            tools/release/package.sh game "$rid" "$VERSION"
+            tools/release/package.sh launcher "$rid" "$VERSION"
+          done
+          tools/release/package.sh web browser-wasm "$VERSION"
+
+      - name: Write the manifest
+        run: |
+          dotnet run --project tools/OpenIGI.Tools.Release --configuration Release -- manifest \
+            --version "${{ steps.tag.outputs.version }}" --channel "${{ steps.tag.outputs.channel }}" \
+            --commit "${{ steps.tag.outputs.commit }}" \
+            --notes "$RUNNER_TEMP/notes/context.json" --assets artifacts/release
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.tag.outputs.version }}
+          CHANNEL: ${{ steps.tag.outputs.channel }}
+        run: |
+          {
+            cat "$RUNNER_TEMP/notes/notes.md"
+            echo
+            echo "---"
+            echo
+            echo "Install with the **OpenIGI Launcher**, which keeps the game up to date on the $CHANNEL channel,"
+            echo "or download an archive below. OpenIGI needs your own copy of Project I.G.I.; it ships none of its data."
+            echo "Verify a download with \`sha256sum -c SHA256SUMS\`."
+          } > "$RUNNER_TEMP/notes/release.md"
+          cp "$RUNNER_TEMP/notes/notes.md" artifacts/release/CHANGELOG.md
+
+          flags=(--latest); [ "$CHANNEL" = beta ] && flags=(--prerelease --latest=false)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" artifacts/release/* --clobber
+          else
+            gh release create "$TAG" artifacts/release/* --verify-tag "${flags[@]}" \
+              --title "OpenIGI $VERSION" --notes-file "$RUNNER_TEMP/notes/release.md"
+          fi
+
+      - name: Connect to the release VM
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # One multiplexed connection for every command: the VM rate-limits new SSH connections.
+          cat > ~/.ssh/config <<EOF
+          Host release-vm
+            HostName ${{ vars.DEPLOY_HOST }}
+            User deploy
+            IdentityFile ~/.ssh/deploy
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            ControlMaster auto
+            ControlPath ~/.ssh/cm-%C
+            ControlPersist 10m
+            ServerAliveInterval 30
+          EOF
+          ssh release-vm status
+
+      - name: Publish the downloads
+        run: |
+          tar -C artifacts/release --exclude CHANGELOG.md -czf - . \
+            | ssh release-vm release "${{ steps.tag.outputs.version }}"
+
+      - name: Deploy the web build
+        run: |
+          ssh release-vm web "${{ steps.tag.outputs.channel }}" "${{ steps.tag.outputs.version }}" \
+            < "artifacts/release/openigi-web-${{ steps.tag.outputs.version }}-browser-wasm.tar.gz"
+
+      - name: Drop old betas
+        if: steps.tag.outputs.channel == 'beta'
+        run: ssh release-vm prune
+
+      # The point of all this: the launcher sees it. The service rescans every 15 s.
+      - name: Check the update service offers it
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+          CHANNEL: ${{ steps.tag.outputs.channel }}
+        run: |
+          for attempt in $(seq 1 12); do
+            latest=$(curl -fsS "https://api.openigi.com/v1/channels/$CHANNEL" | jq -r '.latest.version // empty' || true)
+            [ "$latest" = "$VERSION" ] && { echo "api.openigi.com offers $VERSION on $CHANNEL"; break; }
+            [ "$attempt" = 12 ] && { echo "::error::the update service still offers '${latest:-nothing}' on $CHANNEL"; exit 1; }
+            sleep 10
+          done
+          {
+            echo "### Released $TAG on the $CHANNEL channel"
+            echo
+            echo "| Archive | Size |"
+            echo "|---|---:|"
+            jq -r '.assets[] | "| \(.name) | \(.size / 1048576 | floor) MB |"' artifacts/release/release.json
+            echo
+            cat "$RUNNER_TEMP/notes/notes.md"
+          } >> "$GITHUB_STEP_SUMMARY"

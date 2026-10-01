@@ -40,16 +40,16 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OpenIGI.Composition\OpenIGI.Composition.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Audio\OpenIGI.Audio.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Audio.Web\OpenIGI.Audio.Web.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Core\OpenIGI.Core.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Engine\OpenIGI.Engine.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Host\OpenIGI.Host.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Platform\OpenIGI.Platform.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Platform.Web\OpenIGI.Platform.Web.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Rendering.Pipeline\OpenIGI.Rendering.Pipeline.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Rendering.WebGpu\OpenIGI.Rendering.WebGpu.csproj" />
+    <ProjectReference Include="..\..\src\Audio\OpenIGI.Audio\OpenIGI.Audio.csproj" />
+    <ProjectReference Include="..\..\src\Audio\OpenIGI.Audio.Web\OpenIGI.Audio.Web.csproj" />
+    <ProjectReference Include="..\..\src\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Engine\OpenIGI.Engine.csproj" />
+    <ProjectReference Include="..\..\src\Engine\OpenIGI.Host\OpenIGI.Host.csproj" />
+    <ProjectReference Include="..\..\src\Platform\OpenIGI.Platform\OpenIGI.Platform.csproj" />
+    <ProjectReference Include="..\..\src\Platform\OpenIGI.Platform.Web\OpenIGI.Platform.Web.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.Pipeline\OpenIGI.Rendering.Pipeline.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering.WebGpu\OpenIGI.Rendering.WebGpu.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -84,8 +84,8 @@
     <_AOT_InternalForceInterpretAssemblies Include="OpenIGI.Rendering.WebGpu.Native.dll" />
   </ItemGroup>
 
-  <Import Project="..\..\src\OpenIGI.Rendering.WebGpu.Browser\WgpuBrowser.props" />
-  <Import Project="..\..\src\OpenIGI.Platform.Web\WebPlatform.props" />
-  <Import Project="..\..\src\OpenIGI.Audio.Web\WebAudio.props" />
+  <Import Project="..\..\src\Rendering\OpenIGI.Rendering.WebGpu.Browser\WgpuBrowser.props" />
+  <Import Project="..\..\src\Platform\OpenIGI.Platform.Web\WebPlatform.props" />
+  <Import Project="..\..\src\Audio\OpenIGI.Audio.Web\WebAudio.props" />
 
 </Project>

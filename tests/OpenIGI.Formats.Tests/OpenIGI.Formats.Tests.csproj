@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\OpenIGI.Formats\OpenIGI.Formats.csproj" />
+    <ProjectReference Include="..\..\src\Core\OpenIGI.Formats\OpenIGI.Formats.csproj" />
     <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
   </ItemGroup>
 

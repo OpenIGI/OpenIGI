@@ -1,0 +1,68 @@
+# The release VM's front door. Installed beside compose.yml by `deploy.sh config`.
+#
+# Every name gets a publicly trusted certificate from Caddy's automatic HTTPS. openigi.com,
+# beta.openigi.com and api.openigi.com are proxied by Cloudflare, whose edge forwards the plain-HTTP
+# ACME challenge to this origin (the zone leaves "Always Use HTTPS" off for exactly that), so the zone
+# can verify the origin in Full (strict). dl.openigi.com is DNS-only: archives are large and change
+# rarely, which is not what Cloudflare's free proxy is for.
+{
+	# Admin API only inside the container, for `caddy reload`.
+	admin localhost:2019
+}
+
+# The browser build, as apps/OpenIGI.Web/hosting/apache/.htaccess served it on the old host: every file
+# has .br/.gz siblings written at publish time, which are sent as-is to a browser that accepts them;
+# fingerprinted files never change and are cached for a year, everything else is revalidated so a deploy
+# is seen at once (index.html, main.js and the import map point at the new fingerprints).
+(web) {
+	encode zstd gzip
+	file_server {
+		precompressed br gzip
+	}
+
+	@runtime path *.dat *.dll *.pdb *.blat *.webcil
+	header @runtime Content-Type application/octet-stream
+
+	header Cache-Control "no-cache"
+	@fingerprinted path_regexp \.[a-z0-9]{10}\.(wasm|js|dat|json)$
+	header @fingerprinted Cache-Control "public, max-age=31536000, immutable"
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}
+
+openigi.com, www.openigi.com {
+	@www host www.openigi.com
+	redir @www https://openigi.com{uri} permanent
+
+	root * /srv/web/stable/current
+	import web
+}
+
+beta.openigi.com {
+	root * /srv/web/beta/current
+	import web
+	# A beta site is for testers, not search engines.
+	header X-Robots-Tag "noindex, nofollow"
+}
+
+api.openigi.com {
+	encode zstd gzip
+	reverse_proxy api:8080
+}
+
+dl.openigi.com {
+	root * /srv/dl
+	file_server
+
+	# A release folder never changes once published; the channel feeds come from the api, not from here.
+	@release path /releases/*
+	header @release Cache-Control "public, max-age=31536000, immutable"
+	header {
+		X-Content-Type-Options nosniff
+		-Server
+	}
+}

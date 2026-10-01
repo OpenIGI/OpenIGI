@@ -1,12 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\OpenIGI.Core\OpenIGI.Core.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.UI\OpenIGI.UI.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.UI.Rhi\OpenIGI.UI.Rhi.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.UI.Kit\OpenIGI.UI.Kit.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.UI.Skia\OpenIGI.UI.Skia.csproj" />
+    <ProjectReference Include="..\..\src\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\..\src\Rendering\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\..\src\UI\OpenIGI.UI\OpenIGI.UI.csproj" />
+    <ProjectReference Include="..\..\src\UI\OpenIGI.UI.Rhi\OpenIGI.UI.Rhi.csproj" />
+    <ProjectReference Include="..\..\src\UI\OpenIGI.UI.Kit\OpenIGI.UI.Kit.csproj" />
+    <ProjectReference Include="..\..\src\UI\OpenIGI.UI.Skia\OpenIGI.UI.Skia.csproj" />
     <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
   </ItemGroup>
 
