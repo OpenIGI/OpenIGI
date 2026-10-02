@@ -11,8 +11,24 @@ using OpenIGI.Tools.Release;
 // The manifest (release.json) is what the update service serves and the launcher installs from; the same
 // run also writes SHA256SUMS, so an archive downloaded by hand can be checked with sha256sum -c.
 
+//   dotnet run --project tools/OpenIGI.Tools.Release -- content publish <pack folder>
+//       --pack hd-textures --version 1.0.0 --title <name> --summary <text> --game igi1
+//       [--min-game 0.2.0-beta.1] [--ssh deploy@sh-de | --to-dir <store folder> | --upload-file <tar.gz>] [--remote <command>]
+//       [--cache <folder>] [--dry-run]
+//
+// Publishes a version of an optional content pack: cuts its files into chunks, asks the store which of them
+// it lacks, and uploads only those with the version's manifest (see ContentPublish). The same command lists
+// the packs (content list), renames one, describes it again or changes its picture without publishing a
+// version (content edit), and deletes a pack or one of its versions (content delete --yes).
+
+if (args.Length >= 1 && args[0] == "content")
+{
+    return ContentCommand.Run(args[1..]);
+}
+
 if (args.Length == 0 || args[0] != "manifest")
 {
+    Console.Error.WriteLine(ContentCommand.Usage);
     Console.Error.WriteLine("usage: manifest --version <v> --channel <stable|beta> --commit <sha> --notes <file> --assets <dir> [--tag <tag>] [--published <iso8601>]");
     return 2;
 }
