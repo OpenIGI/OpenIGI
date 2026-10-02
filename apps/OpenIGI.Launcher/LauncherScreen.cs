@@ -265,7 +265,8 @@ internal sealed class LauncherScreen : Screen
         string[] titles = [.. _model.Games.Select(g => g.Title)];
         _switcher = new GameSwitcher(_theme, _model.Current.Title, titles)
         {
-            Subtitle = "IGI 1 · IGI 2 · EDITOR",
+            Subtitle = _model.Current.Tagline,
+            ItemEnabled = i => _model.Games[i].Released,
             TitleSize = 24f,
             CurrentIndex = _model.Selected,
             ItemDetail = i => StateLine(_model.Games[i]),
@@ -275,6 +276,7 @@ internal sealed class LauncherScreen : Screen
         {
             _model.Selected = index;
             _switcher.Text = _model.Current.Title;
+            _switcher.Subtitle = _model.Current.Tagline;
             _home?.Refresh();
             RequestLayout();
         };
@@ -309,7 +311,7 @@ internal sealed class LauncherScreen : Screen
         GameState.NeedsGameFolder => "GAME FILES NEEDED",
         GameState.Damaged => "REPAIR NEEDED",
         GameState.Playing => "RUNNING",
-        GameState.Unavailable => "COMING LATER",
+        GameState.Unavailable => "COMING SOON",
         _ => "READY · " + game.Version,
     };
 

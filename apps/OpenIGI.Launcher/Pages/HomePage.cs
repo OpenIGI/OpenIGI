@@ -87,6 +87,7 @@ internal sealed class HomePage
     {
         LauncherGame game = _model.Current;
         _heading.Title = game.Title;
+        _heading.Eyebrow = game.Tagline;
 
         _chips.ClearChildren();
         if (game.State == GameState.Unavailable)
@@ -138,11 +139,11 @@ internal sealed class HomePage
         switch (game.State)
         {
             case GameState.Unavailable:
-                _heading.State = "COMING LATER";
+                _heading.State = "COMING SOON";
                 _heading.StateColor = _theme.TextMuted;
                 _main.Title = "SOON";
                 _main.Icon = PrimaryActionIcon.Arrow;
-                _main.Subtitle = "NOT RELEASED YET";
+                _main.Subtitle = "IN DEVELOPMENT";
                 break;
             case GameState.Playing:
                 _heading.State = "RUNNING";
@@ -194,8 +195,10 @@ internal sealed class HomePage
     /// <summary>The eyebrow line and the game's name, large.</summary>
     private sealed class HeroHeading(UiTheme theme) : UiElement
     {
-        private const string Eyebrow = "IGI 1 · IGI 2 · EDITOR";
         private string _title = string.Empty;
+
+        /// <summary>Gets or sets the line over the name: the selected game's tagline.</summary>
+        public string Eyebrow { get; set; } = string.Empty;
 
         public string Title
         {

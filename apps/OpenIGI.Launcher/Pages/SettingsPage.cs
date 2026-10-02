@@ -55,7 +55,10 @@ internal static class SettingsPage
 
         columns.Add(
             Column(
-                Group(theme, "Game files", GameFolder(theme, model, GameTitle.Igi1, "Project I.G.I. folder"), GameFolder(theme, model, GameTitle.Igi2, "I.G.I. 2 folder")),
+                // One folder row per released game; I.G.I. 2's appears when it is playable.
+                Group(theme, "Game files", [.. model.Games
+                    .Where(static g => g.Released && g.Retail is not null)
+                    .Select(g => (UiElement)GameFolder(theme, model, g.Retail!, $"{g.Title} folder"))]),
                 Group(theme, "Game launch", LaunchArguments(theme, model), CloseOnLaunch(theme, model))),
             0,
             1);

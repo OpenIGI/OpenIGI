@@ -45,6 +45,13 @@ internal sealed class LauncherGame
     /// <summary>Gets the original game this entry runs, or <see langword="null"/> for one with no build yet.</summary>
     public GameTitle? Retail { get; init; }
 
+    /// <summary>Gets whether this entry can be installed and played yet.</summary>
+    /// <remarks>
+    /// An entry that is not is still listed, so players can see what is coming, but cannot be chosen: it never
+    /// offers an install, an update or PLAY, and never counts towards the update badge.
+    /// </remarks>
+    public bool Released { get; init; }
+
     public GameState State { get; set; }
 
     public string Version { get; set; } = string.Empty;
@@ -132,8 +139,8 @@ internal sealed class LauncherModel : IDisposable
 
         Games =
         [
-            new LauncherGame { Id = "igi1", Title = "Project I.G.I.", Tagline = "I'M GOING IN", Retail = GameTitle.Igi1 },
-            new LauncherGame { Id = "igi2", Title = "I.G.I. 2", Tagline = "COVERT STRIKE", Retail = GameTitle.Igi2 },
+            new LauncherGame { Id = "igi1", Title = "Project I.G.I.", Tagline = "I'M GOING IN", Retail = GameTitle.Igi1, Released = true },
+            new LauncherGame { Id = "igi2", Title = "I.G.I. 2", Tagline = "COVERT STRIKE", Retail = GameTitle.Igi2, State = GameState.Unavailable },
             new LauncherGame { Id = "editor", Title = "Editor", Tagline = "MISSION TOOLS", State = GameState.Unavailable },
         ];
         Recompute();
@@ -524,8 +531,9 @@ internal sealed class LauncherModel : IDisposable
 
         foreach (LauncherGame game in Games)
         {
-            if (game.Retail is not { } title)
+            if (!game.Released || game.Retail is not { } title)
             {
+                game.State = GameState.Unavailable;
                 continue;
             }
 
