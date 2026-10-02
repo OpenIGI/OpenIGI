@@ -28,7 +28,9 @@ internal sealed class ContentOptions
 internal sealed partial class ContentStore(IOptions<ContentOptions> options, ILogger<ContentStore> logger) : BackgroundService
 {
     private readonly ContentOptions _options = options.Value;
-    private string _fingerprint = string.Empty;
+    // Null until the first scan, so even an empty store builds its index once: the index carries the chunk
+    // address, which the empty library from before the first scan does not have.
+    private string? _fingerprint;
 
     /// <summary>Gets the most recent scan.</summary>
     public ContentLibrary Current { get; private set; } = ContentLibrary.Empty;

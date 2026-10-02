@@ -104,6 +104,16 @@ public sealed class ContentLibraryTests : IDisposable
     }
 
     [Fact]
+    public void An_empty_store_still_says_where_chunks_come_from()
+    {
+        ContentStore store = Store();
+        store.Scan();
+
+        Assert.Empty(store.Current.Index.Packs);
+        Assert.Equal(ChunkUrl, store.Current.Index.ChunkUrl);
+    }
+
+    [Fact]
     public void A_store_that_does_not_exist_yet_is_an_empty_index()
     {
         ContentStore store = new(
