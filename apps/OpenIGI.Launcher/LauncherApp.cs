@@ -150,8 +150,8 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     private static readonly long ActiveTicks = Stopwatch.Frequency * 2;
 
     /// <summary>The most frames a second the launcher draws, whatever the display's refresh rate.</summary>
-    /// <remarks>Plenty for a launcher's fades and progress bar, and half a 60 Hz display's work (a sixth of 144 Hz).</remarks>
-    private const int FramesPerSecond = 30;
+    /// <remarks>Smooth fades and progress at 60, and no more on a faster display (144 Hz would be 2.4 times the work).</remarks>
+    private const int FramesPerSecond = 60;
 
     private static readonly long FrameTicks = Stopwatch.Frequency / FramesPerSecond;
 
