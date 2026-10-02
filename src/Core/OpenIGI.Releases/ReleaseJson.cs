@@ -12,6 +12,9 @@ namespace OpenIGI.Releases;
     UseStringEnumConverter = true)]
 [JsonSerializable(typeof(ReleaseManifest))]
 [JsonSerializable(typeof(ChannelFeed))]
+[JsonSerializable(typeof(ContentManifest))]
+[JsonSerializable(typeof(ContentIndex))]
+[JsonSerializable(typeof(ContentPackInfo))]
 public sealed partial class ReleaseJsonContext : JsonSerializerContext;
 
 /// <summary>Reads and writes release documents.</summary>
@@ -44,6 +47,48 @@ public static class ReleaseJson
     public static ChannelFeed ReadFeed(string json) =>
         JsonSerializer.Deserialize(json, ReleaseJsonContext.Default.ChannelFeed)
             ?? throw new JsonException("The channel feed is empty.");
+
+    /// <summary>Serializes a content pack's manifest.</summary>
+    /// <param name="manifest">The manifest.</param>
+    /// <returns>Its JSON.</returns>
+    public static string Write(ContentManifest manifest) =>
+        JsonSerializer.Serialize(manifest, ReleaseJsonContext.Default.ContentManifest);
+
+    /// <summary>Deserializes a content pack's manifest.</summary>
+    /// <param name="json">The JSON.</param>
+    /// <returns>The manifest.</returns>
+    /// <exception cref="JsonException">The JSON is not a content manifest.</exception>
+    public static ContentManifest ReadContent(string json) =>
+        JsonSerializer.Deserialize(json, ReleaseJsonContext.Default.ContentManifest)
+            ?? throw new JsonException("The content manifest is empty.");
+
+    /// <summary>Serializes the content index.</summary>
+    /// <param name="index">The index.</param>
+    /// <returns>Its JSON.</returns>
+    public static string Write(ContentIndex index) =>
+        JsonSerializer.Serialize(index, ReleaseJsonContext.Default.ContentIndex);
+
+    /// <summary>Deserializes the content index.</summary>
+    /// <param name="json">The JSON.</param>
+    /// <returns>The index.</returns>
+    /// <exception cref="JsonException">The JSON is not a content index.</exception>
+    public static ContentIndex ReadContentIndex(string json) =>
+        JsonSerializer.Deserialize(json, ReleaseJsonContext.Default.ContentIndex)
+            ?? throw new JsonException("The content index is empty.");
+
+    /// <summary>Serializes a pack's own description.</summary>
+    /// <param name="info">The description.</param>
+    /// <returns>Its JSON.</returns>
+    public static string Write(ContentPackInfo info) =>
+        JsonSerializer.Serialize(info, ReleaseJsonContext.Default.ContentPackInfo);
+
+    /// <summary>Deserializes a pack's own description.</summary>
+    /// <param name="json">The JSON.</param>
+    /// <returns>The description.</returns>
+    /// <exception cref="JsonException">The JSON is not a pack description.</exception>
+    public static ContentPackInfo ReadPackInfo(string json) =>
+        JsonSerializer.Deserialize(json, ReleaseJsonContext.Default.ContentPackInfo)
+            ?? throw new JsonException("The pack description is empty.");
 
     /// <summary>The wire name of a channel: <c>stable</c> or <c>beta</c>.</summary>
     /// <param name="channel">The channel.</param>
