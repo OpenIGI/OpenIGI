@@ -38,6 +38,51 @@ public sealed class ScreenStackTests
         protected override void OnExit() => Exits++;
     }
 
+    /// <summary>A screen that shows a hidden page from its update, the way a tab click does.</summary>
+    private sealed class TabScreen : Screen
+    {
+        public Panel Page { get; } = new() { Width = 200f, Height = 100f, Visibility = Visibility.Collapsed };
+
+        public bool Reveal { get; set; }
+
+        protected override UiElement BuildRoot(LayoutContext context)
+        {
+            var root = new Panel();
+            root.AddChild(Page);
+            return root;
+        }
+
+        protected override void OnUpdate(float elapsedSeconds)
+        {
+            if (Reveal && Page.Visibility != Visibility.Visible)
+            {
+                Page.Visibility = Visibility.Visible;
+                RequestLayout();
+            }
+        }
+    }
+
+    [Fact]
+    public void A_page_shown_by_input_is_laid_out_before_the_frame_is_drawn()
+    {
+        var stack = new ScreenStack();
+        var screen = new TabScreen();
+        stack.Reset(screen, animate: false);
+        Pump(stack, 0.1f);
+        Assert.True(screen.Page.Bounds.IsEmpty || screen.Page.Bounds.Width == 0f);
+
+        // The frame the page is revealed in: laid out again after the update, so the draw that follows
+        // places it where it belongs rather than where it was (nowhere) a frame ago.
+        screen.Reveal = true;
+        var input = new InputState();
+        input.BeginFrame();
+        stack.Update(Context(), input, 1f / 60f);
+
+        Assert.Equal(200f, screen.Page.Bounds.Width);
+        Assert.Equal(100f, screen.Page.Bounds.Height);
+        Assert.False(screen.LayoutRequested);
+    }
+
     [Fact]
     public void Push_makes_the_new_screen_the_top()
     {

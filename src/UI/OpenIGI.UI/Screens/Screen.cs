@@ -125,6 +125,7 @@ public abstract class Screen
 
         Root.Measure(context, context.SafeRect.Size);
         Root.Arrange(context.SafeRect);
+        LayoutRequested = false;
 
         if (rebuilt)
         {
@@ -144,6 +145,18 @@ public abstract class Screen
 
         Focus!.Validate();
     }
+
+    /// <summary>Gets whether the screen changed its tree after this frame's layout, and must be laid out again before it is drawn.</summary>
+    public bool LayoutRequested { get; private set; }
+
+    /// <summary>Asks for the tree to be laid out again before this frame is drawn.</summary>
+    /// <remarks>
+    /// The frame lays out first and handles input after, so anything the input changes (a page shown or hidden,
+    /// rows added) would otherwise be drawn once with last frame's positions before the next layout corrects it:
+    /// a flash of content in the wrong place. A screen that changes its tree from <c>HandleInput</c> or
+    /// <c>OnUpdate</c> calls this, and the stack lays it out again ahead of the draw.
+    /// </remarks>
+    protected void RequestLayout() => LayoutRequested = true;
 
     /// <summary>Asks for the tree to be rebuilt on the next <see cref="Prepare"/>, for a page whose content has changed shape.</summary>
     /// <remarks>Focus returns to the first control, and nothing replays its entrance.</remarks>

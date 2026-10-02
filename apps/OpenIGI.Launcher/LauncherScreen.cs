@@ -167,6 +167,9 @@ internal sealed class LauncherScreen : Screen
             {
                 _switcher.Text = _model.Current.Title;
             }
+
+            // The page's chips and notes were rebuilt after this frame's layout.
+            RequestLayout();
         }
 
         if (_model.CloseRequested)
@@ -207,6 +210,9 @@ internal sealed class LauncherScreen : Screen
         {
             _tabs[i].Selected = i == _section;
         }
+
+        // The page just shown was hidden when this frame was laid out; lay it out before it is drawn.
+        RequestLayout();
 
         if (refocus)
         {
@@ -270,6 +276,7 @@ internal sealed class LauncherScreen : Screen
             _model.Selected = index;
             _switcher.Text = _model.Current.Title;
             _home?.Refresh();
+            RequestLayout();
         };
         row.Add(_switcher);
 

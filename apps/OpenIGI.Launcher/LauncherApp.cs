@@ -155,6 +155,9 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
 
     private static readonly long FrameTicks = Stopwatch.Frequency / FramesPerSecond;
 
+    /// <summary>The longest step, in seconds, the interface's animations advance by in one update.</summary>
+    private const double MaximumStep = 0.05;
+
     /// <summary>
     /// Runs the window until it closes, drawing only while something on it can be changing.
     /// </summary>
@@ -367,8 +370,11 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
             return;
         }
 
+        // Coming out of an idle wait, the time since the last update is however long the window slept (up to a
+        // second). Handed to the interface whole, every transition a click starts would jump to its end in
+        // one frame; capped at a few frames, it starts from where it should and eases as it does when busy.
         LayoutContext context = Layout();
-        _stack.Update(context, _input, (float)elapsed);
+        _stack.Update(context, _input, (float)Math.Min(elapsed, MaximumStep));
         _input.BeginFrame();
     }
 
