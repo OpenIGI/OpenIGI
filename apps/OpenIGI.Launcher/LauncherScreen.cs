@@ -125,6 +125,18 @@ internal sealed class LauncherScreen : Screen
         ArgumentNullException.ThrowIfNull(nav);
         ArgumentNullException.ThrowIfNull(input);
 
+        // A row being dragged owns the input until it is dropped; one carried with the keys is put back by Back.
+        if (IsPointerCaptured)
+        {
+            base.HandleInput(nav, input);
+            return false;
+        }
+
+        if (nav.Back && Focus?.Focused is ReorderHandle handle && handle.CancelKeyboardMove())
+        {
+            return false;
+        }
+
         // An open game list takes Back for itself: shutting it is what the player meant.
         if (nav.Back && _switcher is { IsOpen: true } open)
         {

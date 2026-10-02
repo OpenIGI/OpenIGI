@@ -126,6 +126,7 @@ internal sealed partial class LauncherModel : IDisposable
     private Process? _running;
     private string? _stagingLauncher;
     private CancellationTokenSource? _download;
+    private int _selected;
 
     public LauncherModel()
     {
@@ -151,7 +152,21 @@ internal sealed partial class LauncherModel : IDisposable
 
     public IReadOnlyList<LauncherGame> Games { get; }
 
-    public int Selected { get; set; }
+    /// <summary>Gets or sets the index of the game the pages are about.</summary>
+    /// <remarks>Each game has its own content load order, so choosing another rebuilds the Content page's list.</remarks>
+    public int Selected
+    {
+        get => _selected;
+        set
+        {
+            if (_selected != value)
+            {
+                _selected = value;
+                BuildLoadOrder();
+                Changed();
+            }
+        }
+    }
 
     public LauncherGame Current => Games[Selected];
 

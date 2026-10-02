@@ -12,8 +12,12 @@ namespace OpenIGI.Launcher.Services;
 /// </remarks>
 internal static class GameStarter
 {
-    /// <summary>The variable that points the game at a folder of replacement assets instead of its own <c>overrides</c>.</summary>
-    public const string OverridesVariable = "OPENIGI_OVERRIDES";
+    /// <summary>The variable that names the content profile: each game's load order of content packs.</summary>
+    /// <remarks>
+    /// A variable rather than an option, because the launcher may start a build from before load orders, and an
+    /// unknown option stops the game where an unknown variable is ignored.
+    /// </remarks>
+    public const string ContentProfileVariable = OpenIGI.Core.Content.ContentProfile.EnvironmentVariable;
 
     /// <summary>The name a single-file game build is installed under, for this platform.</summary>
     public static string ExecutableName { get; } = OperatingSystem.IsWindows() ? "OpenIGI.Desktop.exe" : "OpenIGI.Desktop";
@@ -64,7 +68,7 @@ internal static class GameStarter
     /// <param name="buildFolder">The installed build.</param>
     /// <param name="arguments">The arguments, from <see cref="Arguments"/>.</param>
     /// <param name="environment">
-    /// Variables set for the game on top of the launcher's own, such as <see cref="OverridesVariable"/> naming the
+    /// Variables set for the game on top of the launcher's own, such as <see cref="ContentProfileVariable"/> naming the
     /// content pack the game reads its replacement assets from; <see langword="null"/> for none.
     /// </param>
     /// <returns>The game's process.</returns>
