@@ -26,6 +26,12 @@ internal sealed class LauncherSettings
     /// <summary>Gets or sets whether the launcher closes once the game has started.</summary>
     public bool CloseOnLaunch { get; set; }
 
+    /// <summary>Gets or sets whether a desktop notification announces a new release while the launcher is in the background.</summary>
+    public bool Notifications { get; set; } = true;
+
+    /// <summary>Gets or sets the last version announced of each of <c>game</c> and <c>launcher</c>, so none is announced twice.</summary>
+    public Dictionary<string, string> Announced { get; set; } = new(StringComparer.Ordinal);
+
     /// <summary>Reads the settings, or the defaults when there are none yet or the file is unreadable.</summary>
     /// <param name="path">The settings file.</param>
     /// <returns>The settings.</returns>
@@ -37,6 +43,7 @@ internal sealed class LauncherSettings
                 && JsonSerializer.Deserialize(File.ReadAllText(path), LauncherSettingsJson.Default.LauncherSettings) is { } settings)
             {
                 settings.GameFolders = new Dictionary<string, string>(settings.GameFolders, StringComparer.Ordinal);
+                settings.Announced = new Dictionary<string, string>(settings.Announced, StringComparer.Ordinal);
                 return settings;
             }
         }

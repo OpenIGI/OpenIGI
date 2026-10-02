@@ -1,4 +1,5 @@
 using OpenIGI.Input;
+using OpenIGI.Launcher.Services;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.UI;
 using OpenIGI.UI.Kit;
@@ -61,6 +62,7 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     private readonly LauncherModel _model = new();
     private readonly SkiaImageStore _images = new();
     private readonly SkiaFontCache _fonts = new();
+    private readonly DesktopNotifier _notifier;
 
     private IInputContext? _inputContext;
     private GL? _gl;
@@ -115,14 +117,19 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         _window.FramebufferResize += _ => ReleaseSurface();
         _window.Closing += ReleaseGraphics;
 
-        // Coming back to the window is when a player expects to see a release that came out meanwhile.
+        // Coming back to the window is when a player expects to see a release that came out meanwhile; while
+        // it is away, a release is announced by a desktop notification instead.
         _window.FocusChanged += focused =>
         {
+            _model.WindowFocused = focused;
             if (focused)
             {
                 _model.CheckSoon();
             }
         };
+
+        _notifier = new DesktopNotifier(() => _window.Native?.Win32?.Hwnd ?? 0);
+        _model.Notify = _notifier.Show;
     }
 
     public void Run() => _window.Run();
@@ -139,6 +146,7 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     public void Dispose()
     {
         ReleaseGraphics();
+        _notifier.Dispose();
         _model.Dispose();
         _typography?.Dispose();
         _fonts.Dispose();

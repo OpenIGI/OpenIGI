@@ -320,7 +320,7 @@ internal sealed class LauncherScreen : Screen
         {
             _theme = theme;
             _model = model;
-            _restart = new Button(theme, "Restart to update") { Accent = ButtonAccent.Ghost, TextSize = 16f, Padding = new Thickness(16f, 8f), VerticalAlignment = VerticalAlignment.Center };
+            _restart = new Button(theme, "Restart to update launcher") { Accent = ButtonAccent.Ghost, TextSize = 16f, Padding = new Thickness(16f, 8f), VerticalAlignment = VerticalAlignment.Center };
             _restart.Activated += _ => restart();
             _bar = new ProgressBar(theme) { VerticalAlignment = VerticalAlignment.Center };
             _pause = new Button(theme, "Pause") { Accent = ButtonAccent.Ghost, TextSize = 16f, Padding = new Thickness(16f, 8f), VerticalAlignment = VerticalAlignment.Center };

@@ -34,6 +34,12 @@ internal static class SettingsPage
         var automatic = new Toggle(theme, "Automatic updates", settings.AutomaticUpdates) { Hint = "Download updates as soon as they are released" };
         automatic.ValueChanged += on => model.ChangeSettings(s => s.AutomaticUpdates = on);
 
+        var notify = new Toggle(theme, "Update notifications", settings.Notifications)
+        {
+            Hint = "A desktop notification when a release comes out while the launcher is in the background",
+        };
+        notify.ValueChanged += on => model.ChangeSettings(s => s.Notifications = on);
+
         var library = new TextRow(theme, "Library folder", settings.Library) { Hint = "Where OpenIGI's builds are installed" };
         library.TextChanged += text => model.ChangeSettings(s => s.Library = text);
 
@@ -42,7 +48,7 @@ internal static class SettingsPage
 
         columns.Add(
             Column(
-                Group(theme, "Updates", channel, automatic),
+                Group(theme, "Updates", channel, automatic, notify),
                 Group(theme, "Installation", library, repair)),
             0,
             0);

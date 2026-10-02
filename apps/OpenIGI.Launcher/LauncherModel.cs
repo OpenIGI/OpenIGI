@@ -93,11 +93,13 @@ internal enum PatchNoteKind
 /// <remarks>
 /// Everything slow (asking the service, downloading, unpacking, verifying) runs off the frame loop; its
 /// results are queued and applied in <see cref="Tick"/>, so the pages only ever read state the loop owns.
-/// The service is asked once a minute, when the window regains focus, and when the channel changes.
+/// The service is asked once a minute (see <see cref="PollSchedule"/>), when the window regains focus, and
+/// when the channel changes. A release that comes out while the launcher is open turns the main button into
+/// UPDATE, or the footer's into a restart for a launcher release, and is announced once by a desktop
+/// notification when the launcher is in the background.
 /// </remarks>
 internal sealed class LauncherModel : IDisposable
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(60);
     private const int NotesShown = 6;
 
     private readonly ConcurrentQueue<Action> _results = new();
@@ -112,7 +114,7 @@ internal sealed class LauncherModel : IDisposable
     private ReleaseManifest? _latest;
     private bool _checking;
     private bool _damaged;
-    private DateTime _nextCheck = DateTime.MinValue;
+    private readonly PollSchedule _schedule = new();
     private Process? _running;
     private string? _stagingLauncher;
     private CancellationTokenSource? _download;
@@ -160,6 +162,12 @@ internal sealed class LauncherModel : IDisposable
     /// <summary>Gets whether the launcher asked to close itself (after starting the game).</summary>
     public bool CloseRequested { get; private set; }
 
+    /// <summary>Gets or sets whether the launcher's window has focus; a notification is only for when it has not.</summary>
+    public bool WindowFocused { get; set; } = true;
+
+    /// <summary>Gets or sets what shows a desktop notification (title, message); none until the window gives one.</summary>
+    public Action<string, string>? Notify { get; set; }
+
     public int UpdatesAvailable => Games.Any(static g => g.State == GameState.UpdateAvailable) ? 1 : 0;
 
     public static string FormatSize(double megabytes) =>
@@ -167,8 +175,8 @@ internal sealed class LauncherModel : IDisposable
             ? (megabytes / 1000).ToString("0.0", CultureInfo.InvariantCulture) + " GB"
             : Math.Round(megabytes).ToString(CultureInfo.InvariantCulture) + " MB";
 
-    /// <summary>Asks the update service again at the next tick.</summary>
-    public void CheckSoon() => _nextCheck = DateTime.MinValue;
+    /// <summary>Asks the update service again as soon as the spacing between checks allows.</summary>
+    public void CheckSoon() => _schedule.Soon(DateTime.UtcNow);
 
     /// <summary>Does what the selected game's main button says.</summary>
     /// <param name="openSettings">Shows the settings, for a game whose folder is still to be chosen.</param>
@@ -307,7 +315,7 @@ internal sealed class LauncherModel : IDisposable
 
         Job?.Sample(elapsedSeconds);
 
-        if (!_checking && DateTime.UtcNow >= _nextCheck)
+        if (!_checking && DateTime.UtcNow >= _schedule.Next)
         {
             Check();
         }
@@ -324,7 +332,7 @@ internal sealed class LauncherModel : IDisposable
     private void Check()
     {
         _checking = true;
-        _nextCheck = DateTime.UtcNow + PollInterval;
+        _schedule.Started(DateTime.UtcNow);
         ReleaseChannel channel = Settings.Channel;
         string? since = _installed?.Version;
 
@@ -337,6 +345,7 @@ internal sealed class LauncherModel : IDisposable
                 _results.Enqueue(() =>
                 {
                     _checking = false;
+                    _schedule.Finished(DateTime.UtcNow, succeeded: true);
                     if (channel != Settings.Channel)
                     {
                         return;
@@ -349,6 +358,7 @@ internal sealed class LauncherModel : IDisposable
 
                     _feed = feed;
                     Recompute();
+                    AnnounceGameUpdate();
                     MaybeStartAutomatically();
                     MaybeStageLauncher();
                 });
@@ -358,7 +368,9 @@ internal sealed class LauncherModel : IDisposable
                 _results.Enqueue(() =>
                 {
                     _checking = false;
-                    Problem = "The update service cannot be reached; retrying in a minute.";
+                    _schedule.Finished(DateTime.UtcNow, succeeded: false);
+                    int minutes = Math.Max(1, (int)Math.Round((_schedule.Next - DateTime.UtcNow).TotalMinutes));
+                    Problem = $"The update service cannot be reached; trying again in {minutes} minute{(minutes == 1 ? string.Empty : "s")}.";
                     Changed();
                 });
             }
@@ -486,6 +498,8 @@ internal sealed class LauncherModel : IDisposable
                 _results.Enqueue(() =>
                 {
                     LauncherUpdateReady = latest.Version;
+                    Announce("launcher", latest.Version, "OpenIGI Launcher update ready",
+                        $"Launcher {latest.Version} is downloaded. Restart the launcher to update it.");
                     Changed();
                 });
             }
@@ -567,6 +581,41 @@ internal sealed class LauncherModel : IDisposable
         string title = (latest.Channel == ReleaseChannel.Beta ? "BETA " : "PATCH ") + latest.Version.ToUpperInvariant();
         string date = latest.Published.ToString("MMM yyyy", CultureInfo.InvariantCulture).ToUpperInvariant();
         return new PatchNotes(title, date, shown);
+    }
+
+    // A game update the player has not been told about: told once, by notification if the window is not in
+    // front (if it is, the UPDATE button already says it).
+    private void AnnounceGameUpdate()
+    {
+        if (_latest is { } latest && Games.Any(static g => g.State == GameState.UpdateAvailable))
+        {
+            Announce("game", latest.Version, $"OpenIGI {latest.Version} is out",
+                Settings.AutomaticUpdates && _running is null
+                    ? "Downloading it now; it will be ready to play when the launcher says so."
+                    : "Open the launcher to update.");
+        }
+    }
+
+    private void Announce(string key, string version, string title, string message)
+    {
+        if (!UpdateNotices.ShouldAnnounce(Settings, key, version))
+        {
+            return;
+        }
+
+        try
+        {
+            Settings.Save(_settingsPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Not remembered: at worst the same release is announced again after a restart.
+        }
+
+        if (!WindowFocused)
+        {
+            Notify?.Invoke(title, message);
+        }
     }
 
     private void Changed() => Revision++;
