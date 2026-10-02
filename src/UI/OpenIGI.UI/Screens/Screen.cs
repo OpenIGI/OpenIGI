@@ -74,6 +74,9 @@ public abstract class Screen
     private readonly Tween _transition = new(0f, duration: 0.35f, Ease.OutQuint);
     private UiVec2 _builtViewport = new(-1f, -1f);
     private Control? _hovered;
+
+    // The control holding the pointer through a drag, or null; see Control.CapturesPointer.
+    private Control? _captured;
     private Control? _tooltipTarget;
     private UiVec2 _tooltipAnchor;
     private float _tooltipDwell;
@@ -422,6 +425,35 @@ public abstract class Screen
         MouseState mouse = input.Mouse;
         var pointer = new UiVec2(mouse.X, mouse.Y);
 
+        // A drag in progress owns the pointer until the button comes up: no hover, no focus-follows-
+        // pointer, no activation. Back abandons it rather than leaving the screen.
+        if (_captured is { } held)
+        {
+            if (nav.Back)
+            {
+                _captured = null;
+                held.PointerReleased(pointer, cancelled: true);
+                return false;
+            }
+
+            if (mouse.IsDown(MouseButton.Left))
+            {
+                held.PointerDragged(pointer);
+            }
+            else
+            {
+                _captured = null;
+                held.PointerReleased(pointer, cancelled: false);
+            }
+
+            if (mouse.WheelDelta != 0f)
+            {
+                ScrollUnderPointer(pointer, mouse.WheelDelta);
+            }
+
+            return false;
+        }
+
         // Hover: the control under the pointer is told the pointer is on it (and where), so a tab strip or
         // a list can light the one target the click is about to land on rather than the whole widget.
         UpdateHover(pointer);
@@ -435,7 +467,14 @@ public abstract class Screen
 
         if (mouse.WasPressed(MouseButton.Left) && focus.FocusAt(pointer) is Control clicked)
         {
-            clicked.ActivateAt(pointer);
+            if (clicked.IsEnabled && clicked.CapturesPointer(pointer))
+            {
+                _captured = clicked;
+            }
+            else
+            {
+                clicked.ActivateAt(pointer);
+            }
         }
 
         // The wheel belongs to whichever viewport the pointer is inside, not to the focused widget — the
@@ -465,6 +504,10 @@ public abstract class Screen
 
         return nav.Back;
     }
+
+    /// <summary>Gets a value indicating whether a control is holding the pointer through a drag.</summary>
+    /// <remarks>A screen that adds its own keys checks this, so a drag is not interrupted by a page change.</remarks>
+    protected bool IsPointerCaptured => _captured is not null;
 
     /// <summary>Moves focus in a direction, by default by spatial traversal.</summary>
     /// <param name="direction">The direction pressed.</param>
