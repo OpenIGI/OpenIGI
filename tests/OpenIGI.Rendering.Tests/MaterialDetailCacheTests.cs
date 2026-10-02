@@ -42,6 +42,21 @@ public sealed class MaterialDetailCacheTests : IDisposable
         return pixels;
     }
 
+    /// <summary>
+    /// A replaced texture's map is kept apart from the shipped texture's, and the shipped name is unchanged,
+    /// so a pack's picture never borrows the original's map (or the other way round) across runs.
+    /// </summary>
+    [Fact]
+    public void AReplacedTextureIsCachedApartFromTheShippedOne()
+    {
+        Assert.Equal("000_04_1", MaterialDetailPack.KeyFor("000_04_1", null));
+        Assert.Equal("000_04_1", MaterialDetailPack.KeyFor("000_04_1", string.Empty));
+        Assert.Equal("000_04_1.0123456789abcdef", MaterialDetailPack.KeyFor("000_04_1", "0123456789abcdef"));
+        Assert.NotEqual(
+            MaterialDetailPack.KeyFor("000_04_1", "0123456789abcdef"),
+            MaterialDetailPack.KeyFor("000_04_1", "fedcba9876543210"));
+    }
+
     [Fact]
     public void AMissDerivesAMapWritesItToTheCacheAndAttachesIt()
     {

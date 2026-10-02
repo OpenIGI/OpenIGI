@@ -117,6 +117,8 @@ public readonly record struct HostOptions(
         bool logCamera = false;
         bool lockstep = false;
         List<(int Frame, string Statement)> deferredCommands = [];
+        List<string> contentDirectories = [];
+        string? contentProfile = null;
         bool startFlying = false;
         bool playCutscenes = true;
         float cameraYaw = 0f;
@@ -386,6 +388,14 @@ public readonly record struct HostOptions(
 
                 deferredCommands.Add((runFrame, Next(args, ref i, "runat")));
             }
+            else if (arg.Equals("content", StringComparison.OrdinalIgnoreCase))
+            {
+                contentDirectories.Add(Next(args, ref i, "content"));
+            }
+            else if (arg.Equals("contentprofile", StringComparison.OrdinalIgnoreCase))
+            {
+                contentProfile = Next(args, ref i, "contentprofile");
+            }
             else if (arg.Equals("lockstep", StringComparison.OrdinalIgnoreCase))
             {
                 lockstep = true;
@@ -600,6 +610,8 @@ public readonly record struct HostOptions(
             Difficulty = difficulty,
             StartupCommands = startupCommands,
             DeferredCommands = deferredCommands,
+            ContentDirectories = contentDirectories,
+            ContentProfilePath = contentProfile,
             VanillaMenu = vanillaMenu,
             ShellTab = shellTab,
             EntryCamMission = entryCamMission,
@@ -653,6 +665,20 @@ public readonly record struct HostOptions(
     /// again.
     /// </remarks>
     public IReadOnlyList<(int Frame, string Statement)> DeferredCommands { get; init; } = [];
+
+    /// <summary>Gets the content folders named with <c>-content</c>, highest priority first.</summary>
+    /// <remarks>
+    /// For development: a folder that mirrors the game's paths, stacked above every layer the content
+    /// profile brings, for every title. Repeat the option to stack several; the first named wins.
+    /// </remarks>
+    public IReadOnlyList<string> ContentDirectories { get; init; } = [];
+
+    /// <summary>Gets the content profile named with <c>-contentprofile</c>, or <see langword="null"/>.</summary>
+    /// <remarks>
+    /// The launcher's per-game load order. When absent the game falls back to the file named by
+    /// <c>OPENIGI_CONTENT_PROFILE</c>, and failing that to the game folder's own <c>overrides</c> alone.
+    /// </remarks>
+    public string? ContentProfilePath { get; init; }
 
     /// <summary>Gets the graphics preset a player with no saved settings starts on.</summary>
     /// <remarks>
@@ -895,6 +921,13 @@ public readonly record struct HostOptions(
                            instead of the wall clock. A run then depends only on its arguments,
                            which is what makes a capture reproducible. Capture only -- it uncaps
                            the simulation rate and is not how the game is meant to be played.
+          -content <dir>   Stack a folder of asset overrides on top of the content load order,
+                           for every title. Repeatable; the first named wins.
+          -contentprofile <file>
+                           The per-game content load order the launcher writes. Defaults to
+                           OPENIGI_CONTENT_PROFILE. Without either, only the game folder's own
+                           overrides folder is used. OPENIGI_OVERRIDES still adds one folder,
+                           below any -content and above the profile.
           -runat <n> <cmd> Run one console statement on frame n, once. Unlike +<command>, which runs
                            before any level exists, this reaches a loaded world -- so a capture can fire
                            impact_test or blood_test and photograph the result.

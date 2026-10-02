@@ -101,6 +101,21 @@ public sealed class MaterialDetailPack : IDisposable
         }
     }
 
+    /// <summary>Builds the name a texture's map is kept under, cached on disk and in memory.</summary>
+    /// <param name="name">The texture's name.</param>
+    /// <param name="overrideStamp">
+    /// The stamp of the content-pack file standing in for the texture, or <see langword="null"/> when the
+    /// texture is the game's own.
+    /// </param>
+    /// <returns>The bare name for a shipped texture, or the name and the stamp for a replaced one.</returns>
+    /// <remarks>
+    /// A map is derived from the picture, and the name alone is shared by the shipped picture and every
+    /// pack's replacement of it: keyed by the name, whichever was derived first was handed to all of them,
+    /// across runs. The shipped key is unchanged, so caches filled before content packs keep working.
+    /// </remarks>
+    public static string KeyFor(string name, string? overrideStamp) =>
+        string.IsNullOrEmpty(overrideStamp) ? name : $"{name}.{overrideStamp}";
+
     /// <summary>Gets a value indicating whether maps can be derived and cached at all.</summary>
     public bool IsAvailable => _cacheRoot is not null;
 

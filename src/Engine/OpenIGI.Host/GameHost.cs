@@ -2673,24 +2673,14 @@ internal sealed partial class GameHost : IDisposable
             // Nothing happens with an empty folder: the flag is meaningful only against something to
             // compare with, and reloading a level's textures to show the same assets again would be a
             // long hitch for no picture.
-            if (_overridesApplied != RenderCVars.OverridesEnabled.Value && _overrides.Count > 0)
+            // Any layer with files counts, switched on or not: with every layer off there is still
+            // something the switch is the difference between once one comes back on.
+            if (_overridesApplied != RenderCVars.OverridesEnabled.Value && _overrides.HasContent)
             {
                 _overridesApplied = RenderCVars.OverridesEnabled.Value;
                 _overrides.Bypassed = !_overridesApplied;
 
-                int swapped = _resources.ReapplyOverrides();
-
-                if (swapped > 0)
-                {
-                    _world?.ReloadTextures();
-                    _ = ReloadTerrainTiles();
-
-                    // The card atlas has the diffuse baked into it, so the indirect light is still
-                    // bouncing off the old pixels until it is captured again. Discarding it is the
-                    // existing invalidation -- the same one a density change uses -- and it re-converges
-                    // the GI with it.
-                    DiscardSurfaceCache();
-                }
+                int swapped = ApplyOverrideChange(out _);
 
                 _logger.Information(
                     "Overrides",
@@ -7393,10 +7383,11 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
     /// </remarks>
     private string TextureModeLabel()
     {
+        int layers = _overrides.Layers.Count(layer => layer.Enabled && layer.Wins > 0);
         string upscaled = _overrides.Count == 0
-            ? "original (no overrides folder)"
+            ? "original (no content)"
             : RenderCVars.OverridesEnabled.Value
-                ? $"{_resources.OverriddenCount} override(s) [F8 for the originals]"
+                ? $"{_resources.OverriddenCount} override(s) from {layers} layer(s) [F8 for the originals]"
                 : $"original [F8 for the {_overrides.Count} override(s)]";
 
         // Zero at every preset but high, so "off" here is usually the authored answer rather than a key

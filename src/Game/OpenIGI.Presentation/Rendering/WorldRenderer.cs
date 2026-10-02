@@ -2089,11 +2089,16 @@ public sealed class WorldRenderer : IWorldPresenter
         }
         else
         {
-            DetailMaps?.Attach(name, handle);
+            DetailMaps?.Attach(DetailKey(name), handle);
         }
 
         return handle;
     }
+
+    // The detail pack keys a replaced texture apart from the shipped one, so neither is handed the
+    // other's derived map.
+    private string DetailKey(string name) =>
+        MaterialDetailPack.KeyFor(name, _resources.OverrideStamp(LoadedPack.TextureResourceName(name)));
 
     private TextureHandle CreateFromDecoded(string name, TextureImage image, TextureImage? detail = null)
     {
@@ -2114,7 +2119,7 @@ public sealed class WorldRenderer : IWorldPresenter
         }
         else
         {
-            DetailMaps?.Attach(name, handle, image.GetLevel(0), image.Width, image.Height);
+            DetailMaps?.Attach(DetailKey(name), handle, image.GetLevel(0), image.Width, image.Height);
         }
 
         return handle;

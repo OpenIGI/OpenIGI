@@ -32,6 +32,8 @@ public sealed class ResourceRegistry
     private readonly Dictionary<string, ResourceEntry> _entries = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ReadOnlyMemory<byte>> _shipped = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _overridden = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _stamps = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<string> _lastReapplied = [];
     private readonly VirtualFileSystem _fileSystem;
     private readonly IIgiLogger _logger;
 
@@ -68,6 +70,32 @@ public sealed class ResourceRegistry
     /// somebody looking for a bug that is not there.
     /// </remarks>
     public int OverriddenCount => _overridden.Count;
+
+    /// <summary>Gets the names the last <see cref="ReapplyOverrides"/> swapped or dropped.</summary>
+    /// <remarks>
+    /// For whoever keeps something derived from these bytes under the same name -- a cached detail map is
+    /// the case that needs it -- and has to forget exactly those when a layer is switched.
+    /// </remarks>
+    public IReadOnlyList<string> LastReapplied => _lastReapplied;
+
+    /// <summary>Determines whether a registered resource is currently standing in for a shipped asset.</summary>
+    /// <param name="name">The resource name.</param>
+    /// <returns><see langword="true"/> when an override supplied its bytes.</returns>
+    public bool IsOverridden(string name) => _overridden.Contains(ResourcePath.Normalize(name));
+
+    /// <summary>Gets the stamp of the override standing in for a resource, if one is.</summary>
+    /// <param name="name">The resource name.</param>
+    /// <returns>
+    /// Sixteen hex digits naming the file that supplied the bytes, or <see langword="null"/> when the
+    /// resource is the game's own (or not registered).
+    /// </returns>
+    /// <remarks>
+    /// For anything that caches what it derived from a resource under that resource's name: the name alone
+    /// is the same for the shipped picture and for every pack's replacement of it, and a cache keyed by the
+    /// name hands one of them the other's result.
+    /// </remarks>
+    public string? OverrideStamp(string name) =>
+        _stamps.TryGetValue(ResourcePath.Normalize(name), out string? stamp) ? stamp : null;
 
     /// <summary>Gets the number of registered resources, exploded archive entries included.</summary>
     public int Count => _entries.Count;
@@ -143,10 +171,10 @@ public sealed class ResourceRegistry
             // never be reached. The candidate path is the device path, which is where the installation
             // keeps the file and therefore where a person puts the replacement.
             if (Overrides is { IsActive: true } loose
-                && loose.TryRead(OverridePath.For(candidate), out ReadOnlyMemory<byte> replaced))
+                && loose.TryRead(OverridePath.For(candidate), out ReadOnlyMemory<byte> replaced, out string looseStamp))
             {
                 Add(candidate, ResourceKind.Body, replaced, parent: null, replaceExisting: true);
-                _overridden.Add(ResourcePath.Normalize(candidate));
+                MarkOverridden(ResourcePath.Normalize(candidate), looseStamp);
                 data = replaced;
                 return true;
             }
@@ -321,12 +349,12 @@ public sealed class ResourceRegistry
 
         string candidate = OverridePath.For(archiveName, entryName);
 
-        if (!overrides.TryRead(candidate, out ReadOnlyMemory<byte> replacement))
+        if (!overrides.TryRead(candidate, out ReadOnlyMemory<byte> replacement, out string stamp))
         {
             return shipped;
         }
 
-        _overridden.Add(key);
+        MarkOverridden(key, stamp);
         _logger.Debug(LogCategory, $"'{key}' is overridden by '{candidate}'.");
         return replacement;
     }
@@ -350,6 +378,7 @@ public sealed class ResourceRegistry
     public int ReapplyOverrides()
     {
         int changed = 0;
+        _lastReapplied.Clear();
 
         foreach (ResourceEntry entry in _entries.Values.ToList())
         {
@@ -370,7 +399,8 @@ public sealed class ResourceRegistry
                 if (Overrides is { } store && store.Has(OverridePath.For(entry.Name)))
                 {
                     _entries.Remove(entry.Name);
-                    _overridden.Remove(entry.Name);
+                    MarkShipped(entry.Name);
+                    _lastReapplied.Add(entry.Name);
                     changed++;
                 }
 
@@ -384,32 +414,53 @@ public sealed class ResourceRegistry
 
             string candidate = OverridePath.For(entry.Parent, entry.Name);
             ReadOnlyMemory<byte> wanted = shipped;
+            string? stamp = null;
 
             if (Overrides is { IsActive: true } overrides
-                && overrides.TryRead(candidate, out ReadOnlyMemory<byte> replacement))
+                && overrides.TryRead(candidate, out ReadOnlyMemory<byte> replacement, out string replacementStamp))
             {
                 wanted = replacement;
+                stamp = replacementStamp;
             }
 
             if (wanted.Length == entry.Data.Length && wanted.Span.SequenceEqual(entry.Data.Span))
             {
+                // Same bytes, but possibly from another layer now: the stamp follows the file.
+                if (stamp is not null && _overridden.Contains(entry.Name))
+                {
+                    _stamps[entry.Name] = stamp;
+                }
+
                 continue;
             }
 
             _entries[entry.Name] = new ResourceEntry(entry.Name, entry.Kind, wanted, entry.Parent);
+            _lastReapplied.Add(entry.Name);
             changed++;
 
-            if (wanted.Span.SequenceEqual(shipped.Span))
+            if (stamp is null || wanted.Span.SequenceEqual(shipped.Span))
             {
-                _overridden.Remove(entry.Name);
+                MarkShipped(entry.Name);
             }
             else
             {
-                _overridden.Add(entry.Name);
+                MarkOverridden(entry.Name, stamp);
             }
         }
 
         return changed;
+    }
+
+    private void MarkOverridden(string name, string stamp)
+    {
+        _overridden.Add(name);
+        _stamps[name] = stamp;
+    }
+
+    private void MarkShipped(string name)
+    {
+        _overridden.Remove(name);
+        _stamps.Remove(name);
     }
 
     private ResourceEntry Add(
