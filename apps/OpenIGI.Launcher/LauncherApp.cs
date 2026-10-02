@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using OpenIGI.Input;
 using OpenIGI.Launcher.Services;
 using OpenIGI.Platform.Desktop;
@@ -75,6 +76,12 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     private bool _dragging;
     private Vector2D<float> _dragOrigin;
     private IMouse? _mouse;
+
+    /// <summary>Until when the window draws every frame; after it, the loop sleeps until something happens.</summary>
+    private long _activeUntil;
+
+    /// <summary>The model's revision as last drawn, so a change made in the background wakes the window.</summary>
+    private int _drawnRevision = -1;
     private Edges _resizing;
     private Vector2D<float> _resizeOrigin;
     private Vector2D<int> _minimumSize = new((int)MinimumDesignSize.X, (int)MinimumDesignSize.Y);
@@ -114,13 +121,19 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         _window.Load += OnLoad;
         _window.Update += OnUpdate;
         _window.Render += OnRender;
-        _window.FramebufferResize += _ => ReleaseSurface();
+        _window.FramebufferResize += _ =>
+        {
+            ReleaseSurface();
+            MarkActive();
+        };
+        _window.StateChanged += _ => MarkActive();
         _window.Closing += ReleaseGraphics;
 
         // Coming back to the window is when a player expects to see a release that came out meanwhile; while
         // it is away, a release is announced by a desktop notification instead.
         _window.FocusChanged += focused =>
         {
+            MarkActive();
             _model.WindowFocused = focused;
             if (focused)
             {
@@ -132,7 +145,91 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         _model.Notify = _notifier.Show;
     }
 
-    public void Run() => _window.Run();
+    /// <summary>How long after the last thing that changed the window keeps drawing every frame.</summary>
+    /// <remarks>Long enough for a hover fade, a page transition or a focus ring to finish easing.</remarks>
+    private static readonly long ActiveTicks = Stopwatch.Frequency * 2;
+
+    /// <summary>The most frames a second the launcher draws, whatever the display's refresh rate.</summary>
+    /// <remarks>Plenty for a launcher's fades and progress bar, and half a 60 Hz display's work (a sixth of 144 Hz).</remarks>
+    private const int FramesPerSecond = 30;
+
+    private static readonly long FrameTicks = Stopwatch.Frequency / FramesPerSecond;
+
+    /// <summary>
+    /// Runs the window until it closes, drawing only while something on it can be changing.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A launcher spends nearly all its life open and untouched, and redrawing an unchanging picture sixty times
+    /// a second is what made it the busiest program in Task Manager while doing nothing. So the loop has two
+    /// speeds. While active it updates and draws at <see cref="FramesPerSecond"/>, waiting for events between
+    /// frames (the swap interval stays on, so a frame never tears).
+    /// It is active for a couple of seconds after anything that can change the picture: input, focus, a resize, a
+    /// minimise or restore, the model's state changing (a release seen, an install finishing), and for as long as
+    /// a download is running.
+    /// </para>
+    /// <para>
+    /// The rest of the time it blocks in the system's event wait, which the OS ends the moment there is input,
+    /// and wakes twice a second (once a second while minimised) only to tick the model: update checks, finished
+    /// background work. Nothing is drawn unless that tick changed something, so an idle launcher costs nothing.
+    /// </para>
+    /// </remarks>
+    public unsafe void Run()
+    {
+        _window.Initialize();
+        Glfw glfw = GlfwProvider.GLFW.Value;
+        MarkActive();
+
+        long nextFrame = Stopwatch.GetTimestamp();
+        while (!_window.IsClosing)
+        {
+            if (IsActive)
+            {
+                // At most FramesPerSecond: the time to the next frame is spent waiting for events, which the
+                // OS ends early for input (handled at once, drawn at the frame).
+                long now = Stopwatch.GetTimestamp();
+                if (now < nextFrame)
+                {
+                    glfw.WaitEventsTimeout((double)(nextFrame - now) / Stopwatch.Frequency);
+                    _window.DoEvents();
+                    continue;
+                }
+
+                nextFrame = Math.Max(nextFrame + FrameTicks, now);
+                _window.DoEvents();
+            }
+            else
+            {
+                glfw.WaitEventsTimeout(_window.WindowState == WindowState.Minimized ? 1.0 : 0.5);
+                _window.DoEvents();
+                nextFrame = Stopwatch.GetTimestamp();
+            }
+
+            if (_window.IsClosing)
+            {
+                break;
+            }
+
+            _window.DoUpdate();
+            if (_model.Revision != _drawnRevision || _model.Job is not null)
+            {
+                _drawnRevision = _model.Revision;
+                MarkActive();
+            }
+
+            if (IsActive && _window.WindowState != WindowState.Minimized)
+            {
+                _window.DoRender();
+            }
+        }
+
+        _window.DoEvents();
+        _window.Reset();
+    }
+
+    private bool IsActive => Stopwatch.GetTimestamp() < _activeUntil;
+
+    private void MarkActive() => _activeUntil = Stopwatch.GetTimestamp() + ActiveTicks;
 
     public void Minimize() => _window.WindowState = WindowState.Minimized;
 
@@ -182,18 +279,50 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         _inputContext = _window.CreateInput();
         foreach (IKeyboard keyboard in _inputContext.Keyboards)
         {
-            keyboard.KeyDown += (_, key, _) => SetKey(key, down: true);
-            keyboard.KeyUp += (_, key, _) => SetKey(key, down: false);
-            keyboard.KeyChar += (_, character) => _input.Keyboard.EnqueueCharacter(character);
+            keyboard.KeyDown += (_, key, _) =>
+            {
+                MarkActive();
+                SetKey(key, down: true);
+            };
+            keyboard.KeyUp += (_, key, _) =>
+            {
+                MarkActive();
+                SetKey(key, down: false);
+            };
+            keyboard.KeyChar += (_, character) =>
+            {
+                MarkActive();
+                _input.Keyboard.EnqueueCharacter(character);
+            };
         }
 
         foreach (IMouse mouse in _inputContext.Mice)
         {
-            mouse.MouseDown += (_, button) => OnMouseButton(button, down: true);
-            mouse.MouseUp += (_, button) => OnMouseButton(button, down: false);
-            mouse.MouseMove += (_, position) => OnMouseMove(position);
-            mouse.Scroll += (_, wheel) => _input.Mouse.AddWheel(wheel.Y);
-            mouse.DoubleClick += (_, button, _) => OnDoubleClick(button);
+            mouse.MouseDown += (_, button) =>
+            {
+                MarkActive();
+                OnMouseButton(button, down: true);
+            };
+            mouse.MouseUp += (_, button) =>
+            {
+                MarkActive();
+                OnMouseButton(button, down: false);
+            };
+            mouse.MouseMove += (_, position) =>
+            {
+                MarkActive();
+                OnMouseMove(position);
+            };
+            mouse.Scroll += (_, wheel) =>
+            {
+                MarkActive();
+                _input.Mouse.AddWheel(wheel.Y);
+            };
+            mouse.DoubleClick += (_, button, _) =>
+            {
+                MarkActive();
+                OnDoubleClick(button);
+            };
             _mouse ??= mouse;
         }
 
