@@ -67,6 +67,29 @@ reverse-engineering evidence belongs in the existing the code comments reference
 implementation constraints belong in code comments. Link to the authoritative location instead of
 copying its findings.
 
+## Content packs and mods
+
+They are two separate systems, and they stay separate in names, folders, contracts and UI.
+
+- **Content** is asset overlays: folders that mirror the game's paths and replace its files.
+  - They install to `<Library>/content/<id>/files`, are described by `ContentManifest`
+    (`src/Core/OpenIGI.Releases`), and are listed on the launcher's Content tab.
+  - The game stacks them through `ResourceOverrides` in a per-game load order that the launcher hands it as a
+    `ContentProfile` (`src/Core/OpenIGI.Core/Content`). The profile is named in `OPENIGI_CONTENT_PROFILE`, or
+    passed with `-contentprofile <file>`.
+  - Resolution: the highest enabled layer that has a path wins it, and the layers below fill the gaps.
+    Within a layer a loose file beats an archived entry, and two archives carrying one path resolve
+    alphabetically by archive path. The game's own file comes last.
+  - The game folder's `overrides` is one of the layers ("Local overrides"). `-content <dir>` (repeatable) and
+    the legacy `OPENIGI_OVERRIDES` add layers on top for development.
+  - F8 / `r_overrides` shows the originals. The `content` console command lists layers and conflicts and
+    switches a layer live.
+- **Mods** are code: packages of assemblies built against the game's plugin interfaces (`OpenIGI.Modding`).
+  They are not built yet. When they are, they get `<Library>/mods/<id>`, their own manifest and profile, a
+  plugin host to load them, and the launcher's Mods tab.
+  - A mod is never loaded through `ResourceOverrides`.
+  - Content never runs code.
+
 ## Tests
 
 - Add unit tests for logic, and **golden tests** for every format reader.
