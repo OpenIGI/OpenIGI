@@ -7,15 +7,9 @@ namespace OpenIGI.Launcher.Services;
 /// <summary>What the player chose in the launcher's settings, kept in <c>settings.json</c>.</summary>
 internal sealed class LauncherSettings
 {
-    /// <summary>Gets or sets the update channel the launcher follows.</summary>
-    /// <remarks>
-    /// Until the player chooses, the channel of the launcher they downloaded: a beta launcher (the one
-    /// beta.openigi.com hands out) follows beta from its first start, a stable one follows stable.
-    /// </remarks>
-    public ReleaseChannel Channel { get; set; } =
-        LauncherUpdater.OwnVersion.IsPrerelease && LauncherUpdater.OwnVersion > ReleaseVersion.Parse("0.0.0")
-            ? ReleaseChannel.Beta
-            : ReleaseChannel.Stable;
+    /// <summary>Gets or sets the channel whose game builds the launcher installs: stable unless the player opts in.</summary>
+    /// <remarks>The launcher itself is one line for everyone and updates to its newest release on any channel.</remarks>
+    public ReleaseChannel Channel { get; set; } = ReleaseChannel.Stable;
 
     /// <summary>Gets or sets whether a new release is downloaded as soon as it is seen.</summary>
     public bool AutomaticUpdates { get; set; } = true;

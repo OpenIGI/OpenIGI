@@ -67,7 +67,7 @@ public sealed class BuildInstallerTests : IDisposable
         server.Add("/releases/" + asset.Name, archive);
 
         Assert.Null(installer.Current());
-        InstalledBuild build = await installer.InstallAsync("0.1.0", asset, new Progress<InstallProgress>(), CancellationToken.None);
+        InstalledBuild build = await installer.InstallAsync("0.1.0", asset, "OpenIGI.Desktop.exe", new Progress<InstallProgress>(), CancellationToken.None);
 
         Assert.Equal("0.1.0", installer.Current()!.Version);
         Assert.Equal(Path.Combine(_root, "versions", "0.1.0"), build.Folder);
@@ -85,7 +85,7 @@ public sealed class BuildInstallerTests : IDisposable
         ReleaseAsset asset = Asset("openigi-game-0.1.0-linux-x64.tar.gz", archive);
         server.Add("/releases/" + asset.Name, archive);
 
-        InstalledBuild build = await installer.InstallAsync("0.1.0", asset, new Progress<InstallProgress>(), CancellationToken.None);
+        InstalledBuild build = await installer.InstallAsync("0.1.0", asset, "OpenIGI.Desktop.exe", new Progress<InstallProgress>(), CancellationToken.None);
 
         string executable = Path.Combine(build.Folder, "OpenIGI.Desktop");
         Assert.True(File.Exists(executable));
@@ -93,6 +93,22 @@ public sealed class BuildInstallerTests : IDisposable
         {
             Assert.True(File.GetUnixFileMode(executable).HasFlag(UnixFileMode.UserExecute));
         }
+    }
+
+    [Fact]
+    public async Task A_single_file_build_is_installed_under_its_executable_name()
+    {
+        (BuildInstaller installer, FakeServer server) = Make();
+        byte[] executable = [0x4D, 0x5A, 1, 2, 3];
+        ReleaseAsset asset = Asset("openigi-game-0.3.0-win-x64-dotnet.exe", executable) with { SelfContained = false };
+        server.Add("/releases/" + asset.Name, executable);
+
+        InstalledBuild build = await installer.InstallAsync("0.3.0", asset, "OpenIGI.Desktop.exe", new Progress<InstallProgress>(), CancellationToken.None);
+
+        Assert.Equal(["OpenIGI.Desktop.exe"], build.Files.Select(static f => f.Path));
+        Assert.Equal(executable, File.ReadAllBytes(Path.Combine(build.Folder, "OpenIGI.Desktop.exe")));
+        Assert.False(installer.Current()!.SelfContained);
+        Assert.Empty(BuildInstaller.Verify(build));
     }
 
     [Fact]
@@ -104,7 +120,7 @@ public sealed class BuildInstallerTests : IDisposable
         server.Add("/releases/" + asset.Name, Zip(("OpenIGI.Desktop.exe", "tampered")));
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
-            installer.InstallAsync("0.1.0", asset with { Size = archive.Length }, new Progress<InstallProgress>(), CancellationToken.None));
+            installer.InstallAsync("0.1.0", asset with { Size = archive.Length }, "OpenIGI.Desktop.exe", new Progress<InstallProgress>(), CancellationToken.None));
 
         Assert.Null(installer.Current());
         Assert.False(Directory.Exists(Path.Combine(_root, "versions", "0.1.0")));
@@ -120,18 +136,18 @@ public sealed class BuildInstallerTests : IDisposable
 
         server.CutAfter = archive.Length / 3;
         await Assert.ThrowsAsync<InvalidDataException>(() =>
-            installer.InstallAsync("0.2.0", asset, new Progress<InstallProgress>(), CancellationToken.None));
+            installer.InstallAsync("0.2.0", asset, "OpenIGI.Desktop.exe", new Progress<InstallProgress>(), CancellationToken.None));
 
         // The cut-off file failed its hash and was thrown away: the next attempt must not trust it.
         server.CutAfter = null;
-        InstalledBuild build = await installer.InstallAsync("0.2.0", asset, new Progress<InstallProgress>(), CancellationToken.None);
+        InstalledBuild build = await installer.InstallAsync("0.2.0", asset, "OpenIGI.Desktop.exe", new Progress<InstallProgress>(), CancellationToken.None);
         Assert.Equal("0.2.0", build.Version);
 
         // A partial left by a cancelled download, however, is continued with a range request.
         string partial = Path.Combine(_root, "downloads", asset.Name + ".part");
         File.WriteAllBytes(partial, archive[..1000]);
         server.Requests.Clear();
-        await installer.InstallAsync("0.2.0", asset, new Progress<InstallProgress>(), CancellationToken.None);
+        await installer.InstallAsync("0.2.0", asset, "OpenIGI.Desktop.exe", new Progress<InstallProgress>(), CancellationToken.None);
         Assert.Equal(1000, server.Requests.Single().Headers.Range!.Ranges.Single().From);
     }
 
@@ -144,7 +160,7 @@ public sealed class BuildInstallerTests : IDisposable
             byte[] archive = Zip(("OpenIGI.Desktop.exe", version));
             ReleaseAsset asset = Asset($"openigi-game-{version}-win-x64.zip", archive);
             server.Add("/releases/" + asset.Name, archive);
-            await installer.InstallAsync(version, asset, new Progress<InstallProgress>(), CancellationToken.None);
+            await installer.InstallAsync(version, asset, "OpenIGI.Desktop.exe", new Progress<InstallProgress>(), CancellationToken.None);
         }
 
         Assert.Equal("0.3.0", installer.Current()!.Version);
@@ -160,7 +176,7 @@ public sealed class BuildInstallerTests : IDisposable
         byte[] archive = Zip(("OpenIGI.Desktop.exe", "game"), ("a.dll", "a"), ("b.dll", "b"));
         ReleaseAsset asset = Asset("openigi-game-0.1.0-win-x64.zip", archive);
         server.Add("/releases/" + asset.Name, archive);
-        InstalledBuild build = await installer.InstallAsync("0.1.0", asset, new Progress<InstallProgress>(), CancellationToken.None);
+        InstalledBuild build = await installer.InstallAsync("0.1.0", asset, "OpenIGI.Desktop.exe", new Progress<InstallProgress>(), CancellationToken.None);
 
         File.Delete(Path.Combine(build.Folder, "a.dll"));
         File.WriteAllText(Path.Combine(build.Folder, "b.dll"), "B");

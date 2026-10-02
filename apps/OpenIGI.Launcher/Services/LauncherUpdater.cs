@@ -7,15 +7,16 @@ namespace OpenIGI.Launcher.Services;
 /// <summary>Replaces the running launcher with a newer release of itself.</summary>
 /// <remarks>
 /// <para>
-/// The new launcher is downloaded and unpacked beside the settings (through a <see cref="BuildInstaller"/>
-/// of its own, so it gets the same resume and hash check as the game) while this one keeps running. Applying
-/// it moves each of the running launcher's files aside as <c>*.old</c> — which every platform allows for a
-/// file that is open, Windows included, where overwriting one is refused — copies the new files in, and starts
-/// the new launcher. The <c>*.old</c> files are deleted the next time the launcher starts.
+/// The launcher is one self-contained executable on Windows and Linux, and an application bundle on macOS.
+/// The new release is downloaded beside the settings (through a <see cref="BuildInstaller"/> of its own, so
+/// it gets the same resume and hash check as the game) while this one keeps running. Applying it moves the
+/// running launcher aside as <c>*.old</c> — which every platform allows for a file that is open, Windows
+/// included, where overwriting one is refused — puts the new one in its place, and starts it. The
+/// <c>*.old</c> is deleted the next time the launcher starts.
 /// </para>
 /// <para>
-/// On macOS the files are those inside the application bundle, so the bundle keeps its place in the Dock and
-/// in Finder. A development build (version <c>0.0.0-dev</c>) never replaces itself.
+/// On macOS the files replaced are those inside the bundle, so it keeps its place in the Dock and in Finder.
+/// A development build (version <c>0.0.0-dev</c>) never replaces itself.
 /// </para>
 /// </remarks>
 internal sealed class LauncherUpdater(BuildInstaller staging)
@@ -28,6 +29,9 @@ internal sealed class LauncherUpdater(BuildInstaller staging)
     /// <summary>Gets the folder (macOS: the application bundle) the running launcher was installed as.</summary>
     public static string InstallRoot { get; } = FindInstallRoot();
 
+    /// <summary>The name the launcher's executable has once installed, for this platform.</summary>
+    public static string ExecutableName { get; } = OperatingSystem.IsWindows() ? "OpenIGI.Launcher.exe" : "OpenIGI.Launcher";
+
     /// <summary>Gets whether this launcher may replace itself: a released build in a folder it can write to.</summary>
     public static bool CanUpdateSelf => OwnVersion > ReleaseVersion.Parse("0.0.0") && IsWritable(InstallRoot);
 
@@ -39,7 +43,9 @@ internal sealed class LauncherUpdater(BuildInstaller staging)
     {
         try
         {
-            foreach (string old in Directory.EnumerateFiles(InstallRoot, "*" + OldSuffix, SearchOption.AllDirectories))
+            // A bundle is the launcher's own; a single executable may sit in Downloads beside anything else.
+            SearchOption depth = OperatingSystem.IsMacOS() ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+            foreach (string old in Directory.EnumerateFiles(InstallRoot, "*" + OldSuffix, depth))
             {
                 File.Delete(old);
             }
@@ -62,7 +68,7 @@ internal sealed class LauncherUpdater(BuildInstaller staging)
             return;
         }
 
-        Staged = await staging.InstallAsync(version, asset, new Progress<InstallProgress>(), cancellationToken).ConfigureAwait(false);
+        Staged = await staging.InstallAsync(version, asset, ExecutableName, new Progress<InstallProgress>(), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Swaps the staged release in and starts it; the caller then exits.</summary>
@@ -81,10 +87,18 @@ internal sealed class LauncherUpdater(BuildInstaller staging)
             source = bundle;
         }
 
-        Apply(source, InstallRoot);
-        string executable = OperatingSystem.IsMacOS()
-            ? Path.Combine(InstallRoot, "Contents", "MacOS", "OpenIGI.Launcher")
-            : Path.Combine(InstallRoot, OperatingSystem.IsWindows() ? "OpenIGI.Launcher.exe" : "OpenIGI.Launcher");
+        string executable;
+        if (OperatingSystem.IsMacOS())
+        {
+            Apply(source, InstallRoot);
+            executable = Path.Combine(InstallRoot, "Contents", "MacOS", "OpenIGI.Launcher");
+        }
+        else
+        {
+            // The new single file takes the running one's name, whatever the player called it.
+            executable = Environment.ProcessPath ?? Path.Combine(InstallRoot, ExecutableName);
+            Replace(Path.Combine(source, ExecutableName), executable);
+        }
 
         Process.Start(new ProcessStartInfo(executable) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(executable)! });
         return true;
@@ -113,6 +127,23 @@ internal sealed class LauncherUpdater(BuildInstaller staging)
         }
     }
 
+    /// <summary>Moves a running file aside and puts its replacement in its place.</summary>
+    /// <param name="replacement">The new file.</param>
+    /// <param name="target">The file to replace, which may be the running executable.</param>
+    public static void Replace(string replacement, string target)
+    {
+        if (File.Exists(target))
+        {
+            File.Move(target, target + OldSuffix, overwrite: true);
+        }
+
+        File.Copy(replacement, target);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(target, File.GetUnixFileMode(replacement));
+        }
+    }
+
     private static ReleaseVersion ReadOwnVersion()
     {
         string? informational = typeof(LauncherUpdater).Assembly
@@ -122,7 +153,11 @@ internal sealed class LauncherUpdater(BuildInstaller staging)
 
     private static string FindInstallRoot()
     {
-        string folder = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
+        // The process's own path, not AppContext.BaseDirectory: a single-file launcher's base directory is
+        // the folder it unpacks its assets into, not where the player put it.
+        string folder = Path.GetDirectoryName(Environment.ProcessPath) is { Length: > 0 } running
+            ? running
+            : Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
         if (OperatingSystem.IsMacOS())
         {
             // .../OpenIGI Launcher.app/Contents/MacOS -> the bundle.

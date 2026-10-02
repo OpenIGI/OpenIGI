@@ -11,9 +11,12 @@ namespace OpenIGI.Launcher.Services;
 
 /// <summary>An installed build: which version, where, and the files it was installed with.</summary>
 /// <param name="Version">The release version.</param>
-/// <param name="Folder">The version folder the archive was extracted into.</param>
+/// <param name="Folder">The version folder the build was installed into.</param>
 /// <param name="Files">Every file of the build, relative to <paramref name="Folder"/>, with its size and hash.</param>
-internal sealed record InstalledBuild(string Version, string Folder, IReadOnlyList<InstalledFile> Files);
+/// <param name="SelfContained">
+/// Whether the build carries its own .NET runtime; the other flavour needs the runtime installed to start.
+/// </param>
+internal sealed record InstalledBuild(string Version, string Folder, IReadOnlyList<InstalledFile> Files, bool SelfContained = true);
 
 /// <summary>One installed file, as it was when it was extracted.</summary>
 /// <param name="Path">Relative to the version folder, with forward slashes.</param>
@@ -82,17 +85,23 @@ internal sealed class BuildInstaller(HttpClient http, string root)
         }
     }
 
-    /// <summary>Downloads, checks and installs one archive, then makes it the current build.</summary>
+    /// <summary>Downloads, checks and installs one build, then makes it the current one.</summary>
     /// <param name="version">The release version.</param>
-    /// <param name="asset">The archive, with its download address.</param>
+    /// <param name="asset">The download: an executable, or an archive of a macOS bundle.</param>
+    /// <param name="executableName">
+    /// The name a download that is the executable itself is installed under (it is published as
+    /// <c>openigi-game-0.2.0-win-x64.exe</c> and started as <c>OpenIGI.Desktop.exe</c>). Archives keep their
+    /// own names.
+    /// </param>
     /// <param name="progress">Told how far it has got.</param>
     /// <param name="cancellationToken">Cancels the install; a partial download is kept and resumed next time.</param>
     /// <returns>The installed build.</returns>
-    /// <exception cref="InvalidDataException">The downloaded archive does not match its hash.</exception>
+    /// <exception cref="InvalidDataException">The download does not match its hash.</exception>
     /// <exception cref="HttpRequestException">The download failed.</exception>
     public async Task<InstalledBuild> InstallAsync(
         string version,
         ReleaseAsset asset,
+        string executableName,
         IProgress<InstallProgress> progress,
         CancellationToken cancellationToken)
     {
@@ -121,7 +130,7 @@ internal sealed class BuildInstaller(HttpClient http, string root)
         }
 
         progress.Report(new InstallProgress(asset.Size, asset.Size, InstallStage.Installing));
-        InstalledBuild build = await Task.Run(() => Extract(version, archive), cancellationToken).ConfigureAwait(false);
+        InstalledBuild build = await Task.Run(() => Extract(version, archive, executableName, asset.SelfContained), cancellationToken).ConfigureAwait(false);
 
         File.Delete(archive);
         return build;
@@ -214,7 +223,7 @@ internal sealed class BuildInstaller(HttpClient http, string root)
         return string.Equals(Convert.ToHexStringLower(hash), sha256, StringComparison.OrdinalIgnoreCase);
     }
 
-    private InstalledBuild Extract(string version, string archive)
+    private InstalledBuild Extract(string version, string archive, string executableName, bool selfContained)
     {
         string versions = Directory.CreateDirectory(Path.Combine(Root, "versions")).FullName;
         string folder = Path.Combine(versions, version);
@@ -227,11 +236,22 @@ internal sealed class BuildInstaller(HttpClient http, string root)
             {
                 ZipFile.ExtractToDirectory(archive, staging, overwriteFiles: true);
             }
-            else
+            else if (archive.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
             {
                 using FileStream compressed = File.OpenRead(archive);
                 using GZipStream tar = new(compressed, CompressionMode.Decompress);
                 TarFile.ExtractToDirectory(tar, staging, overwriteFiles: true);
+            }
+            else
+            {
+                // A single-file build: the download is the program.
+                string executable = Path.Combine(staging, executableName);
+                File.Copy(archive, executable);
+                if (!OperatingSystem.IsWindows())
+                {
+                    File.SetUnixFileMode(executable, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                        | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+                }
             }
 
             List<InstalledFile> files = [.. Directory
@@ -250,7 +270,7 @@ internal sealed class BuildInstaller(HttpClient http, string root)
             Directory.Move(staging, folder);
 
             InstalledBuild? previous = Current();
-            InstalledBuild build = new(version, folder, files);
+            InstalledBuild build = new(version, folder, files, selfContained);
             WritePointer(build);
             RemoveOldVersions(keep: [folder, previous?.Folder]);
             return build;

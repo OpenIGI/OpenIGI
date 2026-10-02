@@ -33,24 +33,31 @@ public sealed class ReleaseManifestTests
     }
 
     [Theory]
-    [InlineData("openigi-game-0.2.0-beta.3-win-x64.zip", ReleaseComponent.Game, "win-x64")]
-    [InlineData("openigi-launcher-0.2.0-beta.3-osx-arm64.tar.gz", ReleaseComponent.Launcher, "osx-arm64")]
-    [InlineData("openigi-web-0.2.0-beta.3-browser-wasm.tar.gz", ReleaseComponent.Web, "browser-wasm")]
-    public void An_archive_name_says_what_it_holds(string name, ReleaseComponent component, string runtime)
+    [InlineData("openigi-game-0.2.0-beta.3-win-x64.exe", ReleaseComponent.Game, "win-x64", true)]
+    [InlineData("openigi-game-0.2.0-beta.3-win-x64-dotnet.exe", ReleaseComponent.Game, "win-x64", false)]
+    [InlineData("openigi-game-0.2.0-beta.3-linux-x64", ReleaseComponent.Game, "linux-x64", true)]
+    [InlineData("openigi-game-0.2.0-beta.3-linux-x64-dotnet", ReleaseComponent.Game, "linux-x64", false)]
+    [InlineData("openigi-launcher-0.2.0-beta.3-osx-arm64.tar.gz", ReleaseComponent.Launcher, "osx-arm64", true)]
+    [InlineData("openigi-game-0.2.0-beta.3-osx-arm64-dotnet.tar.gz", ReleaseComponent.Game, "osx-arm64", false)]
+    public void A_download_name_says_what_it_holds(string name, ReleaseComponent component, string runtime, bool selfContained)
     {
-        Assert.True(AssetCatalog.TryParse(name, "0.2.0-beta.3", out ReleaseComponent parsed, out string rid));
+        Assert.True(AssetCatalog.TryParse(name, "0.2.0-beta.3", out ReleaseComponent parsed, out string rid, out bool contained));
         Assert.Equal(component, parsed);
         Assert.Equal(runtime, rid);
-        Assert.Equal(name, AssetCatalog.FileName(component, "0.2.0-beta.3", runtime, name.EndsWith(".zip", StringComparison.Ordinal) ? ".zip" : ".tar.gz"));
+        Assert.Equal(selfContained, contained);
+        Assert.Equal(name, AssetCatalog.FileName(component, "0.2.0-beta.3", runtime, selfContained));
     }
 
     [Theory]
-    [InlineData("openigi-game-0.2.0-beta.2-win-x64.zip")]   // another release's archive
-    [InlineData("openigi-game-0.2.0-beta.3-.zip")]          // no runtime
-    [InlineData("openigi-game-0.2.0-beta.3-win-x64.7z")]    // not an archive the launcher can open
+    [InlineData("openigi-game-0.2.0-beta.2-win-x64.exe")]       // another release's build
+    [InlineData("openigi-game-0.2.0-beta.3-.exe")]              // no runtime
+    [InlineData("openigi-game-0.2.0-beta.3-win-x64.zip")]       // not how a Windows build is packed
+    [InlineData("openigi-game-0.2.0-beta.3-linux-x64.exe")]     // nor a Linux one
+    [InlineData("openigi-game-0.2.0-beta.3-osx-arm64")]         // a macOS build is its bundle, archived
+    [InlineData("openigi-game-0.2.0-beta.3-amiga-68k")]         // a runtime nothing is built for
     [InlineData("notes.txt")]
-    public void A_stray_file_is_not_taken_for_an_archive(string name) =>
-        Assert.False(AssetCatalog.TryParse(name, "0.2.0-beta.3", out _, out _));
+    public void A_stray_file_is_not_taken_for_a_download(string name) =>
+        Assert.False(AssetCatalog.TryParse(name, "0.2.0-beta.3", out _, out _, out _));
 
     [Fact]
     public void A_scanned_folder_round_trips_through_the_manifest()
@@ -58,12 +65,14 @@ public sealed class ReleaseManifestTests
         string dir = Directory.CreateTempSubdirectory("openigi-release-").FullName;
         try
         {
-            File.WriteAllBytes(Path.Combine(dir, "openigi-game-0.1.0-linux-x64.tar.gz"), [1, 2, 3]);
-            File.WriteAllBytes(Path.Combine(dir, "openigi-launcher-0.1.0-linux-x64.tar.gz"), [4, 5]);
+            File.WriteAllBytes(Path.Combine(dir, "openigi-game-0.1.0-linux-x64"), [1, 2, 3]);
+            File.WriteAllBytes(Path.Combine(dir, "openigi-game-0.1.0-linux-x64-dotnet"), [9]);
+            File.WriteAllBytes(Path.Combine(dir, "openigi-launcher-0.1.0-linux-x64"), [4, 5]);
             File.WriteAllText(Path.Combine(dir, "SHA256SUMS"), "left over from a previous run");
 
             IReadOnlyList<ReleaseAsset> assets = AssetCatalog.Scan(dir, "0.1.0");
-            Assert.Equal([ReleaseComponent.Game, ReleaseComponent.Launcher], assets.Select(static a => a.Component));
+            Assert.Equal([ReleaseComponent.Game, ReleaseComponent.Game, ReleaseComponent.Launcher], assets.Select(static a => a.Component));
+            Assert.Equal([true, false, true], assets.Select(static a => a.SelfContained));
             Assert.Equal("039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81", assets[0].Sha256);
             Assert.Equal(3, assets[0].Size);
 
@@ -80,8 +89,17 @@ public sealed class ReleaseManifestTests
             Assert.Equal(manifest.Version, read.Version);
             Assert.Equal(manifest.Assets, read.Assets);
             Assert.Equal(manifest.Notes.Select(static s => s.Title), read.Notes.Select(static s => s.Title));
-            Assert.Same(read.Assets[1], read.Find(ReleaseComponent.Launcher, "LINUX-X64"));
+            Assert.Same(read.Assets[2], read.Find(ReleaseComponent.Launcher, "LINUX-X64"));
+            Assert.Same(read.Assets[0], read.Find(ReleaseComponent.Game, "linux-x64"));
+            Assert.Same(read.Assets[1], read.Find(ReleaseComponent.Game, "linux-x64", selfContained: false));
+            Assert.Null(read.Find(ReleaseComponent.Launcher, "linux-x64", selfContained: false));
             Assert.Null(read.Find(ReleaseComponent.Game, "win-x64"));
+
+            // A manifest written before the flavours existed reads as self-contained throughout.
+            string withoutFlavour = System.Text.RegularExpressions.Regex.Replace(json, @",\s*""selfContained"": (true|false)", string.Empty);
+            Assert.DoesNotContain("selfContained", withoutFlavour, StringComparison.Ordinal);
+            ReleaseManifest older = ReleaseJson.ReadManifest(withoutFlavour);
+            Assert.All(older.Assets, static a => Assert.True(a.SelfContained));
         }
         finally
         {

@@ -57,12 +57,16 @@ public sealed record ReleaseManifest(
     /// <exception cref="FormatException">The manifest's version is not a semantic version.</exception>
     public ReleaseVersion ParsedVersion => ReleaseVersion.Parse(Version);
 
-    /// <summary>Finds the archive of one component for one runtime.</summary>
+    /// <summary>Finds the download of one component for one runtime.</summary>
     /// <param name="component">The component.</param>
     /// <param name="runtime">The runtime identifier, such as <c>win-x64</c>.</param>
-    /// <returns>The asset, or <see langword="null"/> when the release has none for that runtime.</returns>
-    public ReleaseAsset? Find(ReleaseComponent component, string runtime) =>
+    /// <param name="selfContained">
+    /// The build carrying its own .NET runtime (the default), or the smaller one that needs .NET installed.
+    /// </param>
+    /// <returns>The asset, or <see langword="null"/> when the release has none for that runtime and flavour.</returns>
+    public ReleaseAsset? Find(ReleaseComponent component, string runtime, bool selfContained = true) =>
         Assets.FirstOrDefault(asset => asset.Component == component
+            && asset.SelfContained == selfContained
             && string.Equals(asset.Runtime, runtime, StringComparison.OrdinalIgnoreCase));
 }
 
@@ -76,7 +80,7 @@ public sealed record ReleaseNoteSection(string Title, IReadOnlyList<ReleaseNote>
 /// <param name="Text">The change, as a sentence.</param>
 public sealed record ReleaseNote(string? Scope, string Text);
 
-/// <summary>One downloadable archive of a release.</summary>
+/// <summary>One download of a release: an executable, or an archive of a macOS bundle.</summary>
 /// <param name="Name">The file name, unique within the release.</param>
 /// <param name="Component">What it contains.</param>
 /// <param name="Runtime">The runtime identifier it is built for, such as <c>win-x64</c> or <c>browser-wasm</c>.</param>
@@ -86,13 +90,18 @@ public sealed record ReleaseNote(string? Scope, string Text);
 /// Where to download it. Absent in the manifest written at release time (the file sits beside it); filled
 /// in by the update service with the address the player should use.
 /// </param>
+/// <param name="SelfContained">
+/// Whether it carries its own .NET runtime. The other flavour is the same program for a machine that has
+/// the .NET runtime installed, and a fraction of the size.
+/// </param>
 public sealed record ReleaseAsset(
     string Name,
     ReleaseComponent Component,
     string Runtime,
     long Size,
     string Sha256,
-    string? Url = null);
+    string? Url = null,
+    bool SelfContained = true);
 
 /// <summary>What the update service answers for one channel.</summary>
 /// <param name="Channel">The channel asked for.</param>
@@ -102,4 +111,12 @@ public sealed record ReleaseAsset(
 /// releases behind sees every change they are about to receive; just <see cref="Latest"/> when the
 /// caller gave no version.
 /// </param>
-public sealed record ChannelFeed(ReleaseChannel Channel, ReleaseManifest? Latest, IReadOnlyList<ReleaseManifest> Releases);
+/// <param name="Launcher">
+/// The newest release, on any channel, that has a launcher. There is one launcher for everyone: the channel
+/// a player follows decides which game builds they get, not which launcher.
+/// </param>
+public sealed record ChannelFeed(
+    ReleaseChannel Channel,
+    ReleaseManifest? Latest,
+    IReadOnlyList<ReleaseManifest> Releases,
+    ReleaseManifest? Launcher = null);

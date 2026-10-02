@@ -1,8 +1,8 @@
 name: Publish release
 
 # Builds, tests, packages and publishes one tagged release:
-#   - every archive (game and launcher for Windows, Linux and macOS, plus the web build) on the GitHub
-#     release, with the changelog as its notes;
+#   - every download (the game in two flavours and the launcher, for Windows, Linux and macOS) on the
+#     GitHub release, with the changelog as its notes;
 #   - the same archives and their manifest on the download store, which the update service indexes, so the
 #     launcher offers the release within a minute;
 #   - the web build on openigi.com (stable) or beta.openigi.com (beta).
@@ -95,11 +95,15 @@ jobs:
         env:
           VERSION: ${{ steps.tag.outputs.version }}
         run: |
-          rm -rf artifacts/release
+          rm -rf artifacts/release artifacts/web
+          # The game in both flavours: self-contained, and the smaller build for machines with .NET 10. The
+          # launcher is only ever self-contained: it is the one program a player starts with nothing installed.
           for rid in $RUNTIMES; do
-            tools/release/package.sh game "$rid" "$VERSION"
-            tools/release/package.sh launcher "$rid" "$VERSION"
+            tools/release/package.sh game "$rid" "$VERSION" self-contained
+            tools/release/package.sh game "$rid" "$VERSION" dotnet
+            tools/release/package.sh launcher "$rid" "$VERSION" self-contained
           done
+          # The browser build goes to the site, not into the downloads.
           tools/release/package.sh web browser-wasm "$VERSION"
 
       - name: Write the manifest
@@ -115,14 +119,27 @@ jobs:
           VERSION: ${{ steps.tag.outputs.version }}
           CHANNEL: ${{ steps.tag.outputs.channel }}
         run: |
+          v="$VERSION"
+          dl="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$TAG"
           {
             cat "$RUNNER_TEMP/notes/notes.md"
             echo
             echo "---"
             echo
-            echo "Install with the **OpenIGI Launcher**, which keeps the game up to date on the $CHANNEL channel,"
-            echo "or download an archive below. OpenIGI needs your own copy of Project I.G.I.; it ships none of its data."
-            echo "Verify a download with \`sha256sum -c SHA256SUMS\`."
+            echo "### Downloads"
+            echo
+            echo "The **launcher** installs the game, keeps it up to date and starts it. It picks the right build for your machine."
+            echo "If you'd rather run the game yourself, each build comes in two flavours:"
+            echo "**self-contained** runs on any machine, and **.NET** is a fraction of the size but needs the [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0) installed."
+            echo
+            echo "| | Launcher | Game, self-contained | Game, needs .NET 10 |"
+            echo "|---|---|---|---|"
+            echo "| Windows | [openigi-launcher-$v-win-x64.exe]($dl/openigi-launcher-$v-win-x64.exe) | [openigi-game-$v-win-x64.exe]($dl/openigi-game-$v-win-x64.exe) | [openigi-game-$v-win-x64-dotnet.exe]($dl/openigi-game-$v-win-x64-dotnet.exe) |"
+            echo "| Linux | [openigi-launcher-$v-linux-x64]($dl/openigi-launcher-$v-linux-x64) | [openigi-game-$v-linux-x64]($dl/openigi-game-$v-linux-x64) | [openigi-game-$v-linux-x64-dotnet]($dl/openigi-game-$v-linux-x64-dotnet) |"
+            echo "| macOS (Apple silicon) | [openigi-launcher-$v-osx-arm64.tar.gz]($dl/openigi-launcher-$v-osx-arm64.tar.gz) | [openigi-game-$v-osx-arm64.tar.gz]($dl/openigi-game-$v-osx-arm64.tar.gz) | [openigi-game-$v-osx-arm64-dotnet.tar.gz]($dl/openigi-game-$v-osx-arm64-dotnet.tar.gz) |"
+            echo
+            echo "Windows and Linux builds are a single executable (on Linux, \`chmod +x\` it first). macOS builds are an app in a tarball; the first time, open it with right-click → Open."
+            echo "OpenIGI needs your own copy of Project I.G.I.; it ships none of the game's data. Verify a download with \`sha256sum -c SHA256SUMS\`."
           } > "$RUNNER_TEMP/notes/release.md"
           cp "$RUNNER_TEMP/notes/notes.md" artifacts/release/CHANGELOG.md
 
@@ -170,7 +187,7 @@ jobs:
       - name: Deploy the web build
         run: |
           $VM_SSH release-vm web "${{ steps.tag.outputs.channel }}" "${{ steps.tag.outputs.version }}" \
-            < "artifacts/release/openigi-web-${{ steps.tag.outputs.version }}-browser-wasm.tar.gz"
+            < "artifacts/web/openigi-web-${{ steps.tag.outputs.version }}.tar.gz"
 
       - name: Drop old betas
         if: steps.tag.outputs.channel == 'beta'

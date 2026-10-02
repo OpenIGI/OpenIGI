@@ -5,7 +5,8 @@ using OpenIGI.Services;
 // The update service. Three questions, all answered from the release index:
 //
 //   GET /v1/channels/{stable|beta}?since=<version>  what is newest, and every release the caller lacks
-//   GET /download/{runtime}?channel=&component=     a redirect to the newest archive (the site's buttons)
+//   GET /download/{runtime}                         a redirect to the newest launcher (the site's buttons)
+//   GET /download/{runtime}?component=game&channel=&flavour=dotnet   ... or to a game build
 //   GET /healthz                                    whether it is up, and how many releases it sees
 //
 // The launcher polls the first every minute; the entity tag makes an unchanged answer a bodiless 304.
@@ -40,24 +41,34 @@ app.MapGet("/v1/channels/{channel}", (string channel, string? since, HttpContext
     return Results.Text(ReleaseJson.Write(index.Feed(parsed, since)), "application/json");
 });
 
-app.MapGet("/download/{runtime}", (string runtime, string? channel, string? component, ReleaseStore store) =>
+app.MapGet("/download/{runtime}", (string runtime, string? component, string? channel, string? flavour, ReleaseStore store) =>
 {
+    // The launcher (the site's buttons): one line for everyone, the newest on any channel. A game build is
+    // asked for by channel and, for players with .NET installed, by the smaller flavour.
+    if (component is null || string.Equals(component, "launcher", StringComparison.OrdinalIgnoreCase))
+    {
+        return store.Current.NewestLauncher(runtime)?.Find(ReleaseComponent.Launcher, runtime) is { Url: { } launcher }
+            ? Results.Redirect(launcher)
+            : Results.NotFound();
+    }
+
+    if (!string.Equals(component, "game", StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.NotFound();
+    }
+
     ReleaseChannel parsedChannel = ReleaseChannel.Stable;
     if (channel is not null && !ReleaseJson.TryParseChannel(channel, out parsedChannel))
     {
         return Results.NotFound();
     }
 
-    ReleaseComponent parsedComponent = ReleaseComponent.Launcher;
-    if (component is not null && !Enum.TryParse(component, ignoreCase: true, out parsedComponent))
-    {
-        return Results.NotFound();
-    }
+    bool selfContained = !string.Equals(flavour, "dotnet", StringComparison.OrdinalIgnoreCase);
 
-    // Newest release that has the archive, so a release missing one platform does not break its button.
+    // Newest release that has the build, so a release missing one platform does not break its button.
     foreach (ReleaseManifest release in store.Current.Feed(parsedChannel, "0.0.0-0").Releases)
     {
-        if (release.Find(parsedComponent, runtime) is { Url: { } url })
+        if (release.Find(ReleaseComponent.Game, runtime, selfContained) is { Url: { } url })
         {
             return Results.Redirect(url);
         }

@@ -12,6 +12,9 @@ namespace OpenIGI.Launcher.Services;
 /// </remarks>
 internal static class GameStarter
 {
+    /// <summary>The name a single-file game build is installed under, for this platform.</summary>
+    public static string ExecutableName { get; } = OperatingSystem.IsWindows() ? "OpenIGI.Desktop.exe" : "OpenIGI.Desktop";
+
     /// <summary>The game's executable inside an installed build, for this platform.</summary>
     /// <param name="buildFolder">The build's version folder.</param>
     /// <returns>The path to start.</returns>

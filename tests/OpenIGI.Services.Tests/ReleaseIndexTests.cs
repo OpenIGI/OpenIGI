@@ -47,6 +47,16 @@ public sealed class ReleaseIndexTests
     }
 
     [Fact]
+    public void There_is_one_launcher_line_whichever_channel_is_asked()
+    {
+        // A stable player is still offered the newest launcher, even when that came out with a beta.
+        Assert.Equal("0.2.0-beta.10", Index.Feed(ReleaseChannel.Stable, since: null).Launcher!.Version);
+        Assert.Equal("0.2.0-beta.10", Index.Feed(ReleaseChannel.Beta, since: "0.2.0-beta.10").Launcher!.Version);
+        Assert.Equal("0.2.0-beta.10", Index.NewestLauncher("win-x64")!.Version);
+        Assert.Null(Index.NewestLauncher("osx-arm64"));
+    }
+
+    [Fact]
     public void Every_asset_gets_its_download_address()
     {
         ReleaseAsset asset = Index.Feed(ReleaseChannel.Beta, since: null).Latest!.Assets.Single();

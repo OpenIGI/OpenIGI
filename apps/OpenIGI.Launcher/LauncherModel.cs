@@ -365,9 +365,16 @@ internal sealed class LauncherModel : IDisposable
         });
     }
 
+    // The smaller build when this machine has the .NET runtime it needs, the self-contained one otherwise (and
+    // whenever a release has no smaller build for this platform).
+    private static ReleaseAsset? GameAsset(ReleaseManifest? release) =>
+        release is null ? null
+        : (DotnetRuntime.IsInstalled() ? release.Find(ReleaseComponent.Game, LauncherPaths.Runtime, selfContained: false) : null)
+          ?? release.Find(ReleaseComponent.Game, LauncherPaths.Runtime);
+
     private void StartDownload()
     {
-        if (_latest?.Find(ReleaseComponent.Game, LauncherPaths.Runtime) is not { } asset)
+        if (_latest is not { } release || GameAsset(release) is not { } asset)
         {
             Problem = _latest is null
                 ? "No release is available yet."
@@ -376,7 +383,7 @@ internal sealed class LauncherModel : IDisposable
             return;
         }
 
-        string version = _latest.Version;
+        string version = release.Version;
         DownloadJob job = Job is { Paused: true } paused && paused.Version == version
             ? paused
             : new DownloadJob(Current, version, _installed is null ? $"Install OpenIGI {version}" : $"OpenIGI {version}", asset.Size);
@@ -393,7 +400,7 @@ internal sealed class LauncherModel : IDisposable
         {
             try
             {
-                InstalledBuild build = await _installer.InstallAsync(version, asset, progress, token).ConfigureAwait(false);
+                InstalledBuild build = await _installer.InstallAsync(version, asset, GameStarter.ExecutableName, progress, token).ConfigureAwait(false);
                 _results.Enqueue(() =>
                 {
                     _installed = build;
@@ -461,7 +468,8 @@ internal sealed class LauncherModel : IDisposable
 
     private void MaybeStageLauncher()
     {
-        if (!LauncherUpdater.CanUpdateSelf || _latest is not { } latest || _stagingLauncher == latest.Version
+        // One launcher line for everyone: the newest launcher on any channel, whichever channel the game follows.
+        if (!LauncherUpdater.CanUpdateSelf || (_feed?.Launcher ?? _latest) is not { } latest || _stagingLauncher == latest.Version
             || latest.ParsedVersion <= LauncherUpdater.OwnVersion
             || latest.Find(ReleaseComponent.Launcher, LauncherPaths.Runtime) is not { } asset)
         {
@@ -492,7 +500,11 @@ internal sealed class LauncherModel : IDisposable
     {
         _latest = _feed?.Latest;
         int installedMegabytes = _installed is null ? 0 : (int)(_installed.Files.Sum(static f => f.Size) / 1_000_000);
-        int downloadMegabytes = (int)((_latest?.Find(ReleaseComponent.Game, LauncherPaths.Runtime)?.Size ?? 0) / 1_000_000);
+        int downloadMegabytes = (int)((GameAsset(_latest)?.Size ?? 0) / 1_000_000);
+
+        // A build that needs the .NET runtime cannot start once the runtime is gone: repairing it fetches the
+        // self-contained one.
+        bool runtimeGone = _installed is { SelfContained: false } && !DotnetRuntime.IsInstalled();
         bool newer = _latest is not null && (_installed is null || _latest.ParsedVersion > ReleaseVersion.Parse(_installed.Version));
 
         foreach (LauncherGame game in Games)
@@ -510,7 +522,7 @@ internal sealed class LauncherModel : IDisposable
             game.NotesUrl = _latest is null ? null : $"https://github.com/OpenIGI/OpenIGI/releases/tag/v{_latest.Version}";
             game.State = _running is not null ? GameState.Playing
                 : _installed is null ? GameState.NotInstalled
-                : _damaged ? GameState.Damaged
+                : _damaged || runtimeGone ? GameState.Damaged
                 : newer ? GameState.UpdateAvailable
                 : GameStarter.Locate(title, Settings.GameFolders.GetValueOrDefault(title.Id)) is null ? GameState.NeedsGameFolder
                 : GameState.Ready;

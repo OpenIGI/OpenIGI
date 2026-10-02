@@ -62,8 +62,21 @@ internal sealed class ReleaseIndex
             ? [.. offered.Where(release => release.ParsedVersion > installed)]
             : latest is null ? [] : [latest];
 
-        return new ChannelFeed(channel, latest, releases);
+        return new ChannelFeed(channel, latest, releases, NewestLauncher());
     }
+
+    /// <summary>The newest release, on any channel, with a launcher; for one runtime when one is named.</summary>
+    /// <param name="runtime">The runtime the launcher must exist for, or <see langword="null"/> for any.</param>
+    /// <returns>The release, or <see langword="null"/> before the first launcher is published.</returns>
+    /// <remarks>
+    /// There is one launcher line for every player. The channel decides which game builds a player gets;
+    /// a launcher that installs either channel's builds has no reason to come in two versions.
+    /// </remarks>
+    public ReleaseManifest? NewestLauncher(string? runtime = null) =>
+        _releases.FirstOrDefault(release => release.Assets.Any(asset =>
+            asset.Component == ReleaseComponent.Launcher
+            && asset.SelfContained
+            && (runtime is null || string.Equals(asset.Runtime, runtime, StringComparison.OrdinalIgnoreCase))));
 
     private static bool Offers(ReleaseChannel channel, ReleaseManifest release) =>
         channel == ReleaseChannel.Beta || release.Channel == ReleaseChannel.Stable;

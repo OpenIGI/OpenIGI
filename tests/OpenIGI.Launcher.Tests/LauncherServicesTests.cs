@@ -77,6 +77,49 @@ public sealed class LauncherServicesTests
     }
 
     [Fact]
+    public void A_single_file_launcher_is_replaced_in_place_under_whatever_name_it_was_given()
+    {
+        string root = Directory.CreateTempSubdirectory("openigi-replace-").FullName;
+        try
+        {
+            string running = Path.Combine(root, "OpenIGI Launcher (1).exe");
+            string staged = Path.Combine(root, "staged.exe");
+            File.WriteAllText(running, "old");
+            File.WriteAllText(staged, "new");
+
+            LauncherUpdater.Replace(staged, running);
+
+            Assert.Equal("new", File.ReadAllText(running));
+            Assert.Equal("old", File.ReadAllText(running + ".old"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void A_dotnet_runtime_is_found_by_its_shared_framework_folder()
+    {
+        string root = Directory.CreateTempSubdirectory("openigi-dotnet-").FullName;
+        try
+        {
+            string shared = Path.Combine(root, "shared", "Microsoft.NETCore.App");
+            Directory.CreateDirectory(Path.Combine(shared, "9.0.4"));
+            Directory.CreateDirectory(Path.Combine(shared, "10.0.0-rc.2.25502.107"));
+            Assert.False(DotnetRuntime.IsInstalled(10, [null, "", Path.Combine(root, "missing"), root]));
+
+            Directory.CreateDirectory(Path.Combine(shared, "10.0.12"));
+            Assert.True(DotnetRuntime.IsInstalled(10, [null, root]));
+            Assert.False(DotnetRuntime.IsInstalled(11, [root]));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Settings_survive_a_round_trip_and_a_damaged_file_falls_back_to_defaults()
     {
         string dir = Directory.CreateTempSubdirectory("openigi-settings-").FullName;
@@ -94,10 +137,8 @@ public sealed class LauncherServicesTests
             Assert.Equal("D:/IGI", read.GameFolders["igi1"]);
             Assert.Contains("\"beta\"", File.ReadAllText(path), StringComparison.Ordinal);
 
-            // A damaged file falls back to the defaults, whose channel is the launcher's own (beta for a beta
-            // build), so the expectation is the default rather than a fixed channel.
             File.WriteAllText(path, "{ broken");
-            Assert.Equal(new LauncherSettings().Channel, LauncherSettings.Load(path).Channel);
+            Assert.Equal(ReleaseChannel.Stable, LauncherSettings.Load(path).Channel);
             Assert.Empty(LauncherSettings.Load(path).GameFolders);
         }
         finally
