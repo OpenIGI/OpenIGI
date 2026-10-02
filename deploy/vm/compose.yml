@@ -7,7 +7,8 @@ name: openigi
 
 services:
   caddy:
-    image: caddy:2.10-alpine
+    # 2.11, not 2.10: 2.10 answers 206 Partial Content for every precompressed file asked for without a Range.
+    image: caddy:2.11-alpine
     restart: unless-stopped
     ports:
       - "80:80"
