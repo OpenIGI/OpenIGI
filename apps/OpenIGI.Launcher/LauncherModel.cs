@@ -178,6 +178,10 @@ internal sealed partial class LauncherModel : IDisposable
     /// <summary>Gets or sets what shows a desktop notification (title, message); none until the window gives one.</summary>
     public Action<string, string>? Notify { get; set; }
 
+    /// <summary>Gets what the library holds for the launcher: the installed build and every installed pack.</summary>
+    public long LibraryBytes =>
+        (_installed?.Files.Sum(static f => f.Size) ?? 0) + Packs.Sum(static p => p.Installed?.Size ?? 0);
+
     public int UpdatesAvailable => Games.Any(static g => g.State == GameState.UpdateAvailable) ? 1 : 0;
 
     public static string FormatSize(double megabytes) =>
