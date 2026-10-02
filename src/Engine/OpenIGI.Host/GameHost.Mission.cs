@@ -54,6 +54,9 @@ internal sealed partial class GameHost
         LevelTask levelRoot = (LevelTask)_loop.Tasks.New(_loop.Tasks.Root, _loop.Types.Get(EngineTaskTypes.Level));
         _activeLevelRoot = levelRoot;
         _activeMission = chosen;
+
+        // The menu's lite profile ends here, before anything below reads the variables it overrides.
+        UpdateBackdropProfile();
         _missionResultHandled = false;
         _computerOpen = false;
         _computerFlight.Reset();
@@ -2575,6 +2578,10 @@ internal sealed partial class GameHost
         _resources = preview.Resources;
         _activeLevelRoot = preview.LevelRoot;
         _activeMission = chosen;
+
+        // The backdrop stops being drawn lite before BringMissionUp reads the lighting variables: the
+        // real-time structures it skipped are built from here, under the warm-up's hold.
+        UpdateBackdropProfile();
         _missionResultHandled = false;
         _computerOpen = false;
         _computerFlight.Reset();

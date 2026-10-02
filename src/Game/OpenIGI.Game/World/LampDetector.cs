@@ -634,7 +634,7 @@ public static class LampDetector
                 && data.Length >= 4
                 && TexFile.IsTexture(data.Span))
             {
-                look = Measure(TexFile.Load(data.Span));
+                look = Measure(TexFile.LoadLevelZero(data.Span));
             }
         }
         catch (Exception error) when (error is IOException or InvalidDataException or NotSupportedException)

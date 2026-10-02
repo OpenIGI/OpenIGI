@@ -33,7 +33,11 @@ internal sealed unsafe class VulkanBuffer : IDisposable
     private readonly Vk _vk;
     private readonly Device _device;
     private readonly VulkanAllocator _allocator;
-    private readonly DeviceMemory _memory;
+    private readonly VulkanAllocation _allocation;
+
+    // The memory itself, for the mapping calls. Host-visible memory is never shared (see
+    // VulkanAllocator.AllocateResource), so a mapped buffer's allocation starts at offset zero.
+    private DeviceMemory _memory => _allocation.Memory;
     private readonly void* _persistentMapping;
     private ulong _deviceAddress;
     private bool _disposed;
@@ -87,13 +91,14 @@ internal sealed unsafe class VulkanBuffer : IDisposable
 
         bool addressable = usage.HasFlag(BufferUsageFlags.ShaderDeviceAddressBit);
         _vk.GetBufferMemoryRequirements(_device, buffer, out MemoryRequirements requirements);
-        _memory = _allocator.Allocate(requirements, memoryProperties, addressable);
-        VkCheck.Ok(_vk.BindBufferMemory(_device, buffer, _memory, 0), "vkBindBufferMemory");
+        _allocation = _allocator.AllocateResource(requirements, memoryProperties, VulkanResourceKind.Buffer, addressable);
+        VkCheck.Ok(
+            _vk.BindBufferMemory(_device, buffer, _allocation.Memory, _allocation.Offset), "vkBindBufferMemory");
 
         if (persistentlyMapped && HostVisible)
         {
             void* mapped = null;
-            VkCheck.Ok(_vk.MapMemory(_device, _memory, 0, Vk.WholeSize, 0, ref mapped), "vkMapMemory");
+            VkCheck.Ok(_vk.MapMemory(_device, _memory, _allocation.Offset, Vk.WholeSize, 0, ref mapped), "vkMapMemory");
             _persistentMapping = mapped;
         }
     }
@@ -243,6 +248,6 @@ internal sealed unsafe class VulkanBuffer : IDisposable
         }
 
         _vk.DestroyBuffer(_device, Handle, null);
-        _allocator.Free(_memory);
+        _allocator.Free(_allocation);
     }
 }

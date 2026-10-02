@@ -205,4 +205,45 @@ public sealed class CVarTests
         Assert.False(scale.MatchesText("banana"));
         Assert.False(scale.MatchesText(string.Empty));
     }
+
+    [Fact]
+    public void Override_IsReadByValueAndInvisibleToEverythingThatPersists()
+    {
+        NumericCVar<int> shadows = new("r_test_shadows", 2048, 0, 4096);
+        int changes = 0;
+        shadows.Changed += (_, _) => changes++;
+
+        shadows.Override(0);
+
+        Assert.True(shadows.IsOverridden);
+        Assert.Equal(0, shadows.Value);
+
+        // The stored value is what the settings file, the console and the presets see.
+        Assert.Equal("2048", shadows.ValueText);
+        Assert.True(shadows.IsDefault);
+        Assert.True(shadows.MatchesText("2048"));
+        Assert.Equal(0, changes);
+
+        shadows.ClearOverride();
+
+        Assert.False(shadows.IsOverridden);
+        Assert.Equal(2048, shadows.Value);
+        Assert.Equal(0, changes);
+    }
+
+    [Fact]
+    public void Override_IsClampedAndLeavesAssignmentsToTheStoredValue()
+    {
+        NumericCVar<float> scale = new("r_test_override_scale", 1f, 0.25f, 1f);
+        scale.Override(0.1f);
+        Assert.Equal(0.25f, scale.Value);
+
+        // A choice made while the override holds is the player's and survives it.
+        scale.Value = 0.5f;
+        Assert.Equal(0.25f, scale.Value);
+        Assert.Equal("0.5", scale.ValueText);
+
+        scale.ClearOverride();
+        Assert.Equal(0.5f, scale.Value);
+    }
 }

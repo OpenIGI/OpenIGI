@@ -198,11 +198,11 @@ public sealed partial class GraphicsDevice
 
         if (_textures.Find(detail) is not null)
         {
-            _textureDetail[diffuse.Id] = detail.Id;
+            PairDetail(diffuse.Id, detail.Id);
         }
         else
         {
-            _textureDetail.Remove(diffuse.Id);
+            UnpairDetail(diffuse.Id);
         }
     }
 

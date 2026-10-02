@@ -695,6 +695,11 @@ internal sealed partial class GameHost
 
             if (!_warmUp.IsActive)
             {
+                // The level is up. A promoted backdrop still carries the decoded pictures its arming had
+                // not reached; the mission decodes those as it meets them, like a level loaded cold does,
+                // rather than holding the lot for as long as it is played.
+                ReleaseLoadLeftovers();
+
                 if (_warmUp.GaveUp)
                 {
                     _logger.Warning(

@@ -141,6 +141,27 @@ public interface IGraphicsDevice : IDisposable
     /// <exception cref="GraphicsDeviceException">The texture could not be created.</exception>
     TextureHandle CreateTexture(in TextureDescription description, ReadOnlySpan<Bgra32> pixels);
 
+    /// <summary>Creates a texture from a stored block-compressed chain, uploading it as it is.</summary>
+    /// <param name="description">Its size, how many levels it has, and how it is filtered.</param>
+    /// <param name="format">The block format.</param>
+    /// <param name="chain">Every level's blocks, back to back, largest first.</param>
+    /// <param name="proxy">
+    /// A small uncompressed copy, for what reads a texture's pixels as it is created -- the traced world's
+    /// albedo and cut-out mask -- or empty for none.
+    /// </param>
+    /// <param name="proxyWidth">The proxy's width.</param>
+    /// <param name="proxyHeight">The proxy's height.</param>
+    /// <returns>The texture.</returns>
+    /// <exception cref="NotSupportedException">The device cannot sample block formats; see <see cref="GraphicsCapabilities.SupportsBlockCompression"/>.</exception>
+    TextureHandle CreateCompressedTexture(
+        in TextureDescription description,
+        BlockFormat format,
+        ReadOnlySpan<byte> chain,
+        ReadOnlySpan<Bgra32> proxy,
+        int proxyWidth,
+        int proxyHeight) =>
+        throw new NotSupportedException("This device does not create block-compressed textures.");
+
     /// <summary>Replaces the pixels of one mip level. Mirrors <c>ReloadTexture</c>.</summary>
     /// <param name="texture">The texture to update.</param>
     /// <param name="mipLevel">The zero-based mip level.</param>
@@ -560,6 +581,18 @@ public interface IGraphicsDevice : IDisposable
     void SetTraceAdmission(bool unlimited)
     {
         _ = unlimited;
+    }
+
+    /// <summary>Stops, or resumes, building the traced world from the frames' draws.</summary>
+    /// <param name="paused">Whether draws are kept out of the traced world.</param>
+    /// <remarks>
+    /// For a picture nothing traces -- the menu's lite backdrop. Every mesh admitted there is an
+    /// acceleration structure built, and then forgotten at the next swap, for a level nobody will play.
+    /// Resumed, the world fills from the next frame's draws as it does at any load.
+    /// </remarks>
+    void SetTracePaused(bool paused)
+    {
+        _ = paused;
     }
 
     /// <summary>Sets the seed for the following draws' hashed alpha test, zero for the hard cut-out.</summary>
@@ -1645,6 +1678,25 @@ public interface IGraphicsDevice : IDisposable
     /// </para>
     /// </remarks>
     void SubmitShadowCaster(MeshHandle mesh, in Matrix4f modelView, int indexCount);
+
+    /// <summary>Gets whether <see cref="SubmitShadowCaster"/> would keep anything this frame.</summary>
+    /// <remarks>
+    /// Asked before building a caster at all, because building one is the expensive half: the terrain walks
+    /// its whole octree from every direction to write it. False where nothing is traced -- a backend
+    /// without a traced world, or the menu's lite backdrop, which pauses it -- and a profile of the menu
+    /// found that walk taking a couple of seconds of the render thread for a caster the device then
+    /// dropped.
+    /// </remarks>
+    bool AcceptsShadowCasters => false;
+
+    /// <summary>Describes what the device holds in memory, for a memory report.</summary>
+    /// <returns>Lines of text, or empty where there is nothing to say.</returns>
+    string DescribeMemory() => string.Empty;
+
+    /// <summary>Gives back memory held for reuse but idle, once a load is over.</summary>
+    void TrimMemory()
+    {
+    }
 
     /// <summary>Draws a glowing selection outline around a mesh.</summary>
     /// <param name="mesh">The mesh to outline.</param>

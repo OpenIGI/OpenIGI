@@ -129,6 +129,9 @@ internal sealed class VulkanDeviceCapabilities
     /// <summary>Gets a value indicating whether anisotropic sampling is available.</summary>
     public bool SamplerAnisotropy { get; init; }
 
+    /// <summary>Gets a value indicating whether BC1-BC7 block-compressed textures can be sampled.</summary>
+    public bool TextureCompressionBc { get; init; }
+
     /// <summary>Gets a value indicating whether out-of-bounds buffer reads are defined to return zero.</summary>
     public bool RobustBufferAccess { get; init; }
 

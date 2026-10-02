@@ -75,6 +75,18 @@ public enum RhiTextureFormat
 
     /// <summary>A 16-bit normalised depth buffer.</summary>
     Depth16Unorm,
+
+    /// <summary>BC1: eight bytes per four-by-four block, colour with one bit of alpha. Opaque surfaces.</summary>
+    Bc1RgbaUnorm,
+
+    /// <summary>BC1, read through sRGB.</summary>
+    Bc1RgbaUnormSrgb,
+
+    /// <summary>BC7: sixteen bytes per four-by-four block, colour and full alpha at near-lossless quality.</summary>
+    Bc7RgbaUnorm,
+
+    /// <summary>BC7, read through sRGB.</summary>
+    Bc7RgbaUnormSrgb,
 }
 
 /// <summary>What a format is for, which decides where it may be attached or bound.</summary>
@@ -125,7 +137,33 @@ public static class RhiTextureFormatExtensions
     /// <returns><see langword="true"/> when the hardware converts.</returns>
     public static bool IsSrgb(this RhiTextureFormat format) => format
         is RhiTextureFormat.Rgba8UnormSrgb
-        or RhiTextureFormat.Bgra8UnormSrgb;
+        or RhiTextureFormat.Bgra8UnormSrgb
+        or RhiTextureFormat.Bc1RgbaUnormSrgb
+        or RhiTextureFormat.Bc7RgbaUnormSrgb;
+
+    /// <summary>Whether a format stores four-by-four blocks rather than texels.</summary>
+    /// <param name="format">The format asked about.</param>
+    /// <returns><see langword="true"/> for a BC format.</returns>
+    /// <remarks>
+    /// A block format has no bytes per texel -- <see cref="BytesPerTexel"/> answers zero -- and every copy
+    /// into one is stated in whole blocks: rows of <see cref="BlockBytes"/> per four texels across, four
+    /// texels deep.
+    /// </remarks>
+    public static bool IsBlockCompressed(this RhiTextureFormat format) => format
+        is RhiTextureFormat.Bc1RgbaUnorm
+        or RhiTextureFormat.Bc1RgbaUnormSrgb
+        or RhiTextureFormat.Bc7RgbaUnorm
+        or RhiTextureFormat.Bc7RgbaUnormSrgb;
+
+    /// <summary>How many bytes one four-by-four block of a block format occupies.</summary>
+    /// <param name="format">The format asked about.</param>
+    /// <returns>Eight for BC1, sixteen for BC7, zero for a format that is not block-compressed.</returns>
+    public static int BlockBytes(this RhiTextureFormat format) => format switch
+    {
+        RhiTextureFormat.Bc1RgbaUnorm or RhiTextureFormat.Bc1RgbaUnormSrgb => 8,
+        RhiTextureFormat.Bc7RgbaUnorm or RhiTextureFormat.Bc7RgbaUnormSrgb => 16,
+        _ => 0,
+    };
 }
 
 /// <summary>One component of a vertex, as the vertex buffer holds it.</summary>

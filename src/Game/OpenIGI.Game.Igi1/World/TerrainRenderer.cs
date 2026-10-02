@@ -200,6 +200,9 @@ public sealed class TerrainRenderer : ITerrainPresenter
         _logger = logger ?? NullLogger.Instance;
         DetailMaps = detailMaps;
         _tiles = UploadTiles(surface.Terrain.Tiles, derivedDetail);
+
+        // On the GPU now; the level's terrain data need not hold the pictures as well.
+        surface.Terrain.Tiles?.ReleasePixels();
         _caster = new TerrainShadowCaster(device);
     }
 
@@ -577,7 +580,17 @@ public sealed class TerrainRenderer : ITerrainPresenter
         }
         _device.ClearDetailFade();
         _device.SetAlphaReference(IGraphicsDevice.DefaultAlphaReference);
-        SubmitShadowCaster(camera, view, fadeOffset, fadeSlope);
+
+        // Only where something will trace it: the caster is a walk of the whole octree from every
+        // direction, and a device that keeps nothing of it was paying for that every frame.
+        if (_device.AcceptsShadowCasters)
+        {
+            SubmitShadowCaster(camera, view, fadeOffset, fadeSlope);
+        }
+        else
+        {
+            LastCasterTriangleCount = 0;
+        }
 
         LastChunkCount = result.Emitted - occludedChunks;
         LastPassCount = passes;
@@ -823,6 +836,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
 
         foreach (TextureHandle tile in _tiles)
         {
+            DetailMaps?.Release(tile);
             _device.DestroyTexture(tile);
         }
 
@@ -922,6 +936,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
         {
             if (tile.IsValid)
             {
+                DetailMaps?.Release(tile);
                 _device.DestroyTexture(tile);
             }
         }

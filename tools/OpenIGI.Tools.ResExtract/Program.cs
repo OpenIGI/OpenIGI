@@ -27,6 +27,7 @@ static int Run(string[] args)
             "EXTRACT" => Extract(args),
             "IMAGES" => Images(args),
             "PACK" => Pack(args),
+            "COMPRESS" => Compress(args),
             "MAPS" => Maps(args),
             "SOUNDS" => Sounds(args),
             _ => Fail($"Unknown command '{args[0]}'."),
@@ -148,10 +149,34 @@ static int Images(string[] args)
 // a pack, and a half-finished upscale packs what exists and leaves the rest to the game's own copy.
 static int Pack(string[] args)
 {
-    if (args.Length != 3)
+    PackBuild.Options options = new();
+    List<string> positional = [];
+    for (int i = 1; i < args.Length; i++)
     {
-        return Fail("usage: ResExtract pack <png-dir> <overrides-dir>");
+        switch (args[i])
+        {
+            case "--png":
+                // The old pack: PNG frames, decoded and mipped by the game at load.
+                options = options with { BlockCompress = false };
+                break;
+
+            case "--quality" when i + 1 < args.Length && Enum.TryParse(args[i + 1], true, out BlockQuality quality):
+                options = options with { Quality = quality };
+                i++;
+                break;
+
+            default:
+                positional.Add(args[i]);
+                break;
+        }
     }
+
+    if (positional.Count != 2)
+    {
+        return Fail("usage: ResExtract pack <png-dir> <overrides-dir> [--png] [--quality fast|balanced|best]");
+    }
+
+    args = ["pack", .. positional];
 
     string source = Path.GetFullPath(args[1]);
     string manifest = Path.Combine(source, PackManifest.FileName);
@@ -164,7 +189,7 @@ static int Pack(string[] args)
     }
 
     string destination = Path.GetFullPath(args[2]);
-    PackBuild.Result result = PackBuild.Run(source, destination);
+    PackBuild.Result result = PackBuild.Run(source, destination, options);
 
     foreach (string failure in result.Failures.Take(20))
     {
@@ -194,6 +219,57 @@ static int Pack(string[] args)
     Console.WriteLine("the assets are found by the paths they already had, and `overrides` in the console");
     Console.WriteLine("re-reads the folder without a restart.");
 
+    return ExitCode.Ok;
+}
+
+// Converts an installed overrides folder's world textures from PNG to GPU block compression, into a new
+// folder. The pack keeps working either way; compressed, the game uploads its textures as they are
+// stored, at a quarter to an eighth of the memory, with no decoding and no mip building at load.
+static int Compress(string[] args)
+{
+    BlockQuality quality = BlockQuality.Balanced;
+    List<string> positional = [];
+    for (int i = 1; i < args.Length; i++)
+    {
+        if (args[i] == "--quality" && i + 1 < args.Length && Enum.TryParse(args[i + 1], true, out BlockQuality chosen))
+        {
+            quality = chosen;
+            i++;
+            continue;
+        }
+
+        positional.Add(args[i]);
+    }
+
+    if (positional.Count != 2)
+    {
+        return Fail("usage: ResExtract compress <overrides-dir> <new-overrides-dir> [--quality fast|balanced|best]");
+    }
+
+    string source = Path.GetFullPath(positional[0]);
+    string destination = Path.GetFullPath(positional[1]);
+    if (!Directory.Exists(source))
+    {
+        return Fail($"'{source}' does not exist.");
+    }
+
+    if (string.Equals(source.TrimEnd(Path.DirectorySeparatorChar), destination.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+    {
+        return Fail("Write the converted pack to a new folder, then swap it in: the source is read as it is written.");
+    }
+
+    PackRecompress.Result result = PackRecompress.Run(source, destination, quality);
+
+    foreach (string failure in result.Failures.Take(20))
+    {
+        Console.Error.WriteLine($"warning: {failure}");
+    }
+
+    Console.WriteLine(string.Create(
+        CultureInfo.InvariantCulture,
+        $"Compressed {result.Compressed} picture(s), copied {result.Copied}; "
+        + $"{result.BytesBefore / 1048576.0:F0} MiB -> {result.BytesAfter / 1048576.0:F0} MiB; "
+        + $"{result.Failures.Count} left as PNG after a failure."));
     return ExitCode.Ok;
 }
 
@@ -481,7 +557,8 @@ static void PrintUsage() =>
           ResExtract list    <archive>
           ResExtract extract <archive> <outdir>
           ResExtract images  <archive|dir> <outdir>
-          ResExtract pack    <png-dir> <overrides-dir>
+          ResExtract pack    <png-dir> <overrides-dir> [--png] [--quality fast|balanced|best]
+          ResExtract compress <overrides-dir> <new-overrides-dir> [--quality fast|balanced|best]
           ResExtract sounds  <archive|file|dir> <outdir>
 
         Reads ILFF archives (.res), model and font containers (.mef, .fnt) and the legacy

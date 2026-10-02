@@ -107,6 +107,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
             // Where the backend traces, the GI stack builds its ray-query forms and the compute seam binds
             // them the traced world.
             SupportsRayQuery = GiRunsOn(device) && device.RayTracing is not null,
+            SupportsBlockCompression = device.Features.TextureCompressionBc,
             MaxSampleCount = device.Limits.MaxSampleCount,
             MaxComputeGroupsX = device.Limits.MaxComputeWorkgroupsPerDimension,
             UnimplementedSettings = UnimplementedOn(TemporalResolve.RunsOn(device), GiRunsOn(device), device.RayTracing is not null, AutoExposure.RunsOn(device)),

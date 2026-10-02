@@ -53,6 +53,16 @@ public interface IRhiDevice : IDisposable
     /// </remarks>
     IRhiRayTracing? RayTracing { get; }
 
+    /// <summary>Describes what the device holds in memory, for a memory report.</summary>
+    /// <returns>Lines of text, or empty where the backend has nothing to say.</returns>
+    string DescribeMemory() => string.Empty;
+
+    /// <summary>Gives back memory the device holds for reuse but is not using, once a load is over.</summary>
+    /// <remarks>Upload staging and the like: kept between bursts of uploads, and RAM held for nothing after them.</remarks>
+    void TrimMemory()
+    {
+    }
+
     /// <summary>Creates a buffer.</summary>
     /// <param name="descriptor">What it is created as.</param>
     /// <returns>The buffer.</returns>

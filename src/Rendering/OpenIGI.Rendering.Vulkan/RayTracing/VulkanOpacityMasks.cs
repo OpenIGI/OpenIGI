@@ -58,6 +58,12 @@ internal sealed unsafe class VulkanOpacityMasks : IDisposable
     private const ImageLayout Resting = ImageLayout.General;
     private readonly Dictionary<uint, int> _layers = [];
     private int _next;
+
+    // Layers given back by destroyed textures, reused before a fresh one is taken. Without them the array
+    // filled for good: every menu backdrop swap registers its level's cut-outs, and once the hundred and
+    // twenty-eight layers were spent, every cut-out that came after had no mask -- and a cut-out with no
+    // mask is left out of the traced world altogether.
+    private readonly Stack<int> _free = [];
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="VulkanOpacityMasks"/> class.</summary>
@@ -125,7 +131,7 @@ internal sealed unsafe class VulkanOpacityMasks : IDisposable
     public ImageView View { get; }
 
     /// <summary>Gets how many masks have been registered.</summary>
-    public int Count => _next;
+    public int Count => _layers.Count;
 
     /// <summary>Reduces a texture's alpha to a mask layer, or returns the layer it already has.</summary>
     /// <param name="textureId">The texture's identifier, which is what the mapping is keyed by.</param>
@@ -142,12 +148,25 @@ internal sealed unsafe class VulkanOpacityMasks : IDisposable
             return existing;
         }
 
-        if (_next >= MaxLayers || width <= 0 || height <= 0 || width * height > pixels.Length)
+        if (width <= 0 || height <= 0 || width * height > pixels.Length)
         {
             return -1;
         }
 
-        int layer = _next++;
+        int layer;
+        if (_free.Count > 0)
+        {
+            layer = _free.Pop();
+        }
+        else if (_next < MaxLayers)
+        {
+            layer = _next++;
+        }
+        else
+        {
+            return -1;
+        }
+
         _layers[textureId] = layer;
         Upload(layer, Reduce(pixels, width, height));
         return layer;
@@ -158,6 +177,22 @@ internal sealed unsafe class VulkanOpacityMasks : IDisposable
     /// <param name="layer">Receives the layer.</param>
     /// <returns><see langword="true"/> when the texture has a mask.</returns>
     public bool TryGetLayer(uint textureId, out int layer) => _layers.TryGetValue(textureId, out layer);
+
+    /// <summary>Gives a destroyed texture's layer back to the array.</summary>
+    /// <param name="textureId">The texture's identifier.</param>
+    /// <remarks>
+    /// The layer is left as it is rather than cleared: the next registration overwrites it outright, as the
+    /// traced albedo does with its own.
+    /// </remarks>
+    public void Release(uint textureId)
+    {
+        if (_disposed || !_layers.Remove(textureId, out int layer))
+        {
+            return;
+        }
+
+        _free.Push(layer);
+    }
 
     /// <inheritdoc/>
     public void Dispose()
@@ -259,7 +294,7 @@ internal sealed unsafe class VulkanOpacityMasks : IDisposable
     /// <param name="mask">The mask, <see cref="Resolution"/> squared bytes.</param>
     private void Upload(int layer, byte[] mask)
     {
-        using VulkanBuffer staging = new(
+        VulkanBuffer staging = new(
             _vk,
             _owner,
             _allocator,
@@ -268,49 +303,56 @@ internal sealed unsafe class VulkanOpacityMasks : IDisposable
             MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
         staging.Write<byte>(mask);
 
+        // Batched rather than submitted and waited on, one per texture, which made a level's worth of
+        // them a round trip each in the frame that created them. The batch runs before anything submitted
+        // after it and frees the staging when it has; the barriers below are every stage rather than
+        // compute alone, because without the wait they are all that orders this against its readers.
         Image image = Image;
         Buffer stagingHandle = staging.Handle;
-        _commands.SingleTime(cmd =>
-        {
-            Transition(
-                cmd,
-                image,
-                Resting,
-                ImageLayout.TransferDstOptimal,
-                PipelineStageFlags.ComputeShaderBit,
-                PipelineStageFlags.TransferBit,
-                AccessFlags.ShaderReadBit,
-                AccessFlags.TransferWriteBit,
-                (uint)layer,
-                1);
-
-            BufferImageCopy region = new()
+        _commands.SingleTimeBatched(
+            cmd =>
             {
-                BufferOffset = 0,
-                ImageSubresource = new ImageSubresourceLayers
+                Transition(
+                    cmd,
+                    image,
+                    Resting,
+                    ImageLayout.TransferDstOptimal,
+                    PipelineStageFlags.AllCommandsBit,
+                    PipelineStageFlags.TransferBit,
+                    AccessFlags.ShaderReadBit,
+                    AccessFlags.TransferWriteBit,
+                    (uint)layer,
+                    1);
+
+                BufferImageCopy region = new()
                 {
-                    AspectMask = ImageAspectFlags.ColorBit,
-                    MipLevel = 0,
-                    BaseArrayLayer = (uint)layer,
-                    LayerCount = 1,
-                },
-                ImageExtent = new Extent3D(Resolution, Resolution, 1),
-            };
+                    BufferOffset = 0,
+                    ImageSubresource = new ImageSubresourceLayers
+                    {
+                        AspectMask = ImageAspectFlags.ColorBit,
+                        MipLevel = 0,
+                        BaseArrayLayer = (uint)layer,
+                        LayerCount = 1,
+                    },
+                    ImageExtent = new Extent3D(Resolution, Resolution, 1),
+                };
 
-            _vk.CmdCopyBufferToImage(cmd, stagingHandle, image, ImageLayout.TransferDstOptimal, 1, &region);
+                _vk.CmdCopyBufferToImage(cmd, stagingHandle, image, ImageLayout.TransferDstOptimal, 1, &region);
 
-            Transition(
-                cmd,
-                image,
-                ImageLayout.TransferDstOptimal,
-                Resting,
-                PipelineStageFlags.TransferBit,
-                PipelineStageFlags.ComputeShaderBit,
-                AccessFlags.TransferWriteBit,
-                AccessFlags.ShaderReadBit,
-                (uint)layer,
-                1);
-        });
+                Transition(
+                    cmd,
+                    image,
+                    ImageLayout.TransferDstOptimal,
+                    Resting,
+                    PipelineStageFlags.TransferBit,
+                    PipelineStageFlags.AllCommandsBit,
+                    AccessFlags.TransferWriteBit,
+                    AccessFlags.ShaderReadBit,
+                    (uint)layer,
+                    1);
+            },
+            staging,
+            (ulong)mask.Length);
     }
 
     private void Transition(

@@ -39,6 +39,14 @@ public static class MipChainBuilder
     // of pixels is a few million of them, and the input is a byte, so there are only 256 answers.
     private static readonly float[] SrgbToLinear = BuildSrgbToLinear();
 
+    // The way back, without a pow per channel per texel -- which was most of what building a chain cost,
+    // three pows a texel. EncodeThresholds[k] is the smallest linear value that encodes to byte k or above,
+    // found by bisecting the very function the pow path computes, so a lookup returns the byte that path
+    // would have returned, bit for bit. The coarse table only picks where to start looking.
+    private const int CoarseSteps = 4096;
+    private static readonly float[] EncodeThresholds = BuildEncodeThresholds();
+    private static readonly byte[] CoarseEncode = BuildCoarseEncode();
+
     /// <summary>Gets how many levels a texture of this size has, down to a single texel.</summary>
     /// <param name="width">The width in pixels.</param>
     /// <param name="height">The height in pixels.</param>
@@ -79,6 +87,41 @@ public static class MipChainBuilder
                 nameof(levelZero));
         }
 
+        Bgra32[] pixels = new Bgra32[ChainLength(width, height)];
+        levelZero[..pixelCount].CopyTo(pixels);
+        return (pixels, BuildInPlace(pixels, width, height));
+    }
+
+    /// <summary>Gets how many pixels a complete chain for this size holds, every level included.</summary>
+    /// <param name="width">The width of level zero in pixels.</param>
+    /// <param name="height">The height of level zero in pixels.</param>
+    /// <returns>The pixel count of the whole chain.</returns>
+    public static int ChainLength(int width, int height)
+    {
+        int total = 0;
+        int levels = LevelCount(width, height);
+        for (int level = 0; level < levels; level++)
+        {
+            total += Math.Max(1, width >> level) * Math.Max(1, height >> level);
+        }
+
+        return total;
+    }
+
+    /// <summary>Builds every level below level zero in place, in a buffer that already starts with level zero.</summary>
+    /// <param name="chain">At least <see cref="ChainLength"/> pixels, level zero first.</param>
+    /// <param name="width">The width of level zero in pixels.</param>
+    /// <param name="height">The height of level zero in pixels.</param>
+    /// <returns>The offset of each level.</returns>
+    /// <remarks>
+    /// The same chain <see cref="Build"/> returns, without the copy of level zero it makes: a texture
+    /// decoded straight into a chain-sized buffer has its chain built where it lies.
+    /// </remarks>
+    public static int[] BuildInPlace(Span<Bgra32> chain, int width, int height)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+
         int levels = LevelCount(width, height);
 
         int total = 0;
@@ -89,8 +132,13 @@ public static class MipChainBuilder
             total += Math.Max(1, width >> level) * Math.Max(1, height >> level);
         }
 
-        Bgra32[] pixels = new Bgra32[total];
-        levelZero[..pixelCount].CopyTo(pixels);
+        if (chain.Length < total)
+        {
+            throw new ArgumentException(
+                $"A {width}x{height} chain needs {total} pixels, the buffer holds {chain.Length}.", nameof(chain));
+        }
+
+        Span<Bgra32> pixels = chain;
 
         for (int level = 1; level < levels; level++)
         {
@@ -99,13 +147,13 @@ public static class MipChainBuilder
             int targetWidth = Math.Max(1, width >> level);
             int targetHeight = Math.Max(1, height >> level);
 
-            ReadOnlySpan<Bgra32> source = pixels.AsSpan(offsets[level - 1], sourceWidth * sourceHeight);
-            Span<Bgra32> target = pixels.AsSpan(offsets[level], targetWidth * targetHeight);
+            ReadOnlySpan<Bgra32> source = pixels.Slice(offsets[level - 1], sourceWidth * sourceHeight);
+            Span<Bgra32> target = pixels.Slice(offsets[level], targetWidth * targetHeight);
 
             Halve(source, sourceWidth, sourceHeight, target, targetWidth, targetHeight);
         }
 
-        return (pixels, offsets);
+        return offsets;
     }
 
     private static void Halve(
@@ -194,12 +242,80 @@ public static class MipChainBuilder
         return table;
     }
 
-    private static byte LinearToSrgbByte(float linear)
+    /// <summary>Encodes a linear value to its display byte, through the tables.</summary>
+    /// <remarks>Identical to <see cref="EncodeExactly"/> for every input; see <see cref="EncodeThresholds"/>.</remarks>
+    internal static byte LinearToSrgbByte(float linear)
+    {
+        if (!(linear > 0f))
+        {
+            return EncodeExactly(linear);
+        }
+
+        int start = linear >= 1f ? CoarseSteps : (int)(linear * CoarseSteps);
+        int k = CoarseEncode[start];
+
+        // A step or two either way at most: the coarse table is only a starting point.
+        while (k < 255 && linear >= EncodeThresholds[k + 1])
+        {
+            k++;
+        }
+
+        while (k > 0 && linear < EncodeThresholds[k])
+        {
+            k--;
+        }
+
+        return (byte)k;
+    }
+
+    /// <summary>Encodes a linear value to its display byte the slow way, with a pow.</summary>
+    internal static byte EncodeExactly(float linear)
     {
         float encoded = linear <= 0.0031308f
             ? linear * 12.92f
             : (1.055f * MathF.Pow(linear, 1f / 2.4f)) - 0.055f;
 
         return (byte)Math.Clamp((int)MathF.Round(encoded * 255f), 0, 255);
+    }
+
+    private static float[] BuildEncodeThresholds()
+    {
+        // Bisected over the bit patterns of the positive floats, which order the same way as the values,
+        // so each threshold is exact rather than merely close. The encoding only ever rises with its input.
+        float[] thresholds = new float[256];
+        thresholds[0] = float.NegativeInfinity;
+
+        for (int k = 1; k < 256; k++)
+        {
+            int low = 0;
+            int high = BitConverter.SingleToInt32Bits(2f);
+            while (low < high)
+            {
+                int middle = low + ((high - low) / 2);
+                if (EncodeExactly(BitConverter.Int32BitsToSingle(middle)) >= k)
+                {
+                    high = middle;
+                }
+                else
+                {
+                    low = middle + 1;
+                }
+            }
+
+            thresholds[k] = BitConverter.Int32BitsToSingle(low);
+        }
+
+        return thresholds;
+    }
+
+    private static byte[] BuildCoarseEncode()
+    {
+        byte[] coarse = new byte[CoarseSteps + 1];
+        for (int i = 0; i <= CoarseSteps; i++)
+        {
+            coarse[i] = EncodeExactly(i / (float)CoarseSteps);
+        }
+
+        return coarse;
     }
 }

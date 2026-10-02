@@ -193,6 +193,8 @@ internal sealed class VulkanRhiRayTracing : IRhiRayTracing, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _albedo.Release(textureId);
+        _masks.Release(textureId);
+        _cutout.Remove(textureId);
     }
 
     /// <inheritdoc/>

@@ -40,6 +40,9 @@
          stb_truetype, so it adds no native dependency and runs the same on every platform the port
          targets. -->
     <PackageVersion Include="StbTrueTypeSharp" Version="1.26.12" />
+    <!-- BC1/BC7 block compression: encoded by the pack builder, decoded at run time only on an adapter
+         that cannot sample block-compressed textures. MIT. -->
+    <PackageVersion Include="BCnEncoder.Net" Version="2.3.0" />
 
     <!-- The launcher's renderer for the shared interface (OpenIGI.UI.Skia). Skia draws the same widgets
          the game draws through its sprite batch, with real vector text from the same TrueType files. The

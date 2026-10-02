@@ -35,16 +35,27 @@ internal sealed partial class GameHost
     /// this level. Holding the preview keeps both alive; dropping it drops the whole context.
     /// </para>
     /// <para>
-    /// A backdrop is looked at, never played, so nothing a played mission needs is set up: no soldiers, no
-    /// nav graphs, no player, no weapons, no HUD, and no surface cache or distance fields — those are a
-    /// render pass and an upload that would land as a hitch while the player is still browsing. Pressing
-    /// Play runs the real <c>StartMission</c>, which builds all of it.
+    /// A backdrop is looked at, never played, so nothing a played mission needs is set up: no nav graphs,
+    /// no player, no weapons, no HUD. Drawn lite (<see cref="BackdropLite"/>, the default) it has no
+    /// soldiers, surface cache or distance field either -- a render pass ending in a device wait and an
+    /// upload that landed as the swap's stall -- and Play builds them behind the going-in sequence.
     /// </para>
     /// </remarks>
     private void AdoptPreview(MissionPreview preview)
     {
         ArgumentNullException.ThrowIfNull(preview);
         var handover = System.Diagnostics.Stopwatch.StartNew();
+
+        // Where the handover's time went, stage by stage, for the line logged at the end. The total alone
+        // said a swap was slow without saying what to do about it.
+        var stages = new System.Text.StringBuilder();
+        long lapStart = 0;
+        void Lap(string stage)
+        {
+            long now = handover.ElapsedMilliseconds;
+            stages.Append(System.Globalization.CultureInfo.InvariantCulture, $"{(stages.Length == 0 ? "" : ", ")}{stage} {now - lapStart}");
+            lapStart = now;
+        }
 
         _scene = preview.Scene;
         _worldSolids = preview.Solids;
@@ -89,6 +100,10 @@ internal sealed partial class GameHost
         // as long as they live; letting it go would pull the packs out from under them.
         _backdrop = preview;
 
+        // The level is a backdrop from here, so the lite profile decides what below is built at all.
+        UpdateBackdropProfile();
+        Lap("world");
+
         // Both factories, and in the mission path's own order. A backdrop that asked only for the second
         // gave a title whose ground it does not describe no ground at all -- and because a promoted
         // backdrop IS the mission, keeping its terrain rather than rebuilding it, the mission then had
@@ -103,6 +118,10 @@ internal sealed partial class GameHost
                 _device, surface, _logger, _detailMaps, preview.GroundDetail))
             : null;
 
+        // Uploaded with the tiles; the preview held a full-size map per tile for as long as it lived.
+        _backdrop = preview with { GroundDetail = [] };
+        Lap("terrain");
+
         // The mission's soldiers, built while the player is still reading the briefing. They are not drawn
         // -- a backdrop shows a place, not the guards standing in it -- but they ARE given to the shadow
         // pass, and that is the point.
@@ -115,13 +134,24 @@ internal sealed partial class GameHost
         // Nothing about loading them earlier avoids that; only DRAWING them earlier does. The shadow map
         // is an offscreen target that is overwritten every frame, so a cast nobody can see pays the cost
         // where nobody can feel it.
+        //
+        // Not for a lite backdrop, which draws no shadow to give them to: there they were only a level's
+        // worth of soldier meshes and textures decoded and uploaded on this thread, every swap. Play then
+        // loads them the way a cold start does, and the pipeline's first sight of a skinned mesh falls
+        // under the warm-up's hold instead.
         _backdropSoldiers?.Dispose();
-        _backdropSoldiers = new SoldierRenderer(_device, preview.Resources, _logger, _magic) { DetailMaps = _detailMaps };
-        _backdropSoldiers.Load(
-            preview.Mission,
-            preview.LevelRoot,
-            preview.Mission.Terrain is { IsUsable: true } standing ? standing : null,
-            preview.Solids.Caster());
+        _backdropSoldiers = null;
+        if (!BackdropLite)
+        {
+            _backdropSoldiers = new SoldierRenderer(_device, preview.Resources, _logger, _magic) { DetailMaps = _detailMaps };
+            _backdropSoldiers.Load(
+                preview.Mission,
+                preview.LevelRoot,
+                preview.Mission.Terrain is { IsUsable: true } standing ? standing : null,
+                preview.Solids.Caster());
+        }
+
+        Lap("soldiers");
 
         // And the level's own residency, walked a little at a time on the frames that follow. The orbit
         // resolves only what it happens to look at, so without this the frame that moves the camera to the
@@ -142,6 +172,7 @@ internal sealed partial class GameHost
                 _device, preview.LevelRoot, preview.FileSystem, preview.Resources, FarPlane, _logger));
         _globalLight = GlobalLightSettings.Read(preview.LevelRoot);
         _shadowPass ??= new ShadowCasterPass(_device);
+        Lap("sky");
 
         // The level's air and its object shading, which the backdrop draws under and the promoted mission
         // keeps. BringMissionUp reads them only on its cold path; a level that comes up this way must
@@ -173,6 +204,7 @@ internal sealed partial class GameHost
         // backdrop, and the trace belongs to the mission's real load, which caches it for good.
         _probeField = preview.ProbeField;
         _device.SetIrradianceVolume(_probeField);
+        Lap("constants");
 
         // The outgoing level's surface cache and distance fields go first: the cards were captured from
         // the level that has just been replaced, and the clipmaps were traced against it.
@@ -208,10 +240,20 @@ internal sealed partial class GameHost
                 _sdfBake = baking;
             }
         }
+        else
+        {
+            // Started before the lite profile was in force -- the very first backdrop is built before
+            // there is one -- and wanted by nobody now. Play bakes its own if it needs one.
+            preview.PendingDistanceField?.Cancel();
+        }
+
+        Lap("field");
 
         // The capture is a render pass over every distinct model and has to run here. It reads the
-        // lamps' emission off the geometry, so it comes after them.
+        // lamps' emission off the geometry, so it comes after them. A lite backdrop wants no cache, and
+        // this returns at once.
         EnsureSurfaceCache();
+        Lap("cards");
 
         // A title may decline a sky entirely -- the factory returns null when the level declares
         // none -- so the clear colour keeps whatever it had rather than reading off nothing.
@@ -229,13 +271,14 @@ internal sealed partial class GameHost
         _camera = FreeCameraFactory.Create(
             _scene, _options.CameraYaw, _options.CameraPitch, _options.CameraHeight);
         ApplyShowcaseCamera(preview.MissionId, preview.PointsOfInterest);
+        Lap("grade");
 
         // The one number that says whether this stayed off the frame: everything else was built on a
         // worker, so this is the whole of what a backdrop swap costs the render thread.
         _logger.Information(
             "Preview",
             FormattableString.Invariant(
-                $"The backdrop is now mission {preview.MissionId}; the handover took {handover.ElapsedMilliseconds} ms, {SinceProcessStart():0} ms after the process started."));
+                $"The backdrop is now mission {preview.MissionId}; the handover took {handover.ElapsedMilliseconds} ms ({stages} ms), {SinceProcessStart():0} ms after the process started."));
     }
 
     /// <summary>Builds every mission and writes out the places its menu backdrop should circle.</summary>

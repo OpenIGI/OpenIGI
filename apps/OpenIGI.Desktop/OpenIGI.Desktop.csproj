@@ -6,7 +6,16 @@
     <!-- The Vulkan surface bridge reads the window's required-extension list and creates the surface
          through raw handles, both of which are pointer operations. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- Compact the large-object heap when it fragments. A level's pictures pass through it as
+         multi-megabyte arrays on every load, and the workstation collector otherwise leaves the holes they
+         leave behind as memory the process keeps. -->
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
   </PropertyGroup>
+
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="5" />
+  </ItemGroup>
 
   <PropertyGroup>
     <!-- Whether this build produces something that will run on macOS: a macOS runtime identifier, or no

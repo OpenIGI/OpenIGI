@@ -61,6 +61,11 @@ public sealed class SettingsScreen : ShellScreen
     // its own value, so nothing else could carry focus from one column to another. Parallel to _tabPanels.
     private readonly List<List<Control>> _tabRows = [];
 
+    // What ties this page's rows to the variables and the preset registry they show. Those live for the
+    // process, so a row they still pointed at kept the whole page alive: every build of the page -- each
+    // visit, each resize -- used to stay subscribed for good. Disposed on every rebuild and on leaving.
+    private readonly List<IDisposable> _bindings = [];
+
     private Label? _help;
     private int _columns = MaxColumns;
     private int _activeTab;
@@ -86,6 +91,7 @@ public sealed class SettingsScreen : ShellScreen
     /// <inheritdoc/>
     protected override UiElement? BuildContent(LayoutContext context)
     {
+        ReleaseBindings();
         _boundCvars.Clear();
         _tabPanels.Clear();
         _tabRows.Clear();
@@ -273,6 +279,18 @@ public sealed class SettingsScreen : ShellScreen
         // persist engine CVars, so the profile must be saved here too, or every remap is lost (issue #230).
         Context.Host.SaveSettings();
         Context.Host.SaveProfiles();
+        ReleaseBindings();
+    }
+
+    /// <summary>Unhooks every row from the variables it shows.</summary>
+    private void ReleaseBindings()
+    {
+        foreach (IDisposable binding in _bindings)
+        {
+            binding.Dispose();
+        }
+
+        _bindings.Clear();
     }
 
     /// <inheritdoc/>
@@ -351,7 +369,7 @@ public sealed class SettingsScreen : ShellScreen
             var rows = new List<Control>();
             foreach (QualityGroup group in section.Groups)
             {
-                if (QualityBinding.CreateControl(theme, Context.Cvars, group) is not { } control)
+                if (QualityBinding.CreateControl(theme, Context.Cvars, group, _bindings) is not { } control)
                 {
                     continue;
                 }
@@ -415,7 +433,7 @@ public sealed class SettingsScreen : ShellScreen
                 continue;
             }
 
-            if (CVarBinding.CreateControl(theme, cvar, setting.Caption) is not { } control)
+            if (CVarBinding.CreateControl(theme, cvar, setting.Caption, _bindings) is not { } control)
             {
                 continue;
             }
@@ -478,7 +496,7 @@ public sealed class SettingsScreen : ShellScreen
         foreach (string name in names)
         {
             if (Context.Cvars.TryGet(name, out ICVar? cvar) && cvar is not null && CVarBinding.CanBind(cvar)
-                && CVarBinding.CreateControl(theme, cvar) is { } control)
+                && CVarBinding.CreateControl(theme, cvar, lifetime: _bindings) is { } control)
             {
                 // The variable already carries the sentence that explains it — the same one the console
                 // prints — so the tooltip is the help text the CVar was declared with.
@@ -513,7 +531,7 @@ public sealed class SettingsScreen : ShellScreen
             }
         };
 
-        Context.Presets.PresetChanged += (_, preset) =>
+        EventHandler<GraphicsPreset> presetChanged = (_, preset) =>
         {
             int idx = Array.IndexOf(presetNames, preset.ToString());
             if (idx >= 0)
@@ -521,6 +539,9 @@ public sealed class SettingsScreen : ShellScreen
                 presets.SelectedIndex = idx;
             }
         };
+
+        Context.Presets.PresetChanged += presetChanged;
+        _bindings.Add(new Unsubscribe(() => Context.Presets.PresetChanged -= presetChanged));
 
         return presets;
     }
@@ -763,6 +784,18 @@ public sealed class SettingsScreen : ShellScreen
     private sealed record SettingsGroup(string Title, List<Control> Rows)
     {
         public static SettingsGroup Of(string title, IEnumerable<Control> rows) => new(title, [.. rows]);
+    }
+
+    // Runs its action once, on the first dispose.
+    private sealed class Unsubscribe(Action action) : IDisposable
+    {
+        private Action? _action = action;
+
+        public void Dispose()
+        {
+            _action?.Invoke();
+            _action = null;
+        }
     }
 }
 

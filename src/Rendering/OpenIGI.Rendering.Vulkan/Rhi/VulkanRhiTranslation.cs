@@ -49,6 +49,10 @@ public static class VulkanRhiTranslation
         RhiTextureFormat.Depth32Float => Format.D32Sfloat,
         RhiTextureFormat.Depth24PlusStencil8 => Format.D24UnormS8Uint,
         RhiTextureFormat.Depth16Unorm => Format.D16Unorm,
+        RhiTextureFormat.Bc1RgbaUnorm => Format.BC1RgbaUnormBlock,
+        RhiTextureFormat.Bc1RgbaUnormSrgb => Format.BC1RgbaSrgbBlock,
+        RhiTextureFormat.Bc7RgbaUnorm => Format.BC7UnormBlock,
+        RhiTextureFormat.Bc7RgbaUnormSrgb => Format.BC7SrgbBlock,
         _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Not a texture format."),
     };
 
@@ -79,6 +83,10 @@ public static class VulkanRhiTranslation
         Format.D32Sfloat => RhiTextureFormat.Depth32Float,
         Format.D24UnormS8Uint => RhiTextureFormat.Depth24PlusStencil8,
         Format.D16Unorm => RhiTextureFormat.Depth16Unorm,
+        Format.BC1RgbaUnormBlock => RhiTextureFormat.Bc1RgbaUnorm,
+        Format.BC1RgbaSrgbBlock => RhiTextureFormat.Bc1RgbaUnormSrgb,
+        Format.BC7UnormBlock => RhiTextureFormat.Bc7RgbaUnorm,
+        Format.BC7SrgbBlock => RhiTextureFormat.Bc7RgbaUnormSrgb,
         _ => RhiTextureFormat.Undefined,
     };
 

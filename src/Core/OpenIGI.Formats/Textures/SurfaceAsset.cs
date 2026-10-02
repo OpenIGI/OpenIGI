@@ -25,7 +25,16 @@ namespace OpenIGI.Formats.Textures;
 /// entirely of them behaves exactly as it did before any of this existed.
 /// </para>
 /// </remarks>
-public readonly record struct SurfaceAsset(TextureImage Diffuse, TextureImage? Detail);
+/// <param name="CompressedDiffuse">
+/// The picture as a stored block-compressed chain, when the asset is one and the caller asked for it;
+/// <see cref="Diffuse"/> is then only its small proxy.
+/// </param>
+/// <param name="CompressedDetail">The surface map as a stored block-compressed chain, or <see langword="null"/>.</param>
+public readonly record struct SurfaceAsset(
+    TextureImage Diffuse,
+    TextureImage? Detail,
+    CompressedTextureImage? CompressedDiffuse = null,
+    CompressedTextureImage? CompressedDetail = null);
 
 /// <summary>Reads whichever container form a surface arrived in.</summary>
 /// <remarks>
@@ -68,8 +77,12 @@ public static class SurfaceAssetReader
         // surface map. Its map is in a slot of its own and says so.
         if (PackPicture.Is(data))
         {
-            PackPicture.Frame frame = PackPicture.Read(data.ToArray()).Frames[0];
-            return new SurfaceAsset(frame.Image, frame.Surface);
+            // Every pixel is wanted here, so a block-compressed asset is expanded. A caller that can
+            // upload the chain as it is reads through the overload below instead.
+            PackPicture.Frame frame = PackPicture.ReadFirstFrame(data);
+            return frame.Compressed is { } compressed
+                ? new SurfaceAsset(compressed.Decode(), frame.CompressedSurface?.Decode())
+                : new SurfaceAsset(frame.Image, frame.Surface);
         }
 
         if (!TexAtlasFile.IsAtlas(data))
@@ -87,5 +100,27 @@ public static class SurfaceAssetReader
         return new SurfaceAsset(
             atlas.Tiles[0],
             atlas.Tiles.Count > DetailLayer ? atlas.Tiles[DetailLayer] : null);
+    }
+
+    /// <summary>Reads a surface, keeping a block-compressed asset compressed.</summary>
+    /// <param name="data">The file bytes. A compressed chain is a slice of them, so they must outlive the result.</param>
+    /// <param name="palette">The palette to use if the texture is paletted.</param>
+    /// <returns>
+    /// The surface. For a block-compressed asset, <see cref="SurfaceAsset.CompressedDiffuse"/> and
+    /// <see cref="SurfaceAsset.CompressedDetail"/> hold the chains and <see cref="SurfaceAsset.Diffuse"/>
+    /// only the proxy; anything else reads as <see cref="Read(ReadOnlySpan{byte}, ReadOnlySpan{Bgra32})"/> does.
+    /// </returns>
+    /// <exception cref="TextureFormatException">The bytes are not a usable texture.</exception>
+    public static SurfaceAsset ReadKeepingBlocks(ReadOnlyMemory<byte> data, ReadOnlySpan<Bgra32> palette = default)
+    {
+        if (PackPicture.Is(data.Span))
+        {
+            PackPicture.Frame frame = PackPicture.ReadFirstFrame(data);
+            return frame.Compressed is { } compressed
+                ? new SurfaceAsset(frame.Image, null, compressed, frame.CompressedSurface)
+                : new SurfaceAsset(frame.Image, frame.Surface);
+        }
+
+        return Read(data.Span, palette);
     }
 }

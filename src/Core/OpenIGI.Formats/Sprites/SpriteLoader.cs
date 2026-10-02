@@ -95,7 +95,8 @@ public static class SpriteLoader
         {
             PackPicture.Frame frame = content.Frames[i];
 
-            textures[i] = frame.Image;
+            // A block-compressed frame's image is only its proxy; a sprite is drawn from every texel.
+            textures[i] = frame.Compressed?.Decode() ?? frame.Image;
             frames[i] = new SpriteFrame(
                 i,
                 frame.LogicalWidth,

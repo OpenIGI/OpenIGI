@@ -97,6 +97,10 @@ namespace OpenIGI.Host.Menu;
 /// Whether the device can run compute at all. A distance field is only ever traced against on a device
 /// that can, so a backdrop built for one that cannot should not spend a worker baking one.
 /// </param>
+/// <param name="BlockCompressionSupported">
+/// Whether the device samples block-compressed textures, so a texture pack's stored chains are kept as
+/// they are rather than expanded on the worker.
+/// </param>
 /// <param name="TitleId">
 /// Which game the backdrop belongs to, as <c>GameTitle.Id</c> gives it. It names the mission's fixture
 /// file, and the two titles number their missions independently over ranges that overlap.
@@ -117,4 +121,5 @@ public sealed record MissionPreviewContext(
     AssetFormatProfile Formats,
     ITitleWorldBuilder WorldBuilder,
     bool ComputeSupported,
-    string TitleId = EmissiveLightProposer.DefaultTitleId);
+    string TitleId = EmissiveLightProposer.DefaultTitleId,
+    bool BlockCompressionSupported = false);

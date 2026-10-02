@@ -1299,6 +1299,7 @@ public sealed class WorldRenderer : IWorldPresenter
 
         foreach (TextureHandle texture in _textures.Values)
         {
+            DetailMaps?.Release(texture);
             _device.DestroyTexture(texture);
         }
 
@@ -1819,6 +1820,7 @@ public sealed class WorldRenderer : IWorldPresenter
         {
             if (texture.IsValid)
             {
+                DetailMaps?.Release(texture);
                 _device.DestroyTexture(texture);
             }
         }
@@ -1963,14 +1965,18 @@ public sealed class WorldRenderer : IWorldPresenter
         // Decoded on a worker while the backdrop was being built, if one was offered. Everything from
         // the file down to the corrected mip chain has then already happened, and what is left here is
         // the upload -- which is the only part that had to be on this thread in the first place.
-        if (Decoded is not null && Decoded.TryTake(name, out TextureImage? ready, out TextureImage? readyDetail))
+        if (Decoded is not null && Decoded.TryTakeSurface(name, out DecodedSurface? ready))
         {
             TextureHandle prepared = TextureHandle.None;
             if (ready is not null)
             {
                 try
                 {
-                    prepared = CreateFromDecoded(name, ready, readyDetail);
+                    prepared = ready.Compressed is { } blocks
+                        ? CreateFromCompressed(name, blocks, ready.CompressedDetail)
+                        : ready.Image is { } image
+                            ? CreateFromDecoded(name, image, ready.Detail)
+                            : TextureHandle.None;
                 }
                 catch (GraphicsDeviceException ex)
                 {
@@ -1994,7 +2000,18 @@ public sealed class WorldRenderer : IWorldPresenter
                 // never declared, and letting a stray PNG conjure one would let a pack add textures the game
                 // does not ask for. Normally the decode cache has already done this on a worker; this is the
                 // same substitution for whatever the cache never saw, so the two paths cannot disagree.
-                SurfaceAsset asset = SurfaceAssetReader.Read(bytes.Span);
+                SurfaceAsset asset = _device.Capabilities.SupportsBlockCompression
+                    ? SurfaceAssetReader.ReadKeepingBlocks(bytes)
+                    : SurfaceAssetReader.Read(bytes.Span);
+
+                // A texture pack's stored chain: everything below was done to it when the pack was built.
+                if (asset.CompressedDiffuse is { } blocks)
+                {
+                    handle = CreateFromCompressed(name, blocks, asset.CompressedDetail);
+                    _textures[name] = handle;
+                    return handle;
+                }
+
                 TextureImage image = asset.Diffuse;
 
                 // The wire of a fence, the slats of a grille, the leaves of a canopy: everything drawn as
@@ -2051,6 +2068,33 @@ public sealed class WorldRenderer : IWorldPresenter
     /// The half of <see cref="GetTexture"/> that has to be on the render thread, split out so the
     /// decoded-ahead path and the decode-here path upload through exactly the same code.
     /// </remarks>
+    private TextureHandle CreateFromCompressed(string name, CompressedTextureImage image, CompressedTextureImage? detail)
+    {
+        TextureImage? proxy = image.Proxy;
+        TextureHandle handle = _device.CreateCompressedTexture(
+            new TextureDescription(image.Width, image.Height, image.MipLevels, TextureFilter.Linear, TextureAddressMode.Repeat),
+            image.Format,
+            image.Levels.Span,
+            proxy is null ? default : proxy.GetLevel(0),
+            proxy?.Width ?? 0,
+            proxy?.Height ?? 0);
+
+        // The pack's own map when it carries one, compressed beside the picture; otherwise a map cached
+        // by name. Nothing is derived from a compressed picture -- there are no full-size pixels to derive
+        // from, and a pack that wants maps ships them.
+        if (detail is not null)
+        {
+            DetailMaps?.AttachCompressed(
+                handle, detail.Format, detail.Width, detail.Height, detail.MipLevels, detail.Levels.Span);
+        }
+        else
+        {
+            DetailMaps?.Attach(name, handle);
+        }
+
+        return handle;
+    }
+
     private TextureHandle CreateFromDecoded(string name, TextureImage image, TextureImage? detail = null)
     {
         TextureHandle handle = _device.CreateTexture(

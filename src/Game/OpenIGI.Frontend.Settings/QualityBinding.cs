@@ -29,9 +29,14 @@ public static class QualityBinding
     /// <param name="theme">The theme the control draws from.</param>
     /// <param name="cvars">The registry the group's variables live in.</param>
     /// <param name="group">The group to bind.</param>
+    /// <param name="lifetime">
+    /// Receives a handle that unhooks the dropdown from its variables when disposed. Without one the
+    /// variables -- which live for the process -- hold the dropdown, and the page it sits on, for as long.
+    /// </param>
     /// <returns>The bound dropdown, or <see langword="null"/> when a variable the group names is missing.</returns>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    public static Dropdown? CreateControl(UiTheme theme, CVarRegistry cvars, QualityGroup group)
+    public static Dropdown? CreateControl(
+        UiTheme theme, CVarRegistry cvars, QualityGroup group, ICollection<IDisposable>? lifetime = null)
     {
         ArgumentNullException.ThrowIfNull(theme);
         ArgumentNullException.ThrowIfNull(cvars);
@@ -92,10 +97,20 @@ public static class QualityBinding
         // Every variable is watched, because the console can move them one at a time and this row has to
         // notice. A change that lands the set on one of the steps shows that step; anything else shows
         // Custom, which is the honest answer.
+        EventHandler<CVarChangedEventArgs> changed =
+            (_, _) => gate.Run(() => dropdown.SelectedIndex = Detect(cvars, group) ?? customIndex);
         foreach (ICVar cvar in managed)
         {
-            cvar.Changed += (_, _) => gate.Run(() => dropdown.SelectedIndex = Detect(cvars, group) ?? customIndex);
+            cvar.Changed += changed;
         }
+
+        lifetime?.Add(new Unhook(() =>
+        {
+            foreach (ICVar cvar in managed)
+            {
+                cvar.Changed -= changed;
+            }
+        }));
 
         return dropdown;
     }
@@ -132,5 +147,17 @@ public static class QualityBinding
         }
 
         return null;
+    }
+
+    // Runs its action once, on the first dispose.
+    private sealed class Unhook(Action action) : IDisposable
+    {
+        private Action? _action = action;
+
+        public void Dispose()
+        {
+            _action?.Invoke();
+            _action = null;
+        }
     }
 }

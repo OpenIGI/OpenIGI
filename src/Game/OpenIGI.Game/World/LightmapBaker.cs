@@ -465,7 +465,7 @@ public static class LightmapBaker
                 && data.Length >= 4
                 && TexFile.IsTexture(data.Span))
             {
-                colour = MeanColour(TexFile.Load(data.Span));
+                colour = MeanColour(TexFile.LoadLevelZero(data.Span));
             }
         }
         catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException)

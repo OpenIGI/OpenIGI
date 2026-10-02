@@ -50,6 +50,15 @@ public sealed class MaterialDetailPack : IDisposable
     private readonly Dictionary<string, TextureHandle> _maps = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _missing = new(StringComparer.OrdinalIgnoreCase);
 
+    // The names _maps has answered for, readable from the worker Prewarm runs on. _maps itself belongs to
+    // the render thread; without this, Prewarm decoded every map a level shared with an earlier one again,
+    // and nobody ever took those copies.
+    private readonly ConcurrentDictionary<string, byte> _answered = new(StringComparer.OrdinalIgnoreCase);
+
+    // The maps made for one particular diffuse texture rather than for a name -- a ground tile's, or the
+    // one an asset carried as its second layer -- keyed by that texture, so they go when it does.
+    private readonly Dictionary<uint, TextureHandle> _owned = [];
+
     // Names being derived right now, each holding the diffuse textures that asked for one while it was
     // in flight. Every entry is removed by the pump, whether the derivation produced a map or failed.
     private readonly Dictionary<string, List<TextureHandle>> _awaiting = new(StringComparer.OrdinalIgnoreCase);
@@ -112,8 +121,20 @@ public sealed class MaterialDetailPack : IDisposable
     /// </remarks>
     public bool DeriveMissing { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether detail maps are used at all.</summary>
+    /// <remarks>
+    /// Off where the shader multiplies them by nothing (<c>r_material_detail</c> 0). Nothing is then read,
+    /// loaded or derived -- a cache an earlier session filled was otherwise decoded and uploaded on every
+    /// load at presets that never sample it -- and nothing is remembered as missing, so turning detail on
+    /// later finds every map.
+    /// </remarks>
+    public bool Enabled { get; set; } = true;
+
     /// <summary>Gets how many maps have been uploaded.</summary>
-    public int Count => _maps.Count(entry => entry.Value.IsValid);
+    public int Count => _maps.Count(entry => entry.Value.IsValid) + _owned.Count;
+
+    /// <summary>Gets how many decoded maps are waiting to be taken.</summary>
+    public int Unclaimed => _read.Count;
 
     /// <summary>Reads and decodes the maps for a set of textures on the thread pool.</summary>
     /// <param name="names">The texture names, as the pack records them.</param>
@@ -137,12 +158,14 @@ public sealed class MaterialDetailPack : IDisposable
     {
         ArgumentNullException.ThrowIfNull(names);
 
-        if (_disposed || _cacheRoot is null)
+        // Nothing is read while the shader would multiply the maps by nothing: a cache filled by an earlier
+        // session is otherwise decoded and uploaded on every load at presets that never sample it.
+        if (_disposed || _cacheRoot is null || !Enabled)
         {
             return Task.CompletedTask;
         }
 
-        string[] wanted = [.. names];
+        string[] wanted = [.. names.Where(name => !_answered.ContainsKey(name))];
         if (wanted.Length == 0)
         {
             return Task.CompletedTask;
@@ -215,6 +238,13 @@ public sealed class MaterialDetailPack : IDisposable
             return;
         }
 
+        // Off: no map is loaded or derived, and none is remembered as missing either, so turning detail on
+        // later finds them all.
+        if (!Enabled)
+        {
+            return;
+        }
+
         // Already being derived. Wait behind it rather than deriving the same texture twice.
         if (_awaiting.TryGetValue(name, out List<TextureHandle>? queued))
         {
@@ -228,7 +258,7 @@ public sealed class MaterialDetailPack : IDisposable
 
             if (map.IsValid)
             {
-                _maps[name] = map;
+                Remember(name, map);
                 _device.SetTextureDetail(diffuse, map);
                 return;
             }
@@ -242,7 +272,7 @@ public sealed class MaterialDetailPack : IDisposable
             || !IsCacheableName(name))
         {
             // Remembered as having none, so a level full of them costs one failed lookup each.
-            _maps[name] = TextureHandle.None;
+            Remember(name, TextureHandle.None);
             return;
         }
 
@@ -331,14 +361,55 @@ public sealed class MaterialDetailPack : IDisposable
                 },
                 chain);
 
-            // Keyed by the diffuse it was made for, so Dispose releases it. The name is synthetic
-            // because there is none -- that is the whole reason this overload exists.
-            _maps[$"#{diffuse.Id}"] = map;
+            // Owned by the diffuse it was made for: it goes when that texture does (Release), not with
+            // the pack. Kept under a synthetic name in _maps it lasted the session, so every backdrop
+            // swap left a level's ground tiles' maps -- and every map a texture pack carried -- behind.
+            Release(diffuse);
+            _owned[diffuse.Id] = map;
             _device.SetTextureDetail(diffuse, map);
         }
         catch (Exception error) when (error is ArgumentException or GraphicsDeviceException)
         {
             _logger.Warning(LogCategory, $"Could not derive a detail map for {diffuse}: {error.Message}");
+        }
+    }
+
+    /// <summary>Attaches a stored block-compressed detail map to a texture, uploading it as it is.</summary>
+    /// <param name="diffuse">The texture the map belongs to.</param>
+    /// <param name="format">The map's block format.</param>
+    /// <param name="width">The width of its level zero.</param>
+    /// <param name="height">The height of its level zero.</param>
+    /// <param name="mipLevels">How many levels <paramref name="chain"/> holds.</param>
+    /// <param name="chain">Every level's blocks, linear rather than display-encoded, largest first.</param>
+    /// <remarks>
+    /// A texture pack's maps: built and encoded with the pack, so this is an upload and nothing else. Only
+    /// reached on a device that samples block formats -- elsewhere the pack's maps arrive expanded, through
+    /// <see cref="AttachPacked"/>.
+    /// </remarks>
+    public void AttachCompressed(
+        TextureHandle diffuse, BlockFormat format, int width, int height, int mipLevels, ReadOnlySpan<byte> chain)
+    {
+        if (_disposed || !diffuse.IsValid || !Enabled)
+        {
+            return;
+        }
+
+        try
+        {
+            TextureDescription description = new(width, height, mipLevels, TextureFilter.Linear, TextureAddressMode.Repeat)
+            {
+                HoldsData = true,
+            };
+
+            TextureHandle map = _device.CreateCompressedTexture(description, format, chain, default, 0, 0);
+
+            Release(diffuse);
+            _owned[diffuse.Id] = map;
+            _device.SetTextureDetail(diffuse, map);
+        }
+        catch (Exception error) when (error is ArgumentException or GraphicsDeviceException or NotSupportedException)
+        {
+            _logger.Warning(LogCategory, $"Could not attach a compressed detail map to {diffuse}: {error.Message}");
         }
     }
 
@@ -366,7 +437,7 @@ public sealed class MaterialDetailPack : IDisposable
             if (item.Error is not null)
             {
                 _logger.Warning(LogCategory, $"Could not derive a detail map for '{item.Name}': {item.Error}");
-                _maps[item.Name] = TextureHandle.None;
+                Remember(item.Name, TextureHandle.None);
                 continue;
             }
 
@@ -388,7 +459,7 @@ public sealed class MaterialDetailPack : IDisposable
                 _logger.Warning(LogCategory, $"Derived detail map for '{item.Name}' did not upload: {error.Message}");
             }
 
-            _maps[item.Name] = map;
+            Remember(item.Name, map);
             uploaded++;
 
             if (!map.IsValid || waiting is null)
@@ -413,6 +484,27 @@ public sealed class MaterialDetailPack : IDisposable
         _running.RemoveAll(task => task.IsCompleted);
         return uploaded;
     }
+
+    /// <summary>Releases the map made for one diffuse texture, if there is one.</summary>
+    /// <param name="diffuse">The texture being destroyed.</param>
+    /// <remarks>
+    /// Called by whoever destroys a texture it gave <see cref="AttachPacked"/> or <see cref="AttachDerived"/>.
+    /// Maps found by name are shared between levels and stay; these belong to one texture and go with it.
+    /// </remarks>
+    public void Release(TextureHandle diffuse)
+    {
+        if (_owned.Remove(diffuse.Id, out TextureHandle map) && map.IsValid && !_disposed)
+        {
+            _device.DestroyTexture(map);
+        }
+    }
+
+    /// <summary>Drops every map read ahead that nothing took.</summary>
+    /// <remarks>
+    /// For when a level is loaded: what <see cref="Prewarm"/> read and no texture asked for is a name the
+    /// level never drew, and is otherwise held until the pack goes.
+    /// </remarks>
+    public void ReleaseUnclaimed() => _read.Clear();
 
     /// <summary>Waits for every outstanding derivation, then uploads them all.</summary>
     /// <param name="timeout">How long to wait before giving up on the workers.</param>
@@ -468,7 +560,7 @@ public sealed class MaterialDetailPack : IDisposable
         _awaiting.Clear();
         _derived.Clear();
 
-        foreach (TextureHandle map in _maps.Values)
+        foreach (TextureHandle map in _maps.Values.Concat(_owned.Values))
         {
             if (map.IsValid)
             {
@@ -477,6 +569,16 @@ public sealed class MaterialDetailPack : IDisposable
         }
 
         _maps.Clear();
+        _owned.Clear();
+        _answered.Clear();
+        _read.Clear();
+    }
+
+    /// <summary>Records the answer for a name, where <see cref="Prewarm"/> can see it too.</summary>
+    private void Remember(string name, TextureHandle map)
+    {
+        _maps[name] = map;
+        _answered[name] = 0;
     }
 
     /// <summary>Rejects a texture name that cannot be a file name in the cache directory.</summary>

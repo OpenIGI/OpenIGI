@@ -87,8 +87,8 @@ public sealed class ShaderBindings : IDisposable
     /// <remarks>
     /// Two frame slots, with room for a pass whose other contents also alternate. The least recently
     /// used goes first; it is released rather than retired, which is safe on both backends because
-    /// neither frees a group a submitted command still names -- WebGPU counts its references, and this
-    /// Vulkan implementation never hands a descriptor set back at all.
+    /// neither frees a group a submitted command still names -- WebGPU counts its references, and the
+    /// Vulkan implementation hands a descriptor set back only once the submissions that may read it are done.
     /// </remarks>
     private const int RecentCapacity = 8;
 

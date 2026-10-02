@@ -219,12 +219,16 @@ internal sealed partial class GameHost
         //
         // Rebuilt per title rather than once at boot, which is what moving it here buys: the folder is
         // the INSTALLATION's, so a session that switches games has to look in the other one's.
-        _overrides = new ResourceOverrides(
-            _resourceFileSystem.TryGetDevice(LocalFileDevice.DeviceName, out IFileDevice? local)
+        // OPENIGI_OVERRIDES names another folder instead, for trying a pack -- a converted one, a work in
+        // progress -- without putting it in the installation.
+        string? overridesRoot = Environment.GetEnvironmentVariable("OPENIGI_OVERRIDES") is { Length: > 0 } elsewhere
+            ? elsewhere
+            : _resourceFileSystem.TryGetDevice(LocalFileDevice.DeviceName, out IFileDevice? local)
                 && local is LocalFileDevice localDevice
                     ? Path.Combine(localDevice.RootDirectory, ResourceOverrides.DirectoryName)
-                    : null,
-            _logger);
+                    : null;
+
+        _overrides = new ResourceOverrides(overridesRoot, _logger);
 
         _resources.Overrides = _overrides;
 
@@ -384,7 +388,8 @@ internal sealed partial class GameHost
             _titleRuntime.Formats,
             _worldBuilder,
             _device.Capabilities.SupportsCompute,
-            _titleRuntime.Title.Id);
+            _titleRuntime.Title.Id,
+            _device.Capabilities.SupportsBlockCompression);
     }
 
     /// <summary>The campaign as the shell lists it, for the title running now.</summary>

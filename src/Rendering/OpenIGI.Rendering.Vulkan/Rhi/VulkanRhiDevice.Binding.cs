@@ -17,6 +17,14 @@ internal sealed unsafe partial class VulkanRhiDevice
     /// </remarks>
     private const int PoolCapacity = 1024;
 
+    /// <summary>How many wholly empty pools are kept for reuse; the rest are destroyed.</summary>
+    private const int SparePools = 1;
+
+    // Sets whose groups were disposed, each waiting for the submission that may still read it to finish.
+    // A group is disposed the moment its owner lets go -- retired a few frames late by some callers, at
+    // once by others -- so the set is given back only once the timeline says no queued work can reach it.
+    private readonly List<(DescriptorPoolState Pool, DescriptorSet Set, ulong Ticket)> _setFrees = [];
+
     /// <inheritdoc/>
     public IRhiBindGroup CreateBindGroup(RhiBindGroupDescriptor descriptor)
     {
@@ -122,7 +130,7 @@ internal sealed unsafe partial class VulkanRhiDevice
             }
         }
 
-        return new VulkanRhiBindGroup(set, descriptor.Label, textures, buffers);
+        return new VulkanRhiBindGroup(set, descriptor.Label, textures, buffers, this, _pool!);
     }
 
     /// <inheritdoc/>
@@ -270,37 +278,41 @@ internal sealed unsafe partial class VulkanRhiDevice
 
     private DescriptorSet Allocate(DescriptorSetLayout layout)
     {
-        if (_poolRemaining <= 0)
+        // Sets given back since the last allocation go first, so their pools have the room again.
+        ReleaseFinishedSets();
+
+        if (_pool is null || _pool.Live >= PoolCapacity)
         {
-            OpenPool();
+            UsePoolWithRoom();
         }
 
-        Result result = TryAllocate(layout, out DescriptorSet set);
+        Result result = TryAllocate(_pool!, layout, out DescriptorSet set);
 
         // Counting sets is not the whole of what a pool can run out of: each descriptor type has its own
         // budget, and a layout heavy in one type spends it long before the pool's sets are gone. Some
         // drivers overcommit a pool and never say so; MoltenVK's argument buffers hold it to exactly what
-        // it was made with, and answers with either of these. Both mean this pool is done, and the
+        // it was made with, and answers with either of these. A pool whose sets have been given back can
+        // also be too fragmented for a new one. All of them mean this pool is done for now, and the
         // specification's remedy is another pool, so the set is asked for once more from a fresh one.
         if (result is Result.ErrorOutOfPoolMemory or Result.ErrorFragmentedPool)
         {
             OpenPool();
-            result = TryAllocate(layout, out set);
+            result = TryAllocate(_pool!, layout, out set);
         }
 
         VkCheck.Ok(result, "vkAllocateDescriptorSets");
 
-        _poolRemaining--;
+        _pool!.Live++;
         return set;
     }
 
-    private Result TryAllocate(DescriptorSetLayout layout, out DescriptorSet set)
+    private Result TryAllocate(DescriptorPoolState pool, DescriptorSetLayout layout, out DescriptorSet set)
     {
         DescriptorSetLayout local = layout;
         DescriptorSetAllocateInfo info = new()
         {
             SType = StructureType.DescriptorSetAllocateInfo,
-            DescriptorPool = _pool,
+            DescriptorPool = pool.Handle,
             DescriptorSetCount = 1,
             PSetLayouts = &local,
         };
@@ -311,11 +323,104 @@ internal sealed unsafe partial class VulkanRhiDevice
         return result;
     }
 
+    /// <summary>Makes current a pool with room in it -- the emptiest one there is -- or a new one.</summary>
+    private void UsePoolWithRoom()
+    {
+        DescriptorPoolState? roomiest = null;
+        foreach (DescriptorPoolState pool in _pools)
+        {
+            if (pool.Live < PoolCapacity / 2 && (roomiest is null || pool.Live < roomiest.Live))
+            {
+                roomiest = pool;
+            }
+        }
+
+        if (roomiest is null)
+        {
+            OpenPool();
+            return;
+        }
+
+        _pool = roomiest;
+    }
+
     private void OpenPool()
     {
-        _pool = CreatePool();
+        _pool = new DescriptorPoolState(CreatePool());
         _pools.Add(_pool);
-        _poolRemaining = PoolCapacity;
+    }
+
+    /// <summary>Gives a disposed group's set back once nothing queued can read it.</summary>
+    /// <param name="pool">The pool the set came from.</param>
+    /// <param name="set">The set.</param>
+    /// <remarks>
+    /// Sets used to be freed only with the device, so the pools they came from were never given back
+    /// either: every material, every sprite and every rebound pass of every level a session had seen
+    /// stayed allocated, and a menu that swapped its backdrop forty times held forty levels of them.
+    /// </remarks>
+    internal void ReleaseSet(DescriptorPoolState pool, DescriptorSet set)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _setFrees.Add((pool, set, _signalled + 1));
+    }
+
+    /// <summary>Frees every given-back set whose last possible reader has finished, and empty spare pools.</summary>
+    private void ReleaseFinishedSets(bool all = false)
+    {
+        if (_setFrees.Count == 0)
+        {
+            return;
+        }
+
+        ulong completed = all ? ulong.MaxValue : CompletedValue;
+        int kept = 0;
+        for (int i = 0; i < _setFrees.Count; i++)
+        {
+            (DescriptorPoolState pool, DescriptorSet set, ulong ticket) = _setFrees[i];
+            if (ticket > completed || !HasTimeline && !all)
+            {
+                _setFrees[kept++] = _setFrees[i];
+                continue;
+            }
+
+            if (!pool.Destroyed)
+            {
+                DescriptorSet local = set;
+                _vk.FreeDescriptorSets(_device.Device, pool.Handle, 1, &local);
+                pool.Live--;
+            }
+        }
+
+        _setFrees.RemoveRange(kept, _setFrees.Count - kept);
+        DestroySparePools();
+    }
+
+    /// <summary>Destroys wholly empty pools beyond a spare, so a level's worth of sets gives its pools back.</summary>
+    private void DestroySparePools()
+    {
+        int spare = 0;
+        for (int i = _pools.Count - 1; i >= 0; i--)
+        {
+            DescriptorPoolState pool = _pools[i];
+            if (pool.Live > 0)
+            {
+                continue;
+            }
+
+            if (spare < SparePools || ReferenceEquals(pool, _pool))
+            {
+                spare++;
+                continue;
+            }
+
+            _vk.DestroyDescriptorPool(_device.Device, pool.Handle, null);
+            pool.Destroyed = true;
+            _pools.RemoveAt(i);
+        }
     }
 
     private DescriptorPool CreatePool()
@@ -341,6 +446,9 @@ internal sealed unsafe partial class VulkanRhiDevice
             DescriptorPoolCreateInfo info = new()
             {
                 SType = StructureType.DescriptorPoolCreateInfo,
+
+                // So a disposed group can give its set back, and an emptied pool can be destroyed.
+                Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit,
                 PoolSizeCount = (uint)sizes.Length,
                 PPoolSizes = first,
                 MaxSets = PoolCapacity,
@@ -359,7 +467,7 @@ internal sealed unsafe partial class VulkanRhiDevice
         Float32Filterable: true,
         DepthClamp: true,
         IndirectFirstInstance: true,
-        TextureCompressionBc: true);
+        TextureCompressionBc: device.Capabilities.TextureCompressionBc);
 
     /// <summary>The sizes this device will not exceed.</summary>
     /// <remarks>

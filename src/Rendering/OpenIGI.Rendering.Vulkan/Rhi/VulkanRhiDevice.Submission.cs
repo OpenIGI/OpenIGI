@@ -34,6 +34,9 @@ internal sealed unsafe partial class VulkanRhiDevice
 
     private readonly List<VulkanBuffer> _freeStaging = [];
 
+    /// <summary>How many pooled chunks are kept for reuse; the rest are freed as they come back.</summary>
+    private const int MaxFreeStagingChunks = 8;
+
     // The upload being recorded, and the chunks it copies out of.
     private CommandBuffer _upload;
     private readonly List<VulkanBuffer> _uploadChunks = [];
@@ -42,6 +45,19 @@ internal sealed unsafe partial class VulkanRhiDevice
 
     // The buffers the upload being recorded has already copied into.
     private readonly HashSet<ulong> _uploadTargets = [];
+
+    // Every buffer and image the upload being recorded writes, and what was disposed while it did. A
+    // resource destroyed under a recorded, unsubmitted copy invalidates the command buffer -- the upload
+    // then failed validation at its barrier and its end, and on a real driver could fault -- so its
+    // destruction rides with the upload and happens once that submission has finished.
+    private readonly HashSet<ulong> _uploadBuffers = [];
+    private readonly HashSet<ulong> _uploadImages = [];
+    private readonly List<IDisposable> _uploadDeferred = [];
+
+    // What a frame's submission holds besides its command buffers and staging: destructions deferred from
+    // its uploads, run when its slot comes round. Parallel to _slotStaging.
+    private readonly List<IDisposable> _pendingDeferred = [];
+    private List<IDisposable>[] _slotDeferred = [];
 
     // What the frame being recorded will submit, beyond the command buffers in _pending.
     private readonly List<VulkanBuffer> _pendingStaging = [];
@@ -132,18 +148,8 @@ internal sealed unsafe partial class VulkanRhiDevice
 
         VulkanBuffer chunk = StagingFor(size);
         chunk.WriteAt(_uploadChunkUsed, bytes);
-
-        if (_upload.Handle == 0)
-        {
-            _upload = _commands.AllocatePrimary(1)[0];
-            CommandBufferBeginInfo begin = new()
-            {
-                SType = StructureType.CommandBufferBeginInfo,
-                Flags = CommandBufferUsageFlags.OneTimeSubmitBit,
-            };
-
-            VkCheck.Ok(_vk.BeginCommandBuffer(_upload, &begin), "vkBeginCommandBuffer");
-        }
+        OpenUpload();
+        _uploadBuffers.Add(destination.Handle);
 
         // Copies in one command buffer are not ordered by where they were recorded, and a buffer written
         // twice before a submission -- the distance field's cell lists, rebuilt for two levels in one
@@ -183,9 +189,124 @@ internal sealed unsafe partial class VulkanRhiDevice
         _uploadChunkUsed = (_uploadChunkUsed + size + 15UL) & ~15UL;
         _uploadBytes += size;
 
-        if (!_inFrame && _uploadBytes >= MaxPendingUploadBytes)
+        // Inside a frame as well as outside one, as texture writes are: a level's meshes written while a
+        // frame records would otherwise all sit in staging until that frame is submitted.
+        if (_uploadBytes >= MaxPendingUploadBytes)
         {
-            FlushUploads();
+            SubmitPendingUploads();
+        }
+    }
+
+    /// <summary>Queues a write to one mip of a texture, ahead of the next submission.</summary>
+    /// <param name="texture">The texture.</param>
+    /// <param name="bytes">The texels, rows <paramref name="bytesPerRow"/> apart.</param>
+    /// <param name="copy">The copy's destination; its buffer offset and row length are filled in here.</param>
+    /// <param name="bytesPerRow">The distance between rows in <paramref name="bytes"/>.</param>
+    /// <remarks>
+    /// The texture's counterpart of <see cref="QueueUpload"/>, and the same contract as WebGPU's
+    /// <c>queue.writeTexture</c>: it lands before any work submitted after it, and nobody waits for it. It
+    /// was a submission of its own, waited on, per MIP -- with the transition every new texture made, a
+    /// level's few hundred textures cost a couple of thousand round trips to the GPU in the one frame that
+    /// adopted them, and that frame was the menu's backdrop-swap stall.
+    /// </remarks>
+    private void QueueTextureUpload(VulkanRhiTexture texture, ReadOnlySpan<byte> bytes, BufferImageCopy copy, int bytesPerRow)
+    {
+        ulong size = (ulong)bytes.Length;
+        if (size == 0)
+        {
+            return;
+        }
+
+        VulkanBuffer chunk = StagingFor(size);
+        chunk.WriteAt(_uploadChunkUsed, bytes);
+        OpenUpload();
+        _uploadImages.Add(texture.Image.Handle);
+
+        int texelBytes = texture.Format.BytesPerTexel();
+        copy.BufferOffset = _uploadChunkUsed;
+
+        // Vulkan wants the row length in TEXELS where everything else counts bytes, and a row that is not
+        // padded is stated as zero rather than as its own width.
+        copy.BufferRowLength = texelBytes > 0 && bytesPerRow != copy.ImageExtent.Width * texelBytes
+            ? (uint)(bytesPerRow / texelBytes)
+            : 0;
+        copy.BufferImageHeight = 0;
+
+        // The transitions are full barriers, so they also order this copy after any earlier one into the
+        // same texture -- a mip chain is several writes into one image.
+        Transition(_upload, texture, ImageLayout.TransferDstOptimal);
+        _vk.CmdCopyBufferToImage(_upload, chunk.Handle, texture.Image, ImageLayout.TransferDstOptimal, 1, &copy);
+        Transition(_upload, texture, ImageLayout.General);
+
+        // Sixteen-aligned, which covers every texel size a copy's source offset has to be a multiple of.
+        _uploadChunkUsed = (_uploadChunkUsed + size + 15UL) & ~15UL;
+        _uploadBytes += size;
+
+        // Sent on its own once enough has piled up, inside a frame as well: a level adopted mid-frame is a
+        // couple of hundred megabytes of texels, and held for the frame's submission all of it would sit in
+        // staging at once. Sending early changes nothing a reader can see -- it still lands ahead of the
+        // frame, and of any later write.
+        if (_uploadBytes >= MaxPendingUploadBytes)
+        {
+            SubmitPendingUploads();
+        }
+    }
+
+    /// <summary>Queues a texture's move into its resting layout, ahead of the next submission.</summary>
+    /// <param name="texture">A texture just created, still undefined.</param>
+    private void QueueInitialTransition(VulkanRhiTexture texture)
+    {
+        OpenUpload();
+        _uploadImages.Add(texture.Image.Handle);
+        Transition(_upload, texture, ImageLayout.General);
+    }
+
+    /// <summary>Holds a resource's destruction while the upload being recorded still writes it.</summary>
+    /// <param name="handle">The buffer's or image's handle.</param>
+    /// <param name="isImage">Whether it is an image.</param>
+    /// <param name="destroy">What destroys it.</param>
+    /// <returns><see langword="true"/> when it was held, and will be destroyed once the upload has run.</returns>
+    internal bool DeferWhileQueued(ulong handle, bool isImage, IDisposable destroy)
+    {
+        if (_disposed || _upload.Handle == 0 || !(isImage ? _uploadImages : _uploadBuffers).Contains(handle))
+        {
+            return false;
+        }
+
+        _uploadDeferred.Add(destroy);
+        return true;
+    }
+
+    /// <summary>Begins the upload command buffer if nothing has been written into it yet.</summary>
+    private void OpenUpload()
+    {
+        if (_upload.Handle != 0)
+        {
+            return;
+        }
+
+        _upload = _commands.AllocatePrimary(1)[0];
+        CommandBufferBeginInfo begin = new()
+        {
+            SType = StructureType.CommandBufferBeginInfo,
+            Flags = CommandBufferUsageFlags.OneTimeSubmitBit,
+        };
+
+        VkCheck.Ok(_vk.BeginCommandBuffer(_upload, &begin), "vkBeginCommandBuffer");
+    }
+
+    /// <summary>
+    /// Sends the queued writes now, inside a frame or not, for a submission that goes around the frame --
+    /// a one-off that may read a texture written since the last one.
+    /// </summary>
+    private void SubmitPendingUploads()
+    {
+        if (_upload.Handle != 0)
+        {
+            // Uncounted inside a frame. A buffer an encoder writes this frame was given the value the
+            // frame's own submission will signal, so a loose submission signalling it first would tell a
+            // readback the write was done while the frame carrying it had not even been sent.
+            SubmitLoose([], counted: !_inFrame);
         }
     }
 
@@ -222,9 +343,15 @@ internal sealed unsafe partial class VulkanRhiDevice
     }
 
     /// <summary>Ends the upload being recorded and hands it over, with the chunks it reads.</summary>
+    /// <param name="chunks">Receives the staging the upload reads.</param>
+    /// <param name="deferred">Receives the destructions put off until the upload has run.</param>
     /// <returns>The upload, or the null handle when nothing was written.</returns>
-    private CommandBuffer TakeUpload(List<VulkanBuffer> chunks)
+    private CommandBuffer TakeUpload(List<VulkanBuffer> chunks, List<IDisposable> deferred)
     {
+        // The batched one-offs go to the queue first -- the traced world's texture copies -- so whatever
+        // this submission carries is ordered after them, as it was when each of them waited.
+        _commands.FlushBatched();
+
         if (_upload.Handle == 0)
         {
             return default;
@@ -259,6 +386,10 @@ internal sealed unsafe partial class VulkanRhiDevice
         _uploadChunkUsed = 0;
         _uploadBytes = 0;
         _uploadTargets.Clear();
+        _uploadBuffers.Clear();
+        _uploadImages.Clear();
+        deferred.AddRange(_uploadDeferred);
+        _uploadDeferred.Clear();
         return upload;
     }
 
@@ -275,10 +406,13 @@ internal sealed unsafe partial class VulkanRhiDevice
     }
 
     /// <summary>Submits outside a frame, uploads first, holding everything until a fence of its own signals.</summary>
-    private void SubmitLoose(CommandBuffer[] buffers)
+    /// <param name="buffers">The command buffers to send after the uploads.</param>
+    /// <param name="counted">Whether it advances the timeline, which every submission does but an early upload inside a frame.</param>
+    private void SubmitLoose(CommandBuffer[] buffers, bool counted = true)
     {
         List<VulkanBuffer> staging = [];
-        CommandBuffer upload = TakeUpload(staging);
+        List<IDisposable> deferred = [];
+        CommandBuffer upload = TakeUpload(staging, deferred);
 
         List<CommandBuffer> all = new(buffers.Length + 1);
         if (upload.Handle != 0)
@@ -289,6 +423,12 @@ internal sealed unsafe partial class VulkanRhiDevice
         all.AddRange(buffers);
         if (all.Count == 0)
         {
+            // Nothing to submit, so nothing deferred can still be in use.
+            foreach (IDisposable held in deferred)
+            {
+                held.Dispose();
+            }
+
             return;
         }
 
@@ -298,8 +438,9 @@ internal sealed unsafe partial class VulkanRhiDevice
 
         CommandBuffer[] handles = [.. all];
         Semaphore timeline = _timeline;
-        ulong value = HasTimeline ? NextSignal() : 0;
-        TimelineSemaphoreSubmitInfo counted = new()
+        bool signals = counted && HasTimeline;
+        ulong value = signals ? NextSignal() : 0;
+        TimelineSemaphoreSubmitInfo countedInfo = new()
         {
             SType = StructureType.TimelineSemaphoreSubmitInfo,
             SignalSemaphoreValueCount = 1,
@@ -311,17 +452,17 @@ internal sealed unsafe partial class VulkanRhiDevice
             SubmitInfo submit = new()
             {
                 SType = StructureType.SubmitInfo,
-                PNext = HasTimeline ? &counted : null,
+                PNext = signals ? &countedInfo : null,
                 CommandBufferCount = (uint)handles.Length,
                 PCommandBuffers = first,
-                SignalSemaphoreCount = HasTimeline ? 1u : 0u,
+                SignalSemaphoreCount = signals ? 1u : 0u,
                 PSignalSemaphores = &timeline,
             };
 
             Checked(_vk.QueueSubmit(_device.Graphics, 1, &submit, fence), "vkQueueSubmit");
         }
 
-        _loose.Add(new LooseSubmission(fence, all, staging));
+        _loose.Add(new LooseSubmission(fence, all, staging, deferred));
     }
 
     /// <summary>Moves what the frame being submitted holds into its slot, to be released when the slot comes round.</summary>
@@ -330,6 +471,8 @@ internal sealed unsafe partial class VulkanRhiDevice
         _slotCommands[slot].AddRange(buffers);
         _slotStaging[slot].AddRange(_pendingStaging);
         _pendingStaging.Clear();
+        _slotDeferred[slot].AddRange(_pendingDeferred);
+        _pendingDeferred.Clear();
     }
 
     /// <summary>Releases what a slot's last frame held, once its fence has been waited on.</summary>
@@ -338,10 +481,40 @@ internal sealed unsafe partial class VulkanRhiDevice
         _commands.Free(_slotCommands[slot]);
         _slotCommands[slot].Clear();
 
-        _freeStaging.AddRange(_slotStaging[slot]);
+        Recycle(_slotStaging[slot]);
         _slotStaging[slot].Clear();
 
+        foreach (IDisposable held in _slotDeferred[slot])
+        {
+            held.Dispose();
+        }
+
+        _slotDeferred[slot].Clear();
+
         ReleaseFinishedLoose();
+        ReleaseFinishedSets();
+    }
+
+    /// <summary>Takes back staging a finished submission read, keeping only what the next one can reuse.</summary>
+    /// <remarks>
+    /// Every chunk used to be kept, forever. One larger than the pooled size is never handed out again --
+    /// <see cref="StagingFor"/> only reuses pooled-size chunks -- and once textures went through the queue a
+    /// level's worth of large pictures came back every menu backdrop swap: a soak of the menu grew by
+    /// gigabytes of host memory. Those, and anything past a small pool, are freed instead.
+    /// </remarks>
+    private void Recycle(List<VulkanBuffer> chunks)
+    {
+        foreach (VulkanBuffer chunk in chunks)
+        {
+            if (chunk.Size == StagingChunkBytes && _freeStaging.Count < MaxFreeStagingChunks)
+            {
+                _freeStaging.Add(chunk);
+            }
+            else
+            {
+                chunk.Dispose();
+            }
+        }
     }
 
     /// <summary>Releases every submission made outside a frame that has finished.</summary>
@@ -363,7 +536,12 @@ internal sealed unsafe partial class VulkanRhiDevice
 
             _vk.DestroyFence(_device.Device, fence, null);
             _commands.Free(loose.Commands);
-            _freeStaging.AddRange(loose.Staging);
+            Recycle(loose.Staging);
+            foreach (IDisposable held in loose.Deferred)
+            {
+                held.Dispose();
+            }
+
             _loose.RemoveAt(i);
         }
     }
@@ -392,10 +570,12 @@ internal sealed unsafe partial class VulkanRhiDevice
 
         _slotCommands = new List<CommandBuffer>[frames];
         _slotStaging = new List<VulkanBuffer>[frames];
+        _slotDeferred = new List<IDisposable>[frames];
         for (int i = 0; i < frames; i++)
         {
             _slotCommands[i] = [];
             _slotStaging[i] = [];
+            _slotDeferred[i] = [];
         }
     }
 
@@ -410,7 +590,8 @@ internal sealed unsafe partial class VulkanRhiDevice
         }
 
         List<VulkanBuffer> unsent = [];
-        CommandBuffer upload = TakeUpload(unsent);
+        List<IDisposable> unsentDeferred = [];
+        CommandBuffer upload = TakeUpload(unsent, unsentDeferred);
         if (upload.Handle != 0)
         {
             _commands.Free([upload]);
@@ -420,6 +601,14 @@ internal sealed unsafe partial class VulkanRhiDevice
         {
             chunk.Dispose();
         }
+
+        // The device is idle: whatever was put off can go now.
+        foreach (IDisposable held in unsentDeferred.Concat(_pendingDeferred))
+        {
+            held.Dispose();
+        }
+
+        _pendingDeferred.Clear();
 
         _pendingStaging.Clear();
         _freeStaging.Clear();
@@ -444,7 +633,8 @@ internal sealed unsafe partial class VulkanRhiDevice
         return new VulkanRhiWorkMarker(this, HasTimeline ? _signalled : 0);
     }
 
-    private sealed record LooseSubmission(Fence Fence, List<CommandBuffer> Commands, List<VulkanBuffer> Staging);
+    private sealed record LooseSubmission(
+        Fence Fence, List<CommandBuffer> Commands, List<VulkanBuffer> Staging, List<IDisposable> Deferred);
 }
 
 /// <summary>A timeline value, complete once the semaphore has reached it.</summary>

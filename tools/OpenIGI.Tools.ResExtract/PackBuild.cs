@@ -45,11 +45,20 @@ internal static class PackBuild
     internal readonly record struct Result(
         int Assets, int Archives, int Loose, int Missing, long Bytes, List<string> Failures);
 
+    /// <summary>How a pack is encoded.</summary>
+    /// <param name="BlockCompress">
+    /// Whether world textures are stored as GPU block-compressed chains (the default) rather than PNGs.
+    /// Compressed, the game uploads them as they are: a quarter to an eighth of the memory and no decode.
+    /// </param>
+    /// <param name="Quality">How hard the block encoder searches.</param>
+    internal readonly record struct Options(bool BlockCompress = true, BlockQuality Quality = BlockQuality.Balanced);
+
     /// <summary>Builds an overrides folder from an extracted, worked-on PNG tree.</summary>
     /// <param name="source">The PNG tree, holding the manifest the extractor wrote.</param>
     /// <param name="destination">Where to write the overrides folder.</param>
+    /// <param name="options">How to encode it.</param>
     /// <returns>What was produced.</returns>
-    internal static Result Run(string source, string destination)
+    internal static Result Run(string source, string destination, Options options = default)
     {
         PackManifest manifest = PackManifest.Read(Path.Combine(source, PackManifest.FileName));
 
@@ -64,23 +73,26 @@ internal static class PackBuild
         int missing = 0;
         long bytes = 0;
 
-        foreach (PackAsset asset in manifest.Assets)
+        // Encoded side by side -- a block encoder is most of a second a texture -- and written in manifest
+        // order afterwards, so the archives come out the same whatever order the workers finish in.
+        PackAsset[] all = [.. manifest.Assets];
+        Encoded[] encoded = new Encoded[all.Length];
+        Parallel.For(0, all.Length, i => encoded[i] = EncodeAsset(source, all[i], options));
+
+        for (int i = 0; i < all.Length; i++)
         {
-            byte[] file;
+            PackAsset asset = all[i];
+            (byte[]? file, bool absent, string? failure) = encoded[i];
 
-            try
+            if (absent)
             {
-                if (!TryLoad(source, asset, out List<PackPicture.Frame> frames))
-                {
-                    missing++;
-                    continue;
-                }
-
-                file = Encode(asset, frames);
+                missing++;
+                continue;
             }
-            catch (Exception error) when (error is TextureFormatException or ArgumentException or IOException)
+
+            if (failure is not null || file is null)
             {
-                failures.Add($"{asset.Path}: {error.Message}");
+                failures.Add($"{asset.Path}: {failure}");
                 continue;
             }
 
@@ -114,6 +126,36 @@ internal static class PackBuild
         }
 
         return new Result(assets, archives.Count, loose, missing, bytes, failures);
+    }
+
+    /// <summary>One asset's encoded file, or why there is none.</summary>
+    private readonly record struct Encoded(byte[]? File, bool Absent, string? Failure);
+
+    private static Encoded EncodeAsset(string source, PackAsset asset, Options options)
+    {
+        try
+        {
+            if (!TryLoad(source, asset, out List<PackPicture.Frame> frames))
+            {
+                return new Encoded(null, true, null);
+            }
+
+            // Only a world texture: one picture, no grid. Sprites, atlases and tile grids are laid out by
+            // their frames' pixels on the CPU, and stay PNG.
+            if (options.BlockCompress
+                && asset.Shape == PackShape.Texture
+                && frames.Count == 1
+                && PackCompression.CanCompress(frames[0].Image))
+            {
+                frames[0] = PackCompression.Compress(frames[0], options.Quality);
+            }
+
+            return new Encoded(Encode(asset, frames), false, null);
+        }
+        catch (Exception error) when (error is TextureFormatException or ArgumentException or IOException)
+        {
+            return new Encoded(null, false, error.Message);
+        }
     }
 
     private static bool TryLoad(string source, PackAsset asset, out List<PackPicture.Frame> frames)

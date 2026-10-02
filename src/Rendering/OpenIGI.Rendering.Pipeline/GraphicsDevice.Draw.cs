@@ -17,6 +17,10 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
     // Each diffuse's derived detail map, by texture id; see SetTextureDetail.
     private readonly Dictionary<uint, uint> _textureDetail = [];
 
+    // The other direction: which diffuse textures each detail map is paired with, so destroying a map finds
+    // its pairings without walking every one. See SetTextureDetail.
+    private readonly Dictionary<uint, HashSet<uint>> _detailUsers = [];
+
     private uint _nextMesh = 1;
     private Matrix4f _projection = Matrix4f.Identity;
     private DepthState _depthState = DepthState.Disabled;
@@ -47,7 +51,46 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
         ThrowIfDisposed();
 
         TextureHandle texture = _textures.Create(description, pixels);
-        ObserveTexture(texture, description, pixels);
+
+        // A data texture -- a detail map's normal, roughness and occlusion -- is never what a ray sees, so
+        // it takes no layer of the traced albedo and no cut-out mask. Its alpha carries numbers, and read
+        // as coverage it could even classify the map as a cut-out.
+        if (!description.HoldsData)
+        {
+            ObserveTexture(texture, description, pixels);
+        }
+
+        return texture;
+    }
+
+    /// <inheritdoc/>
+    public TextureHandle CreateCompressedTexture(
+        in TextureDescription description,
+        BlockFormat format,
+        ReadOnlySpan<byte> chain,
+        ReadOnlySpan<Bgra32> proxy,
+        int proxyWidth,
+        int proxyHeight)
+    {
+        ThrowIfDisposed();
+
+        if (!Capabilities.SupportsBlockCompression)
+        {
+            throw new NotSupportedException("This device cannot sample block-compressed textures.");
+        }
+
+        TextureHandle texture = _textures.CreateCompressed(description, format, chain);
+
+        // The traced world reads a texture's colour and cut-out shape off its pixels as it is made; a
+        // compressed one hands it the proxy, which is all a ray needs of it.
+        if (!description.HoldsData && proxyWidth > 0 && proxyHeight > 0 && proxy.Length >= proxyWidth * proxyHeight)
+        {
+            ObserveTexture(
+                texture,
+                new TextureDescription(proxyWidth, proxyHeight, 1, description.Filter, description.AddressMode),
+                proxy[..(proxyWidth * proxyHeight)]);
+        }
+
         return texture;
     }
 
@@ -66,11 +109,16 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
         if (_textures.Destroy(texture))
         {
             // A pairing either side of it goes too: a diffuse whose map is gone is given the neutral one.
-            _textureDetail.Remove(texture.Id);
+            // Through the reverse index -- scanning every pairing for each texture destroyed made a
+            // level's release quadratic, on the render thread, every time the menu swapped its backdrop.
+            UnpairDetail(texture.Id);
 
-            foreach (uint diffuse in _textureDetail.Where(pair => pair.Value == texture.Id).Select(pair => pair.Key).ToList())
+            if (_detailUsers.Remove(texture.Id, out HashSet<uint>? diffuses))
             {
-                _textureDetail.Remove(diffuse);
+                foreach (uint diffuse in diffuses)
+                {
+                    _textureDetail.Remove(diffuse);
+                }
             }
 
             // Every group that named it goes with it, or the next frame binds a view that is gone.
@@ -85,6 +133,35 @@ public sealed partial class GraphicsDevice : ISdfTextDevice
                 && (field.Red == texture || field.Green == texture || field.Blue == texture || field.Distance == texture))
             {
                 _realtimeProbe = null;
+            }
+        }
+    }
+
+    /// <summary>Pairs a diffuse texture with a detail map, keeping both directions of the pairing.</summary>
+    private void PairDetail(uint diffuse, uint detail)
+    {
+        UnpairDetail(diffuse);
+        _textureDetail[diffuse] = detail;
+
+        if (!_detailUsers.TryGetValue(detail, out HashSet<uint>? users))
+        {
+            users = [];
+            _detailUsers[detail] = users;
+        }
+
+        users.Add(diffuse);
+    }
+
+    /// <summary>Drops a diffuse texture's pairing, if it has one, from both directions.</summary>
+    private void UnpairDetail(uint diffuse)
+    {
+        if (_textureDetail.Remove(diffuse, out uint detail)
+            && _detailUsers.TryGetValue(detail, out HashSet<uint>? users))
+        {
+            users.Remove(diffuse);
+            if (users.Count == 0)
+            {
+                _detailUsers.Remove(detail);
             }
         }
     }

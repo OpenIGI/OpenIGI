@@ -38,6 +38,11 @@ public sealed class MaterialBindGroupCache(
     private readonly IRhiDevice _device = device ?? throw new ArgumentNullException(nameof(device));
     private readonly IRhiBindGroupLayout _layout = layout ?? throw new ArgumentNullException(nameof(layout));
     private readonly Dictionary<MaterialKey, IRhiBindGroup> _groups = [];
+
+    // Every key each texture appears in, so forgetting one texture finds its groups without walking all
+    // of them. A level's release forgets every texture it had, and the walk made that quadratic in the
+    // size of the level -- paid on the render thread by every menu backdrop swap.
+    private readonly Dictionary<uint, List<MaterialKey>> _byTexture = [];
     private bool _disposed;
 
     /// <summary>Gets how many groups are being kept.</summary>
@@ -78,6 +83,9 @@ public sealed class MaterialBindGroupCache(
             $"material-{key.Diffuse}-{key.Lightmap}-{key.Detail}"));
 
         _groups[key] = group;
+        Index(key.Diffuse, key);
+        Index(key.Lightmap, key);
+        Index(key.Detail, key);
         return group;
     }
 
@@ -90,31 +98,59 @@ public sealed class MaterialBindGroupCache(
     /// </remarks>
     public int Forget(uint textureId)
     {
-        List<MaterialKey> naming = [];
-
-        foreach (MaterialKey key in _groups.Keys)
+        if (!_byTexture.Remove(textureId, out List<MaterialKey>? naming))
         {
-            if (key.Diffuse == textureId || key.Lightmap == textureId || key.Detail == textureId)
-            {
-                naming.Add(key);
-            }
+            return 0;
         }
 
+        int released = 0;
         foreach (MaterialKey key in naming)
         {
+            // Already gone with another of its textures, forgotten first.
+            if (!_groups.Remove(key, out IRhiBindGroup? group))
+            {
+                continue;
+            }
+
+            released++;
             if (retired is { } queue)
             {
-                queue.Retire(_groups[key]);
+                queue.Retire(group);
             }
             else
             {
-                _groups[key].Dispose();
+                group.Dispose();
             }
-
-            _groups.Remove(key);
         }
 
-        return naming.Count;
+        return released;
+    }
+
+    /// <summary>Notes that a texture appears in a group's key.</summary>
+    private void Index(uint textureId, MaterialKey key)
+    {
+        if (!_byTexture.TryGetValue(textureId, out List<MaterialKey>? keys))
+        {
+            keys = [];
+            _byTexture[textureId] = keys;
+        }
+
+        // A key names the same texture twice when it is its own lightmap or detail, and listing it twice
+        // would only make the release skip it the second time.
+        if (keys.Count > 0 && keys[^1] == key)
+        {
+            return;
+        }
+
+        // A group released with another of its textures stays listed under this one. A texture that
+        // outlives levels -- the neutral detail map is in nearly every key -- would collect those without
+        // end, so the list is swept of them whenever it is about to grow: amortised, it costs nothing.
+        if (keys.Count >= 64 && keys.Count == keys.Capacity)
+        {
+            keys.RemoveAll(listed => !_groups.ContainsKey(listed));
+        }
+
+        keys.Add(key);
     }
 
     /// <inheritdoc/>
@@ -133,6 +169,7 @@ public sealed class MaterialBindGroupCache(
         }
 
         _groups.Clear();
+        _byTexture.Clear();
     }
 
     /// <summary>The textures one group binds, which is what it is keyed by.</summary>

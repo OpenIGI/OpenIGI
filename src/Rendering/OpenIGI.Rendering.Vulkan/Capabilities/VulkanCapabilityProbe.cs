@@ -307,6 +307,7 @@ internal static unsafe class VulkanCapabilityProbe
             ShaderFloat16 = v12->ShaderFloat16,
             ShaderInt64Atomics = v12->ShaderBufferInt64Atomics,
             SamplerAnisotropy = features.Features.SamplerAnisotropy,
+            TextureCompressionBc = features.Features.TextureCompressionBC,
             RobustBufferAccess = features.Features.RobustBufferAccess,
             Robustness2 = robustness2Usable,
             ShaderInt64 = features.Features.ShaderInt64,
@@ -538,6 +539,10 @@ internal static unsafe class VulkanCapabilityProbe
         return new PhysicalDeviceFeatures
         {
             SamplerAnisotropy = capabilities.SamplerAnisotropy,
+
+            // Asked for wherever it is offered: a texture pack stores its pictures block-compressed, and
+            // sampling one on a device that did not enable this is invalid usage, not merely slow.
+            TextureCompressionBC = capabilities.TextureCompressionBc,
             RobustBufferAccess = capabilities.RobustBufferAccess,
             ShaderInt64 = capabilities.ShaderInt64,
             FragmentStoresAndAtomics = capabilities.FragmentStoresAndAtomics,

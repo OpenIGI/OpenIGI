@@ -24,6 +24,9 @@ internal sealed class VulkanRhiBuffer : IRhiBuffer
     /// <summary>Gets the allocation behind it.</summary>
     public VulkanBuffer Buffer { get; }
 
+    /// <summary>Gets the device that may still have a write into it queued, or <see langword="null"/>.</summary>
+    internal VulkanRhiDevice? Owner { get; init; }
+
     /// <summary>Gets or sets the submission count after which the GPU's last write to this buffer is done.</summary>
     /// <remarks>
     /// Stamped when a command buffer that copies into it is submitted. A readback waits for this and not
@@ -49,6 +52,14 @@ internal sealed class VulkanRhiBuffer : IRhiBuffer
         }
 
         _disposed = true;
+
+        // A write into it may still be queued, recorded and not yet submitted; destroying the buffer now
+        // would invalidate the command buffer carrying it. The device then destroys it once that has run.
+        if (Owner?.DeferWhileQueued(Buffer.Handle.Handle, isImage: false, Buffer) == true)
+        {
+            return;
+        }
+
         Buffer.Dispose();
     }
 }
@@ -71,7 +82,7 @@ internal sealed unsafe class VulkanRhiTexture : IRhiTexture
     private readonly Vk _vk;
     private readonly Device _device;
     private readonly VulkanAllocator _allocator;
-    private readonly DeviceMemory _memory;
+    private readonly VulkanAllocation _memory;
     private readonly bool _owned;
     private readonly Dictionary<RhiTextureViewDescriptor, VulkanRhiTextureView> _views = [];
     private VulkanRhiTextureView? _whole;
@@ -82,7 +93,7 @@ internal sealed unsafe class VulkanRhiTexture : IRhiTexture
     /// <param name="device">The device it lives on.</param>
     /// <param name="allocator">The allocator its memory came from.</param>
     /// <param name="image">The image.</param>
-    /// <param name="memory">The memory bound to it, or the null handle for an image it does not own.</param>
+    /// <param name="memory">Where it is bound, or the default for an image it does not own.</param>
     /// <param name="descriptor">What it was created as.</param>
     /// <param name="owned">
     /// Whether this destroys the image. False for a swapchain's, which belongs to the swapchain and
@@ -93,7 +104,7 @@ internal sealed unsafe class VulkanRhiTexture : IRhiTexture
         Device device,
         VulkanAllocator allocator,
         Image image,
-        DeviceMemory memory,
+        VulkanAllocation memory,
         in RhiTextureDescriptor descriptor,
         bool owned = true)
     {
@@ -214,6 +225,20 @@ internal sealed unsafe class VulkanRhiTexture : IRhiTexture
 
         _disposed = true;
 
+        // As a buffer does: an upload or a transition into it may be queued and not yet submitted.
+        if (_owned && Owner?.DeferWhileQueued(Image.Handle, isImage: true, new Deferred(Destroy)) == true)
+        {
+            return;
+        }
+
+        Destroy();
+    }
+
+    /// <summary>Gets the device that may still have a write into it queued, or <see langword="null"/>.</summary>
+    internal VulkanRhiDevice? Owner { get; init; }
+
+    private void Destroy()
+    {
         foreach (VulkanRhiTextureView view in _views.Values)
         {
             _vk.DestroyImageView(_device, view.Handle, null);
@@ -410,17 +435,27 @@ internal sealed class VulkanRhiBindGroup : IRhiBindGroup
     /// <param name="label">The name it was created with.</param>
     /// <param name="textures">The textures it binds, and how each is read.</param>
     /// <param name="buffers">The buffers it binds.</param>
+    /// <param name="owner">The device the set is given back to.</param>
+    /// <param name="pool">The pool the set came from.</param>
     public VulkanRhiBindGroup(
         DescriptorSet set,
         string label,
         IReadOnlyList<(VulkanRhiTexture Texture, bool Storage)> textures,
-        IReadOnlyList<VulkanRhiBuffer> buffers)
+        IReadOnlyList<VulkanRhiBuffer> buffers,
+        VulkanRhiDevice owner,
+        DescriptorPoolState pool)
     {
         Set = set;
         Label = label;
         Textures = textures;
         Buffers = buffers;
+        _owner = owner;
+        _pool = pool;
     }
+
+    private readonly VulkanRhiDevice _owner;
+    private readonly DescriptorPoolState _pool;
+    private bool _disposed;
 
     /// <summary>Gets the descriptor set.</summary>
     public DescriptorSet Set { get; }
@@ -435,10 +470,34 @@ internal sealed class VulkanRhiBindGroup : IRhiBindGroup
     public string Label { get; }
 
     /// <inheritdoc/>
-    /// <remarks>The set belongs to the pool it came from and is freed when the device is.</remarks>
+    /// <remarks>
+    /// The set goes back to its pool once the submissions that may still read it have finished, so
+    /// disposing a group the frame in flight is using is safe.
+    /// </remarks>
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _owner.ReleaseSet(_pool, Set);
     }
+}
+
+/// <summary>A descriptor pool and how many of its sets are live.</summary>
+/// <param name="handle">The pool.</param>
+internal sealed class DescriptorPoolState(DescriptorPool handle)
+{
+    /// <summary>Gets the pool.</summary>
+    public DescriptorPool Handle { get; } = handle;
+
+    /// <summary>Gets or sets how many sets allocated from it have not been given back.</summary>
+    public int Live { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the pool has been destroyed.</summary>
+    public bool Destroyed { get; set; }
 }
 
 /// <summary>A pipeline layout.</summary>
@@ -622,5 +681,19 @@ internal sealed class VulkanRhiCommandBuffer : IRhiCommandBuffer
     /// <remarks>The buffer belongs to the pool it was allocated from and is freed with the device.</remarks>
     public void Dispose()
     {
+    }
+}
+
+/// <summary>An action run once, on dispose: a destruction put off until the GPU is done with something.</summary>
+/// <param name="action">What disposing does.</param>
+internal sealed class Deferred(Action action) : IDisposable
+{
+    private Action? _action = action;
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        _action?.Invoke();
+        _action = null;
     }
 }
