@@ -202,6 +202,46 @@ internal sealed unsafe class VulkanDevice : IDisposable
         }
     }
 
+    /// <summary>Describes every memory heap's use and budget, the host's as well as the device's.</summary>
+    /// <returns>One line per heap, or a note that the driver does not report budgets.</returns>
+    /// <remarks>
+    /// The host heap is the one a memory report is usually about: it is where upload staging and every
+    /// other host-visible block lives, and what it holds counts against the process.
+    /// </remarks>
+    public unsafe string DescribeMemoryBudget()
+    {
+        if (!Capabilities.EnabledExtensions.Contains(VulkanExtensionNames.MemoryBudget))
+        {
+            return "  (the driver does not report memory budgets)";
+        }
+
+        PhysicalDeviceMemoryBudgetPropertiesEXT budget = new()
+        {
+            SType = StructureType.PhysicalDeviceMemoryBudgetPropertiesExt,
+        };
+
+        PhysicalDeviceMemoryProperties2 properties = new()
+        {
+            SType = StructureType.PhysicalDeviceMemoryProperties2,
+            PNext = &budget,
+        };
+
+        _vk.GetPhysicalDeviceMemoryProperties2(Selection.Device, &properties);
+
+        var text = new System.Text.StringBuilder();
+        for (uint i = 0; i < properties.MemoryProperties.MemoryHeapCount; i++)
+        {
+            bool deviceLocal = (properties.MemoryProperties.MemoryHeaps[(int)i].Flags & MemoryHeapFlags.DeviceLocalBit) != 0;
+            double used = budget.HeapUsage[(int)i] / (1024.0 * 1024.0);
+            double allowed = budget.HeapBudget[(int)i] / (1024.0 * 1024.0);
+            double size = properties.MemoryProperties.MemoryHeaps[(int)i].Size / (1024.0 * 1024.0);
+            text.Append(FormattableString.Invariant(
+                $"  heap {i} ({(deviceLocal ? "device" : "host")}): {used:F0} MiB used of {allowed:F0} MiB budget ({size:F0} MiB total)\n"));
+        }
+
+        return text.ToString().TrimEnd('\n');
+    }
+
     /// <summary>The NVIDIA diagnostic-checkpoints extension, taken wherever it is offered.</summary>
     public const string DiagnosticCheckpointsExtension = "VK_NV_device_diagnostic_checkpoints";
 

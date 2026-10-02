@@ -553,12 +553,13 @@ public sealed partial class GraphicsDevice
     /// reverse — which it refuses outright.</item>
     /// </list>
     /// <para>
-    /// The kind is only checked where the device runs WGSL, because only there is it known and only there
-    /// does it matter. What a slot declares is read off the WGSL a module compiles to, so a variant with no
-    /// WGSL form -- the ray-query ones, which WebGPU cannot run -- reports every texture as a colour slot.
-    /// Vulkan reads a depth image through either kind correctly, and checking there swapped the scene's own
-    /// depth out of the traced screen gather for a stand-in: with tracing on, the RHI's screen GI found no
-    /// sky and no real surfaces, smeared its history, and shifted colour as the camera moved.
+    /// The kind is only checked where the device runs WGSL, because only there does it matter. What a slot
+    /// declares is read off the WGSL a module compiles to; a variant with no WGSL form -- the ray-query
+    /// ones -- used to report every texture as a colour slot, and now takes its siblings' shapes, but one
+    /// it alone declares still does. Vulkan reads a depth image through either kind correctly, and
+    /// checking there once swapped the scene's own depth out of the traced screen gather for a stand-in:
+    /// with tracing on, the RHI's screen GI found no sky and no real surfaces, and shifted colour as the
+    /// camera moved.
     /// </para>
     /// </remarks>
     private IRhiTextureView SampledOrStandIn(ComputeKernel kernel, ShaderBinding binding, HashSet<IRhiTexture> written)

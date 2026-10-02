@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # One-time (and re-runnable) setup of the release VM. Run as root from a checkout of deploy/vm:
 #
-#   sudo deploy/vm/bootstrap.sh "<ssh public key the release workflow deploys with>"
+#   sudo deploy/vm/bootstrap.sh "<ssh public key the release workflow deploys with>" ["<publisher key>"]
+#
+# The second key, optional, is the one content packs are published with from a workstation
+# (`OpenIGI.Tools.Release content publish`). It gets the same pinned dispatcher and nothing more.
 #
 # Creates the deploy user and /srv/openigi, installs the deploy dispatcher where the deploy user cannot
 # change it, and pins the workflow's key to that dispatcher. Nothing here touches anything else running
@@ -9,7 +12,8 @@
 # running /usr/local/bin/openigi-deploy config < tarball by hand).
 set -euo pipefail
 
-KEY="${1:?usage: bootstrap.sh '<deploy public key>'}"
+KEY="${1:?usage: bootstrap.sh '<deploy public key>' ['<publisher public key>']}"
+PUBLISHER_KEY="${2:-}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRV=/srv/openigi
 
@@ -22,7 +26,7 @@ id deploy >/dev/null 2>&1 || useradd --system --create-home --shell /bin/bash de
 usermod -aG docker deploy
 
 install -d -o deploy -g deploy -m 0755 \
-  "$SRV" "$SRV/web" "$SRV/web/stable" "$SRV/web/beta" "$SRV/dl" "$SRV/dl/releases" "$SRV/api" "$SRV/config"
+  "$SRV" "$SRV/web" "$SRV/web/stable" "$SRV/web/beta" "$SRV/dl" "$SRV/dl/releases" "$SRV/dl/content" "$SRV/dl/content/chunks" "$SRV/api" "$SRV/config"
 
 # An sshd that names who may log in (AllowUsers) must name the deploy user too, or every deploy is refused
 # before its key is even looked at.
@@ -49,7 +53,10 @@ fi
 install -o root -g root -m 0755 "$HERE/deploy.sh" /usr/local/bin/openigi-deploy
 
 install -d -o deploy -g deploy -m 0700 ~deploy/.ssh
-printf 'command="/usr/local/bin/openigi-deploy",restrict %s\n' "$KEY" > ~deploy/.ssh/authorized_keys
+{
+  printf 'command="/usr/local/bin/openigi-deploy",restrict %s\n' "$KEY"
+  [ -z "$PUBLISHER_KEY" ] || printf 'command="/usr/local/bin/openigi-deploy",restrict %s\n' "$PUBLISHER_KEY"
+} > ~deploy/.ssh/authorized_keys
 chown deploy:deploy ~deploy/.ssh/authorized_keys
 chmod 0600 ~deploy/.ssh/authorized_keys
 

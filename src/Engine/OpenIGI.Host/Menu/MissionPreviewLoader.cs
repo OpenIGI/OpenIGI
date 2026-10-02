@@ -369,11 +369,13 @@ public sealed class MissionPreviewLoader(
         // read and belongs here; missed, the bake is started here and carried, so a mission that is
         // browsed for a few seconds before Play has its field ready and one that is not hands the game
         // the bake in flight rather than starting one from nothing on the way in. Single-threaded, so it
-        // takes one core and leaves the frame alone. The same gate the render loop applies.
+        // takes one core and leaves the frame alone. The same gate the render loop applies -- and none of
+        // it for a lite backdrop, which draws without a field: the read is skipped and a missing field is
+        // baked when Play is pressed instead of for every mission the player scrolls past.
         int fieldResolution = RenderCVars.DistanceFieldResolution.Value;
         SceneDistanceField? distanceField = null;
         DistanceFieldBake? pendingField = null;
-        if (RenderCVars.DistanceFields.Value && context.ComputeSupported)
+        if (RenderCVars.DistanceFields.Value && context.ComputeSupported && !RenderCVars.MenuBackdropLite.Value)
         {
             distanceField = context.DistanceFields.TryLoad(missionId, fieldResolution);
             if (distanceField is null)
@@ -391,7 +393,12 @@ public sealed class MissionPreviewLoader(
         // reads the registry on this thread has finished with it: the cache takes the bytes it needs now
         // and touches the registry no further, so nothing races the render thread's own loads later.
         TextureDecodeCache decoded = TextureDecodeCache.StartFor(
-            resources, TextureDecodeCache.AlphaTestCutoff, work, context.DetailMaps);
+            resources,
+            TextureDecodeCache.AlphaTestCutoff,
+            work,
+            context.DetailMaps,
+            TextureDecodeCache.TexturesUsedBy(scene),
+            context.BlockCompressionSupported);
 
         // And finished before the backdrop is handed over: the swap's surface-cache capture wants nearly
         // every texture on the render thread, and one the pool has not reached is decoded there, in the

@@ -23,6 +23,11 @@ internal sealed unsafe partial class VulkanRhiDevice
     private VulkanSwapchain? _swapchain;
     private VulkanRhiTexture[] _offscreen = [];
     private Semaphore[] _acquired = [];
+
+    // One per SWAPCHAIN IMAGE, not per frame slot. A present waits on its semaphore, and the presentation
+    // engine gives it back only when that image is acquired again -- which, with more images than frame
+    // slots, is not before the slot comes round. Per slot, a frame signalled a semaphore the previous
+    // present of a different image might still hold (VUID-vkQueueSubmit-pSignalSemaphores-00067).
     private Semaphore[] _presentable = [];
     private Fence[] _inFlight = [];
     private VulkanRhiTexture?[] _frameTextures = [];
@@ -196,7 +201,7 @@ internal sealed unsafe partial class VulkanRhiDevice
         VkCheck.Ok(_vk.EndCommandBuffer(transition), "vkEndCommandBuffer");
 
         // Writes made since the last submission go ahead of the transition that ends the frame.
-        CommandBuffer upload = TakeUpload(_pendingStaging);
+        CommandBuffer upload = TakeUpload(_pendingStaging, _pendingDeferred);
         if (upload.Handle != 0)
         {
             _pending.Add(upload);
@@ -209,7 +214,7 @@ internal sealed unsafe partial class VulkanRhiDevice
         HoldForSlot(_frameSlot, buffers);
 
         Semaphore wait = _acquired[_frameSlot];
-        Semaphore signal = _presentable[_frameSlot];
+        Semaphore signal = _presentable[_imageIndex];
         PipelineStageFlags stage = PipelineStageFlags.ColorAttachmentOutputBit;
 
         // A flush earlier in the frame waited on the image already, and finished before anything after
@@ -285,7 +290,7 @@ internal sealed unsafe partial class VulkanRhiDevice
             return;
         }
 
-        CommandBuffer upload = TakeUpload(_pendingStaging);
+        CommandBuffer upload = TakeUpload(_pendingStaging, _pendingDeferred);
         if (upload.Handle != 0)
         {
             _pending.Add(upload);
@@ -368,6 +373,10 @@ internal sealed unsafe partial class VulkanRhiDevice
         }
 
         swapchain.Recreate(width, height, vsync);
+
+        // The image count can change with the swapchain, and the present semaphores follow the images.
+        // The device is idle, so none of the old ones is still held.
+        CreatePresentSemaphores(swapchain.Images.Length);
         NeedsReconfigure = false;
     }
 
@@ -386,7 +395,7 @@ internal sealed unsafe partial class VulkanRhiDevice
         if (_inFrame)
         {
             // The writes made before this submission land before it, as the interface promises.
-            CommandBuffer upload = TakeUpload(_pendingStaging);
+            CommandBuffer upload = TakeUpload(_pendingStaging, _pendingDeferred);
             if (upload.Handle != 0)
             {
                 _pending.Add(upload);
@@ -441,7 +450,6 @@ internal sealed unsafe partial class VulkanRhiDevice
         const int Frames = 2;
 
         _acquired = new Semaphore[Frames];
-        _presentable = new Semaphore[Frames];
         _inFlight = new Fence[Frames];
         _frameTextures = new VulkanRhiTexture?[Frames];
         CreateSubmissionState(Frames);
@@ -458,16 +466,34 @@ internal sealed unsafe partial class VulkanRhiDevice
         for (int i = 0; i < Frames; i++)
         {
             Semaphore acquired;
-            Semaphore presentable;
             Fence inFlight;
 
             VkCheck.Ok(_vk.CreateSemaphore(_device.Device, &semaphore, null, &acquired), "vkCreateSemaphore");
-            VkCheck.Ok(_vk.CreateSemaphore(_device.Device, &semaphore, null, &presentable), "vkCreateSemaphore");
             VkCheck.Ok(_vk.CreateFence(_device.Device, &fence, null, &inFlight), "vkCreateFence");
 
             _acquired[i] = acquired;
-            _presentable[i] = presentable;
             _inFlight[i] = inFlight;
+        }
+
+        CreatePresentSemaphores(_swapchain?.Images.Length ?? 0);
+    }
+
+    /// <summary>Makes one present semaphore per swapchain image, replacing whatever there was.</summary>
+    /// <param name="images">How many images the swapchain has.</param>
+    private void CreatePresentSemaphores(int images)
+    {
+        foreach (Semaphore old in _presentable)
+        {
+            _vk.DestroySemaphore(_device.Device, old, null);
+        }
+
+        _presentable = new Semaphore[images];
+        SemaphoreCreateInfo info = new() { SType = StructureType.SemaphoreCreateInfo };
+        for (int i = 0; i < images; i++)
+        {
+            Semaphore presentable;
+            VkCheck.Ok(_vk.CreateSemaphore(_device.Device, &info, null, &presentable), "vkCreateSemaphore");
+            _presentable[i] = presentable;
         }
     }
 
@@ -498,7 +524,7 @@ internal sealed unsafe partial class VulkanRhiDevice
             throw new GraphicsDeviceException("No frame is begun, so there is none to end.");
         }
 
-        CommandBuffer upload = TakeUpload(_pendingStaging);
+        CommandBuffer upload = TakeUpload(_pendingStaging, _pendingDeferred);
         if (upload.Handle != 0)
         {
             _pending.Add(upload);
@@ -555,8 +581,12 @@ internal sealed unsafe partial class VulkanRhiDevice
         {
             RetireFrameTexture(i);
             _vk.DestroySemaphore(_device.Device, _acquired[i], null);
-            _vk.DestroySemaphore(_device.Device, _presentable[i], null);
             _vk.DestroyFence(_device.Device, _inFlight[i], null);
+        }
+
+        foreach (Semaphore presentable in _presentable)
+        {
+            _vk.DestroySemaphore(_device.Device, presentable, null);
         }
 
         ReleaseOffscreen();

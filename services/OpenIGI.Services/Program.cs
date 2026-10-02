@@ -7,6 +7,8 @@ using OpenIGI.Services;
 //   GET /v1/channels/{stable|beta}?since=<version>  what is newest, and every release the caller lacks
 //   GET /download/{runtime}                         a redirect to the newest launcher (the site's buttons)
 //   GET /download/{runtime}?component=game&channel=&flavour=dotnet   ... or to a game build
+//   GET /v1/content                                 the optional content packs, each at its newest version
+//   GET /v1/content/{pack}[/{version}]              one pack version's manifest: its files and their chunks
 //   GET /healthz                                    whether it is up, and how many releases it sees
 //
 // The launcher polls the first every minute; the entity tag makes an unchanged answer a bodiless 304.
@@ -15,6 +17,9 @@ WebApplicationBuilder builder = WebApplication.CreateSlimBuilder(args);
 builder.Services.Configure<ReleaseOptions>(builder.Configuration.GetSection("Releases"));
 builder.Services.AddSingleton<ReleaseStore>();
 builder.Services.AddHostedService(static services => services.GetRequiredService<ReleaseStore>());
+builder.Services.Configure<ContentOptions>(builder.Configuration.GetSection("Content"));
+builder.Services.AddSingleton<ContentStore>();
+builder.Services.AddHostedService(static services => services.GetRequiredService<ContentStore>());
 
 WebApplication app = builder.Build();
 
@@ -75,6 +80,34 @@ app.MapGet("/download/{runtime}", (string runtime, string? component, string? ch
     }
 
     return Results.NotFound();
+});
+
+// The content packs are their own documents, apart from the channel feeds: a launcher too old to know of
+// content reads the feeds with a strict enum of components, and must never meet one it does not know there.
+app.MapGet("/v1/content", (HttpContext context, ContentStore store) =>
+{
+    ContentLibrary library = store.Current;
+    context.Response.Headers.ETag = library.Tag;
+    context.Response.Headers.CacheControl = "public, max-age=30";
+    context.Response.Headers.Vary = "Accept-Encoding";
+
+    return context.Request.Headers.IfNoneMatch.Contains(library.Tag)
+        ? Results.StatusCode(StatusCodes.Status304NotModified)
+        : Results.Text(ReleaseJson.Write(library.Index), "application/json");
+});
+
+// A published version never changes (the deploy verb refuses to overwrite one), so a named version's
+// manifest is cached for good; the newest one, asked for without a version, only briefly.
+app.MapGet("/v1/content/{pack}/{version?}", (string pack, string? version, HttpContext context, ContentStore store) =>
+{
+    if (store.Current.Manifest(pack, version) is not { } json)
+    {
+        return Results.NotFound();
+    }
+
+    context.Response.Headers.CacheControl = version is null ? "public, max-age=30" : "public, max-age=31536000, immutable";
+    context.Response.Headers.Vary = "Accept-Encoding";
+    return Results.Text(json, "application/json");
 });
 
 app.MapGet("/healthz", (ReleaseStore store) =>

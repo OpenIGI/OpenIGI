@@ -22,6 +22,11 @@ internal interface ILauncherWindow
 
     /// <summary>Gets the system clipboard's text, for pasting a folder into a field.</summary>
     string ClipboardText { get; }
+
+    /// <summary>Decodes a picture file for drawing, once per file.</summary>
+    /// <param name="path">The picture: PNG, JPEG or WebP.</param>
+    /// <returns>The picture, or <see langword="null"/> when it is missing or cannot be decoded.</returns>
+    BackdropPicture? Picture(string path);
 }
 
 /// <summary>
@@ -51,6 +56,7 @@ internal sealed class LauncherScreen : Screen
 
     private LauncherBackdrop? _backdrop;
     private HomePage? _home;
+    private ContentPage? _content;
     private GameSwitcher? _switcher;
     private UiElement? _chrome;
     private FooterBar? _footer;
@@ -95,7 +101,8 @@ internal sealed class LauncherScreen : Screen
         var main = new Panel();
         _home = new HomePage(_theme, _model, () => ShowSection(4), () => ShowSection(1));
         AddPage(main, _home.Root);
-        AddPage(main, PlaceholderPage.Build(_theme, _model.Current.Title, "Content", "Content packs arrive with the update service"));
+        _content = new ContentPage(_rowTheme, _model, _window.Picture);
+        AddPage(main, _content.Root);
         AddPage(main, PlaceholderPage.Build(_theme, "Mods & plugins", "Mods", "Mod management arrives with the mod loader"));
         AddPage(main, PlaceholderPage.Build(_theme, "Launcher · session", "Logs", "No log output yet"));
         AddPage(main, SettingsPage.Build(_rowTheme, _model));
@@ -163,6 +170,7 @@ internal sealed class LauncherScreen : Screen
         {
             _revision = _model.Revision;
             _home?.Refresh();
+            _content?.Refresh();
             if (_switcher is not null)
             {
                 _switcher.Text = _model.Current.Title;
@@ -179,6 +187,7 @@ internal sealed class LauncherScreen : Screen
         }
 
         _home?.Update();
+        _content?.Update();
         if (_backdrop is not null)
         {
             _backdrop.Focus = BackdropFocus();
@@ -378,7 +387,8 @@ internal sealed class LauncherScreen : Screen
                 painter.PushClip(new UiRect(x, Bounds.Y, context.Px(300f), Bounds.Height));
                 painter.DrawLabel(_theme.Heading, job.Label.ToUpperInvariant(), new UiVec2(x, UiRowStyle.CapsCenterY(_theme.Heading, labelSize, labelBox)), labelSize, _theme.Text, 0.1f);
                 painter.PopClip();
-                painter.DrawLabel(_theme.Mono, "DOWNLOADING", new UiVec2(x, top + (labelSize * 0.7f) + context.Px(6f)), subSize, _theme.TextMuted, 0.16f);
+                string stage = job.Stage == Services.InstallStage.Installing ? "INSTALLING" : "DOWNLOADING";
+                painter.DrawLabel(_theme.Mono, stage, new UiVec2(x, top + (labelSize * 0.7f) + context.Px(6f)), subSize, _theme.TextMuted, 0.16f);
 
                 string stats = job.Paused
                     ? $"PAUSED · {LauncherModel.FormatSize(job.Done)} / {LauncherModel.FormatSize(job.Size)}"

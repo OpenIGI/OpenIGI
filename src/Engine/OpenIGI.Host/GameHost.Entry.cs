@@ -229,74 +229,34 @@ internal sealed partial class GameHost
                 $"{what}: the worst single frame cost {_worstPassMilliseconds:F1} ms."));
     }
 
-    // What depth of field was set to before the menu reached for it. The shell frames its backdrop with a
-    // heavy, close focus that would be absurd to play through, so it overwrites all three -- and these are
-    // Archive variables, so without somewhere to put the originals the menu's framing becomes the player's
-    // saved preference the next time anything writes settings.cfg.
-    private float _gameplayFocalDistance;
-    private float _gameplayFocalRange;
-    private float _gameplayFocalBlur;
-    private bool _gameplayDepthOfFieldSaved;
-
-    // The motion blur is stashed SEPARATELY, and by the entry shot rather than by the menu, because the
-    // menu does not touch it -- only the shot does. Stashed with the three above, it was read at boot and
-    // written back on every Play, which silently overwrote every change the player made in between: set
-    // Motion Blur in the settings screen, press Play, and the value the menu had found at start-up landed
-    // back on top of it. Since the default is nought, that also erased it from settings.cfg -- "the
-    // setting resets to nothing every time the game is relaunched". A value is stashed where it is
-    // displaced, not where some other value is.
-    private float _shotMotionBlur;
-    private bool _shotMotionBlurSaved;
-
-    /// <summary>The shell's framing: a close focal plane and full blur, so the level reads as a backdrop.</summary>
+    /// <summary>The shell's framing: a close focal plane with no defocus, so the level behind the menu stays sharp.</summary>
     /// <remarks>
-    /// Saves the values it displaces the first time it is called, and only the first time — the menu is
-    /// entered repeatedly across a session (boot, abandon, back out of a mission) and a second save would
-    /// capture the menu's own numbers and make the restore a no-op.
+    /// <para>
+    /// Imposed through overrides, which only the renderer reads. These are archived, preset-managed
+    /// variables, and the menu used to WRITE them: the preset then read as Custom for as long as the menu
+    /// was up, and the restore handed back whatever the variables held at boot, so a depth-of-field change
+    /// made in the settings screen was undone by the next Play. An override has nothing to stash and
+    /// nothing to put back -- clearing it is the player's own value again, whatever they chose meanwhile.
+    /// </para>
     /// </remarks>
-    private void ApplyMenuDepthOfField()
+    private static void ApplyMenuDepthOfField()
     {
-        if (!_gameplayDepthOfFieldSaved)
-        {
-            _gameplayFocalDistance = RenderCVars.FocalDistance.Value;
-            _gameplayFocalRange = RenderCVars.FocalRange.Value;
-            _gameplayFocalBlur = RenderCVars.FocalBlur.Value;
-            _gameplayDepthOfFieldSaved = true;
-        }
-
-        RenderCVars.FocalDistance.Value = MenuFocalDistance;
-        RenderCVars.FocalRange.Value = MenuFocalRange;
-        RenderCVars.FocalBlur.Value = MenuFocalBlur;
+        RenderCVars.FocalDistance.Override(MenuFocalDistance);
+        RenderCVars.FocalRange.Override(MenuFocalRange);
+        RenderCVars.FocalBlur.Override(MenuFocalBlur);
     }
 
-    /// <summary>Puts back whatever depth of field was configured before the menu framed its backdrop.</summary>
+    /// <summary>Gives the camera effects back to the player's settings: the menu's framing and the entry shot's.</summary>
     /// <remarks>
-    /// The two stashes are given back independently because they are taken independently: the menu holds
-    /// the focus for as long as it is up, while the motion blur is held only for the length of an entry
-    /// shot and is usually not held at all. Returning a value nobody took is how the player's own setting
-    /// gets overwritten with a stale one.
+    /// Called twice on the way into a mission -- once when the menu leaves and again when the entry shot
+    /// hands over -- which is harmless: clearing an override that is not there does nothing.
     /// </remarks>
-    private void ApplyGameplayDepthOfField()
+    private static void ApplyGameplayDepthOfField()
     {
-        if (_shotMotionBlurSaved)
-        {
-            RenderCVars.MotionBlur.Value = _shotMotionBlur;
-            _shotMotionBlurSaved = false;
-        }
-
-        if (!_gameplayDepthOfFieldSaved)
-        {
-            return;
-        }
-
-        RenderCVars.FocalDistance.Value = _gameplayFocalDistance;
-        RenderCVars.FocalRange.Value = _gameplayFocalRange;
-        RenderCVars.FocalBlur.Value = _gameplayFocalBlur;
-
-        // The focus stash is deliberately NOT cleared here. This is called twice on the way into a
-        // mission -- once when the menu leaves and again when the entry shot hands over -- and the shot
-        // re-frames the focus in between, so a stash cleared on the first call would leave the shot's own
-        // framing standing on the second. It is held for the session instead; see ApplyMenuDepthOfField.
+        RenderCVars.FocalDistance.ClearOverride();
+        RenderCVars.FocalRange.ClearOverride();
+        RenderCVars.FocalBlur.ClearOverride();
+        RenderCVars.MotionBlur.ClearOverride();
     }
 
     /// <summary>Applies the shot's own framing: what it is focused on, and how much its movement smears.</summary>
@@ -304,38 +264,31 @@ internal sealed partial class GameHost
     /// The menu's framing cannot simply be faded out here. It focuses at a fixed forty metres, which from
     /// the vantage puts the whole world past the focal plane and blurs all of it evenly; what the shot
     /// wants instead is to be focused on the thing it is looking at, so the level stays sharp and the
-    /// distance falls away behind it. The motion blur is the shot's own and is nothing the menu had.
+    /// distance falls away behind it. The motion blur is the shot's own and is nothing the menu had. All of
+    /// it is overridden rather than written, for the reason <see cref="ApplyMenuDepthOfField"/> gives, so
+    /// the player's own values are read straight off the variables underneath.
     /// </remarks>
     private void ApplyEntryFraming()
     {
         float focus = _entry.FocalDistanceMetres;
         if (focus > 0f)
         {
-            RenderCVars.FocalDistance.Value = Math.Clamp(focus, 1f, 500f);
+            RenderCVars.FocalDistance.Override(Math.Clamp(focus, 1f, 500f));
 
             // A range proportional to the distance: the same few metres of sharpness that frames a face
             // at arm's length would leave nothing but a pinprick of the level in focus from altitude.
-            RenderCVars.FocalRange.Value = Math.Clamp(focus * 0.9f, 12f, 200f);
-            RenderCVars.FocalBlur.Value = Lerp(_gameplayFocalBlur, MenuFocalBlur, _entry.MenuDepthOfField);
+            RenderCVars.FocalRange.Override(Math.Clamp(focus * 0.9f, 12f, 200f));
+            RenderCVars.FocalBlur.Override(
+                Lerp(RenderCVars.FocalBlur.StoredValue, MenuFocalBlur, _entry.MenuDepthOfField));
         }
         else
         {
-            RenderCVars.FocalDistance.Value = _gameplayFocalDistance;
-            RenderCVars.FocalRange.Value = _gameplayFocalRange;
-            RenderCVars.FocalBlur.Value = _gameplayFocalBlur;
+            RenderCVars.FocalDistance.ClearOverride();
+            RenderCVars.FocalRange.ClearOverride();
+            RenderCVars.FocalBlur.ClearOverride();
         }
 
-        // Taken on the shot's first frame, which is the frame before it is displaced -- and taken from the
-        // variable rather than from any earlier snapshot, so whatever the player last chose is what they
-        // get back. Guarded because this runs every frame of the shot, and an unguarded stash would save
-        // the shot's own blur on the second frame and hand that back as the player's.
-        if (!_shotMotionBlurSaved)
-        {
-            _shotMotionBlur = RenderCVars.MotionBlur.Value;
-            _shotMotionBlurSaved = true;
-        }
-
-        RenderCVars.MotionBlur.Value = Math.Max(_shotMotionBlur, _entry.MotionBlur);
+        RenderCVars.MotionBlur.Override(Math.Max(RenderCVars.MotionBlur.StoredValue, _entry.MotionBlur));
     }
 
     /// <summary>Interpolates between two settings, for easing the menu's framing off across a shot.</summary>
@@ -381,6 +334,6 @@ internal sealed partial class GameHost
     /// <summary>The focal range the menu frames its backdrop with, in metres.</summary>
     private const float MenuFocalRange = 18f;
 
-    /// <summary>The defocus the menu frames its backdrop with, in pixels.</summary>
-    private const float MenuFocalBlur = 1f;
+    /// <summary>The defocus the menu frames its backdrop with, in pixels; zero keeps the level sharp behind the menu.</summary>
+    private const float MenuFocalBlur = 0f;
 }

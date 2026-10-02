@@ -608,7 +608,7 @@ public static class TerrainChunkMesh
             // original indexes straight past its atlas and takes whatever follows as a texture; wrapping
             // keeps the named tiles distinct from each other and keeps the ground textured, which is the
             // best that can be done with a reference to something that is not there.
-            int count = surface.Terrain.Tiles?.Tiles.Count ?? 0;
+            int count = surface.Terrain.Tiles?.TileCount ?? 0;
             if (count > 0 && tile >= count)
             {
                 tile %= count;

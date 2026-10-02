@@ -43,11 +43,16 @@ namespace OpenIGI.Engine.Resources;
 /// </para>
 /// <para>
 /// <b>Rescannable by design.</b> <see cref="Rescan"/> rebuilds the index and reports what moved, so a
-/// file dropped in while the game is running can be picked up without a restart. The bytes are read on
-/// demand and cached against the file's timestamp and length, so a rescan that finds nothing new costs
-/// a directory walk and nothing else. An archive is INDEXED rather than loaded: the walk reads chunk
-/// headers and names and seeks past every payload, because a 4x pack's level archive is a quarter of a
-/// gigabyte and there may be fifteen of them.
+/// file dropped in while the game is running can be picked up without a restart. A rescan that finds
+/// nothing new costs a directory walk and nothing else. An archive is INDEXED rather than loaded: the
+/// walk reads chunk headers and names and seeks past every payload, because a 4x pack's level archive is
+/// a quarter of a gigabyte and there may be fifteen of them.
+/// </para>
+/// <para>
+/// <b>The bytes are read on demand and not kept here.</b> Whoever asks holds them -- a level's resource
+/// registry, for as long as that level lives -- and lets them go with it. This store used to keep every
+/// override it had ever read, for the whole session, so browsing the menu's missions accumulated every
+/// level's pack in memory and gave none of it back.
 /// </para>
 /// </remarks>
 public sealed class ResourceOverrides
@@ -64,10 +69,8 @@ public sealed class ResourceOverrides
 
     // The index is read from more than one thread. A menu backdrop builds its level on a worker, and the
     // registry it builds into resolves every archived entry through this store while the render thread is
-    // free to rescan the folder or swap the pack out of the frame. Reads mutate too -- a candidate caches
-    // its bytes on first use -- so a reader lock would not be enough and there is nothing here worth the
-    // complication of one: a hit is a dictionary lookup, and the file read that misses is rare by
-    // construction because the answer is kept.
+    // free to rescan the folder or swap the pack out of the frame. The lock covers the index only; the
+    // file read is made outside it.
     private readonly Lock _gate = new();
     private readonly Dictionary<string, Candidate> _files = new(StringComparer.OrdinalIgnoreCase);
 
@@ -233,12 +236,6 @@ public sealed class ResourceOverrides
         {
             changed++;
         }
-        else
-        {
-            // Unchanged: carry the decoded bytes across so a rescan does not throw away work.
-            candidate = existing;
-        }
-
         index[relative] = candidate;
     }
 
@@ -319,8 +316,9 @@ public sealed class ResourceOverrides
     /// <param name="data">Receives the bytes, or empty when there is no such override.</param>
     /// <returns><see langword="true"/> when an override was read.</returns>
     /// <remarks>
-    /// Read once and kept. A resource's bytes are handed out as a <see cref="ReadOnlyMemory{T}"/> that
-    /// the registry holds for as long as the entry lives, so they cannot be a transient buffer.
+    /// A fresh array every call, owned by the caller: a resource's bytes are handed out as a
+    /// <see cref="ReadOnlyMemory{T}"/> the registry holds for as long as its entry lives, so they cannot be
+    /// a transient buffer, and they are not kept here, so they go when the registry does.
     /// </remarks>
     public bool TryRead(string relativePath, out ReadOnlyMemory<byte> data)
     {
@@ -338,12 +336,6 @@ public sealed class ResourceOverrides
             if (!_files.TryGetValue(relativePath, out candidate))
             {
                 return false;
-            }
-
-            if (candidate.Data is { } cached)
-            {
-                data = cached;
-                return true;
             }
         }
 
@@ -367,28 +359,7 @@ public sealed class ResourceOverrides
             }
 
             // Read outside the lock, because a slice of a 4x pack's level archive is megabytes and the
-            // render thread must not wait on that disk read. Re-checked on the way back in: a rescan may
-            // have replaced or dropped this entry meanwhile, and its answer is the newer one.
-            lock (_gate)
-            {
-                if (!_files.TryGetValue(relativePath, out Candidate current))
-                {
-                    data = bytes;
-                    return true;
-                }
-
-                if (current.Data is { } raced)
-                {
-                    data = raced;
-                    return true;
-                }
-
-                if (current == candidate)
-                {
-                    _files[relativePath] = current with { Data = bytes };
-                }
-            }
-
+            // render thread must not wait on that disk read.
             data = bytes;
             return true;
         }
@@ -418,7 +389,5 @@ public sealed class ResourceOverrides
     {
         /// <summary>Where the bytes start in <see cref="Path"/>, or -1 when the file itself is the asset.</summary>
         public long Offset { get; init; } = -1;
-
-        public byte[]? Data { get; init; }
     }
 }

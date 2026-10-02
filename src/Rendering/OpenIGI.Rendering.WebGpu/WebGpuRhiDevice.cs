@@ -611,16 +611,23 @@ public sealed unsafe partial class WebGpuRhiDevice : IRhiDevice
             aspect = WGPUTextureAspect.All,
         };
 
+        // A block format is copied in whole blocks: the extent rounded up to the four-by-four block the
+        // last row and column fall in -- WebGPU refuses a copy that ends part way through one, which is
+        // every mip below four texels -- and the rows counted in blocks rather than texels.
+        bool blocks = ((WebGpuTexture)destination.Texture).Format.IsBlockCompressed();
+        int copyWidth = blocks ? (size.Width + 3) & ~3 : size.Width;
+        int copyHeight = blocks ? (size.Height + 3) & ~3 : size.Height;
+
         WGPUTexelCopyBufferLayout layout = new()
         {
             bytesPerRow = (uint)bytesPerRow,
-            rowsPerImage = (uint)size.Height,
+            rowsPerImage = (uint)(blocks ? copyHeight / 4 : size.Height),
         };
 
         WGPUExtent3D extent = new()
         {
-            width = (uint)size.Width,
-            height = (uint)size.Height,
+            width = (uint)copyWidth,
+            height = (uint)copyHeight,
             depthOrArrayLayers = (uint)size.DepthOrArrayLayers,
         };
 

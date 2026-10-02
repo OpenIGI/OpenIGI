@@ -104,6 +104,63 @@ public sealed class TextureTable : ITextureBindingSource, IDisposable
         return new TextureHandle(id);
     }
 
+    /// <summary>Creates a block-compressed texture and uploads its stored chain as it is.</summary>
+    /// <param name="description">Its size, how many levels it has, and how it is filtered.</param>
+    /// <param name="format">The block format.</param>
+    /// <param name="chain">Every level's blocks, back to back, largest first.</param>
+    /// <param name="label">A name for captures and diagnostics.</param>
+    /// <returns>Its handle.</returns>
+    /// <remarks>
+    /// Stops where the chain runs out, as <see cref="Create"/> does with pixels. Each level is a row of
+    /// whole blocks per four texels across, partial blocks counted whole.
+    /// </remarks>
+    public TextureHandle CreateCompressed(
+        in TextureDescription description, BlockFormat format, ReadOnlySpan<byte> chain, string label = "")
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        uint id = _next++;
+        RhiTextureFormat rhiFormat = (format, description.HoldsData) switch
+        {
+            (BlockFormat.Bc1, false) => RhiTextureFormat.Bc1RgbaUnormSrgb,
+            (BlockFormat.Bc1, true) => RhiTextureFormat.Bc1RgbaUnorm,
+            (BlockFormat.Bc7, false) => RhiTextureFormat.Bc7RgbaUnormSrgb,
+            (BlockFormat.Bc7, true) => RhiTextureFormat.Bc7RgbaUnorm,
+            _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Not a block format."),
+        };
+
+        IRhiTexture texture = _device.CreateTexture(new RhiTextureDescriptor(
+            Math.Max(1, description.Width),
+            Math.Max(1, description.Height),
+            rhiFormat,
+            RhiTextureUsage.Sampled | RhiTextureUsage.CopyDestination,
+            MipLevelCount: Math.Max(1, description.MipLevels),
+            Label: label.Length > 0 ? label : $"texture-{id}"));
+
+        _textures[id] = new Entry(texture, SamplerFor(description));
+
+        int levels = Math.Max(1, description.MipLevels);
+        int at = 0;
+        for (int level = 0; level < levels; level++)
+        {
+            (int width, int height) = MipSize(texture, level);
+            int bytes = BlockCompression.LevelBytes(format, width, height);
+            if (at + bytes > chain.Length)
+            {
+                break;
+            }
+
+            _device.WriteTexture(
+                new RhiTextureRegion(texture, level),
+                chain.Slice(at, bytes),
+                BlockCompression.RowBytes(format, width),
+                new RhiExtent3D(width, height));
+            at += bytes;
+        }
+
+        return new TextureHandle(id);
+    }
+
     /// <summary>Replaces one mip level of a texture.</summary>
     /// <param name="handle">The texture.</param>
     /// <param name="mipLevel">Which level.</param>

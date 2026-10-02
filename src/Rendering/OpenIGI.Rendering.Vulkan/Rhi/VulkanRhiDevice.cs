@@ -28,9 +28,8 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice, RayTracing.IS
     private readonly VulkanAllocator _allocator;
     private readonly VulkanCommands _commands;
     private readonly IIgiLogger _logger;
-    private readonly List<DescriptorPool> _pools = [];
-    private DescriptorPool _pool;
-    private int _poolRemaining;
+    private readonly List<DescriptorPoolState> _pools = [];
+    private DescriptorPoolState? _pool;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="VulkanRhiDevice"/> class.</summary>
@@ -62,6 +61,10 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice, RayTracing.IS
         _allocator = allocator;
         _commands = commands;
         _logger = logger;
+
+        // A one-off goes to the queue around the frame, so anything it may read that is still queued here
+        // -- a texture created or written since the last submission -- has to reach the queue before it.
+        _commands.BeforeOneOffSubmit = SubmitPendingUploads;
 
         Features = ReadFeatures(device);
         Limits = ReadLimits(device);
@@ -146,7 +149,7 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice, RayTracing.IS
             memory,
             persistentlyMapped: VulkanRhiTranslation.NeedsHostVisibleMemory(descriptor.Usage));
 
-        return new VulkanRhiBuffer(buffer, descriptor);
+        return new VulkanRhiBuffer(buffer, descriptor) { Owner = this };
     }
 
     /// <inheritdoc/>
@@ -184,15 +187,17 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice, RayTracing.IS
         VkCheck.Ok(_vk.CreateImage(_device.Device, &info, null, &image), "vkCreateImage");
 
         _vk.GetImageMemoryRequirements(_device.Device, image, out MemoryRequirements requirements);
-        DeviceMemory memory = _allocator.Allocate(requirements, MemoryPropertyFlags.DeviceLocalBit);
-        VkCheck.Ok(_vk.BindImageMemory(_device.Device, image, memory, 0), "vkBindImageMemory");
+        VulkanAllocation memory = _allocator.AllocateResource(
+            requirements, MemoryPropertyFlags.DeviceLocalBit, VulkanResourceKind.Image);
+        VkCheck.Ok(_vk.BindImageMemory(_device.Device, image, memory.Memory, memory.Offset), "vkBindImageMemory");
 
-        VulkanRhiTexture texture = new(_vk, _device.Device, _allocator, image, memory, descriptor);
+        VulkanRhiTexture texture = new(_vk, _device.Device, _allocator, image, memory, descriptor) { Owner = this };
 
-        // Into its resting layout at once, so nothing downstream has to know an image starts undefined.
-        // A transition out of Undefined discards whatever was there, which is exactly right for one
-        // nobody has written to yet.
-        _commands.SingleTime(cmd => Transition(cmd, texture, ImageLayout.General));
+        // Into its resting layout ahead of anything that uses it, so nothing downstream has to know an
+        // image starts undefined. A transition out of Undefined discards whatever was there, which is
+        // exactly right for one nobody has written to yet. Queued with the uploads rather than submitted
+        // and waited on: see QueueTextureUpload.
+        QueueInitialTransition(texture);
         return texture;
     }
 
@@ -430,54 +435,26 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice, RayTracing.IS
         ThrowIfDisposed();
 
         VulkanRhiTexture texture = (VulkanRhiTexture)destination.Texture;
-        ulong bytes = (ulong)(data.Length * sizeof(T));
-
-        using VulkanBuffer staging = new(
-            _vk,
-            _device,
-            _allocator,
-            bytes,
-            BufferUsageFlags.TransferSrcBit,
-            MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
-
-        staging.Write(data);
-
-        Silk.NET.Vulkan.Buffer source = staging.Handle;
-        int texelBytes = texture.Format.BytesPerTexel();
         RhiTextureRegion region = destination;
-        RhiExtent3D extent = size;
 
-        _commands.SingleTime(cmd =>
+        BufferImageCopy copy = new()
         {
-            Transition(cmd, texture, ImageLayout.TransferDstOptimal);
-
-            BufferImageCopy copy = new()
+            ImageSubresource = new ImageSubresourceLayers
             {
-                BufferOffset = 0,
+                AspectMask = texture.Aspects,
+                MipLevel = (uint)region.MipLevel,
+                BaseArrayLayer = (uint)region.Origin.Z,
+                LayerCount = 1,
+            },
+            ImageOffset = new Offset3D(region.Origin.X, region.Origin.Y, 0),
+            ImageExtent = new Extent3D(
+                (uint)size.Width,
+                (uint)size.Height,
+                (uint)(texture.Dimension == RhiTextureViewDimension.Texture3D ? size.DepthOrArrayLayers : 1)),
+        };
 
-                // Vulkan wants the row length in TEXELS where everything else counts bytes, and a row
-                // that is not padded is stated as zero rather than as its own width.
-                BufferRowLength = texelBytes > 0 && bytesPerRow != extent.Width * texelBytes
-                    ? (uint)(bytesPerRow / texelBytes)
-                    : 0,
-                BufferImageHeight = 0,
-                ImageSubresource = new ImageSubresourceLayers
-                {
-                    AspectMask = texture.Aspects,
-                    MipLevel = (uint)region.MipLevel,
-                    BaseArrayLayer = (uint)region.Origin.Z,
-                    LayerCount = 1,
-                },
-                ImageOffset = new Offset3D(region.Origin.X, region.Origin.Y, 0),
-                ImageExtent = new Extent3D(
-                    (uint)extent.Width,
-                    (uint)extent.Height,
-                    (uint)(texture.Dimension == RhiTextureViewDimension.Texture3D ? extent.DepthOrArrayLayers : 1)),
-            };
-
-            _vk.CmdCopyBufferToImage(cmd, source, texture.Image, ImageLayout.TransferDstOptimal, 1, &copy);
-            Transition(cmd, texture, ImageLayout.General);
-        });
+        // Queued ahead of the next submission rather than sent and waited on, as a buffer write is.
+        QueueTextureUpload(texture, System.Runtime.InteropServices.MemoryMarshal.AsBytes(data), copy, bytesPerRow);
     }
 
     /// <inheritdoc/>
@@ -487,7 +464,51 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice, RayTracing.IS
         FlushUploads();
         _vk.DeviceWaitIdle(_device.Device);
         ReleaseFinishedLoose();
+
+        // Everything submitted has finished; only a frame still being recorded can name a set now.
+        ReleaseFinishedSets(all: !_inFrame);
     }
+
+    /// <inheritdoc/>
+    public string DescribeMemory()
+    {
+        int liveSets = 0;
+        foreach (DescriptorPoolState pool in _pools)
+        {
+            liveSets += pool.Live;
+        }
+
+        return string.Join(
+            '\n',
+            "Vulkan heaps:",
+            _device.DescribeMemoryBudget(),
+            "Vulkan allocations:",
+            _allocator.Describe(),
+            FormattableString.Invariant(
+                $"  descriptor pools: {_pools.Count}, {liveSets} live set(s), {_setFrees.Count} waiting to be freed"),
+            FormattableString.Invariant(
+                $"  upload staging: {_freeStaging.Count} spare chunk(s), {_loose.Count} loose submission(s) in flight"));
+    }
+
+    /// <inheritdoc/>
+    public void TrimMemory()
+    {
+        ThrowIfDisposed();
+
+        // The spare staging chunks first, so the allocator's trim sees them as freed blocks.
+        foreach (VulkanBuffer chunk in _freeStaging)
+        {
+            chunk.Dispose();
+        }
+
+        _freeStaging.Clear();
+        ReleaseFinishedSets();
+        _allocator.TrimHostVisible();
+        _allocator.TrimDeviceLocal(TrimmedDevicePoolBytes);
+    }
+
+    /// <summary>How much freed device memory a trim keeps for the next load to reuse.</summary>
+    private const long TrimmedDevicePoolBytes = 64L * 1024 * 1024;
 
     /// <inheritdoc/>
     public void Dispose()
@@ -505,12 +526,13 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice, RayTracing.IS
         DestroySubmissionState();
         DestroyFrameSync();
 
-        foreach (DescriptorPool pool in _pools)
+        foreach (DescriptorPoolState pool in _pools)
         {
-            _vk.DestroyDescriptorPool(_device.Device, pool, null);
+            _vk.DestroyDescriptorPool(_device.Device, pool.Handle, null);
         }
 
         _pools.Clear();
+        _setFrees.Clear();
     }
 
     /// <summary>Puts a texture into a layout, from whatever it was in.</summary>

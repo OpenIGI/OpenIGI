@@ -173,6 +173,9 @@ internal sealed partial class GameHost
     /// </remarks>
     private void EnsureRealtimeGiStructures()
     {
+        // First, because the lite backdrop's overrides decide whether either structure is wanted at all.
+        UpdateBackdropProfile();
+
         if (_scene is null || (_activeMission is null && _backdrop is null))
         {
             return;

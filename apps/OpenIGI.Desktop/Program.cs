@@ -212,6 +212,12 @@ using (window)
     RendererBackend backend = RendererSwitchOrder.Parse(requested);
     HostOptions runOptions = options;
 
+    // The render loop runs on this thread, and the menu builds every backdrop on the pool beside it --
+    // a texture pack's worth of pictures decoded and mipped on every core. A profile of the menu had the
+    // pool at sixteen cores' worth while the frame waited its turn for one, so the picture stalled for as
+    // long as the build ran. Above normal, the frame is scheduled first and the build takes what is left.
+    Thread.CurrentThread.Priority = ThreadPriority.AboveNormal;
+
     // F10 (r_switch_renderer) ends the game to change API rather than to quit. Everything the game
     // holds on the GPU belongs to the device that made it, so the game is built again, over the other
     // API and on the same window, and put back where it was.

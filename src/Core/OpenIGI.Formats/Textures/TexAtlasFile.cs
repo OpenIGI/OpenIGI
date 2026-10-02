@@ -51,6 +51,7 @@ public sealed class TexAtlasFile
         TileWidth = width;
         TileHeight = height;
         Tiles = tiles;
+        TileCount = tiles.Count;
     }
 
     /// <summary>Gets the container version, <see cref="Version7"/> or <see cref="Version9"/>.</summary>
@@ -63,7 +64,19 @@ public sealed class TexAtlasFile
     public int TileHeight { get; }
 
     /// <summary>Gets the tiles, in file order; the index is what a tile map holds.</summary>
-    public IReadOnlyList<TextureImage> Tiles { get; }
+    /// <remarks>Empty once <see cref="ReleasePixels"/> has run; <see cref="TileCount"/> still says how many there were.</remarks>
+    public IReadOnlyList<TextureImage> Tiles { get; private set; }
+
+    /// <summary>Gets how many tiles the atlas holds, whether or not their pixels are still here.</summary>
+    public int TileCount { get; }
+
+    /// <summary>Drops the tiles' pixels once whoever draws them has them on the GPU.</summary>
+    /// <remarks>
+    /// The atlas lives as long as the level's terrain data, and with a texture pack its tiles are full mip
+    /// chains a few megabytes each -- held for the whole level for the sake of an upload made at its start.
+    /// The count stays, because a tile map's indices are checked against it.
+    /// </remarks>
+    public void ReleasePixels() => Tiles = [];
 
     /// <summary>Determines whether a <c>"LOOP"</c> asset is one of the multi-image versions.</summary>
     /// <param name="data">The file bytes.</param>
@@ -91,7 +104,8 @@ public sealed class TexAtlasFile
         if (PackPicture.Is(data.Span))
         {
             PackPicture.Content content = PackPicture.Read(data);
-            TextureImage[] pictures = [.. content.Frames.Select(frame => frame.Image)];
+            // A block-compressed frame's image is only its proxy; an atlas wants every texel of its tiles.
+            TextureImage[] pictures = [.. content.Frames.Select(frame => frame.Compressed?.Decode() ?? frame.Image)];
 
             return new TexAtlasFile(
                 PackPicture.Version,

@@ -45,6 +45,10 @@ public static class WebGpuTranslation
         RhiTextureFormat.Depth32Float => WGPUTextureFormat.Depth32Float,
         RhiTextureFormat.Depth24PlusStencil8 => WGPUTextureFormat.Depth24PlusStencil8,
         RhiTextureFormat.Depth16Unorm => WGPUTextureFormat.Depth16Unorm,
+        RhiTextureFormat.Bc1RgbaUnorm => WGPUTextureFormat.BC1RGBAUnorm,
+        RhiTextureFormat.Bc1RgbaUnormSrgb => WGPUTextureFormat.BC1RGBAUnormSrgb,
+        RhiTextureFormat.Bc7RgbaUnorm => WGPUTextureFormat.BC7RGBAUnorm,
+        RhiTextureFormat.Bc7RgbaUnormSrgb => WGPUTextureFormat.BC7RGBAUnormSrgb,
         _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Not a texture format."),
     };
 
@@ -76,6 +80,10 @@ public static class WebGpuTranslation
         WGPUTextureFormat.Depth32Float => RhiTextureFormat.Depth32Float,
         WGPUTextureFormat.Depth24PlusStencil8 => RhiTextureFormat.Depth24PlusStencil8,
         WGPUTextureFormat.Depth16Unorm => RhiTextureFormat.Depth16Unorm,
+        WGPUTextureFormat.BC1RGBAUnorm => RhiTextureFormat.Bc1RgbaUnorm,
+        WGPUTextureFormat.BC1RGBAUnormSrgb => RhiTextureFormat.Bc1RgbaUnormSrgb,
+        WGPUTextureFormat.BC7RGBAUnorm => RhiTextureFormat.Bc7RgbaUnorm,
+        WGPUTextureFormat.BC7RGBAUnormSrgb => RhiTextureFormat.Bc7RgbaUnormSrgb,
         _ => RhiTextureFormat.Undefined,
     };
 

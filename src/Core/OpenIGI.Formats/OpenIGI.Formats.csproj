@@ -8,6 +8,9 @@
     <!-- The MPEG-1 Layer III decoder behind MpegAudioStreamReader. I.G.I. 2's menu theme is the only
          retail sound in either game that is not ILSF. -->
     <PackageReference Include="NLayer" />
+
+    <!-- Block-compressed pack pictures: decoded on the CPU only where the device cannot sample them. -->
+    <PackageReference Include="BCnEncoder.Net" />
   </ItemGroup>
 
 </Project>

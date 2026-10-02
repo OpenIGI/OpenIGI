@@ -24,9 +24,9 @@ namespace OpenIGI.Rendering.Vulkan;
 /// a queue round trip whatever it carries, and a level's worth of textures is hundreds of them: measured
 /// over a menu session, six hundred milliseconds of the render thread went on <c>vkWaitForFences</c>
 /// waiting for copies that together took a fraction of that. Batched, they accumulate into one buffer
-/// and pay one round trip between them. The guarantee is unchanged — the batch is flushed, and waited
-/// on, before anything else is submitted or a frame opens — so a caller still cannot observe an upload
-/// that has not happened.
+/// and pay one round trip between them. The batch is flushed before anything else is submitted, so the
+/// queue runs it first and anything after it sees what it wrote; the flush itself does not wait, and the
+/// staging it held is released once its fence has signalled.
 /// </para>
 /// </remarks>
 internal sealed unsafe class VulkanCommands : IDisposable
@@ -47,6 +47,9 @@ internal sealed unsafe class VulkanCommands : IDisposable
     private CommandBuffer _batch;
     private int _batchItems;
     private ulong _batchBytes;
+
+    // Batches sent and not yet known to have finished, each with the staging it reads.
+    private readonly List<InFlightBatch> _inFlight = [];
 
     private bool _disposed;
 
@@ -89,6 +92,13 @@ internal sealed unsafe class VulkanCommands : IDisposable
         VkCheck.Ok(_vk.CreateCommandPool(device.Device, &singleTimeInfo, null, &singleTimePool), "vkCreateCommandPool");
         _singleTimePool = singleTimePool;
     }
+
+    /// <summary>Gets or sets what runs before a one-off is submitted, so work queued elsewhere reaches the queue ahead of it.</summary>
+    /// <remarks>
+    /// The device queues its own uploads -- buffer and texture writes -- for its next submission. A one-off
+    /// goes to the queue around that, so without this it could run before the upload of a texture it reads.
+    /// </remarks>
+    public Action? BeforeOneOffSubmit { get; set; }
 
     /// <summary>Allocates primary command buffers from the pool.</summary>
     /// <param name="count">How many to allocate.</param>
@@ -179,14 +189,17 @@ internal sealed unsafe class VulkanCommands : IDisposable
         }
     }
 
-    /// <summary>Submits whatever the batch holds and waits for it, freeing the staging it kept alive.</summary>
+    /// <summary>Submits whatever the batch holds, keeping the staging it reads alive until it has run.</summary>
     /// <remarks>
-    /// Called before anything else reaches the queue -- another one-off, a frame opening -- so batched
-    /// work is always ordered and complete ahead of whatever might read it. Cheap and safe to call with
-    /// an empty batch, which is what it is on nearly every frame.
+    /// Called before anything else reaches the queue -- another one-off, a frame's submission -- so batched
+    /// work is always ordered ahead of whatever might read it. It does not wait: the batch's own barriers
+    /// make its writes visible to what the queue runs after it, and nothing on the host reads them. Cheap
+    /// and safe to call with an empty batch, which is what it is on nearly every frame.
     /// </remarks>
     public void FlushBatched()
     {
+        ReleaseFinishedBatches(wait: false);
+
         if (_batch.Handle == 0)
         {
             return;
@@ -197,18 +210,43 @@ internal sealed unsafe class VulkanCommands : IDisposable
         _batchItems = 0;
         _batchBytes = 0;
 
-        try
+        IDisposable[] held = [.. _batchHeld];
+        _batchHeld.Clear();
+
+        Fence fence = SubmitCore(buffer);
+        _inFlight.Add(new InFlightBatch(fence, buffer, held));
+    }
+
+    /// <summary>Frees every sent batch whose fence has signalled, or waits for all of them.</summary>
+    private void ReleaseFinishedBatches(bool wait)
+    {
+        for (int i = _inFlight.Count - 1; i >= 0; i--)
         {
-            SubmitOneOffCore(buffer);
-        }
-        finally
-        {
-            foreach (IDisposable held in _batchHeld)
+            InFlightBatch batch = _inFlight[i];
+            Fence fence = batch.Fence;
+
+            if (wait)
             {
-                held.Dispose();
+                Result waitResult = _vk.WaitForFences(_device.Device, 1, &fence, true, ulong.MaxValue);
+                if (waitResult == Result.ErrorDeviceLost)
+                {
+                    _device.ReportDeviceFault();
+                }
+            }
+            else if (_vk.GetFenceStatus(_device.Device, fence) != Result.Success)
+            {
+                continue;
             }
 
-            _batchHeld.Clear();
+            _vk.DestroyFence(_device.Device, fence, null);
+            CommandBuffer buffer = batch.Buffer;
+            _vk.FreeCommandBuffers(_device.Device, _singleTimePool, 1, &buffer);
+            foreach (IDisposable resource in batch.Held)
+            {
+                resource.Dispose();
+            }
+
+            _inFlight.RemoveAt(i);
         }
     }
 
@@ -255,8 +293,41 @@ internal sealed unsafe class VulkanCommands : IDisposable
     /// <exception cref="GraphicsDeviceException">The submission failed.</exception>
     public void SubmitOneOff(CommandBuffer commandBuffer)
     {
+        BeforeOneOffSubmit?.Invoke();
         FlushBatched();
         SubmitOneOffCore(commandBuffer);
+    }
+
+    /// <summary>Ends and submits a one-off buffer under a fence of its own, without waiting.</summary>
+    /// <returns>The fence, which the caller destroys once it has signalled.</returns>
+    private Fence SubmitCore(CommandBuffer commandBuffer)
+    {
+        VkCheck.Ok(_vk.EndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
+
+        SubmitInfo submitInfo = new()
+        {
+            SType = StructureType.SubmitInfo,
+            CommandBufferCount = 1,
+            PCommandBuffers = &commandBuffer,
+        };
+
+        FenceCreateInfo fenceInfo = new() { SType = StructureType.FenceCreateInfo };
+        Fence fence;
+        VkCheck.Ok(_vk.CreateFence(_device.Device, &fenceInfo, null, &fence), "vkCreateFence");
+
+        Result submitResult = _vk.QueueSubmit(_device.Graphics, 1, &submitInfo, fence);
+        if (submitResult != Result.Success)
+        {
+            if (submitResult == Result.ErrorDeviceLost)
+            {
+                _device.ReportDeviceFault();
+            }
+
+            _vk.DestroyFence(_device.Device, fence, null);
+            VkCheck.Ok(submitResult, "vkQueueSubmit");
+        }
+
+        return fence;
     }
 
     private void SubmitOneOffCore(CommandBuffer commandBuffer)
@@ -316,7 +387,10 @@ internal sealed unsafe class VulkanCommands : IDisposable
 
         _disposed = true;
         FlushBatched();
+        ReleaseFinishedBatches(wait: true);
         _vk.DestroyCommandPool(_device.Device, _singleTimePool, null);
         _vk.DestroyCommandPool(_device.Device, _pool, null);
     }
+
+    private readonly record struct InFlightBatch(Fence Fence, CommandBuffer Buffer, IDisposable[] Held);
 }

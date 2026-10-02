@@ -113,10 +113,26 @@ public static class TexFile
         {
             // A pack picture can hold several frames. Asked for one texture, it gives the first, which
             // is what a container replacing a single-picture .tex will have written.
-            return PackPicture.Read(data.ToArray()).Frames[0].Image;
+            PackPicture.Frame frame = PackPicture.ReadFirstFrame(data);
+            return frame.Compressed is { } compressed ? compressed.Decode() : frame.Image;
         }
 
         TextureDescriptor descriptor = ReadHeader(data, out int payloadOffset);
         return TextureDecoder.Decode(descriptor, data[payloadOffset..], palette);
     }
+
+    /// <summary>Loads a <c>.tex</c> file's top level only, without building the chain a pack picture asks for.</summary>
+    /// <param name="data">The file bytes.</param>
+    /// <param name="palette">The palette to use if the texture is paletted.</param>
+    /// <returns>The decoded image; level zero is all a caller should read.</returns>
+    /// <exception cref="TextureFormatException">The bytes are not a usable <c>.tex</c> file.</exception>
+    /// <remarks>
+    /// For a caller that measures a texture rather than draws it -- the lamp detector's brightness, the
+    /// lightmap baker's tint. With a texture pack installed, building a chain for each was most of what
+    /// measuring a level's textures cost, and every chain went straight to the garbage collector.
+    /// </remarks>
+    public static TextureImage LoadLevelZero(ReadOnlySpan<byte> data, ReadOnlySpan<Bgra32> palette = default) =>
+        PackPicture.Is(data)
+            ? PackPicture.ReadFirstFrame(data, buildMips: false).Image
+            : Load(data, palette);
 }

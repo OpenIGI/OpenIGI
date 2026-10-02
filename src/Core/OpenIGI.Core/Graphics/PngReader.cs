@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using System.IO.Compression;
 
@@ -46,7 +47,18 @@ public static class PngReader
     /// <param name="data">The file's bytes.</param>
     /// <returns>The pixels, row-major and top-down, with the image's dimensions.</returns>
     /// <exception cref="InvalidDataException">The data is not a PNG this reader supports.</exception>
-    public static (Bgra32[] Pixels, int Width, int Height) Read(ReadOnlySpan<byte> data)
+    public static (Bgra32[] Pixels, int Width, int Height) Read(ReadOnlySpan<byte> data) => Read(data, capacity: null);
+
+    /// <summary>Reads a PNG from memory into an array with room left after the image.</summary>
+    /// <param name="data">The file's bytes.</param>
+    /// <param name="capacity">
+    /// How many pixels the returned array holds, given the image's width and height; at least the image's
+    /// own. Null for exactly the image. A caller about to build a mip chain asks for the whole chain, so
+    /// level zero is decoded where the chain starts rather than into an array that is then copied.
+    /// </param>
+    /// <returns>The pixels, row-major and top-down from index zero, with the image's dimensions.</returns>
+    /// <exception cref="InvalidDataException">The data is not a PNG this reader supports.</exception>
+    public static (Bgra32[] Pixels, int Width, int Height) Read(ReadOnlySpan<byte> data, Func<int, int, int>? capacity)
     {
         if (data.Length < Signature.Length || !data[..Signature.Length].SequenceEqual(Signature))
         {
@@ -60,7 +72,10 @@ public static class PngReader
         bool seenHeader = false;
         bool seenData = false;
         bool seenEnd = false;
-        using MemoryStream compressed = new();
+
+        // Where the image data lies, chunk by chunk; gathered into one buffer once the walk is done.
+        List<(int Offset, int Length)> imageData = [];
+        long compressedLength = 0;
 
         int at = Signature.Length;
 
@@ -149,12 +164,13 @@ public static class PngReader
 
                 // Concatenated, because the pixel data may be split across any number of chunks and
                 // the zlib stream runs across all of them as one.
-                if (compressed.Length > MaxCompressedBytes - length)
+                if (compressedLength > MaxCompressedBytes - length)
                 {
                     throw new InvalidDataException("PNG compressed data exceeds the reader's size limit.");
                 }
 
-                compressed.Write(data.Slice(payload, length));
+                imageData.Add((payload, length));
+                compressedLength += length;
                 seenData = true;
             }
             else if (type.SequenceEqual("IEND"u8))
@@ -192,25 +208,59 @@ public static class PngReader
             throw new InvalidDataException("The PNG has no usable header.");
         }
 
-        compressed.Position = 0;
-        using MemoryStream raw = new();
-
-        using (ZLibStream inflate = new(compressed, CompressionMode.Decompress, leaveOpen: true))
+        // The decompressed size is known from the header, so it is inflated straight into a buffer of that
+        // size rather than into a stream that grows by doubling. The growing stream was the largest single
+        // allocator in a profile of the menu: every texture-pack picture of every backdrop went through
+        // it, at several times the picture's final size counting the copies it left behind. Both buffers
+        // are pooled, because nothing outlives this call but the pixels.
+        long expectedLength = (((long)width * channels * bytesPerSample) + 1) * height;
+        if (expectedLength > MaxDecodedBytes)
         {
-            CopyLimited(inflate, raw, MaxDecodedBytes);
+            throw new InvalidDataException("PNG decompressed data exceeds the reader's size limit.");
         }
 
-        return (Unfilter(raw.GetBuffer(), (int)raw.Length, width, height, channels, bytesPerSample), width, height);
+        byte[] compressed = ArrayPool<byte>.Shared.Rent((int)compressedLength);
+        byte[] raw = ArrayPool<byte>.Shared.Rent((int)expectedLength);
+        try
+        {
+            int gathered = 0;
+            foreach ((int offset, int length) in imageData)
+            {
+                data.Slice(offset, length).CopyTo(compressed.AsSpan(gathered));
+                gathered += length;
+            }
+
+            int inflated;
+            using (MemoryStream source = new(compressed, 0, gathered, writable: false))
+            using (ZLibStream inflate = new(source, CompressionMode.Decompress))
+            {
+                inflated = inflate.ReadAtLeast(raw.AsSpan(0, (int)expectedLength), (int)expectedLength, throwOnEndOfStream: false);
+                DrainLimited(inflate, inflated, MaxDecodedBytes);
+            }
+
+            int room = Math.Max(width * height, capacity?.Invoke(width, height) ?? 0);
+            return (Unfilter(raw, inflated, width, height, channels, bytesPerSample, room), width, height);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(compressed);
+            ArrayPool<byte>.Shared.Return(raw);
+        }
     }
 
-    private static void CopyLimited(Stream source, Stream destination, int limit)
+    /// <summary>Reads past whatever the image needed, holding the whole stream to the size limit.</summary>
+    /// <remarks>
+    /// The pixels are all in hand by now; this keeps the old guarantee that a stream inflating past the
+    /// limit is refused rather than silently cut short. A well-formed file has nothing left to read.
+    /// </remarks>
+    private static void DrainLimited(Stream source, int alreadyRead, int limit)
     {
-        byte[] buffer = new byte[81920];
-        int total = 0;
+        Span<byte> scratch = stackalloc byte[512];
+        int total = alreadyRead;
 
         while (true)
         {
-            int read = source.Read(buffer, 0, buffer.Length);
+            int read = source.Read(scratch);
             if (read == 0)
             {
                 return;
@@ -221,7 +271,6 @@ public static class PngReader
                 throw new InvalidDataException("PNG decompressed data exceeds the reader's size limit.");
             }
 
-            destination.Write(buffer, 0, read);
             total += read;
         }
     }
@@ -267,14 +316,15 @@ public static class PngReader
     /// and in place, because each row's prediction refers to the row above it <em>after</em> that row
     /// has itself been undone.
     /// </remarks>
-    private static Bgra32[] Unfilter(byte[] raw, int length, int width, int height, int channels, int bytesPerSample)
+    private static Bgra32[] Unfilter(byte[] raw, int length, int width, int height, int channels, int bytesPerSample, int room)
     {
         // The filters predict a byte from the byte one WHOLE PIXEL to its left, not one sample: at
         // sixteen bits that is two bytes per sample, so the stride between a byte and its predictor
         // doubles. Using the sample count here instead is the classic way to decode a sixteen-bit PNG
         // into noise that still has roughly the right shape.
         int bytesPerPixel = channels * bytesPerSample;
-        int stride = (width * bytesPerPixel) + 1;
+        int rowBytes = width * bytesPerPixel;
+        int stride = rowBytes + 1;
 
         if (length < stride * height)
         {
@@ -282,68 +332,156 @@ public static class PngReader
                 $"Truncated PNG: {length} bytes of pixel data, {stride * height} expected.");
         }
 
-        byte[] previous = new byte[width * bytesPerPixel];
-        byte[] current = new byte[width * bytesPerPixel];
-        Bgra32[] pixels = new Bgra32[width * height];
+        Bgra32[] pixels = new Bgra32[room];
 
+        // Undone in place, row after row: each row's prediction reads the row above AFTER that row has
+        // been undone, which is exactly what the buffer holds by the time the walk reaches it. The first
+        // row's "above" is all zeroes.
+        byte[] zeroRow = new byte[rowBytes];
         for (int row = 0; row < height; row++)
         {
             int at = row * stride;
             byte filter = raw[at];
-            Array.Copy(raw, at + 1, current, 0, current.Length);
+            Span<byte> current = raw.AsSpan(at + 1, rowBytes);
+            ReadOnlySpan<byte> previous = row == 0 ? zeroRow : raw.AsSpan(at - stride + 1, rowBytes);
 
-            for (int i = 0; i < current.Length; i++)
-            {
-                int left = i >= bytesPerPixel ? current[i - bytesPerPixel] : 0;
-                int above = previous[i];
-                int aboveLeft = i >= bytesPerPixel ? previous[i - bytesPerPixel] : 0;
-
-                current[i] = filter switch
-                {
-                    0 => current[i],
-                    1 => (byte)(current[i] + left),
-                    2 => (byte)(current[i] + above),
-                    3 => (byte)(current[i] + ((left + above) / 2)),
-                    4 => (byte)(current[i] + Paeth(left, above, aboveLeft)),
-                    _ => throw new InvalidDataException($"PNG filter type {filter} is not defined."),
-                };
-            }
-
-            for (int column = 0; column < width; column++)
-            {
-                // The high byte of each sample, which for a big-endian sixteen-bit sample is the byte
-                // it starts on -- so one index step covers both depths.
-                int source = column * bytesPerPixel;
-                int step = bytesPerSample;
-
-                (byte r, byte g, byte b, byte a) = channels switch
-                {
-                    1 => (current[source], current[source], current[source], (byte)255),
-                    2 => (current[source], current[source], current[source], current[source + step]),
-                    3 => (current[source], current[source + step], current[source + (2 * step)], (byte)255),
-                    _ => (current[source], current[source + step], current[source + (2 * step)],
-                          current[source + (3 * step)]),
-                };
-
-                pixels[(row * width) + column] = new Bgra32(b, g, r, a);
-            }
-
-            (previous, current) = (current, previous);
+            UnfilterRow(filter, current, previous, bytesPerPixel);
+            ConvertRow(current, pixels.AsSpan(row * width, width), channels, bytesPerSample);
         }
 
         return pixels;
     }
 
+    /// <summary>Undoes one scanline's prediction in place.</summary>
+    /// <remarks>
+    /// One loop per filter rather than a switch per byte: the filter is the same across the row, and the
+    /// per-byte switch was most of what decoding a texture-pack picture cost. The first pixel of a row
+    /// has no left neighbour and no above-left one, both of which read as zero -- which turns the average
+    /// into half the byte above, and Paeth into the byte above.
+    /// </remarks>
+    private static void UnfilterRow(byte filter, Span<byte> current, ReadOnlySpan<byte> previous, int bytesPerPixel)
+    {
+        int first = Math.Min(bytesPerPixel, current.Length);
+
+        switch (filter)
+        {
+            case 0:
+                break;
+
+            case 1:
+                for (int i = bytesPerPixel; i < current.Length; i++)
+                {
+                    current[i] = (byte)(current[i] + current[i - bytesPerPixel]);
+                }
+
+                break;
+
+            case 2:
+                for (int i = 0; i < current.Length; i++)
+                {
+                    current[i] = (byte)(current[i] + previous[i]);
+                }
+
+                break;
+
+            case 3:
+                for (int i = 0; i < first; i++)
+                {
+                    current[i] = (byte)(current[i] + (previous[i] / 2));
+                }
+
+                for (int i = bytesPerPixel; i < current.Length; i++)
+                {
+                    current[i] = (byte)(current[i] + ((current[i - bytesPerPixel] + previous[i]) / 2));
+                }
+
+                break;
+
+            case 4:
+                for (int i = 0; i < first; i++)
+                {
+                    current[i] = (byte)(current[i] + previous[i]);
+                }
+
+                for (int i = bytesPerPixel; i < current.Length; i++)
+                {
+                    current[i] = (byte)(current[i] + Paeth(current[i - bytesPerPixel], previous[i], previous[i - bytesPerPixel]));
+                }
+
+                break;
+
+            default:
+                throw new InvalidDataException($"PNG filter type {filter} is not defined.");
+        }
+    }
+
+    /// <summary>Turns one undone scanline into pixels.</summary>
+    private static void ConvertRow(ReadOnlySpan<byte> row, Span<Bgra32> pixels, int channels, int bytesPerSample)
+    {
+        // The two shapes nearly every texture is, without the per-pixel switch.
+        if (bytesPerSample == 1 && channels == 4)
+        {
+            for (int column = 0, source = 0; column < pixels.Length; column++, source += 4)
+            {
+                pixels[column] = new Bgra32(row[source + 2], row[source + 1], row[source], row[source + 3]);
+            }
+
+            return;
+        }
+
+        if (bytesPerSample == 1 && channels == 3)
+        {
+            for (int column = 0, source = 0; column < pixels.Length; column++, source += 3)
+            {
+                pixels[column] = new Bgra32(row[source + 2], row[source + 1], row[source], 255);
+            }
+
+            return;
+        }
+
+        int bytesPerPixel = channels * bytesPerSample;
+        for (int column = 0; column < pixels.Length; column++)
+        {
+            // The high byte of each sample, which for a big-endian sixteen-bit sample is the byte it
+            // starts on -- so one index step covers both depths.
+            int source = column * bytesPerPixel;
+            int step = bytesPerSample;
+
+            (byte r, byte g, byte b, byte a) = channels switch
+            {
+                1 => (row[source], row[source], row[source], (byte)255),
+                2 => (row[source], row[source], row[source], row[source + step]),
+                3 => (row[source], row[source + step], row[source + (2 * step)], (byte)255),
+                _ => (row[source], row[source + step], row[source + (2 * step)], row[source + (3 * step)]),
+            };
+
+            pixels[column] = new Bgra32(b, g, r, a);
+        }
+    }
+
     /// <summary>The Paeth predictor: whichever neighbour the gradient points closest to.</summary>
+    /// <remarks>
+    /// Inlined, with the distances worked out without the estimate itself: estimate minus left is above
+    /// minus the corner, and so on. A profile of the menu had a third of all decoding inside calls to
+    /// this and to <see cref="Math.Abs(int)"/>, at three of each per byte of every texture-pack picture.
+    /// </remarks>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
     private static int Paeth(int left, int above, int aboveLeft)
     {
-        int estimate = left + above - aboveLeft;
-        int toLeft = Math.Abs(estimate - left);
-        int toAbove = Math.Abs(estimate - above);
-        int toCorner = Math.Abs(estimate - aboveLeft);
+        int toLeft = Magnitude(above - aboveLeft);
+        int toAbove = Magnitude(left - aboveLeft);
+        int toCorner = Magnitude(left + above - aboveLeft - aboveLeft);
 
         return toLeft <= toAbove && toLeft <= toCorner ? left
             : toAbove <= toCorner ? above
             : aboveLeft;
+    }
+
+    /// <summary>The absolute value, without the overflow check <see cref="Math.Abs(int)"/> makes; the inputs are small.</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private static int Magnitude(int value)
+    {
+        int sign = value >> 31;
+        return (value ^ sign) - sign;
     }
 }

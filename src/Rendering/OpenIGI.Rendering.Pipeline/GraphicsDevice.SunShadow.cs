@@ -42,6 +42,23 @@ public sealed partial class GraphicsDevice
     /// <inheritdoc/>
     public void SetTraceAdmission(bool unlimited) => TracedWorld?.SetUnlimitedAdmission(unlimited);
 
+    // Whether draws are being kept out of the traced world. See SetTracePaused.
+    private bool _tracePaused;
+
+    /// <inheritdoc/>
+    public void SetTracePaused(bool paused) => _tracePaused = paused;
+
+    /// <inheritdoc/>
+    public bool AcceptsShadowCasters => TracedWorld is not null && !_tracePaused;
+
+    /// <inheritdoc/>
+    public string DescribeMemory() =>
+        FormattableString.Invariant($"Graphics device: {_textures.Count} texture(s), {_materials.Count} material group(s).\n")
+        + _device.DescribeMemory();
+
+    /// <inheritdoc/>
+    public void TrimMemory() => _device.TrimMemory();
+
     /// <inheritdoc/>
     /// <remarks>
     /// Asked before the capture opens, which is when the game decides whether the cascades are worth
@@ -67,7 +84,7 @@ public sealed partial class GraphicsDevice
     {
         ThrowIfDisposed();
 
-        if (TracedWorld is not { } world || !_capturing || CurrentPass is not ScenePass.Geometry)
+        if (TracedWorld is not { } world || _tracePaused || !_capturing || CurrentPass is not ScenePass.Geometry)
         {
             return;
         }
@@ -120,6 +137,7 @@ public sealed partial class GraphicsDevice
         bool firstPerson = false)
     {
         if (TracedWorld is not { } world
+            || _tracePaused
             || !_capturing
             || (CurrentPass is not ScenePass.Geometry && !firstPerson)
             || (_material.Emissive > 0f && !_material.CastsOcclusion))

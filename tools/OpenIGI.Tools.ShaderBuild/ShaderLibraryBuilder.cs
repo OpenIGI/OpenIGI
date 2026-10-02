@@ -73,9 +73,12 @@ public sealed class ShaderLibraryBuilder
                     throw new ShaderBuildException($"{module.Id}: the source {module.Source} does not exist.");
                 }
 
-                foreach (ShaderVariantEntry variant in module.Variants)
+                // The variants WGSL can express go first, so the ones it cannot -- the ray-tracing forms --
+                // can take the texture and sampler shapes their siblings' WGSL spelt out. See InheritShapes.
+                Dictionary<string, ShaderBinding> shapes = new(StringComparer.Ordinal);
+                foreach (ShaderVariantEntry variant in module.Variants.OrderBy(v => v.Compiles(ShaderTarget.Wgsl) ? 0 : 1))
                 {
-                    results.AddRange(BuildVariant(module, variant, sourcePath, scratch, checkOnly));
+                    results.AddRange(BuildVariant(module, variant, sourcePath, scratch, checkOnly, shapes));
                 }
             }
         }
@@ -122,7 +125,8 @@ public sealed class ShaderLibraryBuilder
         ShaderVariantEntry variant,
         string sourcePath,
         string scratch,
-        bool checkOnly)
+        bool checkOnly,
+        Dictionary<string, ShaderBinding> shapes)
     {
         // Only the SPIR-V compile is asked for reflection. The two targets agree on binding numbers
         // and specialization identifiers -- which is exactly what declaring textures and samplers
@@ -167,12 +171,65 @@ public sealed class ShaderLibraryBuilder
                 module.Id);
 
             yield return Write($"{module.Id}.{variant.Name}.wgsl", code, checkOnly);
+
+            foreach (ShaderBinding binding in reflection.Bindings)
+            {
+                if (binding.Kind is ShaderBindingKind.Texture or ShaderBindingKind.Sampler)
+                {
+                    shapes[binding.Name] = binding;
+                }
+            }
+        }
+        else
+        {
+            reflection = InheritShapes(reflection, shapes);
         }
 
         byte[] reflectionBytes = Encoding.UTF8.GetBytes(
             JsonSerializer.Serialize(reflection, ShaderJsonContext.Default.ShaderReflection));
 
         yield return Write($"{module.Id}.{variant.Name}.reflection.json", NormaliseNewlines(reflectionBytes), checkOnly);
+    }
+
+    /// <summary>
+    /// Gives a variant with no WGSL form the texture and sampler shapes its siblings' WGSL spelt out.
+    /// </summary>
+    /// <param name="reflection">The SPIR-V-only variant's reflection.</param>
+    /// <param name="shapes">What the module's WGSL variants declared, by binding name.</param>
+    /// <returns>The reflection, its textures and samplers filled in where a sibling declared the same one.</returns>
+    /// <remarks>
+    /// <para>
+    /// Whether a texture holds depth and whether a sampler compares are read off the emitted WGSL, because
+    /// Slang's reflection says neither and SPIR-V cannot say the second. A ray-tracing variant has no WGSL,
+    /// so its reflection reported every texture as colour and every sampler as filtering -- and the
+    /// renderer, which picks a stand-in by that shape, bound a colour texel where the deferred shading
+    /// samples the shadow map through a comparison sampler: a validation error on every frame without a
+    /// shadow map, and an undefined read.
+    /// </para>
+    /// <para>
+    /// The variants are one source compiled with different defines, so a binding of the same name and kind
+    /// is the same declaration. One a ray-tracing variant alone declares keeps what it had.
+    /// </para>
+    /// </remarks>
+    private static ShaderReflection InheritShapes(ShaderReflection reflection, Dictionary<string, ShaderBinding> shapes)
+    {
+        List<ShaderBinding> merged = [];
+        foreach (ShaderBinding binding in reflection.Bindings)
+        {
+            if (binding.Kind is ShaderBindingKind.Texture or ShaderBindingKind.Sampler
+                && shapes.TryGetValue(binding.Name, out ShaderBinding? sibling)
+                && sibling.Kind == binding.Kind
+                && sibling.Arrayed == binding.Arrayed
+                && sibling.Dimensions == binding.Dimensions)
+            {
+                merged.Add(binding with { Comparison = sibling.Comparison, SampleType = sibling.SampleType });
+                continue;
+            }
+
+            merged.Add(binding);
+        }
+
+        return reflection with { Bindings = merged };
     }
 
     /// <summary>Refuses a WGSL target for a module that declares something WGSL has no form for.</summary>

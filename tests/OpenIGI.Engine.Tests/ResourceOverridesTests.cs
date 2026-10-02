@@ -101,9 +101,8 @@ public sealed class ResourceOverridesTests : IDisposable
 
     /// <summary>An edited file must be re-read, not served from the first scan's copy.</summary>
     /// <remarks>
-    /// The bytes are cached, because the registry holds them for the life of an entry and they cannot be
-    /// a transient buffer. The cache is keyed on the file's length and timestamp so that editing a file
-    /// in place — which is exactly what somebody iterating on a texture does — is picked up.
+    /// The bytes are read on demand rather than kept, so editing a file in place — which is exactly what
+    /// somebody iterating on a texture does — is picked up by the next read after a rescan.
     /// </remarks>
     [Fact]
     public void AnEditedOverrideIsReReadRatherThanRememberedWrong()
@@ -248,9 +247,7 @@ public sealed class ResourceOverridesTests : IDisposable
     /// <remarks>
     /// Not a hypothetical: a menu backdrop builds its level on a worker thread, and the registry it builds
     /// into resolves every archived entry through this store — while the render thread is free to rescan
-    /// the folder from the console or take the pack out of the frame. A read mutates too, because a
-    /// candidate caches its bytes the first time it is asked for, so the two collide on writes and not
-    /// merely on reads.
+    /// the folder from the console or take the pack out of the frame.
     /// </remarks>
     [Fact]
     public void ReadingWhileRescanningIsSafe()

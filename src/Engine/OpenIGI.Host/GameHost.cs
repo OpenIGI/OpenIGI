@@ -903,6 +903,7 @@ internal sealed partial class GameHost : IDisposable
         RegisterCameraCommands(console.System);
         RegisterRendererSwitchCommand(console.System);
         RegisterOverrideCommands(console.System);
+        RegisterMemoryCommands(console.System);
 
         console.Start(
             _fileSystem,
@@ -1258,6 +1259,7 @@ internal sealed partial class GameHost : IDisposable
         // A mission started from the menu never hit it, because the loop is already running by then.
         // Measured: 27 maps derived over 600 frames of -mission, against a level's worth of textures.
         _detailMaps.DeriveMissing = RenderCVars.MaterialDetail.Value > 0f;
+        _detailMaps.Enabled = _detailMaps.DeriveMissing;
 
 
         // What a menu backdrop needs to be promotable into the played mission rather than thrown away,
@@ -1424,6 +1426,8 @@ internal sealed partial class GameHost : IDisposable
         // and it simply appears.
         bool holdFrameForDissolve = false;
         bool heldFrameReady = false;
+        bool missionsSwept = false;
+        int backdropSwaps = 0;
         bool heldFrameIsPicture = false;
         bool dissolveRevealPending = false;
 
@@ -1878,7 +1882,11 @@ internal sealed partial class GameHost : IDisposable
             // its game list, its campaign and which entry is current are all the title's.
             if (SwitchTitleIfDue())
             {
+                // The outgoing title's sweep stops with it, and the new title's missions are swept once its
+                // first backdrop is up.
+                missionWarmer?.Dispose();
                 missionWarmer = new MissionWarmer(_gamePath, _missions, _logger, _work);
+                missionsSwept = false;
 
                 // Closed rather than dropped: it owns a worker that may be part way through building the
                 // outgoing game's backdrop, and the replacement below would otherwise race it.
@@ -1936,6 +1944,7 @@ internal sealed partial class GameHost : IDisposable
             // r_material_detail up mid-session starts deriving for whatever loads next -- it is zero
             // under vanilla and enhanced, and deriving maps the shader multiplies by nothing is waste.
             _detailMaps.DeriveMissing = RenderCVars.MaterialDetail.Value > 0f;
+            _detailMaps.Enabled = _detailMaps.DeriveMissing;
             _detailMaps.PumpDerived();
 
             // The probe bake, if one is still tracing. Collected HERE rather than on the worker because
@@ -2500,6 +2509,13 @@ internal sealed partial class GameHost : IDisposable
             if (menuMode && !pauseMenu && _arming is { IsArmed: false })
             {
                 _arming.Step(IdleArmingBudgetMilliseconds);
+
+                // The level is resident: the decoded pictures nobody took are dropped, and the staging
+                // the uploads went through is given back rather than held for the next level.
+                if (_arming.IsArmed)
+                {
+                    ReleaseLoadLeftovers();
+                }
             }
 
             // -entrycam presses Play the moment the backdrop it was pointed at is armed, which is the
@@ -2586,6 +2602,25 @@ internal sealed partial class GameHost : IDisposable
                     currentShowcaseMissionId = readyPreview.MissionId;
                     AdoptPreview(readyPreview);
                     changed = true;
+
+                    // Under the held frame, where the pause is not seen: the outgoing level and the
+                    // incoming one's decoding have just been through the heap.
+                    TrimAfterLoad();
+
+                    // A soak reports where memory stands every tenth swap, so growth shows as a trend.
+                    if (_options.BackdropCycleFrames > 0 && ++backdropSwaps % 10 == 0)
+                    {
+                        Console.WriteLine($"mem_report after {backdropSwaps} backdrop swap(s):");
+                        Console.WriteLine(DescribeMemory());
+                    }
+
+                    // Once the first backdrop is up, every other mission's files are read through in the
+                    // background, so whichever the player settles on next builds from memory.
+                    if (!missionsSwept)
+                    {
+                        missionsSwept = true;
+                        missionWarmer?.WarmAll(_missions.InCampaignOrder().Select(mission => mission.Id));
+                    }
                 }
                 else if (_showcaseCamera is { IsCutDue: true } showcase)
                 {

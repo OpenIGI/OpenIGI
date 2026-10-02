@@ -78,6 +78,13 @@ public sealed class TextureImage
             return this;
         }
 
+        // Decoded with room for its chain (PackPicture asks for it): built where it lies, no copy.
+        if (_pixels.Length >= MipChainBuilder.ChainLength(Width, Height))
+        {
+            int[] inPlace = MipChainBuilder.BuildInPlace(_pixels, Width, Height);
+            return new TextureImage(Width, Height, inPlace.Length, _pixels, inPlace);
+        }
+
         (Bgra32[] pixels, int[] offsets) = MipChainBuilder.Build(_pixels, Width, Height);
         return new TextureImage(Width, Height, offsets.Length, pixels, offsets);
     }
@@ -92,13 +99,20 @@ public sealed class TextureImage
     /// every level of it — the wire's colour was averaged flat against the holes at import — so it goes
     /// dark at distance no matter how well the alpha is preserved. Rebuilt from level zero, the alpha-
     /// weighted filter in <see cref="MipChainBuilder"/> keeps the wire's own colour instead. Build reads
-    /// only level zero of the source, so a chain that is already present is simply replaced.
+    /// only level zero of the source, so a chain that is already present is simply replaced -- in place
+    /// when the pixels have room for it, which changes this instance rather than copying it.
     /// </remarks>
     public TextureImage RebuildMipChain()
     {
         if (Width <= 0 || Height <= 0)
         {
             return this;
+        }
+
+        if (_pixels.Length >= MipChainBuilder.ChainLength(Width, Height))
+        {
+            int[] inPlace = MipChainBuilder.BuildInPlace(_pixels, Width, Height);
+            return new TextureImage(Width, Height, inPlace.Length, _pixels, inPlace);
         }
 
         (Bgra32[] pixels, int[] offsets) = MipChainBuilder.Build(_pixels, Width, Height);

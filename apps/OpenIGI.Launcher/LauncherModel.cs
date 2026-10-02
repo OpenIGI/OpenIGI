@@ -64,10 +64,11 @@ internal sealed class LauncherGame
 
     public int ModsEnabled { get; init; }
 
-    /// <summary>Gets the pack names in the content list, for the home page's summary.</summary>
-    public IReadOnlyList<string> OptionalPacks { get; init; } = [];
+    /// <summary>Gets or sets the names of the optional content packs for this game, for the home page's summary.</summary>
+    public IReadOnlyList<string> OptionalPacks { get; set; } = [];
 
-    public int PacksInstalled { get; init; }
+    /// <summary>Gets or sets how many of <see cref="OptionalPacks"/> are installed.</summary>
+    public int PacksInstalled { get; set; }
 
     public PatchNotes? Notes { get; set; }
 
@@ -105,7 +106,7 @@ internal enum PatchNoteKind
 /// UPDATE, or the footer's into a restart for a launcher release, and is announced once by a desktop
 /// notification when the launcher is in the background.
 /// </remarks>
-internal sealed class LauncherModel : IDisposable
+internal sealed partial class LauncherModel : IDisposable
 {
     private const int NotesShown = 6;
 
@@ -135,6 +136,8 @@ internal sealed class LauncherModel : IDisposable
         _installer = new BuildInstaller(_http, Path.Combine(Settings.Library, "openigi"));
         _selfUpdater = new LauncherUpdater(new BuildInstaller(_http, Path.Combine(LauncherPaths.ConfigDirectory, "launcher-update")));
         _installed = _installer.Current();
+        _contentClient = new ContentFeedClient(_http);
+        LoadInstalledContent();
         LauncherUpdater.CleanUp();
 
         Games =
@@ -215,7 +218,14 @@ internal sealed class LauncherModel : IDisposable
 
         if (job.Paused)
         {
-            StartDownload();
+            if (job.ContentId is { } pack)
+            {
+                InstallContent(pack);
+            }
+            else
+            {
+                StartDownload();
+            }
         }
         else
         {
@@ -298,6 +308,7 @@ internal sealed class LauncherModel : IDisposable
         {
             _installer = new BuildInstaller(_http, Path.Combine(Settings.Library.Trim(), "openigi"));
             _installed = _installer.Current();
+            LoadInstalledContent();
             CheckSoon();
         }
 
@@ -343,6 +354,7 @@ internal sealed class LauncherModel : IDisposable
         ReleaseChannel channel = Settings.Channel;
         string? since = _installed?.Version;
 
+        CheckContent();
         _ = Task.Run(async () =>
         {
             try
@@ -427,6 +439,7 @@ internal sealed class LauncherModel : IDisposable
                     Job = null;
                     CheckSoon();
                     Recompute();
+                    MaybeStartAutomatically();
                 });
             }
             catch (OperationCanceledException)
@@ -461,7 +474,7 @@ internal sealed class LauncherModel : IDisposable
 
         try
         {
-            _running = GameStarter.Start(build.Folder, GameStarter.Arguments(title, folder, Settings.LaunchArguments));
+            _running = GameStarter.Start(build.Folder, GameStarter.Arguments(title, folder, Settings.LaunchArguments), GameEnvironment(title));
             Problem = null;
             if (Settings.CloseOnLaunch)
             {
@@ -478,10 +491,19 @@ internal sealed class LauncherModel : IDisposable
 
     private void MaybeStartAutomatically()
     {
-        if (Settings.AutomaticUpdates && Job is null && _running is null && _installed is not null
-            && Games.Any(static g => g.State == GameState.UpdateAvailable))
+        if (!Settings.AutomaticUpdates || Job is not null || _running is not null || _installed is null)
+        {
+            return;
+        }
+
+        // The game first: a content pack may need the newer build to be read at all.
+        if (Games.Any(static g => g.State == GameState.UpdateAvailable))
         {
             StartDownload();
+        }
+        else if (Packs.FirstOrDefault(static p => p.State == ContentState.UpdateAvailable && p.Enabled) is { } pack)
+        {
+            InstallContent(pack.Pack.Id);
         }
     }
 
@@ -543,6 +565,8 @@ internal sealed class LauncherModel : IDisposable
             game.UpdateMegabytes = downloadMegabytes;
             game.Notes = BuildNotes();
             game.NotesUrl = _latest is null ? null : $"https://github.com/OpenIGI/OpenIGI/releases/tag/v{_latest.Version}";
+            game.OptionalPacks = [.. Packs.Where(p => p.Pack.Game == title.Id).Select(static p => p.Pack.Title)];
+            game.PacksInstalled = Packs.Count(p => p.Pack.Game == title.Id && p.Installed is not null);
             game.State = _running is not null ? GameState.Playing
                 : _installed is null ? GameState.NotInstalled
                 : _damaged || runtimeGone ? GameState.Damaged
@@ -551,6 +575,7 @@ internal sealed class LauncherModel : IDisposable
                 : GameState.Ready;
         }
 
+        RecomputeContent();
         Changed();
     }
 
@@ -644,6 +669,7 @@ internal sealed class LauncherModel : IDisposable
 /// <summary>A download of a build, as the home page and the footer show it.</summary>
 internal sealed class DownloadJob(LauncherGame game, string version, string label, long bytes)
 {
+    private long _total = bytes;
     private long _done;
     private int _stage;
     private long _lastDone;
@@ -655,8 +681,11 @@ internal sealed class DownloadJob(LauncherGame game, string version, string labe
 
     public string Label { get; } = label;
 
-    /// <summary>Gets the archive's size, in megabytes.</summary>
-    public float Size { get; } = bytes / 1_000_000f;
+    /// <summary>Gets the content pack this job installs, or <see langword="null"/> for the game's build.</summary>
+    public string? ContentId { get; init; }
+
+    /// <summary>Gets what the job downloads, in megabytes: the archive, or the chunks a pack lacks.</summary>
+    public float Size => Interlocked.Read(ref _total) / 1_000_000f;
 
     /// <summary>Gets how much has arrived, in megabytes.</summary>
     public float Done => Interlocked.Read(ref _done) / 1_000_000f;
@@ -674,13 +703,14 @@ internal sealed class DownloadJob(LauncherGame game, string version, string labe
     /// <summary>Whether this download covers a game: both titles share one build.</summary>
     /// <param name="other">The game.</param>
     /// <returns>Whether its progress belongs on that game's page.</returns>
-    public bool Covers(LauncherGame other) => other.Retail is not null && Game.Retail is not null;
+    public bool Covers(LauncherGame other) => ContentId is null && other.Retail is not null && Game.Retail is not null;
 
     /// <summary>Takes a progress report from the installer, on whichever thread it arrives.</summary>
     /// <param name="progress">The report.</param>
     public void Report(InstallProgress progress)
     {
         Interlocked.Exchange(ref _done, progress.Done);
+        Interlocked.Exchange(ref _total, progress.Total);
         Volatile.Write(ref _stage, (int)progress.Stage);
     }
 

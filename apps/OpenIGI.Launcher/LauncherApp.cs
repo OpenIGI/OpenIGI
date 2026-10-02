@@ -62,6 +62,7 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     private readonly ScreenStack _stack = new() { PointerSuppressed = true };
     private readonly LauncherModel _model = new();
     private readonly SkiaImageStore _images = new();
+    private readonly Dictionary<string, BackdropPicture?> _pictures = new(StringComparer.Ordinal);
     private readonly SkiaFontCache _fonts = new();
     private readonly DesktopNotifier _notifier;
 
@@ -242,6 +243,19 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     public void Close() => _window.Close();
 
     public string ClipboardText => _inputContext?.Keyboards.Count > 0 ? _inputContext.Keyboards[0].ClipboardText ?? string.Empty : string.Empty;
+
+    public BackdropPicture? Picture(string path)
+    {
+        // A pack's picture is named by its content, so a path decoded once is that picture for good.
+        if (!_pictures.TryGetValue(path, out BackdropPicture? picture))
+        {
+            SkiaSharp.SKImage? image = File.Exists(path) ? SkiaSharp.SKImage.FromEncodedData(path) : null;
+            picture = image is null ? null : new BackdropPicture(_images.Add(image), image.Width / (float)image.Height);
+            _pictures[path] = picture;
+        }
+
+        return picture;
+    }
 
     public void Dispose()
     {

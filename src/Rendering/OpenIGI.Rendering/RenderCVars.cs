@@ -47,6 +47,24 @@ public static class RenderCVars
         CVarOptions.Archive,
         "Wait for the vertical blank when presenting. Off uncaps the frame rate and adds tearing.");
 
+    /// <summary>Whether the level behind the menu is drawn without the expensive parts of the preset.</summary>
+    /// <remarks>
+    /// The backdrop is looked at through a blur, never played, and it is replaced every time the player
+    /// settles on another mission. Building its real-time lighting -- the surface-cache capture and the
+    /// distance field -- and tracing its shadows and reflections made every swap a stall the player saw,
+    /// for detail nobody could. On, the menu draws it on the level's own bakes with no shadows, traces or
+    /// screen-space gathers; the full preset comes back when Play is pressed, behind the going-in sequence.
+    /// Imposed through overrides, so the settings screen and the saved file still show the player's choice.
+    /// </remarks>
+    public static readonly BoolCVar MenuBackdropLite = CVar.Bool(
+        "r_menu_lite",
+        true,
+
+        // Not archived: a switch for comparing, as r_rt is, not a preference -- a session that turned it
+        // off to look must not start that way tomorrow.
+        CVarOptions.None,
+        "Draw the level behind the menu without real-time GI, shadows or traces, so swapping it never stalls.");
+
     /// <summary>How bright a gun's muzzle flame draws, as a fraction of the original's.</summary>
     /// <remarks>
     /// <para>

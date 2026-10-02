@@ -32,6 +32,9 @@ internal sealed class LauncherSettings
     /// <summary>Gets or sets the last version announced of each of <c>game</c> and <c>launcher</c>, so none is announced twice.</summary>
     public Dictionary<string, string> Announced { get; set; } = new(StringComparer.Ordinal);
 
+    /// <summary>Gets or sets, per content pack id, whether the game is started with that pack (when it is installed).</summary>
+    public Dictionary<string, bool> Content { get; set; } = new(StringComparer.Ordinal);
+
     /// <summary>Reads the settings, or the defaults when there are none yet or the file is unreadable.</summary>
     /// <param name="path">The settings file.</param>
     /// <returns>The settings.</returns>
@@ -44,6 +47,7 @@ internal sealed class LauncherSettings
             {
                 settings.GameFolders = new Dictionary<string, string>(settings.GameFolders, StringComparer.Ordinal);
                 settings.Announced = new Dictionary<string, string>(settings.Announced, StringComparer.Ordinal);
+                settings.Content = new Dictionary<string, bool>(settings.Content ?? [], StringComparer.Ordinal);
                 return settings;
             }
         }

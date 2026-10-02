@@ -435,7 +435,7 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
                 AccessFlags.TransferWriteBit,
                 AccessFlags.ShaderReadBit,
                 0,
-                MaxLayers);
+                (uint)_capacity);
         });
     }
 
@@ -444,7 +444,7 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
     /// <param name="texels">The reduced texture, <see cref="Resolution"/> squared RGBA bytes.</param>
     private void Upload(int layer, byte[] texels)
     {
-        using VulkanBuffer staging = new(
+        VulkanBuffer staging = new(
             _vk,
             _owner,
             _allocator,
@@ -453,49 +453,56 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
             MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
         staging.Write<byte>(texels);
 
+        // Batched rather than submitted and waited on, one per texture, which made a level's worth of
+        // them a round trip each in the frame that created them. The batch runs before anything submitted
+        // after it and frees the staging when it has; the barriers below are every stage rather than
+        // compute alone, because without the wait they are all that orders this against its readers.
         Image image = Image;
         Buffer stagingHandle = staging.Handle;
-        _commands.SingleTime(cmd =>
-        {
-            Transition(
-                cmd,
-                image,
-                Resting,
-                ImageLayout.TransferDstOptimal,
-                PipelineStageFlags.ComputeShaderBit,
-                PipelineStageFlags.TransferBit,
-                AccessFlags.ShaderReadBit,
-                AccessFlags.TransferWriteBit,
-                (uint)layer,
-                1);
-
-            BufferImageCopy region = new()
+        _commands.SingleTimeBatched(
+            cmd =>
             {
-                BufferOffset = 0,
-                ImageSubresource = new ImageSubresourceLayers
+                Transition(
+                    cmd,
+                    image,
+                    Resting,
+                    ImageLayout.TransferDstOptimal,
+                    PipelineStageFlags.AllCommandsBit,
+                    PipelineStageFlags.TransferBit,
+                    AccessFlags.ShaderReadBit,
+                    AccessFlags.TransferWriteBit,
+                    (uint)layer,
+                    1);
+
+                BufferImageCopy region = new()
                 {
-                    AspectMask = ImageAspectFlags.ColorBit,
-                    MipLevel = 0,
-                    BaseArrayLayer = (uint)layer,
-                    LayerCount = 1,
-                },
-                ImageExtent = new Extent3D((uint)Resolution, (uint)Resolution, 1),
-            };
+                    BufferOffset = 0,
+                    ImageSubresource = new ImageSubresourceLayers
+                    {
+                        AspectMask = ImageAspectFlags.ColorBit,
+                        MipLevel = 0,
+                        BaseArrayLayer = (uint)layer,
+                        LayerCount = 1,
+                    },
+                    ImageExtent = new Extent3D((uint)Resolution, (uint)Resolution, 1),
+                };
 
-            _vk.CmdCopyBufferToImage(cmd, stagingHandle, image, ImageLayout.TransferDstOptimal, 1, &region);
+                _vk.CmdCopyBufferToImage(cmd, stagingHandle, image, ImageLayout.TransferDstOptimal, 1, &region);
 
-            Transition(
-                cmd,
-                image,
-                ImageLayout.TransferDstOptimal,
-                Resting,
-                PipelineStageFlags.TransferBit,
-                PipelineStageFlags.ComputeShaderBit,
-                AccessFlags.TransferWriteBit,
-                AccessFlags.ShaderReadBit,
-                (uint)layer,
-                1);
-        });
+                Transition(
+                    cmd,
+                    image,
+                    ImageLayout.TransferDstOptimal,
+                    Resting,
+                    PipelineStageFlags.TransferBit,
+                    PipelineStageFlags.AllCommandsBit,
+                    AccessFlags.TransferWriteBit,
+                    AccessFlags.ShaderReadBit,
+                    (uint)layer,
+                    1);
+            },
+            staging,
+            (ulong)texels.Length);
     }
 
     private void Transition(
@@ -574,7 +581,11 @@ internal sealed unsafe class VulkanTracedAlbedo : IDisposable
                 BaseMipLevel = 0,
                 LevelCount = 1,
                 BaseArrayLayer = 0,
-                LayerCount = MaxLayers,
+
+                // Every layer the image has. The view covered the first thousand and twenty-four while the
+                // array could hold four times that, so a texture given a layer past it was sampled outside
+                // the view -- and the clear left those layers in the copy layout the uploads did not expect.
+                LayerCount = (uint)_capacity,
             },
         };
 

@@ -20,6 +20,11 @@ public abstract class CVar<T> : ICVar
 {
     private T _value;
 
+    // A value the running code reads in place of the stored one, for as long as something holds it. See
+    // Override.
+    private T _override = default!;
+    private bool _overridden;
+
     /// <summary>Initialises a new instance of the <see cref="CVar{T}"/> class.</summary>
     /// <param name="name">The registry key.</param>
     /// <param name="defaultValue">The value the variable holds until something changes it.</param>
@@ -55,12 +60,43 @@ public abstract class CVar<T> : ICVar
     /// <summary>Gets or sets the current value.</summary>
     /// <remarks>
     /// The setter applies the derived type's range rule, so a value assigned in code is subject to the
-    /// same clamping as one typed into the console. Assigning an equal value raises no event.
+    /// same clamping as one typed into the console. Assigning an equal value raises no event. While an
+    /// <see cref="Override"/> is held the getter returns it, and the setter still changes the stored value
+    /// underneath.
     /// </remarks>
     public T Value
     {
-        get => _value;
+        get => _overridden ? _override : _value;
         set => Assign(value);
+    }
+
+    /// <summary>Gets the value the variable holds of its own, whatever <see cref="Override"/> is in force.</summary>
+    /// <remarks>What <see cref="Value"/> returns once the override is cleared: the player's choice.</remarks>
+    public T StoredValue => _value;
+
+    /// <summary>Gets a value indicating whether an <see cref="Override"/> is in force.</summary>
+    public bool IsOverridden => _overridden;
+
+    /// <summary>Makes <see cref="Value"/> read <paramref name="value"/> until <see cref="ClearOverride"/> is called.</summary>
+    /// <param name="value">The value the running code reads in the meantime, range-constrained as an assignment would be.</param>
+    /// <remarks>
+    /// For a value a mode of the program imposes rather than one the player chose -- the menu drawing its
+    /// backdrop cheaply, say. Only <see cref="Value"/> sees it: the stored value, which is what the console
+    /// prints, the settings screen shows, the settings file saves and the graphics presets compare against,
+    /// is untouched, and no <see cref="Changed"/> event is raised either way. Writing the variable instead
+    /// would make the mode's numbers the player's preference the next time the settings are saved.
+    /// </remarks>
+    public void Override(T value)
+    {
+        _override = Coerce(value);
+        _overridden = true;
+    }
+
+    /// <summary>Lets <see cref="Value"/> read the stored value again.</summary>
+    public void ClearOverride()
+    {
+        _overridden = false;
+        _override = default!;
     }
 
     /// <inheritdoc/>

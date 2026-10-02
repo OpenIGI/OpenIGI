@@ -31,6 +31,13 @@ public readonly record struct GraphicsCapabilities(
     /// <remarks>Only ever an accelerator: every effect has a path that does not need it.</remarks>
     public bool SupportsCompute { get; init; }
 
+    /// <summary>Gets a value indicating whether BC1 and BC7 textures can be created and sampled as they are.</summary>
+    /// <remarks>
+    /// Where it is false a block-compressed texture is expanded on the CPU before it is uploaded -- correct,
+    /// and four to eight times the memory the compressed form would have taken.
+    /// </remarks>
+    public bool SupportsBlockCompression { get; init; }
+
     /// <summary>Whether a compute shader on this device can trace rays against the world directly.</summary>
     /// <remarks>
     /// The difference between marching a distance field towards a surface and asking the hardware where

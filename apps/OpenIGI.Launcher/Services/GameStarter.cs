@@ -12,6 +12,9 @@ namespace OpenIGI.Launcher.Services;
 /// </remarks>
 internal static class GameStarter
 {
+    /// <summary>The variable that points the game at a folder of replacement assets instead of its own <c>overrides</c>.</summary>
+    public const string OverridesVariable = "OPENIGI_OVERRIDES";
+
     /// <summary>The name a single-file game build is installed under, for this platform.</summary>
     public static string ExecutableName { get; } = OperatingSystem.IsWindows() ? "OpenIGI.Desktop.exe" : "OpenIGI.Desktop";
 
@@ -60,9 +63,13 @@ internal static class GameStarter
     /// <summary>Starts the game.</summary>
     /// <param name="buildFolder">The installed build.</param>
     /// <param name="arguments">The arguments, from <see cref="Arguments"/>.</param>
+    /// <param name="environment">
+    /// Variables set for the game on top of the launcher's own, such as <see cref="OverridesVariable"/> naming the
+    /// content pack the game reads its replacement assets from; <see langword="null"/> for none.
+    /// </param>
     /// <returns>The game's process.</returns>
     /// <exception cref="FileNotFoundException">The build has no executable for this platform.</exception>
-    public static Process Start(string buildFolder, IReadOnlyList<string> arguments)
+    public static Process Start(string buildFolder, IReadOnlyList<string> arguments, IReadOnlyDictionary<string, string>? environment = null)
     {
         string executable = Executable(buildFolder);
         if (!File.Exists(executable))
@@ -85,6 +92,11 @@ internal static class GameStarter
         foreach (string argument in arguments)
         {
             start.ArgumentList.Add(argument);
+        }
+
+        foreach ((string name, string value) in environment ?? new Dictionary<string, string>())
+        {
+            start.Environment[name] = value;
         }
 
         return Process.Start(start) ?? throw new InvalidOperationException("The game did not start.");
