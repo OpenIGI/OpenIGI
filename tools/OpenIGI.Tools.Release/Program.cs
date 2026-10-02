@@ -6,14 +6,14 @@ using OpenIGI.Tools.Release;
 //
 //   dotnet run --project tools/OpenIGI.Tools.Release -- manifest
 //       --version 0.2.0-beta.3 --channel beta --commit <sha>
-//       --notes <git-cliff --context output> --assets <folder of archives>
+//       --notes <git-cliff --context output> --assets <folder of downloads> [--tag <git tag>]
 //
 // The manifest (release.json) is what the update service serves and the launcher installs from; the same
 // run also writes SHA256SUMS, so an archive downloaded by hand can be checked with sha256sum -c.
 
 if (args.Length == 0 || args[0] != "manifest")
 {
-    Console.Error.WriteLine("usage: manifest --version <v> --channel <stable|beta> --commit <sha> --notes <file> --assets <dir> [--published <iso8601>]");
+    Console.Error.WriteLine("usage: manifest --version <v> --channel <stable|beta> --commit <sha> --notes <file> --assets <dir> [--tag <tag>] [--published <iso8601>]");
     return 2;
 }
 
@@ -55,7 +55,8 @@ try
         published,
         Require("--commit"),
         ReleaseNotesReader.Read(File.ReadAllText(Require("--notes"))),
-        AssetCatalog.Scan(assets, version.ToString()));
+        AssetCatalog.Scan(assets, version.ToString()),
+        options.GetValueOrDefault("--tag"));
 
     if (manifest.Assets.Count == 0)
     {

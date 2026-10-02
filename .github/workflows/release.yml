@@ -1,8 +1,8 @@
 name: Publish release
 
 # Builds, tests, packages and publishes one tagged release:
-#   - every download (the game in two flavours for Windows, Linux and macOS, and on a stable release the
-#     launcher) on the GitHub release, with the changelog as its notes;
+#   - every download (the game in two flavours for Windows, Linux and macOS; or, for a launcher release,
+#     the launcher alone) on the GitHub release, with the changelog as its notes;
 #   - the same archives and their manifest on the download store, which the update service indexes, so the
 #     launcher offers the release within a minute;
 #   - the web build on openigi.com (stable) or beta.openigi.com (beta).
@@ -15,6 +15,7 @@ on:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
       - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
+      - "launcher-v[0-9]+.[0-9]+.[0-9]+"
   workflow_call:
     inputs:
       tag:
@@ -58,10 +59,12 @@ jobs:
       - name: Read the tag
         id: tag
         run: |
-          version="${TAG#v}"
+          # The game's line (v0.2.0, v0.2.0-beta.3) and the launcher's own (launcher-v0.1.1, stable only).
+          product=game; version="${TAG#v}"
           if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]; then channel=beta; branch=develop
           elif [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then channel=stable; branch=master
-          else echo "::error::$TAG is not a release tag (vX.Y.Z or vX.Y.Z-beta.N)"; exit 1; fi
+          elif [[ "$TAG" =~ ^launcher-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then product=launcher; version="${TAG#launcher-v}"; channel=stable; branch=master
+          else echo "::error::$TAG is not a release tag (vX.Y.Z, vX.Y.Z-beta.N or launcher-vX.Y.Z)"; exit 1; fi
 
           # A beta is built from develop and a stable release from master, never from a feature branch.
           git fetch --no-tags origin "$branch"
@@ -70,6 +73,7 @@ jobs:
           fi
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "product=$product" >> "$GITHUB_OUTPUT"
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse "$TAG^{commit}")" >> "$GITHUB_OUTPUT"
 
@@ -94,37 +98,42 @@ jobs:
       - name: Package
         env:
           VERSION: ${{ steps.tag.outputs.version }}
-          CHANNEL: ${{ steps.tag.outputs.channel }}
+          PRODUCT: ${{ steps.tag.outputs.product }}
         run: |
           rm -rf artifacts/release artifacts/web
-          # The game in both flavours: self-contained, and the smaller build for machines with .NET 10. The
-          # launcher has one channel, stable: only a stable release builds it, self-contained only, as the one
-          # program a player starts with nothing installed. A beta ships games for the launcher already out.
-          for rid in $RUNTIMES; do
-            tools/release/package.sh game "$rid" "$VERSION" self-contained
-            tools/release/package.sh game "$rid" "$VERSION" dotnet
-            if [ "$CHANNEL" = stable ]; then
+          if [ "$PRODUCT" = launcher ]; then
+            # The launcher alone, self-contained only: the one program a player starts with nothing installed.
+            for rid in $RUNTIMES; do
               tools/release/package.sh launcher "$rid" "$VERSION" self-contained
-            fi
-          done
-          # The browser build goes to the site, not into the downloads.
-          tools/release/package.sh web browser-wasm "$VERSION"
+            done
+          else
+            # The game in both flavours: self-contained, and the smaller build for machines with .NET 10. The
+            # launcher is not part of a game release; it has its own line (launcher-v tags).
+            for rid in $RUNTIMES; do
+              tools/release/package.sh game "$rid" "$VERSION" self-contained
+              tools/release/package.sh game "$rid" "$VERSION" dotnet
+            done
+            # The browser build goes to the site, not into the downloads.
+            tools/release/package.sh web browser-wasm "$VERSION"
+          fi
 
       - name: Write the manifest
         run: |
           dotnet run --project tools/OpenIGI.Tools.Release --configuration Release -- manifest \
             --version "${{ steps.tag.outputs.version }}" --channel "${{ steps.tag.outputs.channel }}" \
             --commit "${{ steps.tag.outputs.commit }}" \
-            --notes "$RUNNER_TEMP/notes/context.json" --assets artifacts/release
+            --notes "$RUNNER_TEMP/notes/context.json" --assets artifacts/release --tag "$TAG"
 
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.tag.outputs.version }}
           CHANNEL: ${{ steps.tag.outputs.channel }}
+          PRODUCT: ${{ steps.tag.outputs.product }}
         run: |
           v="$VERSION"
-          dl="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$TAG"
+          repo="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          dl="$repo/releases/download/$TAG"
           {
             cat "$RUNNER_TEMP/notes/notes.md"
             echo
@@ -132,37 +141,43 @@ jobs:
             echo
             echo "### Downloads"
             echo
-            if [ "$CHANNEL" = stable ]; then
-              echo "The **launcher** installs the game, keeps it up to date and starts it. It picks the right build for your machine."
+            if [ "$PRODUCT" = launcher ]; then
+              echo "The **OpenIGI Launcher** installs the game, keeps it up to date and starts it, and picks the right build for your machine. Launchers already installed update themselves to this one."
+              echo
+              echo "| Windows | Linux | macOS (Apple silicon) |"
+              echo "|---|---|---|"
+              echo "| [openigi-launcher-$v-win-x64.exe]($dl/openigi-launcher-$v-win-x64.exe) | [openigi-launcher-$v-linux-x64]($dl/openigi-launcher-$v-linux-x64) | [openigi-launcher-$v-osx-arm64.tar.gz]($dl/openigi-launcher-$v-osx-arm64.tar.gz) |"
             else
-              echo "This beta has no launcher of its own: the launcher has one channel, stable. Get it from the [latest stable release]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/latest) or openigi.com and set its update channel to Beta to receive this build."
+              echo "The easiest way to play is the **OpenIGI Launcher** ([openigi.com](https://openigi.com) or its [releases]($repo/releases)), which installs this build for you$( [ "$CHANNEL" = beta ] && echo ' once its update channel is set to Beta')."
+              echo "To run the game yourself, each build comes in two flavours:"
+              echo "**self-contained** runs on any machine, and **.NET** is a fraction of the size but needs the [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0) installed."
+              echo
+              # platform, runtime, extension
+              row() {
+                echo "| $1 | [openigi-game-$v-$2$3]($dl/openigi-game-$v-$2$3) | [openigi-game-$v-$2-dotnet$3]($dl/openigi-game-$v-$2-dotnet$3) |"
+              }
+              echo "| | Self-contained | Needs .NET 10 |"
+              echo "|---|---|---|"
+              row Windows win-x64 .exe
+              row Linux linux-x64 ""
+              row "macOS (Apple silicon)" osx-arm64 .tar.gz
             fi
-            echo "If you'd rather run the game yourself, each build comes in two flavours:"
-            echo "**self-contained** runs on any machine, and **.NET** is a fraction of the size but needs the [.NET 10 runtime](https://dotnet.microsoft.com/download/dotnet/10.0) installed."
-            echo
-            # platform, runtime, extension
-            row() {
-              local launcher="-"
-              [ "$CHANNEL" = stable ] && launcher="[openigi-launcher-$v-$2$3]($dl/openigi-launcher-$v-$2$3)"
-              echo "| $1 | $launcher | [openigi-game-$v-$2$3]($dl/openigi-game-$v-$2$3) | [openigi-game-$v-$2-dotnet$3]($dl/openigi-game-$v-$2-dotnet$3) |"
-            }
-            echo "| | Launcher | Game, self-contained | Game, needs .NET 10 |"
-            echo "|---|---|---|---|"
-            row Windows win-x64 .exe
-            row Linux linux-x64 ""
-            row "macOS (Apple silicon)" osx-arm64 .tar.gz
             echo
             echo "Windows and Linux builds are a single executable (on Linux, \`chmod +x\` it first). macOS builds are an app in a tarball; the first time, open it with right-click → Open."
             echo "OpenIGI needs your own copy of Project I.G.I.; it ships none of the game's data. Verify a download with \`sha256sum -c SHA256SUMS\`."
           } > "$RUNNER_TEMP/notes/release.md"
           cp "$RUNNER_TEMP/notes/notes.md" artifacts/release/CHANGELOG.md
 
-          flags=(--latest); [ "$CHANNEL" = beta ] && flags=(--prerelease --latest=false)
+          # "Latest" on the repository's release page is the newest game release; a launcher release never
+          # takes it over.
+          title="OpenIGI $VERSION"; flags=(--latest)
+          [ "$CHANNEL" = beta ] && flags=(--prerelease --latest=false)
+          [ "$PRODUCT" = launcher ] && { title="OpenIGI Launcher $VERSION"; flags=(--latest=false); }
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" artifacts/release/* --clobber
           else
             gh release create "$TAG" artifacts/release/* --verify-tag "${flags[@]}" \
-              --title "OpenIGI $VERSION" --notes-file "$RUNNER_TEMP/notes/release.md"
+              --title "$title" --notes-file "$RUNNER_TEMP/notes/release.md"
           fi
 
       # ssh reads ~/.ssh from the account's home in the password database, not from $HOME, and inside a job
@@ -195,10 +210,12 @@ jobs:
 
       - name: Publish the downloads
         run: |
+          verb=release; [ "${{ steps.tag.outputs.product }}" = launcher ] && verb=launcher
           tar -C artifacts/release --exclude CHANGELOG.md -czf - . \
-            | $VM_SSH release-vm release "${{ steps.tag.outputs.version }}"
+            | $VM_SSH release-vm "$verb" "${{ steps.tag.outputs.version }}"
 
       - name: Deploy the web build
+        if: steps.tag.outputs.product == 'game'
         run: |
           $VM_SSH release-vm web "${{ steps.tag.outputs.channel }}" "${{ steps.tag.outputs.version }}" \
             < "artifacts/web/openigi-web-${{ steps.tag.outputs.version }}.tar.gz"
@@ -212,9 +229,12 @@ jobs:
         env:
           VERSION: ${{ steps.tag.outputs.version }}
           CHANNEL: ${{ steps.tag.outputs.channel }}
+          PRODUCT: ${{ steps.tag.outputs.product }}
         run: |
+          # A game release must be the channel's newest; a launcher release the feed's launcher.
+          field=.latest.version; [ "$PRODUCT" = launcher ] && field=.launcher.version
           for attempt in $(seq 1 12); do
-            latest=$(curl -fsS "https://api.openigi.com/v1/channels/$CHANNEL" | jq -r '.latest.version // empty' || true)
+            latest=$(curl -fsS "https://api.openigi.com/v1/channels/$CHANNEL" | jq -r "$field // empty" || true)
             [ "$latest" = "$VERSION" ] && { echo "api.openigi.com offers $VERSION on $CHANNEL"; break; }
             [ "$attempt" = 12 ] && { echo "::error::the update service still offers '${latest:-nothing}' on $CHANNEL"; exit 1; }
             sleep 10

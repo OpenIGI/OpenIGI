@@ -82,11 +82,13 @@ jobs:
           echo "VM_SSH=ssh -F $dir/config" >> "$GITHUB_ENV"
           ssh -F "$dir/config" release-vm status
 
-      - name: Apply the configuration
-        run: tar -C deploy/vm -czf - compose.yml Caddyfile | $VM_SSH release-vm config
-
+      # The service first, then the configuration: a configuration may name settings only the new service
+      # understands (the download address's {folder}), and the old service would serve broken links meanwhile.
       - name: Deploy the update service
         run: tar -C "$RUNNER_TEMP/api" -czf - . | $VM_SSH release-vm api "${GITHUB_SHA::12}"
+
+      - name: Apply the configuration
+        run: tar -C deploy/vm -czf - compose.yml Caddyfile | $VM_SSH release-vm config
 
       - name: Check it answers
         run: |

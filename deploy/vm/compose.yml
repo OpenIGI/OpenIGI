@@ -32,7 +32,7 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:8080
       Releases__Root: /srv/dl/releases
-      Releases__DownloadUrl: https://dl.openigi.com/releases/{version}/{name}
+      Releases__DownloadUrl: https://dl.openigi.com/releases/{folder}/{name}
     volumes:
       - /srv/openigi/api/current:/app:ro
       - /srv/openigi/dl/releases:/srv/dl/releases:ro

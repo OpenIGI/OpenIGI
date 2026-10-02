@@ -5,7 +5,8 @@
 # CI cannot open a shell, forward a port or run anything else: it names one of the verbs below in
 # SSH_ORIGINAL_COMMAND and streams a tarball on stdin. Arguments are validated before anything is touched.
 #
-#   release <version>            < archives + release.json   publish a release's downloads
+#   release <version>            < downloads + release.json  publish a game release's downloads
+#   launcher <version>           < downloads + release.json  publish a launcher release's downloads
 #   web <channel> <version>      < site tarball              deploy the browser build and switch to it
 #   rollback <channel>                                       switch the site back one deploy
 #   api <commit>                 < service build tarball     deploy the update service and restart it
@@ -74,20 +75,25 @@ prune_versions() {
 }
 
 case "$VERB" in
-  release)
+  release|launcher)
+    # A game release lives in releases/<version>, a launcher release in releases/launcher-<version>: the two
+    # lines are numbered independently and will meet at some version sooner or later.
     V="$(version_arg "${ARGS[1]:-}")"
-    DEST="$SRV/dl/releases/$V"
-    [ -e "$DEST/release.json" ] && die "$V is already published"
+    [[ "$V" == *-* && "$VERB" == launcher ]] && die "the launcher has one channel, stable: $V is a pre-release"
+    FOLDER="$V"
+    [ "$VERB" = launcher ] && FOLDER="launcher-$V"
+    DEST="$SRV/dl/releases/$FOLDER"
+    [ -e "$DEST/release.json" ] && die "$FOLDER is already published"
     STAGING="$(unpack "$SRV/dl/releases")"
     [ -f "$STAGING/release.json" ] || { rm -rf "$STAGING"; die "the upload has no release.json"; }
-    # Archives land first; release.json last, because the update service treats a folder with a
+    # Downloads land first; release.json last, because the update service treats a folder with a
     # manifest as a complete release.
-    (cd "$STAGING" && sha256sum --quiet -c SHA256SUMS) || { rm -rf "$STAGING"; die "an archive does not match SHA256SUMS"; }
+    (cd "$STAGING" && sha256sum --quiet -c SHA256SUMS) || { rm -rf "$STAGING"; die "a download does not match SHA256SUMS"; }
     mkdir -p "$DEST"
     find "$STAGING" -mindepth 1 -maxdepth 1 ! -name release.json -exec mv -t "$DEST" {} +
     mv "$STAGING/release.json" "$DEST/release.json"
     rmdir "$STAGING"
-    log "published $V ($(du -sh "$DEST" | cut -f1))"
+    log "published $FOLDER ($(du -sh "$DEST" | cut -f1))"
     ;;
 
   web)
@@ -161,6 +167,6 @@ case "$VERB" in
     ;;
 
   *)
-    die "unknown command '${SSH_ORIGINAL_COMMAND:-}' (release, web, rollback, api, config, prune, status)"
+    die "unknown command '${SSH_ORIGINAL_COMMAND:-}' (release, launcher, web, rollback, api, config, prune, status)"
     ;;
 esac

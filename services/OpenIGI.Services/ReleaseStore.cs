@@ -42,14 +42,14 @@ internal sealed partial class ReleaseStore(IOptions<ReleaseOptions> options, ILo
             return;
         }
 
-        List<ReleaseManifest> releases = [];
+        List<(ReleaseManifest Release, string Folder)> releases = [];
         foreach (string path in manifests)
         {
             try
             {
                 ReleaseManifest manifest = ReleaseJson.ReadManifest(File.ReadAllText(path));
                 _ = manifest.ParsedVersion;
-                releases.Add(manifest);
+                releases.Add((manifest, Path.GetFileName(Path.GetDirectoryName(path)!)));
             }
             catch (Exception ex) when (ex is JsonException or FormatException or IOException)
             {

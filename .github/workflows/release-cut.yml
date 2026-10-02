@@ -1,15 +1,18 @@
 name: Release
 
-# The button. Actions > Release > Run workflow, on develop for a beta or on master for a stable release.
+# The button. Actions > Release > Run workflow:
+#   beta      on develop: a game beta (v0.2.0-beta.3)
+#   stable    on master:  a game release (v0.2.0)
+#   launcher  on master:  the launcher alone (launcher-v0.1.1), with no game build at all
 # It works out the version from the commits, tags the branch head with the release notes, and runs the
 # release (release.yml) for that tag. Nothing else needs doing by hand.
 on:
   workflow_dispatch:
     inputs:
       channel:
-        description: beta (from develop) or stable (from master)
+        description: beta (game, from develop), stable (game, from master) or launcher (from master)
         type: choice
-        options: [beta, stable]
+        options: [beta, stable, launcher]
         required: true
 
 permissions:
@@ -48,7 +51,7 @@ jobs:
           BRANCH: ${{ github.ref_name }}
         run: |
           case "$CHANNEL:$BRANCH" in
-            beta:develop|stable:master) ;;
+            beta:develop|stable:master|launcher:master) ;;
             *) echo "::error::A $CHANNEL release is cut from $( [ "$CHANNEL" = beta ] && echo develop || echo master ), not $BRANCH."; exit 1 ;;
           esac
 
@@ -56,8 +59,9 @@ jobs:
         id: version
         run: |
           version=$(tools/release/next-version.sh "${{ inputs.channel }}")
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
-          echo "Next ${{ inputs.channel }} release: **v$version**" >> "$GITHUB_STEP_SUMMARY"
+          prefix=v; [ "${{ inputs.channel }}" = launcher ] && prefix=launcher-v
+          echo "tag=$prefix$version" >> "$GITHUB_OUTPUT"
+          echo "Next ${{ inputs.channel }} release: **$prefix$version**" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Tag
         env:

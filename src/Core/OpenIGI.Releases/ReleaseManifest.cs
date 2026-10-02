@@ -37,7 +37,11 @@ public enum ReleaseComponent
 /// <param name="Published">When it was published.</param>
 /// <param name="Commit">The full commit hash the release was built from.</param>
 /// <param name="Notes">The player-facing changes, in display order.</param>
-/// <param name="Assets">The archives of the release.</param>
+/// <param name="Assets">The downloads of the release.</param>
+/// <param name="Tag">
+/// The git tag it was released as: <c>v0.2.0</c> for a game release, <c>launcher-v1.1.0</c> for a launcher
+/// release. Absent from manifests written before the launcher had its own line, which were all <c>v</c>-tags.
+/// </param>
 public sealed record ReleaseManifest(
     int Schema,
     string Version,
@@ -45,8 +49,18 @@ public sealed record ReleaseManifest(
     DateTimeOffset Published,
     string Commit,
     IReadOnlyList<ReleaseNoteSection> Notes,
-    IReadOnlyList<ReleaseAsset> Assets)
+    IReadOnlyList<ReleaseAsset> Assets,
+    string? Tag = null)
 {
+    /// <summary>The prefix of a launcher release's tag; a game release's tag is <c>v</c> and its version.</summary>
+    public const string LauncherTagPrefix = "launcher-v";
+
+    /// <summary>Gets the tag it was released as, worked out for a manifest that does not name it.</summary>
+    public string ReleaseTag => Tag ?? "v" + Version;
+
+    /// <summary>Gets whether this is a release of the game (as opposed to one of the launcher alone).</summary>
+    public bool HasGame => Assets.Any(static asset => asset.Component == ReleaseComponent.Game);
+
     /// <summary>The manifest format this library writes.</summary>
     public const int CurrentSchema = 1;
 
