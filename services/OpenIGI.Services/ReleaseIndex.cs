@@ -65,15 +65,15 @@ internal sealed class ReleaseIndex
         return new ChannelFeed(channel, latest, releases, NewestLauncher());
     }
 
-    /// <summary>The newest release, on any channel, with a launcher; for one runtime when one is named.</summary>
+    /// <summary>The newest stable release with a launcher; for one runtime when one is named.</summary>
     /// <param name="runtime">The runtime the launcher must exist for, or <see langword="null"/> for any.</param>
-    /// <returns>The release, or <see langword="null"/> before the first launcher is published.</returns>
+    /// <returns>The release, or <see langword="null"/> before the first stable launcher is published.</returns>
     /// <remarks>
-    /// There is one launcher line for every player. The channel decides which game builds a player gets;
-    /// a launcher that installs either channel's builds has no reason to come in two versions.
+    /// The launcher has one channel, stable: only a stable release builds it, whichever channel a player's
+    /// games follow. A launcher found in a beta release (the first betas shipped one) is never offered.
     /// </remarks>
     public ReleaseManifest? NewestLauncher(string? runtime = null) =>
-        _releases.FirstOrDefault(release => release.Assets.Any(asset =>
+        _releases.FirstOrDefault(release => release.Channel == ReleaseChannel.Stable && release.Assets.Any(asset =>
             asset.Component == ReleaseComponent.Launcher
             && asset.SelfContained
             && (runtime is null || string.Equals(asset.Runtime, runtime, StringComparison.OrdinalIgnoreCase))));

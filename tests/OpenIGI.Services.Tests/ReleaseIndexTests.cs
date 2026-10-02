@@ -47,13 +47,14 @@ public sealed class ReleaseIndexTests
     }
 
     [Fact]
-    public void There_is_one_launcher_line_whichever_channel_is_asked()
+    public void The_launcher_comes_from_stable_releases_whichever_channel_is_asked()
     {
-        // A stable player is still offered the newest launcher, even when that came out with a beta.
-        Assert.Equal("0.2.0-beta.10", Index.Feed(ReleaseChannel.Stable, since: null).Launcher!.Version);
-        Assert.Equal("0.2.0-beta.10", Index.Feed(ReleaseChannel.Beta, since: "0.2.0-beta.10").Launcher!.Version);
-        Assert.Equal("0.2.0-beta.10", Index.NewestLauncher("win-x64")!.Version);
+        // The fixtures give every release a launcher, betas included; only stable ones may be offered.
+        Assert.Equal("0.1.1", Index.Feed(ReleaseChannel.Stable, since: null).Launcher!.Version);
+        Assert.Equal("0.1.1", Index.Feed(ReleaseChannel.Beta, since: "0.2.0-beta.10").Launcher!.Version);
+        Assert.Equal("0.1.1", Index.NewestLauncher("win-x64")!.Version);
         Assert.Null(Index.NewestLauncher("osx-arm64"));
+        Assert.Null(new ReleaseIndex([Release("0.2.0-beta.1")], Template).NewestLauncher());
     }
 
     [Fact]

@@ -112,8 +112,8 @@ public sealed record ReleaseAsset(
 /// caller gave no version.
 /// </param>
 /// <param name="Launcher">
-/// The newest release, on any channel, that has a launcher. There is one launcher for everyone: the channel
-/// a player follows decides which game builds they get, not which launcher.
+/// The newest stable release, which is the only kind that builds the launcher. The launcher has one
+/// channel, stable; the channel a player follows decides which game builds they get, not which launcher.
 /// </param>
 public sealed record ChannelFeed(
     ReleaseChannel Channel,

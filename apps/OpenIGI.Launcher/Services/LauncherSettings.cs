@@ -8,7 +8,7 @@ namespace OpenIGI.Launcher.Services;
 internal sealed class LauncherSettings
 {
     /// <summary>Gets or sets the channel whose game builds the launcher installs: stable unless the player opts in.</summary>
-    /// <remarks>The launcher itself is one line for everyone and updates to its newest release on any channel.</remarks>
+    /// <remarks>The launcher itself has one channel, stable, and updates only to stable releases of itself.</remarks>
     public ReleaseChannel Channel { get; set; } = ReleaseChannel.Stable;
 
     /// <summary>Gets or sets whether a new release is downloaded as soon as it is seen.</summary>

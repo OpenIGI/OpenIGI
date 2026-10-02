@@ -43,7 +43,7 @@ app.MapGet("/v1/channels/{channel}", (string channel, string? since, HttpContext
 
 app.MapGet("/download/{runtime}", (string runtime, string? component, string? channel, string? flavour, ReleaseStore store) =>
 {
-    // The launcher (the site's buttons): one line for everyone, the newest on any channel. A game build is
+    // The launcher (the site's buttons): the newest stable one, the only channel it has. A game build is
     // asked for by channel and, for players with .NET installed, by the smaller flavour.
     if (component is null || string.Equals(component, "launcher", StringComparison.OrdinalIgnoreCase))
     {

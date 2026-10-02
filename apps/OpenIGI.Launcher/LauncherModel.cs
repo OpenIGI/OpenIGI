@@ -468,8 +468,9 @@ internal sealed class LauncherModel : IDisposable
 
     private void MaybeStageLauncher()
     {
-        // One launcher line for everyone: the newest launcher on any channel, whichever channel the game follows.
-        if (!LauncherUpdater.CanUpdateSelf || (_feed?.Launcher ?? _latest) is not { } latest || _stagingLauncher == latest.Version
+        // The launcher has one channel, stable, whichever channel the games follow: it updates to the launcher
+        // of the newest stable release, never to a beta's.
+        if (!LauncherUpdater.CanUpdateSelf || _feed?.Launcher is not { } latest || _stagingLauncher == latest.Version
             || latest.ParsedVersion <= LauncherUpdater.OwnVersion
             || latest.Find(ReleaseComponent.Launcher, LauncherPaths.Runtime) is not { } asset)
         {
