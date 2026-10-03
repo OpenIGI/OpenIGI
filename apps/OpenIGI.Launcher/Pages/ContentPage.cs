@@ -525,8 +525,28 @@ internal sealed class ContentPage
     private sealed class OnOffSwitch(UiTheme theme) : Control(theme)
     {
         private float _position;
+        private bool _isOn;
+        private bool _known;
 
-        public bool IsOn { get; set; }
+        /// <summary>Gets or sets whether the switch is on.</summary>
+        /// <remarks>
+        /// The first value snaps rather than slides: a switch is created whenever its row is (the screen is
+        /// rebuilt on coming back from minimised, for one), and sliding from OFF there showed every entry as
+        /// switched off for a moment. Only a change after that is animated.
+        /// </remarks>
+        public bool IsOn
+        {
+            get => _isOn;
+            set
+            {
+                _isOn = value;
+                if (!_known)
+                {
+                    _known = true;
+                    _position = value ? 1f : 0f;
+                }
+            }
+        }
 
         protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) => new(context.Px(112f), context.Px(30f));
 
