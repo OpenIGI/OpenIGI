@@ -643,9 +643,13 @@ internal sealed class ContentPage
                 painter.FillRect(box, UiPalette.Ink.WithAlpha(130));
             }
 
-            float size = context.Px(17f);
-            var at = new UiVec2(box.X + context.Px(8f), box.Bottom - context.Px(6f) - theme.Display.LineHeight(size));
-            painter.DrawTextShadowed(theme.Display, Short, at, size, Bgra32.FromRgb(255, 255, 255), UiPalette.Ink.WithAlpha(200), new UiVec2(0f, context.Px(1f)));
+            // The short name stands in for a picture; a pack's own picture is left to speak for itself.
+            if (Picture is null)
+            {
+                float size = context.Px(17f);
+                var at = new UiVec2(box.X + context.Px(8f), box.Bottom - context.Px(6f) - theme.Display.LineHeight(size));
+                painter.DrawTextShadowed(theme.Display, Short, at, size, Bgra32.FromRgb(255, 255, 255), UiPalette.Ink.WithAlpha(200), new UiVec2(0f, context.Px(1f)));
+            }
         }
     }
 
