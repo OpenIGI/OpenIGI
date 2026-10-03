@@ -616,11 +616,7 @@ internal sealed class ContentPage
             painter.FillRect(box, Bgra32.FromRgb(20, 22, 24));
             if (Picture is { } picture)
             {
-                float aspect = box.Width / MathF.Max(1f, box.Height);
-                UiRect source = picture.Aspect > aspect
-                    ? new UiRect((1f - (aspect / picture.Aspect)) * 0.5f, 0f, aspect / picture.Aspect, 1f)
-                    : new UiRect(0f, (1f - (picture.Aspect / aspect)) * 0.5f, 1f, picture.Aspect / aspect);
-                painter.DrawSprite(picture.Image, box, source, Bgra32.FromRgb(255, 255, 255));
+                picture.DrawCover(painter, box);
             }
             else if (Local)
             {

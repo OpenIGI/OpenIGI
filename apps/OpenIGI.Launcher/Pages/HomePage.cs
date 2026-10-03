@@ -23,7 +23,7 @@ internal sealed class HomePage
     private readonly PatchNotesCard _notes;
     private readonly ContentCard _content;
 
-    public HomePage(UiTheme theme, LauncherModel model, Action openSettings, Action openContent)
+    public HomePage(UiTheme theme, LauncherModel model, Func<string, BackdropPicture?> pictures, Action openSettings, Action openContent)
     {
         _theme = theme;
         _model = model;
@@ -63,7 +63,7 @@ internal sealed class HomePage
         left.AddChild(actions);
 
         _notes = new PatchNotesCard(theme, model.OpenNotes);
-        _content = new ContentCard(theme);
+        _content = new ContentCard(theme, pictures);
         _content.Activated += _ => openContent();
 
         var right = new StackPanel { Orientation = Orientation.Vertical, Spacing = 14f, VerticalAlignment = VerticalAlignment.Bottom };
@@ -110,6 +110,7 @@ internal sealed class HomePage
         _notes.Tag = game.State is GameState.UpdateAvailable or GameState.NotInstalled ? "NEW UPDATE" : "LATEST RELEASE";
         _notes.Visibility = game.Notes is null ? Visibility.Collapsed : Visibility.Visible;
         _content.Game = game;
+        _content.Pictures = [.. _model.Packs.Where(p => p.Pack.Game == game.Retail?.Id).Select(static p => p.ThumbnailPath)];
         _content.Visibility = game.OptionalPacks.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         Update();
     }
@@ -317,9 +318,12 @@ internal sealed class HomePage
     }
 
     /// <summary>The optional-content summary: how many packs are in, with a strip of their tiles.</summary>
-    private sealed class ContentCard(UiTheme theme) : Control(theme)
+    private sealed class ContentCard(UiTheme theme, Func<string, BackdropPicture?> pictures) : Control(theme)
     {
         public LauncherGame? Game { get; set; }
+
+        /// <summary>Gets or sets each pack's picture on disk, in the order the tiles are drawn; null for one not fetched yet.</summary>
+        public IReadOnlyList<string?> Pictures { get; set; } = [];
 
         protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) =>
             new(available.X, context.Px(16f + 19f + 3f) + Theme.Mono.LineHeight(context.Px(13f)) + context.Px(14f + 44f + 16f));
@@ -351,10 +355,20 @@ internal sealed class HomePage
             {
                 bool installed = i < game.PacksInstalled;
                 var tile = new UiRect(x + (i * (tileWidth + gap)), tileTop, tileWidth, context.Px(44f));
-                Span<UiGradientStop> art = installed
-                    ? [new(0f, Bgra32.FromRgba(150, 112, 60, 150)), new(1f, Bgra32.FromRgba(60, 74, 80, 150))]
-                    : [new(0f, Bgra32.FromRgba(60, 62, 64, 150)), new(1f, Bgra32.FromRgba(30, 32, 34, 150))];
-                painter.FillGradient(tile, art, (i & 1) == 0 ? UiGradientDirection.Horizontal : UiGradientDirection.Vertical);
+
+                // The pack's own picture, as the Content page shows it; a plain tile until it has been fetched.
+                if (i < Pictures.Count && Pictures[i] is { } path && pictures(path) is { } picture)
+                {
+                    picture.DrawCover(painter, tile);
+                }
+                else
+                {
+                    Span<UiGradientStop> art = installed
+                        ? [new(0f, Bgra32.FromRgba(150, 112, 60, 150)), new(1f, Bgra32.FromRgba(60, 74, 80, 150))]
+                        : [new(0f, Bgra32.FromRgba(60, 62, 64, 150)), new(1f, Bgra32.FromRgba(30, 32, 34, 150))];
+                    painter.FillGradient(tile, art, (i & 1) == 0 ? UiGradientDirection.Horizontal : UiGradientDirection.Vertical);
+                }
+
                 painter.StrokeRect(tile, context.Px(1f), installed ? UiPalette.AccentAt(0.6f) : UiPalette.White(0.1f));
             }
         }

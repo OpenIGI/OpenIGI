@@ -8,8 +8,21 @@ using SkiaSharp;
 
 namespace OpenIGI.Launcher;
 
-/// <summary>The decoded backdrop picture, with its width over its height.</summary>
-internal readonly record struct BackdropPicture(UiImage Image, float Aspect);
+/// <summary>A decoded picture, with its width over its height.</summary>
+internal readonly record struct BackdropPicture(UiImage Image, float Aspect)
+{
+    /// <summary>Draws the picture filling a box, cropped evenly on the sides that do not fit.</summary>
+    /// <param name="painter">Where to draw.</param>
+    /// <param name="box">The box.</param>
+    public void DrawCover(UiPainter painter, UiRect box)
+    {
+        float aspect = box.Width / MathF.Max(1f, box.Height);
+        UiRect source = Aspect > aspect
+            ? new UiRect((1f - (aspect / Aspect)) * 0.5f, 0f, aspect / Aspect, 1f)
+            : new UiRect(0f, (1f - (Aspect / aspect)) * 0.5f, 1f, Aspect / aspect);
+        painter.DrawSprite(Image, box, source, Core.Graphics.Bgra32.FromRgb(255, 255, 255));
+    }
+}
 
 /// <summary>
 /// The launcher's background: a night shot of the game under the design's vignette.

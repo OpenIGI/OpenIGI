@@ -110,7 +110,7 @@ internal sealed class LauncherScreen : Screen
 
         // The main area first in tree order, so focus starts on the page rather than on the chrome.
         var main = new Panel();
-        _home = new HomePage(_theme, _model, () => ShowSection(4), () => ShowSection(1));
+        _home = new HomePage(_theme, _model, _window.Picture, () => ShowSection(4), () => ShowSection(1));
         AddPage(main, _home.Root);
         _content = new ContentPage(_rowTheme, _model, _window.Picture);
         AddPage(main, _content.Root);
