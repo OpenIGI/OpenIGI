@@ -63,6 +63,7 @@ public sealed class FileSink : ILogSink
         StreamWriter writer;
         try
         {
+            ThrowIfHeld(full);
             Rotate(full, keep);
             writer = Create(full);
         }
@@ -115,6 +116,18 @@ public sealed class FileSink : ILogSink
         _thread.Join(FlushTimeout);
         _writer.Dispose();
         _queue.Dispose();
+    }
+
+    // Whether another session is writing the log is asked of the file itself, not left to the rotation to find
+    // out. Moving a file another process has open fails on Windows, but succeeds on Linux and macOS, where the
+    // rotation would carry the other session's log away while it went on writing to it. An exclusive open
+    // fails on all three while a session holds the file (on Unix, .NET takes an advisory lock for it).
+    private static void ThrowIfHeld(string path)
+    {
+        if (File.Exists(path))
+        {
+            using FileStream probe = new(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        }
     }
 
     private static StreamWriter Create(string path) =>
