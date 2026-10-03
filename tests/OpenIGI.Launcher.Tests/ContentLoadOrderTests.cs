@@ -132,6 +132,25 @@ public sealed class ContentLoadOrderTests : IDisposable
         Assert.False(profile.For("igi2")[1].Enabled);
     }
 
+    [Fact]
+    public void A_build_from_before_load_orders_is_given_the_top_enabled_pack()
+    {
+        ContentProfile profile = new(ContentProfile.CurrentSchema, new Dictionary<string, IReadOnlyList<ContentLayerSpec>>
+        {
+            ["igi1"] =
+            [
+                ContentLayerSpec.Local(),
+                new("off", "Off", ContentLayerKind.Pack, "C:/off", false),
+                new("hd", "HD", ContentLayerKind.Pack, "C:/hd", true),
+                new("low", "Low", ContentLayerKind.Pack, "C:/low", true),
+            ],
+            ["igi2"] = [ContentLayerSpec.Local()],
+        });
+
+        Assert.Equal("C:/hd", ContentLoadOrder.LegacyFolder(profile, "igi1"));
+        Assert.Null(ContentLoadOrder.LegacyFolder(profile, "igi2"));
+    }
+
     public void Dispose()
     {
         try

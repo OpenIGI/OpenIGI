@@ -41,9 +41,13 @@ public sealed class ContentLayersTests : IDisposable
         Assert.Equal(Path.Combine(_root, "game2", ResourceOverrides.DirectoryName), local.Root);
     }
 
-    /// <summary>Development folders go on top in the order named, then the legacy variable, then the profile.</summary>
+    /// <summary>Development folders go on top in the order named; with a profile, the legacy variable is ignored.</summary>
+    /// <remarks>
+    /// The launcher sets OPENIGI_OVERRIDES as well as the profile, for builds from before profiles. A build
+    /// that reads the profile stacking that folder too would put one pack above the player's whole order.
+    /// </remarks>
     [Fact]
-    public void DevelopmentFoldersThenTheLegacyFolderThenTheProfile()
+    public void DevelopmentFoldersThenTheProfileWhichOutranksTheLegacyFolder()
     {
         string profile = WriteProfile(new Dictionary<string, IReadOnlyList<ContentLayerSpec>>
         {
@@ -57,7 +61,16 @@ public sealed class ContentLayersTests : IDisposable
             [Path.Combine(_root, "work"), Path.Combine(_root, "other")],
             Path.Combine(_root, "legacy"));
 
-        Assert.Equal(["dev-work", "dev-other", "legacy", ContentLayerSpec.LocalId], layers.Select(static layer => layer.Id));
+        Assert.Equal(["dev-work", "dev-other", ContentLayerSpec.LocalId], layers.Select(static layer => layer.Id));
+    }
+
+    /// <summary>Without a profile the legacy variable is still a layer, above the local folder.</summary>
+    [Fact]
+    public void WithoutAProfileTheLegacyFolderIsStillALayer()
+    {
+        IReadOnlyList<OverrideLayer> layers = ContentLayers.Resolve("igi1", _root, null, [], Path.Combine(_root, "legacy"));
+
+        Assert.Equal(["legacy", ContentLayerSpec.LocalId], layers.Select(static layer => layer.Id));
     }
 
     /// <summary>With no profile, or none for this title, the game folder's own overrides are the only layer.</summary>

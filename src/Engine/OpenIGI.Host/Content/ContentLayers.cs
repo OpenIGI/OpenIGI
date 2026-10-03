@@ -13,14 +13,20 @@ namespace OpenIGI.Host.Content;
 /// </para>
 /// <list type="number">
 /// <item><description>every <c>-content</c> folder, in the order named (development);</description></item>
-/// <item><description>the folder in <c>OPENIGI_OVERRIDES</c>, if set (the launcher's old hand-off, kept so
-/// scripts and shortcuts that set it still work);</description></item>
+/// <item><description>the folder in <c>OPENIGI_OVERRIDES</c>, if set and there is NO profile (the launcher's
+/// old hand-off, kept so scripts and shortcuts that set it still work);</description></item>
 /// <item><description>the content profile's list for this title, which is the player's load order and
 /// holds the game folder's own <c>overrides</c> as one entry among the packs;</description></item>
 /// </list>
 /// <para>
 /// With no profile, or a profile that does not mention this title, the third part is the game folder's
 /// own overrides alone -- the behaviour from before there were packs.
+/// </para>
+/// <para>
+/// The legacy folder is ignored whenever a profile is in force. The launcher sets both on purpose, because
+/// it may start a build from before profiles, which reads only <c>OPENIGI_OVERRIDES</c>; a build that reads
+/// the profile must not also stack that folder, or the pack the old build was given would sit above the
+/// player's whole order, and win even when it is switched off.
 /// </para>
 /// <para>
 /// Re-run on every title switch, because each game has its own list and its own data root.
@@ -66,7 +72,8 @@ public static class ContentLayers
             layers.Add(new OverrideLayer(Unique(layers, "dev-" + name), $"{name} (-content)", folder));
         }
 
-        if (!string.IsNullOrWhiteSpace(legacyFolder))
+        bool profiled = !string.IsNullOrWhiteSpace(profilePath);
+        if (!string.IsNullOrWhiteSpace(legacyFolder) && !profiled)
         {
             layers.Add(new OverrideLayer(Unique(layers, "legacy"), $"Legacy ({LegacyVariable})", legacyFolder));
         }

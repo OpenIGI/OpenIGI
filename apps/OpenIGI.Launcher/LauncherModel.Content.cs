@@ -369,9 +369,18 @@ internal sealed partial class LauncherModel
     {
         Dictionary<string, string> environment = new(StringComparer.Ordinal);
         string path = Path.Combine(Settings.Library.Trim(), ContentFolder, ProfileFile);
+        ContentProfile profile = BuildContentProfile();
+
+        // For a build from before load orders, which reads only this variable and only one folder: the top
+        // enabled pack, as the launcher used to hand over. A build that reads the profile ignores it.
+        if (ContentLoadOrder.LegacyFolder(profile, title.Id) is { } legacy)
+        {
+            environment[GameStarter.LegacyOverridesVariable] = legacy;
+        }
+
         try
         {
-            ContentProfile.Write(path, BuildContentProfile());
+            ContentProfile.Write(path, profile);
             environment[GameStarter.ContentProfileVariable] = path;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

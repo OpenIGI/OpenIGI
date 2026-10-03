@@ -19,6 +19,13 @@ internal static class GameStarter
     /// </remarks>
     public const string ContentProfileVariable = OpenIGI.Core.Content.ContentProfile.EnvironmentVariable;
 
+    /// <summary>The variable a build from before load orders reads its one folder of replacement assets from.</summary>
+    /// <remarks>
+    /// Still set, because the installed build may be that old; a build that reads the profile ignores it while a
+    /// profile is given, so it can never put one pack above the player's order.
+    /// </remarks>
+    public const string LegacyOverridesVariable = "OPENIGI_OVERRIDES";
+
     /// <summary>The name a single-file game build is installed under, for this platform.</summary>
     public static string ExecutableName { get; } = OperatingSystem.IsWindows() ? "OpenIGI.Desktop.exe" : "OpenIGI.Desktop";
 

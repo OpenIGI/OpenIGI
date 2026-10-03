@@ -80,8 +80,9 @@ They are two separate systems, and they stay separate in names, folders, contrac
   - Resolution: the highest enabled layer that has a path wins it, and the layers below fill the gaps.
     Within a layer a loose file beats an archived entry, and two archives carrying one path resolve
     alphabetically by archive path. The game's own file comes last.
-  - The game folder's `overrides` is one of the layers ("Local overrides"). `-content <dir>` (repeatable) and
-    the legacy `OPENIGI_OVERRIDES` add layers on top for development.
+  - The game folder's `overrides` is one of the layers ("Local overrides"). `-content <dir>` (repeatable) adds
+    layers on top for development. The legacy `OPENIGI_OVERRIDES` is a layer only when no profile is given.
+    The launcher still sets it to the top enabled pack, for game builds from before load orders.
   - F8 / `r_overrides` shows the originals. The `content` console command lists layers and conflicts and
     switches a layer live.
 - **Mods** are code: packages of assemblies built against the game's plugin interfaces (`OpenIGI.Modding`).

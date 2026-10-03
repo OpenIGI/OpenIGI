@@ -162,6 +162,20 @@ internal static class ContentLoadOrder
         return new ContentProfile(ContentProfile.CurrentSchema, titles);
     }
 
+    /// <summary>The one folder a build from before load orders is given: the title's top enabled pack.</summary>
+    /// <param name="profile">The profile being handed over.</param>
+    /// <param name="titleId">The title being started.</param>
+    /// <returns>The pack's files folder, or <see langword="null"/> when no pack is enabled.</returns>
+    /// <remarks>
+    /// Such a build reads one folder in place of the game folder's own overrides, so the local folder cannot be
+    /// stacked with it; the top pack is the closest it can come to the player's order.
+    /// </remarks>
+    public static string? LegacyFolder(ContentProfile profile, string titleId)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        return profile.For(titleId).FirstOrDefault(static layer => layer.Kind == ContentLayerKind.Pack && layer.Enabled)?.Path;
+    }
+
     /// <summary>An installed pack, as the profile names it.</summary>
     /// <param name="Name">Its title.</param>
     /// <param name="Game">The game it is for.</param>
