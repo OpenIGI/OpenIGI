@@ -119,7 +119,7 @@ public sealed class MotionBlur : IDisposable
             unprojection.Near,
             unprojection.Far,
             post.MotionBlur,
-            MotionBlurParameters.MaxPercentOfScreenWidth,
+            MotionBlurParameters.SmearCapPercent,
             post.FrameDeltaSeconds);
         _flatten.Bind("uVelocity", velocity, _sampler);
         _flatten.Bind("uDepth", depth, _sampler);
