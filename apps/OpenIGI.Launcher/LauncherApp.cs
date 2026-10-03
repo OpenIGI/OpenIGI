@@ -183,6 +183,7 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     public unsafe void Run()
     {
         _window.Initialize();
+        WindowIcon.Apply(_window);
         Glfw glfw = GlfwProvider.GLFW.Value;
         MarkActive();
 

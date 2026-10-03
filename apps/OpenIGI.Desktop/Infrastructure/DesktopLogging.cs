@@ -1,13 +1,16 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Host;
+using OpenIGI.Host.Infrastructure;
+using OpenIGI.Platform.Desktop.Logging;
 
-namespace OpenIGI.Host.Infrastructure;
+namespace OpenIGI.Desktop;
 
 /// <summary>The desktop game's logging: one router writing to the session's log file and to standard output.</summary>
 /// <remarks>
 /// <para>
 /// Built before anything else in the process, so even a failure to find the game's data is in the log. The
-/// in-game console joins later through <see cref="DevTools.HostConsole.AttachLog"/> and is shown everything
+/// in-game console joins later through <see cref="Host.DevTools.HostConsole.AttachLog"/> and is shown everything
 /// logged before it existed.
 /// </para>
 /// <para>
@@ -22,9 +25,6 @@ namespace OpenIGI.Host.Infrastructure;
 /// </remarks>
 internal sealed class DesktopLogging : IDisposable
 {
-    /// <summary>The name of the session's log file.</summary>
-    internal const string LogFileName = "runtime.log";
-
     private const string LogCategory = "Log";
 
     private readonly IDisposable _crashLogging;

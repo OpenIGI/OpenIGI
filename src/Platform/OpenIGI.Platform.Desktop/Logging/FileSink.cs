@@ -1,12 +1,14 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using OpenIGI.Core.Diagnostics;
 
-namespace OpenIGI.Core.Diagnostics;
+namespace OpenIGI.Platform.Desktop.Logging;
 
 /// <summary>Writes records to a log file from a background thread, keeping the previous sessions' files beside it.</summary>
 /// <remarks>
 /// <para>
-/// The thread that logs only queues the record. The writer thread formats it, and flushes to disk every time
+/// Desktop only: a browser has no file to write and no thread to write it from. The thread that logs only
+/// queues the record. The writer thread formats it, and flushes to disk every time
 /// the queue runs dry, so the file is never more than a moment behind the game. That matters most when the
 /// process dies without unwinding — an access violation inside a graphics driver — which is exactly the
 /// run a log is wanted for. <see cref="Flush"/> waits for the queue to drain.

@@ -1,7 +1,8 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Platform.Desktop.Logging;
 using Xunit;
 
-namespace OpenIGI.Core.Tests.Diagnostics;
+namespace OpenIGI.Desktop.Tests;
 
 /// <summary>Pins the log file's rotation, its fallback when another session holds it, and what it writes.</summary>
 public sealed class FileSinkTests : IDisposable

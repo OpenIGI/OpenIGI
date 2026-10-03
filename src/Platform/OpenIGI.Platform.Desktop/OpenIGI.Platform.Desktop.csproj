@@ -7,6 +7,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The OpenIGI icon: the game's and the launcher's executables carry it (ApplicationIcon), and
+         WindowIcon sets it on their windows from this embedded copy. -->
+    <EmbeddedResource Include="Assets\openigi.ico" LogicalName="OpenIGI.Platform.Desktop.Assets.openigi.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Silk.NET.Windowing" />
     <PackageReference Include="Silk.NET.Input" />
   </ItemGroup>

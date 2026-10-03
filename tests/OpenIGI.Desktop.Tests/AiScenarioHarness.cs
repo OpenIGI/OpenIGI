@@ -4,6 +4,7 @@ using System.Text;
 using OpenIGI.Audio;
 using OpenIGI.Composition;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Platform.Desktop.Logging;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Core.Threading;
 using OpenIGI.Engine.Configuration;
