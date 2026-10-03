@@ -17,11 +17,11 @@ namespace OpenIGI.Presentation.Tests;
 /// whole life however long it had been falling.
 /// </para>
 /// <para>
-/// The spread is now a <b>force</b> — a random range drawn at spawn and left in the drop's physics
-/// force for the solver to integrate on every update after. So a drop's lean grows with its age, and
-/// because the air holds drops of every age at once, the fall carries a range of angles rather than
-/// one. That is the property being pinned here, and it is a property rather than a number: the exact
-/// magnitude is a setting, and these tests are written so that tuning it cannot make them vacuous.
+/// Real rain does not do that. The spread is an <b>acceleration</b>: each drop is given its own random
+/// push at birth, and it keeps acting on the drop for its whole fall. So a drop's lean grows with its
+/// age, and because the air holds drops of every age at once, the fall carries a range of angles rather
+/// than one. That is the property being pinned here, and it is a property rather than a number: the
+/// exact magnitude is a setting, and these tests are written so that tuning it cannot make them vacuous.
 /// </para>
 /// </remarks>
 public sealed class StormDropSpreadTests
@@ -71,8 +71,8 @@ public sealed class StormDropSpreadTests
     [Fact]
     public void Drift_GrowsWithAgeSoThatDropsOfDifferentAgesLeanDifferently()
     {
-        // The spread stays in the physics force, so the solver keeps applying it. A drop
-        // one second old must therefore lean measurably further than one a tenth of a second old.
+        // The spread is a push that keeps acting, so a drop one second old must lean measurably further
+        // than one a tenth of a second old.
         (float x, float y, float z) = StormRenderer.SpawnDrift(Spread, 1f, 0f, 0.5f);
 
         float young = Lean(StormRenderer.DriftAt(0f, 0f, x, y, 0.1f), Fall);

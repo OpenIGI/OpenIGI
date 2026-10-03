@@ -10,12 +10,12 @@ namespace OpenIGI.Presentation.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The sheet is the one part of the storm whose shape is not decided by this repository: it is two
-/// strips of painted streaks, and every constant that addresses them — ten cells across, the sharp
-/// strip on top, a defocused streak that fills far more of its cell than a sharp one — is read off the
-/// images rather than declared by the code. A re-export that changed any of those would not throw and
-/// would not look obviously wrong in a still; it would quietly draw ten drops with the wrong tenth of
-/// the sheet. These tests are what makes that loud.
+/// The sheet is the one part of the storm whose shape is not decided by the renderer's code: it is two
+/// strips of streaks painted by tools/make-weather-sprites.py, and every constant that addresses them —
+/// ten cells across, the sharp strip on top, a defocused streak that fills far more of its cell than a
+/// sharp one — is read off the images rather than declared by the code. A regenerated sheet that changed
+/// any of those would not throw and would not look obviously wrong in a still; it would quietly draw ten
+/// drops with the wrong tenth of the sheet. These tests are what makes that loud.
 /// </para>
 /// <para>
 /// The sheets ship with the game, so every one of these runs. The renderer still draws streaks it
@@ -172,9 +172,9 @@ public sealed class StormDropSheetTests
 /// </summary>
 /// <remarks>
 /// The shipped image is eight frames four across and two down, with three different animations packed
-/// one per colour channel — that is what the image itself measures. Reading it as eight frames across
-/// by four strips down, which this port did, slices every frame into quarters and draws a corner of one
-/// splash where a whole one belongs.
+/// one per colour channel — that is how tools/make-weather-sprites.py paints it. Reading it as eight
+/// frames across by four strips down slices every frame into quarters and draws a corner of one splash
+/// where a whole one belongs.
 /// </remarks>
 public sealed class StormSplashSheetTests
 {
@@ -252,24 +252,24 @@ public sealed class StormSplashSheetTests
 }
 
 /// <summary>
-/// Holds the splash to a realistic size and variety.
+/// Holds the splash to the size of a real raindrop's crown, and to its variety.
 /// </summary>
 /// <remarks>
-/// A real splash is two to four CENTIMETRES across, and flipping the sprite horizontally at random is
-/// what stops a shower of them reading as one stamp repeated. This port drew them at a fifth of a
-/// metre, five to ten times over, which is most of why they were both too big and too bright: a splash
-/// covering twenty-five times the screen area emits twenty-five times the light, and a 128-texel cell
-/// magnified that far has nothing left to be smooth with.
+/// A raindrop's crown is a few CENTIMETRES across, and each one is flipped horizontally at random,
+/// which is what stops a shower of them reading as one stamp repeated. They were once drawn at a fifth
+/// of a metre, five to ten times over, which is most of why they were both too big and too bright: a
+/// splash covering twenty-five times the screen area emits twenty-five times the light, and a
+/// 128-texel cell magnified that far has nothing left to be smooth with.
 /// </remarks>
 public sealed class StormSplashSizeTests
 {
     [Fact]
-    public void SplashSprite_IsTwoToFourCentimetres()
+    public void SplashSprite_IsAFewCentimetresAcross()
     {
         PrecipitationSettings settings = new();
 
-        // The renderer draws the quad at +/- radius, over the 0.7..1 band the spawn gives it.
-        float smallest = settings.SplashRadiusMetres * 0.7f * 2f;
+        // The renderer draws the quad at +/- radius, over the band the spawn gives it.
+        float smallest = settings.SplashRadiusMetres * StormRenderer.SmallestCrownShare * 2f;
         float largest = settings.SplashRadiusMetres * 2f;
 
         Assert.InRange(smallest, 0.018f, 0.032f);
