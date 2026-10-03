@@ -1,0 +1,55 @@
+{
+  "module": "Card",
+  "variant": "default",
+  "entryPoints": [
+    {
+      "name": "vertexMain",
+      "stage": "Vertex",
+      "workgroupSize": null
+    },
+    {
+      "name": "fragmentMain",
+      "stage": "Fragment",
+      "workgroupSize": null
+    }
+  ],
+  "bindings": [
+    {
+      "name": "uDiffuse",
+      "group": 0,
+      "binding": 0,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uDiffuseSampler",
+      "group": 0,
+      "binding": 1,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    }
+  ],
+  "pushBlock": {
+    "name": "push",
+    "size": 128,
+    "group": 3,
+    "binding": 0
+  },
+  "specializationConstants": [
+    {
+      "name": "cClipYDown",
+      "id": 64
+    },
+    {
+      "name": "cSamplerDecodes",
+      "id": 66
+    }
+  ],
+  "globals": null
+}

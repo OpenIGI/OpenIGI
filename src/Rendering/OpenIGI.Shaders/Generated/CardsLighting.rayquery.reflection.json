@@ -1,0 +1,493 @@
+{
+  "module": "CardsLighting",
+  "variant": "rayquery",
+  "entryPoints": [
+    {
+      "name": "computeMain",
+      "stage": "Compute",
+      "workgroupSize": [
+        8,
+        8,
+        1
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "name": "uDirect",
+      "group": 0,
+      "binding": 0,
+      "kind": "StorageTexture",
+      "dimensions": 2,
+      "storageFormat": "Rgba16Float",
+      "wgslStorageFormat": "None",
+      "storageAccess": "ReadWrite"
+    },
+    {
+      "name": "uPages",
+      "group": 0,
+      "binding": 16,
+      "kind": "StorageBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "ReadOnly"
+    },
+    {
+      "name": "uTiles",
+      "group": 0,
+      "binding": 17,
+      "kind": "StorageBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "ReadOnly"
+    },
+    {
+      "name": "uLights",
+      "group": 0,
+      "binding": 18,
+      "kind": "StorageBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "ReadOnly"
+    },
+    {
+      "name": "uCells",
+      "group": 0,
+      "binding": 19,
+      "kind": "StorageBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "ReadWrite"
+    },
+    {
+      "name": "uCellPages",
+      "group": 0,
+      "binding": 20,
+      "kind": "StorageBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "ReadWrite"
+    },
+    {
+      "name": "uProbePos",
+      "group": 0,
+      "binding": 21,
+      "kind": "StorageBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "ReadWrite"
+    },
+    {
+      "name": "uActiveTiles",
+      "group": 0,
+      "binding": 22,
+      "kind": "StorageBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "ReadOnly"
+    },
+    {
+      "name": "uAlbedo",
+      "group": 0,
+      "binding": 33,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uNormal",
+      "group": 0,
+      "binding": 34,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uCutoutMasks",
+      "group": 0,
+      "binding": 35,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "arrayed": true
+    },
+    {
+      "name": "uDepth",
+      "group": 0,
+      "binding": 36,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uClipmaps",
+      "group": 0,
+      "binding": 37,
+      "kind": "Texture",
+      "dimensions": 3,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uPrevious",
+      "group": 0,
+      "binding": 38,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uIndirectRead",
+      "group": 0,
+      "binding": 39,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uDirectHistory",
+      "group": 0,
+      "binding": 44,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uScene",
+      "group": 0,
+      "binding": 48,
+      "kind": "AccelerationStructure",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "Globals",
+      "group": 0,
+      "binding": 49,
+      "kind": "UniformBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uAlbedoSampler",
+      "group": 0,
+      "binding": 65,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uNormalSampler",
+      "group": 0,
+      "binding": 66,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uDepthSampler",
+      "group": 0,
+      "binding": 68,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uClipmapsSampler",
+      "group": 0,
+      "binding": 69,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uPreviousSampler",
+      "group": 0,
+      "binding": 70,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uIndirectReadSampler",
+      "group": 0,
+      "binding": 71,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    }
+  ],
+  "pushBlock": null,
+  "specializationConstants": [],
+  "globals": {
+    "name": "Globals",
+    "group": 0,
+    "binding": 49,
+    "size": 480,
+    "fields": [
+      {
+        "name": "uCutoutRecords",
+        "offset": 0,
+        "size": 8
+      },
+      {
+        "name": "uClipmapOrigin[0]",
+        "offset": 16,
+        "size": 16
+      },
+      {
+        "name": "uClipmapOrigin[1]",
+        "offset": 32,
+        "size": 16
+      },
+      {
+        "name": "uClipmapOrigin[2]",
+        "offset": 48,
+        "size": 16
+      },
+      {
+        "name": "uClipmapOrigin[3]",
+        "offset": 64,
+        "size": 16
+      },
+      {
+        "name": "uSkySh[0]",
+        "offset": 80,
+        "size": 16
+      },
+      {
+        "name": "uSkySh[1]",
+        "offset": 96,
+        "size": 16
+      },
+      {
+        "name": "uSkySh[2]",
+        "offset": 112,
+        "size": 16
+      },
+      {
+        "name": "uSkySh[3]",
+        "offset": 128,
+        "size": 16
+      },
+      {
+        "name": "uSkySh[4]",
+        "offset": 144,
+        "size": 16
+      },
+      {
+        "name": "uSkySh[5]",
+        "offset": 160,
+        "size": 16
+      },
+      {
+        "name": "uSkySh[6]",
+        "offset": 176,
+        "size": 16
+      },
+      {
+        "name": "uAtlasSize",
+        "offset": 192,
+        "size": 12
+      },
+      {
+        "name": "uLookupMin",
+        "offset": 208,
+        "size": 12
+      },
+      {
+        "name": "uSunDirection",
+        "offset": 224,
+        "size": 12
+      },
+      {
+        "name": "uSunColour",
+        "offset": 240,
+        "size": 12
+      },
+      {
+        "name": "uSkyColour",
+        "offset": 256,
+        "size": 12
+      },
+      {
+        "name": "uActiveCentre",
+        "offset": 272,
+        "size": 12
+      },
+      {
+        "name": "uProbeMin",
+        "offset": 288,
+        "size": 12
+      },
+      {
+        "name": "uTraceOrigin",
+        "offset": 304,
+        "size": 12
+      },
+      {
+        "name": "uClipmapRange[0]",
+        "offset": 320,
+        "size": 16
+      },
+      {
+        "name": "uClipmapRange[1]",
+        "offset": 336,
+        "size": 16
+      },
+      {
+        "name": "uClipmapRange[2]",
+        "offset": 352,
+        "size": 16
+      },
+      {
+        "name": "uClipmapRange[3]",
+        "offset": 368,
+        "size": 16
+      },
+      {
+        "name": "uShadowLevels",
+        "offset": 384,
+        "size": 4
+      },
+      {
+        "name": "uShadowResolution",
+        "offset": 388,
+        "size": 4
+      },
+      {
+        "name": "uLookupBuckets",
+        "offset": 392,
+        "size": 4
+      },
+      {
+        "name": "uLookupCell",
+        "offset": 396,
+        "size": 4
+      },
+      {
+        "name": "uTileCount",
+        "offset": 400,
+        "size": 4
+      },
+      {
+        "name": "uTileOffset",
+        "offset": 404,
+        "size": 4
+      },
+      {
+        "name": "uUseActiveList",
+        "offset": 408,
+        "size": 4
+      },
+      {
+        "name": "uActiveCount",
+        "offset": 412,
+        "size": 4
+      },
+      {
+        "name": "uActiveRadius",
+        "offset": 416,
+        "size": 4
+      },
+      {
+        "name": "uLightCount",
+        "offset": 420,
+        "size": 4
+      },
+      {
+        "name": "uLocalScale",
+        "offset": 424,
+        "size": 4
+      },
+      {
+        "name": "uProbeWidth",
+        "offset": 428,
+        "size": 4
+      },
+      {
+        "name": "uProbeHeight",
+        "offset": 432,
+        "size": 4
+      },
+      {
+        "name": "uTemporalIndex",
+        "offset": 436,
+        "size": 4
+      },
+      {
+        "name": "uMaxFrames",
+        "offset": 440,
+        "size": 4
+      },
+      {
+        "name": "uJitterStride",
+        "offset": 444,
+        "size": 4
+      },
+      {
+        "name": "uMode",
+        "offset": 448,
+        "size": 4
+      },
+      {
+        "name": "uBoost",
+        "offset": 452,
+        "size": 4
+      },
+      {
+        "name": "uSkyShValid",
+        "offset": 456,
+        "size": 4
+      },
+      {
+        "name": "uProbe",
+        "offset": 460,
+        "size": 4
+      },
+      {
+        "name": "uProbeInvExtent",
+        "offset": 464,
+        "size": 4
+      }
+    ]
+  }
+}

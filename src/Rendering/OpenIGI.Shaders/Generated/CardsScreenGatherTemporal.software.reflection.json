@@ -1,0 +1,568 @@
+{
+  "module": "CardsScreenGatherTemporal",
+  "variant": "software",
+  "entryPoints": [
+    {
+      "name": "computeMain",
+      "stage": "Compute",
+      "workgroupSize": [
+        8,
+        8,
+        1
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "name": "uIndirect",
+      "group": 0,
+      "binding": 0,
+      "kind": "StorageTexture",
+      "dimensions": 2,
+      "storageFormat": "Rgba16Float",
+      "wgslStorageFormat": "Rgba16Float",
+      "storageAccess": "WriteOnly"
+    },
+    {
+      "name": "uPosition",
+      "group": 0,
+      "binding": 1,
+      "kind": "StorageTexture",
+      "dimensions": 2,
+      "storageFormat": "Rgba16Float",
+      "wgslStorageFormat": "Rgba16Float",
+      "storageAccess": "WriteOnly"
+    },
+    {
+      "name": "uPages",
+      "group": 0,
+      "binding": 16,
+      "kind": "StorageBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "ReadOnly"
+    },
+    {
+      "name": "uCells",
+      "group": 0,
+      "binding": 19,
+      "kind": "StorageBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "ReadWrite"
+    },
+    {
+      "name": "uCellPages",
+      "group": 0,
+      "binding": 20,
+      "kind": "StorageBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "ReadWrite"
+    },
+    {
+      "name": "uAlbedo",
+      "group": 0,
+      "binding": 33,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uDepth",
+      "group": 0,
+      "binding": 36,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uClipmaps",
+      "group": 0,
+      "binding": 37,
+      "kind": "Texture",
+      "dimensions": 3,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uFinal",
+      "group": 0,
+      "binding": 38,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uSceneDepth",
+      "group": 0,
+      "binding": 39,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "sampleType": "Depth"
+    },
+    {
+      "name": "uSceneNormal",
+      "group": 0,
+      "binding": 40,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uHistory",
+      "group": 0,
+      "binding": 41,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uPositionHistory",
+      "group": 0,
+      "binding": 42,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uSceneColour",
+      "group": 0,
+      "binding": 43,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uRaw",
+      "group": 0,
+      "binding": 44,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uVelocity",
+      "group": 0,
+      "binding": 45,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "Globals",
+      "group": 0,
+      "binding": 49,
+      "kind": "UniformBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uAlbedoSampler",
+      "group": 0,
+      "binding": 65,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uDepthSampler",
+      "group": 0,
+      "binding": 68,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uClipmapsSampler",
+      "group": 0,
+      "binding": 69,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uFinalSampler",
+      "group": 0,
+      "binding": 70,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uSceneDepthSampler",
+      "group": 0,
+      "binding": 71,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uSceneNormalSampler",
+      "group": 0,
+      "binding": 72,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uHistorySampler",
+      "group": 0,
+      "binding": 73,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uPositionHistorySampler",
+      "group": 0,
+      "binding": 74,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uSceneColourSampler",
+      "group": 0,
+      "binding": 75,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uRawSampler",
+      "group": 0,
+      "binding": 76,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uVelocitySampler",
+      "group": 0,
+      "binding": 77,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    }
+  ],
+  "pushBlock": null,
+  "specializationConstants": [],
+  "globals": {
+    "name": "Globals",
+    "group": 0,
+    "binding": 49,
+    "size": 608,
+    "fields": [
+      {
+        "name": "uClipmapOrigin[0]",
+        "offset": 0,
+        "size": 16
+      },
+      {
+        "name": "uClipmapOrigin[1]",
+        "offset": 16,
+        "size": 16
+      },
+      {
+        "name": "uClipmapOrigin[2]",
+        "offset": 32,
+        "size": 16
+      },
+      {
+        "name": "uClipmapOrigin[3]",
+        "offset": 48,
+        "size": 16
+      },
+      {
+        "name": "uSkySh[0]",
+        "offset": 64,
+        "size": 16
+      },
+      {
+        "name": "uSkySh[1]",
+        "offset": 80,
+        "size": 16
+      },
+      {
+        "name": "uSkySh[2]",
+        "offset": 96,
+        "size": 16
+      },
+      {
+        "name": "uSkySh[3]",
+        "offset": 112,
+        "size": 16
+      },
+      {
+        "name": "uSkySh[4]",
+        "offset": 128,
+        "size": 16
+      },
+      {
+        "name": "uSkySh[5]",
+        "offset": 144,
+        "size": 16
+      },
+      {
+        "name": "uSkySh[6]",
+        "offset": 160,
+        "size": 16
+      },
+      {
+        "name": "uUnproject",
+        "offset": 176,
+        "size": 16
+      },
+      {
+        "name": "uPrevUnproject",
+        "offset": 192,
+        "size": 16
+      },
+      {
+        "name": "uViewToWorld0",
+        "offset": 208,
+        "size": 12
+      },
+      {
+        "name": "uViewToWorld1",
+        "offset": 224,
+        "size": 12
+      },
+      {
+        "name": "uViewToWorld2",
+        "offset": 240,
+        "size": 12
+      },
+      {
+        "name": "uCameraToCache",
+        "offset": 256,
+        "size": 12
+      },
+      {
+        "name": "uTraceOrigin",
+        "offset": 272,
+        "size": 12
+      },
+      {
+        "name": "uPrevWorldToView0",
+        "offset": 288,
+        "size": 12
+      },
+      {
+        "name": "uPrevWorldToView1",
+        "offset": 304,
+        "size": 12
+      },
+      {
+        "name": "uPrevWorldToView2",
+        "offset": 320,
+        "size": 12
+      },
+      {
+        "name": "uPrevCameraToCache",
+        "offset": 336,
+        "size": 12
+      },
+      {
+        "name": "uColourWorldToView0",
+        "offset": 352,
+        "size": 12
+      },
+      {
+        "name": "uColourWorldToView1",
+        "offset": 368,
+        "size": 12
+      },
+      {
+        "name": "uColourWorldToView2",
+        "offset": 384,
+        "size": 12
+      },
+      {
+        "name": "uColourCameraToCache",
+        "offset": 400,
+        "size": 12
+      },
+      {
+        "name": "uAtlasSize",
+        "offset": 416,
+        "size": 12
+      },
+      {
+        "name": "uLookupMin",
+        "offset": 432,
+        "size": 12
+      },
+      {
+        "name": "uSkyColour",
+        "offset": 448,
+        "size": 12
+      },
+      {
+        "name": "uClipmapRange[0]",
+        "offset": 464,
+        "size": 16
+      },
+      {
+        "name": "uClipmapRange[1]",
+        "offset": 480,
+        "size": 16
+      },
+      {
+        "name": "uClipmapRange[2]",
+        "offset": 496,
+        "size": 16
+      },
+      {
+        "name": "uClipmapRange[3]",
+        "offset": 512,
+        "size": 16
+      },
+      {
+        "name": "uShadowLevels",
+        "offset": 528,
+        "size": 4
+      },
+      {
+        "name": "uShadowResolution",
+        "offset": 532,
+        "size": 4
+      },
+      {
+        "name": "uLookupBuckets",
+        "offset": 536,
+        "size": 4
+      },
+      {
+        "name": "uLookupCell",
+        "offset": 540,
+        "size": 4
+      },
+      {
+        "name": "uScreenWidth",
+        "offset": 544,
+        "size": 4
+      },
+      {
+        "name": "uScreenHeight",
+        "offset": 548,
+        "size": 4
+      },
+      {
+        "name": "uProbeStep",
+        "offset": 552,
+        "size": 4
+      },
+      {
+        "name": "uMaxRayIntensity",
+        "offset": 556,
+        "size": 4
+      },
+      {
+        "name": "uScreenTraceSteps",
+        "offset": 560,
+        "size": 4
+      },
+      {
+        "name": "uScreenTraceDistance",
+        "offset": 564,
+        "size": 4
+      },
+      {
+        "name": "uScreenThickness",
+        "offset": 568,
+        "size": 4
+      },
+      {
+        "name": "uSkyShValid",
+        "offset": 572,
+        "size": 4
+      },
+      {
+        "name": "uBounceScale",
+        "offset": 576,
+        "size": 4
+      },
+      {
+        "name": "uDebugSource",
+        "offset": 580,
+        "size": 4
+      },
+      {
+        "name": "uHasHistory",
+        "offset": 584,
+        "size": 4
+      },
+      {
+        "name": "uFrameIndex",
+        "offset": 588,
+        "size": 4
+      },
+      {
+        "name": "uMaxAccumulated",
+        "offset": 592,
+        "size": 4
+      },
+      {
+        "name": "uHasVelocity",
+        "offset": 596,
+        "size": 4
+      },
+      {
+        "name": "uGatherPass",
+        "offset": 600,
+        "size": 4
+      }
+    ]
+  }
+}
