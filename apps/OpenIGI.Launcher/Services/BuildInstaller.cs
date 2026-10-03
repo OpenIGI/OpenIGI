@@ -86,6 +86,13 @@ internal sealed class BuildInstaller(HttpClient http, string root)
         }
     }
 
+    /// <summary>Gets whether a version other than the current one is still on disk, kept from before.</summary>
+    /// <param name="version">The release version.</param>
+    /// <returns>Whether its folder is there; <see cref="TryReuse"/> still checks it is intact.</returns>
+    /// <remarks>Cheap enough to ask whenever the pages are refreshed: it hashes nothing.</remarks>
+    public bool IsKept(string version) =>
+        Current()?.Version != version && Directory.Exists(Path.Combine(Root, VersionsFolder, version));
+
     /// <summary>Makes a build that is still on disk the current one again, without downloading it.</summary>
     /// <param name="version">The release version.</param>
     /// <param name="asset">The release's download, whose hash identifies a single-file build kept from before.</param>

@@ -63,6 +63,9 @@ internal sealed class LauncherGame
 
     public int UpdateMegabytes { get; set; }
 
+    /// <summary>Gets or sets whether the version on offer is still on disk, so taking it switches rather than downloads.</summary>
+    public bool UpdateIsKept { get; set; }
+
     public int ModsEnabled { get; init; }
 
     /// <summary>Gets or sets the names of the optional content packs for this game, for the home page's summary.</summary>
@@ -645,6 +648,7 @@ internal sealed partial class LauncherModel : IDisposable
             game.LatestVersion = _latest?.Version ?? game.Version;
             game.SizeMegabytes = _installed is null ? downloadMegabytes : installedMegabytes;
             game.UpdateMegabytes = downloadMegabytes;
+            game.UpdateIsKept = _latest is not null && _installer.IsKept(_latest.Version);
             game.Notes = BuildNotes();
             game.NotesUrl = _latest is null ? null : $"https://github.com/OpenIGI/OpenIGI/releases/tag/v{_latest.Version}";
             game.OptionalPacks = [.. Packs.Where(p => p.Pack.Game == title.Id).Select(static p => p.Pack.Title)];
