@@ -244,7 +244,7 @@ public sealed unsafe partial class TrayIcon : IDisposable
         Id = 1,
     };
 
-    [LibraryImport("shell32.dll")]
+    [LibraryImport("shell32.dll", EntryPoint = "Shell_NotifyIconW")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool ShellNotifyIconW(uint message, NotifyIconData* data);
 

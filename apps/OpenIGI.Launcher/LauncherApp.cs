@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Input;
 using OpenIGI.Launcher.Pages;
 using OpenIGI.Launcher.Services;
@@ -152,8 +153,16 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
 
         if (OperatingSystem.IsWindows())
         {
-            _tray = new TrayIcon("OpenIGI Launcher", [new TrayMenuItem("Open OpenIGI Launcher", ShowFromTray), new TrayMenuItem("Exit", Exit)]);
-            _tray.Activated += (_, _) => ShowFromTray();
+            // Without a tray icon the launcher still runs; going to the tray then minimises instead.
+            try
+            {
+                _tray = new TrayIcon("OpenIGI Launcher", [new TrayMenuItem("Open OpenIGI Launcher", ShowFromTray), new TrayMenuItem("Exit", Exit)]);
+                _tray.Activated += (_, _) => ShowFromTray();
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or EntryPointNotFoundException or DllNotFoundException)
+            {
+                _log.Logger.Warning("Launcher", $"The notification-area icon could not be created: {ex.Message}", ex);
+            }
         }
 
         _notifier = new DesktopNotifier(_tray);
