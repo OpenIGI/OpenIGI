@@ -6,8 +6,8 @@
 // eye can tell, and reduce lighting a pixel from the sky to a handful of dot products.
 //
 // Sixty-four directions spread evenly over the sphere, each carrying an equal share of its solid angle.
-// The reference captures a cube first and projects that; this projects the sky-view table directly,
-// which is the same integral without the cube's resampling in the middle of it.
+// The sky-view table is projected directly, with no intermediate cube capture, which is the same
+// integral without a resampling step in the middle of it.
 //
 // The coefficients are written already folded with the cosine convolution and the division by pi, so
 // evaluating them is three dot products and reading them costs a surface nothing but a multiply by its
@@ -54,9 +54,9 @@ void computeMain(uint3 localId : SV_GroupThreadID)
 
     const float solidAnglePerSample = (4.0 * kPi) / 64.0;
 
-    // The sky's own brightness, times how strongly the scene wants to be lit by it. The reference treats
-    // that as a property of the sky light rather than of the atmosphere, and so does this: the table
-    // itself stays physical and only what reads it is scaled.
+    // The sky's own brightness, times how strongly the scene wants to be lit by it. That scale belongs to
+    // the sky light rather than to the atmosphere: the table itself stays physical and only what reads it
+    // is scaled.
     float3 radiance = SampleSkyView(uSkyView, uSkyViewSampler, dir, p.misc.x)
         * solidAnglePerSample * p.misc.y;
 

@@ -9,8 +9,8 @@ namespace OpenIGI.Rendering.Sky;
 /// Mie layers and the ozone band, constant for constant), integrated once along the path to the sun. This
 /// is what colours the sun at sunset: the blue is scattered out of the long, low path first, then the
 /// green, and what reaches the ground is orange, then red, and much dimmer -- while the light scattered out
-/// of it is what makes the sky blue overhead. The reference's sky atmosphere tints its sun light by this
-/// transmittance for the same reason, so the direct light and the sky it sits in always agree.
+/// of it is what makes the sky blue overhead. Tinting the sun light by this transmittance keeps the direct
+/// light and the sky it sits in in agreement.
 /// </para>
 /// <para>
 /// It replaces a hand-made warm tint that was multiplied into the sun AND fed to the sky, which the sky
