@@ -60,6 +60,7 @@ internal enum InstallStage
 internal sealed class BuildInstaller(HttpClient http, string root)
 {
     private const string PointerFile = "current.json";
+    private const string VersionsFolder = "versions";
 
     /// <summary>Gets the folder this installer manages.</summary>
     public string Root { get; } = root;
@@ -83,6 +84,37 @@ internal sealed class BuildInstaller(HttpClient http, string root)
         {
             return null;
         }
+    }
+
+    /// <summary>Makes a build that is still on disk the current one again, without downloading it.</summary>
+    /// <param name="version">The release version.</param>
+    /// <param name="asset">The release's download, whose hash identifies a single-file build kept from before.</param>
+    /// <param name="executableName">The name a single-file build is installed under.</param>
+    /// <returns>The build, or <see langword="null"/> when it is not on disk or no longer intact.</returns>
+    /// <remarks>
+    /// The build an install replaces is kept, so switching back (leaving a beta, say) finds it here. Its files
+    /// are checked against the hashes recorded when it was installed. A build kept from before those records
+    /// existed is recognised when it is a single file whose hash is the release's own.
+    /// </remarks>
+    public InstalledBuild? TryReuse(string version, ReleaseAsset asset, string executableName)
+    {
+        ArgumentNullException.ThrowIfNull(asset);
+        string folder = Path.Combine(Root, VersionsFolder, version);
+        if (!Directory.Exists(folder))
+        {
+            return null;
+        }
+
+        InstalledBuild? build = ReadRecord(version) ?? SingleFileBuild(version, folder, asset, executableName);
+        if (build is null
+            || !string.Equals(Path.GetFullPath(build.Folder), Path.GetFullPath(folder), StringComparison.OrdinalIgnoreCase)
+            || Verify(build).Count > 0)
+        {
+            return null;
+        }
+
+        Activate(build);
+        return build;
     }
 
     /// <summary>Downloads, checks and installs one build, then makes it the current one.</summary>
@@ -225,7 +257,7 @@ internal sealed class BuildInstaller(HttpClient http, string root)
 
     private InstalledBuild Extract(string version, string archive, string executableName, bool selfContained)
     {
-        string versions = Directory.CreateDirectory(Path.Combine(Root, "versions")).FullName;
+        string versions = Directory.CreateDirectory(Path.Combine(Root, VersionsFolder)).FullName;
         string folder = Path.Combine(versions, version);
         string staging = Path.Combine(versions, $".{version}.{Guid.NewGuid():N}");
 
@@ -269,10 +301,9 @@ internal sealed class BuildInstaller(HttpClient http, string root)
 
             Directory.Move(staging, folder);
 
-            InstalledBuild? previous = Current();
             InstalledBuild build = new(version, folder, files, selfContained);
-            WritePointer(build);
-            RemoveOldVersions(keep: [folder, previous?.Folder]);
+            WriteJson(RecordPath(version), build);
+            Activate(build);
             return build;
         }
         finally
@@ -284,17 +315,62 @@ internal sealed class BuildInstaller(HttpClient http, string root)
         }
     }
 
-    private void WritePointer(InstalledBuild build)
+    private static void WriteJson(string path, InstalledBuild build)
     {
-        string pointer = Path.Combine(Root, PointerFile);
-        string temporary = pointer + ".tmp";
+        string temporary = path + ".tmp";
         File.WriteAllText(temporary, JsonSerializer.Serialize(build, InstallJson.Default.InstalledBuild));
-        File.Move(temporary, pointer, overwrite: true);
+        File.Move(temporary, path, overwrite: true);
+    }
+
+    // A download that is the program itself, kept from before builds were recorded: its one file is the
+    // release's asset, so the asset's hash says whether it is intact.
+    private static InstalledBuild? SingleFileBuild(string version, string folder, ReleaseAsset asset, string executableName)
+    {
+        string executable = Path.Combine(folder, executableName);
+        if (asset.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+            || asset.Name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase)
+            || !File.Exists(executable)
+            || !string.Equals(HashFile(executable), asset.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        InstalledFile file = new(executableName, new FileInfo(executable).Length, asset.Sha256.ToLowerInvariant());
+        return new InstalledBuild(version, folder, [file], asset.SelfContained);
+    }
+
+    // Each build's record lives beside its folder rather than in it, so it is never one of the build's files.
+    private string RecordPath(string version) => Path.Combine(Root, VersionsFolder, version + ".json");
+
+    private InstalledBuild? ReadRecord(string version)
+    {
+        try
+        {
+            string path = RecordPath(version);
+            return File.Exists(path) ? JsonSerializer.Deserialize(File.ReadAllText(path), InstallJson.Default.InstalledBuild) : null;
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    // Points current.json at a build and keeps the one it replaces, as the fallback a player can go back to.
+    private void Activate(InstalledBuild build)
+    {
+        InstalledBuild? previous = Current();
+        WriteJson(Path.Combine(Root, PointerFile), build);
+        if (previous is not null && !File.Exists(RecordPath(previous.Version)))
+        {
+            WriteJson(RecordPath(previous.Version), previous);
+        }
+
+        RemoveOldVersions(keep: [build.Folder, previous?.Folder]);
     }
 
     private void RemoveOldVersions(string?[] keep)
     {
-        foreach (string dir in Directory.EnumerateDirectories(Path.Combine(Root, "versions")))
+        foreach (string dir in Directory.EnumerateDirectories(Path.Combine(Root, VersionsFolder)))
         {
             if (keep.Any(k => k is not null && Path.GetFullPath(k) == Path.GetFullPath(dir)))
             {
@@ -304,6 +380,7 @@ internal sealed class BuildInstaller(HttpClient http, string root)
             try
             {
                 Directory.Delete(dir, recursive: true);
+                File.Delete(dir + ".json");
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {

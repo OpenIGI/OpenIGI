@@ -112,6 +112,7 @@ internal sealed partial class LauncherModel : IDisposable
     private const int NotesShown = 6;
     private const string LogCategory = "Launcher";
     private const string GameLogCategory = "Game";
+    private const string InstallLogCategory = "Install";
 
     private readonly ConcurrentQueue<Action> _results = new();
     private readonly LauncherLog _log;
@@ -487,7 +488,14 @@ internal sealed partial class LauncherModel : IDisposable
         {
             try
             {
-                InstalledBuild build = await _installer.InstallAsync(version, asset, GameStarter.ExecutableName, progress, token).ConfigureAwait(false);
+                // The build may still be on disk, kept from before (switching back from a beta finds the stable
+                // build there); then it only becomes current again.
+                InstalledBuild? kept = _installer.TryReuse(version, asset, GameStarter.ExecutableName);
+                InstalledBuild build = kept
+                    ?? await _installer.InstallAsync(version, asset, GameStarter.ExecutableName, progress, token).ConfigureAwait(false);
+                _logger.Information(
+                    InstallLogCategory,
+                    kept is null ? $"Installed OpenIGI {version}." : $"Switched back to OpenIGI {version}, which was still installed.");
                 _results.Enqueue(() =>
                 {
                     _installed = build;
