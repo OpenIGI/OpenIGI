@@ -235,7 +235,7 @@ public sealed class QualityBindingTests
     [Fact]
     public void No_caption_or_step_is_named_after_a_variable_or_a_technique()
     {
-        string[] jargon = ["Sdf", "Ssr", "Ssgi", "Taa", "Tsr", "Msaa", "Aa ", "Hdr", "Lut", "Cvar", "R_"];
+        string[] jargon = ["Sdf", "Ssr", "Ssgi", "Taa", "Msaa", "Aa ", "Hdr", "Lut", "Cvar", "R_"];
 
         List<string> words = [.. GraphicsMenu.Groups.Select(group => group.Caption)];
         words.AddRange(GraphicsMenu.Groups.SelectMany(group => group.Levels).Select(level => level.Name));

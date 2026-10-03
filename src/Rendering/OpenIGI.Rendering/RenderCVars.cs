@@ -272,10 +272,10 @@ public static class RenderCVars
         high: "0.85",
 
         // Native at ultra, and this is the ladder that separates the three real-time tiers. Everything the
-        // GI stack costs -- the probe gather, the lighting, the temporal upscaler resolve -- scales with pixel count, so
+        // GI stack costs -- the probe gather, the lighting, the temporal upscaler -- scales with pixel count, so
         // internal resolution is the one lever that moves all of it at once and it is therefore where the
         // tiers differ rather than in what they switch off. Ultra is native because ultra is the quality
-        // tier: temporal upscaler reconstructing from two-thirds costs about a quarter of the frame's edge energy, which
+        // tier: the temporal upscaler reconstructing from two-thirds costs about a quarter of the frame's edge energy, which
         // is a real loss to a preset whose whole job is the best picture. The cheaper tiers spend exactly
         // that, and buy back most of a traced-GI frame with it.
         //
@@ -1947,7 +1947,7 @@ public static class RenderCVars
     /// and a multisampled depth buffer is not something a shader can read usefully.
     /// <para>
     /// It applies ONLY on the original's forward path (<c>r_hdr 0</c>): the deferred/HDR path records into
-    /// a single-sample G-buffer and is anti-aliased by temporal upscaler instead, so MSAA there would be pure cost for no
+    /// a single-sample G-buffer and is anti-aliased by the temporal upscaler instead, so MSAA there would be pure cost for no
     /// effect. Every preset from enhanced up is deferred, so they set it to off — a value above one on
     /// those presets did nothing but read as if it were working.
     /// </para>
@@ -1959,7 +1959,7 @@ public static class RenderCVars
             0,
             8,
             CVarOptions.Archive,
-            "Samples per pixel on the forward (r_hdr 0) path; off on the deferred path, where temporal upscaler is the AA."),
+            "Samples per pixel on the forward (r_hdr 0) path; off on the deferred path, where the temporal upscaler is the AA."),
         vanilla: "0",
         enhanced: "1",
         high: "1",
