@@ -46,8 +46,9 @@ internal sealed class LauncherLog : IDisposable
     public static string Folder => LauncherPaths.LogDirectory;
 
     /// <summary>Starts the launcher's logging.</summary>
+    /// <param name="folder">Where the log file goes; the launcher's own log folder when omitted.</param>
     /// <returns>The log, which the caller disposes on the way out.</returns>
-    public static LauncherLog Start()
+    public static LauncherLog Start(string? folder = null)
     {
         LogRouter router = new(LogLevelPolicy.FromEnvironment(LogLevel.Information));
 
@@ -55,7 +56,7 @@ internal sealed class LauncherLog : IDisposable
         string? failure = null;
         try
         {
-            FileSink file = FileSink.Open(Path.Combine(Folder, "launcher.log"));
+            FileSink file = FileSink.Open(Path.Combine(folder ?? Folder, "launcher.log"));
             router.AddSink(file);
             path = file.Path;
         }

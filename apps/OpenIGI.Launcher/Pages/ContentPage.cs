@@ -689,12 +689,12 @@ internal sealed class ContentPage
             }
 
             y += nameHeight + context.Px(6f);
-            painter.DrawLabel(theme.Body, Fit(theme.Body, Description, bodySize, Bounds.Width), new UiVec2(Bounds.X, y), bodySize, Bgra32.FromRgb(169, 168, 163), 0f);
+            painter.DrawLabel(theme.Body, UI.Text.TextFit.ToWidth(theme.Body, Description, bodySize, Bounds.Width), new UiVec2(Bounds.X, y), bodySize, Bgra32.FromRgb(169, 168, 163), 0f);
 
             if (Detail.Length > 0)
             {
                 y += theme.Body.LineHeight(bodySize) + context.Px(6f);
-                painter.DrawLabel(theme.Mono, Fit(theme.Mono, Detail, monoSize, Bounds.Width), new UiVec2(Bounds.X, y), monoSize, DetailColor, 0.14f);
+                painter.DrawLabel(theme.Mono, UI.Text.TextFit.ToWidth(theme.Mono, Detail, monoSize, Bounds.Width), new UiVec2(Bounds.X, y), monoSize, DetailColor, 0.14f);
             }
 
             painter.PopClip();
@@ -703,22 +703,6 @@ internal sealed class ContentPage
         private float Block(LayoutContext context) =>
             theme.Heading.LineHeight(context.Px(23f)) + context.Px(6f) + theme.Body.LineHeight(context.Px(17f))
             + (Detail.Length > 0 ? context.Px(6f) + theme.Mono.LineHeight(context.Px(13f)) : 0f);
-
-        private static string Fit(UI.Text.UiFont font, string text, float size, float width)
-        {
-            if (UiPainter.MeasureLabel(font, text, size, 0f) <= width)
-            {
-                return text;
-            }
-
-            int length = text.Length;
-            while (length > 0 && UiPainter.MeasureLabel(font, string.Concat(text.AsSpan(0, length), "…"), size, 0f) > width)
-            {
-                length--;
-            }
-
-            return string.Concat(text.AsSpan(0, length).TrimEnd(), "…");
-        }
     }
 
     // A small grey caption over a value: the design's SIZE column.

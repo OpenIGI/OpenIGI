@@ -162,7 +162,7 @@ public class Slider : Control
     protected override void OnDraw(UiPainter painter)
     {
         float highlight = UiRowStyle.Highlight(this);
-        UiRowStyle.DrawFrame(painter, this, Label, highlight);
+        UiRowStyle.DrawFrame(painter, this, Label, highlight, _track.X);
 
         LayoutContext context = painter.Context;
         float appear = Visual.Appear;

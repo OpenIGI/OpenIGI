@@ -21,10 +21,8 @@ internal static class SettingsPage
         ArgumentNullException.ThrowIfNull(window);
         LauncherSettings settings = model.Settings;
 
-        var columns = new Grid { ColumnSpacing = 20f, VerticalAlignment = VerticalAlignment.Top };
-        columns.ColumnDefinitions.Add(GridLength.Star);
-        columns.ColumnDefinitions.Add(GridLength.Star);
-        columns.RowDefinitions.Add(GridLength.Auto);
+        // Two columns where each row has room for its caption and its control; one, stacked, on a narrower window.
+        var columns = new AdaptiveColumns { MinColumnWidth = 640f, Spacing = 20f, VerticalAlignment = VerticalAlignment.Top };
 
         var channel = new Dropdown(theme, "Update channel", ["Stable", "Beta"], settings.Channel == ReleaseChannel.Beta ? 1 : 0)
         {
@@ -54,9 +52,7 @@ internal static class SettingsPage
             Column(
                 Group(theme, "Updates", channel, automatic, notify),
                 Group(theme, "Installation", library, repair),
-                Group(theme, "Launcher window", new CloseButtonRow(theme, model))),
-            0,
-            0);
+                Group(theme, "Launcher window", new CloseButtonRow(theme, model))));
 
         columns.Add(
             Column(
@@ -64,9 +60,7 @@ internal static class SettingsPage
                 Group(theme, "Game files", [.. model.Games
                     .Where(static g => g.Released && g.Retail is not null)
                     .Select(g => (UiElement)GameFolder(theme, model, window, g.Retail!, $"{g.Title} folder"))]),
-                Group(theme, "Game launch", LaunchArguments(theme, model), MinimizeOnLaunch(theme, model))),
-            0,
-            1);
+                Group(theme, "Game launch", LaunchArguments(theme, model), MinimizeOnLaunch(theme, model))));
 
         var scroll = new ScrollView(theme);
         scroll.SetContent(columns);

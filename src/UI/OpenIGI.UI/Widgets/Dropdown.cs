@@ -204,7 +204,7 @@ public class Dropdown : Control
         }
         else
         {
-            UiRowStyle.DrawFrame(painter, this, Label, highlight);
+            UiRowStyle.DrawFrame(painter, this, Label, highlight, _previousRect.X);
         }
 
         DrawChevron(painter, _previousRect, UiDirection.Left, appear);

@@ -761,13 +761,13 @@ public sealed class ConsoleBody : UiElement
             Bgra32 nameColour = suggestion.IsBlocked ? _theme.Ui.TextDisabled : _theme.ColorFor(suggestion.Kind);
             float x = MathF.Round(line.X + (unit * 2f));
 
-            painter.DrawText(_theme.BodyFont, Fit(suggestion.Text, 28), new UiVec2(x, y), _theme.BodySize, nameColour);
+            painter.DrawText(_theme.BodyFont, TextFit.ToColumns(suggestion.Text, 28), new UiVec2(x, y), _theme.BodySize, nameColour);
 
             if (suggestion.Detail.Length > 0)
             {
                 painter.DrawText(
                     _theme.BodyFont,
-                    Fit(suggestion.Detail, 11),
+                    TextFit.ToColumns(suggestion.Detail, 11),
                     new UiVec2(MathF.Round(x + (_theme.Cell * 29f)), y),
                     _theme.BodySize,
                     _theme.Ui.Text);
@@ -785,7 +785,7 @@ public sealed class ConsoleBody : UiElement
             {
                 painter.DrawText(
                     _theme.SmallFont,
-                    Fit(trailing, columns),
+                    TextFit.ToColumns(trailing, columns),
                     new UiVec2(helpX, MathF.Round(line.Y + ((line.Height - _theme.SmallFont.LineHeight(_theme.SmallSize)) * 0.5f))),
                     _theme.SmallSize,
                     _theme.Ui.TextMuted);
@@ -804,17 +804,6 @@ public sealed class ConsoleBody : UiElement
         ConsoleSeverity.Error => "error",
         _ => "info",
     };
-
-    /// <summary>Trims text to a column count, marking where it was cut.</summary>
-    /// <param name="text">The text to fit.</param>
-    /// <param name="columns">How many character cells are available.</param>
-    /// <returns>The text, elided if it did not fit.</returns>
-    /// <remarks>
-    /// Elided rather than wrapped. A wrapped log line destroys the vertical scan that is the only
-    /// reason to read a log at speed, and a wrapped table row stops being a table.
-    /// </remarks>
-    private static string Fit(string text, int columns) =>
-        columns <= 1 || text.Length <= columns ? text : string.Concat(text.AsSpan(0, columns - 1), "…");
 
     private static string FormatTime(double seconds)
     {

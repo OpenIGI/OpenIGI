@@ -227,7 +227,10 @@ internal sealed class LauncherScreen : Screen
         host.AddChild(page);
     }
 
-    private void ShowSection(int index, bool refocus = true)
+    /// <summary>Shows one of the sections: 0 Home, 1 Content, 2 Mods, 3 Logs, 4 Settings.</summary>
+    /// <param name="index">The section.</param>
+    /// <param name="refocus">Whether focus moves to the section's first control.</param>
+    internal void ShowSection(int index, bool refocus = true)
     {
         _section = Math.Clamp(index, 0, Sections.Length - 1);
         for (int i = 0; i < _pages.Count; i++)

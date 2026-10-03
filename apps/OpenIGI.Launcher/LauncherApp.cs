@@ -403,14 +403,8 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
             ?? throw new InvalidOperationException("Skia could not create a GPU context on the window.");
 
         _typography = LauncherFonts.Load();
-        UiTheme theme = _typography.CreateTheme();
+        (UiTheme theme, UiTheme rows) = CreateThemes(_typography);
         _theme = theme;
-
-        // The launcher's settings rows are the design's taller, ruled kind, with a larger caption.
-        UiTheme rows = _typography.CreateTheme();
-        rows.RowHeight = 54f;
-        rows.RowDividers = true;
-        rows.BodyTextSize = 18f;
 
         BackdropPicture? picture = LauncherBackdrop.LoadPicture(_images);
         _screen = new LauncherScreen(theme, rows, _model, this, picture);
@@ -543,16 +537,37 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         _gr.Flush();
     }
 
+    /// <summary>The launcher's two themes: the page's, and the settings rows' taller, ruled kind with a larger caption.</summary>
+    /// <param name="typography">The loaded faces.</param>
+    /// <returns>The page theme and the row theme.</returns>
+    internal static (UiTheme Page, UiTheme Rows) CreateThemes(IgiTypography typography)
+    {
+        UiTheme page = typography.CreateTheme();
+        UiTheme rows = typography.CreateTheme();
+        rows.RowHeight = 54f;
+        rows.RowDividers = true;
+        rows.BodyTextSize = 18f;
+        return (page, rows);
+    }
+
+    /// <summary>The layout for a framebuffer: the display's scale, whatever the window's size.</summary>
+    /// <param name="width">The framebuffer's width in pixels.</param>
+    /// <param name="height">The framebuffer's height in pixels.</param>
+    /// <param name="contentScale">The display's scale.</param>
+    /// <returns>The layout context.</returns>
+    internal static LayoutContext Layout(float width, float height, float contentScale)
+    {
+        var fitted = new LayoutContext(width, height, DesignSize, match: 0.5f);
+        return new LayoutContext(width, height, DesignSize, match: 0.5f, userScale: contentScale / fitted.Scale);
+    }
+
     private LayoutContext Layout()
     {
         // A desktop window, not a game screen: the interface stays at the display's scale whatever the
         // window's size, and a larger window gives the layout more room rather than larger type. The context
         // fits the design to the window, so the user scale undoes that fit and applies the display's instead.
         Vector2D<int> size = _window.FramebufferSize;
-        float width = MathF.Max(1, size.X);
-        float height = MathF.Max(1, size.Y);
-        var fitted = new LayoutContext(width, height, DesignSize, match: 0.5f);
-        return new LayoutContext(width, height, DesignSize, match: 0.5f, userScale: _contentScale / fitted.Scale);
+        return Layout(MathF.Max(1, size.X), MathF.Max(1, size.Y), _contentScale);
     }
 
     private void EnsureSurface(Vector2D<int> size)

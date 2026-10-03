@@ -2,6 +2,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.UI.Drawing;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Layout;
+using OpenIGI.UI.Text;
 
 namespace OpenIGI.UI.Widgets;
 
@@ -99,22 +100,28 @@ public sealed class TextBox : Control
 
         painter.FillRect(Bounds, Theme.Panel.WithAlpha((byte)(175 + (45 * focus))), UiBlend.AlphaBlend);
         painter.StrokeRect(Bounds, painter.Context.Px(1f), border, UiBlend.AlphaBlend);
-        painter.DrawText(
-            Theme.Body,
-            drawn,
-            new UiVec2(Bounds.X + pad, Bounds.Y + ((Bounds.Height - Theme.Body.LineHeight(size)) * 0.5f)),
-            size,
-            color);
 
-        if (Visual.Focus > 0.45f && IsEnabled)
+        // The text stays inside the field. Not being edited, a long value is cut short with an ellipsis; being
+        // edited, it slides left so its end, where the caret is, stays in view.
+        var inner = new UiRect(Bounds.X + pad, Bounds.Y, MathF.Max(0f, Bounds.Width - (pad * 2f)), Bounds.Height);
+        bool editing = Visual.Focus > 0.45f && IsEnabled;
+        float caretWidth = painter.Context.Px(2f);
+        float textWidth = Theme.Body.MeasureWidth(drawn, size);
+        float x = editing && _text.Length > 0 && textWidth + caretWidth > inner.Width ? inner.Right - textWidth - caretWidth : inner.X;
+        string shown = editing ? drawn : TextFit.ToWidth(Theme.Body, drawn, size, inner.Width);
+
+        painter.PushClip(inner);
+        painter.DrawText(Theme.Body, shown, new UiVec2(x, UiRowStyle.CenterY(Theme.Body, size, Bounds)), size, color);
+        if (editing)
         {
-            float width = Theme.Body.MeasureWidth(_text, size);
             float caretHeight = Theme.Body.LineHeight(size) * 0.78f;
-            float caretX = MathF.Min(Bounds.Right - pad, Bounds.X + pad + width + painter.Context.Px(2f));
+            float caretX = x + (_text.Length == 0 ? 0f : textWidth) + caretWidth;
             painter.FillRect(
-                new UiRect(caretX, Bounds.Y + ((Bounds.Height - caretHeight) * 0.5f), painter.Context.Px(2f), caretHeight),
+                new UiRect(caretX, Bounds.Y + ((Bounds.Height - caretHeight) * 0.5f), caretWidth, caretHeight),
                 Theme.Accent,
                 UiBlend.AlphaBlend);
         }
+
+        painter.PopClip();
     }
 }

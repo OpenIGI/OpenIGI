@@ -95,7 +95,9 @@ internal sealed class TextRow : Control
             right -= button + context.Px(Gap);
         }
 
-        float width = context.Px(FieldWidth);
+        // The design's width, or less on a narrow row, which keeps at least half of the room for the caption.
+        float room = right - (contentRect.X + context.Px(UiRowStyle.Inset));
+        float width = MathF.Max(0f, MathF.Min(context.Px(FieldWidth), room * 0.55f));
         _box.Arrange(new UiRect(right - width, top, width, height));
     }
 
@@ -104,5 +106,6 @@ internal sealed class TextRow : Control
             painter,
             this,
             Caption,
-            _browse is null ? UiRowStyle.Highlight(_box) : MathF.Max(UiRowStyle.Highlight(_box), UiRowStyle.Highlight(_browse)));
+            _browse is null ? UiRowStyle.Highlight(_box) : MathF.Max(UiRowStyle.Highlight(_box), UiRowStyle.Highlight(_browse)),
+            _box.Bounds.X);
 }

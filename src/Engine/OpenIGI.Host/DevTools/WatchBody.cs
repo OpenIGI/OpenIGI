@@ -1,6 +1,7 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
+using OpenIGI.UI.Text;
 
 namespace OpenIGI.Host.DevTools;
 
@@ -26,7 +27,6 @@ public sealed class WatchBody : UiElement
     private readonly CVarRegistry _registry;
     private readonly DevConsoleTheme _theme;
     private readonly List<ConsoleWatchEntry> _entries = [];
-
 
     /// <summary>Initialises a new instance of the <see cref="WatchBody"/> class.</summary>
     /// <param name="watch">The pinned set.</param>
@@ -83,7 +83,7 @@ public sealed class WatchBody : UiElement
 
             painter.DrawText(
                 _theme.BodyFont,
-                Fit(entry.Name, NameColumns - 1),
+                TextFit.ToColumns(entry.Name, NameColumns - 1),
                 new UiVec2(x, textY),
                 _theme.BodySize,
                 entry.IsResolved ? _theme.Ui.TextMuted : _theme.Ui.TextDisabled);
@@ -100,7 +100,4 @@ public sealed class WatchBody : UiElement
             y = MathF.Round(y + rowHeight);
         }
     }
-
-    private static string Fit(string text, int columns) =>
-        columns <= 1 || text.Length <= columns ? text : string.Concat(text.AsSpan(0, columns - 1), "…");
 }
