@@ -66,9 +66,9 @@ float3 ViewPositionAt(float2 uv, float depth)
 // Catmull-Rom over the accumulated mask, nine bilinear taps across the 4x4 footprint. The same filter
 // the history update uses, and here for the same reason: a single bilinear fetch low-pass-filters what
 // it reads, and a running mean re-reads its own history every frame, so the loss compounds. Sixteen
-// frames of it measurably softened the office shadow edges -- 0.0253 to 0.0237 of high-frequency
-// energy against the reference's 0.0257 -- which is the accumulation buying stability with sharpness
-// it did not need to spend. The negative lobes undo most of it.
+// frames of it measurably softened the office shadow edges -- 0.0253 to 0.0237 of high-frequency energy
+// -- which is the accumulation buying stability with sharpness it did not need to spend. The negative
+// lobes undo most of it.
 float4 SampleHistoryCatmullRom(float2 uv)
 {
     float2 size = p.resolution.xy;

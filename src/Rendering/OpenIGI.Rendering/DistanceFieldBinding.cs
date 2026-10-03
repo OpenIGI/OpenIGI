@@ -28,10 +28,9 @@ public readonly record struct DistanceFieldLevel(Vector3f Origin, float VoxelSiz
 /// therefore reflected the sky and nothing else.
 /// </para>
 /// <para>
-/// The reference does exactly this: its software tracing marches a global distance field and resolves
-/// what it hits against the same surface cache the hardware path uses. Nothing here is a lesser
-/// approximation of the traced answer — it is a different way of finding the hit, feeding the identical
-/// resolve.
+/// Software tracing marches a global distance field and resolves what it hits against the same surface
+/// cache the hardware path uses. Nothing here is a lesser approximation of the traced answer — it is a
+/// different way of finding the hit, feeding the identical resolve.
 /// </para>
 /// <para>
 /// <b>Four levels, by value.</b> The shader declares four and the settings clamp to four, so this

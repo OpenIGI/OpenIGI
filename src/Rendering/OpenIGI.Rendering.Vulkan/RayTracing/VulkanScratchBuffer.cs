@@ -22,10 +22,10 @@ namespace OpenIGI.Rendering.Vulkan.RayTracing;
 /// enough that the previous frame is always done.
 /// </para>
 /// <para>
-/// The reference does the same thing by a different route: its build scratch is a transient buffer
-/// created inside the render graph each frame, and the graph will not hand back memory it knows is still
-/// in flight. This is that rule, kept by hand — a buffer is only reused once the queue says the
-/// submission that last used it has completed.
+/// A render graph would get the same result by a different route: build scratch as a transient buffer
+/// created inside the graph each frame, which will not hand back memory it knows is still in flight.
+/// This is that rule, kept by hand — a buffer is only reused once the queue says the submission that
+/// last used it has completed.
 /// </para>
 /// <para>
 /// They grow and never shrink. The largest batch the scene ever builds is the size they settle at, which

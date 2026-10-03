@@ -44,8 +44,7 @@ internal struct VulkanRayTracingInstance
     /// So the rig goes into the same structure as everything else -- there is only one, and a second one
     /// would have to be built and kept in step -- and is separated by the mask instead. It takes the top
     /// bit alone; the world keeps <see cref="VisibleToAll"/>, so every ray that asks for
-    /// <see cref="ExcludingFirstPerson"/> still sees all of it and none of the rig. The reference divides
-    /// its own scene the same way and for the same reason: see its first-person world-space mask.
+    /// <see cref="ExcludingFirstPerson"/> still sees all of it and none of the rig.
     /// </para>
     /// </remarks>
     public const byte FirstPersonOnly = 0x80;

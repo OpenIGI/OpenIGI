@@ -3861,8 +3861,8 @@ internal sealed partial class GameHost : IDisposable
                     aspectRatio = 1.3333f;
                 }
 
-                // A pinned lens for reference comparisons: -fov overrides the game's own ninety-degree
-                // horizontal, so a capture can be framed exactly as a reference render whose camera
+                // A pinned lens for side-by-side comparisons: -fov overrides the game's own ninety-degree
+                // horizontal, so a capture can be framed exactly as an external render whose camera
                 // differs. The sight zoom still governs ordinary play.
                 float horizontalTangent = _options.FieldOfView is { } fixedFov
                     ? MathF.Tan(fixedFov * (MathF.PI / 360f))
@@ -4287,7 +4287,7 @@ internal sealed partial class GameHost : IDisposable
                 // thing that knows how far under the horizon the sun has gone, and the resolve is a long way
                 // from here, so it travels as the one hidden variable rather than as another argument
                 // threaded through every pass between. The fixed-sun path leaves it at nought, which is what
-                // a reference render wants: a pinned sun and an unmodified exposure.
+                // a comparison capture wants: a pinned sun and an unmodified exposure.
                 RenderCVars.Nightfall.Value = _dayNight.Nightfall;
 
                 // And what the LEVEL says about its own darkness, which the adaptation cannot work out
@@ -4389,8 +4389,8 @@ internal sealed partial class GameHost : IDisposable
                 // instead of all being handed one number. The colours come from the sun, so a fog bank is
                 // lit by the same light as the ground under it.
                 // Lighter than it was: the authored FogAmount, read at full strength, laid a haze dense
-                // enough to wash the yard white a few tens of metres out -- where the reference keeps its
-                // buildings crisp -- and it hung inside rooms besides. This carries the same shape at a
+                // enough to wash the yard white a few tens of metres out -- where the buildings should stay
+                // crisp -- and it hung inside rooms besides. This carries the same shape at a
                 // fraction of the extinction, so distance still reads but the far wall of a compound stays
                 // legible.
                 // A title that authors a real extinction gives it here, in the same units, and is
@@ -4607,7 +4607,7 @@ internal sealed partial class GameHost : IDisposable
                         }
                     }
 
-                    // The bounce accumulates EVERY frame -- the reference's amortised radiosity. Each frame
+                    // The bounce accumulates EVERY frame -- an amortised radiosity. Each frame
                     // reads last frame's final and folds ONE more bounce in, so a still scene keeps filling
                     // with light toward its multi-bounce equilibrium (the "lighting up" over the first
                     // second) instead of holding at the two bounces the load pass seeded. This was gated on
@@ -5213,12 +5213,12 @@ if (retailFog)
                 // light. It replaces the ambient inside the shade rather than compositing over the frame, so
                 // there is no ambient to zero and nothing runs after the lighting.
                 const int giStep = 8;
-                // The probes' running average, capped at the reference's screen-probe temporal limit of
-                // ten frames. It was thirty-two, and a history that long outlives every
-                // turn of the view -- each frame of motion resamples it through the reprojection and clamps
-                // it into the window of one frame's rays, and at one part in thirty-three the bias that
-                // leaves takes the better part of a second to wash back out, which is the cloud that
-                // follows the camera and settles after it stops.
+                // The probes' running average, capped at a temporal limit of ten frames. It was
+                // thirty-two, and a history that long outlives every turn of the view -- each frame of
+                // motion resamples it through the reprojection and clamps it into the window of one
+                // frame's rays, and at one part in thirty-three the bias that leaves takes the better part
+                // of a second to wash back out, which is the cloud that follows the camera and settles
+                // after it stops.
                 const int giMaxAccum = 10;
 
                 // The screen trace tier: how far its rays reach across the frame and their step cap, plus the
@@ -5453,10 +5453,10 @@ if (retailFog)
 
                     TextureHandle giRead = giFilterRadius > 0 ? giFiltered : giAccum[giLastWrite];
 
-                    // The full-resolution temporal resolve (the reference's ScreenProbeTemporalReprojectionCS):
-                    // upsample the sparse atlas once and accumulate it per pixel, reprojecting against each
-                    // surface's own world position, so the indirect is pinned to the world instead of sliding
-                    // with the coarse sparse-probe reprojection. The deferred fill reads the full-res result.
+                    // The full-resolution temporal resolve: upsample the sparse atlas once and accumulate
+                    // it per pixel, reprojecting against each surface's own world position, so the
+                    // indirect is pinned to the world instead of sliding with the coarse sparse-probe
+                    // reprojection. The deferred fill reads the full-res result.
                     int resolveWrite = giResolveFrame & 1;
                     int resolveRead = 1 - resolveWrite;
 
@@ -5806,7 +5806,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                     Vector3f stormSunLight =
                         stormSun.Colour * RenderCVars.SunScale.Value * RenderCVars.LightScale.Value;
 
-                    // What the reference multiplies by is the frame BEHIND the drop, and outdoors that
+                    // What a refracting drop really shows is the frame BEHIND it, and outdoors that
                     // is overwhelmingly sky rather than the flat fill the interiors are lit by. The sky
                     // fill alone left daylight rain almost invisible against a bright sky, which is the
                     // one place rain is most obviously there. A fifth of the sun's own illuminance is a
@@ -6645,7 +6645,7 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                         I($"{preset}  {_window.Width}x{_window.Height}  vsync {(_device.VSyncEnabled ? "on" : "off")}  indoor {(cameraIndoors ? "yes" : "no")}"),
 
                         // Which of the two shadow systems is actually drawing, spelled out with the keys
-                        // that move it. Reading a shadow against the reference means knowing which one
+                        // that move it. Judging a shadow in a capture means knowing which one
                         // produced it, and the answer is two cvars deep -- r_rt_shadows does nothing
                         // while r_rt is off, and neither means anything with shadows turned off.
                         I($"shadow   {ShadowModeLabel()}"),

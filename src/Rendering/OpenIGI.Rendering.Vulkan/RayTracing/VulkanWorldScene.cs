@@ -377,10 +377,10 @@ internal sealed class VulkanWorldScene : IDisposable
             // discovered at once behind the loading screen or as the camera swept across them -- which then
             // existed only where a frame drew them. Every GI and shadow ray met a world that gained and lost
             // walls, fittings and fences with the view, and the bounce light crept across walls and ceilings
-            // in patches that took seconds to settle, moving and at rest. The reference never guesses: a
-            // primitive's mobility says what is static. Here each PLACEMENT answers for itself: re-offered,
-            // it stays; not offered, it goes (see ExpireUnoffered) -- one copy moving no longer condemns the
-            // copies that stand still, nor leaves a trail of where it has been.
+            // in patches that took seconds to settle, moving and at rest. Nothing is guessed any more: each
+            // PLACEMENT answers for itself: re-offered, it stays; not offered, it goes (see ExpireUnoffered) --
+            // one copy moving no longer condemns the copies that stand still, nor leaves a trail of where it
+            // has been.
             _placed[placement] = _frame;
             _observedThisPass++;
             _grewThisFrame = true;

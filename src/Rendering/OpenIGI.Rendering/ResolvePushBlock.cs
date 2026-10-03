@@ -50,9 +50,8 @@ public static class ResolvePushBlock
 
     /// <summary>The quantization dither's width: one code value of an 8-bit target.</summary>
     /// <remarks>
-    /// The reference dithers its backbuffer by exactly one code value of the target's depth, triangular
-    /// (PostProcessTonemap.cpp BackbufferQuantizationDithering). That is enough to break up an 8-bit
-    /// display's banding and too little to read as noise.
+    /// The shader shapes its noise into a triangle across this width, so a gradient that would step
+    /// between adjacent codes is broken up instead of banding.
     /// </remarks>
     public const float QuantizationDither = 1f / 255f;
 

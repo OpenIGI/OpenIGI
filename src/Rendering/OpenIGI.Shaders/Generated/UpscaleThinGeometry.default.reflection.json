@@ -1,0 +1,81 @@
+{
+  "module": "UpscaleThinGeometry",
+  "variant": "default",
+  "entryPoints": [
+    {
+      "name": "computeMain",
+      "stage": "Compute",
+      "workgroupSize": [
+        8,
+        8,
+        1
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "name": "uDepth",
+      "group": 0,
+      "binding": 0,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "sampleType": "Depth"
+    },
+    {
+      "name": "uRejection",
+      "group": 0,
+      "binding": 2,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uRelaxed",
+      "group": 0,
+      "binding": 4,
+      "kind": "StorageTexture",
+      "dimensions": 2,
+      "storageFormat": "Rg8Unorm",
+      "wgslStorageFormat": "Rgba32Float",
+      "storageAccess": "WriteOnly"
+    },
+    {
+      "name": "uVelocity",
+      "group": 0,
+      "binding": 5,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uVelocitySampler",
+      "group": 0,
+      "binding": 6,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "p",
+      "group": 0,
+      "binding": 7,
+      "kind": "UniformBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    }
+  ],
+  "pushBlock": null,
+  "specializationConstants": [],
+  "globals": null
+}

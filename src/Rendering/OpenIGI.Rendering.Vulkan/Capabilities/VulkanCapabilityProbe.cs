@@ -473,8 +473,8 @@ internal static unsafe class VulkanCapabilityProbe
         // The seven descriptor-indexing bits the heap depends on were judged together, so they are asked
         // for together. The other six are asked for exactly as the adapter answered, never derived from
         // those seven: an adapter is free to implement the seven and not one of the six, and Pascal does
-        // precisely that, missing uniform-buffer update-after-bind. The reference takes the same line -- it checks
-        // the bits it needs, then hands the queried structure itself back to vkCreateDevice.
+        // precisely that, missing uniform-buffer update-after-bind. So the bits needed are checked, and
+        // then the queried structure itself is handed back to vkCreateDevice.
         DescriptorIndexingOptions optional = capabilities.DescriptorIndexing
             ? capabilities.DescriptorIndexingOptions
             : default;

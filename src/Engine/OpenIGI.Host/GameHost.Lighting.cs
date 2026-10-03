@@ -81,7 +81,7 @@ internal sealed partial class GameHost
         // Left as the level authored it. An earlier version blended the ambient hard towards a golden
         // horizon by how low the sun sat, on the theory that a low sun is a warm sun -- but mission 1 is a
         // COLD clear morning, its sun as low as a dusk one and its skylight cool blue off the snow, and the
-        // warming dumped orange over a room the reference keeps a clean neutral. A low sun is not a warm
+        // warming dumped orange over a room that should read a clean neutral. A low sun is not a warm
         // one; only a SETTING sun is, and that is a per-mission call rather than a function of height. The
         // authored cool ambient is what balances the slightly warm sun into neutral daylight, so it stands.
         _ = sinElevation;
@@ -102,7 +102,7 @@ internal sealed partial class GameHost
         // Neutral. The sky the window shows and the fill it carries stay the authored cool blue rather than
         // being reddened towards the horizon by the sun's height. See WarmedAmbient: a cold morning has a
         // low sun over a cool sky, and tinting the sky warm to match a low sun turned the snow outside the
-        // window and the light off it orange, where the reference keeps a clean cool daylight.
+        // window and the light off it orange, where it should read a clean cool daylight.
         _ = sinElevation;
         return Vector3f.One;
     }
@@ -132,7 +132,7 @@ internal sealed partial class GameHost
     /// the player walked up to it.
     /// </para>
     /// <para>
-    /// A pinned reference sun (<c>-sundir</c>) keeps the level's own colour with the pinned direction.
+    /// A pinned sun (<c>-sundir</c>) keeps the level's own colour with the pinned direction.
     /// Otherwise the level's bound sun is swept to the hour; a title that leaves its fill to the renderer
     /// has its ambient re-pointed to a daylight chroma by day; and under cloud the moon loses most of its
     /// directional light to the deck.
@@ -144,8 +144,8 @@ internal sealed partial class GameHost
         bool pinned = _options.SunDirection is not null;
         if (_options.SunDirection is { } fixedSun)
         {
-            // A fixed sun for matching an external reference render: the level's own colour and ambient,
-            // but a direction pinned to the reference's, bypassing the day/night sweep -- which leaves the
+            // A fixed sun for matching an external render: the level's own colour and ambient, but a
+            // direction pinned to the one given, bypassing the day/night sweep -- which leaves the
             // cycle's nightfall at nought, so the re-tint below treats it as full day.
             Vector3f dir = new(fixedSun.X, fixedSun.Y, fixedSun.Z);
             float len = dir.Length;
@@ -160,7 +160,7 @@ internal sealed partial class GameHost
         }
 
         // The sun keeps the level's own authored chromaticity, because rewriting it to a neutral key is
-        // the kind of grade that made the reference and this render impossible to compare channel for
+        // the kind of grade that makes two renders of the same level impossible to compare channel for
         // channel. Only the ambient is re-pointed, since the level's flat cool triple stands in for a sky
         // the dynamic model now largely derives itself -- and only for a title that leaves its fill to the
         // renderer: one that authored an ambient per level means it (the sequel's night fills with a cold
@@ -222,7 +222,7 @@ internal sealed partial class GameHost
 
     /// <summary>What the night sky holds this frame beyond the atmosphere: glow, cover, stars and moon.</summary>
     /// <remarks>
-    /// Everything is weighted by how far into night the cycle is, so a day, or a reference render with a
+    /// Everything is weighted by how far into night the cycle is, so a day, or a capture with a
     /// pinned sun, carries none of it and draws exactly the sky it always did.
     /// </remarks>
     private NightSky FrameNightSky()

@@ -316,7 +316,7 @@ public static class GraphicsMenu
                     "The photographic grade over the finished frame: contrast, colour, the darkening at "
                         + "the corners, the fringing in the lens, the bloom and the sharpening. Taste "
                         + "rather than fidelity — Off is the untouched picture, and Ultra is the neutral "
-                        + "grade the reference render uses.",
+                        + "grade with nothing added.",
                     new QualityLevel(
                         "Off",
                         ("r_contrast", "1"),

@@ -15,9 +15,9 @@ namespace OpenIGI.Rendering;
 /// <remarks>
 /// A renderer that can trace rays shadows its lamps against the world's acceleration structure and never
 /// reads this. One that cannot -- WebGPU, and so every browser -- marches the same rays through this
-/// field instead, as the reference's many-lights path does without hardware; without it such a renderer
-/// had no lamp shadow at all. The corners are in doubles because the level stands kilometres from the
-/// origin, and the renderer makes them relative to its own camera.
+/// field instead, the usual software fallback for lamp shadows; without it such a renderer had no lamp
+/// shadow at all. The corners are in doubles because the level stands kilometres from the origin, and the
+/// renderer makes them relative to its own camera.
 /// </remarks>
 public readonly record struct LampOcclusionField(
     TextureHandle Clipmaps,

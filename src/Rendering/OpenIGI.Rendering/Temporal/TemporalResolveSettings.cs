@@ -14,7 +14,7 @@ namespace OpenIGI.Rendering.Temporal;
 /// less than a stop after exposure are the same colour to an eye and should not reject.
 /// </param>
 /// <param name="ShadingBlend">
-/// How much of the shading rejection is believed, which the reference calls the theoretical blend.
+/// How much of the shading rejection is believed: the floor on how much of this frame the guide takes.
 /// </param>
 /// <param name="ThinRelaxation">
 /// How far a thin feature is allowed to relax its rejection, nought to one. A wire or a railing is

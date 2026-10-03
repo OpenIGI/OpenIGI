@@ -883,7 +883,7 @@ public interface IGraphicsDevice : IDisposable
     /// <summary>Gets the current scene target's lit colour, or <see cref="TextureHandle.None"/>.</summary>
     /// <remarks>
     /// What the deferred lighting wrote, before tone mapping. The screen probe gather reads it to add its
-    /// indirect term onto the frame the same way the reference composites the surface cache's bounce.
+    /// indirect term onto the frame, compositing the surface cache's bounce over the direct light.
     /// </remarks>
     TextureHandle SceneColour { get; }
 

@@ -61,7 +61,7 @@ public enum ShaderModuleId
     /// <summary>Bloom: one axis of the separable gaussian.</summary>
     BloomBlur,
 
-    /// <summary>Bloom: sum the pyramid with the reference's per-stage tints.</summary>
+    /// <summary>Bloom: sum the pyramid with per-stage tints.</summary>
     BloomCombine,
 
     /// <summary>Temporal resolve: spread the shading rejection to a rejecting pixel's neighbours.</summary>
@@ -100,10 +100,10 @@ public enum ShaderModuleId
     /// <summary>Volumetric fog: each column accumulated front to back into what a pixel sees.</summary>
     FogIntegrate,
 
-    /// <summary>temporal upscaler: how much of the reprojected history this frame's shading contradicts.</summary>
+    /// <summary>Temporal upscaler: how much of the reprojected history this frame's shading contradicts.</summary>
     UpscaleRejectShading,
 
-    /// <summary>temporal upscaler: this frame accumulated into the super-sampled history.</summary>
+    /// <summary>Temporal upscaler: this frame accumulated into the super-sampled history.</summary>
     UpscaleUpdateHistory,
 
     /// <summary>Lamp shadows: the traced visibility reprojected and accumulated over time.</summary>

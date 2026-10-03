@@ -242,14 +242,14 @@ GBufferTargets fragmentMain(Varyings input)
     float4 diffuse = uDiffuse.Sample(uDiffuseSampler, input.diffuseUv);
     float alpha = diffuse.a * input.color.a;
 
-    // A hard cut-out keeps or drops a WHOLE pixel, so a chain-link mesh or a wire thinner than a
-    // pixel is present in one frame and gone the next depending on where the jitter fell -- and it
-    // fades out entirely once it is narrow enough to miss most centres. The hashed test instead
-    // recovers the edge's coverage from the alpha gradient and keeps the pixel with THAT probability,
-    // dithered per pixel and per frame, which the temporal resolve averages into a smooth edge: a
-    // wire covering a third of a pixel comes out a third as bright rather than absent two frames in
-    // three. This is the reference's dithered opacity mask, and it only works where a temporal filter
-    // runs, which is why it follows the same presets.
+    // A hard cut-out keeps or drops a WHOLE pixel, so a chain-link mesh or a wire thinner than a pixel
+    // is present in one frame and gone the next depending on where the jitter fell -- and it fades out
+    // entirely once it is narrow enough to miss most centres. The hashed test instead recovers the
+    // edge's coverage from the alpha gradient and keeps the pixel with THAT probability, dithered per
+    // pixel and per frame, which the temporal resolve averages into a smooth edge: a wire covering a
+    // third of a pixel comes out a third as bright rather than absent two frames in three. This is a
+    // dithered opacity mask, and it only works where a temporal filter runs, which is why it follows
+    // the same presets.
     float alphaGradient = fwidth(alpha);
 
     // GATED ON THE ALPHA ACTUALLY VARYING ACROSS THE PIXEL, and that gate is load-bearing rather than
@@ -394,12 +394,12 @@ GBufferTargets fragmentMain(Varyings input)
     }
 
     // Up-facing surfaces are smoothed towards the floor sheen so a floor takes a reflection while the
-    // walls stay matte, which is the split the reference has -- or, above one, roughened, so a floor
-    // seen at a grazing angle does not out-shine the walls around it. Here the normal is already in world
-    // space and this world's up is Z, so how up-facing a surface is needs no transform. In the
-    // G-buffer rather than in the shading because the roughness written here is what the screen-space
-    // reflections decide by as well -- a floor glossy only to the light would be the one surface the
-    // setting exists for and still not reflect.
+    // walls stay matte -- or, above one, roughened, so a floor seen at a grazing angle does not
+    // out-shine the walls around it. Here the normal is already in world space and this world's up is
+    // Z, so how up-facing a surface is needs no transform. In the G-buffer rather than in the shading
+    // because the roughness written here is what the screen-space reflections decide by as well -- a
+    // floor glossy only to the light would be the one surface the setting exists for and still not
+    // reflect.
     if (frame.surface.y != 1.0 && !matte)
     {
         float upFacing = clamp(normal.z, 0.0, 1.0);
@@ -415,9 +415,9 @@ GBufferTargets fragmentMain(Varyings input)
     // The fix is to widen the lobe by exactly the variance the pixel actually holds, measured from the
     // screen-space derivatives of the normal and added in ALPHA space, where variances are additive.
     // [Kaplanyan et al., "Improved Geometric Specular Antialiasing", and this is Godot's arrangement
-    // of it -- scene_forward_clustered.glsl, with its own defaults of 0.25 and 0.18.] The reference
-    // engine's NormalCurvatureToRoughness does the same job from the VERTEX normal, which cannot see a
-    // normal map at all; this runs on the shading normal, which is the one that is actually aliasing.
+    // of it -- scene_forward_clustered.glsl, with its own defaults of 0.25 and 0.18.] Deriving it from
+    // the VERTEX normal's curvature instead cannot see a normal map at all; this runs on the shading
+    // normal, which is the one that is actually aliasing.
     //
     // Unconditional, not gated on whether a detail map was applied: a curved railing or a distant
     // fence post swings its normal across a pixel with no map involved, and those were glittering too.
@@ -434,9 +434,9 @@ GBufferTargets fragmentMain(Varyings input)
         roughness = sqrt(min(1.0, alpha2 + min(2.0 * variance, kSpecularAaLimit)));
     }
 
-    // The alpha carries the material's own occlusion, in the reference's layout -- the fine contact
-    // shading that is a property of the TEXTURE rather than of where the surface stands, so it is the
-    // same from every angle in every frame and costs nothing per pixel to have.
+    // The alpha carries the material's own occlusion -- the fine contact shading that is a property of
+    // the TEXTURE rather than of where the surface stands, so it is the same from every angle in every
+    // frame and costs nothing per pixel to have.
     //
     // It survives the attachment unencoded, and that is not luck: this target is R8G8B8A8Srgb, and a
     // Vulkan sRGB format applies its transfer function to the three colour channels and never to
@@ -446,12 +446,12 @@ GBufferTargets fragmentMain(Varyings input)
     output.baseColour = float4(albedo, occlusion);
     output.normal = EncodeGBufferNormal(normal, 0.0);
 
-    // The sky dome is light rather than a lit surface, and the reference says so with the shading
-    // model rather than with a separate channel -- so the flag the material carries becomes an unlit
-    // shading model here, and the lighting pass reads it from the same place it reads everything else.
+    // The sky dome is light rather than a lit surface, and that is said with the shading model rather
+    // than with a separate channel -- so the flag the material carries becomes an unlit shading model
+    // here, and the lighting pass reads it from the same place it reads everything else.
     int shadingModel = push.material.z > 0.0 ? kShadingModelUnlit : kShadingModelDefaultLit;
 
-    // Specular is the reference's default 0.5, which is what makes a non-metal's normal-incidence
+    // Specular is the conventional default 0.5, which is what makes a non-metal's normal-incidence
     // reflectance the 0.04 every dielectric in this scene wants -- except on an unlit surface, which
     // reflects nothing and lends the slot to how brightly it emits instead.
     float specular = shadingModel == kShadingModelUnlit

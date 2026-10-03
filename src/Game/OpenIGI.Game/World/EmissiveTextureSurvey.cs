@@ -39,7 +39,7 @@ namespace OpenIGI.Game.World;
 /// level's real ceiling fittings score exactly nought, because those rooms were lit without painting
 /// the fitting bright. So this does not decide which textures are lamps and is not consulted on it;
 /// <see cref="LampDetector"/> reads the geometry instead, and records why. What this is good for is a
-/// starting list for <c>materials.json</c> and for the reference exporter's emissive materials — it says
+/// starting list for <c>materials.json</c> and for any level export's emissive materials — it says
 /// which textures are worth looking at, and someone still has to look.
 /// </para>
 /// </remarks>
@@ -237,8 +237,8 @@ public static class EmissiveTextureSurvey
     /// MODEL's surfaces, and that is not local enough: a ceiling model carries its slab, its beams and
     /// the one small tube bolted to it in a single <c>.olm</c>, so averaging the page divides the tube's
     /// near-white by the whole dark ceiling around it and the brightest thing in the room scores like
-    /// concrete. That failure is why the reference exporter needed a hand-written list of lamp textures to
-    /// catch what the survey missed. Measuring only the texels this sub-mesh's own lightmap UVs reach
+    /// concrete. That failure is why a page-wide survey needs a hand-written list of lamp textures to
+    /// catch what it missed. Measuring only the texels this sub-mesh's own lightmap UVs reach
     /// takes the dilution away, and the list with it.
     /// </para>
     /// <para>

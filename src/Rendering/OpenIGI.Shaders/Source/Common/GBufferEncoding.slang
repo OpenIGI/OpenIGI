@@ -14,7 +14,9 @@
 // blindingly bright pixel; clamping just above zero keeps the lobe narrow but finite.
 static const float kMinRoughness = 0.015625;
 
-// Shading models, matching the reference's numbering so a ported pass reads the same values.
+// Which lighting path the shading pass takes for a pixel, stored in the material target's alpha as a
+// byte. Unlit surfaces (the sky and emissive draws) are shown as their own colour; default-lit ones
+// take the full direct and indirect lighting.
 static const int kShadingModelUnlit = 0;
 static const int kShadingModelDefaultLit = 1;
 

@@ -91,10 +91,10 @@ void computeMain(uint3 id : SV_DispatchThreadID)
     }
 
     // The depth belongs to the ray displaced by this frame's projection jitter. Reconstruct that surface
-    // through its UNJITTERED screen position, just as the reference's no-AA clip transform does. Using
-    // rasterUv here happens to cancel for a held camera and for much of a rotation, but it reconstructs
-    // the wrong world point under translation; the parallax error then grows with walking speed and
-    // makes every history lookup land between the right samples.
+    // through its UNJITTERED screen position, the clip transform without the AA jitter. Using rasterUv
+    // here happens to cancel for a held camera and for much of a rotation, but it reconstructs the wrong
+    // world point under translation; the parallax error then grows with walking speed and makes every
+    // history lookup land between the right samples.
     float2 currentUv = rasterUv - (p.jitter.xy * p.resolution.zw);
     float3 viewPos = ViewPositionAt(currentUv, depth, p.unproject);
 

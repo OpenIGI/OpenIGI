@@ -489,11 +489,11 @@ internal sealed partial class GameHost
     /// by walking up to each place in turn.
     /// </para>
     /// <para>
-    /// The reference keeps its surface cache current the same way: a per-frame budget of card updates
-    /// over the whole scene rather than a radius around the eye. Here the whole cache is swept a slice a
-    /// frame, the direct term relit under this frame's sun and lamps and a bounce folded in at half
-    /// weight, so a far surface follows every change within a few seconds and never pops -- both halves
-    /// blend. The slices near the camera are refreshed twice, which costs little and changes nothing.
+    /// The cache is kept current with a per-frame budget of card updates over the whole scene rather
+    /// than a radius around the eye: the whole cache is swept a slice a frame, the direct term relit
+    /// under this frame's sun and lamps and a bounce folded in at half weight, so a far surface follows
+    /// every change within a few seconds and never pops -- both halves blend. The slices near the camera
+    /// are refreshed twice, which costs little and changes nothing.
     /// </para>
     /// <para>
     /// Relighting the direct term alone, as this first did, changed nothing anyone could see: the far

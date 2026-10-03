@@ -3,8 +3,8 @@
 // A depth-only pass would need no fragment stage at all were it not for cut-outs. The port's windows
 // are opaque draws whose glass is a hole in the texture, so a shadow pass that wrote depth for every
 // triangle put the whole room behind them in shade -- the office floor caught no sun at all, which is
-// most of what separated it from the reference. The test has to match the G-buffer's exactly, or a
-// surface shadows itself along the edge where the two disagree.
+// the most visible fault in the room. The test has to match the G-buffer's exactly, or a surface
+// shadows itself along the edge where the two disagree.
 
 #include "../Common/PushConstants.slang"
 #include "../Common/ClipSpace.slang"

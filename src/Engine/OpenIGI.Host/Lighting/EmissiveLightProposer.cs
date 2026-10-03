@@ -109,12 +109,11 @@ public static class EmissiveLightProposer
                 return Proposal.None;
             }
 
-            // One set of textures for both halves: the geometry that glows IS the geometry the lights
-            // come out of. They were briefly two -- everything the artists baked bright glowed, and only
-            // the fixture-shaped ones cast light, which is what the reference exporter does -- and the extra
-            // set was all false positives. Emission means something stronger here than it does there: an
-            // emissive surface is UNLIT, so a bake-bright office cabinet did not glow gently, it turned
-            // into a flat shadeless panel.
+            // One set of textures for both halves: the geometry that glows IS the geometry the lights come out
+            // of. They were briefly two -- everything the artists baked bright glowed, and only the
+            // fixture-shaped ones cast light -- and the extra set was all false positives. Emission means
+            // something strong here: an emissive surface is UNLIT, so a bake-bright office cabinet did not glow
+            // gently, it turned into a flat shadeless panel.
             IReadOnlyList<LightFixture> fixtures = LightFixtureExtractor.ProposeFromScene(
                 scene, lamps, LampDetector.Tint(resources), logger: logger);
 

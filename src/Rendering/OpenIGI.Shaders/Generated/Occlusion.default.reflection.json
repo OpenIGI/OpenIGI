@@ -1,0 +1,30 @@
+{
+  "module": "Occlusion",
+  "variant": "default",
+  "entryPoints": [
+    {
+      "name": "vertexMain",
+      "stage": "Vertex",
+      "workgroupSize": null
+    },
+    {
+      "name": "fragmentMain",
+      "stage": "Fragment",
+      "workgroupSize": null
+    }
+  ],
+  "bindings": [],
+  "pushBlock": {
+    "name": "push",
+    "size": 96,
+    "group": 3,
+    "binding": 0
+  },
+  "specializationConstants": [
+    {
+      "name": "cClipYDown",
+      "id": 64
+    }
+  ],
+  "globals": null
+}

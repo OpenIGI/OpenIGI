@@ -205,9 +205,9 @@ internal sealed unsafe class VulkanTopLevelStructure : IDisposable
     /// The same rule the build scratch keeps, and for the same reason. The instances are written by the
     /// CPU while the previous frame is still on the GPU, and that frame's scene build is reading them —
     /// so writing into the buffer it is reading hands it a scene half of one frame and half of the next,
-    /// including placements whose structures have since been freed. The reference never hits this because
-    /// its instance buffer is created inside the render graph each frame and the graph does not hand back
-    /// memory that is still in flight; this is that rule, kept by hand.
+    /// including placements whose structures have since been freed. An instance buffer created inside a
+    /// render graph each frame never hits this, because the graph does not hand back memory that is still
+    /// in flight; this is that rule, kept by hand.
     /// </remarks>
     private VulkanBuffer AcquireInstanceBuffer(ulong submissionValue, ulong completedValue)
     {

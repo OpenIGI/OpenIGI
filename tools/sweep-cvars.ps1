@@ -9,7 +9,7 @@
     about why.
 
     That is not hypothetical here. A whole session was spent chasing a lighting difference that turned
-    out to be a preset silently running four times the probe irradiance of its own reference, and the
+    out to be a preset silently running four times the probe irradiance it was meant to, and the
     only reason it was ever found was someone reading the values by hand.
 
     So each cvar is captured twice, at two values that should look different, and the two frames are
@@ -67,7 +67,7 @@ $sun = '0.032795,-0.939117,0.342020'
 # has nothing to do with whether the backend reads it.
 $cases = @(
     @{ Name = 'r_bloom';             A = '0';     B = '0.6'   }
-    @{ Name = 'r_bloom_threshold';   A = '0';     B = '4'     ; Expected = 'our bloom is unthresholded, matching the reference, so there is no cut for this to move' }
+    @{ Name = 'r_bloom_threshold';   A = '0';     B = '4'     ; Expected = 'our bloom is unthresholded at ultra, so there is no cut for this to move' }
     @{ Name = 'r_vignette';          A = '0';     B = '0.9'   }
     @{ Name = 'r_grain';             A = '0';     B = '0.5'   }
     @{ Name = 'r_chromatic';         A = '0';     B = '2'     }
@@ -75,10 +75,10 @@ $cases = @(
     @{ Name = 'r_contrast';          A = '1';     B = '1.6'   }
     @{ Name = 'r_saturation';        A = '1';     B = '0'     }
     @{ Name = 'r_dof';               A = '0';     B = '8'     }
-    @{ Name = 'r_dof_range';         A = '4';     B = '60'    ; Expected = 'depth of field is off at ultra, matching the reference, so its range has nothing to scale' }
-    @{ Name = 'r_dof_blur';          A = '1';     B = '20'    ; Expected = 'depth of field is off at ultra, matching the reference, so its radius has nothing to widen' }
+    @{ Name = 'r_dof_range';         A = '4';     B = '60'    ; Expected = 'depth of field is off at ultra, so its range has nothing to scale' }
+    @{ Name = 'r_dof_blur';          A = '1';     B = '20'    ; Expected = 'depth of field is off at ultra, so its radius has nothing to widen' }
     @{ Name = 'r_motion_blur';       A = '0';     B = '1'     ; Expected = 'the compare pose is still, and a still frame has no motion to smear -- swept under a moving camera instead' }
-    @{ Name = 'r_camera_taps';       A = '4';     B = '16'    ; Expected = 'the motion gather takes the reference sample count for its own blur length; this dial is superseded' }
+    @{ Name = 'r_camera_taps';       A = '4';     B = '16'    ; Expected = 'the motion gather picks its own sample count from its blur length; this dial is superseded' }
     @{ Name = 'r_lut';               A = '0';     B = '1'     }
     @{ Name = 'r_ssr';               A = '0';     B = '64'    }
     @{ Name = 'r_ssr_intensity';     A = '0';     B = '2'     }

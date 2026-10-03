@@ -272,10 +272,10 @@ public static class RenderCVars
         high: "0.85",
 
         // Native at ultra, and this is the ladder that separates the three real-time tiers. Everything the
-        // GI stack costs -- the probe gather, the lighting, the temporal upscaler resolve -- scales with pixel count, so
+        // GI stack costs -- the probe gather, the lighting, the temporal upscaler -- scales with pixel count, so
         // internal resolution is the one lever that moves all of it at once and it is therefore where the
         // tiers differ rather than in what they switch off. Ultra is native because ultra is the quality
-        // tier: temporal upscaler reconstructing from two-thirds costs about a quarter of the frame's edge energy, which
+        // tier: the temporal upscaler reconstructing from two-thirds costs about a quarter of the frame's edge energy, which
         // is a real loss to a preset whose whole job is the best picture. The cheaper tiers spend exactly
         // that, and buy back most of a traced-GI frame with it.
         //
@@ -369,12 +369,11 @@ public static class RenderCVars
             CVarOptions.Archive,
             "Scene brightness before tone mapping. Half a stop over the level's own lighting."),
 
-        // Half a stop over unity on every modern preset, which is where this number started life: it is
-        // the reference renderer's own auto-exposure compensation, and it was matched when the point of
-        // the number was to land this port's frame on that reference's channel for channel.
+        // Half a stop over unity on every modern preset, which is where this number started life: a
+        // half-stop auto-exposure compensation chosen while the target look was being calibrated.
         //
-        // It was moved to a flat one on the argument that a calibration against another engine is not a
-        // default a player should inherit, and that a brightness slider reading 1.4 before anyone has
+        // It was moved to a flat one on the argument that a calibration is not a default a player
+        // should inherit, and that a brightness slider reading 1.4 before anyone has
         // touched it has a neutral that is not neutral. Played rather than compared, one is too dark --
         // the dynamic model's own output does not fill the tone curve on its own -- so the argument loses
         // to the picture, and the slider's neutral is simply not where its scale happens to read one.
@@ -568,32 +567,30 @@ public static class RenderCVars
     /// <remarks>
     /// <para>
     /// One is the physical answer: the cache holds real outgoing radiance and a ray that hits a card
-    /// should keep all of it. This scales OUR cache's answer down without touching the sky, which the
-    /// reference resolves separately. Applies to the screen gather and the radiance cache alike.
+    /// should keep all of it. This scales the cache's answer down without touching the sky, which is
+    /// resolved separately. Applies to the screen gather and the radiance cache alike.
     /// </para>
     /// <para>
-    /// <b>It was 0.15, then 0.35, and both were matched against a reference artifact.</b> The stored
-    /// comparison shot showed the office floor at 0.2 out of 255 — black — because the reference's
-    /// surface cache had no coverage over this level's imported geometry, so its rays hit surfaces with
-    /// nothing cached and came back with nothing. 0.15 existed to reproduce that darkness; 0.35 was half
-    /// a step back from it once the reference was recaptured, arrived at by a whole-frame sweep that
-    /// could not see what the deficit was doing to the exposure.
+    /// <b>It was 0.15, then 0.35, and both were tuned against a broken target.</b> The target image showed
+    /// the office floor at 0.2 out of 255 — black — because the cache that produced it had no coverage
+    /// over this level's geometry, so its rays hit surfaces with nothing cached and came back with
+    /// nothing. 0.15 existed to reproduce that darkness; 0.35 was half a step back from it, arrived at by
+    /// a whole-frame sweep that could not see what the deficit was doing to the exposure.
     /// </para>
     /// <para>
     /// <b>It is back at the physical one, and the measurement that put it there is the fill, not the
     /// frame.</b> Sampled over 1056 office-floor points at fixed exposure with no tone map, the tenth
     /// percentile is the sky-and-bounce fill and the ninetieth is the same surface with the sun on it.
-    /// Against the reference's HDR scene colour at the same pose and the same points: fill 0.00437
-    /// against 0.01007 at 0.35 — the bounce was carrying under half the light it should — and 0.01208
-    /// against 0.01007 at one, while the sunlit end lands at 0.09053 against 0.09003. Twenty per cent
-    /// generous on the fill and within one per cent on the sun is the closest a single scalar gets, and
-    /// it is on the right side: the deficit was what pinned the auto-exposure against its ceiling.
+    /// At 0.35 the bounce carried under half the light a physically-normalised bounce delivers; at one
+    /// the fill lands about twenty per cent generous while the sunlit end stays within one per cent,
+    /// which is the closest a single scalar gets, and it is on the right side: the deficit was what
+    /// pinned the auto-exposure against its ceiling.
     /// </para>
     /// <para>
-    /// What it costs is the office ceiling, which overshoots the reference. That region is a strip light
-    /// this port lights as an emissive fixture and the reference renders unlit, so most of the gap is a
-    /// material the two engines disagree about rather than bounce this value is delivering; the room's
-    /// floor, wall, window and sun pool all move toward the reference, and the exterior improves.
+    /// What it costs is the office ceiling, which comes out bright. That region is a strip light this
+    /// port lights as an emissive fixture, so most of the excess is the fixture's own emission rather
+    /// than bounce this value is delivering; the room's floor, wall, window and sun pool all improve,
+    /// and so does the exterior.
     /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> GiBounce = Presets.Define(
@@ -603,7 +600,7 @@ public static class RenderCVars
             0f,
             4f,
             CVarOptions.Archive,
-            "Traced bounce strength off the surface cache. 1 is physical; lower matches the reference's sparser bounce."),
+            "Traced bounce strength off the surface cache. 1 is physical; lower gives a sparser, darker bounce."),
         vanilla: "1",
         enhanced: "1",
         high: "1",
@@ -741,11 +738,10 @@ public static class RenderCVars
     /// rejecting it, so the wire is averaged rather than gambled on.
     /// </para>
     /// <para>
-    /// <b>The reference has this switched off, deliberately, and we switch it on for an equally
-    /// deliberate reason.</b> It rasterises every mesh through a software visibility-buffer rasteriser, which resolves
-    /// sub-pixel coverage properly, so it has no thin-geometry problem to detect. We have no such rasteriser.
-    /// This is therefore a considered deviation rather than an oversight, and the thing it deviates from
-    /// is a setting whose justification we do not share.
+    /// <b>A renderer that resolves sub-pixel coverage itself has no need of this, and we switch it on
+    /// deliberately.</b> A software visibility-buffer rasteriser resolves sub-pixel coverage properly, so it
+    /// has no thin-geometry problem to detect. We have no such rasteriser, so the detection earns its keep
+    /// here.
     /// </para>
     /// <para>
     /// Not one, at any preset. A thin thing that is genuinely moving still has to be able to reject its
@@ -769,9 +765,9 @@ public static class RenderCVars
     /// <summary>The temporal history's per-texel sample ceiling, which sets how much of the past it keeps.</summary>
     /// <remarks>
     /// <para>
-    /// The history holds four texels per rendered pixel. The reference budgets sixteen samples per
-    /// output pixel and so allows each texel four, which also zeroes its velocity weight clamp (the
-    /// clamp's amplitude is <c>1 - 4 / ceiling</c>). Measured here, four is the sharpest at rest but
+    /// The history holds four texels per rendered pixel. A budget of sixteen samples per output pixel
+    /// allows each texel four, which also zeroes the velocity weight clamp (the clamp's amplitude is
+    /// <c>1 - 4 / ceiling</c>). Measured here, four is the sharpest at rest but
     /// four times as flickery on distant ridges, and without the clamp a walk ghosts; thirty-two keeps
     /// the ridge stable, is marginally sharper in motion than sixteen, and leaves the clamp holding a
     /// moving pixel to an eighth of its history.
@@ -804,8 +800,8 @@ public static class RenderCVars
     /// dial — it is the physical fact the softness is derived from.
     /// </para>
     /// <para>
-    /// Every preset carries the same figure for that reason, and it is the real one: 0.5357 degrees, which
-    /// is also what the reference render this preset is matched against uses. It only reaches the picture
+    /// Every preset carries the same figure for that reason, and it is the real one: 0.5357 degrees, the
+    /// sun's mean angular diameter seen from the earth. It only reaches the picture
     /// where the sun's shadow is traced rather than sampled from the cascades, which today means ultra
     /// with <c>r_rt</c> on; the cascaded path has no disc to sample.
     /// </para>
@@ -860,14 +856,14 @@ public static class RenderCVars
     /// <remarks>
     /// The screen trace resolves a hit from the previous frame's lit scene, and this frame's indirect is
     /// built out of what it returns — which then lights the scene the next trace reads. Unbounded, that
-    /// loop does not settle: past a certain gather strength each pass is brighter than the last. The
-    /// reference bounds the same read for the same reason, and calls it the maximum ray intensity.
+    /// loop does not settle: past a certain gather strength each pass is brighter than the last, so the
+    /// read is clamped.
     /// <para>
-    /// In EXPOSED units, as the reference's is, and at the reference's ten on every preset. The modern
-    /// presets carried 50.1 applied to raw scene radiance, which at night -- exposure sixteen and up --
-    /// let a ray through some eighty times brighter than the reference would: the few of a probe's
-    /// sixteen rays that landed on a lamp's fixture or its pool of light swung its estimate frame to
-    /// frame, and that was the cloud drifting around every lamp at night.
+    /// In EXPOSED units, so the cap means the same brightness on screen by day and by night, and at ten on
+    /// every preset. The modern presets carried 50.1 applied to raw scene radiance, which at night --
+    /// exposure sixteen and up -- let a ray through some eighty times brighter than ten exposed: the few of
+    /// a probe's sixteen rays that landed on a lamp's fixture or its pool of light swung its estimate frame
+    /// to frame, and that was the cloud drifting around every lamp at night.
     /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> ScreenGatherMaxIntensity = Presets.Define(
@@ -912,11 +908,11 @@ public static class RenderCVars
         // On at every preset above vanilla. The screen probe gather is a real-time indirect -- it traces the surface cache along
         // the view so the bounce responds to the frame -- and it is what carries the warm bounced light the
         // interior reads as: the world-space radiance cache alone, sampled straight, comes back markedly
-        // cooler than the reference (its far-field trace misses the near, sun-warmed bounce a screen ray
+        // cooler than the target look (its far-field trace misses the near, sun-warmed bounce a screen ray
         // catches), so the gather is not optional for the look, it is the look. Two things make it shippable
         // where the raw screen estimate was not, both added with it. Its full-resolution temporal resolve
         // now clamps each reprojected history into the current frame's own neighbourhood mean and spread --
-        // the reference's anti-shimmer -- so a stale or noisy history can no longer slide across a wall as
+        // a standard anti-shimmer clamp -- so a stale or noisy history can no longer slide across a wall as
         // the low-frequency shimmer that once shelved it. And the gather REPLACES the flat ambient, the
         // far probe field and the additive sky term rather than being floored against them -- flooring
         // against an unoccluded ambient is what washes an interior flat -- which is also why the bounce
@@ -984,8 +980,8 @@ public static class RenderCVars
     /// a sunlit floor into a room lit by the light it bounces up its walls. Half was far too timid: it left a
     /// window room showing only the sun's own patches on the floor with no bounce climbing the walls, the
     /// single-bounce indirect starved to almost nothing. Lifted so the bounce actually carries the room --
-    /// validated on mission 1's office, where the sun through the window now fills the whole room the way the
-    /// reference's does, and on the outdoor spawn, which does not blow out. The sealed-room leak this would
+    /// validated on mission 1's office, where the sun through the window now fills the whole room, and on the
+    /// outdoor spawn, which does not blow out. The sealed-room leak this would
     /// also amplify is cut at its source instead (see the sky-leak reject in the cache trace), not by keeping
     /// the whole bounce dim.
     /// </remarks>
@@ -1673,8 +1669,8 @@ public static class RenderCVars
         CVar.Float(
             "r_sky_light",
 
-            // The reference scene's SkyLight multiplies its captured sky by three; matching it here keeps
-            // the two renders' window light on the same scale.
+            // Three times the captured sky, which puts the window light of an interior on the scale the
+            // tuned exposure expects.
             3f,
             0f,
             16f,
@@ -1947,7 +1943,7 @@ public static class RenderCVars
     /// and a multisampled depth buffer is not something a shader can read usefully.
     /// <para>
     /// It applies ONLY on the original's forward path (<c>r_hdr 0</c>): the deferred/HDR path records into
-    /// a single-sample G-buffer and is anti-aliased by temporal upscaler instead, so MSAA there would be pure cost for no
+    /// a single-sample G-buffer and is anti-aliased by the temporal upscaler instead, so MSAA there would be pure cost for no
     /// effect. Every preset from enhanced up is deferred, so they set it to off — a value above one on
     /// those presets did nothing but read as if it were working.
     /// </para>
@@ -1959,7 +1955,7 @@ public static class RenderCVars
             0,
             8,
             CVarOptions.Archive,
-            "Samples per pixel on the forward (r_hdr 0) path; off on the deferred path, where temporal upscaler is the AA."),
+            "Samples per pixel on the forward (r_hdr 0) path; off on the deferred path, where the temporal upscaler is the AA."),
         vanilla: "0",
         enhanced: "1",
         high: "1",
@@ -2221,10 +2217,10 @@ public static class RenderCVars
         enhanced: "1",
         high: "1.5",
 
-        // 3 at ultra. The reference's sun casts a soft penumbra -- a window's shadow grid lands on the
-        // floor with edges that widen with distance, not the hard stencil a single-tap shadow gives. A
-        // wider filter is what reads as that penumbra; the grid stays defined at this radius rather than
-        // smearing away, matching the reference's soft-but-legible shadows against a crisp one.
+        // 3 at ultra. A real sun casts a soft penumbra -- a window's shadow grid lands on the floor with
+        // edges that widen with distance, not the hard stencil a single-tap shadow gives. A wider filter
+        // is what reads as that penumbra; the grid stays defined at this radius rather than smearing
+        // away, so the shadows read soft but legible rather than crisp.
         ultra: "3");
 
     /// <summary>How many directions each pixel searches for its horizons, or 0 for no occlusion.</summary>
@@ -2278,8 +2274,8 @@ public static class RenderCVars
     /// indirect gather computes; multiplying that overlap by three darkened an office corner until the
     /// lockers standing in it dissolved into the noise floor, while the sunlit floor it could not reach
     /// stayed too bright — the two errors then hid each other in any average over the frame. Measured
-    /// against the reference across five regions, three scored 8.2 levels of mean error against 5.6 at
-    /// the physical amount, and only the physical amount kept the corner readable.
+    /// across five regions, three scored 8.2 levels of mean error against 5.6 at the physical amount,
+    /// and only the physical amount kept the corner readable.
     /// </remarks>
     public static readonly NumericCVar<float> AmbientOcclusionIntensity = Presets.Define(
         CVar.Float(
@@ -2341,9 +2337,8 @@ public static class RenderCVars
     /// camera and the sniper scope, which decide where the eye is going anyway.
     /// <para>
     /// Ultra briefly carried 40 metres, which arrived with a preset seeded from a saved config rather
-    /// than from a decision — it contradicted the paragraph above, and it does not match the reference
-    /// render either, whose focal distance and depth blur radius are both zero and whose depth of field
-    /// is therefore switched off entirely. Every preset is back to off.
+    /// than from a decision — it contradicted the paragraph above, and the target look has no depth of
+    /// field at all. Every preset is back to off.
     /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> FocalDistance = Presets.Define(
@@ -2462,11 +2457,11 @@ public static class RenderCVars
         // then this is where the strength is held.
         high: "0.25",
 
-        // Off at ultra. The reference the ultra look is matched against renders the level's own diffuse
-        // textures flat, with no derived normal or roughness, so the derived relief -- however mild -- reads
-        // as a departure from it: a faint sparkle on surfaces the reference leaves matte. With the relief
-        // gone the two agree, and the low-frequency lighting the radiance cache carries is what the eye reads
-        // instead. High keeps a quarter for the presets not held to that reference.
+        // Off at ultra. The ultra look renders the level's own diffuse textures flat, with no derived normal
+        // or roughness, so the derived relief -- however mild -- reads as a departure from it: a faint
+        // sparkle on surfaces meant to be matte. With the relief gone the low-frequency lighting the
+        // radiance cache carries is what the eye reads instead. High keeps a quarter, since it is not held
+        // to that look.
         ultra: "0");
 
     /// <summary>How an up-facing surface's (a floor's, a desk top's) roughness differs from a wall's.</summary>
@@ -2721,10 +2716,10 @@ public static class RenderCVars
             "r_light_scale",
 
             // Seven eighths lands mission 1's authored sun — about eight lux along its warm chromaticity —
-            // on the reference scene's seven, so the two renders share an illuminance and every remaining
-            // difference is the transport's fault, not the key light's. Ultra carried a hand-set 0.96 for
-            // a while, about a tenth of a stop over; measured against the reference across five regions
-            // it was worth about half a level of error, and the derivation is the better authority.
+            // on seven, the illuminance the rest of the ultra calibration assumes, so any remaining error
+            // is the transport's fault, not the key light's. Ultra carried a hand-set 0.96 for a while,
+            // about a tenth of a stop over; measured across five regions it was worth about half a level
+            // of error, and the derivation is the better authority.
             0.875f,
             0.1f,
             2f,
@@ -2771,13 +2766,13 @@ public static class RenderCVars
         high: "7",
 
         // Restored to 7. The 1.51 before it came from a fixed-exposure sample that read our sun as
-        // 1.714 times our sky against the reference's 0.369 and divided the sun by the difference; the
-        // sample points were a wall and its shade, not a sunlit floor and its shadow, and they put the
-        // reference's sun BELOW its own fill, which no sunlit exterior does. Measured again over 1056
-        // office-floor points against the reference's HDR scene colour at the same pose, the ninetieth
-        // percentile -- the same surface with the sun on it -- is 0.09053 here against 0.09003 there,
-        // and the sun's own share of it 0.0785 against 0.0800. The sun was never the term that was
-        // wrong; the bounce under it was, and r_gi_bounce carries that correction.
+        // 1.714 times our sky and divided the sun down to a target ratio; the sample points were a wall
+        // and its shade, not a sunlit floor and its shadow, and the target they implied put the sun
+        // BELOW its own fill, which no sunlit exterior does. Measured again over 1056 office-floor
+        // points at the same pose, the ninetieth percentile -- the same surface with the sun on it --
+        // lands within one per cent of the expected value, and so does the sun's own share of it. The
+        // sun was never the term that was wrong; the bounce under it was, and r_gi_bounce carries that
+        // correction.
         //
         // Dividing it by 4.6 took the whole scene down with it, which is what made this visible: the
         // frame's average luminance fell under AutoExposurePass's metering floor, the adapted exposure
@@ -2836,22 +2831,20 @@ public static class RenderCVars
     /// <summary>The luminance above which a pixel starts to bloom, or negative to bloom everything.</summary>
     /// <remarks>
     /// <para>
-    /// Ultra is negative because the reference render this preset is matched against leaves its own bloom
-    /// threshold at minus one, which in that engine means do not threshold at all: every pixel spills in
-    /// proportion to its brightness rather than only those above a cut. That is also what makes its bloom
-    /// read as lens scatter instead of as a glow that switches on -- a hard cut shows as a contour where a
-    /// surface crosses it.
+    /// Ultra does not threshold at all: every pixel spills in proportion to its brightness rather than
+    /// only those above a cut. That is what makes the bloom read as lens scatter instead of as a glow
+    /// that switches on -- a hard cut shows as a contour where a surface crosses it.
     /// </para>
     /// <para>
-    /// Zero is that "do not threshold" case here rather than the reference's own minus one, because a
+    /// Zero is that "do not threshold" case rather than a negative sentinel such as minus one, because a
     /// console value beginning with a minus cannot be typed: the argument parser reads it as the next
     /// option, so `+r_bloom_threshold -1` exits rather than setting anything. A value nobody can type is
     /// not a control. Zero is unambiguous because a threshold of zero and no threshold at all differ --
     /// the first still scales dim pixels down towards nothing, the second passes them through.
     ///
     /// The lower bound had to open to admit it: the range was 0.1 to 8, which cannot express the case at
-    /// all, so ultra carried 2.47 -- a number the backend ignored, because the bloom chain was written to
-    /// the reference's unthresholded behaviour directly. The value now says what the picture actually
+    /// all, so ultra carried 2.47 -- a number the backend ignored, because the bloom chain was written
+    /// unthresholded directly. The value now says what the picture actually
     /// does. Vanilla keeps a real threshold, having no tone curve for this to be calibrated against.
     /// </para>
     /// </remarks>
@@ -2869,13 +2862,11 @@ public static class RenderCVars
         ultra: "0");
 
     /// <summary>How far colour is pushed away from mid-grey.</summary>
-    /// <remarks>
-    /// Ultra sits at 1, which is neutral, because the reference render this preset is matched
-    /// against grades to identity — its colour contrast, gamma and gain are all 1, its offset 0, and
-    /// it has no lookup table. It had been carrying a value that came in with a preset seeded from a
-    /// saved config, and tinting a picture that is supposed to match an untinted one only ever moves
-    /// it away. Enhanced and high keep a gentle grade of their own; it is taste rather than fidelity, and
-    /// the settings menu offers all four as one Image Style choice.
+    /// <remarks> Ultra sits at 1, which is neutral, because its target look grades to identity — contrast,
+    /// gamma and gain all 1, offset 0, and no lookup table. It had been carrying a value that came in with
+    /// a preset seeded from a saved config, and tinting a picture that is meant to be untinted only ever
+    /// moves it away. Enhanced and high keep a gentle grade of their own; it is taste rather than fidelity,
+    /// and the settings menu offers all four as one Image Style choice.
     /// </remarks>
     public static readonly NumericCVar<float> Contrast = Presets.Define(
         CVar.Float(
@@ -2891,13 +2882,11 @@ public static class RenderCVars
         ultra: "1");
 
     /// <summary>How far colour is pushed away from its own luminance.</summary>
-    /// <remarks>
-    /// Ultra sits at 1, which is neutral, because the reference render this preset is matched
-    /// against grades to identity — its colour saturation, gamma and gain are all 1, its offset 0, and
-    /// it has no lookup table. It had been carrying a value that came in with a preset seeded from a
-    /// saved config, and tinting a picture that is supposed to match an untinted one only ever moves
-    /// it away. Enhanced and high keep a gentle grade of their own; it is taste rather than fidelity, and
-    /// the settings menu offers all four as one Image Style choice.
+    /// <remarks> Ultra sits at 1, which is neutral, because its target look grades to identity —
+    /// saturation, gamma and gain all 1, offset 0, and no lookup table. It had been carrying a value that
+    /// came in with a preset seeded from a saved config, and tinting a picture that is meant to be untinted
+    /// only ever moves it away. Enhanced and high keep a gentle grade of their own; it is taste rather than
+    /// fidelity, and the settings menu offers all four as one Image Style choice.
     /// </remarks>
     public static readonly NumericCVar<float> Saturation = Presets.Define(
         CVar.Float(
@@ -2940,7 +2929,7 @@ public static class RenderCVars
         // and not a grain's: at that strength it moved nearly four code values either way every frame,
         // and at night -- where most of a frame is a few code values above black -- it changed nearly
         // half the pixels of one frame to the next and read as noise over every shadow. The resolve now
-        // dithers by one code value, as the reference does, which removes the banding without the noise.
+        // dithers by one code value, which removes the banding without the noise.
         vanilla: "0",
         enhanced: "0",
         high: "0",
@@ -2959,9 +2948,9 @@ public static class RenderCVars
         enhanced: "0",
         high: "0.8",
 
-        // Off at ultra. The reference the ultra look is matched against has no lens fringing, and against a
-        // window's high-contrast edges the aberration read as coloured fringes that made the frame look less
-        // clean, not more filmic. High keeps a little for the presets not held to that reference.
+        // Off at ultra. The ultra look has no lens fringing, and against a window's high-contrast edges the
+        // aberration read as coloured fringes that made the frame look less clean, not more filmic. High
+        // keeps a little, since it is not held to that look.
         ultra: "0");
 
     /// <summary>How much of the level's authored colour table is applied.</summary>
@@ -3007,11 +2996,9 @@ public static class RenderCVars
 
     /// <summary>How much local contrast is restored after the temporal accumulation softens the frame.</summary>
     /// <remarks>
-    /// Ultra takes 0, which is what the reference render this preset is matched against uses — its
-    /// tonemapper sharpen is left to the volume and the volume asks for none. That is not the reference
-    /// declining a free improvement: sharpening is a correction for a soft resolve, and ultra runs the same
-    /// temporal reconstruction the reference does at the same native resolution, so it inherits the same
-    /// answer.
+    /// Ultra takes 0. That is not declining a free improvement: sharpening is a correction for a soft
+    /// resolve, and ultra runs its temporal reconstruction at native resolution, where there is no
+    /// upsampling softness to correct.
     /// <para>
     /// Enhanced and high keep theirs, and the reason is now <see cref="RenderScale"/> rather than a cruder
     /// resolve — they run the identical reconstruction, but from 70% and 85% of the output pixels, and
@@ -3077,8 +3064,8 @@ public static class RenderCVars
     /// the surface CRUSHES a stop or two darker than it should, besides shimmering as the ray wanders under
     /// motion. That single-ray march is what made interiors read dark and noisy. At 0.22 only genuinely
     /// glossy surfaces -- glass, a monitor, polished metal -- still march, where one ray IS the reflection;
-    /// everything rougher keeps the probe field's smooth, bright, stable fallback. The reference denoises a
-    /// many-ray reflection instead; this is the single-ray equivalent of not marching where it cannot help.
+    /// everything rougher keeps the probe field's smooth, bright, stable fallback. Without a denoised
+    /// multi-ray reflection, not marching where one ray cannot help is the single-ray answer.
     /// </remarks>
     public static readonly NumericCVar<float> ReflectionMaxRoughness = Presets.Define(
         CVar.Float(
@@ -3149,8 +3136,8 @@ public static class RenderCVars
     /// <para>
     /// A reflection is ONE ray a pixel, so nothing averages away a ray that happens to land on something
     /// brilliant -- a lamp's own emissive card, a sun-lit white wall -- and what a single unbounded ray
-    /// does to a mirror is a hard bright dot that moves with the camera. The reference caps the same read
-    /// for the same reason and calls it the maximum ray intensity.
+    /// does to a mirror is a hard bright dot that moves with the camera. Capping the read is the standard
+    /// firefly guard for a single-sample estimate.
     /// </para>
     /// <para>
     /// Separate from <c>r_screen_gi_max</c>, which looks like the same number and is not: that one bounds
@@ -3185,9 +3172,8 @@ public static class RenderCVars
     /// the draw path, so it held exactly what the camera had at some point had in frame — and a window
     /// reflects what is BEHIND the camera, which is precisely what the frustum throws away. A pane could
     /// therefore only show a place the player had already stood and looked at, and showed more of the
-    /// level the longer they played. These two settings replace the frustum with the rule the reference
-    /// uses for its own traced scene: keep a placement unless it is both too far off and too small to
-    /// matter.
+    /// level the longer they played. These two settings replace the frustum with a distance-and-size
+    /// rule: keep a placement unless it is both too far off and too small to matter.
     /// </para>
     /// <para>
     /// Zero switches the whole mechanism off, leaving the structure to be fed by drawing alone. That is a
@@ -3212,7 +3198,7 @@ public static class RenderCVars
     /// The companion to <see cref="TracedWorldRadius"/>, and what keeps that radius from being a hard
     /// wall. A placement is dropped only when it is BOTH beyond the radius and smaller than this angle,
     /// so a hillside or a hangar stays in the structure at any distance while a crate three hundred
-    /// metres back does not. One degree is the reference's own threshold.
+    /// metres back does not. One degree keeps anything a reflection could plausibly resolve.
     /// </remarks>
     public static readonly NumericCVar<float> TracedWorldAngle = Presets.Define(
         CVar.Float(
@@ -3508,7 +3494,7 @@ public static class RenderCVars
         high: "4",
         ultra: "4");
 
-    /// <summary>The diffuse colour boost the surface cache reflects light through — the reference's DiffuseColorBoost.</summary>
+    /// <summary>The diffuse colour boost the surface cache reflects light through.</summary>
     /// <remarks>
     /// The single lever for how bright the bounced light is. Each time light reflects off a card, the
     /// surface's albedo is raised by <c>pow(luminance, boost)</c> before it passes light along, so a
@@ -3629,13 +3615,12 @@ public static class RenderCVars
     /// is one, on above it.
     /// </remarks>
     /// <para>
-    /// <b>Off at every preset now, on two independent grounds.</b> The reference render this port is
-    /// matched against leaves its own dithered opacity mask switched off, so as-is parity says off. And
-    /// measured here it costs more than it buys: still-camera stability goes from 0.390% to 0.483%
-    /// consecutive-frame RMSE and detail from 45.9 to 44.5, because the dither is noise until a temporal
-    /// filter resolves it and ours does not fully resolve it even with the camera stopped. It buys a
-    /// slightly better yard whole-frame figure (12.76% to 12.48%) and that is not worth a quarter more
-    /// shimmer on the exact geometry the shimmer was complained about.
+    /// <b>Off at every preset now, on two independent grounds.</b> The target look has no dithered opacity
+    /// mask, so the look says off. And measured here it costs more than it buys: still-camera stability
+    /// goes from 0.390% to 0.483% consecutive-frame RMSE and detail from 45.9 to 44.5, because the dither
+    /// is noise until a temporal filter resolves it and ours does not fully resolve it even with the camera
+    /// stopped. It buys a slightly better yard whole-frame figure (12.76% to 12.48%) and that is not worth
+    /// a quarter more shimmer on the exact geometry the shimmer was complained about.
     /// </para>
     /// <para>
     /// It is implemented rather than removed: the value used to be one here and the Vulkan backend

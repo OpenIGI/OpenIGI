@@ -144,7 +144,7 @@ public readonly record struct SurfaceMaterial(
     /// Sixteen, so that a strength of exactly one — the sky dome, a tracer, every emissive draw that
     /// existed before lamps did — lands on exactly one code and comes back exactly one. A round step
     /// is what keeps this packing from putting a fraction of a percent onto the sky, which is inside
-    /// the tolerance the reference comparisons are read at.
+    /// the tolerance capture comparisons are read at.
     /// </remarks>
     private const float EmissiveStepsPerUnit = 16f;
 

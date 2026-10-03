@@ -864,7 +864,7 @@ internal sealed partial class GameHost
         // Rain is a gameplay effect, not part of the backdrop picture: it is configured fresh for every
         // mission — cold start or promoted — straight from the level's own objects.qvm (a RainEffect task
         // enabled by its Is Rain and Is Active flags), and whatever rain the previous mission left is
-        // dropped first, exactly as the reference resets its rain at every level load. The same scene's
+        // dropped first, exactly as the reference editor resets its rain at every level load. The same scene's
         // geometry also provides the roofs the rain is suppressed under.
         _rain?.Dispose();
         _rain = new RainRenderer(_device, _logger);

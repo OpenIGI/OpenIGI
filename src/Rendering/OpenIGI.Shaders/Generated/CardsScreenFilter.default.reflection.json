@@ -1,0 +1,137 @@
+{
+  "module": "CardsScreenFilter",
+  "variant": "default",
+  "entryPoints": [
+    {
+      "name": "computeMain",
+      "stage": "Compute",
+      "workgroupSize": [
+        8,
+        8,
+        1
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "name": "uFiltered",
+      "group": 0,
+      "binding": 0,
+      "kind": "StorageTexture",
+      "dimensions": 2,
+      "storageFormat": "Rgba16Float",
+      "wgslStorageFormat": "Rgba16Float",
+      "storageAccess": "WriteOnly"
+    },
+    {
+      "name": "uAccum",
+      "group": 0,
+      "binding": 32,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uPosition",
+      "group": 0,
+      "binding": 33,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uSceneNormal",
+      "group": 0,
+      "binding": 34,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "g",
+      "group": 0,
+      "binding": 49,
+      "kind": "UniformBuffer",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uAccumSampler",
+      "group": 0,
+      "binding": 64,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uPositionSampler",
+      "group": 0,
+      "binding": 65,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    },
+    {
+      "name": "uSceneNormalSampler",
+      "group": 0,
+      "binding": 66,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None"
+    }
+  ],
+  "pushBlock": null,
+  "specializationConstants": [],
+  "globals": {
+    "name": "g",
+    "group": 0,
+    "binding": 49,
+    "size": 32,
+    "fields": [
+      {
+        "name": "uWidth",
+        "offset": 0,
+        "size": 4
+      },
+      {
+        "name": "uHeight",
+        "offset": 4,
+        "size": 4
+      },
+      {
+        "name": "uRadius",
+        "offset": 8,
+        "size": 4
+      },
+      {
+        "name": "uAccum",
+        "offset": 12,
+        "size": 4
+      },
+      {
+        "name": "uPosition",
+        "offset": 16,
+        "size": 4
+      },
+      {
+        "name": "uSceneNormal",
+        "offset": 20,
+        "size": 4
+      }
+    ]
+  }
+}

@@ -25,8 +25,8 @@ internal sealed unsafe class VulkanBottomLevelStructure : IDisposable
     // the device fault caught it as an invalid read of acceleration-structure memory when a fast camera
     // streamed terrain, and a retirement margin only narrowed the window rather than closing it. Off, the
     // structures stay a little larger but nothing is ever freed under a live trace. Re-enable this -- back
-    // to a real threshold, a few hundred triangles as the reference draws it -- only once the compacted-structure
-    // retirement holds until every frame that could name the old copy has finished.
+    // to a real threshold, a few hundred triangles -- only once the compacted-structure retirement holds
+    // until every frame that could name the old copy has finished.
     private const uint MinimumPrimitivesToCompact = uint.MaxValue;
 
     private readonly Vk _vk;
