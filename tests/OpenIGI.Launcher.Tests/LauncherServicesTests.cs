@@ -181,4 +181,39 @@ public sealed class LauncherServicesTests
         await client.FetchAsync(service, ReleaseChannel.Stable, "0.1.0", CancellationToken.None);
         Assert.Empty(server.Requests[2].Headers.IfNoneMatch);
     }
+
+    [Fact]
+    public async Task Each_channel_keeps_its_own_answer_so_switching_back_is_instant()
+    {
+        FakeServer server = new()
+        {
+            Override = request =>
+            {
+                ReleaseChannel channel = request.RequestUri!.AbsolutePath.EndsWith("beta", StringComparison.Ordinal) ? ReleaseChannel.Beta : ReleaseChannel.Stable;
+                string tag = channel == ReleaseChannel.Beta ? "\"b\"" : "\"s\"";
+                if (request.Headers.IfNoneMatch.Any(t => t.Tag == tag))
+                {
+                    return new HttpResponseMessage(HttpStatusCode.NotModified);
+                }
+
+                HttpResponseMessage response = new(HttpStatusCode.OK) { Content = new StringContent(ReleaseJson.Write(new ChannelFeed(channel, null, []))) };
+                response.Headers.ETag = new EntityTagHeaderValue(tag);
+                return response;
+            },
+        };
+
+        ReleaseFeedClient client = new(new HttpClient(server));
+        Uri service = new("https://api.test/");
+        Assert.Null(client.Cached(ReleaseChannel.Beta, null));
+
+        ChannelFeed beta = await client.FetchAsync(service, ReleaseChannel.Beta, null, CancellationToken.None);
+        ChannelFeed stable = await client.FetchAsync(service, ReleaseChannel.Stable, null, CancellationToken.None);
+
+        Assert.Same(beta, client.Cached(ReleaseChannel.Beta, null));
+        Assert.Same(stable, client.Cached(ReleaseChannel.Stable, null));
+
+        // Back on beta, the request carries beta's own tag and the unchanged answer is the one kept.
+        Assert.Same(beta, await client.FetchAsync(service, ReleaseChannel.Beta, null, CancellationToken.None));
+        Assert.Equal("\"b\"", server.Requests[2].Headers.IfNoneMatch.Single().Tag);
+    }
 }

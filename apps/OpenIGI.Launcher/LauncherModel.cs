@@ -346,10 +346,16 @@ internal sealed partial class LauncherModel : IDisposable
             Report($"Settings could not be saved: {ex.Message}", ex);
         }
 
+        // A channel the player has just chosen is shown at once: from its last answer when there is one, and
+        // asked about straight away rather than when the polling spacing next allows.
         if (Settings.Channel != channel)
         {
-            _feed = null;
-            CheckSoon();
+            _feed = _feedClient.Cached(Settings.Channel, _installed?.Version);
+            Recompute();
+            if (!_checking)
+            {
+                Check();
+            }
         }
 
         // A different library is a different install: whatever is (or is not) installed there now counts.
@@ -424,8 +430,10 @@ internal sealed partial class LauncherModel : IDisposable
                 {
                     _checking = false;
                     _schedule.Finished(DateTime.UtcNow, succeeded: true);
+                    // The channel changed while this was being asked: ask again for the one now chosen.
                     if (channel != Settings.Channel)
                     {
+                        Check();
                         return;
                     }
 
