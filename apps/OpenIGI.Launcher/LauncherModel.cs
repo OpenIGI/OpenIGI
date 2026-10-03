@@ -14,7 +14,7 @@ internal enum GameState
     /// <summary>Installed, current, and its game folder found: PLAY.</summary>
     Ready,
 
-    /// <summary>Installed with a newer version out: UPDATE.</summary>
+    /// <summary>Installed with a newer version out, or a beta build kept after switching to stable: UPDATE.</summary>
     UpdateAvailable,
 
     /// <summary>Not on disk: INSTALL.</summary>
@@ -616,6 +616,15 @@ internal sealed partial class LauncherModel : IDisposable
         bool runtimeGone = _installed is { SelfContained: false } && !DotnetRuntime.IsInstalled();
         bool newer = _latest is not null && (_installed is null || _latest.ParsedVersion > ReleaseVersion.Parse(_installed.Version));
 
+        // A beta build kept after switching to stable is not on the line the player chose. Its version is
+        // higher than stable's newest, so "newer" alone would leave it in place and show it as current; the
+        // stable build is offered in its place instead, as leaving a beta does everywhere else.
+        bool leftBeta = _latest is not null
+            && _installed is not null
+            && Settings.Channel == ReleaseChannel.Stable
+            && ReleaseVersion.Parse(_installed.Version).IsPrerelease
+            && _latest.ParsedVersion != ReleaseVersion.Parse(_installed.Version);
+
         foreach (LauncherGame game in Games)
         {
             if (!game.Released || game.Retail is not { } title)
@@ -635,7 +644,7 @@ internal sealed partial class LauncherModel : IDisposable
             game.State = _running is not null ? GameState.Playing
                 : _installed is null ? GameState.NotInstalled
                 : _damaged || runtimeGone ? GameState.Damaged
-                : newer ? GameState.UpdateAvailable
+                : newer || leftBeta ? GameState.UpdateAvailable
                 : GameStarter.Locate(title, Settings.GameFolders.GetValueOrDefault(title.Id)) is null ? GameState.NeedsGameFolder
                 : GameState.Ready;
         }
@@ -685,7 +694,11 @@ internal sealed partial class LauncherModel : IDisposable
     // front (if it is, the UPDATE button already says it).
     private void AnnounceGameUpdate()
     {
-        if (_latest is { } latest && Games.Any(static g => g.State == GameState.UpdateAvailable))
+        // Only a release that is newer: the stable build offered after leaving the beta is the player's own
+        // doing, not news.
+        if (_latest is { } latest
+            && (_installed is null || latest.ParsedVersion > ReleaseVersion.Parse(_installed.Version))
+            && Games.Any(static g => g.State == GameState.UpdateAvailable))
         {
             Announce("game", latest.Version, $"OpenIGI {latest.Version} is out",
                 Settings.AutomaticUpdates && _running is null
