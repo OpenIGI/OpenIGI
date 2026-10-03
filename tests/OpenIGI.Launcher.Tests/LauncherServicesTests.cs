@@ -120,20 +120,46 @@ public sealed class LauncherServicesTests
     }
 
     [Fact]
+    public void Closing_on_launch_from_an_older_launcher_becomes_going_to_the_tray()
+    {
+        string dir = Directory.CreateTempSubdirectory("openigi-settings-").FullName;
+        try
+        {
+            string path = Path.Combine(dir, "settings.json");
+            File.WriteAllText(path, """{ "closeOnLaunch": true }""");
+
+            LauncherSettings read = LauncherSettings.Load(path);
+            Assert.True(read.MinimizeOnLaunch);
+            Assert.Equal(CloseAction.Ask, read.CloseButton);
+
+            // The old name is only read: what is saved is the new one.
+            read.Save(path);
+            string saved = File.ReadAllText(path);
+            Assert.DoesNotContain("closeOnLaunch", saved, StringComparison.Ordinal);
+            Assert.Contains("\"minimizeOnLaunch\": true", saved, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Settings_survive_a_round_trip_and_a_damaged_file_falls_back_to_defaults()
     {
         string dir = Directory.CreateTempSubdirectory("openigi-settings-").FullName;
         try
         {
             string path = Path.Combine(dir, "nested", "settings.json");
-            LauncherSettings settings = new() { Channel = ReleaseChannel.Beta, LaunchArguments = "-windowed", CloseOnLaunch = true };
+            LauncherSettings settings = new() { Channel = ReleaseChannel.Beta, LaunchArguments = "-windowed", MinimizeOnLaunch = true, CloseButton = CloseAction.Exit };
             settings.GameFolders["igi1"] = "D:/IGI";
             settings.Save(path);
 
             LauncherSettings read = LauncherSettings.Load(path);
             Assert.Equal(ReleaseChannel.Beta, read.Channel);
             Assert.Equal("-windowed", read.LaunchArguments);
-            Assert.True(read.CloseOnLaunch);
+            Assert.True(read.MinimizeOnLaunch);
+            Assert.Equal(CloseAction.Exit, read.CloseButton);
             Assert.Equal("D:/IGI", read.GameFolders["igi1"]);
             Assert.Contains("\"beta\"", File.ReadAllText(path), StringComparison.Ordinal);
 

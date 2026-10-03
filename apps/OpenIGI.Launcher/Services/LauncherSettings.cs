@@ -23,8 +23,20 @@ internal sealed class LauncherSettings
     /// <summary>Gets or sets extra arguments passed to the game.</summary>
     public string LaunchArguments { get; set; } = string.Empty;
 
-    /// <summary>Gets or sets whether the launcher closes once the game has started.</summary>
-    public bool CloseOnLaunch { get; set; }
+    /// <summary>Gets or sets whether the launcher goes to the tray once the game has started, and comes back when it exits.</summary>
+    public bool MinimizeOnLaunch { get; set; }
+
+    /// <summary>Gets or sets what the close button does: ask, go to the tray, or exit.</summary>
+    public CloseAction CloseButton { get; set; } = CloseAction.Ask;
+
+    /// <summary>Reads the setting <see cref="MinimizeOnLaunch"/> replaced, from a file an earlier launcher wrote.</summary>
+    /// <remarks>Closing on launch now means going to the tray, so a player who chose it keeps the choice.</remarks>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? CloseOnLaunch
+    {
+        get => null;
+        set => MinimizeOnLaunch |= value == true;
+    }
 
     /// <summary>Gets or sets whether a desktop notification announces a new release while the launcher is in the background.</summary>
     public bool Notifications { get; set; } = true;
@@ -86,3 +98,16 @@ internal sealed class LauncherSettings
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web, WriteIndented = true, UseStringEnumConverter = true)]
 [JsonSerializable(typeof(LauncherSettings))]
 internal sealed partial class LauncherSettingsJson : JsonSerializerContext;
+
+/// <summary>What the launcher's close button does.</summary>
+internal enum CloseAction
+{
+    /// <summary>Ask each time: go to the tray, or exit.</summary>
+    Ask,
+
+    /// <summary>Hide in the notification area (the Dock or the taskbar where there is none), still checking for updates.</summary>
+    MinimizeToTray,
+
+    /// <summary>Exit the launcher.</summary>
+    Exit,
+}

@@ -49,7 +49,8 @@ internal static class SettingsPage
         columns.Add(
             Column(
                 Group(theme, "Updates", channel, automatic, notify),
-                Group(theme, "Installation", library, repair)),
+                Group(theme, "Installation", library, repair),
+                Group(theme, "Launcher window", new CloseButtonRow(theme, model))),
             0,
             0);
 
@@ -59,7 +60,7 @@ internal static class SettingsPage
                 Group(theme, "Game files", [.. model.Games
                     .Where(static g => g.Released && g.Retail is not null)
                     .Select(g => (UiElement)GameFolder(theme, model, g.Retail!, $"{g.Title} folder"))]),
-                Group(theme, "Game launch", LaunchArguments(theme, model), CloseOnLaunch(theme, model))),
+                Group(theme, "Game launch", LaunchArguments(theme, model), MinimizeOnLaunch(theme, model))),
             0,
             1);
 
@@ -101,11 +102,41 @@ internal static class SettingsPage
         return row;
     }
 
-    private static Toggle CloseOnLaunch(UiTheme theme, LauncherModel model)
+    private static Toggle MinimizeOnLaunch(UiTheme theme, LauncherModel model)
     {
-        var toggle = new Toggle(theme, "Close launcher when game starts", model.Settings.CloseOnLaunch);
-        toggle.ValueChanged += on => model.ChangeSettings(s => s.CloseOnLaunch = on);
+        var toggle = new Toggle(theme, $"{TrayWording} when game starts", model.Settings.MinimizeOnLaunch)
+        {
+            Hint = "It comes back when the game exits",
+        };
+        toggle.ValueChanged += on => model.ChangeSettings(s => s.MinimizeOnLaunch = on);
         return toggle;
+    }
+
+    // Only Windows has a notification area the launcher can go to; elsewhere it minimises instead.
+    private static string TrayWording => OperatingSystem.IsWindows() ? "Minimize to tray" : "Minimize";
+
+    /// <summary>What the close button does. Follows the setting, which the close question's "remember" can change too.</summary>
+    private sealed class CloseButtonRow : Dropdown
+    {
+        private readonly LauncherModel _model;
+
+        public CloseButtonRow(UiTheme theme, LauncherModel model)
+            : base(theme, "Close button", ["Ask every time", TrayWording, "Exit"], (int)model.Settings.CloseButton)
+        {
+            _model = model;
+            Hint = "What the launcher's close button does";
+            SelectionChanged += index => model.ChangeSettings(s => s.CloseButton = (CloseAction)index);
+        }
+
+        protected override void OnUpdate(float elapsedSeconds)
+        {
+            base.OnUpdate(elapsedSeconds);
+            int chosen = (int)_model.Settings.CloseButton;
+            if (SelectedIndex != chosen)
+            {
+                SelectedIndex = chosen;
+            }
+        }
     }
 
     private static StackPanel Column(params UiElement[] groups)

@@ -135,6 +135,7 @@ internal sealed partial class LauncherModel : IDisposable
     private string? _stagingLauncher;
     private CancellationTokenSource? _download;
     private bool _switching;
+    private bool _hiddenForGame;
     private string? _notReusable;
     private int _selected;
 
@@ -200,8 +201,11 @@ internal sealed partial class LauncherModel : IDisposable
     /// <summary>Gets a number that changes whenever the pages need re-reading.</summary>
     public int Revision { get; private set; }
 
-    /// <summary>Gets whether the launcher asked to close itself (after starting the game).</summary>
-    public bool CloseRequested { get; private set; }
+    /// <summary>Occurs when the game has started and the player asked for the launcher to go to the tray meanwhile.</summary>
+    public event EventHandler? HideRequested;
+
+    /// <summary>Occurs when the game the launcher went to the tray for has exited: the launcher comes back.</summary>
+    public event EventHandler? ShowRequested;
 
     /// <summary>Gets or sets whether the launcher's window has focus; a notification is only for when it has not.</summary>
     public bool WindowFocused { get; set; } = true;
@@ -386,6 +390,11 @@ internal sealed partial class LauncherModel : IDisposable
             _running.Dispose();
             _running = null;
             Recompute();
+            if (_hiddenForGame)
+            {
+                _hiddenForGame = false;
+                ShowRequested?.Invoke(this, EventArgs.Empty);
+            }
         }
 
         Job?.Sample(elapsedSeconds);
@@ -555,19 +564,16 @@ internal sealed partial class LauncherModel : IDisposable
 
         try
         {
-            // The game's output is read only while the launcher stays open to show it.
-            bool follow = !Settings.CloseOnLaunch;
-            _running = GameStarter.Start(build.Folder, GameStarter.Arguments(title, folder, Settings.LaunchArguments), GameEnvironment(title), follow);
-            if (follow)
-            {
-                _log.Follow(_running);
-            }
+            // The launcher keeps running while the game does, in the tray or not, so it always reads its log.
+            _running = GameStarter.Start(build.Folder, GameStarter.Arguments(title, folder, Settings.LaunchArguments), GameEnvironment(title), followOutput: true);
+            _log.Follow(_running);
 
             _logger.Information(GameLogCategory, $"Started {title.DisplayName} from {build.Folder} (process {_running.Id}).");
             Problem = null;
-            if (Settings.CloseOnLaunch)
+            if (Settings.MinimizeOnLaunch)
             {
-                CloseRequested = true;
+                _hiddenForGame = true;
+                HideRequested?.Invoke(this, EventArgs.Empty);
             }
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)

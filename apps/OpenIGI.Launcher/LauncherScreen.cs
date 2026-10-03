@@ -18,7 +18,11 @@ internal interface ILauncherWindow
 
     void ToggleMaximize();
 
+    /// <summary>Does what the close button is set to: asks, goes to the tray, or exits.</summary>
     void Close();
+
+    /// <summary>Exits the launcher, whatever the close button is set to.</summary>
+    void Exit();
 
     /// <summary>Gets or sets the system clipboard's text: read to paste a folder into a field, written to copy the log.</summary>
     string ClipboardText { get; set; }
@@ -194,12 +198,6 @@ internal sealed class LauncherScreen : Screen
             RequestLayout();
         }
 
-        if (_model.CloseRequested)
-        {
-            _window.Close();
-            return;
-        }
-
         _home?.Update();
         _content?.Update();
         _logs?.Update();
@@ -250,7 +248,7 @@ internal sealed class LauncherScreen : Screen
     {
         if (_model.RestartIntoUpdate())
         {
-            _window.Close();
+            _window.Exit();
         }
     }
 

@@ -106,7 +106,7 @@ public sealed class UpdateNoticeTests
     {
         // NOTIFYICONDATAW since Vista: 976 bytes on 64-bit, 956 on 32-bit. A wrong size and the shell
         // silently ignores the call.
-        Type data = typeof(DesktopNotifier).GetNestedType("NotifyIconData", BindingFlags.NonPublic)!;
+        Type data = typeof(OpenIGI.Platform.Desktop.TrayIcon).GetNestedType("NotifyIconData", BindingFlags.NonPublic)!;
         Assert.Equal(Environment.Is64BitProcess ? 976 : 956, Marshal.SizeOf(data));
     }
 }

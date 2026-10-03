@@ -1,5 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <!-- The Windows notification-area icon (TrayIcon) receives its clicks through a window procedure the
+         system calls by function pointer, and hands the shell fixed-size text buffers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
     <ProjectReference Include="..\OpenIGI.Platform\OpenIGI.Platform.csproj" />
@@ -8,7 +14,7 @@
 
   <ItemGroup>
     <!-- The OpenIGI icon: the game's and the launcher's executables carry it (ApplicationIcon), and
-         WindowIcon sets it on their windows from this embedded copy. -->
+         WindowIcon sets it on their windows, and TrayIcon in the notification area, from this embedded copy. -->
     <EmbeddedResource Include="Assets\openigi.ico" LogicalName="OpenIGI.Platform.Desktop.Assets.openigi.ico" />
   </ItemGroup>
 

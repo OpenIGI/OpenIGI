@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using OpenIGI.Input;
+using OpenIGI.Launcher.Pages;
 using OpenIGI.Launcher.Services;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.UI;
@@ -67,6 +68,12 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     private readonly SkiaFontCache _fonts = new();
     private readonly DesktopNotifier _notifier;
 
+    // The notification-area icon, on Windows: the way back to a launcher that went to the tray, and where its
+    // notifications come from. Elsewhere the launcher minimises to the Dock or the taskbar instead.
+    private readonly TrayIcon? _tray;
+    private bool _exiting;
+    private UiTheme? _theme;
+
     private IInputContext? _inputContext;
     private GL? _gl;
     private GRContext? _gr;
@@ -130,7 +137,6 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
             MarkActive();
         };
         _window.StateChanged += _ => MarkActive();
-        _window.Closing += ReleaseGraphics;
 
         // Coming back to the window is when a player expects to see a release that came out meanwhile; while
         // it is away, a release is announced by a desktop notification instead.
@@ -144,8 +150,16 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
             }
         };
 
-        _notifier = new DesktopNotifier(() => _window.Native?.Win32?.Hwnd ?? 0);
+        if (OperatingSystem.IsWindows())
+        {
+            _tray = new TrayIcon("OpenIGI Launcher", [new TrayMenuItem("Open OpenIGI Launcher", ShowFromTray), new TrayMenuItem("Exit", Exit)]);
+            _tray.Activated += (_, _) => ShowFromTray();
+        }
+
+        _notifier = new DesktopNotifier(_tray);
         _model.Notify = _notifier.Show;
+        _model.HideRequested += (_, _) => HideToTray();
+        _model.ShowRequested += (_, _) => ShowFromTray();
     }
 
     /// <summary>How long after the last thing that changed the window keeps drawing every frame.</summary>
@@ -212,6 +226,13 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
                 nextFrame = Stopwatch.GetTimestamp();
             }
 
+            // Closed by the system (Alt+F4, the taskbar) rather than by Exit: the close button's choice decides.
+            if (_window.IsClosing && !_exiting)
+            {
+                _window.IsClosing = false;
+                Close();
+            }
+
             if (_window.IsClosing)
             {
                 break;
@@ -231,6 +252,7 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         }
 
         _window.DoEvents();
+        ReleaseGraphics();
         _window.Reset();
     }
 
@@ -243,7 +265,77 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     public void ToggleMaximize() =>
         _window.WindowState = _window.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 
-    public void Close() => _window.Close();
+    /// <summary>Does what the close button is set to: asks, goes to the tray, or exits.</summary>
+    public void Close()
+    {
+        switch (_model.Settings.CloseButton)
+        {
+            case CloseAction.MinimizeToTray:
+                HideToTray();
+                break;
+            case CloseAction.Exit:
+                Exit();
+                break;
+            default:
+                if (_theme is not null && _stack.Top is not CloseDialog)
+                {
+                    _stack.Push(new CloseDialog(_theme, _tray is not null, OnCloseChosen), animate: true);
+                    MarkActive();
+                }
+
+                break;
+        }
+    }
+
+    /// <summary>Exits the launcher, whatever the close button is set to.</summary>
+    public void Exit()
+    {
+        _exiting = true;
+        _window.Close();
+    }
+
+    /// <summary>Hides the window in the notification area, or minimises it where there is none.</summary>
+    public void HideToTray()
+    {
+        if (_tray is null)
+        {
+            Minimize();
+            return;
+        }
+
+        _window.IsVisible = false;
+        _model.WindowFocused = false;
+    }
+
+    /// <summary>Brings the window back from the tray, or from being minimised, and to the front.</summary>
+    public void ShowFromTray()
+    {
+        _window.IsVisible = true;
+        if (_window.WindowState == WindowState.Minimized)
+        {
+            _window.WindowState = WindowState.Normal;
+        }
+
+        _window.Focus();
+        MarkActive();
+    }
+
+    private void OnCloseChosen(CloseAction action, bool remember)
+    {
+        if (remember)
+        {
+            _model.ChangeSettings(s => s.CloseButton = action);
+        }
+
+        if (action == CloseAction.Exit)
+        {
+            Exit();
+        }
+        else
+        {
+            HideToTray();
+        }
+    }
 
     public string ClipboardText
     {
@@ -273,7 +365,11 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     public void Dispose()
     {
         ReleaseGraphics();
-        _notifier.Dispose();
+        if (OperatingSystem.IsWindows())
+        {
+            _tray?.Dispose();
+        }
+
         _model.Dispose();
         _typography?.Dispose();
         _fonts.Dispose();
@@ -296,6 +392,7 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
 
         _typography = LauncherFonts.Load();
         UiTheme theme = _typography.CreateTheme();
+        _theme = theme;
 
         // The launcher's settings rows are the design's taller, ruled kind, with a larger caption.
         UiTheme rows = _typography.CreateTheme();
