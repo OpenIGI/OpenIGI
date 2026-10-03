@@ -56,10 +56,10 @@ public sealed class ConfigScript
     /// </param>
     public static GameConfig Load(
         ReadOnlyMemory<byte> script,
-        IIgiLogger? logger = null,
+        IOpenIgiLogger? logger = null,
         string? source = null)
     {
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         GameConfig config = new();
         Loader loader = new(config);
 

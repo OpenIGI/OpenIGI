@@ -8,6 +8,7 @@
     <!-- The tool writes the very types the catalogue reads back, so both sides share one set of
          records and a change to the generated schema cannot reach only one of them. -->
     <ProjectReference Include="..\..\src\Rendering\OpenIGI.Shaders\OpenIGI.Shaders.csproj" />
+    <ProjectReference Include="..\OpenIGI.Tools.Common\OpenIGI.Tools.Common.csproj" />
   </ItemGroup>
 
 </Project>

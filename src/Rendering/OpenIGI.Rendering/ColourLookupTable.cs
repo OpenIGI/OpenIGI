@@ -108,10 +108,10 @@ public sealed class ColourLookupTable
     /// Never throws for bad content. A grade is a look rather than a mechanism: a level that cannot
     /// find its grade should render ungraded, not fail to render.
     /// </remarks>
-    public static ColourLookupTable? Load(string path, IIgiLogger? logger = null)
+    public static ColourLookupTable? Load(string path, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(path);
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         if (!File.Exists(path))
         {
@@ -135,12 +135,12 @@ public sealed class ColourLookupTable
     /// <param name="logger">Where to report a malformed table.</param>
     /// <returns>The table, or <see langword="null"/> when the lines are not a usable one.</returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public static ColourLookupTable? Parse(string name, IReadOnlyList<string> lines, IIgiLogger? logger = null)
+    public static ColourLookupTable? Parse(string name, IReadOnlyList<string> lines, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(name);
         ArgumentNullException.ThrowIfNull(lines);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         int size = -1;
         float[]? entries = null;

@@ -37,8 +37,9 @@ internal static class PackRecompress
     /// <param name="source">The installed overrides folder.</param>
     /// <param name="destination">Where to write the converted folder; must not be <paramref name="source"/>.</param>
     /// <param name="quality">How hard the block encoder searches.</param>
+    /// <param name="context">Where each file's progress is reported.</param>
     /// <returns>What was done.</returns>
-    internal static Result Run(string source, string destination, BlockQuality quality)
+    internal static Result Run(string source, string destination, BlockQuality quality, ToolContext context)
     {
         ConcurrentBag<string> failures = [];
         int compressed = 0;
@@ -74,7 +75,7 @@ internal static class PackRecompress
 
             File.WriteAllBytes(target, output);
             after += output.Length;
-            Console.WriteLine($"  {relative}: {input.Length / 1048576.0:F1} -> {output.Length / 1048576.0:F1} MiB");
+            context.Info($"  {relative}: {input.Length / 1048576.0:F1} -> {output.Length / 1048576.0:F1} MiB");
         }
 
         return new Result(compressed, copied, before, after, [.. failures]);

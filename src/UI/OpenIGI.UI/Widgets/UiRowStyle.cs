@@ -1,6 +1,7 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Layout;
+using OpenIGI.UI.Text;
 
 namespace OpenIGI.UI.Widgets;
 
@@ -21,6 +22,9 @@ public static class UiRowStyle
 
     /// <summary>The inset of a row's caption and control from its edges, in design units.</summary>
     public const float Inset = 10f;
+
+    /// <summary>The least room kept between a row's caption and its control, in design units.</summary>
+    public const float Gap = 16f;
 
     /// <summary>How lit a row is: 1 under the pointer or focus, easing in and out with focus.</summary>
     /// <param name="control">The row.</param>
@@ -55,7 +59,11 @@ public static class UiRowStyle
     /// <param name="control">The row.</param>
     /// <param name="caption">The caption, set on the left.</param>
     /// <param name="highlight">How lit the row is, from <see cref="Highlight"/>.</param>
-    public static void DrawFrame(UiPainter painter, Control control, string caption, float highlight)
+    /// <param name="controlLeft">
+    /// Where the row's control begins, in pixels. The caption and its hint are cut short with an ellipsis
+    /// before it, so a narrow window never draws them under the control; omitted, they may use the whole row.
+    /// </param>
+    public static void DrawFrame(UiPainter painter, Control control, string caption, float highlight, float controlLeft = float.PositiveInfinity)
     {
         ArgumentNullException.ThrowIfNull(painter);
         ArgumentNullException.ThrowIfNull(control);
@@ -82,6 +90,8 @@ public static class UiRowStyle
         float sizePx = painter.Context.Px(theme.BodyTextSize);
         Bgra32 color = !control.IsEnabled ? theme.TextDisabled : Interpolate.Lerp(theme.TextLabel, theme.TextBright, highlight);
         float x = bounds.X + painter.Context.Px(Inset);
+        float room = MathF.Min(bounds.Right - painter.Context.Px(Inset), controlLeft - painter.Context.Px(Gap)) - x;
+        caption = TextFit.ToWidth(theme.Body, caption, sizePx, room);
         if (control.Hint.Length == 0)
         {
             float y = bounds.Y + ((bounds.Height - theme.Body.LineHeight(sizePx)) * 0.5f);
@@ -95,7 +105,8 @@ public static class UiRowStyle
         float block = theme.Body.LineHeight(sizePx) + gap + theme.Body.LineHeight(hintPx);
         float top = bounds.Y + ((bounds.Height - block) * 0.5f);
         painter.DrawText(theme.Body, caption, new UiVec2(x, top), sizePx, UiPalette.Fade(color, appear));
-        painter.DrawText(theme.Body, control.Hint, new UiVec2(x, top + theme.Body.LineHeight(sizePx) + gap), hintPx, UiPalette.Fade(theme.TextMuted, appear));
+        string hint = TextFit.ToWidth(theme.Body, control.Hint, hintPx, room);
+        painter.DrawText(theme.Body, hint, new UiVec2(x, top + theme.Body.LineHeight(sizePx) + gap), hintPx, UiPalette.Fade(theme.TextMuted, appear));
     }
 
     private static float HintSize(UiTheme theme) => theme.BodyTextSize * 0.89f;

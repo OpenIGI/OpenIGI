@@ -95,20 +95,24 @@ public sealed class LevelPositionVerificationTests
     [RequiresGameDataFact]
     public void EveryCampaignMissionEmitsReferenceLevelLoaderRecordsWithoutPlacementMismatches()
     {
-        List<string> records = [];
-        RecordingLogger logger = new(records);
+        // Large enough that no mission's placement records push an earlier mission's out.
+        MemorySink logger = new(capacity: 1 << 20);
 
         for (int missionId = 1; missionId <= 14; missionId++)
         {
             _ = Build(missionId, logger);
         }
 
+        IReadOnlyList<LogRecord> records = logger.Snapshot();
         string[] loaded = records
-            .Where(line => line.Contains("[LevelLoader] Object Loaded:", StringComparison.Ordinal))
+            .Where(record => record.Category == "World.Loader"
+                && record.Message.StartsWith("Object Loaded:", StringComparison.Ordinal))
+            .Select(record => record.Message)
             .ToArray();
 
         Assert.True(loaded.Length > 1000, $"expected reference placement records, got {loaded.Length}");
         string[] mismatches = records
+            .Select(record => record.Message)
             .Where(line => line.Contains("Verification=MISMATCH", StringComparison.Ordinal))
             .ToArray();
         Assert.True(mismatches.Length == 0, string.Join(Environment.NewLine, mismatches.Take(10)));
@@ -159,7 +163,7 @@ public sealed class LevelPositionVerificationTests
             Matrix3f.FromEngineEulerAngles(alpha, 0f, gamma + headGamma), placement.Orientation));
     }
 
-    private static WorldScene Build(int missionId, IIgiLogger? logger = null)
+    private static WorldScene Build(int missionId, IOpenIgiLogger? logger = null)
     {
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -254,13 +258,4 @@ public sealed class LevelPositionVerificationTests
 
     private static float Dot(Vector3f left, Vector3f right) =>
         (left.X * right.X) + (left.Y * right.Y) + (left.Z * right.Z);
-
-    private sealed class RecordingLogger(List<string> records) : IIgiLogger
-    {
-        public bool IsEnabled(LogLevel level) => true;
-
-        public void Log(LogLevel level, string category, string message, Exception? exception = null) =>
-            records.Add(message);
-    }
-
 }

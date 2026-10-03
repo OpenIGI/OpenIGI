@@ -35,11 +35,11 @@ public sealed class MagicObjectRegistry
 
     private readonly Dictionary<string, MagicObjectDefinition> _byName = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<int, string> _taskTypeNames = [];
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="MagicObjectRegistry"/> class.</summary>
     /// <param name="logger">The logger for load diagnostics; defaults to a sink that discards them.</param>
-    public MagicObjectRegistry(IIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
+    public MagicObjectRegistry(IOpenIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
 
     /// <summary>Gets the definitions, keyed by attachment name.</summary>
     public IReadOnlyDictionary<string, MagicObjectDefinition> Definitions => _byName;

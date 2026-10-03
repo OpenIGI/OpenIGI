@@ -20,7 +20,7 @@ internal static class SurfaceCacheDebugDumps
     /// </summary>
     public static void ScreenGather(
         IGraphicsDevice device, SurfaceCacheLighting cards, GlobalDistanceField field, Camera3D eye,
-        Matrix4f projection, float farPlane, int width, int height, string into, IIgiLogger logger)
+        Matrix4f projection, float farPlane, int width, int height, string into, IOpenIgiLogger logger)
     {
         try
         {
@@ -87,7 +87,7 @@ internal static class SurfaceCacheDebugDumps
     /// <param name="probe">A non-zero probe index switches the report to min/mean/max per channel.</param>
     /// <param name="name">The file name for the direct-lighting atlas.</param>
     public static void CardLighting(
-        IGraphicsDevice device, SurfaceCacheLighting lighting, string into, IIgiLogger logger,
+        IGraphicsDevice device, SurfaceCacheLighting lighting, string into, IOpenIgiLogger logger,
         int probe = 0, string name = "cards-direct.png")
     {
         try
@@ -221,7 +221,7 @@ internal static class SurfaceCacheDebugDumps
     /// <param name="into">The directory the images are written to.</param>
     /// <param name="logger">The log the writes are reported to.</param>
     public static void CardAtlas(
-        IGraphicsDevice device, SurfaceCacheCapture.Result cards, string into, IIgiLogger logger)
+        IGraphicsDevice device, SurfaceCacheCapture.Result cards, string into, IOpenIgiLogger logger)
     {
         try
         {

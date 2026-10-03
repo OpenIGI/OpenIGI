@@ -57,7 +57,7 @@ public sealed class GlobalDistanceField : IDisposable
     private const int FloatsPerInstance = 28;
 
     private readonly IGraphicsDevice _device;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly GlobalDistanceFieldSettings _settings;
     private readonly SceneDistanceField _scene;
     private readonly Vector3d _levelOrigin;
@@ -75,7 +75,7 @@ public sealed class GlobalDistanceField : IDisposable
 
     private GlobalDistanceField(
         IGraphicsDevice device,
-        IIgiLogger logger,
+        IOpenIgiLogger logger,
         GlobalDistanceFieldSettings settings,
         SceneDistanceField scene,
         Vector3d levelOrigin,
@@ -131,13 +131,13 @@ public sealed class GlobalDistanceField : IDisposable
         SceneDistanceField scene,
         DistanceFieldAtlas atlas,
         GlobalDistanceFieldSettings settings,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(atlas);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         if (!device.Capabilities.SupportsCompute)
         {
@@ -230,10 +230,10 @@ public sealed class GlobalDistanceField : IDisposable
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="device"/> is <see langword="null"/>.</exception>
-    public static bool ValidateShader(IGraphicsDevice device, IIgiLogger? logger = null)
+    public static bool ValidateShader(IGraphicsDevice device, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         if (!device.Capabilities.SupportsCompute)
         {

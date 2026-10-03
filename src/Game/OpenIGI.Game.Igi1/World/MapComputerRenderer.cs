@@ -36,7 +36,7 @@ internal sealed class MapComputerRenderer : IMapComputerPresenter
 
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Func<string, string> _resolveText;
     private readonly Dictionary<string, SpriteResource?> _sprites = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, BitmapTextRenderer?> _fonts = new(StringComparer.OrdinalIgnoreCase);
@@ -52,7 +52,7 @@ internal sealed class MapComputerRenderer : IMapComputerPresenter
     private bool _mapDragActive;
     private bool _disposed;
 
-    public MapComputerRenderer(IGraphicsDevice device, ResourceRegistry resources, IIgiLogger logger,
+    public MapComputerRenderer(IGraphicsDevice device, ResourceRegistry resources, IOpenIgiLogger logger,
         Func<string, string> resolveText)
     {
         _device = device;

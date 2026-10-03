@@ -36,7 +36,7 @@ internal static class HostConfiguration
     /// retail file, then defaults. The second of those is only ever read — the next save moves it out to
     /// the per-user location, so profiles made before this moved survive rather than appearing lost.
     /// </remarks>
-    public static GameConfig Load(VirtualFileSystem fileSystem, IIgiLogger logger)
+    public static GameConfig Load(VirtualFileSystem fileSystem, IOpenIgiLogger logger)
     {
         GameConfig config = Read(fileSystem, logger);
 
@@ -52,7 +52,7 @@ internal static class HostConfiguration
         return config;
     }
 
-    private static GameConfig Read(VirtualFileSystem fileSystem, IIgiLogger logger)
+    private static GameConfig Read(VirtualFileSystem fileSystem, IOpenIgiLogger logger)
     {
         string userPath = SettingsPaths.GetFilePath(FileName);
 
@@ -105,7 +105,7 @@ internal static class HostConfiguration
     /// <summary>Writes the configuration to the player's own file.</summary>
     /// <param name="configuration">The configuration to persist.</param>
     /// <param name="logger">The log the save is reported to.</param>
-    public static void Save(GameConfig configuration, IIgiLogger logger)
+    public static void Save(GameConfig configuration, IOpenIgiLogger logger)
     {
         string path = SettingsPaths.GetFilePath(FileName);
 

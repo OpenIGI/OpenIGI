@@ -70,11 +70,11 @@ public sealed class Igi2MissionCatalogue : IMissionCatalogue<MissionDescriptor>
 
     private readonly List<MissionDescriptor> _missions = [];
     private readonly Dictionary<int, MissionDescriptor> _byId = [];
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initialises a new instance of the <see cref="Igi2MissionCatalogue"/> class.</summary>
     /// <param name="logger">Where scan diagnostics go.</param>
-    public Igi2MissionCatalogue(IIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
+    public Igi2MissionCatalogue(IOpenIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
 
     /// <inheritdoc/>
     public IReadOnlyList<MissionDescriptor> Missions => _missions;

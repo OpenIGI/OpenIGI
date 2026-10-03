@@ -78,7 +78,7 @@ public sealed partial class GraphicsDevice : IGraphicsDevice
         in DisplayMode mode,
         double timestampPeriodNanoseconds = 1.0,
         bool captureFrames = false,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
 

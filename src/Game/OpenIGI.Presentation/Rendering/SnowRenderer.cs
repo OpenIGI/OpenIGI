@@ -31,7 +31,7 @@ public sealed class SnowRenderer : IDisposable
         NoHistory: true);
 
     private readonly IGraphicsDevice _device;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Vertex3D[] _vertices;
     private readonly ushort[] _indices;
     private readonly (float X, float Y, float Z)[] _seeds;
@@ -48,7 +48,7 @@ public sealed class SnowRenderer : IDisposable
     private float _alpha = 0.25f;
 
     /// <summary>Initializes the snowfall renderer.</summary>
-    public SnowRenderer(IGraphicsDevice device, IIgiLogger? logger = null, int particleCount = DefaultParticleCount)
+    public SnowRenderer(IGraphicsDevice device, IOpenIgiLogger? logger = null, int particleCount = DefaultParticleCount)
     {
         ArgumentNullException.ThrowIfNull(device);
 

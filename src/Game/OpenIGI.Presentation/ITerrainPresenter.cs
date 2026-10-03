@@ -91,7 +91,7 @@ public interface ITerrainPresenter : IDisposable
 public readonly record struct TerrainPresentationRequest(
     IGraphicsDevice Device,
     TerrainSurface Surface,
-    IIgiLogger Logger,
+    IOpenIgiLogger Logger,
     MaterialDetailPack? DetailMaps,
     IReadOnlyList<Core.Graphics.Bgra32[]>? DerivedDetail);
 
@@ -123,7 +123,7 @@ public readonly record struct GroundPresentationRequest(
     IGraphicsDevice Device,
     GameTask LevelRoot,
     ResourceRegistry Resources,
-    IIgiLogger Logger);
+    IOpenIgiLogger Logger);
 
 /// <remarks>
 /// <para>

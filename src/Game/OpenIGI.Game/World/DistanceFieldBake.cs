@@ -59,12 +59,12 @@ public sealed class DistanceFieldBake
         IEnumerable<WorldPlacement> placements,
         IWorkScheduler work,
         int resolution = MeshDistanceFieldBaker.DefaultResolution,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(placements);
         ArgumentNullException.ThrowIfNull(work);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         WorldPlacement[] snapshot = [.. placements];
 
         // The token is taken before the work starts, and the work captures the token rather than the
@@ -124,7 +124,7 @@ public sealed class DistanceFieldBake
         WorldPlacement[] snapshot,
         IWorkScheduler work,
         int resolution,
-        IIgiLogger log,
+        IOpenIgiLogger log,
         Action<Result?> done,
         CancellationToken token)
     {

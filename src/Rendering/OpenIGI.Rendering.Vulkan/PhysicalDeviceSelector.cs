@@ -34,12 +34,12 @@ internal sealed unsafe class PhysicalDeviceSelector
     private readonly Instance _instance;
     private readonly KhrSurface _khrSurface;
     private readonly SurfaceKHR _surface;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initialises a new instance of the <see cref="PhysicalDeviceSelector"/> class.</summary>
     /// <param name="instance">The instance and its surface to select against.</param>
     /// <param name="logger">Where to report the choice made.</param>
-    public PhysicalDeviceSelector(VulkanInstance instance, IIgiLogger logger)
+    public PhysicalDeviceSelector(VulkanInstance instance, IOpenIgiLogger logger)
     {
         ArgumentNullException.ThrowIfNull(instance);
         _vk = instance.Vk;

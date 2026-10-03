@@ -217,7 +217,7 @@ public interface IWorldPresenter : IDisposable
 public readonly record struct WorldPresentationRequest(
     IGraphicsDevice Device,
     ResourceRegistry Resources,
-    IIgiLogger Logger);
+    IOpenIgiLogger Logger);
 
 /// <summary>Draws a title's skinned characters.</summary>
 public interface ICharacterPresenter

@@ -225,104 +225,245 @@ internal sealed partial class GameHost
             });
     }
 
-    /// <summary>Reports what a scan of the overrides folder found.</summary>
+    /// <summary>Reports what a scan of the content layers found.</summary>
     /// <param name="scan">The scan result.</param>
     private void ReportOverrideScan(ResourceOverrides.ScanResult scan)
     {
-        if (_overrides.Root is null)
-        {
-            return;
-        }
+        IReadOnlyList<ResourceOverrides.LayerInfo> layers = _overrides.Layers;
 
         if (scan.Total == 0 && !scan.Moved)
         {
-            _logger.Debug("Overrides", $"No overrides in '{_overrides.Root}'.");
+            _logger.Debug("Overrides", $"No overrides in {layers.Count} content layer(s).");
             return;
         }
 
-        _logger.Information("Overrides", $"{scan} in '{_overrides.Root}'.");
+        _logger.Information("Overrides", $"{scan} across {layers.Count} content layer(s).");
+
+        foreach (ResourceOverrides.LayerInfo layer in layers)
+        {
+            _logger.Information("Overrides", "  " + Describe(layer));
+        }
     }
 
-    /// <summary>Registers the commands that manage the overrides folder.</summary>
+    private static string Describe(ResourceOverrides.LayerInfo layer) =>
+        $"{(layer.Enabled ? "ON " : "OFF")}  {layer.Name} [{layer.Id}]: {layer.Files} file(s), wins {layer.Wins}"
+            + (layer.Root is null ? string.Empty : $"  ({layer.Root})");
+
+    /// <summary>Brings what is loaded up to date with the content layers, after anything changed them.</summary>
+    /// <param name="report">Receives a sentence on what was reloaded.</param>
+    /// <returns>How many registered resources were swapped.</returns>
+    /// <remarks>
+    /// The one path F8, a rescan and a layer switched on or off all take. Reloading the RESOURCES is only
+    /// half of it: everything already decoded from them -- an uploaded texture, the ground, the surface
+    /// cache's baked diffuse -- holds its own copy, so those are rebuilt too, and only when something
+    /// actually moved, because the reload is a visible hitch.
+    /// </remarks>
+    private int ApplyOverrideChange(out string report)
+    {
+        int swapped = _resources.ReapplyOverrides();
+        report = $"{swapped} registered resource(s) swapped, {_resources.OverriddenCount} now standing in.";
+
+        if (swapped > 0)
+        {
+            _world?.ReloadTextures();
+            report += ReloadTerrainTiles() ? " Textures and ground reloaded." : " Textures reloaded.";
+
+            // The card atlas has the diffuse baked into it, so the indirect light is still bouncing off
+            // the old pixels until it is captured again. Discarding it re-converges the GI with it.
+            DiscardSurfaceCache();
+        }
+
+        return swapped;
+    }
+
+    /// <summary>Registers the commands that manage the content layers.</summary>
     /// <param name="console">The console to register with.</param>
     /// <remarks>
     /// <para>
-    /// An overrides folder that only took effect on a cold launch would make replacing an asset a
-    /// compile-run-look loop with a whole game start in the middle of it. Rescanning is cheap -- a
-    /// directory walk and a byte compare against what is registered -- so the loop becomes: save the
-    /// file, alt-tab, type the command.
+    /// Content that only took effect on a cold launch would make replacing an asset a compile-run-look
+    /// loop with a whole game start in the middle of it. Rescanning is cheap -- a directory walk and a byte
+    /// compare against what is registered -- and switching a layer is cheaper still, so the loop becomes:
+    /// save the file, alt-tab, type the command.
     /// </para>
     /// <para>
-    /// Reloading the RESOURCES is only half of it. Everything already decoded from them -- an uploaded
-    /// texture, a built mesh -- holds its own copy, so the textures are reloaded too; that is the same
-    /// path r_hd uses to swap the upscaled pack in and out, and it is why this costs a hitch.
+    /// <c>overrides</c> is the older command and keeps its meaning; <c>content</c> is the one that knows
+    /// there is more than one layer.
     /// </para>
     /// </remarks>
     private void RegisterOverrideCommands(ConsoleSystem console)
     {
         console.Commands.Add(
             "overrides",
-            "Rescans the overrides folder and reloads whatever changed. No argument reports what is there.",
+            "Rescans the content layers and reloads whatever changed. 'list' reports what is there.",
             context =>
             {
-                if (_overrides.Root is null)
-                {
-                    context.Warn("No installation directory, so there is nowhere for an overrides folder to be.");
-                    return;
-                }
-
                 if (context.Count > 0 && context[0] is "list")
                 {
-                    // To the log as well as the scrollback: a headless -runat run has no scrollback, and
-                    // this is exactly the command somebody reaches for when a pack is not taking effect.
-                    _logger.Information(
-                        "Overrides",
-                        $"{_overrides.Count} override(s) under '{_overrides.Root}'; "
-                            + $"{_resources.OverriddenCount} standing in for a shipped asset.");
-
-                    if (!_overrides.IsActive)
-                    {
-                        context.Print($"No overrides in '{_overrides.Root}'.");
-                        return;
-                    }
-
-                    foreach (string listed in _overrides.Paths.Order(StringComparer.OrdinalIgnoreCase).Take(10))
-                    {
-                        _logger.Information("Overrides", $"  {listed}");
-                    }
-
-                    foreach (string path in _overrides.Paths.Order(StringComparer.OrdinalIgnoreCase).Take(40))
-                    {
-                        context.Print($"  {path}");
-                    }
-
-                    if (_overrides.Count > 40)
-                    {
-                        context.Print($"  ... and {_overrides.Count - 40} more.");
-                    }
-
+                    ListOverrides(context);
                     return;
                 }
 
-                ResourceOverrides.ScanResult scan = _overrides.Rescan();
-                int swapped = _resources.ReapplyOverrides();
-
-                string report =
-                    $"{scan}; {swapped} registered resource(s) swapped, {_resources.OverriddenCount} now standing in.";
-
-                // Only when something actually moved: the reload discards and re-uploads every texture in
-                // the level, which is a visible hitch and is not worth paying to be told nothing changed.
-                if (swapped > 0)
-                {
-                    _world?.ReloadTextures();
-                    report += ReloadTerrainTiles() ? " Textures and ground reloaded." : " Textures reloaded.";
-                    DiscardSurfaceCache();
-                }
-
-                context.Print(report);
-                _logger.Information("Overrides", report);
+                Rescan(context);
             },
             "[list]");
+
+        console.Commands.Add(
+            "content",
+            "Lists the content layers (top wins), their conflicts, and switches a layer on or off live.",
+            context =>
+            {
+                string verb = context.Count > 0 ? context[0].ToLowerInvariant() : string.Empty;
+
+                switch (verb)
+                {
+                    case "":
+                    case "list":
+                        ListLayers(context);
+                        break;
+
+                    case "conflicts":
+                        ListConflicts(context, context.Count > 1 ? context[1] : null);
+                        break;
+
+                    case "rescan":
+                        Rescan(context);
+                        break;
+
+                    case "on":
+                    case "off":
+                    case "toggle":
+                        SwitchLayer(context, verb, context.Count > 1 ? context[1] : string.Empty);
+                        break;
+
+                    default:
+                        context.Warn($"Unknown content command '{context[0]}'.");
+                        break;
+                }
+            },
+            "[list | conflicts [filter] | on <#|id> | off <#|id> | toggle <#|id> | rescan]");
+    }
+
+    private void ListLayers(ConsoleCommandContext context)
+    {
+        IReadOnlyList<ResourceOverrides.LayerInfo> layers = _overrides.Layers;
+        if (layers.Count == 0)
+        {
+            context.Print("No content layers.");
+            return;
+        }
+
+        context.Print(
+            $"{layers.Count} content layer(s), top wins; {_overrides.Count} path(s) overridden"
+                + (_overrides.Bypassed ? " -- all bypassed (F8 / r_overrides 0)." : "."));
+
+        for (int index = 0; index < layers.Count; index++)
+        {
+            string line = $"  {index + 1,2}. {Describe(layers[index])}";
+            context.Print(line);
+            _logger.Information("Overrides", line);
+        }
+    }
+
+    private void ListConflicts(ConsoleCommandContext context, string? filter)
+    {
+        IReadOnlyList<ResourceOverrides.LayerInfo> layers = _overrides.Layers;
+        IReadOnlyList<ResourceOverrides.Conflict> conflicts = _overrides.Conflicts();
+
+        if (!string.IsNullOrEmpty(filter))
+        {
+            conflicts = [.. conflicts.Where(conflict => conflict.Path.Contains(filter, StringComparison.OrdinalIgnoreCase))];
+        }
+
+        context.Print($"{conflicts.Count} path(s) carried by more than one enabled layer.");
+
+        foreach (ResourceOverrides.Conflict conflict in conflicts.Take(40))
+        {
+            string covered = string.Join(", ", conflict.Covered.Select(layer => layers[layer].Name));
+            string line = $"  {conflict.Path}  <- {layers[conflict.Winner].Name} (covers {covered})";
+            context.Print(line);
+            _logger.Information("Overrides", line);
+        }
+
+        if (conflicts.Count > 40)
+        {
+            context.Print($"  ... and {conflicts.Count - 40} more.");
+        }
+    }
+
+    private void SwitchLayer(ConsoleCommandContext context, string verb, string which)
+    {
+        int index = _overrides.Find(which);
+        if (index < 0)
+        {
+            context.Warn($"No content layer '{which}'. 'content' lists them.");
+            return;
+        }
+
+        ResourceOverrides.LayerInfo layer = _overrides.Layers[index];
+        bool enabled = verb switch
+        {
+            "on" => true,
+            "off" => false,
+            _ => !layer.Enabled,
+        };
+
+        _overrides.SetEnabled(layer.Id, enabled, out ResourceOverrides.ScanResult result);
+        ApplyOverrideChange(out string reload);
+
+        string report = $"{layer.Name} {(enabled ? "on" : "off")}: {result}; {reload}";
+        if (_overrides.Bypassed)
+        {
+            report += " Every layer is bypassed until F8 / r_overrides 1.";
+        }
+
+        context.Print(report);
+        _logger.Information("Overrides", report);
+    }
+
+    private void Rescan(ConsoleCommandContext context)
+    {
+        ResourceOverrides.ScanResult scan = _overrides.Rescan();
+        ApplyOverrideChange(out string reload);
+
+        string report = $"{scan}; {reload}";
+        context.Print(report);
+        _logger.Information("Overrides", report);
+    }
+
+    private void ListOverrides(ConsoleCommandContext context)
+    {
+        // To the log as well as the scrollback: a headless -runat run has no scrollback, and this is
+        // exactly the command somebody reaches for when a pack is not taking effect.
+        _logger.Information(
+            "Overrides",
+            $"{_overrides.Count} override(s) across {_overrides.Layers.Count} layer(s); "
+                + $"{_resources.OverriddenCount} standing in for a shipped asset.");
+
+        if (!_overrides.IsActive)
+        {
+            context.Print(_overrides.Bypassed ? "Overrides are bypassed (F8)." : "No overrides in any enabled layer.");
+            return;
+        }
+
+        IReadOnlyList<ResourceOverrides.LayerInfo> layers = _overrides.Layers;
+        string[] paths = [.. _overrides.Paths.Order(StringComparer.OrdinalIgnoreCase)];
+
+        for (int index = 0; index < Math.Min(paths.Length, 40); index++)
+        {
+            int layer = _overrides.LayerOf(paths[index]);
+            string line = layer < 0 ? $"  {paths[index]}" : $"  {paths[index]}  <- {layers[layer].Name}";
+            context.Print(line);
+
+            if (index < 10)
+            {
+                _logger.Information("Overrides", line);
+            }
+        }
+
+        if (paths.Length > 40)
+        {
+            context.Print($"  ... and {paths.Length - 40} more.");
+        }
     }
 
     /// <summary>Puts the ground back up from whatever the resource registry now hands over.</summary>

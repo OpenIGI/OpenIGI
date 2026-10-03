@@ -33,7 +33,7 @@ public sealed class SoundSystem : IDisposable
     private readonly IAudioDevice _device;
     private readonly SoundBank _bank;
     private readonly VirtualFileSystem _fileSystem;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Dictionary<string, AudioBufferHandle> _buffers = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (AudioFormat Format, byte[] Pcm)> _external = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, AudioBufferHandle> _externalBuffers = new(StringComparer.OrdinalIgnoreCase);
@@ -46,7 +46,7 @@ public sealed class SoundSystem : IDisposable
     /// <param name="fileSystem">Used to reopen streamed sounds, which the bank holds only a path for.</param>
     /// <param name="logger">Where to report a name nothing answers to.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public SoundSystem(IAudioDevice device, SoundBank bank, VirtualFileSystem fileSystem, IIgiLogger? logger = null)
+    public SoundSystem(IAudioDevice device, SoundBank bank, VirtualFileSystem fileSystem, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(bank);

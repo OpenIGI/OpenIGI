@@ -113,6 +113,35 @@ public abstract class Control : UiElement, IFocusable
     /// </remarks>
     public virtual void ActivateAt(UiVec2 point) => Activate();
 
+    /// <summary>Asks the control whether a press at a point starts a drag it wants every move of.</summary>
+    /// <param name="point">Where the left button went down, in pixels.</param>
+    /// <returns>
+    /// <see langword="true"/> to hold the pointer until the button is released: the screen then sends
+    /// <see cref="PointerDragged"/> each frame and <see cref="PointerReleased"/> at the end, and neither
+    /// activates the control nor moves hover or focus while it is held.
+    /// </returns>
+    /// <remarks>
+    /// False by default, which keeps a click a click. A drag handle -- something a list is reordered by --
+    /// says yes, because its whole job happens between the press and the release.
+    /// </remarks>
+    public virtual bool CapturesPointer(UiVec2 point) => false;
+
+    /// <summary>Tells a control holding the pointer where it is now; sent every frame the button is down.</summary>
+    /// <param name="point">The pointer position in pixels.</param>
+    public virtual void PointerDragged(UiVec2 point)
+    {
+    }
+
+    /// <summary>Tells a control holding the pointer that the hold is over.</summary>
+    /// <param name="point">The pointer position in pixels.</param>
+    /// <param name="cancelled">
+    /// <see langword="true"/> when the hold was abandoned (Escape or Back) rather than released, so whatever
+    /// the drag was doing should be undone.
+    /// </param>
+    public virtual void PointerReleased(UiVec2 point, bool cancelled)
+    {
+    }
+
     /// <summary>Sets whether the control is being pressed, for its press animation.</summary>
     /// <param name="pressed">Whether the control is pressed.</param>
     public void SetPressed(bool pressed) => Visual.SetPressed(pressed && IsEnabled);

@@ -58,7 +58,7 @@ public sealed class PlayerCamera
     public const double UnitsPerMetre = 4096.0;
 
     private readonly PlayerBody _body = new();
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly PlayerInputState _input = new();
     private readonly IgiRandom _random = new();
     private readonly Mp5SightZoom _sightZoom = new();
@@ -112,7 +112,7 @@ public sealed class PlayerCamera
 
     /// <summary>Initializes the player camera.</summary>
     /// <param name="logger">Where optional collision diagnostics are written.</param>
-    public PlayerCamera(IIgiLogger? logger = null)
+    public PlayerCamera(IOpenIgiLogger? logger = null)
     {
         _logger = logger ?? NullLogger.Instance;
     }
@@ -2373,8 +2373,8 @@ public sealed class PlayerCamera
         {
             WorldInteraction? fence = _interactions?.FindElectrifiedFenceNear(nearest.Position);
             _logger.Information(
-                "Player",
-                $"[fence] wall contact task={(fence is null ? "-" : fence.Task.Id.ToString(System.Globalization.CultureInfo.InvariantCulture))} "
+                "Player.Fence",
+                $"wall contact task={(fence is null ? "-" : fence.Task.Id.ToString(System.Globalization.CultureInfo.InvariantCulture))} "
                     + $"powered={(fence?.IsElectrified == true ? "true" : "false")} "
                     + $"contact={(fence is null ? "miss" : "candidate")} "
                     + $"player=({_body.Position.X:F0},{_body.Position.Y:F0},{_body.Position.Z:F0})");

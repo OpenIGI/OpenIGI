@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Input;
+using OpenIGI.Launcher.Pages;
 using OpenIGI.Launcher.Services;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.UI;
@@ -60,11 +62,18 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     private readonly IWindow _window;
     private readonly InputState _input = new();
     private readonly ScreenStack _stack = new() { PointerSuppressed = true };
-    private readonly LauncherModel _model = new();
+    private readonly LauncherLog _log = LauncherLog.Start();
+    private readonly LauncherModel _model;
     private readonly SkiaImageStore _images = new();
     private readonly Dictionary<string, BackdropPicture?> _pictures = new(StringComparer.Ordinal);
     private readonly SkiaFontCache _fonts = new();
     private readonly DesktopNotifier _notifier;
+
+    // The notification-area icon, on Windows: the way back to a launcher that went to the tray, and where its
+    // notifications come from. Elsewhere the launcher minimises to the Dock or the taskbar instead.
+    private readonly TrayIcon? _tray;
+    private bool _exiting;
+    private UiTheme? _theme;
 
     private IInputContext? _inputContext;
     private GL? _gl;
@@ -102,6 +111,7 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
 
     public LauncherApp()
     {
+        _model = new LauncherModel(_log);
         GlfwWindowing.RegisterPlatform();
         GlfwInput.RegisterPlatform();
 
@@ -128,7 +138,6 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
             MarkActive();
         };
         _window.StateChanged += _ => MarkActive();
-        _window.Closing += ReleaseGraphics;
 
         // Coming back to the window is when a player expects to see a release that came out meanwhile; while
         // it is away, a release is announced by a desktop notification instead.
@@ -142,8 +151,24 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
             }
         };
 
-        _notifier = new DesktopNotifier(() => _window.Native?.Win32?.Hwnd ?? 0);
+        if (OperatingSystem.IsWindows())
+        {
+            // Without a tray icon the launcher still runs; going to the tray then minimises instead.
+            try
+            {
+                _tray = new TrayIcon("OpenIGI Launcher", [new TrayMenuItem("Open OpenIGI Launcher", ShowFromTray), new TrayMenuItem("Exit", Exit)]);
+                _tray.Activated += (_, _) => ShowFromTray();
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or EntryPointNotFoundException or DllNotFoundException)
+            {
+                _log.Logger.Warning("Launcher", $"The notification-area icon could not be created: {ex.Message}", ex);
+            }
+        }
+
+        _notifier = new DesktopNotifier(_tray);
         _model.Notify = _notifier.Show;
+        _model.HideRequested += (_, _) => HideToTray();
+        _model.ShowRequested += (_, _) => ShowFromTray();
     }
 
     /// <summary>How long after the last thing that changed the window keeps drawing every frame.</summary>
@@ -181,6 +206,7 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     public unsafe void Run()
     {
         _window.Initialize();
+        WindowIcon.Apply(_window);
         Glfw glfw = GlfwProvider.GLFW.Value;
         MarkActive();
 
@@ -209,6 +235,13 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
                 nextFrame = Stopwatch.GetTimestamp();
             }
 
+            // Closed by the system (Alt+F4, the taskbar) rather than by Exit: the close button's choice decides.
+            if (_window.IsClosing && !_exiting)
+            {
+                _window.IsClosing = false;
+                Close();
+            }
+
             if (_window.IsClosing)
             {
                 break;
@@ -228,6 +261,7 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         }
 
         _window.DoEvents();
+        ReleaseGraphics();
         _window.Reset();
     }
 
@@ -240,9 +274,92 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     public void ToggleMaximize() =>
         _window.WindowState = _window.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 
-    public void Close() => _window.Close();
+    /// <summary>Does what the close button is set to: asks, goes to the tray, or exits.</summary>
+    public void Close()
+    {
+        switch (_model.Settings.CloseButton)
+        {
+            case CloseAction.MinimizeToTray:
+                HideToTray();
+                break;
+            case CloseAction.Exit:
+                Exit();
+                break;
+            default:
+                if (_theme is not null && _stack.Top is not CloseDialog)
+                {
+                    _stack.Push(new CloseDialog(_theme, _tray is not null, OnCloseChosen), animate: true);
+                    MarkActive();
+                }
 
-    public string ClipboardText => _inputContext?.Keyboards.Count > 0 ? _inputContext.Keyboards[0].ClipboardText ?? string.Empty : string.Empty;
+                break;
+        }
+    }
+
+    /// <summary>Exits the launcher, whatever the close button is set to.</summary>
+    public void Exit()
+    {
+        _exiting = true;
+        _window.Close();
+    }
+
+    /// <summary>Hides the window in the notification area, or minimises it where there is none.</summary>
+    public void HideToTray()
+    {
+        if (_tray is null)
+        {
+            Minimize();
+            return;
+        }
+
+        _window.IsVisible = false;
+        _model.WindowFocused = false;
+    }
+
+    /// <summary>Brings the window back from the tray, or from being minimised, and to the front.</summary>
+    public void ShowFromTray()
+    {
+        _window.IsVisible = true;
+        if (_window.WindowState == WindowState.Minimized)
+        {
+            _window.WindowState = WindowState.Normal;
+        }
+
+        _window.Focus();
+        MarkActive();
+    }
+
+    private void OnCloseChosen(CloseAction action, bool remember)
+    {
+        if (remember)
+        {
+            _model.ChangeSettings(s => s.CloseButton = action);
+        }
+
+        if (action == CloseAction.Exit)
+        {
+            Exit();
+        }
+        else
+        {
+            HideToTray();
+        }
+    }
+
+    public string ClipboardText
+    {
+        get => _inputContext?.Keyboards.Count > 0 ? _inputContext.Keyboards[0].ClipboardText ?? string.Empty : string.Empty;
+        set
+        {
+            if (_inputContext?.Keyboards.Count > 0)
+            {
+                _inputContext.Keyboards[0].ClipboardText = value;
+            }
+        }
+    }
+
+    public Task<string?> PickFolder(string title, string? initial) =>
+        FolderPicker.PickAsync(title, initial, _window.Native?.Win32?.Hwnd ?? 0);
 
     public BackdropPicture? Picture(string path)
     {
@@ -260,13 +377,18 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     public void Dispose()
     {
         ReleaseGraphics();
-        _notifier.Dispose();
+        if (OperatingSystem.IsWindows())
+        {
+            _tray?.Dispose();
+        }
+
         _model.Dispose();
         _typography?.Dispose();
         _fonts.Dispose();
         _images.Dispose();
         _inputContext?.Dispose();
         _window.Dispose();
+        _log.Dispose();
     }
 
     private void OnLoad()
@@ -281,13 +403,8 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
             ?? throw new InvalidOperationException("Skia could not create a GPU context on the window.");
 
         _typography = LauncherFonts.Load();
-        UiTheme theme = _typography.CreateTheme();
-
-        // The launcher's settings rows are the design's taller, ruled kind, with a larger caption.
-        UiTheme rows = _typography.CreateTheme();
-        rows.RowHeight = 54f;
-        rows.RowDividers = true;
-        rows.BodyTextSize = 18f;
+        (UiTheme theme, UiTheme rows) = CreateThemes(_typography);
+        _theme = theme;
 
         BackdropPicture? picture = LauncherBackdrop.LoadPicture(_images);
         _screen = new LauncherScreen(theme, rows, _model, this, picture);
@@ -420,16 +537,37 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         _gr.Flush();
     }
 
+    /// <summary>The launcher's two themes: the page's, and the settings rows' taller, ruled kind with a larger caption.</summary>
+    /// <param name="typography">The loaded faces.</param>
+    /// <returns>The page theme and the row theme.</returns>
+    internal static (UiTheme Page, UiTheme Rows) CreateThemes(IgiTypography typography)
+    {
+        UiTheme page = typography.CreateTheme();
+        UiTheme rows = typography.CreateTheme();
+        rows.RowHeight = 54f;
+        rows.RowDividers = true;
+        rows.BodyTextSize = 18f;
+        return (page, rows);
+    }
+
+    /// <summary>The layout for a framebuffer: the display's scale, whatever the window's size.</summary>
+    /// <param name="width">The framebuffer's width in pixels.</param>
+    /// <param name="height">The framebuffer's height in pixels.</param>
+    /// <param name="contentScale">The display's scale.</param>
+    /// <returns>The layout context.</returns>
+    internal static LayoutContext Layout(float width, float height, float contentScale)
+    {
+        var fitted = new LayoutContext(width, height, DesignSize, match: 0.5f);
+        return new LayoutContext(width, height, DesignSize, match: 0.5f, userScale: contentScale / fitted.Scale);
+    }
+
     private LayoutContext Layout()
     {
         // A desktop window, not a game screen: the interface stays at the display's scale whatever the
         // window's size, and a larger window gives the layout more room rather than larger type. The context
         // fits the design to the window, so the user scale undoes that fit and applies the display's instead.
         Vector2D<int> size = _window.FramebufferSize;
-        float width = MathF.Max(1, size.X);
-        float height = MathF.Max(1, size.Y);
-        var fitted = new LayoutContext(width, height, DesignSize, match: 0.5f);
-        return new LayoutContext(width, height, DesignSize, match: 0.5f, userScale: _contentScale / fitted.Scale);
+        return Layout(MathF.Max(1, size.X), MathF.Max(1, size.Y), _contentScale);
     }
 
     private void EnsureSurface(Vector2D<int> size)

@@ -31,7 +31,7 @@ namespace OpenIGI.Host.Menu;
 public sealed class MissionWarmer(
     string gamePath,
     IMissionCatalogue<MissionDescriptor> missions,
-    IIgiLogger logger,
+    IOpenIgiLogger logger,
     IWorkScheduler work) : IDisposable
 {
     private readonly Lock _gate = new();

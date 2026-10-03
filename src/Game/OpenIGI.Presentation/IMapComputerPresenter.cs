@@ -176,7 +176,7 @@ public interface ITacticalComputerPresenter : IDisposable
 public readonly record struct MapComputerPresentationRequest(
     IGraphicsDevice Device,
     ResourceRegistry Resources,
-    IIgiLogger Logger,
+    IOpenIgiLogger Logger,
     Func<string, string> ResolveText);
 
 /// <summary>What a title needs in order to build the catalogue of places its computer marks.</summary>

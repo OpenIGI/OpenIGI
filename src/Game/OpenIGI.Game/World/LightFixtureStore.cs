@@ -64,12 +64,12 @@ public static partial class LightFixtureStore
         string path,
         IReadOnlyList<LightFixture> fixtures,
         LampDetector.Lamps lamps = default,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         ArgumentNullException.ThrowIfNull(fixtures);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         try
         {
@@ -119,11 +119,11 @@ public static partial class LightFixtureStore
         string path,
         out IReadOnlyList<LightFixture> fixtures,
         out LampDetector.Lamps lamps,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         fixtures = [];
         lamps = LampDetector.Lamps.None;
 

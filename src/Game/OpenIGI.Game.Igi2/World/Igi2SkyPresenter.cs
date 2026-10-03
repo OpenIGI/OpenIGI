@@ -42,7 +42,7 @@ public sealed class Igi2SkyPresenter : ISkyPresenter
     public const float UnitsPerPosition = (float)Game.World.WorldScene.UnitsPerMetre;
 
     private readonly IGraphicsDevice _device;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Layer[] _layers;
     private readonly Vertex3D[] _grid = new Vertex3D[SkyCloudPlane.VertexCount];
     private readonly ushort[] _gridIndices;
@@ -67,7 +67,7 @@ public sealed class Igi2SkyPresenter : ISkyPresenter
         IGraphicsDevice device,
         FlatSkyTask sky,
         Func<string, TextureHandle>? textures = null,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(sky);

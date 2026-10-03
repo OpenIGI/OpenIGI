@@ -33,14 +33,14 @@ public sealed class GiBakeCache
 
     private readonly string _writeDirectory;
     private readonly IReadOnlyList<string> _readDirectories;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initialises a new instance of the <see cref="GiBakeCache"/> class.</summary>
     /// <param name="writeDirectory">Where newly-baked volumes are written (created on first write).</param>
     /// <param name="readDirectories">Directories searched for a cached volume, in order; the first hit wins.</param>
     /// <param name="logger">Where to report a load or save failure.</param>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    public GiBakeCache(string writeDirectory, IReadOnlyList<string> readDirectories, IIgiLogger? logger = null)
+    public GiBakeCache(string writeDirectory, IReadOnlyList<string> readDirectories, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(writeDirectory);
         ArgumentNullException.ThrowIfNull(readDirectories);
@@ -54,7 +54,7 @@ public sealed class GiBakeCache
     /// <param name="userDirectory">The writable per-user directory.</param>
     /// <param name="logger">Where to report a failure.</param>
     /// <returns>The cache.</returns>
-    public static GiBakeCache Create(string shippedDirectory, string userDirectory, IIgiLogger? logger = null) =>
+    public static GiBakeCache Create(string shippedDirectory, string userDirectory, IOpenIgiLogger? logger = null) =>
         new(userDirectory, [shippedDirectory, userDirectory], logger);
 
     /// <summary>Loads a cached volume for a mission, if one matching the bake inputs is present.</summary>

@@ -239,12 +239,12 @@ public static class LampDetector
         WorldScene scene,
         ResourceRegistry resources,
         IReadOnlyList<LampManifest.Entry>? named = null,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(resources);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         Dictionary<string, TextureLook> looks = new(StringComparer.OrdinalIgnoreCase);
         HashSet<string> textures = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, float> subMeshes = new(StringComparer.OrdinalIgnoreCase);
@@ -266,7 +266,7 @@ public static class LampDetector
         HashSet<string> textures,
         Dictionary<string, float> subMeshes,
         IReadOnlyList<LampManifest.Entry> named,
-        IIgiLogger log)
+        IOpenIgiLogger log)
     {
         Dictionary<MefModel, MeshGeometry?> built = [];
         HashSet<string> tested = new(StringComparer.OrdinalIgnoreCase);

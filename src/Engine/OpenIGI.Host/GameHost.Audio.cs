@@ -1658,8 +1658,8 @@ internal sealed partial class GameHost
                 if (sounding && _reportedSirenFailures.Add(speaker))
                 {
                     _logger.Warning(
-                        "Audio",
-                        $"[alarm] voice {voice.Value} for {speaker.Task.Name} ended while its condition remained true; restarting.");
+                        "Audio.Alarm",
+                        $"voice {voice.Value} for {speaker.Task.Name} ended while its condition remained true; restarting.");
                 }
 
                 AudioVoiceHandle started = _sounds.PlayDefinition(
@@ -1671,8 +1671,8 @@ internal sealed partial class GameHost
                 if (!sounding)
                 {
                     _logger.Information(
-                        "Audio",
-                        $"[alarm] start {speaker.Task.Name}: sound='{speaker.SirenSound}', voice={started.Value}, "
+                        "Audio.Alarm",
+                        $"start {speaker.Task.Name}: sound='{speaker.SirenSound}', voice={started.Value}, "
                             + $"playing={_sounds.IsPlaying(started)}, position={speaker.PositionUnits}, "
                             + $"condition='{speaker.AlarmExpression}'.");
                 }
@@ -1681,8 +1681,8 @@ internal sealed partial class GameHost
                     && _reportedSirenFailures.Add(speaker))
                 {
                     _logger.Warning(
-                        "Audio",
-                        $"[alarm] '{speaker.SirenSound}' failed to produce a playing voice for {speaker.Task.Name}.");
+                        "Audio.Alarm",
+                        $"'{speaker.SirenSound}' failed to produce a playing voice for {speaker.Task.Name}.");
                 }
             }
             else if (!on && sounding)
@@ -1691,8 +1691,8 @@ internal sealed partial class GameHost
                 _sirenVoices.Remove(speaker);
                 _reportedSirenFailures.Remove(speaker);
                 _logger.Information(
-                    "Audio",
-                    $"[alarm] stop {speaker.Task.Name}: voice={voice.Value}, condition='{speaker.AlarmExpression}'.");
+                    "Audio.Alarm",
+                    $"stop {speaker.Task.Name}: voice={voice.Value}, condition='{speaker.AlarmExpression}'.");
             }
         }
     }

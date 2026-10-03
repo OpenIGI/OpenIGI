@@ -1,3 +1,5 @@
+using OpenIGI.Core.Content;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Launcher.Services;
 using OpenIGI.Releases;
@@ -53,22 +55,65 @@ internal sealed class ContentEntry
     public string? ThumbnailPath { get; set; }
 }
 
+/// <summary>One entry of the selected game's load order, as the Content page shows it.</summary>
+internal sealed class LoadOrderItem
+{
+    /// <summary>Gets the entry's id: a pack id, or <see cref="ContentLayerSpec.LocalId"/>.</summary>
+    public required string Id { get; init; }
+
+    /// <summary>Gets the pack, or <see langword="null"/> for the game folder's own overrides.</summary>
+    public ContentEntry? Entry { get; init; }
+
+    /// <summary>Gets a value indicating whether this is the game folder's own overrides folder.</summary>
+    public bool IsLocal => Entry is null;
+
+    /// <summary>Gets or sets whether the game is started with it.</summary>
+    public bool Enabled { get; set; }
+
+    /// <summary>Gets or sets, for the local entry, the folder; <see langword="null"/> while the game's folder is unknown.</summary>
+    public string? Folder { get; set; }
+
+    /// <summary>Gets or sets, for the local entry, how many files the folder holds.</summary>
+    public int LocalFiles { get; set; }
+
+    /// <summary>Gets or sets, for the local entry, the folder's size in bytes.</summary>
+    public long LocalBytes { get; set; }
+
+    /// <summary>Gets or sets where its files overlap the other enabled entries.</summary>
+    public ContentConflict Conflict { get; set; } = ContentConflict.None;
+}
+
 /// <content>The optional content packs: listing them, installing, updating, verifying and removing them.</content>
 internal sealed partial class LauncherModel
 {
     private const string ContentFolder = "content";
     private const string ListingFile = "listing.json";
     private const string ThumbnailFolder = ".thumbnails";
+    private const string ProfileFile = "profile.json";
+
+    // Where mods will be installed beside content, once there is a mod loader. Kept apart on purpose: content
+    // is asset overlays the game stacks through its overrides; mods are code, with their own manifest, profile
+    // and loader. See "Content packs and mods" in CONTRIBUTING.md.
+    internal const string ModsFolder = "mods";
 
     private readonly ContentFeedClient _contentClient;
     private readonly List<ContentEntry> _packs = [];
     private readonly Dictionary<string, ContentManifest> _targets = new(StringComparer.Ordinal);
     private readonly HashSet<string> _busy = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, LocalListing> _localListings = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<LoadOrderItem> _loadOrder = [];
+    private readonly List<ContentEntry> _available = [];
     private ContentIndex? _contentIndex;
     private bool _checkingContent;
 
     /// <summary>Gets every pack: the ones the service lists and the ones installed, by title.</summary>
     public IReadOnlyList<ContentEntry> Packs => _packs;
+
+    /// <summary>Gets the selected game's load order, highest priority first: its installed packs and its own overrides folder.</summary>
+    public IReadOnlyList<LoadOrderItem> LoadOrder => _loadOrder;
+
+    /// <summary>Gets the selected game's packs that are offered and not installed.</summary>
+    public IReadOnlyList<ContentEntry> AvailableContent => _available;
 
     /// <summary>Installs a pack, updates it to its newest version, or repairs the files a verify found damaged.</summary>
     /// <param name="id">The pack.</param>
@@ -76,21 +121,21 @@ internal sealed partial class LauncherModel
     {
         if (Find(id) is not { } entry || _contentIndex is not { } index)
         {
-            Problem = "The content list has not been fetched yet.";
+            Report("The content list has not been fetched yet.");
             Changed();
             return;
         }
 
         if (Job is { } running && !(running.Paused && running.ContentId == id))
         {
-            Problem = "Another download is running; this one can start when it is done.";
+            Report("Another download is running; this one can start when it is done.");
             Changed();
             return;
         }
 
         if (_running is not null)
         {
-            Problem = "Close the game first: it is reading the pack's files.";
+            Report("Close the game first: it is reading the pack's files.");
             Changed();
             return;
         }
@@ -122,10 +167,7 @@ internal sealed partial class LauncherModel
                     entry.Installed = installed;
                     entry.Damaged = new HashSet<string>();
                     entry.DownloadBytes = 0;
-                    if (!Settings.Content.ContainsKey(id))
-                    {
-                        ChangeSettings(s => s.Content[id] = true);
-                    }
+                    ChangeSettings(s => ContentLoadOrder.AddInstalled(OrderFor(s, pack.Game), id));
 
                     Job = null;
                     Recompute();
@@ -143,7 +185,7 @@ internal sealed partial class LauncherModel
                 _results.Enqueue(() =>
                 {
                     Job = null;
-                    Problem = $"{pack.Title} could not be installed: {ex.Message}";
+                    Report($"{pack.Title} could not be installed: {ex.Message}", ex);
                     Recompute();
                 });
             }
@@ -162,7 +204,7 @@ internal sealed partial class LauncherModel
 
         if (_running is not null)
         {
-            Problem = "Close the game first: it is reading the pack's files.";
+            Report("Close the game first: it is reading the pack's files.");
             Changed();
             return;
         }
@@ -181,8 +223,15 @@ internal sealed partial class LauncherModel
                     entry.Installed = null;
                     entry.Damaged = new HashSet<string>();
                     entry.DownloadBytes = entry.Pack.Download;
-                    ChangeSettings(s => s.Content.Remove(id));
-                    Problem = $"{entry.Pack.Title} was removed.";
+                    ChangeSettings(s =>
+                    {
+                        s.Content.Remove(id);
+                        foreach (List<ContentOrderEntry> order in s.ContentOrder.Values)
+                        {
+                            order.RemoveAll(entry => entry.Id == id);
+                        }
+                    });
+                    Report($"{entry.Pack.Title} was removed.");
                     Recompute();
                 });
             }
@@ -191,7 +240,7 @@ internal sealed partial class LauncherModel
                 _results.Enqueue(() =>
                 {
                     _busy.Remove(id);
-                    Problem = $"{entry.Pack.Title} could not be removed: {ex.Message}";
+                    Report($"{entry.Pack.Title} could not be removed: {ex.Message}", ex);
                     Recompute();
                 });
             }
@@ -208,7 +257,7 @@ internal sealed partial class LauncherModel
         }
 
         _busy.Add(id);
-        Problem = $"Verifying {entry.Pack.Title}…";
+        Report($"Verifying {entry.Pack.Title}…");
         ContentInstaller installer = ContentInstallerFor(id);
         Recompute();
         _ = Task.Run(() =>
@@ -221,9 +270,9 @@ internal sealed partial class LauncherModel
                     _busy.Remove(id);
                     entry.Damaged = new HashSet<string>(damaged, StringComparer.Ordinal);
                     entry.DownloadBytes = -1;
-                    Problem = damaged.Count > 0
+                    Report(damaged.Count > 0
                         ? $"{damaged.Count} file(s) of {entry.Pack.Title} are missing or changed: repair to restore them."
-                        : $"Every file of {entry.Pack.Title} is intact.";
+                        : $"Every file of {entry.Pack.Title} is intact.");
                     Recompute();
                     PlanContent(entry);
                 });
@@ -233,35 +282,128 @@ internal sealed partial class LauncherModel
                 _results.Enqueue(() =>
                 {
                     _busy.Remove(id);
-                    Problem = $"{entry.Pack.Title} could not be verified: {ex.Message}";
+                    Report($"{entry.Pack.Title} could not be verified: {ex.Message}", ex);
                     Recompute();
                 });
             }
         });
     }
 
-    /// <summary>Turns a pack on or off for the next game start, without touching its files.</summary>
-    /// <param name="id">The pack.</param>
+    /// <summary>Turns an entry of the selected game's load order on or off for the next game start, without touching its files.</summary>
+    /// <param name="id">The pack, or <see cref="ContentLayerSpec.LocalId"/>.</param>
     /// <param name="enabled">Whether the game is started with it.</param>
-    public void SetContentEnabled(string id, bool enabled) => ChangeSettings(s => s.Content[id] = enabled);
+    public void SetContentEnabled(string id, bool enabled)
+    {
+        if (Current.Retail is { } title)
+        {
+            ChangeSettings(s => ContentLoadOrder.SetEnabled(OrderFor(s, title.Id), id, enabled));
+        }
+    }
+
+    /// <summary>Moves an entry of the selected game's load order, as the Content page's list shows it.</summary>
+    /// <param name="from">Its index in <see cref="LoadOrder"/>.</param>
+    /// <param name="to">The index it is dropped at.</param>
+    /// <remarks>
+    /// By the entry now at <paramref name="to"/> rather than by index, because the saved order may also hold
+    /// packs the page does not show (a library on a drive that is not plugged in) and those keep their places.
+    /// </remarks>
+    public void MoveContent(int from, int to)
+    {
+        if (Current.Retail is not { } title || from < 0 || to < 0 || from >= _loadOrder.Count || to >= _loadOrder.Count || from == to)
+        {
+            return;
+        }
+
+        string moved = _loadOrder[from].Id;
+        string target = _loadOrder[to].Id;
+        ChangeSettings(s =>
+        {
+            List<ContentOrderEntry> order = OrderFor(s, title.Id);
+            ContentLoadOrder.Move(order, moved, order.FindIndex(entry => entry.Id == target));
+        });
+    }
 
     /// <summary>Opens a pack's folder in the system's file manager.</summary>
     /// <param name="id">The pack.</param>
     public void OpenContentFolder(string id) => Open(ContentInstallerFor(id).Files);
 
-    // The variables the game is started with: the folder of the enabled, installed pack for the title, which
-    // the game reads its replacement assets from in place of its own overrides folder. The game takes one such
-    // folder, so the first enabled pack for the title wins.
+    /// <summary>Opens the selected game's own overrides folder, creating it when it is not there yet.</summary>
+    public void OpenLocalOverrides()
+    {
+        if (_loadOrder.Find(static item => item.IsLocal)?.Folder is not { } folder)
+        {
+            Report("Choose the game's folder in Settings first.");
+            Changed();
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(folder);
+            Open(folder);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Report($"The overrides folder could not be opened: {ex.Message}", ex);
+            Changed();
+        }
+    }
+
+    /// <summary>Builds the content profile the game is started with: every game's load order, as the settings hold it.</summary>
+    /// <returns>The profile.</returns>
+    /// <remarks>
+    /// Every game rather than the one being started, so a title switch inside the game finds the other game's
+    /// order; and disabled entries too, so the game's console can switch one on. A pack whose files are damaged,
+    /// or that the installed game is too old for, is left out: it was never going to load right.
+    /// </remarks>
+    internal ContentProfile BuildContentProfile() =>
+        ContentLoadOrder.ToProfile(
+            Settings.ContentOrder,
+            id => Find(id) is { Installed: not null } pack
+                  && pack.State is not (ContentState.Incompatible or ContentState.Damaged or ContentState.Working)
+                ? new ContentLoadOrder.PackLayer(pack.Pack.Title, pack.Pack.Game, ContentInstallerFor(id).Files)
+                : null);
+
+    // The variables the game is started with: the content profile, written beside the packs. The game stacks
+    // the layers it lists for whichever title it is running, in the player's order.
     private Dictionary<string, string> GameEnvironment(GameTitle title)
     {
         Dictionary<string, string> environment = new(StringComparer.Ordinal);
-        if (Packs.FirstOrDefault(p => p.Pack.Game == title.Id && p.Installed is not null && p.Enabled
-                && p.State is not (ContentState.Incompatible or ContentState.Damaged)) is { } pack)
+        string path = Path.Combine(Settings.Library.Trim(), ContentFolder, ProfileFile);
+        ContentProfile profile = BuildContentProfile();
+
+        // For a build from before load orders, which reads only this variable and only one folder: the top
+        // enabled pack, as the launcher used to hand over. A build that reads the profile ignores it.
+        if (ContentLoadOrder.LegacyFolder(profile, title.Id) is { } legacy)
         {
-            environment[GameStarter.OverridesVariable] = ContentInstallerFor(pack.Pack.Id).Files;
+            environment[GameStarter.LegacyOverridesVariable] = legacy;
+        }
+
+        try
+        {
+            ContentProfile.Write(path, profile);
+            environment[GameStarter.ContentProfileVariable] = path;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The game still starts, with its own overrides folder only; the reason is on the page.
+            Report($"The content load order could not be handed to {title.DisplayName}: {ex.Message}", ex);
+            Changed();
         }
 
         return environment;
+    }
+
+    // A game's order in the settings, created on first use.
+    private static List<ContentOrderEntry> OrderFor(LauncherSettings settings, string game)
+    {
+        if (!settings.ContentOrder.TryGetValue(game, out List<ContentOrderEntry>? order))
+        {
+            order = [new ContentOrderEntry(ContentLayerSpec.LocalId, true)];
+            settings.ContentOrder[game] = order;
+        }
+
+        return order;
     }
 
     private ContentInstaller ContentInstallerFor(string id) =>
@@ -329,6 +471,7 @@ internal sealed partial class LauncherModel
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
             {
                 // The game's own check reports the service being unreachable; the content list keeps what it had.
+                _logger.Debug(LogCategory, $"The content list could not be fetched: {ex.Message}");
                 _results.Enqueue(() => _checkingContent = false);
             }
         });
@@ -414,6 +557,7 @@ internal sealed partial class LauncherModel
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or UnauthorizedAccessException)
             {
                 // No picture: the card draws its plain panel, and the next check tries again.
+                _logger.Debug(LogCategory, $"A content thumbnail could not be fetched: {ex.Message}");
             }
 
             _results.Enqueue(() =>
@@ -490,6 +634,7 @@ internal sealed partial class LauncherModel
                                            or InvalidDataException or System.Text.Json.JsonException)
             {
                 // Left unknown; the card says so, and the update itself works it out again.
+                _logger.Debug(LogCategory, $"A content update could not be planned: {ex.Message}");
             }
         });
     }
@@ -521,9 +666,12 @@ internal sealed partial class LauncherModel
 
     private void RecomputeContent()
     {
+        ReconcileLoadOrders();
+
         foreach (ContentEntry entry in _packs)
         {
-            entry.Enabled = Settings.Content.GetValueOrDefault(entry.Pack.Id, true);
+            entry.Enabled = Settings.ContentOrder.TryGetValue(entry.Pack.Game, out List<ContentOrderEntry>? order)
+                && order.Find(e => e.Id == entry.Pack.Id) is { Enabled: true };
             if ((Job?.ContentId == entry.Pack.Id && !Job.Paused) || _busy.Contains(entry.Pack.Id))
             {
                 entry.State = ContentState.Working;
@@ -537,5 +685,155 @@ internal sealed partial class LauncherModel
                 : entry.Pack.ParsedVersion > entry.Installed.ParsedVersion ? ContentState.UpdateAvailable
                 : ContentState.Installed;
         }
+    }
+
+    // Keeps every game's load order in step with what is installed, carries the old per-pack switches into it,
+    // and rebuilds the selected game's list and its conflicts for the page.
+    private void ReconcileLoadOrders()
+    {
+        bool libraryReachable = Directory.Exists(Path.Combine(Settings.Library.Trim(), ContentFolder));
+        bool changed = false;
+
+        foreach (LauncherGame game in Games)
+        {
+            if (game.Retail is not { } title)
+            {
+                continue;
+            }
+
+            string[] installed = [.. _packs.Where(p => p.Pack.Game == title.Id && p.Installed is not null).Select(static p => p.Pack.Id)];
+            if (installed.Length == 0 && !Settings.ContentOrder.ContainsKey(title.Id))
+            {
+                continue;
+            }
+
+            changed |= ContentLoadOrder.Reconcile(OrderFor(Settings, title.Id), installed, Settings.Content, prune: libraryReachable);
+        }
+
+        // The old switches are read once: whatever the orders now hold has been carried over.
+        foreach (string id in Settings.Content.Keys.ToArray())
+        {
+            if (Settings.ContentOrder.Values.Any(order => order.Exists(entry => entry.Id == id)))
+            {
+                Settings.Content.Remove(id);
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            try
+            {
+                Settings.Save(_settingsPath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Report($"Settings could not be saved: {ex.Message}", ex);
+            }
+        }
+
+        BuildLoadOrder();
+    }
+
+    private void BuildLoadOrder()
+    {
+        _loadOrder.Clear();
+        _available.Clear();
+        if (Current.Retail is not { } title)
+        {
+            return;
+        }
+
+        _available.AddRange(_packs.Where(p => p.Pack.Game == title.Id && p.Installed is null));
+        if (!Settings.ContentOrder.TryGetValue(title.Id, out List<ContentOrderEntry>? order))
+        {
+            order = [new ContentOrderEntry(ContentLayerSpec.LocalId, true)];
+        }
+
+        string? gameFolder = GameStarter.Locate(title, Settings.GameFolders.GetValueOrDefault(title.Id));
+        foreach (ContentOrderEntry entry in order)
+        {
+            if (entry.Id == ContentLayerSpec.LocalId)
+            {
+                string? folder = gameFolder is null ? null : Path.Combine(gameFolder, OverridesFolder);
+                LocalListing listing = ListLocal(folder);
+                _loadOrder.Add(new LoadOrderItem
+                {
+                    Id = entry.Id,
+                    Enabled = entry.Enabled,
+                    Folder = folder,
+                    LocalFiles = listing.Files.Count,
+                    LocalBytes = listing.Bytes,
+                });
+            }
+            else if (Find(entry.Id) is { Installed: not null } pack && pack.Pack.Game == title.Id)
+            {
+                _loadOrder.Add(new LoadOrderItem { Id = entry.Id, Entry = pack, Enabled = entry.Enabled });
+            }
+        }
+
+        IReadOnlyDictionary<string, ContentConflict> conflicts = ContentConflicts.Compute(
+        [
+            .. _loadOrder.Select(item => new ContentLayerFiles(
+                item.Id,
+                item.Entry?.Pack.Title ?? "Local overrides",
+                item.Enabled,
+                item.Entry?.Installed is { } manifest
+                    ? manifest.Files.Select(static f => f.Path).ToArray()
+                    : ListLocal(item.Folder).Files)),
+        ]);
+
+        foreach (LoadOrderItem item in _loadOrder)
+        {
+            item.Conflict = conflicts.GetValueOrDefault(item.Id, ContentConflict.None);
+        }
+    }
+
+    // What the local overrides folder holds, listed at most every few seconds: the page asks on every change,
+    // and a developer's folder can hold thousands of files.
+    private LocalListing ListLocal(string? folder)
+    {
+        if (folder is null)
+        {
+            return LocalListing.Empty;
+        }
+
+        long now = Environment.TickCount64;
+        if (_localListings.TryGetValue(folder, out LocalListing? cached) && now - cached.Taken < LocalListingSeconds * 1000)
+        {
+            return cached;
+        }
+
+        LocalListing listing = LocalListing.Empty with { Taken = now };
+        try
+        {
+            if (Directory.Exists(folder))
+            {
+                List<string> files = [];
+                long bytes = 0;
+                foreach (FileInfo file in new DirectoryInfo(folder).EnumerateFiles("*", SearchOption.AllDirectories))
+                {
+                    files.Add(Path.GetRelativePath(folder, file.FullName).Replace('\\', '/'));
+                    bytes += file.Length;
+                }
+
+                listing = new LocalListing(files, bytes, now);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Listed as empty; the game reads the folder itself either way.
+        }
+
+        _localListings[folder] = listing;
+        return listing;
+    }
+
+    private const string OverridesFolder = "overrides";
+    private const int LocalListingSeconds = 5;
+
+    private sealed record LocalListing(IReadOnlyList<string> Files, long Bytes, long Taken)
+    {
+        public static LocalListing Empty { get; } = new([], 0, 0);
     }
 }

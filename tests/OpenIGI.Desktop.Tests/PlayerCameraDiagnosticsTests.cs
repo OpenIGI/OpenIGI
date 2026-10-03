@@ -17,17 +17,9 @@ public sealed class PlayerCameraDiagnosticsTests
     [Fact]
     public void WallBlockProbesRunOnlyForVerboseInformationLogging()
     {
-        PlayerCamera camera = new(new InformationLogger());
+        PlayerCamera camera = new(new MemorySink(minimumLevel: LogLevel.Information));
 
         Assert.True(camera.WallBlockDiagnosticsEnabled);
     }
 
-    private sealed class InformationLogger : IIgiLogger
-    {
-        public bool IsEnabled(LogLevel level) => level >= LogLevel.Information;
-
-        public void Log(LogLevel level, string category, string message, Exception? exception = null)
-        {
-        }
-    }
 }

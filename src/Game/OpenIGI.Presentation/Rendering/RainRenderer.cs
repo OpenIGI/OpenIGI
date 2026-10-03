@@ -56,7 +56,7 @@ public sealed class RainRenderer : IDisposable
         NoHistory: true);
 
     private readonly IGraphicsDevice _device;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Vertex3D[] _vertices;
     private readonly ushort[] _indices;
     private readonly (float X, float Y, float Z)[] _seeds;
@@ -77,7 +77,7 @@ public sealed class RainRenderer : IDisposable
     /// <param name="device">The graphics device to draw with.</param>
     /// <param name="logger">Optional logger for diagnostics.</param>
     /// <param name="numDrops">Number of rain particle drops to simulate (default 1200).</param>
-    public RainRenderer(IGraphicsDevice device, IIgiLogger? logger = null, int numDrops = DefaultParticleCount)
+    public RainRenderer(IGraphicsDevice device, IOpenIgiLogger? logger = null, int numDrops = DefaultParticleCount)
     {
         ArgumentNullException.ThrowIfNull(device);
 

@@ -14,5 +14,5 @@ public sealed class NullAudioDeviceFactory : IAudioDeviceFactory
     public static readonly NullAudioDeviceFactory Instance = new();
 
     /// <inheritdoc/>
-    public IAudioDevice Open(AudioDeviceOptions options, IIgiLogger logger) => new NullAudioDevice();
+    public IAudioDevice Open(AudioDeviceOptions options, IOpenIgiLogger logger) => new NullAudioDevice();
 }

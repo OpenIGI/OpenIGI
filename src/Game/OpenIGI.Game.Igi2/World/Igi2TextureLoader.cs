@@ -48,7 +48,7 @@ public sealed class Igi2TextureLoader
 
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Dictionary<string, TextureHandle> _byName = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Creates a loader.</summary>
@@ -56,7 +56,7 @@ public sealed class Igi2TextureLoader
     /// <param name="resources">The registry textures are read from.</param>
     /// <param name="logger">Where load diagnostics go.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public Igi2TextureLoader(IGraphicsDevice device, ResourceRegistry resources, IIgiLogger? logger = null)
+    public Igi2TextureLoader(IGraphicsDevice device, ResourceRegistry resources, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(resources);

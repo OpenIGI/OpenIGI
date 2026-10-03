@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <ApplicationIcon>Assets\openigi.ico</ApplicationIcon>
+    <OutputType>WinExe</OutputType>
+    <ApplicationIcon>..\..\src\Platform\OpenIGI.Platform.Desktop\Assets\openigi.ico</ApplicationIcon>
     <!-- The Vulkan surface bridge reads the window's required-extension list and creates the surface
          through raw handles, both of which are pointer operations. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -53,11 +53,6 @@
     <ProjectReference Include="..\..\src\Platform\OpenIGI.Platform\OpenIGI.Platform.csproj" />
     <ProjectReference Include="..\..\src\Platform\OpenIGI.Platform.Desktop\OpenIGI.Platform.Desktop.csproj" />
     <ProjectReference Include="..\OpenIGI.Composition\OpenIGI.Composition.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- The window icon. The host's own assets come with OpenIGI.Composition. -->
-    <None Include="Assets\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

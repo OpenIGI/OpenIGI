@@ -158,7 +158,7 @@ public sealed class GameHostStepTests : IDisposable
     {
         string root = GameData.RequireRoot();
         IGameTitleRuntime runtime = TitleCatalog.Default;
-        IIgiLogger logger = NullLogger.Instance;
+        IOpenIgiLogger logger = NullLogger.Instance;
 
         VirtualFileSystem fileSystem = new(logger);
         fileSystem.RegisterDevice(new LocalFileDevice(root));
@@ -199,6 +199,6 @@ public sealed class GameHostStepTests : IDisposable
 
     private sealed class RecordingAudioFactory : IAudioDeviceFactory
     {
-        public IAudioDevice Open(AudioDeviceOptions options, IIgiLogger logger) => new RecordingAudioDevice();
+        public IAudioDevice Open(AudioDeviceOptions options, IOpenIgiLogger logger) => new RecordingAudioDevice();
     }
 }

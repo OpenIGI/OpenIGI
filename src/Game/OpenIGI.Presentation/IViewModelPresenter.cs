@@ -181,4 +181,4 @@ public readonly record struct ViewModelPresentationRequest(
     IGraphicsDevice Device,
     ResourceRegistry Resources,
     MagicObjectRegistry? Magic,
-    IIgiLogger Logger);
+    IOpenIgiLogger Logger);

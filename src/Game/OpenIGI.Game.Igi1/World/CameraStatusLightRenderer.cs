@@ -49,7 +49,7 @@ internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
         NoHistory: true);
 
     private readonly IGraphicsDevice _device;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Vertex3D[] _vertices = new Vertex3D[MaximumCameras * VerticesPerCamera];
     private SpriteResource? _sprite;
     private SpriteFrame _frame;
@@ -62,7 +62,7 @@ internal sealed class CameraStatusLightRenderer : ICameraStatusLightPresenter
     private bool _disposed;
 
     /// <summary>Initializes a camera-lamp renderer.</summary>
-    public CameraStatusLightRenderer(IGraphicsDevice device, IIgiLogger? logger = null)
+    public CameraStatusLightRenderer(IGraphicsDevice device, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         _device = device;

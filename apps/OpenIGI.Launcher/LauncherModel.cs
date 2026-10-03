@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Launcher.Services;
 using OpenIGI.Releases;
@@ -13,7 +14,7 @@ internal enum GameState
     /// <summary>Installed, current, and its game folder found: PLAY.</summary>
     Ready,
 
-    /// <summary>Installed with a newer version out: UPDATE.</summary>
+    /// <summary>Installed with a newer version out, or a beta build kept after switching to stable: UPDATE.</summary>
     UpdateAvailable,
 
     /// <summary>Not on disk: INSTALL.</summary>
@@ -109,8 +110,15 @@ internal enum PatchNoteKind
 internal sealed partial class LauncherModel : IDisposable
 {
     private const int NotesShown = 6;
+    private const string LogCategory = "Launcher";
+    private const string GameLogCategory = "Game";
+    private const string InstallLogCategory = "Install";
 
     private readonly ConcurrentQueue<Action> _results = new();
+    private readonly LauncherLog _log;
+    private readonly IOpenIgiLogger _logger;
+    private long _launcherLogVersion = -1;
+    private long _gameLogVersion = -1;
     private readonly HttpClient _http;
     private readonly ReleaseFeedClient _feedClient;
     private BuildInstaller _installer;
@@ -126,9 +134,16 @@ internal sealed partial class LauncherModel : IDisposable
     private Process? _running;
     private string? _stagingLauncher;
     private CancellationTokenSource? _download;
+    private bool _switching;
+    private bool _hiddenForGame;
+    private string? _notReusable;
+    private int _selected;
 
-    public LauncherModel()
+    public LauncherModel(LauncherLog log)
     {
+        ArgumentNullException.ThrowIfNull(log);
+        _log = log;
+        _logger = log.Logger;
         Settings = LauncherSettings.Load(_settingsPath);
         _http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         _http.DefaultRequestHeaders.UserAgent.ParseAdd($"OpenIGI-Launcher/{LauncherUpdater.OwnVersion}");
@@ -151,7 +166,21 @@ internal sealed partial class LauncherModel : IDisposable
 
     public IReadOnlyList<LauncherGame> Games { get; }
 
-    public int Selected { get; set; }
+    /// <summary>Gets or sets the index of the game the pages are about.</summary>
+    /// <remarks>Each game has its own content load order, so choosing another rebuilds the Content page's list.</remarks>
+    public int Selected
+    {
+        get => _selected;
+        set
+        {
+            if (_selected != value)
+            {
+                _selected = value;
+                BuildLoadOrder();
+                Changed();
+            }
+        }
+    }
 
     public LauncherGame Current => Games[Selected];
 
@@ -163,20 +192,30 @@ internal sealed partial class LauncherModel : IDisposable
     /// <summary>Gets what went wrong last (the service unreachable, a download failing), for the footer.</summary>
     public string? Problem { get; private set; }
 
+    /// <summary>Gets the launcher's log and the log of the game it started, for the Logs page.</summary>
+    public LauncherLog Log => _log;
+
     /// <summary>Gets the launcher release that is downloaded and waiting for a restart.</summary>
     public string? LauncherUpdateReady { get; private set; }
 
     /// <summary>Gets a number that changes whenever the pages need re-reading.</summary>
     public int Revision { get; private set; }
 
-    /// <summary>Gets whether the launcher asked to close itself (after starting the game).</summary>
-    public bool CloseRequested { get; private set; }
+    /// <summary>Occurs when the game has started and the player asked for the launcher to go to the tray meanwhile.</summary>
+    public event EventHandler? HideRequested;
+
+    /// <summary>Occurs when the game the launcher went to the tray for has exited: the launcher comes back.</summary>
+    public event EventHandler? ShowRequested;
 
     /// <summary>Gets or sets whether the launcher's window has focus; a notification is only for when it has not.</summary>
     public bool WindowFocused { get; set; } = true;
 
     /// <summary>Gets or sets what shows a desktop notification (title, message); none until the window gives one.</summary>
     public Action<string, string>? Notify { get; set; }
+
+    /// <summary>Gets what the library holds for the launcher: the installed build and every installed pack.</summary>
+    public long LibraryBytes =>
+        (_installed?.Files.Sum(static f => f.Size) ?? 0) + Packs.Sum(static p => p.Installed?.Size ?? 0);
 
     public int UpdatesAvailable => Games.Any(static g => g.State == GameState.UpdateAvailable) ? 1 : 0;
 
@@ -250,7 +289,7 @@ internal sealed partial class LauncherModel : IDisposable
             return;
         }
 
-        Problem = "Verifying the installed files…";
+        Report("Verifying the installed files…");
         Changed();
         _ = Task.Run(() =>
         {
@@ -258,10 +297,24 @@ internal sealed partial class LauncherModel : IDisposable
             _results.Enqueue(() =>
             {
                 _damaged = damaged.Count > 0;
-                Problem = _damaged ? $"{damaged.Count} file(s) are missing or changed: repair to download them again." : "Every installed file is intact.";
+                Report(_damaged ? $"{damaged.Count} file(s) are missing or changed: repair to download them again." : "Every installed file is intact.");
                 Recompute();
             });
         });
+    }
+
+    /// <summary>Opens the folder the launcher's log files are kept in.</summary>
+    public void OpenLogFolder()
+    {
+        Directory.CreateDirectory(LauncherLog.Folder);
+        Open(LauncherLog.Folder);
+    }
+
+    /// <summary>Empties the Logs page; the log files keep everything.</summary>
+    public void ClearLog()
+    {
+        _log.Launcher.Clear();
+        _log.Game.Clear();
     }
 
     /// <summary>Opens the installed build's folder in the system's file manager.</summary>
@@ -294,13 +347,19 @@ internal sealed partial class LauncherModel : IDisposable
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Problem = $"Settings could not be saved: {ex.Message}";
+            Report($"Settings could not be saved: {ex.Message}", ex);
         }
 
+        // A channel the player has just chosen is shown at once: from its last answer when there is one, and
+        // asked about straight away rather than when the polling spacing next allows.
         if (Settings.Channel != channel)
         {
-            _feed = null;
-            CheckSoon();
+            _feed = _feedClient.Cached(Settings.Channel, _installed?.Version);
+            Recompute();
+            if (!_checking)
+            {
+                Check();
+            }
         }
 
         // A different library is a different install: whatever is (or is not) installed there now counts.
@@ -326,12 +385,27 @@ internal sealed partial class LauncherModel : IDisposable
 
         if (_running is { HasExited: true })
         {
+            int code = _running.ExitCode;
+            _logger.Log(code == 0 ? LogLevel.Information : LogLevel.Warning, GameLogCategory, $"The game exited with code {code}.");
             _running.Dispose();
             _running = null;
             Recompute();
+            if (_hiddenForGame)
+            {
+                _hiddenForGame = false;
+                ShowRequested?.Invoke(this, EventArgs.Empty);
+            }
         }
 
         Job?.Sample(elapsedSeconds);
+
+        // A new log line is a change the Logs page shows.
+        if (_log.Launcher.Version != _launcherLogVersion || _log.Game.Version != _gameLogVersion)
+        {
+            _launcherLogVersion = _log.Launcher.Version;
+            _gameLogVersion = _log.Game.Version;
+            Changed();
+        }
 
         if (!_checking && DateTime.UtcNow >= _schedule.Next)
         {
@@ -365,8 +439,10 @@ internal sealed partial class LauncherModel : IDisposable
                 {
                     _checking = false;
                     _schedule.Finished(DateTime.UtcNow, succeeded: true);
+                    // The channel changed while this was being asked: ask again for the one now chosen.
                     if (channel != Settings.Channel)
                     {
+                        Check();
                         return;
                     }
 
@@ -377,6 +453,7 @@ internal sealed partial class LauncherModel : IDisposable
 
                     _feed = feed;
                     Recompute();
+                    CleanDownloads();
                     AnnounceGameUpdate();
                     MaybeStartAutomatically();
                     MaybeStageLauncher();
@@ -389,7 +466,7 @@ internal sealed partial class LauncherModel : IDisposable
                     _checking = false;
                     _schedule.Finished(DateTime.UtcNow, succeeded: false);
                     int minutes = Math.Max(1, (int)Math.Round((_schedule.Next - DateTime.UtcNow).TotalMinutes));
-                    Problem = $"The update service cannot be reached; trying again in {minutes} minute{(minutes == 1 ? string.Empty : "s")}.";
+                    Report($"The update service cannot be reached; trying again in {minutes} minute{(minutes == 1 ? string.Empty : "s")}.", ex);
                     Changed();
                 });
             }
@@ -405,11 +482,17 @@ internal sealed partial class LauncherModel : IDisposable
 
     private void StartDownload()
     {
+        // A kept build is being made current; there will be nothing to download once it is.
+        if (_switching)
+        {
+            return;
+        }
+
         if (_latest is not { } release || GameAsset(release) is not { } asset)
         {
-            Problem = _latest is null
+            Report(_latest is null
                 ? "No release is available yet."
-                : $"This release has no build for {LauncherPaths.Runtime}.";
+                : $"This release has no build for {LauncherPaths.Runtime}.");
             Changed();
             return;
         }
@@ -431,7 +514,14 @@ internal sealed partial class LauncherModel : IDisposable
         {
             try
             {
-                InstalledBuild build = await _installer.InstallAsync(version, asset, GameStarter.ExecutableName, progress, token).ConfigureAwait(false);
+                // The build may still be on disk, kept from before (switching back from a beta finds the stable
+                // build there); then it only becomes current again.
+                InstalledBuild? kept = _installer.TryReuse(version, asset, GameStarter.ExecutableName);
+                InstalledBuild build = kept
+                    ?? await _installer.InstallAsync(version, asset, GameStarter.ExecutableName, progress, token).ConfigureAwait(false);
+                _logger.Information(
+                    InstallLogCategory,
+                    kept is null ? $"Installed OpenIGI {version}." : $"Switched back to OpenIGI {version}, which was still installed.");
                 _results.Enqueue(() =>
                 {
                     _installed = build;
@@ -451,7 +541,7 @@ internal sealed partial class LauncherModel : IDisposable
                 _results.Enqueue(() =>
                 {
                     Job = null;
-                    Problem = $"The download failed: {ex.Message}";
+                    Report($"The download failed: {ex.Message}", ex);
                     Recompute();
                 });
             }
@@ -474,16 +564,21 @@ internal sealed partial class LauncherModel : IDisposable
 
         try
         {
-            _running = GameStarter.Start(build.Folder, GameStarter.Arguments(title, folder, Settings.LaunchArguments), GameEnvironment(title));
+            // The launcher keeps running while the game does, in the tray or not, so it always reads its log.
+            _running = GameStarter.Start(build.Folder, GameStarter.Arguments(title, folder, Settings.LaunchArguments), GameEnvironment(title), followOutput: true);
+            _log.Follow(_running);
+
+            _logger.Information(GameLogCategory, $"Started {title.DisplayName} from {build.Folder} (process {_running.Id}).");
             Problem = null;
-            if (Settings.CloseOnLaunch)
+            if (Settings.MinimizeOnLaunch)
             {
-                CloseRequested = true;
+                _hiddenForGame = true;
+                HideRequested?.Invoke(this, EventArgs.Empty);
             }
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
-            Problem = $"The game did not start: {ex.Message}";
+            Report($"The game did not start: {ex.Message}", ex);
         }
 
         Recompute();
@@ -491,7 +586,7 @@ internal sealed partial class LauncherModel : IDisposable
 
     private void MaybeStartAutomatically()
     {
-        if (!Settings.AutomaticUpdates || Job is not null || _running is not null || _installed is null)
+        if (!Settings.AutomaticUpdates || Job is not null || _running is not null || _installed is null || _switching)
         {
             return;
         }
@@ -534,6 +629,7 @@ internal sealed partial class LauncherModel : IDisposable
             }
             catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or UnauthorizedAccessException)
             {
+                _logger.Warning(LogCategory, $"The launcher update could not be downloaded: {ex.Message}", ex);
                 _results.Enqueue(() => _stagingLauncher = null);
             }
         });
@@ -550,6 +646,21 @@ internal sealed partial class LauncherModel : IDisposable
         // self-contained one.
         bool runtimeGone = _installed is { SelfContained: false } && !DotnetRuntime.IsInstalled();
         bool newer = _latest is not null && (_installed is null || _latest.ParsedVersion > ReleaseVersion.Parse(_installed.Version));
+
+        // A beta build kept after switching to stable is not on the line the player chose. Its version is
+        // higher than stable's newest, so "newer" alone would leave it in place and show it as current; the
+        // stable build is offered in its place instead, as leaving a beta does everywhere else.
+        bool leftBeta = _latest is not null
+            && _installed is not null
+            && Settings.Channel == ReleaseChannel.Stable
+            && ReleaseVersion.Parse(_installed.Version).IsPrerelease
+            && _latest.ParsedVersion != ReleaseVersion.Parse(_installed.Version);
+
+        // A build on offer that is still on disk is switched to rather than offered: the game stays READY.
+        if (newer || leftBeta)
+        {
+            UseKeptBuild();
+        }
 
         foreach (LauncherGame game in Games)
         {
@@ -570,13 +681,86 @@ internal sealed partial class LauncherModel : IDisposable
             game.State = _running is not null ? GameState.Playing
                 : _installed is null ? GameState.NotInstalled
                 : _damaged || runtimeGone ? GameState.Damaged
-                : newer ? GameState.UpdateAvailable
+                : (newer || leftBeta) && !_switching ? GameState.UpdateAvailable
                 : GameStarter.Locate(title, Settings.GameFolders.GetValueOrDefault(title.Id)) is null ? GameState.NeedsGameFolder
                 : GameState.Ready;
         }
 
         RecomputeContent();
         Changed();
+    }
+
+    // Once the channel's newest release is known, every other download is stale: kept are only that release's
+    // download and partial, so an interrupted download still resumes. Not while one is running or paused,
+    // which may be for a release the feed has since moved past.
+    private void CleanDownloads()
+    {
+        if (Job is not null)
+        {
+            return;
+        }
+
+        string? keep = GameAsset(_latest)?.Name;
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                long freed = _installer.CleanDownloads(keep);
+                if (freed > 0)
+                {
+                    _logger.Information(InstallLogCategory, $"Removed stale downloads: {FormatSize(freed / 1_000_000.0)} freed.");
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.Debug(InstallLogCategory, $"Stale downloads could not be removed: {ex.Message}");
+            }
+        });
+    }
+
+    // The build the channel offers is often still on disk: the installer keeps the one an install replaced,
+    // so changing channel and back finds it there. It is made current in place of an update, and the game
+    // reads READY to play at once. Its files are hashed off the frame loop; a kept build found changed is
+    // left alone, and then the main button offers it as an ordinary download.
+    private void UseKeptBuild()
+    {
+        if (_switching || Job is not null || _running is not null
+            || _latest is not { } latest || latest.Version == _notReusable
+            || GameAsset(latest) is not { } asset || !_installer.IsKept(latest.Version))
+        {
+            return;
+        }
+
+        _switching = true;
+        string version = latest.Version;
+        _ = Task.Run(() =>
+        {
+            InstalledBuild? build = null;
+            try
+            {
+                build = _installer.TryReuse(version, asset, GameStarter.ExecutableName);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.Warning(InstallLogCategory, $"OpenIGI {version} is still on disk but could not be used: {ex.Message}", ex);
+            }
+
+            _results.Enqueue(() =>
+            {
+                _switching = false;
+                if (build is null)
+                {
+                    _notReusable = version;
+                    Recompute();
+                    return;
+                }
+
+                _logger.Information(InstallLogCategory, $"Switched to OpenIGI {version}, which was still installed.");
+                _installed = build;
+                _damaged = false;
+                Recompute();
+            });
+        });
     }
 
     // The changes the player is about to receive (every release since theirs, newest first), or the newest
@@ -620,7 +804,12 @@ internal sealed partial class LauncherModel : IDisposable
     // front (if it is, the UPDATE button already says it).
     private void AnnounceGameUpdate()
     {
-        if (_latest is { } latest && Games.Any(static g => g.State == GameState.UpdateAvailable))
+        // Only a release that is newer: the stable build offered after leaving the beta is the player's own
+        // doing, not news.
+        if (_latest is { } latest
+            && (_installed is null || latest.ParsedVersion > ReleaseVersion.Parse(_installed.Version))
+            && !_switching
+            && Games.Any(static g => g.State == GameState.UpdateAvailable))
         {
             Announce("game", latest.Version, $"OpenIGI {latest.Version} is out",
                 Settings.AutomaticUpdates && _running is null
@@ -643,6 +832,7 @@ internal sealed partial class LauncherModel : IDisposable
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Not remembered: at worst the same release is announced again after a restart.
+            _logger.Debug(LogCategory, $"The announced release could not be remembered: {ex.Message}");
         }
 
         if (!WindowFocused)
@@ -653,7 +843,14 @@ internal sealed partial class LauncherModel : IDisposable
 
     private void Changed() => Revision++;
 
-    private static void Open(string target)
+    // What the footer shows is also what the log keeps: a failure with its exception, anything else as it was said.
+    private void Report(string problem, Exception? exception = null)
+    {
+        Problem = problem;
+        _logger.Log(exception is null ? LogLevel.Information : LogLevel.Warning, LogCategory, problem, exception);
+    }
+
+    private void Open(string target)
     {
         try
         {
@@ -662,6 +859,7 @@ internal sealed partial class LauncherModel : IDisposable
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
             // Nothing registered to open it; there is nothing more the launcher can do.
+            _logger.Warning(LogCategory, $"'{target}' could not be opened: {ex.Message}");
         }
     }
 }

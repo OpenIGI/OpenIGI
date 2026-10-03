@@ -23,7 +23,7 @@ public sealed partial class GraphicsDevice
             return 1f;
         }
 
-        _autoExposure ??= new AutoExposure(_device, FramesInFlight);
+        _autoExposure ??= new AutoExposure(_device, FramesInFlight, _logger);
 
         // The histogram this slot carried two frames ago, read before this frame's is recorded over it.
         float adapted = _autoExposure.Adapt(FrameSlot, post.ExposureDeltaSeconds);

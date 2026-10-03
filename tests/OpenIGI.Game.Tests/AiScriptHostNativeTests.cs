@@ -20,17 +20,6 @@ namespace OpenIGI.Game.Tests;
 /// </remarks>
 public sealed class AiScriptHostNativeTests
 {
-    // A logger that keeps every message, so a "not modelled" warning can be asserted against.
-    private sealed class Recorder : IIgiLogger
-    {
-        public List<string> Messages { get; } = [];
-
-        public bool IsEnabled(LogLevel level) => true;
-
-        public void Log(LogLevel level, string category, string message, Exception? exception = null) =>
-            Messages.Add(message);
-    }
-
     /// <summary>A fresh AI has the defaults the constructor <c>0x44F060</c> writes.</summary>
     [RequiresGameDataFact]
     public void AFreshSoldierHasTheConstructorsDefaults()
@@ -157,7 +146,7 @@ public sealed class AiScriptHostNativeTests
     {
         foreach (string archetype in new[] { "guard", "patrol" })
         {
-            (AiScriptHost host, Recorder log) = Host();
+            (AiScriptHost host, MemorySink log) = Host();
             AiSoldier soldier = Soldier();
             QvmProgram script = QvmProgram.Read(File.ReadAllBytes(ArchetypePath(archetype)));
 
@@ -166,7 +155,7 @@ public sealed class AiScriptHostNativeTests
                 host.Run(script, soldier, type, slot: 0);
             }
 
-            string[] unmodelled = [.. log.Messages.Where(m => m.Contains("not modelled", StringComparison.Ordinal))];
+            string[] unmodelled = [.. log.Snapshot().Select(static r => r.Message).Where(static m => m.Contains("not modelled", StringComparison.Ordinal))];
             Assert.True(unmodelled.Length == 0, $"{archetype}.qvm calls an unmodelled native: {string.Join("; ", unmodelled)}");
         }
     }
@@ -266,10 +255,10 @@ public sealed class AiScriptHostNativeTests
         shared.RegisterConstant("GAME_FREQUENCY", 30);
         shared.RegisterRealConstant("WORLD_METER", 4096.0);
         shared.RegisterRealConstant("MATH_PI", Math.PI);
-        _ = new AiScriptHost(shared, new Recorder());
+        _ = new AiScriptHost(shared, NullLogger.Instance);
 
         // The next mission's host registers against the SAME registry, as the transition does.
-        AiScriptHost nextMission = new(shared, new Recorder());
+        AiScriptHost nextMission = new(shared, NullLogger.Instance);
 
         AiSoldier soldier = Soldier();
         QvmProgram script = QvmProgram.Read(File.ReadAllBytes(ArchetypePath("guard")));
@@ -290,7 +279,9 @@ public sealed class AiScriptHostNativeTests
 
     private static readonly int[] LookAtEventArgs = [2, 0];
 
-    private static (AiScriptHost Host, Recorder Log) Host()
+    /// <summary>A host over the AI natives and the game constants, whose warnings are kept.</summary>
+    /// <returns>The host, and the sink holding every warning it logs, so a "not modelled" one can be asserted against.</returns>
+    private static (AiScriptHost Host, MemorySink Log) Host()
     {
         NativeRegistry natives = new();
         natives.RegisterConstant("TRUE", 1);
@@ -301,7 +292,7 @@ public sealed class AiScriptHostNativeTests
         natives.RegisterConstant("GAME_FREQUENCY", 30);
         natives.RegisterRealConstant("WORLD_METER", 4096.0);
         natives.RegisterRealConstant("MATH_PI", Math.PI);
-        Recorder log = new();
+        MemorySink log = new(minimumLevel: LogLevel.Warning);
         return (new AiScriptHost(natives, log), log);
     }
 

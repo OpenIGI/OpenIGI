@@ -58,14 +58,14 @@ public static class Igi2DrawableScene
         Igi2ModelTable table,
         Igi2LightmapIndex? lightmaps,
         IReadOnlyList<LoadedPack> packs,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(mission);
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(table);
         ArgumentNullException.ThrowIfNull(packs);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         // The walk is given the models because one type cannot be placed without them: a train's
         // carriages are spaced by the distance between their model's two couplings, which nothing
         // authors. See Igi2Train.

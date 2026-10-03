@@ -35,7 +35,7 @@ public partial class MenuManagerTask
     private ScriptExpressionEvaluator? _evaluator;
     private MenuScreenTask? _current;
     private ConfigNatives? _configuration;
-    private IIgiLogger _logger = NullLogger.Instance;
+    private IOpenIgiLogger _logger = NullLogger.Instance;
 
     /// <summary>Gets the screen stack and fade this manager drives.</summary>
     public MenuNavigator Navigator { get; } = new();
@@ -72,7 +72,7 @@ public partial class MenuManagerTask
     /// <paramref name="system"/>'s, which is what a script loaded into a game loop has.
     /// </param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public void Initialize(MenuSystem system, IMenuHost host, IIgiLogger? logger = null, ScriptVarRegistry? variables = null)
+    public void Initialize(MenuSystem system, IMenuHost host, IOpenIgiLogger? logger = null, ScriptVarRegistry? variables = null)
     {
         ArgumentNullException.ThrowIfNull(system);
         ArgumentNullException.ThrowIfNull(host);

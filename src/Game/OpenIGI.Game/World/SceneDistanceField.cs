@@ -139,7 +139,7 @@ public sealed class SceneDistanceField
         IEnumerable<WorldPlacement> placements,
         Func<MefModel, MeshGeometry?> geometry,
         int resolution,
-        IIgiLogger? logger,
+        IOpenIgiLogger? logger,
         IWorkScheduler work,
         Action<SceneDistanceField> complete,
         CancellationToken cancellation = default)
@@ -157,7 +157,7 @@ public sealed class SceneDistanceField
         IEnumerable<WorldPlacement> placements,
         Func<MefModel, MeshGeometry?> geometry,
         int resolution,
-        IIgiLogger log,
+        IOpenIgiLogger log,
         IWorkScheduler work,
         Action<SceneDistanceField> complete,
         CancellationToken cancellation)

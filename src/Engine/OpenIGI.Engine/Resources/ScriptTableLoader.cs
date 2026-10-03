@@ -44,7 +44,7 @@ public static class ScriptTableLoader
         NativeRegistry natives,
         string root,
         string scriptName,
-        IIgiLogger? logger = null,
+        IOpenIgiLogger? logger = null,
         int maxDepth = DefaultMaxDepth)
     {
         ArgumentNullException.ThrowIfNull(fileSystem);
@@ -53,7 +53,7 @@ public static class ScriptTableLoader
         ArgumentException.ThrowIfNullOrEmpty(root);
         ArgumentException.ThrowIfNullOrEmpty(scriptName);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         List<string> scripts = [];
         Walk(fileSystem, root, scriptName, scripts, 0, maxDepth);
 

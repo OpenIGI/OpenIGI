@@ -2,6 +2,7 @@ using System.Globalization;
 using OpenIGI.Core.Configuration;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
+using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Host.DevTools;
@@ -279,11 +280,11 @@ public sealed class InspectorBody : UiElement
         float y = rect.Y + ((rect.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f);
         float x = rect.X + _theme.Cell;
 
-        painter.DrawText(_theme.BodyFont, Fit(entity.Name, NameColumns - 1), new UiVec2(x, y), _theme.BodySize, _theme.Ui.Text);
+        painter.DrawText(_theme.BodyFont, TextFit.ToColumns(entity.Name, NameColumns - 1), new UiVec2(x, y), _theme.BodySize, _theme.Ui.Text);
 
         painter.DrawText(
             _theme.SmallFont,
-            Fit(entity.Kind, KindColumns - 1),
+            TextFit.ToColumns(entity.Kind, KindColumns - 1),
             new UiVec2(MathF.Round(x + (_theme.Cell * NameColumns)), y),
             _theme.SmallSize,
             _theme.Ui.TextMuted);
@@ -304,9 +305,6 @@ public sealed class InspectorBody : UiElement
             _theme.SmallSize,
             _theme.Ui.TextMuted);
     }
-
-    private static string Fit(string text, int columns) =>
-        columns <= 1 || text.Length <= columns ? text : string.Concat(text.AsSpan(0, columns - 1), "…");
 
     private static string Line(FormattableString text) => FormattableString.Invariant(text);
 }

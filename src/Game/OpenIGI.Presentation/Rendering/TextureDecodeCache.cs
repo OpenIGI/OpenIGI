@@ -151,7 +151,7 @@ public sealed class TextureDecodeCache
             if (cache._images.TryAdd(name, lazy))
             {
                 pending.Add(lazy);
-                names.Add(name);
+                names.Add(MaterialDetailPack.KeyFor(name, resources.OverrideStamp(entry.Name)));
             }
         }
 

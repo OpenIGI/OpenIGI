@@ -117,9 +117,9 @@ public sealed class LampManifest
     /// A broken file never stops the game: every level falls back to the detector alone, which is the
     /// behaviour from before this file existed.
     /// </remarks>
-    public static LampManifest Load(string path, IIgiLogger? logger = null)
+    public static LampManifest Load(string path, IOpenIgiLogger? logger = null)
     {
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         if (string.IsNullOrEmpty(path) || !File.Exists(path))
         {

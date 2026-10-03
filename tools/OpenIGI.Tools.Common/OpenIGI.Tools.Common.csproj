@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- What every command-line tool shares: the logger its progress and failures go through, the stream its
+       actual result is written to, and the exit codes. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
+  </ItemGroup>
+
+</Project>

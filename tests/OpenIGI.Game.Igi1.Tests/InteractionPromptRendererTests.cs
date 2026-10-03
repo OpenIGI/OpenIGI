@@ -160,7 +160,7 @@ public sealed class InteractionPromptRendererTests
         int height = Height)
     {
         RecordingGraphicsDevice device = new();
-        using RemasteredHudRenderer renderer = new(device, new SilentLogger());
+        using RemasteredHudRenderer renderer = new(device, NullLogger.Instance);
         Assert.True(renderer.Load());
         SpriteBatch batch = new(device);
 
@@ -195,12 +195,4 @@ public sealed class InteractionPromptRendererTests
         return (left, right, top, bottom);
     }
 
-    private sealed class SilentLogger : IIgiLogger
-    {
-        public bool IsEnabled(LogLevel level) => false;
-
-        public void Log(LogLevel level, string category, string message, Exception? exception = null)
-        {
-        }
-    }
 }

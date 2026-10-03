@@ -7,45 +7,52 @@ using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Legacy;
 using OpenIGI.Formats.Sound;
 using OpenIGI.Formats.Textures;
+using OpenIGI.Tools;
 using OpenIGI.Tools.ResExtract;
 
-return Run(args);
+return ToolHost.Run("ResExtract", args, Run);
 
-static int Run(string[] args)
+static int Run(ToolContext ctx)
 {
-    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+    IReadOnlyList<string> args = ctx.Arguments;
+    if (args.Count == 0 || args[0] is "-h" or "--help" or "help")
     {
-        PrintUsage();
-        return args.Length == 0 ? ExitCode.Usage : ExitCode.Ok;
+        if (args.Count == 0)
+        {
+            return ctx.Usage(UsageText);
+        }
+
+        ctx.Out.WriteLine(UsageText);
+        return ToolExitCode.Ok;
     }
 
     try
     {
         return args[0].ToUpperInvariant() switch
         {
-            "LIST" => List(args),
-            "EXTRACT" => Extract(args),
-            "IMAGES" => Images(args),
-            "PACK" => Pack(args),
-            "COMPRESS" => Compress(args),
-            "MAPS" => Maps(args),
-            "SOUNDS" => Sounds(args),
-            _ => Fail($"Unknown command '{args[0]}'."),
+            "LIST" => List(ctx),
+            "EXTRACT" => Extract(ctx),
+            "IMAGES" => Images(ctx),
+            "PACK" => Pack(ctx),
+            "COMPRESS" => Compress(ctx),
+            "MAPS" => Maps(ctx),
+            "SOUNDS" => Sounds(ctx),
+            _ => ctx.Usage(UsageText, $"Unknown command '{args[0]}'."),
         };
     }
     catch (Exception error) when (error is IlffFormatException or FlatResourceFormatException
         or IlsfFormatException or IOException or UnauthorizedAccessException)
     {
-        Console.Error.WriteLine($"error: {error.Message}");
-        return ExitCode.Failure;
+        return ctx.Fail(error.Message, error);
     }
 }
 
-static int List(string[] args)
+static int List(ToolContext ctx)
 {
-    if (args.Length != 2)
+    IReadOnlyList<string> args = ctx.Arguments;
+    if (args.Count != 2)
     {
-        return Fail("usage: ResExtract list <archive>");
+        return ctx.Usage(UsageText, "usage: ResExtract list <archive>");
     }
 
     IReadOnlyList<ArchiveItem> items = ReadArchive(args[1]);
@@ -53,21 +60,22 @@ static int List(string[] args)
 
     foreach (ArchiveItem item in items)
     {
-        Console.WriteLine(string.Create(
+        ctx.Out.WriteLine(string.Create(
             CultureInfo.InvariantCulture,
             $"{item.Kind,-13} {item.Data.Length,10}  {item.Name}"));
         total += item.Data.Length;
     }
 
-    Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{items.Count} entries, {total} bytes."));
-    return ExitCode.Ok;
+    ctx.Out.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{items.Count} entries, {total} bytes."));
+    return ToolExitCode.Ok;
 }
 
-static int Extract(string[] args)
+static int Extract(ToolContext ctx)
 {
-    if (args.Length != 3)
+    IReadOnlyList<string> args = ctx.Arguments;
+    if (args.Count != 3)
     {
-        return Fail("usage: ResExtract extract <archive> <outdir>");
+        return ctx.Usage(UsageText, "usage: ResExtract extract <archive> <outdir>");
     }
 
     string outputRoot = Path.GetFullPath(args[2]);
@@ -83,7 +91,7 @@ static int Extract(string[] args)
 
         if (path is null || !path.StartsWith(outputRoot, StringComparison.OrdinalIgnoreCase))
         {
-            Console.Error.WriteLine($"warning: skipping '{item.Name}': its name does not map to a file below the output directory.");
+            ctx.Warn($"skipping '{item.Name}': its name does not map to a file below the output directory.");
             skipped++;
             continue;
         }
@@ -93,10 +101,10 @@ static int Extract(string[] args)
         written++;
     }
 
-    Console.WriteLine(string.Create(
+    ctx.Info(string.Create(
         CultureInfo.InvariantCulture,
         $"Wrote {written} file(s) to {outputRoot}{(skipped > 0 ? $", skipped {skipped}" : string.Empty)}."));
-    return ExitCode.Ok;
+    return ToolExitCode.Ok;
 }
 
 // Writes every picture in an installation out as a PNG, with a manifest saying where each came from.
@@ -112,31 +120,32 @@ static int Extract(string[] args)
 // entries inside archives and silently passed over the rest -- which is why an upscale pack visibly
 // improved the world and left the menu, the loading screens, the HUD, the computer terminals, the sprites
 // and every square metre of ground exactly as they were.
-static int Images(string[] args)
+static int Images(ToolContext ctx)
 {
-    if (args.Length != 3)
+    IReadOnlyList<string> args = ctx.Arguments;
+    if (args.Count != 3)
     {
-        return Fail("usage: ResExtract images <archive|dir> <outdir>");
+        return ctx.Usage(UsageText, "usage: ResExtract images <archive|dir> <outdir>");
     }
 
     ImageExport.Result result = ImageExport.Run(args[1], Path.GetFullPath(args[2]));
 
     foreach (string failure in result.Failures.Take(20))
     {
-        Console.Error.WriteLine($"warning: {failure}");
+        ctx.Warn(failure);
     }
 
     if (result.Failures.Count > 20)
     {
-        Console.Error.WriteLine($"warning: and {result.Failures.Count - 20} more.");
+        ctx.Warn($"and {result.Failures.Count - 20} more.");
     }
 
-    Console.WriteLine(string.Create(
+    ctx.Info(string.Create(
         CultureInfo.InvariantCulture,
         $"Wrote {result.Assets} picture(s) as {result.Frames} PNG(s) to {Path.GetFullPath(args[2])}, with " +
         $"{PackManifest.FileName}; {result.Repeats} repeat(s), {result.Failures.Count} failure(s)."));
 
-    return result.Assets == 0 ? ExitCode.Failure : ExitCode.Ok;
+    return result.Assets == 0 ? ToolExitCode.Failure : ToolExitCode.Ok;
 }
 
 // Turns a worked-on PNG tree back into an overrides folder of the game's own files.
@@ -147,11 +156,12 @@ static int Images(string[] args)
 // An override archive holds only what the pack replaces. It is an overlay rather than a copy of the
 // game's archive with some entries swapped, so nothing falls out of the installation by being left out of
 // a pack, and a half-finished upscale packs what exists and leaves the rest to the game's own copy.
-static int Pack(string[] args)
+static int Pack(ToolContext ctx)
 {
+    IReadOnlyList<string> args = ctx.Arguments;
     PackBuild.Options options = new();
     List<string> positional = [];
-    for (int i = 1; i < args.Length; i++)
+    for (int i = 1; i < args.Count; i++)
     {
         switch (args[i])
         {
@@ -160,7 +170,7 @@ static int Pack(string[] args)
                 options = options with { BlockCompress = false };
                 break;
 
-            case "--quality" when i + 1 < args.Length && Enum.TryParse(args[i + 1], true, out BlockQuality quality):
+            case "--quality" when i + 1 < args.Count && Enum.TryParse(args[i + 1], true, out BlockQuality quality):
                 options = options with { Quality = quality };
                 i++;
                 break;
@@ -173,7 +183,7 @@ static int Pack(string[] args)
 
     if (positional.Count != 2)
     {
-        return Fail("usage: ResExtract pack <png-dir> <overrides-dir> [--png] [--quality fast|balanced|best]");
+        return ctx.Usage(UsageText, "usage: ResExtract pack <png-dir> <overrides-dir> [--png] [--quality fast|balanced|best]");
     }
 
     args = ["pack", .. positional];
@@ -183,7 +193,8 @@ static int Pack(string[] args)
 
     if (!File.Exists(manifest))
     {
-        return Fail(
+        return ctx.Usage(
+            UsageText,
             $"'{source}' holds no {PackManifest.FileName}. A pack is built from what `ResExtract images` " +
             "wrote, so run that first and work on the PNGs in place.");
     }
@@ -193,15 +204,15 @@ static int Pack(string[] args)
 
     foreach (string failure in result.Failures.Take(20))
     {
-        Console.Error.WriteLine($"warning: {failure}");
+        ctx.Warn(failure);
     }
 
     if (result.Failures.Count > 20)
     {
-        Console.Error.WriteLine($"warning: and {result.Failures.Count - 20} more.");
+        ctx.Warn($"and {result.Failures.Count - 20} more.");
     }
 
-    Console.WriteLine(string.Create(
+    ctx.Info(string.Create(
         CultureInfo.InvariantCulture,
         $"Packed {result.Assets} picture(s) into {result.Archives} archive(s) and {result.Loose} loose " +
         $"file(s), {result.Bytes / (1024.0 * 1024.0):F1} MiB in all; {result.Missing} not yet upscaled, " +
@@ -209,29 +220,30 @@ static int Pack(string[] args)
 
     if (result.Assets == 0)
     {
-        return Fail("Nothing was packed.");
+        return ctx.Fail("Nothing was packed.");
     }
 
-    Console.WriteLine();
-    Console.WriteLine("Move or copy the contents of");
-    Console.WriteLine($"  {destination}");
-    Console.WriteLine("into <game>/overrides, beside missions and common. Nothing else to configure --");
-    Console.WriteLine("the assets are found by the paths they already had, and `overrides` in the console");
-    Console.WriteLine("re-reads the folder without a restart.");
+    ctx.Info(string.Empty);
+    ctx.Info("Move or copy the contents of");
+    ctx.Info($"  {destination}");
+    ctx.Info("into <game>/overrides, beside missions and common. Nothing else to configure --");
+    ctx.Info("the assets are found by the paths they already had, and `overrides` in the console");
+    ctx.Info("re-reads the folder without a restart.");
 
-    return ExitCode.Ok;
+    return ToolExitCode.Ok;
 }
 
 // Converts an installed overrides folder's world textures from PNG to GPU block compression, into a new
 // folder. The pack keeps working either way; compressed, the game uploads its textures as they are
 // stored, at a quarter to an eighth of the memory, with no decoding and no mip building at load.
-static int Compress(string[] args)
+static int Compress(ToolContext ctx)
 {
+    IReadOnlyList<string> args = ctx.Arguments;
     BlockQuality quality = BlockQuality.Balanced;
     List<string> positional = [];
-    for (int i = 1; i < args.Length; i++)
+    for (int i = 1; i < args.Count; i++)
     {
-        if (args[i] == "--quality" && i + 1 < args.Length && Enum.TryParse(args[i + 1], true, out BlockQuality chosen))
+        if (args[i] == "--quality" && i + 1 < args.Count && Enum.TryParse(args[i + 1], true, out BlockQuality chosen))
         {
             quality = chosen;
             i++;
@@ -243,34 +255,34 @@ static int Compress(string[] args)
 
     if (positional.Count != 2)
     {
-        return Fail("usage: ResExtract compress <overrides-dir> <new-overrides-dir> [--quality fast|balanced|best]");
+        return ctx.Usage(UsageText, "usage: ResExtract compress <overrides-dir> <new-overrides-dir> [--quality fast|balanced|best]");
     }
 
     string source = Path.GetFullPath(positional[0]);
     string destination = Path.GetFullPath(positional[1]);
     if (!Directory.Exists(source))
     {
-        return Fail($"'{source}' does not exist.");
+        return ctx.Usage(UsageText, $"'{source}' does not exist.");
     }
 
     if (string.Equals(source.TrimEnd(Path.DirectorySeparatorChar), destination.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
     {
-        return Fail("Write the converted pack to a new folder, then swap it in: the source is read as it is written.");
+        return ctx.Usage(UsageText, "Write the converted pack to a new folder, then swap it in: the source is read as it is written.");
     }
 
-    PackRecompress.Result result = PackRecompress.Run(source, destination, quality);
+    PackRecompress.Result result = PackRecompress.Run(source, destination, quality, ctx);
 
     foreach (string failure in result.Failures.Take(20))
     {
-        Console.Error.WriteLine($"warning: {failure}");
+        ctx.Warn(failure);
     }
 
-    Console.WriteLine(string.Create(
+    ctx.Info(string.Create(
         CultureInfo.InvariantCulture,
         $"Compressed {result.Compressed} picture(s), copied {result.Copied}; "
         + $"{result.BytesBefore / 1048576.0:F0} MiB -> {result.BytesAfter / 1048576.0:F0} MiB; "
         + $"{result.Failures.Count} left as PNG after a failure."));
-    return ExitCode.Ok;
+    return ToolExitCode.Ok;
 }
 
 // Decodes every ILSF sound found below a path and writes each one out as an ordinary WAV.
@@ -283,11 +295,12 @@ static int Compress(string[] args)
 // Walks loose files and archives alike, because the streamed forms only ever exist loose on disk and
 // the resident forms only ever inside sounds.res -- so covering one and not the other tests half the
 // decoder.
-static int Sounds(string[] args)
+static int Sounds(ToolContext ctx)
 {
-    if (args.Length != 3)
+    IReadOnlyList<string> args = ctx.Arguments;
+    if (args.Count != 3)
     {
-        return Fail("usage: ResExtract sounds <archive|file|dir> <outdir>");
+        return ctx.Usage(UsageText, "usage: ResExtract sounds <archive|file|dir> <outdir>");
     }
 
     string outputRoot = Path.GetFullPath(args[2]);
@@ -299,7 +312,7 @@ static int Sounds(string[] args)
     int failed = 0;
     var census = new SortedDictionary<string, int>(StringComparer.Ordinal);
 
-    foreach ((string origin, ReadOnlyMemory<byte> data) in EnumerateSoundSources(args[1]))
+    foreach ((string origin, ReadOnlyMemory<byte> data) in EnumerateSoundSources(ctx, args[1]))
     {
         string stem = Path.GetFileNameWithoutExtension(ToRelativePath(new ArchiveItem(origin, string.Empty, data)) ?? origin);
         if (stem.Length == 0 || !seen.Add(stem))
@@ -324,25 +337,25 @@ static int Sounds(string[] args)
         }
         catch (Exception error) when (error is IlsfFormatException or IOException)
         {
-            Console.Error.WriteLine($"warning: '{stem}' did not decode: {error.Message}");
+            ctx.Warn($"'{stem}' did not decode: {error.Message}");
             failed++;
         }
     }
 
     foreach ((string key, int count) in census)
     {
-        Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{count,6}  {key}"));
+        ctx.Out.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{count,6}  {key}"));
     }
 
-    Console.WriteLine(string.Create(
+    ctx.Info(string.Create(
         CultureInfo.InvariantCulture,
         $"Wrote {written} sound(s) to {outputRoot}; {duplicates} repeat(s), {failed} failure(s)."));
 
-    return failed > 0 && written == 0 ? ExitCode.Failure : ExitCode.Ok;
+    return failed > 0 && written == 0 ? ToolExitCode.Failure : ToolExitCode.Ok;
 }
 
 // Yields every ILSF sound below a path: loose files first, then the bodies inside every archive.
-static IEnumerable<(string Origin, ReadOnlyMemory<byte> Data)> EnumerateSoundSources(string path)
+static IEnumerable<(string Origin, ReadOnlyMemory<byte> Data)> EnumerateSoundSources(ToolContext ctx, string path)
 {
     if (!Directory.Exists(path))
     {
@@ -382,7 +395,7 @@ static IEnumerable<(string Origin, ReadOnlyMemory<byte> Data)> EnumerateSoundSou
         }
         catch (Exception error) when (error is IlffFormatException or FlatResourceFormatException)
         {
-            Console.Error.WriteLine($"warning: skipping '{archive}': {error.Message}");
+            ctx.Warn($"skipping '{archive}': {error.Message}");
             continue;
         }
 
@@ -402,11 +415,12 @@ static IEnumerable<(string Origin, ReadOnlyMemory<byte> Data)> EnumerateSoundSou
 // contact sheet rather than one texture at a time -- which is how a bad derivation is actually caught.
 // The ORM arrangement is the one every other tool expects, so a texture somebody wants to correct by
 // hand can be taken out, edited, and put back.
-static int Maps(string[] args)
+static int Maps(ToolContext ctx)
 {
-    if (args.Length is not (3 or 4))
+    IReadOnlyList<string> args = ctx.Arguments;
+    if (args.Count is not (3 or 4))
     {
-        return Fail("usage: ResExtract maps <diffuse-dir> <outdir> [normal-strength]");
+        return ctx.Usage(UsageText, "usage: ResExtract maps <diffuse-dir> <outdir> [normal-strength]");
     }
 
     string sourceRoot = Path.GetFullPath(args[1]);
@@ -414,15 +428,15 @@ static int Maps(string[] args)
 
     if (!Directory.Exists(sourceRoot))
     {
-        return Fail($"'{sourceRoot}' is not a directory. Run 'images' first.");
+        return ctx.Usage(UsageText, $"'{sourceRoot}' is not a directory. Run 'images' first.");
     }
 
     float strength = 1f;
 
-    if (args.Length == 4
+    if (args.Count == 4
         && !float.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out strength))
     {
-        return Fail($"'{args[3]}' is not a number.");
+        return ctx.Usage(UsageText, $"'{args[3]}' is not a number.");
     }
 
     MaterialMapGenerator.Options options = new(NormalStrength: strength);
@@ -478,16 +492,16 @@ static int Maps(string[] args)
         }
         catch (Exception error) when (error is ArgumentException or IOException or InvalidDataException)
         {
-            Console.Error.WriteLine($"warning: '{stem}' did not derive: {error.Message}");
+            ctx.Warn($"'{stem}' did not derive: {error.Message}");
             failed++;
         }
     }
 
-    Console.WriteLine(string.Create(
+    ctx.Info(string.Create(
         CultureInfo.InvariantCulture,
         $"Derived maps for {written} texture(s) into {outputRoot} ({failed} failure(s))."));
 
-    return failed > 0 && written == 0 ? ExitCode.Failure : ExitCode.Ok;
+    return failed > 0 && written == 0 ? ToolExitCode.Failure : ToolExitCode.Ok;
 }
 
 static IReadOnlyList<ArchiveItem> ReadArchive(string path)
@@ -541,15 +555,10 @@ static string? ToRelativePath(ArchiveItem item)
     return item.Kind == nameof(IresEntryKind.ContextString) ? name + ".txt" : name;
 }
 
-static int Fail(string message)
+/// <summary>The tool's usage text.</summary>
+internal static partial class Program
 {
-    Console.Error.WriteLine($"error: {message}");
-    PrintUsage();
-    return ExitCode.Usage;
-}
-
-static void PrintUsage() =>
-    Console.WriteLine(
+    private const string UsageText =
         """
         OpenIGI ResExtract - inspect and unpack Project I.G.I. resource archives.
 
@@ -583,13 +592,7 @@ static void PrintUsage() =>
         "sounds" decodes every ILSF sound it finds -- expanding the ADPCM forms -- to an ordinary
         PCM WAV. The game's own ".wav" files are ILSF, not WAV, so nothing else will open them.
         Given a directory it walks the loose files and every .res below it.
-        """);
+        """;
+}
 
 internal sealed record ArchiveItem(string Name, string Kind, ReadOnlyMemory<byte> Data);
-
-internal static class ExitCode
-{
-    public const int Ok = 0;
-    public const int Usage = 1;
-    public const int Failure = 2;
-}

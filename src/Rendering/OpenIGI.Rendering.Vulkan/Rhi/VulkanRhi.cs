@@ -65,13 +65,13 @@ public sealed class VulkanRhi : IDisposable
         int width,
         int height,
         RhiTextureFormat format,
-        IIgiLogger? logger = null,
+        IOpenIgiLogger? logger = null,
         bool enableValidation = false)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(width, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(height, 1);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         VulkanInstance instance = new(new NoSurface(), enableValidation, log);
 
         try
@@ -110,14 +110,14 @@ public sealed class VulkanRhi : IDisposable
         int width,
         int height,
         bool vsync,
-        IIgiLogger? logger = null,
+        IOpenIgiLogger? logger = null,
         bool enableValidation = false)
     {
         ArgumentNullException.ThrowIfNull(surface);
         ArgumentOutOfRangeException.ThrowIfLessThan(width, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(height, 1);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         VulkanInstance instance = new(surface, enableValidation, log);
 
         try

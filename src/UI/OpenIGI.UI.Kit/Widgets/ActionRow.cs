@@ -52,8 +52,6 @@ public class ActionRow : Control
     protected override void OnDraw(UiPainter painter)
     {
         float highlight = UiRowStyle.Highlight(this);
-        UiRowStyle.DrawFrame(painter, this, Caption, highlight);
-
         LayoutContext context = painter.Context;
         float appear = Visual.Appear;
         float height = context.Px(36f);
@@ -63,23 +61,32 @@ public class ActionRow : Control
         float labelSize = context.Px(16f);
         float buttonWidth = UiPainter.MeasureLabel(Theme.Heading, _action, labelSize, 0.16f) + context.Px(28f);
         var button = new UiRect(right - buttonWidth, top, buttonWidth, height);
+        UiRect? field = Value.Length == 0 ? null : FieldRect(context, button, top, height);
+        UiRowStyle.DrawFrame(painter, this, Caption, highlight, field?.X ?? button.X);
         Bgra32 border = Interpolate.Lerp(UiPalette.White(0.18f), Theme.Accent, highlight);
         Bgra32 ink = Interpolate.Lerp(Theme.Text, Theme.Accent, highlight);
         painter.StrokeRect(button, context.Px(1f), UiPalette.Fade(border, appear));
         painter.DrawLabel(Theme.Heading, _action, new UiVec2(button.X + context.Px(14f), UiRowStyle.CapsCenterY(Theme.Heading, labelSize, button)), labelSize, UiPalette.Fade(ink, appear), 0.16f);
 
-        if (Value.Length == 0)
+        if (field is not { } box)
         {
             return;
         }
 
-        float fieldWidth = context.Px(FieldWidth);
-        var field = new UiRect(button.X - context.Px(8f) - fieldWidth, top, fieldWidth, height);
-        painter.FillRect(field, UiPalette.White(0.04f * appear));
-        painter.StrokeRect(field, context.Px(1f), UiPalette.White(0.1f * appear));
+        painter.FillRect(box, UiPalette.White(0.04f * appear));
+        painter.StrokeRect(box, context.Px(1f), UiPalette.White(0.1f * appear));
         float valueSize = context.Px(15f);
-        painter.PushClip(field.Deflate(new Thickness(context.Px(12f), 0f)));
-        painter.DrawText(Theme.Mono, Value, new UiVec2(field.X + context.Px(12f), UiRowStyle.CenterY(Theme.Mono, valueSize, field)), valueSize, UiPalette.Fade(UiPalette.TextBody, appear));
+        painter.PushClip(box.Deflate(new Thickness(context.Px(12f), 0f)));
+        painter.DrawText(Theme.Mono, Value, new UiVec2(box.X + context.Px(12f), UiRowStyle.CenterY(Theme.Mono, valueSize, box)), valueSize, UiPalette.Fade(UiPalette.TextBody, appear));
         painter.PopClip();
+    }
+
+    // The value's field, left of the button: its design width, or less on a narrow row, which keeps at
+    // least half of the room beside the button for the caption.
+    private UiRect FieldRect(LayoutContext context, UiRect button, float top, float height)
+    {
+        float room = button.X - context.Px(8f) - (Bounds.X + context.Px(UiRowStyle.Inset));
+        float width = MathF.Max(0f, MathF.Min(context.Px(FieldWidth), room * 0.5f));
+        return new UiRect(button.X - context.Px(8f) - width, top, width, height);
     }
 }

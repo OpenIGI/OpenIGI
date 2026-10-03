@@ -295,7 +295,7 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
 
         IGraphicsDevice device = request.Device;
         ResourceRegistry resources = request.Resources;
-        IIgiLogger logger = request.Logger;
+        IOpenIgiLogger logger = request.Logger;
 
         Igi2TextureLoader textures = new(device, resources, logger);
         return new Igi2WaterPresenter(
@@ -312,7 +312,7 @@ public sealed class Igi2PresentationProvider : ITitlePresentationProvider
         ResourceRegistry resources,
         Dictionary<int, WaterTask> tasks,
         Igi2WaterSheet sheet,
-        IIgiLogger logger)
+        IOpenIgiLogger logger)
     {
         if (sheet.EnvmapIndices.Count == 0 || !tasks.TryGetValue(sheet.TaskId, out WaterTask? water))
         {

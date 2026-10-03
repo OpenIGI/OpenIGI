@@ -40,11 +40,11 @@ public sealed class WeaponConfigRegistry
 
     private readonly List<WeaponConfigTask> _weapons = [];
     private readonly Dictionary<int, WeaponConfigTask> _byId = [];
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="WeaponConfigRegistry"/> class.</summary>
     /// <param name="logger">The logger for load diagnostics; defaults to a sink that discards them.</param>
-    public WeaponConfigRegistry(IIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
+    public WeaponConfigRegistry(IOpenIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
 
     /// <summary>Gets the weapons, in script order.</summary>
     public IReadOnlyList<WeaponConfigTask> Weapons => _weapons;

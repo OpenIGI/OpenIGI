@@ -23,8 +23,20 @@ internal sealed class LauncherSettings
     /// <summary>Gets or sets extra arguments passed to the game.</summary>
     public string LaunchArguments { get; set; } = string.Empty;
 
-    /// <summary>Gets or sets whether the launcher closes once the game has started.</summary>
-    public bool CloseOnLaunch { get; set; }
+    /// <summary>Gets or sets whether the launcher goes to the tray once the game has started, and comes back when it exits.</summary>
+    public bool MinimizeOnLaunch { get; set; }
+
+    /// <summary>Gets or sets what the close button does: ask, go to the tray, or exit.</summary>
+    public CloseAction CloseButton { get; set; } = CloseAction.Ask;
+
+    /// <summary>Reads the setting <see cref="MinimizeOnLaunch"/> replaced, from a file an earlier launcher wrote.</summary>
+    /// <remarks>Closing on launch now means going to the tray, so a player who chose it keeps the choice.</remarks>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? CloseOnLaunch
+    {
+        get => null;
+        set => MinimizeOnLaunch |= value == true;
+    }
 
     /// <summary>Gets or sets whether a desktop notification announces a new release while the launcher is in the background.</summary>
     public bool Notifications { get; set; } = true;
@@ -32,7 +44,15 @@ internal sealed class LauncherSettings
     /// <summary>Gets or sets the last version announced of each of <c>game</c> and <c>launcher</c>, so none is announced twice.</summary>
     public Dictionary<string, string> Announced { get; set; } = new(StringComparer.Ordinal);
 
-    /// <summary>Gets or sets, per content pack id, whether the game is started with that pack (when it is installed).</summary>
+    /// <summary>Gets or sets, per game id, the content load order: highest priority first, each entry on or off.</summary>
+    /// <remarks>The game folder's own overrides are an entry too; see <see cref="ContentLoadOrder"/>.</remarks>
+    public Dictionary<string, List<ContentOrderEntry>> ContentOrder { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>Gets or sets the on/off state of each pack from before there was a load order.</summary>
+    /// <remarks>
+    /// Read once, to carry each pack's choice into its game's <see cref="ContentOrder"/>, and emptied as the
+    /// packs are met; never written to otherwise.
+    /// </remarks>
     public Dictionary<string, bool> Content { get; set; } = new(StringComparer.Ordinal);
 
     /// <summary>Reads the settings, or the defaults when there are none yet or the file is unreadable.</summary>
@@ -48,6 +68,10 @@ internal sealed class LauncherSettings
                 settings.GameFolders = new Dictionary<string, string>(settings.GameFolders, StringComparer.Ordinal);
                 settings.Announced = new Dictionary<string, string>(settings.Announced, StringComparer.Ordinal);
                 settings.Content = new Dictionary<string, bool>(settings.Content ?? [], StringComparer.Ordinal);
+                settings.ContentOrder = new Dictionary<string, List<ContentOrderEntry>>(
+                    (settings.ContentOrder ?? []).Where(static pair => pair.Value is not null)
+                        .ToDictionary(static pair => pair.Key, static pair => pair.Value.Where(static entry => entry?.Id is { Length: > 0 }).ToList()),
+                    StringComparer.Ordinal);
                 return settings;
             }
         }
@@ -74,3 +98,16 @@ internal sealed class LauncherSettings
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web, WriteIndented = true, UseStringEnumConverter = true)]
 [JsonSerializable(typeof(LauncherSettings))]
 internal sealed partial class LauncherSettingsJson : JsonSerializerContext;
+
+/// <summary>What the launcher's close button does.</summary>
+internal enum CloseAction
+{
+    /// <summary>Ask each time: go to the tray, or exit.</summary>
+    Ask,
+
+    /// <summary>Hide in the notification area (the Dock or the taskbar where there is none), still checking for updates.</summary>
+    MinimizeToTray,
+
+    /// <summary>Exit the launcher.</summary>
+    Exit,
+}

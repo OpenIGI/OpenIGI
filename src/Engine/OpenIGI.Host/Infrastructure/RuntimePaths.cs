@@ -5,6 +5,9 @@ internal static class RuntimePaths
 {
     internal const string RuntimeDirectoryEnvironmentVariable = "IGI_RUNTIME_DIR";
 
+    /// <summary>The name of the session's log file.</summary>
+    internal const string LogFileName = "runtime.log";
+
     public static string GetLogPath()
     {
         string? explicitDirectory = Environment.GetEnvironmentVariable(RuntimeDirectoryEnvironmentVariable);
@@ -26,7 +29,7 @@ internal static class RuntimePaths
         {
             try
             {
-                return Path.Combine(EnsureWritableDirectory(explicitDirectory), PersistentLogger.LogFileName);
+                return Path.Combine(EnsureWritableDirectory(explicitDirectory), LogFileName);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
             {
@@ -45,7 +48,7 @@ internal static class RuntimePaths
 
             try
             {
-                return Path.Combine(EnsureWritableDirectory(candidate), PersistentLogger.LogFileName);
+                return Path.Combine(EnsureWritableDirectory(candidate), LogFileName);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
             {

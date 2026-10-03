@@ -3,11 +3,16 @@ using System.IO;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.TestSupport;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace OpenIGI.Scripting.Tests;
 
 public sealed class DiagObjectsDump
 {
+    private readonly ITestOutputHelper _output;
+
+    public DiagObjectsDump(ITestOutputHelper output) => _output = output;
+
     [RequiresGameDataFact]
     public void DumpMission4Objects()
     {
@@ -21,7 +26,7 @@ public sealed class DiagObjectsDump
             string line = lines[i];
             if (line.Contains("; string \"") || line.Contains("; symbol"))
             {
-                Console.WriteLine($"{i:D6}: {line}");
+                _output.WriteLine($"{i:D6}: {line}");
             }
         }
     }

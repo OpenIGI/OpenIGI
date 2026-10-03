@@ -245,12 +245,12 @@ public sealed class Igi2EnvironmentMap
     public static IReadOnlyList<Igi2EnvironmentMap> LoadAll(
         WaterTask water,
         IresArchive archive,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(water);
         ArgumentNullException.ThrowIfNull(archive);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         List<Igi2EnvironmentMap> maps = [];
 
         foreach (int index in water.EnvmapIndices)

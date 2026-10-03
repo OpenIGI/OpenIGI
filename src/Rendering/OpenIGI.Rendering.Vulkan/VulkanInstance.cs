@@ -37,9 +37,11 @@ internal sealed unsafe class VulkanInstance : IDisposable
     // local that the GC could reclaim once the constructor returns.
     private static readonly DebugUtilsMessengerCallbackFunctionEXT DebugCallback = OnDebugMessage;
 
-    // The callback is static, so the one logger it routes to is stashed here. There is a single backend
-    // per process, so a static sink is enough.
-    private static IIgiLogger _debugLogger = NullLogger.Instance;
+    private readonly IOpenIgiLogger _logger;
+
+    // The messenger's user data: a handle back to this instance, so the static callback reports through
+    // this instance's logger rather than a process-wide one.
+    private GCHandle _self;
 
     private readonly ExtDebugUtils? _debugUtils;
     private readonly DebugUtilsMessengerEXT _debugMessenger;
@@ -51,10 +53,10 @@ internal sealed unsafe class VulkanInstance : IDisposable
     /// <param name="enableValidation">Whether to attach the Khronos validation layer if it is present.</param>
     /// <param name="logger">Where to report backend diagnostics.</param>
     /// <exception cref="GraphicsDeviceException">The instance or the surface could not be created.</exception>
-    public VulkanInstance(IVulkanSurfaceProvider surfaceProvider, bool enableValidation, IIgiLogger logger)
+    public VulkanInstance(IVulkanSurfaceProvider surfaceProvider, bool enableValidation, IOpenIgiLogger logger)
     {
         ArgumentNullException.ThrowIfNull(surfaceProvider);
-        _debugLogger = logger;
+        _logger = logger ?? NullLogger.Instance;
         Vk = Vk.GetApi();
 
         List<string> extensions = [.. surfaceProvider.GetRequiredInstanceExtensions()];
@@ -118,6 +120,11 @@ internal sealed unsafe class VulkanInstance : IDisposable
         {
             _debugUtils.DestroyDebugUtilsMessenger(Instance, _debugMessenger, null);
             _debugUtils.Dispose();
+        }
+
+        if (_self.IsAllocated)
+        {
+            _self.Free();
         }
 
         KhrSurface.Dispose();
@@ -252,6 +259,8 @@ internal sealed unsafe class VulkanInstance : IDisposable
                 | DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt,
             PfnUserCallback = new PfnDebugUtilsMessengerCallbackEXT(DebugCallback),
         };
+        _self = GCHandle.Alloc(this);
+        createInfo.PUserData = (void*)GCHandle.ToIntPtr(_self);
 
         DebugUtilsMessengerEXT messenger;
         VkCheck.Ok(
@@ -270,14 +279,13 @@ internal sealed unsafe class VulkanInstance : IDisposable
             ? "(no message)"
             : Marshal.PtrToStringAnsi((nint)data->PMessage) ?? "(no message)";
 
-        if (severity.HasFlag(DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt))
-        {
-            _debugLogger.Error("Vulkan", message);
-        }
-        else
-        {
-            _debugLogger.Warning("Vulkan", message);
-        }
+        IOpenIgiLogger logger = userData is not null && GCHandle.FromIntPtr((nint)userData).Target is VulkanInstance owner
+            ? owner._logger
+            : NullLogger.Instance;
+        logger.Log(
+            severity.HasFlag(DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt) ? LogLevel.Error : LogLevel.Warning,
+            "Vulkan.Validation",
+            message);
 
         // The spec requires the application to always return false here: true is reserved for the
         // layer's own use and aborts the call that triggered the message.

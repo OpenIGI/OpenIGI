@@ -2,6 +2,7 @@ using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Graphics;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
+using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Host.DevTools;
@@ -296,7 +297,6 @@ public sealed class CVarBrowserBody : UiElement
 
         FilterRect = box;
 
-
         float y = MathF.Round(box.Y + ((box.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f));
         float textX = MathF.Round(box.X + (unit * 2f));
 
@@ -381,7 +381,7 @@ public sealed class CVarBrowserBody : UiElement
         float y = MathF.Round(rect.Y + ((rect.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f));
         float x = MathF.Round(rect.X + _theme.Gutter);
 
-        painter.DrawText(_theme.BodyFont, Fit(variable.Name, NameColumns - 1), new UiVec2(x, y), _theme.BodySize, _theme.SyntaxVariable);
+        painter.DrawText(_theme.BodyFont, TextFit.ToColumns(variable.Name, NameColumns - 1), new UiVec2(x, y), _theme.BodySize, _theme.SyntaxVariable);
 
         float valueX = MathF.Round(x + (cell * NameColumns));
         if (selected && _editing)
@@ -392,7 +392,7 @@ public sealed class CVarBrowserBody : UiElement
         {
             painter.DrawText(
                 _theme.BodyFont,
-                Fit(variable.ValueText, ValueColumns - 1),
+                TextFit.ToColumns(variable.ValueText, ValueColumns - 1),
                 new UiVec2(valueX, y),
                 _theme.BodySize,
                 variable.IsDefault ? _theme.Ui.Text : _theme.Ui.Accent);
@@ -400,7 +400,7 @@ public sealed class CVarBrowserBody : UiElement
 
         painter.DrawText(
             _theme.SmallFont,
-            Fit(variable.DefaultText, DefaultColumns - 1),
+            TextFit.ToColumns(variable.DefaultText, DefaultColumns - 1),
             new UiVec2(MathF.Round(x + (cell * (NameColumns + ValueColumns))), MathF.Round(rect.Y + ((rect.Height - _theme.SmallFont.LineHeight(_theme.SmallSize)) * 0.5f))),
             _theme.SmallSize,
             _theme.Ui.TextDisabled);
@@ -420,7 +420,7 @@ public sealed class CVarBrowserBody : UiElement
         {
             painter.DrawText(
                 _theme.SmallFont,
-                Fit(trailing, helpColumns),
+                TextFit.ToColumns(trailing, helpColumns),
                 new UiVec2(helpX, MathF.Round(rect.Y + ((rect.Height - _theme.SmallFont.LineHeight(_theme.SmallSize)) * 0.5f))),
                 _theme.SmallSize,
                 _theme.Ui.TextMuted);
@@ -498,7 +498,4 @@ public sealed class CVarBrowserBody : UiElement
 
         return at == 0 ? string.Empty : new string(letters[..at]);
     }
-
-    private static string Fit(string text, int columns) =>
-        columns <= 1 || text.Length <= columns ? text : string.Concat(text.AsSpan(0, columns - 1), "…");
 }

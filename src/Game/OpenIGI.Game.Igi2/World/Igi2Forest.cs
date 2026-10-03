@@ -75,12 +75,12 @@ public sealed class Igi2Forest
     /// A <c>Forest</c> task whose file is absent contributes no trees rather than faulting. The task is
     /// the authority on the stand; the file is the bake, and a level may ship one without the other.
     /// </remarks>
-    public static Igi2Forest Build(GameTask levelRoot, ResourceRegistry resources, IIgiLogger? logger = null)
+    public static Igi2Forest Build(GameTask levelRoot, ResourceRegistry resources, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(resources);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         List<Igi2ForestStand> stands = [];
 
         foreach (GameTask task in Walk(levelRoot))

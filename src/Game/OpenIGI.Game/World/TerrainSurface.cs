@@ -81,12 +81,12 @@ public sealed class TerrainSurface
     /// <param name="logger">Where to report modifiers or discard volumes that do not resolve.</param>
     /// <returns>The surface.</returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public static TerrainSurface Build(TerrainData terrain, GameTask levelRoot, IIgiLogger? logger = null)
+    public static TerrainSurface Build(TerrainData terrain, GameTask levelRoot, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(terrain);
         ArgumentNullException.ThrowIfNull(levelRoot);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         List<TerrainTileLayer> layers = [];
         int skippedModifiers = 0;
 

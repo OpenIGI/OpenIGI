@@ -3,11 +3,15 @@ using System.Globalization;
 using System.Runtime;
 using System.Text;
 using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Diagnostics;
 
 namespace OpenIGI.Host;
 
 internal sealed partial class GameHost
 {
+    /// <summary>The category memory reports are logged under.</summary>
+    internal const string MemoryLogCategory = "Memory";
+
     /// <summary>Registers <c>mem_report</c>.</summary>
     /// <param name="console">The console to register with.</param>
     private void RegisterMemoryCommands(ConsoleSystem console)
@@ -15,18 +19,10 @@ internal sealed partial class GameHost
         console.Commands.Add(
             "mem_report",
             "Prints where the game's memory is: the managed heap, the process, the graphics device and its caches.",
-            context =>
-            {
-                string report = DescribeMemory();
-                foreach (string line in report.Split('\n'))
-                {
-                    context.Print(line);
-                }
-
-                // Also to standard output, so a scripted soak (-runat, -backdropcycle) can read it back:
-                // the runtime log keeps warnings only.
-                Console.WriteLine(report);
-            });
+            // Logged rather than printed, so the report reaches the console, the log file and standard output
+            // alike: a scripted soak (-runat, -backdropcycle) reads it back from the last two. The Memory
+            // category is on at Information whatever the verbosity; see DesktopLogging.
+            _ => _logger.Information(MemoryLogCategory, DescribeMemory()));
     }
 
     /// <summary>Describes where the process's memory is, managed and native.</summary>

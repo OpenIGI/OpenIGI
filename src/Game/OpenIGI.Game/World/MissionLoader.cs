@@ -61,7 +61,7 @@ public sealed class MissionLoader
     private readonly LevelLoader _levelLoader;
     private readonly TerrainLoader? _terrainLoader;
     private readonly SoundBank? _soundBank;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="MissionLoader"/> class.</summary>
     /// <param name="registry">The mission table, already scanned.</param>
@@ -85,7 +85,7 @@ public sealed class MissionLoader
         VirtualFileSystem fileSystem,
         ResourceRegistry resources,
         LevelLoader levelLoader,
-        IIgiLogger? logger = null,
+        IOpenIgiLogger? logger = null,
         TerrainLoader? terrainLoader = null,
         SoundBank? soundBank = null,
         AssetFormatProfile? formats = null)

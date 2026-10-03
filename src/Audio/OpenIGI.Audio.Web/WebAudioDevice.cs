@@ -43,7 +43,7 @@ public sealed class WebAudioDevice : IAudioDevice
 {
     private const string LogCategory = "Audio";
 
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly AudioDeviceOptions _options;
     private readonly IWebAudioPage _page;
     private readonly MixBuses _buses = new();
@@ -59,7 +59,7 @@ public sealed class WebAudioDevice : IAudioDevice
     /// <param name="options">How to open the device.</param>
     /// <param name="page">The page's audio graph.</param>
     /// <param name="logger">Where to report what happened, or <see langword="null"/> for silence.</param>
-    public WebAudioDevice(AudioDeviceOptions options, IWebAudioPage page, IIgiLogger? logger = null)
+    public WebAudioDevice(AudioDeviceOptions options, IWebAudioPage page, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(page);
 

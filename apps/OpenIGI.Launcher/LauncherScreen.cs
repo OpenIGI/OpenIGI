@@ -18,10 +18,20 @@ internal interface ILauncherWindow
 
     void ToggleMaximize();
 
+    /// <summary>Does what the close button is set to: asks, goes to the tray, or exits.</summary>
     void Close();
 
-    /// <summary>Gets the system clipboard's text, for pasting a folder into a field.</summary>
-    string ClipboardText { get; }
+    /// <summary>Exits the launcher, whatever the close button is set to.</summary>
+    void Exit();
+
+    /// <summary>Gets or sets the system clipboard's text: read to paste a folder into a field, written to copy the log.</summary>
+    string ClipboardText { get; set; }
+
+    /// <summary>Asks the player for a folder with the system's own picker, in front of the launcher.</summary>
+    /// <param name="title">What the picker asks.</param>
+    /// <param name="initial">The folder it opens on, if it exists.</param>
+    /// <returns>The folder chosen, or <see langword="null"/> when the player cancelled.</returns>
+    Task<string?> PickFolder(string title, string? initial);
 
     /// <summary>Decodes a picture file for drawing, once per file.</summary>
     /// <param name="path">The picture: PNG, JPEG or WebP.</param>
@@ -57,6 +67,7 @@ internal sealed class LauncherScreen : Screen
     private LauncherBackdrop? _backdrop;
     private HomePage? _home;
     private ContentPage? _content;
+    private LogsPage? _logs;
     private GameSwitcher? _switcher;
     private UiElement? _chrome;
     private FooterBar? _footer;
@@ -99,13 +110,14 @@ internal sealed class LauncherScreen : Screen
 
         // The main area first in tree order, so focus starts on the page rather than on the chrome.
         var main = new Panel();
-        _home = new HomePage(_theme, _model, () => ShowSection(4), () => ShowSection(1));
+        _home = new HomePage(_theme, _model, _window.Picture, () => ShowSection(4), () => ShowSection(1));
         AddPage(main, _home.Root);
         _content = new ContentPage(_rowTheme, _model, _window.Picture);
         AddPage(main, _content.Root);
         AddPage(main, PlaceholderPage.Build(_theme, "Mods & plugins", "Mods", "Mod management arrives with the mod loader"));
-        AddPage(main, PlaceholderPage.Build(_theme, "Launcher · session", "Logs", "No log output yet"));
-        AddPage(main, SettingsPage.Build(_rowTheme, _model));
+        _logs = new LogsPage(_theme, _model, _window);
+        AddPage(main, _logs.Root);
+        AddPage(main, SettingsPage.Build(_rowTheme, _model, _window));
         layout.Add(main, 2, 0);
 
         _chrome = BuildChrome();
@@ -124,6 +136,18 @@ internal sealed class LauncherScreen : Screen
     {
         ArgumentNullException.ThrowIfNull(nav);
         ArgumentNullException.ThrowIfNull(input);
+
+        // A row being dragged owns the input until it is dropped; one carried with the keys is put back by Back.
+        if (IsPointerCaptured)
+        {
+            base.HandleInput(nav, input);
+            return false;
+        }
+
+        if (nav.Back && Focus?.Focused is ReorderHandle handle && handle.CancelKeyboardMove())
+        {
+            return false;
+        }
 
         // An open game list takes Back for itself: shutting it is what the player meant.
         if (nav.Back && _switcher is { IsOpen: true } open)
@@ -180,14 +204,9 @@ internal sealed class LauncherScreen : Screen
             RequestLayout();
         }
 
-        if (_model.CloseRequested)
-        {
-            _window.Close();
-            return;
-        }
-
         _home?.Update();
         _content?.Update();
+        _logs?.Update();
         if (_backdrop is not null)
         {
             _backdrop.Focus = BackdropFocus();
@@ -197,6 +216,7 @@ internal sealed class LauncherScreen : Screen
         {
             _tabs[0].Badge = _model.UpdatesAvailable;
             _tabs[1].Badge = _model.Job is null ? 0 : 1;
+            _tabs[3].Badge = _logs?.Errors ?? 0;
         }
     }
 
@@ -207,7 +227,10 @@ internal sealed class LauncherScreen : Screen
         host.AddChild(page);
     }
 
-    private void ShowSection(int index, bool refocus = true)
+    /// <summary>Shows one of the sections: 0 Home, 1 Content, 2 Mods, 3 Logs, 4 Settings.</summary>
+    /// <param name="index">The section.</param>
+    /// <param name="refocus">Whether focus moves to the section's first control.</param>
+    internal void ShowSection(int index, bool refocus = true)
     {
         _section = Math.Clamp(index, 0, Sections.Length - 1);
         for (int i = 0; i < _pages.Count; i++)
@@ -234,7 +257,7 @@ internal sealed class LauncherScreen : Screen
     {
         if (_model.RestartIntoUpdate())
         {
-            _window.Close();
+            _window.Exit();
         }
     }
 

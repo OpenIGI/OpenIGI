@@ -1,3 +1,4 @@
+using OpenIGI.Tools;
 using OpenIGI.Tools.ShaderBuild;
 
 // Compiles src/Rendering/OpenIGI.Shaders from Slang to SPIR-V and WGSL.
@@ -8,72 +9,74 @@ using OpenIGI.Tools.ShaderBuild;
 // The committed artefacts are what the game loads; this tool is what produces them, and --check is
 // what stops a shader source being edited without its compiled form following.
 
-bool checkOnly = args.Contains("--check", StringComparer.Ordinal);
+return ToolHost.Run("ShaderBuild", args, Run);
 
-try
+static int Run(ToolContext ctx)
 {
-    string projectDirectory = ShaderProjectLocator.Locate();
-    string slangc = SlangLocator.Locate();
-    SlangCompiler compiler = new(slangc);
+    // The build itself failed (no slangc, a shader that does not compile), as distinct from --check finding
+    // stale output, which is ToolExitCode.Failure.
+    const int BuildFailed = 2;
 
-    string version = compiler.Version();
-    Console.WriteLine($"slangc   {slangc}");
-    Console.WriteLine($"version  {version}");
-    Console.WriteLine($"library  {projectDirectory}");
-    Console.WriteLine();
+    bool checkOnly = ctx.Arguments.Contains("--check", StringComparer.Ordinal);
 
-    ShaderLibraryBuilder builder = new(compiler, projectDirectory);
-    IReadOnlyList<ArtifactResult> results = builder.Build(checkOnly);
-
-    foreach (ArtifactResult result in results)
+    try
     {
-        string label = result.State switch
+        string projectDirectory = ShaderProjectLocator.Locate();
+        string slangc = SlangLocator.Locate();
+        SlangCompiler compiler = new(slangc);
+
+        string version = compiler.Version();
+        ctx.Info($"slangc   {slangc}");
+        ctx.Info($"version  {version}");
+        ctx.Info($"library  {projectDirectory}");
+        ctx.Info(string.Empty);
+
+        ShaderLibraryBuilder builder = new(compiler, projectDirectory);
+        IReadOnlyList<ArtifactResult> results = builder.Build(checkOnly);
+
+        foreach (ArtifactResult result in results)
         {
-            ArtifactState.Unchanged => "unchanged",
-            ArtifactState.Changed => checkOnly ? "STALE" : "rewritten",
-            _ => checkOnly ? "MISSING" : "added",
-        };
-        Console.WriteLine($"  {label,-10} {result.RelativePath}");
-    }
-
-    int stale = results.Count(result => result.State != ArtifactState.Unchanged);
-    Console.WriteLine();
-
-    foreach (string warning in compiler.Warnings)
-    {
-        Console.WriteLine($"  {warning}");
-    }
-
-    if (compiler.Warnings.Count > 0)
-    {
-        Console.WriteLine();
-    }
-
-
-    if (!checkOnly)
-    {
-        if (builder.Pin is { } moved)
-        {
-            Console.WriteLine($"slangVersion moved to {moved}; commit ShaderModules.json with the output.");
+            string label = result.State switch
+            {
+                ArtifactState.Unchanged => "unchanged",
+                ArtifactState.Changed => checkOnly ? "STALE" : "rewritten",
+                _ => checkOnly ? "MISSING" : "added",
+            };
+            ctx.Out.WriteLine($"  {label,-10} {result.RelativePath}");
         }
 
-        Console.WriteLine($"{results.Count} artefact(s), {stale} written.");
-        return 0;
-    }
+        int stale = results.Count(result => result.State != ArtifactState.Unchanged);
+        ctx.Out.WriteLine();
 
-    if (stale == 0)
+        foreach (string warning in compiler.Warnings)
+        {
+            ctx.Warn(warning);
+        }
+
+        if (!checkOnly)
+        {
+            if (builder.Pin is { } moved)
+            {
+                ctx.Info($"slangVersion moved to {moved}; commit ShaderModules.json with the output.");
+            }
+
+            ctx.Info($"{results.Count} artefact(s), {stale} written.");
+            return ToolExitCode.Ok;
+        }
+
+        if (stale == 0)
+        {
+            ctx.Info($"{results.Count} artefact(s) are current.");
+            return ToolExitCode.Ok;
+        }
+
+        return ctx.Fail(
+            $"{stale} of {results.Count} committed artefact(s) do not match the sources. "
+            + "Run `dotnet run --project tools/OpenIGI.Tools.ShaderBuild` and commit the result.");
+    }
+    catch (ShaderBuildException exception)
     {
-        Console.WriteLine($"{results.Count} artefact(s) are current.");
-        return 0;
+        ctx.Fail(exception.Message, exception);
+        return BuildFailed;
     }
-
-    Console.Error.WriteLine(
-        $"{stale} of {results.Count} committed artefact(s) do not match the sources. "
-        + "Run `dotnet run --project tools/OpenIGI.Tools.ShaderBuild` and commit the result.");
-    return 1;
-}
-catch (ShaderBuildException exception)
-{
-    Console.Error.WriteLine(exception.Message);
-    return 2;
 }

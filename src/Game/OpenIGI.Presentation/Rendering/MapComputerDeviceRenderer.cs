@@ -23,7 +23,7 @@ internal sealed class MapComputerDeviceRenderer : IDisposable
 
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
 
     private MeshGeometry? _geometry;
@@ -34,7 +34,7 @@ internal sealed class MapComputerDeviceRenderer : IDisposable
     private bool _disposed;
     private float _widthMetres = DefaultWidthMetres;
 
-    public MapComputerDeviceRenderer(IGraphicsDevice device, ResourceRegistry resources, IIgiLogger logger)
+    public MapComputerDeviceRenderer(IGraphicsDevice device, ResourceRegistry resources, IOpenIgiLogger logger)
     {
         _device = device;
         _resources = resources;

@@ -163,7 +163,6 @@ public class KeyBindingRow : Control
     protected override void OnDraw(UiPainter painter)
     {
         float highlight = UiRowStyle.Highlight(this);
-        UiRowStyle.DrawFrame(painter, this, Action, highlight);
 
         // The binding is a key cap, the same one the footer's hints use, so a binding reads as the key it
         // is rather than as a word.
@@ -182,6 +181,7 @@ public class KeyBindingRow : Control
         float height = context.Px(28f);
         float right = Bounds.Right - context.Px(UiRowStyle.Inset);
         var cap = new UiRect(right - textWidth - (padX * 2f), Bounds.Y + ((Bounds.Height - height) * 0.5f), textWidth + (padX * 2f), height);
+        UiRowStyle.DrawFrame(painter, this, Action, highlight, cap.X);
 
         Bgra32 border = IsListening
             ? Interpolate.Lerp(UiPalette.AccentAt(0.35f), Theme.Accent, _pulse.Value)

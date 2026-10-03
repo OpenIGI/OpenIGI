@@ -41,7 +41,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
 {
     private const string LogCategory = "Audio";
 
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly AudioDeviceOptions _options;
     private readonly Lock _gate = new();
     private readonly MixBuses _buses = new();
@@ -59,7 +59,7 @@ public sealed class OpenAlAudioDevice : IAudioDevice
     /// <summary>Initializes a new instance of the <see cref="OpenAlAudioDevice"/> class.</summary>
     /// <param name="options">How to open the device.</param>
     /// <param name="logger">Where to report what happened, or <see langword="null"/> for silence.</param>
-    public OpenAlAudioDevice(AudioDeviceOptions options, IIgiLogger? logger = null)
+    public OpenAlAudioDevice(AudioDeviceOptions options, IOpenIgiLogger? logger = null)
     {
         _logger = logger ?? NullLogger.Instance;
         _options = options;

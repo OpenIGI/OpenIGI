@@ -4,142 +4,140 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Level;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
+using OpenIGI.Tools;
 
-if (args.Length == 0 || args[0] is "-h" or "--help")
-{
-    Console.WriteLine("OpenIGI TaskCensus - report the task types a game's level scripts declare.");
-    Console.WriteLine();
-    Console.WriteLine("usage:");
-    Console.WriteLine("  TaskCensus <game-root> [--out <file.md>]");
-    Console.WriteLine();
-    Console.WriteLine("Runs every objects.qvm below <game-root>/missions with an empty type registry and");
-    Console.WriteLine("reports what each level declared: the type name, its parameter count and its");
-    Console.WriteLine("parameters in wire order. See README.md.");
-    return 0;
-}
+return ToolHost.Run("TaskCensus", args, Run);
 
-string root = args[0];
-string? outPath = null;
-for (int i = 1; i < args.Length - 1; i++)
+static int Run(ToolContext ctx)
 {
-    if (args[i] is "--out" or "-o")
+    IReadOnlyList<string> args = ctx.Arguments;
+    if (args.Count == 0 || args[0] is "-h" or "--help")
     {
-        outPath = args[i + 1];
+        ctx.Out.WriteLine(UsageText);
+        return ToolExitCode.Ok;
     }
-}
 
-if (!Directory.Exists(root))
-{
-    Console.Error.WriteLine($"'{root}' does not exist.");
-    return 2;
-}
-
-string missionsRoot = Path.Combine(root, "missions");
-if (!Directory.Exists(missionsRoot))
-{
-    Console.Error.WriteLine($"'{missionsRoot}' does not exist; is this a game root?");
-    return 2;
-}
-
-// name -> the declaration, plus which levels declared it. A type declared identically by every level is
-// the common case; a disagreement is the interesting one, so both are recorded.
-SortedDictionary<string, Declaration> census = new(StringComparer.Ordinal);
-List<string> failures = [];
-int levels = 0;
-
-foreach (string script in Directory
-    .EnumerateFiles(missionsRoot, LevelLoader.ObjectsScriptName, SearchOption.AllDirectories)
-    .OrderBy(static p => p, StringComparer.OrdinalIgnoreCase))
-{
-    string levelDirectory = Path.GetDirectoryName(script)!;
-    string label = Path.GetRelativePath(missionsRoot, levelDirectory).Replace('\\', '/');
-
-    try
+    string root = args[0];
+    string? outPath = null;
+    for (int i = 1; i < args.Count - 1; i++)
     {
-        foreach (DeclaredType type in DeclaredTypesOf(root, levelDirectory))
+        if (args[i] is "--out" or "-o")
         {
-            string signature = Signature(type);
-
-            if (!census.TryGetValue(type.Name, out Declaration? existing))
-            {
-                census[type.Name] = new Declaration(type.Name, signature, [label]);
-                continue;
-            }
-
-            existing!.Levels.Add(label);
-            if (!string.Equals(existing.Signature, signature, StringComparison.Ordinal))
-            {
-                existing.Disagreements.Add($"{label}: {signature}");
-            }
-        }
-
-        levels++;
-    }
-    catch (Exception ex) when (ex is EngineFatalException or InvalidOperationException or IOException)
-    {
-        failures.Add($"{label}: {ex.Message}");
-    }
-}
-
-StringBuilder report = new();
-report.AppendLine(CultureInfo.InvariantCulture, $"# Task-type census — `{root}`");
-report.AppendLine();
-report.AppendLine(CultureInfo.InvariantCulture,
-    $"{census.Count} task types declared across {levels} level(s), recovered by running each level's ");
-report.AppendLine("`objects.qvm` with an empty type registry. Parameters are in wire order: the order the");
-report.AppendLine("`Task_New` calls supply them.");
-report.AppendLine();
-
-foreach (Declaration declaration in census.Values)
-{
-    report.AppendLine(CultureInfo.InvariantCulture, $"## {declaration.Name}");
-    report.AppendLine();
-    report.AppendLine(CultureInfo.InvariantCulture, $"Declared by {declaration.Levels.Count} level(s).");
-    report.AppendLine();
-    report.AppendLine("```");
-    report.AppendLine(declaration.Signature);
-    report.AppendLine("```");
-
-    if (declaration.Disagreements.Count > 0)
-    {
-        report.AppendLine();
-        report.AppendLine("**Levels disagree on this type:**");
-        report.AppendLine();
-        foreach (string disagreement in declaration.Disagreements.Distinct(StringComparer.Ordinal))
-        {
-            report.AppendLine(CultureInfo.InvariantCulture, $"- {disagreement}");
+            outPath = args[i + 1];
         }
     }
 
-    report.AppendLine();
-}
+    if (!Directory.Exists(root))
+    {
+        return ctx.Usage(UsageText, $"'{root}' does not exist.");
+    }
 
-if (failures.Count > 0)
-{
-    report.AppendLine("## Levels that did not load");
+    string missionsRoot = Path.Combine(root, "missions");
+    if (!Directory.Exists(missionsRoot))
+    {
+        return ctx.Usage(UsageText, $"'{missionsRoot}' does not exist; is this a game root?");
+    }
+
+    // name -> the declaration, plus which levels declared it. A type declared identically by every level is
+    // the common case; a disagreement is the interesting one, so both are recorded.
+    SortedDictionary<string, Declaration> census = new(StringComparer.Ordinal);
+    List<string> failures = [];
+    int levels = 0;
+
+    foreach (string script in Directory
+        .EnumerateFiles(missionsRoot, LevelLoader.ObjectsScriptName, SearchOption.AllDirectories)
+        .OrderBy(static p => p, StringComparer.OrdinalIgnoreCase))
+    {
+        string levelDirectory = Path.GetDirectoryName(script)!;
+        string label = Path.GetRelativePath(missionsRoot, levelDirectory).Replace('\\', '/');
+
+        try
+        {
+            foreach (DeclaredType type in DeclaredTypesOf(root, levelDirectory))
+            {
+                string signature = Signature(type);
+
+                if (!census.TryGetValue(type.Name, out Declaration? existing))
+                {
+                    census[type.Name] = new Declaration(type.Name, signature, [label]);
+                    continue;
+                }
+
+                existing!.Levels.Add(label);
+                if (!string.Equals(existing.Signature, signature, StringComparison.Ordinal))
+                {
+                    existing.Disagreements.Add($"{label}: {signature}");
+                }
+            }
+
+            levels++;
+        }
+        catch (Exception ex) when (ex is EngineFatalException or InvalidOperationException or IOException)
+        {
+            failures.Add($"{label}: {ex.Message}");
+        }
+    }
+
+    StringBuilder report = new();
+    report.AppendLine(CultureInfo.InvariantCulture, $"# Task-type census — `{root}`");
     report.AppendLine();
+    report.AppendLine(CultureInfo.InvariantCulture,
+        $"{census.Count} task types declared across {levels} level(s), recovered by running each level's ");
+    report.AppendLine("`objects.qvm` with an empty type registry. Parameters are in wire order: the order the");
+    report.AppendLine("`Task_New` calls supply them.");
+    report.AppendLine();
+
+    foreach (Declaration declaration in census.Values)
+    {
+        report.AppendLine(CultureInfo.InvariantCulture, $"## {declaration.Name}");
+        report.AppendLine();
+        report.AppendLine(CultureInfo.InvariantCulture, $"Declared by {declaration.Levels.Count} level(s).");
+        report.AppendLine();
+        report.AppendLine("```");
+        report.AppendLine(declaration.Signature);
+        report.AppendLine("```");
+
+        if (declaration.Disagreements.Count > 0)
+        {
+            report.AppendLine();
+            report.AppendLine("**Levels disagree on this type:**");
+            report.AppendLine();
+            foreach (string disagreement in declaration.Disagreements.Distinct(StringComparer.Ordinal))
+            {
+                report.AppendLine(CultureInfo.InvariantCulture, $"- {disagreement}");
+            }
+        }
+
+        report.AppendLine();
+    }
+
+    if (failures.Count > 0)
+    {
+        report.AppendLine("## Levels that did not load");
+        report.AppendLine();
+        foreach (string failure in failures)
+        {
+            report.AppendLine(CultureInfo.InvariantCulture, $"- {failure}");
+        }
+    }
+
+    if (outPath is null)
+    {
+        ctx.Out.Write(report.ToString());
+    }
+    else
+    {
+        File.WriteAllText(outPath, report.ToString());
+        ctx.Info($"{census.Count} type(s) from {levels} level(s) -> {outPath}");
+    }
+
     foreach (string failure in failures)
     {
-        report.AppendLine(CultureInfo.InvariantCulture, $"- {failure}");
+        ctx.Warn(failure);
     }
-}
 
-if (outPath is null)
-{
-    Console.Write(report.ToString());
+    return ToolExitCode.Ok;
 }
-else
-{
-    File.WriteAllText(outPath, report.ToString());
-    Console.WriteLine($"{census.Count} type(s) from {levels} level(s) -> {outPath}");
-}
-
-foreach (string failure in failures)
-{
-    Console.Error.WriteLine($"warning: {failure}");
-}
-
-return 0;
 
 static IReadOnlyList<DeclaredType> DeclaredTypesOf(string gameRoot, string levelDirectory)
 {
@@ -205,6 +203,22 @@ static string Signature(DeclaredType type)
 /// <param name="Name">The type name scripts spawn it by.</param>
 /// <param name="Parameters">Its parameters, in the order Task_New supplies them.</param>
 internal sealed record DeclaredType(string Name, IReadOnlyList<string> Parameters);
+
+/// <summary>The tool's usage text.</summary>
+internal static partial class Program
+{
+    private const string UsageText =
+        """
+        OpenIGI TaskCensus - report the task types a game's level scripts declare.
+
+        usage:
+          TaskCensus <game-root> [--out <file.md>]
+
+        Runs every objects.qvm below <game-root>/missions with an empty type registry and
+        reports what each level declared: the type name, its parameter count and its
+        parameters in wire order. See README.md.
+        """;
+}
 
 internal sealed record Declaration(string Name, string Signature, List<string> Levels)
 {

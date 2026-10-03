@@ -14,6 +14,7 @@ using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace OpenIGI.Game.Tests;
 
@@ -26,6 +27,10 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 public sealed class MissionFourFriendlyActivationTests
 {
+    private readonly ITestOutputHelper _output;
+
+    public MissionFourFriendlyActivationTests(ITestOutputHelper output) => _output = output;
+
     [RequiresGameDataFact]
     public void MissionFourFriendliesActivateAfterHelicopterAnimRunsSixtySixSeconds()
     {
@@ -51,7 +56,7 @@ public sealed class MissionFourFriendlyActivationTests
         DeclaredTask anim = Assert.IsType<DeclaredTask>(root.Tree.FromId(850));
         Assert.Equal("AnimTask", anim.Type?.Name);
         GameTask? task760 = root.Tree.FromId(760);
-        System.Console.WriteLine($"  task760 type=[{task760?.Type?.Name}] runtimeType=[{task760?.GetType().Name}]");
+        _output.WriteLine($"  task760 type=[{task760?.Type?.Name}] runtimeType=[{task760?.GetType().Name}]");
 
         // The friendlies must start dormant: the intro/heli-area containers still gate them.
         Assert.False(ConditionalContainerGate.IsTaskActive(friendly));
@@ -73,7 +78,7 @@ public sealed class MissionFourFriendlyActivationTests
                 bool c3901 = loop.Variables.TryRead("ConditionalContainer_3901.isRun", out OpenIGI.Scripting.Runtime.QvmValue r3901);
                 bool c305 = loop.Variables.TryRead("ConditionalContainer_305.isRun", out OpenIGI.Scripting.Runtime.QvmValue r305);
                 bool timer = loop.Variables.TryRead("LevelTimer_760.nTick", out OpenIGI.Scripting.Runtime.QvmValue t760);
-                System.Console.WriteLine(
+                _output.WriteLine(
                     $"  tick={tick} active={ConditionalContainerGate.IsTaskActive(friendly)} " +
                     $"animNTick=[{(nTickReads ? nTick.ToString() : "unresolved")}] " +
                     $"sceneDone=[{(sceneDone ? done.ToString() : "unresolved")}] " +
@@ -90,7 +95,7 @@ public sealed class MissionFourFriendlyActivationTests
         Assert.True(ConditionalContainerGate.IsTaskActive(friendly),
             "mission 4 friendly soldiers must activate after the helicopter anim's 66s mark " +
             "(retail container 300 condition AnimTask_850.nTick > 66 * GAME_FREQUENCY)");
-        System.Console.WriteLine(
+        _output.WriteLine(
             $"  activation tick log attach/rest: {string.Join(" ; ", runtime.Diagnostics.Take(12))}");
     }
 

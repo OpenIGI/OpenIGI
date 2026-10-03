@@ -198,7 +198,14 @@ case "$VERB" in
     # The api mounts the content store; made here first, or docker would create it owned by root.
     mkdir -p "$SRV/config" "$CONTENT/chunks"
     install -m 0644 "$STAGING/compose.yml" "$SRV/config/compose.yml"
-    install -m 0644 "$STAGING/Caddyfile" "$SRV/config/Caddyfile"
+    # Caddy mounts this one file, which binds the file the container was started with: a new file put in
+    # its place (as install does) is never seen, and every reload reads the old one. Its contents are
+    # rewritten instead, so the mount sees them.
+    if [ -f "$SRV/config/Caddyfile" ]; then
+      cat "$STAGING/Caddyfile" > "$SRV/config/Caddyfile"
+    else
+      install -m 0644 "$STAGING/Caddyfile" "$SRV/config/Caddyfile"
+    fi
     rm -rf "$STAGING"
     docker compose -f "$SRV/config/compose.yml" up -d --remove-orphans
     docker compose -f "$SRV/config/compose.yml" exec -T caddy caddy reload --config /etc/caddy/Caddyfile

@@ -48,7 +48,7 @@ public sealed record ContentRegistrationContext(
     NativeRegistry Natives,
     ScriptVarRegistry Variables,
     IServiceCollector Services,
-    IIgiLogger Logger);
+    IOpenIgiLogger Logger);
 
 /// <summary>What a content module loads its tables through.</summary>
 /// <param name="FileSystem">The virtual file system scripts and archives are read from.</param>
@@ -69,4 +69,4 @@ public sealed record ContentLoadContext(
     NativeRegistry Natives,
     TaskTree Tasks,
     IServiceCatalog Services,
-    IIgiLogger Logger);
+    IOpenIgiLogger Logger);

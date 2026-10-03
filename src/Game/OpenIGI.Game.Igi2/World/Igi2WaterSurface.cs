@@ -97,11 +97,11 @@ public sealed class Igi2WaterSurface
     /// <param name="logger">Where load diagnostics go.</param>
     /// <returns>The water, which may be empty.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="levelRoot"/> is <see langword="null"/>.</exception>
-    public static Igi2WaterSurface Build(GameTask levelRoot, IIgiLogger? logger = null)
+    public static Igi2WaterSurface Build(GameTask levelRoot, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         List<Igi2WaterSheet> sheets = [];
 
         foreach (GameTask task in Walk(levelRoot))

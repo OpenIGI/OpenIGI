@@ -181,7 +181,7 @@ public static class TitleCatalog
     /// arguments in one game and fourteen in the other, and the fourth argument of the first is a next
     /// mission id the second does not have.
     /// </remarks>
-    public static IMissionCatalogue<MissionDescriptor> MissionCatalogueFor(GameTitle title, IIgiLogger? logger = null)
+    public static IMissionCatalogue<MissionDescriptor> MissionCatalogueFor(GameTitle title, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(title);
 

@@ -23,7 +23,7 @@ public sealed class GameLoop
 {
     private const string LogCategory = "Flow";
 
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="GameLoop"/> class.</summary>
     /// <param name="time">The wall-clock source; defaults to the real clock.</param>
@@ -41,7 +41,7 @@ public sealed class GameLoop
         IFlowHost? host = null,
         IFrameSuspension? suspension = null,
         IRenderScheduler? renderer = null,
-        IIgiLogger? logger = null,
+        IOpenIgiLogger? logger = null,
         IReadOnlyList<string>? structuralTypes = null)
     {
         _logger = logger ?? NullLogger.Instance;

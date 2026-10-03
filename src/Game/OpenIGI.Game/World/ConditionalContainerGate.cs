@@ -27,7 +27,7 @@ public sealed class ConditionalContainerGate
     private const string LogCategory = "Level";
 
     private readonly ScriptVarRegistry _variables;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Dictionary<string, ScriptExpression?> _parseCache = new(StringComparer.Ordinal);
 
     // Diagnostic (headless verification only): IGI_DIAG_FORCE_CC=3902 or IGI_DIAG_FORCE_CC=3902:Expr forces
@@ -53,7 +53,7 @@ public sealed class ConditionalContainerGate
     /// <param name="variables">The level's exported script variables, which the conditions read.</param>
     /// <param name="logger">Where to report a condition that would not parse; defaults to a sink.</param>
     /// <exception cref="ArgumentNullException"><paramref name="variables"/> is <see langword="null"/>.</exception>
-    public ConditionalContainerGate(ScriptVarRegistry variables, IIgiLogger? logger = null)
+    public ConditionalContainerGate(ScriptVarRegistry variables, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(variables);
         _variables = variables;

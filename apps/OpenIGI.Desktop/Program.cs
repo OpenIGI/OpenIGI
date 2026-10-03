@@ -19,6 +19,27 @@ using OpenIGI.Rendering.Vulkan.Rhi;
 using OpenIGI.Rendering.WebGpu;
 using OpenIGI.Rendering;
 
+// Before anything touches the console: a windowed build started from a terminal borrows it, so a capture
+// or soak run from a shell still prints.
+DesktopConsole.AttachToParent();
+
+const string StartupLogCategory = "Startup";
+
+using DesktopLogging logging = DesktopLogging.Start();
+IOpenIgiLogger logger = logging.Logger;
+return Run(args, logger);
+
+// Reported where somebody will see it: the log and standard output always, and a dialog when the game was
+// double-clicked and has nowhere else to say why it stopped.
+static int Fail(IOpenIgiLogger logger, string message, int exitCode = 2, Exception? exception = null)
+{
+    logger.Error(StartupLogCategory, message, exception);
+    DesktopConsole.ShowFailure("OpenIGI", message);
+    return exitCode;
+}
+
+static int Run(string[] args, IOpenIgiLogger logger)
+{
 HostOptions options;
 try
 {
@@ -30,43 +51,8 @@ try
 }
 catch (ArgumentException ex)
 {
-    Console.Error.WriteLine(ex.Message);
-    Console.Error.WriteLine();
-    Console.Error.WriteLine(HostOptions.Usage);
-    return 2;
+    return Fail(logger, $"{ex.Message}\n\n{HostOptions.Usage}");
 }
-
-OpenIGI.Host.Infrastructure.PersistentLogger persistentLogger;
-try
-{
-    persistentLogger = new(RuntimePaths.GetLogPath());
-}
-catch (IOException)
-{
-    // Another instance already owns the log — a second copy for a capture or a comparison is a normal
-    // thing to run, and it should not die over a file name. It logs beside the first, named by process.
-    try
-    {
-        string sidecar = Path.Combine(
-            Path.GetDirectoryName(RuntimePaths.GetLogPath()) ?? ".",
-            FormattableString.Invariant($"runtime.{Environment.ProcessId}.log"));
-        persistentLogger = new(sidecar);
-    }
-    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
-    {
-        Console.Error.WriteLine($"Could not initialize the runtime log: {ex.Message}");
-        return 2;
-    }
-}
-catch (Exception ex) when (ex is UnauthorizedAccessException or ArgumentException or NotSupportedException)
-{
-    Console.Error.WriteLine($"Could not initialize the runtime log: {ex.Message}");
-    return 2;
-}
-
-using (persistentLogger)
-{
-IIgiLogger logger = persistentLogger;
 
 // Where the executable is, then where it was run from. Dropping the port into the game's own folder
 // is then the whole of the installation procedure, which is how somebody expects to install an add-on
@@ -92,9 +78,7 @@ if (options.Title is { } requestedTitle)
 {
     if (!TitleCatalog.TryResolve(requestedTitle, out titleRuntime))
     {
-        Console.Error.WriteLine($"'{requestedTitle}' is not a game this build runs.");
-        Console.Error.WriteLine($"  -title {TitleCatalog.KnownTitleIds}");
-        return 2;
+        return Fail(logger, $"'{requestedTitle}' is not a game this build runs.\n  -title {TitleCatalog.KnownTitleIds}");
     }
 }
 else
@@ -114,22 +98,22 @@ string? gamePath = options.GamePath
 
 if (string.IsNullOrWhiteSpace(gamePath))
 {
-    Console.Error.WriteLine($"No {title.DisplayName} installation found.");
-    Console.Error.WriteLine();
-    Console.Error.WriteLine($"Put OpenIGI in the folder that holds {title.SignatureFile}, or point it at one:");
-    Console.Error.WriteLine("  -game <dir>");
-    Console.Error.WriteLine($"  {TitleCatalog.GamePathVariableFor(title)}=<dir>");
-    Console.Error.WriteLine();
-    Console.Error.WriteLine($"To run a different game: -title {TitleCatalog.KnownTitleIds}");
-    Console.Error.WriteLine();
-    Console.Error.WriteLine("Looked in:");
-
-    foreach (string candidate in searched)
-    {
-        Console.Error.WriteLine($"  {candidate}");
-    }
-
-    return 2;
+    return Fail(
+        logger,
+        string.Join(
+            '\n',
+            [
+                $"No {title.DisplayName} installation found.",
+                string.Empty,
+                $"Put OpenIGI in the folder that holds {title.SignatureFile}, or point it at one:",
+                "  -game <dir>",
+                $"  {TitleCatalog.GamePathVariableFor(title)}=<dir>",
+                string.Empty,
+                $"To run a different game: -title {TitleCatalog.KnownTitleIds}",
+                string.Empty,
+                "Looked in:",
+                .. searched.Select(static candidate => $"  {candidate}"),
+            ]));
 }
 
 // Reported apart from the search, because a path somebody typed being wrong is a different mistake
@@ -139,11 +123,11 @@ GameProfile profile = new(title, gamePath);
 
 if (!profile.IsInstalled)
 {
-    Console.Error.WriteLine(
+    return Fail(
+        logger,
         Directory.Exists(gamePath)
             ? $"'{gamePath}' is not a {title.DisplayName} installation -- no {title.SignatureFile} in it."
             : $"'{gamePath}' does not exist.");
-    return 2;
 }
 
 VirtualFileSystem fileSystem = new(logger);
@@ -173,8 +157,7 @@ try
 }
 catch (PlatformException ex)
 {
-    logger.Error("Desktop", ex.Message, ex);
-    return 3;
+    return Fail(logger, ex.Message, 3, ex);
 }
 
 // macOS reports a zero drawable for a window that has never been shown, and the swapchain is sized from

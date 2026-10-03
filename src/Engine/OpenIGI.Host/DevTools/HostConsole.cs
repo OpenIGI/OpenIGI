@@ -21,7 +21,7 @@ namespace OpenIGI.Host.DevTools;
 /// once and then never passing it again expects.
 /// </para>
 /// <para>
-/// Everything the game writes through <see cref="IIgiLogger"/> is mirrored into the scrollback, so
+/// Everything the game writes through <see cref="IOpenIgiLogger"/> is mirrored into the scrollback, so
 /// opening the console shows the log rather than an empty panel.
 /// </para>
 /// </remarks>
@@ -29,8 +29,11 @@ public sealed class HostConsole : IDisposable
 {
     private const string LogCategory = "Console";
 
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
+    private readonly ConsoleLineSink _logLines = new();
+    private readonly Action<ConsoleLine> _writeLine;
     private readonly string _settingsPath;
+    private LogRouter? _router;
     private readonly DeveloperConsole _view;
     private bool _disposed;
 
@@ -38,7 +41,7 @@ public sealed class HostConsole : IDisposable
     /// <param name="device">The device the console's font is uploaded to.</param>
     /// <param name="logger">Where to report what the console does.</param>
     /// <exception cref="ArgumentNullException"><paramref name="device"/> is <see langword="null"/>.</exception>
-    public HostConsole(IGraphicsDevice device, IIgiLogger? logger = null)
+    public HostConsole(IGraphicsDevice device, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
 
@@ -47,14 +50,12 @@ public sealed class HostConsole : IDisposable
 
         System = new ConsoleSystem();
         Model = new ConsoleModel(System);
+        _writeLine = System.Write;
         _view = new DeveloperConsole(device, Model, _logger);
 
-        // Seconds since the console was built, which is near enough to "since launch" for reading a
-        // log and needs no clock of its own. Stopwatch rather than wall time: it cannot go backwards
-        // when the machine's clock is corrected mid-session. Fully qualified because this type's own
-        // `System` property shadows the namespace.
-        long started = global::System.Diagnostics.Stopwatch.GetTimestamp();
-        System.Clock = () => global::System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalSeconds;
+        // Stamped on the same clock as the log lines replayed into the scrollback, so a command's output
+        // and the startup it follows read as one timeline.
+        System.Clock = static () => ConsoleLineSink.Elapsed;
 
         string configDirectory = Path.GetDirectoryName(_settingsPath) ?? SettingsPaths.PortableDirectory;
         BuiltInConsoleCommands.Register(System, new DirectoryConsoleFileSystem(configDirectory));
@@ -186,14 +187,21 @@ public sealed class HostConsole : IDisposable
         System.Write("Type 'help' for commands, 'cvarlist' for settings, or press Tab to complete.");
     }
 
-    /// <summary>Mirrors engine log output into the console's scrollback.</summary>
-    /// <param name="inner">The logger to wrap.</param>
-    /// <returns>A logger that writes to both.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="inner"/> is <see langword="null"/>.</exception>
-    public IIgiLogger WrapLogger(IIgiLogger inner)
+    /// <summary>Shows the process's log in the scrollback, starting with what was logged before the console existed.</summary>
+    /// <param name="router">The process's logger.</param>
+    /// <remarks>Also gives <c>log_level</c> the router's policy to change.</remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="router"/> is <see langword="null"/>.</exception>
+    public void AttachLog(LogRouter router)
     {
-        ArgumentNullException.ThrowIfNull(inner);
-        return new ConsoleMirrorLogger(inner, System);
+        ArgumentNullException.ThrowIfNull(router);
+        if (_router is not null)
+        {
+            return;
+        }
+
+        _router = router;
+        router.AddSink(_logLines);
+        DrainLog();
     }
 
     /// <summary>Applies a frame's input.</summary>
@@ -203,6 +211,7 @@ public sealed class HostConsole : IDisposable
     public bool Update(InputState input, float elapsedSeconds)
     {
         ArgumentNullException.ThrowIfNull(input);
+        DrainLog();
 
         // The toggle is handled here rather than in the view, because it is the one key that has to
         // work when the console is shut and the view is doing nothing at all.
@@ -386,6 +395,8 @@ public sealed class HostConsole : IDisposable
         }
 
         _disposed = true;
+        _router?.RemoveSink(_logLines);
+        _logLines.Dispose();
         System.Variables.AnyChanged -= OnVariableChanged;
         GraphicsPresetRegistry.Default.PresetChanged -= OnPresetChanged;
         PlayerCheatCVars.CheatsEnabled.Changed -= OnCheatsEnabledChanged;
@@ -445,44 +456,54 @@ public sealed class HostConsole : IDisposable
                 context.Print($"cheats {(System.CheatsEnabled ? "enabled" : "disabled")}");
             },
             "[0 | 1]");
+
+        System.Commands.Add(
+            "log_level",
+            "Reports the log levels, or sets the default (log_level debug) or one category's (log_level AI.Gunner trace; 'default' clears it).",
+            RunLogLevel,
+            "[level] | [category level|default]");
     }
+
+    private void RunLogLevel(ConsoleCommandContext context)
+    {
+        if (_router is not { } router)
+        {
+            context.Error("The log is not attached to this console.");
+            return;
+        }
+
+        LogLevelPolicy policy = router.Policy;
+        switch (context.Count)
+        {
+            case 0:
+                context.Print($"default: {policy.Default}");
+                foreach ((string category, LogLevel level) in policy.Overrides.OrderBy(static o => o.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    context.Print($"  {category}: {level}");
+                }
+
+                return;
+            case 1 when LogLevelPolicy.TryParseLevel(context[0], out LogLevel level):
+                policy.Default = level;
+                context.Print($"default: {level}");
+                return;
+            case 2 when context[1].Equals("default", StringComparison.OrdinalIgnoreCase):
+                policy.SetOverride(context[0], null);
+                context.Print($"{context[0]}: {policy.LevelFor(context[0])} (default)");
+                return;
+            case 2 when LogLevelPolicy.TryParseLevel(context[1], out LogLevel level):
+                policy.SetOverride(context[0], level);
+                context.Print($"{context[0]}: {level}");
+                return;
+            default:
+                context.Error("Expected a level: trace, debug, info, warning, error, fatal or off.");
+                return;
+        }
+    }
+
+    private void DrainLog() => _logLines.Drain(_writeLine);
 
     // The Extras screen's "Enable cheats" toggle writes the variable directly; the console follows it.
     private void OnCheatsEnabledChanged(object? sender, CVarChangedEventArgs e) =>
         System.CheatsEnabled = PlayerCheatCVars.CheatsEnabled.Value;
-
-    /// <summary>Sends log output to the engine's logger and to the console's scrollback.</summary>
-    /// <param name="inner">The logger to forward to.</param>
-    /// <param name="console">The console to mirror into.</param>
-    private sealed class ConsoleMirrorLogger(IIgiLogger inner, ConsoleSystem console) : IIgiLogger
-    {
-        public bool IsEnabled(LogLevel level) => inner.IsEnabled(level);
-
-        public void Log(LogLevel level, string category, string message, Exception? exception = null)
-        {
-            if (!inner.IsEnabled(level))
-            {
-                return;
-            }
-
-            inner.Log(level, category, message, exception);
-
-            if (level < LogLevel.Information)
-            {
-                return;
-            }
-
-            ConsoleSeverity severity = level switch
-            {
-                LogLevel.Warning => ConsoleSeverity.Warning,
-                LogLevel.Error or LogLevel.Fatal => ConsoleSeverity.Error,
-                _ => ConsoleSeverity.Output,
-            };
-
-            // The category rides beside the text rather than inside it. Formatted in, it could not be
-            // filtered on, it matched every search for the subsystem's name, and it came along when a
-            // line was copied.
-            console.Write(new ConsoleLine(message, severity, category, console.Elapsed));
-        }
-    }
 }

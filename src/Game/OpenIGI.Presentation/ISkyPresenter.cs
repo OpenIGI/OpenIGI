@@ -28,7 +28,7 @@ public readonly record struct SkyPresentationRequest(
     VirtualFileSystem FileSystem,
     ResourceRegistry Resources,
     float FarPlane,
-    IIgiLogger Logger);
+    IOpenIgiLogger Logger);
 
 /// <summary>What one frame needs in order to draw a title's sky.</summary>
 /// <param name="Camera">The camera the sky is drawn about.</param>

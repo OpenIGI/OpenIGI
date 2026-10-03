@@ -54,9 +54,9 @@ public sealed class MenuSystem
     /// <returns>The loaded menu.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="script"/> is <see langword="null"/>.</exception>
     /// <exception cref="EngineFatalException">The script faulted, or built no manager.</exception>
-    public static MenuSystem Load(ReadOnlyMemory<byte> script, IIgiLogger? logger = null)
+    public static MenuSystem Load(ReadOnlyMemory<byte> script, IOpenIgiLogger? logger = null)
     {
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         NativeRegistry natives = new();
         TaskTypeRegistry types = new();
@@ -106,10 +106,10 @@ public sealed class MenuSystem
     /// updates and renders it like anything else. The loop has already registered <c>Task_New</c> and
     /// <c>Task_DeclareParameters</c>, so only the menu types and constants are added here.
     /// </remarks>
-    public static MenuSystem Load(ReadOnlyMemory<byte> script, GameLoop loop, IIgiLogger? logger = null)
+    public static MenuSystem Load(ReadOnlyMemory<byte> script, GameLoop loop, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(loop);
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         MenuTaskTypes.RegisterAll(loop.Types);
         MenuTaskTypes.RegisterConstants(loop.Natives);

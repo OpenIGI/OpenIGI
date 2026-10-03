@@ -26,19 +26,22 @@ internal sealed unsafe class VulkanDevice : IDisposable
 {
     private readonly Vk _vk;
     private readonly Instance _instance;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Pipelines.VulkanPipelineCache _pipelineCache;
     private readonly bool _deviceFaultEnabled;
     private nint _cmdSetCheckpoint;
     private nint _getQueueCheckpointData;
     private bool _disposed;
 
+    /// <summary>Gets where the backend reports diagnostics.</summary>
+    public IOpenIgiLogger Logger => _logger;
+
     /// <summary>Initialises a new instance of the <see cref="VulkanDevice"/> class.</summary>
     /// <param name="instance">The instance the device is created under.</param>
     /// <param name="selection">The chosen adapter and how it will be used.</param>
     /// <param name="logger">Where to report device creation.</param>
     /// <exception cref="GraphicsDeviceException">The logical device could not be created.</exception>
-    public VulkanDevice(VulkanInstance instance, PhysicalDeviceSelection selection, IIgiLogger logger)
+    public VulkanDevice(VulkanInstance instance, PhysicalDeviceSelection selection, IOpenIgiLogger logger)
     {
         ArgumentNullException.ThrowIfNull(instance);
         ArgumentNullException.ThrowIfNull(selection);

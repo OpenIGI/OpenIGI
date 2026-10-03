@@ -8,9 +8,11 @@ using OpenIGI.Formats.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Scripting.Runtime;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.TestSupport;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace OpenIGI.Game.Tests;
 
@@ -21,6 +23,10 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 public sealed class RetailMissionFourHelicopterTests
 {
+    private readonly ITestOutputHelper _output;
+
+    public RetailMissionFourHelicopterTests(ITestOutputHelper output) => _output = output;
+
     [RequiresGameDataFact]
     public void MissionFourIntroHelicopterNeverSinksBelowTerrain()
     {
@@ -216,7 +222,7 @@ public sealed class RetailMissionFourHelicopterTests
             lowestZ >= lowestTerrainBelow - 1.0,
             $"parked Bell 800 sat {lowestTerrainBelow - lowestZ:F1}m below the terrain");
         Assert.Contains(runtime.Diagnostics, line => line.Contains("heli-park-rest", StringComparison.Ordinal));
-        System.Console.WriteLine("  park diagnostics: " + string.Join(" | ", runtime.Diagnostics.Take(8)));
+        _output.WriteLine("  park diagnostics: " + string.Join(" | ", runtime.Diagnostics.Take(8)));
     }
 
     /// <summary>
@@ -710,109 +716,98 @@ public sealed class RetailMissionFourHelicopterTests
     [RequiresGameDataFact]
     public void MissionFourAirframePathLogMatchesQvmGates()
     {
-        string log = Path.Combine(Path.GetTempPath(), $"m4-airframe-{Guid.NewGuid():N}.log");
-        string? previous = CutsceneRuntime.AirframePathLog;
-        CutsceneRuntime.AirframePathLog = log;
-        try
+        // Every sample the runtime logs is kept: the whole run must fit, so no early 356 sample is dropped.
+        MemorySink log = new(capacity: 1 << 18);
+        VirtualFileSystem fs = new();
+        fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fs);
+        GameLoop loop = new(new ManualTimeSource());
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
+        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        MissionRegistry missions = new();
+        missions.Register(loop.Natives);
+        missions.Scan(fs, resources, loop.Natives);
+        MagicObjectRegistry magic = new();
+        magic.Register(loop.Natives);
+        magic.Load(resources, loop.Natives);
+        VehiclePhysicsRegistry vehiclePhysics = new();
+        vehiclePhysics.Load(resources);
+        LoadedMission mission = new MissionLoader(
+            missions, fs, resources,
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources),
+            terrainLoader: new TerrainLoader(resources, loop.Natives)).Load(4);
+        WorldScene scene = WorldScene.Build(mission, root, magic);
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        CutsceneRuntime runtime = new(
+            root, loop.Variables, terrain: mission.Terrain, vehiclePhysics: vehiclePhysics, logger: log)
         {
-            VirtualFileSystem fs = new();
-            fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
-            ResourceRegistry resources = new(fs);
-            GameLoop loop = new(new ManualTimeSource());
-            LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
-            loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
-            loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
-            MissionRegistry missions = new();
-            missions.Register(loop.Natives);
-            missions.Scan(fs, resources, loop.Natives);
-            MagicObjectRegistry magic = new();
-            magic.Register(loop.Natives);
-            magic.Load(resources, loop.Natives);
-            VehiclePhysicsRegistry vehiclePhysics = new();
-            vehiclePhysics.Load(resources);
-            LoadedMission mission = new MissionLoader(
-                missions, fs, resources,
-                new LevelLoader(root, loop.TaskCommands, loop.Natives, resources),
-                terrainLoader: new TerrainLoader(resources, loop.Natives)).Load(4);
-            WorldScene scene = WorldScene.Build(mission, root, magic);
-            new ConditionalContainerGate(loop.Variables).Prepare(root);
-            CutsceneRuntime runtime = new(
-                root, loop.Variables, terrain: mission.Terrain, vehiclePhysics: vehiclePhysics)
+            CollisionIndex = ObjectCollisionIndex.Build(scene.Placements),
+        };
+
+        ConfigureMissionFourGetawayLanding(runtime, root);
+        // Same edge Escape uses (LevelFlow_GetBreakCutSceneKey). Mission 1 covers
+        // the native; here we only need the Heli tick to keep running after break.
+        runtime.RequestBreak();
+
+        // Natural flow first: CC 305 opens 800. 3902 is mutually exclusive with 305.
+        for (int tick = 0; tick < 3_200; tick++)
+        {
+            runtime.Tick();
+            runtime.FinishExpressionTick();
+        }
+
+        if (root.Tree.FromId(3902) is ConditionalContainerTask extract)
+        {
+            extract.Condition = "1";
+        }
+
+        for (int tick = 0; tick < 1_400; tick++)
+        {
+            runtime.Tick();
+            runtime.FinishExpressionTick();
+        }
+
+        string[] lines = [.. log.Snapshot()
+            .Where(static record => record.Category == CutsceneRuntime.AirframePathLogCategory)
+            .Select(static record => record.Message)];
+        Assert.True(lines.Length > 0, $"shipped Heli tick must log to {CutsceneRuntime.AirframePathLogCategory}");
+        Assert.All(lines, line => Assert.StartsWith("t=", line, StringComparison.Ordinal));
+        Assert.DoesNotContain(lines, line => line.Contains("type=Plane", StringComparison.Ordinal));
+
+        bool saw356 = false;
+        bool saw800 = false;
+        foreach (string line in lines)
+        {
+            Assert.True(
+                line.Contains("id=356", StringComparison.Ordinal)
+                || line.Contains("id=800", StringComparison.Ordinal),
+                $"path log named an airframe QVM does not author: {line}");
+            if (line.Contains("id=800", StringComparison.Ordinal) && TryReadDeltas(line, out double h8, out double v8))
             {
-                CollisionIndex = ObjectCollisionIndex.Build(scene.Placements),
-            };
-
-            ConfigureMissionFourGetawayLanding(runtime, root);
-            // Same edge Escape uses (LevelFlow_GetBreakCutSceneKey). Mission 1 covers
-            // the native; here we only need the Heli tick to keep running after break.
-            runtime.RequestBreak();
-
-            // Natural flow first: CC 305 opens 800. 3902 is mutually exclusive with 305.
-            for (int tick = 0; tick < 3_200; tick++)
-            {
-                runtime.Tick();
-                runtime.FinishExpressionTick();
-            }
-
-            if (root.Tree.FromId(3902) is ConditionalContainerTask extract)
-            {
-                extract.Condition = "1";
-            }
-
-            for (int tick = 0; tick < 1_400; tick++)
-            {
-                runtime.Tick();
-                runtime.FinishExpressionTick();
-            }
-
-            Assert.True(File.Exists(log), "shipped Heli tick must write OPENIGI_AIRFRAME_PATH_LOG");
-            string[] lines = File.ReadAllLines(log);
-            Assert.True(lines.Length > 0, "airframe path log is empty");
-            Assert.All(lines, line => Assert.Contains("[AIRFRAME-PATH]", line));
-            Assert.DoesNotContain(lines, line => line.Contains("type=Plane", StringComparison.Ordinal));
-
-            bool saw356 = false;
-            bool saw800 = false;
-            foreach (string line in lines)
-            {
-                Assert.True(
-                    line.Contains("id=356", StringComparison.Ordinal)
-                    || line.Contains("id=800", StringComparison.Ordinal),
-                    $"path log named an airframe QVM does not author: {line}");
-                if (line.Contains("id=800", StringComparison.Ordinal) && TryReadDeltas(line, out double h8, out double v8))
+                saw800 = true;
+                if (h8 > 100.0)
                 {
-                    saw800 = true;
-                    if (h8 > 100.0)
-                    {
-                        Assert.True(
-                            h8 > Math.Abs(v8),
-                            $"heli 800 QVM flight is vertical-dominant: {line}");
-                    }
-                }
-
-                if (line.Contains("id=356", StringComparison.Ordinal) && TryReadDeltas(line, out double h3, out double v3))
-                {
-                    saw356 = true;
-                    if (h3 > 20.0)
-                    {
-                        Assert.True(
-                            h3 > Math.Abs(v3),
-                            $"heli 356 post-cyclic path is vertical-dominant: {line}");
-                    }
+                    Assert.True(
+                        h8 > Math.Abs(v8),
+                        $"heli 800 QVM flight is vertical-dominant: {line}");
                 }
             }
 
-            Assert.True(saw356, "forcing CC 3902 must tick Heli 356 into the path log");
-            Assert.True(saw800, "after the 45 s gate Heli 800 must tick into the path log");
-        }
-        finally
-        {
-            CutsceneRuntime.AirframePathLog = previous;
-            if (File.Exists(log))
+            if (line.Contains("id=356", StringComparison.Ordinal) && TryReadDeltas(line, out double h3, out double v3))
             {
-                File.Delete(log);
+                saw356 = true;
+                if (h3 > 20.0)
+                {
+                    Assert.True(
+                        h3 > Math.Abs(v3),
+                        $"heli 356 post-cyclic path is vertical-dominant: {line}");
+                }
             }
         }
+
+        Assert.True(saw356, "forcing CC 3902 must tick Heli 356 into the path log");
+        Assert.True(saw800, "after the 45 s gate Heli 800 must tick into the path log");
     }
 
     private static bool TryReadDeltas(string line, out double dHoriz, out double dVert)

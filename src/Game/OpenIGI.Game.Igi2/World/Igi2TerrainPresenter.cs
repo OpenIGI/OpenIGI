@@ -37,7 +37,7 @@ namespace OpenIGI.Game.Igi2.World;
 /// </para>
 /// <para>
 /// <b>Two modes, and the constructor chooses.</b> Given
-/// <see cref="Igi2TerrainPresenter(IGraphicsDevice, Igi2TerrainSurface, Igi2TerrainLodSettings, Func{string, TextureHandle}, IIgiLogger?)">
+/// <see cref="Igi2TerrainPresenter(IGraphicsDevice, Igi2TerrainSurface, Igi2TerrainLodSettings, Func{string, TextureHandle}, IOpenIgiLogger?)">
 /// a level's detail controls</see> it runs <see cref="Igi2TerrainLod"/> every frame and streams the
 /// result, which is what the original does — <c>TerrainRender_Draw</c> locks its vertex and index
 /// buffers at the top of the frame and refills them from the quadtree. Without them it uploads every
@@ -123,14 +123,14 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         IGraphicsDevice device,
         Igi2TerrainSurface surface,
         Func<string, TextureHandle> textures,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(surface);
         ArgumentNullException.ThrowIfNull(textures);
 
         _device = device;
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         foreach (Igi2TerrainTile tile in surface.Tiles)
         {
@@ -179,7 +179,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         Igi2TerrainSurface surface,
         Igi2TerrainLodSettings settings,
         Func<string, TextureHandle> textures,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(surface);
@@ -188,7 +188,7 @@ public sealed class Igi2TerrainPresenter : ITerrainPresenter
         _device = device;
         _settings = settings;
         _tessellates = true;
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         foreach (Igi2TerrainTile tile in surface.Tiles)
         {

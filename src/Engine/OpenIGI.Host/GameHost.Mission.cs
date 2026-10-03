@@ -620,7 +620,7 @@ internal sealed partial class GameHost
                 ", ",
                 levelTimer.Type.Parameters.Select(
                     (parameter, index) => $"{parameter.Name}={levelTimer.GetValue(index) ?? "<null>"}"));
-            _logger.Information("Mission", $"[timer] LevelTimer_1608 {parameters}");
+            _logger.Information("Mission.Timer", $"LevelTimer_1608 {parameters}");
         }
         if (collectDiagnostics && levelRoot.Tree.FromId(161) is DeclaredTask activation)
         {
@@ -628,7 +628,7 @@ internal sealed partial class GameHost
                 ", ",
                 activation.Type.Parameters.Select(
                     (parameter, index) => $"{parameter.Name}={activation.GetValue(index) ?? "<null>"}"));
-            _logger.Information("Mission", $"[timer] AreaActivate_161 {parameters}");
+            _logger.Information("Mission.Timer", $"AreaActivate_161 {parameters}");
         }
         // LevelFlow exports eDifficulty straight from the active profile (0x488ED0), unclamped, and the
         // number-row keys as Key0..9.isPressed. -difficulty overrides the profile here as it does for the AI.
@@ -3327,8 +3327,8 @@ internal sealed partial class GameHost
 
         float healthBefore = _playerHealth.RemainingFraction;
         _logger.Information(
-            "Player",
-            $"[fence] contact task={fence.Task.Id} powered={(fence.IsElectrified ? "true" : "false")} "
+            "Player.Fence",
+            $"contact task={fence.Task.Id} powered={(fence.IsElectrified ? "true" : "false")} "
                 + $"healthBefore={healthBefore:P0} position=({player.Body.Position.X:F0},"
                 + $"{player.Body.Position.Y:F0},{player.Body.Position.Z:F0})");
 
@@ -3337,8 +3337,8 @@ internal sealed partial class GameHost
         if (dealt <= 0f)
         {
             _logger.Warning(
-                "Player",
-                $"[fence] contact produced no damage task={fence.Task.Id} "
+                "Player.Fence",
+                $"contact produced no damage task={fence.Task.Id} "
                     + $"health={_playerHealth.RemainingFraction:P0} hits={_playerHealth.Hits}.");
             return;
         }

@@ -40,7 +40,7 @@ public sealed class MaterialDetailPack : IDisposable
 
     private readonly IGraphicsDevice _device;
     private readonly IWorkScheduler _work;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     // Detail PNGs read and decoded ahead of the render thread by Prewarm. A name maps to its pixels, or
     // to null when the pack has no map for it -- which is an answer worth remembering, because a level
@@ -85,7 +85,7 @@ public sealed class MaterialDetailPack : IDisposable
     public MaterialDetailPack(
         IGraphicsDevice device,
         IWorkScheduler work,
-        IIgiLogger? logger = null,
+        IOpenIgiLogger? logger = null,
         string? cacheDirectory = null)
     {
         ArgumentNullException.ThrowIfNull(device);
@@ -100,6 +100,21 @@ public sealed class MaterialDetailPack : IDisposable
             _cacheRoot = Path.GetFullPath(cacheDirectory);
         }
     }
+
+    /// <summary>Builds the name a texture's map is kept under, cached on disk and in memory.</summary>
+    /// <param name="name">The texture's name.</param>
+    /// <param name="overrideStamp">
+    /// The stamp of the content-pack file standing in for the texture, or <see langword="null"/> when the
+    /// texture is the game's own.
+    /// </param>
+    /// <returns>The bare name for a shipped texture, or the name and the stamp for a replaced one.</returns>
+    /// <remarks>
+    /// A map is derived from the picture, and the name alone is shared by the shipped picture and every
+    /// pack's replacement of it: keyed by the name, whichever was derived first was handed to all of them,
+    /// across runs. The shipped key is unchanged, so caches filled before content packs keep working.
+    /// </remarks>
+    public static string KeyFor(string name, string? overrideStamp) =>
+        string.IsNullOrEmpty(overrideStamp) ? name : $"{name}.{overrideStamp}";
 
     /// <summary>Gets a value indicating whether maps can be derived and cached at all.</summary>
     public bool IsAvailable => _cacheRoot is not null;

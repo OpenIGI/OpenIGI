@@ -41,9 +41,9 @@ public sealed class FogPresets
     /// A broken preset file never stops the game: the levels fall back to their own authored fog,
     /// which is the behaviour before this file existed.
     /// </remarks>
-    public static FogPresets Load(string path, IIgiLogger? logger = null)
+    public static FogPresets Load(string path, IOpenIgiLogger? logger = null)
     {
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         if (!File.Exists(path))
         {

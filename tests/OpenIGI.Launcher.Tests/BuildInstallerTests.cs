@@ -170,6 +170,96 @@ public sealed class BuildInstallerTests : IDisposable
     }
 
     [Fact]
+    public async Task Switching_back_to_the_kept_build_downloads_nothing()
+    {
+        (BuildInstaller installer, FakeServer server) = Make();
+        ReleaseAsset stable = await Install(installer, server, "0.1.0");
+        await Install(installer, server, "0.2.0-beta.1");
+        int requests = server.Requests.Count;
+
+        InstalledBuild? build = installer.TryReuse("0.1.0", stable, "OpenIGI.Desktop.exe");
+
+        Assert.NotNull(build);
+        Assert.Equal("0.1.0", installer.Current()!.Version);
+        Assert.Equal(requests, server.Requests.Count);
+
+        // And the beta it replaced is kept in turn, so switching again is free too.
+        Assert.True(Directory.Exists(Path.Combine(_root, "versions", "0.2.0-beta.1")));
+    }
+
+    [Fact]
+    public async Task A_kept_build_that_was_changed_is_not_reused()
+    {
+        (BuildInstaller installer, FakeServer server) = Make();
+        ReleaseAsset stable = await Install(installer, server, "0.1.0");
+        await Install(installer, server, "0.2.0-beta.1");
+        File.WriteAllText(Path.Combine(_root, "versions", "0.1.0", "OpenIGI.Desktop.exe"), "tampered");
+
+        Assert.Null(installer.TryReuse("0.1.0", stable, "OpenIGI.Desktop.exe"));
+        Assert.Equal("0.2.0-beta.1", installer.Current()!.Version);
+    }
+
+    [Fact]
+    public async Task A_single_file_build_kept_without_a_record_is_recognised_by_the_release_hash()
+    {
+        (BuildInstaller installer, FakeServer server) = Make();
+        byte[] executable = [0x4D, 0x5A, 0, 1];
+        ReleaseAsset stable = Asset("openigi-game-0.1.0-win-x64.exe", executable);
+        server.Add("/releases/" + stable.Name, executable);
+        await installer.InstallAsync("0.1.0", stable, "OpenIGI.Desktop.exe", new Progress<InstallProgress>(), CancellationToken.None);
+        await Install(installer, server, "0.2.0-beta.1");
+
+        // As a launcher from before build records left it.
+        File.Delete(Path.Combine(_root, "versions", "0.1.0.json"));
+
+        Assert.NotNull(installer.TryReuse("0.1.0", stable, "OpenIGI.Desktop.exe"));
+        Assert.Equal("0.1.0", installer.Current()!.Version);
+    }
+
+    [Fact]
+    public void A_build_not_on_disk_is_not_reused()
+    {
+        (BuildInstaller installer, _) = Make();
+        Assert.Null(installer.TryReuse("0.1.0", Asset("openigi-game-0.1.0-win-x64.zip", [1]), "OpenIGI.Desktop.exe"));
+    }
+
+    private static async Task<ReleaseAsset> Install(BuildInstaller installer, FakeServer server, string version)
+    {
+        byte[] archive = Zip(("OpenIGI.Desktop.exe", version));
+        ReleaseAsset asset = Asset($"openigi-game-{version}-win-x64.zip", archive);
+        server.Add("/releases/" + asset.Name, archive);
+        await installer.InstallAsync(version, asset, "OpenIGI.Desktop.exe", new Progress<InstallProgress>(), CancellationToken.None);
+        return asset;
+    }
+
+    [Fact]
+    public void CleanDownloads_keeps_only_the_offered_release_and_its_partial()
+    {
+        (BuildInstaller installer, _) = Make();
+        string downloads = Directory.CreateDirectory(Path.Combine(_root, "downloads")).FullName;
+        File.WriteAllBytes(Path.Combine(downloads, "openigi-game-0.1.0-win-x64.exe"), new byte[100]);
+        File.WriteAllBytes(Path.Combine(downloads, "openigi-game-0.1.0-win-x64.exe.part"), new byte[50]);
+        File.WriteAllBytes(Path.Combine(downloads, "openigi-game-0.2.0-win-x64.exe.part"), new byte[30]);
+
+        long freed = installer.CleanDownloads("openigi-game-0.2.0-win-x64.exe");
+
+        Assert.Equal(150, freed);
+        Assert.Equal(["openigi-game-0.2.0-win-x64.exe.part"], Directory.EnumerateFiles(downloads).Select(Path.GetFileName));
+    }
+
+    [Fact]
+    public void CleanDownloads_with_nothing_on_offer_removes_everything()
+    {
+        (BuildInstaller installer, _) = Make();
+        string downloads = Directory.CreateDirectory(Path.Combine(_root, "downloads")).FullName;
+        File.WriteAllBytes(Path.Combine(downloads, "stale.zip"), new byte[10]);
+
+        Assert.Equal(10, installer.CleanDownloads(null));
+        Assert.Empty(Directory.EnumerateFiles(downloads));
+        Assert.Equal(0, installer.CleanDownloads(null));
+    }
+
+    [Fact]
     public async Task Verify_finds_a_missing_or_changed_file()
     {
         (BuildInstaller installer, FakeServer server) = Make();

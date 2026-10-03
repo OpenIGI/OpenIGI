@@ -42,4 +42,9 @@
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- The APIs no project may call: output goes through the logger (see BannedSymbols.txt). -->
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)BannedSymbols.txt" Link="BannedSymbols.txt" Visible="false" />
+  </ItemGroup>
+
 </Project>

@@ -74,4 +74,4 @@ public interface ICameraStatusLightPresenter : IDisposable
 public readonly record struct EffectsPresentationRequest(
     IGraphicsDevice Device,
     ResourceRegistry Resources,
-    IIgiLogger Logger);
+    IOpenIgiLogger Logger);

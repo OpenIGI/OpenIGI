@@ -99,8 +99,9 @@ public class Toggle : Control
     protected override void OnDraw(UiPainter painter)
     {
         float highlight = UiRowStyle.Highlight(this);
-        UiRowStyle.DrawFrame(painter, this, Label, highlight);
-        DrawSwitch(painter, SwitchRect(painter.Context), Theme, _knob.Value, highlight, IsEnabled, Visual.Appear);
+        UiRect track = SwitchRect(painter.Context);
+        UiRowStyle.DrawFrame(painter, this, Label, highlight, track.X);
+        DrawSwitch(painter, track, Theme, _knob.Value, highlight, IsEnabled, Visual.Appear);
     }
 
     /// <summary>Draws the OFF / ON switch on its own, for a widget that wants it outside a row.</summary>

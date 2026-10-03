@@ -173,6 +173,7 @@ public sealed class SilkGameWindow : IGameWindow
                 + "A driver supporting Vulkan 1.2 or newer is required.");
         }
 
+        WindowIcon.Apply(window);
         return window;
     }
 

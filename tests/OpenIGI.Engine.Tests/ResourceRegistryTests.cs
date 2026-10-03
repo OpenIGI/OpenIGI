@@ -288,6 +288,56 @@ public sealed class ResourceRegistryTests : IDisposable
         Assert.Equal(new byte[] { 9, 9, 9, 9 }, again.ToArray());
     }
 
+    /// <summary>
+    /// An archived entry follows the content layers as they are switched: the top layer's bytes, then the next
+    /// layer's, then the game's own, each swapped in place by a reapply and marked with the file it came from.
+    /// </summary>
+    [Fact]
+    public void ReapplyingFollowsTheLayersForAnArchivedEntry()
+    {
+        foreach ((string layer, byte value) in new[] { ("top", (byte)7), ("bottom", (byte)8) })
+        {
+            string folder = Path.Combine(_root, layer, "common", "textures");
+            Directory.CreateDirectory(folder);
+            File.WriteAllBytes(Path.Combine(folder, "a.tex"), [value]);
+        }
+
+        ResourceOverrides overrides = new(
+        [
+            new OverrideLayer("top", "Top", Path.Combine(_root, "top")),
+            new OverrideLayer("bottom", "Bottom", Path.Combine(_root, "bottom")),
+        ]);
+        _ = overrides.Rescan();
+
+        ResourceRegistry registry = CreateRegistry();
+        registry.Overrides = overrides;
+        byte[] archive = new IlffWriter("IRES").AddName("LOCAL:common/textures/a.tex").AddBody([1, 2, 3]).ToArray();
+        registry.Register("LOCAL:common/textures/textures.res", archive);
+
+        const string Name = "LOCAL:common/textures/a.tex";
+        Assert.Equal(new byte[] { 7 }, registry.Load(Name).ToArray());
+        Assert.True(registry.IsOverridden(Name));
+        string? top = registry.OverrideStamp(Name);
+        Assert.NotNull(top);
+
+        overrides.SetEnabled("top", false, out _);
+        Assert.Equal(1, registry.ReapplyOverrides());
+        Assert.Equal([Name], registry.LastReapplied);
+        Assert.Equal(new byte[] { 8 }, registry.Load(Name).ToArray());
+        Assert.NotEqual(top, registry.OverrideStamp(Name));
+
+        overrides.SetEnabled("bottom", false, out _);
+        Assert.Equal(1, registry.ReapplyOverrides());
+        Assert.Equal(new byte[] { 1, 2, 3 }, registry.Load(Name).ToArray());
+        Assert.False(registry.IsOverridden(Name));
+        Assert.Null(registry.OverrideStamp(Name));
+
+        overrides.SetEnabled("top", true, out _);
+        Assert.Equal(1, registry.ReapplyOverrides());
+        Assert.Equal(new byte[] { 7 }, registry.Load(Name).ToArray());
+        Assert.Equal(top, registry.OverrideStamp(Name));
+    }
+
     private ResourceRegistry CreateRegistry()
     {
         var vfs = new VirtualFileSystem();

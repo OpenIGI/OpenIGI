@@ -40,7 +40,8 @@ foreach ($mission in $missions) {
             & $executable `
                 -mission $mission -fullscreen -size 2560x1440 -freecam -skipcutscene `
                 -yaw 0.4 -yawend 3.4 -pitch -0.12 -pitchend -0.12 `
-                -benchmark $json +gfx_preset $preset
+                -benchmark $json +gfx_preset $preset | Out-Host
+            # Piped, so PowerShell waits for the game, which is a windowed program, and sets its exit code.
             if ($LASTEXITCODE -ne 0) {
                 throw "Benchmark process failed with exit code $LASTEXITCODE"
             }

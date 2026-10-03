@@ -9,6 +9,7 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Menus;
 using OpenIGI.Game.World;
+using OpenIGI.Host.Content;
 using OpenIGI.Host.Configuration;
 using OpenIGI.Host.Menu;
 using OpenIGI.Host.Titles;
@@ -179,6 +180,7 @@ internal sealed partial class GameHost
             .ApplyTo(_fileSystem);
 
         LoadTitleResources();
+        ReportOverrideScan(_overrideScan);
         LoadTitleSession();
 
         // After the session, because the score is one of the things it registers natives against, and
@@ -212,23 +214,26 @@ internal sealed partial class GameHost
         _resourceFileSystem = _fileSystem;
         _resources = new ResourceRegistry(_resourceFileSystem, _logger);
 
-        // The overrides folder, beside the game's own directories. Anything dropped in there replaces the
-        // asset that lives at the same path in the installation -- an archived texture by the directory
-        // its archive sits in, a loose file by its own path -- so a replacement pack is just the game
-        // folder with the files somebody changed and nothing else.
+        // The content layers: the player's load order of packs and the game folder's own overrides
+        // folder, each a tree mirroring the installation. Anything in one replaces the asset that lives at
+        // the same path -- an archived texture by the directory its archive sits in, a loose file by its
+        // own path -- and the highest enabled layer that has a path wins it.
         //
-        // Rebuilt per title rather than once at boot, which is what moving it here buys: the folder is
-        // the INSTALLATION's, so a session that switches games has to look in the other one's.
-        // OPENIGI_OVERRIDES names another folder instead, for trying a pack -- a converted one, a work in
-        // progress -- without putting it in the installation.
-        string? overridesRoot = Environment.GetEnvironmentVariable("OPENIGI_OVERRIDES") is { Length: > 0 } elsewhere
-            ? elsewhere
-            : _resourceFileSystem.TryGetDevice(LocalFileDevice.DeviceName, out IFileDevice? local)
-                && local is LocalFileDevice localDevice
-                    ? Path.Combine(localDevice.RootDirectory, ResourceOverrides.DirectoryName)
-                    : null;
+        // Rebuilt per title rather than once at boot: the local folder is the INSTALLATION's, and the
+        // profile holds a separate list for each game, so a session that switches games has to take the
+        // other one's. See ContentLayers for the order and the development and legacy folders.
+        string? dataRoot = _resourceFileSystem.TryGetDevice(LocalFileDevice.DeviceName, out IFileDevice? local)
+            && local is LocalFileDevice localDevice
+                ? localDevice.RootDirectory
+                : null;
 
-        _overrides = new ResourceOverrides(overridesRoot, _logger);
+        _overrides = new ResourceOverrides(
+            ContentLayers.Resolve(_titleRuntime.Title.Id, dataRoot, _options, _logger),
+            _logger)
+        {
+            // Carried across a title switch: F8 is the player's, not the title's.
+            Bypassed = !_overridesApplied,
+        };
 
         _resources.Overrides = _overrides;
 

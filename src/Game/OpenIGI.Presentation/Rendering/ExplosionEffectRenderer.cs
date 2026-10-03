@@ -68,7 +68,7 @@ internal sealed class ExplosionEffectRenderer : IDisposable
 
     private readonly IGraphicsDevice _device;
     private readonly VirtualFileSystem _fileSystem;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly IgiRandom _random = new();
     private readonly Puff[] _puffs = new Puff[MaximumPuffs];
     private readonly List<Pending> _pending = [];
@@ -85,7 +85,7 @@ internal sealed class ExplosionEffectRenderer : IDisposable
     /// <param name="device">The device to upload to and draw with.</param>
     /// <param name="fileSystem">The virtual file system the common sprite archive is mounted in.</param>
     /// <param name="logger">The logger for load diagnostics.</param>
-    public ExplosionEffectRenderer(IGraphicsDevice device, VirtualFileSystem fileSystem, IIgiLogger? logger = null)
+    public ExplosionEffectRenderer(IGraphicsDevice device, VirtualFileSystem fileSystem, IOpenIgiLogger? logger = null)
     {
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));

@@ -120,20 +120,46 @@ public sealed class LauncherServicesTests
     }
 
     [Fact]
+    public void Closing_on_launch_from_an_older_launcher_becomes_going_to_the_tray()
+    {
+        string dir = Directory.CreateTempSubdirectory("openigi-settings-").FullName;
+        try
+        {
+            string path = Path.Combine(dir, "settings.json");
+            File.WriteAllText(path, """{ "closeOnLaunch": true }""");
+
+            LauncherSettings read = LauncherSettings.Load(path);
+            Assert.True(read.MinimizeOnLaunch);
+            Assert.Equal(CloseAction.Ask, read.CloseButton);
+
+            // The old name is only read: what is saved is the new one.
+            read.Save(path);
+            string saved = File.ReadAllText(path);
+            Assert.DoesNotContain("closeOnLaunch", saved, StringComparison.Ordinal);
+            Assert.Contains("\"minimizeOnLaunch\": true", saved, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Settings_survive_a_round_trip_and_a_damaged_file_falls_back_to_defaults()
     {
         string dir = Directory.CreateTempSubdirectory("openigi-settings-").FullName;
         try
         {
             string path = Path.Combine(dir, "nested", "settings.json");
-            LauncherSettings settings = new() { Channel = ReleaseChannel.Beta, LaunchArguments = "-windowed", CloseOnLaunch = true };
+            LauncherSettings settings = new() { Channel = ReleaseChannel.Beta, LaunchArguments = "-windowed", MinimizeOnLaunch = true, CloseButton = CloseAction.Exit };
             settings.GameFolders["igi1"] = "D:/IGI";
             settings.Save(path);
 
             LauncherSettings read = LauncherSettings.Load(path);
             Assert.Equal(ReleaseChannel.Beta, read.Channel);
             Assert.Equal("-windowed", read.LaunchArguments);
-            Assert.True(read.CloseOnLaunch);
+            Assert.True(read.MinimizeOnLaunch);
+            Assert.Equal(CloseAction.Exit, read.CloseButton);
             Assert.Equal("D:/IGI", read.GameFolders["igi1"]);
             Assert.Contains("\"beta\"", File.ReadAllText(path), StringComparison.Ordinal);
 
@@ -180,5 +206,40 @@ public sealed class LauncherServicesTests
         // A different question is never answered from the last one's tag.
         await client.FetchAsync(service, ReleaseChannel.Stable, "0.1.0", CancellationToken.None);
         Assert.Empty(server.Requests[2].Headers.IfNoneMatch);
+    }
+
+    [Fact]
+    public async Task Each_channel_keeps_its_own_answer_so_switching_back_is_instant()
+    {
+        FakeServer server = new()
+        {
+            Override = request =>
+            {
+                ReleaseChannel channel = request.RequestUri!.AbsolutePath.EndsWith("beta", StringComparison.Ordinal) ? ReleaseChannel.Beta : ReleaseChannel.Stable;
+                string tag = channel == ReleaseChannel.Beta ? "\"b\"" : "\"s\"";
+                if (request.Headers.IfNoneMatch.Any(t => t.Tag == tag))
+                {
+                    return new HttpResponseMessage(HttpStatusCode.NotModified);
+                }
+
+                HttpResponseMessage response = new(HttpStatusCode.OK) { Content = new StringContent(ReleaseJson.Write(new ChannelFeed(channel, null, []))) };
+                response.Headers.ETag = new EntityTagHeaderValue(tag);
+                return response;
+            },
+        };
+
+        ReleaseFeedClient client = new(new HttpClient(server));
+        Uri service = new("https://api.test/");
+        Assert.Null(client.Cached(ReleaseChannel.Beta, null));
+
+        ChannelFeed beta = await client.FetchAsync(service, ReleaseChannel.Beta, null, CancellationToken.None);
+        ChannelFeed stable = await client.FetchAsync(service, ReleaseChannel.Stable, null, CancellationToken.None);
+
+        Assert.Same(beta, client.Cached(ReleaseChannel.Beta, null));
+        Assert.Same(stable, client.Cached(ReleaseChannel.Stable, null));
+
+        // Back on beta, the request carries beta's own tag and the unchanged answer is the one kept.
+        Assert.Same(beta, await client.FetchAsync(service, ReleaseChannel.Beta, null, CancellationToken.None));
+        Assert.Equal("\"b\"", server.Requests[2].Headers.IfNoneMatch.Single().Tag);
     }
 }

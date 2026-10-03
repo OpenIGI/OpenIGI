@@ -95,13 +95,13 @@ public static class EmissiveTextureSurvey
         WorldScene scene,
         ResourceRegistry resources,
         AssetFormatProfile formats,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(resources);
         ArgumentNullException.ThrowIfNull(formats);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         if (!scene.Mission.TryReadLightmapArchive(resources, out IresArchive? archive) || archive is null)
         {
@@ -212,7 +212,7 @@ public static class EmissiveTextureSurvey
         Dictionary<string, IresEntry> entries,
         string entryName,
         AssetFormatProfile formats,
-        IIgiLogger log)
+        IOpenIgiLogger log)
     {
         if (!entries.TryGetValue(entryName, out IresEntry? entry) || entry is null)
         {

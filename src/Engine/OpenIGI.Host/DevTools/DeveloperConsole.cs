@@ -56,7 +56,7 @@ public sealed class DeveloperConsole : IDisposable
 
     private readonly IGraphicsDevice _device;
     private readonly ConsoleModel _model;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Dictionary<string, UiWindow> _panels = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _pendingOpen = new(StringComparer.OrdinalIgnoreCase);
     private readonly ContextMenu _menu = new();
@@ -106,7 +106,7 @@ public sealed class DeveloperConsole : IDisposable
     /// <param name="model">The console state shown and edited.</param>
     /// <param name="logger">Where to report what the console does.</param>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    public DeveloperConsole(IGraphicsDevice device, ConsoleModel model, IIgiLogger? logger = null)
+    public DeveloperConsole(IGraphicsDevice device, ConsoleModel model, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(model);

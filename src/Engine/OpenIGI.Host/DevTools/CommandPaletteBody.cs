@@ -2,6 +2,7 @@ using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Graphics;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
+using OpenIGI.UI.Text;
 using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Host.DevTools;
@@ -180,13 +181,13 @@ public sealed class CommandPaletteBody : UiElement
             float textY = row.Y + ((row.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f);
             Bgra32 colour = entry.IsBlocked ? _theme.Ui.TextDisabled : _theme.ColorFor(entry.Kind);
 
-            painter.DrawText(_theme.BodyFont, Fit(entry.Text, 34), new UiVec2(row.X + (_theme.Cell * 2f), textY), _theme.BodySize, colour);
+            painter.DrawText(_theme.BodyFont, TextFit.ToColumns(entry.Text, 34), new UiVec2(row.X + (_theme.Cell * 2f), textY), _theme.BodySize, colour);
 
             if (entry.Detail.Length > 0)
             {
                 painter.DrawText(
                     _theme.BodyFont,
-                    Fit(entry.Detail, 14),
+                    TextFit.ToColumns(entry.Detail, 14),
                     new UiVec2(row.X + (_theme.Cell * 37f), textY),
                     _theme.BodySize,
                     _theme.Ui.Text);
@@ -199,7 +200,7 @@ public sealed class CommandPaletteBody : UiElement
                 {
                     painter.DrawText(
                         _theme.BodyFont,
-                        Fit(entry.Help, columns),
+                        TextFit.ToColumns(entry.Help, columns),
                         new UiVec2(row.X + (_theme.Cell * 53f), textY),
                         _theme.BodySize,
                         _theme.Ui.TextMuted);
@@ -209,7 +210,4 @@ public sealed class CommandPaletteBody : UiElement
             y += rowHeight;
         }
     }
-
-    private static string Fit(string text, int columns) =>
-        columns <= 1 || text.Length <= columns ? text : string.Concat(text.AsSpan(0, columns - 1), "…");
 }

@@ -21,5 +21,5 @@ public sealed class WebAudioDeviceFactory : IAudioDeviceFactory
     }
 
     /// <inheritdoc/>
-    public IAudioDevice Open(AudioDeviceOptions options, IIgiLogger logger) => new WebAudioDevice(options, _page, logger);
+    public IAudioDevice Open(AudioDeviceOptions options, IOpenIgiLogger logger) => new WebAudioDevice(options, _page, logger);
 }

@@ -1,0 +1,8 @@
+T:System.Console;Log through IOpenIgiLogger (OpenIGI.Core.Diagnostics); a tool writes its result to ToolContext.Out
+M:System.Diagnostics.Debug.Write(System.String);Log through IOpenIgiLogger (OpenIGI.Core.Diagnostics)
+M:System.Diagnostics.Debug.Write(System.Object);Log through IOpenIgiLogger (OpenIGI.Core.Diagnostics)
+M:System.Diagnostics.Debug.WriteLine(System.String);Log through IOpenIgiLogger (OpenIGI.Core.Diagnostics)
+M:System.Diagnostics.Debug.WriteLine(System.Object);Log through IOpenIgiLogger (OpenIGI.Core.Diagnostics)
+M:System.Diagnostics.Debug.WriteLine(System.String,System.Object[]);Log through IOpenIgiLogger (OpenIGI.Core.Diagnostics)
+M:System.Diagnostics.Debug.Print(System.String);Log through IOpenIgiLogger (OpenIGI.Core.Diagnostics)
+T:System.Diagnostics.Trace;Log through IOpenIgiLogger (OpenIGI.Core.Diagnostics)

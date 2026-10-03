@@ -414,13 +414,13 @@ public sealed class WorldScene
         LoadedMission mission,
         GameTask levelRoot,
         MagicObjectRegistry? magic = null,
-        IIgiLogger? logger = null,
+        IOpenIgiLogger? logger = null,
         VehiclePhysicsRegistry? vehiclePhysics = null)
     {
         ArgumentNullException.ThrowIfNull(mission);
         ArgumentNullException.ThrowIfNull(levelRoot);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         Dictionary<string, (MtpInstance Instance, LoadedPack Pack, MefModel Model)> byName =
             new(StringComparer.OrdinalIgnoreCase);
 
@@ -827,7 +827,7 @@ public sealed class WorldScene
         GameTask levelRoot,
         Dictionary<string, (MtpInstance Instance, LoadedPack Pack, MefModel Model)> byName,
         List<WorldPlacement> placements,
-        IIgiLogger log)
+        IOpenIgiLogger log)
     {
         int added = 0;
         int chain = 0;
@@ -1215,7 +1215,7 @@ public sealed class WorldScene
     /// </remarks>
     private static int AddAttached(
         LoadedMission mission,
-        IIgiLogger log,
+        IOpenIgiLogger log,
         WorldObject node,
         Vector3d position,
         Matrix3f drawOrientation,
@@ -1558,7 +1558,7 @@ public sealed class WorldScene
     /// name: that is the identity the retail loader uses when it adds the object.
     /// </summary>
     private static void LogPlacementVerification(
-        IIgiLogger log,
+        IOpenIgiLogger log,
         LoadedMission mission,
         DeclaredTask task,
         string modelId,
@@ -1593,8 +1593,8 @@ public sealed class WorldScene
                     : positionMatch && orientationMatch ? "PASS" : "MISMATCH";
 
         log.Information(
-            LogCategory,
-            $"[LevelLoader] Object Loaded: ModelID={modelId}, Type={type}, Name={name}, "
+            LogCategory + ".Loader",
+            $"Object Loaded: ModelID={modelId}, Type={type}, Name={name}, "
                 + $"Pos={positionText}, Ori={orientationText}, Tex={modelId}, Model={modelId}, "
                 + $"Source={source}, PositionMatch={positionMatch}, OrientationMatch={orientationMatch}, "
                 + $"Verification={verification}");
@@ -1602,8 +1602,8 @@ public sealed class WorldScene
         if (verification == "MISMATCH")
         {
             log.Error(
-                LogCategory,
-                $"[LevelLoader] Object verification failed: ModelID={modelId}, Type={type}, Name={name}, "
+                LogCategory + ".Loader",
+                $"Object verification failed: ModelID={modelId}, Type={type}, Name={name}, "
                     + $"Source={source}, authoredPos={FormatPosition(authoredPositionMetres * UnitsPerMetre)}, "
                     + $"runtimePos={positionText}, authoredOri={FormatOrientation(authoredOrientation)}, "
                     + $"runtimeOri={orientationText}");
@@ -1611,7 +1611,7 @@ public sealed class WorldScene
     }
 
     private static void LogDerivedPlacement(
-        IIgiLogger log,
+        IOpenIgiLogger log,
         LoadedMission mission,
         DeclaredTask? owner,
         string modelId,
@@ -1623,8 +1623,8 @@ public sealed class WorldScene
         string name = owner?.Name ?? string.Empty;
         string source = $"LOCAL:{mission.Descriptor.MissionDirectory}/objects.qvm";
         log.Information(
-            LogCategory,
-            $"[LevelLoader] Object Loaded: ModelID={modelId}, Type={type}, Name={name}, "
+            LogCategory + ".Loader",
+            $"Object Loaded: ModelID={modelId}, Type={type}, Name={name}, "
                 + $"Pos={FormatPosition(positionMetres * UnitsPerMetre)}, Ori={FormatOrientation(orientation)}, "
                 + $"Tex={modelId}, Model={modelId}, Source={source}, PositionMatch=True, "
                 + $"OrientationMatch=True, Verification=DERIVED_{sourceKind}");

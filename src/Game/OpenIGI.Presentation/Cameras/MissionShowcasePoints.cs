@@ -162,7 +162,7 @@ public static class MissionShowcasePoints
         GameTask? levelRoot,
         int count,
         MenuCameraSpec fallback,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         if (count <= 0 || scene.Placements.Count == 0)
@@ -295,7 +295,7 @@ public static class MissionShowcasePoints
     }
 
     /// <summary>Every placement in a level that is a building, measured and scored.</summary>
-    private static List<Structure> FindBuildings(WorldScene scene, IIgiLogger? logger)
+    private static List<Structure> FindBuildings(WorldScene scene, IOpenIgiLogger? logger)
     {
         (double low, double high) = HeightBand(scene);
         int aloft = 0;
@@ -411,7 +411,7 @@ public static class MissionShowcasePoints
     /// looking at the triple as a whole can trade a slightly duller building for one that is four hundred
     /// metres away.
     /// </remarks>
-    private static Structure[] PickTriangle(List<Structure> candidates, IIgiLogger? logger)
+    private static Structure[] PickTriangle(List<Structure> candidates, IOpenIgiLogger? logger)
     {
         List<Structure> corners = Shortlist(candidates);
         double best = candidates[0].Score;
@@ -542,7 +542,7 @@ public static class MissionShowcasePoints
         Structure[] triangle,
         List<Structure> candidates,
         int wanted,
-        IIgiLogger? logger)
+        IOpenIgiLogger? logger)
     {
         var inside = new List<Structure>(wanted);
 

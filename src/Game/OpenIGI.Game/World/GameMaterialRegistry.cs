@@ -50,12 +50,12 @@ public sealed class GameMaterialRegistry
     public const int BulletSoundCount = 6;
 
     private readonly Dictionary<int, GameMaterial> _byIndex = [];
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private int _active;
 
     /// <summary>Initializes a new instance of the <see cref="GameMaterialRegistry"/> class.</summary>
     /// <param name="logger">Where to report a row that cannot be read.</param>
-    public GameMaterialRegistry(IIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
+    public GameMaterialRegistry(IOpenIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
 
     /// <summary>Gets the materials, keyed by the row they occupy.</summary>
     public IReadOnlyDictionary<int, GameMaterial> ByIndex => _byIndex;

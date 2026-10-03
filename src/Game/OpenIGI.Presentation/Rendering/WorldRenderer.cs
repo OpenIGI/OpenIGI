@@ -46,7 +46,7 @@ public sealed class WorldRenderer : IWorldPresenter
     private LampSwitchboard? _switchboard;
     private readonly ResourceRegistry _resources;
     private readonly AssetFormatProfile _formats;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private MaterialLibrary _materials = MaterialLibrary.Empty;
     private readonly Dictionary<string, MeshGeometry?> _geometry = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, MeshHandle> _meshes = new(StringComparer.OrdinalIgnoreCase);
@@ -154,7 +154,7 @@ public sealed class WorldRenderer : IWorldPresenter
         IGraphicsDevice device,
         ResourceRegistry resources,
         AssetFormatProfile formats,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(resources);
@@ -2089,11 +2089,16 @@ public sealed class WorldRenderer : IWorldPresenter
         }
         else
         {
-            DetailMaps?.Attach(name, handle);
+            DetailMaps?.Attach(DetailKey(name), handle);
         }
 
         return handle;
     }
+
+    // The detail pack keys a replaced texture apart from the shipped one, so neither is handed the
+    // other's derived map.
+    private string DetailKey(string name) =>
+        MaterialDetailPack.KeyFor(name, _resources.OverrideStamp(LoadedPack.TextureResourceName(name)));
 
     private TextureHandle CreateFromDecoded(string name, TextureImage image, TextureImage? detail = null)
     {
@@ -2114,7 +2119,7 @@ public sealed class WorldRenderer : IWorldPresenter
         }
         else
         {
-            DetailMaps?.Attach(name, handle, image.GetLevel(0), image.Width, image.Height);
+            DetailMaps?.Attach(DetailKey(name), handle, image.GetLevel(0), image.Width, image.Height);
         }
 
         return handle;

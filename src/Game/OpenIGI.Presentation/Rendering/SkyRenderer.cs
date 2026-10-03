@@ -74,7 +74,7 @@ public sealed class SkyRenderer : ISkyPresenter
     private const float StripOverscan = 1.001f;
 
     private readonly IGraphicsDevice _device;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly List<CloudLayer> _layers = [];
     private MeshHandle _dome = MeshHandle.None;
 
@@ -116,7 +116,7 @@ public sealed class SkyRenderer : ISkyPresenter
         VirtualFileSystem fileSystem,
         GameTask levelRoot,
         float farPlane,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(fileSystem);

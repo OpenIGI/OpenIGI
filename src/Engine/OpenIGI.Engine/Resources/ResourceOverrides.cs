@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using OpenIGI.Core;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Resources;
@@ -6,12 +9,12 @@ using OpenIGI.Formats.Ilff;
 namespace OpenIGI.Engine.Resources;
 
 /// <summary>
-/// A directory of loose files that stand in for the game's own assets, addressed the way the
+/// An ordered stack of folders whose files stand in for the game's own assets, addressed the way the
 /// installation addresses them.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The folder mirrors the game.</b> An asset is overridden by putting a file where that asset lives
+/// <b>Each folder mirrors the game.</b> An asset is overridden by putting a file where that asset lives
 /// in the installation — <c>overrides/common/textures/000_04_1.tex</c> replaces the shared texture,
 /// <c>overrides/missions/location0/level10/textures/000_04_1.tex</c> replaces level 10's own, and
 /// <c>overrides/missions/location0/level1/terrain/terrain.tex</c> replaces a file that was already
@@ -25,72 +28,78 @@ namespace OpenIGI.Engine.Resources;
 /// replacement keyed by WHERE THE ARCHIVE IS can, because an archive has exactly one place.
 /// </para>
 /// <para>
-/// <b>An archive in the folder works too, and means the same thing.</b> A <c>.res</c> file under
-/// <c>overrides</c> is opened and every entry in it is registered at the path that entry would have been
-/// overridden at individually — so <c>overrides/common/textures/textures.res</c> holding
-/// <c>water_igi.tex</c> is exactly equivalent to <c>overrides/common/textures/water_igi.tex</c>. That is
-/// what lets a generated pack ship the game's own file types without the loader needing a second idea of
-/// what an override is: the archive is a delivery mechanism, not a new rule.
+/// <b>An archive in a folder works too, and means the same thing.</b> A <c>.res</c> file in a layer is
+/// opened and every entry in it is registered at the path that entry would have been overridden at
+/// individually — so <c>overrides/common/textures/textures.res</c> holding <c>water_igi.tex</c> is exactly
+/// equivalent to <c>overrides/common/textures/water_igi.tex</c>. The archive is a delivery mechanism, not a
+/// new rule. It holds only what it replaces, so a name it does not carry resolves the way it always did.
 /// </para>
 /// <para>
-/// An override archive holds only what it replaces. It is not a copy of the game's archive with some
-/// entries swapped, so nothing falls out of the installation by being left out of the pack — a name the
-/// override does not carry simply resolves the way it always did.
+/// <b>Several layers, one rule.</b> The layers are ordered, first highest. For every path the first
+/// ENABLED layer that has it wins; the layers below fill whatever it leaves out; a path no enabled layer
+/// has is the game's own. Within one layer a loose file beats an archived entry (someone who drops one
+/// <c>.tex</c> beside a generated pack is correcting that pack), and two archives that carry the same path
+/// resolve by archive path, alphabetically first, so the answer never depends on directory order.
 /// </para>
 /// <para>
-/// <b>A loose file wins over an archived one.</b> Someone who drops a single <c>.tex</c> next to a
-/// generated pack is correcting that pack, and the more specific, hand-placed thing is what they meant.
-/// </para>
-/// <para>
-/// <b>Rescannable by design.</b> <see cref="Rescan"/> rebuilds the index and reports what moved, so a
-/// file dropped in while the game is running can be picked up without a restart. A rescan that finds
-/// nothing new costs a directory walk and nothing else. An archive is INDEXED rather than loaded: the
-/// walk reads chunk headers and names and seeks past every payload, because a 4x pack's level archive is
-/// a quarter of a gigabyte and there may be fifteen of them.
+/// <b>Rescannable by design.</b> <see cref="Rescan"/> rebuilds every layer's index and reports what moved,
+/// so a file dropped in while the game is running is picked up without a restart. An archive is INDEXED
+/// rather than loaded: the walk reads chunk headers and names and seeks past every payload, because a 4x
+/// pack's level archive is a quarter of a gigabyte and there may be fifteen of them. Switching a layer on
+/// or off (<see cref="SetEnabled"/>) re-merges the indexes already held and touches no disk.
 /// </para>
 /// <para>
 /// <b>The bytes are read on demand and not kept here.</b> Whoever asks holds them -- a level's resource
-/// registry, for as long as that level lives -- and lets them go with it. This store used to keep every
-/// override it had ever read, for the whole session, so browsing the menu's missions accumulated every
-/// level's pack in memory and gave none of it back.
+/// registry, for as long as that level lives -- and lets them go with it.
 /// </para>
 /// </remarks>
 public sealed class ResourceOverrides
 {
     private const string LogCategory = "Overrides";
 
-    /// <summary>The directory name, relative to the installation root.</summary>
+    /// <summary>The game folder's own overrides directory name, relative to the installation root.</summary>
     public const string DirectoryName = "overrides";
 
-    /// <summary>The extension that marks a file in the folder as an archive of overrides, not an asset.</summary>
+    /// <summary>The extension that marks a file in a layer as an archive of overrides, not an asset.</summary>
     public const string ArchiveExtension = ".res";
 
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
+    private readonly Layer[] _layers;
 
     // The index is read from more than one thread. A menu backdrop builds its level on a worker, and the
     // registry it builds into resolves every archived entry through this store while the render thread is
-    // free to rescan the folder or swap the pack out of the frame. The lock covers the index only; the
-    // file read is made outside it.
+    // free to rescan or swap a layer out of the frame. The lock covers the indexes only; the file read is
+    // made outside it.
     private readonly Lock _gate = new();
-    private readonly Dictionary<string, Candidate> _files = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Initializes a new instance of the <see cref="ResourceOverrides"/> class.</summary>
+    // The merged answer: each path's winning candidate, from the enabled layers only.
+    private Dictionary<string, Candidate> _files = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Initializes a new instance of the <see cref="ResourceOverrides"/> class with one folder.</summary>
     /// <param name="root">The overrides directory, or <see langword="null"/> or absent for none.</param>
     /// <param name="logger">Where to report what was found.</param>
-    public ResourceOverrides(string? root, IIgiLogger? logger = null)
+    public ResourceOverrides(string? root, IOpenIgiLogger? logger = null)
+        : this(string.IsNullOrWhiteSpace(root) ? [] : [new OverrideLayer(DirectoryName, DirectoryName, root)], logger)
     {
-        _logger = logger ?? NullLogger.Instance;
-
-        if (!string.IsNullOrWhiteSpace(root))
-        {
-            Root = Path.GetFullPath(root);
-        }
     }
 
-    /// <summary>Gets the overrides directory, or <see langword="null"/> when none was configured.</summary>
-    public string? Root { get; }
+    /// <summary>Initializes a new instance of the <see cref="ResourceOverrides"/> class with a stack of folders.</summary>
+    /// <param name="layers">The layers, highest priority first.</param>
+    /// <param name="logger">Where to report what was found.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="layers"/> is <see langword="null"/>.</exception>
+    public ResourceOverrides(IReadOnlyList<OverrideLayer> layers, IOpenIgiLogger? logger = null)
+    {
+        ArgumentNullException.ThrowIfNull(layers);
 
-    /// <summary>Gets how many files the last scan found.</summary>
+        _logger = logger ?? NullLogger.Instance;
+        _layers = [.. layers.Select(layer => new Layer(
+            layer.Id,
+            layer.Name,
+            string.IsNullOrWhiteSpace(layer.Root) ? null : Path.GetFullPath(layer.Root),
+            layer.Enabled))];
+    }
+
+    /// <summary>Gets how many paths the enabled layers override, after resolution.</summary>
     public int Count
     {
         get
@@ -98,6 +107,19 @@ public sealed class ResourceOverrides
             lock (_gate)
             {
                 return _files.Count;
+            }
+        }
+    }
+
+    /// <summary>Gets a value indicating whether any layer, enabled or not, holds a file.</summary>
+    /// <remarks>What decides whether there is anything for the originals switch to compare against.</remarks>
+    public bool HasContent
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _layers.Any(layer => layer.Index.Count > 0);
             }
         }
     }
@@ -113,7 +135,7 @@ public sealed class ResourceOverrides
     /// <summary>Gets a value indicating whether any override is present and in use.</summary>
     public bool IsActive => !Bypassed && Count > 0;
 
-    /// <summary>Gets every override path found, relative to the root and normalised.</summary>
+    /// <summary>Gets every overridden path, relative to its layer and normalised.</summary>
     public IReadOnlyCollection<string> Paths
     {
         get
@@ -127,177 +149,160 @@ public sealed class ResourceOverrides
         }
     }
 
-    /// <summary>Rebuilds the index from the directory.</summary>
-    /// <returns>What changed since the previous scan.</returns>
-    /// <remarks>
-    /// Safe to call at any time, including with no directory configured, in which case it reports an
-    /// empty scan rather than failing — an installation with no overrides is the ordinary one.
-    /// </remarks>
-    public ScanResult Rescan()
+    /// <summary>Gets the layers, highest priority first, with what each holds and supplies.</summary>
+    public IReadOnlyList<LayerInfo> Layers
     {
-        Dictionary<string, Candidate> previous;
-
-        lock (_gate)
-        {
-            previous = new(_files, StringComparer.OrdinalIgnoreCase);
-        }
-
-        if (Root is null || !Directory.Exists(Root))
+        get
         {
             lock (_gate)
             {
-                _files.Clear();
+                int[] wins = new int[_layers.Length];
+                foreach (Candidate candidate in _files.Values)
+                {
+                    wins[candidate.Layer]++;
+                }
+
+                return [.. _layers.Select((layer, index) =>
+                    new LayerInfo(layer.Id, layer.Name, layer.Root, layer.Enabled, layer.Index.Count, wins[index]))];
             }
-
-            return new ScanResult(0, 0, previous.Count, 0);
         }
+    }
 
+    /// <summary>Rebuilds every layer's index from disk.</summary>
+    /// <returns>What changed, after resolution, since the previous scan.</returns>
+    /// <remarks>
+    /// Safe to call at any time, including with no layers or with folders that do not exist, in which case
+    /// it reports an empty scan rather than failing — an installation with no overrides is the ordinary one.
+    /// </remarks>
+    public ScanResult Rescan()
+    {
         // Built off to the side and published at the end, so the walk -- which opens and reads the header
-        // of every archive in the folder -- never holds the lock a level load is resolving through.
-        Dictionary<string, Candidate> next = new(StringComparer.OrdinalIgnoreCase);
-
-        int added = 0;
-        int changed = 0;
-        List<string> archives = [];
-
-        foreach (string path in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories))
+        // of every archive in every folder -- never holds the lock a level load is resolving through.
+        var indexes = new Dictionary<string, Candidate>[_layers.Length];
+        for (int layer = 0; layer < _layers.Length; layer++)
         {
-            string relative = ResourcePath.Normalize(Path.GetRelativePath(Root, path));
-
-            if (relative.Length == 0)
-            {
-                continue;
-            }
-
-            FileInfo info;
-
-            try
-            {
-                info = new FileInfo(path);
-            }
-            catch (IOException)
-            {
-                continue;
-            }
-
-            if (relative.EndsWith(ArchiveExtension, StringComparison.OrdinalIgnoreCase))
-            {
-                // Held back and indexed after the loose files, so that a hand-placed file already holds
-                // its path by the time the archive's copy of that name is offered.
-                archives.Add(path);
-                continue;
-            }
-
-            Record(next, relative, new Candidate(path, info.Length, info.LastWriteTimeUtc), previous, ref added, ref changed);
+            indexes[layer] = ScanLayer(layer);
         }
-
-        foreach (string path in archives)
-        {
-            IndexArchive(next, path, previous, ref added, ref changed);
-        }
-
-        int removed = previous.Keys.Count(key => !next.ContainsKey(key));
 
         lock (_gate)
         {
-            _files.Clear();
+            Dictionary<string, Candidate> previous = _files;
 
-            foreach (KeyValuePair<string, Candidate> file in next)
+            for (int layer = 0; layer < _layers.Length; layer++)
             {
-                _files[file.Key] = file.Value;
+                _layers[layer].Index = indexes[layer];
             }
-        }
 
-        return new ScanResult(next.Count, added, removed, changed);
+            _files = Merge();
+            return Compare(previous, _files);
+        }
     }
 
-    private static void Record(
-        Dictionary<string, Candidate> index,
-        string relative,
-        Candidate candidate,
-        Dictionary<string, Candidate> previous,
-        ref int added,
-        ref int changed)
+    /// <summary>Switches one layer on or off, re-resolving every path from the indexes already held.</summary>
+    /// <param name="layer">The layer's id, or its 1-based position in <see cref="Layers"/>.</param>
+    /// <param name="enabled">Whether it should take part.</param>
+    /// <param name="result">Receives what changed after resolution.</param>
+    /// <returns><see langword="true"/> when the layer was found.</returns>
+    /// <remarks>
+    /// The store's answer changes at once; whoever already holds bytes (a resource registry) is brought up
+    /// to date by its own reapply, exactly as after a <see cref="Rescan"/> or a flip of <see cref="Bypassed"/>.
+    /// </remarks>
+    public bool SetEnabled(string layer, bool enabled, out ScanResult result)
     {
-        if (index.ContainsKey(relative))
+        ArgumentNullException.ThrowIfNull(layer);
+
+        result = default;
+        int found = Find(layer);
+        if (found < 0)
         {
-            // A loose file already claimed this path. Archives are indexed second precisely so this is
-            // the direction the collision resolves in.
-            return;
+            return false;
         }
 
-        if (!previous.TryGetValue(relative, out Candidate existing))
+        lock (_gate)
         {
-            added++;
+            if (_layers[found].Enabled == enabled)
+            {
+                result = new ScanResult(_files.Count, 0, 0, 0);
+                return true;
+            }
+
+            _layers[found].Enabled = enabled;
+            Dictionary<string, Candidate> previous = _files;
+            _files = Merge();
+            result = Compare(previous, _files);
+            return true;
         }
-        else if (existing.Length != candidate.Length
-            || existing.Written != candidate.Written
-            || existing.Offset != candidate.Offset)
-        {
-            changed++;
-        }
-        index[relative] = candidate;
     }
 
-    private void IndexArchive(
-        Dictionary<string, Candidate> index,
-        string path,
-        Dictionary<string, Candidate> previous,
-        ref int added,
-        ref int changed)
+    /// <summary>Finds a layer by id or by 1-based position.</summary>
+    /// <param name="layer">The id, or the position as text.</param>
+    /// <returns>The 0-based index, or -1 when there is no such layer.</returns>
+    public int Find(string layer)
     {
-        FileInfo info;
-        IReadOnlyList<IresIndex.Located> entries;
+        ArgumentNullException.ThrowIfNull(layer);
 
-        try
+        for (int index = 0; index < _layers.Length; index++)
         {
-            info = new FileInfo(path);
-
-            using FileStream stream = File.OpenRead(path);
-            entries = IresIndex.Read(stream);
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or IlffFormatException)
-        {
-            _logger.Warning(LogCategory, $"Override archive '{path}' could not be read: {error.Message}");
-            return;
-        }
-
-        string archive = ResourcePath.Normalize(Path.GetRelativePath(Root!, path));
-        int registered = 0;
-
-        foreach (IresIndex.Located entry in entries)
-        {
-            if (entry.Kind != IresEntryKind.Body)
+            if (string.Equals(_layers[index].Id, layer, StringComparison.OrdinalIgnoreCase))
             {
-                // Only a body is an asset. PATH and CSTR describe the archive's own structure, which an
-                // overlay has no business replacing.
-                continue;
+                return index;
             }
-
-            string relative = OverridePath.For(archive, entry.Name);
-
-            if (relative.Length == 0)
-            {
-                continue;
-            }
-
-            Record(
-                index,
-                relative,
-                new Candidate(path, entry.Length, info.LastWriteTimeUtc) { Offset = entry.Offset },
-                previous,
-                ref added,
-                ref changed);
-
-            registered++;
         }
 
-        _logger.Information(LogCategory, $"'{archive}' contributes {registered} override(s).");
+        return int.TryParse(layer, out int position) && position >= 1 && position <= _layers.Length
+            ? position - 1
+            : -1;
     }
 
-    /// <summary>Determines whether a path is overridden.</summary>
+    /// <summary>Gets the layer that supplies a path.</summary>
     /// <param name="relativePath">The path, from one of the <see cref="OverridePath"/>.</param>
-    /// <returns><see langword="true"/> when an override file is present.</returns>
+    /// <returns>The 0-based layer index, or -1 when no enabled layer has it.</returns>
+    public int LayerOf(string relativePath)
+    {
+        lock (_gate)
+        {
+            return _files.TryGetValue(relativePath, out Candidate candidate) ? candidate.Layer : -1;
+        }
+    }
+
+    /// <summary>Lists every path that more than one enabled layer carries.</summary>
+    /// <returns>Each contested path with the layer that wins it and the layers it covers, ordered by path.</returns>
+    public IReadOnlyList<Conflict> Conflicts()
+    {
+        List<Conflict> conflicts = [];
+
+        lock (_gate)
+        {
+            foreach ((string path, Candidate winner) in _files)
+            {
+                List<int>? covered = null;
+                for (int layer = winner.Layer + 1; layer < _layers.Length; layer++)
+                {
+                    if (_layers[layer].Enabled && _layers[layer].Index.ContainsKey(path))
+                    {
+                        (covered ??= []).Add(layer);
+                    }
+                }
+
+                if (covered is not null)
+                {
+                    conflicts.Add(new Conflict(path, winner.Layer, covered));
+                }
+            }
+        }
+
+        conflicts.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.Path, b.Path));
+        return conflicts;
+    }
+
+    /// <summary>Determines whether any layer, enabled or not, carries a path.</summary>
+    /// <param name="relativePath">The path, from one of the <see cref="OverridePath"/>.</param>
+    /// <returns><see langword="true"/> when some layer has a file for it.</returns>
+    /// <remarks>
+    /// Deliberately blind to <see cref="Bypassed"/> and to which layers are on: it answers "could this path
+    /// be overridden", which is what a reapply needs to evict an entry whose override has just come or
+    /// gone in either direction.
+    /// </remarks>
     public bool Has(string relativePath)
     {
         if (relativePath.Length == 0)
@@ -307,11 +312,19 @@ public sealed class ResourceOverrides
 
         lock (_gate)
         {
-            return _files.ContainsKey(relativePath);
+            foreach (Layer layer in _layers)
+            {
+                if (layer.Index.ContainsKey(relativePath))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 
-    /// <summary>Reads an override's bytes.</summary>
+    /// <summary>Reads an override's bytes, from whichever enabled layer wins the path.</summary>
     /// <param name="relativePath">The path, from one of the <see cref="OverridePath"/>.</param>
     /// <param name="data">Receives the bytes, or empty when there is no such override.</param>
     /// <returns><see langword="true"/> when an override was read.</returns>
@@ -320,9 +333,22 @@ public sealed class ResourceOverrides
     /// <see cref="ReadOnlyMemory{T}"/> the registry holds for as long as its entry lives, so they cannot be
     /// a transient buffer, and they are not kept here, so they go when the registry does.
     /// </remarks>
-    public bool TryRead(string relativePath, out ReadOnlyMemory<byte> data)
+    public bool TryRead(string relativePath, out ReadOnlyMemory<byte> data) =>
+        TryRead(relativePath, out data, out _);
+
+    /// <summary>Reads an override's bytes, with a stamp that names exactly which file supplied them.</summary>
+    /// <param name="relativePath">The path, from one of the <see cref="OverridePath"/>.</param>
+    /// <param name="data">Receives the bytes, or empty when there is no such override.</param>
+    /// <param name="stamp">
+    /// Receives sixteen hex digits that change whenever the supplying file, layer, slice or write time does,
+    /// or the empty string when nothing was read. Stable across runs, so it can name a file in a disk cache
+    /// of things derived from these bytes.
+    /// </param>
+    /// <returns><see langword="true"/> when an override was read.</returns>
+    public bool TryRead(string relativePath, out ReadOnlyMemory<byte> data, out string stamp)
     {
         data = default;
+        stamp = string.Empty;
 
         if (Bypassed || relativePath.Length == 0)
         {
@@ -361,6 +387,7 @@ public sealed class ResourceOverrides
             // Read outside the lock, because a slice of a 4x pack's level archive is megabytes and the
             // render thread must not wait on that disk read.
             data = bytes;
+            stamp = Stamp(candidate);
             return true;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
@@ -370,14 +397,168 @@ public sealed class ResourceOverrides
         }
     }
 
-    /// <summary>What a <see cref="Rescan"/> found.</summary>
-    /// <param name="Total">How many override files are present now.</param>
-    /// <param name="Added">How many were not there before.</param>
-    /// <param name="Removed">How many have gone.</param>
-    /// <param name="Changed">How many are the same path with different contents.</param>
+    private static string Stamp(Candidate candidate)
+    {
+        // Hashed rather than spelled out, so it fits in a file name; SHA-256 rather than HashCode, because
+        // HashCode is seeded per process and the stamp has to mean the same thing next run.
+        string identity = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{candidate.Path.ToUpperInvariant()}|{candidate.Offset}|{candidate.Length}|{candidate.Written.Ticks}");
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(identity));
+        return Convert.ToHexStringLower(hash.AsSpan(0, 8));
+    }
+
+    private Dictionary<string, Candidate> ScanLayer(int layer)
+    {
+        Dictionary<string, Candidate> index = new(StringComparer.OrdinalIgnoreCase);
+        string? root = _layers[layer].Root;
+
+        if (root is null || !Directory.Exists(root))
+        {
+            return index;
+        }
+
+        List<(string Relative, string Path)> archives = [];
+
+        foreach (string path in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        {
+            string relative = ResourcePath.Normalize(Path.GetRelativePath(root, path));
+
+            if (relative.Length == 0)
+            {
+                continue;
+            }
+
+            if (relative.EndsWith(ArchiveExtension, StringComparison.OrdinalIgnoreCase))
+            {
+                // Held back and indexed after the loose files, so that a hand-placed file already holds
+                // its path by the time the archive's copy of that name is offered.
+                archives.Add((relative, path));
+                continue;
+            }
+
+            FileInfo info;
+
+            try
+            {
+                info = new FileInfo(path);
+            }
+            catch (IOException)
+            {
+                continue;
+            }
+
+            index.TryAdd(relative, new Candidate(path, info.Length, info.LastWriteTimeUtc) { Layer = layer });
+        }
+
+        // Sorted, because the directory walk's order is the file system's and two archives may carry the
+        // same path: the first by archive path wins, the same answer on every machine and every run.
+        archives.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.Relative, b.Relative));
+
+        foreach ((string relative, string path) in archives)
+        {
+            IndexArchive(index, layer, relative, path);
+        }
+
+        return index;
+    }
+
+    private void IndexArchive(Dictionary<string, Candidate> index, int layer, string archive, string path)
+    {
+        FileInfo info;
+        IReadOnlyList<IresIndex.Located> entries;
+
+        try
+        {
+            info = new FileInfo(path);
+
+            using FileStream stream = File.OpenRead(path);
+            entries = IresIndex.Read(stream);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or IlffFormatException)
+        {
+            _logger.Warning(LogCategory, $"Override archive '{path}' could not be read: {error.Message}");
+            return;
+        }
+
+        int registered = 0;
+
+        foreach (IresIndex.Located entry in entries)
+        {
+            if (entry.Kind != IresEntryKind.Body)
+            {
+                // Only a body is an asset. PATH and CSTR describe the archive's own structure, which an
+                // overlay has no business replacing.
+                continue;
+            }
+
+            string relative = OverridePath.For(archive, entry.Name);
+
+            // TryAdd: a loose file, or an alphabetically earlier archive, already holds the path.
+            if (relative.Length > 0
+                && index.TryAdd(
+                    relative,
+                    new Candidate(path, entry.Length, info.LastWriteTimeUtc) { Offset = entry.Offset, Layer = layer }))
+            {
+                registered++;
+            }
+        }
+
+        _logger.Information(LogCategory, $"'{_layers[layer].Name}': '{archive}' contributes {registered} override(s).");
+    }
+
+    // Under _gate. Walks the layers top-down so each path keeps the first enabled layer that has it.
+    private Dictionary<string, Candidate> Merge()
+    {
+        Dictionary<string, Candidate> merged = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (Layer layer in _layers)
+        {
+            if (!layer.Enabled)
+            {
+                continue;
+            }
+
+            foreach ((string path, Candidate candidate) in layer.Index)
+            {
+                merged.TryAdd(path, candidate);
+            }
+        }
+
+        return merged;
+    }
+
+    private static ScanResult Compare(Dictionary<string, Candidate> previous, Dictionary<string, Candidate> next)
+    {
+        int added = 0;
+        int changed = 0;
+
+        foreach ((string path, Candidate candidate) in next)
+        {
+            if (!previous.TryGetValue(path, out Candidate existing))
+            {
+                added++;
+            }
+            else if (existing != candidate)
+            {
+                // Every field counts, the file and the layer included: the same size and time in a
+                // different pack is a different picture.
+                changed++;
+            }
+        }
+
+        int removed = previous.Keys.Count(path => !next.ContainsKey(path));
+        return new ScanResult(next.Count, added, removed, changed);
+    }
+
+    /// <summary>What a <see cref="Rescan"/> or <see cref="SetEnabled"/> changed, after resolution.</summary>
+    /// <param name="Total">How many paths are overridden now.</param>
+    /// <param name="Added">How many were not before.</param>
+    /// <param name="Removed">How many are no longer.</param>
+    /// <param name="Changed">How many are the same path from a different file, layer or version.</param>
     public readonly record struct ScanResult(int Total, int Added, int Removed, int Changed)
     {
-        /// <summary>Gets a value indicating whether anything moved since the previous scan.</summary>
+        /// <summary>Gets a value indicating whether anything moved.</summary>
         public bool Moved => Added > 0 || Removed > 0 || Changed > 0;
 
         /// <inheritdoc/>
@@ -385,9 +566,40 @@ public sealed class ResourceOverrides
             $"{Total} override(s); {Added} new, {Changed} changed, {Removed} gone";
     }
 
+    /// <summary>One layer as it stands.</summary>
+    /// <param name="Id">The layer's id.</param>
+    /// <param name="Name">The layer's display name.</param>
+    /// <param name="Root">Its folder, or <see langword="null"/> when it has none.</param>
+    /// <param name="Enabled">Whether it takes part.</param>
+    /// <param name="Files">How many paths it carries.</param>
+    /// <param name="Wins">How many of those it supplies, because no enabled layer above it has them.</param>
+    public readonly record struct LayerInfo(string Id, string Name, string? Root, bool Enabled, int Files, int Wins);
+
+    /// <summary>A path more than one enabled layer carries.</summary>
+    /// <param name="Path">The path.</param>
+    /// <param name="Winner">The index of the layer that supplies it.</param>
+    /// <param name="Covered">The indexes of the enabled layers below that also carry it.</param>
+    public sealed record Conflict(string Path, int Winner, IReadOnlyList<int> Covered);
+
+    private sealed class Layer(string id, string name, string? root, bool enabled)
+    {
+        public string Id { get; } = id;
+
+        public string Name { get; } = name;
+
+        public string? Root { get; } = root;
+
+        public bool Enabled { get; set; } = enabled;
+
+        public Dictionary<string, Candidate> Index { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    }
+
     private readonly record struct Candidate(string Path, long Length, DateTime Written)
     {
         /// <summary>Where the bytes start in <see cref="Path"/>, or -1 when the file itself is the asset.</summary>
         public long Offset { get; init; } = -1;
+
+        /// <summary>The layer the file belongs to.</summary>
+        public int Layer { get; init; }
     }
 }

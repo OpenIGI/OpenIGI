@@ -5,6 +5,11 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
+  <ItemGroup Label="Analyzers">
+    <!-- Keeps logging in one place: raw Console, Debug.WriteLine and Trace use fails the build (BannedSymbols.txt). -->
+    <GlobalPackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="5.6.0" />
+  </ItemGroup>
+
   <ItemGroup Label="Silk.NET">
     <PackageVersion Include="Silk.NET.Core" Version="2.22.0" />
     <PackageVersion Include="Silk.NET.Windowing" Version="2.22.0" />

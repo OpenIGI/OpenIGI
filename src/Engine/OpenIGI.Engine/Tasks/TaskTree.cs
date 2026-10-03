@@ -30,14 +30,14 @@ public sealed class TaskTree
 
     private readonly GameTask?[] _idTable = new GameTask?[IdCapacity];
     private readonly Dictionary<GameTask, int> _idsByTask = [];
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="TaskTree"/> class.</summary>
     /// <param name="types">The type registry tasks in this tree are created from.</param>
     /// <param name="root">The root task, or <see langword="null"/> to create a plain <see cref="RootTask"/>.</param>
     /// <param name="logger">The logger for tree diagnostics; defaults to a sink that discards them.</param>
     /// <exception cref="ArgumentNullException"><paramref name="types"/> is <see langword="null"/>.</exception>
-    public TaskTree(TaskTypeRegistry types, GameTask? root = null, IIgiLogger? logger = null)
+    public TaskTree(TaskTypeRegistry types, GameTask? root = null, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(types);
         Types = types;

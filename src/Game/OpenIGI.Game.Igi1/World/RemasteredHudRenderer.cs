@@ -51,7 +51,7 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
     public const float MetresPerUnit = 0.0019f;
 
     private readonly IGraphicsDevice _device;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private UiFont? _body;
     private UiFont? _display;
     private UiTheme? _theme;
@@ -59,7 +59,7 @@ internal sealed class RemasteredHudRenderer : IRemasteredHudPresenter
     private InteractionBadgeSprite? _badge;
     private bool _disposed;
 
-    public RemasteredHudRenderer(IGraphicsDevice device, IIgiLogger logger)
+    public RemasteredHudRenderer(IGraphicsDevice device, IOpenIgiLogger logger)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(logger);

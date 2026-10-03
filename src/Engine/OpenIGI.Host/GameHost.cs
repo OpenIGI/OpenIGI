@@ -89,7 +89,7 @@ internal sealed partial class GameHost : IDisposable
 
     // A factory rather than the catalogue itself, because the scan happens after the log is wrapped by
     // the developer console and the catalogue reports what it found as it goes.
-    private Func<IIgiLogger, IMissionCatalogue<MissionDescriptor>> _missionCatalogue;
+    private Func<IOpenIgiLogger, IMissionCatalogue<MissionDescriptor>> _missionCatalogue;
     /// <summary>Gets the window width, or the authored 320 when a minimize/dock race reports 0x0.</summary>
     private int SafeWindowWidth => _window.Width > 0 ? _window.Width : 320;
 
@@ -103,7 +103,7 @@ internal sealed partial class GameHost : IDisposable
     // Where the RUNNING title is installed. The file system's LOCAL device is re-pointed here on a
     // switch; VirtualFileSystem registers devices by name, so re-registering replaces rather than adds.
     private string _gamePath;
-    private IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     // --- Services built during startup ---
     private ResourceRegistry _resources = null!;
@@ -684,7 +684,7 @@ internal sealed partial class GameHost : IDisposable
         VirtualFileSystem fileSystem,
         HostOptions options,
         string gamePath,
-        IIgiLogger logger)
+        IOpenIgiLogger logger)
     {
         ArgumentNullException.ThrowIfNull(titles);
         ArgumentNullException.ThrowIfNull(startOn);
@@ -709,6 +709,7 @@ internal sealed partial class GameHost : IDisposable
         _options = options;
         _gamePath = gamePath;
         _logger = logger;
+        Diagnostics.PresentationPacingProbe.Logger = logger;
     }
 
     /// <summary>Builds the world, runs the frame loop until the game is asked to quit, then shuts down.</summary>
@@ -881,9 +882,14 @@ internal sealed partial class GameHost : IDisposable
 
         // The developer console: the CVar registry, settings.cfg and the on-screen view. Brought up before
         // anything reads a setting, so the saved file and the command line's +statements are already in
-        // effect by the time the renderer and the game are built. Everything logged from here on is
-        // mirrored into its scrollback, so opening it shows the log rather than an empty panel.
+        // effect by the time the renderer and the game are built. The process's log is shown in its
+        // scrollback, startup included, so opening it shows the log rather than an empty panel.
         using HostConsole console = new(_device, _logger);
+        if (_logger is LogRouter router)
+        {
+            console.AttachLog(router);
+        }
+
         console.QuitRequested += (_, _) => running = false;
 
         // The console reaches the system clipboard through the window, which is what owns the handle,
@@ -911,7 +917,6 @@ internal sealed partial class GameHost : IDisposable
             useSavedSettings: !_options.Lockstep,
             _options.FirstRunPreset,
             _options.LockedPreset);
-        _logger = console.WrapLogger(_logger);
         // The scan LoadTitleResources ran: taken off the field because the scan now happens wherever the
         // resources are loaded, and that is a method a title switch calls too.
         ReportOverrideScan(_overrideScan);
@@ -2610,8 +2615,7 @@ internal sealed partial class GameHost : IDisposable
                     // A soak reports where memory stands every tenth swap, so growth shows as a trend.
                     if (_options.BackdropCycleFrames > 0 && ++backdropSwaps % 10 == 0)
                     {
-                        Console.WriteLine($"mem_report after {backdropSwaps} backdrop swap(s):");
-                        Console.WriteLine(DescribeMemory());
+                        _logger.Information(MemoryLogCategory, $"After {backdropSwaps} backdrop swap(s):\n{DescribeMemory()}");
                     }
 
                     // Once the first backdrop is up, every other mission's files are read through in the
@@ -2673,24 +2677,14 @@ internal sealed partial class GameHost : IDisposable
             // Nothing happens with an empty folder: the flag is meaningful only against something to
             // compare with, and reloading a level's textures to show the same assets again would be a
             // long hitch for no picture.
-            if (_overridesApplied != RenderCVars.OverridesEnabled.Value && _overrides.Count > 0)
+            // Any layer with files counts, switched on or not: with every layer off there is still
+            // something the switch is the difference between once one comes back on.
+            if (_overridesApplied != RenderCVars.OverridesEnabled.Value && _overrides.HasContent)
             {
                 _overridesApplied = RenderCVars.OverridesEnabled.Value;
                 _overrides.Bypassed = !_overridesApplied;
 
-                int swapped = _resources.ReapplyOverrides();
-
-                if (swapped > 0)
-                {
-                    _world?.ReloadTextures();
-                    _ = ReloadTerrainTiles();
-
-                    // The card atlas has the diffuse baked into it, so the indirect light is still
-                    // bouncing off the old pixels until it is captured again. Discarding it is the
-                    // existing invalidation -- the same one a density change uses -- and it re-converges
-                    // the GI with it.
-                    DiscardSurfaceCache();
-                }
+                int swapped = ApplyOverrideChange(out _);
 
                 _logger.Information(
                     "Overrides",
@@ -3842,7 +3836,7 @@ internal sealed partial class GameHost : IDisposable
                     : 1f;
 
                 // Whether the picture's own clock keeps step with the wall clock, behind
-                // OPENIGI_PACING_DEBUG=1. Sampled here because this pair -- the tick and the blend --
+                // the Pacing log category at Debug. Sampled here because this pair -- the tick and the blend --
                 // is exactly the moment in the simulation the frame is about to be drawn at.
                 Diagnostics.PresentationPacingProbe.Sample(
                     pacingWall, _loop.Clock.TickCount, tickBlend, _loop.Clock.TickRate, smoothPresentation);
@@ -7393,10 +7387,11 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
     /// </remarks>
     private string TextureModeLabel()
     {
+        int layers = _overrides.Layers.Count(layer => layer.Enabled && layer.Wins > 0);
         string upscaled = _overrides.Count == 0
-            ? "original (no overrides folder)"
+            ? "original (no content)"
             : RenderCVars.OverridesEnabled.Value
-                ? $"{_resources.OverriddenCount} override(s) [F8 for the originals]"
+                ? $"{_resources.OverriddenCount} override(s) from {layers} layer(s) [F8 for the originals]"
                 : $"original [F8 for the {_overrides.Count} override(s)]";
 
         // Zero at every preset but high, so "off" here is usually the authored answer rather than a key

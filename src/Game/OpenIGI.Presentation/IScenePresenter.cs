@@ -43,7 +43,7 @@ public readonly record struct ScenePresentationRequest(
     ResourceRegistry Resources,
     Func<string, MefModel?> Models,
     Func<string, int, string?> MaterialTextures,
-    IIgiLogger Logger);
+    IOpenIgiLogger Logger);
 
 /// <summary>What one frame needs in order to draw a title's foliage.</summary>
 /// <param name="Camera">Where the trees are seen from.</param>

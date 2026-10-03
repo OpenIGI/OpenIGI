@@ -37,10 +37,10 @@ public sealed class IrradianceProbeBake
     private readonly ScheduledJob<IrradianceVolume?> _job;
     private readonly CancellationTokenSource _cancellation;
     private readonly Stream _stream;
-    private readonly IIgiLogger _log;
+    private readonly IOpenIgiLogger _log;
     private bool _collected;
 
-    private IrradianceProbeBake(ScheduledJob<IrradianceVolume?> job, CancellationTokenSource cancellation, Stream stream, IIgiLogger log)
+    private IrradianceProbeBake(ScheduledJob<IrradianceVolume?> job, CancellationTokenSource cancellation, Stream stream, IOpenIgiLogger log)
     {
         _job = job;
         _cancellation = cancellation;
@@ -112,13 +112,13 @@ public sealed class IrradianceProbeBake
         float spacing,
         Vector3f groundAlbedo,
         IWorkScheduler work,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(cast);
         ArgumentNullException.ThrowIfNull(work);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         CancellationTokenSource cancellation = new();
         CancellationToken token = cancellation.Token;
         Stream stream = new();
@@ -134,7 +134,7 @@ public sealed class IrradianceProbeBake
         Vector3f sunDirection,
         float spacing,
         Vector3f groundAlbedo,
-        IIgiLogger log,
+        IOpenIgiLogger log,
         Stream stream,
         IWorkScheduler work,
         Action<IrradianceVolume?> done,

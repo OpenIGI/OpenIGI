@@ -27,7 +27,7 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice, RayTracing.IS
     private readonly VulkanDevice _device;
     private readonly VulkanAllocator _allocator;
     private readonly VulkanCommands _commands;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly List<DescriptorPoolState> _pools = [];
     private DescriptorPoolState? _pool;
     private bool _disposed;
@@ -47,7 +47,7 @@ internal sealed unsafe partial class VulkanRhiDevice : IRhiDevice, RayTracing.IS
         VulkanDevice device,
         VulkanAllocator allocator,
         VulkanCommands commands,
-        IIgiLogger logger,
+        IOpenIgiLogger logger,
         VulkanInstance? instance = null)
     {
         ArgumentNullException.ThrowIfNull(vk);

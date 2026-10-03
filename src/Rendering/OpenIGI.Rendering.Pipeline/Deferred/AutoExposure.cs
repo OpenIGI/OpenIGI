@@ -1,3 +1,4 @@
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Rendering.Pipeline.Compute;
 using OpenIGI.Rendering.Rhi;
 using OpenIGI.Shaders;
@@ -33,19 +34,21 @@ public sealed class AutoExposure : IDisposable
     private readonly IRhiBuffer[] _readback;
     private readonly IRhiReadback?[] _pending;
     private readonly bool[] _written;
-    private readonly ExposureAdaptation _adaptation = new();
+    private readonly ExposureAdaptation _adaptation;
     private float _adapted = 1f;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="AutoExposure"/> class.</summary>
     /// <param name="device">The device, which must compile the histogram module (see <see cref="RunsOn"/>).</param>
     /// <param name="framesInFlight">How many frames may be recorded before one completes.</param>
-    public AutoExposure(IRhiDevice device, int framesInFlight)
+    /// <param name="logger">Where the metering is reported at Debug; nowhere when omitted.</param>
+    public AutoExposure(IRhiDevice device, int framesInFlight, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentOutOfRangeException.ThrowIfLessThan(framesInFlight, 1);
 
         _device = device;
+        _adaptation = new ExposureAdaptation(logger);
         _histogram = new ComputePass(device, ShaderModuleId.ExposureHistogram, "exposure.histogram");
         _parameters = new ComputeParameters(
             device, ExposureAdaptation.ParameterFloats * sizeof(float), framesInFlight, "exposure");
