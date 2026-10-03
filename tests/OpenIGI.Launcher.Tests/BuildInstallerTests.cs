@@ -233,6 +233,33 @@ public sealed class BuildInstallerTests : IDisposable
     }
 
     [Fact]
+    public void CleanDownloads_keeps_only_the_offered_release_and_its_partial()
+    {
+        (BuildInstaller installer, _) = Make();
+        string downloads = Directory.CreateDirectory(Path.Combine(_root, "downloads")).FullName;
+        File.WriteAllBytes(Path.Combine(downloads, "openigi-game-0.1.0-win-x64.exe"), new byte[100]);
+        File.WriteAllBytes(Path.Combine(downloads, "openigi-game-0.1.0-win-x64.exe.part"), new byte[50]);
+        File.WriteAllBytes(Path.Combine(downloads, "openigi-game-0.2.0-win-x64.exe.part"), new byte[30]);
+
+        long freed = installer.CleanDownloads("openigi-game-0.2.0-win-x64.exe");
+
+        Assert.Equal(150, freed);
+        Assert.Equal(["openigi-game-0.2.0-win-x64.exe.part"], Directory.EnumerateFiles(downloads).Select(Path.GetFileName));
+    }
+
+    [Fact]
+    public void CleanDownloads_with_nothing_on_offer_removes_everything()
+    {
+        (BuildInstaller installer, _) = Make();
+        string downloads = Directory.CreateDirectory(Path.Combine(_root, "downloads")).FullName;
+        File.WriteAllBytes(Path.Combine(downloads, "stale.zip"), new byte[10]);
+
+        Assert.Equal(10, installer.CleanDownloads(null));
+        Assert.Empty(Directory.EnumerateFiles(downloads));
+        Assert.Equal(0, installer.CleanDownloads(null));
+    }
+
+    [Fact]
     public async Task Verify_finds_a_missing_or_changed_file()
     {
         (BuildInstaller installer, FakeServer server) = Make();

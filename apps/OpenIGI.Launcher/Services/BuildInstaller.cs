@@ -61,6 +61,7 @@ internal sealed class BuildInstaller(HttpClient http, string root)
 {
     private const string PointerFile = "current.json";
     private const string VersionsFolder = "versions";
+    private const string DownloadsFolder = "downloads";
 
     /// <summary>Gets the folder this installer manages.</summary>
     public string Root { get; } = root;
@@ -151,7 +152,7 @@ internal sealed class BuildInstaller(HttpClient http, string root)
             throw new InvalidDataException($"{asset.Name} has no download address.");
         }
 
-        string downloads = Directory.CreateDirectory(Path.Combine(Root, "downloads")).FullName;
+        string downloads = Directory.CreateDirectory(Path.Combine(Root, DownloadsFolder)).FullName;
         string archive = Path.Combine(downloads, asset.Name);
         string partial = archive + ".part";
 
@@ -173,6 +174,49 @@ internal sealed class BuildInstaller(HttpClient http, string root)
 
         File.Delete(archive);
         return build;
+    }
+
+    /// <summary>Deletes every download except the one for the release now on offer.</summary>
+    /// <param name="keep">
+    /// The asset name of the release on offer, whose finished or partial download is kept so it installs or
+    /// resumes without starting over; <see langword="null"/> to delete everything.
+    /// </param>
+    /// <returns>How many bytes were freed.</returns>
+    /// <remarks>
+    /// A download is removed once it is installed, so what is left is from an attempt that stopped: a
+    /// cancelled or failed download, or one for a release that has since been replaced. A file still open (a
+    /// download running in another launcher) is skipped.
+    /// </remarks>
+    public long CleanDownloads(string? keep)
+    {
+        string downloads = Path.Combine(Root, DownloadsFolder);
+        if (!Directory.Exists(downloads))
+        {
+            return 0;
+        }
+
+        long freed = 0;
+        foreach (string file in Directory.EnumerateFiles(downloads))
+        {
+            string name = Path.GetFileName(file);
+            if (keep is not null && (name == keep || name == keep + ".part"))
+            {
+                continue;
+            }
+
+            try
+            {
+                long size = new FileInfo(file).Length;
+                File.Delete(file);
+                freed += size;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // In use; the next clean gets it.
+            }
+        }
+
+        return freed;
     }
 
     /// <summary>Checks every installed file against the hash it was installed with.</summary>

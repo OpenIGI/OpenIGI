@@ -436,6 +436,7 @@ internal sealed partial class LauncherModel : IDisposable
 
                     _feed = feed;
                     Recompute();
+                    CleanDownloads();
                     AnnounceGameUpdate();
                     MaybeStartAutomatically();
                     MaybeStageLauncher();
@@ -673,6 +674,34 @@ internal sealed partial class LauncherModel : IDisposable
 
         RecomputeContent();
         Changed();
+    }
+
+    // Once the channel's newest release is known, every other download is stale: kept are only that release's
+    // download and partial, so an interrupted download still resumes. Not while one is running or paused,
+    // which may be for a release the feed has since moved past.
+    private void CleanDownloads()
+    {
+        if (Job is not null)
+        {
+            return;
+        }
+
+        string? keep = GameAsset(_latest)?.Name;
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                long freed = _installer.CleanDownloads(keep);
+                if (freed > 0)
+                {
+                    _logger.Information(InstallLogCategory, $"Removed stale downloads: {FormatSize(freed / 1_000_000.0)} freed.");
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.Debug(InstallLogCategory, $"Stale downloads could not be removed: {ex.Message}");
+            }
+        });
     }
 
     // The build the channel offers is often still on disk: the installer keeps the one an install replaced,
