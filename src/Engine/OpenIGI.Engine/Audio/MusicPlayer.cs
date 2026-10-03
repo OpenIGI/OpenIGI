@@ -36,7 +36,7 @@ public sealed class MusicPlayer
     private const string LogCategory = "Audio";
 
     private readonly SoundSystem _sounds;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     private AudioVoiceHandle _current;
     private AudioVoiceHandle _fading;
@@ -54,7 +54,7 @@ public sealed class MusicPlayer
     /// <param name="sounds">Where tracks are found and played.</param>
     /// <param name="logger">Where to report a track that is not there.</param>
     /// <exception cref="ArgumentNullException"><paramref name="sounds"/> is <see langword="null"/>.</exception>
-    public MusicPlayer(SoundSystem sounds, IIgiLogger? logger = null)
+    public MusicPlayer(SoundSystem sounds, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(sounds);
         _sounds = sounds;

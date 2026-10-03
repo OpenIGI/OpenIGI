@@ -39,6 +39,8 @@ public sealed class AiScenarioHarness : IDisposable
     private const double Metre = 4096.0;
     private readonly string _scratch = Path.Combine(Path.GetTempPath(), $"openigi-aiscn-{Guid.NewGuid():N}");
 
+    private LogRouter? _log;
+
     public AiScenarioHarness() => Directory.CreateDirectory(_scratch);
 
     [RequiresGameDataFact]
@@ -1140,6 +1142,7 @@ public sealed class AiScenarioHarness : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
+        _log?.Dispose();
         try
         {
             Directory.Delete(_scratch, recursive: true);
@@ -1288,7 +1291,7 @@ public sealed class AiScenarioHarness : IDisposable
         && ConditionalContainerGate.IsTaskActive(pair.Key.Soldier)
         && pair.Value.Arm != AiCombatArm.None;
 
-    private static (GameHost Host, PlayerCamera Player, SoldierRenderer Soldiers) Boot(RecordingGraphicsDevice device, int mission)
+    private (GameHost Host, PlayerCamera Player, SoldierRenderer Soldiers) Boot(RecordingGraphicsDevice device, int mission)
     {
         GameHost host = Host(device, "-mission", mission.ToString(CultureInfo.InvariantCulture), "-skipcutscene", "-lockstep", "-frames", "1000000");
         host.Start();
@@ -1349,16 +1352,35 @@ public sealed class AiScenarioHarness : IDisposable
     private static string Fmt(Vector3d p) =>
         string.Create(CultureInfo.InvariantCulture, $"({p.X / Metre:0.0},{p.Y / Metre:0.0},{p.Z / Metre:0.0})");
 
-    private static GameHost Host(RecordingGraphicsDevice device, params string[] args) =>
+    /// <summary>
+    /// The log a scenario's hosts write to: the file <c>OPENIGI_AI_SCENARIO_LOG</c> names, at
+    /// <see cref="LogLevel.Information"/> and up, or nothing when it is unset.
+    /// </summary>
+    /// <returns>The logger, shared by every host this harness boots and closed when it is disposed.</returns>
+    private IOpenIgiLogger ScenarioLog()
+    {
+        if (_log is not null)
+        {
+            return _log;
+        }
+
+        if (Environment.GetEnvironmentVariable("OPENIGI_AI_SCENARIO_LOG") is not { Length: > 0 } logPath)
+        {
+            return NullLogger.Instance;
+        }
+
+        _log = new LogRouter(new LogLevelPolicy(LogLevel.Information)).AddSink(FileSink.Open(logPath));
+        return _log;
+    }
+
+    private GameHost Host(RecordingGraphicsDevice device, params string[] args) =>
         Host(device, new HeadlessGameWindow(), args);
 
-    private static GameHost Host(RecordingGraphicsDevice device, HeadlessGameWindow window, params string[] args)
+    private GameHost Host(RecordingGraphicsDevice device, HeadlessGameWindow window, params string[] args)
     {
         string root = GameData.RequireRoot();
         IGameTitleRuntime runtime = TitleCatalog.Default;
-        IIgiLogger logger = Environment.GetEnvironmentVariable("OPENIGI_AI_SCENARIO_LOG") is { Length: > 0 } logPath
-            ? new FileLogger(logPath)
-            : NullLogger.Instance;
+        IOpenIgiLogger logger = ScenarioLog();
 
         VirtualFileSystem fileSystem = new(logger);
         fileSystem.RegisterDevice(new LocalFileDevice(root));
@@ -1382,24 +1404,8 @@ public sealed class AiScenarioHarness : IDisposable
             logger);
     }
 
-#pragma warning disable CA1001 // A diagnostic run's log lives as long as the process.
-    private sealed class FileLogger(string path) : IIgiLogger
-    {
-        private readonly TextWriter _writer = TextWriter.Synchronized(File.CreateText(path));
-
-        public bool IsEnabled(LogLevel level) => level >= LogLevel.Information;
-
-        public void Log(LogLevel level, string category, string message, Exception? exception = null)
-        {
-            _writer.WriteLine($"{level} [{category}] {message} {exception}");
-            _writer.Flush();
-        }
-    }
-
-#pragma warning restore CA1001
-
     private sealed class SilentAudioFactory : IAudioDeviceFactory
     {
-        public IAudioDevice Open(AudioDeviceOptions options, IIgiLogger logger) => new RecordingAudioDevice();
+        public IAudioDevice Open(AudioDeviceOptions options, IOpenIgiLogger logger) => new RecordingAudioDevice();
     }
 }

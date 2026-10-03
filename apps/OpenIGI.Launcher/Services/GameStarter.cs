@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
 
 namespace OpenIGI.Launcher.Services;
@@ -78,9 +79,17 @@ internal static class GameStarter
     /// Variables set for the game on top of the launcher's own, such as <see cref="ContentProfileVariable"/> naming the
     /// content pack the game reads its replacement assets from; <see langword="null"/> for none.
     /// </param>
+    /// <param name="followOutput">
+    /// Whether the game's output is redirected for <see cref="LauncherLog.Follow"/> to read, and asked for in
+    /// <see cref="LogWire"/> lines. Leave it off when nothing will read it.
+    /// </param>
     /// <returns>The game's process.</returns>
     /// <exception cref="FileNotFoundException">The build has no executable for this platform.</exception>
-    public static Process Start(string buildFolder, IReadOnlyList<string> arguments, IReadOnlyDictionary<string, string>? environment = null)
+    public static Process Start(
+        string buildFolder,
+        IReadOnlyList<string> arguments,
+        IReadOnlyDictionary<string, string>? environment = null,
+        bool followOutput = false)
     {
         string executable = Executable(buildFolder);
         if (!File.Exists(executable))
@@ -95,10 +104,15 @@ internal static class GameStarter
             File.SetUnixFileMode(executable, mode | UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute);
         }
 
+        // No console window, whatever the build: a build from before the game became a windowed program would
+        // otherwise open one beside it.
         ProcessStartInfo start = new(executable)
         {
             UseShellExecute = false,
+            CreateNoWindow = true,
             WorkingDirectory = Path.GetDirectoryName(executable)!,
+            RedirectStandardOutput = followOutput,
+            RedirectStandardError = followOutput,
         };
         foreach (string argument in arguments)
         {
@@ -108,6 +122,11 @@ internal static class GameStarter
         foreach ((string name, string value) in environment ?? new Dictionary<string, string>())
         {
             start.Environment[name] = value;
+        }
+
+        if (followOutput)
+        {
+            start.Environment[LogWire.StreamVariable] = LogWire.StreamValue;
         }
 
         return Process.Start(start) ?? throw new InvalidOperationException("The game did not start.");

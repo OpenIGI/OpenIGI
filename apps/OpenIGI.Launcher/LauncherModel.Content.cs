@@ -1,4 +1,5 @@
 using OpenIGI.Core.Content;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Launcher.Services;
 using OpenIGI.Releases;
@@ -120,21 +121,21 @@ internal sealed partial class LauncherModel
     {
         if (Find(id) is not { } entry || _contentIndex is not { } index)
         {
-            Problem = "The content list has not been fetched yet.";
+            Report("The content list has not been fetched yet.");
             Changed();
             return;
         }
 
         if (Job is { } running && !(running.Paused && running.ContentId == id))
         {
-            Problem = "Another download is running; this one can start when it is done.";
+            Report("Another download is running; this one can start when it is done.");
             Changed();
             return;
         }
 
         if (_running is not null)
         {
-            Problem = "Close the game first: it is reading the pack's files.";
+            Report("Close the game first: it is reading the pack's files.");
             Changed();
             return;
         }
@@ -184,7 +185,7 @@ internal sealed partial class LauncherModel
                 _results.Enqueue(() =>
                 {
                     Job = null;
-                    Problem = $"{pack.Title} could not be installed: {ex.Message}";
+                    Report($"{pack.Title} could not be installed: {ex.Message}", ex);
                     Recompute();
                 });
             }
@@ -203,7 +204,7 @@ internal sealed partial class LauncherModel
 
         if (_running is not null)
         {
-            Problem = "Close the game first: it is reading the pack's files.";
+            Report("Close the game first: it is reading the pack's files.");
             Changed();
             return;
         }
@@ -230,7 +231,7 @@ internal sealed partial class LauncherModel
                             order.RemoveAll(entry => entry.Id == id);
                         }
                     });
-                    Problem = $"{entry.Pack.Title} was removed.";
+                    Report($"{entry.Pack.Title} was removed.");
                     Recompute();
                 });
             }
@@ -239,7 +240,7 @@ internal sealed partial class LauncherModel
                 _results.Enqueue(() =>
                 {
                     _busy.Remove(id);
-                    Problem = $"{entry.Pack.Title} could not be removed: {ex.Message}";
+                    Report($"{entry.Pack.Title} could not be removed: {ex.Message}", ex);
                     Recompute();
                 });
             }
@@ -256,7 +257,7 @@ internal sealed partial class LauncherModel
         }
 
         _busy.Add(id);
-        Problem = $"Verifying {entry.Pack.Title}…";
+        Report($"Verifying {entry.Pack.Title}…");
         ContentInstaller installer = ContentInstallerFor(id);
         Recompute();
         _ = Task.Run(() =>
@@ -269,9 +270,9 @@ internal sealed partial class LauncherModel
                     _busy.Remove(id);
                     entry.Damaged = new HashSet<string>(damaged, StringComparer.Ordinal);
                     entry.DownloadBytes = -1;
-                    Problem = damaged.Count > 0
+                    Report(damaged.Count > 0
                         ? $"{damaged.Count} file(s) of {entry.Pack.Title} are missing or changed: repair to restore them."
-                        : $"Every file of {entry.Pack.Title} is intact.";
+                        : $"Every file of {entry.Pack.Title} is intact.");
                     Recompute();
                     PlanContent(entry);
                 });
@@ -281,7 +282,7 @@ internal sealed partial class LauncherModel
                 _results.Enqueue(() =>
                 {
                     _busy.Remove(id);
-                    Problem = $"{entry.Pack.Title} could not be verified: {ex.Message}";
+                    Report($"{entry.Pack.Title} could not be verified: {ex.Message}", ex);
                     Recompute();
                 });
             }
@@ -331,7 +332,7 @@ internal sealed partial class LauncherModel
     {
         if (_loadOrder.Find(static item => item.IsLocal)?.Folder is not { } folder)
         {
-            Problem = "Choose the game's folder in Settings first.";
+            Report("Choose the game's folder in Settings first.");
             Changed();
             return;
         }
@@ -343,7 +344,7 @@ internal sealed partial class LauncherModel
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Problem = $"The overrides folder could not be opened: {ex.Message}";
+            Report($"The overrides folder could not be opened: {ex.Message}", ex);
             Changed();
         }
     }
@@ -386,7 +387,7 @@ internal sealed partial class LauncherModel
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // The game still starts, with its own overrides folder only; the reason is on the page.
-            Problem = $"The content load order could not be handed to {title.DisplayName}: {ex.Message}";
+            Report($"The content load order could not be handed to {title.DisplayName}: {ex.Message}", ex);
             Changed();
         }
 
@@ -470,6 +471,7 @@ internal sealed partial class LauncherModel
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
             {
                 // The game's own check reports the service being unreachable; the content list keeps what it had.
+                _logger.Debug(LogCategory, $"The content list could not be fetched: {ex.Message}");
                 _results.Enqueue(() => _checkingContent = false);
             }
         });
@@ -555,6 +557,7 @@ internal sealed partial class LauncherModel
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or UnauthorizedAccessException)
             {
                 // No picture: the card draws its plain panel, and the next check tries again.
+                _logger.Debug(LogCategory, $"A content thumbnail could not be fetched: {ex.Message}");
             }
 
             _results.Enqueue(() =>
@@ -631,6 +634,7 @@ internal sealed partial class LauncherModel
                                            or InvalidDataException or System.Text.Json.JsonException)
             {
                 // Left unknown; the card says so, and the update itself works it out again.
+                _logger.Debug(LogCategory, $"A content update could not be planned: {ex.Message}");
             }
         });
     }
@@ -724,7 +728,7 @@ internal sealed partial class LauncherModel
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                Problem = $"Settings could not be saved: {ex.Message}";
+                Report($"Settings could not be saved: {ex.Message}", ex);
             }
         }
 

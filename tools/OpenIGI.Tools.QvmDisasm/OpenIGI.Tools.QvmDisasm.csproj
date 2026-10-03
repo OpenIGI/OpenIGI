@@ -7,6 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Core\OpenIGI.Core\OpenIGI.Core.csproj" />
     <ProjectReference Include="..\..\src\Core\OpenIGI.Scripting\OpenIGI.Scripting.csproj" />
+    <ProjectReference Include="..\OpenIGI.Tools.Common\OpenIGI.Tools.Common.csproj" />
   </ItemGroup>
 
 </Project>

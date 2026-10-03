@@ -62,7 +62,7 @@ public readonly record struct AiProducedAction(
 public sealed class AiScriptHost
 {
     private readonly NativeRegistry _natives;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     // Faults already reported, so a per-tick failure is logged once rather than for ever.
     private readonly HashSet<string> _reported = new(StringComparer.Ordinal);
@@ -79,7 +79,7 @@ public sealed class AiScriptHost
     /// <param name="logger">Where to report a script asking for something unmodelled.</param>
     /// <param name="random">The mission-wide IGI random stream, or a fresh stream for isolated use.</param>
     /// <exception cref="ArgumentNullException"><paramref name="natives"/> is <see langword="null"/>.</exception>
-    public AiScriptHost(NativeRegistry natives, IIgiLogger? logger = null, IgiRandom? random = null)
+    public AiScriptHost(NativeRegistry natives, IOpenIgiLogger? logger = null, IgiRandom? random = null)
     {
         ArgumentNullException.ThrowIfNull(natives);
         _natives = natives;

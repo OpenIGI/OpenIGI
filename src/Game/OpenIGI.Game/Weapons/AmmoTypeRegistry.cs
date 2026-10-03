@@ -45,11 +45,11 @@ public sealed class AmmoTypeRegistry
     private readonly List<AmmoType> _types = [];
     private readonly Dictionary<int, AmmoType> _byId = [];
     private readonly Dictionary<int, AmmoType> _byCalibre = [];
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="AmmoTypeRegistry"/> class.</summary>
     /// <param name="logger">The logger for load diagnostics; defaults to a sink that discards them.</param>
-    public AmmoTypeRegistry(IIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
+    public AmmoTypeRegistry(IOpenIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
 
     /// <summary>Gets the ammunition types, in load order.</summary>
     public IReadOnlyList<AmmoType> Types => _types;

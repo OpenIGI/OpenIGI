@@ -32,7 +32,7 @@ internal sealed class ViewModelRenderer : IViewModelPresenter
 
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
 
     private MefModel? _model;
@@ -49,7 +49,7 @@ internal sealed class ViewModelRenderer : IViewModelPresenter
     /// <param name="resources">Where texture bytes are read from.</param>
     /// <param name="logger">Where to report problems.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public ViewModelRenderer(IGraphicsDevice device, ResourceRegistry resources, IIgiLogger? logger = null)
+    public ViewModelRenderer(IGraphicsDevice device, ResourceRegistry resources, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(resources);

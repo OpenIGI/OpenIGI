@@ -57,7 +57,8 @@ public static partial class Program
             throw new InvalidOperationException("The game has already booted.");
         }
 
-        ConsoleLogger logger = new();
+        // The browser's developer console, plus the in-game console once the game attaches it.
+        LogRouter logger = new LogRouter().AddSink(new ConsoleSink());
         // The browser build is the original's picture and the opening of the campaign: the preset is held
         // on Vanilla whatever was saved, and only the first missions can be played.
         HostOptions options = HostOptions.Parse(args ?? []) with

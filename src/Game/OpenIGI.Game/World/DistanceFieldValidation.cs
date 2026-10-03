@@ -69,7 +69,7 @@ public static class DistanceFieldValidation
     /// </para>
     /// </remarks>
     private static byte[] Read(
-        IGraphicsDevice device, GlobalDistanceField clipmaps, int level, IIgiLogger log)
+        IGraphicsDevice device, GlobalDistanceField clipmaps, int level, IOpenIgiLogger log)
     {
         GlobalDistanceFieldSettings settings = clipmaps.Settings;
         int count = settings.VoxelsPerLevel;
@@ -137,13 +137,13 @@ public static class DistanceFieldValidation
         GlobalDistanceField clipmaps,
         SceneDistanceField scene,
         int level = 0,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(clipmaps);
         ArgumentNullException.ThrowIfNull(scene);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         GlobalDistanceFieldSettings settings = clipmaps.Settings;
         level = Math.Clamp(level, 0, settings.Levels - 1);
 

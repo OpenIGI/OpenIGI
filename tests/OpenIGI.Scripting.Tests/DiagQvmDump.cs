@@ -3,15 +3,20 @@ using System.IO;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.TestSupport;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace OpenIGI.Scripting.Tests;
 
 /// <summary>
 /// Dumps the mission-4 per-soldier AI scripts so their authored patrol-path ids and action calls
-/// can be read. Not an assertion test; run with a filter and read the console output.
+/// can be read. Not an assertion test; run with a filter and read the test output.
 /// </summary>
 public sealed class DiagQvmDump
 {
+    private readonly ITestOutputHelper _output;
+
+    public DiagQvmDump(ITestOutputHelper output) => _output = output;
+
     [RequiresGameDataFact]
     public void DumpMission4AiScripts()
     {
@@ -20,11 +25,11 @@ public sealed class DiagQvmDump
         foreach (string path in Directory.GetFiles(aiDir, "*.qvm").OrderBy(p => Path.GetFileNameWithoutExtension(p), StringComparer.Ordinal))
         {
             string id = Path.GetFileNameWithoutExtension(path)!;
-            Console.WriteLine($"=== {id}.qvm ===");
+            _output.WriteLine($"=== {id}.qvm ===");
             QvmProgram program = QvmProgram.Read(File.ReadAllBytes(path));
             foreach (string line in QvmDisassembler.Disassemble(program))
             {
-                Console.WriteLine(line);
+                _output.WriteLine(line);
             }
         }
     }

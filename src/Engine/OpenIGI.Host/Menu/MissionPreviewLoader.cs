@@ -77,7 +77,7 @@ public sealed class MissionPreviewLoader(
     GiBakeCache probeFields,
     MenuCameraLibrary cameras,
     MissionPreviewContext context,
-    IIgiLogger logger,
+    IOpenIgiLogger logger,
     IWorkScheduler work) : IDisposable
 {
     private const string LogCategory = "Preview";

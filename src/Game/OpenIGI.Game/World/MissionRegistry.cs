@@ -46,11 +46,11 @@ public sealed class MissionRegistry : IMissionCatalogue<MissionDescriptor>
 
     private readonly List<MissionDescriptor> _missions = [];
     private readonly Dictionary<int, MissionDescriptor> _byId = [];
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="MissionRegistry"/> class.</summary>
     /// <param name="logger">The logger for scan diagnostics; defaults to a sink that discards them.</param>
-    public MissionRegistry(IIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
+    public MissionRegistry(IOpenIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
 
     /// <summary>Gets the descriptors, in the order they were defined.</summary>
     public IReadOnlyList<MissionDescriptor> Missions => _missions;

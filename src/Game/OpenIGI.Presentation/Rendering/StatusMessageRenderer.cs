@@ -50,7 +50,7 @@ internal sealed class StatusMessageRenderer : IDisposable
     private const int ExitFrames = 12;
 
     private readonly IGraphicsDevice _device;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Dictionary<FeedKey, RetiringMessage> _retiring = [];
     private List<FeedItem> _previousFeed = [];
     private UiFont? _body;
@@ -61,7 +61,7 @@ internal sealed class StatusMessageRenderer : IDisposable
     /// <param name="device">The device the font atlases are uploaded to.</param>
     /// <param name="logger">Where to report a missing font.</param>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    public StatusMessageRenderer(IGraphicsDevice device, IIgiLogger logger)
+    public StatusMessageRenderer(IGraphicsDevice device, IOpenIgiLogger logger)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(logger);

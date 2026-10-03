@@ -30,7 +30,7 @@ internal sealed class GrenadeRenderer : IGrenadePresenter
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
     private readonly MagicObjectRegistry _magic;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private HeldWeaponRenderer? _frag;
     private HeldWeaponRenderer? _mine;
     private HeldWeaponRenderer? _flashbang;
@@ -40,7 +40,7 @@ internal sealed class GrenadeRenderer : IGrenadePresenter
         IGraphicsDevice device,
         ResourceRegistry resources,
         MagicObjectRegistry magic,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _resources = resources ?? throw new ArgumentNullException(nameof(resources));

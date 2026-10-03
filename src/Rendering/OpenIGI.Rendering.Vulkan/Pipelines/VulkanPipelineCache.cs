@@ -43,7 +43,7 @@ internal sealed unsafe class VulkanPipelineCache : IDisposable
     private readonly Vk _vk;
     private readonly Device _device;
     private readonly string? _path;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="VulkanPipelineCache"/> class.</summary>
@@ -56,7 +56,7 @@ internal sealed unsafe class VulkanPipelineCache : IDisposable
         Vk vk,
         Device device,
         in PhysicalDeviceProperties properties,
-        IIgiLogger logger,
+        IOpenIgiLogger logger,
         string? directory = null)
     {
         _vk = vk;

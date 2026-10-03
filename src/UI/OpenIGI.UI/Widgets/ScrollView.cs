@@ -20,7 +20,7 @@ namespace OpenIGI.UI.Widgets;
 /// what lets one mouse-wheel rule and one focus rule serve every viewport on a screen.
 /// </para>
 /// </remarks>
-public class ScrollView : UiElement
+public class ScrollView : UiElement, IWheelScrollable
 {
     private readonly Spring _offset = new(0f, smoothTime: 0.12f);
     private readonly UiTheme _theme;

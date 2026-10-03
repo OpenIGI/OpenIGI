@@ -32,7 +32,7 @@ public sealed class TaskScriptCommands
 
     private readonly TaskTree _tree;
     private readonly ScriptVarRegistry _variables;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private QvmSymbol? _taskNewSymbol;
 
     /// <summary>Initializes a new instance of the <see cref="TaskScriptCommands"/> class.</summary>
@@ -40,7 +40,7 @@ public sealed class TaskScriptCommands
     /// <param name="variables">The registry exported task variables are published into.</param>
     /// <param name="logger">The logger for load diagnostics; defaults to a sink that discards them.</param>
     /// <exception cref="ArgumentNullException"><paramref name="tree"/> or <paramref name="variables"/> is <see langword="null"/>.</exception>
-    public TaskScriptCommands(TaskTree tree, ScriptVarRegistry variables, IIgiLogger? logger = null)
+    public TaskScriptCommands(TaskTree tree, ScriptVarRegistry variables, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(tree);
         ArgumentNullException.ThrowIfNull(variables);

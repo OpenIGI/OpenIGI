@@ -67,7 +67,7 @@ public sealed class Igi2WaterPresenter : IWaterPresenter
     public const int MinimumEdgeVertices = 2;
 
     private readonly IGraphicsDevice _device;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Sheet[] _sheets;
     private bool _disposed;
 
@@ -83,7 +83,7 @@ public sealed class Igi2WaterPresenter : IWaterPresenter
         Igi2WaterSurface surface,
         Func<string, TextureHandle> textures,
         Func<Igi2WaterSheet, TextureHandle>? cubes = null,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(surface);

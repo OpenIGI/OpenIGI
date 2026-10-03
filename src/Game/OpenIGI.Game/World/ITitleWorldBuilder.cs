@@ -18,7 +18,7 @@ public readonly record struct WorldBuildRequest(
     GameTask LevelRoot,
     ResourceRegistry Resources,
     MagicObjectRegistry? Magic,
-    IIgiLogger Logger,
+    IOpenIgiLogger Logger,
 
     // The registry a walk reads a vehicle's mass and contact points from. Nullable because a title
     // without driveable vehicles has none to read, and the walk treats absent as "no vehicle here".

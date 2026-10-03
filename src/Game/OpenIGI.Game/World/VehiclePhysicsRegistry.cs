@@ -40,14 +40,14 @@ public sealed class VehiclePhysicsRegistry
     private readonly Dictionary<string, HelicopterPhysicsDefinition> _helicopters = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, CarPhysicsDefinition> _cars = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, PlanePhysicsDefinition> _planes = new(StringComparer.OrdinalIgnoreCase);
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private int _rotorType;
     private int _heliType;
     private int _carType;
     private int _planeType;
 
     /// <summary>Creates an empty registry.</summary>
-    public VehiclePhysicsRegistry(IIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
+    public VehiclePhysicsRegistry(IOpenIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
 
     /// <summary>Loads every shipped helicopter family.</summary>
     public int Load(ResourceRegistry resources)

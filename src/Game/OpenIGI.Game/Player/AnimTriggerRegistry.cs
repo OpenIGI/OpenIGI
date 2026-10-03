@@ -38,11 +38,11 @@ public sealed class AnimTriggerRegistry
 
     private readonly Dictionary<int, AnimTriggerDefinition> _byId = [];
     private readonly Dictionary<int, string> _taskTypeNames = [];
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="AnimTriggerRegistry"/> class.</summary>
     /// <param name="logger">The logger for load diagnostics; defaults to a sink that discards them.</param>
-    public AnimTriggerRegistry(IIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
+    public AnimTriggerRegistry(IOpenIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
 
     /// <summary>Gets the entries, keyed by event id.</summary>
     public IReadOnlyDictionary<int, AnimTriggerDefinition> Definitions => _byId;

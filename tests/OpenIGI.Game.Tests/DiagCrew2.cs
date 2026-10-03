@@ -12,11 +12,16 @@ using OpenIGI.TestSupport;
 using OpenIGI.Formats.World;
 using OpenIGI.Core.Numerics;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace OpenIGI.Game.Tests;
 
 public sealed class DiagCrew2
 {
+    private readonly ITestOutputHelper _output;
+
+    public DiagCrew2(ITestOutputHelper output) => _output = output;
+
     [RequiresGameDataFact]
     public void Dump()
     {
@@ -35,7 +40,7 @@ public sealed class DiagCrew2
         WorldScene scene = WorldScene.Build(mission, root, magic);
         ConditionalContainerGate gate = new(loop.Variables);
         int dormant = gate.Prepare(root);
-        System.Console.WriteLine($"=== dormant containers: {dormant} ===");
+        _output.WriteLine($"=== dormant containers: {dormant} ===");
 
         // Count every task type name so we see HumanPlayer / HumanSoldierFemale / Heli tasks the
         // soldier walk never touches.
@@ -43,7 +48,7 @@ public sealed class DiagCrew2
         CountTypes(root, typeCounts);
         foreach (KeyValuePair<string, int> pair in typeCounts.OrderBy(p => p.Key, StringComparer.Ordinal))
         {
-            System.Console.WriteLine($"  TYPE {pair.Key}: {pair.Value}");
+            _output.WriteLine($"  TYPE {pair.Key}: {pair.Value}");
         }
 
         int index = 0;
@@ -58,12 +63,12 @@ public sealed class DiagCrew2
                 ? "no-mind"
                 : $"mind={mind.AiTypeName} graph={mind.GraphId} mindId={mind.Id} arche={mind.Archetype}";
             int pathCommands = CountPathCommands(soldier);
-            System.Console.WriteLine(
+            _output.WriteLine(
                 $"  [{index}] {active} task={soldier.Name} model={soldier.Model} id={soldier.Id} standAnim={soldier.StandAnimation} boneHier={soldier.BoneHierarchy} animSet={hasSet} " +
                 $"{mindText} pathCmds={pathCommands} {ancestry}");
         }
 
-        System.Console.WriteLine($"=== total HumanSoldierTask: {index} ===");
+        _output.WriteLine($"=== total HumanSoldierTask: {index} ===");
 
         // What are the friendlies' containers gated on, and what do they read?
         foreach (HumanSoldierTask soldier in Walk(root))
@@ -74,17 +79,17 @@ public sealed class DiagCrew2
                 {
                     if (a is ConditionalContainerTask cc)
                     {
-                        System.Console.WriteLine(
+                        _output.WriteLine(
                             $"  container {cc.Id}: condition=[{cc.Condition}] runAtStart=[{cc.RunAtStart}] runAtStop=[{cc.RunAtStop}] isRun={cc.IsRun}");
                     }
                     else
                     {
-                        System.Console.WriteLine($"  ancestor {a.Name} runtimeType={a.GetType().Name} declared={a is DeclaredTask} id={a.Id}");
+                        _output.WriteLine($"  ancestor {a.Name} runtimeType={a.GetType().Name} declared={a is DeclaredTask} id={a.Id}");
                     }
                 }
 
                 HumanAiTask? mind = soldier.Children.OfType<HumanAiTask>().FirstOrDefault();
-                System.Console.WriteLine($"  soldier {soldier.Id} mindId={mind?.Id} 400-siblings: " +
+                _output.WriteLine($"  soldier {soldier.Id} mindId={mind?.Id} 400-siblings: " +
                     string.Join(", ", soldier.Parent?.Children.Where(c => c is HumanSoldierTask).Select(c => c.Id) ?? []));
                 break;
             }
@@ -108,7 +113,7 @@ public sealed class DiagCrew2
             ccCount++;
             string condition = cc.TryGetValue("Condition", out object? c) && c is string cs ? cs : "(none)";
             string runAtStart = cc.TryGetValue("Run at start", out object? r) && r is string rs ? rs : "";
-            System.Console.WriteLine($"  CC {cc.Id}: condition=[{condition.TrimEnd('\r', '\n')}] runAtStart=[{runAtStart.TrimEnd('\r', '\n')}]");
+            _output.WriteLine($"  CC {cc.Id}: condition=[{condition.TrimEnd('\r', '\n')}] runAtStart=[{runAtStart.TrimEnd('\r', '\n')}]");
         }
 
         // Ancestry of every soldier whose mind id is in the friendly set (400-405, 540-544, 1234-1238).
@@ -117,7 +122,7 @@ public sealed class DiagCrew2
             int? mindId = soldier.Children.OfType<HumanAiTask>().FirstOrDefault()?.Id;
             if (soldier.Id is >= 400 and <= 405 || mindId is >= 540 and <= 544 or >= 1234 and <= 1238)
             {
-                System.Console.WriteLine($"  soldier {soldier.Id} mind {mindId} ancestry: {Ancestry(soldier)}");
+                _output.WriteLine($"  soldier {soldier.Id} mind {mindId} ancestry: {Ancestry(soldier)}");
             }
         }
 
@@ -127,7 +132,7 @@ public sealed class DiagCrew2
             if (task.Id is >= 540 and <= 544 or >= 1234 and <= 1238)
             {
                 GameTask? p = task.Parent;
-                System.Console.WriteLine($"  TASK {task.Id} type={task.Type?.Name} runtime={task.GetType().Name} parent={p?.Type?.Name}_{p?.Id} ancestry={Ancestry(task)}");
+                _output.WriteLine($"  TASK {task.Id} type={task.Type?.Name} runtime={task.GetType().Name} parent={p?.Type?.Name}_{p?.Id} ancestry={Ancestry(task)}");
             }
         }
 
@@ -136,13 +141,13 @@ public sealed class DiagCrew2
         {
             if (task is DeclaredTask dt && dt.Id == 850 && string.Equals(task.Type?.Name, "AnimTask", StringComparison.Ordinal))
             {
-                System.Console.WriteLine($"  AnimTask_850 ancestry: {Ancestry(dt)}");
-                System.Console.WriteLine($"  AnimTask_850 Run=[{DiagText(dt, "Run")}] InitialRun={DiagBool(dt, "Initial run")} TargetID={DiagInt(dt, "TargetID", -1)}");
+                _output.WriteLine($"  AnimTask_850 ancestry: {Ancestry(dt)}");
+                _output.WriteLine($"  AnimTask_850 Run=[{DiagText(dt, "Run")}] InitialRun={DiagBool(dt, "Initial run")} TargetID={DiagInt(dt, "TargetID", -1)}");
                 if (dt.TryGetValue("AnimData", out object? data) && data is System.Collections.IEnumerable entries)
                 {
                     int n = 0;
                     foreach (object? _ in entries) { n++; }
-                    System.Console.WriteLine($"  AnimTask_850 AnimData entries: {n}");
+                    _output.WriteLine($"  AnimTask_850 AnimData entries: {n}");
                 }
             }
         }
@@ -152,10 +157,10 @@ public sealed class DiagCrew2
         {
             if (task.Id == 156 && task is DeclaredTask dt156)
             {
-                System.Console.WriteLine($"  AREA156 type={task.Type?.Name} ancestry={Ancestry(task)}");
+                _output.WriteLine($"  AREA156 type={task.Type?.Name} ancestry={Ancestry(task)}");
                 foreach (string key in new[] { "Position", "Dimensions", "Criteria" })
                 {
-                    System.Console.WriteLine($"    {key} = {(dt156.TryGetValue(key, out object? v) ? v : "(none)")}");
+                    _output.WriteLine($"    {key} = {(dt156.TryGetValue(key, out object? v) ? v : "(none)")}");
                 }
             }
         }
@@ -173,7 +178,7 @@ public sealed class DiagCrew2
                     }
                 }
 
-                System.Console.WriteLine($"  PatrolPath {task.Id}: [{string.Join(" | ", nodes)}]");
+                _output.WriteLine($"  PatrolPath {task.Id}: [{string.Join(" | ", nodes)}]");
             }
 
             if (task.Id == 2600 && string.Equals(task.Type?.Name, AiTaskTypes.PatrolPath, StringComparison.Ordinal))
@@ -187,7 +192,7 @@ public sealed class DiagCrew2
                     }
                 }
 
-                System.Console.WriteLine($"  PatrolPath 2600 (blocker): [{string.Join(" | ", nodes)}]");
+                _output.WriteLine($"  PatrolPath 2600 (blocker): [{string.Join(" | ", nodes)}]");
             }
         }
 
@@ -197,7 +202,7 @@ public sealed class DiagCrew2
             int? mindId = soldier.Children.OfType<HumanAiTask>().FirstOrDefault()?.Id;
             if (soldier.Id is >= 400 and <= 405 || mindId is >= 540 and <= 544 or >= 1234 and <= 1238)
             {
-                System.Console.WriteLine($"  SOLDIER {soldier.Id} mind {mindId} pos={soldier.Position.X / 4096.0:0.000},{soldier.Position.Y / 4096.0:0.000}");
+                _output.WriteLine($"  SOLDIER {soldier.Id} mind {mindId} pos={soldier.Position.X / 4096.0:0.000},{soldier.Position.Y / 4096.0:0.000}");
             }
 
             if (soldier.Id == 666)
@@ -206,26 +211,26 @@ public sealed class DiagCrew2
                 {
                     if (cc.Id == 3900)
                     {
-                        System.Console.WriteLine($"  CC3900 condition: [{cc.Condition}] runAtStart=[{cc.RunAtStart}] runAtStop=[{cc.RunAtStop}]");
+                        _output.WriteLine($"  CC3900 condition: [{cc.Condition}] runAtStart=[{cc.RunAtStart}] runAtStop=[{cc.RunAtStop}]");
                     }
                 }
             }
 
             if (soldier.Id == 400)
             {
-                System.Console.WriteLine($"  FRIENDLY400 chain: {AncestorChain(soldier.Parent)}");
+                _output.WriteLine($"  FRIENDLY400 chain: {AncestorChain(soldier.Parent)}");
             }
 
             if (soldier.Id == 666 || soldier.Children.OfType<HumanAiTask>().FirstOrDefault()?.Id is 540 or 1234)
             {
-                System.Console.WriteLine($"  CHAIN soldier {soldier.Id} mind {soldier.Children.OfType<HumanAiTask>().FirstOrDefault()?.Id}");
-                System.Console.WriteLine($"    {AncestorChain(soldier.Parent)}");
+                _output.WriteLine($"  CHAIN soldier {soldier.Id} mind {soldier.Children.OfType<HumanAiTask>().FirstOrDefault()?.Id}");
+                _output.WriteLine($"    {AncestorChain(soldier.Parent)}");
             }
 
             if (soldier.Id == 666)
             {
-                System.Console.WriteLine($"  BLOCKER soldier 666 mind {mindId} pos={soldier.Position.X / 4096.0:0.000},{soldier.Position.Y / 4096.0:0.000}");
-                System.Console.WriteLine($"  BLOCKER chain: {AncestorChain(soldier.Parent)}");
+                _output.WriteLine($"  BLOCKER soldier 666 mind {mindId} pos={soldier.Position.X / 4096.0:0.000},{soldier.Position.Y / 4096.0:0.000}");
+                _output.WriteLine($"  BLOCKER chain: {AncestorChain(soldier.Parent)}");
             }
         }
 
@@ -237,7 +242,7 @@ public sealed class DiagCrew2
                 continue;
             }
 
-            System.Console.WriteLine($"  MIND {task.Id} graphId={ai.GraphId} type={ai.AiTypeName}");
+            _output.WriteLine($"  MIND {task.Id} graphId={ai.GraphId} type={ai.AiTypeName}");
         }
     }
 

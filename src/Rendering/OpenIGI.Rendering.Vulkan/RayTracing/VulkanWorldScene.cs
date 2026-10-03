@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Queues;
 using Silk.NET.Vulkan;
@@ -847,9 +848,9 @@ internal sealed class VulkanWorldScene : IDisposable
             if (!_recordOverflow)
             {
                 _recordOverflow = true;
-                Console.WriteLine(
-                    $"[raytracing] material records exhausted at {MaxRecords}; cut-out surfaces admitted "
-                    + "after this point cast as solid.");
+                _device.Logger.Warning(
+                    "Vulkan.RayTracing",
+                    $"Material records exhausted at {MaxRecords}; cut-out surfaces admitted after this point cast as solid.");
             }
 
             return 0;

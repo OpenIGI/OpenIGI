@@ -36,7 +36,7 @@ public sealed class LevelLoader
     private readonly TaskScriptCommands _commands;
     private readonly NativeRegistry _natives;
     private readonly ResourceRegistry _resources;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="LevelLoader"/> class.</summary>
     /// <param name="levelRoot">The task the level's subtree hangs off.</param>
@@ -50,7 +50,7 @@ public sealed class LevelLoader
         TaskScriptCommands commands,
         NativeRegistry natives,
         ResourceRegistry resources,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(commands);

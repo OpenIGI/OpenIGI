@@ -60,7 +60,7 @@ public sealed class TitleSession
         GameLoop loop,
         VirtualFileSystem fileSystem,
         ResourceRegistry resources,
-        IIgiLogger? logger = null,
+        IOpenIgiLogger? logger = null,
         bool loadTables = true,
         IServiceCatalog? inherited = null)
     {
@@ -69,7 +69,7 @@ public sealed class TitleSession
         ArgumentNullException.ThrowIfNull(fileSystem);
         ArgumentNullException.ThrowIfNull(resources);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         TitleSession session = new(
             modules,
             inherited is ServiceCatalog seed ? new ServiceCatalog(seed) : new ServiceCatalog());
@@ -105,13 +105,13 @@ public sealed class TitleSession
         GameLoop loop,
         VirtualFileSystem fileSystem,
         ResourceRegistry resources,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(loop);
         ArgumentNullException.ThrowIfNull(fileSystem);
         ArgumentNullException.ThrowIfNull(resources);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         ContentLoadContext load = new(fileSystem, resources, loop.Natives, loop.Tasks, _services, log);
 
         foreach (IContentModule module in Modules)

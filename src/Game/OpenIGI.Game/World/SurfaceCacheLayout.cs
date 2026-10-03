@@ -98,11 +98,11 @@ public sealed class SurfaceCacheLayout
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="cards"/> is <see langword="null"/>.</exception>
     public static SurfaceCacheLayout Pack(
-        IReadOnlyList<MeshCard> cards, int maximumSize = 8192, IIgiLogger? logger = null)
+        IReadOnlyList<MeshCard> cards, int maximumSize = 8192, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(cards);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         if (cards.Count == 0)
         {

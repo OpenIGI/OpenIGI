@@ -30,7 +30,7 @@ public sealed record TitleBinding(
     IGameTitleRuntime Runtime,
     ITitlePresentationProvider Presentation,
     ITitleWorldBuilder WorldBuilder,
-    Func<IIgiLogger, IMissionCatalogue<MissionDescriptor>> Missions,
+    Func<IOpenIgiLogger, IMissionCatalogue<MissionDescriptor>> Missions,
     string DataRoot)
 {
     /// <summary>Gets whether this title is installed where the catalogue looked.</summary>

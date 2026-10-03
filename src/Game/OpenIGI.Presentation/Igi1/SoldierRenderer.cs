@@ -42,6 +42,11 @@ namespace OpenIGI.Presentation.Igi1;
 public sealed class SoldierRenderer : IDisposable
 {
     private const string LogCategory = "Soldier";
+    private const string TraceLogCategory = LogCategory + ".Trace";
+
+    // The one staged actor whose placement is traced each second, named by soldier id in
+    // OPENIGI_TRACE_CUTSCENE_ACTOR. Read once: the check runs for every soldier on every tick.
+    private static readonly string? TracedCutsceneActor = Environment.GetEnvironmentVariable("OPENIGI_TRACE_CUTSCENE_ACTOR");
 
     /// <summary>How far above the declared position the ground probe starts — 0.5 m.</summary>
     private const double ProbeAboveInUnits = 2048.0;
@@ -74,7 +79,7 @@ public sealed class SoldierRenderer : IDisposable
     private readonly List<MeshDrawRange> _outlineRanges = [];
     private readonly ResourceRegistry _resources;
     private readonly MagicObjectRegistry? _magic;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Group> _groups = [];
     private readonly List<HeldWeapon> _weapons = [];
@@ -448,7 +453,7 @@ public sealed class SoldierRenderer : IDisposable
     public SoldierRenderer(
         IGraphicsDevice device,
         ResourceRegistry resources,
-        IIgiLogger? logger = null,
+        IOpenIgiLogger? logger = null,
         MagicObjectRegistry? magic = null,
         Func<IHeldWeaponPresenter>? heldWeapons = null)
     {
@@ -1674,8 +1679,8 @@ public sealed class SoldierRenderer : IDisposable
                     if (groundedZ != initialPosition.Z)
                     {
                         _logger.Information(
-                            LogCategory,
-                            $"[AI-GROUND] soldier={view.Soldier.Id} declaredZ={initialPosition.Z:0.0} " +
+                            LogCategory + ".Ground",
+                            $"soldier={view.Soldier.Id} declaredZ={initialPosition.Z:0.0} " +
                             $"groundedZ={groundedZ:0.0} delta={(groundedZ - initialPosition.Z) / WorldScene.UnitsPerMetre:0.000}m");
                         initialPosition = new Vector3d(initialPosition.X, initialPosition.Y, groundedZ);
                         view.PlaceAt(initialPosition, view.Orientation);
@@ -1723,8 +1728,8 @@ public sealed class SoldierRenderer : IDisposable
                                 || _interactions?.FindStationaryGun(id) is not null)
                             {
                                 _logger.Information(
-                                    LogCategory,
-                                    $"[gunner] runtime={brain.RuntimeId} activation reached task={id} "
+                                    LogCategory + ".Gunner",
+                                    $"runtime={brain.RuntimeId} activation reached task={id} "
                                         + $"gunnerId={brain.GunnerId}");
                             }
                             _aiTaskActivator?.Invoke(id);
@@ -1858,8 +1863,8 @@ public sealed class SoldierRenderer : IDisposable
                     gun.BindWeapon(null);
                     _stationaryWeaponVisuals[gun] = null;
                     _logger.Warning(
-                        LogCategory,
-                        $"[gunner] task={gun.TaskId} weapon={gun.WeaponId} is not in the weapon table.");
+                        LogCategory + ".Gunner",
+                        $"task={gun.TaskId} weapon={gun.WeaponId} is not in the weapon table.");
                     continue;
                 }
 
@@ -1882,8 +1887,8 @@ public sealed class SoldierRenderer : IDisposable
 
                 _stationaryWeaponVisuals[gun] = held;
                 _logger.Information(
-                    LogCategory,
-                    $"[gunner] task={gun.TaskId} weapon={weapon.ScriptId} model={weapon.GunModel} "
+                    LogCategory + ".Gunner",
+                    $"task={gun.TaskId} weapon={weapon.ScriptId} model={weapon.GunModel} "
                         + $"position=({gun.Position.X:0.##},{gun.Position.Y:0.##},{gun.Position.Z:0.##}) "
                         + $"visual={(held is null ? "missing" : "ready")}");
             }
@@ -2133,7 +2138,7 @@ public sealed class SoldierRenderer : IDisposable
             {
                 if (brain.Activity == AiSoldierActivity.Engaging)
                 {
-                    _logger.Information(LogCategory, $"[aiflow] #{brain.RuntimeId} {brain.DescribeCombat()}");
+                    _logger.Information(LogCategory + ".Flow", $"#{brain.RuntimeId} {brain.DescribeCombat()}");
                 }
             }
         }
@@ -2153,7 +2158,8 @@ public sealed class SoldierRenderer : IDisposable
 
     /// <summary>Logs each input channel a fight asks for, once per type and channel.</summary>
     /// <remarks>
-    /// Deliberately the same shape as the probe's <c>[combat] channel</c> line from the retail game, so
+    /// Deliberately the same shape as the probe's <c>[combat] channel</c> line from the retail game (logged
+    /// here under the <c>Soldier.Combat</c> category rather than a tag), so
     /// a run of the port and a capture of the original can be put side by side. The slot is resolved
     /// through the port's transcription of <c>off_54151C</c>; if it disagrees with the probe's, the
     /// transcription is wrong.
@@ -2162,12 +2168,12 @@ public sealed class SoldierRenderer : IDisposable
     {
         foreach (AiChannelWrite write in brain.ChannelWrites)
         {
-            string line = $"[combat] channel type={(int)brain.Type} channel={(int)write.Channel} "
+            string line = $"channel type={(int)brain.Type} channel={(int)write.Channel} "
                 + $"-> slot {write.Slot} value={write.Value:0.00}";
 
             if (_reportedChannels.Add(line))
             {
-                _logger.Information(LogCategory, line);
+                _logger.Information(LogCategory + ".Combat", line);
             }
         }
     }
@@ -2701,9 +2707,9 @@ public sealed class SoldierRenderer : IDisposable
 
         _lastNoiseLogTick = _tick;
         _logger.Information(
-            LogCategory,
+            LogCategory + ".Flow",
             FormattableString.Invariant(
-                $"[aiflow] noise {kind} heard by {heard} soldier(s) (radius {radiusUnits / 4096.0:0.0} m)"));
+                $"noise {kind} heard by {heard} soldier(s) (radius {radiusUnits / 4096.0:0.0} m)"));
     }
 
     private int _lastNoiseLogTick = -100;
@@ -3597,15 +3603,15 @@ public sealed class SoldierRenderer : IDisposable
 
             string activityText = string.Join(", ", activity.OrderByDescending(p => p.Value).Select(p => $"{p.Key}={p.Value}"));
             _logger.Information(
-                LogCategory, $"[aiflow] heartbeat tick={_tick} brains={_brains.Count} onPatrol={onPatrol} [{activityText}]");
+                LogCategory + ".Flow", $"heartbeat tick={_tick} brains={_brains.Count} onPatrol={onPatrol} [{activityText}]");
 
-            // Diagnostic-only: IGI_AI_TRACE=1 adds per-soldier detail for the friendlies (ids 400-405,
-            // plus the heli crews by their mind ids), so a long lockstep run shows what they actually do.
-            // IGI_AI_TRACE_ALL=1 extends the same record to every active human, which is useful for
+            // Diagnostic-only: the Soldier.Trace category at Debug adds per-soldier detail for the friendlies
+            // (ids 400-405, plus the heli crews by their mind ids), so a long lockstep run shows what they
+            // actually do. At Trace it extends the same record to every active human, which is useful for
             // checking first-base guard grounding without changing the normal diagnostic volume.
-            if (Environment.GetEnvironmentVariable("IGI_AI_TRACE") == "1")
+            if (_logger.IsEnabled(LogLevel.Debug, TraceLogCategory))
             {
-                bool traceAll = Environment.GetEnvironmentVariable("IGI_AI_TRACE_ALL") == "1";
+                bool traceAll = _logger.IsEnabled(LogLevel.Trace, TraceLogCategory);
                 foreach (KeyValuePair<SoldierView, AiSoldier> pair in _brains)
                 {
                     HumanSoldierTask soldier = pair.Key.Soldier;
@@ -3622,7 +3628,7 @@ public sealed class SoldierRenderer : IDisposable
                     }
 
                     AiSoldier brain = pair.Value;
-                    string traceTag = friendly ? "[aiflow][friendly]" : "[aiflow][guard]";
+                    string traceTag = friendly ? "friendly" : "guard";
                     string route = brain.Route is null ? "-" : $"path {brain.Route.Path.Id} cmd={brain.Route.Current?.Kind}";
                     string last = brain.LastActions.Count == 0
                         ? "none"
@@ -3631,8 +3637,8 @@ public sealed class SoldierRenderer : IDisposable
                     string dispatched = brain.LastDispatchedEvent?.ToString() ?? "-";
                     double groundZ = SnapToGround(pair.Key.Position.X, pair.Key.Position.Y, pair.Key.Position.Z);
                     double groundGap = (pair.Key.Position.Z - groundZ) / WorldScene.UnitsPerMetre;
-                    _logger.Information(
-                        LogCategory,
+                    _logger.Debug(
+                        TraceLogCategory,
                         $"{traceTag} soldier {soldier.Id} mind {mindId} {brain.Activity} {route} " +
                         $"evt={dispatched} last={last} pending=[{pending}] lastTick={brain.LastTick} " +
                         $"anim={pair.Key.CurrentAnimation} rm={Math.Abs(pair.Key.RootMotion().Y):0.0} " +
@@ -3656,8 +3662,8 @@ public sealed class SoldierRenderer : IDisposable
                         double h = Math.Sqrt((dx * dx) + (dy * dy)) / 4096.0;
                         if (h < 3.0)
                         {
-                            _logger.Information(
-                                LogCategory,
+                            _logger.Debug(
+                                TraceLogCategory,
                                 $"{traceTag}   near s{soldier.Id}: s{otherView.Soldier.Id} m{otherView.Soldier.Children.OfType<HumanAiTask>().FirstOrDefault()?.Id} {h:0.000} m {other.Activity}");
                         }
                     }
@@ -4085,7 +4091,7 @@ public sealed class SoldierRenderer : IDisposable
                 if (_lastGunnerRuntimeReports.GetValueOrDefault(brain.RuntimeId) != report)
                 {
                     _lastGunnerRuntimeReports[brain.RuntimeId] = report;
-                    _logger.Information(LogCategory, $"[gunner] {report}");
+                    _logger.Information(LogCategory + ".Gunner", $"{report}");
                 }
 
                 if (_tick % 300 == 1)
@@ -4095,8 +4101,8 @@ public sealed class SoldierRenderer : IDisposable
                         : "missing";
                     string dispatched = brain.LastDispatchedEvent?.ToString() ?? "-";
                     _logger.Information(
-                        LogCategory,
-                        $"[gunner] diagnostic runtime={brain.RuntimeId} lastEvent={dispatched} "
+                        LogCategory + ".Gunner",
+                        $"diagnostic runtime={brain.RuntimeId} lastEvent={dispatched} "
                         + $"timer1608={timer}");
                 }
             }
@@ -4120,8 +4126,8 @@ public sealed class SoldierRenderer : IDisposable
             {
                 _lastDrainLogTick = _tick;
                 _logger.Information(
-                    LogCategory,
-                    $"[aiflow] #{brain.RuntimeId} drained gunshot={gunshot} miss={miss} "
+                    LogCategory + ".Flow",
+                    $"#{brain.RuntimeId} drained gunshot={gunshot} miss={miss} "
                         + $"explosion={explosion} grenadeThrown={grenadeThrown} "
                         + $"grenadeLand={grenadeLand} flashbang={flashbang} "
                         + $"impact={impact} walk={walk} dmg={damage} act={brain.Activity}");
@@ -4347,8 +4353,8 @@ public sealed class SoldierRenderer : IDisposable
         {
             _alarmWasOn = alarmIsOn;
             _logger.Information(
-                LogCategory,
-                $"[alarm] mission alarm {(alarmIsOn ? "ON" : "OFF")} at tick {_tick}.");
+                LogCategory + ".Alarm",
+                $"mission alarm {(alarmIsOn ? "ON" : "OFF")} at tick {_tick}.");
         }
     }
 
@@ -4446,13 +4452,13 @@ public sealed class SoldierRenderer : IDisposable
     private void CaptureTickState(Member member)
     {
         (Vector3d where, Matrix3f orientation) = TickPlacementOf(member);
-        if (Environment.GetEnvironmentVariable("OPENIGI_TRACE_CUTSCENE_ACTOR") is { } traceActor
+        if (TracedCutsceneActor is { } traceActor
             && traceActor == member.View.Soldier.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
             && _tick % 30 == 0)
         {
             BoneClip? clip = member.View.Bones.SourceOf(0);
-            _logger.Warning(LogCategory,
-                $"[cutscene-actor] tick={_tick} actor={traceActor} active={ConditionalContainerGate.IsTaskActive(member.View.Soldier)} "
+            _logger.Warning(LogCategory + ".CutsceneActor",
+                $"tick={_tick} actor={traceActor} active={ConditionalContainerGate.IsTaskActive(member.View.Soldier)} "
                 + $"scene={Cutscenes?.ActiveScene?.Id} staged={member.IsCutsceneActor} where={where} "
                 + $"view={member.View.Position} clip={member.View.CurrentAnimation} time={clip?.Time} "
                 + $"root={member.View.RootSample} delta={member.View.RootMotion()}");
@@ -4832,8 +4838,8 @@ public sealed class SoldierRenderer : IDisposable
             if (_reportedStationaryVisuals.Add(gun.TaskId))
             {
                 _logger.Information(
-                    LogCategory,
-                    $"[gunner] static visual task={gun.TaskId} weapon={gun.WeaponId} "
+                    LogCategory + ".Gunner",
+                    $"static visual task={gun.TaskId} weapon={gun.WeaponId} "
                     + $"position=({gun.Position.X:0.##},{gun.Position.Y:0.##},{gun.Position.Z:0.##}) drawn");
             }
 
@@ -6478,8 +6484,8 @@ public sealed class SoldierRenderer : IDisposable
         // OnDamageHandler), so a run of the port and a capture of the original diff directly. The port
         // resolves the zone from the pose (HumanHitTest.NearestBone) where the engine reads a part index
         // the bullet physics recorded, so a zone that disagrees for the same shot is the one to chase.
-        _logger.Information(LogCategory,
-            $"[dmg] port zone={hit.Zone} ({HumanDamage.ZoneName(hit.Zone)}) bone={hit.Bone} dmgFactor={damageFactor:0.000} "
+        _logger.Information(LogCategory + ".Damage",
+            $"port zone={hit.Zone} ({HumanDamage.ZoneName(hit.Zone)}) bone={hit.Bone} dmgFactor={damageFactor:0.000} "
             + $"invuln={(invulnerable ? 1 : 0)} instDeathDisabled={(brain?.IsInstantDeathDisabled ?? false ? 1 : 0)} "
             + $"friendly={(friendlyFire ? 1 : 0)} accum={struck.Damage:0.000} max={struck.MaximumHealth:0.000} dead={(struck.IsDead ? 1 : 0)}");
 
@@ -6843,8 +6849,8 @@ public sealed class SoldierRenderer : IDisposable
             }
 
             _logger.Information(
-                LogCategory,
-                $"[dmg] port zone={candidate.Zone} ({HumanDamage.ZoneName(candidate.Zone)}) bone={candidate.Bone} "
+                LogCategory + ".Damage",
+                $"port zone={candidate.Zone} ({HumanDamage.ZoneName(candidate.Zone)}) bone={candidate.Bone} "
                     + $"dmgFactor={weapon.DamageFactor:0.000} invuln={(invulnerable ? 1 : 0)} "
                     + $"instDeathDisabled={(brain?.IsInstantDeathDisabled ?? false ? 1 : 0)} "
                     + $"accum={health.Damage:0.000} max={health.MaximumHealth:0.000} "

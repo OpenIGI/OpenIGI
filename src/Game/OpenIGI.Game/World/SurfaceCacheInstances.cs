@@ -68,12 +68,12 @@ public sealed class SurfaceCacheInstances
         IReadOnlyList<WorldPlacement> placements,
         Func<WorldPlacement, int> modelOf,
         int maximumSize = 8192,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(placements);
         ArgumentNullException.ThrowIfNull(modelOf);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         // Which captured cards belong to each model, gathered once. The capture stores the owner per
         // card, so without this every placement would rescan the whole card list.

@@ -14,6 +14,9 @@ internal static class LauncherPaths
     /// <summary>Gets the folder holding <c>settings.json</c>.</summary>
     public static string ConfigDirectory { get; } = Path.Combine(ConfigRoot(), "OpenIGI", "Launcher");
 
+    /// <summary>Gets the folder the launcher's own log files are kept in.</summary>
+    public static string LogDirectory { get; } = Path.Combine(DataRoot(), "OpenIGI", "Launcher", "logs");
+
     /// <summary>Gets the library folder used until the player chooses another.</summary>
     public static string DefaultLibrary { get; } = Path.Combine(DataRoot(), "OpenIGI", "Library");
 

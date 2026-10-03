@@ -61,7 +61,7 @@ internal sealed class SmokeSpriteRenderer : IDisposable
 
     private readonly IGraphicsDevice _device;
     private readonly VirtualFileSystem _fileSystem;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly IgiRandom _random = new();
     private readonly Puff[] _puffs = new Puff[MaximumPuffs];
     private readonly Vertex3D[] _vertices = new Vertex3D[MaximumVertices];
@@ -74,7 +74,7 @@ internal sealed class SmokeSpriteRenderer : IDisposable
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="SmokeSpriteRenderer"/> class.</summary>
-    public SmokeSpriteRenderer(IGraphicsDevice device, VirtualFileSystem fileSystem, IIgiLogger? logger = null)
+    public SmokeSpriteRenderer(IGraphicsDevice device, VirtualFileSystem fileSystem, IOpenIgiLogger? logger = null)
     {
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));

@@ -38,14 +38,14 @@ public sealed class TerrainLoader
 
     private readonly ResourceRegistry _resources;
     private readonly NativeRegistry _natives;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="TerrainLoader"/> class.</summary>
     /// <param name="resources">Where the terrain files are read from.</param>
     /// <param name="natives">The script namespace the two terrain natives are registered into.</param>
     /// <param name="logger">The logger for load diagnostics.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public TerrainLoader(ResourceRegistry resources, NativeRegistry natives, IIgiLogger? logger = null)
+    public TerrainLoader(ResourceRegistry resources, NativeRegistry natives, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(resources);
         ArgumentNullException.ThrowIfNull(natives);

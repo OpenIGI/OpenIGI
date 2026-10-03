@@ -19,7 +19,7 @@ namespace OpenIGI.Rendering.Pipeline;
 /// </remarks>
 public sealed partial class GraphicsDevice
 {
-    private readonly IIgiLogger? _logger;
+    private readonly IOpenIgiLogger? _logger;
     private readonly Dictionary<string, string> _reported = new(StringComparer.Ordinal);
 
     // How the panes that reached the forward pass this frame reflected, for the glazing's line.

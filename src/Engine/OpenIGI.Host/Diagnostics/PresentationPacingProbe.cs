@@ -1,10 +1,10 @@
-using System;
 using System.Globalization;
+using OpenIGI.Core.Diagnostics;
 
 namespace OpenIGI.Host.Diagnostics;
 
 /// <summary>
-/// Measures whether presented motion advances in step with real time, behind OPENIGI_PACING_DEBUG=1.
+/// Measures whether presented motion advances in step with real time, when the <c>Pacing</c> log category is at Debug.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -32,29 +32,21 @@ internal static class PresentationPacingProbe
     private static int _smoothFrames;
     private static int _totalFrames;
 
-    private static bool _enabled;
-    private static bool _resolved;
+    private const string LogCategory = "Pacing";
+
     private static int _count;
     private static double _lastWallMilliseconds;
     private static double _lastSimMilliseconds;
     private static bool _hasPrevious;
 
+    /// <summary>Gets or sets the logger the probe reports to and asks whether it is wanted.</summary>
+    /// <remarks>Turned on with <c>OPENIGI_LOG=Pacing=debug</c>, or <c>log_level Pacing debug</c> in the console.</remarks>
+    public static IOpenIgiLogger Logger { get; set; } = NullLogger.Instance;
+
     /// <summary>Gets whether the probe is listening, so callers can skip their own measuring.</summary>
     public static bool IsEnabled => Enabled;
 
-    private static bool Enabled
-    {
-        get
-        {
-            if (!_resolved)
-            {
-                _enabled = Environment.GetEnvironmentVariable("OPENIGI_PACING_DEBUG") == "1";
-                _resolved = true;
-            }
-
-            return _enabled;
-        }
-    }
+    private static bool Enabled => Logger.IsEnabled(LogLevel.Debug, LogCategory);
 
     /// <summary>Records where in the simulation this frame was drawn, and when.</summary>
     /// <param name="wallMilliseconds">The precise wall clock the frame sampled its blend from.</param>
@@ -163,7 +155,7 @@ internal static class PresentationPacingProbe
         }
     }
 
-    /// <summary>Prints the pacing distribution gathered so far, if the probe is on.</summary>
+    /// <summary>Logs the pacing distribution gathered so far, if the probe is on.</summary>
     /// <param name="label">What run this is, so two reports can be told apart.</param>
     public static void Report(string label)
     {
@@ -174,9 +166,9 @@ internal static class PresentationPacingProbe
 
         if (_count < 2)
         {
-            Console.WriteLine(string.Format(
+            Log(string.Format(
                 CultureInfo.InvariantCulture,
-                "[pacing] {0}  no interpolated frames to measure -- withheld by: pauseMenu {1:F1}%  "
+                "{0}  no interpolated frames to measure -- withheld by: pauseMenu {1:F1}%  "
                     + "cutscene {2:F1}%  lockstep {3:F1}%  r_smooth=0 {4:F1}%  of {5} frames",
                 label,
                 100.0 * _gatePause / Math.Max(1, _totalFrames),
@@ -212,18 +204,18 @@ internal static class PresentationPacingProbe
 
         Array.Sort(deviations);
 
-        Console.WriteLine(string.Format(
+        Log(string.Format(
             CultureInfo.InvariantCulture,
-            "[pacing] {0}  frames {1}  fps~{2:F0}  frame ms p50 {3:F2} p99 {4:F2}",
+            "{0}  frames {1}  fps~{2:F0}  frame ms p50 {3:F2} p99 {4:F2}",
             label,
             _count,
             1000.0 / Percentile(frames, 0.50),
             Percentile(frames, 0.50),
             Percentile(frames, 0.99)));
 
-        Console.WriteLine(string.Format(
+        Log(string.Format(
             CultureInfo.InvariantCulture,
-            "[pacing] {0}  sim/wall p01 {1:F3} p50 {2:F3} p99 {3:F3}  |err| p50 {4:F3} p95 {5:F3}  >25% off {6:F2}%",
+            "{0}  sim/wall p01 {1:F3} p50 {2:F3} p99 {3:F3}  |err| p50 {4:F3} p95 {5:F3}  >25% off {6:F2}%",
             label,
             Percentile(ratios, 0.01),
             Percentile(ratios, 0.50),
@@ -235,9 +227,9 @@ internal static class PresentationPacingProbe
         // What separates the two explanations for a frozen picture. Smoothing simply being off pins
         // every blend at exactly 1; smoothing on but the tick running late pins only the frames that
         // outlast the deadline, and the rest sweep 0 to 1 as they should.
-        Console.WriteLine(string.Format(
+        Log(string.Format(
             CultureInfo.InvariantCulture,
-            "[pacing] {0}  r_smooth active on {1:F1}% of frames  blend p25 {2:F3} p50 {3:F3} p75 {4:F3}  saturated(=1) {5:F1}%",
+            "{0}  r_smooth active on {1:F1}% of frames  blend p25 {2:F3} p50 {3:F3} p75 {4:F3}  saturated(=1) {5:F1}%",
             label,
             100.0 * _smoothFrames / Math.Max(1, _totalFrames),
             Percentile(blends, 0.25),
@@ -245,9 +237,9 @@ internal static class PresentationPacingProbe
             Percentile(blends, 0.75),
             100.0 * _saturated / _count));
 
-        Console.WriteLine(string.Format(
+        Log(string.Format(
             CultureInfo.InvariantCulture,
-            "[pacing] {0}  withheld by: pauseMenu {1:F1}%  cutscene {2:F1}%  lockstep {3:F1}%  r_smooth=0 {4:F1}%",
+            "{0}  withheld by: pauseMenu {1:F1}%  cutscene {2:F1}%  lockstep {3:F1}%  r_smooth=0 {4:F1}%",
             label,
             100.0 * _gatePause / Math.Max(1, _totalFrames),
             100.0 * _gateCutscene / Math.Max(1, _totalFrames),
@@ -259,9 +251,9 @@ internal static class PresentationPacingProbe
             double[] blocks = new double[_blockCount];
             Array.Copy(PresentBlocks, blocks, _blockCount);
             Array.Sort(blocks);
-            Console.WriteLine(string.Format(
+            Log(string.Format(
                 CultureInfo.InvariantCulture,
-                "[pacing] {0}  present block ms p50 {1:F2} p95 {2:F2}  = {3:F0}% of a {4:F1}ms frame, "
+                "{0}  present block ms p50 {1:F2} p95 {2:F2}  = {3:F0}% of a {4:F1}ms frame, "
                     + "{5:F0}% of a 33.3ms tick",
                 label,
                 Percentile(blocks, 0.50),
@@ -276,9 +268,9 @@ internal static class PresentationPacingProbe
             double[] intervals = new double[_tickIntervalCount];
             Array.Copy(TickIntervals, intervals, _tickIntervalCount);
             Array.Sort(intervals);
-            Console.WriteLine(string.Format(
+            Log(string.Format(
                 CultureInfo.InvariantCulture,
-                "[pacing] {0}  tick interval ms p01 {1:F2} p50 {2:F2} p99 {3:F2}  (ideal 33.33)  "
+                "{0}  tick interval ms p01 {1:F2} p50 {2:F2} p99 {3:F2}  (ideal 33.33)  "
                     + "ticks {4}  renders/tick {5:F2}",
                 label,
                 Percentile(intervals, 0.01),
@@ -288,6 +280,8 @@ internal static class PresentationPacingProbe
                 (double)_count / Math.Max(1, _tickIntervalCount)));
         }
     }
+
+    private static void Log(string line) => Logger.Debug(LogCategory, line);
 
     private static readonly double[] PresentBlocks = new double[Capacity];
     private static int _blockCount;

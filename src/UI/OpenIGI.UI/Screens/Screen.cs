@@ -557,7 +557,7 @@ public abstract class Screen
         // one enclosing it takes over, so a nested list does not swallow the page's own scrolling.
         for (UiElement? element = Root?.HitTest(pointer); element is not null; element = element.Parent)
         {
-            if (element is ScrollView viewport && viewport.ScrollByWheel(notches))
+            if (element is IWheelScrollable viewport && viewport.ScrollByWheel(notches))
             {
                 return;
             }

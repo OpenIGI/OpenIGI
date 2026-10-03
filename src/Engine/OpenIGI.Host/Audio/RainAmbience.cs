@@ -96,7 +96,7 @@ internal sealed class RainAmbience : IDisposable
     private const int VoicePriority = 180;
 
     private readonly SoundSystem _sounds;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly SkyExposureProbe _probe = new();
     private readonly AudioVoiceHandle[] _voices;
     private readonly FilteredLoopSource?[] _taps;
@@ -111,7 +111,7 @@ internal sealed class RainAmbience : IDisposable
     /// <param name="sounds">The sound system whose device the taps stream on.</param>
     /// <param name="logger">Where to report what was loaded and what could not be.</param>
     /// <exception cref="ArgumentNullException"><paramref name="sounds"/> is <see langword="null"/>.</exception>
-    public RainAmbience(SoundSystem sounds, IIgiLogger? logger = null)
+    public RainAmbience(SoundSystem sounds, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(sounds);
 

@@ -58,7 +58,7 @@ public sealed class AudioDeviceFactoryTests
     {
         public AudioDeviceOptions LastOptions { get; private set; }
 
-        public IAudioDevice Open(AudioDeviceOptions options, IIgiLogger logger)
+        public IAudioDevice Open(AudioDeviceOptions options, IOpenIgiLogger logger)
         {
             LastOptions = options;
             return new NullAudioDevice();

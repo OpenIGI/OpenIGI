@@ -29,13 +29,13 @@ public sealed class MenuScriptContext : IScriptExpressionContext
     public const string SelfPrefix = "this.";
 
     private readonly MenuNavigator _stack;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="MenuScriptContext"/> class.</summary>
     /// <param name="stack">The screen stack the navigation natives drive.</param>
     /// <param name="logger">Where to report calls that reach <see cref="Fallback"/>.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public MenuScriptContext(MenuNavigator stack, IIgiLogger? logger = null)
+    public MenuScriptContext(MenuNavigator stack, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(stack);
         _stack = stack;

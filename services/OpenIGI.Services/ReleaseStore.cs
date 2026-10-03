@@ -10,7 +10,7 @@ namespace OpenIGI.Services;
 /// with a manifest is a complete one: a scan that runs mid-upload simply does not see it yet. A manifest
 /// that does not parse is skipped and logged rather than taking the whole feed down with it.
 /// </remarks>
-internal sealed partial class ReleaseStore(IOptions<ReleaseOptions> options, ILogger<ReleaseStore> logger) : BackgroundService
+internal sealed class ReleaseStore(IOptions<ReleaseOptions> options, ILogger<ReleaseStore> logger) : BackgroundService
 {
     private readonly ReleaseOptions _options = options.Value;
     private string _fingerprint = string.Empty;
@@ -23,7 +23,7 @@ internal sealed partial class ReleaseStore(IOptions<ReleaseOptions> options, ILo
     {
         if (!Directory.Exists(_options.Root))
         {
-            LogMissingRoot(logger, _options.Root);
+            StoreLog.MissingRoot(logger, "release", _options.Root);
             return;
         }
 
@@ -53,13 +53,13 @@ internal sealed partial class ReleaseStore(IOptions<ReleaseOptions> options, ILo
             }
             catch (Exception ex) when (ex is JsonException or FormatException or IOException)
             {
-                LogBadManifest(logger, path, ex.Message);
+                StoreLog.BadManifest(logger, path, ex.Message);
             }
         }
 
         Current = new ReleaseIndex(releases, _options.DownloadUrl);
         _fingerprint = fingerprint;
-        LogScanned(logger, Current.Count, Current.Tag);
+        StoreLog.Scanned(logger, Current.Count, "release(s)", Current.Tag);
     }
 
     /// <inheritdoc/>
@@ -74,21 +74,9 @@ internal sealed partial class ReleaseStore(IOptions<ReleaseOptions> options, ILo
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                LogScanFailed(logger, ex.Message);
+                StoreLog.ScanFailed(logger, "release", ex.Message);
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false));
     }
-
-    [LoggerMessage(Level = LogLevel.Information, Message = "Indexed {Count} release(s), tag {Tag}")]
-    private static partial void LogScanned(ILogger logger, int count, string tag);
-
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Skipped {Path}: {Reason}")]
-    private static partial void LogBadManifest(ILogger logger, string path, string reason);
-
-    [LoggerMessage(Level = LogLevel.Warning, Message = "The release store {Root} does not exist")]
-    private static partial void LogMissingRoot(ILogger logger, string root);
-
-    [LoggerMessage(Level = LogLevel.Error, Message = "Scanning the release store failed: {Reason}")]
-    private static partial void LogScanFailed(ILogger logger, string reason);
 }

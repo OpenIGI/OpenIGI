@@ -20,8 +20,8 @@ internal interface ILauncherWindow
 
     void Close();
 
-    /// <summary>Gets the system clipboard's text, for pasting a folder into a field.</summary>
-    string ClipboardText { get; }
+    /// <summary>Gets or sets the system clipboard's text: read to paste a folder into a field, written to copy the log.</summary>
+    string ClipboardText { get; set; }
 
     /// <summary>Decodes a picture file for drawing, once per file.</summary>
     /// <param name="path">The picture: PNG, JPEG or WebP.</param>
@@ -57,6 +57,7 @@ internal sealed class LauncherScreen : Screen
     private LauncherBackdrop? _backdrop;
     private HomePage? _home;
     private ContentPage? _content;
+    private LogsPage? _logs;
     private GameSwitcher? _switcher;
     private UiElement? _chrome;
     private FooterBar? _footer;
@@ -104,7 +105,8 @@ internal sealed class LauncherScreen : Screen
         _content = new ContentPage(_rowTheme, _model, _window.Picture);
         AddPage(main, _content.Root);
         AddPage(main, PlaceholderPage.Build(_theme, "Mods & plugins", "Mods", "Mod management arrives with the mod loader"));
-        AddPage(main, PlaceholderPage.Build(_theme, "Launcher · session", "Logs", "No log output yet"));
+        _logs = new LogsPage(_theme, _model, _window);
+        AddPage(main, _logs.Root);
         AddPage(main, SettingsPage.Build(_rowTheme, _model));
         layout.Add(main, 2, 0);
 
@@ -200,6 +202,7 @@ internal sealed class LauncherScreen : Screen
 
         _home?.Update();
         _content?.Update();
+        _logs?.Update();
         if (_backdrop is not null)
         {
             _backdrop.Focus = BackdropFocus();
@@ -209,6 +212,7 @@ internal sealed class LauncherScreen : Screen
         {
             _tabs[0].Badge = _model.UpdatesAvailable;
             _tabs[1].Badge = _model.Job is null ? 0 : 1;
+            _tabs[3].Badge = _logs?.Errors ?? 0;
         }
     }
 

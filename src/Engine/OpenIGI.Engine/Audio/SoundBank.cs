@@ -39,7 +39,7 @@ public sealed class SoundBank
     private const string LogCategory = "Audio";
 
     private readonly VirtualFileSystem _fileSystem;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Dictionary<string, SoundEntry> _sounds = new(StringComparer.Ordinal);
     private readonly List<string> _mounted = [];
 
@@ -47,7 +47,7 @@ public sealed class SoundBank
     /// <param name="fileSystem">The file system paths are resolved through.</param>
     /// <param name="logger">Where to report what was mounted and what would not load.</param>
     /// <exception cref="ArgumentNullException"><paramref name="fileSystem"/> is <see langword="null"/>.</exception>
-    public SoundBank(VirtualFileSystem fileSystem, IIgiLogger? logger = null)
+    public SoundBank(VirtualFileSystem fileSystem, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(fileSystem);
         _fileSystem = fileSystem;

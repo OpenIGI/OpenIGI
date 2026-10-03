@@ -35,13 +35,13 @@ public sealed class ResourceRegistry
     private readonly Dictionary<string, string> _stamps = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _lastReapplied = [];
     private readonly VirtualFileSystem _fileSystem;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="ResourceRegistry"/> class.</summary>
     /// <param name="fileSystem">The virtual file system used when a name is not registered.</param>
     /// <param name="logger">The logger for load diagnostics; defaults to a sink that discards them.</param>
     /// <exception cref="ArgumentNullException"><paramref name="fileSystem"/> is <see langword="null"/>.</exception>
-    public ResourceRegistry(VirtualFileSystem fileSystem, IIgiLogger? logger = null)
+    public ResourceRegistry(VirtualFileSystem fileSystem, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(fileSystem);
         _fileSystem = fileSystem;

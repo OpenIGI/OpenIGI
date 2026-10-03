@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Titles;
 using OpenIGI.Launcher.Services;
 using OpenIGI.Releases;
@@ -109,8 +110,14 @@ internal enum PatchNoteKind
 internal sealed partial class LauncherModel : IDisposable
 {
     private const int NotesShown = 6;
+    private const string LogCategory = "Launcher";
+    private const string GameLogCategory = "Game";
 
     private readonly ConcurrentQueue<Action> _results = new();
+    private readonly LauncherLog _log;
+    private readonly IOpenIgiLogger _logger;
+    private long _launcherLogVersion = -1;
+    private long _gameLogVersion = -1;
     private readonly HttpClient _http;
     private readonly ReleaseFeedClient _feedClient;
     private BuildInstaller _installer;
@@ -128,8 +135,11 @@ internal sealed partial class LauncherModel : IDisposable
     private CancellationTokenSource? _download;
     private int _selected;
 
-    public LauncherModel()
+    public LauncherModel(LauncherLog log)
     {
+        ArgumentNullException.ThrowIfNull(log);
+        _log = log;
+        _logger = log.Logger;
         Settings = LauncherSettings.Load(_settingsPath);
         _http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         _http.DefaultRequestHeaders.UserAgent.ParseAdd($"OpenIGI-Launcher/{LauncherUpdater.OwnVersion}");
@@ -177,6 +187,9 @@ internal sealed partial class LauncherModel : IDisposable
 
     /// <summary>Gets what went wrong last (the service unreachable, a download failing), for the footer.</summary>
     public string? Problem { get; private set; }
+
+    /// <summary>Gets the launcher's log and the log of the game it started, for the Logs page.</summary>
+    public LauncherLog Log => _log;
 
     /// <summary>Gets the launcher release that is downloaded and waiting for a restart.</summary>
     public string? LauncherUpdateReady { get; private set; }
@@ -269,7 +282,7 @@ internal sealed partial class LauncherModel : IDisposable
             return;
         }
 
-        Problem = "Verifying the installed files…";
+        Report("Verifying the installed files…");
         Changed();
         _ = Task.Run(() =>
         {
@@ -277,10 +290,24 @@ internal sealed partial class LauncherModel : IDisposable
             _results.Enqueue(() =>
             {
                 _damaged = damaged.Count > 0;
-                Problem = _damaged ? $"{damaged.Count} file(s) are missing or changed: repair to download them again." : "Every installed file is intact.";
+                Report(_damaged ? $"{damaged.Count} file(s) are missing or changed: repair to download them again." : "Every installed file is intact.");
                 Recompute();
             });
         });
+    }
+
+    /// <summary>Opens the folder the launcher's log files are kept in.</summary>
+    public void OpenLogFolder()
+    {
+        Directory.CreateDirectory(LauncherLog.Folder);
+        Open(LauncherLog.Folder);
+    }
+
+    /// <summary>Empties the Logs page; the log files keep everything.</summary>
+    public void ClearLog()
+    {
+        _log.Launcher.Clear();
+        _log.Game.Clear();
     }
 
     /// <summary>Opens the installed build's folder in the system's file manager.</summary>
@@ -313,7 +340,7 @@ internal sealed partial class LauncherModel : IDisposable
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Problem = $"Settings could not be saved: {ex.Message}";
+            Report($"Settings could not be saved: {ex.Message}", ex);
         }
 
         if (Settings.Channel != channel)
@@ -345,12 +372,22 @@ internal sealed partial class LauncherModel : IDisposable
 
         if (_running is { HasExited: true })
         {
+            int code = _running.ExitCode;
+            _logger.Log(code == 0 ? LogLevel.Information : LogLevel.Warning, GameLogCategory, $"The game exited with code {code}.");
             _running.Dispose();
             _running = null;
             Recompute();
         }
 
         Job?.Sample(elapsedSeconds);
+
+        // A new log line is a change the Logs page shows.
+        if (_log.Launcher.Version != _launcherLogVersion || _log.Game.Version != _gameLogVersion)
+        {
+            _launcherLogVersion = _log.Launcher.Version;
+            _gameLogVersion = _log.Game.Version;
+            Changed();
+        }
 
         if (!_checking && DateTime.UtcNow >= _schedule.Next)
         {
@@ -408,7 +445,7 @@ internal sealed partial class LauncherModel : IDisposable
                     _checking = false;
                     _schedule.Finished(DateTime.UtcNow, succeeded: false);
                     int minutes = Math.Max(1, (int)Math.Round((_schedule.Next - DateTime.UtcNow).TotalMinutes));
-                    Problem = $"The update service cannot be reached; trying again in {minutes} minute{(minutes == 1 ? string.Empty : "s")}.";
+                    Report($"The update service cannot be reached; trying again in {minutes} minute{(minutes == 1 ? string.Empty : "s")}.", ex);
                     Changed();
                 });
             }
@@ -426,9 +463,9 @@ internal sealed partial class LauncherModel : IDisposable
     {
         if (_latest is not { } release || GameAsset(release) is not { } asset)
         {
-            Problem = _latest is null
+            Report(_latest is null
                 ? "No release is available yet."
-                : $"This release has no build for {LauncherPaths.Runtime}.";
+                : $"This release has no build for {LauncherPaths.Runtime}.");
             Changed();
             return;
         }
@@ -470,7 +507,7 @@ internal sealed partial class LauncherModel : IDisposable
                 _results.Enqueue(() =>
                 {
                     Job = null;
-                    Problem = $"The download failed: {ex.Message}";
+                    Report($"The download failed: {ex.Message}", ex);
                     Recompute();
                 });
             }
@@ -493,7 +530,15 @@ internal sealed partial class LauncherModel : IDisposable
 
         try
         {
-            _running = GameStarter.Start(build.Folder, GameStarter.Arguments(title, folder, Settings.LaunchArguments), GameEnvironment(title));
+            // The game's output is read only while the launcher stays open to show it.
+            bool follow = !Settings.CloseOnLaunch;
+            _running = GameStarter.Start(build.Folder, GameStarter.Arguments(title, folder, Settings.LaunchArguments), GameEnvironment(title), follow);
+            if (follow)
+            {
+                _log.Follow(_running);
+            }
+
+            _logger.Information(GameLogCategory, $"Started {title.DisplayName} from {build.Folder} (process {_running.Id}).");
             Problem = null;
             if (Settings.CloseOnLaunch)
             {
@@ -502,7 +547,7 @@ internal sealed partial class LauncherModel : IDisposable
         }
         catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
-            Problem = $"The game did not start: {ex.Message}";
+            Report($"The game did not start: {ex.Message}", ex);
         }
 
         Recompute();
@@ -553,6 +598,7 @@ internal sealed partial class LauncherModel : IDisposable
             }
             catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or UnauthorizedAccessException)
             {
+                _logger.Warning(LogCategory, $"The launcher update could not be downloaded: {ex.Message}", ex);
                 _results.Enqueue(() => _stagingLauncher = null);
             }
         });
@@ -662,6 +708,7 @@ internal sealed partial class LauncherModel : IDisposable
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Not remembered: at worst the same release is announced again after a restart.
+            _logger.Debug(LogCategory, $"The announced release could not be remembered: {ex.Message}");
         }
 
         if (!WindowFocused)
@@ -672,7 +719,14 @@ internal sealed partial class LauncherModel : IDisposable
 
     private void Changed() => Revision++;
 
-    private static void Open(string target)
+    // What the footer shows is also what the log keeps: a failure with its exception, anything else as it was said.
+    private void Report(string problem, Exception? exception = null)
+    {
+        Problem = problem;
+        _logger.Log(exception is null ? LogLevel.Information : LogLevel.Warning, LogCategory, problem, exception);
+    }
+
+    private void Open(string target)
     {
         try
         {
@@ -681,6 +735,7 @@ internal sealed partial class LauncherModel : IDisposable
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
             // Nothing registered to open it; there is nothing more the launcher can do.
+            _logger.Warning(LogCategory, $"'{target}' could not be opened: {ex.Message}");
         }
     }
 }

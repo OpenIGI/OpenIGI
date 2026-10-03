@@ -34,7 +34,7 @@ public sealed class MissionArming
 {
     private readonly WorldScene _scene;
     private readonly IWorldPresenter _world;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Stopwatch _spent = new();
 
     private int _placement;
@@ -47,7 +47,7 @@ public sealed class MissionArming
     /// <param name="world">The renderer they are made resident in.</param>
     /// <param name="logger">The logger.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public MissionArming(int missionId, WorldScene scene, IWorldPresenter world, IIgiLogger logger)
+    public MissionArming(int missionId, WorldScene scene, IWorldPresenter world, IOpenIgiLogger logger)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(world);

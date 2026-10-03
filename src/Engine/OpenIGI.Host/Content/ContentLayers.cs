@@ -53,7 +53,7 @@ public static class ContentLayers
         string? profilePath,
         IReadOnlyList<string> developmentFolders,
         string? legacyFolder,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(titleId);
         ArgumentNullException.ThrowIfNull(developmentFolders);
@@ -106,7 +106,7 @@ public static class ContentLayers
         string titleId,
         string? dataRoot,
         HostOptions options,
-        IIgiLogger? logger = null) =>
+        IOpenIgiLogger? logger = null) =>
         Resolve(
             titleId,
             dataRoot,
@@ -115,7 +115,7 @@ public static class ContentLayers
             NonEmpty(Environment.GetEnvironmentVariable(LegacyVariable)),
             logger);
 
-    private static IReadOnlyList<ContentLayerSpec> ReadProfile(string titleId, string? profilePath, IIgiLogger logger)
+    private static IReadOnlyList<ContentLayerSpec> ReadProfile(string titleId, string? profilePath, IOpenIgiLogger logger)
     {
         if (string.IsNullOrWhiteSpace(profilePath))
         {

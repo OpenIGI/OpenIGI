@@ -60,7 +60,8 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
     private readonly IWindow _window;
     private readonly InputState _input = new();
     private readonly ScreenStack _stack = new() { PointerSuppressed = true };
-    private readonly LauncherModel _model = new();
+    private readonly LauncherLog _log = LauncherLog.Start();
+    private readonly LauncherModel _model;
     private readonly SkiaImageStore _images = new();
     private readonly Dictionary<string, BackdropPicture?> _pictures = new(StringComparer.Ordinal);
     private readonly SkiaFontCache _fonts = new();
@@ -102,6 +103,7 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
 
     public LauncherApp()
     {
+        _model = new LauncherModel(_log);
         GlfwWindowing.RegisterPlatform();
         GlfwInput.RegisterPlatform();
 
@@ -242,7 +244,17 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
 
     public void Close() => _window.Close();
 
-    public string ClipboardText => _inputContext?.Keyboards.Count > 0 ? _inputContext.Keyboards[0].ClipboardText ?? string.Empty : string.Empty;
+    public string ClipboardText
+    {
+        get => _inputContext?.Keyboards.Count > 0 ? _inputContext.Keyboards[0].ClipboardText ?? string.Empty : string.Empty;
+        set
+        {
+            if (_inputContext?.Keyboards.Count > 0)
+            {
+                _inputContext.Keyboards[0].ClipboardText = value;
+            }
+        }
+    }
 
     public BackdropPicture? Picture(string path)
     {
@@ -267,6 +279,7 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         _images.Dispose();
         _inputContext?.Dispose();
         _window.Dispose();
+        _log.Dispose();
     }
 
     private void OnLoad()

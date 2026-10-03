@@ -1,4 +1,5 @@
 using System.Text;
+using OpenIGI.Tools;
 using OpenIGI.Tools.WebGpuBind;
 
 // Generates src/Rendering/OpenIGI.Rendering.WebGpu.Native/Generated/ from the headers committed beside it.
@@ -10,96 +11,104 @@ using OpenIGI.Tools.WebGpuBind;
 // shaders are: a contributor should be able to build and run without the generator, and a generated
 // file that nobody can read in a diff is a generated file nobody reviews.
 
-bool checkOnly = args.Contains("--check", StringComparer.Ordinal);
+return ToolHost.Run("WebGpuBind", args, Run);
 
-try
+static int Run(ToolContext ctx)
 {
-    string root = Locate();
-    string project = Path.Combine(root, "src", "Rendering", "OpenIGI.Rendering.WebGpu.Native");
-    string native = Path.Combine(project, "native");
-    string generated = Path.Combine(project, "Generated");
+    // The generator itself failed (a header it cannot read, no solution above it), as distinct from --check
+    // finding stale output, which is ToolExitCode.Failure.
+    const int GenerationFailed = 2;
 
-    string version = File.ReadAllText(Path.Combine(native, "VERSION")).Trim();
+    bool checkOnly = ctx.Arguments.Contains("--check", StringComparer.Ordinal);
 
-    HeaderModel model = HeaderParser
-        .Parse(File.ReadAllText(Path.Combine(native, "webgpu.h")))
-        .Concat(HeaderParser.Parse(File.ReadAllText(Path.Combine(native, "wgpu.h"))));
-
-    Console.WriteLine($"wgpu-native  {version}");
-    Console.WriteLine($"headers      {native}");
-    Console.WriteLine(
-        $"declared     {model.Enums.Count} enums, {model.Structs.Count} structs, {model.Handles.Count} handles, "
-        + $"{model.Callbacks.Count} callbacks, {model.Functions.Count} functions");
-    Console.WriteLine();
-
-    IReadOnlyList<GeneratedFile> files = new BindingEmitter(model, version).Emit();
-
-    string browser = Path.Combine(root, "src", "Rendering", "OpenIGI.Rendering.WebGpu.Browser");
-
-    if (!checkOnly)
+    try
     {
-        Directory.CreateDirectory(generated);
-        Directory.CreateDirectory(browser);
-    }
+        string root = Locate();
+        string project = Path.Combine(root, "src", "Rendering", "OpenIGI.Rendering.WebGpu.Native");
+        string native = Path.Combine(project, "native");
+        string generated = Path.Combine(project, "Generated");
 
-    // The C# binding into Generated/, and the browser bridge's enum tables beside the bridge.
-    (string Path, GeneratedFile File)[] outputs =
-    [
-        .. files.Select(file => (Path.Combine(generated, file.FileName), file)),
-        (Path.Combine(browser, BrowserEnumEmitter.FileName),
-            new GeneratedFile(BrowserEnumEmitter.FileName, BrowserEnumEmitter.Emit(model, version))),
-    ];
+        string version = File.ReadAllText(Path.Combine(native, "VERSION")).Trim();
 
-    int stale = 0;
-    foreach ((string path, GeneratedFile file) in outputs)
-    {
-        byte[] wanted = Encoding.UTF8.GetBytes(file.Text);
-        bool exists = File.Exists(path);
+        HeaderModel model = HeaderParser
+            .Parse(File.ReadAllText(Path.Combine(native, "webgpu.h")))
+            .Concat(HeaderParser.Parse(File.ReadAllText(Path.Combine(native, "wgpu.h"))));
 
-        // Compared with line endings normalised, because the working tree's are not the repository's:
-        // this repository stores LF and a Windows checkout can hold CRLF, so a byte comparison would
-        // call every file stale on one machine and current on the next. What is written keeps the
-        // platform's own endings; git normalises them back on the way in.
-        bool same = exists && string.Equals(
-            Normalise(File.ReadAllText(path)),
-            Normalise(file.Text),
-            StringComparison.Ordinal);
+        ctx.Info($"wgpu-native  {version}");
+        ctx.Info($"headers      {native}");
+        ctx.Info(
+            $"declared     {model.Enums.Count} enums, {model.Structs.Count} structs, {model.Handles.Count} handles, "
+            + $"{model.Callbacks.Count} callbacks, {model.Functions.Count} functions");
+        ctx.Info(string.Empty);
 
-        if (!same)
+        IReadOnlyList<GeneratedFile> files = new BindingEmitter(model, version).Emit();
+
+        string browser = Path.Combine(root, "src", "Rendering", "OpenIGI.Rendering.WebGpu.Browser");
+
+        if (!checkOnly)
         {
-            stale++;
-            if (!checkOnly)
-            {
-                File.WriteAllBytes(path, wanted);
-            }
+            Directory.CreateDirectory(generated);
+            Directory.CreateDirectory(browser);
         }
 
-        string label = same ? "unchanged" : exists ? (checkOnly ? "STALE" : "rewritten") : (checkOnly ? "MISSING" : "added");
-        Console.WriteLine($"  {label,-10} {file.FileName}");
+        // The C# binding into Generated/, and the browser bridge's enum tables beside the bridge.
+        (string Path, GeneratedFile File)[] outputs =
+        [
+            .. files.Select(file => (Path.Combine(generated, file.FileName), file)),
+            (Path.Combine(browser, BrowserEnumEmitter.FileName),
+                new GeneratedFile(BrowserEnumEmitter.FileName, BrowserEnumEmitter.Emit(model, version))),
+        ];
+
+        int stale = 0;
+        foreach ((string path, GeneratedFile file) in outputs)
+        {
+            byte[] wanted = Encoding.UTF8.GetBytes(file.Text);
+            bool exists = File.Exists(path);
+
+            // Compared with line endings normalised, because the working tree's are not the repository's:
+            // this repository stores LF and a Windows checkout can hold CRLF, so a byte comparison would
+            // call every file stale on one machine and current on the next. What is written keeps the
+            // platform's own endings; git normalises them back on the way in.
+            bool same = exists && string.Equals(
+                Normalise(File.ReadAllText(path)),
+                Normalise(file.Text),
+                StringComparison.Ordinal);
+
+            if (!same)
+            {
+                stale++;
+                if (!checkOnly)
+                {
+                    File.WriteAllBytes(path, wanted);
+                }
+            }
+
+            string label = same ? "unchanged" : exists ? (checkOnly ? "STALE" : "rewritten") : (checkOnly ? "MISSING" : "added");
+            ctx.Out.WriteLine($"  {label,-10} {file.FileName}");
+        }
+
+        ctx.Out.WriteLine();
+
+        if (!checkOnly)
+        {
+            ctx.Info($"{outputs.Length} file(s), {stale} written.");
+            return ToolExitCode.Ok;
+        }
+
+        if (stale == 0)
+        {
+            ctx.Info($"{outputs.Length} file(s) are current.");
+            return ToolExitCode.Ok;
+        }
+
+        return ctx.Fail(
+            $"{stale} generated file(s) do not match the headers. Run the tool without --check and commit what it writes.");
     }
-
-    Console.WriteLine();
-
-    if (!checkOnly)
+    catch (WebGpuBindException error)
     {
-        Console.WriteLine($"{outputs.Length} file(s), {stale} written.");
-        return 0;
+        ctx.Fail(error.Message, error);
+        return GenerationFailed;
     }
-
-    if (stale == 0)
-    {
-        Console.WriteLine($"{outputs.Length} file(s) are current.");
-        return 0;
-    }
-
-    Console.Error.WriteLine(
-        $"{stale} generated file(s) do not match the headers. Run the tool without --check and commit what it writes.");
-    return 1;
-}
-catch (WebGpuBindException error)
-{
-    Console.Error.WriteLine(error.Message);
-    return 2;
 }
 
 static string Normalise(string text) => text.Replace("\r\n", "\n", StringComparison.Ordinal);

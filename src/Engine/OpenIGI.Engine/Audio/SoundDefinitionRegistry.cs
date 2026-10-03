@@ -47,11 +47,11 @@ public sealed class SoundDefinitionRegistry
     private readonly List<SoundDefinition> _roots = [];
     private readonly Dictionary<string, SoundDefinition> _byName = new(StringComparer.Ordinal);
     private readonly Stack<List<SoundDefinition>> _open = new();
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="SoundDefinitionRegistry"/> class.</summary>
     /// <param name="logger">The logger for load diagnostics; defaults to a sink that discards them.</param>
-    public SoundDefinitionRegistry(IIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
+    public SoundDefinitionRegistry(IOpenIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
 
     /// <summary>Gets the top-level definitions, in the order the scripts declared them.</summary>
     public IReadOnlyList<SoundDefinition> Roots => _roots;

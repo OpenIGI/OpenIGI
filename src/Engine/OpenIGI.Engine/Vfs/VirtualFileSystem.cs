@@ -59,11 +59,11 @@ public sealed class VirtualFileSystem
 
     private readonly Dictionary<string, IFileDevice> _devices = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<AliasBinding> _aliases = [];
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="VirtualFileSystem"/> class.</summary>
     /// <param name="logger">The logger for mount and rebind diagnostics; defaults to a sink that discards them.</param>
-    public VirtualFileSystem(IIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
+    public VirtualFileSystem(IOpenIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
 
     /// <summary>Finds a registered device by name.</summary>
     /// <param name="name">The device name, with or without its trailing colon.</param>

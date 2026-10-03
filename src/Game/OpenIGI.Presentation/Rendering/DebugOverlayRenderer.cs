@@ -32,12 +32,12 @@ internal sealed class DebugOverlayRenderer : IDisposable
     private const float BodySizeDesign = 16f;
 
     private readonly IGraphicsDevice _device;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private UiFont? _body;
     private UiTheme? _theme;
     private bool _disposed;
 
-    public DebugOverlayRenderer(IGraphicsDevice device, IIgiLogger logger)
+    public DebugOverlayRenderer(IGraphicsDevice device, IOpenIgiLogger logger)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(logger);

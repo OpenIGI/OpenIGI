@@ -1,5 +1,6 @@
 using System.Globalization;
 using OpenIGI.Releases;
+using OpenIGI.Tools;
 using OpenIGI.Tools.Release;
 
 // Writes the manifest of one release, beside its archives.
@@ -21,81 +22,86 @@ using OpenIGI.Tools.Release;
 // the packs (content list), renames one, describes it again or changes its picture without publishing a
 // version (content edit), and deletes a pack or one of its versions (content delete --yes).
 
-if (args.Length >= 1 && args[0] == "content")
-{
-    return ContentCommand.Run(args[1..]);
-}
+return ToolHost.Run("Release", args, Run);
 
-if (args.Length == 0 || args[0] != "manifest")
+static int Run(ToolContext ctx)
 {
-    Console.Error.WriteLine(ContentCommand.Usage);
-    Console.Error.WriteLine("usage: manifest --version <v> --channel <stable|beta> --commit <sha> --notes <file> --assets <dir> [--tag <tag>] [--published <iso8601>]");
-    return 2;
-}
-
-Dictionary<string, string> options = new(StringComparer.Ordinal);
-for (int i = 1; i + 1 < args.Length; i += 2)
-{
-    options[args[i]] = args[i + 1];
-}
-
-string Require(string name) =>
-    options.TryGetValue(name, out string? value) && !string.IsNullOrWhiteSpace(value)
-        ? value
-        : throw new ArgumentException($"{name} is required.");
-
-try
-{
-    ReleaseVersion version = ReleaseVersion.Parse(Require("--version"));
-    if (!ReleaseJson.TryParseChannel(Require("--channel"), out ReleaseChannel channel))
+    IReadOnlyList<string> args = ctx.Arguments;
+    if (args.Count >= 1 && args[0] == "content")
     {
-        throw new ArgumentException("--channel must be stable or beta.");
+        return ContentCommand.Run(ctx, [.. args.Skip(1)]);
     }
 
-    // A stable release that looks like a beta, or the reverse, would put a pre-release in front of every
-    // player or hide a release from them, so the two must agree before anything is written.
-    if (version.IsPrerelease != (channel == ReleaseChannel.Beta))
+    if (args.Count == 0 || args[0] != "manifest")
     {
-        throw new ArgumentException($"{version} cannot be published to the {channel.Name()} channel.");
+        return ctx.Usage(
+            ContentCommand.Usage + "\n"
+            + "usage: manifest --version <v> --channel <stable|beta> --commit <sha> --notes <file> --assets <dir> [--tag <tag>] [--published <iso8601>]");
     }
 
-    string assets = Require("--assets");
-    DateTimeOffset published = options.TryGetValue("--published", out string? when)
-        ? DateTimeOffset.Parse(when, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal)
-        : DateTimeOffset.UtcNow;
-
-    ReleaseManifest manifest = new(
-        ReleaseManifest.CurrentSchema,
-        version.ToString(),
-        channel,
-        published,
-        Require("--commit"),
-        ReleaseNotesReader.Read(File.ReadAllText(Require("--notes"))),
-        AssetCatalog.Scan(assets, version.ToString()),
-        options.GetValueOrDefault("--tag"));
-
-    if (manifest.Assets.Count == 0)
+    Dictionary<string, string> options = new(StringComparer.Ordinal);
+    for (int i = 1; i + 1 < args.Count; i += 2)
     {
-        throw new InvalidDataException($"No archives of {version} were found in {assets}.");
+        options[args[i]] = args[i + 1];
     }
 
-    File.WriteAllText(Path.Combine(assets, ReleaseManifest.FileName), ReleaseJson.Write(manifest) + "\n");
-    File.WriteAllLines(
-        Path.Combine(assets, "SHA256SUMS"),
-        manifest.Assets.Select(static asset => $"{asset.Sha256}  {asset.Name}"));
+    string Require(string name) =>
+        options.TryGetValue(name, out string? value) && !string.IsNullOrWhiteSpace(value)
+            ? value
+            : throw new ArgumentException($"{name} is required.");
 
-    Console.WriteLine($"{manifest.Version} ({channel.Name()}): {manifest.Assets.Count} archive(s), "
-        + $"{manifest.Notes.Sum(static s => s.Entries.Count)} note(s)");
-    foreach (ReleaseAsset asset in manifest.Assets)
+    try
     {
-        Console.WriteLine($"  {asset.Name,-60} {asset.Size,12:N0}  {asset.Sha256[..12]}");
-    }
+        ReleaseVersion version = ReleaseVersion.Parse(Require("--version"));
+        if (!ReleaseJson.TryParseChannel(Require("--channel"), out ReleaseChannel channel))
+        {
+            throw new ArgumentException("--channel must be stable or beta.");
+        }
 
-    return 0;
-}
-catch (Exception ex) when (ex is ArgumentException or FormatException or IOException or InvalidDataException
-                               or System.Text.Json.JsonException)
-{
-    Console.Error.WriteLine($"error: {ex.Message}");
-    return 1;
+        // A stable release that looks like a beta, or the reverse, would put a pre-release in front of every
+        // player or hide a release from them, so the two must agree before anything is written.
+        if (version.IsPrerelease != (channel == ReleaseChannel.Beta))
+        {
+            throw new ArgumentException($"{version} cannot be published to the {channel.Name()} channel.");
+        }
+
+        string assets = Require("--assets");
+        DateTimeOffset published = options.TryGetValue("--published", out string? when)
+            ? DateTimeOffset.Parse(when, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal)
+            : DateTimeOffset.UtcNow;
+
+        ReleaseManifest manifest = new(
+            ReleaseManifest.CurrentSchema,
+            version.ToString(),
+            channel,
+            published,
+            Require("--commit"),
+            ReleaseNotesReader.Read(File.ReadAllText(Require("--notes"))),
+            AssetCatalog.Scan(assets, version.ToString()),
+            options.GetValueOrDefault("--tag"));
+
+        if (manifest.Assets.Count == 0)
+        {
+            throw new InvalidDataException($"No archives of {version} were found in {assets}.");
+        }
+
+        File.WriteAllText(Path.Combine(assets, ReleaseManifest.FileName), ReleaseJson.Write(manifest) + "\n");
+        File.WriteAllLines(
+            Path.Combine(assets, "SHA256SUMS"),
+            manifest.Assets.Select(static asset => $"{asset.Sha256}  {asset.Name}"));
+
+        ctx.Out.WriteLine($"{manifest.Version} ({channel.Name()}): {manifest.Assets.Count} archive(s), "
+            + $"{manifest.Notes.Sum(static s => s.Entries.Count)} note(s)");
+        foreach (ReleaseAsset asset in manifest.Assets)
+        {
+            ctx.Out.WriteLine($"  {asset.Name,-60} {asset.Size,12:N0}  {asset.Sha256[..12]}");
+        }
+
+        return ToolExitCode.Ok;
+    }
+    catch (Exception ex) when (ex is ArgumentException or FormatException or IOException or InvalidDataException
+                                   or System.Text.Json.JsonException)
+    {
+        return ctx.Fail(ex.Message, ex);
+    }
 }

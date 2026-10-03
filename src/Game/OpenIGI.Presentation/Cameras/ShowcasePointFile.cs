@@ -41,7 +41,7 @@ public static class ShowcasePointFile
     /// <param name="entries">The missions, in the order they should appear.</param>
     /// <param name="logger">Where to report the write.</param>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    public static void Write(string path, IReadOnlyList<Entry> entries, IIgiLogger? logger = null)
+    public static void Write(string path, IReadOnlyList<Entry> entries, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(entries);

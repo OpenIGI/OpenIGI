@@ -168,7 +168,7 @@ public sealed class SurfaceCacheLighting : IDisposable
     private const float CardSkin = 0.25f;
 
     private readonly IGraphicsDevice _device;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     // Not readonly: the trace mode is live-switchable, and a flipped mode recompiles this and every
     // other pass that traces.
@@ -255,7 +255,7 @@ public sealed class SurfaceCacheLighting : IDisposable
 
     private SurfaceCacheLighting(
         IGraphicsDevice device,
-        IIgiLogger logger,
+        IOpenIgiLogger logger,
         TextureHandle direct,
         TextureHandle indirect,
         TextureHandle final,
@@ -383,12 +383,12 @@ public sealed class SurfaceCacheLighting : IDisposable
         IGraphicsDevice device,
         SurfaceCacheCapture.Result capture,
         SurfaceCacheInstances instances,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(instances);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         if (!device.Capabilities.SupportsCompute)
         {

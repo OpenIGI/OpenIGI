@@ -23,11 +23,11 @@ public sealed class ConfigVariableRegistry
     private const string LogCategory = "Config";
 
     private readonly Dictionary<string, ConfigVariable> _variables = new(StringComparer.OrdinalIgnoreCase);
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="ConfigVariableRegistry"/> class.</summary>
     /// <param name="logger">The logger for registration diagnostics; defaults to a sink that discards them.</param>
-    public ConfigVariableRegistry(IIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
+    public ConfigVariableRegistry(IOpenIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
 
     /// <summary>Gets the number of registered variables.</summary>
     public int Count => _variables.Count;

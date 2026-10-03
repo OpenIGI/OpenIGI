@@ -82,7 +82,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
 
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Func<string, string> _resolveText;
 
     private UiFont? _body;
@@ -110,7 +110,7 @@ internal sealed class TacticalComputerRenderer : ITacticalComputerPresenter
     public TacticalComputerRenderer(
         IGraphicsDevice device,
         ResourceRegistry resources,
-        IIgiLogger logger,
+        IOpenIgiLogger logger,
         Func<string, string> resolveText)
     {
         ArgumentNullException.ThrowIfNull(device);

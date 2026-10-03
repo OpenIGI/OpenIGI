@@ -46,12 +46,12 @@ public sealed class HumanAiConfigRegistry
     private readonly HumanAiConfigItemTask?[] _declared = new HumanAiConfigItemTask?[AiTypeCount * DifficultyCount];
     private readonly HumanAiConfigItemTask[] _rows = new HumanAiConfigItemTask[AiTypeCount * DifficultyCount];
     private readonly AiCombatParameters[] _resolved = new AiCombatParameters[AiTypeCount * DifficultyCount];
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="HumanAiConfigRegistry"/> class.</summary>
     /// <param name="logger">The logger for load diagnostics; defaults to a sink that discards them.</param>
     /// <remarks>The table starts complete, filled with the engine's own default rows.</remarks>
-    public HumanAiConfigRegistry(IIgiLogger? logger = null)
+    public HumanAiConfigRegistry(IOpenIgiLogger? logger = null)
     {
         _logger = logger ?? NullLogger.Instance;
         FillGaps();

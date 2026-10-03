@@ -32,14 +32,8 @@ public sealed class CutsceneRuntime
     /// </remarks>
     private const double GroundContactToleranceUnits = 64.0;
 
-    private static readonly AsyncLocal<string?> AirframePathLogLocal = new();
-
-    /// <summary>[AIRFRAME-PATH] Per-test hook (AsyncLocal) so parallel suites do not share one file.</summary>
-    public static string? AirframePathLog
-    {
-        get => AirframePathLogLocal.Value;
-        set => AirframePathLogLocal.Value = value;
-    }
+    /// <summary>The category the airframe path samples are logged under, at Trace.</summary>
+    public const string AirframePathLogCategory = "Airframe.Path";
 
     private readonly GameTask _root;
     private readonly ScriptVarRegistry _variables;
@@ -74,7 +68,7 @@ public sealed class CutsceneRuntime
     private readonly Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? _vehicleObstacleHit;
     private readonly Func<GameTask, bool>? _vehicleObstacleReleased;
     private readonly TerrainData? _terrain;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private ObjectCollisionIndex? _collisionIndex;
     private DestructibleObjectRegistry? _destructibles;
     private Func<int, CutsceneTargetPose?>? _targetPoseResolver;
@@ -317,7 +311,7 @@ public sealed class CutsceneRuntime
         Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? vehicleObstacleHit = null,
         Func<GameTask, bool>? vehicleObstacleReleased = null,
         TerrainData? terrain = null,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(variables);
@@ -4181,7 +4175,7 @@ public sealed class CutsceneRuntime
 
             _logger.Warning(
                 "Airframe",
-                $"[AIRFRAME-REST] id={task.Id} type=Heli "
+                $"rest id={task.Id} type=Heli "
                 + $"measured={FormatMetres(measuredRest)} applied={FormatMetres(state.GroundRestOffset)} "
                 + $"mode={(plausible && measuredRest >= bodyFloor ? "authored" : "physics-floor")}");
         }
@@ -4285,7 +4279,7 @@ public sealed class CutsceneRuntime
                 : transform.GroundRestOffset / WorldScene.UnitsPerMetre;
             _logger.Warning(
                 "Airframe",
-                $"[AIRFRAME-CONTACT] id={ignoredOwner?.Id ?? -1} type={type} tick={SimulationTick} "
+                $"contact id={ignoredOwner?.Id ?? -1} type={type} tick={SimulationTick} "
                 + $"x={transform.Position.X / WorldScene.UnitsPerMetre:F2} "
                 + $"y={transform.Position.Y / WorldScene.UnitsPerMetre:F2} "
                 + $"z={transform.Position.Z / WorldScene.UnitsPerMetre:F2} "
@@ -4305,7 +4299,7 @@ public sealed class CutsceneRuntime
             string type = ignoredOwner?.Type.Name ?? "Airframe";
             _logger.Warning(
                 "Airframe",
-                $"[AIRFRAME-LANDING-LATCH] id={ignoredOwner?.Id ?? -1} type={type} tick={SimulationTick} "
+                $"landing-latch id={ignoredOwner?.Id ?? -1} type={type} tick={SimulationTick} "
                 + $"x={transform.Position.X / WorldScene.UnitsPerMetre:F2} "
                 + $"y={transform.Position.Y / WorldScene.UnitsPerMetre:F2} "
                 + $"z={transform.Position.Z / WorldScene.UnitsPerMetre:F2} "
@@ -4327,7 +4321,7 @@ public sealed class CutsceneRuntime
                 : transform.GroundRestOffset / WorldScene.UnitsPerMetre;
             _logger.Warning(
                 "Airframe",
-                $"[AIRFRAME-LANDING] id={ignoredOwner?.Id ?? -1} type={type} tick={SimulationTick} "
+                $"landing id={ignoredOwner?.Id ?? -1} type={type} tick={SimulationTick} "
                 + $"x={transform.Position.X / WorldScene.UnitsPerMetre:F2} "
                 + $"y={transform.Position.Y / WorldScene.UnitsPerMetre:F2} "
                 + $"z={transform.Position.Z / WorldScene.UnitsPerMetre:F2} "
@@ -4357,20 +4351,13 @@ public sealed class CutsceneRuntime
     }
 
     /// <summary>
-    /// [AIRFRAME-PATH] Append-only sample of the live Heli/Plane tick. Set
-    /// <c>OPENIGI_AIRFRAME_PATH_LOG</c> to a file path. One grep of the tag removes the helper.
+    /// Samples the live Heli/Plane tick every fifteenth physics tick, at Trace in the <c>Airframe.Path</c>
+    /// log category (<c>OPENIGI_LOG=Airframe.Path=trace</c>).
     /// </summary>
     private void LogAirframePath(int id, string type, GameTask? target, TransformState transform)
     {
-        // [AIRFRAME-PATH]
-        if (transform.PhysicsTicks > 0 && transform.PhysicsTicks % 15 != 0)
-        {
-            return;
-        }
-
-        string? path = AirframePathLog
-            ?? Environment.GetEnvironmentVariable("OPENIGI_AIRFRAME_PATH_LOG");
-        if (string.IsNullOrWhiteSpace(path))
+        if ((transform.PhysicsTicks > 0 && transform.PhysicsTicks % 15 != 0)
+            || !_logger.IsEnabled(LogLevel.Trace, AirframePathLogCategory))
         {
             return;
         }
@@ -4399,27 +4386,16 @@ public sealed class CutsceneRuntime
         double vx = transform.Velocity.X / WorldScene.UnitsPerMetre;
         double vy = transform.Velocity.Y / WorldScene.UnitsPerMetre;
         double vz = transform.Velocity.Z / WorldScene.UnitsPerMetre;
-        try
-        {
-            File.AppendAllText(
-                path,
-                $"[AIRFRAME-PATH] t={SimulationTick} pt={transform.PhysicsTicks} id={id} type={type} "
-                + $"x={x:F2} y={y:F2} z={z:F2} dHoriz={dHoriz:F2} dVert={dVert:F2} "
-                + $"vx={vx:F3} vy={vy:F3} vz={vz:F3} "
-                + $"thrust={transform.Thrust:F3} target={transform.TargetThrust:F3} col={transform.CollisionEnabled} "
-                + $"offset={offset:F3} support={support:F3} source={supportSource} rest={rest:F3} "
-                + $"supportGap={supportGap:F3} restGap={restGap:F3} "
-                + $"latched={transform.TerminalLandingLatched} "
-                + $"ctl=({transform.Control.X:F3},{transform.Control.Y:F3},{transform.Control.Z:F3})"
-                + Environment.NewLine);
-        }
-        catch (IOException)
-        {
-            // Path logging must never take down the tick.
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
+        _logger.Trace(
+            AirframePathLogCategory,
+            $"t={SimulationTick} pt={transform.PhysicsTicks} id={id} type={type} "
+            + $"x={x:F2} y={y:F2} z={z:F2} dHoriz={dHoriz:F2} dVert={dVert:F2} "
+            + $"vx={vx:F3} vy={vy:F3} vz={vz:F3} "
+            + $"thrust={transform.Thrust:F3} target={transform.TargetThrust:F3} col={transform.CollisionEnabled} "
+            + $"offset={offset:F3} support={support:F3} source={supportSource} rest={rest:F3} "
+            + $"supportGap={supportGap:F3} restGap={restGap:F3} "
+            + $"latched={transform.TerminalLandingLatched} "
+            + $"ctl=({transform.Control.X:F3},{transform.Control.Y:F3},{transform.Control.Z:F3})");
     }
 
     /// <summary>Finds the height a helicopter should rest at under a body position.</summary>

@@ -25,7 +25,7 @@ internal sealed class ContentOptions
 /// A publish moves a version's chunks in first and its <c>content.json</c> last, as a release does with its
 /// <c>release.json</c>, so a version with a manifest is complete: every chunk it names is already there.
 /// </remarks>
-internal sealed partial class ContentStore(IOptions<ContentOptions> options, ILogger<ContentStore> logger) : BackgroundService
+internal sealed class ContentStore(IOptions<ContentOptions> options, ILogger<ContentStore> logger) : BackgroundService
 {
     private readonly ContentOptions _options = options.Value;
     // Null until the first scan, so even an empty store builds its index once: the index carries the chunk
@@ -91,7 +91,7 @@ internal sealed partial class ContentStore(IOptions<ContentOptions> options, ILo
             }
             catch (Exception ex) when (ex is JsonException or FormatException or IOException)
             {
-                LogBadManifest(logger, path, ex.Message);
+                StoreLog.BadManifest(logger, path, ex.Message);
             }
         }
 
@@ -111,13 +111,13 @@ internal sealed partial class ContentStore(IOptions<ContentOptions> options, ILo
             }
             catch (Exception ex) when (ex is JsonException or FormatException or IOException)
             {
-                LogBadManifest(logger, path, ex.Message);
+                StoreLog.BadManifest(logger, path, ex.Message);
             }
         }
 
         Current = new ContentLibrary(versions, _options.ChunkUrl, infos, _options.ThumbnailUrl);
         _fingerprint = fingerprint;
-        LogScanned(logger, Current.Count, Current.Tag);
+        StoreLog.Scanned(logger, Current.Count, "content pack version(s)", Current.Tag);
     }
 
     /// <inheritdoc/>
@@ -132,18 +132,9 @@ internal sealed partial class ContentStore(IOptions<ContentOptions> options, ILo
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                LogScanFailed(logger, ex.Message);
+                StoreLog.ScanFailed(logger, "content", ex.Message);
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false));
     }
-
-    [LoggerMessage(Level = LogLevel.Information, Message = "Indexed {Count} content pack version(s), tag {Tag}")]
-    private static partial void LogScanned(ILogger logger, int count, string tag);
-
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Skipped {Path}: {Reason}")]
-    private static partial void LogBadManifest(ILogger logger, string path, string reason);
-
-    [LoggerMessage(Level = LogLevel.Error, Message = "Scanning the content store failed: {Reason}")]
-    private static partial void LogScanFailed(ILogger logger, string reason);
 }

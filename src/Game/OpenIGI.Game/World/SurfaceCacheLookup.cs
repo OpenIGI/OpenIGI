@@ -148,12 +148,12 @@ public sealed class SurfaceCacheLookup : IDisposable
         SurfaceCacheCapture.Result capture,
         SurfaceCacheInstances instances,
         Vector3d origin,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(instances);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         SurfaceCacheLayout layout = instances.Layout;
 
         int pageCount = layout.Pages.Length;
@@ -336,7 +336,7 @@ public sealed class SurfaceCacheLookup : IDisposable
 
     private static SurfaceCacheLookup? Upload(
         IGraphicsDevice device,
-        IIgiLogger log,
+        IOpenIgiLogger log,
         int[] offsets,
         int[] counts,
         int[] references,

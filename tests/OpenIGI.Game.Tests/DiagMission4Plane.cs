@@ -11,6 +11,7 @@ using OpenIGI.Scripting.Runtime;
 using OpenIGI.Core.Numerics;
 using OpenIGI.TestSupport;
 using Xunit;
+using Xunit.Abstractions;
 using System.Globalization;
 
 namespace OpenIGI.Game.Tests;
@@ -18,6 +19,10 @@ namespace OpenIGI.Game.Tests;
 /// <summary>Dumps Mission 4's Plane/Heli tasks and whether the cutscene runtime drives them below terrain.</summary>
 public sealed class DiagMission4Plane
 {
+    private readonly ITestOutputHelper _output;
+
+    public DiagMission4Plane(ITestOutputHelper output) => _output = output;
+
     [RequiresGameDataFact]
     public void DumpRideAtStart()
     {
@@ -50,7 +55,7 @@ public sealed class DiagMission4Plane
         runtime.Tick();
         runtime.FinishExpressionTick();
 
-        System.Console.WriteLine("=== M4 NATURAL START (no force 3902) ===");
+        _output.WriteLine("=== M4 NATURAL START (no force 3902) ===");
         int humans = 0;
         foreach (GameTask task in Walk(root))
         {
@@ -71,7 +76,7 @@ public sealed class DiagMission4Plane
                 int mind = task.Children.OfType<HumanAiTask>().FirstOrDefault()?.Id
                     ?? (task is DeclaredTask da && da.TryGetValue("ID", out object? idv) && idv is int ii ? ii : -2);
                 bool attached = runtime.TryGetAttachedDrawTransform(task, out Vector3d ap, out _);
-                System.Console.WriteLine(
+                _output.WriteLine(
                     $"  {typeName} id={task.Id} mind={mind} parent={Name(task.Parent)} staged={CinematicActor.IsStaged(task)} attached={attached} "
                     + $"world=({hp.X / WorldScene.UnitsPerMetre:F1},{hp.Y / WorldScene.UnitsPerMetre:F1},{hp.Z / WorldScene.UnitsPerMetre:F1})"
                     + (attached ? $" ride=({ap.X:F1},{ap.Y:F1},{ap.Z:F1})" : ""));
@@ -81,7 +86,7 @@ public sealed class DiagMission4Plane
             {
                 anim.TryGetValue("TargetID", out object? tid);
                 anim.TryGetValue("Target ID", out object? tid2);
-                System.Console.WriteLine($"  ANIM id={task.Id} parent={Name(task.Parent)} target={tid ?? tid2}");
+                _output.WriteLine($"  ANIM id={task.Id} parent={Name(task.Parent)} target={tid ?? tid2}");
             }
 
             if (task is DeclaredTask declared && typeName is "Plane" or "Heli")
@@ -93,17 +98,17 @@ public sealed class DiagMission4Plane
                 declared.TryGetValue("Model", out object? model);
                 bool drawn = runtime.TryGetDrawTransform(task, out Vector3d draw, out Matrix3f drawOri);
                 Vector3f fwd = drawOri.Row2;
-                System.Console.WriteLine(
+                _output.WriteLine(
                     $"  {typeName} id={task.Id} parent={Name(task.Parent)} model={model} thrust={thrust} col={col}");
-                System.Console.WriteLine($"    authored={pos} ori={ori}");
+                _output.WriteLine($"    authored={pos} ori={ori}");
                 if (drawn)
                 {
-                    System.Console.WriteLine(
+                    _output.WriteLine(
                         $"    draw=({draw.X:F1},{draw.Y:F1},{draw.Z:F1}) fwd=({fwd.X:F2},{fwd.Y:F2},{fwd.Z:F2})");
                 }
                 else
                 {
-                    System.Console.WriteLine("    draw=NONE (container closed?)");
+                    _output.WriteLine("    draw=NONE (container closed?)");
                 }
 
                 foreach (GameTask child in task.Children)
@@ -112,7 +117,7 @@ public sealed class DiagMission4Plane
                     {
                         bool attached = runtime.TryGetAttachedDrawTransform(cabin, out Vector3d ap, out _);
                         int mind = cabin.Children.OfType<HumanAiTask>().FirstOrDefault()?.Id ?? -1;
-                        System.Console.WriteLine(
+                        _output.WriteLine(
                             $"    CABIN soldier={cabin.Id} mind={mind} staged={CinematicActor.IsStaged(cabin)} attached={attached} "
                             + (attached ? $"at=({ap.X:F1},{ap.Y:F1},{ap.Z:F1})" : $"world=({cabin.Position.X / WorldScene.UnitsPerMetre:F1},{cabin.Position.Y / WorldScene.UnitsPerMetre:F1},{cabin.Position.Z / WorldScene.UnitsPerMetre:F1})"));
                     }
@@ -126,7 +131,7 @@ public sealed class DiagMission4Plane
                     || CinematicActor.IsStaged(human))
                 {
                     bool attached = runtime.TryGetAttachedDrawTransform(human, out Vector3d ap, out _);
-                    System.Console.WriteLine(
+                    _output.WriteLine(
                         $"  HUMAN soldier={human.Id} mind={mind} parent={Name(human.Parent)} staged={CinematicActor.IsStaged(human)} attached={attached} "
                         + $"world=({human.Position.X / WorldScene.UnitsPerMetre:F1},{human.Position.Y / WorldScene.UnitsPerMetre:F1},{human.Position.Z / WorldScene.UnitsPerMetre:F1})"
                         + (attached ? $" ride=({ap.X:F1},{ap.Y:F1},{ap.Z:F1})" : ""));
@@ -135,11 +140,11 @@ public sealed class DiagMission4Plane
 
             if (task is ConditionalContainerTask cc && (cc.Id is 300 or 305 or 3902 || (cc.Label ?? "").Contains("Heli", StringComparison.OrdinalIgnoreCase) || (cc.Label ?? "").Contains("Friendly", StringComparison.OrdinalIgnoreCase) || (cc.Label ?? "").Contains("Harrison", StringComparison.OrdinalIgnoreCase)))
             {
-                System.Console.WriteLine($"  CC id={cc.Id} label='{cc.Label}' cond='{cc.Condition}' run={cc.IsRun}");
+                _output.WriteLine($"  CC id={cc.Id} label='{cc.Label}' cond='{cc.Condition}' run={cc.IsRun}");
             }
         }
 
-        System.Console.WriteLine($"  human-count={humans}");
+        _output.WriteLine($"  human-count={humans}");
     }
 
     private static string Name(GameTask? task) =>
@@ -170,7 +175,7 @@ public sealed class DiagMission4Plane
         ConditionalContainerGate gate = new(loop.Variables);
         int dormant = gate.Prepare(root);
 
-        System.Console.WriteLine($"=== Mission 4: dormant containers {dormant}, terrain usable={mission.Terrain?.IsUsable} ===");
+        _output.WriteLine($"=== Mission 4: dormant containers {dormant}, terrain usable={mission.Terrain?.IsUsable} ===");
 
         foreach (GameTask task in Walk(root))
         {
@@ -187,7 +192,7 @@ public sealed class DiagMission4Plane
                 continue;
             }
 
-            System.Console.WriteLine($"  ANIM id={task.Id} target={tgt}");
+            _output.WriteLine($"  ANIM id={task.Id} target={tgt}");
             string? mdl = null;
             if (task.Parent is DeclaredTask pd)
             {
@@ -197,19 +202,19 @@ public sealed class DiagMission4Plane
                     mdl = mv2 as string;
                 }
             }
-            System.Console.WriteLine($"    model={(mdl ?? "?")} thrust-authored="
+            _output.WriteLine($"    model={(mdl ?? "?")} thrust-authored="
                 + (task.Parent is DeclaredTask pd2 && pd2.TryGetValue("Original Thrust", out object? ot) ? ot : "?"));
             if (d2.TryGetValue("AnimData", out object? ad) && ad is IReadOnlyList<AnimDataEntry> entries)
             {
-                System.Console.WriteLine(
+                _output.WriteLine(
                     $"    entries={entries.Count}");
-                System.Console.WriteLine(
+                _output.WriteLine(
                     "    " + string.Join(" ", entries.Select(e => $"{e.Code}:{e.Value.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}")));
             }
         }
 
         ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements);
-        System.Console.WriteLine($"  collision index entries={solids.Count}");
+        _output.WriteLine($"  collision index entries={solids.Count}");
         if (mission.Terrain is { } t2)
         {
             foreach ((double mx, double my) in new[] { (27474.0, -13615.0), (27532.0, -13513.0), (27889.0, -12755.0), (28156.0, -12112.0), (28675.0, -10766.0), (29235.0, -9022.0), (29494.0, -7295.0), (29164.0, -5697.0), (28871.0, -4434.0), (28590.0, -3182.0) })
@@ -225,7 +230,7 @@ public sealed class DiagMission4Plane
                         break;
                     }
                 }
-                System.Console.WriteLine($"  terrain@{mx:F0},{my:F0} -> {(double.IsNaN(found) ? "NO TERRAIN" : found.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) + "m")}");
+                _output.WriteLine($"  terrain@{mx:F0},{my:F0} -> {(double.IsNaN(found) ? "NO TERRAIN" : found.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) + "m")}");
             }
         }
 
@@ -233,7 +238,7 @@ public sealed class DiagMission4Plane
         {
             CollisionIndex = solids,
         };
-        System.Console.WriteLine($"  cutscene playing={runtime.IsPlaying} frame={runtime.Frame is not null}");
+        _output.WriteLine($"  cutscene playing={runtime.IsPlaying} frame={runtime.Frame is not null}");
 
         foreach (GameTask task in Walk(root))
         {
@@ -271,7 +276,7 @@ public sealed class DiagMission4Plane
                 }
                 string heightText = double.IsNaN(heightAbove)
                     ? "n/a" : heightAbove.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) + "m";
-                System.Console.WriteLine(
+                _output.WriteLine(
                     $"  VEH id={task.Id} type={typeName} authoredZ={authored.Z.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}m "
                     + $"groundZ={groundZ.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}m "
                     + $"heightAbove={heightText}"
@@ -279,11 +284,11 @@ public sealed class DiagMission4Plane
             }
             else
             {
-                System.Console.WriteLine($"  VEH id={task.Id} type={typeName}");
+                _output.WriteLine($"  VEH id={task.Id} type={typeName}");
             }
         }
 
-        System.Console.WriteLine($"  cutscene playing={runtime.IsPlaying} frame={runtime.Frame is not null}");
+        _output.WriteLine($"  cutscene playing={runtime.IsPlaying} frame={runtime.Frame is not null}");
 
         double lowestPlaneZ = double.MaxValue;
         double groundUnderPlane = double.MaxValue;
@@ -308,7 +313,7 @@ public sealed class DiagMission4Plane
 
             if (tick >= 428 && tick <= 445 || tick % 50 == 0)
             {
-                ProbeRuntime(runtime, root, tick);
+                ProbeRuntime(_output, runtime, root, tick);
             }
             if (tick % 100 == 0 && root.Tree.FromId(356) is GameTask hp356
                 && runtime.TryGetDrawTransform(hp356, out Vector3d hp36, out _))
@@ -335,7 +340,7 @@ public sealed class DiagMission4Plane
                     {
                         cast8 = c8.Position.Z / upm8;
                     }
-                    System.Console.WriteLine(
+                    _output.WriteLine(
                         $"    heli800 tick={tick} z={h8.Z.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}m "
                         + $"x={h8.X.ToString("F0", System.Globalization.CultureInfo.InvariantCulture)} "
                         + $"y={h8.Y.ToString("F0", System.Globalization.CultureInfo.InvariantCulture)} "
@@ -366,7 +371,7 @@ public sealed class DiagMission4Plane
                     {
                         deepGround = dtg.Height / upm;
                     }
-                    System.Console.WriteLine(
+                    _output.WriteLine(
                         $"    heli356 tick={tick} z={h36.Z.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}m "
                         + $"x={h36.X.ToString("F0", System.Globalization.CultureInfo.InvariantCulture)} "
                         + $"y={h36.Y.ToString("F0", System.Globalization.CultureInfo.InvariantCulture)} "
@@ -414,7 +419,7 @@ public sealed class DiagMission4Plane
             }
         }
 
-        System.Console.WriteLine(
+        _output.WriteLine(
             $"  planeTicks={planeTicks} lowestPlaneZ={lowestPlaneZ:F2}m lowestGroundUnder={groundUnderPlane:F2}m"
             + (planeTicks > 0 && lowestPlaneZ < groundUnderPlane
                 ? "  *** PLANE WENT BELOW TERRAIN ***"
@@ -422,7 +427,7 @@ public sealed class DiagMission4Plane
         foreach (KeyValuePair<int, double> pair in heliLowest.OrderBy(p => p.Key))
         {
             double ground = heliGround.TryGetValue(pair.Key, out double g) ? g : double.NaN;
-            System.Console.WriteLine(
+            _output.WriteLine(
                 $"  HELI id={pair.Key} lowestZ={pair.Value:F2}m lowestGround={ground:F2}m"
                 + (double.IsNaN(ground) || pair.Value < ground
                     ? "  *** HELI BELOW TERRAIN ***"
@@ -453,12 +458,12 @@ public sealed class DiagMission4Plane
                 {
                     unknown++;
                 }
-                System.Console.WriteLine(
+                _output.WriteLine(
                     $"    pathTerrain tick={tick} x={px.ToString("F0", System.Globalization.CultureInfo.InvariantCulture)} "
                     + $"y={py.ToString("F0", System.Globalization.CultureInfo.InvariantCulture)} -> "
                     + (double.IsNaN(terrain) ? "NO TERRAIN" : terrain.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) + "m"));
             }
-            System.Console.WriteLine($"  heli356 pathTerrain unknown={unknown}/{heli356Path.Count}");
+            _output.WriteLine($"  heli356 pathTerrain unknown={unknown}/{heli356Path.Count}");
         }
 
         // Report each heli's final position and the terrain height at that XY regardless of the body's Z.
@@ -480,20 +485,20 @@ public sealed class DiagMission4Plane
                 if (hasGround)
                 {
                     double groundZ = fg.Height / WorldScene.UnitsPerMetre;
-                    System.Console.WriteLine(
+                    _output.WriteLine(
                         $"  HELI final id={task.Id} finalZ={fin.Z.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}m "
                         + $"terrainAtXY={groundZ.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}m "
                         + $"delta={((fin.Z - groundZ)).ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}m");
                 }
                 else
                 {
-                    System.Console.WriteLine(
+                    _output.WriteLine(
                         $"  HELI final id={task.Id} finalZ={fin.Z.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}m -> NO TERRAIN AT THAT XY");
                 }
             }
             else
             {
-                System.Console.WriteLine($"  HELI final id={task.Id} -> no draw transform");
+                _output.WriteLine($"  HELI final id={task.Id} -> no draw transform");
             }
         }
     }
@@ -514,7 +519,7 @@ public sealed class DiagMission4Plane
     }
 
     /// <summary>Dumps the runtime's private animation and transform state for heli 356.</summary>
-    private static void ProbeRuntime(CutsceneRuntime runtime, GameTask root, int tick)
+    private static void ProbeRuntime(ITestOutputHelper output, CutsceneRuntime runtime, GameTask root, int tick)
     {
         try
         {
@@ -525,7 +530,7 @@ public sealed class DiagMission4Plane
                 "_taskTransforms", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             if (animationsField is null || taskTransformsField is null)
             {
-                System.Console.WriteLine(
+                output.WriteLine(
                     $"  PROBE356 tick={tick} WARNING: reflection could not find _animations or _taskTransforms"
                     + $" (animations={animationsField is not null}, transforms={taskTransformsField is not null})");
                 return;
@@ -609,12 +614,12 @@ public sealed class DiagMission4Plane
                     sb.Append(CultureInfo.InvariantCulture, $" pos={pos} vel={vel} thrust={thrust} targetThrust={targetThrust} originalThrust={originalThrust} control={control} physicsTicks={physicsTicks} orient={orientation}");
                 }
 
-                System.Console.WriteLine(sb.ToString());
+                output.WriteLine(sb.ToString());
             }
         }
         catch (Exception ex)
         {
-            System.Console.WriteLine($"  PROBE356 tick={tick} EXCEPTION {ex.GetType().Name}: {ex.Message}");
+            output.WriteLine($"  PROBE356 tick={tick} EXCEPTION {ex.GetType().Name}: {ex.Message}");
         }
     }
 }

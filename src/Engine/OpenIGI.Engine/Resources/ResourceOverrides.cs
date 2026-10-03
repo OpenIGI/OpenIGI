@@ -63,7 +63,7 @@ public sealed class ResourceOverrides
     /// <summary>The extension that marks a file in a layer as an archive of overrides, not an asset.</summary>
     public const string ArchiveExtension = ".res";
 
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Layer[] _layers;
 
     // The index is read from more than one thread. A menu backdrop builds its level on a worker, and the
@@ -78,7 +78,7 @@ public sealed class ResourceOverrides
     /// <summary>Initializes a new instance of the <see cref="ResourceOverrides"/> class with one folder.</summary>
     /// <param name="root">The overrides directory, or <see langword="null"/> or absent for none.</param>
     /// <param name="logger">Where to report what was found.</param>
-    public ResourceOverrides(string? root, IIgiLogger? logger = null)
+    public ResourceOverrides(string? root, IOpenIgiLogger? logger = null)
         : this(string.IsNullOrWhiteSpace(root) ? [] : [new OverrideLayer(DirectoryName, DirectoryName, root)], logger)
     {
     }
@@ -87,7 +87,7 @@ public sealed class ResourceOverrides
     /// <param name="layers">The layers, highest priority first.</param>
     /// <param name="logger">Where to report what was found.</param>
     /// <exception cref="ArgumentNullException"><paramref name="layers"/> is <see langword="null"/>.</exception>
-    public ResourceOverrides(IReadOnlyList<OverrideLayer> layers, IIgiLogger? logger = null)
+    public ResourceOverrides(IReadOnlyList<OverrideLayer> layers, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(layers);
 

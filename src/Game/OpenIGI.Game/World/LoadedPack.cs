@@ -120,14 +120,14 @@ public sealed class LoadedPack
         string directory,
         string name,
         ResourceRegistry resources,
-        IIgiLogger? logger = null,
+        IOpenIgiLogger? logger = null,
         AssetFormatProfile? profile = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(directory);
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(resources);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         string dir = directory.EndsWith('/') ? directory : directory + "/";
 
         MtpPack pack = ReadPack($"{dir}{name}.mtp", resources);
@@ -429,7 +429,7 @@ public sealed class LoadedPack
         ResourceRegistry resources,
         string path,
         List<BoneAnimationSet> sets,
-        IIgiLogger log)
+        IOpenIgiLogger log)
     {
         if (!resources.TryLoad(path, out ReadOnlyMemory<byte> bytes))
         {
@@ -521,7 +521,7 @@ public sealed class LoadedPack
     private static IresArchive? TryRegisterArchive(
         string path,
         ResourceRegistry resources,
-        IIgiLogger logger,
+        IOpenIgiLogger logger,
         bool replaceExisting = false)
     {
         if (!resources.TryLoad(path, out ReadOnlyMemory<byte> bytes))

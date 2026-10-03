@@ -31,10 +31,10 @@ public sealed class LightmapBake
 
     private readonly ScheduledJob<BakedLightmaps?> _job;
     private readonly CancellationTokenSource _cancellation;
-    private readonly IIgiLogger _log;
+    private readonly IOpenIgiLogger _log;
     private bool _collected;
 
-    private LightmapBake(ScheduledJob<BakedLightmaps?> job, CancellationTokenSource cancellation, IIgiLogger log)
+    private LightmapBake(ScheduledJob<BakedLightmaps?> job, CancellationTokenSource cancellation, IOpenIgiLogger log)
     {
         _job = job;
         _cancellation = cancellation;
@@ -71,7 +71,7 @@ public sealed class LightmapBake
         IWorkScheduler work,
         int bounces = 4,
         int hemisphereRays = 64,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(targets);
@@ -80,7 +80,7 @@ public sealed class LightmapBake
         ArgumentNullException.ThrowIfNull(cast);
         ArgumentNullException.ThrowIfNull(work);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         CancellationTokenSource cancellation = new();
         CancellationToken token = cancellation.Token;
 
@@ -103,7 +103,7 @@ public sealed class LightmapBake
         int bounces,
         int hemisphereRays,
         IWorkScheduler work,
-        IIgiLogger log,
+        IOpenIgiLogger log,
         Action<BakedLightmaps?> done,
         CancellationToken token)
     {

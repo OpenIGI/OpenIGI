@@ -29,7 +29,7 @@ public sealed class MenuHost : IFlowHost, IMenuHost
 
     private readonly List<MenuInputEvent> _events = [];
     private readonly List<char> _typed = [];
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly InputState _input;
     private readonly SpriteBatch _batch;
     private readonly Func<MenuRenderer?> _renderer;
@@ -53,7 +53,7 @@ public sealed class MenuHost : IFlowHost, IMenuHost
         Func<int> screenWidth,
         Func<int> screenHeight,
         Action quit,
-        IIgiLogger logger)
+        IOpenIgiLogger logger)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(batch);

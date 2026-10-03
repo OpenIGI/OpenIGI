@@ -26,7 +26,7 @@ internal static class RuntimePaths
         {
             try
             {
-                return Path.Combine(EnsureWritableDirectory(explicitDirectory), PersistentLogger.LogFileName);
+                return Path.Combine(EnsureWritableDirectory(explicitDirectory), DesktopLogging.LogFileName);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
             {
@@ -45,7 +45,7 @@ internal static class RuntimePaths
 
             try
             {
-                return Path.Combine(EnsureWritableDirectory(candidate), PersistentLogger.LogFileName);
+                return Path.Combine(EnsureWritableDirectory(candidate), DesktopLogging.LogFileName);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
             {

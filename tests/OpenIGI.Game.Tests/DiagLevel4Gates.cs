@@ -10,6 +10,7 @@ using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using OpenIGI.Scripting.Runtime;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace OpenIGI.Game.Tests;
 
@@ -17,10 +18,14 @@ namespace OpenIGI.Game.Tests;
 /// Diagnostic: prints mission 4's authored gate wiring — every ConditionalContainer's condition and
 /// transitions, every LevelTimer's Run, and every AnimTask's Run/TargetID/Initial run — from the
 /// parsed level tree, exactly as the runtime sees it. Not an assertion test; run with a filter and
-/// read the console output.
+/// read the test output.
 /// </summary>
 public sealed class DiagLevel4Gates
 {
+    private readonly ITestOutputHelper _output;
+
+    public DiagLevel4Gates(ITestOutputHelper output) => _output = output;
+
     [RequiresGameDataFact]
     public void DumpMission4TaskTypeInventory()
     {
@@ -110,7 +115,7 @@ public sealed class DiagLevel4Gates
         Assert.Equal([416, 429, 430, 431], generators.Select(task =>
             Assert.Single(task.Children.OfType<HumanSoldierTask>()).Id));
 
-        Console.WriteLine("type,count,declaration_only,runtime_classes,ids");
+        _output.WriteLine("type,count,declaration_only,runtime_classes,ids");
         foreach (IGrouping<string, GameTask> group in tasks
                      .GroupBy(task => task.Type?.Name ?? "<untyped>", StringComparer.Ordinal)
                      .OrderBy(group => group.Key, StringComparer.Ordinal))
@@ -121,7 +126,7 @@ public sealed class DiagLevel4Gates
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(name => name, StringComparer.Ordinal));
             string ids = string.Join('|', instances.Select(task => task.Id));
-            Console.WriteLine(
+            _output.WriteLine(
                 $"{group.Key},{instances.Length},{instances[0].Type.IsDeclarationOnly},{runtimeClasses},{ids}");
         }
 
@@ -130,10 +135,10 @@ public sealed class DiagLevel4Gates
             .Select(type => type.Name)
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
-        Console.WriteLine($"TOTAL tasks={tasks.Length} used-types={tasks.Select(task => task.Type).Distinct().Count()} "
+        _output.WriteLine($"TOTAL tasks={tasks.Length} used-types={tasks.Select(task => task.Type).Distinct().Count()} "
             + $"declared-types={loop.Types.Types.Count(type => type.IsDeclared)} "
             + $"declaration-only-types={loop.Types.Types.Count(type => type.IsDeclarationOnly)}");
-        Console.WriteLine($"UNUSED-DECLARATIONS {string.Join('|', unusedDeclarations)}");
+        _output.WriteLine($"UNUSED-DECLARATIONS {string.Join('|', unusedDeclarations)}");
         Assert.Empty(unusedDeclarations);
     }
 
@@ -160,7 +165,7 @@ public sealed class DiagLevel4Gates
         {
             if (task is ConditionalContainerTask cc)
             {
-                Console.WriteLine(
+                _output.WriteLine(
                     $"CC {cc.Id} [{cc.IsRun}] cond=[{cc.Condition}] start=[{cc.RunAtStart}] stop=[{cc.RunAtStop}] " +
                     $"parent=[{task.Parent?.Id}:{task.Parent?.GetType().Name}]");
             }
@@ -175,7 +180,7 @@ public sealed class DiagLevel4Gates
                     string run = declared.TryGetValue(runKey, out object? runValue) ? runValue as string ?? "" : "";
                     string target = declared.TryGetValue("TargetID", out object? targetValue) ? targetValue?.ToString() ?? "" : "";
                     string initial = declared.TryGetValue("Initial run", out object? initialValue) ? initialValue?.ToString() ?? "" : "";
-                    Console.WriteLine(
+                    _output.WriteLine(
                         $"TASK {declared.Id} type={type} run=[{run}] target=[{target}] initial=[{initial}] " +
                         $"parent=[{task.Parent?.Id}:{task.Parent?.GetType().Name}]");
                 }

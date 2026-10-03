@@ -86,7 +86,7 @@ internal sealed class StatusScreenRenderer : IHudPresenter
     public const string SubtitleFontPath = "LOCAL:screens/intro/font4.fnt";
 
     private readonly IGraphicsDevice _device;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Dictionary<string, SpriteResource?> _sprites = new(StringComparer.OrdinalIgnoreCase);
     private IresArchive? _archive;
     private IresArchive? _fontArchive;
@@ -102,7 +102,7 @@ internal sealed class StatusScreenRenderer : IHudPresenter
     /// <param name="device">The device sprites are uploaded to.</param>
     /// <param name="logger">Where to report a missing archive.</param>
     /// <exception cref="ArgumentNullException"><paramref name="device"/> is <see langword="null"/>.</exception>
-    public StatusScreenRenderer(IGraphicsDevice device, IIgiLogger? logger = null)
+    public StatusScreenRenderer(IGraphicsDevice device, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         _device = device;

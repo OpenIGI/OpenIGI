@@ -60,13 +60,13 @@ public static class SurfaceCacheCapture
         IReadOnlyList<Subject> subjects,
         IReadOnlyList<MeshHandle> meshes,
         int maximumSize = 8192,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(subjects);
         ArgumentNullException.ThrowIfNull(meshes);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         List<MeshCard> cards = [];
         List<int> owners = [];

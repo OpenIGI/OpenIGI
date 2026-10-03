@@ -207,7 +207,7 @@ public static class LightFixtureExtractor
         Func<string, Vector3f>? colour = null,
         float clusterDistance = DefaultClusterDistance,
         float radiusScale = DefaultRadiusScale,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
 
@@ -248,13 +248,13 @@ public static class LightFixtureExtractor
         Func<string, Vector3f>? colour = null,
         float clusterDistance = DefaultClusterDistance,
         float radiusScale = DefaultRadiusScale,
-        IIgiLogger? logger = null,
+        IOpenIgiLogger? logger = null,
         LampDetector.Lamps lamps = default)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(emitterTextures);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         Dictionary<MefModel, MeshGeometry?> built = [];
         List<PlacedMesh> meshes = [];

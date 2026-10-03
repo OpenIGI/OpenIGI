@@ -119,7 +119,7 @@ internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
     private readonly MagicObjectRegistry _magic;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Part> _parts = [];
 
@@ -139,7 +139,7 @@ internal sealed class HeldWeaponRenderer : IHeldWeaponPresenter
         IGraphicsDevice device,
         ResourceRegistry resources,
         MagicObjectRegistry magic,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(resources);

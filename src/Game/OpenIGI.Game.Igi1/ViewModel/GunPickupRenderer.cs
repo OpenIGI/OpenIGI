@@ -20,7 +20,7 @@ internal sealed class GunPickupRenderer : IGunPickupPresenter
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
     private readonly MagicObjectRegistry _magic;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly List<Entry> _entries = [];
     private bool _disposed;
 
@@ -28,7 +28,7 @@ internal sealed class GunPickupRenderer : IGunPickupPresenter
         IGraphicsDevice device,
         ResourceRegistry resources,
         MagicObjectRegistry magic,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _resources = resources ?? throw new ArgumentNullException(nameof(resources));

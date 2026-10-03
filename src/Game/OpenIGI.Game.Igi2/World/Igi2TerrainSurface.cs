@@ -405,7 +405,7 @@ public sealed class Igi2TerrainSurface
     /// The one place that knows where the maps live, because two callers want them: the presenter that
     /// draws the ground and the walk that hands the player something to stand on.
     /// </remarks>
-    public static Igi2TerrainSurface Build(GameTask levelRoot, ResourceRegistry resources, IIgiLogger? logger = null)
+    public static Igi2TerrainSurface Build(GameTask levelRoot, ResourceRegistry resources, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(resources);
 
@@ -422,11 +422,11 @@ public sealed class Igi2TerrainSurface
     /// <param name="logger">Where load diagnostics go.</param>
     /// <returns>The surface, which may be empty.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="levelRoot"/> is <see langword="null"/>.</exception>
-    public static Igi2TerrainSurface Build(GameTask levelRoot, IresArchive? heightmaps, IIgiLogger? logger = null)
+    public static Igi2TerrainSurface Build(GameTask levelRoot, IresArchive? heightmaps, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
 
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
         List<Igi2TerrainTile> tiles = [];
         Dictionary<int, TerrainMaterialTask> materials = [];
         List<Igi2TerrainDiscard> discards = [];
@@ -495,7 +495,7 @@ public sealed class Igi2TerrainSurface
     private static bool TryLoad(
         TerrainMapTask map,
         IReadOnlyDictionary<string, IresEntry> byName,
-        IIgiLogger log,
+        IOpenIgiLogger log,
         out Igi2TerrainTile tile)
     {
         tile = default;

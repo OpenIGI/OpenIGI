@@ -65,7 +65,7 @@ public static class EmissiveLightProposer
         LampManifest manifest,
         int missionId,
         string titleId,
-        IIgiLogger logger)
+        IOpenIgiLogger logger)
     {
         ArgumentNullException.ThrowIfNull(logger);
 

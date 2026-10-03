@@ -18,12 +18,12 @@ internal sealed class MissileRenderer : IMissilePresenter
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
     private readonly MagicObjectRegistry _magic;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Dictionary<string, HeldWeaponRenderer?> _models = new(StringComparer.OrdinalIgnoreCase);
     private LoadedMission? _mission;
     private bool _disposed;
 
-    public MissileRenderer(IGraphicsDevice device, ResourceRegistry resources, MagicObjectRegistry magic, IIgiLogger? logger = null)
+    public MissileRenderer(IGraphicsDevice device, ResourceRegistry resources, MagicObjectRegistry magic, IOpenIgiLogger? logger = null)
     {
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _resources = resources ?? throw new ArgumentNullException(nameof(resources));

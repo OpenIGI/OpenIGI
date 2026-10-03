@@ -80,7 +80,7 @@ public sealed partial class MenuCameraLibrary
     /// <param name="path">The JSON file path.</param>
     /// <param name="logger">Where to report a load failure.</param>
     /// <returns>The library.</returns>
-    public static MenuCameraLibrary Load(string path, IIgiLogger? logger = null)
+    public static MenuCameraLibrary Load(string path, IOpenIgiLogger? logger = null)
     {
         if (!File.Exists(path))
         {

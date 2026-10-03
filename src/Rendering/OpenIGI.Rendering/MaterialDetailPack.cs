@@ -40,7 +40,7 @@ public sealed class MaterialDetailPack : IDisposable
 
     private readonly IGraphicsDevice _device;
     private readonly IWorkScheduler _work;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     // Detail PNGs read and decoded ahead of the render thread by Prewarm. A name maps to its pixels, or
     // to null when the pack has no map for it -- which is an answer worth remembering, because a level
@@ -85,7 +85,7 @@ public sealed class MaterialDetailPack : IDisposable
     public MaterialDetailPack(
         IGraphicsDevice device,
         IWorkScheduler work,
-        IIgiLogger? logger = null,
+        IOpenIgiLogger? logger = null,
         string? cacheDirectory = null)
     {
         ArgumentNullException.ThrowIfNull(device);

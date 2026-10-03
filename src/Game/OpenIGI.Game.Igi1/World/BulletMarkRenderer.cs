@@ -51,7 +51,7 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
 
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Vertex3D[] _vertices = new Vertex3D[MaximumVertices];
     private readonly List<(TextureHandle Texture, int FirstQuad, int QuadCount)> _batches = [];
@@ -72,7 +72,7 @@ internal sealed class BulletMarkRenderer : IBulletMarkPresenter
     /// <param name="resources">Where the decal textures are read from.</param>
     /// <param name="logger">Where to report a texture that will not load.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public BulletMarkRenderer(IGraphicsDevice device, ResourceRegistry resources, IIgiLogger? logger = null)
+    public BulletMarkRenderer(IGraphicsDevice device, ResourceRegistry resources, IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(resources);

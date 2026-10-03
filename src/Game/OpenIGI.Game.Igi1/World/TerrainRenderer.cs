@@ -107,7 +107,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
     private readonly IGraphicsDevice _device;
     private readonly TerrainSurface _surface;
     private readonly TerrainData _terrain;
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
     private readonly List<TerrainChunk> _chunks = [];
 
     // The ground the traced sun is shadowed by: the same descent with no frustum. See SubmitShadowCaster.
@@ -180,7 +180,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
     public TerrainRenderer(
         IGraphicsDevice device,
         TerrainSurface surface,
-        IIgiLogger? logger = null,
+        IOpenIgiLogger? logger = null,
         MaterialDetailPack? detailMaps = null,
         IReadOnlyList<Bgra32[]>? derivedDetail = null)
     {

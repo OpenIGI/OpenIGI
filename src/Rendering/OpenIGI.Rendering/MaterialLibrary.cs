@@ -68,9 +68,9 @@ public sealed class MaterialLibrary
     /// A broken file never stops the game: every surface falls back to the default, which is the
     /// behaviour from before this file existed.
     /// </remarks>
-    public static MaterialLibrary Load(string path, IIgiLogger? logger = null)
+    public static MaterialLibrary Load(string path, IOpenIgiLogger? logger = null)
     {
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         // Its OWN library rather than the shared empty one, even with nothing to put in it: the level
         // that follows will hand its detected emitters to whatever Load returned, and writing those onto

@@ -85,7 +85,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         Igi2Forest forest,
         Func<string, MefModel?> models,
         Func<string, int, TextureHandle> textures,
-        IIgiLogger? logger = null)
+        IOpenIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(forest);
@@ -93,7 +93,7 @@ public sealed class Igi2ForestPresenter : IForestPresenter
         ArgumentNullException.ThrowIfNull(textures);
 
         _device = device;
-        IIgiLogger log = logger ?? NullLogger.Instance;
+        IOpenIgiLogger log = logger ?? NullLogger.Instance;
 
         foreach (Igi2ForestStand stand in forest.Stands)
         {

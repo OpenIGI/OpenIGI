@@ -25,11 +25,11 @@ public sealed class TaskTypeRegistry
 
     private readonly Dictionary<string, TaskType> _types = new(StringComparer.Ordinal);
     private readonly List<TaskType> _byId = [];
-    private readonly IIgiLogger _logger;
+    private readonly IOpenIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="TaskTypeRegistry"/> class.</summary>
     /// <param name="logger">The logger for registration diagnostics; defaults to a sink that discards them.</param>
-    public TaskTypeRegistry(IIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
+    public TaskTypeRegistry(IOpenIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
 
     /// <summary>Gets the number of registered types.</summary>
     public int Count => _types.Count;

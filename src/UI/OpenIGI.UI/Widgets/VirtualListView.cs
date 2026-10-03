@@ -26,7 +26,7 @@ namespace OpenIGI.UI.Widgets;
 /// animated value — otherwise rows would pop in and out during the glide.
 /// </para>
 /// </remarks>
-public class VirtualListView : UiElement
+public class VirtualListView : UiElement, IWheelScrollable
 {
     private readonly Spring _scroll = new(0f, smoothTime: 0.12f);
     private readonly UiTheme _theme;
@@ -100,6 +100,27 @@ public class VirtualListView : UiElement
     /// <summary>Scrolls by a number of rows.</summary>
     /// <param name="rows">How many rows to move; positive moves towards the end.</param>
     public void ScrollByRows(float rows) => ScrollOffset += rows * RowHeight;
+
+    /// <summary>Gets or sets how many rows one notch of the mouse wheel scrolls.</summary>
+    public float WheelRows { get; set; } = 3f;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Scrolling back lets go of <see cref="StickToEnd"/>, so new rows stop pulling the view away from what is
+    /// being read; scrolling all the way down takes hold of the end again.
+    /// </remarks>
+    public bool ScrollByWheel(float notches)
+    {
+        if (MaxScroll <= 0f || notches == 0f)
+        {
+            return false;
+        }
+
+        StickToEnd = false;
+        ScrollByRows(-notches * WheelRows);
+        StickToEnd = ScrollOffset >= MaxScroll - 0.5f;
+        return true;
+    }
 
     /// <summary>Scrolls to the end.</summary>
     public void ScrollToEnd() => ScrollOffset = MaxScroll;
