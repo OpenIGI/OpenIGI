@@ -175,14 +175,6 @@ internal sealed class HomePage
                     ? "CHECKING FOR THE LATEST RELEASE"
                     : $"{LauncherModel.FormatSize(game.SizeMegabytes)} · VERSION {game.LatestVersion}";
                 break;
-            case GameState.UpdateAvailable when game.UpdateIsKept:
-                // The build on offer is still installed (switching channel back): taking it downloads nothing.
-                _heading.State = "ANOTHER VERSION INSTALLED";
-                _heading.StateColor = _theme.Accent;
-                _main.Title = "SWITCH";
-                _main.Icon = PrimaryActionIcon.Arrow;
-                _main.Subtitle = $"{game.Version} → {game.LatestVersion} · ALREADY INSTALLED";
-                break;
             case GameState.UpdateAvailable:
                 _heading.State = "UPDATE AVAILABLE";
                 _heading.StateColor = _theme.Accent;

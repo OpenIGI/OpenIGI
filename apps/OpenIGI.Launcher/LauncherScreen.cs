@@ -332,7 +332,6 @@ internal sealed class LauncherScreen : Screen
     private static string StateLine(LauncherGame game) => game.State switch
     {
         GameState.NotInstalled => "NOT INSTALLED",
-        GameState.UpdateAvailable when game.UpdateIsKept => "SWITCH TO " + game.LatestVersion,
         GameState.UpdateAvailable => "UPDATE AVAILABLE",
         GameState.NeedsGameFolder => "GAME FILES NEEDED",
         GameState.Damaged => "REPAIR NEEDED",
@@ -419,7 +418,7 @@ internal sealed class LauncherScreen : Screen
             {
                 string idle = _model.Problem is { } problem ? problem.ToUpperInvariant()
                     : _model.LauncherUpdateReady is { } ready ? $"LAUNCHER {ready} IS READY"
-                    : _model.UpdatesAvailable > 0 ? (_model.Current.UpdateIsKept ? $"{_model.Current.LatestVersion} IS STILL INSTALLED" : "UPDATE AVAILABLE")
+                    : _model.UpdatesAvailable > 0 ? "UPDATE AVAILABLE"
                     : "UP TO DATE";
                 painter.FillDiamond(new UiVec2(x + context.Px(3f), Bounds.Center.Y), context.Px(6f), _theme.TextMuted);
                 painter.DrawLabel(_theme.Mono, idle, new UiVec2(x + context.Px(16f), UiRowStyle.CenterY(_theme.Mono, mono, Bounds)), mono, _theme.TextMuted, 0.2f);

@@ -63,9 +63,6 @@ internal sealed class LauncherGame
 
     public int UpdateMegabytes { get; set; }
 
-    /// <summary>Gets or sets whether the version on offer is still on disk, so taking it switches rather than downloads.</summary>
-    public bool UpdateIsKept { get; set; }
-
     public int ModsEnabled { get; init; }
 
     /// <summary>Gets or sets the names of the optional content packs for this game, for the home page's summary.</summary>
@@ -137,6 +134,8 @@ internal sealed partial class LauncherModel : IDisposable
     private Process? _running;
     private string? _stagingLauncher;
     private CancellationTokenSource? _download;
+    private bool _switching;
+    private string? _notReusable;
     private int _selected;
 
     public LauncherModel(LauncherLog log)
@@ -465,6 +464,12 @@ internal sealed partial class LauncherModel : IDisposable
 
     private void StartDownload()
     {
+        // A kept build is being made current; there will be nothing to download once it is.
+        if (_switching)
+        {
+            return;
+        }
+
         if (_latest is not { } release || GameAsset(release) is not { } asset)
         {
             Report(_latest is null
@@ -566,7 +571,7 @@ internal sealed partial class LauncherModel : IDisposable
 
     private void MaybeStartAutomatically()
     {
-        if (!Settings.AutomaticUpdates || Job is not null || _running is not null || _installed is null)
+        if (!Settings.AutomaticUpdates || Job is not null || _running is not null || _installed is null || _switching)
         {
             return;
         }
@@ -636,6 +641,12 @@ internal sealed partial class LauncherModel : IDisposable
             && ReleaseVersion.Parse(_installed.Version).IsPrerelease
             && _latest.ParsedVersion != ReleaseVersion.Parse(_installed.Version);
 
+        // A build on offer that is still on disk is switched to rather than offered: the game stays READY.
+        if (newer || leftBeta)
+        {
+            UseKeptBuild();
+        }
+
         foreach (LauncherGame game in Games)
         {
             if (!game.Released || game.Retail is not { } title)
@@ -648,7 +659,6 @@ internal sealed partial class LauncherModel : IDisposable
             game.LatestVersion = _latest?.Version ?? game.Version;
             game.SizeMegabytes = _installed is null ? downloadMegabytes : installedMegabytes;
             game.UpdateMegabytes = downloadMegabytes;
-            game.UpdateIsKept = _latest is not null && _installer.IsKept(_latest.Version);
             game.Notes = BuildNotes();
             game.NotesUrl = _latest is null ? null : $"https://github.com/OpenIGI/OpenIGI/releases/tag/v{_latest.Version}";
             game.OptionalPacks = [.. Packs.Where(p => p.Pack.Game == title.Id).Select(static p => p.Pack.Title)];
@@ -656,13 +666,58 @@ internal sealed partial class LauncherModel : IDisposable
             game.State = _running is not null ? GameState.Playing
                 : _installed is null ? GameState.NotInstalled
                 : _damaged || runtimeGone ? GameState.Damaged
-                : newer || leftBeta ? GameState.UpdateAvailable
+                : (newer || leftBeta) && !_switching ? GameState.UpdateAvailable
                 : GameStarter.Locate(title, Settings.GameFolders.GetValueOrDefault(title.Id)) is null ? GameState.NeedsGameFolder
                 : GameState.Ready;
         }
 
         RecomputeContent();
         Changed();
+    }
+
+    // The build the channel offers is often still on disk: the installer keeps the one an install replaced,
+    // so changing channel and back finds it there. It is made current in place of an update, and the game
+    // reads READY to play at once. Its files are hashed off the frame loop; a kept build found changed is
+    // left alone, and then the main button offers it as an ordinary download.
+    private void UseKeptBuild()
+    {
+        if (_switching || Job is not null || _running is not null
+            || _latest is not { } latest || latest.Version == _notReusable
+            || GameAsset(latest) is not { } asset || !_installer.IsKept(latest.Version))
+        {
+            return;
+        }
+
+        _switching = true;
+        string version = latest.Version;
+        _ = Task.Run(() =>
+        {
+            InstalledBuild? build = null;
+            try
+            {
+                build = _installer.TryReuse(version, asset, GameStarter.ExecutableName);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.Warning(InstallLogCategory, $"OpenIGI {version} is still on disk but could not be used: {ex.Message}", ex);
+            }
+
+            _results.Enqueue(() =>
+            {
+                _switching = false;
+                if (build is null)
+                {
+                    _notReusable = version;
+                    Recompute();
+                    return;
+                }
+
+                _logger.Information(InstallLogCategory, $"Switched to OpenIGI {version}, which was still installed.");
+                _installed = build;
+                _damaged = false;
+                Recompute();
+            });
+        });
     }
 
     // The changes the player is about to receive (every release since theirs, newest first), or the newest
@@ -710,6 +765,7 @@ internal sealed partial class LauncherModel : IDisposable
         // doing, not news.
         if (_latest is { } latest
             && (_installed is null || latest.ParsedVersion > ReleaseVersion.Parse(_installed.Version))
+            && !_switching
             && Games.Any(static g => g.State == GameState.UpdateAvailable))
         {
             Announce("game", latest.Version, $"OpenIGI {latest.Version} is out",
