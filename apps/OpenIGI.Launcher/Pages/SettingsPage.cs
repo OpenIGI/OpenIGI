@@ -15,9 +15,10 @@ namespace OpenIGI.Launcher.Pages;
 /// </summary>
 internal static class SettingsPage
 {
-    public static UiElement Build(UiTheme theme, LauncherModel model)
+    public static UiElement Build(UiTheme theme, LauncherModel model, ILauncherWindow window)
     {
         ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(window);
         LauncherSettings settings = model.Settings;
 
         var columns = new Grid { ColumnSpacing = 20f, VerticalAlignment = VerticalAlignment.Top };
@@ -40,7 +41,10 @@ internal static class SettingsPage
         };
         notify.ValueChanged += on => model.ChangeSettings(s => s.Notifications = on);
 
-        var library = new TextRow(theme, "Library folder", settings.Library) { Hint = "Where OpenIGI's builds are installed" };
+        var library = new TextRow(theme, "Library folder", settings.Library, browse: current => window.PickFolder("Choose where OpenIGI's builds are installed", current))
+        {
+            Hint = "Where OpenIGI's builds are installed",
+        };
         library.TextChanged += text => model.ChangeSettings(s => s.Library = text);
 
         var repair = new ActionRow(theme, "Repair installation", "Verify now") { Hint = "Re-checks every installed file against the release" };
@@ -59,7 +63,7 @@ internal static class SettingsPage
                 // One folder row per released game; I.G.I. 2's appears when it is playable.
                 Group(theme, "Game files", [.. model.Games
                     .Where(static g => g.Released && g.Retail is not null)
-                    .Select(g => (UiElement)GameFolder(theme, model, g.Retail!, $"{g.Title} folder"))]),
+                    .Select(g => (UiElement)GameFolder(theme, model, window, g.Retail!, $"{g.Title} folder"))]),
                 Group(theme, "Game launch", LaunchArguments(theme, model), MinimizeOnLaunch(theme, model))),
             0,
             1);
@@ -78,10 +82,15 @@ internal static class SettingsPage
 
     // OpenIGI ships none of the original game; this is where the player's own copy is. The hint says at once
     // whether the folder typed is one, by the same file the game itself checks for.
-    private static TextRow GameFolder(UiTheme theme, LauncherModel model, GameTitle title, string caption)
+    private static TextRow GameFolder(UiTheme theme, LauncherModel model, ILauncherWindow window, GameTitle title, string caption)
     {
         string chosen = model.Settings.GameFolders.GetValueOrDefault(title.Id) ?? GameStarter.Locate(title, null) ?? string.Empty;
-        var row = new TextRow(theme, caption, chosen, "Paste the folder holding " + title.SignatureFile);
+        var row = new TextRow(
+            theme,
+            caption,
+            chosen,
+            "Choose the folder holding " + title.SignatureFile,
+            browse: current => window.PickFolder($"Choose the folder holding {title.SignatureFile}", current));
         void Describe(string text) => row.Hint = text.Length == 0
             ? $"Your own copy of the game: the folder holding {title.SignatureFile}"
             : GameStarter.IsInstallation(title, text) ? "Found" : $"No {title.SignatureFile} in that folder";

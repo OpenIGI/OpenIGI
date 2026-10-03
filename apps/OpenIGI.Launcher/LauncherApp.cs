@@ -358,6 +358,9 @@ internal sealed class LauncherApp : ILauncherWindow, IDisposable
         }
     }
 
+    public Task<string?> PickFolder(string title, string? initial) =>
+        FolderPicker.PickAsync(title, initial, _window.Native?.Win32?.Hwnd ?? 0);
+
     public BackdropPicture? Picture(string path)
     {
         // A pack's picture is named by its content, so a path decoded once is that picture for good.

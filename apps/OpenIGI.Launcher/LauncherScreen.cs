@@ -27,6 +27,12 @@ internal interface ILauncherWindow
     /// <summary>Gets or sets the system clipboard's text: read to paste a folder into a field, written to copy the log.</summary>
     string ClipboardText { get; set; }
 
+    /// <summary>Asks the player for a folder with the system's own picker, in front of the launcher.</summary>
+    /// <param name="title">What the picker asks.</param>
+    /// <param name="initial">The folder it opens on, if it exists.</param>
+    /// <returns>The folder chosen, or <see langword="null"/> when the player cancelled.</returns>
+    Task<string?> PickFolder(string title, string? initial);
+
     /// <summary>Decodes a picture file for drawing, once per file.</summary>
     /// <param name="path">The picture: PNG, JPEG or WebP.</param>
     /// <returns>The picture, or <see langword="null"/> when it is missing or cannot be decoded.</returns>
@@ -111,7 +117,7 @@ internal sealed class LauncherScreen : Screen
         AddPage(main, PlaceholderPage.Build(_theme, "Mods & plugins", "Mods", "Mod management arrives with the mod loader"));
         _logs = new LogsPage(_theme, _model, _window);
         AddPage(main, _logs.Root);
-        AddPage(main, SettingsPage.Build(_rowTheme, _model));
+        AddPage(main, SettingsPage.Build(_rowTheme, _model, _window));
         layout.Add(main, 2, 0);
 
         _chrome = BuildChrome();
