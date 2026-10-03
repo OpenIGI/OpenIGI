@@ -6,7 +6,7 @@ namespace OpenIGI.Rendering;
 /// A frame rendered below the output size picks its mips for the smaller image, and the upscale then
 /// shows them too soft; a temporal resolve with any feedback averages detail away on top. Both are paid
 /// back by biasing every mipmapped texture's selection by the log of the render scale, and a little more
-/// under temporal feedback -- which is what the reference upscalers ask of the engines that feed them.
+/// under temporal feedback -- which is what temporal upscalers commonly ask of the engines that feed them.
 /// </para>
 /// <para>
 /// It reaches further than sharpness. A cut-out's coverage is its alpha tested against a threshold, and a

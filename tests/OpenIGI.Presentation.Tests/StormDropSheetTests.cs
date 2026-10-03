@@ -172,9 +172,9 @@ public sealed class StormDropSheetTests
 /// </summary>
 /// <remarks>
 /// The shipped image is eight frames four across and two down, with three different animations packed
-/// one per colour channel — that is what the reference's sprite renderer declares and what the image
-/// itself measures. Reading it as eight frames across by four strips down, which this port did, slices
-/// every frame into quarters and draws a corner of one splash where a whole one belongs.
+/// one per colour channel — that is what the image itself measures. Reading it as eight frames across
+/// by four strips down, which this port did, slices every frame into quarters and draws a corner of one
+/// splash where a whole one belongs.
 /// </remarks>
 public sealed class StormSplashSheetTests
 {
@@ -252,20 +252,19 @@ public sealed class StormSplashSheetTests
 }
 
 /// <summary>
-/// Holds the splash to the size and the variety the reference gives it.
+/// Holds the splash to a realistic size and variety.
 /// </summary>
 /// <remarks>
-/// A splash sprite there is two to four CENTIMETRES — <c>Sprite Size Min (2,2)</c> to
-/// <c>Sprite Size Max (2.5,4)</c> in its own units, which are centimetres — and it is flipped
-/// horizontally at random, which is what stops a shower of them reading as one stamp repeated. This
-/// port drew them at a fifth of a metre, five to ten times over, which is most of why they were both
-/// too big and too bright: a splash covering twenty-five times the screen area emits twenty-five times
-/// the light, and a 128-texel cell magnified that far has nothing left to be smooth with.
+/// A real splash is two to four CENTIMETRES across, and flipping the sprite horizontally at random is
+/// what stops a shower of them reading as one stamp repeated. This port drew them at a fifth of a
+/// metre, five to ten times over, which is most of why they were both too big and too bright: a splash
+/// covering twenty-five times the screen area emits twenty-five times the light, and a 128-texel cell
+/// magnified that far has nothing left to be smooth with.
 /// </remarks>
 public sealed class StormSplashSizeTests
 {
     [Fact]
-    public void SplashSprite_IsTheReferencesTwoToFourCentimetres()
+    public void SplashSprite_IsTwoToFourCentimetres()
     {
         PrecipitationSettings settings = new();
 

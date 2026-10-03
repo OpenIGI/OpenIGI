@@ -21,8 +21,8 @@ namespace OpenIGI.Game.World;
 /// finds its albedo at the same position within the card, in the other atlas.
 /// </para>
 /// <para>
-/// The alternative — one per-instance atlas holding surface and lighting together, which is what the
-/// reference does — is simpler and costs the duplication of every model's albedo once per placement.
+/// The alternative — one per-instance atlas holding surface and lighting together — is simpler and
+/// costs the duplication of every model's albedo once per placement.
 /// On level 1 that is 687 copies of 106 models' surfaces, about six and a half times the memory, for
 /// data that is identical in every copy.
 /// </para>

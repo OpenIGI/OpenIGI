@@ -505,8 +505,8 @@ public static class LightFixtureExtractor
             Accumulate(byTexture, triangle.Texture, triangle.Area);
 
             // From the WINDING, not from the authored vertex normals. This game's normals face inward on
-            // interior shells and, smoothed across a box, tilt away from each face -- the exporter had to
-            // rebuild them per face for the same reason before the reference would light a flat roof.
+            // interior shells and, smoothed across a box, tilt away from each face, so a flat roof built
+            // from them would not light as flat.
             Vector3d cross = Vector3d.Cross(triangle.B - triangle.A, triangle.C - triangle.A);
 
             facing += cross;

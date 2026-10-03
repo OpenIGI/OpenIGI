@@ -7,18 +7,18 @@ using OpenIGI.Rendering;
 namespace OpenIGI.Host;
 
 /// <summary>
-/// <c>-dumplighting</c>: the light a frame was lit with, written out so an external reference render
-/// can be set up from the same numbers.
+/// <c>-dumplighting</c>: the light a frame was lit with, written out so an external render can be set
+/// up from the same numbers.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A second derivation of the sun, the moon or a lamp's strength on the reference side would drift the
+/// A second derivation of the sun, the moon or a lamp's strength on the other side would drift the
 /// moment either side changed; reading what this frame actually handed the renderer cannot. Everything
-/// is in world space and metres, the frame the level is authored in, so the reader needs only the
-/// exporter's pivot to place it.
+/// is in world space and metres, the frame the level is authored in, so the reader needs only a level
+/// export's pivot to place it.
 /// </para>
 /// <para>
-/// Every fixture the level has is written, not only the ones this frame selected: a reference render
+/// Every fixture the level has is written, not only the ones this frame selected: an external render
 /// lights with all of them, and the selection is a budget of this renderer's rather than a fact about
 /// the level. Each carries the strength and reach the frame loop would give it, from the same
 /// arithmetic.

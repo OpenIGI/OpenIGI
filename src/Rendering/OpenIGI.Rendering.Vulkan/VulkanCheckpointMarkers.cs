@@ -9,8 +9,8 @@ namespace OpenIGI.Rendering.Vulkan;
 /// sitting at, that is the difference between a report that says <em>a write to page zero</em> and one
 /// that says <em>a write to page zero during the lighting</em>. <c>VK_NV_device_diagnostic_checkpoints</c>
 /// closes that gap: every pass and every one-off upload batch records a marker, and when the device is
-/// lost the queue is asked for the last markers it passed. The reference's Vulkan RHI uses the same
-/// extension for the same purpose when GPU crash debugging is on.
+/// lost the queue is asked for the last markers it passed. This is the extension's intended use: GPU
+/// crash debugging.
 /// </para>
 /// <para>
 /// A marker is an opaque pointer to the driver, so these are small integers cast to one -- nothing is

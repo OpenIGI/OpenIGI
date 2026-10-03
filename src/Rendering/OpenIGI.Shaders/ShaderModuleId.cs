@@ -61,7 +61,7 @@ public enum ShaderModuleId
     /// <summary>Bloom: one axis of the separable gaussian.</summary>
     BloomBlur,
 
-    /// <summary>Bloom: sum the pyramid with the reference's per-stage tints.</summary>
+    /// <summary>Bloom: sum the pyramid with per-stage tints.</summary>
     BloomCombine,
 
     /// <summary>Temporal resolve: spread the shading rejection to a rejecting pixel's neighbours.</summary>

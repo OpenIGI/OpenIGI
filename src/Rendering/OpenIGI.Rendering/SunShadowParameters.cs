@@ -121,7 +121,7 @@ public static class SunShadowParameters
         data[6] = unprojection.Near;
         data[7] = unprojection.Far;
 
-        // The reference's penumbra formula for a directional light, its trigonometry folded onto the host:
+        // The penumbra of a directional light of finite angular size, its trigonometry folded onto the host:
         // the tangent of the half-angle, times the distance to the occluder, is the penumbra's radius.
         data[8] = MathF.Tan(0.5f * float.DegreesToRadians(Math.Max(sunAngleDegrees, 0f)));
 

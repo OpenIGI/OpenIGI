@@ -126,7 +126,7 @@ internal sealed class DayNightCycle
     /// <remarks>
     /// Nought until the moon holds the direct light, which is when the shell lets the weather and
     /// <c>r_moonlight</c> at it. Stays nought when <see cref="Apply"/> is bypassed (a pinned <c>-sundir</c>
-    /// reference sun), which never hangs a moon.
+    /// sun), which never hangs a moon.
     /// </remarks>
     public float Moonrise { get; private set; }
 

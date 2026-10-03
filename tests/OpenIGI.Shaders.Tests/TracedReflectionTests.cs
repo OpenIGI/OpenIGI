@@ -125,7 +125,7 @@ public sealed class TracedReflectionTests
         Assert.Contains("kCardSkin + (voxel * 2.0)", glazing, StringComparison.Ordinal);
 
         // The traced half resolves through the plain forms, which is the same thing as taking no slack:
-        // the cards at exactly the skin, which is the bias the reference gives a triangle hit.
+        // the cards at exactly the skin, which is the right bias for an exact triangle hit.
         Assert.Contains("LitAtHit(hitRelative, radiance)", glazing, StringComparison.Ordinal);
         Assert.Contains(
             "SampleCardsWithin(hitRelative + p.cacheOrigin.xyz, hitNormal, kCardSkin, cardRadiance)",

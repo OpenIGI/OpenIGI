@@ -294,11 +294,11 @@ float3 Resolve(float3 relative, float3 normalW, float3 rayW, float viewDepth)
     // record says outright whether this hit was static, so ask that instead of inferring it from a
     // distance.
     //
-    // The cards are sampled BY THE HIT'S NORMAL, as the reference samples its own: the card that
-    // photographed a surface is the one that looked the way the surface faces, every card facing it
-    // contributes by how squarely it faced, and each texel under the footprint is judged against the
-    // depth recorded there. The record could fail to name a normal -- no records at all -- and a hit then
-    // faces the ray that found it, which is the one direction its surface is known to face.
+    // The cards are sampled BY THE HIT'S NORMAL: the card that photographed a surface is the one that
+    // looked the way the surface faces, every card facing it contributes by how squarely it faced, and
+    // each texel under the footprint is judged against the depth recorded there. The record could fail to
+    // name a normal -- no records at all -- and a hit then faces the ray that found it, which is the one
+    // direction its surface is known to face.
     if (!resolved && !gHitDynamic)
     {
         float3 hitNormal = dot(gHitNormalW, gHitNormalW) > 0.0 ? gHitNormalW : -rayW;
@@ -358,8 +358,7 @@ float3 Resolve(float3 relative, float3 normalW, float3 rayW, float viewDepth)
 // saw glass that reflected daylight and nothing else -- no building, no ground, no soldier. The hit is
 // found by MARCHING the level's distance field instead of tracing an acceleration structure, and
 // everything after that is the same: the lit frame where the camera can see the place, the surface
-// cache's cards where it cannot. The reference resolves its own software traces against its surface
-// cache in exactly this shape.
+// cache's cards where it cannot.
 //
 // What it cannot do is the third route. Shading a hit from the hit's own texture needs to know WHICH
 // triangle was struck, and a distance field has no triangles in it -- it is a field of distances, so a

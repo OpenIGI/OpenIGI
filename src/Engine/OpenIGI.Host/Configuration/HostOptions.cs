@@ -759,7 +759,7 @@ public readonly record struct HostOptions(
     /// <summary>Gets the world position in metres the fly-through camera opens at, or <see langword="null"/> for the level's centre.</summary>
     public (double X, double Y, double Z)? CameraPosition { get; init; }
 
-    /// <summary>Gets a fixed sun direction (pointing towards the sun) that overrides the level's, or <see langword="null"/> to use the level's own. For matching an external reference render.</summary>
+    /// <summary>Gets a fixed sun direction (pointing towards the sun) that overrides the level's, or <see langword="null"/> to use the level's own. For matching an external render.</summary>
     public (float X, float Y, float Z)? SunDirection { get; init; }
 
     /// <summary>
@@ -768,7 +768,7 @@ public readonly record struct HostOptions(
     /// nothing.
     /// </summary>
     /// <remarks>
-    /// A tool for lining an external reference render up with this one from the same numbers rather than
+    /// A tool for lining an external render up with this one from the same numbers rather than
     /// from a second derivation of them, which would drift the moment either side changed. Written on the
     /// frame a capture exits on, so it describes the picture <c>-screenshot</c> saved beside it.
     /// </remarks>
@@ -776,7 +776,7 @@ public readonly record struct HostOptions(
 
     /// <summary>
     /// Gets a fixed horizontal field of view in degrees, or null for the game's own ninety. For lining a
-    /// capture up against a reference render whose camera lens differs.
+    /// capture up against an external render whose camera lens differs.
     /// </summary>
     public float? FieldOfView { get; init; }
 

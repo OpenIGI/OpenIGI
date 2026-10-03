@@ -39,16 +39,15 @@ float SceneViewZ(float depth)
 }
 
 // A traced hit the camera can actually see, resolved out of the lit frame instead of out of a card. This
-// is the reference's SampleSceneColorAtHit and it is worth the handful of instructions: a card holds one
-// texel for every several centimetres of wall and knows nothing about this frame's shadows, while the lit
-// picture is the real thing at full detail. It is also the ONLY path by which anything that moves -- a
-// soldier, the weapon, the player's own hands -- can appear in a reflection at all, because the cards are
-// a capture of the static level.
+// is worth the handful of instructions: a card holds one texel for every several centimetres of wall and
+// knows nothing about this frame's shadows, while the lit picture is the real thing at full detail. It is
+// also the ONLY path by which anything that moves -- a soldier, the weapon, the player's own hands -- can
+// appear in a reflection at all, because the cards are a capture of the static level.
 //
-// Deliberately simpler than the reference in one way: it reprojects into LAST frame's colour and tests
-// the history's depth as well, because its trace runs before the frame is lit. Both of the passes here
-// run after, so the hit is tested against this frame's own depth and read out of this frame's own colour,
-// and there is no history to disagree with.
+// Deliberately simpler than a pre-lighting trace, which has to reproject into LAST frame's colour and
+// test the history's depth as well. Both of the passes here run after the frame is lit, so the hit is
+// tested against this frame's own depth and read out of this frame's own colour, and there is no history
+// to disagree with.
 //
 // Taken with a stated slack, for a caller whose hit is not exactly on the surface it means. A
 // ray-triangle intersection needs none; a hit found by MARCHING a distance field is good only to a
@@ -97,7 +96,7 @@ bool LitAtHitWithin(float3 hitRelative, float slack, out float3 radiance)
     // different one. On screen that is a grid of dots through an otherwise clean reflection, which reads
     // as noise rather than as a filtering mistake.
     //
-    // The reference samples its depth through a point-clamped sampler for the same reason.
+    // A point-clamped sampler would do the same; Load makes it explicit.
     float depth = uSceneDepth.Load(int3(int2(uv * kResolution), 0)).r;
     if (depth <= 0.0)
     {

@@ -1014,8 +1014,8 @@ public sealed class WorldRenderer : IWorldPresenter
         // only for as long as it goes on being offered (VulkanWorldScene), which is what lets an object
         // that moves leave the structure at once instead of leaving a trail -- so anything not offered
         // here disappears from every ray. It used to be culled at three hundred metres and a degree of
-        // arc, the reference's own culling; but the reference caches every static instance up front
-        // and culls per frame against that, whereas here what was not offered was never admitted: the
+        // arc; that rule only works for a scene that caches every static instance up front and culls
+        // per frame against the cache, whereas here what was not offered was never admitted: the
         // props, fittings and shells around the player's start were judged from the loading-screen
         // camera, arrived only once play began, and the lighting crept across the room as they did.
 
@@ -2023,8 +2023,8 @@ public sealed class WorldRenderer : IWorldPresenter
                 // Most of this game's textures carry a single level, and this backend generates none --
                 // so without this the whole world was sampled at full resolution however far away it was,
                 // which sparkles on every surface and makes thin things crawl.
-                // A cut-out's partly-covered edge texels are drawn by the reference and discarded by us,
-                // which is why its barbed wire is visibly thicker than ours against the same sky. Widened
+                // A cut-out's partly-covered edge texels would be discarded by the half-alpha test, which
+                // thins barbed wire visibly against the sky (see AlphaCoverage.WidenCutout). Widened
                 // first, so the chain below filters the alpha we actually intend to keep. Real
                 // transparencies -- window glass above all -- are classified out and left alone.
                 // Classified from level zero before the alpha is touched. A cut-out needs its chain rebuilt

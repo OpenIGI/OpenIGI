@@ -44,10 +44,10 @@ public enum ScenePass
     /// </para>
     /// <para>
     /// So the question is asked in a pass with a DEPTH BUFFER OF ITS OWN, where the depth unit decides it
-    /// — nearest wins, by construction, with no ordering to get right. The reference does exactly this and
-    /// for exactly this reason. It has to be a separate pass rather than depth writes in the translucency
-    /// subpass, because the glazing there shares its depth buffer with the tracers, the muzzle flame and
-    /// the smoke, and glass that wrote depth would occlude all three.
+    /// — nearest wins, by construction, with no ordering to get right. It has to be a separate pass rather
+    /// than depth writes in the translucency subpass, because the glazing there shares its depth buffer
+    /// with the tracers, the muzzle flame and the smoke, and glass that wrote depth would occlude all
+    /// three.
     /// </para>
     /// </remarks>
     GlassLayer,

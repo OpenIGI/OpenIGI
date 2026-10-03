@@ -149,7 +149,7 @@ public sealed class SurfaceCacheLighting : IDisposable
     private const int MinSliceGroups = 4096;
 
 
-    /// <summary>How many texels lie between probes each way. The reference's probe spacing.</summary>
+    /// <summary>How many texels lie between probes each way.</summary>
     /// <remarks>
     /// Must match the shader's <c>kProbeMask</c>, which is this less one: the mask picks out a probe as
     /// the texels whose low bits are clear, so a spacing of four is a mask of three.
@@ -464,9 +464,9 @@ public sealed class SurfaceCacheLighting : IDisposable
             StorageBufferHandle activeTiles = device.CreateStorageBuffer(
                 Math.Max(tileCount, 1) * sizeof(int), "cards.active");
 
-            // One probe every fourth texel each way -- the reference's probe spacing -- so the probe grid
-            // is a quarter of the atlas on a side. Zeroed on the way up so a probe grid cell no page
-            // covers reads as invalid (its w stays zero) rather than as a probe at the origin.
+            // One probe every fourth texel each way, so the probe grid is a quarter of the atlas on a side.
+            // Zeroed on the way up so a probe grid cell no page covers reads as invalid (its w stays zero)
+            // rather than as a probe at the origin.
             int probeWidth = (layout.Width + ProbeSpacing - 1) / ProbeSpacing;
             int probeHeight = (layout.Height + ProbeSpacing - 1) / ProbeSpacing;
 
@@ -646,8 +646,8 @@ public sealed class SurfaceCacheLighting : IDisposable
     /// <b>With shadows this has to run repeatedly, and that is a property of the clipmaps rather than
     /// of the lighting.</b> They follow the camera and reach a few hundred metres, so a page on the far
     /// side of the level has no field to trace against. Re-lighting as the camera moves is what brings
-    /// each page's shadow in as the player approaches it, which is how the reference does it and is
-    /// also what would let the light move at all.
+    /// each page's shadow in as the player approaches it, and is also what would let the light move at
+    /// all.
     /// </para>
     /// <para>
     /// Without them it is a single pass at load: this game's sun is a fixed direction per mission, so
@@ -939,11 +939,10 @@ public sealed class SurfaceCacheLighting : IDisposable
     /// final atlas is seeded with the direct term's outgoing radiance and then gathered and combined
     /// <paramref name="iterations"/> times, so a still scene is lit without waiting for frames. Once
     /// running, each relight gathers once -- reading last frame's final, so a further bounce arrives over
-    /// frames the way the reference's does -- blends the result onto the running estimate, and folds it
-    /// back into the final. It does not re-seed, because that would throw away the bounce the final
-    /// already carries. The gather cannot read and write one atlas at once -- invocations run in no known
-    /// order -- which is what forces the split into separate dispatches, and is also what keeps the last
-    /// answer around for the next to build on.
+    /// frames -- blends the result onto the running estimate, and folds it back into the final. It does not
+    /// re-seed, because that would throw away the bounce the final already carries. The gather cannot read
+    /// and write one atlas at once -- invocations run in no known order -- which is what forces the split
+    /// into separate dispatches, and is also what keeps the last answer around for the next to build on.
     /// </remarks>
     public void Bounce(
         GlobalDistanceField? shadows, float boost = DefaultBoost, int iterations = 2, int temporalIndex = 0)
@@ -1089,11 +1088,11 @@ public sealed class SurfaceCacheLighting : IDisposable
 
     /// <summary>The albedo boost a surface's diffuse colour is passed through by default.</summary>
     /// <remarks>
-    /// The reference's <c>DiffuseColorBoost</c>. Below one it raises a dark surface's albedo towards but
-    /// never to one, so light bouncing between dim interior surfaces does not vanish; at one or above it
-    /// is identity. This is the single knob that decides whether interiors read as lit or as washed out,
-    /// and it is the first thing to reach for. The clamp below one in the shader is also what keeps the
-    /// multi-bounce feedback from diverging.
+    /// A diffuse colour boost. Below one it raises a dark surface's albedo towards but never to one, so
+    /// light bouncing between dim interior surfaces does not vanish; at one or above it is identity. This
+    /// is the single knob that decides whether interiors read as lit or as washed out, and it is the first
+    /// thing to reach for. The clamp below one in the shader is also what keeps the multi-bounce feedback
+    /// from diverging.
     /// </remarks>
     public const float DefaultBoost = 0.8f;
 
@@ -1364,12 +1363,12 @@ public sealed class SurfaceCacheLighting : IDisposable
 
     /// <summary>The brightest a single screen GI ray may be, in scene units.</summary>
     /// <remarks>
-    /// r_screen_gi_max is a cap on what a ray contributes as the eye SEES it -- the reference applies its
-    /// MaxRayIntensity to pre-exposed radiance -- so it is divided by the exposure before it reaches the
-    /// shader. Applied in raw scene units it was a different cap at every time of day: at night the
-    /// exposure is sixteen or more, so it let rays through sixteen times brighter than the reference
-    /// does, and the few of a probe's sixteen that landed on a lamp's fixture or its pool of light swung
-    /// its estimate frame to frame into the drifting clouds around every lamp.
+    /// r_screen_gi_max is a cap on what a ray contributes as the eye SEES it -- a cap on pre-exposed
+    /// radiance -- so it is divided by the exposure before it reaches the shader. Applied in raw scene
+    /// units it was a different cap at every time of day: at night the exposure is sixteen or more, so it
+    /// let rays through sixteen times brighter than by day, and the few of a probe's sixteen that landed on
+    /// a lamp's fixture or its pool of light swung its estimate frame to frame into the drifting clouds
+    /// around every lamp.
     /// </remarks>
     private float ExposedRayCap()
         => RenderCVars.ScreenGatherMaxIntensity.Value / MathF.Max(_device.SceneExposure, 1e-3f);
@@ -1451,9 +1450,8 @@ public sealed class SurfaceCacheLighting : IDisposable
     /// </para>
     /// <para>
     /// A probe grid rather than per pixel, because indirect light varies slowly and tracing every pixel
-    /// would trace sixteen rays a pixel over the whole screen. The reference places probes the same way,
-    /// adaptively refining them where depth or normal vary too fast for the grid to interpolate; that
-    /// refinement is a later slice.
+    /// would trace sixteen rays a pixel over the whole screen. Probes could be refined adaptively where
+    /// depth or normal vary too fast for the grid to interpolate; that refinement is a later slice.
     /// </para>
     /// </remarks>
     public void GatherScreen(
@@ -1571,12 +1569,11 @@ public sealed class SurfaceCacheLighting : IDisposable
     /// </param>
     /// <remarks>
     /// L6c's temporal accumulation of the gather, with L5b's screen trace tier. The raw estimate is noisy
-    /// -- sixteen jittered rays a
-    /// frame -- so reading it straight ghosts and shimmers. Each probe reprojects its surface onto last
-    /// frame's screen, reads the irradiance that accumulated there, and blends this frame's estimate in
-    /// with a weight that falls as the frame count climbs, the running average the reference keeps. A
-    /// reprojection that lands on a different surface, or off screen, drops the history rather than
-    /// smearing it. Kept separate from the frame's own temporal anti-aliasing: this stabilises the
+    /// -- sixteen jittered rays a frame -- so reading it straight ghosts and shimmers. Each probe
+    /// reprojects its surface onto last frame's screen, reads the irradiance that accumulated there, and
+    /// blends this frame's estimate in with a weight that falls as the frame count climbs, a running
+    /// average. A reprojection that lands on a different surface, or off screen, drops the history rather
+    /// than smearing it. Kept separate from the frame's own temporal anti-aliasing: this stabilises the
     /// gather in probe space before it is read, and the two filters compose.
     /// </remarks>
     public void GatherScreenTemporal(
@@ -1738,10 +1735,10 @@ public sealed class SurfaceCacheLighting : IDisposable
     /// zoom changes it a little every frame, and reprojecting through this frame's instead misses.
     /// </param>
     /// <remarks>
-    /// The reference's ScreenProbeTemporalReprojectionCS. The gather accumulates at the sparse probe grid,
-    /// whose reprojection is coarse, so its upsampled indirect slides across a surface as the camera moves.
-    /// This resolves it to full resolution and reprojects THERE, per pixel, against the surface's own world
-    /// position -- pinning the indirect to the world. The deferred fill reads the result directly.
+    /// The gather accumulates at the sparse probe grid, whose reprojection is coarse, so its upsampled indirect
+    /// slides across a surface as the camera moves. This resolves it to full resolution and reprojects THERE,
+    /// per pixel, against the surface's own world position -- pinning the indirect to the world. The deferred
+    /// fill reads the result directly.
     /// </remarks>
     public void ResolveScreenTemporal(
         TextureHandle probe,

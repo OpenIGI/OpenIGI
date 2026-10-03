@@ -34,14 +34,14 @@ namespace OpenIGI.Game.World;
 /// level rather than binding four.
 /// </para>
 /// <para>
-/// <b>This subsumes the reference's separate mesh-SDF trace tier, deliberately.</b> The reference keeps
-/// every mesh's own distance field and, for a ray, culls the meshes near it into a froxel grid
-/// (its mesh-SDF culling) so the ray tests only those, finer than its coarse global field. This
-/// resamples every mesh field into the clipmap at build, culling the instances per cell as it goes, so
-/// the one global trace already carries the per-object detail the reference's mesh-SDF tier existed to
-/// add — at the cost of the clipmap's own voxel resolution, which for indirect light is enough. The
-/// froxel-culled mesh-SDF tier is therefore not ported: it would recover only sub-clipmap-voxel detail a
-/// bounce does not need, at the price of a second acceleration structure and a per-ray cull.
+/// <b>There is no separate per-mesh distance-field trace tier, deliberately.</b> A two-tier design keeps
+/// every mesh's own distance field and, for a ray, culls the meshes near it into a froxel grid so the
+/// ray tests only those, finer than a coarse global field. This resamples every mesh field into the
+/// clipmap at build, culling the instances per cell as it goes, so the one global trace already carries
+/// the per-object detail such a tier would add — at the cost of the clipmap's own voxel resolution,
+/// which for indirect light is enough. A froxel-culled per-mesh tier would recover only
+/// sub-clipmap-voxel detail a bounce does not need, at the price of a second acceleration structure and
+/// a per-ray cull.
 /// </para>
 /// </remarks>
 public sealed class GlobalDistanceField : IDisposable
@@ -260,9 +260,9 @@ public sealed class GlobalDistanceField : IDisposable
         }
     }
 
-    // How many already-built clipmap levels may be re-voxelised in one frame. Two, matching the
-    // reference's clipmap budget: a fast camera drifts every level at once, and doing all of them a frame
-    // is the GI spike. The first build of a level is exempt, so the field always exists complete.
+    // How many already-built clipmap levels may be re-voxelised in one frame. Two: a fast camera drifts
+    // every level at once, and doing all of them a frame is the GI spike. The first build of a level is
+    // exempt, so the field always exists complete.
     private const int MaxRebuildsPerFrame = 2;
 
     /// <summary>Rebuilds whichever levels the camera has walked out of.</summary>
@@ -302,10 +302,11 @@ public sealed class GlobalDistanceField : IDisposable
             // once, and rebuilding all of them each frame was the GI spike the overlay showed. Innermost
             // first (this loop runs inner to outer), because the fine level nearest the camera is what the
             // eye reads; the coarse outer levels keep their old contents a few frames and catch up when
-            // the camera slows, imperceptible while it is moving fast. the reference bounds it by clipmaps-per-frame,
-            // Godot by one cascade's dirty slab. The cap is only for the drift rebuild: a level's FIRST
-            // build is never held back, so the field is complete the frame it first exists and no trace
-            // ever reads a half-built clipmap -- which had seeded the temporal GI bright and stuck there.
+            // the camera slows, imperceptible while it is moving fast. Bounding it by clipmaps per frame is the
+            // usual answer (Godot bounds it by one cascade's dirty slab). The cap is only for the drift
+            // rebuild: a level's FIRST build is never held back, so the field is complete the frame it first
+            // exists and no trace ever reads a half-built clipmap -- which had seeded the temporal GI bright
+            // and stuck there.
             if (!force && _built[level] && rebuilt >= MaxRebuildsPerFrame)
             {
                 break;

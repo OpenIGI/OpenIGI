@@ -24,9 +24,7 @@ namespace OpenIGI.Game.World;
 /// <b>What this asks about instead is the object.</b> A ceiling lamp is a specific shape in a specific
 /// place: small, above head height, flat, facing down, and painted in near-neutral white rather than in
 /// a brand's colours. None of those alone means anything — plenty of small flat things hang from
-/// ceilings — but together they describe a light fixture and very little else. This is the test the
-/// reference exporter arrived at over a run of comparisons against the reference, ported here so that the
-/// port and the reference agree about what a lamp is.
+/// ceilings — but together they describe a light fixture and very little else, so that is the test.
 /// </para>
 /// <para>
 /// <b>And that shape test is not, on its own, nearly enough.</b> Measured over the fourteen retail
@@ -40,12 +38,11 @@ namespace OpenIGI.Game.World;
 /// </para>
 /// <para>
 /// <b>The bake is not used as a second source, and that was measured rather than assumed.</b> Letting a
-/// high survey score make a texture emissive on its own is what the exporter does, and here it is
-/// wrong twice over. It says yes to surfaces that are bright because they are LIT — level 1's
-/// highest-scoring texture of all, baked pure white across thirty uses, is a panel that skins office
-/// cabinets, and it glowed. And emission means something stronger in this renderer than in the reference:
-/// an emissive surface is UNLIT, it stops receiving light entirely, so a half-confident emitter does
-/// not glow faintly, it turns into a flat shadeless slab.
+/// high survey score make a texture emissive on its own would be wrong twice over. It says yes to
+/// surfaces that are bright because they are LIT — level 1's highest-scoring texture of all, baked pure
+/// white across thirty uses, is a panel that skins office cabinets, and it glowed. And emission means
+/// something strong in this renderer: an emissive surface is UNLIT, it stops receiving light entirely,
+/// so a half-confident emitter does not glow faintly, it turns into a flat shadeless slab.
 /// </para>
 /// <para>
 /// Using the bake the other way round — as a veto — fails on the same level for the opposite reason:
@@ -84,7 +81,7 @@ public static class LampDetector
     /// of kilometres from the origin.
     /// </para>
     /// <para>
-    /// <b>Low, and deliberately so, because the reference it is measured against is poor.</b>
+    /// <b>Low, and deliberately so, because the datum it is measured against is poor.</b>
     /// <c>GroundHeight</c> is the MEDIAN height of the level's placements — a fact about the whole
     /// level, which says nothing about the floor of the room a fixture is in. At head height it threw
     /// away a 2.4 m office ceiling strip, normal straight down and 11 cm thick, for sitting 1.72 m above

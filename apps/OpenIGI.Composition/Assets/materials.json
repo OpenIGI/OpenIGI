@@ -48,7 +48,7 @@
       "anyway rather than per texel: a fuel tank is steel over the whole of it and a wall is steel over",
       "none of it.",
       "",
-      "Binary, per Filament's guidance and both reference engines': a surface is a conductor or it is",
+      "Binary, per Filament's guidance and common physically based practice: a surface is a conductor or it is",
       "not, and the values in between only exist for a texture that mixes the two. Roughness 0.45 is",
       "worn industrial steel -- these are not polished, and none of them were clean in 1998 either.",
       "",

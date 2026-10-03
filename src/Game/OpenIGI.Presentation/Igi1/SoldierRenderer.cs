@@ -5958,8 +5958,8 @@ public sealed class SoldierRenderer : IDisposable
             subsets++;
             // Reflections only: the camera stands inside this body, so to every other ray -- the GI's and
             // the shadows' -- it is an occluder wrapped around the eye, which darkened whatever wall the
-            // player faced into a cloud that followed the view. The reference's default is the same: a
-            // primitive hidden in game does not affect indirect lighting unless it asks to.
+            // player faced into a cloud that followed the view. A primitive hidden in game should not
+            // affect indirect lighting unless it asks to.
             _device.SubmitTracedMesh(
                 member.Mesh, subset.IndexOffset, subset.IndexCount, modelView, diffuse, firstPersonOnly: true);
         }

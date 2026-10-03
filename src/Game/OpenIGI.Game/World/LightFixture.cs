@@ -76,8 +76,8 @@ namespace OpenIGI.Game.World;
 /// zero for a fixture that faces nowhere.
 /// <para>
 /// A fitting is a rectangle, not a disc: a fluorescent batten is over a metre long and a hand wide.
-/// Its shadow rays are aimed at points on THAT rectangle, as the reference samples a rect light on
-/// the rect. Aimed at a disc a quarter of a metre across instead, half the points hung in the air
+/// Its shadow rays are aimed at points on THAT rectangle, as a rect light is sampled on its own
+/// area. Aimed at a disc a quarter of a metre across instead, half the points hung in the air
 /// beside the glass, and from a wall at a grazing angle each frame's rays clipped the housing or not
 /// at random -- the black speckle under every ceiling and beside every lit panel.
 /// </para>

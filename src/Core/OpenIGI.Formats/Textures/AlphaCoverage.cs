@@ -4,7 +4,7 @@ namespace OpenIGI.Formats.Textures;
 
 /// <summary>
 /// Rescales the alpha of a mip chain so that an alpha-tested surface keeps the same amount of itself at
-/// every distance — the reference's alpha coverage preservation.
+/// every distance — alpha-to-coverage-preserving mipmaps (Castaño, 2010).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -21,8 +21,7 @@ namespace OpenIGI.Formats.Textures;
 /// a threshold test, because the test is not linear: what has to be preserved is the FRACTION OF TEXELS
 /// THAT PASS IT, and that is a property of the whole level rather than of any neighbourhood. So each
 /// level is filtered as usual and then its alpha is scaled by a single number chosen so that the fraction
-/// passing the cutoff matches the top level's. The reference does exactly this at import, and the port's
-/// own textures carry the setting switched on.
+/// passing the cutoff matches the top level's. It is done once, when the texture is imported.
 /// </para>
 /// <para>
 /// <b>Why the scale is searched rather than computed.</b> Coverage as a function of the scale is a step
@@ -137,18 +136,16 @@ public static class AlphaCoverage
     /// <returns><see langword="true"/> when the texture was a cut-out and was widened.</returns>
     /// <remarks>
     /// <para>
-    /// The reference clips its masked surfaces at essentially zero — every texel carrying any alpha at
-    /// all is drawn. Ours clips at a half, which throws away the partly-covered texels along the edge of
-    /// every wire, slat and leaf. The difference is visible: the reference's barbed wire is perceptibly
-    /// thicker than ours against the same sky, and its chain-link holds together at distances where ours
-    /// has thinned to a haze.
+    /// The shader clips at a half, which throws away the partly-covered texels along the edge of every
+    /// wire, slat and leaf. The difference is visible: clipped at essentially zero — every texel carrying
+    /// any alpha at all drawn — barbed wire is perceptibly thicker against the same sky, and chain-link
+    /// holds together at distances where a half-clip has thinned it to a haze.
     /// </para>
     /// <para>
     /// <b>Why this is not simply a lower cutoff.</b> Lowering it for everything is catastrophic, and was
     /// measured to be: the game's window glass carries partial alpha as a genuine transparency, so a low
-    /// cutoff turns a pane opaque and the office window falls from 156 to 38 out of 255. The reference
-    /// does not have that problem because its own glass alpha is binary. So the two cases have to be told
-    /// apart, and the texture itself is what tells them apart: a cut-out's alpha is nearly all zero or
+    /// cutoff turns a pane opaque and the office window falls from 156 to 38 out of 255. So the two cases
+    /// have to be told apart, and the texture itself is what tells them apart: a cut-out's alpha is nearly all zero or
     /// nearly all full, with only edge texels in between, while glass lives in the middle band. Only the
     /// first kind is widened, and it is widened at load rather than in the shader — which needs no
     /// per-draw state, no seam change, and cannot affect a surface that was not classified.
@@ -195,7 +192,7 @@ public static class AlphaCoverage
             return false;
         }
 
-        // Everything the reference would have drawn is drawn. A texel carrying any meaningful alpha is
+        // Everything with any coverage is drawn. A texel carrying any meaningful alpha is
         // lifted to the cutoff so the shader keeps it; one carrying none is left alone so the holes stay
         // holes. The colour channels are untouched -- this decides coverage, not shade.
         bool widened = false;
