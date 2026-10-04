@@ -93,6 +93,25 @@ internal sealed class VulkanWorldScene : IDisposable
     // can be in the right place. See the static/dynamic split over the instance list below.
     private readonly HashSet<uint> _movers = [];
 
+    // The movers already placed this frame. A model is drawn once per material subset, and every one of
+    // those draws arrives here; a static placement is deduplicated by _placed, but a mover used to be
+    // added once per draw -- a soldier stood in the structure nine to fourteen times over, every copy the
+    // whole body, and every ray that passed near one tested all of them. Emptied with the moving tail.
+    private readonly HashSet<Placement> _movedThisFrame = [];
+
+    // Rigid movers, found by what they do rather than by a guess. A mesh that, in the same scene build,
+    // gains a new static placement AND loses one it was no longer offered at has moved: a static prop
+    // turning up for the first time only gains, and one destroyed only loses. Seen on enough consecutive
+    // builds, the mesh is filed with the movers -- see RigidMoverBuilds. Until then a helicopter or a held
+    // weapon was a new "static" placement every frame, which re-sorted the instance list and kept the
+    // world from ever counting as settled.
+    private readonly HashSet<uint> _gainedStatic = [];
+    private readonly HashSet<uint> _lostStatic = [];
+    private readonly Dictionary<uint, int> _movingBuilds = [];
+
+    /// <summary>How many consecutive scene builds a mesh must move on before it is filed as a mover.</summary>
+    private const int RigidMoverBuilds = 3;
+
     // How many of the leading instances are accumulated static placements. Everything past it is this
     // frame's movers, cleared and refilled every frame -- so a moving object is traced where it is now
     // rather than everywhere it has ever been.
@@ -323,6 +342,13 @@ internal sealed class VulkanWorldScene : IDisposable
 
         bool moving = _movers.Contains(meshId);
         Placement placement = default;
+        if (moving && !_movedThisFrame.Add(Placement.From(meshId, worldTransform)))
+        {
+            // This mover's other subsets: the structure already holds every run, so one instance is the
+            // whole body.
+            return;
+        }
+
         if (!moving)
         {
             placement = Placement.From(meshId, worldTransform);
@@ -384,6 +410,7 @@ internal sealed class VulkanWorldScene : IDisposable
             _placed[placement] = _frame;
             _observedThisPass++;
             _grewThisFrame = true;
+            _gainedStatic.Add(meshId);
         }
 
         AddInstance(moving, meshId, placement, VulkanRayTracingInstance.Create(
@@ -592,6 +619,51 @@ internal sealed class VulkanWorldScene : IDisposable
             _instanceMeshIds.RemoveRange(_staticCount, _instanceMeshIds.Count - _staticCount);
             _instancesChanged = true;
         }
+
+        _movedThisFrame.Clear();
+        FileRigidMovers();
+    }
+
+    /// <summary>Moves a mesh that has moved on several builds running from the static placements to the movers.</summary>
+    /// <remarks>
+    /// Its static placements are left to expire on their own: no longer offered as statics, they go at the
+    /// next build like any placement nothing offers.
+    /// </remarks>
+    private void FileRigidMovers()
+    {
+        foreach (uint meshId in _gainedStatic)
+        {
+            if (!_lostStatic.Contains(meshId))
+            {
+                continue;
+            }
+
+            int builds = _movingBuilds.GetValueOrDefault(meshId) + 1;
+            if (builds >= RigidMoverBuilds)
+            {
+                _movers.Add(meshId);
+                _movingBuilds.Remove(meshId);
+                _instancesChanged = true;
+                continue;
+            }
+
+            _movingBuilds[meshId] = builds;
+        }
+
+        // A run broken is a run restarted: a door that swung once and stopped is not a mover.
+        if (_movingBuilds.Count > 0)
+        {
+            foreach (uint meshId in _movingBuilds.Keys)
+            {
+                if (!_gainedStatic.Contains(meshId) || !_lostStatic.Contains(meshId))
+                {
+                    _movingBuilds.Remove(meshId);
+                }
+            }
+        }
+
+        _gainedStatic.Clear();
+        _lostStatic.Clear();
     }
 
     /// <summary>Repoints every placement at its structure and hands the list to the scene.</summary>
@@ -694,6 +766,7 @@ internal sealed class VulkanWorldScene : IDisposable
                 && lastOffered < stale)
             {
                 _placed.Remove(_instancePlacements[i]);
+                _lostStatic.Add(meshId);
                 continue;
             }
 
@@ -748,6 +821,7 @@ internal sealed class VulkanWorldScene : IDisposable
         _surfaces.Remove(meshId);
         _stale.Remove(meshId);
         _movers.Remove(meshId);
+        _movingBuilds.Remove(meshId);
         _instancesChanged = true;
     }
 
@@ -776,6 +850,10 @@ internal sealed class VulkanWorldScene : IDisposable
         _casterVersions.Clear();
         _casterRecords.Clear();
         _movers.Clear();
+        _movedThisFrame.Clear();
+        _gainedStatic.Clear();
+        _lostStatic.Clear();
+        _movingBuilds.Clear();
         _forgotten.Clear();
         _staticCount = 0;
         _instancesChanged = true;
