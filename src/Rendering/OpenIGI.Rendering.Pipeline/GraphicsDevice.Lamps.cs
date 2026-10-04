@@ -19,6 +19,12 @@ public sealed partial class GraphicsDevice
     private int _localLightCount;
     private TracedLampShadow? _tracedLamps;
 
+    /// <summary>
+    /// The exposed lamp light, as a fraction of the display's full scale, below which a lamp's shadow is not
+    /// traced: a quarter of one 8-bit step, divided by four for the specular lobe.
+    /// </summary>
+    private const float MinimumVisibleLampFraction = 0.25f / 255f / 4f;
+
     // Whether this frame's lamp visibility was traced, and so whether the shading reads it.
     private bool _lampsTraced;
 
@@ -98,36 +104,91 @@ public sealed partial class GraphicsDevice
         DeferredLampBlock.Write(_lampBlock, LampState(), LocalLights);
         TemporalFrameState state = TemporalState(scene);
 
-        using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
-            _profiler.Time(RenderStage.Shadows, "lamp.shadow"),
-            "lampshadow")))
+        // What the lamps must bring to a pixel for any of their shadow to be seen there, from the exposure the
+        // last frame was shown at. Their summed light is the same quantity the lighting pass adds -- colour times
+        // strength times the windowed falloff times n.l, which the trace already sums to choose its lamps --
+        // and a shadow can take away at most all of it. A quarter of the smallest step the display shows, with
+        // four times that again for a glossy highlight above the diffuse term: in daylight outdoors the lamps
+        // add nothing the eye can see, and their rays were a millisecond and a half of every frame.
+        float minimumVisibleLamp = MinimumVisibleLampFraction / MathF.Max(_sceneExposure, 1e-4f);
+
+        // And the sun the lighting pass will add, where this frame traced it: against a sunlit surface the
+        // lamps' share decides whether their shadow could be seen at all. Traced just before this.
+        IRhiTextureView? sunMask = _sunTraced ? _tracedSun?.Mask : null;
+        Vector3f sunDirection = _lighting.WorldSunDirection(_viewToWorld);
+        Vector3f sunColour = _lighting.SunColour * _lighting.Scale;
+        float sunLuminance = (0.2126f * sunColour.X) + (0.7152f * sunColour.Y) + (0.0722f * sunColour.Z);
+
+        TracedLampFrame lampFrame =
+            traced
+                ? new TracedLampFrame(
+                    TracedWorld!.WorldScene,
+                    _cameraPosition,
+                    _lampBlock,
+                    (int)(_frameCounter % 64UL),
+                    RenderCVars.LampDenoise.Value != 0,
+                    TracedWorld.CutoutMasks,
+                    TracedWorld.HitRecordAddress,
+                    MinimumVisible: minimumVisibleLamp,
+                    SunVisibility: sunMask,
+                    SunDirection: sunDirection,
+                    SunLuminance: sunLuminance)
+                : new TracedLampFrame(
+                    null,
+                    _cameraPosition,
+                    _lampBlock,
+                    (int)(_frameCounter % 64UL),
+                    RenderCVars.LampDenoise.Value != 0,
+                    null,
+                    0UL,
+                    _textures.Resolve(_lampField!.Value.Clipmaps).View,
+                    WriteLampField(_lampField.Value),
+                    minimumVisibleLamp,
+                    sunMask,
+                    sunDirection,
+                    sunLuminance);
+        IRhiTextureView? lampVelocity = _velocityRecorded ? scene.View(SceneTargetId.Velocity) : null;
+
+        // Step by step while measuring, so the trace and the two filters are told apart in the breakdown.
+        if (_profiler.Enabled)
         {
+            IRhiComputePassEncoder? open = null;
+            try
+            {
+                _tracedLamps.Record(
+                    null,
+                    FrameSlot,
+                    scene.View(SceneTargetId.Depth),
+                    scene.View(SceneTargetId.Normal),
+                    lampFrame,
+                    state,
+                    lampVelocity,
+                    label =>
+                    {
+                        open?.Dispose();
+                        open = Encoder().BeginComputePass(new RhiComputePassDescriptor(
+                            _profiler.Time(RenderStage.Shadows, label),
+                            label));
+                        return open;
+                    });
+            }
+            finally
+            {
+                open?.Dispose();
+            }
+        }
+        else
+        {
+            using IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
+                Label: "lampshadow"));
             _tracedLamps.Record(
                 pass,
                 FrameSlot,
                 scene.View(SceneTargetId.Depth),
                 scene.View(SceneTargetId.Normal),
-                traced
-                    ? new TracedLampFrame(
-                        TracedWorld!.WorldScene,
-                        _cameraPosition,
-                        _lampBlock,
-                        (int)(_frameCounter % 64UL),
-                        RenderCVars.LampDenoise.Value != 0,
-                        TracedWorld.CutoutMasks,
-                        TracedWorld.HitRecordAddress)
-                    : new TracedLampFrame(
-                        null,
-                        _cameraPosition,
-                        _lampBlock,
-                        (int)(_frameCounter % 64UL),
-                        RenderCVars.LampDenoise.Value != 0,
-                        null,
-                        0UL,
-                        _textures.Resolve(_lampField!.Value.Clipmaps).View,
-                        WriteLampField(_lampField.Value)),
+                lampFrame,
                 state,
-                _velocityRecorded ? scene.View(SceneTargetId.Velocity) : null);
+                lampVelocity);
         }
 
         _lampsTraced = true;

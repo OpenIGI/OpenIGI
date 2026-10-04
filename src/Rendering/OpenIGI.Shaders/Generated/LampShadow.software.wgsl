@@ -9,6 +9,7 @@ struct Params_std140_0
     @align(16) unproject_0 : vec4<f32>,
     @align(16) resolution_0 : vec4<f32>,
     @align(16) cameraFrame_0 : vec4<f32>,
+    @align(16) sunLight_0 : vec4<f32>,
     @align(16) lampControl_0 : vec4<f32>,
     @align(16) lampSource_0 : vec4<f32>,
     @align(16) lampPositionRadius_0 : array<vec4<f32>, i32(160)>,
@@ -27,6 +28,8 @@ struct Params_std140_0
 @binding(2) @group(0) var uNormal_0 : texture_2d<f32>;
 
 @binding(3) @group(0) var uNormalSampler_0 : sampler;
+
+@binding(10) @group(0) var uSunVisibility_0 : texture_2d<f32>;
 
 struct FieldParams_std140_0
 {
@@ -417,13 +420,46 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
         weightSum_0 = weightSum_1;
         i_1 = i_1 + i32(1);
     }
+    if((p_0.sunLight_0.w) > 0.0f)
+    {
+        _S26 = weightSum_0 > 0.0f;
+    }
+    else
+    {
+        _S26 = false;
+    }
+    if(_S26)
+    {
+        var _S31 : vec3<i32> = vec3<i32>(_S25, i32(0));
+        atten_0 = p_0.sunLight_0.w * max(dot(normal_0, p_0.sunLight_0.xyz), 0.0f) * saturate((textureLoad((uSunVisibility_0), ((_S31)).xy, ((_S31)).z)).x);
+    }
+    else
+    {
+        atten_0 = 0.0f;
+    }
     if(weightSum_0 <= 0.0f)
+    {
+        _S26 = true;
+    }
+    else
+    {
+        _S26 = weightSum_0 < (p_0.lampSource_0.w);
+    }
+    if(_S26)
+    {
+        _S26 = true;
+    }
+    else
+    {
+        _S26 = weightSum_0 < (0.00999999977648258f * atten_0);
+    }
+    if(_S26)
     {
         textureStore((uVisibility_0), (vec2<u32>(_S25)), (vec4<f32>(1.0f, 0.0f, 0.0f, 0.0f)));
         return;
     }
     k_0 = i32(0);
-    atten_0 = 0.0f;
+    var visibleSum_0 : f32 = 0.0f;
     var penumbraSum_0 : f32 = 0.0f;
     var blocked_0 : f32 = 0.0f;
     for(;;)
@@ -439,25 +475,25 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
         var lampCentre_0 : vec3<f32> = (((vec4<f32>(p_0.lampPositionRadius_0[chosen_0[k_0]].xyz, 1.0f)) * (mat4x4<f32>(p_0.viewToWorld_0.data_0[i32(0)][i32(0)], p_0.viewToWorld_0.data_0[i32(1)][i32(0)], p_0.viewToWorld_0.data_0[i32(2)][i32(0)], p_0.viewToWorld_0.data_0[i32(3)][i32(0)], p_0.viewToWorld_0.data_0[i32(0)][i32(1)], p_0.viewToWorld_0.data_0[i32(1)][i32(1)], p_0.viewToWorld_0.data_0[i32(2)][i32(1)], p_0.viewToWorld_0.data_0[i32(3)][i32(1)], p_0.viewToWorld_0.data_0[i32(0)][i32(2)], p_0.viewToWorld_0.data_0[i32(1)][i32(2)], p_0.viewToWorld_0.data_0[i32(2)][i32(2)], p_0.viewToWorld_0.data_0[i32(3)][i32(2)], p_0.viewToWorld_0.data_0[i32(0)][i32(3)], p_0.viewToWorld_0.data_0[i32(1)][i32(3)], p_0.viewToWorld_0.data_0[i32(2)][i32(3)], p_0.viewToWorld_0.data_0[i32(3)][i32(3)])))).xyz + p_0.cameraFrame_0.xyz;
         var lampDir_0 : vec3<f32> = normalize(lampCentre_0 - _S27);
         var source_0 : f32 = clamp(p_0.lampDirection_0[chosen_0[k_0]].w, 0.01999999955296516f, p_0.lampSource_0.x);
-        const _S31 : vec3<f32> = vec3<f32>(0.0f, 0.0f, 0.0f);
-        var _S32 : vec3<f32> = p_0.lampDirection_0[chosen_0[k_0]].xyz;
+        const _S32 : vec3<f32> = vec3<f32>(0.0f, 0.0f, 0.0f);
+        var _S33 : vec3<f32> = p_0.lampDirection_0[chosen_0[k_0]].xyz;
         var emitting_0 : vec3<f32>;
         var axis_0 : vec3<f32>;
-        if((dot(_S32, _S32)) > 0.25f)
+        if((dot(_S33, _S33)) > 0.25f)
         {
-            var axis_1 : vec3<f32> = normalize((((vec4<f32>(_S32, 0.0f)) * (mat4x4<f32>(p_0.viewToWorld_0.data_0[i32(0)][i32(0)], p_0.viewToWorld_0.data_0[i32(1)][i32(0)], p_0.viewToWorld_0.data_0[i32(2)][i32(0)], p_0.viewToWorld_0.data_0[i32(3)][i32(0)], p_0.viewToWorld_0.data_0[i32(0)][i32(1)], p_0.viewToWorld_0.data_0[i32(1)][i32(1)], p_0.viewToWorld_0.data_0[i32(2)][i32(1)], p_0.viewToWorld_0.data_0[i32(3)][i32(1)], p_0.viewToWorld_0.data_0[i32(0)][i32(2)], p_0.viewToWorld_0.data_0[i32(1)][i32(2)], p_0.viewToWorld_0.data_0[i32(2)][i32(2)], p_0.viewToWorld_0.data_0[i32(3)][i32(2)], p_0.viewToWorld_0.data_0[i32(0)][i32(3)], p_0.viewToWorld_0.data_0[i32(1)][i32(3)], p_0.viewToWorld_0.data_0[i32(2)][i32(3)], p_0.viewToWorld_0.data_0[i32(3)][i32(3)])))).xyz);
+            var axis_1 : vec3<f32> = normalize((((vec4<f32>(_S33, 0.0f)) * (mat4x4<f32>(p_0.viewToWorld_0.data_0[i32(0)][i32(0)], p_0.viewToWorld_0.data_0[i32(1)][i32(0)], p_0.viewToWorld_0.data_0[i32(2)][i32(0)], p_0.viewToWorld_0.data_0[i32(3)][i32(0)], p_0.viewToWorld_0.data_0[i32(0)][i32(1)], p_0.viewToWorld_0.data_0[i32(1)][i32(1)], p_0.viewToWorld_0.data_0[i32(2)][i32(1)], p_0.viewToWorld_0.data_0[i32(3)][i32(1)], p_0.viewToWorld_0.data_0[i32(0)][i32(2)], p_0.viewToWorld_0.data_0[i32(1)][i32(2)], p_0.viewToWorld_0.data_0[i32(2)][i32(2)], p_0.viewToWorld_0.data_0[i32(3)][i32(2)], p_0.viewToWorld_0.data_0[i32(0)][i32(3)], p_0.viewToWorld_0.data_0[i32(1)][i32(3)], p_0.viewToWorld_0.data_0[i32(2)][i32(3)], p_0.viewToWorld_0.data_0[i32(3)][i32(3)])))).xyz);
             emitting_0 = axis_1 * vec3<f32>(0.01999999955296516f);
             axis_0 = axis_1;
         }
         else
         {
-            emitting_0 = _S31;
+            emitting_0 = _S32;
             axis_0 = lampDir_0;
         }
         var rand_0 : vec2<f32> = fract(pixelRandom_0.yz + vec2<f32>((frame_0 * 2.0f + f32(k_0))) * vec2<f32>(0.75487768650054932f, 0.56984031200408936f));
         var rect_0 : vec4<f32> = p_0.lampRect_0[lamp_0];
-        var _S33 : bool = (dot(emitting_0, emitting_0)) > 0.0f;
-        if(_S33)
+        var _S34 : bool = (dot(emitting_0, emitting_0)) > 0.0f;
+        if(_S34)
         {
             _S26 = (rect_0.w) > 0.0f;
         }
@@ -465,18 +501,18 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
         {
             _S26 = false;
         }
-        var _S34 : bool;
+        var _S35 : bool;
         if(_S26)
         {
-            var _S35 : vec3<f32> = rect_0.xyz;
-            _S34 = (dot(_S35, _S35)) > 0.0f;
+            var _S36 : vec3<f32> = rect_0.xyz;
+            _S35 = (dot(_S36, _S36)) > 0.0f;
         }
         else
         {
-            _S34 = false;
+            _S35 = false;
         }
         var target_0 : vec3<f32>;
-        if(_S34)
+        if(_S35)
         {
             var halfLength_0 : vec3<f32> = (((vec4<f32>(rect_0.xyz, 0.0f)) * (mat4x4<f32>(p_0.viewToWorld_0.data_0[i32(0)][i32(0)], p_0.viewToWorld_0.data_0[i32(1)][i32(0)], p_0.viewToWorld_0.data_0[i32(2)][i32(0)], p_0.viewToWorld_0.data_0[i32(3)][i32(0)], p_0.viewToWorld_0.data_0[i32(0)][i32(1)], p_0.viewToWorld_0.data_0[i32(1)][i32(1)], p_0.viewToWorld_0.data_0[i32(2)][i32(1)], p_0.viewToWorld_0.data_0[i32(3)][i32(1)], p_0.viewToWorld_0.data_0[i32(0)][i32(2)], p_0.viewToWorld_0.data_0[i32(1)][i32(2)], p_0.viewToWorld_0.data_0[i32(2)][i32(2)], p_0.viewToWorld_0.data_0[i32(3)][i32(2)], p_0.viewToWorld_0.data_0[i32(0)][i32(3)], p_0.viewToWorld_0.data_0[i32(1)][i32(3)], p_0.viewToWorld_0.data_0[i32(2)][i32(3)], p_0.viewToWorld_0.data_0[i32(3)][i32(3)])))).xyz;
             var uv_5 : vec2<f32> = rand_0 * vec2<f32>(2.0f) - vec2<f32>(1.0f);
@@ -499,20 +535,20 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
         }
         var toTarget_0 : vec3<f32> = target_0 - _S27;
         var distance_1 : f32 = length(toTarget_0);
-        var _S36 : bool;
-        if(_S33)
+        var _S37 : bool;
+        if(_S34)
         {
-            _S36 = (rect_0.w) > 0.0f;
+            _S37 = (rect_0.w) > 0.0f;
         }
         else
         {
-            _S36 = false;
+            _S37 = false;
         }
         var onRect_0 : bool;
-        if(_S36)
+        if(_S37)
         {
-            var _S37 : vec3<f32> = rect_0.xyz;
-            onRect_0 = (dot(_S37, _S37)) > 0.0f;
+            var _S38 : vec3<f32> = rect_0.xyz;
+            onRect_0 = (dot(_S38, _S38)) > 0.0f;
         }
         else
         {
@@ -528,18 +564,18 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
         }
         if(distance_1 <= (stopShort_0 + 0.01999999955296516f))
         {
-            atten_0 = atten_0 + 1.0f;
+            visibleSum_0 = visibleSum_0 + 1.0f;
             k_0 = k_0 + i32(1);
             continue;
         }
         var t_1 : f32;
         var hit_0 : bool = SoftwareBlocked_0(_S27 - p_0.cameraFrame_0.xyz, toTarget_0 / vec3<f32>(distance_1), distance_1 - stopShort_0, &(t_1));
-        var visibleSum_0 : f32;
+        var visibleSum_1 : f32;
         var penumbraSum_1 : f32;
         var blocked_1 : f32;
         if(!hit_0)
         {
-            visibleSum_0 = atten_0 + 1.0f;
+            visibleSum_1 = visibleSum_0 + 1.0f;
             penumbraSum_1 = penumbraSum_0;
             blocked_1 = blocked_0;
         }
@@ -547,19 +583,19 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
         {
             if(onRect_0)
             {
-                visibleSum_0 = length(rect_0.xyz) + rect_0.w;
+                visibleSum_1 = length(rect_0.xyz) + rect_0.w;
             }
             else
             {
-                visibleSum_0 = 2.0f * source_0;
+                visibleSum_1 = 2.0f * source_0;
             }
-            var penumbraSum_2 : f32 = penumbraSum_0 + visibleSum_0 * t_1 / max(distance_1 - t_1, 0.05000000074505806f);
+            var penumbraSum_2 : f32 = penumbraSum_0 + visibleSum_1 * t_1 / max(distance_1 - t_1, 0.05000000074505806f);
             var blocked_2 : f32 = blocked_0 + 1.0f;
-            visibleSum_0 = atten_0;
+            visibleSum_1 = visibleSum_0;
             penumbraSum_1 = penumbraSum_2;
             blocked_1 = blocked_2;
         }
-        atten_0 = visibleSum_0;
+        visibleSum_0 = visibleSum_1;
         penumbraSum_0 = penumbraSum_1;
         blocked_0 = blocked_1;
         k_0 = k_0 + i32(1);
@@ -572,7 +608,7 @@ fn computeMain(@builtin(global_invocation_id) id_0 : vec3<u32>)
     {
         stopShort_0 = 0.0020000000949949f;
     }
-    textureStore((uVisibility_0), (vec2<u32>(_S25)), (vec4<f32>(atten_0 / 2.0f, stopShort_0, 0.0f, 0.0f)));
+    textureStore((uVisibility_0), (vec2<u32>(_S25)), (vec4<f32>(visibleSum_0 / 2.0f, stopShort_0, 0.0f, 0.0f)));
     return;
 }
 

@@ -1734,13 +1734,17 @@ public sealed class SurfaceCacheLighting : IDisposable
         // uGatherPass for why the pool cannot share the trace's dispatch.
         _device.BindImage(0, raw, ImageAccess.Write);
         _device.SetComputeUniform(_screenGatherTemporal, "uGatherPass", 0);
+        _device.SetComputeTimingLabel("cards.screen.trace");
         _device.Dispatch(_screenGatherTemporal, (gridX + 7) / 8, (gridY + 7) / 8);
+        _device.SetComputeTimingLabel(null);
         _device.MemoryBarrier(MemoryBarrierScope.Image | MemoryBarrierScope.TextureFetch);
 
         _device.BindImage(0, accumulated, ImageAccess.Write);
         _device.SetTexture(12, raw);
         _device.SetComputeUniform(_screenGatherTemporal, "uGatherPass", 1);
+        _device.SetComputeTimingLabel("cards.screen.pool");
         _device.Dispatch(_screenGatherTemporal, (gridX + 7) / 8, (gridY + 7) / 8);
+        _device.SetComputeTimingLabel(null);
         _device.MemoryBarrier(MemoryBarrierScope.Image | MemoryBarrierScope.TextureFetch);
     }
 

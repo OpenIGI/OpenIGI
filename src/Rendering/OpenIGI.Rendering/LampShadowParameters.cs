@@ -37,12 +37,12 @@ public static class LampShadowParameters
     /// <summary>How a frame-pixel jitter or offset scales into the visibility's pixels.</summary>
     public const float JitterScale = 1f / ResolutionDivisor;
 
-    /// <summary>The number of floats in the trace's header: a rotation and three vectors.</summary>
+    /// <summary>The number of floats in the trace's header: a rotation and four vectors.</summary>
     /// <remarks>
     /// Exactly right or nothing works: the lamp arrays are read at a fixed offset after it, so a header even
     /// one vector longer than the shader believes shifts every lamp and the trace reads a count of nought.
     /// </remarks>
-    public const int TraceHeaderFloats = 28;
+    public const int TraceHeaderFloats = 32;
 
     /// <summary>The number of floats in the trace's block: the header, then the shading's lamp block.</summary>
     public const int TraceFloats = TraceHeaderFloats + DeferredLampBlock.Floats;
@@ -66,6 +66,15 @@ public static class LampShadowParameters
     /// The device address of the traced world's hit records, which the rays' cut-out test reads each
     /// surface's mask layer from; nought where there are none, and every candidate is taken as solid.
     /// </param>
+    /// <param name="sunDirection">The world direction towards the sun.</param>
+    /// <param name="sunLuminance">
+    /// The sun's luminance as the lighting pass applies it, where the sun was traced this frame; nought
+    /// otherwise, which keeps every lamp shadow the sun's share would have skipped.
+    /// </param>
+    /// <param name="minimumVisible">
+    /// The summed lamp light below which a pixel is left lit without a ray, because no shadow there could
+    /// be seen; nought traces every pixel a lamp reaches.
+    /// </param>
     public static void WriteTrace(
         Span<float> data,
         int width,
@@ -75,7 +84,10 @@ public static class LampShadowParameters
         in DepthUnprojection unprojection,
         int frameIndex,
         ReadOnlySpan<float> lamps,
-        ulong cutoutRecords = 0)
+        ulong cutoutRecords = 0,
+        float minimumVisible = 0f,
+        Vector3f sunDirection = default,
+        float sunLuminance = 0f)
     {
         Require(data, TraceFloats);
         data.Clear();
@@ -94,16 +106,27 @@ public static class LampShadowParameters
         data[26] = camera.Z;
         data[27] = frameIndex;
 
+        data[28] = sunDirection.X;
+        data[29] = sunDirection.Y;
+        data[30] = sunDirection.Z;
+        data[31] = MathF.Max(sunLuminance, 0f);
+
         lamps[..Math.Min(lamps.Length, data.Length - TraceHeaderFloats)].CopyTo(data[TraceHeaderFloats..]);
 
         // Into the lamp block's source vector, whose last three slots the shading does not read: the
         // records' address as a bit pattern, low word then high, as every other trace carries it.
         data[TraceHeaderFloats + CutoutRecordsLow] = BitConverter.UInt32BitsToSingle((uint)cutoutRecords);
+
+        // The lamp light below which nothing a shadow could take away would show; see the trace's skip.
+        data[TraceHeaderFloats + MinimumVisibleSlot] = MathF.Max(minimumVisible, 0f);
         data[TraceHeaderFloats + CutoutRecordsLow + 1] = BitConverter.UInt32BitsToSingle((uint)(cutoutRecords >> 32));
     }
 
     // Where in the lamp block the trace finds the records' address: the source vector's y and z.
     private const int CutoutRecordsLow = 5;
+
+    /// <summary>The lamp block's otherwise unused <c>source.w</c>, read only by the trace.</summary>
+    private const int MinimumVisibleSlot = 7;
 
     /// <summary>Fills the temporal half's block.</summary>
     /// <param name="data">The block, <see cref="TemporalFloats"/> long.</param>

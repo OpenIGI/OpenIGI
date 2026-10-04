@@ -63,11 +63,19 @@
 
 [[vk::binding(5, 0)]] [[vk::image_format("rg16f")]] WTexture2D<float4> uVisibility;
 
+// The sun's traced visibility this frame, at the same resolution, for the skip below: how much of the sun
+// a pixel already has decides whether the lamps' share of its light is enough to show a shadow in.
+// Where the sun was not traced p.sunLight.w is nought and this is never read.
+[[vk::binding(10, 0)]] Texture2D<float4> uSunVisibility;
+
 #if !OPENIGI_LAMP_FIELD
 // The world's cut-out masks, for the rays' alpha test (CutoutHit.slang).
 [[vk::binding(6, 0)]] Texture2DArray<float4> uMasks;
 [[vk::binding(7, 0)]] SamplerState uMasksSampler;
 #endif
+
+// The share of the sunlight on a surface that lamp light must reach before its shadow is traced there.
+static const float kInvisibleShareOfSun = 0.01;
 
 struct Params
 {
@@ -83,13 +91,18 @@ struct Params
     // xyz the camera's world position, w the frame index.
     float4 cameraFrame;
 
+    // xyz the world direction towards the sun, w its luminance as the lighting pass applies it; nought
+    // where the sun was not traced this frame, which turns the relative skip off.
+    float4 sunLight;
+
     // The lamps, laid out exactly as the shading pass lays them out, so the two cannot disagree
     // about which lamp is which.
 
     // count, whether they shadow, frame index, _.
     float4 lampControl;
 
-    // largest source a ray samples, the hit records' address as a bit pattern (low word, high word), _.
+    // largest source a ray samples, the hit records' address as a bit pattern (low word, high word), and
+    // the summed lamp light below which a shadow here could not be seen at this exposure.
     float4 lampSource;
 
     // xyz view position, w reach.
@@ -401,7 +414,20 @@ void computeMain(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    if (weightSum <= 0.0)
+    // No lamp reaches this pixel -- or what reaches it could not show a shadow: too little at the exposure the
+    // frame is seen at, or too small a share of the sunlight already on it. The weights are the lighting
+    // pass's own lamp term, so this is all the light a shadow here could take away; against a sunlit
+    // surface a hundredth of its light is below what the eye tells apart. Only sunlight the sun's own
+    // trace found reaching the pixel counts, so a room, a shaded wall and every night keep their lamps'
+    // shadows exactly as they were.
+    float sunlit = 0.0;
+    if (p.sunLight.w > 0.0 && weightSum > 0.0)
+    {
+        float sunVisibility = saturate(uSunVisibility.Load(int3(px, 0)).r);
+        sunlit = p.sunLight.w * max(dot(normal, p.sunLight.xyz), 0.0) * sunVisibility;
+    }
+
+    if (weightSum <= 0.0 || weightSum < p.lampSource.w || weightSum < (kInvisibleShareOfSun * sunlit))
     {
         // No lamp reaches this pixel, so there is nothing for a shadow to be cast by.
         uVisibility.Store(px, float4(1.0, 0.0, 0.0, 0.0));
