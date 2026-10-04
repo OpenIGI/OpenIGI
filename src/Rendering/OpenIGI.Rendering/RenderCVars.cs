@@ -2349,58 +2349,6 @@ public static class RenderCVars
         high: "1",
         ultra: "1");
 
-    /// <summary>How far, in metres, the camera is focused, or 0 for no depth of field.</summary>
-    /// <remarks>
-    /// Off by default and deliberately so: in a first-person shooter the player's eye chooses what to
-    /// look at, and a renderer that blurs everything else is fighting them. Its place is the menu
-    /// camera and the sniper scope, which decide where the eye is going anyway.
-    /// <para>
-    /// Ultra briefly carried 40 metres, which arrived with a preset seeded from a saved config rather
-    /// than from a decision — it contradicted the paragraph above, and the target look has no depth of
-    /// field at all. Every preset is back to off.
-    /// </para>
-    /// </remarks>
-    public static readonly NumericCVar<float> FocalDistance = Presets.Define(
-        CVar.Float(
-            "r_dof",
-            0f,
-            0f,
-            500f,
-            CVarOptions.Archive,
-            "Focal distance in metres; 0 turns depth of field off."),
-        vanilla: "0",
-        enhanced: "0",
-        high: "0",
-        ultra: "0");
-
-    /// <summary>Over how many metres a surface goes from sharp to fully defocused.</summary>
-    public static readonly NumericCVar<float> FocalRange = Presets.Define(
-        CVar.Float(
-            "r_dof_range",
-            12f,
-            0.5f,
-            200f,
-            CVarOptions.Archive,
-            "Metres from the focal plane over which a surface defocuses completely."),
-        vanilla: "12",
-        enhanced: "12",
-        high: "12",
-        ultra: "18");
-
-    /// <summary>The widest the defocus gets, in pixels.</summary>
-    public static readonly NumericCVar<float> FocalBlur = Presets.Define(
-        CVar.Float(
-            "r_dof_blur",
-            8f,
-            0f,
-            64f,
-            CVarOptions.Archive,
-            "The widest defocus, in pixels."),
-        vanilla: "8",
-        enhanced: "8",
-        high: "8",
-        ultra: "1");
-
     /// <summary>How much of a frame's movement is smeared.</summary>
     public static readonly NumericCVar<float> MotionBlur = Presets.Define(
         CVar.Float(
@@ -2419,20 +2367,6 @@ public static class RenderCVars
         enhanced: "0",
         high: "0",
         ultra: "0.5");
-
-    /// <summary>How many samples the defocus and motion gather takes.</summary>
-    public static readonly NumericCVar<int> CameraTaps = Presets.Define(
-        CVar.Int(
-            "r_camera_taps",
-            6,
-            1,
-            16,
-            CVarOptions.Archive,
-            "Samples per pixel for depth of field and motion blur together."),
-        vanilla: "6",
-        enhanced: "4",
-        high: "6",
-        ultra: "10");
 
     /// <summary>How strongly the derived surface-detail maps are applied, or 0 to ignore them.</summary>
     /// <remarks>
@@ -3847,22 +3781,6 @@ public static class RenderCVars
         enhanced: "4",
         high: "8",
         ultra: "16");
-
-    /// <summary>Whether a mip chain is built for textures that ship without one.</summary>
-    /// <remarks>
-    /// The terrain's ground tiles ship without: the atlas layer descriptors carry no mip count, so
-    /// each is one 128x128 level, and minifying that unfiltered crawls and sparkles.
-    /// </remarks>
-    public static readonly BoolCVar GenerateMipmaps = Presets.Define(
-        CVar.Bool(
-            "r_generate_mipmaps",
-            true,
-            CVarOptions.Archive | CVarOptions.RequiresRestart,
-            "Build mipmaps for textures that ship without them, such as the terrain's ground tiles."),
-        vanilla: "0",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
 
     /// <summary>Whether gameplay uses the remaster HUD instead of IGI1's retail StatusScreen.</summary>
     /// <remarks>

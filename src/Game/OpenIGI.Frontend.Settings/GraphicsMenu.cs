@@ -284,23 +284,19 @@ public static class GraphicsMenu
                     new QualityLevel(
                         "Original",
                         ("r_material_detail", "0"),
-                        ("r_anisotropy", "1"),
-                        ("r_generate_mipmaps", "0")),
+                        ("r_anisotropy", "1")),
                     new QualityLevel(
                         "Enhanced",
                         ("r_material_detail", "0"),
-                        ("r_anisotropy", "4"),
-                        ("r_generate_mipmaps", "1")),
+                        ("r_anisotropy", "4")),
                     new QualityLevel(
                         "High",
                         ("r_material_detail", "0.25"),
-                        ("r_anisotropy", "8"),
-                        ("r_generate_mipmaps", "1")),
+                        ("r_anisotropy", "8")),
                     new QualityLevel(
                         "Ultra",
                         ("r_material_detail", "0"),
-                        ("r_anisotropy", "16"),
-                        ("r_generate_mipmaps", "1"))),
+                        ("r_anisotropy", "16"))),
 
                 new QualityGroup(
                     "World Detail",
@@ -609,14 +605,6 @@ public static class GraphicsMenu
         // the same authored haze through the froxel volume instead. A player who could set this
         // separately could set both at once, which fogs the frame twice.
         "r_fog_retail",
-
-        "r_camera_taps",
-
-        // Off at every preset by design: a first-person camera has no business deciding what the player
-        // is looking at, so the focus is never pulled.
-        "r_dof",
-        "r_dof_range",
-        "r_dof_blur",
 
         // Diagnostics, A/B levers and paths on disk.
         "r_rt",

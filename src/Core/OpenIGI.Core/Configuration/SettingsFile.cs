@@ -49,10 +49,36 @@ public static class SettingsFile
 
         foreach (string line in lines)
         {
-            console.Execute(line);
+            foreach (string statement in CommandTokenizer.SplitStatements(line))
+            {
+                if (!IsRetiredSetting(console, statement))
+                {
+                    console.Execute(statement);
+                }
+            }
         }
 
         return true;
+    }
+
+    /// <summary>Whether a saved statement assigns a setting this build no longer has.</summary>
+    /// <remarks>
+    /// A file written by an earlier build can name a variable since removed. Assigned, it reported an
+    /// unknown variable on every launch until the next save happened to drop it, for a setting the player
+    /// cannot see or change; skipped, the save that ends this session writes the file without it.
+    /// </remarks>
+    private static bool IsRetiredSetting(ConsoleSystem console, string statement)
+    {
+        IReadOnlyList<string> tokens = CommandTokenizer.Tokenize(statement);
+        if (tokens.Count < 2)
+        {
+            return false;
+        }
+
+        string name = tokens[0];
+        return !console.Variables.TryGet(name, out _)
+            && !console.Commands.TryGet(name, out _)
+            && !console.Aliases.ContainsKey(name);
     }
 
     /// <summary>Writes the current settings.</summary>

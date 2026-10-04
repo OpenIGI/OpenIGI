@@ -287,25 +287,6 @@ public sealed class MissionEntryCamera
             _ => 0f,
         };
 
-    /// <summary>Gets what the camera is focused on, in metres, or 0 for no depth of field.</summary>
-    /// <remarks>
-    /// The distance to the thing being looked at — the player's own start — so the level under the
-    /// vantage stays sharp while everything far behind it softens. The menu's own framing cannot be
-    /// reused here: it focuses at a fixed forty metres, which from three hundred metres up puts the
-    /// entire world beyond the focal plane and simply blurs all of it.
-    /// </remarks>
-    /// <remarks>
-    /// Zero once the menu's framing has finished easing off, which turns the defocus gather off outright
-    /// rather than leaving it running against a focal plane nothing is behind. The shot wants depth of
-    /// field only while it is letting go of the menu's; past that the level is the subject and the only
-    /// thing that should still be softening the picture is the shot's own movement.
-    /// </remarks>
-    public float FocalDistanceMetres =>
-        Phase is MissionEntryPhase.Idle or MissionEntryPhase.Done or MissionEntryPhase.Chrome
-            || MenuDepthOfField <= 0.001f
-            ? 0f
-            : (float)Math.Max(1.0, Distance(_pose.Position, _landing.Position));
-
     /// <summary>The widest the shot's own smear gets.</summary>
     /// <remarks>
     /// Above the ultra preset's own 0.4, because this is a camera move rather than a player turning their
@@ -318,26 +299,6 @@ public sealed class MissionEntryCamera
     /// </para>
     /// </remarks>
     private const float PeakMotionBlur = 0.6f;
-
-    /// <summary>Gets how much of the menu's depth of field is still applied, 1 all of it to 0 none.</summary>
-    /// <remarks>
-    /// The menu frames its backdrop with a close focal plane and full blur, which would be absurd to play
-    /// through. Letting it off across the travel and the descent is what makes the world sharpen as the
-    /// player drops into it.
-    /// </remarks>
-    public float MenuDepthOfField =>
-        Phase switch
-        {
-            MissionEntryPhase.Idle => 1f,
-            MissionEntryPhase.Reveal => 1f,
-
-            // Off across the CLIMB rather than across the travel. The menu's framing exists to push a
-            // backdrop behind an interface, and by the time the interface has gone and the camera is
-            // looking at the level from above, the level is the subject and wants to be sharp. Holding
-            // the menu's full blur all the way to the vantage washed it out.
-            MissionEntryPhase.Ascend => 1f - Easing.Evaluate(Ease.InOutQuad, Math.Clamp(_phaseElapsed / AscendSeconds, 0f, 1f)),
-            _ => 0f,
-        };
 
     /// <summary>Begins the shot.</summary>
     /// <param name="showcase">The pose the menu's orbit is in at the moment Play was pressed.</param>

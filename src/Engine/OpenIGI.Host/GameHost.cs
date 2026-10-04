@@ -1516,7 +1516,7 @@ internal sealed partial class GameHost : IDisposable
                         shell?.ClosePauseMenu();
                         menuMode = false;
                         pauseMenu = false;
-                        ApplyGameplayDepthOfField();
+                        ApplyGameplayMotionBlur();
                     }
 
                     // The menu has been drawing this very level for as long as the player has been
@@ -1622,7 +1622,7 @@ internal sealed partial class GameHost : IDisposable
                             shell?.ClosePauseMenu();
                             menuMode = false;
                             pauseMenu = false;
-                            ApplyGameplayDepthOfField();
+                            ApplyGameplayMotionBlur();
                             StartMission(mission.Id);
                             _window.CursorVisible = false;
                         }
@@ -1652,7 +1652,6 @@ internal sealed partial class GameHost : IDisposable
                     // backdrop again rather than as something being played through.
                     pauseMenu = false;
                     showcasePending = true;
-                    ApplyMenuDepthOfField();
                     _window.CursorVisible = true;
                 },
                 quit: () => running = false,
@@ -1744,12 +1743,6 @@ internal sealed partial class GameHost : IDisposable
                     showcasePending = true;
                 }
 
-                // Heavy depth of field behind the UI, on the deferred path the shell's preset leaves on.
-                // Through a helper because what it displaces has to be given back: these are Archive
-                // variables, so leaving the menu's framing in place meant the first save wrote it out as
-                // the player's own setting.
-                ApplyMenuDepthOfField();
-
                 // -entrycam: open on the campaign and remember that Play is to be pressed as soon as this
                 // mission's backdrop is up. The backdrop itself is requested through the ordinary showcase
                 // path below, so what gets measured is the real thing rather than a special case.
@@ -1772,7 +1765,7 @@ internal sealed partial class GameHost : IDisposable
         _logger.Information(
             "Render",
             FormattableString.Invariant(
-                $"Camera effects: r_motion_blur {RenderCVars.MotionBlur.Value:0.###}, r_camera_taps {RenderCVars.CameraTaps.Value}, r_dof {RenderCVars.FocalDistance.Value:0.#}/{RenderCVars.FocalRange.Value:0.#}, r_dof_blur {RenderCVars.FocalBlur.Value:0.#}, r_hdr {RenderCVars.OffscreenScene.Value}, r_deferred {RenderCVars.Deferred.Value}, r_taa {RenderCVars.TemporalFeedback.Value:0.###}, r_smooth {RenderCVars.SmoothPresentation.Value}, r_scale {RenderCVars.RenderScale.Value:0.###}."));
+                $"Camera effects: r_motion_blur {RenderCVars.MotionBlur.Value:0.###}, r_hdr {RenderCVars.OffscreenScene.Value}, r_deferred {RenderCVars.Deferred.Value}, r_taa {RenderCVars.TemporalFeedback.Value:0.###}, r_smooth {RenderCVars.SmoothPresentation.Value}, r_scale {RenderCVars.RenderScale.Value:0.###}."));
 
         _window.CloseRequested += (_, _) => running = false;
         _window.Show();
@@ -1913,7 +1906,6 @@ internal sealed partial class GameHost : IDisposable
                 menuMode = true;
                 pauseMenu = false;
                 showcasePending = true;
-                ApplyMenuDepthOfField();
             }
 
             // The menu has nothing to gain past the display's rate, and a GPU kept at full load turns every
@@ -2247,15 +2239,14 @@ internal sealed partial class GameHost : IDisposable
                     }
                 }
 
-                // The shot's own framing: focused on what it is looking at rather than on the menu's fixed
-                // forty metres, and smeared by its own movement. Both hand back to the player's settings.
-                ApplyEntryFraming();
+                // The shot's own smear, from its own movement; handed back to the player's setting after.
+                ApplyEntryMotionBlur();
 
                 if (_entry.Phase == MissionEntryPhase.Done)
                 {
                     _entry.Reset();
                     _soldiers?.HidePlayerBody();
-                    ApplyGameplayDepthOfField();
+                    ApplyGameplayMotionBlur();
                     ReportWatchedFramePassesIn(1);
 
                     // The eye is drawn between its last two ticks, and it has just been somewhere else
@@ -2299,7 +2290,6 @@ internal sealed partial class GameHost : IDisposable
                         menuMode = true;
                         pauseMenu = false;
                         showcasePending = true;
-                        ApplyMenuDepthOfField();
                     }
                     else if (_missionCycleMission > 0)
                     {
@@ -2307,7 +2297,7 @@ internal sealed partial class GameHost : IDisposable
                         shell.ClosePauseMenu();
                         menuMode = false;
                         pauseMenu = false;
-                        ApplyGameplayDepthOfField();
+                        ApplyGameplayMotionBlur();
                         StartMission(_missionCycleMission);
                     }
                 }
@@ -3979,11 +3969,7 @@ internal sealed partial class GameHost : IDisposable
                     Grain: RenderCVars.Grain.Value,
                     ChromaticAberration: MathF.Max(RenderCVars.ChromaticAberration.Value, binocularAberration),
                     Sharpen: RenderCVars.Sharpen.Value,
-                    FocalDistance: RenderCVars.FocalDistance.Value,
-                    FocalRange: RenderCVars.FocalRange.Value,
-                    FocalBlur: RenderCVars.FocalBlur.Value,
                     MotionBlur: MathF.Max(RenderCVars.MotionBlur.Value, computerFlightBlur),
-                    CameraTaps: RenderCVars.CameraTaps.Value,
                     SpatialAa: RenderCVars.SpatialAa.Value,
                     SpatialAaThreshold: RenderCVars.SpatialAaThreshold.Value,
                     ColourLookup: RenderCVars.ColourLookup.Value,
