@@ -92,6 +92,10 @@ public sealed partial class GraphicsDevice
 
         bool traced = WillTraceLamps() && TracedWorld is { WorldScene: not null };
         bool marched = !traced && WillMarchLamps();
+        if (marched)
+        {
+            EnsureLampMaps();
+        }
         if (_localLightCount <= 0 || (!traced && !marched))
         {
             return;
@@ -146,7 +150,9 @@ public sealed partial class GraphicsDevice
                     minimumVisibleLamp,
                     sunMask,
                     sunDirection,
-                    sunLuminance);
+                    sunLuminance,
+                    _lampMapArray,
+                    _lampMapSampler);
         IRhiTextureView? lampVelocity = _velocityRecorded ? scene.View(SceneTargetId.Velocity) : null;
 
         // Step by step while measuring, so the trace and the two filters are told apart in the breakdown.
@@ -211,8 +217,9 @@ public sealed partial class GraphicsDevice
 
         _lampFieldBlock[20] = BitConverter.Int32BitsToSingle(levels);
         _lampFieldBlock[21] = BitConverter.Int32BitsToSingle(field.Resolution);
-        _lampFieldBlock[22] = 0f;
+        _lampFieldBlock[22] = BitConverter.Int32BitsToSingle(_debugView == DebugView.LampMarch ? 1 : 0);
         _lampFieldBlock[23] = 0f;
+        WriteLampMaps(_lampFieldBlock);
         return _lampFieldBlock;
     }
 

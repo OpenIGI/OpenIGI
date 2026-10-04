@@ -41,6 +41,8 @@ public readonly record struct FogSliceDistribution(float B, float O, float Scale
 /// <param name="DepthBias">The cascades' depth bias.</param>
 /// <param name="NormalBias">Their normal bias.</param>
 /// <param name="ShadowTexelSize">One over the shadow map's resolution.</param>
+/// <param name="ShadowFilterRadius">The cascades' filter radius, in texels.</param>
+/// <param name="ContactShadowReach">How far the cascades' contact shadow marches, in metres; nought for none.</param>
 /// <param name="Wetness">How wet the world is and how its water moves.</param>
 /// <param name="HasShelterMap">Whether the level has a top-down roof raster.</param>
 /// <param name="Shelter">Where that raster sits in the world and how a texel decodes.</param>
@@ -75,6 +77,8 @@ public readonly record struct DeferredLightingState(
     float DepthBias = 0f,
     float NormalBias = 0f,
     float ShadowTexelSize = 0f,
+    float ShadowFilterRadius = 1f,
+    float ContactShadowReach = 0f,
     WetnessSettings Wetness = default,
     bool HasShelterMap = false,
     ShelterMapTransform Shelter = default,
@@ -150,10 +154,16 @@ public static class DeferredLightingParameters
         block[17] = state.SkyColour.Y * intensity;
         block[18] = state.SkyColour.Z * intensity;
 
+        // probeSky.w: the cascades' filter radius in texels.
+        block[19] = MathF.Max(state.ShadowFilterRadius, 1f);
+
         // camera: the camera's world position, added to the rotated view position.
         block[20] = state.CameraPosition.X;
         block[21] = state.CameraPosition.Y;
         block[22] = state.CameraPosition.Z;
+
+        // camera.w: how far the cascades' contact shadow marches towards the sun, in metres.
+        block[23] = MathF.Max(state.ContactShadowReach, 0f);
 
         // giParams: the screen-GI strength (nought disables it), whether its atlas is full resolution,
         // whether ambient occlusion is on, and the height the sky tables were built for.

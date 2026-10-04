@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Presentation;
 using OpenIGI.Rendering;
@@ -23,10 +24,10 @@ namespace OpenIGI.Presentation.Rendering;
 /// <c>Camera3D.CreateModelView</c> folds the camera offset into each object's transform.
 /// </para>
 /// <para>
-/// <b>Terrain does not cast here.</b> Its level of detail is chosen from the camera's position, so
-/// drawing it from the light would pick a tessellation for a viewpoint kilometres away — and its own
-/// shadowing is already in the baked lightmaps. Objects and soldiers are what throw the shadows a player
-/// reads. The ray-traced sun does see it, through the title's own terrain shadow caster.
+/// <b>Terrain casts through the caster the traced sun is given</b>: the ground gathered from every
+/// direction around the eye, at the levels of detail the frame drew it with, rather than a descent from
+/// the light -- which would pick a tessellation for a viewpoint kilometres away. Without it a hill threw
+/// no shadow at all here, while the traced sun had it; the two shadow systems disagreed about the ground.
 /// </para>
 /// </remarks>
 public sealed class ShadowCasterPass
@@ -52,13 +53,15 @@ public sealed class ShadowCasterPass
     /// <param name="scene">The world's placed objects, or <see langword="null"/> for none.</param>
     /// <param name="world">The presenter that draws them, or <see langword="null"/> for none.</param>
     /// <param name="characters">The character presenter, or <see langword="null"/> for none.</param>
+    /// <param name="terrain">The ground, or <see langword="null"/> for none.</param>
     public void Render(
         ReadOnlySpan<ShadowCascade> cascades,
         int count,
         in Camera3D eye,
         WorldScene? scene,
         IWorldPresenter? world,
-        ICharacterPresenter? characters)
+        ICharacterPresenter? characters,
+        ITerrainPresenter? terrain = null)
     {
         LastCascadeCount = 0;
 
@@ -86,7 +89,9 @@ public sealed class ShadowCasterPass
                         new WorldDrawOptions(MinimumRadius: cascades[i].Radius * (1f / 256f)));
                 }
 
-characters?.Draw(lightCamera, cascades[i].Projection);
+                terrain?.DrawShadowCaster(lightCamera);
+
+                characters?.Draw(lightCamera, cascades[i].Projection);
 
                 // The player's own body, which is not one of the characters and so is not in that draw.
                 // It costs a shadow only while something is showing it -- the third-person view, a ladder,
@@ -103,5 +108,51 @@ characters?.Draw(lightCamera, cascades[i].Projection);
 
             LastCascadeCount = i + 1;
         }
+    }
+
+    /// <summary>Draws the world into one lamp's shadow map, from the lamp.</summary>
+    /// <param name="slot">The map.</param>
+    /// <param name="position">Where the lamp's camera stands, just in front of its glass.</param>
+    /// <param name="rotation">The way it looks: its rows the right, up and forward axes.</param>
+    /// <param name="projection">The perspective it looks through.</param>
+    /// <param name="scene">The world's placed objects, or <see langword="null"/> for none.</param>
+    /// <param name="world">The presenter that draws them, or <see langword="null"/> for none.</param>
+    /// <param name="characters">The character presenter, or <see langword="null"/> for none.</param>
+    /// <returns>Whether the map was drawn.</returns>
+    /// <remarks>
+    /// The same renderers as the cascades, from a camera in the lamp. Nothing is culled by size: a lamp's map
+    /// covers a room, and the bar of a window frame is what it is there to catch.
+    /// </remarks>
+    public bool RenderLampMap(
+        int slot,
+        Vector3d position,
+        Matrix3f rotation,
+        in Matrix4f projection,
+        WorldScene? scene,
+        IWorldPresenter? world,
+        ICharacterPresenter? characters)
+    {
+        if (!_device.BeginLampShadowMap(slot, position, rotation, projection))
+        {
+            return false;
+        }
+
+        try
+        {
+            Camera3D lampCamera = new(position, rotation);
+            if (scene is not null && world is not null)
+            {
+                world.Draw(scene, lampCamera, projection, new WorldDrawOptions(MinimumRadius: 0f));
+            }
+
+            characters?.Draw(lampCamera, projection);
+            characters?.DrawPlayerBody(lampCamera, projection);
+        }
+        finally
+        {
+            _device.EndShadowCascade();
+        }
+
+        return true;
     }
 }

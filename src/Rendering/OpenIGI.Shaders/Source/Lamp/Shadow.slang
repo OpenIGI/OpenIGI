@@ -131,17 +131,148 @@ struct FieldParams
     // Each level's encoded distance range.
     float4 range;
 
-    // level count, resolution per level, _, _.
+    // level count, resolution per level, whether the march reports its own verdicts (the lampmarch
+    // debug view), _.
     int4 levels;
+
+    // The nearest lamps' shadow maps: each map's camera-relative world to clip, and which map each lamp
+    // reads (-1 for none), four lamps to an int4.
+    float4x4 mapMatrix[16];
+    int4 mapSlot[40];
 };
 
 [[vk::binding(9, 0)]] ConstantBuffer<FieldParams> f;
+[[vk::binding(11, 0)]] DepthTexture2DArray uLampMaps;
+[[vk::binding(12, 0)]] SamplerComparisonState uLampMapSampler;
+
+// How much of a lamp reaches a camera-relative point by the lamp's own shadow map, filtered over a texel
+// either way; or -1 where the lamp has no map or the point is outside it, for the field to answer instead.
+// The bias is taken in metres along the lamp's view -- a few centimetres and a hundredth of the distance --
+// and only then turned into the map's depth, which a perspective map spends unevenly.
+float LampMapVisibility(int lamp, float3 cameraRelative, float cosToLamp)
+{
+    int slot = f.mapSlot[lamp >> 2][lamp & 3];
+    if (slot < 0)
+    {
+        return -1.0;
+    }
+
+    float4x4 m = f.mapMatrix[slot];
+    float4 clip = mul(m, float4(cameraRelative, 1.0));
+
+    // Behind the glass: a ceiling round a batten, the wall a lamp hangs on. The fitting's own aim gives such
+    // a point none of its light, so nothing here can be taken away; and the field, asked instead, finds the
+    // housing in the way at its resolution and blacked out every ceiling under its lights.
+    if (clip.w <= 0.06)
+    {
+        return 1.0;
+    }
+
+    float3 ndc = clip.xyz / clip.w;
+    if (any(abs(ndc.xy) > float2(0.98, 0.98)))
+    {
+        return -1.0;
+    }
+
+    // A texel of the map at this distance, in metres, times how steeply the surface falls away from the
+    // lamp: a wall the lamp skims holds the same depth across many texels, and one texel's worth of bias
+    // shadowed it with itself in long wedges.
+    float viewZ = clip.w;
+    float texelMetres = viewZ * (2.0 / max(length(float3(m[0][0], m[0][1], m[0][2])), 1e-3)) / 512.0;
+    float cosine = clamp(cosToLamp, 0.05, 1.0);
+    float slope = min(sqrt(1.0 - (cosine * cosine)) / cosine, 12.0);
+    float biased = max(viewZ - (0.03 + (0.005 * viewZ) + (texelMetres * (1.5 + slope))), 0.06);
+    float depth = ((m[2][2] + (m[2][3] / biased)) * 0.5) + 0.5;
+    float2 uv = float2((ndc.x * 0.5) + 0.5, 0.5 - (ndc.y * 0.5));
+
+    uint width;
+    uint height;
+    uint layers;
+    uLampMaps.GetDimensions(width, height, layers);
+    float texel = 1.0 / float(max(width, 1u));
+
+    float sum = 0.0;
+    for (int y = -1; y <= 1; y++)
+    {
+        for (int x = -1; x <= 1; x++)
+        {
+            sum += uLampMaps.SampleCmpLevelZero(
+                uLampMapSampler, float3(uv + (float2(float(x), float(y)) * texel), float(slot)), depth);
+        }
+    }
+
+    return sum / 9.0;
+}
 
 #define uClipmapOrigin f.origin
 #define uClipmapRange f.range
 #define uShadowLevels f.levels.x
 #define uShadowResolution f.levels.y
 #include "../Common/DistanceField.slang"
+
+// One level's reading at a point the level holds.
+float LampLevelDistance(int level, float3 voxel)
+{
+    float slice = (float(level) * float(uShadowResolution)) + voxel.z;
+    float3 uvw = float3(
+        voxel.x / float(uShadowResolution),
+        voxel.y / float(uShadowResolution),
+        slice / float(uShadowResolution * uShadowLevels));
+    float raw = uClipmaps.SampleLevel(uClipmapsSampler, uvw, 0.0).r;
+    return ((raw * 2.0) - 1.0) * uClipmapRange[level];
+}
+
+// How many voxels from a level's edge its answer starts handing over to the next level out.
+static const float kLampLevelBlend = 8.0;
+
+// The field at a point, as DistanceAt reads it, but handed smoothly from each level to the next across the
+// outer voxels of the finer one. DistanceAt answers from the finest level holding the point and nothing
+// else, and the levels follow the camera: a wall a few metres off went from a quarter-metre voxel to a
+// half-metre one the moment a step of the player's put it past the fine level's edge, and its lamp
+// shadow -- the thin ones, the near-wall ones -- jumped with it. That was lamp light that changed with
+// where the player stood and shimmered while they walked, and held still when they stopped. Each level is
+// snapped to the world, so a point's reading in either level is fixed; only the share between them moves,
+// and it moves gradually.
+float LampDistanceAt(float3 world, out bool known, out float resolved)
+{
+    known = false;
+    resolved = uClipmapOrigin[0].w;
+
+    for (int level = 0; level < uShadowLevels; level++)
+    {
+        float4 corner = uClipmapOrigin[level];
+        float3 voxel = (world - corner.xyz) / corner.w;
+        float top = float(uShadowResolution) - 0.5;
+        if (any(voxel < float3(0.5, 0.5, 0.5)) || any(voxel > float3(top, top, top)))
+        {
+            continue;
+        }
+
+        known = true;
+        float here = LampLevelDistance(level, voxel);
+        resolved = corner.w;
+
+        float3 fromEdge = min(voxel - 0.5, top - voxel);
+        float edge = min(fromEdge.x, min(fromEdge.y, fromEdge.z));
+        float handOver = saturate(1.0 - (edge / kLampLevelBlend));
+        if (handOver <= 0.0 || level + 1 >= uShadowLevels)
+        {
+            return here;
+        }
+
+        float4 outer = uClipmapOrigin[level + 1];
+        float3 outerVoxel = (world - outer.xyz) / outer.w;
+        if (any(outerVoxel < float3(0.5, 0.5, 0.5)) || any(outerVoxel > float3(top, top, top)))
+        {
+            return here;
+        }
+
+        resolved = lerp(corner.w, outer.w, handOver);
+        return lerp(here, LampLevelDistance(level + 1, outerVoxel), handOver);
+    }
+
+    return 1e6;
+}
 
 // The depth buffer is trusted for the first metre only: beyond that a step lands on a pixel whose surface
 // may be anything, and the field takes over. Sixteen steps keep each one a few centimetres long.
@@ -158,7 +289,23 @@ float2 ProjectToUv(float3 viewPosition)
 
 // Whether anything stands between a point and a point on a lamp, and how far along if so. Positions are
 // relative to the camera, as the field's corners are.
-bool SoftwareBlocked(float3 from, float3 direction, float segment, out float hitT)
+//
+// receiverLift is how far the ray's start stands off the receiving surface and receiverRise how fast the
+// ray climbs away from it (the cosine to its normal); lampDistance is the whole length to the point on the
+// lamp and lampRise how squarely the lamp's face looks back down the ray -- negative for a ray reaching it
+// from behind the glass, nought for a lamp with no face.
+// Together they say how far each sample is from the receiver's own plane and from the plane the lamp is
+// mounted on -- see the field's hit test for why that matters.
+bool SoftwareBlocked(
+    float3 from,
+    float3 direction,
+    float segment,
+    float receiverLift,
+    float receiverRise,
+    float lampDistance,
+    float lampRise,
+    out float hitT,
+    inout float nearMiss)
 {
     hitT = 0.0;
 
@@ -217,12 +364,26 @@ bool SoftwareBlocked(float3 from, float3 direction, float segment, out float hit
     // in before it may be stopped by anything, as far as a voxel and a half of the level it is in.
     bool leaving = true;
     float leaveBy = 0.0;
+
+    // What the field reads at the start, where the nearest surface is the receiver's own: the field's
+    // error there -- it can read a point a few centimetres under a ceiling as inside it -- is the same
+    // error it makes along the receiver's plane further on, so the plane test below is measured from this
+    // reading rather than from the true lift.
+    bool startKnown;
+    float startResolved;
+    float startDistance = LampDistanceAt(from + (direction * travelled), startKnown, startResolved);
+    float startTravelled = travelled;
+
+    // And at the end, where the nearest surface is the lamp's own fitting and whatever it is mounted on:
+    // the same calibration for the lamp's plane, so a fitting is told from a slab hanging in front of it.
+    bool endKnown;
+    float endResolved;
+    float endDistance = LampDistanceAt(from + (direction * end), endKnown, endResolved);
     for (int step = 0; step < 64 && travelled < end; step++)
     {
         bool known;
-        float raw;
         float resolved;
-        float distance = DistanceAt(from + (direction * travelled), known, raw, resolved);
+        float distance = LampDistanceAt(from + (direction * travelled), known, resolved);
         if (!known)
         {
             return false;
@@ -247,8 +408,47 @@ bool SoftwareBlocked(float3 from, float3 direction, float segment, out float hit
         // A hit once the ray comes within a capture radius of a surface: nothing at the start, so a ray
         // leaving a surface does not catch it again, growing to half a voxel over the first two voxels so
         // a slab a short way off is still caught though the march steps over its thin middle.
+        //
+        // And only a surface nearer the ray than the receiver's own plane and the lamp's mounting plane. A
+        // ray from a ceiling to the batten screwed to it runs a few centimetres under the ceiling all the
+        // way, and the field -- a quarter of a metre a voxel at its finest -- calls that touching: every
+        // ceiling under its own lights came out black, a desk top thinner than a voxel lost its lamp, and
+        // the corners blotched. A sample whose nearest surface is no closer than those planes is only
+        // seeing them; something really in the way stands closer to the ray than either.
         float hitRadius = (0.5 * resolved) * saturate(travelled / (2.0 * resolved));
-        if (distance < hitRadius)
+        // A quarter of a voxel past the receiver's own reading. The plane is measured from what the field
+        // said at the start, which already carries the field's error about it; a wider margin let a slab
+        // standing out of the receiver's own wall -- the canopy under a row of wall lamps -- pass as part
+        // of the wall, and the whole wall under it lit.
+        float margin = 0.25 * resolved;
+        float aboveReceiver = startKnown
+            ? startDistance + ((travelled - startTravelled) * receiverRise)
+            : receiverLift + (travelled * receiverRise);
+        float toLamp = lampDistance - travelled;
+        float belowLamp = lampRise <= 0.0 ? 1e9
+            : endKnown ? endDistance + ((end - travelled) * lampRise)
+            : toLamp * lampRise;
+
+        // The last voxel and a half before the lamp is the fitting itself -- its housing, at the field's
+        // resolution -- for a ray that reaches it from BEHIND the glass, as one from the ceiling it hangs on
+        // does: that is not shadowed by the lamp it is going to. Any ray in front of the glass keeps every
+        // hit, however glancing: a wall lamp facing out over a canopy is reached almost edge-on by a ray
+        // climbing the wall below, and the canopy in the way is what keeps that wall dark.
+        bool atFitting = lampRise <= 0.0 && toLamp < (1.5 * resolved);
+        bool touching = distance < hitRadius;
+        if (touching
+            && (atFitting || distance >= aboveReceiver - margin || distance >= belowLamp - (0.25 * resolved)))
+        {
+            // Something within the capture radius that a plane test or the fitting let through; counted for
+            // the lampmarch debug view, which is how a leak past a thin slab is told from a slab the field
+            // never held at all.
+            nearMiss = 1.0;
+        }
+
+        if (!atFitting
+            && touching
+            && distance < aboveReceiver - margin
+            && distance < belowLamp - (0.25 * resolved))
         {
             hitT = travelled;
             return true;
@@ -328,7 +528,8 @@ void computeMain(uint3 id : SV_DispatchThreadID)
     // this game's surfaces carry a second, back-facing skin a few centimetres in front of the one the
     // rasteriser draws -- a door leaf is two single-sided quads -- and a ray started inside that gap
     // strikes the skin from behind: the office door read as permanently shadowed at two centimetres.
-    float3 origin = worldPos + (normal * (0.08 + (0.0005 * viewPos.z)));
+    float originLift = 0.08 + (0.0005 * viewPos.z);
+    float3 origin = worldPos + (normal * originLift);
 
     // Wrapped so the low-discrepancy steps below keep their precision in a float.
     float frame = float(uint(p.cameraFrame.w) % 65536u);
@@ -446,6 +647,7 @@ void computeMain(uint3 id : SV_DispatchThreadID)
     // of binary rays into a smooth soft edge rather than a grain.
     float penumbraSum = 0.0;
     float blocked = 0.0;
+    float nearMissSum = 0.0;
 
     for (int k = 0; k < kSamples; k++)
     {
@@ -521,9 +723,35 @@ void computeMain(uint3 id : SV_DispatchThreadID)
 
         bool hit;
         float t;
+        float nearMiss = 0.0;
 #if OPENIGI_LAMP_FIELD
+        // A lamp with a map of its own is answered by it: the geometry as drawn, thin slabs and all.
+        float mapped = LampMapVisibility(lamp, origin - p.cameraFrame.xyz, dot(normal, normalize(toTarget)));
+        if (mapped >= 0.0)
+        {
+            visibleSum += mapped;
+            if (mapped < 1.0)
+            {
+                blocked += 1.0 - mapped;
+                penumbraSum += (1.0 - mapped) * 0.05;
+            }
+
+            continue;
+        }
+
         // Camera-relative, which is the space the field's corners are handed over in.
-        hit = SoftwareBlocked(origin - p.cameraFrame.xyz, toTarget / distance, distance - stopShort, t);
+        float3 rayDirection = toTarget / distance;
+        hit = SoftwareBlocked(
+            origin - p.cameraFrame.xyz,
+            rayDirection,
+            distance - stopShort,
+            originLift,
+            max(dot(rayDirection, normal), 0.0),
+            distance,
+            dot(emitting, emitting) > 0.0 ? dot(-rayDirection, axis) : 0.0,
+            t,
+            nearMiss);
+        nearMissSum += nearMiss;
 #else
         RayDesc ray;
         ray.Origin = origin;
@@ -563,5 +791,14 @@ void computeMain(uint3 id : SV_DispatchThreadID)
     // denoisers behind this pass smooth the first and size their kernel from the second; the shading
     // multiplies every lamp's unshadowed light by the result.
     float penumbra = blocked > 0.0 ? clamp(penumbraSum / blocked, 0.002, 1.0) : 0.002;
+#if OPENIGI_LAMP_FIELD
+    if (f.levels.z != 0)
+    {
+        // The lampmarch debug view: the share of rays the march stopped, and the share it let through past
+        // something it was touching. Both channels are read by the shading as they come out of the filters.
+        uVisibility.Store(px, float4(blocked / float(kSamples), max(nearMissSum / float(kSamples), 0.002), 0.0, 0.0));
+        return;
+    }
+#endif
     uVisibility.Store(px, float4(visibleSum / float(kSamples), penumbra, 0.0, 0.0));
 }

@@ -55,6 +55,7 @@ internal sealed class TerrainShadowCaster : IDisposable
     private readonly List<(int VertexStart, int IndexStart)> _runs = [];
 
     private int _current = -1;
+    private bool _committed;
     private long _lastHash;
     private Vector3d _lastCamera;
     private float _lastOffset;
@@ -179,14 +180,14 @@ internal sealed class TerrainShadowCaster : IDisposable
         }
     }
 
-    /// <summary>Uploads what was assembled, or reuses the last upload, and offers it to the traced world.</summary>
-    /// <param name="camera">The camera the terrain is drawn with, in metres, to place the mesh.</param>
-    public void Submit(in Camera3D camera)
+    /// <summary>Uploads what was assembled, or keeps the last upload where nothing changed.</summary>
+    public void Commit()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (_indices.Count < 3)
         {
+            _committed = false;
             LastTriangleCount = 0;
             return;
         }
@@ -207,20 +208,63 @@ internal sealed class TerrainShadowCaster : IDisposable
             _lastSlope = _slope;
         }
 
+        _committed = true;
+        int triangles = 0;
+        foreach (int indexCount in _slots[_current].IndexCounts)
+        {
+            triangles += indexCount / 3;
+        }
+
+        LastTriangleCount = triangles;
+    }
+
+    /// <summary>Offers the committed caster to the traced world.</summary>
+    /// <param name="camera">The camera the terrain is drawn with, in metres, to place the mesh.</param>
+    public void Submit(in Camera3D camera)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_committed)
+        {
+            return;
+        }
+
         Slot slot = _slots[_current];
         Matrix4f modelView = camera.CreateModelView(slot.Origin);
-        int triangles = 0;
         for (int i = 0; i < slot.Meshes.Count; i++)
         {
             int indexCount = slot.IndexCounts[i];
             if (indexCount >= 3)
             {
                 _device.SubmitShadowCaster(slot.Meshes[i], modelView, indexCount);
-                triangles += indexCount / 3;
             }
         }
+    }
 
-        LastTriangleCount = triangles;
+    /// <summary>Draws the committed caster into the sun's cascade being filled.</summary>
+    /// <param name="lightCamera">The light's camera, at the eye and looking along the sun.</param>
+    /// <remarks>
+    /// The same surface the traced sun is given, so the two shadows agree on what the ground is: the
+    /// morph is already in the vertices, and the cascade's own depth bias keeps it off itself.
+    /// </remarks>
+    public void DrawCascade(in Camera3D lightCamera)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_committed)
+        {
+            return;
+        }
+
+        Slot slot = _slots[_current];
+        Matrix4f modelView = lightCamera.CreateModelView(slot.Origin);
+        for (int i = 0; i < slot.Meshes.Count; i++)
+        {
+            int indexCount = slot.IndexCounts[i];
+            if (indexCount >= 3)
+            {
+                _device.DrawMesh(
+                    slot.Meshes[i], 0, indexCount, modelView, TextureHandle.None, TextureHandle.None, BlendMode.Opaque);
+            }
+        }
     }
 
     private void Upload(Slot slot)

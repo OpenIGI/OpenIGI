@@ -203,6 +203,36 @@ internal sealed class DayNightCycle
         }
     }
 
+    /// <summary>Moves the clock to an hour, as holding the scrub keys would, without touching anything else.</summary>
+    /// <param name="hours">The hour of day; wrapped into [0, 24).</param>
+    public void SetHour(float hours) => _timeHours = hours - (MathF.Floor(hours / HoursPerDay) * HoursPerDay);
+
+    /// <summary>Sweeps the clock forward to an hour over a time, as holding the scrub key would.</summary>
+    /// <param name="hours">The hour to arrive at.</param>
+    /// <param name="seconds">How long the sweep takes; nought or less sets the hour at once.</param>
+    public void SweepToHour(float hours, float seconds)
+    {
+        if (seconds <= 0f)
+        {
+            SetHour(hours);
+            return;
+        }
+
+        float target = hours - (MathF.Floor(hours / HoursPerDay) * HoursPerDay);
+        float ahead = target - _timeHours;
+        if (ahead < 0f)
+        {
+            ahead += HoursPerDay;
+        }
+
+        _sweepRate = ahead / seconds;
+        _sweepLeft = seconds;
+    }
+
+    // A sweep in progress: hours per second, and the seconds it has left to run. See SweepToHour.
+    private float _sweepRate;
+    private float _sweepLeft;
+
     /// <summary>Returns the cycle to a starting hour with no re-orientation, for a fresh level.</summary>
     /// <param name="startHours">The hour of day to open on; wrapped into [0, 24).</param>
     public void Reset(float startHours = 12f)
@@ -312,6 +342,13 @@ internal sealed class DayNightCycle
 
         float hourStep = (HoursPerDay / SecondsPerDay) * deltaSeconds;
 
+        if (_sweepLeft > 0f)
+        {
+            float spent = MathF.Min(deltaSeconds, _sweepLeft);
+            _timeHours += _sweepRate * spent;
+            _sweepLeft -= spent;
+        }
+
         // IsDown already returns false while the console has the keyboard, so scrubbing never fights typing.
         if (keyboard.IsDown(KeyCode.RightBracket))
         {
@@ -414,6 +451,11 @@ internal sealed class DayNightCycle
         // The sky does not share this slot: it is handed the sun (SunDirection, SkySunColour) and the moon
         // (MoonDirection, MoonColour) as two lights of its own, so it glows through twilight whichever of
         // them the direct light belongs to.
+        // The sun's own height, kept before the moon may take the direction over below: the sky's fill
+        // follows the SUN. Read after the swap it was the moon's height, so as soon as the moon held the slot
+        // the twilight read as full day and the fill jumped back to the authored daytime ambient -- the
+        // whole night lit by a noon sky through the GI.
+        float sunHeight = direction.Z;
         float moonLevel = Smoothstep(0f, 0.15f, -direction.Z);
         Vector3f moonColour = _nightColour * moonLevel;
         MoonColour = moonColour;
@@ -435,7 +477,7 @@ internal sealed class DayNightCycle
         // Crossed in ratio rather than in step, as light is seen: the sky's light falls by roughly the
         // same factor for every degree the sun sinks, so an even fade to the eye is an even fade in the
         // logarithm. It never dips under the night's fill on the way.
-        float twilight = Smoothstep(TwilightEndSine, TwilightStartSine, direction.Z);
+        float twilight = Smoothstep(TwilightEndSine, TwilightStartSine, sunHeight);
         Vector3f ambient = RatioLerp(_nightAmbient, authored.Ambient, twilight);
 
         _lastDirection = direction;

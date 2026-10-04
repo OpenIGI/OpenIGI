@@ -61,6 +61,12 @@ public sealed partial class GraphicsDevice
     // The last harmonics that arrived, answered again while a newer copy is still in flight.
     private readonly float[] _skyIrradiance = new float[SkyAtmosphere.IrradianceFloats];
     private bool _skyIrradianceKnown;
+
+    // Which march of the sky the held harmonics were copied after; see TryGetSkyIrradiance.
+    private int _skyIrradianceBuild;
+
+    /// <summary>The longest the game is held for harmonics the sky has just changed to.</summary>
+    private static readonly TimeSpan SkyIrradianceWait = TimeSpan.FromMilliseconds(50);
     private BloomPass? _bloom;
     private IRhiBindGroupLayout? _surfaceLayout;
     private IRhiBuffer? _surfaceUniform;
@@ -601,10 +607,20 @@ public sealed partial class GraphicsDevice
         ThrowIfDisposed();
         if (_sky is { } sky
             && _skySubmittedSlot >= 0
-            && _skySubmittedSlot != _skyRecordedSlot
-            && sky.TryReadIrradiance(_skySubmittedSlot, _skyIrradiance))
+            && _skySubmittedSlot != _skyRecordedSlot)
         {
-            _skyIrradianceKnown = true;
+            // Without waiting, which is every frame of a sky that is not changing. But where the answer held
+            // is from before the sky last changed and the slot sent since holds the change, it is waited for:
+            // the copy is a frame old and arrives in a moment. Not waiting, a sky being scrubbed through
+            // the day never let a copy arrive while it moved, and the GI was handed the noon sky for as long
+            // as the scrub lasted and long after -- the world stayed lit under a black sky at midnight.
+            int submittedBuild = sky.BuildOf(_skySubmittedSlot);
+            TimeSpan wait = _skyIrradianceBuild < submittedBuild ? SkyIrradianceWait : TimeSpan.Zero;
+            if (sky.TryReadIrradiance(_skySubmittedSlot, _skyIrradiance, wait))
+            {
+                _skyIrradianceKnown = true;
+                _skyIrradianceBuild = submittedBuild;
+            }
         }
 
         // Once any have arrived, always an answer: a sky moves with the sun, not from one frame to the

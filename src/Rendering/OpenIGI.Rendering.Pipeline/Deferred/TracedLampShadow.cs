@@ -18,6 +18,8 @@ namespace OpenIGI.Rendering.Pipeline.Deferred;
 /// <param name="Field">The field's block (<see cref="TracedLampShadow.FieldFloats"/> floats), likewise.</param>
 /// <param name="SunVisibility">The sun's traced visibility this frame, or <see langword="null"/> where it was not traced.</param>
 /// <param name="SunDirection">The world direction towards the sun.</param>
+/// <param name="LampMaps">The nearest lamps' shadow maps, one per layer, or <see langword="null"/> for none yet.</param>
+/// <param name="LampMapSampler">The comparison sampler those maps are read through.</param>
 /// <param name="SunLuminance">The sun's luminance as the lighting pass applies it; nought with no traced sun.</param>
 /// <param name="MinimumVisible">
 /// The summed lamp light at a pixel below which its shadow could not show at this exposure; such a pixel is
@@ -36,7 +38,9 @@ public readonly record struct TracedLampFrame(
     float MinimumVisible = 0f,
     IRhiTextureView? SunVisibility = null,
     Vector3f SunDirection = default,
-    float SunLuminance = 0f);
+    float SunLuminance = 0f,
+    IRhiTextureView? LampMaps = null,
+    IRhiSampler? LampMapSampler = null);
 
 /// <summary>
 /// The lamps' shadows asked of the geometry: one ray per half-resolution pixel at the lamp its reservoir
@@ -59,7 +63,7 @@ public sealed class TracedLampShadow : IDisposable
     private static readonly RhiClearColor Unshadowed = new(1f, 0f, 0f, 0f);
 
     /// <summary>Floats in the software trace's field block: four corners with their voxel sizes, four ranges, and four integers.</summary>
-    public const int FieldFloats = 24;
+    public const int FieldFloats = 24 + (16 * 16) + DeferredLocalLight.Maximum;
 
     private readonly IRhiDevice _device;
     private readonly RetiredResources _retired;
@@ -266,6 +270,14 @@ public sealed class TracedLampShadow : IDisposable
             _march.Bind("uClipmaps", clipmaps, _sampler);
             _march.Bind("uVisibility", raw.View);
             _march.Bind("uSunVisibility", frame.SunVisibility ?? normal);
+
+            // The nearest lamps' own maps. Made whenever the march runs, so the slots are always bound; a
+            // lamp is handed out as having none until a map has been drawn for it.
+            if (frame.LampMaps is { } maps && frame.LampMapSampler is { } comparison)
+            {
+                _march.Bind("uLampMaps", maps);
+                _march.Bind("uLampMapSampler", comparison);
+            }
             _march.Bind("p", _traceParameters.Write<float>(frameInFlight, trace));
             _march.Bind("f", _fieldParameters.Write<float>(frameInFlight, frame.Field.Span));
             _march.Dispatch(nextPass?.Invoke("lamp.shadow.march") ?? pass!, _width, _height);

@@ -115,6 +115,10 @@ public sealed class TerrainRenderer : ITerrainPresenter
 
     // What the ray-traced world traces instead of the pages: this frame's chunks, morphed as drawn.
     private readonly TerrainShadowCaster _caster;
+
+    // Whether the last frame asked for the caster to be built for the sun's cascades as well as for the
+    // traced world. See TerrainFrame.CastsIntoCascades.
+    private bool _castsIntoCascades;
     private readonly Dictionary<ChunkKey, Entry> _cache = [];
 
     // The arrays evicted chunks give up, for the chunks coming into view to build into.
@@ -368,6 +372,7 @@ public sealed class TerrainRenderer : ITerrainPresenter
     void ITerrainPresenter.Draw(in TerrainFrame frame)
     {
         CacheLimit = RenderCVars.TerrainCache.Value;
+        _castsIntoCascades = frame.CastsIntoCascades;
 
         Draw(
             frame.Camera,
@@ -581,9 +586,9 @@ public sealed class TerrainRenderer : ITerrainPresenter
         _device.ClearDetailFade();
         _device.SetAlphaReference(IGraphicsDevice.DefaultAlphaReference);
 
-        // Only where something will trace it: the caster is a walk of the whole octree from every
-        // direction, and a device that keeps nothing of it was paying for that every frame.
-        if (_device.AcceptsShadowCasters)
+        // Only where something will trace it or the cascades will draw it: the caster is a walk of the
+        // whole octree from every direction, and a frame that uses neither was paying for that.
+        if (_device.AcceptsShadowCasters || _castsIntoCascades)
         {
             SubmitShadowCaster(camera, view, fadeOffset, fadeSlope);
         }
@@ -1116,8 +1121,28 @@ public sealed class TerrainRenderer : ITerrainPresenter
             }
         }
 
-        _caster.Submit(camera);
+        _caster.Commit();
+        if (_device.AcceptsShadowCasters)
+        {
+            _caster.Submit(camera);
+        }
+
         LastCasterTriangleCount = _caster.LastTriangleCount;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The caster the last frame built: the cascades are filled before this frame's ground is drawn. A
+    /// frame's worth of camera travel moves where the levels of detail meet by less than a cascade texel,
+    /// and the ring of meshes keeps that one alive past the frames in flight.
+    /// </remarks>
+    public void DrawShadowCaster(in Camera3D lightCamera)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_castsIntoCascades)
+        {
+            _caster.DrawCascade(lightCamera);
+        }
     }
 
     /// <summary>Gets how many triangles the last frame's shadow caster held.</summary>

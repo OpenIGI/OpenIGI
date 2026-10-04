@@ -66,6 +66,10 @@ public sealed class SkyAtmosphere : IDisposable
     private readonly IRhiBuffer[] _readback;
     private readonly IRhiReadback?[] _pending;
 
+    // Which march each slot's copy was taken after, so a reader can tell a slot holding the sky as it is now
+    // from one still holding an hour ago. See SkyViewBuilds.
+    private readonly int[] _slotBuild;
+
     private bool _staticTablesBuilt;
     private bool _dynamicBuilt;
     private SkyConditions _last;
@@ -103,6 +107,7 @@ public sealed class SkyAtmosphere : IDisposable
 
         _readback = new IRhiBuffer[framesInFlight];
         _pending = new IRhiReadback?[framesInFlight];
+        _slotBuild = new int[framesInFlight];
 
         for (int i = 0; i < framesInFlight; i++)
         {
@@ -220,7 +225,13 @@ public sealed class SkyAtmosphere : IDisposable
 
         _pending[slot]?.Dispose();
         _pending[slot] = null;
+        _slotBuild[slot] = SkyViewBuilds;
     }
+
+    /// <summary>Gets which march a slot's copied harmonics were taken after.</summary>
+    /// <param name="frameInFlight">The slot.</param>
+    /// <returns>The <see cref="SkyViewBuilds"/> count when its copy was recorded.</returns>
+    public int BuildOf(int frameInFlight) => _slotBuild[frameInFlight % _slotBuild.Length];
 
     /// <summary>Starts mapping a slot whose copy has just been submitted, so it can arrive before it is asked for.</summary>
     /// <param name="frameInFlight">The slot the submission just sent copied into.</param>
@@ -251,7 +262,15 @@ public sealed class SkyAtmosphere : IDisposable
     /// nothing rather than waiting, and the caller keeps last frame's answer — which for a sky that
     /// changes once a mission is the same answer.
     /// </remarks>
-    public bool TryReadIrradiance(int frameInFlight, Span<float> destination)
+    public bool TryReadIrradiance(int frameInFlight, Span<float> destination) =>
+        TryReadIrradiance(frameInFlight, destination, TimeSpan.Zero);
+
+    /// <summary>Reads a slot's harmonics, waiting for them up to a time.</summary>
+    /// <param name="frameInFlight">A slot whose copy has been submitted.</param>
+    /// <param name="destination">Room for <see cref="IrradianceFloats"/> floats.</param>
+    /// <param name="wait">How long to wait for the copy to arrive.</param>
+    /// <returns><see langword="true"/> when the harmonics were read.</returns>
+    public bool TryReadIrradiance(int frameInFlight, Span<float> destination, TimeSpan wait)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -263,7 +282,7 @@ public sealed class SkyAtmosphere : IDisposable
         int slot = frameInFlight % _readback.Length;
         IRhiReadback readback = _pending[slot] ??= _device.ReadBuffer(_readback[slot]);
 
-        if (!readback.Wait(TimeSpan.Zero) && !readback.IsComplete)
+        if (!readback.Wait(wait) && !readback.IsComplete)
         {
             return false;
         }

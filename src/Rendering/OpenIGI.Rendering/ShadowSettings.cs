@@ -47,8 +47,8 @@ public readonly record struct ShadowSettings(
     int Resolution = 2048,
     float Distance = 220f,
     float SplitBlend = 0.75f,
-    float DepthBias = 2f,
-    float NormalBias = 1.5f,
+    float DepthBias = 1f,
+    float NormalBias = 0.35f,
     float ContactReach = 0.35f,
     float ContactThickness = 0.5f,
     float FilterRadius = 1f)

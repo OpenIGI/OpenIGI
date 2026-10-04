@@ -37,6 +37,13 @@ public sealed partial class GraphicsDevice
     private int _shadowCascade;
     private bool _shadowsDrawn;
 
+    // The depth layer the open shadow pass draws into and the light's rotation it looks along: a cascade's
+    // or a lamp map's. Kept so a flush can pick the same layer up again, whichever kind it was.
+    private IRhiTextureView? _shadowLayer;
+    private int _shadowLayerSize;
+    private string _shadowLayerLabel = string.Empty;
+    private Matrix3f _shadowRotation = Matrix3f.Identity;
+
     /// <inheritdoc/>
     /// <remarks>
     /// Keeps the depth unprojection and view rotation the shading needs, and composes each cascade's
@@ -101,19 +108,29 @@ public sealed partial class GraphicsDevice
     /// <param name="resume">Whether this picks the cascade up again after a flush, keeping what it drew.</param>
     private void OpenShadowCascade(int cascade, IRhiTexture map, bool resume)
     {
+        _shadowCascade = cascade;
+        OpenShadowLayer(_shadowLayers[cascade], map.Width, $"cascade{cascade}", _cascadeLightRotations[cascade], resume);
+    }
+
+    /// <summary>Opens a depth-only pass on one layer of a shadow map, cleared or picked up again.</summary>
+    private void OpenShadowLayer(IRhiTextureView layer, int size, string label, Matrix3f rotation, bool resume)
+    {
         _shadowPass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             [],
             new RhiDepthAttachment(
-                _shadowLayers[cascade],
+                layer,
                 resume ? RhiLoadOp.Load : RhiLoadOp.Clear,
                 RhiStoreOp.Store,
                 DepthClearValue: 1f),
             _profiler.Time(RenderStage.Shadows, "shadow-maps"),
-            Label: $"cascade{cascade}"));
+            Label: label));
 
-        _shadowPass.SetViewport(0, 0, map.Width, map.Height, 0f, 1f);
-        _shadowPass.SetScissor(0, 0, map.Width, map.Height);
-        _shadowCascade = cascade;
+        _shadowPass.SetViewport(0, 0, size, size, 0f, 1f);
+        _shadowPass.SetScissor(0, 0, size, size);
+        _shadowLayer = layer;
+        _shadowLayerSize = size;
+        _shadowLayerLabel = label;
+        _shadowRotation = rotation;
     }
 
     /// <inheritdoc/>
@@ -175,7 +192,7 @@ public sealed partial class GraphicsDevice
 
         if (_detailFade.Active)
         {
-            Matrix3f lightToWorld = _cascadeLightRotations[_shadowCascade].Transposed();
+            Matrix3f lightToWorld = _shadowRotation.Transposed();
             Vector3f offset = GBufferPushBlock.TerrainCameraOffset(modelView, lightToWorld);
 
             push[16] = _detailFade.Scale;
@@ -247,6 +264,8 @@ public sealed partial class GraphicsDevice
         DepthBias = _shadowSettings.DepthBias,
         NormalBias = _shadowSettings.NormalBias,
         ShadowTexelSize = _shadowMap is { } map ? 1f / map.Width : 0f,
+        ShadowFilterRadius = _shadowSettings.FilterRadius,
+        ContactShadowReach = _shadowSettings.ContactReach,
     };
 
     /// <summary>The splits the shading divides the view by.</summary>
@@ -294,6 +313,7 @@ public sealed partial class GraphicsDevice
 
     private void DisposeShadows()
     {
+        DisposeLampMaps();
         _shadowPass?.Dispose();
         _shadowPass = null;
         ReleaseShadowMap(retire: false);

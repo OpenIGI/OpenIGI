@@ -1555,6 +1555,41 @@ public interface IGraphicsDevice : IDisposable
     /// <summary>Ends the current cascade.</summary>
     void EndShadowCascade();
 
+    /// <summary>Gets whether this frame's lamp shadows are marched without ray tracing and would read lamp maps.</summary>
+    /// <remarks>
+    /// Where it is <see langword="false"/> -- the lamps are traced, or not shadowed at all -- nothing need be
+    /// drawn into the maps.
+    /// </remarks>
+    bool WantsLampShadowMaps => false;
+
+    /// <summary>Gets how many lamps can hold a shadow map at once.</summary>
+    int LampShadowMapSlots => 0;
+
+    /// <summary>Says which lamp map each of this frame's lamps reads.</summary>
+    /// <param name="slotPerLight">
+    /// One per lamp, in the order <see cref="SetLocalLights"/> was given them: the slot, or -1 for none.
+    /// </param>
+    void SetLampShadowMapSlots(ReadOnlySpan<int> slotPerLight)
+    {
+        _ = slotPerLight;
+    }
+
+    /// <summary>Begins drawing the world into one lamp's shadow map, from the lamp.</summary>
+    /// <param name="slot">The map, below <see cref="LampShadowMapSlots"/>.</param>
+    /// <param name="position">Where the lamp's camera stands, in absolute world metres.</param>
+    /// <param name="rotation">The light's rotation: its rows the right, up and forward axes.</param>
+    /// <param name="projection">The perspective it looks through.</param>
+    /// <returns><see langword="true"/> when the pass is open; end it with <see cref="EndShadowCascade"/>.</returns>
+    /// <remarks>Like a cascade: depth only, outside a scene capture, before the frame is drawn.</remarks>
+    bool BeginLampShadowMap(int slot, Vector3d position, Matrix3f rotation, in Matrix4f projection)
+    {
+        _ = slot;
+        _ = position;
+        _ = rotation;
+        _ = projection;
+        return false;
+    }
+
     /// <summary>Sets the light the scene is lit by for this frame.</summary>
     /// <param name="lighting">The lighting model, sun and ambient.</param>
     void SetLighting(in SceneLighting lighting);

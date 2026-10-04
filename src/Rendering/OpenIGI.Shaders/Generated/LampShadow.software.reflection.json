@@ -113,6 +113,29 @@
       "storageFormat": "None",
       "wgslStorageFormat": "None",
       "storageAccess": "None"
+    },
+    {
+      "name": "uLampMaps",
+      "group": 0,
+      "binding": 11,
+      "kind": "Texture",
+      "dimensions": 2,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "arrayed": true,
+      "sampleType": "Depth"
+    },
+    {
+      "name": "uLampMapSampler",
+      "group": 0,
+      "binding": 12,
+      "kind": "Sampler",
+      "dimensions": 0,
+      "storageFormat": "None",
+      "wgslStorageFormat": "None",
+      "storageAccess": "None",
+      "comparison": true
     }
   ],
   "pushBlock": null,

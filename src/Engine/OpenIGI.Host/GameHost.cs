@@ -1,4 +1,4 @@
-﻿using OpenIGI.Audio;
+using OpenIGI.Audio;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
@@ -314,6 +314,26 @@ internal sealed partial class GameHost : IDisposable
     // after the last such change the retrace idles, which is what takes out the periodic multi-millisecond
     // spike that halved the frame rate at rest. It resumes the instant a level scrolls or the sun moves.
     private int _giStaticFrames;
+
+    // Frames since the sun last moved, for the fast follow a clock scrub needs. See GiSunFollowFrames.
+    private int _giSunMovedFrames = GiSunFollowFrames + 1;
+
+    /// <summary>How long after the sun last moved the GI keeps following it closely, in frames.</summary>
+    /// <remarks>
+    /// Long enough for the near cache to be relit a few times over at <see cref="GiSunFollowSpread"/>, so a
+    /// scrub that stops lands on the new hour's light and the slow blend takes over from there.
+    /// </remarks>
+    private const int GiSunFollowFrames = 24;
+
+    /// <summary>How many frames the near relight is spread over while following a moving sun.</summary>
+    private const int GiSunFollowSpread = 4;
+
+    /// <summary>How many frames a card's estimate averages over while following a moving sun.</summary>
+    /// <remarks>
+    /// Short enough to keep up with a scrub, long enough that a card's single noisy bounce does not show:
+    /// at one, every relight replaced the last outright and the walls clouded over while the key was held.
+    /// </remarks>
+    private const int GiSunFollowTemporalFrames = 4;
     private bool _giSunValid;
     private Vector3f _lastGiSunDirection;
     private Vector3f _lastGiSunColour;
@@ -4567,19 +4587,32 @@ internal sealed partial class GameHost : IDisposable
                         GiSettleFrames,
                         2 * Math.Max(RenderCVars.GiAmortize.Value, 1) * (1 + Math.Max(RenderCVars.GiTemporalFrames.Value, 1)));
                     _giStaticFrames = giChanged ? 0 : Math.Min(_giStaticFrames + 1, giSettle + 1);
+
+                    // A scrub of the clock, and the moments after it: the cache follows the sun at once instead
+                    // of over the long blend tuned for a sun that does not move. Held to that long blend, a scrub
+                    // into the night left every surface lit by the day's bounce for twenty seconds -- the world
+                    // stayed bright under a black sky. The screen gather's own history is left alone: it is ten
+                    // frames already, and throwing it away every frame of a scrub showed its raw single-frame
+                    // noise as clouds on every wall.
+                    _giSunMovedFrames = giSunMoved ? 0 : Math.Min(_giSunMovedFrames + 1, GiSunFollowFrames + 1);
+                    bool followingSun = _giSunMovedFrames <= GiSunFollowFrames;
                     bool retraceGi = _giStaticFrames <= giSettle;
 
                     if (_cardLighting is { } litCards)
                     {
                         // How many frames the relight and the bounce spread their tiles across, from the cvar
                         // so the per-frame GPU cost can be traded against GI fill-in latency without a rebuild.
-                        litCards.BounceFrameSpread = RenderCVars.GiAmortize.Value;
+                        litCards.BounceFrameSpread = followingSun
+                            ? Math.Min(RenderCVars.GiAmortize.Value, GiSunFollowSpread)
+                            : RenderCVars.GiAmortize.Value;
                         litCards.MinSliceTiles = RenderCVars.GiMinSlice.Value;
 
                         // How many frames a tile's estimate accumulates over, the pair to the spread above:
                         // the two together set how much of one retrace is admitted and how often, which is
                         // what governs the slow ripple across interior surfaces. See r_gi_temporal_frames.
-                        litCards.TemporalFrames = RenderCVars.GiTemporalFrames.Value;
+                        litCards.TemporalFrames = followingSun
+                            ? Math.Min(RenderCVars.GiTemporalFrames.Value, GiSunFollowTemporalFrames)
+                            : RenderCVars.GiTemporalFrames.Value;
 
                         // Where the steady-state refresh is centred and how far it reaches. The cache spans
                         // the whole level and the cursor used to walk all of it every round, so a fixed
@@ -4816,7 +4849,15 @@ internal sealed partial class GameHost : IDisposable
                     // draws whichever game supplied them. The title becomes injected in phase 1.
                     Igi1Presentation casters = new(_world, shadowCasters);
                     _shadowPass.Render(
-                        cascadeStorage, cascadeCount, eye, _scene, casters.World, casters.Characters);
+                        cascadeStorage, cascadeCount, eye, _scene, casters.World, casters.Characters, _terrain);
+                }
+
+                // The nearest lamps' own shadow maps, where the device marches lamp shadows rather than
+                // tracing them. Whatever the sun is doing: these are the night's shadows.
+                if (_shadowPass is not null && _device.WantsLampShadowMaps)
+                {
+                    Igi1Presentation lampCasters = new(_world, shadowCasters);
+                    RenderLampMaps(_shadowPass, _scene, lampCasters.World, lampCasters.Characters);
                 }
                 EndStageIfSlow("the shadow cascades");
 
@@ -5044,7 +5085,11 @@ internal sealed partial class GameHost : IDisposable
                     // meaning what it did; otherwise the setting decides.
                     _options.TerrainViewDistance > 0 ? _options.TerrainViewDistance : RenderCVars.TerrainDetail.Value,
                     GraphicsPresetRegistry.Default.Current != GraphicsPreset.Vanilla,
-                    RenderCVars.TerrainOcclusion.Value));
+                    RenderCVars.TerrainOcclusion.Value,
+
+                    // The ground casts into the cascades through the same caster the traced sun reads,
+                    // built here for the next frame's cascades.
+                    CastsIntoCascades: cascadesRead && cascadeCount > 0));
                 EndStageIfSlow("the terrain");
 
 if (retailFog)
@@ -5645,6 +5690,7 @@ if (retailFog)
                     // renderer is drawing it, and the ultra preset -- the one that discards the shipped
                     // bakes entirely and so has NOTHING else lighting an interior -- is the Vulkan path.
                     _device.SetLocalLights(_localLightScratch.AsSpan(0, localCount));
+                    AssignLampMaps(localCount, localLightRange);
                     _stormLampCount = localCount;
 
                     // And the distance field those lamps' shadows are marched through wherever the renderer

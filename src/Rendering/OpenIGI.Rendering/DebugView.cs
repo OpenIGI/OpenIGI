@@ -221,4 +221,16 @@ public enum DebugView
     /// <summary>How much of the flashlight reaches each surface: white where it all arrives, black in shadow.</summary>
     /// <remarks>The mask the shading multiplies the beam by, after its filter; white everywhere without one.</remarks>
     FlashlightShadow = 28,
+
+    /// <summary>
+    /// What the software lamp march decided, where lamp shadows are marched through the distance field:
+    /// red for the share of rays it stopped, green for the share it let through past a surface it was
+    /// touching -- a receiver's own plane, a fitting, a slab the plane tests took for one of those.
+    /// </summary>
+    /// <remarks>
+    /// The view that tells a leak through a thin canopy (green over the leak: the field held the slab and
+    /// a test waved it through) from a slab the field never held at all (black: nothing near the ray). Black
+    /// everywhere with ray tracing on, which does not march.
+    /// </remarks>
+    LampMarch = 29,
 }

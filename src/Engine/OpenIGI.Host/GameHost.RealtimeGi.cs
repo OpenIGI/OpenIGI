@@ -52,7 +52,10 @@ internal sealed partial class GameHost
     // The rendered frame the refresh last advanced on; see StepGiRelight.
     private int _giRefreshLastFrame = -1;
 
-    /// <summary>How many whole sweeps the far refresh runs after its inputs last changed, before it idles.</summary>
+    /// <summary>How many slices of the whole cache the far refresh relights a frame while the sun is moving.</summary>
+    private const int GiSunFollowSlices = 8;
+
+        /// <summary>How many whole sweeps the far refresh runs after its inputs last changed, before it idles.</summary>
     /// <remarks>
     /// One sweep relights every card under the new inputs; the rest fold more bounce in, at the steady
     /// bounce's weight, so far rooms reach their multi-bounce answer rather than stopping at one. At the
@@ -573,6 +576,27 @@ internal sealed partial class GameHost
             return;
         }
 
+        // While the clock is being scrubbed the whole cache has to keep up with the sun, so the sweep runs
+        // several slices a frame: at one a frame a full pass took two seconds, and every distant surface --
+        // the hills, the far side of the yard -- went on returning the day's light to everything that
+        // gathered from it, so a scrub into the night left the world lit under a black sky. Only while the
+        // sun moves; at rest the sweep goes back to one slice a frame.
+        int steps = _giSunMovedFrames <= GiSunFollowFrames ? Math.Min(GiSunFollowSlices, slices) : 1;
+        for (int step = 0; step < steps; step++)
+        {
+            StepGiRelightSlice(cards, field, sun, sunDirection, sunColour, slices);
+        }
+    }
+
+    /// <summary>Relights and bounces one slice of the whole cache, and moves the sweep on.</summary>
+    private void StepGiRelightSlice(
+        SurfaceCacheLighting cards,
+        GlobalDistanceField field,
+        DirectionalLightSettings sun,
+        Vector3f sunDirection,
+        Vector3f sunColour,
+        int slices)
+    {
         int slice = _giRefreshSlice % slices;
         _giRefreshSlice = (slice + 1) % slices;
         if (_giRefreshSlice == 0)
@@ -594,8 +618,12 @@ internal sealed partial class GameHost
         // ones by the player included, halfway to one fixed sixteen-ray estimate, and once the steady
         // bounce idled that estimate was all the cache held -- the per-probe blotches every ray read back.
         int steady = Math.Max(RenderCVars.GiTemporalFrames.Value, 1);
+        // Right after a change -- a scrub of the clock, a lamp switched -- the first sweeps take the new
+        // light at half weight, so the far cache follows the hour instead of easing towards it over the long
+        // steady blend; the sweeps after fold bounce in at that steady weight as before.
+        int pass = _giRefreshQuietRounds < 2 ? 1 : steady + 1 + _giRefreshRounds;
         cards.ConvergeBounceSlice(
-            field, RenderCVars.GlobalIlluminationBoost.Value, pass: steady + 1 + _giRefreshRounds, slice, slices);
+            field, RenderCVars.GlobalIlluminationBoost.Value, pass: pass, slice, slices);
     }
 
     private static bool NearlyEqual(Vector3f a, Vector3f b) =>
