@@ -36,10 +36,14 @@ internal sealed class VulkanWorldScene : IDisposable
     // megabyte of instance descriptors.
     private const int MaxInstances = 16384;
 
-    // One per geometry of every structure ever built, including the runs left behind by a rebuild. A
-    // level settles at a few hundred; this is the ceiling a runaway rebuild loop would hit rather than a
-    // size anything is expected to reach.
+    // One per geometry of every live structure. A run a rebuild or an eviction leaves behind goes back
+    // to be reused once no frame in flight can still read it; see ReleaseRecords.
     private const int MaxRecords = 16384;
+
+    // How many frames a released run of records is held before it is handed out again: past the frames
+    // in flight and the scene's own retirement slack, so no trace still running can read a record that
+    // has since been rewritten for another mesh.
+    private const int RecordRetireFrames = 8;
 
     // Two device addresses, a first index and a mask layer.
     private const int RecordSize = 32;
@@ -144,6 +148,15 @@ internal sealed class VulkanWorldScene : IDisposable
     private readonly VulkanBuffer _records;
     private int _recordCount;
     private bool _recordOverflow;
+
+    // Runs of records free to hand out again, in address order with neighbours merged, and the runs
+    // released but not yet old enough to reuse, each with the frame it may be reused from. Without these
+    // the records were append-only: every terrain page streamed in took one for good, so flying across a
+    // large level ran them out, and every structure built after that was pointed at record nought -- some
+    // other mesh's vertices, indices and cut-out mask. Its rays read the wrong mask (a tree's whole card
+    // cast a shadow) and indexed past the end of the wrong index buffer (a device fault).
+    private readonly List<(int Start, int Count)> _freeRecords = [];
+    private readonly List<(int Frame, int Start, int Count)> _releasedRecords = [];
 
     private int _newThisFrame;
 
@@ -317,9 +330,20 @@ internal sealed class VulkanWorldScene : IDisposable
             && !_scene.IsCompacting(built.Structure)
             && (UnlimitedAdmission || _newThisFrame < MaxNewGeometriesPerFrame))
         {
-            _geometries[meshId] = BuildGeometry(mesh, surfaces, allowUpdate: skinned);
-            _scene.RetireStructure(built.Structure);
-            _stale.Remove(meshId);
+            if (BuildGeometry(mesh, surfaces, allowUpdate: skinned) is { } rebuilt)
+            {
+                _geometries[meshId] = rebuilt;
+                _scene.RetireStructure(built.Structure);
+                ReleaseRecords(built.RecordBase, built.RecordCount);
+                _stale.Remove(meshId);
+            }
+            else
+            {
+                // No records for the larger run: the old structure stands, and the mark stays for a
+                // later frame that has some.
+                _stale.Add(meshId);
+            }
+
             _newThisFrame++;
         }
 
@@ -376,7 +400,15 @@ internal sealed class VulkanWorldScene : IDisposable
                 return;
             }
 
-            geometry = BuildGeometry(mesh, surfaces, allowUpdate: skinned);
+            if (BuildGeometry(mesh, surfaces, allowUpdate: skinned) is not { } admitted)
+            {
+                // No records left to give it: left out of the traced world rather than built against
+                // another mesh's records, and offered again next frame.
+                _grewThisFrame = true;
+                return;
+            }
+
+            geometry = admitted;
             _geometries[meshId] = geometry;
             _stale.Remove(meshId);
             _newThisFrame++;
@@ -543,15 +575,21 @@ internal sealed class VulkanWorldScene : IDisposable
         // compactor still holds is safe since RetireStructure takes it out of the handshake.
         if (!current)
         {
-            if (built)
-            {
-                _scene.RetireStructure(geometry.Structure);
-            }
-
             if (!_casterRecords.TryGetValue(meshId, out int recordBase))
             {
                 recordBase = WriteRecords(mesh, [surface]);
+                if (recordBase < 0)
+                {
+                    // None to give it; whatever this page had stays until a later frame has one.
+                    return;
+                }
+
                 _casterRecords[meshId] = recordBase;
+            }
+
+            if (built)
+            {
+                _scene.RetireStructure(geometry.Structure);
             }
 
             VulkanTriangleGeometry[] triangles =
@@ -566,7 +604,9 @@ internal sealed class VulkanWorldScene : IDisposable
                     Opaque: true),
             ];
 
-            geometry = new Geometry(_scene.AddGeometry(triangles), indexCount, recordBase);
+            // The record is the page's own, held in _casterRecords across rebuilds, so the geometry
+            // claims none of it: it goes back when the page is forgotten, not when it is rebuilt.
+            geometry = new Geometry(_scene.AddGeometry(triangles), indexCount, recordBase, RecordCount: 0);
             _geometries[meshId] = geometry;
             _casterVersions[meshId] = mesh.ContentVersion;
             _surfaces[meshId] = [surface];
@@ -595,6 +635,7 @@ internal sealed class VulkanWorldScene : IDisposable
     public void Record(CommandBuffer commandBuffer, ISubmissionClock queue)
     {
         _frame++;
+        ReclaimRecords();
         _newThisFrame = 0;
         _quietFrames = _grewThisFrame ? 0 : _quietFrames + 1;
         _grewThisFrame = false;
@@ -809,6 +850,12 @@ internal sealed class VulkanWorldScene : IDisposable
         if (_geometries.Remove(meshId, out Geometry geometry))
         {
             _scene.RetireStructure(geometry.Structure);
+            ReleaseRecords(geometry.RecordBase, geometry.RecordCount);
+        }
+
+        if (_casterRecords.TryGetValue(meshId, out int casterRecord))
+        {
+            ReleaseRecords(casterRecord, 1);
         }
 
         // This mesh's placements have to stop naming its structure before the next scene is built, or
@@ -841,6 +888,8 @@ internal sealed class VulkanWorldScene : IDisposable
         _stale.Clear();
         _recordCount = 0;
         _recordOverflow = false;
+        _freeRecords.Clear();
+        _releasedRecords.Clear();
         _placed.Clear();
         _instances.Clear();
         _instanceMeshIds.Clear();
@@ -892,8 +941,15 @@ internal sealed class VulkanWorldScene : IDisposable
     /// touching them again is a few bytes per rebuild against having to fence a host write behind the
     /// frames that might read it.
     /// </remarks>
-    private Geometry BuildGeometry(IRayTracedMesh mesh, List<RayTracedSurface> surfaces, bool allowUpdate = false)
+    private Geometry? BuildGeometry(IRayTracedMesh mesh, List<RayTracedSurface> surfaces, bool allowUpdate = false)
     {
+        // The records first: a structure with none of its own would read another mesh's.
+        int recordBase = WriteRecords(mesh, surfaces);
+        if (recordBase < 0)
+        {
+            return null;
+        }
+
         VulkanTriangleGeometry[] triangles = new VulkanTriangleGeometry[surfaces.Count];
         for (int i = 0; i < surfaces.Count; i++)
         {
@@ -908,8 +964,8 @@ internal sealed class VulkanWorldScene : IDisposable
                 Opaque: s.Opaque);
         }
 
-        int recordBase = WriteRecords(mesh, surfaces);
-        return new Geometry(_scene.AddGeometry(triangles, allowUpdate), mesh.DrawableIndexCount, recordBase);
+        return new Geometry(
+            _scene.AddGeometry(triangles, allowUpdate), mesh.DrawableIndexCount, recordBase, surfaces.Count);
     }
 
     /// <summary>Appends one material record per range and returns where the run starts.</summary>
@@ -918,23 +974,23 @@ internal sealed class VulkanWorldScene : IDisposable
     /// <returns>The index of the first record, which is what the instance carries as its custom index.</returns>
     private int WriteRecords(IRayTracedMesh mesh, List<RayTracedSurface> surfaces)
     {
-        if (_recordCount + surfaces.Count > MaxRecords)
+        int start = AllocateRecords(surfaces.Count);
+        if (start < 0)
         {
-            // Out of records. The structure is still built and still occludes; what it loses is the
-            // per-texel test, so a cut-out run reverts to casting the shadow of its whole triangle. Said
-            // once, because silently doing that would look like the alpha test not working.
+            // Out of records. The caller leaves the mesh out of the traced world: built against records
+            // that are not its own, its rays would read another mesh's buffers. Said once, because a
+            // missing shadow would otherwise look like a different bug.
             if (!_recordOverflow)
             {
                 _recordOverflow = true;
                 _device.Logger.Warning(
                     "Vulkan.RayTracing",
-                    $"Material records exhausted at {MaxRecords}; cut-out surfaces admitted after this point cast as solid.");
+                    $"Material records exhausted at {MaxRecords}; meshes admitted after this point are left out of the traced world.");
             }
 
-            return 0;
+            return -1;
         }
 
-        int start = _recordCount;
         Span<uint> record = stackalloc uint[RecordSize / sizeof(uint)];
 
         for (int i = 0; i < surfaces.Count; i++)
@@ -955,8 +1011,93 @@ internal sealed class VulkanWorldScene : IDisposable
             _records.WriteAt((ulong)((start + i) * RecordSize), (ReadOnlySpan<uint>)record);
         }
 
-        _recordCount = start + surfaces.Count;
         return start;
+    }
+
+    /// <summary>Takes a run of records: the first free run long enough, else fresh ones at the end.</summary>
+    /// <returns>Where the run starts, or -1 where there is no room.</returns>
+    private int AllocateRecords(int count)
+    {
+        for (int i = 0; i < _freeRecords.Count; i++)
+        {
+            (int start, int length) = _freeRecords[i];
+            if (length < count)
+            {
+                continue;
+            }
+
+            if (length == count)
+            {
+                _freeRecords.RemoveAt(i);
+            }
+            else
+            {
+                _freeRecords[i] = (start + count, length - count);
+            }
+
+            return start;
+        }
+
+        if (_recordCount + count > MaxRecords)
+        {
+            return -1;
+        }
+
+        int fresh = _recordCount;
+        _recordCount += count;
+        return fresh;
+    }
+
+    /// <summary>Gives a run of records back, to be handed out again once no frame in flight can read it.</summary>
+    private void ReleaseRecords(int start, int count)
+    {
+        if (count > 0)
+        {
+            _releasedRecords.Add((_frame + RecordRetireFrames, start, count));
+        }
+    }
+
+    /// <summary>Moves the released runs old enough to reuse onto the free list, merging neighbours.</summary>
+    private void ReclaimRecords()
+    {
+        for (int i = _releasedRecords.Count - 1; i >= 0; i--)
+        {
+            (int frame, int start, int count) = _releasedRecords[i];
+            if (frame > _frame)
+            {
+                continue;
+            }
+
+            _releasedRecords.RemoveAt(i);
+
+            int at = 0;
+            while (at < _freeRecords.Count && _freeRecords[at].Start < start)
+            {
+                at++;
+            }
+
+            _freeRecords.Insert(at, (start, count));
+
+            if (at + 1 < _freeRecords.Count && start + count == _freeRecords[at + 1].Start)
+            {
+                _freeRecords[at] = (start, count + _freeRecords[at + 1].Count);
+                _freeRecords.RemoveAt(at + 1);
+            }
+
+            if (at > 0 && _freeRecords[at - 1].Start + _freeRecords[at - 1].Count == start)
+            {
+                _freeRecords[at - 1] = (_freeRecords[at - 1].Start, _freeRecords[at - 1].Count + _freeRecords[at].Count);
+                _freeRecords.RemoveAt(at);
+            }
+        }
+
+        // A free run that ends where the used span does goes back to the span, so fresh allocations at
+        // the end stay as cheap as they were before anything was released.
+        if (_freeRecords.Count > 0 && _freeRecords[^1].Start + _freeRecords[^1].Count == _recordCount)
+        {
+            _recordCount = _freeRecords[^1].Start;
+            _freeRecords.RemoveAt(_freeRecords.Count - 1);
+        }
     }
 
     /// <summary>One mesh's traceable form, and how much of it was built.</summary>
@@ -966,8 +1107,12 @@ internal sealed class VulkanWorldScene : IDisposable
     /// Where this structure's run of material records starts. An instance carries it as its custom index,
     /// so a hit reaches its own record by adding the geometry index traversal reports.
     /// </param>
+    /// <param name="RecordCount">
+    /// How many of those records the structure owns and gives back when it goes; nought for a terrain
+    /// page, whose one record outlives its rebuilds.
+    /// </param>
     private readonly record struct Geometry(
-        VulkanBottomLevelStructure Structure, int IndexCount, int RecordBase);
+        VulkanBottomLevelStructure Structure, int IndexCount, int RecordBase, int RecordCount);
 
     /// <summary>A mesh at a place, quantised so that the same placement is recognised as the same one.</summary>
     /// <remarks>
