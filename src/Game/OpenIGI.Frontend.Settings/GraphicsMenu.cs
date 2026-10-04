@@ -126,7 +126,7 @@ public static class GraphicsMenu
                         ("r_sdf_resolution", "46"),
                         ("r_gi_amortize", "24"),
                         ("r_gi_temporal_frames", "32"),
-                        ("r_screen_gi_cadence", "1"),
+                        ("r_screen_gi_cadence", "2"),
                         ("r_screen_gi_filter", "2"))),
 
                 new QualityGroup(
@@ -585,6 +585,7 @@ public static class GraphicsMenu
         "r_screen_gi_max",
         "r_screen_gi_trace",
         "r_upscale_samples",
+        "r_upscale_history", // the upscaler's history resolution, a cost the preset already weighs
         "r_alpha_hash",
         "r_world_cull",
         "r_world_occlusion",

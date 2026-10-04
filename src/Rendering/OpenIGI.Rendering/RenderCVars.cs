@@ -21,11 +21,17 @@ namespace OpenIGI.Rendering;
 public static class RenderCVars
 {
     /// <summary>Whether presentation waits for the vertical blank.</summary>
-    public static readonly BoolCVar VSync = CVar.Bool(
-        "r_vsync",
-        true,
-        CVarOptions.Archive,
-        "Wait for the vertical blank when presenting. Off uncaps the frame rate and adds tearing.");
+    /// <remarks>On under every preset, so choosing one brings back a tear-free picture whatever was saved.</remarks>
+    public static readonly BoolCVar VSync = Presets.Define(
+        CVar.Bool(
+            "r_vsync",
+            true,
+            CVarOptions.Archive,
+            "Wait for the vertical blank when presenting. Off uncaps the frame rate and adds tearing."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>Whether the level behind the menu is drawn without the expensive parts of the preset.</summary>
     /// <remarks>
