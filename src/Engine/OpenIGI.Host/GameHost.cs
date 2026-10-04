@@ -2772,8 +2772,9 @@ internal sealed partial class GameHost : IDisposable
             // above is: a fitting takes a couple of hundred milliseconds to go out and about a second to
             // come back, and a fade advanced once per rendered frame would be a different fade on every
             // machine. Cheap enough to be unconditional -- a level nobody has touched walks an array of
-            // steady lamps and returns.
-            UpdateLamps(_loop.TimeSource.Milliseconds);
+            // steady lamps and returns. The daylight's photocells ride on the same pass, reading the sun
+            // the sweep above has just moved.
+            UpdateLamps(_loop.TimeSource.Milliseconds, audible: !menuMode && _activeMission is not null);
 
             // G shows the sun gizmo, but only while flying: it takes the cursor to drag its rings, which the
             // walking player needs for looking. Leaving the free camera puts it away.

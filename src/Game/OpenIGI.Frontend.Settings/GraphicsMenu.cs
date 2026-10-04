@@ -403,6 +403,12 @@ public static class GraphicsMenu
             "How long a whole day takes, in minutes, once the cycle above is on. Forty is a sun you "
                 + "notice having moved; a minute or two is a sunrise you can stand and watch."),
         new GraphicsSetting(
+            "r_lamp_daylight",
+            "Lamps Follow Daylight",
+            "Puts the level's lamps on photocells: they go out by day and strike one by one as dusk "
+                + "falls, each on its own delay. Outdoors leaves lamps under a roof lit, as a building's "
+                + "are; Everywhere includes them; Off keeps every lamp burning, as in the original."),
+        new GraphicsSetting(
             "r_remastered_hud",
             "Remastered HUD",
             "Draws the health, ammunition and objective readouts in the remaster's own style. Off returns "

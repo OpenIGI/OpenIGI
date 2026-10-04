@@ -182,6 +182,14 @@ internal sealed class DayNightCycle
     /// </remarks>
     public Vector3f MoonColour { get; private set; }
 
+    /// <summary>Gets a number that moves every time the cycle is put back to a level's opening hour.</summary>
+    /// <remarks>
+    /// For whatever follows the sun with a lag of its own -- the lamps' photocells -- to tell a new level's
+    /// clock from the same clock having been scrubbed. The first is a state to snap to; the second is time
+    /// passing, and is followed the slow way.
+    /// </remarks>
+    public int LevelEpoch { get; private set; }
+
     /// <summary>Turns the sun's arc about one world axis, for the gizmo to drive as the numpad keys do.</summary>
     /// <param name="axis">0 for X, 1 for Y, 2 for Z.</param>
     /// <param name="radians">The angle to add.</param>
@@ -229,7 +237,18 @@ internal sealed class DayNightCycle
             : authored is { TimeOfDay: > 0f and <= 24f } sun ? sun.TimeOfDay : 12f;
 
         Reset(hour);
+        LevelEpoch++;
     }
+
+    /// <summary>Gets the sine of the sun's elevation at the current hour, the sun's own, never the moon's.</summary>
+    /// <param name="authored">The level's sun, as <see cref="Apply"/> is given it.</param>
+    /// <returns>One with the sun overhead, nought on the horizon, negative under it.</returns>
+    /// <remarks>
+    /// The same sweep <see cref="Apply"/> lights the level with, re-orientation included, but without
+    /// touching anything: it is for asking how light the world is from outside the frame -- before the
+    /// frame has applied the sun, or on a pass that draws no frame at all.
+    /// </remarks>
+    public float SunSine(DirectionalLightSettings authored) => Sweep(authored, out _).Z;
 
     /// <summary>Sets what the cycle's night is made of, for a level that authors one of its own.</summary>
     /// <param name="colour">What the moon carries, or null for the cycle's own faint moonlight.</param>
@@ -349,45 +368,7 @@ internal sealed class DayNightCycle
     /// <returns>The sun for this moment: swept direction, and a colour and sky fill that track the day.</returns>
     public DirectionalLightSettings Apply(DirectionalLightSettings authored)
     {
-        // The authored sun decomposed into the arc's reference -- its elevation above the horizon and its
-        // compass bearing, at its own hour. World Z is up; Direction points towards the sun.
-        Vector3f d = authored.Direction;
-        float length = d.Length;
-        if (length > 1e-5f)
-        {
-            d /= length;
-        }
-
-        float referenceElevation = MathF.Asin(Math.Clamp(d.Z, -1f, 1f));
-        float referenceAzimuth = MathF.Atan2(d.Y, d.X);
-        float referenceHour = authored.TimeOfDay is > 0f and <= 24f ? authored.TimeOfDay : 12f;
-
-        // Elevation follows a sine over the day, peaking at noon and dipping below the horizon at night,
-        // scaled so that at the authored hour it lands back on the authored elevation. The bearing drifts a
-        // full turn over the day, so at the authored hour it too returns to the authored value.
-        float referencePhase = ((referenceHour - 6f) / 12f) * MathF.PI;
-        float referenceSine = MathF.Sin(referencePhase);
-        float peakElevation = MathF.Abs(referenceSine) > 0.05f
-            ? referenceElevation / referenceSine
-            : referenceElevation;
-        peakElevation = Math.Clamp(peakElevation, 0.15f, 1.5533f);
-
-        float phase = ((_timeHours - 6f) / 12f) * MathF.PI;
-        float elevation = peakElevation * MathF.Sin(phase);
-        float azimuth = referenceAzimuth + (((_timeHours - referenceHour) / HoursPerDay) * Tau);
-
-        float cosElevation = MathF.Cos(elevation);
-        Vector3f arc = new(
-            cosElevation * MathF.Cos(azimuth),
-            cosElevation * MathF.Sin(azimuth),
-            MathF.Sin(elevation));
-
-        // The player's re-orientation of the whole arc, around the three world axes.
-        Vector3f direction = (Matrix3f.RotationZ(_rotZ) * Matrix3f.RotationY(_rotY) * Matrix3f.RotationX(_rotX))
-            .Transform(arc);
-
-        float directionLength = direction.Length;
-        direction = directionLength > 1e-5f ? direction / directionLength : Vector3f.UnitZ;
+        Vector3f direction = Sweep(authored, out Vector3f d);
 
         // How far into night the sky is, for the exposure. Deliberately a WIDER and lower band than the
         // daylight above: that one is about whether there is a sun to light with and wants to be decisive
@@ -466,6 +447,55 @@ internal sealed class DayNightCycle
             Ambient = ambient,
             TimeOfDay = _timeHours,
         };
+    }
+
+    /// <summary>The sun's direction at the current hour and re-orientation, under the horizon included.</summary>
+    /// <param name="authored">The level's sun, read at its authored hour.</param>
+    /// <param name="reference">Receives the authored sun's own direction, normalised.</param>
+    private Vector3f Sweep(DirectionalLightSettings authored, out Vector3f reference)
+    {
+        // The authored sun decomposed into the arc's reference -- its elevation above the horizon and its
+        // compass bearing, at its own hour. World Z is up; Direction points towards the sun.
+        Vector3f d = authored.Direction;
+        float length = d.Length;
+        if (length > 1e-5f)
+        {
+            d /= length;
+        }
+
+        float referenceElevation = MathF.Asin(Math.Clamp(d.Z, -1f, 1f));
+        float referenceAzimuth = MathF.Atan2(d.Y, d.X);
+        float referenceHour = authored.TimeOfDay is > 0f and <= 24f ? authored.TimeOfDay : 12f;
+
+        // Elevation follows a sine over the day, peaking at noon and dipping below the horizon at night,
+        // scaled so that at the authored hour it lands back on the authored elevation. The bearing drifts a
+        // full turn over the day, so at the authored hour it too returns to the authored value.
+        float referencePhase = ((referenceHour - 6f) / 12f) * MathF.PI;
+        float referenceSine = MathF.Sin(referencePhase);
+        float peakElevation = MathF.Abs(referenceSine) > 0.05f
+            ? referenceElevation / referenceSine
+            : referenceElevation;
+        peakElevation = Math.Clamp(peakElevation, 0.15f, 1.5533f);
+
+        float phase = ((_timeHours - 6f) / 12f) * MathF.PI;
+        float elevation = peakElevation * MathF.Sin(phase);
+        float azimuth = referenceAzimuth + (((_timeHours - referenceHour) / HoursPerDay) * Tau);
+
+        float cosElevation = MathF.Cos(elevation);
+        Vector3f arc = new(
+            cosElevation * MathF.Cos(azimuth),
+            cosElevation * MathF.Sin(azimuth),
+            MathF.Sin(elevation));
+
+        // The player's re-orientation of the whole arc, around the three world axes.
+        Vector3f direction = (Matrix3f.RotationZ(_rotZ) * Matrix3f.RotationY(_rotY) * Matrix3f.RotationX(_rotX))
+            .Transform(arc);
+
+        float directionLength = direction.Length;
+        direction = directionLength > 1e-5f ? direction / directionLength : Vector3f.UnitZ;
+
+        reference = d;
+        return direction;
     }
 
     private static float Smoothstep(float edge0, float edge1, float x)

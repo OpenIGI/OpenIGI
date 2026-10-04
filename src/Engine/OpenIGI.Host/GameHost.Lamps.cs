@@ -71,7 +71,9 @@ internal sealed partial class GameHost
                 }
 
                 board.Reset();
-                context.Print($"Every one of the level's {board.Count} lamp(s) is back on.");
+                context.Print(
+                    $"Every one of the level's {board.Count} lamp(s) is back on at the wall; the daylight still "
+                        + "decides which of them are lit.");
             });
     }
 
@@ -105,11 +107,15 @@ internal sealed partial class GameHost
     /// have a dying tube in it, and turning it back on will show that — so both are reported rather than
     /// one standing in for the other.
     /// </remarks>
+    /// <remarks>
+    /// The daylight is a third: a lamp switched on at the wall that its photocell has put out for the day
+    /// is on and dark, and says so.
+    /// </remarks>
     private static string Describe(LampSwitchboard board, int index) => board.ModeOf(index) switch
     {
         LampMode.Off => board.IsFaulty(index) ? "off, with a faulty tube" : "off",
-        LampMode.Broken => "broken, and flickering",
-        _ => "on",
+        LampMode.Broken => board.IsSupplied(index) ? "broken, and flickering" : "broken, and dark until dusk",
+        _ => board.IsSupplied(index) ? "on" : "on, and dark until dusk",
     };
 
     /// <summary>Finds the lamp the frame's own eye is looking at, with the level's walls respected.</summary>
@@ -171,6 +177,7 @@ internal sealed partial class GameHost
 
     /// <summary>Advances every lamp, and lets the bounce catch up with them.</summary>
     /// <param name="milliseconds">The loop's real-time clock.</param>
+    /// <param name="audible">Whether what the lamps do is to be heard: a level being played, not a backdrop.</param>
     /// <remarks>
     /// <para>
     /// Real elapsed time rather than the tick, and on every pass of the loop rather than every rendered
@@ -185,7 +192,7 @@ internal sealed partial class GameHost
     /// bounce that takes far longer than that to converge in the first place.
     /// </para>
     /// </remarks>
-    private void UpdateLamps(int milliseconds)
+    private void UpdateLamps(int milliseconds, bool audible)
     {
         if (_lampSwitchboard is not { } board)
         {
@@ -195,7 +202,11 @@ internal sealed partial class GameHost
 
         float elapsed = Math.Clamp((milliseconds - _lampMilliseconds) / 1000f, 0f, 0.25f);
         _lampMilliseconds = milliseconds;
+
+        // The daylight first, so a lamp its photocell switches this pass starts its fade this pass too.
+        UpdateLampDaylight(board, elapsed);
         board.Update(elapsed);
+        PlayLampSounds(board, elapsed, audible);
 
         if (_cardLighting is { } bounce && board.Revision != _lampBounceRevision)
         {
@@ -215,8 +226,11 @@ internal sealed partial class GameHost
         }
 
         LightFixture fixture = _lightFixtures[index];
+        string daylight = _lampPhotocells is { } cells && cells.Follows(index)
+            ? FormattableString.Invariant($"dusk circuit {cells.CircuitOf(index)} on below {cells.ThresholdsOf(index).On:0.000}")
+            : "kept on by day";
 
         return FormattableString.Invariant(
-            $"lamp: #{index} {Describe(board, index)} at {board.LevelOf(index) * 100f:F0}%, {distance:F1}m, {fixture.Texture}");
+            $"lamp: #{index} {Describe(board, index)} at {board.LevelOf(index) * 100f:F0}%, {distance:F1}m, {fixture.Texture}, {board.CharacterOf(index)}, {daylight}");
     }
 }

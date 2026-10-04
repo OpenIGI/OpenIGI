@@ -341,6 +341,13 @@ internal sealed partial class GameHost
         // The remaster's flashlight switch, which the game's banks have no sound for.
         _sounds.RegisterExternal(FlashlightClick.OnSoundName, FlashlightClick.Format, FlashlightClick.OnPcm);
         _sounds.RegisterExternal(FlashlightClick.OffSoundName, FlashlightClick.Format, FlashlightClick.OffPcm);
+
+        // And the lamps' starters, ignitors and ballasts, which the original's never needed: they never change.
+        foreach ((string name, byte[] pcm) in LampSounds.All)
+        {
+            _sounds.RegisterExternal(name, LampSounds.Format, pcm);
+        }
+
         _soldierWeaponSounds.Clear();
         MountMenuSounds();
         LoadRainAmbience();

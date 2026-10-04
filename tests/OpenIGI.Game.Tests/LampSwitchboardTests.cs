@@ -397,6 +397,253 @@ public sealed class LampSwitchboardTests
         Assert.Equal(-1, board.NearestFixture(new Vector3d(5, 0, 0), 4.0));
     }
 
+    private static LightFixture Coloured(double x, Vector3f colour) =>
+        new("lamp", new Vector3d(x, 0, 0), 8f, colour, 1f, 0.2f, 4);
+
+    /// <summary>A board of many lamps, so every character is on it, with the supply already off.</summary>
+    private static LampSwitchboard DarkYard(int count, Vector3f colour)
+    {
+        LightFixture[] fixtures = new LightFixture[count];
+        for (int i = 0; i < count; i++)
+        {
+            fixtures[i] = Coloured(i * 5.0, colour);
+        }
+
+        LampSwitchboard board = new(fixtures, seed: 11);
+        for (int i = 0; i < count; i++)
+        {
+            board.SetSupplyImmediately(i, false);
+        }
+
+        return board;
+    }
+
+    /// <summary>Cutting the supply puts a lamp out the way the switch does, and restoring it brings it back.</summary>
+    [Fact]
+    public void TheSupplyPutsALampOutAndBringsItBack()
+    {
+        LampSwitchboard board = Board(Fixture(0, 0, 0));
+
+        board.SetSupply(0, false);
+        Assert.False(board.IsSupplied(0));
+        Assert.Equal(LampMode.On, board.ModeOf(0));
+        Assert.False(board.IsUntouched);
+
+        board.Update(1f / 60f);
+        Assert.InRange(board.LevelOf(0), 0.05f, 0.95f);
+
+        Run(board, 1.5f);
+        Assert.Equal(0f, board.LevelOf(0));
+
+        board.SetSupply(0, true);
+        Run(board, 25f);
+        Assert.Equal(1f, board.LevelOf(0));
+        Assert.True(board.IsUntouched);
+    }
+
+    /// <summary>The wall switch and the supply are in series: either one open is a dark lamp.</summary>
+    /// <remarks>
+    /// A lamp somebody switched off must not come on by itself at dusk; one they switched back on during
+    /// the day must not light until dusk, and then must.
+    /// </remarks>
+    [Fact]
+    public void TheSwitchAndTheSupplyAreInSeries()
+    {
+        LampSwitchboard board = Board(Fixture(0, 0, 0));
+
+        board.Switch(0);
+        Run(board, 1.5f);
+        board.SetSupply(0, false);
+        board.SetSupply(0, true);
+        Run(board, 25f);
+        Assert.Equal(0f, board.LevelOf(0));
+
+        board.SetSupply(0, false);
+        board.Switch(0);
+        Run(board, 25f);
+        Assert.Equal(LampMode.On, board.ModeOf(0));
+        Assert.Equal(0f, board.LevelOf(0));
+
+        board.SetSupply(0, true);
+        Run(board, 25f);
+        Assert.Equal(1f, board.LevelOf(0));
+    }
+
+    /// <summary>A level opening snaps its lamps to their state silently: no fade, and nothing heard.</summary>
+    [Fact]
+    public void SettingTheSupplyImmediatelyIsSilentAndAtOnce()
+    {
+        LampSwitchboard board = Board(Fixture(0, 0, 0), Fixture(4, 0, 0));
+        board.Break(1);
+        Run(board, 1f);
+        board.DrainEvents([]);
+
+        board.SetSupplyImmediately(0, false);
+        board.SetSupplyImmediately(1, false);
+        Assert.Equal(0f, board.LevelOf(0));
+        Assert.Equal(0f, board.LevelOf(1));
+
+        // Dark, and staying dark: a broken lamp without supply does not flicker.
+        for (int frame = 0; frame < 300; frame++)
+        {
+            board.Update(1f / 60f);
+            Assert.Equal(0f, board.LevelOf(1));
+        }
+
+        board.SetSupplyImmediately(0, true);
+        Assert.Equal(1f, board.LevelOf(0));
+
+        var events = new List<LampEvent>();
+        board.DrainEvents(events);
+        Assert.Empty(events);
+    }
+
+    /// <summary>Every lamp brought up cold makes the sounds of its own sort of start, in the order it does them.</summary>
+    /// <remarks>
+    /// The sounds are raised by the state machine that moves the light, which is the whole guarantee that
+    /// they match it: a tube's ticks come before its hum, a lantern's crackle before its arc.
+    /// </remarks>
+    [Fact]
+    public void ColdStartsSoundLikeTheirOwnSortOfLamp()
+    {
+        LampSwitchboard board = DarkYard(48, Vector3f.One);
+        var events = new List<LampEvent>();
+
+        for (int i = 0; i < board.Count; i++)
+        {
+            board.SetSupply(i, true);
+        }
+
+        for (int frame = 0; frame < 60 * 25; frame++)
+        {
+            board.Update(1f / 60f);
+            board.DrainEvents(events);
+        }
+
+        var characters = new HashSet<LampCharacter>();
+
+        for (int i = 0; i < board.Count; i++)
+        {
+            Assert.Equal(1f, board.LevelOf(i));
+
+            LampSound[] heard = [.. events.Where(e => e.Index == i).Select(e => e.Sound)];
+            LampCharacter character = board.CharacterOf(i);
+            characters.Add(character);
+
+            switch (character)
+            {
+                case LampCharacter.Tube:
+                    Assert.True(heard.Length >= 2, $"Tube {i} made {heard.Length} sound(s).");
+                    Assert.All(heard[..^1], sound => Assert.Equal(LampSound.Starter, sound));
+                    Assert.Equal(LampSound.Arc, heard[^1]);
+                    break;
+
+                case LampCharacter.Discharge:
+                    Assert.True(heard.Length >= 2, $"Lantern {i} made {heard.Length} sound(s).");
+                    Assert.All(heard[..^1], sound => Assert.Equal(LampSound.Ignitor, sound));
+                    Assert.Equal(LampSound.Arc, heard[^1]);
+                    break;
+
+                default:
+                    Assert.Equal(new[] { LampSound.Filament }, heard);
+                    break;
+            }
+        }
+
+        Assert.Equal(3, characters.Count);
+    }
+
+    /// <summary>A yard brought up at one instant does not finish at one instant.</summary>
+    /// <remarks>
+    /// Even with every supply closed on the same frame -- one contactor -- the lamps strike and warm each in
+    /// their own time. A row of lamps reaching full together is one effect played on all of them.
+    /// </remarks>
+    [Fact]
+    public void AColdYardDoesNotComeUpInStep()
+    {
+        LampSwitchboard board = DarkYard(24, Vector3f.One);
+        float[] lit = new float[board.Count];
+        Array.Fill(lit, -1f);
+
+        for (int i = 0; i < board.Count; i++)
+        {
+            board.SetSupply(i, true);
+        }
+
+        for (int frame = 0; frame < 60 * 25; frame++)
+        {
+            board.Update(1f / 60f);
+
+            for (int i = 0; i < board.Count; i++)
+            {
+                if (lit[i] < 0f && board.LevelOf(i) >= 1f)
+                {
+                    lit[i] = frame / 60f;
+                }
+            }
+        }
+
+        Assert.All(lit, seconds => Assert.True(seconds > 0f, "A lamp never reached full."));
+        Assert.True(lit.Max() - lit.Min() > 2f, $"The yard came up within {lit.Max() - lit.Min():0.00} s.");
+    }
+
+    /// <summary>A sodium lantern starts in its starting gas's colour and ends in its own.</summary>
+    [Fact]
+    public void AnAmberLanternWarmsUpThroughPink()
+    {
+        LampSwitchboard board = DarkYard(32, new Vector3f(1f, 0.55f, 0.2f));
+        int lantern = Enumerable.Range(0, board.Count).First(i => board.CharacterOf(i) == LampCharacter.Discharge);
+
+        board.SetSupply(lantern, true);
+        bool pink = false;
+
+        for (int frame = 0; frame < 60 * 25; frame++)
+        {
+            board.Update(1f / 60f);
+            Vector3f tint = board.TintOf(lantern);
+            pink |= board.LevelOf(lantern) > 0.1f && tint.Y < 0.7f && tint.Z > tint.Y;
+        }
+
+        Assert.True(pink, "The lantern never showed its starting gas's colour.");
+        Assert.Equal(1f, board.LevelOf(lantern));
+        Assert.Equal(Vector3f.One, board.TintOf(lantern));
+    }
+
+    /// <summary>A board nobody drains does not grow its sound list without bound.</summary>
+    [Fact]
+    public void UndrainedSoundsAreBounded()
+    {
+        LampSwitchboard board = Board(Fixture(0, 0, 0));
+
+        for (int i = 0; i < 5000; i++)
+        {
+            board.Switch(0);
+        }
+
+        var events = new List<LampEvent>();
+        board.DrainEvents(events);
+        Assert.InRange(events.Count, 1, 256);
+
+        events.Clear();
+        board.DrainEvents(events);
+        Assert.Empty(events);
+    }
+
+    /// <summary>Reset puts the switches back and leaves the daylight's supply alone.</summary>
+    [Fact]
+    public void ResetLeavesTheSupplyAlone()
+    {
+        LampSwitchboard board = Board(Fixture(0, 0, 0));
+        board.SetSupplyImmediately(0, false);
+        board.Switch(0);
+
+        board.Reset();
+
+        Assert.Equal(LampMode.On, board.ModeOf(0));
+        Assert.False(board.IsSupplied(0));
+        Assert.Equal(0f, board.LevelOf(0));
+    }
+
     /// <summary>A level with no lamps at all is a board nothing throws on.</summary>
     [Fact]
     public void AnEmptyLevelIsHarmless()

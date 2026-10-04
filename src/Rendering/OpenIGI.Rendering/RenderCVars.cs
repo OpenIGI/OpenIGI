@@ -483,6 +483,31 @@ public static class RenderCVars
         CVarOptions.Archive,
         "How long a whole day takes when the day/night cycle is on, in real minutes.");
 
+    /// <summary>Which of the level's lamps go off by day and come on at dusk.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not retail.</b> The original's lamps are painted into its lightmaps and burn at noon as at
+    /// midnight. Here each one follows the sun through a photocell of its own -- see
+    /// <c>LampPhotocells</c> -- so as the sky darkens the yard's lamps strike one by one, raggedly and
+    /// audibly, and at dawn go out again.
+    /// </para>
+    /// <para>
+    /// Outdoors by default: a lamp with a roof over it is lit by day as by night in any real building,
+    /// and a windowless room whose lamps had gone out at noon would be a room the player cannot see in.
+    /// Everywhere puts every lamp on the daylight. Off is the original's lamps, always lit.
+    /// </para>
+    /// <para>
+    /// Follows the sun whether or not the clock is running: the scrub keys move it either way. Nothing
+    /// happens under the vanilla preset, which draws the original's lamps, or with a pinned
+    /// <c>-sundir</c>, which is a comparison capture and keeps every lamp as the level ships it.
+    /// </para>
+    /// </remarks>
+    public static readonly EnumCVar<LampDaylight> LampDaylight = CVar.Choice(
+        "r_lamp_daylight",
+        global::OpenIGI.Rendering.LampDaylight.Outdoors,
+        CVarOptions.Archive,
+        "Which lamps go off by day and come on at dusk: off, outdoors or everywhere. Not in the original.");
+
     /// <summary>The brightness the frame is actually exposed at: the player's, less the night's.</summary>
     /// <remarks>
     /// Every consumer of the exposure reads THIS, including the two that only want to divide a

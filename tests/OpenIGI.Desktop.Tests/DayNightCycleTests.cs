@@ -267,5 +267,42 @@ public sealed class DayNightCycleTests
         }
     }
 
+    /// <summary>The sun's height asked for on its own is the height the frame lights with.</summary>
+    /// <remarks>
+    /// The lamps' photocells read it from outside the frame, before the sun has been applied. If the two
+    /// answers drifted apart, a lamp would come on under a sky the picture still shows as daylight.
+    /// </remarks>
+    [Fact]
+    public void TheSunsHeightOnItsOwnIsTheHeightTheFrameLightsWith()
+    {
+        DirectionalLightSettings authored = AuthoredAt(15.5f);
+        var cycle = new DayNightCycle();
+
+        for (float hour = 0f; hour < 24f; hour += 0.25f)
+        {
+            // Re-oriented as well, since the photocells must see the sun the player has turned.
+            cycle.Reset(hour);
+            cycle.RotateAxis(2, 0.4f);
+            float asked = cycle.SunSine(authored);
+            cycle.Apply(authored);
+
+            Assert.Equal(cycle.SunDirection.Z, asked, 5);
+        }
+    }
+
+    /// <summary>A level's opening hour is marked as one; the clock being scrubbed or reset by key is not.</summary>
+    [Fact]
+    public void OnlyALevelsOpeningMovesTheEpoch()
+    {
+        var cycle = new DayNightCycle();
+        int before = cycle.LevelEpoch;
+
+        cycle.Reset(6f);
+        Assert.Equal(before, cycle.LevelEpoch);
+
+        cycle.ResetForLevel(AuthoredAt(15.5f));
+        Assert.Equal(before + 1, cycle.LevelEpoch);
+    }
+
     private static float Luminance(Vector3f c) => (0.2126f * c.X) + (0.7152f * c.Y) + (0.0722f * c.Z);
 }
