@@ -137,6 +137,12 @@ OPENIGI_COMPUTE_GLOBALS cbuffer Globals
     int uUseActiveList;
     int uActiveCount;
 
+    // How far apart in the tile array consecutive work groups stand. One (or an unset nought) is a
+    // contiguous range. The whole-cache sweeps take every Nth tile instead, so each of their slices is a
+    // sample of the whole level rather than one neighbourhood of it -- and costs what every other slice
+    // costs, where a contiguous slice over a dense interior cost five times one over open ground.
+    int uTileStride;
+
     // The steady state's reach. A radius of nought relights everything, which is what the seed and the
     // dump pass. See ActiveRadius.
     float uActiveRadius;
@@ -622,7 +628,7 @@ static const int2 kProbeCorner[4] = { int2(0, 0), int2(1, 0), int2(0, 1), int2(1
 [numthreads(8, 8, 1)]
 void computeMain(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
 {
-    int slot = int(groupId.x) + uTileOffset;
+    int slot = (int(groupId.x) * max(uTileStride, 1)) + uTileOffset;
     int tile = slot;
     if (uUseActiveList != 0)
     {

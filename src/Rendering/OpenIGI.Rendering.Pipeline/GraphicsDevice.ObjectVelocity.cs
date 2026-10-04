@@ -187,7 +187,7 @@ public sealed partial class GraphicsDevice
         }
 
         _objectVelocity ??= new ObjectVelocityPass(_device);
-        _objectVelocity.Record(Encoder(), scene, _objectVelocityDraws, _profiler.Time(RenderStage.TemporalResolve));
+        _objectVelocity.Record(Encoder(), scene, _objectVelocityDraws, _profiler.Time(RenderStage.TemporalResolve, "object-velocity"));
     }
 
     /// <summary>Makes this frame's transforms the ones the next frame pairs against.</summary>

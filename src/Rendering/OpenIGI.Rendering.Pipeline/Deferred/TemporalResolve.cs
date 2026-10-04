@@ -138,33 +138,80 @@ public sealed class TemporalResolve : IDisposable
     /// </para>
     /// </remarks>
     /// <param name="timestamps">Where to time the pass, or <see langword="null"/>.</param>
+    /// <param name="timeStep">
+    /// When given, each step is recorded in a pass of its own and timed under the label this returns the
+    /// writes for -- the breakdown within the chain, for a profile. Left out, the chain is one pass.
+    /// </param>
     public void Record(
         IRhiCommandEncoder encoder,
         SceneTargetSet targets,
         in TemporalFrameState state,
         in TemporalResolveSettings settings,
         int frameInFlight,
-        RhiTimestampWrites? timestamps = null)
+        RhiTimestampWrites? timestamps = null,
+        Func<string, RhiTimestampWrites?>? timeStep = null)
     {
         ArgumentNullException.ThrowIfNull(encoder);
         ArgumentNullException.ThrowIfNull(targets);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        int width = targets.Width;
-        int height = targets.Height;
-
         encoder.ClearBuffer(targets.ClosestOccluder);
+
+        if (timeStep is not null)
+        {
+            for (int step = 0; step < StepLabels.Length; step++)
+            {
+                string label = StepLabels[step];
+                using IRhiComputePassEncoder own = encoder.BeginComputePass(new RhiComputePassDescriptor(timeStep(label), label));
+                RecordStep(step, own, targets, state, settings, frameInFlight);
+            }
+
+            return;
+        }
 
         using IRhiComputePassEncoder pass = encoder.BeginComputePass(new RhiComputePassDescriptor(timestamps, "upscale"));
 
-        DilateVelocity(pass, targets, state, frameInFlight, width, height);
-        DecimateHistory(pass, targets, state, frameInFlight, width, height);
-        ThinGeometry(pass, targets, state, settings, frameInFlight, width, height);
-        RejectShading(pass, targets, state, settings, frameInFlight, width, height);
-        DilateRejection(pass, targets, state, frameInFlight, width, height);
-        SpatialAntiAliasing(pass, targets, state, settings, frameInFlight, width, height);
-        UpdateHistory(pass, targets, state, settings, frameInFlight, width, height);
-        ResolveHistory(pass, targets, settings, frameInFlight, width, height, targets.OutputWidth, targets.OutputHeight);
+        for (int step = 0; step < StepLabels.Length; step++)
+        {
+            RecordStep(step, pass, targets, state, settings, frameInFlight);
+        }
+    }
+
+    /// <summary>The chain's steps in the order they run, by the name each is timed under.</summary>
+    private static readonly string[] StepLabels =
+    [
+        "upscale.dilate-velocity",
+        "upscale.decimate-history",
+        "upscale.thin-geometry",
+        "upscale.reject-shading",
+        "upscale.dilate-rejection",
+        "upscale.spatial-aa",
+        "upscale.update-history",
+        "upscale.resolve-history",
+    ];
+
+    private void RecordStep(
+        int step,
+        IRhiComputePassEncoder pass,
+        SceneTargetSet targets,
+        in TemporalFrameState state,
+        in TemporalResolveSettings settings,
+        int frame)
+    {
+        int width = targets.Width;
+        int height = targets.Height;
+
+        switch (step)
+        {
+            case 0: DilateVelocity(pass, targets, state, frame, width, height); break;
+            case 1: DecimateHistory(pass, targets, state, frame, width, height); break;
+            case 2: ThinGeometry(pass, targets, state, settings, frame, width, height); break;
+            case 3: RejectShading(pass, targets, state, settings, frame, width, height); break;
+            case 4: DilateRejection(pass, targets, state, frame, width, height); break;
+            case 5: SpatialAntiAliasing(pass, targets, state, settings, frame, width, height); break;
+            case 6: UpdateHistory(pass, targets, state, settings, frame, width, height); break;
+            default: ResolveHistory(pass, targets, settings, frame, width, height, targets.OutputWidth, targets.OutputHeight); break;
+        }
     }
 
     /// <inheritdoc/>

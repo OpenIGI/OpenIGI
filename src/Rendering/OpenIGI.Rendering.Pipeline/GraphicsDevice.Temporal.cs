@@ -22,6 +22,9 @@ namespace OpenIGI.Rendering.Pipeline;
 /// </remarks>
 public sealed partial class GraphicsDevice
 {
+    // Times one step of the upscaler under its own label; kept so a profiled frame does not allocate it.
+    private Func<string, RhiTimestampWrites?>? _timeUpscaleStep;
+
     /// <summary>The vertical jitter's sign once it reaches history space.</summary>
     /// <remarks>
     /// The game hands over a jitter in OpenGL's clip convention. Flipping the viewport displaces the
@@ -79,7 +82,7 @@ public sealed partial class GraphicsDevice
         }
 
         using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
-            _profiler.Time(RenderStage.AmbientOcclusionSearch),
+            _profiler.Time(RenderStage.AmbientOcclusionSearch, "ambient-occlusion"),
             "occlusion")))
         {
             screen.RecordOcclusion(
@@ -128,7 +131,7 @@ public sealed partial class GraphicsDevice
         if (!_velocityRecorded)
         {
             using IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
-                _profiler.Time(RenderStage.TemporalResolve),
+                _profiler.Time(RenderStage.TemporalResolve, "velocity"),
                 "velocity"));
             screen.RecordVelocity(pass, scene, TemporalState(scene), FrameSlot);
         }
@@ -190,11 +193,12 @@ public sealed partial class GraphicsDevice
         }
 
         TemporalFrameState state = TemporalState(scene);
+        // The history's scale is the one its targets were built at, so the two can never disagree.
         TemporalResolveSettings settings = TemporalResolveSettings.ForFrame(
             _taa,
             scene.Width,
             scene.OutputWidth,
-            _debugView);
+            _debugView) with { HistoryScale = scene.HistoryScale };
 
         ClosePass();
         CloseScenePass();
@@ -205,7 +209,7 @@ public sealed partial class GraphicsDevice
         if (!_velocityRecorded)
         {
             using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
-                _profiler.Time(RenderStage.TemporalResolve),
+                _profiler.Time(RenderStage.TemporalResolve, "velocity"),
                 "velocity")))
             {
                 screen.RecordVelocity(pass, scene, state, FrameSlot);
@@ -217,12 +221,19 @@ public sealed partial class GraphicsDevice
 
         if (settings.Enabled && _temporal is { } temporal)
         {
-            temporal.Record(Encoder(), scene, state, settings, FrameSlot, _profiler.Time(RenderStage.TemporalResolve));
+            // Step by step while measuring, so the chain's cost is broken down rather than one figure.
+            temporal.Record(
+                Encoder(),
+                scene,
+                state,
+                settings,
+                FrameSlot,
+                timeStep: _profiler.Enabled ? _timeUpscaleStep ??= label => _profiler.Time(RenderStage.TemporalResolve, label) : null);
             _temporalResolved = true;
         }
 
         using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
-            _profiler.Time(RenderStage.TemporalResolve),
+            _profiler.Time(RenderStage.TemporalResolve, "copy-depth"),
             "copy-depth")))
         {
             copy.Bind("uDepth", scene.View(SceneTargetId.Depth));

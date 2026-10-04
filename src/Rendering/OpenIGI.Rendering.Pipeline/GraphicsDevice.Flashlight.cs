@@ -53,7 +53,7 @@ public sealed partial class GraphicsDevice
         bool traced = WillTraceFlashlight() && TracedWorld is { WorldScene: not null };
 
         using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
-            _profiler.Time(RenderStage.Shadows),
+            _profiler.Time(RenderStage.Shadows, "flashlight.shadow"),
             "flashlightshadow")))
         {
             _flashlightShadowed = _flashlightShadow.Record(

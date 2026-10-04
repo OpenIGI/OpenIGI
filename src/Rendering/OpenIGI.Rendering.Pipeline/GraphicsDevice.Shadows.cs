@@ -108,7 +108,7 @@ public sealed partial class GraphicsDevice
                 resume ? RhiLoadOp.Load : RhiLoadOp.Clear,
                 RhiStoreOp.Store,
                 DepthClearValue: 1f),
-            _profiler.Time(RenderStage.Shadows),
+            _profiler.Time(RenderStage.Shadows, "shadow-maps"),
             Label: $"cascade{cascade}"));
 
         _shadowPass.SetViewport(0, 0, map.Width, map.Height, 0f, 1f);

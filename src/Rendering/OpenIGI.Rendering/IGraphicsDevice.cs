@@ -1297,6 +1297,34 @@ public interface IGraphicsDevice : IDisposable
     /// <summary>Gets the rolling distribution of total timed GPU work per completed frame.</summary>
     GpuFrameTiming GpuTiming();
 
+    /// <summary>Gets every labelled pass timed since timing began, the most expensive first.</summary>
+    /// <returns>The breakdown within the stages; empty where nothing labels its passes.</returns>
+    IReadOnlyList<RenderPassTiming> PassTimings() => [];
+
+    /// <summary>Names the compute work recorded from here on in the timings, or stops naming it.</summary>
+    /// <param name="label">The name, or <see langword="null"/> to go back to each kernel's own.</param>
+    /// <remarks>
+    /// One kernel can serve several callers -- the surface cache's relight, bounce and far refresh are one
+    /// program -- and timed under the kernel's name they are one figure that cannot say which of them
+    /// spiked. Costs nothing when nothing is being timed.
+    /// </remarks>
+    void SetComputeTimingLabel(string? label)
+    {
+        _ = label;
+    }
+
+    /// <summary>Gets what each labelled pass cost in the slowest share of the frames timed.</summary>
+    /// <param name="fraction">The share: 0.01 is the frames behind the 1% low.</param>
+    /// <param name="frames">How many frames that was.</param>
+    /// <param name="averageMilliseconds">Their average summed GPU time.</param>
+    /// <returns>The breakdown, the most expensive first; empty where nothing labels its passes.</returns>
+    IReadOnlyList<RenderPassTiming> WorstFramePassTimings(double fraction, out int frames, out double averageMilliseconds)
+    {
+        frames = 0;
+        averageMilliseconds = 0.0;
+        return [];
+    }
+
     /// <summary>Gets the whole GPU frame measured end to end, rather than summed from its stages.</summary>
     /// <remarks>
     /// <para>

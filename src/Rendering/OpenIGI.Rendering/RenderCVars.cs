@@ -1089,6 +1089,19 @@ public static class RenderCVars
         // only way to spread it further.
         ultra: "24");
 
+    /// <summary>The fewest surface-cache tiles one steady-state relight or bounce slice dispatches.</summary>
+    /// <remarks>
+    /// A floor on the slice, because the tracing hides its ray latency only in a large dispatch. Too high a
+    /// floor packs a whole round of work into a few frames and idles the rest, which is a spike every round.
+    /// </remarks>
+    public static readonly NumericCVar<int> GiMinSlice = CVar.Int(
+        "r_gi_min_slice",
+        1024,
+        64,
+        65536,
+        CVarOptions.Developer,
+        "Fewest surface-cache tiles per amortised GI slice. Lower spreads the work evenly; higher is more efficient.");
+
     /// <summary>How many frames a level is drawn for, unseen, before it is shown to the player.</summary>
     /// <remarks>
     /// <para>
@@ -1877,18 +1890,18 @@ public static class RenderCVars
         enhanced: "2",
         high: "1",
 
-        // ONE at high and ultra, where the accuracy is the point. This is the frame's largest pass and two
-        // measured a 1.5ms saving, but it is not free: the probe grid is anchored to the SCREEN, so an atlas
+        // ONE at high, where the accuracy is the point; TWO at ultra, which since the far-refresh idle is the
+        // tier where the gather is the largest single pass (2.7 of ~15.4 ms at 1440p) and halving it measured
+        // about a millisecond. It is not free: the probe grid is anchored to the SCREEN, so an atlas
         // carried over from the previous frame is misaligned with the depth buffer the resolve upsamples it
         // against, and the resolve accumulates that misalignment into its per-pixel history every frame.
         // Measured against the same three still-camera scenes the corner fix was validated on, it moved the
         // whole image by a mean of 1.7/255 with visible structure across every surface -- a systematic bias
         // rather than noise, though still inside this project's own 2/255 acceptance.
         //
-        // Enhanced takes that trade and the tiers above it do not, which is exactly what separates them:
-        // enhanced is the tier that has to run on hardware the other two do not, and 1.5ms out of the
-        // largest pass in the frame is the single biggest saving available after r_scale.
-        ultra: "1");
+        // Enhanced and ultra take that trade; high keeps every-frame tracing. Set it to 1 by hand for the
+        // unbiased indirect at ultra.
+        ultra: "2");
 
     /// <summary>How far the screen probe gather's spatial denoise blur reaches, in probes. Zero is off.</summary>
     /// <remarks>
@@ -3535,6 +3548,48 @@ public static class RenderCVars
         false,
         CVarOptions.Developer,
         "Time each stage of the frame on the GPU and show the result. Costs a little of what it measures.");
+
+    /// <summary>How many history texels the temporal upscaler keeps per rendered pixel, on each axis.</summary>
+    /// <remarks>
+    /// <para>
+    /// Twice the render resolution is what lets an upscale reconstruct detail finer than one frame holds:
+    /// the jittered frames land between each other's pixels, and a history at the rendered size would
+    /// average them back down. At native resolution and above there is no finer output to reconstruct, and
+    /// the doubled history is four times the pixels written and read every frame for very little -- at
+    /// 2560x1440 a 5120x2880 history.
+    /// </para>
+    /// <para>
+    /// 0 chooses: one where the frame is rendered at or above the presented size, two where it is upscaled.
+    /// 1 or 2 forces that scale.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> UpscaleHistory = Presets.Define(
+        CVar.Int(
+            "r_upscale_history",
+            0,
+            0,
+            2,
+            CVarOptions.Archive,
+            "Temporal upscaler history per rendered pixel: 0 = auto (1 at native, 2 when upscaling), 1 or 2 to force."),
+
+        // Automatic at every tier: the render scale each preset sets already decides which one is worth it.
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+        ultra: "0");
+
+    /// <summary>How many of the most expensive individual passes r_perflog lists under its stages.</summary>
+    /// <remarks>
+    /// A stage is the sum of its passes, and the global illumination alone is a dozen dispatches; a stage
+    /// over budget says where to look but not at what. Every pass is also written to the log on exit.
+    /// </remarks>
+    public static readonly NumericCVar<int> PerformanceLogPasses = CVar.Int(
+        "r_perflog_passes",
+        0,
+        0,
+        32,
+        CVarOptions.Developer,
+        "With r_perflog, list this many of the most expensive individual GPU passes, by name.");
 
     /// <summary>Diagnostic: which one source of the screen GI gather's light to keep.</summary>
     /// <remarks>

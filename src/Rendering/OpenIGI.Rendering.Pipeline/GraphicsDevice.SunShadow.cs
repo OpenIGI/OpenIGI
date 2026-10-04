@@ -185,7 +185,7 @@ public sealed partial class GraphicsDevice
         // Outside any pass, because a structure cannot be built inside one.
         ClosePass();
         CloseScenePass();
-        world.RecordSceneUpdate(Encoder(), _profiler.Time(RenderStage.AccelerationStructure));
+        world.RecordSceneUpdate(Encoder(), _profiler.Time(RenderStage.AccelerationStructure, "scene-update"));
     }
 
     /// <summary>Drops the traced world a level change asked to be released, before the frame records anything.</summary>
@@ -238,7 +238,7 @@ public sealed partial class GraphicsDevice
 
         // A shadow, so it reports under the shadows' stage.
         using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
-            _profiler.Time(RenderStage.Shadows),
+            _profiler.Time(RenderStage.Shadows, "sun.shadow"),
             "sunshadow")))
         {
             _tracedSun.Record(

@@ -24,19 +24,20 @@ struct SLANG_ParameterGroup_Globals_std140_0
     @align(4) uTileOffset_0 : i32,
     @align(8) uUseActiveList_0 : i32,
     @align(4) uActiveCount_0 : i32,
-    @align(16) uActiveRadius_0 : f32,
-    @align(4) uLightCount_0 : i32,
-    @align(8) uLocalScale_0 : f32,
-    @align(4) uProbeWidth_0 : i32,
-    @align(16) uProbeHeight_0 : i32,
-    @align(4) uTemporalIndex_0 : i32,
-    @align(8) uMaxFrames_0 : i32,
-    @align(4) uJitterStride_0 : i32,
-    @align(16) uMode_0 : i32,
-    @align(4) uBoost_0 : f32,
-    @align(8) uSkyShValid_0 : i32,
-    @align(4) uProbe_0 : i32,
-    @align(16) uProbeInvExtent_0 : f32,
+    @align(16) uTileStride_0 : i32,
+    @align(4) uActiveRadius_0 : f32,
+    @align(8) uLightCount_0 : i32,
+    @align(4) uLocalScale_0 : f32,
+    @align(16) uProbeWidth_0 : i32,
+    @align(4) uProbeHeight_0 : i32,
+    @align(8) uTemporalIndex_0 : i32,
+    @align(4) uMaxFrames_0 : i32,
+    @align(16) uJitterStride_0 : i32,
+    @align(4) uMode_0 : i32,
+    @align(8) uBoost_0 : f32,
+    @align(4) uSkyShValid_0 : i32,
+    @align(16) uProbe_0 : i32,
+    @align(4) uProbeInvExtent_0 : f32,
 };
 
 @binding(49) @group(0) var<uniform> Globals_0 : SLANG_ParameterGroup_Globals_std140_0;
@@ -1090,7 +1091,7 @@ fn SegmentVisibility_0( world_15 : vec3<f32>,  normal_11 : vec3<f32>,  target_0 
 @workgroup_size(8, 8, 1)
 fn computeMain(@builtin(workgroup_id) groupId_0 : vec3<u32>, @builtin(local_invocation_id) localId_0 : vec3<u32>)
 {
-    var slot_1 : i32 = i32(groupId_0.x) + Globals_0.uTileOffset_0;
+    var slot_1 : i32 = i32(groupId_0.x) * max(Globals_0.uTileStride_0, i32(1)) + Globals_0.uTileOffset_0;
     var tile_0 : i32;
     if((Globals_0.uUseActiveList_0) != i32(0))
     {

@@ -25,7 +25,7 @@ public sealed partial class GraphicsDevice
         _motionBlur ??= new MotionBlur(_device, FramesInFlight, _retired);
 
         using IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
-            _profiler.Time(RenderStage.CameraEffects),
+            _profiler.Time(RenderStage.CameraEffects, "motion-blur"),
             "motionblur"));
 
         // At the size of the picture it smears, which the resolve has already reconstructed to the

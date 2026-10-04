@@ -81,6 +81,16 @@ public sealed partial class GraphicsDevice
     public GpuFrameTiming GpuTiming() => _profiler.Ledger.TotalTiming();
 
     /// <inheritdoc/>
+    public IReadOnlyList<RenderPassTiming> PassTimings() => _profiler.Ledger.PassTimings();
+
+    /// <inheritdoc/>
+    public void SetComputeTimingLabel(string? label) => _computeTimingLabel = label;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<RenderPassTiming> WorstFramePassTimings(double fraction, out int frames, out double averageMilliseconds) =>
+        _profiler.Ledger.WorstFramePassTimings(fraction, out frames, out averageMilliseconds);
+
+    /// <inheritdoc/>
     public GpuFrameTiming GpuMeasuredTiming() => _profiler.Ledger.MeasuredTiming();
 
     /// <inheritdoc/>

@@ -81,7 +81,7 @@ public sealed partial class GraphicsDevice
         bool cascades = _cascadeCount > 0 && _shadowsDrawn;
 
         using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
-            _profiler.Time(RenderStage.FogIntegrate),
+            _profiler.Time(RenderStage.FogIntegrate, "fog"),
             "fog")))
         {
             _volumetricFog.Record(

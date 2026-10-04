@@ -7,6 +7,7 @@ using OpenIGI.Rendering.Pipeline.Sky;
 using OpenIGI.Rendering.Pipeline.Targets;
 using OpenIGI.Rendering.Sky;
 using OpenIGI.Rendering.Rhi;
+using OpenIGI.Rendering.Temporal;
 
 namespace OpenIGI.Rendering.Pipeline;
 
@@ -238,7 +239,7 @@ public sealed partial class GraphicsDevice
                 load,
                 RhiStoreOp.Store,
                 DepthClearValue: 0f),
-            _profiler.Time(RenderStage.Geometry),
+            _profiler.Time(RenderStage.Geometry, "geometry"),
 
             // Where the world's visibility probes land; see IssueOcclusionQuery.
             OcclusionQuerySet: _occlusion.CurrentSet,
@@ -259,7 +260,7 @@ public sealed partial class GraphicsDevice
         _scenePass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             [new RhiColorAttachment(scene.View(SceneTargetId.Lit), RhiLoadOp.Load, RhiStoreOp.Store, RhiClearColor.Transparent)],
             new RhiDepthAttachment(scene.View(SceneTargetId.Depth), RhiLoadOp.Load, RhiStoreOp.Store, DepthClearValue: 0f),
-            _profiler.Time(RenderStage.Forward),
+            _profiler.Time(RenderStage.Forward, "forward"),
             Label: "forward"));
 
         ApplySceneViewport(_scenePass);
@@ -438,7 +439,7 @@ public sealed partial class GraphicsDevice
 
         using (IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             [new RhiColorAttachment(_frame.Target, RhiLoadOp.Clear, RhiStoreOp.Store, _clearColour)],
-            Timestamps: _profiler.Time(RenderStage.ToneMapGrade),
+            Timestamps: _profiler.Time(RenderStage.ToneMapGrade, "tonemap"),
             Label: "resolve")))
         {
             pass.SetViewport(0, 0, CurrentMode.Width, CurrentMode.Height, 0f, 1f);
@@ -472,7 +473,7 @@ public sealed partial class GraphicsDevice
         }
 
         using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
-            _profiler.Time(RenderStage.Bloom),
+            _profiler.Time(RenderStage.Bloom, "bloom"),
             "bloom")))
         {
             (int width, int height) = PostSize(scene);
@@ -549,7 +550,7 @@ public sealed partial class GraphicsDevice
 
         using IRhiRenderPassEncoder pass = Encoder().BeginRenderPass(new RhiRenderPassDescriptor(
             [new RhiColorAttachment(scene.View(SceneTargetId.Lit), RhiLoadOp.Clear, RhiStoreOp.Store, RhiClearColor.Transparent)],
-            Timestamps: _profiler.Time(RenderStage.Lighting),
+            Timestamps: _profiler.Time(RenderStage.Lighting, "lighting"),
             Label: "shading"));
 
         pass.SetViewport(0, 0, scene.Width, scene.Height, 0f, 1f);
@@ -575,7 +576,7 @@ public sealed partial class GraphicsDevice
         IRhiCommandEncoder encoder = Encoder();
 
         using (IRhiComputePassEncoder pass = encoder.BeginComputePass(new RhiComputePassDescriptor(
-            _profiler.Time(RenderStage.Setup),
+            _profiler.Time(RenderStage.Setup, "setup"),
             "sky")))
         {
             sky.Record(pass, FrameSlot, SkyConditions.ForScene(_lighting, _viewToWorld, altitudeMetres: 2f));
@@ -779,18 +780,20 @@ public sealed partial class GraphicsDevice
     /// <summary>Builds everything the deferred frame needs, at the size it is asked for.</summary>
     private void EnsureDeferred(int width, int height, int outputWidth, int outputHeight)
     {
-        if (_scene is { } existing && existing.Matches(width, height, outputWidth, outputHeight))
+        int historyScale = TemporalResolveSettings.HistoryScaleFor(width, outputWidth > 0 ? outputWidth : width);
+
+        if (_scene is { } existing && existing.Matches(width, height, outputWidth, outputHeight, historyScale))
         {
             return;
         }
 
         if (_scene is { } resized)
         {
-            resized.Resize(width, height, outputWidth, outputHeight);
+            resized.Resize(width, height, outputWidth, outputHeight, historyScale);
             return;
         }
 
-        _scene = new SceneTargetSet(_device, width, height, outputWidth, outputHeight);
+        _scene = new SceneTargetSet(_device, width, height, outputWidth, outputHeight, _retired, historyScale);
 
         _surfaceLayout = _device.CreateBindGroupLayout(new RhiBindGroupLayoutDescriptor(
             [new RhiBindGroupLayoutEntry(0, RhiBindingType.UniformBuffer, RhiShaderStages.Graphics)],

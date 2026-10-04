@@ -409,6 +409,9 @@ public sealed partial class GraphicsDevice
     /// past the frames in flight is always free.
     /// </para>
     /// </remarks>
+    // What the caller asked the compute it records to be timed as, over the kernel's own name.
+    private string? _computeTimingLabel;
+
     private void RunCompute(ComputeKernel kernel, Action<IRhiComputePassEncoder> dispatch)
     {
         bool inFrame = _inFrame || (_frameCounter > 0 && !CapturingCards);
@@ -431,7 +434,7 @@ public sealed partial class GraphicsDevice
             // lighting, its radiance cache, the screen gather and the distance field. Untimed, the stack was
             // invisible to the stage timings and the benchmark's GPU total alike.
             using IRhiComputePassEncoder pass = frame.BeginComputePass(new RhiComputePassDescriptor(
-                _profiler.Time(RenderStage.GlobalIllumination),
+                _profiler.Time(RenderStage.GlobalIllumination, _computeTimingLabel ?? kernel.Label),
                 kernel.Label));
             dispatch(pass);
             return;

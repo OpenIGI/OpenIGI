@@ -41,6 +41,22 @@ internal sealed partial class GameHost
     // Whole sweeps the refresh has completed, which is what advances its jitter from one sweep to the next.
     private int _giRefreshRounds;
 
+    // What the refresh last saw its inputs as, and how many whole sweeps it has finished since any of them
+    // changed. See StepGiRelight.
+    private Vector3f _giRefreshSunDirection;
+    private Vector3f _giRefreshSunColour;
+    private int _giRefreshLampRevision = -1;
+    private int _giRefreshQuietRounds;
+    private bool _giRefreshWorldSettled;
+
+    /// <summary>How many whole sweeps the far refresh runs after its inputs last changed, before it idles.</summary>
+    /// <remarks>
+    /// One sweep relights every card under the new inputs; the rest fold more bounce in, at the steady
+    /// bounce's weight, so far rooms reach their multi-bounce answer rather than stopping at one. At the
+    /// ultra preset's 128 slices this is about eight seconds at sixty frames a second.
+    /// </remarks>
+    private const int FarRefreshQuietRounds = 4;
+
     // How many frames the load-time convergence has waited for the world's structure to settle. See
     // BeginGiConvergence.
     private int _giSettleWaitFrames;
@@ -409,6 +425,8 @@ internal sealed partial class GameHost
         // cache was converged in daylight. See CycleSun.
         DirectionalLightSettings sun = CycleSun();
         _giRefreshSlice = 0;
+        _giRefreshQuietRounds = 0;
+        _giRefreshWorldSettled = false;
 
         // Whole-cache bounces, so each one is worth a full pass -- and capped, because that is what makes
         // them affordable. The old one-shot convergence ran two whole-cache iterations and then seven
@@ -512,16 +530,46 @@ internal sealed partial class GameHost
             return;
         }
 
+        // Idle once nothing it is lit by has changed for a few whole sweeps. It ran every frame for good,
+        // re-deriving the same far cache over and over: a slice of the WHOLE level, unculled, which at
+        // ultra was some two and a half milliseconds of every frame -- the largest single cost in the GI.
+        // What wakes it is exactly the list above: the sun (a scrub or a moving clock), a lamp switched,
+        // and a traced world still taking in walls after the load. Only until that world has first
+        // settled: past then it is view-dependent -- what leaves the view expires and comes back when the
+        // player turns -- so it "grows" on every turn of the head, and waking on that kept the sweep going
+        // for good while telling the far cards nothing new.
+        Vector3f sunColour = sun.Colour * (RenderCVars.SunScale.Value * RenderCVars.LightScale.Value);
+        Vector3f sunDirection = CacheSunDirection(sun);
+        bool worldSettled = _device.WorldTraceSettled;
+        _giRefreshWorldSettled |= worldSettled;
+        bool changed = (!_giRefreshWorldSettled && !worldSettled)
+            || _lampBounceRevision != _giRefreshLampRevision
+            || !NearlyEqual(sunDirection, _giRefreshSunDirection)
+            || !NearlyEqual(sunColour, _giRefreshSunColour);
+
+        if (changed)
+        {
+            _giRefreshQuietRounds = 0;
+            _giRefreshLampRevision = _lampBounceRevision;
+            _giRefreshSunDirection = sunDirection;
+            _giRefreshSunColour = sunColour;
+        }
+        else if (_giRefreshQuietRounds >= FarRefreshQuietRounds)
+        {
+            return;
+        }
+
         int slice = _giRefreshSlice % slices;
         _giRefreshSlice = (slice + 1) % slices;
         if (_giRefreshSlice == 0)
         {
             _giRefreshRounds = (_giRefreshRounds + 1) & 0x3fff;
+            _giRefreshQuietRounds++;
         }
 
         cards.ConvergeLightSlice(
-            CacheSunDirection(sun),
-            sun.Colour * (RenderCVars.SunScale.Value * RenderCVars.LightScale.Value),
+            sunDirection,
+            sunColour,
             SkyFillColour(sun),
             field,
             slice,
@@ -535,6 +583,9 @@ internal sealed partial class GameHost
         cards.ConvergeBounceSlice(
             field, RenderCVars.GlobalIlluminationBoost.Value, pass: steady + 1 + _giRefreshRounds, slice, slices);
     }
+
+    private static bool NearlyEqual(Vector3f a, Vector3f b) =>
+        MathF.Abs(a.X - b.X) <= 1e-4f && MathF.Abs(a.Y - b.Y) <= 1e-4f && MathF.Abs(a.Z - b.Z) <= 1e-4f;
 
     // A sun under the horizon lights nothing directly, and the cache is told so with no direction at all.
     private static Vector3f CacheSunDirection(DirectionalLightSettings sun) =>

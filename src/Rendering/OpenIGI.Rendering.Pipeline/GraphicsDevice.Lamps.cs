@@ -99,7 +99,7 @@ public sealed partial class GraphicsDevice
         TemporalFrameState state = TemporalState(scene);
 
         using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
-            _profiler.Time(RenderStage.Shadows),
+            _profiler.Time(RenderStage.Shadows, "lamp.shadow"),
             "lampshadow")))
         {
             _tracedLamps.Record(

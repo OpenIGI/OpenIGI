@@ -145,8 +145,21 @@ public sealed class SurfaceCacheLighting : IDisposable
     /// in the first few frames at full occupancy and the remaining frames dispatch nothing at all,
     /// rather than every frame paying the latency of an underfilled machine. Refresh cadence is
     /// unchanged either way: one full pass over the active set per <see cref="BounceFrameSpread"/>.
+    /// <para>
+    /// 1024 rather than the 4096 it was: at 4096 a round's bounce landed on a handful of frames at up to
+    /// 6.5 ms each at 1440p ultra and idled the rest, which was the largest single cause of the 1% low.
+    /// At 1024 the peak is about 2 ms for some 0.2 ms more on average; at 512 the latency cost began to
+    /// show in the average (the bounce doubled). The image is the same at any value.
+    /// </para>
     /// </remarks>
-    private const int MinSliceGroups = 4096;
+    private const int MinSliceGroups = 1024;
+
+    // How far apart the tiles of the dispatch being recorded stand; see uTileStride. One except inside a
+    // whole-cache slice.
+    private int _tileStride = 1;
+
+    /// <summary>Gets or sets the fewest tiles a steady-state slice dispatches; see <see cref="MinSliceGroups"/>.</summary>
+    public int MinSliceTiles { get; set; } = MinSliceGroups;
 
 
     /// <summary>How many texels lie between probes each way.</summary>
@@ -681,7 +694,7 @@ public sealed class SurfaceCacheLighting : IDisposable
             int slice = Math.Max(1, (domain + spread - 1) / spread);
             if (lightList)
             {
-                slice = Math.Max(slice, MinSliceGroups);
+                slice = Math.Max(slice, Math.Max(1, MinSliceTiles));
             }
 
             int phase = _lightCursor % spread;
@@ -697,9 +710,11 @@ public sealed class SurfaceCacheLighting : IDisposable
             lightTiles = Math.Min(slice, domain - lightOffset);
         }
 
+        _device.SetComputeTimingLabel("cards.near.relight");
         LightTiles(
             sunDirection, sunColour, skyColour, shadows, probe, localScale,
             lightOffset, lightTiles, lightList, cull: amortize);
+        _device.SetComputeTimingLabel(null);
     }
 
     /// <summary>
@@ -734,9 +749,13 @@ public sealed class SurfaceCacheLighting : IDisposable
             return;
         }
 
+        _tileStride = Math.Max(1, sliceCount);
+        _device.SetComputeTimingLabel("cards.far.relight");
         LightTiles(
             sunDirection, sunColour, skyColour, shadows, probe: 0, localScale,
             offset, tiles, useActiveList: false, cull: false);
+        _device.SetComputeTimingLabel(null);
+        _tileStride = 1;
     }
 
     /// <summary>Seeds one slice of the final atlas from the direct term, the first step of a spread convergence.</summary>
@@ -754,12 +773,14 @@ public sealed class SurfaceCacheLighting : IDisposable
 
         float radius = ActiveRadius;
         ActiveRadius = 0f;
+        _tileStride = Math.Max(1, sliceCount);
         try
         {
             Dispatch(3, DirectLighting, FinalLighting, shadows, boost, 0, offset, tiles, useActiveList: false);
         }
         finally
         {
+            _tileStride = 1;
             ActiveRadius = radius;
         }
     }
@@ -788,25 +809,35 @@ public sealed class SurfaceCacheLighting : IDisposable
 
         float radius = ActiveRadius;
         ActiveRadius = 0f;
+        _tileStride = Math.Max(1, sliceCount);
         try
         {
+            _device.SetComputeTimingLabel("cards.far.bounce");
             Dispatch(1, FinalLighting, IndirectLighting, shadows, boost, Math.Max(pass, 0), offset, tiles, useActiveList: false);
             Dispatch(2, DirectLighting, FinalLighting, shadows, boost, 0, offset, tiles, useActiveList: false);
         }
         finally
         {
+            _device.SetComputeTimingLabel(null);
+            _tileStride = 1;
             ActiveRadius = radius;
         }
     }
 
-    /// <summary>Gets the tile range one slice of an evenly divided cache covers.</summary>
+    /// <summary>Gets the tiles one slice of an evenly divided cache covers: every <paramref name="sliceCount"/>th.</summary>
     /// <returns><see langword="false"/> when the slice is past the end and there is nothing to dispatch.</returns>
+    /// <remarks>
+    /// Interleaved rather than contiguous, with <see cref="_tileStride"/> set to the slice count by the caller:
+    /// tiles are laid out page by page, so a contiguous slice is one part of the level, and its cost was that
+    /// part's -- a slice over a dense interior took several times the frame time of one over open ground,
+    /// which is a spike once every sweep. Interleaved, every slice samples the whole level alike. The union
+    /// over all the slices is still every tile exactly once.
+    /// </remarks>
     private bool SliceRange(int slice, int sliceCount, out int offset, out int tiles)
     {
         int count = Math.Max(1, sliceCount);
-        int size = Math.Max(1, (_tileCount + count - 1) / count);
-        offset = Math.Clamp(slice, 0, count - 1) * size;
-        tiles = Math.Min(size, _tileCount - offset);
+        offset = Math.Clamp(slice, 0, count - 1);
+        tiles = offset < _tileCount ? ((_tileCount - offset) + count - 1) / count : 0;
         return tiles > 0;
     }
 
@@ -892,9 +923,12 @@ public sealed class SurfaceCacheLighting : IDisposable
     {
         int most = Math.Max(_device.Capabilities.MaxComputeGroupsX, 1);
 
+        int stride = Math.Max(1, _tileStride);
+        _device.SetComputeUniform(_shader, "uTileStride", stride);
+
         for (int done = 0; done < count; done += most)
         {
-            _device.SetComputeUniform(_shader, "uTileOffset", offset + done);
+            _device.SetComputeUniform(_shader, "uTileOffset", offset + (done * stride));
             _device.Dispatch(_shader, Math.Min(most, count - done));
         }
     }
@@ -985,7 +1019,7 @@ public sealed class SurfaceCacheLighting : IDisposable
         int slice = Math.Max(1, (domain + spread - 1) / spread);
         if (useList)
         {
-            slice = Math.Max(slice, MinSliceGroups);
+            slice = Math.Max(slice, Math.Max(1, MinSliceTiles));
         }
 
         // Staggered half a round from the direct relight. Both amortised passes cover their active slices
@@ -1006,8 +1040,10 @@ public sealed class SurfaceCacheLighting : IDisposable
         }
 
         int groups = Math.Min(slice, domain - offset);
+        _device.SetComputeTimingLabel("cards.near.bounce");
         Dispatch(1, FinalLighting, IndirectLighting, shadows, boost, temporalIndex, offset, groups, useList, spread);
         Dispatch(2, DirectLighting, FinalLighting, shadows, boost, 0, offset, groups, useList);
+        _device.SetComputeTimingLabel(null);
     }
 
     private void Dispatch(

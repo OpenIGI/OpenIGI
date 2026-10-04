@@ -112,6 +112,7 @@ public readonly record struct HostOptions(
         int? flightFrames = null;
         int flightDelay = 0;
         float cameraShake = 0f;
+        float cameraSwing = 0f;
         int exitAfterFrames = 0;
         int uiScale = Core.Graphics.UiScale.Automatic;
         bool logCamera = false;
@@ -136,6 +137,7 @@ public readonly record struct HostOptions(
         int missionCycleFrames = 0;
         int titleCycleFrames = 0;
         int backdropCycleFrames = 0;
+        int presetCycleFrames = 0;
         string? showcasePointDump = null;
         string? benchmarkPath = null;
         bool bakeAll = false;
@@ -328,6 +330,13 @@ public readonly record struct HostOptions(
                 {
                     throw new ArgumentException($"-camshake expects a non-negative amplitude in degrees, got '{cameraShake}'.", nameof(args));
                 }
+            }
+            else if (arg.Equals("camswing", StringComparison.OrdinalIgnoreCase))
+            {
+                // Swing the camera's yaw by this many degrees on every other frame, so frame N and N+2 are the
+                // same view. Anything that differs between them changed because the camera looked away and
+                // back -- the test for a picture that depends on where the view has been. A development flag.
+                cameraSwing = ParseNumber(Next(args, ref i, "camswing"), "camswing", args);
             }
             else if (arg.Equals("flightdelay", StringComparison.OrdinalIgnoreCase))
             {
@@ -525,6 +534,18 @@ public readonly record struct HostOptions(
                         $"-backdropcycle expects a frame count, got '{value}'.", nameof(args));
                 }
             }
+            else if (arg.Equals("presetcycle", StringComparison.OrdinalIgnoreCase))
+            {
+                // Apply the next graphics preset every n frames, for as long as the run lasts: the same
+                // path as choosing one in the settings, which swaps whole render paths and their targets
+                // while the loop keeps presenting. A development flag.
+                string value = Next(args, ref i, "presetcycle");
+                if (!int.TryParse(value, out presetCycleFrames) || presetCycleFrames <= 0)
+                {
+                    throw new ArgumentException(
+                        $"-presetcycle expects a frame count, got '{value}'.", nameof(args));
+                }
+            }
             else if (arg.Equals("vanillarender", StringComparison.OrdinalIgnoreCase))
             {
                 // Just the renderer: the cinematic shell over the original's render path.
@@ -607,6 +628,7 @@ public readonly record struct HostOptions(
             FlightFrames = flightFrames,
             FlightDelay = flightDelay,
             CameraShake = cameraShake,
+            CameraSwing = cameraSwing,
             Difficulty = difficulty,
             StartupCommands = startupCommands,
             DeferredCommands = deferredCommands,
@@ -620,6 +642,7 @@ public readonly record struct HostOptions(
             MissionCycleFrames = missionCycleFrames,
             TitleCycleFrames = titleCycleFrames,
             BackdropCycleFrames = backdropCycleFrames,
+            PresetCycleFrames = presetCycleFrames,
             ShowcasePointDump = showcasePointDump,
             PlayCutscenes = playCutscenes,
             BenchmarkPath = benchmarkPath,
@@ -739,6 +762,10 @@ public readonly record struct HostOptions(
     /// </remarks>
     public int BackdropCycleFrames { get; init; }
 
+    /// <summary>Gets how many frames each graphics preset is kept before the next is applied.</summary>
+    /// <remarks>Set by <c>-presetcycle</c>; walks vanilla, enhanced, high and ultra in turn.</remarks>
+    public int PresetCycleFrames { get; init; }
+
     /// <summary>
     /// Gets the cinematic shell's section to open on — <c>campaign</c>, <c>settings</c>, <c>profile</c> or
     /// <c>extras</c> — or <see langword="null"/> for the landing page. Set by <c>-shelltab</c>.
@@ -826,6 +853,9 @@ public readonly record struct HostOptions(
     /// </remarks>
     public float CameraShake { get; init; }
 
+    /// <summary>Gets how many degrees of yaw are added on every other frame, or zero. Set by <c>-camswing</c>.</summary>
+    public float CameraSwing { get; init; }
+
     /// <summary>
     /// Gets a value indicating whether a scripted free-camera flight is asked for — an end pose the opening
     /// camera is flown to over the frame budget. When set, <c>-screenshot</c> writes one numbered frame per
@@ -833,7 +863,8 @@ public readonly record struct HostOptions(
     /// visible in the sequence.
     /// </summary>
     public bool HasFlight
-        => CameraEnd is not null || CameraYawEnd is not null || CameraPitchEnd is not null || CameraShake > 0f;
+        => CameraEnd is not null || CameraYawEnd is not null || CameraPitchEnd is not null || CameraShake > 0f
+            || CameraSwing != 0f;
 
     /// <summary>
     /// Gets the difficulty override from <c>-difficulty</c>, or <see langword="null"/> to use the active
@@ -950,6 +981,8 @@ public readonly record struct HostOptions(
           -pitchend <rad>  Pitch the flight ends on. Defaults to the opening pitch (-pitch).
           -flightframes N  Finish the flight in N frames and hold the end pose for the rest of the
                            capture. Defaults to spreading the flight over every frame.
+          -camswing <deg>  Add this much yaw on every other frame, so frames N and N+2 show the same view:
+                           what differs between them depends on where the camera has looked.
           -camshake <deg>  Lay a handheld-camera shake of this peak amplitude over the pose, drifting
                            the way a hand does rather than jittering randomly. Implies a flight, so it
                            can be used on its own to shake a fixed viewpoint. Try 0.15 for a steady
@@ -979,6 +1012,8 @@ public readonly record struct HostOptions(
           -backdropcycle N Select the next mission in the menu every N frames, so the backdrop swap --
                            a whole level replaced while the loop keeps presenting -- can be run for as
                            long as it takes instead of clicked down the list by hand.
+          -presetcycle N   Apply the next graphics preset every N frames, the way choosing one in
+                           the settings does.
           -computercam <n> Open the map computer by itself on frame <n> of a mission, so its camera
                            move and display boot can be captured from a known frame. Pair with
                            -frames and -screenshot for the whole transition as a sequence.

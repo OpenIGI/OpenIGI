@@ -181,7 +181,7 @@ public sealed partial class GraphicsDevice
         reflect.Bind("p", _glassReflectBlock!.Write<float>(FrameSlot, block));
 
         using (IRhiComputePassEncoder pass = Encoder().BeginComputePass(new RhiComputePassDescriptor(
-            _profiler.Time(RenderStage.Reflections),
+            _profiler.Time(RenderStage.Reflections, "reflections"),
             "glazing.reflect")))
         {
             reflect.Dispatch(pass, scene.Width, scene.Height);

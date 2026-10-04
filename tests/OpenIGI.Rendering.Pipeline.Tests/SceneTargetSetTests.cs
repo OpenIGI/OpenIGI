@@ -147,6 +147,47 @@ public sealed class SceneTargetSetTests
     }
 
     [Fact]
+    public void A_resize_retires_the_old_targets_until_the_frames_in_flight_are_done()
+    {
+        // The frame before the resize may still be running on the GPU and reading every one of them;
+        // freeing them at once lost the device whenever a preset changed the render scale.
+        using RecordingRhiDevice device = new();
+        using RetiredResources retired = new(framesInFlight: 2);
+        using SceneTargetSet targets = new(device, 1280, 720, retired: retired);
+
+        RecordedTexture before = (RecordedTexture)targets[SceneTargetId.Lit];
+
+        retired.Frame = 10;
+        targets.Resize(1088, 612, 1280, 720);
+
+        Assert.False(before.IsDisposed);
+
+        retired.ReleaseBefore(11);
+        Assert.False(before.IsDisposed);
+
+        retired.ReleaseBefore(12);
+        Assert.True(before.IsDisposed);
+    }
+
+    [Fact]
+    public void A_history_at_one_scale_is_the_frame_size_and_a_change_of_scale_rebuilds()
+    {
+        // At native resolution the doubled history buys nothing it can show, so it may be kept at the
+        // frame's own size; switching between the two is a rebuild like any change of size.
+        using RecordingRhiDevice device = new();
+        using SceneTargetSet targets = new(device, 1280, 720, historyScale: 1);
+
+        Assert.Equal(1, targets.HistoryScale);
+        Assert.Equal(1280, targets[SceneTargetId.ResolveHistoryColour].Width);
+        Assert.Equal(720, targets[SceneTargetId.ResolveHistoryMetadata].Height);
+        Assert.False(targets.Matches(1280, 720, historyScale: 2));
+
+        targets.Resize(1280, 720, historyScale: 2);
+
+        Assert.Equal(2560, targets[SceneTargetId.ResolveHistoryColour].Width);
+    }
+
+    [Fact]
     public void Under_a_render_scale_the_resolve_output_is_at_the_presented_size()
     {
         // The temporal resolve reconstructs to the window's size; everything before it runs at the

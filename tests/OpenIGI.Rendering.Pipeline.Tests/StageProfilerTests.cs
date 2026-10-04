@@ -178,6 +178,30 @@ public sealed class StageProfilerTests
     }
 
     [Fact]
+    public void A_map_that_arrives_after_the_frame_read_is_folded_before_the_slot_is_reused()
+    {
+        // A GPU-bound frame: the end-of-frame read looks before the GPU has finished, and the map completes
+        // only by the time the slot comes round. Disposing it then, unread, left the overlay at zero GPU time.
+        using RecordingRhiDevice device = new(CanTime) { HoldsReadbacks = true };
+        using StageProfiler profiler = new(device, framesInFlight: 1) { Enabled = true };
+
+        profiler.BeginFrame(0);
+        profiler.Time(RenderStage.Shadows);
+        Resolve(device, profiler);
+        profiler.RequestReadback(0);
+
+        Assert.False(profiler.ReadCompletedFrame(0));
+
+        device.ReleaseReadbacks();
+
+        profiler.BeginFrame(0);
+        profiler.Time(RenderStage.Lighting);
+        Resolve(device, profiler);
+
+        Assert.Equal(1, profiler.Ledger.CompletedFrames);
+    }
+
+    [Fact]
     public void Switching_timing_off_and_on_forgets_the_history()
     {
         using RecordingRhiDevice device = new(CanTime);

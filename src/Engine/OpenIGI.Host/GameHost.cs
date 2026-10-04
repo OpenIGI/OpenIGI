@@ -483,6 +483,9 @@ internal sealed partial class GameHost : IDisposable
     // Which row -backdropcycle is on, so each is asked for once rather than on every frame past its mark.
     private long _backdropCycleRow = -1;
 
+    // Which step -presetcycle is on, latched the same way.
+    private long _presetCycleStep = -1;
+
     /// <summary>How many ticks a step may run in a row before it returns to its host without a picture.</summary>
     private const int MaxTicksPerStep = 8;
 
@@ -2576,6 +2579,23 @@ internal sealed partial class GameHost : IDisposable
                 }
             }
 
+            // -presetcycle applies the next graphics preset on a fixed cadence, the way the settings page does.
+            if (_options.PresetCycleFrames > 0)
+            {
+                long step = _loop.Clock.FrameCount / _options.PresetCycleFrames;
+                if (step != _presetCycleStep)
+                {
+                    _presetCycleStep = step;
+                    GraphicsPreset[] presets = [GraphicsPreset.Ultra, GraphicsPreset.Vanilla, GraphicsPreset.High, GraphicsPreset.Enhanced];
+                    GraphicsPreset preset = presets[(int)(step % presets.Length)];
+                    if (GraphicsPresetRegistry.Default.IsAllowed(preset))
+                    {
+                        _logger.Information("Menu", $"-presetcycle: applying {preset}.");
+                        GraphicsPresetRegistry.Default.Apply(preset);
+                    }
+                }
+            }
+
             // The build request, once the campaign selection has held still for a moment. The debounce is
             // only there to stop a run down the list queueing fourteen builds; it costs the render thread
             // nothing either way, because the build happens on a worker.
@@ -3802,6 +3822,10 @@ internal sealed partial class GameHost : IDisposable
                     float endPitch = _options.CameraPitchEnd ?? flightStartPitch;
 
                     (float shakeYaw, float shakePitch) = HandheldShake(flightFrame, _options.CameraShake);
+                    if ((flightFrame & 1) == 1)
+                    {
+                        shakeYaw += _options.CameraSwing * (MathF.PI / 180f);
+                    }
 
                     _camera.MoveTo(
                         new Vector3d(
@@ -4563,6 +4587,7 @@ internal sealed partial class GameHost : IDisposable
                         // How many frames the relight and the bounce spread their tiles across, from the cvar
                         // so the per-frame GPU cost can be traded against GI fill-in latency without a rebuild.
                         litCards.BounceFrameSpread = RenderCVars.GiAmortize.Value;
+                        litCards.MinSliceTiles = RenderCVars.GiMinSlice.Value;
 
                         // How many frames a tile's estimate accumulates over, the pair to the spread above:
                         // the two together set how much of one retrace is admitted and how often, which is
@@ -6683,6 +6708,16 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                         ? I($"{"gpu total",-24} {gpu.Milliseconds,5:0.00} {gpu.P95Milliseconds,6:0.00} {gpu.PeakMilliseconds,6:0.00}")
                         : "measuring...");
 
+                    if (RenderCVars.PerformanceLogPasses.Value is > 0 and int shown)
+                    {
+                        IReadOnlyList<RenderPassTiming> passes = _device.PassTimings();
+                        for (int p = 0; p < passes.Count && p < shown; p++)
+                        {
+                            RenderPassTiming pass = passes[p];
+                            perf.Add(I($"  {pass.Label,-22} {pass.Milliseconds,5:0.00}        {pass.PeakMilliseconds,6:0.00}"));
+                        }
+                    }
+
                     // The CPU side the GPU timers cannot see. cpu is how much longer the frame's wall time
                     // is than the GPU's -- submission, game logic and GC that did not overlap the GPU. alloc
                     // is the managed allocation rate, eased so it is readable; a high figure is what feeds the
@@ -7015,6 +7050,38 @@ _world.Draw(_scene, eye, projection, new WorldDrawOptions(RotorsOnly: true));
                         "Perf",
                         FormattableString.Invariant(
                             $"{timing.Stage,-28} avg {timing.Milliseconds,6:0.000} ms  p95 {timing.P95Milliseconds,6:0.000} ms  peak {timing.PeakMilliseconds,6:0.000} ms{against}"));
+                }
+
+                foreach (RenderPassTiming pass in _device.PassTimings())
+                {
+                    _logger.Information(
+                        "Perf",
+                        FormattableString.Invariant(
+                            $"  pass {pass.Label,-32} avg {pass.Milliseconds,6:0.000} ms  peak {pass.PeakMilliseconds,7:0.000} ms  ran {pass.FramesRun} frame(s)  [{pass.Stage}]"));
+                }
+
+                // The 1% low, taken apart: what each pass cost in the slowest frames, beside its overall average.
+                IReadOnlyList<RenderPassTiming> worst = _device.WorstFramePassTimings(0.01, out int worstFrames, out double worstAverage);
+                if (worstFrames > 0)
+                {
+                    Dictionary<string, double> overall = [];
+                    foreach (RenderPassTiming pass in _device.PassTimings())
+                    {
+                        overall[pass.Label] = pass.Milliseconds;
+                    }
+
+                    _logger.Information(
+                        "Perf",
+                        FormattableString.Invariant($"Slowest 1% ({worstFrames} frame(s)): summed GPU avg {worstAverage:0.000} ms."));
+
+                    foreach (RenderPassTiming pass in worst)
+                    {
+                        double usual = overall.GetValueOrDefault(pass.Label);
+                        _logger.Information(
+                            "Perf",
+                            FormattableString.Invariant(
+                                $"  worst {pass.Label,-32} {pass.Milliseconds,7:0.000} ms  (usually {usual,6:0.000}, {pass.Milliseconds - usual,+7:0.000})  ran in {pass.FramesRun}/{worstFrames}"));
+                    }
                 }
 
                 GpuFrameTiming gpu = _device.GpuTiming();
