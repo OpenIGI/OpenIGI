@@ -158,6 +158,10 @@ public sealed class SurfaceCacheLighting : IDisposable
     // whole-cache slice.
     private int _tileStride = 1;
 
+    /// <summary>Gets or sets whether the whole-cache slices recorded now belong to the load-time convergence.</summary>
+    /// <remarks>Only how they are named in the timings; the convergence and the far refresh share the slices.</remarks>
+    public bool Converging { get; set; }
+
     /// <summary>Gets or sets the fewest tiles a steady-state slice dispatches; see <see cref="MinSliceGroups"/>.</summary>
     public int MinSliceTiles { get; set; } = MinSliceGroups;
 
@@ -262,6 +266,11 @@ public sealed class SurfaceCacheLighting : IDisposable
     private readonly Dictionary<WorldPlacement, int> _instanceOf = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<int> _movingInstances = [];
     private readonly List<int> _movingPages = [];
+
+    // Each moving placement's run of _movingPages and its bounding sphere, as the lookup lists them; the
+    // spheres follow the placements every frame one of them moves.
+    private readonly List<SurfaceCacheLookup.MoverObject> _movers = [];
+    private bool _moversMoved;
     private int _dirtyLow = int.MaxValue;
     private int _dirtyHigh = -1;
     private bool _moversChanged;
@@ -582,6 +591,7 @@ public sealed class SurfaceCacheLighting : IDisposable
             _moversChanged = true;
         }
 
+        int firstMoving = _movingPages.Count;
         for (int slot = 0; slot < placed.PageCount; slot++)
         {
             int page = placed.FirstPage + slot;
@@ -606,6 +616,13 @@ public sealed class SurfaceCacheLighting : IDisposable
             _dirtyLow = Math.Min(_dirtyLow, page);
             _dirtyHigh = Math.Max(_dirtyHigh, page);
         }
+
+        if (!moving && _movingPages.Count > firstMoving)
+        {
+            _movers.Add(new SurfaceCacheLookup.MoverObject(firstMoving, _movingPages.Count - firstMoving, default, 0f));
+        }
+
+        _moversMoved = true;
     }
 
     /// <summary>Uploads the pages moved this frame, and the movers' list if it grew.</summary>
@@ -617,11 +634,22 @@ public sealed class SurfaceCacheLighting : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        if (_moversMoved || _moversChanged)
+        {
+            BoundMovers();
+        }
+
         if (_moversChanged)
         {
-            _lookup?.SetMovers(_movingPages);
+            _lookup?.SetMovers(_movingPages, _movers);
             _moversChanged = false;
         }
+        else if (_moversMoved)
+        {
+            _lookup?.UpdateMoverBounds(_movers);
+        }
+
+        _moversMoved = false;
 
         if (_dirtyHigh >= _dirtyLow)
         {
@@ -630,6 +658,46 @@ public sealed class SurfaceCacheLighting : IDisposable
             _device.UpdateStorageBuffer<float>(_pages, from, _pageRecords.AsSpan(from, count));
             _dirtyLow = int.MaxValue;
             _dirtyHigh = -1;
+        }
+    }
+
+    /// <summary>Encloses each mover's pages, where their records stand now, in one sphere for the lookup to test.</summary>
+    private void BoundMovers()
+    {
+        for (int m = 0; m < _movers.Count; m++)
+        {
+            SurfaceCacheLookup.MoverObject mover = _movers[m];
+
+            // The centre of the box around the pages' spheres, then the radius that reaches the far side of
+            // every one of them from it.
+            Vector3f low = new(float.MaxValue, float.MaxValue, float.MaxValue);
+            Vector3f high = new(float.MinValue, float.MinValue, float.MinValue);
+            for (int i = 0; i < mover.PageCount; i++)
+            {
+                int at = (_movingPages[mover.FirstPage + i] * FloatsPerPage) + 36;
+                float r = _pageRecords[at + 3];
+                low = new Vector3f(
+                    MathF.Min(low.X, _pageRecords[at] - r),
+                    MathF.Min(low.Y, _pageRecords[at + 1] - r),
+                    MathF.Min(low.Z, _pageRecords[at + 2] - r));
+                high = new Vector3f(
+                    MathF.Max(high.X, _pageRecords[at] + r),
+                    MathF.Max(high.Y, _pageRecords[at + 1] + r),
+                    MathF.Max(high.Z, _pageRecords[at + 2] + r));
+            }
+
+            Vector3f centre = new((low.X + high.X) * 0.5f, (low.Y + high.Y) * 0.5f, (low.Z + high.Z) * 0.5f);
+            float radius = 0f;
+            for (int i = 0; i < mover.PageCount; i++)
+            {
+                int at = (_movingPages[mover.FirstPage + i] * FloatsPerPage) + 36;
+                float dx = _pageRecords[at] - centre.X;
+                float dy = _pageRecords[at + 1] - centre.Y;
+                float dz = _pageRecords[at + 2] - centre.Z;
+                radius = MathF.Max(radius, MathF.Sqrt((dx * dx) + (dy * dy) + (dz * dz)) + _pageRecords[at + 3]);
+            }
+
+            _movers[m] = mover with { Centre = centre, Radius = radius };
         }
     }
 
@@ -750,7 +818,7 @@ public sealed class SurfaceCacheLighting : IDisposable
         }
 
         _tileStride = Math.Max(1, sliceCount);
-        _device.SetComputeTimingLabel("cards.far.relight");
+        _device.SetComputeTimingLabel(Converging ? "cards.converge.relight" : "cards.far.relight");
         LightTiles(
             sunDirection, sunColour, skyColour, shadows, probe: 0, localScale,
             offset, tiles, useActiveList: false, cull: false);
@@ -812,7 +880,7 @@ public sealed class SurfaceCacheLighting : IDisposable
         _tileStride = Math.Max(1, sliceCount);
         try
         {
-            _device.SetComputeTimingLabel("cards.far.bounce");
+            _device.SetComputeTimingLabel(Converging ? "cards.converge.bounce" : "cards.far.bounce");
             Dispatch(1, FinalLighting, IndirectLighting, shadows, boost, Math.Max(pass, 0), offset, tiles, useActiveList: false);
             Dispatch(2, DirectLighting, FinalLighting, shadows, boost, 0, offset, tiles, useActiveList: false);
         }

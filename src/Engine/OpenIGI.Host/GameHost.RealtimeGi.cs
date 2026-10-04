@@ -49,6 +49,9 @@ internal sealed partial class GameHost
     private int _giRefreshQuietRounds;
     private bool _giRefreshWorldSettled;
 
+    // The rendered frame the refresh last advanced on; see StepGiRelight.
+    private int _giRefreshLastFrame = -1;
+
     /// <summary>How many whole sweeps the far refresh runs after its inputs last changed, before it idles.</summary>
     /// <remarks>
     /// One sweep relights every card under the new inputs; the rest fold more bounce in, at the steady
@@ -521,6 +524,17 @@ internal sealed partial class GameHost
     /// </remarks>
     private void StepGiRelight()
     {
+        // Once per RENDERED frame. This runs once per pass of the loop, and a pass that only ticks the
+        // simulation renders nothing: its slice landed in the next frame beside that frame's own, so one frame
+        // in every few carried two -- every fourth at a 30 Hz simulation under a 120 Hz picture, and on
+        // mission 3's large cache that was a 3.5 ms frame becoming a 7 ms one, over and over.
+        if (_loop.Clock.FrameCount == _giRefreshLastFrame)
+        {
+            return;
+        }
+
+        _giRefreshLastFrame = _loop.Clock.FrameCount;
+
         int slices = RenderCVars.GiFarRefresh.Value;
         if (slices <= 0
             || _cardLighting is not { } cards

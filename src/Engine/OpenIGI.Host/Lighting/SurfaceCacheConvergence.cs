@@ -205,6 +205,7 @@ internal sealed class SurfaceCacheConvergence
     {
         int stage = _step / Slices;
         int slice = _step % Slices;
+        _cards.Converging = true;
 
         if (stage == 0)
         {
@@ -219,6 +220,7 @@ internal sealed class SurfaceCacheConvergence
             _cards.ConvergeBounceSlice(_field, _boost, stage - 2, slice, Slices);
         }
 
+        _cards.Converging = false;
         _step++;
     }
 }

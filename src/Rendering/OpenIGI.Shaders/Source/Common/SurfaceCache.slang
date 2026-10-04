@@ -80,6 +80,27 @@ void ProjectOntoCard(
     facing = direction.xyz;
 }
 
+// How many ints one moving object's entry in the movers' list takes: its bounding sphere's centre and
+// radius as float bits, then where its pages start in uCellPages and how many there are. Must match
+// SurfaceCacheLookup.MoverHeaderInts.
+static const int kMoverHeaderInts = 6;
+
+// The pages of one moving object, or none where the point lies outside it. The movers' bucket -- the one
+// past the hashed ones -- lists the objects rather than their pages, so a lookup tests one sphere per
+// object instead of walking every page of every vehicle, door and fan in the level: that walk was half
+// of what every traced bounce cost.
+int2 MoverPages(int headers, int index, float3 world, float bias)
+{
+    int at = headers + (index * kMoverHeaderInts);
+    float3 centre = float3(asfloat(uCellPages[at]), asfloat(uCellPages[at + 1]), asfloat(uCellPages[at + 2]));
+    float reach = asfloat(uCellPages[at + 3]) + bias;
+    float3 toCentre = world - centre;
+
+    return dot(toCentre, toCentre) > reach * reach
+        ? int2(0, 0)
+        : int2(uCellPages[at + 4], uCellPages[at + 5]);
+}
+
 // The grid narrows the field to a handful of candidates; the work here is deciding between them, because
 // a point on a wall sits inside the box of every card of that wall and of whatever stands against it.
 // Each candidate is taken back into its own placement's space, projected onto its card, and rejected if
@@ -116,12 +137,13 @@ bool LookupCardWithin(
 
     bool anyFound = false;
     bool settled = false;
-    // Two walks: the point's own cell, then the movers' list -- the one bucket past the hashed ones.
-    // A page that moves is still filed in the grid where it stood at load, so the first walk passes
-    // over it and the second finds it wherever its record now puts it.
-    for (int walk = 0; walk < 2 && !settled; walk++)
+    // The point's own cell, then each moving object it falls within. A page that moves is still filed
+    // in the grid where it stood at load, so the cell's walk passes over it and the object's finds it
+    // wherever its record now puts it. See MoverPages.
+    int2 movers = uCells[uLookupBuckets];
+    for (int walk = 0; walk <= movers.y && !settled; walk++)
     {
-        int2 span = walk == 0 ? range : uCells[uLookupBuckets];
+        int2 span = walk == 0 ? range : MoverPages(movers.x, walk - 1, world, 0.0);
         for (int slot = 0; slot < span.y && !settled; slot++)
         {
             int page = uCellPages[span.x + slot];
@@ -241,12 +263,13 @@ bool SampleCardsWithin(float3 world, float3 normalW, float bias, out float3 radi
     float2 albedoSize = float2(float(albedoWidth), float(albedoHeight));
 
     float weightSum = 0.0;
-    // Two walks: the point's own cell, then the movers' list -- the one bucket past the hashed ones.
-    // A page that moves is still filed in the grid where it stood at load, so the first walk passes
-    // over it and the second finds it wherever its record now puts it.
-    for (int walk = 0; walk < 2; walk++)
+    // The point's own cell, then each moving object it falls within. A page that moves is still filed
+    // in the grid where it stood at load, so the cell's walk passes over it and the object's finds it
+    // wherever its record now puts it. See MoverPages.
+    int2 movers = uCells[uLookupBuckets];
+    for (int walk = 0; walk <= movers.y; walk++)
     {
-        int2 span = walk == 0 ? range : uCells[uLookupBuckets];
+        int2 span = walk == 0 ? range : MoverPages(movers.x, walk - 1, world, bias);
         for (int slot = 0; slot < span.y; slot++)
         {
             int page = uCellPages[span.x + slot];
