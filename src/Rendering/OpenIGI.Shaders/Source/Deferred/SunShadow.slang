@@ -179,9 +179,15 @@ void computeMain(uint3 id : SV_DispatchThreadID)
     // Absolute world, which is the space the acceleration structure is built in.
     float3 worldPos = mul(p.viewToWorld, float4(viewPos, 1.0)).xyz + p.camera.xyz;
 
-    // Off the surface along its own normal, and scaled with distance because the rounding this guards
-    // against grows with the magnitude of the position it happens to.
-    float offset = 0.02 + (0.0005 * viewPos.z);
+    // Off the surface along its own normal, and scaled with distance. Not for the float rounding alone: the
+    // terrain the ray can meet is level-of-detail geometry whose error grows with distance by design, and the
+    // normal this offsets along is the smooth shading normal, not the facet's. At half a millimetre a metre a
+    // ray off a distant slope started close enough to the facets beside it to graze them, and a change of a
+    // ten-thousandth of a degree in the view flipped a thirtieth of the screen between lit and shadowed --
+    // whole triangles of the far hills coming and going every frame the mouse moved. Measured on mission 1's
+    // far ridge: 28710 pixels flipping at 0.0005, 3321 at 0.001, 972 at 0.002, 916 at 0.003. Two millimetres
+    // a metre is the knee: a centimetre at arm's length, four metres two kilometres out where a pixel is more.
+    float offset = 0.02 + (0.002 * viewPos.z);
 
     float2 rand = float2(
         InterleavedGradientNoise(float2(px), p.jitter.x),
